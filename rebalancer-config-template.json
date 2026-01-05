@@ -1,0 +1,25 @@
+{
+    "kraken": {
+        "apiKey": "API_KEY",
+        "privateKey": "PRIVATE_KEY"
+    },
+    "settings": {
+        "loopDelaySeconds": 60,
+        "deviationTriggerPercent": 5.0,
+        "dryRun": true
+    },
+    "allocations": [
+        {
+            "symbol": "BTC",
+            "targetPercent": 50
+        },
+        {
+            "symbol": "ETH",
+            "targetPercent": 45
+        },
+        {
+            "symbol": "USD",
+            "targetPercent": 5
+        }
+    ]
+}
