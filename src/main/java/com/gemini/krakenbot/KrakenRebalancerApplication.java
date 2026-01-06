@@ -15,7 +15,10 @@ public class KrakenRebalancerApplication {
 
     @Bean
     public com.fasterxml.jackson.databind.ObjectMapper objectMapper() {
-        return new com.fasterxml.jackson.databind.ObjectMapper();
+        com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        mapper.findAndRegisterModules();
+        mapper.configure(com.fasterxml.jackson.databind.SerializationFeature.WRITE_DATES_AS_TIMESTAMPS, false);
+        return mapper;
     }
 
     @Bean

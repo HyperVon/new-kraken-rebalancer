@@ -16,8 +16,26 @@ const TradeHistory = ({ history }) => {
                     </thead>
                     <tbody>
                         {history.flatMap((snapshot, sIndex) => {
-                            // If no actions, maybe skip or show "No actions"
-                            if (!snapshot.actions || snapshot.actions.length === 0) return [];
+                            // Convert timestamp
+                            const date = new Date(snapshot.timestamp);
+                            // Handle numeric timestamp (seconds vs ms) - simplistic check
+                            // If timestamp is number and small (seconds), multiply by 1000
+                            // But cleaner is to fix backend. For now, let's assume valid Date input or fix visual.
+
+                            const dateStr = isNaN(date.getTime()) && typeof snapshot.timestamp === 'number'
+                                ? new Date(snapshot.timestamp * 1000).toLocaleString()
+                                : new Date(snapshot.timestamp).toLocaleString();
+
+                            if (!snapshot.actions || snapshot.actions.length === 0) {
+                                return (
+                                    <tr key={`${sIndex}-no-action`}>
+                                        <td style={{ color: '#94a3b8' }}>{dateStr}</td>
+                                        <td>
+                                            <span style={{ color: '#64748b', fontStyle: 'italic' }}>No trades executed (Cycle complete)</span>
+                                        </td>
+                                    </tr>
+                                );
+                            }
 
                             return snapshot.actions.map((action, aIndex) => {
                                 const isBuy = action.toUpperCase().startsWith('BUY');
@@ -28,7 +46,7 @@ const TradeHistory = ({ history }) => {
 
                                 return (
                                     <tr key={`${sIndex}-${aIndex}`}>
-                                        <td style={{ color: '#94a3b8' }}>{new Date(snapshot.timestamp).toLocaleString()}</td>
+                                        <td style={{ color: '#94a3b8' }}>{dateStr}</td>
                                         <td>
                                             <span className={badgeClass}>{isBuy ? 'BUY' : (isSell ? 'SELL' : 'INFO')}</span>
                                             <span style={{ marginLeft: '10px' }}>{action}</span>
@@ -37,9 +55,6 @@ const TradeHistory = ({ history }) => {
                                 );
                             });
                         })}
-                        {history.every(h => !h.actions || h.actions.length === 0) && (
-                            <tr><td colSpan="2" style={{ textAlign: 'center', color: '#94a3b8' }}>No recent trades</td></tr>
-                        )}
                     </tbody>
                 </table>
             </div>

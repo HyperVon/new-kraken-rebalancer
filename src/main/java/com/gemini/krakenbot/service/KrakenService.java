@@ -78,7 +78,7 @@ public class KrakenService {
             JsonNode resp = queryPrivate(path, params);
             log.info("Order Executed: {}", resp.toString());
         } catch (Exception e) {
-            log.error("Failed to execute order", e);
+            log.error("Failed to execute order: {} {} {} volume={}", type, side, pair, volume, e);
         }
     }
 

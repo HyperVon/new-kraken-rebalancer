@@ -215,7 +215,7 @@ public class PortfolioManager {
                 cost = projectedCash.multiply(BigDecimal.valueOf(0.99)); // Safety buffer
             }
 
-            if (cost.compareTo(BigDecimal.valueOf(1.0)) < 0) { // Min order check roughly
+            if (cost.compareTo(BigDecimal.valueOf(s.dustThresholdUSD())) < 0) { // Min order check
                 log.info("Skipping dust buy for {} (${})", symbol, cost);
                 continue;
             }
@@ -311,10 +311,24 @@ public class PortfolioManager {
 
             if (isDeposit) {
                 // USD Excess -> BUY
-                buyOrders.put(a.symbol(), share);
+                // Only buy if asset is underweight (deviation < 0)
+                BigDecimal assetDev = allDevs.getOrDefault(a.symbol(), BigDecimal.ZERO);
+                if (assetDev.compareTo(BigDecimal.ZERO) < 0) {
+                    buyOrders.put(a.symbol(), share);
+                } else {
+                    log.info("Skipping fiat buy distribution for {} as it is not underweight (Dev: {})", a.symbol(),
+                            assetDev);
+                }
             } else {
                 // USD Shortage -> SELL
-                sellOrders.put(a.symbol(), share);
+                // Only sell if asset is overweight (deviation > 0)
+                BigDecimal assetDev = allDevs.getOrDefault(a.symbol(), BigDecimal.ZERO);
+                if (assetDev.compareTo(BigDecimal.ZERO) > 0) {
+                    sellOrders.put(a.symbol(), share);
+                } else {
+                    log.info("Skipping fiat sell distribution for {} as it is not overweight (Dev: {})", a.symbol(),
+                            assetDev);
+                }
             }
         }
     }
