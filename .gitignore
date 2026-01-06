@@ -3,3 +3,4 @@
 rebalancer-config.json
 target
 .vscode
+*.gz

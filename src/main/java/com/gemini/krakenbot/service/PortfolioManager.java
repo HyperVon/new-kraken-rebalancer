@@ -2,6 +2,7 @@ package com.gemini.krakenbot.service;
 
 import com.gemini.krakenbot.config.Allocation;
 import com.gemini.krakenbot.config.Settings;
+import com.gemini.krakenbot.model.PortfolioSnapshot;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -9,8 +10,11 @@ import org.springframework.stereotype.Service;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.ArrayList;
 import java.util.concurrent.TimeUnit;
+import java.time.Instant;
 
 @Service
 public class PortfolioManager {
@@ -18,10 +22,13 @@ public class PortfolioManager {
     private static final Logger log = LoggerFactory.getLogger(PortfolioManager.class);
     private final KrakenService krakenService;
     private final ConfigService configService;
+    private final TradeHistoryService tradeHistoryService;
 
-    public PortfolioManager(KrakenService krakenService, ConfigService configService) {
+    public PortfolioManager(KrakenService krakenService, ConfigService configService,
+            TradeHistoryService tradeHistoryService) {
         this.krakenService = krakenService;
         this.configService = configService;
+        this.tradeHistoryService = tradeHistoryService;
     }
 
     public void startRebalancingLoop() {
@@ -51,6 +58,8 @@ public class PortfolioManager {
 
     private void performRebalanceCycle() {
         log.info("--- Starting Snapshot Phase ---");
+        List<String> actionLog = new ArrayList<>();
+
         // 1. Snapshot
         Map<String, Double> balances = krakenService.getBalances();
         log.info("Available Balance Keys: {}", balances.keySet());
@@ -140,6 +149,10 @@ public class PortfolioManager {
                     a.symbol(), deviationPct, deviationUSD.setScale(2, RoundingMode.HALF_UP),
                     s.deviationTriggerPercent());
 
+            if (deviationPct.doubleValue() >= s.deviationTriggerPercent()) {
+                actionLog.add("Deviation Triggered details: " + a.symbol() + " Dev: " + deviationPct + "%");
+            }
+
             if (a.symbol().equalsIgnoreCase("USD")) {
                 if (deviationPct.doubleValue() >= s.deviationTriggerPercent()) {
                     log.info("Asset USD Deviation: {}% (Trigger: {}%). USD Dev: {}", deviationPct,
@@ -166,6 +179,7 @@ public class PortfolioManager {
         // We need to correct the USD imbalance by trading the most off-balance assets
         if (buyOrders.isEmpty() && sellOrders.isEmpty() && usdTriggered) {
             log.info("USD Deviation triggered but no individual asset triggers. Enforcing fiat correction.");
+            actionLog.add("USD Deviation Triggered. Enforcing fiat correction.");
             distributeFiatCorrection(usdDeviationAmount, allDeviations, buyOrders, sellOrders);
         }
 
@@ -188,6 +202,7 @@ public class PortfolioManager {
             // Execute
             krakenService.executeOrder(symbol + "USD", "market", "sell", volume.doubleValue());
             projectedCash = projectedCash.add(usdToSell); // Assume fill at current price
+            actionLog.add("SELL " + symbol + " Volume: " + volume + " Value: $" + usdToSell);
         }
 
         // Execute BUYS
@@ -212,7 +227,63 @@ public class PortfolioManager {
             BigDecimal volume = cost.divide(price, 8, RoundingMode.HALF_UP);
             krakenService.executeOrder(symbol + "USD", "market", "buy", volume.doubleValue());
             projectedCash = projectedCash.subtract(cost);
+            actionLog.add("BUY " + symbol + " Volume: " + volume + " Cost: $" + cost);
         }
+
+        // 4. Record Snapshot
+        Map<String, PortfolioSnapshot.AssetSnapshot> assetSnapshots = new HashMap<>();
+        for (Allocation a : configService.getConfig().allocations()) {
+            String symbol = a.symbol();
+            BigDecimal balance = BigDecimal.valueOf(balances.getOrDefault(symbol, 0.0));
+            // Try better lookup if needed (like in original loop) but using cached values:
+            if (currentValuesUSD.containsKey(symbol)) { // We calculated it earlier
+                // Re-derive or store earlier?
+                // To avoid re-calc mess, let's just use what we have in currentValuesUSD and
+                // price map
+            }
+
+            BigDecimal valUSD = currentValuesUSD.getOrDefault(symbol, BigDecimal.ZERO);
+            BigDecimal price = BigDecimal.ONE;
+            if (!symbol.equalsIgnoreCase("USD")) {
+                price = getCurrentPrice(symbol, prices);
+            }
+
+            // Recalculate percentages for snapshot
+            BigDecimal targetPct = BigDecimal.valueOf(a.targetPercent());
+            BigDecimal currentPct = BigDecimal.ZERO;
+            if (totalPortfolioValueUSD.compareTo(BigDecimal.ZERO) > 0) {
+                currentPct = valUSD.divide(totalPortfolioValueUSD, 4, RoundingMode.HALF_UP)
+                        .multiply(BigDecimal.valueOf(100));
+            }
+            BigDecimal devPct = BigDecimal.ZERO;
+            // Calculate target value in USD for this asset
+            BigDecimal targetVal = totalPortfolioValueUSD.multiply(targetPct).divide(BigDecimal.valueOf(100), 4,
+                    RoundingMode.HALF_UP);
+
+            if (targetVal.compareTo(BigDecimal.ZERO) > 0) {
+                // Calculate deviation as a percentage of the target value (Relative Deviation)
+                // This matches the "Deviation %" logic used in the rebalancing analysis loop
+                BigDecimal deviationUSD = valUSD.subtract(targetVal);
+                devPct = deviationUSD.divide(targetVal, 4, RoundingMode.HALF_UP).multiply(BigDecimal.valueOf(100));
+            }
+
+            assetSnapshots.put(symbol, new PortfolioSnapshot.AssetSnapshot(
+                    symbol,
+                    balance, // Note: this might be 0 if we didn't find it in balances map correctly earlier
+                    price,
+                    valUSD,
+                    targetPct,
+                    currentPct,
+                    devPct));
+        }
+
+        PortfolioSnapshot snapshot = new PortfolioSnapshot(
+                Instant.now(),
+                totalPortfolioValueUSD,
+                assetSnapshots,
+                actionLog);
+
+        tradeHistoryService.addSnapshot(snapshot);
 
         log.info("--- Cycle Complete ---");
     }
