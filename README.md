@@ -20,6 +20,7 @@ A robust, automated portfolio rebalancing bot for the Kraken cryptocurrency exch
 
 -   Java 21 or higher
 -   Maven
+-   Node.js (LTS version) and npm
 -   A Kraken account with API Keys (Permissions: Query Funds, Modified Orders)
 
 ### Configuration
@@ -35,10 +36,21 @@ A robust, automated portfolio rebalancing bot for the Kraken cryptocurrency exch
 
 ### Running the Application
 
-Run the application using Maven:
+You need to run both the backend and frontend services.
 
+**1. Start the Backend:**
 ```bash
 mvn spring-boot:run
 ```
+
+**2. Start the Frontend:**
+Open a new terminal configuration:
+```bash
+cd frontend
+npm install  # First time only
+npm run dev
+```
+
+Open your browser to the URL shown (usually http://localhost:5173).
 
 The application will start logging the portfolio status and any actions taken.
