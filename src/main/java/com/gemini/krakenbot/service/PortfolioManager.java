@@ -136,6 +136,10 @@ public class PortfolioManager {
 
             allDeviations.put(a.symbol(), deviationUSD);
 
+            log.info("Analysis [{}]: Dev: {}% (${}). Threshold: {}%",
+                    a.symbol(), deviationPct, deviationUSD.setScale(2, RoundingMode.HALF_UP),
+                    s.deviationTriggerPercent());
+
             if (a.symbol().equalsIgnoreCase("USD")) {
                 if (deviationPct.doubleValue() >= s.deviationTriggerPercent()) {
                     log.info("Asset USD Deviation: {}% (Trigger: {}%). USD Dev: {}", deviationPct,
