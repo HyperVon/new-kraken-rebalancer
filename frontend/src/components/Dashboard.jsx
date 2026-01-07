@@ -127,7 +127,27 @@ const Dashboard = () => {
 
             <div className="grid-cols-2" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', marginBottom: '2rem' }}>
                 <StatusCard title="Total Portfolio" value={formatCurrency(totalValue)} type="neutral" />
-                <StatusCard title="Cash (USD)" value={formatCurrency(usdValue)} subValue={`${usdAsset?.currentPercent?.toFixed(2)}%`} type="success" />
+                <StatusCard
+                    title="Cash (USD)"
+                    value={formatCurrency(usdValue)}
+                    subValue={
+                        usdAsset ? (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.875rem' }}>
+                                <span title="Current Allocation">{usdAsset.currentPercent?.toFixed(2)}%</span>
+                                <span style={{ color: 'var(--text-secondary)' }}>|</span>
+                                <span title="Target Allocation" style={{ color: 'var(--text-secondary)' }}>Target: {usdAsset.targetPercent?.toFixed(2)}%</span>
+                                <span style={{ color: 'var(--text-secondary)' }}>|</span>
+                                <span
+                                    title="Deviation"
+                                    style={{ color: usdAsset.deviationPercent > 0 ? 'var(--danger-color)' : (usdAsset.deviationPercent < 0 ? 'var(--success-color)' : 'inherit') }}
+                                >
+                                    Dev: {usdAsset.deviationPercent > 0 ? '+' : ''}{usdAsset.deviationPercent?.toFixed(2)}%
+                                </span>
+                            </div>
+                        ) : '-'
+                    }
+                    type="success"
+                />
                 <StatusCard title="Crypto Assets" value={formatCurrency(cryptoValue)} type="neutral" />
             </div>
 
