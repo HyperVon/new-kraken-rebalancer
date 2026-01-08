@@ -51,9 +51,10 @@ The system determines what trades are necessary to restore the portfolio to its 
 
     *   **Scenario B: Fiat Correction (Deposit/Withdrawal)**
         If *only* the USD asset triggers the threshold (e.g., due to a fresh deposit of cash), the system recognizes this as a "Fiat Correction" event.
-        *   The surplus (or deficit) of USD is distributed across all other assets.
-        *   Each asset receives a share of the trade proportional to its target allocation.
-        *   *Note: This ensures that new deposits are immediately invested according to your strategy without waiting for market movements.*
+        *   The surplus (or deficit) of USD is distributed intelligently among assets that counter-balance the deviation.
+        *   **Surplus (Deposit)**: Buys are distributed among **Underweight** assets only, proportional to their current USD deficit.
+        *   **Shortage (Withdrawal)**: Sells are distributed among **Overweight** assets only, proportional to their current USD surplus.
+        *   *Note: This concentrates the rebalancing power into the assets that are furthest from their targets, effectively clearing dust thresholds.*
 
 ---
 
@@ -78,4 +79,5 @@ The behavior is controlled by `rebalancer-config.json`:
 
 -   **`loopDelaySeconds`**: Time to wait between cycles.
 -   **`deviationTriggerPercent`**: Sensitivity of the rebalancer. Lower values track targets closer but trade more frequently (higher fees).
+-   **`dustThresholdUSD`**: Minimum order value in USD. Trades smaller than this amount are skipped to avoid API errors (Kraken minimum is typically ~$1-5).
 -   **`dryRun`**: If set to `true`, the system performs all calculations and logs intended trades but **does not** send orders to Kraken.

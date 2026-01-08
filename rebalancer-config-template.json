@@ -6,6 +6,7 @@
     "settings": {
         "loopDelaySeconds": 60,
         "deviationTriggerPercent": 5.0,
+        "dustThresholdUSD": 5.0,
         "dryRun": true
     },
     "allocations": [
