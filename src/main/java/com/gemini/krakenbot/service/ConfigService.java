@@ -33,6 +33,16 @@ public class ConfigService {
         return appConfig;
     }
 
+    public void updateConfig(AppConfig newConfig) {
+        this.appConfig = newConfig;
+        validateConfig();
+        try {
+            objectMapper.writerWithDefaultPrettyPrinter().writeValue(new File("rebalancer-config.json"), newConfig);
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to save configuration", e);
+        }
+    }
+
     private void validateConfig() {
         double totalPercent = appConfig.allocations().stream()
                 .mapToDouble(Allocation::targetPercent)

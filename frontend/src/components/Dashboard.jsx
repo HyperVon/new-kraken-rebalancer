@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import StatusCard from './StatusCard';
 import AllocationChart from './AllocationChart';
 import TradeHistory from './TradeHistory';
+import Settings from './Settings';
 
 const Dashboard = () => {
     const [status, setStatus] = useState(null);
@@ -10,6 +11,7 @@ const Dashboard = () => {
     const [sortConfig, setSortConfig] = useState({ key: 'valueUSD', direction: 'desc' });
     const [lastUpdatedFormatted, setLastUpdatedFormatted] = useState('-');
     const [timeSinceUpdate, setTimeSinceUpdate] = useState(0);
+    const [showSettings, setShowSettings] = useState(false);
 
     const fetchData = async () => {
         try {
@@ -52,12 +54,19 @@ const Dashboard = () => {
 
     // Main polling loop
     useEffect(() => {
+        // Don't poll aggressively if in settings
+        if (showSettings) return;
+
         fetchData();
         const dataInterval = setInterval(fetchData, 5000);
         return () => clearInterval(dataInterval);
-    }, []);
+    }, [showSettings]);
 
-    if (loading && !status) return <div className="dashboard-container">Loading...</div>;
+    if (loading && !status && !showSettings) return <div className="dashboard-container">Loading...</div>;
+
+    if (showSettings) {
+        return <Settings onBack={() => setShowSettings(false)} />;
+    }
 
     const isStale = timeSinceUpdate > 90; // Warn if data is older than 90s (cycle is ~60s)
     const liveBadgeColor = isStale ? '#eab308' : '#22c55e'; // Yellow if stale, Green if live
@@ -116,12 +125,30 @@ const Dashboard = () => {
                         animation: isStale ? 'none' : 'pulse 2s infinite'
                     }}>{liveBadgeText}</span>
                 </div>
-                <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontSize: '0.875rem', color: '#94a3b8' }}>Data Age</div>
-                    <div style={{ fontWeight: 'bold', color: isStale ? '#eab308' : 'inherit' }}>{timeSinceUpdate}s ago</div>
-                    <div style={{ fontSize: '0.75rem', color: '#64748b' }}>
-                        {status ? new Date(status.timestamp).toLocaleTimeString() : '-'}
+                <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+                    <div style={{ textAlign: 'right' }}>
+                        <div style={{ fontSize: '0.875rem', color: '#e2e8f0' }}>Data Age</div>
+                        <div style={{ fontWeight: 'bold', color: isStale ? '#eab308' : 'inherit' }}>{timeSinceUpdate}s ago</div>
+                        <div style={{ fontSize: '0.75rem', color: '#cbd5e1' }}>
+                            {status ? new Date(status.timestamp).toLocaleTimeString() : '-'}
+                        </div>
                     </div>
+                    <button
+                        onClick={() => setShowSettings(true)}
+                        style={{
+                            background: '#334155',
+                            color: 'white',
+                            border: 'none',
+                            padding: '0.5rem 1rem',
+                            borderRadius: '4px',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.5rem'
+                        }}
+                    >
+                        <span>⚙️ Settings</span>
+                    </button>
                 </div>
             </div>
 

@@ -29,9 +29,9 @@ const TradeHistory = ({ history }) => {
                             if (!snapshot.actions || snapshot.actions.length === 0) {
                                 return (
                                     <tr key={`${sIndex}-no-action`}>
-                                        <td style={{ color: '#94a3b8' }}>{dateStr}</td>
+                                        <td style={{ color: '#e2e8f0' }}>{dateStr}</td>
                                         <td>
-                                            <span style={{ color: '#64748b', fontStyle: 'italic' }}>No trades executed (Cycle complete)</span>
+                                            <span style={{ color: '#cbd5e1', fontStyle: 'italic' }}>No trades executed (Cycle complete)</span>
                                         </td>
                                     </tr>
                                 );
@@ -46,7 +46,7 @@ const TradeHistory = ({ history }) => {
 
                                 return (
                                     <tr key={`${sIndex}-${aIndex}`}>
-                                        <td style={{ color: '#94a3b8' }}>{dateStr}</td>
+                                        <td style={{ color: '#e2e8f0' }}>{dateStr}</td>
                                         <td>
                                             <span className={badgeClass}>{isBuy ? 'BUY' : (isSell ? 'SELL' : 'INFO')}</span>
                                             <span style={{ marginLeft: '10px' }}>{action}</span>

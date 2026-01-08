@@ -49,7 +49,7 @@ const AllocationChart = ({ assets }) => {
                     color: '#334155'
                 },
                 ticks: {
-                    color: '#94a3b8',
+                    color: '#e2e8f0',
                     callback: (value) => '$' + value
                 }
             },

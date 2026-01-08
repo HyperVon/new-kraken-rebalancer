@@ -36,4 +36,10 @@ public class DashboardController {
     public AppConfig getConfig() {
         return configService.getConfig();
     }
+
+    @org.springframework.web.bind.annotation.PostMapping("/config")
+    public AppConfig updateConfig(@org.springframework.web.bind.annotation.RequestBody AppConfig config) {
+        configService.updateConfig(config);
+        return configService.getConfig();
+    }
 }

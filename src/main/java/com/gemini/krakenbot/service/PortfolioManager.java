@@ -38,8 +38,10 @@ public class PortfolioManager {
 
         while (true) {
             try {
+                // Fetch latest settings for this iteration
+                Settings currentSettings = configService.getConfig().settings();
                 performRebalanceCycle();
-                TimeUnit.SECONDS.sleep(settings.loopDelaySeconds());
+                TimeUnit.SECONDS.sleep(currentSettings.loopDelaySeconds());
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 log.warn("Rebalancing loop interrupted.");
