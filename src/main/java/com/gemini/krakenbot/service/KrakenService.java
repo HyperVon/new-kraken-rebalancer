@@ -88,7 +88,13 @@ public class KrakenService {
         if (response == null)
             response = "{}";
         try {
-            return objectMapper.readTree(response);
+            JsonNode root = objectMapper.readTree(response);
+            if (root.has("error") && !root.path("error").isEmpty()) {
+                log.error("Kraken Public API Error for path {}: {}", path, root.path("error"));
+                // Return empty result or throw? Throwing allows catching in main loop.
+                throw new RuntimeException("Kraken Public API Error: " + root.path("error").toString());
+            }
+            return root;
         } catch (JsonProcessingException e) {
             throw new RuntimeException("Failed to parse public API response", e);
         }

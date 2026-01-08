@@ -109,8 +109,8 @@ public class PortfolioManager {
             if (!symbol.equalsIgnoreCase("USD")) {
                 BigDecimal p = getCurrentPrice(symbol, prices);
                 if (p.compareTo(BigDecimal.ZERO) == 0) {
-                    log.error("Price not found for {}", symbol);
-                    continue; // Skip this asset or abort? Abort safer.
+                    log.error("Price not found for {}. Aborting rebalance cycle to prevent erroneous trades.", symbol);
+                    return; // Abort cycle
                 }
                 price = p;
             }
