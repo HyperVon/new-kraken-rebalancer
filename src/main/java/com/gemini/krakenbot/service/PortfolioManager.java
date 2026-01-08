@@ -291,44 +291,56 @@ public class PortfolioManager {
     private void distributeFiatCorrection(BigDecimal usdDev, Map<String, BigDecimal> allDevs,
             Map<String, BigDecimal> buyOrders, Map<String, BigDecimal> sellOrders) {
 
-        // Logic: specific handling for isolated USD deviation (e.g. Deposit/Withdrawal
-        // or Drift)
-        // If USD is high (positive dev), we BUY assets.
-        // If USD is low (negative dev), we SELL assets.
-        // Amount per asset = AssetTarget% / 100 * Abs(Deviation)
+        // Logic: Distribute USD deviation strictly among the assets that
+        // counter-balance it.
+        // If USD is Surplus (>0): Buy assets that are Underweight (<0).
+        // If USD is Shortage (<0): Sell assets that are Overweight (>0).
+        // Weighting: Proportional to the asset's deviation magnitude relative to the
+        // total counter-deviation.
 
         BigDecimal deviationAbs = usdDev.abs();
-        boolean isDeposit = usdDev.compareTo(BigDecimal.ZERO) > 0; // Surplus USD -> Buy
+        boolean isDeposit = usdDev.compareTo(BigDecimal.ZERO) > 0;
+        BigDecimal totalCounterDev = BigDecimal.ZERO;
+        List<String> candidates = new ArrayList<>();
 
-        for (Allocation a : configService.getConfig().allocations()) {
-            if (a.symbol().equalsIgnoreCase("USD"))
+        // 1. Identify candidates and sum their deviations
+        for (Map.Entry<String, BigDecimal> entry : allDevs.entrySet()) {
+            String symbol = entry.getKey();
+            if (symbol.equalsIgnoreCase("USD"))
                 continue;
 
-            // Math: targetPercent is e.g. 50. div(100) -> 0.5. mul(deviation)
-            BigDecimal share = BigDecimal.valueOf(a.targetPercent())
-                    .divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP)
-                    .multiply(deviationAbs);
+            BigDecimal d = entry.getValue();
+            if (isDeposit && d.compareTo(BigDecimal.ZERO) < 0) {
+                // USD Surplus -> Look for Underweight
+                candidates.add(symbol);
+                totalCounterDev = totalCounterDev.add(d.abs());
+            } else if (!isDeposit && d.compareTo(BigDecimal.ZERO) > 0) {
+                // USD Shortage -> Look for Overweight
+                candidates.add(symbol);
+                totalCounterDev = totalCounterDev.add(d);
+            }
+        }
+
+        if (totalCounterDev.compareTo(BigDecimal.ZERO) == 0) {
+            log.info("Fiat correction required but no suitable counter-balancing assets found.");
+            return;
+        }
+
+        log.info("Distributing Fiat Correction (${}) among {} candidates. Total Counter-Dev: ${}",
+                deviationAbs.setScale(2, RoundingMode.HALF_UP), candidates.size(),
+                totalCounterDev.setScale(2, RoundingMode.HALF_UP));
+
+        // 2. Distribute shares
+        for (String symbol : candidates) {
+            BigDecimal assetDev = allDevs.get(symbol).abs();
+            // share = (assetDev / totalCounterDev) * usdDevAbs
+            BigDecimal ratio = assetDev.divide(totalCounterDev, 8, RoundingMode.HALF_UP);
+            BigDecimal share = deviationAbs.multiply(ratio);
 
             if (isDeposit) {
-                // USD Excess -> BUY
-                // Only buy if asset is underweight (deviation < 0)
-                BigDecimal assetDev = allDevs.getOrDefault(a.symbol(), BigDecimal.ZERO);
-                if (assetDev.compareTo(BigDecimal.ZERO) < 0) {
-                    buyOrders.put(a.symbol(), share);
-                } else {
-                    log.info("Skipping fiat buy distribution for {} as it is not underweight (Dev: {})", a.symbol(),
-                            assetDev);
-                }
+                buyOrders.put(symbol, share);
             } else {
-                // USD Shortage -> SELL
-                // Only sell if asset is overweight (deviation > 0)
-                BigDecimal assetDev = allDevs.getOrDefault(a.symbol(), BigDecimal.ZERO);
-                if (assetDev.compareTo(BigDecimal.ZERO) > 0) {
-                    sellOrders.put(a.symbol(), share);
-                } else {
-                    log.info("Skipping fiat sell distribution for {} as it is not overweight (Dev: {})", a.symbol(),
-                            assetDev);
-                }
+                sellOrders.put(symbol, share);
             }
         }
     }
