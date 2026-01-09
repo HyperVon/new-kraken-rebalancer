@@ -143,6 +143,8 @@ public class PortfolioManager {
             if (targetValue.compareTo(BigDecimal.ZERO) > 0) {
                 deviationPct = deviationUSD.abs().divide(targetValue, 4, RoundingMode.HALF_UP)
                         .multiply(BigDecimal.valueOf(100));
+            } else if (currentVal.compareTo(BigDecimal.ZERO) > 0) {
+                deviationPct = BigDecimal.valueOf(100.0);
             }
 
             allDeviations.put(a.symbol(), deviationUSD);
