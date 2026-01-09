@@ -1,8 +1,5 @@
 package com.gemini.krakenbot.simulation;
 
-import java.util.ArrayList;
-import java.util.List;
-
 public class SimulationTool {
 
     // Configuration from user settings
