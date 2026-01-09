@@ -1,10 +1,15 @@
 package com.gemini.krakenbot;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
 import com.gemini.krakenbot.service.PortfolioManager;
+
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Bean;
+import org.springframework.web.client.RestClient;
 
 @SpringBootApplication
 public class KrakenRebalancerApplication {
@@ -14,17 +19,25 @@ public class KrakenRebalancerApplication {
     }
 
     @Bean
-    public com.fasterxml.jackson.databind.ObjectMapper objectMapper() {
-        com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+    public ObjectMapper objectMapper() {
+        ObjectMapper mapper = new ObjectMapper();
         mapper.findAndRegisterModules();
-        mapper.configure(com.fasterxml.jackson.databind.SerializationFeature.WRITE_DATES_AS_TIMESTAMPS, false);
+        mapper.configure(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS, false);
         return mapper;
     }
 
     @Bean
-    public CommandLineRunner run(PortfolioManager portfolioManager) {
+    public RestClient.Builder restClientBuilder() {
+        return RestClient.builder();
+    }
+
+    @Bean
+    public CommandLineRunner run(PortfolioManager portfolioManager,
+            @Value("${app.enable-rebalancing:true}") boolean enableRebalancing) {
         return args -> {
-            portfolioManager.startRebalancingLoop();
+            if (enableRebalancing) {
+                portfolioManager.startRebalancingLoop();
+            }
         };
     }
 }

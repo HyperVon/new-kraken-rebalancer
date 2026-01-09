@@ -29,10 +29,10 @@ public class KrakenService {
     private final ConfigService configService;
     private final ObjectMapper objectMapper;
 
-    public KrakenService(ConfigService configService, ObjectMapper objectMapper) {
+    public KrakenService(ConfigService configService, ObjectMapper objectMapper, RestClient.Builder restClientBuilder) {
         this.configService = configService;
         this.objectMapper = objectMapper;
-        this.restClient = RestClient.builder().baseUrl(API_URL).build();
+        this.restClient = restClientBuilder.baseUrl(API_URL).build();
     }
 
     public Map<String, Double> getBalances() {

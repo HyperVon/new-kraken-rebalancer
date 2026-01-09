@@ -9,12 +9,12 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Instant;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.ArrayList;
 import java.util.concurrent.TimeUnit;
-import java.time.Instant;
 
 @Service
 public class PortfolioManager {
@@ -31,17 +31,32 @@ public class PortfolioManager {
         this.tradeHistoryService = tradeHistoryService;
     }
 
+    private volatile boolean running = true;
+
+    public void stopRebalancingLoop() {
+        this.running = false;
+    }
+
     public void startRebalancingLoop() {
+        // Reset running state in case it was stopped previously (e.g. in tests)
+        this.running = true;
+
         Settings settings = configService.getConfig().settings();
         log.info("Starting Rebalancing Loop. Interval: {}s, DryRun: {}", settings.loopDelaySeconds(),
                 settings.dryRun());
 
-        while (true) {
+        while (running) {
             try {
                 // Fetch latest settings for this iteration
                 Settings currentSettings = configService.getConfig().settings();
                 performRebalanceCycle();
-                TimeUnit.SECONDS.sleep(currentSettings.loopDelaySeconds());
+
+                // Sleep with check
+                for (int i = 0; i < currentSettings.loopDelaySeconds(); i++) {
+                    if (!running)
+                        break;
+                    TimeUnit.SECONDS.sleep(1);
+                }
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 log.warn("Rebalancing loop interrupted.");

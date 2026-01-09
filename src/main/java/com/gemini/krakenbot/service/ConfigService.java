@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.gemini.krakenbot.config.Allocation;
 import com.gemini.krakenbot.config.AppConfig;
 import jakarta.annotation.PostConstruct;
+
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import java.io.File;
 import java.io.IOException;
@@ -13,14 +15,21 @@ public class ConfigService {
 
     private AppConfig appConfig;
     private final ObjectMapper objectMapper;
+    private final String configFilePath;
 
+    @Autowired
     public ConfigService(ObjectMapper objectMapper) {
+        this(objectMapper, "rebalancer-config.json");
+    }
+
+    public ConfigService(ObjectMapper objectMapper, String configFilePath) {
         this.objectMapper = objectMapper;
+        this.configFilePath = configFilePath;
     }
 
     @PostConstruct
     public void loadConfig() throws IOException {
-        File configFile = new File("rebalancer-config.json");
+        File configFile = new File(configFilePath);
         if (!configFile.exists()) {
             throw new RuntimeException(
                     "Configuration file 'rebalancer-config.json' not found in the application directory.");
@@ -37,7 +46,7 @@ public class ConfigService {
         this.appConfig = newConfig;
         validateConfig();
         try {
-            objectMapper.writerWithDefaultPrettyPrinter().writeValue(new File("rebalancer-config.json"), newConfig);
+            objectMapper.writerWithDefaultPrettyPrinter().writeValue(new File(configFilePath), newConfig);
         } catch (IOException e) {
             throw new RuntimeException("Failed to save configuration", e);
         }

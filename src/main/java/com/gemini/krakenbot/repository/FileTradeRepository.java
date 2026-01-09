@@ -13,7 +13,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 @Repository
-public class FileTradeRepository {
+public class FileTradeRepository implements TradeRepository {
     private static final Logger log = LoggerFactory.getLogger(FileTradeRepository.class);
     private static final String FILE_PATH = "trade-history.json";
     private final ObjectMapper objectMapper;

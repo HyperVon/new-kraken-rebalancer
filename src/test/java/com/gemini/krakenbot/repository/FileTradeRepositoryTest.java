@@ -14,6 +14,11 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
+import org.mockito.ArgumentMatchers;
+import org.mockito.Mockito;
+
+import java.time.Instant;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 class FileTradeRepositoryTest {
@@ -40,7 +45,7 @@ class FileTradeRepositoryTest {
     @Test
     void testSaveAndLoad() {
         PortfolioSnapshot snapshot = new PortfolioSnapshot(
-                java.time.Instant.now(),
+                Instant.now(),
                 BigDecimal.valueOf(1000.0),
                 Collections.emptyMap(),
                 List.of("Action 1"));
@@ -78,5 +83,17 @@ class FileTradeRepositoryTest {
         List<PortfolioSnapshot> loaded = repository.load();
         assertNotNull(loaded);
         assertTrue(loaded.isEmpty(), "Should return empty list on corrupted file");
+    }
+
+    @Test
+    void testSaveError() throws IOException {
+        ObjectMapper mockMapper = Mockito.mock(ObjectMapper.class);
+        Mockito.doThrow(new IOException("Write failed")).when(mockMapper)
+                .writeValue(ArgumentMatchers.any(File.class), ArgumentMatchers.any());
+
+        FileTradeRepository repo = new FileTradeRepository(mockMapper);
+
+        // Should log error but not throw
+        assertDoesNotThrow(() -> repo.save(Collections.emptyList()));
     }
 }

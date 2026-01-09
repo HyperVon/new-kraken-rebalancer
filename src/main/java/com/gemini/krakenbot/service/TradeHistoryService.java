@@ -1,7 +1,7 @@
 package com.gemini.krakenbot.service;
 
 import com.gemini.krakenbot.model.PortfolioSnapshot;
-import com.gemini.krakenbot.repository.FileTradeRepository;
+import com.gemini.krakenbot.repository.TradeRepository;
 import jakarta.annotation.PostConstruct;
 import org.springframework.stereotype.Service;
 
@@ -16,9 +16,9 @@ public class TradeHistoryService {
     private final List<PortfolioSnapshot> history = new CopyOnWriteArrayList<>();
     private static final int MAX_HISTORY_SIZE = 50;
 
-    private final FileTradeRepository repository;
+    private final TradeRepository repository;
 
-    public TradeHistoryService(FileTradeRepository repository) {
+    public TradeHistoryService(TradeRepository repository) {
         this.repository = repository;
     }
 
