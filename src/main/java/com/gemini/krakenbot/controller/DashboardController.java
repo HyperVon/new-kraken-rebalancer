@@ -5,6 +5,8 @@ import com.gemini.krakenbot.model.PortfolioSnapshot;
 import com.gemini.krakenbot.service.ConfigService;
 import com.gemini.krakenbot.service.TradeHistoryService;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -37,8 +39,8 @@ public class DashboardController {
         return configService.getConfig();
     }
 
-    @org.springframework.web.bind.annotation.PostMapping("/config")
-    public AppConfig updateConfig(@org.springframework.web.bind.annotation.RequestBody AppConfig config) {
+    @PostMapping("/config")
+    public AppConfig updateConfig(@RequestBody AppConfig config) {
         configService.updateConfig(config);
         return configService.getConfig();
     }
