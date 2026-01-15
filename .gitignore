@@ -5,3 +5,4 @@ target
 .vscode
 *.gz
 trade-history.json
+.idea
