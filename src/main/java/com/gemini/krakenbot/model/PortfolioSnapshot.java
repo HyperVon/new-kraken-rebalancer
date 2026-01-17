@@ -10,16 +10,23 @@ public class PortfolioSnapshot {
     private BigDecimal totalValueUSD;
     private Map<String, AssetSnapshot> assets;
     private List<String> actions;
+    private BigDecimal drawdownPercent;
+    private BigDecimal fiatDeploymentPercent;
+    private BigDecimal effectiveUsdTargetPercent;
 
     public PortfolioSnapshot() {
     }
 
     public PortfolioSnapshot(Instant timestamp, BigDecimal totalValueUSD, Map<String, AssetSnapshot> assets,
-            List<String> actions) {
+            List<String> actions, BigDecimal drawdownPercent, BigDecimal fiatDeploymentPercent,
+            BigDecimal effectiveUsdTargetPercent) {
         this.timestamp = timestamp;
         this.totalValueUSD = totalValueUSD;
         this.assets = assets;
         this.actions = actions;
+        this.drawdownPercent = drawdownPercent;
+        this.fiatDeploymentPercent = fiatDeploymentPercent;
+        this.effectiveUsdTargetPercent = effectiveUsdTargetPercent;
     }
 
     public Instant getTimestamp() {
@@ -52,6 +59,30 @@ public class PortfolioSnapshot {
 
     public void setActions(List<String> actions) {
         this.actions = actions;
+    }
+
+    public BigDecimal getDrawdownPercent() {
+        return drawdownPercent;
+    }
+
+    public void setDrawdownPercent(BigDecimal drawdownPercent) {
+        this.drawdownPercent = drawdownPercent;
+    }
+
+    public BigDecimal getFiatDeploymentPercent() {
+        return fiatDeploymentPercent;
+    }
+
+    public void setFiatDeploymentPercent(BigDecimal fiatDeploymentPercent) {
+        this.fiatDeploymentPercent = fiatDeploymentPercent;
+    }
+
+    public BigDecimal getEffectiveUsdTargetPercent() {
+        return effectiveUsdTargetPercent;
+    }
+
+    public void setEffectiveUsdTargetPercent(BigDecimal effectiveUsdTargetPercent) {
+        this.effectiveUsdTargetPercent = effectiveUsdTargetPercent;
     }
 
     public static class AssetSnapshot {

@@ -40,7 +40,7 @@ class ConfigServiceTest {
     }
 
     private void createValidConfig(File file) throws IOException {
-        Settings settings = new Settings(60L, 2.0, 1.0, true);
+        Settings settings = new Settings(60L, 2.0, 1.0, true, 0.0, 1.0);
         AppConfig config = new AppConfig(new KrakenCredentials("k", "s"), settings,
                 List.of(new Allocation("USD", 100.0)));
         objectMapper.writeValue(file, config);
@@ -120,7 +120,8 @@ class ConfigServiceTest {
         // No, updateConfig(newConfig) validates newConfig.
 
         // Setup valid payload
-        AppConfig validConfig = new AppConfig(new KrakenCredentials("k", "s"), new Settings(60L, 2.0, 1.0, true),
+        AppConfig validConfig = new AppConfig(new KrakenCredentials("k", "s"),
+                new Settings(60L, 2.0, 1.0, true, 0.0, 1.0),
                 List.of(new Allocation("USD", 100.0)));
 
         assertThrows(RuntimeException.class, () -> configService.updateConfig(validConfig));

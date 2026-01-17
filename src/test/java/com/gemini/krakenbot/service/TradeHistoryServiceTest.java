@@ -32,7 +32,7 @@ class TradeHistoryServiceTest {
     @Test
     void init_LoadsHistory() {
         PortfolioSnapshot snapshot = new PortfolioSnapshot(Instant.now(), BigDecimal.ZERO,
-                Collections.emptyMap(), Collections.emptyList());
+                Collections.emptyMap(), Collections.emptyList(), BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO);
         when(repository.load()).thenReturn(List.of(snapshot));
 
         tradeHistoryService.init();
@@ -44,9 +44,9 @@ class TradeHistoryServiceTest {
     @Test
     void addSnapshot_AddsToFrontAndSaves() {
         PortfolioSnapshot s1 = new PortfolioSnapshot(Instant.now(), BigDecimal.ZERO,
-                Collections.emptyMap(), Collections.emptyList());
+                Collections.emptyMap(), Collections.emptyList(), BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO);
         PortfolioSnapshot s2 = new PortfolioSnapshot(Instant.now(), BigDecimal.ZERO,
-                Collections.emptyMap(), Collections.emptyList());
+                Collections.emptyMap(), Collections.emptyList(), BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO);
 
         tradeHistoryService.addSnapshot(s1);
         tradeHistoryService.addSnapshot(s2); // s2 is newer
@@ -61,7 +61,8 @@ class TradeHistoryServiceTest {
         // Add 60 snapshots
         for (int i = 0; i < 60; i++) {
             tradeHistoryService.addSnapshot(new PortfolioSnapshot(Instant.now(), BigDecimal.ZERO,
-                    Collections.emptyMap(), Collections.emptyList()));
+                    Collections.emptyMap(), Collections.emptyList(), BigDecimal.ZERO, BigDecimal.ZERO,
+                    BigDecimal.ZERO));
         }
 
         assertEquals(50, tradeHistoryService.getHistory().size());

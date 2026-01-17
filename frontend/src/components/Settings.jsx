@@ -162,6 +162,26 @@ const Settings = ({ onBack }) => {
                             onChange={(e) => handleSettingChange('dustThresholdUSD', parseFloat(e.target.value))}
                         />
                     </div>
+                    <div>
+                        <label style={{ display: 'block', marginBottom: '0.5rem', color: '#e2e8f0' }}>Fiat Max Drawdown (%)</label>
+                        <input
+                            type="number"
+                            step="1.0"
+                            style={{ width: '100%', padding: '0.5rem', background: '#0f172a', border: '1px solid #334155', color: 'white' }}
+                            value={config.settings.fiatMaxDrawdown ?? 0}
+                            onChange={(e) => handleSettingChange('fiatMaxDrawdown', parseFloat(e.target.value))}
+                        />
+                    </div>
+                    <div>
+                        <label style={{ display: 'block', marginBottom: '0.5rem', color: '#e2e8f0' }}>Fiat Deployment Exponent</label>
+                        <input
+                            type="number"
+                            step="0.1"
+                            style={{ width: '100%', padding: '0.5rem', background: '#0f172a', border: '1px solid #334155', color: 'white' }}
+                            value={config.settings.fiatDeploymentExponent ?? 1.0}
+                            onChange={(e) => handleSettingChange('fiatDeploymentExponent', parseFloat(e.target.value))}
+                        />
+                    </div>
                     <div style={{ display: 'flex', alignItems: 'center' }}>
                         <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', color: '#e2e8f0' }}>
                             <input

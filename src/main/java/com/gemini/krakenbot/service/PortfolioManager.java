@@ -23,12 +23,15 @@ public class PortfolioManager {
     private final KrakenService krakenService;
     private final ConfigService configService;
     private final TradeHistoryService tradeHistoryService;
+    private final com.gemini.krakenbot.repository.PortfolioStatsRepository portfolioStatsRepository;
 
     public PortfolioManager(KrakenService krakenService, ConfigService configService,
-            TradeHistoryService tradeHistoryService) {
+            TradeHistoryService tradeHistoryService,
+            com.gemini.krakenbot.repository.PortfolioStatsRepository portfolioStatsRepository) {
         this.krakenService = krakenService;
         this.configService = configService;
         this.tradeHistoryService = tradeHistoryService;
+        this.portfolioStatsRepository = portfolioStatsRepository;
     }
 
     private volatile boolean running = true;
@@ -137,6 +140,44 @@ public class PortfolioManager {
 
         log.info("Total Portfolio Value: ${}", totalPortfolioValueUSD.setScale(2, RoundingMode.HALF_UP));
 
+        // --- Fiat Drawdown Logic ---
+        com.gemini.krakenbot.model.PortfolioStats stats = portfolioStatsRepository.load();
+        BigDecimal ath = stats.getAllTimeHigh();
+        if (ath == null || totalPortfolioValueUSD.compareTo(ath) > 0) {
+            ath = totalPortfolioValueUSD;
+            stats.setAllTimeHigh(ath);
+            portfolioStatsRepository.save(stats);
+            log.info("New All-Time High detected: ${}", ath);
+        }
+
+        BigDecimal drawdownPct = BigDecimal.ZERO;
+        if (ath.compareTo(BigDecimal.ZERO) > 0 && totalPortfolioValueUSD.compareTo(ath) < 0) {
+            BigDecimal diff = ath.subtract(totalPortfolioValueUSD);
+            drawdownPct = diff.divide(ath, 4, RoundingMode.HALF_UP).multiply(BigDecimal.valueOf(100));
+        }
+
+        Settings s = configService.getConfig().settings();
+        BigDecimal fiatDeploymentPct = BigDecimal.ZERO;
+
+        if (s.fiatMaxDrawdown() > 0) { // Only if enabled
+            BigDecimal maxDD = BigDecimal.valueOf(s.fiatMaxDrawdown());
+            // Ratio = min(1.0, currentDD / maxDD)
+            BigDecimal ratio = drawdownPct.divide(maxDD, 4, RoundingMode.HALF_UP);
+            if (ratio.compareTo(BigDecimal.ONE) > 0) {
+                ratio = BigDecimal.ONE;
+            }
+            // Deploy% = (ratio ^ exponent) * 100
+            double ratioDouble = ratio.doubleValue();
+            double exponent = s.fiatDeploymentExponent();
+            double deployDouble = Math.pow(ratioDouble, exponent) * 100.0;
+            fiatDeploymentPct = BigDecimal.valueOf(deployDouble);
+        }
+
+        if (fiatDeploymentPct.compareTo(BigDecimal.ZERO) > 0) {
+            log.info("Drawdown Detected: {}%. Fiat Deployment: {}%", drawdownPct.setScale(2, RoundingMode.HALF_UP),
+                    fiatDeploymentPct.setScale(2, RoundingMode.HALF_UP));
+        }
+
         // 2. Analysis
         Map<String, BigDecimal> buyOrders = new HashMap<>(); // Symbol -> USD Amount
         Map<String, BigDecimal> sellOrders = new HashMap<>(); // Symbol -> USD Amount (Positive)
@@ -145,11 +186,42 @@ public class PortfolioManager {
         boolean usdTriggered = false;
         BigDecimal usdDeviationAmount = BigDecimal.ZERO;
 
-        Settings s = configService.getConfig().settings();
+        // Pre-calculate Target Adjustments
+        BigDecimal totalNonUsdTarget = BigDecimal.ZERO;
+        BigDecimal baseUsdTarget = BigDecimal.ZERO;
 
         for (Allocation a : configService.getConfig().allocations()) {
-            BigDecimal targetPct = BigDecimal.valueOf(a.targetPercent()).divide(BigDecimal.valueOf(100), 4,
-                    RoundingMode.HALF_UP);
+            if (a.symbol().equalsIgnoreCase("USD")) {
+                baseUsdTarget = baseUsdTarget.add(BigDecimal.valueOf(a.targetPercent()));
+            } else {
+                totalNonUsdTarget = totalNonUsdTarget.add(BigDecimal.valueOf(a.targetPercent()));
+            }
+        }
+
+        BigDecimal effectiveUsdTarget = baseUsdTarget;
+        if (fiatDeploymentPct.compareTo(BigDecimal.ZERO) > 0) {
+            BigDecimal factor = BigDecimal.ONE
+                    .subtract(fiatDeploymentPct.divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP));
+            effectiveUsdTarget = baseUsdTarget.multiply(factor);
+        }
+
+        BigDecimal remainingForCrypto = BigDecimal.valueOf(100).subtract(effectiveUsdTarget);
+        BigDecimal cryptoScaleFactor = BigDecimal.ONE;
+        if (totalNonUsdTarget.compareTo(BigDecimal.ZERO) > 0) {
+            cryptoScaleFactor = remainingForCrypto.divide(totalNonUsdTarget, 8, RoundingMode.HALF_UP);
+        }
+
+        for (Allocation a : configService.getConfig().allocations()) {
+            BigDecimal targetPct = BigDecimal.valueOf(a.targetPercent());
+
+            // Dynamic Adjustment
+            if (a.symbol().equalsIgnoreCase("USD")) {
+                targetPct = effectiveUsdTarget;
+            } else {
+                targetPct = targetPct.multiply(cryptoScaleFactor);
+            }
+
+            targetPct = targetPct.divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP);
             BigDecimal targetValue = totalPortfolioValueUSD.multiply(targetPct);
             BigDecimal currentVal = currentValuesUSD.getOrDefault(a.symbol(), BigDecimal.ZERO);
 
@@ -300,7 +372,25 @@ public class PortfolioManager {
                 Instant.now(),
                 totalPortfolioValueUSD,
                 assetSnapshots,
-                actionLog);
+                actionLog,
+                drawdownPct,
+                fiatDeploymentPct,
+                BigDecimal.ZERO // Placeholder, effectively calculated per iteration but user sees 'USD'
+                                // effective
+        );
+
+        // Find the effective USD target from our earlier calculation (little hacky to
+        // re-find it,
+        // but let's just calc it again for the snapshot field)
+        // Actually, we can just grab it from the loop if we stored it, or calc it here:
+        for (Allocation a : configService.getConfig().allocations()) {
+            if (a.symbol().equalsIgnoreCase("USD")) {
+                BigDecimal base = BigDecimal.valueOf(a.targetPercent());
+                BigDecimal factor = BigDecimal.ONE
+                        .subtract(fiatDeploymentPct.divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP));
+                snapshot.setEffectiveUsdTargetPercent(base.multiply(factor));
+            }
+        }
 
         tradeHistoryService.addSnapshot(snapshot);
 

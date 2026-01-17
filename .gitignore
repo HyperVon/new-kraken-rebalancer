@@ -6,3 +6,4 @@ target
 *.gz
 trade-history.json
 .idea
+portfolio-stats.json

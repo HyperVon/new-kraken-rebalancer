@@ -33,7 +33,7 @@ class KrakenServiceTest {
         // Mock Config
         KrakenCredentials credentials = new KrakenCredentials("public-key",
                 Base64.getEncoder().encodeToString("secret-key".getBytes()));
-        Settings settings = new Settings(60L, 2.0, 1.0, false);
+        Settings settings = new Settings(60L, 2.0, 1.0, false, 0.0, 1.0);
         AppConfig config = new AppConfig(credentials, settings, Collections.emptyList());
         when(configService.getConfig()).thenReturn(config);
 
@@ -81,7 +81,7 @@ class KrakenServiceTest {
 
     @Test
     void executeOrder_DryRun() {
-        Settings settings = new Settings(60L, 2.0, 1.0, true); // dryRun = true
+        Settings settings = new Settings(60L, 2.0, 1.0, true, 0.0, 1.0); // dryRun = true
         AppConfig config = new AppConfig(new KrakenCredentials("k", "s"), settings, Collections.emptyList());
         when(configService.getConfig()).thenReturn(config);
 

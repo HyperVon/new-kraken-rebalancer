@@ -50,7 +50,7 @@ class DashboardControllerTest {
     @Test
     void getStatus_ReturnsLatestSnapshot() throws Exception {
         PortfolioSnapshot snapshot = new PortfolioSnapshot(Instant.now(), BigDecimal.ZERO, Collections.emptyMap(),
-                Collections.emptyList());
+                Collections.emptyList(), BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO);
         when(tradeHistoryService.getLatestSnapshot()).thenReturn(snapshot);
 
         mockMvc.perform(get("/api/status"))
@@ -60,7 +60,7 @@ class DashboardControllerTest {
     @Test
     void getHistory_ReturnsHistory() throws Exception {
         PortfolioSnapshot snapshot = new PortfolioSnapshot(Instant.now(), BigDecimal.ZERO, Collections.emptyMap(),
-                Collections.emptyList());
+                Collections.emptyList(), BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO);
         when(tradeHistoryService.getHistory()).thenReturn(List.of(snapshot));
 
         mockMvc.perform(get("/api/history"))

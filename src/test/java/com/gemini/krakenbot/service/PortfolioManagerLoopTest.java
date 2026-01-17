@@ -30,14 +30,17 @@ class PortfolioManagerLoopTest {
     @BeforeEach
     void setUp() {
         MockitoAnnotations.openMocks(this);
-        portfolioManager = new PortfolioManager(krakenService, configService, tradeHistoryService);
+        com.gemini.krakenbot.repository.PortfolioStatsRepository repo = org.mockito.Mockito
+                .mock(com.gemini.krakenbot.repository.PortfolioStatsRepository.class);
+        when(repo.load()).thenReturn(new com.gemini.krakenbot.model.PortfolioStats(java.math.BigDecimal.ZERO));
+        portfolioManager = new PortfolioManager(krakenService, configService, tradeHistoryService, repo);
     }
 
     @Test
     @Timeout(10)
     void startRebalancingLoop_RunsAndStops() throws InterruptedException {
         // Setup config with short interval
-        Settings settings = new Settings(1L, 2.0, 1.0, true);
+        Settings settings = new Settings(1L, 2.0, 1.0, true, 0.0, 1.0);
         AppConfig config = new AppConfig(new KrakenCredentials("k", "s"), settings, Collections.emptyList());
         when(configService.getConfig()).thenReturn(config);
 
@@ -67,7 +70,7 @@ class PortfolioManagerLoopTest {
     @Timeout(10)
     void startRebalancingLoop_HandlesException() throws InterruptedException {
         // Setup config
-        Settings settings = new Settings(1L, 2.0, 1.0, true);
+        Settings settings = new Settings(1L, 2.0, 1.0, true, 0.0, 1.0);
         AppConfig config = new AppConfig(new KrakenCredentials("k", "s"), settings, Collections.emptyList());
         when(configService.getConfig()).thenReturn(config);
 

@@ -24,8 +24,12 @@ class PortfolioManagerFiatCorrectionTest {
                 ConfigService configService = mock(ConfigService.class);
                 TradeHistoryService tradeHistoryService = mock(TradeHistoryService.class);
 
+                com.gemini.krakenbot.repository.PortfolioStatsRepository repo = org.mockito.Mockito
+                                .mock(com.gemini.krakenbot.repository.PortfolioStatsRepository.class);
+                org.mockito.Mockito.when(repo.load())
+                                .thenReturn(new com.gemini.krakenbot.model.PortfolioStats(BigDecimal.ZERO));
                 PortfolioManager portfolioManager = new PortfolioManager(krakenService, configService,
-                                tradeHistoryService);
+                                tradeHistoryService, repo);
 
                 // Config Mock
                 Allocation allocA = new Allocation("A", 50.0);
@@ -71,8 +75,12 @@ class PortfolioManagerFiatCorrectionTest {
                 ConfigService configService = mock(ConfigService.class);
                 TradeHistoryService tradeHistoryService = mock(TradeHistoryService.class);
 
+                com.gemini.krakenbot.repository.PortfolioStatsRepository repo = org.mockito.Mockito
+                                .mock(com.gemini.krakenbot.repository.PortfolioStatsRepository.class);
+                org.mockito.Mockito.when(repo.load())
+                                .thenReturn(new com.gemini.krakenbot.model.PortfolioStats(BigDecimal.ZERO));
                 PortfolioManager portfolioManager = new PortfolioManager(krakenService, configService,
-                                tradeHistoryService);
+                                tradeHistoryService, repo);
 
                 List<Allocation> allAllocations = List.of(new Allocation("A", 50.0), new Allocation("B", 50.0));
                 AppConfig mockConfig = mock(AppConfig.class);
@@ -112,8 +120,12 @@ class PortfolioManagerFiatCorrectionTest {
                 ConfigService configService = mock(ConfigService.class);
                 TradeHistoryService tradeHistoryService = mock(TradeHistoryService.class);
 
+                com.gemini.krakenbot.repository.PortfolioStatsRepository repo = org.mockito.Mockito
+                                .mock(com.gemini.krakenbot.repository.PortfolioStatsRepository.class);
+                org.mockito.Mockito.when(repo.load())
+                                .thenReturn(new com.gemini.krakenbot.model.PortfolioStats(BigDecimal.ZERO));
                 PortfolioManager portfolioManager = new PortfolioManager(krakenService, configService,
-                                tradeHistoryService);
+                                tradeHistoryService, repo);
 
                 // Allocations (targets don't matter for this logic anymore, but needed for
                 // config mock)

@@ -48,7 +48,8 @@ class FileTradeRepositoryTest {
                 Instant.now(),
                 BigDecimal.valueOf(1000.0),
                 Collections.emptyMap(),
-                List.of("Action 1"));
+                List.of("Action 1"),
+                BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO);
 
         List<PortfolioSnapshot> history = new ArrayList<>();
         history.add(snapshot);

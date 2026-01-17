@@ -32,9 +32,31 @@ In this phase, the system builds a complete view of the current portfolio state.
 
 The system determines what trades are necessary to restore the portfolio to its target state.
 
-1.  **Target Calculation**:
-    For each asset, the Ideal Value is calculated:
-    `Target Value = Total Portfolio Value * Target %`
+### 1. Target Calculation & Dynamic Adjustment
+    Normally, the target value is `Total Portfolio Value * Target %`. However, the system implements a **Dynamic Fiat Deployment Strategy**:
+
+    1.  **ATH Tracking**: The bot tracks the portfolio's All-Time High (ATH) value in `portfolio-stats.json`.
+    2.  **Drawdown Calculation**:
+        `Drawdown % = (ATH - Current Value) / ATH * 100`
+    3.  **Fiat Deployment Percentage**:
+        Based on the configured `fiatMaxDrawdown` (e.g., 30%) and `fiatDeploymentExponent` (e.g., 1.0):
+        `Deployment % = (Drawdown % / Max Drawdown %) ^ Exponent` (Capped at 100%)
+
+        **Examples (Max Drawdown = 30%)**:
+        | Drawdown | Linear (1.0) | Aggressive (0.5) | Conservative (2.0) |
+        | :--- | :--- | :--- | :--- |
+        | **1.5%** (5% of Max) | 5% | 22% | 0.25% |
+        | **7.5%** (25% of Max) | 25% | 50% | 6.25% |
+        | **15%** (50% of Max) | 50% | 71% | 25% |
+        | **22.5%** (75% of Max) | 75% | 87% | 56% |
+        | **30%** (100% of Max) | 100% | 100% | 100% |
+
+    4.  **Target Adjustment**:
+        The target percentage for USD is reduced by the Deployment %:
+        `Effective USD Target = Base USD Target * (1 - Deployment %)`
+        The removed allocation is redistributed proportionally to the crypto assets, ensuring the total remains 100%.
+
+    Using these effective targets, the **Ideal Value** for each asset is calculated.
 
 2.  **Deviation Calculation**:
     The difference between current and target value is calculated:
@@ -81,3 +103,5 @@ The behavior is controlled by `rebalancer-config.json`:
 -   **`deviationTriggerPercent`**: Sensitivity of the rebalancer. Lower values track targets closer but trade more frequently (higher fees).
 -   **`dustThresholdUSD`**: Minimum order value in USD. Trades smaller than this amount are skipped to avoid API errors (Kraken minimum is typically ~$1-5).
 -   **`dryRun`**: If set to `true`, the system performs all calculations and logs intended trades but **does not** send orders to Kraken.
+-   **`fiatMaxDrawdown`**: The portfolio drawdown percentage at which 100% of the USD allocation should be deployed into assets.
+-   **`fiatDeploymentExponent`**: Controls the aggressiveness of deployment. `1.0` is linear. Values `< 1.0` deploy more cash earlier (aggressive). Values `> 1.0` save cash for deeper dips (conservative).

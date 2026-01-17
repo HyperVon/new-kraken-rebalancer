@@ -153,7 +153,9 @@ const Dashboard = () => {
             </div>
 
             <div className="grid-cols-2" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', marginBottom: '2rem' }}>
-                <StatusCard title="Total Portfolio" value={formatCurrency(totalValue)} type="neutral" />
+                <StatusCard title="Total Portfolio" value={formatCurrency(totalValue)} type="neutral"
+                    subValue={status?.drawdownPercent > 0 ? <span className="text-danger" style={{ fontSize: '0.8rem' }}>Drawdown: {status.drawdownPercent.toFixed(2)}%</span> : null}
+                />
                 <StatusCard
                     title="Cash (USD)"
                     value={formatCurrency(usdValue)}
@@ -162,7 +164,12 @@ const Dashboard = () => {
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.875rem' }}>
                                 <span title="Current Allocation">{usdAsset.currentPercent?.toFixed(2)}%</span>
                                 <span style={{ color: 'var(--text-secondary)' }}>|</span>
-                                <span title="Target Allocation" style={{ color: 'var(--text-secondary)' }}>Target: {usdAsset.targetPercent?.toFixed(2)}%</span>
+                                <span title="Target Allocation" style={{ color: 'var(--text-secondary)' }}>
+                                    Target: {status.effectiveUsdTargetPercent !== undefined ? status.effectiveUsdTargetPercent.toFixed(2) : usdAsset.targetPercent?.toFixed(2)}%
+                                    {status.effectiveUsdTargetPercent !== undefined && Math.abs(status.effectiveUsdTargetPercent - usdAsset.targetPercent) > 0.01 &&
+                                        <span style={{ fontSize: '0.75em', opacity: 0.8 }}> (Base: {usdAsset.targetPercent?.toFixed(2)}%)</span>
+                                    }
+                                </span>
                                 <span style={{ color: 'var(--text-secondary)' }}>|</span>
                                 <span
                                     title="Deviation"

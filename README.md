@@ -6,6 +6,7 @@ A robust, automated portfolio rebalancing bot for the Kraken cryptocurrency exch
 
 -   **Automatic Rebalancing**: Continuously monitors your portfolio and rebalances when asset allocations drift beyond a configured threshold.
 -   **Fiat Correction**: Intelligently handles deposits and withdrawals by distributing surplus USD (or selling assets for withdrawals) based on your target allocation logic.
+-   **Dynamic Fiat Deployment**: Automatically deploys idle cash (USD) into assets during market drawdowns based on All-Time High tracking.
 -   **Drift Protection**: Prevents oscillation by using a configurable deviation threshold.
 -   **Dry Run Mode**: safely test your configuration and strategy without executing real trades.
 -   **Java Spring Boot**: Built on a modern, enterprise-grade stack.

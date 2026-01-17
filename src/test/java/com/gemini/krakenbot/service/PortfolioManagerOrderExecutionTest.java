@@ -25,7 +25,12 @@ class PortfolioManagerOrderExecutionTest {
         ConfigService configService = mock(ConfigService.class);
         TradeHistoryService tradeHistoryService = mock(TradeHistoryService.class);
 
-        PortfolioManager portfolioManager = new PortfolioManager(krakenService, configService, tradeHistoryService);
+        com.gemini.krakenbot.repository.PortfolioStatsRepository repo = org.mockito.Mockito
+                .mock(com.gemini.krakenbot.repository.PortfolioStatsRepository.class);
+        org.mockito.Mockito.when(repo.load())
+                .thenReturn(new com.gemini.krakenbot.model.PortfolioStats(java.math.BigDecimal.ZERO));
+        PortfolioManager portfolioManager = new PortfolioManager(krakenService, configService, tradeHistoryService,
+                repo);
 
         // Config Mock
         // Asset A: Overweight -> Needs Sell

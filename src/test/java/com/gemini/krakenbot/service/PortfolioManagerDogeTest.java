@@ -28,13 +28,16 @@ class PortfolioManagerDogeTest {
     @BeforeEach
     void setUp() {
         MockitoAnnotations.openMocks(this);
-        portfolioManager = new PortfolioManager(krakenService, configService, tradeHistoryService);
+        com.gemini.krakenbot.repository.PortfolioStatsRepository repo = org.mockito.Mockito
+                .mock(com.gemini.krakenbot.repository.PortfolioStatsRepository.class);
+        when(repo.load()).thenReturn(new com.gemini.krakenbot.model.PortfolioStats(java.math.BigDecimal.ZERO));
+        portfolioManager = new PortfolioManager(krakenService, configService, tradeHistoryService, repo);
     }
 
     @Test
     void testDogeMapping() {
         // Setup config with DOGE
-        Settings settings = new Settings(60L, 2.0, 1.0, true); // dryRun
+        Settings settings = new Settings(60L, 2.0, 1.0, true, 0.0, 1.0); // dryRun
         AppConfig config = new AppConfig(new KrakenCredentials("k", "s"), settings,
                 List.of(new Allocation("DOGE", 50.0), new Allocation("USD", 50.0)));
 
@@ -82,7 +85,7 @@ class PortfolioManagerDogeTest {
     @Test
     void testBtcMapping() {
         // Setup config with BTC
-        Settings settings = new Settings(60L, 2.0, 1.0, true);
+        Settings settings = new Settings(60L, 2.0, 1.0, true, 0.0, 1.0);
         AppConfig config = new AppConfig(new KrakenCredentials("k", "s"), settings,
                 List.of(new Allocation("BTC", 50.0), new Allocation("USD", 50.0)));
 
