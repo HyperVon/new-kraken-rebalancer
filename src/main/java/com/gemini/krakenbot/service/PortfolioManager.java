@@ -340,7 +340,18 @@ public class PortfolioManager {
             }
 
             // Recalculate percentages for snapshot
-            BigDecimal targetPct = BigDecimal.valueOf(a.targetPercent());
+            BigDecimal baseTargetPct = BigDecimal.valueOf(a.targetPercent());
+            BigDecimal snapshotTargetPct = baseTargetPct;
+            BigDecimal calcTargetPct = baseTargetPct;
+
+            if (a.symbol().equalsIgnoreCase("USD")) {
+                calcTargetPct = effectiveUsdTarget;
+                // Keep snapshotTargetPct as Base for USD to preserve "Base" display in UI
+            } else {
+                calcTargetPct = baseTargetPct.multiply(cryptoScaleFactor);
+                snapshotTargetPct = calcTargetPct; // Show effective target for crypto
+            }
+
             BigDecimal currentPct = BigDecimal.ZERO;
             if (totalPortfolioValueUSD.compareTo(BigDecimal.ZERO) > 0) {
                 currentPct = valUSD.divide(totalPortfolioValueUSD, 4, RoundingMode.HALF_UP)
@@ -348,7 +359,7 @@ public class PortfolioManager {
             }
             BigDecimal devPct = BigDecimal.ZERO;
             // Calculate target value in USD for this asset
-            BigDecimal targetVal = totalPortfolioValueUSD.multiply(targetPct).divide(BigDecimal.valueOf(100), 4,
+            BigDecimal targetVal = totalPortfolioValueUSD.multiply(calcTargetPct).divide(BigDecimal.valueOf(100), 4,
                     RoundingMode.HALF_UP);
 
             if (targetVal.compareTo(BigDecimal.ZERO) > 0) {
@@ -363,7 +374,7 @@ public class PortfolioManager {
                     balance, // Note: this might be 0 if we didn't find it in balances map correctly earlier
                     price,
                     valUSD,
-                    targetPct,
+                    snapshotTargetPct,
                     currentPct,
                     devPct));
         }
@@ -379,18 +390,8 @@ public class PortfolioManager {
                                 // effective
         );
 
-        // Find the effective USD target from our earlier calculation (little hacky to
-        // re-find it,
-        // but let's just calc it again for the snapshot field)
-        // Actually, we can just grab it from the loop if we stored it, or calc it here:
-        for (Allocation a : configService.getConfig().allocations()) {
-            if (a.symbol().equalsIgnoreCase("USD")) {
-                BigDecimal base = BigDecimal.valueOf(a.targetPercent());
-                BigDecimal factor = BigDecimal.ONE
-                        .subtract(fiatDeploymentPct.divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP));
-                snapshot.setEffectiveUsdTargetPercent(base.multiply(factor));
-            }
-        }
+        // Ensure effective USD target is set in the snapshot
+        snapshot.setEffectiveUsdTargetPercent(effectiveUsdTarget);
 
         tradeHistoryService.addSnapshot(snapshot);
 
