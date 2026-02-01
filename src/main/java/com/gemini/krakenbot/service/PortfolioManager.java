@@ -283,6 +283,11 @@ public class PortfolioManager {
             String symbol = entry.getKey();
             BigDecimal usdToSell = entry.getValue();
 
+            if (usdToSell.compareTo(BigDecimal.valueOf(s.dustThresholdUSD())) < 0) {
+                log.info("Skipping dust sell for {} (${})", symbol, usdToSell);
+                continue;
+            }
+
             // Calculate volume to sell: USD / Price
             BigDecimal price = getCurrentPrice(symbol, prices);
             if (price.compareTo(BigDecimal.ZERO) == 0)
