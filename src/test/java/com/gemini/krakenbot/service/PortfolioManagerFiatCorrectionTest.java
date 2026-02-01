@@ -55,7 +55,7 @@ class PortfolioManagerFiatCorrectionTest {
 
                 // Invoke private method
                 ReflectionTestUtils.invokeMethod(portfolioManager, "distributeFiatCorrection",
-                                usdDev, allDevs, buyOrders, sellOrders);
+                                usdDev, allDevs, buyOrders, sellOrders, new java.util.ArrayList<String>());
 
                 // Verify
                 // Expect Buy for B
@@ -100,7 +100,7 @@ class PortfolioManagerFiatCorrectionTest {
 
                 // Invoke private method
                 ReflectionTestUtils.invokeMethod(portfolioManager, "distributeFiatCorrection",
-                                usdDev, allDevs, buyOrders, sellOrders);
+                                usdDev, allDevs, buyOrders, sellOrders, new java.util.ArrayList<String>());
 
                 // Verify
                 // Expect Sell for A
@@ -153,7 +153,7 @@ class PortfolioManagerFiatCorrectionTest {
 
                 // Invoke
                 ReflectionTestUtils.invokeMethod(portfolioManager, "distributeFiatCorrection",
-                                usdDev, allDevs, buyOrders, sellOrders);
+                                usdDev, allDevs, buyOrders, sellOrders, new java.util.ArrayList<String>());
 
                 // Verify Total Weight = 200 + 50 = 250
                 // A Share = (200 / 250) * 100 = 80

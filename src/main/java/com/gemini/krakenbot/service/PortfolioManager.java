@@ -271,7 +271,7 @@ public class PortfolioManager {
         if (buyOrders.isEmpty() && sellOrders.isEmpty() && usdTriggered) {
             log.info("USD Deviation triggered but no individual asset triggers. Enforcing fiat correction.");
             actionLog.add("USD Deviation Triggered. Enforcing fiat correction.");
-            distributeFiatCorrection(usdDeviationAmount, allDeviations, buyOrders, sellOrders);
+            distributeFiatCorrection(usdDeviationAmount, allDeviations, buyOrders, sellOrders, actionLog);
         }
 
         // 3. Execution
@@ -285,6 +285,7 @@ public class PortfolioManager {
 
             if (usdToSell.compareTo(BigDecimal.valueOf(s.dustThresholdUSD())) < 0) {
                 log.info("Skipping dust sell for {} (${})", symbol, usdToSell);
+                actionLog.add("Skipping dust sell for " + symbol + " ($" + usdToSell + ")");
                 continue;
             }
 
@@ -313,6 +314,7 @@ public class PortfolioManager {
 
             if (cost.compareTo(BigDecimal.valueOf(s.dustThresholdUSD())) < 0) { // Min order check
                 log.info("Skipping dust buy for {} (${})", symbol, cost);
+                actionLog.add("Skipping dust buy for " + symbol + " ($" + cost + ")");
                 continue;
             }
 
@@ -405,7 +407,7 @@ public class PortfolioManager {
     }
 
     private void distributeFiatCorrection(BigDecimal usdDev, Map<String, BigDecimal> allDevs,
-            Map<String, BigDecimal> buyOrders, Map<String, BigDecimal> sellOrders) {
+            Map<String, BigDecimal> buyOrders, Map<String, BigDecimal> sellOrders, List<String> actionLog) {
 
         // Logic: Distribute USD deviation strictly among the assets that
         // counter-balance it.
@@ -445,6 +447,8 @@ public class PortfolioManager {
         log.info("Distributing Fiat Correction (${}) among {} candidates. Total Counter-Dev: ${}",
                 deviationAbs.setScale(2, RoundingMode.HALF_UP), candidates.size(),
                 totalCounterDev.setScale(2, RoundingMode.HALF_UP));
+        actionLog.add("Distributing Fiat Correction ($" + deviationAbs.setScale(2, RoundingMode.HALF_UP) + ") among "
+                + candidates.size() + " candidates.");
 
         // 2. Distribute shares
         for (String symbol : candidates) {
