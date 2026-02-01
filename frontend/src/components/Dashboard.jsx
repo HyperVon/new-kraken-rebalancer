@@ -176,6 +176,9 @@ const Dashboard = () => {
                                     style={{ color: usdAsset.deviationPercent > 0 ? 'var(--danger-color)' : (usdAsset.deviationPercent < 0 ? 'var(--success-color)' : 'inherit') }}
                                 >
                                     Dev: {usdAsset.deviationPercent > 0 ? '+' : ''}{usdAsset.deviationPercent?.toFixed(2)}%
+                                    <span style={{ marginLeft: '4px', fontSize: '0.9em' }}>
+                                        ({usdAsset.deviationUSD >= 0 ? '+' : ''}{formatCurrency(usdAsset.deviationUSD)})
+                                    </span>
                                 </span>
                             </div>
                         ) : '-'
@@ -215,7 +218,12 @@ const Dashboard = () => {
                                         <td>{formatCurrency(asset.valueUSD)}</td>
                                         <td>{asset.targetPercent?.toFixed(2)}%</td>
                                         <td>{asset.currentPercent?.toFixed(2)}%</td>
-                                        <td className={devClass}>{dev?.toFixed(2)}%</td>
+                                        <td className={devClass}>
+                                            {dev?.toFixed(2)}%
+                                            <div style={{ fontSize: '0.75rem', opacity: 0.9 }}>
+                                                ({asset.deviationUSD >= 0 ? '+' : ''}{formatCurrency(asset.deviationUSD)})
+                                            </div>
+                                        </td>
                                     </tr>
                                 );
                             })}

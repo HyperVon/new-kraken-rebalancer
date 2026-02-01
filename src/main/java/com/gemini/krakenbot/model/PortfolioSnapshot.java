@@ -93,12 +93,14 @@ public class PortfolioSnapshot {
         private BigDecimal targetPercent;
         private BigDecimal currentPercent;
         private BigDecimal deviationPercent;
+        private BigDecimal deviationUSD;
 
         public AssetSnapshot() {
         }
 
         public AssetSnapshot(String symbol, BigDecimal balance, BigDecimal price, BigDecimal valueUSD,
-                BigDecimal targetPercent, BigDecimal currentPercent, BigDecimal deviationPercent) {
+                BigDecimal targetPercent, BigDecimal currentPercent, BigDecimal deviationPercent,
+                BigDecimal deviationUSD) {
             this.symbol = symbol;
             this.balance = balance;
             this.price = price;
@@ -106,6 +108,7 @@ public class PortfolioSnapshot {
             this.targetPercent = targetPercent;
             this.currentPercent = currentPercent;
             this.deviationPercent = deviationPercent;
+            this.deviationUSD = deviationUSD;
         }
 
         public String getSymbol() {
@@ -162,6 +165,14 @@ public class PortfolioSnapshot {
 
         public void setDeviationPercent(BigDecimal deviationPercent) {
             this.deviationPercent = deviationPercent;
+        }
+
+        public BigDecimal getDeviationUSD() {
+            return deviationUSD;
+        }
+
+        public void setDeviationUSD(BigDecimal deviationUSD) {
+            this.deviationUSD = deviationUSD;
         }
     }
 }

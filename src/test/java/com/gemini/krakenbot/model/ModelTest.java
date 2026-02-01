@@ -27,7 +27,7 @@ class ModelTest {
 
         PortfolioSnapshot.AssetSnapshot asset2 = new PortfolioSnapshot.AssetSnapshot(
                 "ETH", BigDecimal.ONE, BigDecimal.TEN, BigDecimal.TEN, BigDecimal.ZERO, BigDecimal.ZERO,
-                BigDecimal.ZERO);
+                BigDecimal.ZERO, BigDecimal.ZERO);
         assertEquals("ETH", asset2.getSymbol());
     }
 }

@@ -367,10 +367,10 @@ public class PortfolioManager {
             BigDecimal targetVal = totalPortfolioValueUSD.multiply(calcTargetPct).divide(BigDecimal.valueOf(100), 4,
                     RoundingMode.HALF_UP);
 
+            BigDecimal deviationUSD = valUSD.subtract(targetVal);
             if (targetVal.compareTo(BigDecimal.ZERO) > 0) {
                 // Calculate deviation as a percentage of the target value (Relative Deviation)
                 // This matches the "Deviation %" logic used in the rebalancing analysis loop
-                BigDecimal deviationUSD = valUSD.subtract(targetVal);
                 devPct = deviationUSD.divide(targetVal, 4, RoundingMode.HALF_UP).multiply(BigDecimal.valueOf(100));
             }
 
@@ -381,7 +381,8 @@ public class PortfolioManager {
                     valUSD,
                     snapshotTargetPct,
                     currentPct,
-                    devPct));
+                    devPct,
+                    deviationUSD));
         }
 
         PortfolioSnapshot snapshot = new PortfolioSnapshot(
