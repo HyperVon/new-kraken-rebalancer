@@ -1,16 +1,34 @@
-# React + Vite
+# Kraken Rebalancer — Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A React-based dashboard for monitoring and configuring the Kraken Rebalancer.
 
-Currently, two official plugins are available:
+## Tech Stack
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- **React 19** with Vite 7 for fast HMR development
+- **Chart.js** (via react-chartjs-2) for portfolio allocation visualization
+- **Vanilla CSS** with CSS custom properties for a consistent dark theme
 
-## React Compiler
+## Components
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+| Component | Description |
+|---|---|
+| `Dashboard` | Main view — status cards, allocation chart, asset table, and trade history. Polls `/api/status` and `/api/history` every 5 seconds. |
+| `StatusCard` | Reusable card displaying a metric (Total Portfolio, Cash, Crypto Assets) with optional sub-values. |
+| `AllocationChart` | Horizontal bar chart showing top assets by USD value using Chart.js. |
+| `TradeHistory` | Scrollable table of recent rebalance cycle actions with BUY/SELL/INFO badges. |
+| `Settings` | Configuration editor for global parameters and per-asset allocation targets. Validates 100% total before allowing save. |
 
-## Expanding the ESLint configuration
+## Development
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+```bash
+npm install   # First time only
+npm run dev   # Starts dev server on http://localhost:5173
+```
+
+The Vite dev server proxies `/api/*` requests to `http://localhost:8080` (the Spring Boot backend).
+
+## Build
+
+```bash
+npm run build   # Outputs to dist/
+```

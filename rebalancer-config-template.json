@@ -1,13 +1,15 @@
 {
     "kraken": {
-        "apiKey": "API_KEY",
-        "privateKey": "PRIVATE_KEY"
+        "apiKey": "YOUR_KRAKEN_API_KEY",
+        "privateKey": "YOUR_KRAKEN_PRIVATE_KEY"
     },
     "settings": {
         "loopDelaySeconds": 60,
         "deviationTriggerPercent": 5.0,
         "dustThresholdUSD": 5.0,
-        "dryRun": true
+        "dryRun": true,
+        "fiatMaxDrawdown": 30.0,
+        "fiatDeploymentExponent": 1.0
     },
     "allocations": [
         {

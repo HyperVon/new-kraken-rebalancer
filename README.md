@@ -1,57 +1,241 @@
 # Kraken Rebalancer
 
-A robust, automated portfolio rebalancing bot for the Kraken cryptocurrency exchange. This application monitors your portfolio and automatically creates buy/sell orders to maintain your desired asset allocation percentages.
+A production-grade, autonomous portfolio rebalancing engine for the [Kraken](https://www.kraken.com/) cryptocurrency exchange. The system continuously monitors your portfolio and automatically executes trades to maintain target asset allocations — with intelligent strategies for handling deposits, withdrawals, and market drawdowns.
+
+**This application has been running in production managing a live portfolio for several months.**
+
+![Dashboard](docs/images/dashboard.png)
+
+---
+
+## Tech Stack
+
+| Layer | Technology |
+|---|---|
+| **Backend** | Java 25, Spring Boot 4, Lombok, Jackson |
+| **Frontend** | React 19, Vite 7, Chart.js |
+| **API** | Kraken REST API with HMAC-SHA512 authentication |
+| **Testing** | JUnit 5, Mockito, JaCoCo (95%+ coverage enforced) |
+| **Build** | Maven, npm |
+
+---
 
 ## Features
 
--   **Automatic Rebalancing**: Continuously monitors your portfolio and rebalances when asset allocations drift beyond a configured threshold.
--   **Fiat Correction**: Intelligently handles deposits and withdrawals by distributing surplus USD (or selling assets for withdrawals) based on your target allocation logic.
--   **Dynamic Fiat Deployment**: Automatically deploys idle cash (USD) into assets during market drawdowns based on All-Time High tracking.
--   **Drift Protection**: Prevents oscillation by using a configurable deviation threshold.
--   **Dry Run Mode**: safely test your configuration and strategy without executing real trades.
--   **Java Spring Boot**: Built on a modern, enterprise-grade stack.
+### Autonomous Rebalancing
+- Continuously monitors portfolio allocations against configurable targets
+- Automatically generates and executes market orders when deviation thresholds are exceeded
+- Sells overweight assets first to generate liquidity, then buys underweight assets
 
-## Documentation
+### Dynamic Fiat Deployment
+- Tracks portfolio All-Time High (ATH) and calculates real-time drawdown
+- Progressively deploys idle cash into the market as drawdowns deepen
+- Configurable deployment curve via an exponent parameter (linear, aggressive, or conservative)
 
--   **[Algorithm Details](ALGORITHM.md)**: A detailed explanation of the logic, trigger conditions, and execution phases.
+### Intelligent Fiat Correction
+- Detects deposits/withdrawals by recognizing when only USD triggers a deviation
+- Distributes surplus cash proportionally among the most underweight assets
+- Handles withdrawals by selling from the most overweight assets
+
+### Live Dashboard
+- Real-time portfolio overview with auto-refresh (5-second polling)
+- Horizontal bar chart showing asset allocation by value
+- Sortable asset performance table with deviation indicators
+- Trade history log with BUY/SELL badges
+- Live/Delayed status indicator with data age tracking
+
+### Hot-Reload Configuration
+- Modify all settings (allocations, thresholds, assets) via the web UI
+- Add or remove assets without restarting the application
+- Allocation validation ensures targets always sum to 100%
+
+### Safety & Reliability
+- **Dry Run Mode** — test your strategy without executing real trades
+- Dust threshold filtering to avoid minimum order size errors
+- Automatic error recovery — API failures don't crash the rebalancing loop
+- Price validation — aborts cycle if any asset price is unavailable
+
+---
+
+## Screenshots
+
+### Dashboard
+The main dashboard shows portfolio value, cash position with effective target (adjusted for drawdown deployment), crypto asset values, an allocation chart, and a sortable asset performance table.
+
+![Dashboard](docs/images/dashboard.png)
+
+### Asset Table & Trade History
+The lower section shows detailed per-asset metrics (price, value, target %, current %, deviation) and a chronological trade activity log.
+
+![Dashboard Bottom](docs/images/dashboard-bottom.png)
+
+### Settings
+All configuration is managed through the web UI — loop interval, deviation trigger, dust threshold, fiat deployment parameters, and per-asset allocation targets.
+
+![Settings](docs/images/settings.png)
+
+---
+
+## Architecture
+
+```mermaid
+graph LR
+    subgraph Frontend["Frontend (React + Vite)"]
+        D[Dashboard] --> SC[StatusCards]
+        D --> AC[AllocationChart]
+        D --> AP[AssetPerformance]
+        D --> TH[TradeHistory]
+        D --> S[Settings]
+    end
+
+    subgraph Backend["Backend (Spring Boot)"]
+        DC[DashboardController] --> THS[TradeHistoryService]
+        DC --> CS[ConfigService]
+        PM[PortfolioManager] --> KS[KrakenService]
+        PM --> CS
+        PM --> THS
+        PM --> PSR[PortfolioStatsRepository]
+        THS --> FTR[FileTradeRepository]
+    end
+
+    subgraph External
+        KA[Kraken API]
+    end
+
+    Frontend -- "REST API\n/api/*" --> DC
+    PM -- "Rebalance Loop\n(configurable interval)" --> PM
+    KS -- "HMAC-SHA512\nAuthenticated" --> KA
+```
+
+### Rebalance Cycle
+
+Each cycle executes three phases:
+
+```mermaid
+flowchart LR
+    A["📸 Snapshot\nFetch balances & prices\nCalculate portfolio value"] --> B["📊 Analysis\nCompute deviations\nApply drawdown adjustments\nDetermine trades"]
+    B --> C["⚡ Execution\nSell overweight assets\nBuy underweight assets\nRecord snapshot"]
+    C --> D["💤 Sleep\n(configurable delay)"]
+    D --> A
+```
+
+See **[ALGORITHM.md](ALGORITHM.md)** for a detailed breakdown of the rebalancing logic, fiat correction strategy, and dynamic deployment math.
+
+---
+
+## Project Structure
+
+```
+├── src/main/java/com/gemini/krakenbot/
+│   ├── KrakenRebalancerApplication.java  # Entry point, Spring Boot config
+│   ├── config/                           # Records: AppConfig, Settings, Allocation, KrakenCredentials
+│   ├── controller/                       # REST API: DashboardController
+│   ├── model/                            # Domain: PortfolioSnapshot, PortfolioStats
+│   ├── repository/                       # Persistence: FileTradeRepository, PortfolioStatsRepository
+│   └── service/                          # Core logic: PortfolioManager, KrakenService, ConfigService
+├── src/test/java/                        # 54 unit tests (95%+ coverage)
+├── frontend/
+│   └── src/
+│       ├── components/                   # Dashboard, Settings, AllocationChart, TradeHistory, StatusCard
+│       ├── index.css                     # Dark theme design system
+│       └── App.jsx                       # Root component
+├── ALGORITHM.md                          # Detailed algorithm documentation
+├── rebalancer-config-template.json       # Configuration template
+└── pom.xml                              # Maven build with JaCoCo coverage enforcement
+```
+
+---
 
 ## Getting Started
 
 ### Prerequisites
 
--   Java 21 or higher
--   Maven
--   Node.js (LTS version) and npm
--   A Kraken account with API Keys (Permissions: Query Funds, Modified Orders)
+- Java 21 or higher
+- Maven
+- Node.js (LTS version) and npm
+- A Kraken account with API Keys (Permissions: **Query Funds**, **Create & Modify Orders**)
 
-### Configuration
+### 1. Clone & Configure
 
-1.  Copy the template config:
-    ```bash
-    cp rebalancer-config-template.json rebalancer-config.json
-    ```
-2.  Edit `rebalancer-config.json`:
-    *   Add your Kraken API Key and Private Key.
-    *   Define your desired `allocations` (Must sum to 100%).
-    *   Set `dryRun` to `true` for initial testing.
+```bash
+git clone https://github.com/HyperVon/new-kraken-rebalancer.git
+cd new-kraken-rebalancer
+cp rebalancer-config-template.json rebalancer-config.json
+```
 
-### Running the Application
+Edit `rebalancer-config.json`:
+- Add your Kraken API Key and Private Key
+- Define your desired `allocations` (must sum to 100%, must include USD)
+- Set `dryRun` to `true` for initial testing
+- Optionally configure `fiatMaxDrawdown` and `fiatDeploymentExponent` for dynamic cash deployment
 
-You need to run both the backend and frontend services.
+### 2. Start the Backend
 
-**1. Start the Backend:**
 ```bash
 mvn spring-boot:run
 ```
 
-**2. Start the Frontend:**
-Open a new terminal configuration:
+The backend starts on port **8080** and begins the rebalancing loop immediately.
+
+### 3. Start the Frontend
+
 ```bash
 cd frontend
-npm install  # First time only
+npm install   # First time only
 npm run dev
 ```
 
-Open your browser to the URL shown (usually http://localhost:5173).
+Open your browser to **http://localhost:5173**. The frontend proxies API requests to the backend automatically.
 
-The application will start logging the portfolio status and any actions taken.
+---
+
+## Configuration Reference
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `loopDelaySeconds` | `long` | `60` | Seconds between rebalance cycles |
+| `deviationTriggerPercent` | `double` | `5.0` | Minimum deviation % to trigger a trade |
+| `dustThresholdUSD` | `double` | `5.0` | Minimum trade value in USD (below this is skipped) |
+| `dryRun` | `boolean` | `true` | If true, logs intended trades without executing them |
+| `fiatMaxDrawdown` | `double` | `0.0` | Portfolio drawdown % at which 100% of USD is deployed (0 = disabled) |
+| `fiatDeploymentExponent` | `double` | `1.0` | Controls deployment curve: `1.0` = linear, `<1.0` = aggressive, `>1.0` = conservative |
+
+---
+
+## API Endpoints
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/status` | Returns the latest portfolio snapshot |
+| `GET` | `/api/history` | Returns the last 50 portfolio snapshots |
+| `GET` | `/api/config` | Returns the current configuration |
+| `POST` | `/api/config` | Updates and persists configuration (validated server-side) |
+
+---
+
+## Testing
+
+The project enforces **95% instruction coverage** via JaCoCo. All tests are behavioral — they verify actual rebalancing decisions, not just method invocations.
+
+```bash
+mvn clean install
+```
+
+**54 tests** across:
+- `PortfolioManagerComprehensiveTest` — full rebalance cycle scenarios
+- `PortfolioManagerFiatCorrectionTest` — deposit/withdrawal distribution logic
+- `PortfolioManagerDrawdownTest` — ATH tracking and dynamic deployment
+- `PortfolioManagerOrderExecutionTest` — sell-first/buy-second sequencing
+- `PortfolioManagerLoopTest` — loop lifecycle, error recovery, interruption
+- `PortfolioManagerZeroAllocationTest` — edge case: 0% target allocation
+- `PortfolioManagerDogeTest` — Kraken symbol mapping quirks (BTC→XBT, DOGE→XDG)
+- `KrakenServiceTest` — API signing, error handling, dry run
+- `ConfigServiceTest` — validation, hot-reload, persistence
+- `TradeHistoryServiceTest` — snapshot storage, size limits
+- `FileTradeRepositoryTest` / `PortfolioStatsRepositoryTest` — file I/O
+
+---
+
+## License
+
+This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.

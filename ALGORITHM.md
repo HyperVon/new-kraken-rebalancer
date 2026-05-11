@@ -2,6 +2,51 @@
 
 This document details the operational logic of the Kraken Rebalancer. The system is designed to autonomously maintain a specific portfolio allocation across a set of assets (cryptocurrencies & fiat).
 
+## Overview
+
+```mermaid
+flowchart TD
+    START([Cycle Start]) --> SNAP
+    
+    subgraph SNAP["Phase 1: Snapshot"]
+        S1[Fetch Balances from Kraken] --> S2[Fetch Market Prices]
+        S2 --> S3["Calculate USD Value per Asset"]
+        S3 --> S4["Sum → Total Portfolio Value"]
+    end
+
+    SNAP --> ATH{New ATH?}
+    ATH -- Yes --> SAVE_ATH[Update ATH in portfolio-stats.json]
+    ATH -- No --> DD
+    SAVE_ATH --> DD
+
+    subgraph DD["Drawdown Assessment"]
+        DD1["Drawdown % = (ATH - Current) / ATH × 100"]
+        DD1 --> DD2["Deploy % = (Drawdown / MaxDrawdown) ^ Exponent"]
+        DD2 --> DD3["Reduce USD Target by Deploy %\nRedistribute to Crypto"]
+    end
+
+    DD --> ANALYSIS
+
+    subgraph ANALYSIS["Phase 2: Analysis"]
+        A1["Calculate Deviation per Asset\n(Current Value vs Target Value)"]
+        A1 --> A2{Any Deviation ≥ Trigger?}
+        A2 -- "Crypto Triggered" --> A3["Generate BUY/SELL orders"]
+        A2 -- "Only USD Triggered" --> A4["Fiat Correction:\nDistribute among counter-balanced assets"]
+        A2 -- "None Triggered" --> SKIP[No trades needed]
+    end
+
+    ANALYSIS --> EXEC
+
+    subgraph EXEC["Phase 3: Execution"]
+        E1["Execute SELL orders first\n(generate USD liquidity)"] --> E2["Execute BUY orders second\n(verify cash sufficiency)"]
+        E2 --> E3["Record Snapshot\n& Trade History"]
+    end
+
+    EXEC --> SLEEP["Sleep (configurable delay)"]
+    SKIP --> SLEEP
+    SLEEP --> START
+```
+
 ## Core Concepts
 
 ### 1. Portfolio Definition
@@ -91,7 +136,7 @@ The system executes the calculated orders in a specific sequence to ensure liqui
     *   If cash is insufficient (rare, usually due to price slippage), buy orders may be reduced.
 3.  **Order Placement**:
     *   Orders are placed as **Market Orders** for immediate execution.
-    *   "Dust" orders (value < $1.00) are skipped to avoid API errors.
+    *   "Dust" orders (below the configured `dustThresholdUSD`) are skipped to avoid API errors.
 
 ---
 
@@ -99,9 +144,11 @@ The system executes the calculated orders in a specific sequence to ensure liqui
 
 The behavior is controlled by `rebalancer-config.json`:
 
--   **`loopDelaySeconds`**: Time to wait between cycles.
--   **`deviationTriggerPercent`**: Sensitivity of the rebalancer. Lower values track targets closer but trade more frequently (higher fees).
--   **`dustThresholdUSD`**: Minimum order value in USD. Trades smaller than this amount are skipped to avoid API errors (Kraken minimum is typically ~$1-5).
--   **`dryRun`**: If set to `true`, the system performs all calculations and logs intended trades but **does not** send orders to Kraken.
--   **`fiatMaxDrawdown`**: The portfolio drawdown percentage at which 100% of the USD allocation should be deployed into assets.
--   **`fiatDeploymentExponent`**: Controls the aggressiveness of deployment. `1.0` is linear. Values `< 1.0` deploy more cash earlier (aggressive). Values `> 1.0` save cash for deeper dips (conservative).
+| Parameter | Description |
+| :--- | :--- |
+| `loopDelaySeconds` | Time to wait between cycles. |
+| `deviationTriggerPercent` | Sensitivity of the rebalancer. Lower values track targets closer but trade more frequently (higher fees). |
+| `dustThresholdUSD` | Minimum order value in USD. Trades smaller than this amount are skipped to avoid API errors. |
+| `dryRun` | If set to `true`, the system performs all calculations and logs intended trades but **does not** send orders to Kraken. |
+| `fiatMaxDrawdown` | The portfolio drawdown percentage at which 100% of the USD allocation should be deployed into assets. Set to `0` to disable. |
+| `fiatDeploymentExponent` | Controls the aggressiveness of deployment. `1.0` is linear. Values `< 1.0` deploy more cash earlier (aggressive). Values `> 1.0` save cash for deeper dips (conservative). |

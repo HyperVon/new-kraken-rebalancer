@@ -3,6 +3,8 @@ package com.gemini.krakenbot.service;
 import com.gemini.krakenbot.config.Allocation;
 import com.gemini.krakenbot.config.Settings;
 import com.gemini.krakenbot.model.PortfolioSnapshot;
+import com.gemini.krakenbot.model.PortfolioStats;
+import com.gemini.krakenbot.repository.PortfolioStatsRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -23,11 +25,11 @@ public class PortfolioManager {
     private final KrakenService krakenService;
     private final ConfigService configService;
     private final TradeHistoryService tradeHistoryService;
-    private final com.gemini.krakenbot.repository.PortfolioStatsRepository portfolioStatsRepository;
+    private final PortfolioStatsRepository portfolioStatsRepository;
 
     public PortfolioManager(KrakenService krakenService, ConfigService configService,
             TradeHistoryService tradeHistoryService,
-            com.gemini.krakenbot.repository.PortfolioStatsRepository portfolioStatsRepository) {
+            PortfolioStatsRepository portfolioStatsRepository) {
         this.krakenService = krakenService;
         this.configService = configService;
         this.tradeHistoryService = tradeHistoryService;
@@ -141,7 +143,7 @@ public class PortfolioManager {
         log.info("Total Portfolio Value: ${}", totalPortfolioValueUSD.setScale(2, RoundingMode.HALF_UP));
 
         // --- Fiat Drawdown Logic ---
-        com.gemini.krakenbot.model.PortfolioStats stats = portfolioStatsRepository.load();
+        PortfolioStats stats = portfolioStatsRepository.load();
         BigDecimal ath = stats.getAllTimeHigh();
         if (ath == null || totalPortfolioValueUSD.compareTo(ath) > 0) {
             ath = totalPortfolioValueUSD;

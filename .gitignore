@@ -1,9 +1,22 @@
+# Build artifacts
+target/
+*.class
+*.jar
+*.war
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# Application data files
 *.txt
 *.log
-rebalancer-config.json
-target
-.vscode
 *.gz
+rebalancer-config.json
 trade-history.json
-.idea
 portfolio-stats.json
+
+# Frontend build
+frontend/node_modules/
+frontend/dist/
