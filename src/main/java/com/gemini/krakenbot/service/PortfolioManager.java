@@ -82,18 +82,59 @@ public class PortfolioManager {
         log.info("--- Starting Snapshot Phase ---");
         List<String> actionLog = new ArrayList<>();
 
-        // 1. Snapshot
+        // 1. Snapshot — fetch balances and prices, compute USD values
+        Map<String, Double> balances = fetchBalances();
+        Map<String, Double> prices = fetchPrices();
+        Map<String, BigDecimal> currentValuesUSD = new HashMap<>();
+        BigDecimal totalPortfolioValueUSD = calculatePortfolioValues(balances, prices, currentValuesUSD);
+        if (totalPortfolioValueUSD == null) {
+            return; // Price lookup failed, cycle aborted
+        }
+
+        log.info("Total Portfolio Value: ${}", totalPortfolioValueUSD.setScale(2, RoundingMode.HALF_UP));
+
+        // 2. Drawdown assessment — ATH tracking and fiat deployment
+        BigDecimal drawdownPct = updateAthAndCalculateDrawdown(totalPortfolioValueUSD);
+        BigDecimal fiatDeploymentPct = calculateFiatDeployment(drawdownPct);
+
+        if (fiatDeploymentPct.compareTo(BigDecimal.ZERO) > 0) {
+            log.info("Drawdown Detected: {}%. Fiat Deployment: {}%", drawdownPct.setScale(2, RoundingMode.HALF_UP),
+                    fiatDeploymentPct.setScale(2, RoundingMode.HALF_UP));
+        }
+
+        // 3. Analysis — compute deviations and generate orders
+        BigDecimal effectiveUsdTarget = calculateEffectiveUsdTarget(fiatDeploymentPct);
+        BigDecimal cryptoScaleFactor = calculateCryptoScaleFactor(effectiveUsdTarget);
+
+        Map<String, BigDecimal> buyOrders = new HashMap<>();
+        Map<String, BigDecimal> sellOrders = new HashMap<>();
+        analyzeDeviations(totalPortfolioValueUSD, currentValuesUSD, effectiveUsdTarget, cryptoScaleFactor,
+                buyOrders, sellOrders, actionLog);
+
+        // 4. Execution — sell first, then buy
+        Settings s = configService.getConfig().settings();
+        executeOrders(buyOrders, sellOrders, currentValuesUSD, prices, s, actionLog);
+
+        // 5. Record snapshot
+        PortfolioSnapshot snapshot = buildSnapshot(balances, prices, currentValuesUSD,
+                totalPortfolioValueUSD, effectiveUsdTarget, cryptoScaleFactor,
+                drawdownPct, fiatDeploymentPct, actionLog);
+        tradeHistoryService.addSnapshot(snapshot);
+
+        log.info("--- Cycle Complete ---");
+    }
+
+    // ========================================================================
+    // Phase 1: Snapshot
+    // ========================================================================
+
+    private Map<String, Double> fetchBalances() {
         Map<String, Double> balances = krakenService.getBalances();
         log.info("Available Balance Keys: {}", balances.keySet());
+        return balances;
+    }
 
-        // Filter for Allocations to know what to fetch
-        // Note: Kraken balances keys might differ from symbols (e.g. ZUSD vs USD).
-        // For simplicity, we assume mapping is handled or keys match decently.
-        // Or we map "USD" -> "ZUSD" / "USDT", etc.
-        // Let's assume standard Kraken keys: XXBT, ZUSD, or the user config uses Kraken
-        // Balance keys as symbols.
-
-        // Prepare symbols for Ticker
+    private Map<String, Double> fetchPrices() {
         StringBuilder pairs = new StringBuilder();
         for (Allocation a : configService.getConfig().allocations()) {
             if (!a.symbol().equalsIgnoreCase("USD")) {
@@ -102,27 +143,20 @@ public class PortfolioManager {
                 pairs.append(mapToKrakenTicker(a.symbol())).append("USD");
             }
         }
+        return krakenService.getTickerPrices(pairs.toString());
+    }
 
-        Map<String, Double> prices = krakenService.getTickerPrices(pairs.toString());
-
+    /**
+     * Calculates USD values for all configured assets and returns the total portfolio value.
+     * Returns null if a price lookup fails (cycle should be aborted).
+     */
+    private BigDecimal calculatePortfolioValues(Map<String, Double> balances, Map<String, Double> prices,
+            Map<String, BigDecimal> currentValuesUSD) {
         BigDecimal totalPortfolioValueUSD = BigDecimal.ZERO;
-        Map<String, BigDecimal> currentValuesUSD = new HashMap<>();
 
-        // Calculate Holdings Value
         for (Allocation a : configService.getConfig().allocations()) {
             String symbol = a.symbol();
-            // Try to find balance directly or with prefix/suffix quirks if needed.
-            // Simplified: User config symbol MUST match Kraken Balance Key roughly.
-            // Actually, Kraken Balance Keys are strange (XXBT, ZUSD).
-            // We'll rely on a fuzzy match or exact match if user config is good.
-            // Let's assume valid mapping for now or try standard keys.
-
-            Double balance = balances.getOrDefault(symbol,
-                    balances.getOrDefault("X" + symbol, // Common Kraken quirk
-                            balances.getOrDefault("Z" + symbol, // Common Fiat quirk
-                                    balances.getOrDefault(mapToKrakenTicker(symbol),
-                                            balances.getOrDefault("X" + mapToKrakenTicker(symbol), 0.0)))));
-
+            Double balance = resolveBalance(symbol, balances);
             BigDecimal bal = BigDecimal.valueOf(balance);
             BigDecimal price = BigDecimal.ONE; // default for USD
 
@@ -130,7 +164,7 @@ public class PortfolioManager {
                 BigDecimal p = getCurrentPrice(symbol, prices);
                 if (p.compareTo(BigDecimal.ZERO) == 0) {
                     log.error("Price not found for {}. Aborting rebalance cycle to prevent erroneous trades.", symbol);
-                    return; // Abort cycle
+                    return null; // Abort cycle
                 }
                 price = p;
             }
@@ -140,9 +174,26 @@ public class PortfolioManager {
             totalPortfolioValueUSD = totalPortfolioValueUSD.add(val);
         }
 
-        log.info("Total Portfolio Value: ${}", totalPortfolioValueUSD.setScale(2, RoundingMode.HALF_UP));
+        return totalPortfolioValueUSD;
+    }
 
-        // --- Fiat Drawdown Logic ---
+    /**
+     * Resolves a balance from Kraken's response, handling their quirky key naming
+     * (e.g., XXBT for BTC, ZUSD for USD).
+     */
+    private Double resolveBalance(String symbol, Map<String, Double> balances) {
+        return balances.getOrDefault(symbol,
+                balances.getOrDefault("X" + symbol, // Common Kraken quirk
+                        balances.getOrDefault("Z" + symbol, // Common Fiat quirk
+                                balances.getOrDefault(mapToKrakenTicker(symbol),
+                                        balances.getOrDefault("X" + mapToKrakenTicker(symbol), 0.0)))));
+    }
+
+    // ========================================================================
+    // Phase 2: Drawdown Assessment
+    // ========================================================================
+
+    private BigDecimal updateAthAndCalculateDrawdown(BigDecimal totalPortfolioValueUSD) {
         PortfolioStats stats = portfolioStatsRepository.load();
         BigDecimal ath = stats.getAllTimeHigh();
         if (ath == null || totalPortfolioValueUSD.compareTo(ath) > 0) {
@@ -157,61 +208,68 @@ public class PortfolioManager {
             BigDecimal diff = ath.subtract(totalPortfolioValueUSD);
             drawdownPct = diff.divide(ath, 4, RoundingMode.HALF_UP).multiply(BigDecimal.valueOf(100));
         }
+        return drawdownPct;
+    }
 
+    private BigDecimal calculateFiatDeployment(BigDecimal drawdownPct) {
         Settings s = configService.getConfig().settings();
-        BigDecimal fiatDeploymentPct = BigDecimal.ZERO;
-
-        if (s.fiatMaxDrawdown() > 0) { // Only if enabled
-            BigDecimal maxDD = BigDecimal.valueOf(s.fiatMaxDrawdown());
-            // Ratio = min(1.0, currentDD / maxDD)
-            BigDecimal ratio = drawdownPct.divide(maxDD, 4, RoundingMode.HALF_UP);
-            if (ratio.compareTo(BigDecimal.ONE) > 0) {
-                ratio = BigDecimal.ONE;
-            }
-            // Deploy% = (ratio ^ exponent) * 100
-            double ratioDouble = ratio.doubleValue();
-            double exponent = s.fiatDeploymentExponent();
-            double deployDouble = Math.pow(ratioDouble, exponent) * 100.0;
-            fiatDeploymentPct = BigDecimal.valueOf(deployDouble);
+        if (s.fiatMaxDrawdown() <= 0) {
+            return BigDecimal.ZERO;
         }
 
-        if (fiatDeploymentPct.compareTo(BigDecimal.ZERO) > 0) {
-            log.info("Drawdown Detected: {}%. Fiat Deployment: {}%", drawdownPct.setScale(2, RoundingMode.HALF_UP),
-                    fiatDeploymentPct.setScale(2, RoundingMode.HALF_UP));
+        BigDecimal maxDD = BigDecimal.valueOf(s.fiatMaxDrawdown());
+        BigDecimal ratio = drawdownPct.divide(maxDD, 4, RoundingMode.HALF_UP);
+        if (ratio.compareTo(BigDecimal.ONE) > 0) {
+            ratio = BigDecimal.ONE;
         }
 
-        // 2. Analysis
-        Map<String, BigDecimal> buyOrders = new HashMap<>(); // Symbol -> USD Amount
-        Map<String, BigDecimal> sellOrders = new HashMap<>(); // Symbol -> USD Amount (Positive)
-        Map<String, BigDecimal> allDeviations = new HashMap<>(); // Symbol -> USD Deviation
+        double deployDouble = Math.pow(ratio.doubleValue(), s.fiatDeploymentExponent()) * 100.0;
+        return BigDecimal.valueOf(deployDouble);
+    }
 
-        boolean usdTriggered = false;
-        BigDecimal usdDeviationAmount = BigDecimal.ZERO;
+    // ========================================================================
+    // Phase 3: Analysis
+    // ========================================================================
 
-        // Pre-calculate Target Adjustments
-        BigDecimal totalNonUsdTarget = BigDecimal.ZERO;
+    private BigDecimal calculateEffectiveUsdTarget(BigDecimal fiatDeploymentPct) {
         BigDecimal baseUsdTarget = BigDecimal.ZERO;
-
         for (Allocation a : configService.getConfig().allocations()) {
             if (a.symbol().equalsIgnoreCase("USD")) {
                 baseUsdTarget = baseUsdTarget.add(BigDecimal.valueOf(a.targetPercent()));
-            } else {
+            }
+        }
+
+        if (fiatDeploymentPct.compareTo(BigDecimal.ZERO) > 0) {
+            BigDecimal factor = BigDecimal.ONE
+                    .subtract(fiatDeploymentPct.divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP));
+            return baseUsdTarget.multiply(factor);
+        }
+        return baseUsdTarget;
+    }
+
+    private BigDecimal calculateCryptoScaleFactor(BigDecimal effectiveUsdTarget) {
+        BigDecimal totalNonUsdTarget = BigDecimal.ZERO;
+        for (Allocation a : configService.getConfig().allocations()) {
+            if (!a.symbol().equalsIgnoreCase("USD")) {
                 totalNonUsdTarget = totalNonUsdTarget.add(BigDecimal.valueOf(a.targetPercent()));
             }
         }
 
-        BigDecimal effectiveUsdTarget = baseUsdTarget;
-        if (fiatDeploymentPct.compareTo(BigDecimal.ZERO) > 0) {
-            BigDecimal factor = BigDecimal.ONE
-                    .subtract(fiatDeploymentPct.divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP));
-            effectiveUsdTarget = baseUsdTarget.multiply(factor);
-        }
-
         BigDecimal remainingForCrypto = BigDecimal.valueOf(100).subtract(effectiveUsdTarget);
-        BigDecimal cryptoScaleFactor = BigDecimal.ONE;
         if (totalNonUsdTarget.compareTo(BigDecimal.ZERO) > 0) {
-            cryptoScaleFactor = remainingForCrypto.divide(totalNonUsdTarget, 8, RoundingMode.HALF_UP);
+            return remainingForCrypto.divide(totalNonUsdTarget, 8, RoundingMode.HALF_UP);
         }
+        return BigDecimal.ONE;
+    }
+
+    private void analyzeDeviations(BigDecimal totalPortfolioValueUSD, Map<String, BigDecimal> currentValuesUSD,
+            BigDecimal effectiveUsdTarget, BigDecimal cryptoScaleFactor,
+            Map<String, BigDecimal> buyOrders, Map<String, BigDecimal> sellOrders, List<String> actionLog) {
+
+        Settings s = configService.getConfig().settings();
+        boolean usdTriggered = false;
+        BigDecimal usdDeviationAmount = BigDecimal.ZERO;
+        Map<String, BigDecimal> allDeviations = new HashMap<>();
 
         for (Allocation a : configService.getConfig().allocations()) {
             BigDecimal targetPct = BigDecimal.valueOf(a.targetPercent());
@@ -275,12 +333,19 @@ public class PortfolioManager {
             actionLog.add("USD Deviation Triggered. Enforcing fiat correction.");
             distributeFiatCorrection(usdDeviationAmount, allDeviations, buyOrders, sellOrders, actionLog);
         }
+    }
 
-        // 3. Execution
+    // ========================================================================
+    // Phase 4: Execution
+    // ========================================================================
+
+    private void executeOrders(Map<String, BigDecimal> buyOrders, Map<String, BigDecimal> sellOrders,
+            Map<String, BigDecimal> currentValuesUSD, Map<String, Double> prices, Settings s, List<String> actionLog) {
+
         BigDecimal currentUsdBal = currentValuesUSD.getOrDefault("USD", BigDecimal.ZERO);
         BigDecimal projectedCash = currentUsdBal;
 
-        // Execute SELLS
+        // Execute SELLS first to generate liquidity
         for (Map.Entry<String, BigDecimal> entry : sellOrders.entrySet()) {
             String symbol = entry.getKey();
             BigDecimal usdToSell = entry.getValue();
@@ -291,20 +356,17 @@ public class PortfolioManager {
                 continue;
             }
 
-            // Calculate volume to sell: USD / Price
             BigDecimal price = getCurrentPrice(symbol, prices);
             if (price.compareTo(BigDecimal.ZERO) == 0)
                 continue;
 
             BigDecimal volume = usdToSell.divide(price, 8, RoundingMode.HALF_UP);
-
-            // Execute
             krakenService.executeOrder(symbol + "USD", "market", "sell", volume.doubleValue());
-            projectedCash = projectedCash.add(usdToSell); // Assume fill at current price
+            projectedCash = projectedCash.add(usdToSell);
             actionLog.add("SELL " + symbol + " Volume: " + volume + " Value: $" + usdToSell);
         }
 
-        // Execute BUYS
+        // Execute BUYS second, verifying cash sufficiency
         for (Map.Entry<String, BigDecimal> entry : buyOrders.entrySet()) {
             String symbol = entry.getKey();
             BigDecimal cost = entry.getValue();
@@ -314,7 +376,7 @@ public class PortfolioManager {
                 cost = projectedCash.multiply(BigDecimal.valueOf(0.99)); // Safety buffer
             }
 
-            if (cost.compareTo(BigDecimal.valueOf(s.dustThresholdUSD())) < 0) { // Min order check
+            if (cost.compareTo(BigDecimal.valueOf(s.dustThresholdUSD())) < 0) {
                 log.info("Skipping dust buy for {} (${})", symbol, cost);
                 actionLog.add("Skipping dust buy for " + symbol + " ($" + cost + ")");
                 continue;
@@ -329,19 +391,21 @@ public class PortfolioManager {
             projectedCash = projectedCash.subtract(cost);
             actionLog.add("BUY " + symbol + " Volume: " + volume + " Cost: $" + cost);
         }
+    }
 
-        // 4. Record Snapshot
+    // ========================================================================
+    // Phase 5: Record Snapshot
+    // ========================================================================
+
+    private PortfolioSnapshot buildSnapshot(Map<String, Double> balances, Map<String, Double> prices,
+            Map<String, BigDecimal> currentValuesUSD, BigDecimal totalPortfolioValueUSD,
+            BigDecimal effectiveUsdTarget, BigDecimal cryptoScaleFactor,
+            BigDecimal drawdownPct, BigDecimal fiatDeploymentPct, List<String> actionLog) {
+
         Map<String, PortfolioSnapshot.AssetSnapshot> assetSnapshots = new HashMap<>();
         for (Allocation a : configService.getConfig().allocations()) {
             String symbol = a.symbol();
-            BigDecimal balance = BigDecimal.valueOf(balances.getOrDefault(symbol, 0.0));
-            // Try better lookup if needed (like in original loop) but using cached values:
-            if (currentValuesUSD.containsKey(symbol)) { // We calculated it earlier
-                // Re-derive or store earlier?
-                // To avoid re-calc mess, let's just use what we have in currentValuesUSD and
-                // price map
-            }
-
+            BigDecimal balance = BigDecimal.valueOf(resolveBalance(symbol, balances));
             BigDecimal valUSD = currentValuesUSD.getOrDefault(symbol, BigDecimal.ZERO);
             BigDecimal price = BigDecimal.ONE;
             if (!symbol.equalsIgnoreCase("USD")) {
@@ -351,7 +415,7 @@ public class PortfolioManager {
             // Recalculate percentages for snapshot
             BigDecimal baseTargetPct = BigDecimal.valueOf(a.targetPercent());
             BigDecimal snapshotTargetPct = baseTargetPct;
-            BigDecimal calcTargetPct = baseTargetPct;
+            BigDecimal calcTargetPct;
 
             if (a.symbol().equalsIgnoreCase("USD")) {
                 calcTargetPct = effectiveUsdTarget;
@@ -366,47 +430,32 @@ public class PortfolioManager {
                 currentPct = valUSD.divide(totalPortfolioValueUSD, 4, RoundingMode.HALF_UP)
                         .multiply(BigDecimal.valueOf(100));
             }
-            BigDecimal devPct = BigDecimal.ZERO;
-            // Calculate target value in USD for this asset
+
             BigDecimal targetVal = totalPortfolioValueUSD.multiply(calcTargetPct).divide(BigDecimal.valueOf(100), 4,
                     RoundingMode.HALF_UP);
-
             BigDecimal deviationUSD = valUSD.subtract(targetVal);
+            BigDecimal devPct = BigDecimal.ZERO;
             if (targetVal.compareTo(BigDecimal.ZERO) > 0) {
-                // Calculate deviation as a percentage of the target value (Relative Deviation)
-                // This matches the "Deviation %" logic used in the rebalancing analysis loop
                 devPct = deviationUSD.divide(targetVal, 4, RoundingMode.HALF_UP).multiply(BigDecimal.valueOf(100));
             }
 
             assetSnapshots.put(symbol, new PortfolioSnapshot.AssetSnapshot(
-                    symbol,
-                    balance, // Note: this might be 0 if we didn't find it in balances map correctly earlier
-                    price,
-                    valUSD,
-                    snapshotTargetPct,
-                    currentPct,
-                    devPct,
-                    deviationUSD));
+                    symbol, balance, price, valUSD, snapshotTargetPct, currentPct, devPct, deviationUSD));
         }
 
-        PortfolioSnapshot snapshot = new PortfolioSnapshot(
+        return new PortfolioSnapshot(
                 Instant.now(),
                 totalPortfolioValueUSD,
                 assetSnapshots,
                 actionLog,
                 drawdownPct,
                 fiatDeploymentPct,
-                BigDecimal.ZERO // Placeholder, effectively calculated per iteration but user sees 'USD'
-                                // effective
-        );
-
-        // Ensure effective USD target is set in the snapshot
-        snapshot.setEffectiveUsdTargetPercent(effectiveUsdTarget);
-
-        tradeHistoryService.addSnapshot(snapshot);
-
-        log.info("--- Cycle Complete ---");
+                effectiveUsdTarget);
     }
+
+    // ========================================================================
+    // Fiat Correction
+    // ========================================================================
 
     private void distributeFiatCorrection(BigDecimal usdDev, Map<String, BigDecimal> allDevs,
             Map<String, BigDecimal> buyOrders, Map<String, BigDecimal> sellOrders, List<String> actionLog) {
@@ -466,6 +515,10 @@ public class PortfolioManager {
             }
         }
     }
+
+    // ========================================================================
+    // Utilities
+    // ========================================================================
 
     private String mapToKrakenTicker(String symbol) {
         if ("BTC".equalsIgnoreCase(symbol))

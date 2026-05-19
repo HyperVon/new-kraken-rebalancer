@@ -81,10 +81,6 @@ public class PortfolioSnapshot {
         return effectiveUsdTargetPercent;
     }
 
-    public void setEffectiveUsdTargetPercent(BigDecimal effectiveUsdTargetPercent) {
-        this.effectiveUsdTargetPercent = effectiveUsdTargetPercent;
-    }
-
     public static class AssetSnapshot {
         private String symbol;
         private BigDecimal balance;
