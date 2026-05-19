@@ -5,7 +5,6 @@ import com.gemini.krakenbot.config.Allocation;
 import com.gemini.krakenbot.config.AppConfig;
 import jakarta.annotation.PostConstruct;
 
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import java.io.File;
 import java.io.IOException;
@@ -17,7 +16,6 @@ public class ConfigService {
     private final ObjectMapper objectMapper;
     private final String configFilePath;
 
-    @Autowired
     public ConfigService(ObjectMapper objectMapper,
             @org.springframework.beans.factory.annotation.Value("${app.config-file:rebalancer-config.json}") String configFilePath) {
         this.objectMapper = objectMapper;
