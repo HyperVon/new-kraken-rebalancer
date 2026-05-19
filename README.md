@@ -150,7 +150,7 @@ See **[ALGORITHM.md](ALGORITHM.md)** for a detailed breakdown of the rebalancing
 
 ### Prerequisites
 
-- Java 21 or higher
+- Java 25 or higher
 - Maven
 - Node.js (LTS version) and npm
 - A Kraken account with API Keys (Permissions: **Query Funds**, **Create & Modify Orders**)
