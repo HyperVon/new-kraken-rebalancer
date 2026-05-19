@@ -1,6 +1,7 @@
 package com.gemini.krakenbot.controller;
 
 import com.gemini.krakenbot.config.AppConfig;
+import com.gemini.krakenbot.config.KrakenCredentials;
 import com.gemini.krakenbot.model.PortfolioSnapshot;
 import com.gemini.krakenbot.service.ConfigService;
 import com.gemini.krakenbot.service.TradeHistoryService;
@@ -35,13 +36,19 @@ public class DashboardController {
     }
 
     @GetMapping("/config")
-    public AppConfig getConfig() {
-        return configService.getConfig();
+    public FrontendConfig getConfig() {
+        AppConfig config = configService.getConfig();
+        return new FrontendConfig(config.settings(), config.allocations());
     }
 
     @PostMapping("/config")
-    public AppConfig updateConfig(@RequestBody AppConfig config) {
-        configService.updateConfig(config);
-        return configService.getConfig();
+    public FrontendConfig updateConfig(@RequestBody FrontendConfig config) {
+        // Preserve server-side credentials — the client never has them
+        KrakenCredentials serverCredentials = configService.getConfig().kraken();
+        AppConfig configWithCredentials = new AppConfig(serverCredentials, config.settings(), config.allocations());
+        configService.updateConfig(configWithCredentials);
+        // Return sanitized config
+        AppConfig updated = configService.getConfig();
+        return new FrontendConfig(updated.settings(), updated.allocations());
     }
 }

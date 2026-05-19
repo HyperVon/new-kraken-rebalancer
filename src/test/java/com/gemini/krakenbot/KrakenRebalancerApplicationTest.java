@@ -5,7 +5,10 @@ import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
-@SpringBootTest
+@SpringBootTest(properties = {
+        "app.config-file=src/test/resources/test-rebalancer-config.json",
+        "app.enable-rebalancing=false"
+})
 class KrakenRebalancerApplicationTest {
 
     @MockitoBean
@@ -27,7 +30,8 @@ class KrakenRebalancerApplicationTest {
         // Ideally contextLoads is enough for "testing", but for "coverage" of main
         // method line:
         try {
-            KrakenRebalancerApplication.main(new String[] { "--app.enable-rebalancing=false" });
+            KrakenRebalancerApplication.main(new String[] { "--app.enable-rebalancing=false",
+                    "--app.config-file=src/test/resources/test-rebalancer-config.json" });
         } catch (Exception e) {
             // Ignore startup errors if any (e.g. port collision)
         }
