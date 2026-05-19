@@ -4,13 +4,13 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.gemini.krakenbot.model.PortfolioStats;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.stereotype.Service;
+import org.springframework.stereotype.Repository;
 
 import java.io.File;
 import java.io.IOException;
 import java.math.BigDecimal;
 
-@Service
+@Repository
 public class PortfolioStatsRepository {
 
     private static final Logger log = LoggerFactory.getLogger(PortfolioStatsRepository.class);
