@@ -36,20 +36,19 @@ public class DashboardController {
     }
 
     @GetMapping("/config")
-    public AppConfig getConfig() {
+    public FrontendConfig getConfig() {
         AppConfig config = configService.getConfig();
-        // Sanitize credentials — never expose API keys to the frontend
-        return new AppConfig(new KrakenCredentials(null, null), config.settings(), config.allocations());
+        return new FrontendConfig(config.settings(), config.allocations());
     }
 
     @PostMapping("/config")
-    public AppConfig updateConfig(@RequestBody AppConfig config) {
+    public FrontendConfig updateConfig(@RequestBody FrontendConfig config) {
         // Preserve server-side credentials — the client never has them
         KrakenCredentials serverCredentials = configService.getConfig().kraken();
         AppConfig configWithCredentials = new AppConfig(serverCredentials, config.settings(), config.allocations());
         configService.updateConfig(configWithCredentials);
         // Return sanitized config
         AppConfig updated = configService.getConfig();
-        return new AppConfig(new KrakenCredentials(null, null), updated.settings(), updated.allocations());
+        return new FrontendConfig(updated.settings(), updated.allocations());
     }
 }

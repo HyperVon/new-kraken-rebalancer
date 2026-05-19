@@ -81,8 +81,7 @@ class DashboardControllerTest {
 
         mockMvc.perform(get("/api/config"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.kraken.apiKey").isEmpty())
-                .andExpect(jsonPath("$.kraken.privateKey").isEmpty())
+                .andExpect(jsonPath("$.kraken").doesNotExist())
                 .andExpect(jsonPath("$.settings.loopDelaySeconds").value(60));
     }
 
@@ -94,8 +93,8 @@ class DashboardControllerTest {
                 List.of(new Allocation("USD", 100.0)));
         when(configService.getConfig()).thenReturn(serverConfig);
 
-        // Client sends config without real credentials
-        AppConfig clientConfig = new AppConfig(null, serverConfig.settings(), serverConfig.allocations());
+        // Client sends config without real credentials using FrontendConfig
+        FrontendConfig clientConfig = new FrontendConfig(serverConfig.settings(), serverConfig.allocations());
 
         mockMvc.perform(post("/api/config")
                 .contentType(MediaType.APPLICATION_JSON)
