@@ -18,11 +18,8 @@ public class ConfigService {
     private final String configFilePath;
 
     @Autowired
-    public ConfigService(ObjectMapper objectMapper) {
-        this(objectMapper, "rebalancer-config.json");
-    }
-
-    public ConfigService(ObjectMapper objectMapper, String configFilePath) {
+    public ConfigService(ObjectMapper objectMapper,
+            @org.springframework.beans.factory.annotation.Value("${app.config-file:rebalancer-config.json}") String configFilePath) {
         this.objectMapper = objectMapper;
         this.configFilePath = configFilePath;
     }
@@ -35,16 +32,16 @@ public class ConfigService {
                     "Configuration file 'rebalancer-config.json' not found in the application directory.");
         }
         this.appConfig = objectMapper.readValue(configFile, AppConfig.class);
-        validateConfig();
+        validateConfig(this.appConfig);
     }
 
-    public AppConfig getConfig() {
+    public synchronized AppConfig getConfig() {
         return appConfig;
     }
 
-    public void updateConfig(AppConfig newConfig) {
+    public synchronized void updateConfig(AppConfig newConfig) {
+        validateConfig(newConfig);
         this.appConfig = newConfig;
-        validateConfig();
         try {
             objectMapper.writerWithDefaultPrettyPrinter().writeValue(new File(configFilePath), newConfig);
         } catch (IOException e) {
@@ -52,8 +49,8 @@ public class ConfigService {
         }
     }
 
-    private void validateConfig() {
-        double totalPercent = appConfig.allocations().stream()
+    private void validateConfig(AppConfig config) {
+        double totalPercent = config.allocations().stream()
                 .mapToDouble(Allocation::targetPercent)
                 .sum();
 
@@ -65,7 +62,7 @@ public class ConfigService {
                     "Total allocation percentage must be exactly 100%. Current sum: " + totalPercent);
         }
 
-        boolean hasUsd = appConfig.allocations().stream()
+        boolean hasUsd = config.allocations().stream()
                 .anyMatch(a -> "USD".equalsIgnoreCase(a.symbol()));
 
         if (!hasUsd) {

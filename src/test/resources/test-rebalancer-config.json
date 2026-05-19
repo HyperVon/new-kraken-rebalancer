@@ -1,0 +1,28 @@
+{
+    "kraken": {
+        "apiKey": "test-api-key",
+        "privateKey": "dGVzdC1wcml2YXRlLWtleQ=="
+    },
+    "settings": {
+        "loopDelaySeconds": 60,
+        "deviationTriggerPercent": 5.0,
+        "dustThresholdUSD": 5.0,
+        "dryRun": true,
+        "fiatMaxDrawdown": 0.0,
+        "fiatDeploymentExponent": 1.0
+    },
+    "allocations": [
+        {
+            "symbol": "BTC",
+            "targetPercent": 50
+        },
+        {
+            "symbol": "ETH",
+            "targetPercent": 45
+        },
+        {
+            "symbol": "USD",
+            "targetPercent": 5
+        }
+    ]
+}
