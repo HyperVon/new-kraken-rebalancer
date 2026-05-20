@@ -16,6 +16,8 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 @Service
@@ -36,44 +38,34 @@ public class PortfolioManager {
         this.portfolioStatsRepository = portfolioStatsRepository;
     }
 
-    private volatile boolean running = true;
+    private ScheduledExecutorService scheduler;
 
-    public void stopRebalancingLoop() {
-        this.running = false;
+    public synchronized void stopRebalancingLoop() {
+        if (scheduler != null && !scheduler.isShutdown()) {
+            scheduler.shutdownNow();
+        }
     }
 
-    public void startRebalancingLoop() {
-        // Reset running state in case it was stopped previously (e.g. in tests)
-        this.running = true;
+    public synchronized void startRebalancingLoop() {
+        if (scheduler != null && !scheduler.isShutdown()) {
+            scheduler.shutdownNow();
+        }
+        scheduler = Executors.newSingleThreadScheduledExecutor();
+        scheduler.execute(this::runCycleAndScheduleNext);
+    }
 
-        Settings settings = configService.getConfig().settings();
-        log.info("Starting Rebalancing Loop. Interval: {}s, DryRun: {}", settings.loopDelaySeconds(),
-                settings.dryRun());
-
-        while (running) {
-            try {
-                // Fetch latest settings for this iteration
-                Settings currentSettings = configService.getConfig().settings();
-                performRebalanceCycle();
-
-                // Sleep with check
-                for (int i = 0; i < currentSettings.loopDelaySeconds(); i++) {
-                    if (!running)
-                        break;
-                    TimeUnit.SECONDS.sleep(1);
-                }
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                log.warn("Rebalancing loop interrupted.");
-                break;
-            } catch (Exception e) {
-                log.error("Error in rebalancing cycle", e);
-                // Don't crash the loop on API errors, just wait and retry
-                try {
-                    TimeUnit.SECONDS.sleep(10);
-                } catch (InterruptedException ex) {
-                    Thread.currentThread().interrupt();
-                }
+    private void runCycleAndScheduleNext() {
+        if (scheduler.isShutdown()) return;
+        try {
+            Settings settings = configService.getConfig().settings();
+            log.info("Starting Rebalance Cycle. DryRun: {}", settings.dryRun());
+            performRebalanceCycle();
+        } catch (Exception e) {
+            log.error("Error in rebalancing cycle", e);
+        } finally {
+            if (!scheduler.isShutdown()) {
+                Settings settings = configService.getConfig().settings();
+                scheduler.schedule(this::runCycleAndScheduleNext, settings.loopDelaySeconds(), TimeUnit.SECONDS);
             }
         }
     }
@@ -130,6 +122,9 @@ public class PortfolioManager {
 
     private Map<String, Double> fetchBalances() {
         Map<String, Double> balances = krakenService.getBalances();
+        if (balances == null) {
+            balances = new HashMap<>();
+        }
         log.info("Available Balance Keys: {}", balances.keySet());
         return balances;
     }
@@ -346,6 +341,7 @@ public class PortfolioManager {
         BigDecimal projectedCash = currentUsdBal;
 
         // Execute SELLS first to generate liquidity
+        boolean executedSells = false;
         for (Map.Entry<String, BigDecimal> entry : sellOrders.entrySet()) {
             String symbol = entry.getKey();
             BigDecimal usdToSell = entry.getValue();
@@ -363,7 +359,25 @@ public class PortfolioManager {
             BigDecimal volume = usdToSell.divide(price, 8, RoundingMode.HALF_UP);
             krakenService.executeOrder(symbol + "USD", "market", "sell", volume.doubleValue());
             projectedCash = projectedCash.add(usdToSell);
+            executedSells = true;
             actionLog.add("SELL " + symbol + " Volume: " + volume + " Value: $" + usdToSell);
+        }
+
+        BigDecimal actualCash = projectedCash;
+        if (executedSells && !s.dryRun()) {
+            try {
+                TimeUnit.MILLISECONDS.sleep(100); // Wait for orders to settle (use 100ms for faster tests)
+                Map<String, Double> updatedBalances = krakenService.getBalances();
+                if (updatedBalances != null && !updatedBalances.isEmpty()) {
+                    Double usdBalance = resolveBalance("USD", updatedBalances);
+                    if (usdBalance != null && usdBalance > 0) {
+                        actualCash = BigDecimal.valueOf(usdBalance);
+                        log.info("Updated USD balance after sells: ${}", actualCash);
+                    }
+                }
+            } catch (Exception e) {
+                log.warn("Failed to fetch updated USD balance before buys, using previous snapshot.", e);
+            }
         }
 
         // Execute BUYS second, verifying cash sufficiency
@@ -371,9 +385,9 @@ public class PortfolioManager {
             String symbol = entry.getKey();
             BigDecimal cost = entry.getValue();
 
-            if (cost.compareTo(projectedCash) > 0) {
-                log.warn("Not enough cash to buy {}. Cost: {}, Cash: {}. Reducing.", symbol, cost, projectedCash);
-                cost = projectedCash.multiply(BigDecimal.valueOf(0.99)); // Safety buffer
+            if (cost.compareTo(actualCash) > 0) {
+                log.warn("Not enough cash to buy {}. Cost: {}, Cash: {}. Reducing.", symbol, cost, actualCash);
+                cost = actualCash.multiply(BigDecimal.valueOf(0.99)); // Safety buffer
             }
 
             if (cost.compareTo(BigDecimal.valueOf(s.dustThresholdUSD())) < 0) {
@@ -388,7 +402,7 @@ public class PortfolioManager {
 
             BigDecimal volume = cost.divide(price, 8, RoundingMode.HALF_UP);
             krakenService.executeOrder(symbol + "USD", "market", "buy", volume.doubleValue());
-            projectedCash = projectedCash.subtract(cost);
+            actualCash = actualCash.subtract(cost);
             actionLog.add("BUY " + symbol + " Volume: " + volume + " Cost: $" + cost);
         }
     }
