@@ -136,4 +136,100 @@ class PortfolioManagerOrderExecutionTest {
                 // Verify NO Sell
                 verify(krakenService, never()).executeOrder(eq("AUSD"), anyString(), eq("sell"), anyDouble());
         }
+
+        @Test
+        void testExecution_CashVerificationFallback() {
+                // Setup
+                KrakenService krakenService = mock(KrakenService.class);
+                ConfigService configService = mock(ConfigService.class);
+                TradeHistoryService tradeHistoryService = mock(TradeHistoryService.class);
+
+                com.gemini.krakenbot.repository.PortfolioStatsRepository repo = org.mockito.Mockito
+                                .mock(com.gemini.krakenbot.repository.PortfolioStatsRepository.class);
+                org.mockito.Mockito.when(repo.load())
+                                .thenReturn(new com.gemini.krakenbot.model.PortfolioStats(java.math.BigDecimal.ZERO));
+                PortfolioManager portfolioManager = new PortfolioManager(krakenService, configService,
+                                tradeHistoryService, repo);
+
+                List<Allocation> allAllocations = List.of(new Allocation("A", 10.0), new Allocation("B", 90.0));
+                AppConfig mockConfig = mock(AppConfig.class);
+                Settings mockSettings = mock(Settings.class);
+                when(mockConfig.allocations()).thenReturn(allAllocations);
+                when(mockConfig.settings()).thenReturn(mockSettings);
+                when(mockSettings.deviationTriggerPercent()).thenReturn(1.0);
+                when(mockSettings.dustThresholdUSD()).thenReturn(1.0);
+                when(configService.getConfig()).thenReturn(mockConfig);
+
+                // Initial balances
+                Map<String, Double> initialBalances = new HashMap<>();
+                initialBalances.put("A", 5.0); // $500
+                initialBalances.put("B", 50.0); // $500
+                initialBalances.put("USD", 0.0);
+
+                // First call: returns initial balances
+                // Second call (verification): throws Exception
+                when(krakenService.getBalances())
+                    .thenReturn(initialBalances)
+                    .thenThrow(new RuntimeException("API Error during verification!"));
+
+                Map<String, Double> prices = new HashMap<>();
+                prices.put("AUSD", 100.0);
+                prices.put("BUSD", 10.0);
+                when(krakenService.getTickerPrices(anyString())).thenReturn(prices);
+
+                // Execute
+                ReflectionTestUtils.invokeMethod(portfolioManager, "performRebalanceCycle");
+
+                // It should fall back to projectedCash ($400 from sell A) and buy B
+                verify(krakenService).executeOrder(eq("AUSD"), eq("market"), eq("sell"), anyDouble());
+                verify(krakenService).executeOrder(eq("BUSD"), eq("market"), eq("buy"), anyDouble());
+        }
+
+        @Test
+        void testExecution_PartialFillCashUpdate() {
+                KrakenService krakenService = mock(KrakenService.class);
+                ConfigService configService = mock(ConfigService.class);
+                TradeHistoryService tradeHistoryService = mock(TradeHistoryService.class);
+
+                com.gemini.krakenbot.repository.PortfolioStatsRepository repo = org.mockito.Mockito
+                                .mock(com.gemini.krakenbot.repository.PortfolioStatsRepository.class);
+                org.mockito.Mockito.when(repo.load())
+                                .thenReturn(new com.gemini.krakenbot.model.PortfolioStats(java.math.BigDecimal.ZERO));
+                PortfolioManager portfolioManager = new PortfolioManager(krakenService, configService,
+                                tradeHistoryService, repo);
+
+                List<Allocation> allAllocations = List.of(new Allocation("A", 10.0), new Allocation("B", 90.0));
+                AppConfig mockConfig = mock(AppConfig.class);
+                Settings mockSettings = mock(Settings.class);
+                when(mockConfig.allocations()).thenReturn(allAllocations);
+                when(mockConfig.settings()).thenReturn(mockSettings);
+                when(mockSettings.deviationTriggerPercent()).thenReturn(1.0);
+                when(mockSettings.dustThresholdUSD()).thenReturn(1.0);
+                when(configService.getConfig()).thenReturn(mockConfig);
+
+                Map<String, Double> initialBalances = new HashMap<>();
+                initialBalances.put("A", 5.0); // $500 -> sell $400
+                initialBalances.put("B", 50.0); // $500 -> buy $400
+                initialBalances.put("USD", 0.0);
+
+                Map<String, Double> updatedBalances = new HashMap<>();
+                updatedBalances.put("A", 2.0); // sold some
+                updatedBalances.put("B", 50.0); 
+                updatedBalances.put("USD", 200.0); // Only got $200! (Partial fill/slippage)
+
+                when(krakenService.getBalances())
+                    .thenReturn(initialBalances)
+                    .thenReturn(updatedBalances);
+
+                Map<String, Double> prices = new HashMap<>();
+                prices.put("AUSD", 100.0);
+                prices.put("BUSD", 10.0);
+                when(krakenService.getTickerPrices(anyString())).thenReturn(prices);
+
+                ReflectionTestUtils.invokeMethod(portfolioManager, "performRebalanceCycle");
+
+                verify(krakenService).executeOrder(eq("AUSD"), eq("market"), eq("sell"), anyDouble());
+                // It should buy B but only with $200 cash * 0.99 = $198. $198 / 10 = 19.8 units
+                verify(krakenService).executeOrder(eq("BUSD"), eq("market"), eq("buy"), doubleThat(v -> Math.abs(v - 19.8) < 0.1));
+        }
 }

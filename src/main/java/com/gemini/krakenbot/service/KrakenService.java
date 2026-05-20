@@ -17,6 +17,7 @@ import java.util.Base64;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.stream.Collectors;
+import java.util.concurrent.atomic.AtomicLong;
 
 @Service
 public class KrakenService {
@@ -28,6 +29,7 @@ public class KrakenService {
     private final RestClient restClient;
     private final ConfigService configService;
     private final ObjectMapper objectMapper;
+    private final AtomicLong nonceGenerator = new AtomicLong(System.currentTimeMillis() * 1000);
 
     public KrakenService(ConfigService configService, ObjectMapper objectMapper, RestClient.Builder restClientBuilder) {
         this.configService = configService;
@@ -102,7 +104,7 @@ public class KrakenService {
 
     @SuppressWarnings("null")
     private JsonNode queryPrivate(String path, Map<String, String> data) {
-        String nonce = String.valueOf(System.currentTimeMillis());
+        String nonce = String.valueOf(nonceGenerator.incrementAndGet());
         Map<String, String> payload = new HashMap<>(data);
         payload.put("nonce", nonce);
 

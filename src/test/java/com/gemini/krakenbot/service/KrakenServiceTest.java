@@ -12,7 +12,15 @@ import org.springframework.web.client.RestClient;
 
 import java.util.Base64;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -135,5 +143,34 @@ class KrakenServiceTest {
                 .andRespond(withSuccess("{broken-json", MediaType.APPLICATION_JSON));
 
         assertThrows(RuntimeException.class, () -> krakenService.getBalances());
+    }
+
+    @Test
+    void testNonceGeneration_Concurrency() throws InterruptedException {
+        AtomicLong nonceGen = (AtomicLong) ReflectionTestUtils.getField(krakenService, "nonceGenerator");
+        assertNotNull(nonceGen);
+
+        int numThreads = 10;
+        int incrementsPerThread = 1000;
+        Set<Long> generatedNonces = Collections.synchronizedSet(new HashSet<>());
+        ExecutorService executor = Executors.newFixedThreadPool(numThreads);
+        CountDownLatch latch = new CountDownLatch(numThreads);
+
+        for (int i = 0; i < numThreads; i++) {
+            executor.submit(() -> {
+                try {
+                    for (int j = 0; j < incrementsPerThread; j++) {
+                        generatedNonces.add(nonceGen.incrementAndGet());
+                    }
+                } finally {
+                    latch.countDown();
+                }
+            });
+        }
+
+        assertTrue(latch.await(5, TimeUnit.SECONDS));
+        executor.shutdown();
+
+        assertEquals(numThreads * incrementsPerThread, generatedNonces.size(), "Nonces should be strictly unique across concurrent threads");
     }
 }
