@@ -25,10 +25,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Root Documentation**: Refreshed root `README.md` and `frontend/README.md` to reflect TypeScript, Tailwind CSS v4, correct file paths, and accurate test counts.
 - **Updated Screenshots**: Captured and saved high-quality screenshots showing the updated dashboard layout (`docs/images/dashboard.png`, `docs/images/dashboard-bottom.png`, `docs/images/settings.png`).
 
-### Removed
-- **Deployed Metric**: Removed the confusing "Deployed" fiat deployment percentage metric from the Total Portfolio status card.
-- **Unused Configurations**: Removed the temporary chrome-profile directory and manually generated lock files from the development workspace.
-
 ---
 
 ## [1.1.0] - 2026-05-20
