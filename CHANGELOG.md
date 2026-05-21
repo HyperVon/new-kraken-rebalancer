@@ -7,7 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [Unreleased] - large_refactor Branch
+## [Unreleased]
+
+---
+
+## [1.2.0] - 2026-05-21
 
 ### Added
 - **TypeScript Migration**: Fully migrated the frontend codebase from JavaScript (`.jsx`, `.js`) to TypeScript (`.tsx`, `.ts`). Added `tsconfig.json`, `tsconfig.app.json`, and `tsconfig.node.json` configurations.
