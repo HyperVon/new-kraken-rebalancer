@@ -181,7 +181,7 @@ The backend starts on port **8080** and begins the rebalancing loop immediately.
 
 ```bash
 cd frontend
-npm install   # First time only
+npm install   # First time setup, or after pulling updates to install new dependencies
 npm run dev
 ```
 
