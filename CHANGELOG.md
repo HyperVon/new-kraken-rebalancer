@@ -1,0 +1,53 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+---
+
+## [Unreleased] - large_refactor Branch
+
+### Added
+- **TypeScript Migration**: Fully migrated the frontend codebase from JavaScript (`.jsx`, `.js`) to TypeScript (`.tsx`, `.ts`). Added `tsconfig.json`, `tsconfig.app.json`, and `tsconfig.node.json` configurations.
+- **Tailwind CSS v4 Integration**: Replaced the custom Vanilla CSS styles with Tailwind CSS v4, utilizing a modern, utility-first approach for styling and theming.
+- **Vitest Suite**: Implemented 97 frontend unit tests covering all major UI components (`Dashboard.tsx`, `Settings.tsx`, `StatusCard.tsx`, `AllocationChart.tsx`, `TradeHistory.tsx`).
+- **Comprehensive CI Workflow**: Updated the GitHub Actions CI (`.github/workflows/maven.yml`) to build, lint, and run tests for both the Java Spring Boot backend and the React frontend.
+
+### Changed
+- **Asset Performance Sorting**: Changed default table sorting in the Asset Performance table to sort by **Dev %** in **ascending** order (`deviationPercent` asc).
+- **Layout Spacing & Padding**: Redesigned dashboard cards and table spacing to eliminate wasted layout space, prevent horizontal and vertical scrollbars, and ensure no table rows are cut off.
+- **Root Documentation**: Refreshed root `README.md` and `frontend/README.md` to reflect TypeScript, Tailwind CSS v4, correct file paths, and accurate test counts.
+- **Updated Screenshots**: Captured and saved high-quality screenshots showing the updated dashboard layout (`docs/images/dashboard.png`, `docs/images/dashboard-bottom.png`, `docs/images/settings.png`).
+
+### Removed
+- **Deployed Metric**: Removed the confusing "Deployed" fiat deployment percentage metric from the Total Portfolio status card.
+- **Unused Configurations**: Removed the temporary chrome-profile directory and manually generated lock files from the development workspace.
+
+---
+
+## [1.1.0] - 2026-05-20
+
+### Added
+- **Lombok Integration**: Adopted Lombok across backend models and services to reduce boilerplate.
+- **95%+ Test Coverage Enforcement**: Expanded unit tests to **78 backend tests** with JaCoCo to strictly enforce code quality and cover edge cases (e.g., Doge symbol mapping, 0% allocations, deposit distribution, and ATH tracking).
+- **Security Hardening**: Created a `FrontendConfig` DTO to prevent leaking private backend credentials or raw API key structures to the frontend client.
+
+### Changed
+- **Backend Architecture Refactoring**: Restructured backend services into interface-implementation patterns, moving core logic out of controllers and into dedicated packages (`com.gemini.krakenbot.service.impl` and `com.gemini.krakenbot.repository.impl`).
+- **Dependency Upgrades**: Upgraded Spring Boot version from `4.0.1` to `4.0.6`.
+- **Imports Cleanup**: Removed redundant Fully Qualified Names (FQNs) in backend code and replaced them with standard imports.
+
+---
+
+## [1.0.0] - 2026-05-18
+
+### Added
+- **Core Rebalancing Loop**: Continuous monitoring cycle with automated, market-order execution when deviation thresholds are met.
+- **Dynamic Drawdown-Based Fiat Deployment**: Automatic, curve-configured deployment of USD cash into crypto assets during market pullbacks using ATH tracking.
+- **Intelligent Fiat Correction**: Deposit and withdrawal recognition, distributing USD surpluses/deficits to counter-balancing assets without triggering full portfolio sells.
+- **Interactive UI Dashboard**: React-based dashboard featuring real-time overview cards, dynamic Chart.js allocation treemaps, asset tables, and BUY/SELL badge history.
+- **Web UI Configuration Editor**: Live hot-reload settings configuration page with allocation target safety validation (must sum to 100%).
+- **Dry Run Safety Mode**: Order placement safety valve to simulate portfolio rebalancing cycles without risking live capital.
+- **Project Infrastructure**: Setup initial MIT License, Security Policy, contributing guidelines, Pull Request template, issue templates, and basic GitHub Actions Java CI build file.
