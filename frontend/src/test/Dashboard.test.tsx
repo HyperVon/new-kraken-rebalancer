@@ -76,7 +76,7 @@ describe('Dashboard', () => {
     const setupFetchMocks = () => {
         global.fetch.mockImplementation((url) => {
             if (url === '/api/status') {
-                return Promise.resolve({ ok: true, json: () => Promise.resolve({ currentStatus: mockStatus }) });
+                return Promise.resolve({ ok: true, json: () => Promise.resolve(mockStatus) });
             }
             if (url === '/api/history') {
                 return Promise.resolve({ ok: true, json: () => Promise.resolve(mockHistory) });
@@ -258,7 +258,7 @@ describe('Dashboard', () => {
         const staleStatus = { ...mockStatus, timestamp: staleTime };
         global.fetch.mockImplementation((url) => {
             if (url === '/api/status') {
-                return Promise.resolve({ ok: true, json: () => Promise.resolve({ currentStatus: staleStatus }) });
+                return Promise.resolve({ ok: true, json: () => Promise.resolve(staleStatus) });
             }
             if (url === '/api/history') {
                 return Promise.resolve({ ok: true, json: () => Promise.resolve(mockHistory) });
@@ -286,7 +286,7 @@ describe('Dashboard', () => {
         };
         global.fetch.mockImplementation((url) => {
             if (url === '/api/status') {
-                return Promise.resolve({ ok: true, json: () => Promise.resolve({ currentStatus: zeroDevStatus }) });
+                return Promise.resolve({ ok: true, json: () => Promise.resolve(zeroDevStatus) });
             }
             if (url === '/api/history') {
                 return Promise.resolve({ ok: true, json: () => Promise.resolve(mockHistory) });
@@ -313,7 +313,7 @@ describe('Dashboard', () => {
         };
         global.fetch.mockImplementation((url) => {
             if (url === '/api/status') {
-                return Promise.resolve({ ok: true, json: () => Promise.resolve({ currentStatus: noUsdStatus }) });
+                return Promise.resolve({ ok: true, json: () => Promise.resolve(noUsdStatus) });
             }
             if (url === '/api/history') {
                 return Promise.resolve({ ok: true, json: () => Promise.resolve(mockHistory) });
@@ -385,7 +385,7 @@ describe('Dashboard', () => {
         };
         global.fetch.mockImplementation((url) => {
             if (url === '/api/status') {
-                return Promise.resolve({ ok: true, json: () => Promise.resolve({ currentStatus: equalStatus }) });
+                return Promise.resolve({ ok: true, json: () => Promise.resolve(equalStatus) });
             }
             if (url === '/api/history') {
                 return Promise.resolve({ ok: true, json: () => Promise.resolve(mockHistory) });
@@ -412,7 +412,7 @@ describe('Dashboard', () => {
         };
         global.fetch.mockImplementation((url) => {
             if (url === '/api/status') {
-                return Promise.resolve({ ok: true, json: () => Promise.resolve({ currentStatus: statusWithEffective }) });
+                return Promise.resolve({ ok: true, json: () => Promise.resolve(statusWithEffective) });
             }
             if (url === '/api/history') {
                 return Promise.resolve({ ok: true, json: () => Promise.resolve(mockHistory) });
@@ -439,7 +439,7 @@ describe('Dashboard', () => {
         };
         global.fetch.mockImplementation((url) => {
             if (url === '/api/status') {
-                return Promise.resolve({ ok: true, json: () => Promise.resolve({ currentStatus: statusWithNegDev }) });
+                return Promise.resolve({ ok: true, json: () => Promise.resolve(statusWithNegDev) });
             }
             if (url === '/api/history') {
                 return Promise.resolve({ ok: true, json: () => Promise.resolve(mockHistory) });
@@ -464,7 +464,7 @@ describe('Dashboard', () => {
         };
         global.fetch.mockImplementation((url) => {
             if (url === '/api/status') {
-                return Promise.resolve({ ok: true, json: () => Promise.resolve({ currentStatus: statusWithPosDev }) });
+                return Promise.resolve({ ok: true, json: () => Promise.resolve(statusWithPosDev) });
             }
             if (url === '/api/history') {
                 return Promise.resolve({ ok: true, json: () => Promise.resolve(mockHistory) });
@@ -479,11 +479,11 @@ describe('Dashboard', () => {
         });
     });
 
-    it('displays no drawdown when drawdownPercent is 0', async () => {
+    it('displays drawdownPercent of 0.00% when drawdown is 0', async () => {
         const statusNoDraw = { ...mockStatus, drawdownPercent: 0 };
         global.fetch.mockImplementation((url) => {
             if (url === '/api/status') {
-                return Promise.resolve({ ok: true, json: () => Promise.resolve({ currentStatus: statusNoDraw }) });
+                return Promise.resolve({ ok: true, json: () => Promise.resolve(statusNoDraw) });
             }
             if (url === '/api/history') {
                 return Promise.resolve({ ok: true, json: () => Promise.resolve(mockHistory) });
@@ -494,8 +494,9 @@ describe('Dashboard', () => {
         await act(async () => { renderWithProviders(<Dashboard />); });
         await waitFor(() => {
             const card = screen.getByTestId('status-card-total-portfolio');
-            // No subValue should be rendered when drawdown is 0
-            expect(card.querySelector('[data-testid="card-subvalue"]')).not.toBeInTheDocument();
+            // subValue is always rendered for visual balance; it should display 0.00% drawdown
+            expect(card.querySelector('[data-testid="card-subvalue"]')).toBeInTheDocument();
+            expect(card.querySelector('[data-testid="card-subvalue"]')?.textContent).toContain('Drawdown: 0.00%');
         });
     });
 });

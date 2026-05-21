@@ -50,7 +50,7 @@ describe('StatusCard', () => {
             <StatusCard title="Portfolio" value="$10,000" subValue={null} />
         );
 
-        const subValueContainers = container.querySelectorAll('.mt-4.pt-4.border-t');
+        const subValueContainers = container.querySelectorAll('.subvalue-container');
         expect(subValueContainers).toHaveLength(0);
     });
 
@@ -59,7 +59,7 @@ describe('StatusCard', () => {
             <StatusCard title="Portfolio" value="$10,000" />
         );
 
-        const subValueContainers = container.querySelectorAll('.mt-4.pt-4.border-t');
+        const subValueContainers = container.querySelectorAll('.subvalue-container');
         expect(subValueContainers).toHaveLength(0);
     });
 

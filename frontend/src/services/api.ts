@@ -1,4 +1,4 @@
-import { PortfolioSnapshot, StatusResponse, Settings, AppConfig, KrakenCredentials } from '@/types';
+import { PortfolioSnapshot, FrontendConfig } from '@/types';
 
 class ApiError extends Error {
     constructor(public status: number, message: string) {
@@ -15,18 +15,19 @@ async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
 }
 
 export const apiService = {
-    getStatus: (): Promise<StatusResponse> => fetchJson('/api/status'),
+    getStatus: (): Promise<PortfolioSnapshot> => fetchJson('/api/status'),
     
     getHistory: (): Promise<PortfolioSnapshot[]> => fetchJson('/api/history'),
     
-    getSettings: (): Promise<Settings> => fetchJson('/api/config'),
+    getSettings: (): Promise<FrontendConfig> => fetchJson('/api/config'),
     
-    updateSettings: (settings: Settings): Promise<void> => 
+    updateSettings: (config: FrontendConfig): Promise<FrontendConfig> => 
         fetchJson('/api/config', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify(settings)
+            body: JSON.stringify(config)
         })
 };
+

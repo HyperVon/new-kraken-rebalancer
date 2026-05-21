@@ -4,12 +4,12 @@ import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { ArrowLeft, Save, Plus, Trash2, ShieldAlert } from 'lucide-react';
 import { apiService } from '@/services/api';
-import { Settings as SettingsType } from '@/types';
+import { FrontendConfig, Settings as SettingsType, Allocation } from '@/types';
 
 const Settings: React.FC = () => {
     const navigate = useNavigate();
     const queryClient = useQueryClient();
-    const [config, setConfig] = useState<SettingsType | null>(null);
+    const [config, setConfig] = useState<FrontendConfig | null>(null);
     const [newSymbol, setNewSymbol] = useState('');
 
     const { data: remoteConfig, isLoading, error: fetchError } = useQuery({
@@ -56,58 +56,73 @@ const Settings: React.FC = () => {
     if (fetchError) return <div className="text-rose-500 p-8">Error: {(fetchError as Error).message}</div>;
     if (!config) return null;
 
-    const handleSettingChange = (field: string, value: any) => {
-        setConfig(prev => ({
-            ...prev!,
-            settings: {
-                ...(prev as any).settings,
-                [field]: value
-            }
-        } as SettingsType));
+    const handleSettingChange = (field: keyof SettingsType, value: any) => {
+        setConfig(prev => {
+            if (!prev) return null;
+            return {
+                ...prev,
+                settings: {
+                    ...prev.settings,
+                    [field]: value
+                }
+            };
+        });
     };
 
-    const handleAllocationChange = (index: number, field: string, value: string) => {
-        const newAllocations = [...(config as any).allocations];
+    const handleAllocationChange = (index: number, field: keyof Allocation, value: string) => {
+        if (!config) return;
+        const newAllocations = [...config.allocations];
         newAllocations[index] = {
             ...newAllocations[index],
             [field]: field === 'targetPercent' ? parseFloat(value) || 0 : value
-        };
-        setConfig(prev => ({ ...prev!, allocations: newAllocations } as unknown as SettingsType));
+        } as any;
+        setConfig(prev => {
+            if (!prev) return null;
+            return { ...prev, allocations: newAllocations };
+        });
     };
 
     const addAllocation = () => {
-        if (!newSymbol) return;
-        const allocations = (config as any).allocations || [];
-        if (allocations.some((a: any) => a.symbol?.toUpperCase() === newSymbol.toUpperCase())) {
+        if (!newSymbol || !config) return;
+        const allocations = config.allocations || [];
+        if (allocations.some((a) => a.symbol?.toUpperCase() === newSymbol.toUpperCase())) {
             toast.error('Symbol already exists');
             return;
         }
 
-        setConfig(prev => ({
-            ...prev!,
-            allocations: [
-                ...(prev as any).allocations,
-                { symbol: newSymbol.toUpperCase(), targetPercent: 0 }
-            ]
-        } as unknown as SettingsType));
+        setConfig(prev => {
+            if (!prev) return null;
+            return {
+                ...prev,
+                allocations: [
+                    ...prev.allocations,
+                    { symbol: newSymbol.toUpperCase(), targetPercent: 0 }
+                ]
+            };
+        });
         setNewSymbol('');
     };
 
     const removeAllocation = (index: number) => {
-        const newAllocations = ((config as any).allocations || []).filter((_: any, i: number) => i !== index);
-        setConfig(prev => ({ ...prev!, allocations: newAllocations } as unknown as SettingsType));
+        if (!config) return;
+        const newAllocations = (config.allocations || []).filter((_, i) => i !== index);
+        setConfig(prev => {
+            if (!prev) return null;
+            return { ...prev, allocations: newAllocations };
+        });
     };
 
     const saveConfig = () => {
-        const allocations = (config as any).allocations || [];
-        const totalPct = allocations.reduce((sum: number, a: any) => sum + (a.targetPercent || 0), 0);
+        if (!config) return;
+        const allocations = config.allocations || [];
+        const totalPct = allocations.reduce((sum, a) => sum + (a.targetPercent || 0), 0);
         if (Math.abs(totalPct - 100) > 0.01) {
             /* v8 ignore start -- defensive: button is disabled when total ≠ 100% */
             toast.error(`Total allocation must be 100%. Current: ${totalPct.toFixed(2)}%`);
             return;
             /* v8 ignore stop */
         }
-        if (!allocations.some((a: any) => a.symbol === 'USD')) {
+        if (!allocations.some((a) => a.symbol === 'USD')) {
             toast.error('Must include USD allocation.');
             return;
         }
@@ -115,10 +130,10 @@ const Settings: React.FC = () => {
         mutation.mutate(config);
     };
 
-    const allocations = (config as any).allocations || [];
-    const totalAllocated = allocations.reduce((sum: number, a: any) => sum + (a.targetPercent || 0), 0);
+    const allocations = config.allocations || [];
+    const totalAllocated = allocations.reduce((sum, a) => sum + (a.targetPercent || 0), 0);
     const isValidTotal = Math.abs(totalAllocated - 100) <= 0.01;
-    const settings = (config as any).settings || {};
+    const settings = config.settings || {} as SettingsType;
 
     return (
         <div className="max-w-4xl mx-auto p-4 md:p-8 space-y-8">
