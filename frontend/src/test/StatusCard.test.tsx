@@ -80,4 +80,10 @@ describe('StatusCard', () => {
         expect(screen.getByText('Target: 12.00%')).toBeInTheDocument();
         expect(screen.getByText('Dev: -1.50%')).toBeInTheDocument();
     });
+
+    it('renders the icon when provided', () => {
+        const testIcon = <span data-testid="test-icon">icon-element</span>;
+        render(<StatusCard title="Portfolio" value="$10,000" icon={testIcon} />);
+        expect(screen.getByTestId('test-icon')).toBeInTheDocument();
+    });
 });
