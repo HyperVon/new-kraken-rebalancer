@@ -21,7 +21,7 @@ A React-based dashboard for monitoring and configuring the Kraken Rebalancer.
 ## Development
 
 ```bash
-npm install   # First time only
+npm install   # First time setup, or after pulling updates to install new dependencies
 npm run dev   # Starts dev server on http://localhost:5173
 ```
 
