@@ -1,4 +1,5 @@
 package com.gemini.krakenbot.service;
+import com.gemini.krakenbot.service.impl.*;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.gemini.krakenbot.config.AppConfig;
@@ -47,7 +48,7 @@ class KrakenServiceTest {
 
         RestClient.Builder builder = RestClient.builder();
         mockServer = MockRestServiceServer.bindTo(builder).build();
-        krakenService = new KrakenService(configService, objectMapper, builder);
+        krakenService = new KrakenServiceImpl(configService, objectMapper, builder);
     }
 
     @Test
@@ -172,5 +173,72 @@ class KrakenServiceTest {
         executor.shutdown();
 
         assertEquals(numThreads * incrementsPerThread, generatedNonces.size(), "Nonces should be strictly unique across concurrent threads");
+    }
+
+    @Test
+    void queryPrivate_ApiKeyNull() {
+        ConfigService mockConfigService = mock(ConfigService.class);
+        AppConfig config = new AppConfig(new KrakenCredentials(null, "secret"), new Settings(60L, 2.0, 1.0, false, 0.0, 1.0), Collections.emptyList());
+        when(mockConfigService.getConfig()).thenReturn(config);
+        
+        KrakenService localService = new KrakenServiceImpl(mockConfigService, new ObjectMapper(), RestClient.builder());
+        
+        RuntimeException ex = assertThrows(RuntimeException.class, () -> localService.getBalances());
+        assertEquals("API Key is null", ex.getMessage());
+    }
+
+    @Test
+    void queryPublic_NullResponse() {
+        RestClient mockClient = mock(RestClient.class);
+        RestClient.RequestHeadersUriSpec getSpec = mock(RestClient.RequestHeadersUriSpec.class);
+        RestClient.RequestHeadersSpec uriSpec = mock(RestClient.RequestHeadersSpec.class);
+        RestClient.ResponseSpec responseSpec = mock(RestClient.ResponseSpec.class);
+        
+        when(mockClient.get()).thenReturn(getSpec);
+        when(getSpec.uri(anyString())).thenReturn(uriSpec);
+        when(uriSpec.retrieve()).thenReturn(responseSpec);
+        when(responseSpec.body(String.class)).thenReturn(null);
+        
+        KrakenServiceImpl localService = new KrakenServiceImpl(configService, new ObjectMapper(), RestClient.builder());
+        ReflectionTestUtils.setField(localService, "restClient", mockClient);
+        
+        Map<String, Double> prices = localService.getTickerPrices("BTCUSD");
+        assertTrue(prices.isEmpty());
+    }
+
+    @Test
+    void queryPrivate_NullResponse() {
+        RestClient mockClient = mock(RestClient.class);
+        RestClient.RequestBodyUriSpec postSpec = mock(RestClient.RequestBodyUriSpec.class);
+        RestClient.RequestBodySpec uriSpec = mock(RestClient.RequestBodySpec.class);
+        RestClient.ResponseSpec responseSpec = mock(RestClient.ResponseSpec.class);
+        
+        when(mockClient.post()).thenReturn(postSpec);
+        when(postSpec.uri(anyString())).thenReturn(uriSpec);
+        when(uriSpec.header(anyString(), anyString())).thenReturn(uriSpec);
+        when(uriSpec.body(anyString())).thenReturn(uriSpec);
+        when(uriSpec.retrieve()).thenReturn(responseSpec);
+        when(responseSpec.body(String.class)).thenReturn(null);
+        
+        KrakenServiceImpl localService = new KrakenServiceImpl(configService, new ObjectMapper(), RestClient.builder());
+        ReflectionTestUtils.setField(localService, "restClient", mockClient);
+        
+        Map<String, Double> balances = localService.getBalances();
+        assertTrue(balances.isEmpty());
+    }
+
+    @Test
+    void queryPrivate_InvalidPrivateKeyBase64() {
+        ConfigService mockConfigService = mock(ConfigService.class);
+        AppConfig config = new AppConfig(
+            new KrakenCredentials("apiKey", "invalid_base64_!@#$"), 
+            new Settings(60L, 2.0, 1.0, false, 0.0, 1.0), 
+            Collections.emptyList()
+        );
+        when(mockConfigService.getConfig()).thenReturn(config);
+        
+        KrakenService localService = new KrakenServiceImpl(mockConfigService, new ObjectMapper(), RestClient.builder());
+        
+        assertThrows(RuntimeException.class, () -> localService.getBalances());
     }
 }

@@ -14,25 +14,23 @@ describe('StatusCard', () => {
         render(<StatusCard title="Test" value="$100" />);
 
         const valueElement = screen.getByText('$100');
-        expect(valueElement).toHaveClass('stat-value');
-        expect(valueElement).not.toHaveClass('text-success');
-        expect(valueElement).not.toHaveClass('text-danger');
+        expect(valueElement).toHaveClass('from-white');
+        expect(valueElement).not.toHaveClass('from-emerald-400');
+        expect(valueElement).not.toHaveClass('from-rose-400');
     });
 
     it('applies the success type class when type is success', () => {
         render(<StatusCard title="Cash" value="$5,000" type="success" />);
 
         const valueElement = screen.getByText('$5,000');
-        expect(valueElement).toHaveClass('stat-value');
-        expect(valueElement).toHaveClass('text-success');
+        expect(valueElement).toHaveClass('from-emerald-400');
     });
 
     it('applies the danger type class when type is danger', () => {
         render(<StatusCard title="Loss" value="-$500" type="danger" />);
 
         const valueElement = screen.getByText('-$500');
-        expect(valueElement).toHaveClass('stat-value');
-        expect(valueElement).toHaveClass('text-danger');
+        expect(valueElement).toHaveClass('from-rose-400');
     });
 
     it('renders the subValue when provided', () => {
@@ -52,8 +50,8 @@ describe('StatusCard', () => {
             <StatusCard title="Portfolio" value="$10,000" subValue={null} />
         );
 
-        const statLabels = container.querySelectorAll('.stat-label');
-        expect(statLabels).toHaveLength(0);
+        const subValueContainers = container.querySelectorAll('.mt-4.pt-4.border-t');
+        expect(subValueContainers).toHaveLength(0);
     });
 
     it('does not render subValue container when subValue is undefined', () => {
@@ -61,8 +59,8 @@ describe('StatusCard', () => {
             <StatusCard title="Portfolio" value="$10,000" />
         );
 
-        const statLabels = container.querySelectorAll('.stat-label');
-        expect(statLabels).toHaveLength(0);
+        const subValueContainers = container.querySelectorAll('.mt-4.pt-4.border-t');
+        expect(subValueContainers).toHaveLength(0);
     });
 
     it('renders complex JSX subValue correctly', () => {

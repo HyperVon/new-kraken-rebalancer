@@ -1,8 +1,15 @@
 package com.gemini.krakenbot.service;
 
+import java.math.BigDecimal;
+
+import com.gemini.krakenbot.model.PortfolioStats;
+import com.gemini.krakenbot.service.impl.*;
+
 import com.gemini.krakenbot.config.AppConfig;
 import com.gemini.krakenbot.config.KrakenCredentials;
 import com.gemini.krakenbot.config.Settings;
+import com.gemini.krakenbot.repository.PortfolioStatsRepository;
+import com.gemini.krakenbot.repository.impl.PortfolioStatsRepositoryImpl;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -10,9 +17,6 @@ import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 
 import java.util.Collections;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
 
 import static org.mockito.Mockito.*;
 
@@ -25,78 +29,69 @@ class PortfolioManagerLoopTest {
     @Mock
     private TradeHistoryService tradeHistoryService;
 
-    private PortfolioManager portfolioManager;
+    private PortfolioManagerImpl portfolioManager;
 
     @BeforeEach
     void setUp() {
         MockitoAnnotations.openMocks(this);
-        com.gemini.krakenbot.repository.PortfolioStatsRepository repo = org.mockito.Mockito
-                .mock(com.gemini.krakenbot.repository.PortfolioStatsRepository.class);
-        when(repo.load()).thenReturn(new com.gemini.krakenbot.model.PortfolioStats(java.math.BigDecimal.ZERO));
-        portfolioManager = new PortfolioManager(krakenService, configService, tradeHistoryService, repo);
+        PortfolioStatsRepository repo = mock(PortfolioStatsRepositoryImpl.class);
+        when(repo.load()).thenReturn(new PortfolioStats(BigDecimal.ZERO));
+        portfolioManager = new PortfolioManagerImpl(krakenService, configService, tradeHistoryService, repo);
     }
 
     @Test
-    @Timeout(10)
-    void startRebalancingLoop_RunsAndStops() throws InterruptedException {
-        // Setup config with short interval
-        Settings settings = new Settings(1L, 2.0, 1.0, true, 0.0, 1.0);
+    void startRebalancingLoop_RunsWhenEnabled() {
+        // Setup config with 0 interval to bypass delay check
+        Settings settings = new Settings(0L, 2.0, 1.0, true, 0.0, 1.0);
+        AppConfig config = new AppConfig(new KrakenCredentials("k", "s"), settings, Collections.emptyList());
+        when(configService.getConfig()).thenReturn(config);
+        when(krakenService.getBalances()).thenReturn(Collections.emptyMap());
+
+        // Start the loop (sets isRunning = true)
+        portfolioManager.startRebalancingLoop();
+
+        // Simulate scheduled tick
+        portfolioManager.checkAndRunCycle();
+
+        // Verify it ran
+        verify(krakenService, times(1)).getBalances();
+    }
+
+    @Test
+    void stopRebalancingLoop_StopsExecution() {
+        // Setup config with 0 interval
+        Settings settings = new Settings(0L, 2.0, 1.0, true, 0.0, 1.0);
         AppConfig config = new AppConfig(new KrakenCredentials("k", "s"), settings, Collections.emptyList());
         when(configService.getConfig()).thenReturn(config);
 
-        when(krakenService.getBalances()).thenReturn(Collections.emptyMap());
-
-        // Run in thread
-        Future<?> future = Executors.newSingleThreadExecutor().submit(() -> {
-            portfolioManager.startRebalancingLoop();
-        });
-
-        // Let it run for a bit
-        TimeUnit.SECONDS.sleep(2);
-
-        // Stop
+        // Start and then Stop immediately
+        portfolioManager.startRebalancingLoop();
         portfolioManager.stopRebalancingLoop();
 
-        // Wait for finish
-        while (!future.isDone()) {
-            TimeUnit.MILLISECONDS.sleep(100);
-        }
+        // Simulate scheduled tick
+        portfolioManager.checkAndRunCycle();
 
-        // Verify it ran at least once
-        verify(krakenService, atLeastOnce()).getBalances();
+        // Verify it DID NOT run
+        verify(krakenService, never()).getBalances();
     }
 
     @Test
-    @Timeout(10)
-    void startRebalancingLoop_HandlesException() throws InterruptedException {
-        // Setup config
-        Settings settings = new Settings(1L, 2.0, 1.0, true, 0.0, 1.0);
+    void checkAndRunCycle_HandlesExceptionGracefully() {
+        // Setup config with 0 interval
+        Settings settings = new Settings(0L, 2.0, 1.0, true, 0.0, 1.0);
         AppConfig config = new AppConfig(new KrakenCredentials("k", "s"), settings, Collections.emptyList());
         when(configService.getConfig()).thenReturn(config);
 
         // Force exception
         when(krakenService.getBalances()).thenThrow(new RuntimeException("API Error!"));
 
-        // Run in thread
-        Future<?> future = Executors.newSingleThreadExecutor().submit(() -> {
-            portfolioManager.startRebalancingLoop();
-        });
+        // Start
+        portfolioManager.startRebalancingLoop();
 
-        // Let it run and hit exception
-        TimeUnit.SECONDS.sleep(1);
+        // Simulate tick - Should not throw exception out of method
+        portfolioManager.checkAndRunCycle();
 
-        // Stop
-        portfolioManager.stopRebalancingLoop();
-        future.cancel(true); // Interrupt the 10s sleep
-
-        // Wait for finish
-        try {
-            future.get(2, TimeUnit.SECONDS);
-        } catch (Exception e) {
-            // Expected to be cancelled or return null
-        }
-
-        // Verify it retried (atLeastOnce implies it ran, exception didn't crash thread)
-        verify(krakenService, atLeastOnce()).getBalances();
+        // Verify it hit the method
+        verify(krakenService, times(1)).getBalances();
     }
 }

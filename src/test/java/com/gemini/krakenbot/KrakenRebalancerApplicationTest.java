@@ -4,6 +4,7 @@ import com.gemini.krakenbot.service.PortfolioManager;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 @SpringBootTest(properties = {
         "app.config-file=src/test/resources/test-rebalancer-config.json",
@@ -35,5 +36,24 @@ class KrakenRebalancerApplicationTest {
         } catch (Exception e) {
             // Ignore startup errors if any (e.g. port collision)
         }
+    }
+
+    @Test
+    void testCommandLineRunner() throws Exception {
+        KrakenRebalancerApplication app = new KrakenRebalancerApplication();
+        PortfolioManager mockPm = org.mockito.Mockito.mock(PortfolioManager.class);
+        
+        // Test enableRebalancing = true
+        app.run(mockPm, true).run(new String[]{});
+        org.mockito.Mockito.verify(mockPm).startRebalancingLoop();
+        
+        // Test enableRebalancing = false
+        org.mockito.Mockito.reset(mockPm);
+        app.run(mockPm, false).run(new String[]{});
+        org.mockito.Mockito.verify(mockPm, org.mockito.Mockito.never()).startRebalancingLoop();
+        
+        // Call other bean methods for complete coverage
+        assertNotNull(app.objectMapper());
+        assertNotNull(app.restClientBuilder());
     }
 }

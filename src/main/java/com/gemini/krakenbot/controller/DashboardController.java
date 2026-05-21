@@ -1,5 +1,8 @@
 package com.gemini.krakenbot.controller;
 
+import lombok.RequiredArgsConstructor;
+
+
 import com.gemini.krakenbot.config.AppConfig;
 import com.gemini.krakenbot.config.KrakenCredentials;
 import com.gemini.krakenbot.model.PortfolioSnapshot;
@@ -15,15 +18,14 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/api")
+
+@RequiredArgsConstructor
 public class DashboardController {
 
     private final TradeHistoryService tradeHistoryService;
     private final ConfigService configService;
 
-    public DashboardController(TradeHistoryService tradeHistoryService, ConfigService configService) {
-        this.tradeHistoryService = tradeHistoryService;
-        this.configService = configService;
-    }
+    
 
     @GetMapping("/status")
     public PortfolioSnapshot getStatus() {

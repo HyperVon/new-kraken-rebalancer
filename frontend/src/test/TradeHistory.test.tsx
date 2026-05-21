@@ -7,13 +7,13 @@ describe('TradeHistory', () => {
         render(<TradeHistory history={null} />);
 
         expect(screen.getByText('Recent Activity')).toBeInTheDocument();
-        expect(screen.getByText('No history available.')).toBeInTheDocument();
+        expect(screen.getByText('No trading history available.')).toBeInTheDocument();
     });
 
     it('renders empty state when history is an empty array', () => {
         render(<TradeHistory history={[]} />);
 
-        expect(screen.getByText('No history available.')).toBeInTheDocument();
+        expect(screen.getByText('No trading history available.')).toBeInTheDocument();
     });
 
     it('renders a BUY action with the correct badge', () => {

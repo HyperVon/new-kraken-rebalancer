@@ -1,5 +1,10 @@
 package com.gemini.krakenbot.service;
 
+import java.math.BigDecimal;
+
+import com.gemini.krakenbot.model.PortfolioStats;
+import com.gemini.krakenbot.service.impl.*;
+
 import com.gemini.krakenbot.config.Allocation;
 import com.gemini.krakenbot.config.AppConfig;
 import com.gemini.krakenbot.config.Settings;
@@ -40,7 +45,7 @@ class PortfolioManagerDrawdownTest {
     private Settings settings;
 
     @InjectMocks
-    private PortfolioManager portfolioManager;
+    private PortfolioManagerImpl portfolioManager;
 
     @BeforeEach
     void setUp() {
