@@ -190,13 +190,13 @@ class KrakenServiceTest {
     @Test
     void queryPublic_NullResponse() {
         RestClient mockClient = mock(RestClient.class);
-        RestClient.RequestHeadersUriSpec getSpec = mock(RestClient.RequestHeadersUriSpec.class);
-        RestClient.RequestHeadersSpec uriSpec = mock(RestClient.RequestHeadersSpec.class);
+        RestClient.RequestHeadersUriSpec<?> getSpec = mock(RestClient.RequestHeadersUriSpec.class);
+        RestClient.RequestHeadersSpec<?> uriSpec = mock(RestClient.RequestHeadersSpec.class);
         RestClient.ResponseSpec responseSpec = mock(RestClient.ResponseSpec.class);
         
-        when(mockClient.get()).thenReturn(getSpec);
-        when(getSpec.uri(anyString())).thenReturn(uriSpec);
-        when(uriSpec.retrieve()).thenReturn(responseSpec);
+        doReturn(getSpec).when(mockClient).get();
+        doReturn(uriSpec).when(getSpec).uri(anyString());
+        doReturn(responseSpec).when(uriSpec).retrieve();
         when(responseSpec.body(String.class)).thenReturn(null);
         
         KrakenServiceImpl localService = new KrakenServiceImpl(configService, new ObjectMapper(), RestClient.builder());
