@@ -9,7 +9,7 @@ Thank you for your interest in contributing! This project is a production-grade 
 - Java 25+
 - Maven 3.8+
 - A Kraken account (for testing with real API — use **dry-run mode**)
-- Basic familiarity with Spring Boot and Kotlin
+- Basic familiarity with Spring Boot, Java, and React (TypeScript)
 
 ### Local Setup
 
@@ -58,7 +58,7 @@ Thank you for your interest in contributing! This project is a production-grade 
 
 ## Code Guidelines
 
-- **Language:** Kotlin preferred for new code; Java acceptable
+- **Language:** Java 25 for backend development; TypeScript and React for frontend development
 - **Style:** Follow existing code formatting conventions
 - **Safety first:** Any change touching order execution must be tested with `dryRun: true`
 - **No credentials:** Never include API keys, secrets, or real account data in commits

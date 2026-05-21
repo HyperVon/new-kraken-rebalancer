@@ -1,5 +1,8 @@
 package com.gemini.krakenbot.service;
 
+import java.math.BigDecimal;
+import com.gemini.krakenbot.service.impl.*;
+
 import com.gemini.krakenbot.model.PortfolioSnapshot;
 import com.gemini.krakenbot.repository.TradeRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -26,7 +29,7 @@ class TradeHistoryServiceTest {
     @BeforeEach
     void setUp() {
         MockitoAnnotations.openMocks(this);
-        tradeHistoryService = new TradeHistoryService(repository);
+        tradeHistoryService = new TradeHistoryServiceImpl(repository);
     }
 
     @Test
@@ -67,5 +70,16 @@ class TradeHistoryServiceTest {
 
         assertEquals(50, tradeHistoryService.getHistory().size());
         verify(repository, atLeastOnce()).save(anyList());
+    }
+    @Test
+    void init_HandlesNullLoaded() {
+        when(repository.load()).thenReturn(null);
+        tradeHistoryService.init();
+        assertTrue(tradeHistoryService.getHistory().isEmpty());
+    }
+
+    @Test
+    void getLatestSnapshot_ReturnsNullWhenEmpty() {
+        assertNull(tradeHistoryService.getLatestSnapshot());
     }
 }

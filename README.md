@@ -13,7 +13,7 @@ A production-grade, autonomous portfolio rebalancing engine for the [Kraken](htt
 | Layer | Technology |
 |---|---|
 | **Backend** | Java 25, Spring Boot 4, Lombok, Jackson |
-| **Frontend** | React 19, Vite 7, Chart.js |
+| **Frontend** | React 19 (TypeScript), Vite 7, Tailwind CSS v4, Chart.js |
 | **API** | Kraken REST API with HMAC-SHA512 authentication |
 | **Testing** | JUnit 5, Mockito, JaCoCo (95%+ coverage enforced) |
 | **Build** | Maven, npm |
@@ -133,12 +133,12 @@ See **[ALGORITHM.md](ALGORITHM.md)** for a detailed breakdown of the rebalancing
 │   ├── model/                            # Domain: PortfolioSnapshot, PortfolioStats
 │   ├── repository/                       # Persistence: FileTradeRepository, PortfolioStatsRepository
 │   └── service/                          # Core logic: PortfolioManager, KrakenService, ConfigService
-├── src/test/java/                        # 54 unit tests (95%+ coverage)
+├── src/test/java/                        # 78 unit tests (95%+ coverage)
 ├── frontend/
 │   └── src/
 │       ├── components/                   # Dashboard, Settings, AllocationChart, TradeHistory, StatusCard
 │       ├── index.css                     # Dark theme design system
-│       └── App.jsx                       # Root component
+│       └── App.tsx                       # Root component
 ├── ALGORITHM.md                          # Detailed algorithm documentation
 ├── rebalancer-config-template.json       # Configuration template
 └── pom.xml                              # Maven build with JaCoCo coverage enforcement
@@ -221,7 +221,7 @@ The project enforces **95% instruction coverage** via JaCoCo. All tests are beha
 mvn clean install
 ```
 
-**54 tests** across:
+**78 tests** across:
 - `PortfolioManagerComprehensiveTest` — full rebalance cycle scenarios
 - `PortfolioManagerFiatCorrectionTest` — deposit/withdrawal distribution logic
 - `PortfolioManagerDrawdownTest` — ATH tracking and dynamic deployment

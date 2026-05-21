@@ -1,8 +1,14 @@
 package com.gemini.krakenbot.service;
 
+import java.math.BigDecimal;
+
+import com.gemini.krakenbot.model.PortfolioStats;
+import com.gemini.krakenbot.service.impl.*;
+
 import com.gemini.krakenbot.config.Allocation;
 import com.gemini.krakenbot.config.AppConfig;
 import com.gemini.krakenbot.config.Settings;
+import com.gemini.krakenbot.repository.PortfolioStatsRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -36,10 +42,10 @@ class PortfolioManagerComprehensiveTest {
         private Settings settings;
 
         @Mock
-        private com.gemini.krakenbot.repository.PortfolioStatsRepository portfolioStatsRepository;
+        private PortfolioStatsRepository portfolioStatsRepository;
 
         @InjectMocks
-        private PortfolioManager portfolioManager;
+        private PortfolioManagerImpl portfolioManager;
 
         @BeforeEach
         void setUp() {
@@ -55,7 +61,7 @@ class PortfolioManagerComprehensiveTest {
                 when(settings.deviationTriggerPercent()).thenReturn(2.0); // 2% Trigger
                 when(settings.dustThresholdUSD()).thenReturn(1.0); // $1 Min Order
                 when(portfolioStatsRepository.load())
-                                .thenReturn(new com.gemini.krakenbot.model.PortfolioStats(java.math.BigDecimal.ZERO));
+                                .thenReturn(new PortfolioStats(BigDecimal.ZERO));
         }
 
         // ==========================================

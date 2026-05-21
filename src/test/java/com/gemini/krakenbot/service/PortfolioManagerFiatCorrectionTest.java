@@ -1,7 +1,17 @@
 package com.gemini.krakenbot.service;
 
+import static org.mockito.Mockito.*;
+import java.util.ArrayList;
+
+import java.math.BigDecimal;
+
+import com.gemini.krakenbot.model.PortfolioStats;
+import com.gemini.krakenbot.service.impl.*;
+
 import com.gemini.krakenbot.config.Allocation;
 import com.gemini.krakenbot.config.AppConfig;
+import com.gemini.krakenbot.repository.PortfolioStatsRepository;
+import com.gemini.krakenbot.repository.impl.PortfolioStatsRepositoryImpl;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -12,8 +22,6 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
 
 class PortfolioManagerFiatCorrectionTest {
 
@@ -24,11 +32,10 @@ class PortfolioManagerFiatCorrectionTest {
                 ConfigService configService = mock(ConfigService.class);
                 TradeHistoryService tradeHistoryService = mock(TradeHistoryService.class);
 
-                com.gemini.krakenbot.repository.PortfolioStatsRepository repo = org.mockito.Mockito
-                                .mock(com.gemini.krakenbot.repository.PortfolioStatsRepository.class);
-                org.mockito.Mockito.when(repo.load())
-                                .thenReturn(new com.gemini.krakenbot.model.PortfolioStats(BigDecimal.ZERO));
-                PortfolioManager portfolioManager = new PortfolioManager(krakenService, configService,
+                PortfolioStatsRepository repo = mock(PortfolioStatsRepositoryImpl.class);
+                when(repo.load())
+                                .thenReturn(new PortfolioStats(BigDecimal.ZERO));
+                PortfolioManagerImpl portfolioManager = new PortfolioManagerImpl(krakenService, configService,
                                 tradeHistoryService, repo);
 
                 // Config Mock
@@ -55,7 +62,7 @@ class PortfolioManagerFiatCorrectionTest {
 
                 // Invoke private method
                 ReflectionTestUtils.invokeMethod(portfolioManager, "distributeFiatCorrection",
-                                usdDev, allDevs, buyOrders, sellOrders, new java.util.ArrayList<String>());
+                                usdDev, allDevs, buyOrders, sellOrders, new ArrayList<String>());
 
                 // Verify
                 // Expect Buy for B
@@ -75,11 +82,10 @@ class PortfolioManagerFiatCorrectionTest {
                 ConfigService configService = mock(ConfigService.class);
                 TradeHistoryService tradeHistoryService = mock(TradeHistoryService.class);
 
-                com.gemini.krakenbot.repository.PortfolioStatsRepository repo = org.mockito.Mockito
-                                .mock(com.gemini.krakenbot.repository.PortfolioStatsRepository.class);
-                org.mockito.Mockito.when(repo.load())
-                                .thenReturn(new com.gemini.krakenbot.model.PortfolioStats(BigDecimal.ZERO));
-                PortfolioManager portfolioManager = new PortfolioManager(krakenService, configService,
+                PortfolioStatsRepository repo = mock(PortfolioStatsRepositoryImpl.class);
+                when(repo.load())
+                                .thenReturn(new PortfolioStats(BigDecimal.ZERO));
+                PortfolioManagerImpl portfolioManager = new PortfolioManagerImpl(krakenService, configService,
                                 tradeHistoryService, repo);
 
                 List<Allocation> allAllocations = List.of(new Allocation("A", 50.0), new Allocation("B", 50.0));
@@ -100,7 +106,7 @@ class PortfolioManagerFiatCorrectionTest {
 
                 // Invoke private method
                 ReflectionTestUtils.invokeMethod(portfolioManager, "distributeFiatCorrection",
-                                usdDev, allDevs, buyOrders, sellOrders, new java.util.ArrayList<String>());
+                                usdDev, allDevs, buyOrders, sellOrders, new ArrayList<String>());
 
                 // Verify
                 // Expect Sell for A
@@ -120,11 +126,10 @@ class PortfolioManagerFiatCorrectionTest {
                 ConfigService configService = mock(ConfigService.class);
                 TradeHistoryService tradeHistoryService = mock(TradeHistoryService.class);
 
-                com.gemini.krakenbot.repository.PortfolioStatsRepository repo = org.mockito.Mockito
-                                .mock(com.gemini.krakenbot.repository.PortfolioStatsRepository.class);
-                org.mockito.Mockito.when(repo.load())
-                                .thenReturn(new com.gemini.krakenbot.model.PortfolioStats(BigDecimal.ZERO));
-                PortfolioManager portfolioManager = new PortfolioManager(krakenService, configService,
+                PortfolioStatsRepository repo = mock(PortfolioStatsRepositoryImpl.class);
+                when(repo.load())
+                                .thenReturn(new PortfolioStats(BigDecimal.ZERO));
+                PortfolioManagerImpl portfolioManager = new PortfolioManagerImpl(krakenService, configService,
                                 tradeHistoryService, repo);
 
                 // Allocations (targets don't matter for this logic anymore, but needed for
@@ -153,7 +158,7 @@ class PortfolioManagerFiatCorrectionTest {
 
                 // Invoke
                 ReflectionTestUtils.invokeMethod(portfolioManager, "distributeFiatCorrection",
-                                usdDev, allDevs, buyOrders, sellOrders, new java.util.ArrayList<String>());
+                                usdDev, allDevs, buyOrders, sellOrders, new ArrayList<String>());
 
                 // Verify Total Weight = 200 + 50 = 250
                 // A Share = (200 / 250) * 100 = 80

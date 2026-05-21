@@ -25,16 +25,16 @@ vi.mock('chart.js', () => ({
 }));
 
 describe('AllocationChart', () => {
-    it('renders "No data" when assets is null', () => {
+    it('renders "No Asset Data Available" when assets is null', () => {
         render(<AllocationChart assets={null} />);
 
-        expect(screen.getByText('No data')).toBeInTheDocument();
+        expect(screen.getByText('No asset data available.')).toBeInTheDocument();
     });
 
-    it('renders "No data" when assets is an empty object', () => {
+    it('renders "No Asset Data Available" when assets is an empty object', () => {
         render(<AllocationChart assets={{}} />);
 
-        expect(screen.getByText('No data')).toBeInTheDocument();
+        expect(screen.getByText('No asset data available.')).toBeInTheDocument();
     });
 
     it('renders the chart with correct title', () => {
@@ -101,5 +101,34 @@ describe('AllocationChart', () => {
 
         expect(screen.getByTestId('mock-bar-chart')).toBeInTheDocument();
         expect(screen.getByTestId('chart-label-BTC')).toBeInTheDocument();
+    });
+
+    it('renders chart when assets is an array', () => {
+        const assets = [
+            { symbol: 'BTC', valueUSD: 50000 },
+            { symbol: 'ETH', valueUSD: 10000 },
+        ];
+
+        render(<AllocationChart assets={assets} />);
+
+        expect(screen.getByTestId('mock-bar-chart')).toBeInTheDocument();
+        expect(screen.getByTestId('chart-label-BTC')).toBeInTheDocument();
+        expect(screen.getByTestId('chart-label-ETH')).toBeInTheDocument();
+    });
+});
+
+describe('AllocationChart helpers', () => {
+    it('formatTooltipLabel formats currency correctly', async () => {
+        const { formatTooltipLabel } = await import('../components/AllocationChart');
+        expect(formatTooltipLabel({ raw: 50000 })).toBe('$50,000.00');
+        expect(formatTooltipLabel({ raw: 0 })).toBe('$0.00');
+        expect(formatTooltipLabel({ raw: 1234.56 })).toBe('$1,234.56');
+    });
+
+    it('formatTickLabel prepends dollar sign', async () => {
+        const { formatTickLabel } = await import('../components/AllocationChart');
+        expect(formatTickLabel(1000)).toBe('$1000');
+        expect(formatTickLabel(0)).toBe('$0');
+        expect(formatTickLabel('500')).toBe('$500');
     });
 });

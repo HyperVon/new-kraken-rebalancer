@@ -1,4 +1,5 @@
 package com.gemini.krakenbot.service;
+import com.gemini.krakenbot.service.impl.*;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.gemini.krakenbot.config.Allocation;
@@ -36,7 +37,7 @@ class ConfigServiceTest {
         // Write initial valid config
         createValidConfig(tempFile);
 
-        configService = new ConfigService(objectMapper, tempFile.getAbsolutePath());
+        configService = new ConfigServiceImpl(objectMapper, tempFile.getAbsolutePath());
     }
 
     private void createValidConfig(File file) throws IOException {
@@ -56,7 +57,7 @@ class ConfigServiceTest {
     @Test
     void loadConfig_FileNotFound() {
         File missingFile = new File(tempFile.getParent(), "missing.json");
-        configService = new ConfigService(objectMapper, missingFile.getAbsolutePath());
+        configService = new ConfigServiceImpl(objectMapper, missingFile.getAbsolutePath());
 
         RuntimeException ex = assertThrows(RuntimeException.class, () -> configService.loadConfig());
         assertTrue(ex.getMessage().contains("not found"));
@@ -113,7 +114,7 @@ class ConfigServiceTest {
         // we can just inject dependency and call updateConfig directly
         // But updateConfig calls validate, so config must be valid
 
-        configService = new ConfigService(mockMapper, tempFile.getAbsolutePath());
+        configService = new ConfigServiceImpl(mockMapper, tempFile.getAbsolutePath());
 
         // We don't need to loadConfig first if we just call updateConfig, BUT
         // updateConfig checks existing config?

@@ -1,8 +1,9 @@
-package com.gemini.krakenbot.repository;
+package com.gemini.krakenbot.repository.impl;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.gemini.krakenbot.model.PortfolioSnapshot;
+import com.gemini.krakenbot.repository.TradeRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Repository;
@@ -13,12 +14,12 @@ import java.util.ArrayList;
 import java.util.List;
 
 @Repository
-public class FileTradeRepository implements TradeRepository {
-    private static final Logger log = LoggerFactory.getLogger(FileTradeRepository.class);
+public class FileTradeRepositoryImpl implements TradeRepository {
+    private static final Logger log = LoggerFactory.getLogger(FileTradeRepositoryImpl.class);
     private static final String FILE_PATH = "trade-history.json";
     private final ObjectMapper objectMapper;
 
-    public FileTradeRepository(ObjectMapper objectMapper) {
+    public FileTradeRepositoryImpl(ObjectMapper objectMapper) {
         this.objectMapper = objectMapper;
     }
 
@@ -36,7 +37,7 @@ public class FileTradeRepository implements TradeRepository {
             return new ArrayList<>();
         }
         try {
-            return objectMapper.readValue(file, new TypeReference<List<PortfolioSnapshot>>() {
+            return objectMapper.readValue(file, new TypeReference<>() {
             });
         } catch (Exception e) {
             log.error("Failed to load trade history from {}. Starting with empty history.", FILE_PATH, e);

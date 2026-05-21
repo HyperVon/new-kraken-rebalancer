@@ -4,9 +4,9 @@ A React-based dashboard for monitoring and configuring the Kraken Rebalancer.
 
 ## Tech Stack
 
-- **React 19** with Vite 7 for fast HMR development
+- **React 19** with **TypeScript** and Vite 7 for type-safe, fast HMR development
 - **Chart.js** (via react-chartjs-2) for portfolio allocation visualization
-- **Vanilla CSS** with CSS custom properties for a consistent dark theme
+- **Tailwind CSS v4** for utility-first responsive styling and theme configuration
 
 ## Components
 

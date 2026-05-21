@@ -2,6 +2,7 @@ package com.gemini.krakenbot.repository;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.gemini.krakenbot.model.PortfolioStats;
+import com.gemini.krakenbot.repository.impl.PortfolioStatsRepositoryImpl;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -11,14 +12,14 @@ import java.math.BigDecimal;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-class PortfolioStatsRepositoryTest {
+class PortfolioStatsRepositoryImplTest {
 
     private PortfolioStatsRepository repository;
     private static final String TEST_FILE = "portfolio-stats.json";
 
     @BeforeEach
     void setUp() {
-        repository = new PortfolioStatsRepository(new ObjectMapper());
+        repository = new PortfolioStatsRepositoryImpl(new ObjectMapper());
     }
 
     @AfterEach
@@ -50,13 +51,24 @@ class PortfolioStatsRepositoryTest {
     }
 
     @Test
-    void save_HandlesExceptionGracefully() {
-        // Hard to mock file IO failure without specialized tools or tricky mocking of
-        // ObjectMapper writing to a specific file path hardcoded in the service.
-        // But we can verify basic getter/setter of the model here too just to be safe
-        // for coverage.
-        PortfolioStats stats = new PortfolioStats();
-        stats.setAllTimeHigh(BigDecimal.TEN);
-        assertEquals(BigDecimal.TEN, stats.getAllTimeHigh());
+    void load_HandlesIOException() throws Exception {
+        File file = new File(TEST_FILE);
+        java.nio.file.Files.writeString(file.toPath(), "{invalid json}");
+        
+        PortfolioStats stats = repository.load();
+        assertNotNull(stats);
+        assertEquals(BigDecimal.ZERO, stats.getAllTimeHigh());
+    }
+
+    @Test
+    void save_HandlesIOException() throws Exception {
+        ObjectMapper mockMapper = org.mockito.Mockito.mock(ObjectMapper.class);
+        org.mockito.Mockito.doThrow(new java.io.IOException("simulated error"))
+            .when(mockMapper).writeValue(org.mockito.ArgumentMatchers.any(File.class), org.mockito.ArgumentMatchers.any());
+
+        PortfolioStatsRepositoryImpl errRepository = new PortfolioStatsRepositoryImpl(mockMapper);
+        PortfolioStats stats = new PortfolioStats(BigDecimal.TEN);
+        
+        assertDoesNotThrow(() -> errRepository.save(stats));
     }
 }

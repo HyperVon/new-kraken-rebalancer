@@ -1,8 +1,15 @@
 package com.gemini.krakenbot.service;
 
+import java.math.BigDecimal;
+
+import com.gemini.krakenbot.model.PortfolioStats;
+import com.gemini.krakenbot.service.impl.*;
+
 import com.gemini.krakenbot.config.Allocation;
 import com.gemini.krakenbot.config.AppConfig;
 import com.gemini.krakenbot.config.Settings;
+import com.gemini.krakenbot.repository.PortfolioStatsRepository;
+import com.gemini.krakenbot.repository.impl.PortfolioStatsRepositoryImpl;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -24,11 +31,10 @@ class PortfolioManagerZeroAllocationTest {
         ConfigService configService = mock(ConfigService.class);
         TradeHistoryService tradeHistoryService = mock(TradeHistoryService.class);
 
-        com.gemini.krakenbot.repository.PortfolioStatsRepository repo = org.mockito.Mockito
-                .mock(com.gemini.krakenbot.repository.PortfolioStatsRepository.class);
-        org.mockito.Mockito.when(repo.load())
-                .thenReturn(new com.gemini.krakenbot.model.PortfolioStats(java.math.BigDecimal.ZERO));
-        PortfolioManager portfolioManager = new PortfolioManager(krakenService, configService, tradeHistoryService,
+        PortfolioStatsRepository repo = mock(PortfolioStatsRepositoryImpl.class);
+        when(repo.load())
+                .thenReturn(new PortfolioStats(BigDecimal.ZERO));
+        PortfolioManagerImpl portfolioManager = new PortfolioManagerImpl(krakenService, configService, tradeHistoryService,
                 repo);
 
         // Config Mock

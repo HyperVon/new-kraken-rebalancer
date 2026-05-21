@@ -2,6 +2,7 @@ package com.gemini.krakenbot.repository;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.gemini.krakenbot.model.PortfolioSnapshot;
+import com.gemini.krakenbot.repository.impl.FileTradeRepositoryImpl;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -23,7 +24,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class FileTradeRepositoryTest {
 
-    private FileTradeRepository repository;
+    private FileTradeRepositoryImpl repository;
     private ObjectMapper objectMapper;
     private static final String TEST_FILE = "trade-history.json";
 
@@ -31,7 +32,7 @@ class FileTradeRepositoryTest {
     void setUp() {
         objectMapper = new ObjectMapper();
         objectMapper.findAndRegisterModules(); // Support for JavaTimeModule/Instant
-        repository = new FileTradeRepository(objectMapper);
+        repository = new FileTradeRepositoryImpl(objectMapper);
     }
 
     @AfterEach
@@ -92,7 +93,7 @@ class FileTradeRepositoryTest {
         Mockito.doThrow(new IOException("Write failed")).when(mockMapper)
                 .writeValue(ArgumentMatchers.any(File.class), ArgumentMatchers.any());
 
-        FileTradeRepository repo = new FileTradeRepository(mockMapper);
+        FileTradeRepositoryImpl repo = new FileTradeRepositoryImpl(mockMapper);
 
         // Should log error but not throw
         assertDoesNotThrow(() -> repo.save(Collections.emptyList()));
