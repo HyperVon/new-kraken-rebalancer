@@ -6,6 +6,20 @@ import { ArrowLeft, Save, Plus, Trash2, ShieldAlert } from 'lucide-react';
 import { apiService } from '@/services/api';
 import { FrontendConfig, Settings as SettingsType, Allocation } from '@/types';
 
+const ALLOWED_SETTING_KEYS = new Set<keyof SettingsType>([
+    'loopDelaySeconds',
+    'deviationTriggerPercent',
+    'dustThresholdUSD',
+    'dryRun',
+    'fiatMaxDrawdown',
+    'fiatDeploymentExponent'
+]);
+
+const ALLOWED_ALLOCATION_KEYS = new Set<keyof Allocation>([
+    'symbol',
+    'targetPercent'
+]);
+
 const Settings: React.FC = () => {
     const navigate = useNavigate();
     const queryClient = useQueryClient();
@@ -57,6 +71,7 @@ const Settings: React.FC = () => {
     if (!config) return null;
 
     const handleSettingChange = (field: keyof SettingsType, value: any) => {
+        if (!ALLOWED_SETTING_KEYS.has(field)) return;
         setConfig(prev => {
             /* v8 ignore start */
             if (!prev) return null;
@@ -72,6 +87,7 @@ const Settings: React.FC = () => {
     };
 
     const handleAllocationChange = (index: number, field: keyof Allocation, value: string) => {
+        if (!ALLOWED_ALLOCATION_KEYS.has(field)) return;
         /* v8 ignore start */
         if (!config) return;
         /* v8 ignore stop */

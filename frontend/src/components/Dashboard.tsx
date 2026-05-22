@@ -8,6 +8,8 @@ import TradeHistory from './TradeHistory';
 import { apiService } from '@/services/api';
 import { AssetSnapshot } from '@/types';
 
+const ALLOWED_SORT_KEYS = new Set(['symbol', 'price', 'valueUSD', 'targetPercent', 'currentPercent', 'deviationPercent']);
+
 const Dashboard: React.FC = () => {
     const navigate = useNavigate();
     const [sortConfig, setSortConfig] = useState<{key: keyof AssetSnapshot | string, direction: 'asc' | 'desc'}>({ key: 'deviationPercent', direction: 'asc' });
@@ -113,10 +115,12 @@ const Dashboard: React.FC = () => {
         if (!status || !status.assets) return [];
         let assets = Object.values(status.assets).filter(a => a.symbol !== 'USD');
 
+        const sortKey = ALLOWED_SORT_KEYS.has(sortConfig.key) ? sortConfig.key : 'deviationPercent';
+
         /* v8 ignore start */
         return assets.sort((a: any, b: any) => {
-            if (a[sortConfig.key] < b[sortConfig.key]) return sortConfig.direction === 'asc' ? -1 : 1;
-            if (a[sortConfig.key] > b[sortConfig.key]) return sortConfig.direction === 'asc' ? 1 : -1;
+            if (a[sortKey] < b[sortKey]) return sortConfig.direction === 'asc' ? -1 : 1;
+            if (a[sortKey] > b[sortKey]) return sortConfig.direction === 'asc' ? 1 : -1;
             return 0;
         });
         /* v8 ignore stop */
