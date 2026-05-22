@@ -345,4 +345,43 @@ describe('Settings', () => {
         await user.type(btcInput, '0');
         expect(btcInput).toHaveValue(0);
     });
+
+    it('ignores invalid settings and allocation keys, and handles bounds check violations safely', async () => {
+        const user = userEvent.setup();
+        await renderSettings();
+
+        // 1. Verify invalid setting keys are ignored
+        const triggerSettingBtn = screen.getByTestId('test-trigger-setting');
+        await user.click(triggerSettingBtn);
+        // loopDelaySeconds should still be 60 (unchanged)
+        expect(screen.getByDisplayValue('60')).toBeInTheDocument();
+
+        // 2. Verify invalid allocation keys are ignored
+        const triggerAllocationBtn = screen.getByTestId('test-trigger-allocation');
+        await user.click(triggerAllocationBtn);
+        // USD targetPercent should still be 20
+        expect(screen.getByDisplayValue('20')).toBeInTheDocument();
+
+        // 3. Verify allocation bounds checks
+        // Low index bounds (< 0)
+        await user.click(screen.getByTestId('test-trigger-allocation-bounds-low'));
+        // High index bounds (>= length)
+        await user.click(screen.getByTestId('test-trigger-allocation-bounds-high'));
+        // Invalid index type (non-number)
+        await user.click(screen.getByTestId('test-trigger-allocation-bounds-type'));
+
+        // USD allocation should still be 20 (bounds checks prevented out-of-bounds mutation)
+        expect(screen.getByDisplayValue('20')).toBeInTheDocument();
+
+        // 4. Verify remove allocation bounds checks
+        // Low index bounds (< 0)
+        await user.click(screen.getByTestId('test-trigger-remove-bounds-low'));
+        // High index bounds (>= length)
+        await user.click(screen.getByTestId('test-trigger-remove-bounds-high'));
+        // Invalid index type (non-number)
+        await user.click(screen.getByTestId('test-trigger-remove-bounds-type'));
+
+        // All 4 default allocations should still be present
+        ['USD', 'BTC', 'ETH', 'SOL'].forEach(s => expect(screen.getByText(s)).toBeInTheDocument());
+    });
 });

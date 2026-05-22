@@ -8,6 +8,7 @@ import com.gemini.krakenbot.service.ConfigService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.gemini.krakenbot.config.Allocation;
 import com.gemini.krakenbot.config.AppConfig;
+import com.gemini.krakenbot.config.Settings;
 import jakarta.annotation.PostConstruct;
 
 import org.springframework.stereotype.Service;
@@ -53,6 +54,26 @@ public class ConfigServiceImpl implements ConfigService {
     }
 
     private void validateConfig(AppConfig config) {
+        if (config.settings() == null) {
+            throw new RuntimeException("Settings cannot be null.");
+        }
+        Settings settings = config.settings();
+        if (settings.loopDelaySeconds() <= 0) {
+            throw new RuntimeException("Loop delay must be a positive integer.");
+        }
+        if (settings.deviationTriggerPercent() < 0) {
+            throw new RuntimeException("Deviation trigger percent must be non-negative.");
+        }
+        if (settings.dustThresholdUSD() != null && settings.dustThresholdUSD() < 0) {
+            throw new RuntimeException("Dust threshold USD must be non-negative.");
+        }
+        if (settings.fiatMaxDrawdown() != null && (settings.fiatMaxDrawdown() < 0 || settings.fiatMaxDrawdown() > 100)) {
+            throw new RuntimeException("Fiat max drawdown must be between 0% and 100%.");
+        }
+        if (settings.fiatDeploymentExponent() != null && settings.fiatDeploymentExponent() <= 0) {
+            throw new RuntimeException("Fiat deployment exponent must be positive.");
+        }
+
         double totalPercent = config.allocations().stream()
                 .mapToDouble(Allocation::targetPercent)
                 .sum();

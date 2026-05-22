@@ -127,4 +127,56 @@ class ConfigServiceTest {
 
         assertThrows(RuntimeException.class, () -> configService.updateConfig(validConfig));
     }
+
+    @Test
+    void validateConfig_NullSettings() {
+        AppConfig invalidConfig = new AppConfig(new KrakenCredentials("k", "s"), null,
+                List.of(new Allocation("USD", 100.0)));
+        assertThrows(RuntimeException.class, () -> configService.updateConfig(invalidConfig));
+    }
+
+    @Test
+    void validateConfig_InvalidLoopDelay() {
+        Settings settings = new Settings(0L, 2.0, 1.0, true, 0.0, 1.0);
+        AppConfig invalidConfig = new AppConfig(new KrakenCredentials("k", "s"), settings,
+                List.of(new Allocation("USD", 100.0)));
+        assertThrows(RuntimeException.class, () -> configService.updateConfig(invalidConfig));
+    }
+
+    @Test
+    void validateConfig_InvalidDeviationTrigger() {
+        Settings settings = new Settings(60L, -1.0, 1.0, true, 0.0, 1.0);
+        AppConfig invalidConfig = new AppConfig(new KrakenCredentials("k", "s"), settings,
+                List.of(new Allocation("USD", 100.0)));
+        assertThrows(RuntimeException.class, () -> configService.updateConfig(invalidConfig));
+    }
+
+    @Test
+    void validateConfig_InvalidDustThreshold() {
+        Settings settings = new Settings(60L, 2.0, -0.5, true, 0.0, 1.0);
+        AppConfig invalidConfig = new AppConfig(new KrakenCredentials("k", "s"), settings,
+                List.of(new Allocation("USD", 100.0)));
+        assertThrows(RuntimeException.class, () -> configService.updateConfig(invalidConfig));
+    }
+
+    @Test
+    void validateConfig_InvalidFiatMaxDrawdown() {
+        Settings settings1 = new Settings(60L, 2.0, 1.0, true, -10.0, 1.0);
+        AppConfig invalidConfig1 = new AppConfig(new KrakenCredentials("k", "s"), settings1,
+                List.of(new Allocation("USD", 100.0)));
+        assertThrows(RuntimeException.class, () -> configService.updateConfig(invalidConfig1));
+
+        Settings settings2 = new Settings(60L, 2.0, 1.0, true, 101.0, 1.0);
+        AppConfig invalidConfig2 = new AppConfig(new KrakenCredentials("k", "s"), settings2,
+                List.of(new Allocation("USD", 100.0)));
+        assertThrows(RuntimeException.class, () -> configService.updateConfig(invalidConfig2));
+    }
+
+    @Test
+    void validateConfig_InvalidFiatDeploymentExponent() {
+        Settings settings = new Settings(60L, 2.0, 1.0, true, 0.0, 0.0);
+        AppConfig invalidConfig = new AppConfig(new KrakenCredentials("k", "s"), settings,
+                List.of(new Allocation("USD", 100.0)));
+        assertThrows(RuntimeException.class, () -> configService.updateConfig(invalidConfig));
+    }
 }

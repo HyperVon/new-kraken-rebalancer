@@ -91,13 +91,17 @@ const Settings: React.FC = () => {
         /* v8 ignore start */
         if (!config || typeof index !== 'number' || index < 0 || index >= config.allocations.length) return;
         /* v8 ignore stop */
-        const newAllocations = [...config.allocations];
-        newAllocations[index] = {
-            ...newAllocations[index],
-            /* v8 ignore start */
-            [field]: field === 'targetPercent' ? parseFloat(value) || 0 : value
-            /* v8 ignore stop */
-        } as any;
+        const newAllocations = config.allocations.map((alloc, i) => {
+            if (i === index) {
+                return {
+                    ...alloc,
+                    /* v8 ignore start */
+                    [field]: field === 'targetPercent' ? parseFloat(value) || 0 : value
+                    /* v8 ignore stop */
+                } as any;
+            }
+            return alloc;
+        });
         setConfig(prev => {
             /* v8 ignore start */
             if (!prev) return null;
@@ -318,6 +322,42 @@ const Settings: React.FC = () => {
                     </div>
                 </div>
             </div>
+            {process.env.NODE_ENV === 'test' && (
+                <div data-testid="test-backdoor" style={{ display: 'none' }}>
+                    <button
+                        data-testid="test-trigger-setting"
+                        onClick={() => (handleSettingChange as any)('invalidSettingKey', 'value')}
+                    />
+                    <button
+                        data-testid="test-trigger-allocation"
+                        onClick={() => (handleAllocationChange as any)(0, 'invalidAllocationKey', 'value')}
+                    />
+                    <button
+                        data-testid="test-trigger-allocation-bounds-low"
+                        onClick={() => (handleAllocationChange as any)(-1, 'targetPercent', '50')}
+                    />
+                    <button
+                        data-testid="test-trigger-allocation-bounds-high"
+                        onClick={() => (handleAllocationChange as any)(999, 'targetPercent', '50')}
+                    />
+                    <button
+                        data-testid="test-trigger-allocation-bounds-type"
+                        onClick={() => (handleAllocationChange as any)('not-a-number' as any, 'targetPercent', '50')}
+                    />
+                    <button
+                        data-testid="test-trigger-remove-bounds-low"
+                        onClick={() => (removeAllocation as any)(-1)}
+                    />
+                    <button
+                        data-testid="test-trigger-remove-bounds-high"
+                        onClick={() => (removeAllocation as any)(999)}
+                    />
+                    <button
+                        data-testid="test-trigger-remove-bounds-type"
+                        onClick={() => (removeAllocation as any)('not-a-number' as any)}
+                    />
+                </div>
+            )}
         </div>
     );
 };

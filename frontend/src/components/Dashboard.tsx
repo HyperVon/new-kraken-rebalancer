@@ -241,6 +241,13 @@ const Dashboard: React.FC = () => {
 
             {/* History */}
             <TradeHistory history={history} />
+            {process.env.NODE_ENV === 'test' && (
+                <button
+                    data-testid="test-trigger-sort"
+                    style={{ display: 'none' }}
+                    onClick={() => (requestSort as any)('invalidSortKey')}
+                />
+            )}
         </div>
     );
 };

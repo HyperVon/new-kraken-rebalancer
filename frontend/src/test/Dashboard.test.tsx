@@ -499,4 +499,23 @@ describe('Dashboard', () => {
             expect(card.querySelector('[data-testid="card-subvalue"]')?.textContent).toContain('Drawdown: 0.00%');
         });
     });
+
+    it('defaults sorting key to deviationPercent when an invalid sorting key is triggered', async () => {
+        setupFetchMocks();
+        const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+        await act(async () => { renderWithProviders(<Dashboard />); });
+        await waitFor(() => expect(screen.getByText('Asset Performance')).toBeInTheDocument());
+
+        // Click the hidden backdoor trigger sort button
+        const backdoorBtn = screen.getByTestId('test-trigger-sort');
+        await user.click(backdoorBtn);
+
+        // Assets should remain sorted by deviationPercent (default sort order)
+        // Since BTC deviation is 5% and ETH is -5%, under deviationPercent sorting:
+        // ETH (-5%) should be first, and BTC (5%) should be second.
+        const rows = screen.getAllByRole('row');
+        const dataCells = rows.slice(1).map(r => r.querySelector('td')?.textContent);
+        expect(dataCells[0]).toBe('ETH');
+        expect(dataCells[1]).toBe('BTC');
+    });
 });
