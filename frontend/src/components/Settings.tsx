@@ -89,7 +89,7 @@ const Settings: React.FC = () => {
     const handleAllocationChange = (index: number, field: keyof Allocation, value: string) => {
         if (!ALLOWED_ALLOCATION_KEYS.has(field)) return;
         /* v8 ignore start */
-        if (!config) return;
+        if (!config || typeof index !== 'number' || index < 0 || index >= config.allocations.length) return;
         /* v8 ignore stop */
         const newAllocations = [...config.allocations];
         newAllocations[index] = {
@@ -133,7 +133,7 @@ const Settings: React.FC = () => {
 
     const removeAllocation = (index: number) => {
         /* v8 ignore start */
-        if (!config) return;
+        if (!config || typeof index !== 'number' || index < 0 || index >= config.allocations.length) return;
         const newAllocations = (config.allocations || []).filter((_, i) => i !== index);
         /* v8 ignore stop */
         setConfig(prev => {
