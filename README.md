@@ -81,9 +81,8 @@ All configuration is managed through the web UI — loop interval, deviation tri
 ```mermaid
 graph LR
     subgraph Frontend["Frontend (React + Vite)"]
-        D[Dashboard] --> SC[StatusCards]
+        D[Dashboard] --> SC[StatusCard]
         D --> AC[AllocationChart]
-        D --> AP[AssetPerformance]
         D --> TH[TradeHistory]
         D --> S[Settings]
     end
