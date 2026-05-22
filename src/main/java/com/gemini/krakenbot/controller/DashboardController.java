@@ -18,14 +18,11 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/api")
-
 @RequiredArgsConstructor
 public class DashboardController {
 
     private final TradeHistoryService tradeHistoryService;
     private final ConfigService configService;
-
-    
 
     @GetMapping("/status")
     public PortfolioSnapshot getStatus() {

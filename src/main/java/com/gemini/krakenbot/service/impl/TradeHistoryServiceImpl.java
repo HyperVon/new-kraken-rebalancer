@@ -1,6 +1,5 @@
 package com.gemini.krakenbot.service.impl;
 
-
 import lombok.RequiredArgsConstructor;
 
 
@@ -16,7 +15,6 @@ import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 @Service
-
 @RequiredArgsConstructor
 public class TradeHistoryServiceImpl implements TradeHistoryService {
 

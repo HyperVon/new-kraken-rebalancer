@@ -28,8 +28,6 @@ import java.util.concurrent.atomic.AtomicLong;
 @Service
 @Slf4j
 public class KrakenServiceImpl implements KrakenService {
-
-    
     private static final String API_URL = "https://api.kraken.com";
     private static final String API_VERSION = "0";
 

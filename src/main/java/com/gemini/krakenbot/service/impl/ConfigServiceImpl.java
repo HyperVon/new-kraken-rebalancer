@@ -15,7 +15,6 @@ import java.io.File;
 import java.io.IOException;
 
 @Service
-
 public class ConfigServiceImpl implements ConfigService {
 
     private AppConfig appConfig;
@@ -27,8 +26,6 @@ public class ConfigServiceImpl implements ConfigService {
         this.objectMapper = objectMapper;
         this.configFilePath = configFilePath;
     }
-
-    
 
     @PostConstruct
     public void loadConfig() throws IOException {
