@@ -128,15 +128,19 @@ See **[ALGORITHM.md](ALGORITHM.md)** for a detailed breakdown of the rebalancing
 ```
 ├── src/main/java/com/gemini/krakenbot/
 │   ├── KrakenRebalancerApplication.java  # Entry point, Spring Boot config
-│   ├── config/                           # Records: AppConfig, Settings, Allocation, KrakenCredentials
-│   ├── controller/                       # REST API: DashboardController
+│   ├── config/                           # Records & Config: AppConfig, Settings, Allocation, KrakenCredentials, WebConfig
+│   ├── controller/                       # REST API: DashboardController, FrontendConfig
 │   ├── model/                            # Domain: PortfolioSnapshot, PortfolioStats
-│   ├── repository/                       # Persistence: FileTradeRepository, PortfolioStatsRepository
-│   └── service/                          # Core logic: PortfolioManager, KrakenService, ConfigService
+│   ├── repository/                       # Persistence interfaces: TradeRepository, PortfolioStatsRepository
+│   │   └── impl/                         # Implementations: FileTradeRepositoryImpl, PortfolioStatsRepositoryImpl
+│   └── service/                          # Core logic interfaces: PortfolioManager, KrakenService, ConfigService, TradeHistoryService
+│       └── impl/                         # Service implementations
 ├── src/test/java/                        # 78 unit tests (95%+ coverage)
 ├── frontend/
 │   └── src/
 │       ├── components/                   # Dashboard, Settings, AllocationChart, TradeHistory, StatusCard
+│       ├── services/                     # API client configurations
+│       ├── types/                        # TypeScript definitions
 │       ├── index.css                     # Dark theme design system
 │       └── App.tsx                       # Root component
 ├── ALGORITHM.md                          # Detailed algorithm documentation
