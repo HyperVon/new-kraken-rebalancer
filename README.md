@@ -138,8 +138,10 @@ See **[ALGORITHM.md](ALGORITHM.md)** for a detailed breakdown of the rebalancing
 ├── src/test/java/                        # 78 unit tests (95%+ coverage)
 ├── frontend/
 │   └── src/
+│       ├── assets/                       # Static assets (e.g., images, icons)
 │       ├── components/                   # Dashboard, Settings, AllocationChart, TradeHistory, StatusCard
 │       ├── services/                     # API client configurations
+│       ├── test/                         # Frontend unit and component tests
 │       ├── types/                        # TypeScript definitions
 │       ├── index.css                     # Dark theme design system
 │       └── App.tsx                       # Root component
