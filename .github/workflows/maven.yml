@@ -10,7 +10,7 @@ name: Java and React CI
 
 on:
   push:
-    branches: [ "main", "large_refactor" ]
+    branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
 
