@@ -1,12 +1,5 @@
 package com.gemini.krakenbot.service.impl;
 
-import com.gemini.krakenbot.service.ConfigService;
-import com.gemini.krakenbot.service.KrakenService;
-import com.gemini.krakenbot.service.PortfolioManager;
-import com.gemini.krakenbot.service.TradeHistoryService;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-
 
 import lombok.RequiredArgsConstructor;
 
@@ -44,9 +37,9 @@ public class TradeHistoryServiceImpl implements TradeHistoryService {
     }
 
     public void addSnapshot(PortfolioSnapshot snapshot) {
-        history.add(0, snapshot);
+        history.addFirst(snapshot);
         if (history.size() > MAX_HISTORY_SIZE) {
-            history.remove(history.size() - 1);
+            history.removeLast();
         }
         repository.save(new ArrayList<>(history));
     }
@@ -58,6 +51,6 @@ public class TradeHistoryServiceImpl implements TradeHistoryService {
     public PortfolioSnapshot getLatestSnapshot() {
         if (history.isEmpty())
             return null;
-        return history.get(0);
+        return history.getFirst();
     }
 }

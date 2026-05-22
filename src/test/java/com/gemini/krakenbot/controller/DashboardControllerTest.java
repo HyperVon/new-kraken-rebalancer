@@ -43,7 +43,7 @@ class DashboardControllerTest {
     @InjectMocks
     private DashboardController dashboardController;
 
-    private ObjectMapper objectMapper = new ObjectMapper();
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     @BeforeEach
     void setUp() {

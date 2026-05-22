@@ -15,6 +15,7 @@ class KrakenRebalancerApplicationTest {
     @MockitoBean
     private PortfolioManager portfolioManager;
 
+    @SuppressWarnings("EmptyMethod")
     @Test
     void contextLoads() {
     }
@@ -44,12 +45,12 @@ class KrakenRebalancerApplicationTest {
         PortfolioManager mockPm = org.mockito.Mockito.mock(PortfolioManager.class);
         
         // Test enableRebalancing = true
-        app.run(mockPm, true).run(new String[]{});
+        app.run(mockPm, true).run();
         org.mockito.Mockito.verify(mockPm).startRebalancingLoop();
         
         // Test enableRebalancing = false
         org.mockito.Mockito.reset(mockPm);
-        app.run(mockPm, false).run(new String[]{});
+        app.run(mockPm, false).run();
         org.mockito.Mockito.verify(mockPm, org.mockito.Mockito.never()).startRebalancingLoop();
         
         // Call other bean methods for complete coverage

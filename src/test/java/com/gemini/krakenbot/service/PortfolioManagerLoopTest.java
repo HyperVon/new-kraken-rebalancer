@@ -12,7 +12,6 @@ import com.gemini.krakenbot.repository.PortfolioStatsRepository;
 import com.gemini.krakenbot.repository.impl.PortfolioStatsRepositoryImpl;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.Timeout;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 

@@ -51,7 +51,7 @@ class ConfigServiceTest {
     void loadConfig_Success() throws IOException {
         configService.loadConfig();
         assertNotNull(configService.getConfig());
-        assertEquals("USD", configService.getConfig().allocations().get(0).symbol());
+        assertEquals("USD", configService.getConfig().allocations().getFirst().symbol());
     }
 
     @Test

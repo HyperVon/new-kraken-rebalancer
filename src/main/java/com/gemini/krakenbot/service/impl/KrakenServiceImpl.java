@@ -1,11 +1,6 @@
 package com.gemini.krakenbot.service.impl;
 
 import com.gemini.krakenbot.service.ConfigService;
-import com.gemini.krakenbot.service.KrakenService;
-import com.gemini.krakenbot.service.PortfolioManager;
-import com.gemini.krakenbot.service.TradeHistoryService;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 
 
 import lombok.extern.slf4j.Slf4j;

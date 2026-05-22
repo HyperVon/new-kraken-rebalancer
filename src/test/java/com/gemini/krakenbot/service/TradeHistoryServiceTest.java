@@ -1,6 +1,5 @@
 package com.gemini.krakenbot.service;
 
-import java.math.BigDecimal;
 import com.gemini.krakenbot.service.impl.*;
 
 import com.gemini.krakenbot.model.PortfolioSnapshot;

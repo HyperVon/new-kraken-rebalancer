@@ -238,7 +238,7 @@ const Settings: React.FC = () => {
                                     <input
                                         type="checkbox"
                                         className="peer appearance-none w-6 h-6 border-2 border-slate-600 rounded bg-slate-900/50 checked:bg-blue-500 checked:border-blue-500 transition-all cursor-pointer"
-                                        checked={!!settings.dryRun}
+                                        checked={settings.dryRun}
                                         onChange={(e) => handleSettingChange('dryRun', e.target.checked)}
                                     />
                                     <svg className="absolute w-4 h-4 text-white opacity-0 peer-checked:opacity-100 pointer-events-none transition-opacity" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>

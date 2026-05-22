@@ -3,8 +3,6 @@ package com.gemini.krakenbot.service;
 import static org.mockito.Mockito.*;
 import java.util.ArrayList;
 
-import java.math.BigDecimal;
-
 import com.gemini.krakenbot.model.PortfolioStats;
 import com.gemini.krakenbot.service.impl.*;
 

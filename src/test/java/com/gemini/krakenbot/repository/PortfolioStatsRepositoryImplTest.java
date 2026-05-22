@@ -26,6 +26,7 @@ class PortfolioStatsRepositoryImplTest {
     void tearDown() {
         File file = new File(TEST_FILE);
         if (file.exists()) {
+            //noinspection ResultOfMethodCallIgnored
             file.delete();
         }
     }
@@ -33,6 +34,7 @@ class PortfolioStatsRepositoryImplTest {
     @Test
     void load_ReturnsZeroWhenFileDoesNotExist() {
         // Ensure file is gone
+        //noinspection ResultOfMethodCallIgnored
         new File(TEST_FILE).delete();
 
         PortfolioStats stats = repository.load();

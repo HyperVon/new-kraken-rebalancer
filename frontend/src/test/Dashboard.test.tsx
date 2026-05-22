@@ -21,7 +21,7 @@ const renderWithProviders = (ui) => {
 const mockNavigate = vi.fn();
 vi.mock('react-router-dom', () => ({
     useNavigate: () => mockNavigate,
-    BrowserRouter: ({ children }) => <div>{children}</div>,
+    BrowserRouter: ({ children }: any) => <div>{children}</div>,
 }));
 
 // Mock child components to isolate Dashboard logic

@@ -25,20 +25,21 @@ import static org.junit.jupiter.api.Assertions.*;
 class FileTradeRepositoryTest {
 
     private FileTradeRepositoryImpl repository;
-    private ObjectMapper objectMapper;
     private static final String TEST_FILE = "trade-history.json";
 
     @BeforeEach
     void setUp() {
-        objectMapper = new ObjectMapper();
+        ObjectMapper objectMapper = new ObjectMapper();
         objectMapper.findAndRegisterModules(); // Support for JavaTimeModule/Instant
         repository = new FileTradeRepositoryImpl(objectMapper);
     }
 
+    @SuppressWarnings("ResultOfMethodCallIgnored")
     @AfterEach
     void tearDown() {
         File file = new File(TEST_FILE);
         if (file.exists()) {
+            //noinspection ResultOfMethodCallIgnored
             file.delete();
         }
     }
@@ -60,13 +61,14 @@ class FileTradeRepositoryTest {
         List<PortfolioSnapshot> loaded = repository.load();
         assertNotNull(loaded);
         assertEquals(1, loaded.size());
-        assertEquals(0, snapshot.getTotalValueUSD().compareTo(loaded.get(0).getTotalValueUSD()));
-        assertEquals(snapshot.getActions(), loaded.get(0).getActions());
+        assertEquals(0, snapshot.getTotalValueUSD().compareTo(loaded.getFirst().getTotalValueUSD()));
+        assertEquals(snapshot.getActions(), loaded.getFirst().getActions());
     }
 
     @Test
     void testLoadEmpty() {
         // Ensure file is gone
+        //noinspection ResultOfMethodCallIgnored
         new File(TEST_FILE).delete();
 
         List<PortfolioSnapshot> loaded = repository.load();

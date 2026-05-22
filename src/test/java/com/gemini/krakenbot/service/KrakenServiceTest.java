@@ -154,23 +154,24 @@ class KrakenServiceTest {
         int numThreads = 10;
         int incrementsPerThread = 1000;
         Set<Long> generatedNonces = Collections.synchronizedSet(new HashSet<>());
-        ExecutorService executor = Executors.newFixedThreadPool(numThreads);
-        CountDownLatch latch = new CountDownLatch(numThreads);
+        try (ExecutorService executor = Executors.newFixedThreadPool(numThreads)) {
+            CountDownLatch latch = new CountDownLatch(numThreads);
 
-        for (int i = 0; i < numThreads; i++) {
-            executor.submit(() -> {
-                try {
-                    for (int j = 0; j < incrementsPerThread; j++) {
-                        generatedNonces.add(nonceGen.incrementAndGet());
+            for (int i = 0; i < numThreads; i++) {
+                executor.submit(() -> {
+                    try {
+                        for (int j = 0; j < incrementsPerThread; j++) {
+                            generatedNonces.add(nonceGen.incrementAndGet());
+                        }
+                    } finally {
+                        latch.countDown();
                     }
-                } finally {
-                    latch.countDown();
-                }
-            });
-        }
+                });
+            }
 
-        assertTrue(latch.await(5, TimeUnit.SECONDS));
-        executor.shutdown();
+            assertTrue(latch.await(5, TimeUnit.SECONDS));
+            executor.shutdown();
+        }
 
         assertEquals(numThreads * incrementsPerThread, generatedNonces.size(), "Nonces should be strictly unique across concurrent threads");
     }
@@ -183,7 +184,7 @@ class KrakenServiceTest {
         
         KrakenService localService = new KrakenServiceImpl(mockConfigService, new ObjectMapper(), RestClient.builder());
         
-        RuntimeException ex = assertThrows(RuntimeException.class, () -> localService.getBalances());
+        RuntimeException ex = assertThrows(RuntimeException.class, localService::getBalances);
         assertEquals("API Key is null", ex.getMessage());
     }
 
@@ -239,6 +240,6 @@ class KrakenServiceTest {
         
         KrakenService localService = new KrakenServiceImpl(mockConfigService, new ObjectMapper(), RestClient.builder());
         
-        assertThrows(RuntimeException.class, () -> localService.getBalances());
+        assertThrows(RuntimeException.class, localService::getBalances);
     }
 }

@@ -2,10 +2,8 @@ package com.gemini.krakenbot.service.impl;
 
 import com.gemini.krakenbot.service.ConfigService;
 import com.gemini.krakenbot.service.KrakenService;
-import com.gemini.krakenbot.service.PortfolioManager;
 import com.gemini.krakenbot.service.TradeHistoryService;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 
 
 import lombok.extern.slf4j.Slf4j;
@@ -139,7 +137,7 @@ public class PortfolioManagerImpl implements PortfolioManager {
         StringBuilder pairs = new StringBuilder();
         for (Allocation a : configService.getConfig().allocations()) {
             if (!a.symbol().equalsIgnoreCase("USD")) {
-                if (pairs.length() > 0)
+                if (!pairs.isEmpty())
                     pairs.append(",");
                 pairs.append(mapToKrakenTicker(a.symbol())).append("USD");
             }
@@ -343,8 +341,7 @@ public class PortfolioManagerImpl implements PortfolioManager {
     private void executeOrders(Map<String, BigDecimal> buyOrders, Map<String, BigDecimal> sellOrders,
             Map<String, BigDecimal> currentValuesUSD, Map<String, Double> prices, Settings s, List<String> actionLog) {
 
-        BigDecimal currentUsdBal = currentValuesUSD.getOrDefault("USD", BigDecimal.ZERO);
-        BigDecimal projectedCash = currentUsdBal;
+        BigDecimal projectedCash = currentValuesUSD.getOrDefault("USD", BigDecimal.ZERO);
 
         // Execute SELLS first to generate liquidity
         boolean executedSells = false;

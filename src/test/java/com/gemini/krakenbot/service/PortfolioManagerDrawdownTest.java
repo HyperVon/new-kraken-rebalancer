@@ -1,8 +1,5 @@
 package com.gemini.krakenbot.service;
 
-import java.math.BigDecimal;
-
-import com.gemini.krakenbot.model.PortfolioStats;
 import com.gemini.krakenbot.service.impl.*;
 
 import com.gemini.krakenbot.config.Allocation;
@@ -26,7 +23,6 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
 
 class PortfolioManagerDrawdownTest {
