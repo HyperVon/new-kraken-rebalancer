@@ -199,4 +199,67 @@ class PortfolioManagerEdgeCasesTest {
         verify(krakenService).executeOrder(eq("BTCUSD"), eq("market"), eq("sell"), eq(10.0));
         verify(krakenService).executeOrder(eq("ETHUSD"), eq("market"), eq("buy"), eq(2.0));
     }
+
+    @Test
+    void testUpdateAthAndCalculateDrawdown_NewAth() {
+        when(portfolioStatsRepository.load()).thenReturn(new PortfolioStats(new BigDecimal("1000.0")));
+        BigDecimal drawdown = ReflectionTestUtils.invokeMethod(portfolioManager, "updateAthAndCalculateDrawdown", new BigDecimal("1500.0"));
+        assertEquals(BigDecimal.ZERO, drawdown);
+        verify(portfolioStatsRepository).save(any(PortfolioStats.class));
+    }
+
+    @Test
+    void testExecuteOrders_UpdateBalancesEmptyUsdOrNull() {
+        Map<String, BigDecimal> buyOrders = Map.of("ETH", BigDecimal.TEN);
+        Map<String, BigDecimal> sellOrders = Map.of("BTC", BigDecimal.valueOf(100.0));
+        Map<String, BigDecimal> currentValuesUSD = Map.of("USD", BigDecimal.valueOf(1000.0));
+        Map<String, Double> prices = Map.of("XBTUSD", 10.0, "ETHUSD", 5.0);
+        Settings settings = new Settings(0L, 2.0, 1.0, false, 0.0, 1.0);
+        List<String> actionLog = new java.util.ArrayList<>();
+        
+        // Return balances but USD is null/missing or 0
+        when(krakenService.getBalances()).thenReturn(Map.of("BTC", 1.0, "ZUSD", 0.0));
+        
+        ReflectionTestUtils.invokeMethod(portfolioManager, "executeOrders",
+            buyOrders, sellOrders, currentValuesUSD, prices, settings, actionLog);
+            
+        verify(krakenService).executeOrder(eq("BTCUSD"), eq("market"), eq("sell"), eq(10.0));
+        verify(krakenService).executeOrder(eq("ETHUSD"), eq("market"), eq("buy"), eq(2.0));
+    }
+
+    @Test
+    void testExecuteOrders_SkipDustBuys() {
+        Map<String, BigDecimal> buyOrders = Map.of("ETH", BigDecimal.valueOf(0.5)); // 0.5 < 1.0 (dust threshold)
+        Map<String, BigDecimal> sellOrders = new HashMap<>();
+        Map<String, BigDecimal> currentValuesUSD = Map.of("USD", BigDecimal.valueOf(1000.0));
+        Map<String, Double> prices = Map.of("ETHUSD", 5.0);
+        Settings settings = new Settings(0L, 2.0, 1.0, false, 0.0, 1.0);
+        List<String> actionLog = new java.util.ArrayList<>();
+        
+        ReflectionTestUtils.invokeMethod(portfolioManager, "executeOrders",
+            buyOrders, sellOrders, currentValuesUSD, prices, settings, actionLog);
+            
+        verify(krakenService, never()).executeOrder(anyString(), anyString(), anyString(), anyDouble());
+    }
+
+    @Test
+    void testAnalyzeDeviations_UsdTriggeredButOrdersNotEmpty() {
+        Map<String, BigDecimal> currentValuesUSD = Map.of("USD", BigDecimal.valueOf(1100.0), "BTC", BigDecimal.valueOf(900.0));
+        BigDecimal totalVal = BigDecimal.valueOf(2000.0);
+        BigDecimal effUsdTarget = BigDecimal.valueOf(50.0);
+        BigDecimal cryptoScale = BigDecimal.ONE;
+        Map<String, BigDecimal> buyOrders = new HashMap<>();
+        Map<String, BigDecimal> sellOrders = new HashMap<>();
+        List<String> actionLog = new java.util.ArrayList<>();
+        
+        List<Allocation> allocs = List.of(new Allocation("USD", 50.0), new Allocation("BTC", 50.0));
+        Settings settings = new Settings(0L, 2.0, 1.0, true, 0.0, 1.0);
+        when(configService.getConfig()).thenReturn(new AppConfig(new KrakenCredentials("k", "s"), settings, allocs));
+
+        ReflectionTestUtils.invokeMethod(portfolioManager, "analyzeDeviations", 
+                totalVal, currentValuesUSD, effUsdTarget, cryptoScale, buyOrders, sellOrders, actionLog);
+        
+        assertFalse(buyOrders.isEmpty()); 
+        // buyOrders will have BTC because BTC target is 1000 and current is 900 (underweight)
+    }
 }
