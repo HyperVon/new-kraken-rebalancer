@@ -11,6 +11,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.3.0] - 2026-05-23
+
+### Added
+- **Server-Side Configuration Validation**: Implemented robust backend validation for configuration updates, ensuring values such as drawdown limits, loop delays, and allocation targets are within strict bounds.
+- **Frontend Property Whitelisting**: Added explicit whitelist validation for dynamic object property access in the React `Dashboard` and `Settings` components to improve UI security.
+- **Edge-Case Test Coverage**: Expanded the backend test suite to 89 unit tests (solidifying >95% branch coverage across all OS environments). This includes coverage for detecting new All-Time Highs, skipping dust-sized buy orders, and handling empty USD API responses. Added frontend test backdoors for better edge-case simulation.
+
+### Changed
+- **GitHub Actions Security**: Pinned all GitHub Actions workflows in `.github/workflows/maven.yml` to specific commit SHAs rather than mutable tags for improved supply chain security.
+- **Frontend Dependency Management**: Updated all frontend `package.json` dependencies and strictly pinned them to exact versions to prevent future CI breakages from upstream updates.
+
+### Fixed
+- **Tomcat Security Vulnerability**: Upgraded the embedded Tomcat server to version `11.0.22` via `pom.xml` to successfully resolve high-severity vulnerabilities (CVE-2026-41284).
+- **Allocation Array Bounds**: Added explicit bounds checking for index parameters during allocation state updates to prevent out-of-bounds exceptions.
+
+---
+
 ## [1.2.0] - 2026-05-21
 
 ### Added
