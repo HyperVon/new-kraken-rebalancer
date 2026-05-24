@@ -179,4 +179,12 @@ class ConfigServiceTest {
                 List.of(new Allocation("USD", 100.0)));
         assertThrows(RuntimeException.class, () -> configService.updateConfig(invalidConfig));
     }
+
+    @Test
+    void validateConfig_NullableFieldsNull() {
+        Settings settings = new Settings(60L, 2.0, null, true, null, null);
+        AppConfig validConfig = new AppConfig(new KrakenCredentials("k", "s"), settings,
+                List.of(new Allocation("USD", 100.0)));
+        assertDoesNotThrow(() -> configService.updateConfig(validConfig));
+    }
 }
