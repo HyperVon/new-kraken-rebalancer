@@ -242,4 +242,37 @@ class KrakenServiceTest {
         
         assertThrows(RuntimeException.class, localService::getBalances);
     }
+
+    @Test
+    void queryPrivate_InvalidNonce_RetrySuccess() {
+        String errorJson = "{\"error\":[\"EAPI:Invalid nonce\"]}";
+        String successJson = "{\"error\":[],\"result\":{\"XXBTZUSD\":63000.0}}";
+
+        // First attempt fails with Invalid nonce
+        mockServer.expect(requestTo("https://api.kraken.com/0/private/Balance"))
+                .andRespond(withSuccess(errorJson, MediaType.APPLICATION_JSON));
+        
+        // Second attempt succeeds
+        mockServer.expect(requestTo("https://api.kraken.com/0/private/Balance"))
+                .andRespond(withSuccess(successJson, MediaType.APPLICATION_JSON));
+
+        Map<String, Double> balances = krakenService.getBalances();
+        assertEquals(63000.0, balances.get("XXBTZUSD"));
+        mockServer.verify();
+    }
+
+    @Test
+    void queryPrivate_InvalidNonce_RetryExceeded() {
+        String errorJson = "{\"error\":[\"EAPI:Invalid nonce\"]}";
+
+        // 6 attempts (1 initial + 5 retries)
+        for (int i = 0; i < 6; i++) {
+            mockServer.expect(requestTo("https://api.kraken.com/0/private/Balance"))
+                    .andRespond(withSuccess(errorJson, MediaType.APPLICATION_JSON));
+        }
+
+        RuntimeException ex = assertThrows(RuntimeException.class, () -> krakenService.getBalances());
+        assertTrue(ex.getMessage().contains("Invalid nonce"));
+        mockServer.verify();
+    }
 }
