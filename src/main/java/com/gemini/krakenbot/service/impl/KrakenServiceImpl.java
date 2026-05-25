@@ -109,40 +109,52 @@ public class KrakenServiceImpl implements KrakenService {
 
     @SuppressWarnings("null")
     private JsonNode queryPrivate(String path, Map<String, String> data) {
-        String nonce = String.valueOf(nonceGenerator.incrementAndGet());
-        Map<String, String> payload = new HashMap<>(data);
-        payload.put("nonce", nonce);
+        int maxRetries = 5;
+        int retryCount = 0;
 
-        String postData = payload.entrySet().stream()
-                .map(e -> e.getKey() + "=" + e.getValue())
-                .collect(Collectors.joining("&"));
+        while (true) {
+            String nonce = String.valueOf(nonceGenerator.incrementAndGet());
+            Map<String, String> payload = new HashMap<>(data);
+            payload.put("nonce", nonce);
 
-        String signature = signRequest(path, nonce, postData);
+            String postData = payload.entrySet().stream()
+                    .map(e -> e.getKey() + "=" + e.getValue())
+                    .collect(Collectors.joining("&"));
 
-        String apiKey = configService.getConfig().kraken().apiKey();
-        if (apiKey == null)
-            throw new RuntimeException("API Key is null");
+            String signature = signRequest(path, nonce, postData);
 
-        String response = restClient.post()
-                .uri(path)
-                .header("API-Key", apiKey)
-                .header("API-Sign", signature)
-                .header("Content-Type", "application/x-www-form-urlencoded")
-                .body(postData)
-                .retrieve()
-                .body(String.class);
+            String apiKey = configService.getConfig().kraken().apiKey();
+            if (apiKey == null)
+                throw new RuntimeException("API Key is null");
 
-        if (response == null)
-            response = "{}";
+            String response = restClient.post()
+                    .uri(path)
+                    .header("API-Key", apiKey)
+                    .header("API-Sign", signature)
+                    .header("Content-Type", "application/x-www-form-urlencoded")
+                    .body(postData)
+                    .retrieve()
+                    .body(String.class);
 
-        try {
-            JsonNode root = objectMapper.readTree(response);
-            if (!root.path("error").isEmpty()) {
-                throw new RuntimeException("Kraken API Error: " + root.path("error").toString());
+            if (response == null)
+                response = "{}";
+
+            try {
+                JsonNode root = objectMapper.readTree(response);
+                if (!root.path("error").isEmpty()) {
+                    String errorMsg = root.path("error").toString();
+                    if (errorMsg.contains("Invalid nonce") && retryCount < maxRetries) {
+                        log.warn("Invalid nonce detected. Adjusting nonce generator and retrying (Attempt {}/{})", retryCount + 1, maxRetries);
+                        nonceGenerator.addAndGet(5000); // jump ahead to resolve collisions
+                        retryCount++;
+                        continue;
+                    }
+                    throw new RuntimeException("Kraken API Error: " + errorMsg);
+                }
+                return root.path("result");
+            } catch (JsonProcessingException e) {
+                throw new RuntimeException("Failed to parse private API response", e);
             }
-            return root.path("result");
-        } catch (JsonProcessingException e) {
-            throw new RuntimeException("Failed to parse private API response", e);
         }
     }
 
