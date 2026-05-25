@@ -1,0 +1,37 @@
+package com.gemini.krakenbot.repository.impl
+
+import com.fasterxml.jackson.databind.ObjectMapper
+import com.gemini.krakenbot.model.PortfolioStats
+import com.gemini.krakenbot.repository.PortfolioStatsRepository
+import org.slf4j.LoggerFactory
+import java.io.File
+import java.io.IOException
+import java.math.BigDecimal
+
+class PortfolioStatsRepositoryImpl(
+    private val objectMapper: ObjectMapper
+) : PortfolioStatsRepository {
+
+    private val log = LoggerFactory.getLogger(PortfolioStatsRepositoryImpl::class.java)
+    private val filePath = "portfolio-stats.json"
+
+    override fun load(): PortfolioStats {
+        val file = File(filePath)
+        if (file.exists()) {
+            try {
+                return objectMapper.readValue(file, PortfolioStats::class.java)
+            } catch (e: IOException) {
+                log.error("Failed to load portfolio stats", e)
+            }
+        }
+        return PortfolioStats(BigDecimal.ZERO)
+    }
+
+    override fun save(stats: PortfolioStats) {
+        try {
+            objectMapper.writeValue(File(filePath), stats)
+        } catch (e: IOException) {
+            log.error("Failed to save portfolio stats", e)
+        }
+    }
+}
