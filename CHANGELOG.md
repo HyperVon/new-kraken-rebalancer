@@ -11,6 +11,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.0.0] - 2026-05-25
+
+### Changed — Breaking (Full Stack Migration)
+- **Language**: Rewrote the entire backend from **Java 25** to **Kotlin 2.x**, adopting idiomatic Kotlin constructs throughout (data classes, extension functions, object expressions, coroutines).
+- **Framework**: Replaced **Spring Boot 4** with **Ktor 2.3** (Netty engine) for the HTTP server and routing, eliminating classpath scanning and annotation-driven wiring in favour of explicit, type-safe configuration.
+- **Dependency Injection**: Replaced Spring's IoC container with **Koin 3.5**, a lightweight, Kotlin-first DI framework. All bindings are defined in a single `AppModule.kt`.
+- **HTTP Client**: Replaced the blocking OkHttp client with the **Ktor CIO async client**, making all Kraken API calls fully non-blocking coroutine-native `suspend` functions.
+- **Concurrency**: Replaced `Thread.sleep` and Java `ScheduledExecutorService` with **Kotlin Coroutines** (`kotlinx.coroutines` 1.8). The rebalancing loop runs inside a structured `CoroutineScope`; delays use `kotlinx.coroutines.delay`.
+- **Build System**: Replaced **Maven** (`pom.xml`) with **Gradle** (Kotlin DSL: `build.gradle.kts`, `settings.gradle.kts`). The Gradle wrapper (`./gradlew`) is included — no Gradle installation required.
+- **Testing**: Replaced **JUnit 5 + Mockito** with **Kotest 5.9** (StringSpec) + **MockK 1.13**. `KrakenServiceTest` uses the Ktor `MockEngine`; all `PortfolioManager` tests use `FakeKrakenService` (an in-process test double) and `kotlinx.coroutines.test.runTest`.
+
+### Added
+- `FakeKrakenService` — an in-process test double for `KrakenService` that exposes supplier lambdas for controlled state injection, avoiding fragile `coEvery` stubbing of `suspend` functions.
+- `executeOrderAction` lambda on `FakeKrakenService` for exception-injection scenarios without subclassing.
+- Gradle wrapper binaries (`gradlew`, `gradlew.bat`, `gradle/wrapper/gradle-wrapper.properties`).
+- Updated `.gitignore` to cover Gradle build artefacts (`build/`, `.gradle/`).
+
+### Removed
+- All `src/main/java` sources (replaced by `src/main/kotlin`)
+- All `src/test/java` sources (replaced by `src/test/kotlin`)
+- `pom.xml` (replaced by `build.gradle.kts`)
+- Spring Boot, Lombok, Tomcat, OkHttp, JUnit 5, Mockito dependencies
+
+---
+
 ## [1.3.0] - 2026-05-23
 
 ### Added
