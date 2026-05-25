@@ -84,31 +84,43 @@ class KrakenServiceImpl(
     }
 
     private suspend fun queryPrivate(path: String, data: Map<String, String>): JsonNode {
-        val nonce = nonceGenerator.incrementAndGet().toString()
-        val payload = data.toMutableMap()
-        payload["nonce"] = nonce
+        val maxRetries = 5
+        var retryCount = 0
 
-        val postData = payload.entries.joinToString("&") { "${it.key}=${it.value}" }
-        val signature = signRequest(path, nonce, postData)
+        while (true) {
+            val nonce = nonceGenerator.incrementAndGet().toString()
+            val payload = data.toMutableMap()
+            payload["nonce"] = nonce
 
-        val apiKey = configService.getConfig().kraken.apiKey
-        if (apiKey.isBlank()) throw RuntimeException("API Key is null")
+            val postData = payload.entries.joinToString("&") { "${it.key}=${it.value}" }
+            val signature = signRequest(path, nonce, postData)
 
-        val responseBody = httpClient.post(API_URL + path) {
-            header("API-Key", apiKey)
-            header("API-Sign", signature)
-            header("Content-Type", "application/x-www-form-urlencoded")
-            setBody(postData)
-        }.bodyAsText()
+            val apiKey = configService.getConfig().kraken.apiKey
+            if (apiKey.isBlank()) throw RuntimeException("API Key is null")
 
-        try {
-            val root: JsonNode = objectMapper.readTree(responseBody)
-            if (!root.path("error").isEmpty) {
-                throw RuntimeException("Kraken API Error: " + root.path("error").toString())
+            val responseBody = httpClient.post(API_URL + path) {
+                header("API-Key", apiKey)
+                header("API-Sign", signature)
+                header("Content-Type", "application/x-www-form-urlencoded")
+                setBody(postData)
+            }.bodyAsText()
+
+            try {
+                val root: JsonNode = objectMapper.readTree(responseBody)
+                if (!root.path("error").isEmpty) {
+                    val errorMsg = root.path("error").toString()
+                    if (errorMsg.contains("Invalid nonce") && retryCount < maxRetries) {
+                        log.warn("Invalid nonce detected. Adjusting nonce generator and retrying (Attempt {}/{})", retryCount + 1, maxRetries)
+                        nonceGenerator.addAndGet(5000) // jump ahead to resolve collisions
+                        retryCount++
+                        continue
+                    }
+                    throw RuntimeException("Kraken API Error: $errorMsg")
+                }
+                return root.path("result")
+            } catch (e: JsonProcessingException) {
+                throw RuntimeException("Failed to parse private API response", e)
             }
-            return root.path("result")
-        } catch (e: JsonProcessingException) {
-            throw RuntimeException("Failed to parse private API response", e)
         }
     }
 

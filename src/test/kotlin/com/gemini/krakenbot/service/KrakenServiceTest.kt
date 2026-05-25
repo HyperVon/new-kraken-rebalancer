@@ -220,5 +220,54 @@ class KrakenServiceTest : StringSpec() {
                 shouldThrow<RuntimeException> { localService.getBalances() }
             }
         }
+
+        "queryPrivate_InvalidNonce_RetrySuccess" {
+            runTest {
+                val errorJson = "{\"error\":[\"EAPI:Invalid nonce\"]}"
+                val successJson = "{\"error\":[],\"result\":{\"XXBTZUSD\":63000.0}}"
+                var attempt = 0
+                val mockEngine = MockEngine { request ->
+                    val content = if (attempt++ == 0) errorJson else successJson
+                    respond(
+                        content = content,
+                        status = HttpStatusCode.OK,
+                        headers = headersOf(HttpHeaders.ContentType, "application/json")
+                    )
+                }
+
+                val mockConfigService = mockk<ConfigService>(relaxed = true)
+                val validSecret = java.util.Base64.getEncoder().encodeToString("secret".toByteArray())
+                val config = AppConfig(KrakenCredentials("k", validSecret), Settings(60L, 2.0, 1.0, false, 0.0, 1.0), emptyList())
+                every { mockConfigService.getConfig() } returns config
+
+                val service = KrakenServiceImpl(mockConfigService, jacksonObjectMapper(), HttpClient(mockEngine))
+                
+                val balances = service.getBalances()
+                balances["XXBTZUSD"] shouldBe 63000.0
+            }
+        }
+
+        "queryPrivate_InvalidNonce_RetryExceeded" {
+            runTest {
+                val errorJson = "{\"error\":[\"EAPI:Invalid nonce\"]}"
+                val mockEngine = MockEngine { request ->
+                    respond(
+                        content = errorJson,
+                        status = HttpStatusCode.OK,
+                        headers = headersOf(HttpHeaders.ContentType, "application/json")
+                    )
+                }
+
+                val mockConfigService = mockk<ConfigService>(relaxed = true)
+                val validSecret = java.util.Base64.getEncoder().encodeToString("secret".toByteArray())
+                val config = AppConfig(KrakenCredentials("k", validSecret), Settings(60L, 2.0, 1.0, false, 0.0, 1.0), emptyList())
+                every { mockConfigService.getConfig() } returns config
+
+                val service = KrakenServiceImpl(mockConfigService, jacksonObjectMapper(), HttpClient(mockEngine))
+                
+                val ex = shouldThrow<RuntimeException> { service.getBalances() }
+                ex.message?.contains("Invalid nonce")?.shouldBeTrue()
+            }
+        }
     }
 }
