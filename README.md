@@ -161,7 +161,7 @@ See **[ALGORITHM.md](ALGORITHM.md)** for a detailed breakdown of the rebalancing
 
 ### Prerequisites
 
-- JDK 21 or higher
+- JDK 25 or higher
 - Gradle (or use the included `./gradlew` wrapper — no installation required)
 - Node.js (LTS version) and npm
 - A Kraken account with API Keys (Permissions: **Query Funds**, **Create & Modify Orders**)
