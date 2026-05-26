@@ -15,6 +15,7 @@ import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.nulls.shouldNotBeNull
+import io.kotest.matchers.nulls.shouldBeNull
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
@@ -102,11 +103,11 @@ class KrakenE2ETest : StringSpec() {
             // Execute E2E Rebalance
             portfolioManager.performRebalanceCycle()
 
-            // Verify Order Execution Payload
-            // Balance is 0.5 BTC ($25000) and 25000 USD. Total = $50,000. Target = 50% BTC ($25,000)
-            // It shouldn't execute an order because it is perfectly balanced!
-            // Wait, let's make it unbalanced to trigger a trade.
-            // Balance is 0.4 BTC ($20000) and 30000 USD. Total = $50,000. Target BTC = $25,000. Needs to buy 0.1 BTC ($5000).
+            // Verify no order was executed because the portfolio is perfectly balanced!
+            capturedOrderPayload.shouldBeNull()
+            
+            if (statsFile.exists()) statsFile.delete()
+            if (tradesFile.exists()) tradesFile.delete()
         }
     }
 
