@@ -2,7 +2,6 @@ package com.gemini.krakenbot.service.impl
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.gemini.krakenbot.config.AppConfig
-import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.service.ConfigService
 import java.io.File
 import java.io.IOException
@@ -56,7 +55,7 @@ class ConfigServiceImpl(
         if (settings.dustThresholdUSD < 0) {
             throw RuntimeException("Dust threshold USD must be non-negative.")
         }
-        if (settings.fiatMaxDrawdown < 0 || settings.fiatMaxDrawdown > 100) {
+        if (settings.fiatMaxDrawdown !in 0.0..100.0) {
             throw RuntimeException("Fiat max drawdown must be between 0% and 100%.")
         }
         if (settings.fiatDeploymentExponent <= 0) {

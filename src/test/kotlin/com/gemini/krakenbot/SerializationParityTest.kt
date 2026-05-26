@@ -8,7 +8,6 @@ import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.collections.shouldHaveSize
 import java.math.BigDecimal
-import java.time.Instant
 
 class SerializationParityTest : StringSpec({
 

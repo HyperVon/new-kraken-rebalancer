@@ -13,7 +13,6 @@ import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.assertions.throwables.shouldNotThrowAny
 import io.mockk.every
 import io.mockk.mockk
-import io.mockk.verify
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
@@ -236,7 +235,7 @@ class KrakenServiceTest : StringSpec() {
                 }
 
                 val mockConfigService = mockk<ConfigService>(relaxed = true)
-                val validSecret = java.util.Base64.getEncoder().encodeToString("secret".toByteArray())
+                val validSecret = Base64.getEncoder().encodeToString("secret".toByteArray())
                 val config = AppConfig(KrakenCredentials("k", validSecret), Settings(60L, 2.0, 1.0, false, 0.0, 1.0), emptyList())
                 every { mockConfigService.getConfig() } returns config
 
@@ -259,7 +258,7 @@ class KrakenServiceTest : StringSpec() {
                 }
 
                 val mockConfigService = mockk<ConfigService>(relaxed = true)
-                val validSecret = java.util.Base64.getEncoder().encodeToString("secret".toByteArray())
+                val validSecret = Base64.getEncoder().encodeToString("secret".toByteArray())
                 val config = AppConfig(KrakenCredentials("k", validSecret), Settings(60L, 2.0, 1.0, false, 0.0, 1.0), emptyList())
                 every { mockConfigService.getConfig() } returns config
 

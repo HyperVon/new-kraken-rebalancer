@@ -33,7 +33,7 @@ class KrakenServiceImpl(
     override suspend fun getBalances(): Map<String, Double> {
         val path = "/$API_VERSION/private/Balance"
         val response = queryPrivate(path, emptyMap())
-        return response.properties().asSequence().associate { (key, value) ->
+        return response.properties().associate { (key, value) ->
             key to value.asDouble()
         }
     }

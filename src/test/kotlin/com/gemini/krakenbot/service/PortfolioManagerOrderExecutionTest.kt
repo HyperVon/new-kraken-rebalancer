@@ -13,6 +13,7 @@ import io.kotest.matchers.shouldBe
 import io.kotest.matchers.booleans.shouldBeTrue
 import kotlinx.coroutines.test.runTest
 import java.math.BigDecimal
+import kotlin.math.abs
 
 class PortfolioManagerOrderExecutionTest : StringSpec() {
 
@@ -171,7 +172,7 @@ class PortfolioManagerOrderExecutionTest : StringSpec() {
                 krakenService.executedOrders[0].side shouldBe "sell"
                 krakenService.executedOrders[1].pair shouldBe "BUSD"
                 krakenService.executedOrders[1].side shouldBe "buy"
-                (Math.abs(krakenService.executedOrders[1].volume - 19.8) < 0.1).shouldBeTrue()
+                (abs(krakenService.executedOrders[1].volume - 19.8) < 0.1).shouldBeTrue()
             }
         }
     }

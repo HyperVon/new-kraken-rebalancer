@@ -1,21 +1,19 @@
 package com.gemini.krakenbot.service.impl
 
-import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.PortfolioSnapshot
-import com.gemini.krakenbot.model.PortfolioStats
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.KrakenService
 import com.gemini.krakenbot.service.PortfolioManager
 import com.gemini.krakenbot.service.TradeHistoryService
+import kotlinx.coroutines.delay
 import org.slf4j.LoggerFactory
 import java.math.BigDecimal
 import java.math.RoundingMode
 import java.time.Instant
-import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicLong
 import kotlin.math.pow
+import kotlin.time.Duration.Companion.milliseconds
 
 class PortfolioManagerImpl(
     private val krakenService: KrakenService,
@@ -28,7 +26,6 @@ class PortfolioManagerImpl(
 
     @Volatile
     private var isRunning = false
-    private val lastRunTime = AtomicLong(0)
 
     @Synchronized
     override fun stopRebalancingLoop() {
@@ -51,7 +48,7 @@ class PortfolioManagerImpl(
             } catch (e: Exception) {
                 log.error("Error in rebalancing cycle", e)
             }
-            kotlinx.coroutines.delay(settings.loopDelaySeconds * 1000L)
+            delay((settings.loopDelaySeconds * 1000L).milliseconds)
         }
     }
 
@@ -62,9 +59,7 @@ class PortfolioManagerImpl(
         val balances = fetchBalances()
         val prices = fetchPrices()
         val currentValuesUSD = mutableMapOf<String, BigDecimal>()
-        val totalPortfolioValueUSD = calculatePortfolioValues(balances, prices, currentValuesUSD)
-
-        if (totalPortfolioValueUSD == null) return
+        val totalPortfolioValueUSD = calculatePortfolioValues(balances, prices, currentValuesUSD) ?: return
 
         log.info("Total Portfolio Value: $${totalPortfolioValueUSD.setScale(2, RoundingMode.HALF_UP)}")
 
@@ -226,10 +221,10 @@ class PortfolioManagerImpl(
         for (a in configService.getConfig().allocations) {
             var targetPct = BigDecimal.valueOf(a.targetPercent)
 
-            if (a.symbol.equals("USD", ignoreCase = true)) {
-                targetPct = effectiveUsdTarget
+            targetPct = if (a.symbol.equals("USD", ignoreCase = true)) {
+                effectiveUsdTarget
             } else {
-                targetPct = targetPct.multiply(cryptoScaleFactor)
+                targetPct.multiply(cryptoScaleFactor)
             }
 
             targetPct = targetPct.divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP)
@@ -315,7 +310,7 @@ class PortfolioManagerImpl(
         var actualCash = projectedCash
         if (executedSells && !s.dryRun) {
             try {
-                kotlinx.coroutines.delay(100)
+                delay(100.milliseconds)
                 val updatedBalances = krakenService.getBalances()
                 if (updatedBalances.isNotEmpty()) {
                     val usdBalance = resolveBalance("USD", updatedBalances)

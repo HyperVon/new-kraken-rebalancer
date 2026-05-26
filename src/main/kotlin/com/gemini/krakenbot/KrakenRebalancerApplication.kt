@@ -1,19 +1,19 @@
 package com.gemini.krakenbot
 
+import com.fasterxml.jackson.databind.SerializationFeature
 import com.gemini.krakenbot.config.appModule
 import com.gemini.krakenbot.controller.dashboardRouting
 import com.gemini.krakenbot.service.PortfolioManager
-import io.ktor.serialization.jackson.jackson
-import com.fasterxml.jackson.databind.SerializationFeature
-import io.ktor.server.application.install
-import io.ktor.server.engine.embeddedServer
-import io.ktor.server.netty.Netty
-import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
-import io.ktor.server.plugins.cors.routing.CORS
-import io.ktor.http.HttpMethod
+import io.ktor.http.*
+import io.ktor.serialization.jackson.*
+import io.ktor.server.application.*
+import io.ktor.server.engine.*
+import io.ktor.server.netty.*
+import io.ktor.server.plugins.contentnegotiation.*
+import io.ktor.server.plugins.cors.routing.*
 import kotlinx.coroutines.launch
+import org.koin.core.context.GlobalContext
 import org.koin.core.context.startKoin
-import org.koin.ktor.plugin.Koin
 import org.koin.logger.slf4jLogger
 
 fun main() {
@@ -22,7 +22,7 @@ fun main() {
         modules(appModule)
     }
 
-    val koin = org.koin.core.context.GlobalContext.get()
+    val koin = GlobalContext.get()
     val portfolioManager = koin.get<PortfolioManager>()
     
     // Start the background rebalancing loop
@@ -45,8 +45,8 @@ fun main() {
             allowMethod(HttpMethod.Put)
             allowMethod(HttpMethod.Delete)
             allowMethod(HttpMethod.Patch)
-            allowHeader(io.ktor.http.HttpHeaders.Authorization)
-            allowHeader(io.ktor.http.HttpHeaders.ContentType)
+            allowHeader(HttpHeaders.Authorization)
+            allowHeader(HttpHeaders.ContentType)
         }
         
         dashboardRouting()

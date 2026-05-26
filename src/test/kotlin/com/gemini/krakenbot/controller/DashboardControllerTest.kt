@@ -10,7 +10,6 @@ import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.TradeHistoryService
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
-import io.kotest.matchers.nulls.shouldNotBeNull
 import io.ktor.client.request.*
 import io.ktor.client.statement.*
 import io.ktor.http.*

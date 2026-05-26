@@ -10,7 +10,7 @@ class FakeKrakenService : KrakenService {
     var balanceSupplier: () -> Map<String, Double> = { emptyMap() }
     var pricesSupplier: (String) -> Map<String, Double> = { emptyMap() }
 
-    /** If set, replaces the default record-and-return behaviour of [executeOrder]. */
+    /** If set, replaces the default record-and-return behavior of [executeOrder]. */
     var executeOrderAction: ((String, String, String, Double) -> Unit)? = null
 
     var executedOrders = mutableListOf<OrderCall>()

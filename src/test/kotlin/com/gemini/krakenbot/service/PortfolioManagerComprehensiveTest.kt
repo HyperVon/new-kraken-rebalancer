@@ -2,7 +2,6 @@ package com.gemini.krakenbot.service
 
 import io.mockk.every
 import io.mockk.mockk
-import io.mockk.coVerify
 
 import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.config.AppConfig
@@ -13,6 +12,7 @@ import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
 import kotlinx.coroutines.test.runTest
+import kotlin.math.abs
 
 class PortfolioManagerComprehensiveTest : StringSpec() {
 
@@ -61,11 +61,11 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
 
                 val sell = krakenService.executedOrders.first { it.side == "sell" }
                 sell.pair shouldBe "AUSD"
-                (Math.abs(sell.volume - 1.0) < 0.0001) shouldBe true
+                (abs(sell.volume - 1.0) < 0.0001) shouldBe true
 
                 val buy = krakenService.executedOrders.first { it.side == "buy" }
                 buy.pair shouldBe "BUSD"
-                (Math.abs(buy.volume - 1.0) < 0.0001) shouldBe true
+                (abs(buy.volume - 1.0) < 0.0001) shouldBe true
             }
         }
 
@@ -80,10 +80,10 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
                 portfolioManager.performRebalanceCycle()
 
                 val buyA = krakenService.executedOrders.first { it.pair == "AUSD" && it.side == "buy" }
-                (Math.abs(buyA.volume - 4.0) < 0.0001) shouldBe true
+                (abs(buyA.volume - 4.0) < 0.0001) shouldBe true
 
                 val buyB = krakenService.executedOrders.first { it.pair == "BUSD" && it.side == "buy" }
-                (Math.abs(buyB.volume - 4.0) < 0.0001) shouldBe true
+                (abs(buyB.volume - 4.0) < 0.0001) shouldBe true
             }
         }
 
@@ -97,11 +97,11 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
 
                 val sell = krakenService.executedOrders.first { it.side == "sell" }
                 sell.pair shouldBe "AUSD"
-                (Math.abs(sell.volume - 4.5) < 0.0001) shouldBe true
+                (abs(sell.volume - 4.5) < 0.0001) shouldBe true
 
                 val buy = krakenService.executedOrders.first { it.side == "buy" }
                 buy.pair shouldBe "BUSD"
-                (Math.abs(buy.volume - 4.5) < 0.05) shouldBe true
+                (abs(buy.volume - 4.5) < 0.05) shouldBe true
             }
         }
 
@@ -127,7 +127,7 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
 
                 val sell = krakenService.executedOrders.first { it.side == "sell" }
                 sell.pair shouldBe "AUSD"
-                (Math.abs(sell.volume - 10.0) < 0.0001) shouldBe true
+                (abs(sell.volume - 10.0) < 0.0001) shouldBe true
             }
         }
 
@@ -141,7 +141,7 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
 
                 val buy = krakenService.executedOrders.first { it.side == "buy" }
                 buy.pair shouldBe "AUSD"
-                (Math.abs(buy.volume - 10.0) < 0.0001) shouldBe true
+                (abs(buy.volume - 10.0) < 0.0001) shouldBe true
             }
         }
 
@@ -155,7 +155,7 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
 
                 val sell = krakenService.executedOrders.first { it.side == "sell" }
                 sell.pair shouldBe "AUSD"
-                (Math.abs(sell.volume - 2.5) < 0.0001) shouldBe true
+                (abs(sell.volume - 2.5) < 0.0001) shouldBe true
             }
         }
 

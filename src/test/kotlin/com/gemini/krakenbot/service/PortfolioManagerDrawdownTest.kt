@@ -1,10 +1,8 @@
 package com.gemini.krakenbot.service
 
-import io.mockk.MockKAnnotations
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
-import io.mockk.coEvery
 
 import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.config.AppConfig
@@ -17,12 +15,9 @@ import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.booleans.shouldBeTrue
-import io.kotest.matchers.nulls.shouldNotBeNull
-import io.kotest.matchers.nulls.shouldBeNull
-import io.kotest.assertions.throwables.shouldThrow
-import io.kotest.assertions.throwables.shouldNotThrowAny
 import kotlinx.coroutines.test.runTest
 import java.math.BigDecimal
+import kotlin.math.abs
 
 class PortfolioManagerDrawdownTest : StringSpec() {
 
@@ -75,7 +70,7 @@ class PortfolioManagerDrawdownTest : StringSpec() {
                 order.pair shouldBe "AUSD"
                 order.type shouldBe "market"
                 order.side shouldBe "buy"
-                (Math.abs(order.volume - 3.75) < 0.01).shouldBeTrue()
+                (abs(order.volume - 3.75) < 0.01).shouldBeTrue()
 
                 val captor = io.mockk.slot<PortfolioSnapshot>()
                 verify { tradeHistoryService.addSnapshot(capture(captor)) }
