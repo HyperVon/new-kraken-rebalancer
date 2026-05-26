@@ -129,3 +129,12 @@ tasks.jacocoTestCoverageVerification {
 tasks.check {
     dependsOn(tasks.jacocoTestCoverageVerification)
 }
+
+configurations.all {
+    resolutionStrategy.eachDependency {
+        if (requested.group == "io.netty") {
+            useVersion("4.1.134.Final")
+            because("Fixes Netty security vulnerabilities including HTTP/2 continuation frame flood (CVE-2026-33871)")
+        }
+    }
+}
