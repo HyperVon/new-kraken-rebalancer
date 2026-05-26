@@ -180,10 +180,10 @@ class KrakenE2ETest : StringSpec() {
 
             // Verify
             capturedOrderPayload.shouldNotBeNull()
-            capturedOrderPayload!!.contains("pair=BTCUSD").shouldBeTrue()
-            capturedOrderPayload!!.contains("type=buy").shouldBeTrue()
-            capturedOrderPayload!!.contains("ordertype=market").shouldBeTrue()
-            capturedOrderPayload!!.contains("volume=0.1").shouldBeTrue()
+            capturedOrderPayload.contains("pair=BTCUSD").shouldBeTrue()
+            capturedOrderPayload.contains("type=buy").shouldBeTrue()
+            capturedOrderPayload.contains("ordertype=market").shouldBeTrue()
+            capturedOrderPayload.contains("volume=0.1").shouldBeTrue()
             if (statsFile.exists()) statsFile.delete()
             if (tradesFile.exists()) tradesFile.delete()
         }
