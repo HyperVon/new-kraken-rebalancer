@@ -134,7 +134,7 @@ See **[ALGORITHM.md](ALGORITHM.md)** for a detailed breakdown of the rebalancing
 │   │   └── impl/                         # Implementations: FileTradeRepositoryImpl, PortfolioStatsRepositoryImpl
 │   └── service/                          # Core logic interfaces: PortfolioManager, KrakenService, ConfigService, TradeHistoryService
 │       └── impl/                         # Service implementations
-├── src/test/java/                        # 78 unit tests (95%+ coverage)
+├── src/test/java/                        # 98 unit tests (99.4% line coverage, 95.5% branch)
 ├── frontend/
 │   └── src/
 │       ├── assets/                       # Static assets (e.g., images, icons)
@@ -226,7 +226,8 @@ The project enforces **95% instruction coverage** via JaCoCo. All tests are beha
 mvn clean install
 ```
 
-**78 tests** across:
+**98 tests** across:
+- `KrakenE2ETest` / `ResilienceChaosTest` / `PrecisionRoundingFuzzTest` / `SerializationParityTest` — advanced E2E black-box and fuzz testing
 - `PortfolioManagerComprehensiveTest` — full rebalance cycle scenarios
 - `PortfolioManagerFiatCorrectionTest` — deposit/withdrawal distribution logic
 - `PortfolioManagerDrawdownTest` — ATH tracking and dynamic deployment
