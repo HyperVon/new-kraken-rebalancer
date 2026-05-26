@@ -50,7 +50,7 @@ class KrakenE2ETest : StringSpec() {
                 when (request.url.encodedPath) {
                     "/0/private/Balance" -> {
                         respond(
-                            content = "{\"error\":[],\"result\":{\"XXBTZUSD\":0.5,\"USD\":25000.0}}",
+                            content = "{\"error\":[],\"result\":{\"XXBT\":0.5,\"ZUSD\":25000.0}}",
                             status = HttpStatusCode.OK,
                             headers = headersOf(HttpHeaders.ContentType, "application/json")
                         )
@@ -128,7 +128,7 @@ class KrakenE2ETest : StringSpec() {
                 when (request.url.encodedPath) {
                     "/0/private/Balance" -> {
                         respond(
-                            content = "{\"error\":[],\"result\":{\"XXBTZUSD\":0.4,\"USD\":30000.0}}",
+                            content = "{\"error\":[],\"result\":{\"XXBT\":0.4,\"ZUSD\":30000.0}}",
                             status = HttpStatusCode.OK,
                             headers = headersOf(HttpHeaders.ContentType, "application/json")
                         )
@@ -182,7 +182,7 @@ class KrakenE2ETest : StringSpec() {
             capturedOrderPayload!!.contains("pair=BTCUSD").shouldBeTrue()
             capturedOrderPayload!!.contains("type=buy").shouldBeTrue()
             capturedOrderPayload!!.contains("ordertype=market").shouldBeTrue()
-            capturedOrderPayload!!.contains("volume=").shouldBeTrue()
+            capturedOrderPayload!!.contains("volume=0.1").shouldBeTrue()
             if (statsFile.exists()) statsFile.delete()
             if (tradesFile.exists()) tradesFile.delete()
         }
