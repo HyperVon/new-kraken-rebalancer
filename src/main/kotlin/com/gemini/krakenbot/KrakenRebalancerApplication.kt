@@ -46,10 +46,6 @@ fun main() {
             allowHeader(io.ktor.http.HttpHeaders.Authorization)
             allowHeader(io.ktor.http.HttpHeaders.ContentType)
         }
-        install(Koin) {
-            slf4jLogger()
-            modules(appModule)
-        }
         
         dashboardRouting()
     }.start(wait = true)

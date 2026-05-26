@@ -47,9 +47,7 @@ class ConfigServiceTest : StringSpec({
 
     "loadConfig_FileNotFound" {
         val missingFile = File(tempFile.parent, "missing.json")
-        configService = ConfigServiceImpl(objectMapper, missingFile.absolutePath)
-
-        val ex = shouldThrow<RuntimeException> { configService.loadConfig() }
+        val ex = shouldThrow<RuntimeException> { ConfigServiceImpl(objectMapper, missingFile.absolutePath) }
         ex.message!!.contains("not found").shouldBeTrue()
     }
 
@@ -116,6 +114,7 @@ class ConfigServiceTest : StringSpec({
         val mockMapper = mockk<ObjectMapper>(relaxed = true)
         val mockWriter = mockk<ObjectWriter>(relaxed = true)
         every { mockMapper.writerWithDefaultPrettyPrinter() } returns mockWriter
+        every { mockMapper.readValue(any<File>(), AppConfig::class.java) } returns AppConfig(KrakenCredentials("a", "b"), Settings(1, 1.0, 1.0, true, 0.0, 1.0), listOf(Allocation("USD", 100.0)))
         every { mockWriter.writeValue(any<File>(), any<Any>()) } throws IOException("Write error")
 
         configService = ConfigServiceImpl(mockMapper, tempFile.absolutePath)

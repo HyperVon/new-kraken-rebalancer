@@ -16,6 +16,10 @@ class ConfigServiceImpl(
     @Volatile
     private lateinit var appConfig: AppConfig
 
+    init {
+        loadConfig()
+    }
+
     override fun loadConfig() {
         val configFile = File(configFilePath)
         if (!configFile.exists()) {
