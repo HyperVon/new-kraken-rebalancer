@@ -2,6 +2,7 @@ package com.gemini.krakenbot.config
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule
+import com.fasterxml.jackson.databind.SerializationFeature
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.repository.TradeRepository
@@ -24,6 +25,7 @@ val appModule = module {
     single<ObjectMapper> { 
         jacksonObjectMapper().apply {
             registerModule(JavaTimeModule())
+            disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)
         }
     }
     single<ConfigService> { ConfigServiceImpl(get()) }

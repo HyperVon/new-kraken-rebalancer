@@ -4,6 +4,7 @@ import com.gemini.krakenbot.config.appModule
 import com.gemini.krakenbot.controller.dashboardRouting
 import com.gemini.krakenbot.service.PortfolioManager
 import io.ktor.serialization.jackson.jackson
+import com.fasterxml.jackson.databind.SerializationFeature
 import io.ktor.server.application.install
 import io.ktor.server.engine.embeddedServer
 import io.ktor.server.netty.Netty
@@ -35,6 +36,7 @@ fun main() {
         install(ContentNegotiation) {
             jackson {
                 findAndRegisterModules()
+                disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)
             }
         }
         install(CORS) {
