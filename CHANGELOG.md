@@ -7,9 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [Unreleased]
+## [2.1.0] - 2026-05-25
 ### Added
 - **Advanced E2E Kotlin Tests**: Introduced highly rigorous Kotest-based test suites using `MockRestServiceServer` to simulate Kraken API behavior (`KrakenE2ETest`, `SerializationParityTest`, `ResilienceChaosTest`, `PrecisionRoundingFuzzTest`). These strictly validate precision handling, JSON backwards compatibility, and resilient coroutine failure states. Increased test suite to 92 unit tests, achieving **98%+ line coverage** and **96%+ branch coverage**.
+
+### Fixed
+- **Startup Configuration Crash**: Fixed `ConfigServiceImpl` to automatically load `rebalancer-config.json` upon instantiation, preventing `UninitializedPropertyAccessException`.
+- **Koin Duplicate Initialization**: Fixed `KoinAppAlreadyStartedException` by removing duplicate Koin configuration from the Ktor application module.
+- **Frontend Data Age Bug**: Disabled `WRITE_DATES_AS_TIMESTAMPS` in Jackson so `java.time.Instant` serializes as an ISO-8601 string, fixing a bug where the frontend misinterpreted raw numeric timestamps as milliseconds.
 
 ---
 
