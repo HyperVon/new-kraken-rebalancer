@@ -11,6 +11,9 @@ import io.ktor.server.engine.*
 import io.ktor.server.netty.*
 import io.ktor.server.plugins.contentnegotiation.*
 import io.ktor.server.plugins.cors.routing.*
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import org.koin.core.context.GlobalContext
 import org.koin.core.context.startKoin
@@ -27,7 +30,7 @@ fun main() {
     
     // Start the background rebalancing loop
     portfolioManager.startRebalancingLoop()
-    val applicationScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Default + kotlinx.coroutines.SupervisorJob())
+    val applicationScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     applicationScope.launch {
         portfolioManager.runLoop()
     }
