@@ -12,6 +12,7 @@ import io.ktor.client.request.post
 import io.ktor.client.request.header
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
+import java.security.MessageDigest
 import java.util.Base64
 import java.util.concurrent.atomic.AtomicLong
 import javax.crypto.Mac
@@ -126,7 +127,7 @@ class KrakenServiceImpl(
 
     private fun signRequest(path: String, nonce: String, postData: String): String {
         try {
-            val sha2 = java.security.MessageDigest.getInstance("SHA-256")
+            val sha2 = MessageDigest.getInstance("SHA-256")
                 .digest((nonce + postData).toByteArray(Charsets.UTF_8))
 
             val pathBytes = path.toByteArray(Charsets.UTF_8)

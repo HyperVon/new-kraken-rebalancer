@@ -218,7 +218,7 @@ class PortfolioManagerImpl(
         var usdDeviationAmount = BigDecimal.ZERO
         val allDeviations = mutableMapOf<String, BigDecimal>()
 
-        for (a in configService.getConfig().allocations) {
+        configService.getConfig().allocations.forEach { a ->
             var targetPct = BigDecimal.valueOf(a.targetPercent)
 
             targetPct = if (a.symbol.equals("USD", ignoreCase = true)) {
@@ -253,16 +253,16 @@ class PortfolioManagerImpl(
 
             if (a.symbol.equals("USD", ignoreCase = true)) {
                 if (deviationPct.toDouble() >= s.deviationTriggerPercent) {
-                    log.info("Asset USD Deviation: {}% (Trigger: {}%). USD Dev: {}", 
+                    log.info("Asset USD Deviation: {}% (Trigger: {}%). USD Dev: {}",
                         deviationPct, s.deviationTriggerPercent, deviationUSD)
                     usdTriggered = true
                     usdDeviationAmount = deviationUSD
                 }
             } else {
                 if (deviationPct.toDouble() >= s.deviationTriggerPercent) {
-                    log.info("Asset {} Deviation: {}% (Trigger: {}%). USD Dev: {}", 
+                    log.info("Asset {} Deviation: {}% (Trigger: {}%). USD Dev: {}",
                         a.symbol, deviationPct, s.deviationTriggerPercent, deviationUSD)
-                    
+
                     if (deviationUSD > BigDecimal.ZERO) {
                         sellOrders[a.symbol] = deviationUSD
                     } else {
