@@ -17,7 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - **Koin `3.5.3` → `3.5.6`**: Upgraded to the official 3.5.x LTS release.
-- **kotlinx-coroutines `1.8.0` → `1.11.0`**: Updated to the latest stable release.
+- **kotlinx-coroutines**: Kept at `1.8.0` to preserve binary compatibility with Ktor 2.3.x (prevents NoSuchMethodError in BlockingAdapter).
 - **MockK `1.13.11` → `1.14.9`**: Updated to the latest stable release.
 - **Kotest `5.9.0` → `6.1.11`**: Upgraded to the current major version (6.x); the 5.9.x branch is EOL and no longer receives patches.
 
