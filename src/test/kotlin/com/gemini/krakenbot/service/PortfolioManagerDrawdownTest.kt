@@ -81,9 +81,9 @@ class PortfolioManagerDrawdownTest : StringSpec() {
                 verify { tradeHistoryService.addSnapshot(capture(captor)) }
                 val s = captor.captured
 
-                s.drawdownPercent shouldBe BigDecimal("25.0")
-                s.fiatDeploymentPercent shouldBe BigDecimal("50.0")
-                s.effectiveUsdTargetPercent shouldBe BigDecimal("25.0")
+                s.drawdownPercent.compareTo(BigDecimal("25.0")) shouldBe 0
+                s.fiatDeploymentPercent.compareTo(BigDecimal("50.0")) shouldBe 0
+                s.effectiveUsdTargetPercent.compareTo(BigDecimal("25.0")) shouldBe 0
             }
         }
 
