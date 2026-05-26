@@ -20,7 +20,7 @@ Describe how you tested this change:
 - [ ] Tested in **dry-run mode** (`dryRun: true`) — no live orders placed
 - [ ] Tested with **live trading** (if applicable, describe the scenario)
 - [ ] Unit tests added or updated
-- [ ] Existing tests pass (`mvn test`)
+- [ ] Existing tests pass (`./gradlew test`)
 
 ## Checklist
 

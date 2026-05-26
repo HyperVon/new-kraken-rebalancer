@@ -12,11 +12,14 @@ A production-grade, autonomous portfolio rebalancing engine for the [Kraken](htt
 
 | Layer | Technology |
 |---|---|
-| **Backend** | Java 25, Spring Boot 4, Lombok, Jackson |
+| **Language** | Kotlin 2.x (JVM) |
+| **Backend** | Ktor 2.3 (Netty engine), Koin 3.5 (DI), Jackson |
+| **HTTP Client** | Ktor CIO Client (async, coroutine-native) |
+| **Concurrency** | Kotlin Coroutines (`kotlinx.coroutines` 1.8) |
 | **Frontend** | React 19 (TypeScript), Vite 7, Tailwind CSS v4, Chart.js |
 | **API** | Kraken REST API with HMAC-SHA512 authentication |
-| **Testing** | JUnit 5, Mockito, JaCoCo (95%+ coverage enforced) |
-| **Build** | Maven, npm |
+| **Testing** | Kotest 5.9 (StringSpec), MockK 1.13, Ktor MockEngine, JaCoCo (95%+ coverage enforced) |
+| **Build** | Gradle (Kotlin DSL), npm |
 
 ---
 
@@ -87,8 +90,8 @@ graph LR
         D --> S[Settings]
     end
 
-    subgraph Backend["Backend (Spring Boot)"]
-        DC[DashboardController] --> THS[TradeHistoryService]
+    subgraph Backend["Backend (Ktor + Koin)"]
+        DC[DashboardRoutes] --> THS[TradeHistoryService]
         DC --> CS[ConfigService]
         PM[PortfolioManager] --> KS[KrakenService]
         PM --> CS
@@ -102,7 +105,7 @@ graph LR
     end
 
     Frontend -- "REST API\n/api/*" --> DC
-    PM -- "Rebalance Loop\n(configurable interval)" --> PM
+    PM -- "Coroutine Loop\n(configurable interval)" --> PM
     KS -- "HMAC-SHA512\nAuthenticated" --> KA
 ```
 
@@ -114,7 +117,7 @@ Each cycle executes three phases:
 flowchart LR
     A["📸 Snapshot\nFetch balances & prices\nCalculate portfolio value"] --> B["📊 Analysis\nCompute deviations\nApply drawdown adjustments\nDetermine trades"]
     B --> C["⚡ Execution\nSell overweight assets\nBuy underweight assets\nRecord snapshot"]
-    C --> D["💤 Sleep\n(configurable delay)"]
+    C --> D["💤 delay()\n(configurable interval)"]
     D --> A
 ```
 
@@ -125,28 +128,31 @@ See **[ALGORITHM.md](ALGORITHM.md)** for a detailed breakdown of the rebalancing
 ## Project Structure
 
 ```
-├── src/main/java/com/gemini/krakenbot/
-│   ├── KrakenRebalancerApplication.java  # Entry point, Spring Boot config
-│   ├── config/                           # Records & Config: AppConfig, Settings, Allocation, KrakenCredentials, WebConfig
-│   ├── controller/                       # REST API: DashboardController, FrontendConfig
-│   ├── model/                            # Domain: PortfolioSnapshot, PortfolioStats
-│   ├── repository/                       # Persistence interfaces: TradeRepository, PortfolioStatsRepository
-│   │   └── impl/                         # Implementations: FileTradeRepositoryImpl, PortfolioStatsRepositoryImpl
-│   └── service/                          # Core logic interfaces: PortfolioManager, KrakenService, ConfigService, TradeHistoryService
-│       └── impl/                         # Service implementations
-├── src/test/java/                        # 98 unit tests (99.4% line coverage, 95.5% branch)
+├── src/main/kotlin/com/gemini/krakenbot/
+│   ├── KrakenRebalancerApplication.kt    # Entry point, Ktor server & Koin DI bootstrap
+│   ├── config/                            # Data classes: AppConfig, Settings, Allocation, KrakenCredentials
+│   │   └── AppModule.kt                  # Koin dependency injection module
+│   ├── controller/                        # Ktor routes: DashboardRoutes, FrontendConfig
+│   ├── model/                             # Domain: PortfolioSnapshot, PortfolioStats
+│   ├── repository/                        # Persistence interfaces: TradeRepository, PortfolioStatsRepository
+│   │   └── impl/                          # File-backed implementations
+│   └── service/                           # Core logic interfaces: PortfolioManager, KrakenService, ConfigService, TradeHistoryService
+│       └── impl/                          # Service implementations (coroutine-aware)
+├── src/test/kotlin/                       # 92 unit tests (98%+ line coverage, 96%+ branch coverage enforced by JaCoCo)
+│   └── com/gemini/krakenbot/service/
+│       └── FakeKrakenService.kt           # In-process test double for KrakenService
 ├── frontend/
 │   └── src/
-│       ├── assets/                       # Static assets (e.g., images, icons)
-│       ├── components/                   # Dashboard, Settings, AllocationChart, TradeHistory, StatusCard
-│       ├── services/                     # API client configurations
-│       ├── test/                         # Frontend unit and component tests
-│       ├── types/                        # TypeScript definitions
-│       ├── index.css                     # Dark theme design system
-│       └── App.tsx                       # Root component
-├── ALGORITHM.md                          # Detailed algorithm documentation
-├── rebalancer-config-template.json       # Configuration template
-└── pom.xml                              # Maven build with JaCoCo coverage enforcement
+│       ├── assets/                        # Static assets (e.g., images, icons)
+│       ├── components/                    # Dashboard, Settings, AllocationChart, TradeHistory, StatusCard
+│       ├── services/                      # API client configurations
+│       ├── test/                          # Frontend unit and component tests
+│       ├── types/                         # TypeScript definitions
+│       ├── index.css                      # Dark theme design system
+│       └── App.tsx                        # Root component
+├── ALGORITHM.md                           # Detailed algorithm documentation
+├── rebalancer-config-template.json        # Configuration template
+└── build.gradle.kts                       # Gradle build with JaCoCo coverage enforcement
 ```
 
 ---
@@ -155,8 +161,8 @@ See **[ALGORITHM.md](ALGORITHM.md)** for a detailed breakdown of the rebalancing
 
 ### Prerequisites
 
-- Java 25 or higher
-- Maven
+- JDK 25 or higher
+- Gradle (or use the included `./gradlew` wrapper — no installation required)
 - Node.js (LTS version) and npm
 - A Kraken account with API Keys (Permissions: **Query Funds**, **Create & Modify Orders**)
 
@@ -177,7 +183,7 @@ Edit `rebalancer-config.json`:
 ### 2. Start the Backend
 
 ```bash
-mvn spring-boot:run
+./gradlew run
 ```
 
 The backend starts on port **8080** and begins the rebalancing loop immediately.
@@ -198,12 +204,12 @@ Open your browser to **http://localhost:5173**. The frontend proxies API request
 
 | Field | Type | Default | Description |
 |---|---|---|---|
-| `loopDelaySeconds` | `long` | `60` | Seconds between rebalance cycles |
-| `deviationTriggerPercent` | `double` | `5.0` | Minimum deviation % to trigger a trade |
-| `dustThresholdUSD` | `double` | `5.0` | Minimum trade value in USD (below this is skipped) |
-| `dryRun` | `boolean` | `true` | If true, logs intended trades without executing them |
-| `fiatMaxDrawdown` | `double` | `0.0` | Portfolio drawdown % at which 100% of USD is deployed (0 = disabled) |
-| `fiatDeploymentExponent` | `double` | `1.0` | Controls deployment curve: `1.0` = linear, `<1.0` = aggressive, `>1.0` = conservative |
+| `loopDelaySeconds` | `Long` | `60` | Seconds between rebalance cycles |
+| `deviationTriggerPercent` | `Double` | `5.0` | Minimum deviation % to trigger a trade |
+| `dustThresholdUSD` | `Double` | `5.0` | Minimum trade value in USD (below this is skipped) |
+| `dryRun` | `Boolean` | `true` | If true, logs intended trades without executing them |
+| `fiatMaxDrawdown` | `Double` | `0.0` | Portfolio drawdown % at which 100% of USD is deployed (0 = disabled) |
+| `fiatDeploymentExponent` | `Double` | `1.0` | Controls deployment curve: `1.0` = linear, `<1.0` = aggressive, `>1.0` = conservative |
 
 ---
 
@@ -220,25 +226,31 @@ Open your browser to **http://localhost:5173**. The frontend proxies API request
 
 ## Testing
 
-The project enforces **95% instruction coverage** via JaCoCo. All tests are behavioral — they verify actual rebalancing decisions, not just method invocations.
+The project enforces **95% line and branch coverage** via JaCoCo. All tests are behavioural — they verify actual rebalancing decisions, not just method invocations.
 
 ```bash
-mvn clean install
+./gradlew test
 ```
 
-**98 tests** across:
+**92 tests** across:
 - `KrakenE2ETest` / `ResilienceChaosTest` / `PrecisionRoundingFuzzTest` / `SerializationParityTest` — advanced E2E black-box and fuzz testing
-- `PortfolioManagerComprehensiveTest` — full rebalance cycle scenarios
 - `PortfolioManagerFiatCorrectionTest` — deposit/withdrawal distribution logic
 - `PortfolioManagerDrawdownTest` — ATH tracking and dynamic deployment
 - `PortfolioManagerOrderExecutionTest` — sell-first/buy-second sequencing
 - `PortfolioManagerLoopTest` — loop lifecycle, error recovery, interruption
 - `PortfolioManagerZeroAllocationTest` — edge case: 0% target allocation
+- `PortfolioManagerEdgeCasesTest` — dust thresholds, price gaps, zero balances
 - `PortfolioManagerDogeTest` — Kraken symbol mapping quirks (BTC→XBT, DOGE→XDG)
-- `KrakenServiceTest` — API signing, error handling, dry run
+- `KrakenServiceTest` — API signing, error handling, dry run (using Ktor `MockEngine`)
 - `ConfigServiceTest` — validation, hot-reload, persistence
 - `TradeHistoryServiceTest` — snapshot storage, size limits
 - `FileTradeRepositoryTest` / `PortfolioStatsRepositoryTest` — file I/O
+
+### Test Design Principles
+
+- **`FakeKrakenService`** — an in-process test double for `KrakenService` used by all `PortfolioManager` tests. Avoids fragile `coEvery` stubbing of `suspend` functions in concurrent coroutine contexts.
+- **`runTest`** — all tests that call `suspend` functions use `kotlinx.coroutines.test.runTest` for correct coroutine scheduling.
+- **`MockEngine`** — `KrakenServiceTest` uses Ktor's `MockEngine` to simulate HTTP responses without a real network.
 
 ---
 

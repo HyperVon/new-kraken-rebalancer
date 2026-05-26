@@ -6,10 +6,10 @@ Thank you for your interest in contributing! This project is a production-grade 
 
 ### Prerequisites
 
-- Java 25+
-- Maven 3.8+
+- JDK 21+
+- Gradle (the `./gradlew` wrapper is included — no separate installation required)
 - A Kraken account (for testing with real API — use **dry-run mode**)
-- Basic familiarity with Spring Boot, Java, and React (TypeScript)
+- Basic familiarity with Kotlin, Ktor, Koin, and React (TypeScript)
 
 ### Local Setup
 
@@ -27,7 +27,7 @@ Thank you for your interest in contributing! This project is a production-grade 
 
 3. **Build the project:**
    ```bash
-   mvn clean install -DskipTests
+   ./gradlew build -x test
    ```
 
 4. **Run in dry-run mode** before enabling live trading:
@@ -53,16 +53,17 @@ Thank you for your interest in contributing! This project is a production-grade 
    git checkout -b feature/your-feature-name
    ```
 2. Make your changes, keeping commits focused and descriptive
-3. Ensure existing tests pass: `mvn test` (requires a valid `rebalancer-config.json`)
+3. Ensure existing tests pass: `./gradlew test` (requires a valid `rebalancer-config.json`)
 4. Open a pull request against `main` with a clear description of what and why
 
 ## Code Guidelines
 
-- **Language:** Java 25 for backend development; TypeScript and React for frontend development
-- **Style:** Follow existing code formatting conventions
+- **Language:** Kotlin for all backend development; TypeScript and React for frontend development
+- **Style:** Follow existing code formatting conventions; use idiomatic Kotlin (data classes, coroutines, extension functions)
 - **Safety first:** Any change touching order execution must be tested with `dryRun: true`
 - **No credentials:** Never include API keys, secrets, or real account data in commits
-- **Tests:** Add or update tests for any non-trivial logic changes
+- **Tests:** Add or update tests for any non-trivial logic changes. The project enforces **95%+ coverage** via JaCoCo.
+- **Coroutines:** Any method interacting with `KrakenService` must be a `suspend` function and tested with `runTest`
 
 ## Areas Where Help is Welcome
 

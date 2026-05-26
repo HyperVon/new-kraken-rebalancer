@@ -1,0 +1,146 @@
+package com.gemini.krakenbot.service.impl
+
+import com.fasterxml.jackson.core.JsonProcessingException
+import com.fasterxml.jackson.databind.JsonNode
+import com.fasterxml.jackson.databind.ObjectMapper
+import com.gemini.krakenbot.service.ConfigService
+import com.gemini.krakenbot.service.KrakenService
+import org.slf4j.LoggerFactory
+import io.ktor.client.HttpClient
+import io.ktor.client.request.get
+import io.ktor.client.request.post
+import io.ktor.client.request.header
+import io.ktor.client.request.setBody
+import io.ktor.client.statement.bodyAsText
+import java.util.Base64
+import java.util.concurrent.atomic.AtomicLong
+import javax.crypto.Mac
+import javax.crypto.spec.SecretKeySpec
+
+class KrakenServiceImpl(
+    private val configService: ConfigService,
+    private val objectMapper: ObjectMapper,
+    private val httpClient: HttpClient
+) : KrakenService {
+
+    private val log = LoggerFactory.getLogger(KrakenServiceImpl::class.java)
+    private val API_URL = "https://api.kraken.com"
+    private val API_VERSION = "0"
+
+
+    private val nonceGenerator = AtomicLong(System.currentTimeMillis() * 1000)
+
+    override suspend fun getBalances(): Map<String, Double> {
+        val path = "/$API_VERSION/private/Balance"
+        val response = queryPrivate(path, emptyMap())
+        return response.properties().asSequence().associate { (key, value) ->
+            key to value.asDouble()
+        }
+    }
+
+    override suspend fun getTickerPrices(pairs: String): Map<String, Double> {
+        val path = "/$API_VERSION/public/Ticker?pair=$pairs"
+        val result = queryPublic(path).path("result")
+        return result.properties().asSequence().mapNotNull { (key, value) ->
+            val c = value.path("c")
+            if (c.isArray && !c.isEmpty) key to c.get(0).asDouble() else null
+        }.toMap()
+    }
+
+    override suspend fun executeOrder(pair: String, type: String, side: String, volume: Double) {
+        if (configService.getConfig().settings.dryRun) {
+            log.info("[DRY RUN] Would execute order: {} {} {} volume={}", type, side, pair, volume)
+            return
+        }
+
+        val path = "/$API_VERSION/private/AddOrder"
+        val params = mapOf(
+            "pair" to pair,
+            "type" to side,
+            "ordertype" to type,
+            "volume" to volume.toString()
+        )
+
+        try {
+            val resp = queryPrivate(path, params)
+            log.info("Order Executed: {}", resp.toString())
+        } catch (e: Exception) {
+            log.error("Failed to execute order: {} {} {} volume={}", type, side, pair, volume, e)
+        }
+    }
+
+    private suspend fun queryPublic(path: String): JsonNode {
+        val responseBody = httpClient.get(API_URL + path).bodyAsText()
+        try {
+            val root: JsonNode = objectMapper.readTree(responseBody)
+            if (root.has("error") && !root.path("error").isEmpty) {
+                log.error("Kraken Public API Error for path {}: {}", path, root.path("error"))
+                throw RuntimeException("Kraken Public API Error: " + root.path("error").toString())
+            }
+            return root
+        } catch (e: JsonProcessingException) {
+            throw RuntimeException("Failed to parse public API response", e)
+        }
+    }
+
+    private suspend fun queryPrivate(path: String, data: Map<String, String>): JsonNode {
+        val maxRetries = 5
+        var retryCount = 0
+
+        while (true) {
+            val nonce = nonceGenerator.incrementAndGet().toString()
+            val payload = data.toMutableMap()
+            payload["nonce"] = nonce
+
+            val postData = payload.entries.joinToString("&") { "${it.key}=${it.value}" }
+            val signature = signRequest(path, nonce, postData)
+
+            val apiKey = configService.getConfig().kraken.apiKey
+            if (apiKey.isBlank()) throw RuntimeException("API Key is null")
+
+            val responseBody = httpClient.post(API_URL + path) {
+                header("API-Key", apiKey)
+                header("API-Sign", signature)
+                header("Content-Type", "application/x-www-form-urlencoded")
+                setBody(postData)
+            }.bodyAsText()
+
+            try {
+                val root: JsonNode = objectMapper.readTree(responseBody)
+                if (!root.path("error").isEmpty) {
+                    val errorMsg = root.path("error").toString()
+                    if (errorMsg.contains("Invalid nonce") && retryCount < maxRetries) {
+                        log.warn("Invalid nonce detected. Adjusting nonce generator and retrying (Attempt {}/{})", retryCount + 1, maxRetries)
+                        nonceGenerator.addAndGet(5000) // jump ahead to resolve collisions
+                        retryCount++
+                        continue
+                    }
+                    throw RuntimeException("Kraken API Error: $errorMsg")
+                }
+                return root.path("result")
+            } catch (e: JsonProcessingException) {
+                throw RuntimeException("Failed to parse private API response", e)
+            }
+        }
+    }
+
+    private fun signRequest(path: String, nonce: String, postData: String): String {
+        try {
+            val sha2 = java.security.MessageDigest.getInstance("SHA-256")
+                .digest((nonce + postData).toByteArray(Charsets.UTF_8))
+
+            val pathBytes = path.toByteArray(Charsets.UTF_8)
+            val hmacMessage = pathBytes + sha2
+
+            val mac = Mac.getInstance("HmacSHA512")
+            val secretDecoded = Base64.getDecoder().decode(configService.getConfig().kraken.privateKey)
+            val secretSpec = SecretKeySpec(secretDecoded, "HmacSHA512")
+            mac.init(secretSpec)
+
+            val sigBytes = mac.doFinal(hmacMessage)
+            return Base64.getEncoder().encodeToString(sigBytes)
+        } catch (e: Exception) {
+            throw RuntimeException("Failed to sign request", e)
+        }
+    }
+}

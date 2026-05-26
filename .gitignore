@@ -1,5 +1,12 @@
-# Build artifacts
+# Build artifacts (Maven)
 target/
+
+# Build artifacts (Gradle)
+build/
+.gradle/
+out/
+
+
 *.class
 *.jar
 *.war
