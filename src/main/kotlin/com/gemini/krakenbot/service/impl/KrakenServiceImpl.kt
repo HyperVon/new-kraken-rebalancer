@@ -41,7 +41,7 @@ class KrakenServiceImpl(
     override suspend fun getTickerPrices(pairs: String): Map<String, Double> {
         val path = "/$API_VERSION/public/Ticker?pair=$pairs"
         val result = queryPublic(path).path("result")
-        return result.properties().asSequence().mapNotNull { (key, value) ->
+        return result.properties().mapNotNull { (key, value) ->
             val c = value.path("c")
             if (c.isArray && !c.isEmpty) key to c.get(0).asDouble() else null
         }.toMap()
