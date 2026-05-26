@@ -138,7 +138,7 @@ See **[ALGORITHM.md](ALGORITHM.md)** for a detailed breakdown of the rebalancing
 │   │   └── impl/                          # File-backed implementations
 │   └── service/                           # Core logic interfaces: PortfolioManager, KrakenService, ConfigService, TradeHistoryService
 │       └── impl/                          # Service implementations (coroutine-aware)
-├── src/test/kotlin/                       # 92 unit tests (95%+ coverage enforced by JaCoCo)
+├── src/test/kotlin/                       # 92 unit tests (98%+ line coverage, 96%+ branch coverage enforced by JaCoCo)
 │   └── com/gemini/krakenbot/service/
 │       └── FakeKrakenService.kt           # In-process test double for KrakenService
 ├── frontend/
@@ -233,7 +233,7 @@ The project enforces **95% line and branch coverage** via JaCoCo. All tests are 
 ```
 
 **92 tests** across:
-- `PortfolioManagerComprehensiveTest` — full rebalance cycle scenarios
+- `KrakenE2ETest` / `ResilienceChaosTest` / `PrecisionRoundingFuzzTest` / `SerializationParityTest` — advanced E2E black-box and fuzz testing
 - `PortfolioManagerFiatCorrectionTest` — deposit/withdrawal distribution logic
 - `PortfolioManagerDrawdownTest` — ATH tracking and dynamic deployment
 - `PortfolioManagerOrderExecutionTest` — sell-first/buy-second sequencing
