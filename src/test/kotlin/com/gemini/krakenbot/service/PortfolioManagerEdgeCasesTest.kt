@@ -122,7 +122,7 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
 
                 val captor = io.mockk.slot<PortfolioSnapshot>()
                 verify { tradeHistoryService.addSnapshot(capture(captor)) }
-                captor.captured.fiatDeploymentPercent!!.toDouble() shouldBe 100.0
+                captor.captured.fiatDeploymentPercent.toDouble() shouldBe 100.0
             }
         }
 

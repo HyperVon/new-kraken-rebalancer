@@ -88,7 +88,7 @@ class PrecisionRoundingFuzzTest : StringSpec() {
             capturedOrderPayload.shouldNotBeNull()
             
             // Regex asserts volume is a number with 1 to 8 decimal places
-            val volumeMatch = Regex("volume=(\\d+\\.\\d{1,8})(&|$)").find(capturedOrderPayload!!)
+            val volumeMatch = Regex("volume=(\\d+\\.\\d{1,8})(&|$)").find(capturedOrderPayload)
             volumeMatch.shouldNotBeNull()
         }
     }
