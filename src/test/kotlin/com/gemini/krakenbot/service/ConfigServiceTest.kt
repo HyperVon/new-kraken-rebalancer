@@ -19,6 +19,7 @@ import io.kotest.matchers.shouldBe
 import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.assertions.throwables.shouldThrow
+import java.nio.file.Files
 
 class ConfigServiceTest : StringSpec({
 
@@ -34,7 +35,7 @@ class ConfigServiceTest : StringSpec({
 
     beforeTest {
         objectMapper = jacksonObjectMapper()
-        tempFile = java.nio.file.Files.createTempDirectory("test").resolve("test-config.json").toFile()
+        tempFile = Files.createTempDirectory("test").resolve("test-config.json").toFile()
         createValidConfig(tempFile)
         configService = ConfigServiceImpl(objectMapper, tempFile.absolutePath)
     }

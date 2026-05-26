@@ -11,6 +11,7 @@ import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.assertions.throwables.shouldNotThrowAny
+import io.kotest.core.spec.IsolationMode
 import io.mockk.every
 import io.mockk.mockk
 import io.ktor.client.HttpClient
@@ -29,7 +30,7 @@ import java.util.concurrent.atomic.AtomicLong
 
 class KrakenServiceTest : StringSpec() {
 
-    override fun isolationMode() = io.kotest.core.spec.IsolationMode.InstancePerTest
+    override fun isolationMode() = IsolationMode.InstancePerTest
 
     private lateinit var configService: ConfigService
 

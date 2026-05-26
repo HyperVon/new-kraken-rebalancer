@@ -6,22 +6,25 @@ import io.mockk.verify
 
 import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.config.AppConfig
+import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.PortfolioStats
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
+import io.kotest.core.spec.IsolationMode
 
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.booleans.shouldBeTrue
+import io.mockk.slot
 import kotlinx.coroutines.test.runTest
 import java.math.BigDecimal
 import kotlin.math.abs
 
 class PortfolioManagerDrawdownTest : StringSpec() {
 
-    override fun isolationMode() = io.kotest.core.spec.IsolationMode.InstancePerTest
+    override fun isolationMode() = IsolationMode.InstancePerTest
 
     private val krakenService = FakeKrakenService()
     private val configService = mockk<ConfigService>(relaxed = true)
@@ -34,7 +37,7 @@ class PortfolioManagerDrawdownTest : StringSpec() {
             portfolioManager = PortfolioManagerImpl(krakenService, configService, tradeHistoryService, portfolioStatsRepository)
             
             val settings = Settings(60L, 2.0, 1.0, false, 50.0, 1.0)
-            val appConfig = AppConfig(com.gemini.krakenbot.config.KrakenCredentials("k", "s"), settings, emptyList())
+            val appConfig = AppConfig(KrakenCredentials("k", "s"), settings, emptyList())
             every { configService.getConfig() } returns appConfig
         }
 
@@ -48,7 +51,7 @@ class PortfolioManagerDrawdownTest : StringSpec() {
                 )
                 
                 val appConfig = AppConfig(
-                    com.gemini.krakenbot.config.KrakenCredentials("k", "s"), 
+                    KrakenCredentials("k", "s"),
                     Settings(60L, 2.0, 1.0, false, 50.0, 1.0), 
                     allocs
                 )
@@ -72,7 +75,7 @@ class PortfolioManagerDrawdownTest : StringSpec() {
                 order.side shouldBe "buy"
                 (abs(order.volume - 3.75) < 0.01).shouldBeTrue()
 
-                val captor = io.mockk.slot<PortfolioSnapshot>()
+                val captor = slot<PortfolioSnapshot>()
                 verify { tradeHistoryService.addSnapshot(capture(captor)) }
                 val s = captor.captured
 
@@ -90,7 +93,7 @@ class PortfolioManagerDrawdownTest : StringSpec() {
                 val allocs = listOf(Allocation("USD", 100.0))
                 
                 val appConfig = AppConfig(
-                    com.gemini.krakenbot.config.KrakenCredentials("k", "s"), 
+                    KrakenCredentials("k", "s"),
                     Settings(60L, 2.0, 1.0, false, 50.0, 1.0), 
                     allocs
                 )

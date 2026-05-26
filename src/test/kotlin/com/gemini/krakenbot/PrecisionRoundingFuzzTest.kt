@@ -12,6 +12,7 @@ import com.gemini.krakenbot.service.impl.KrakenServiceImpl
 import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.assertions.throwables.shouldNotThrowAny
+import io.kotest.core.spec.IsolationMode
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
@@ -26,7 +27,7 @@ import java.util.Base64
 
 class PrecisionRoundingFuzzTest : StringSpec() {
 
-    override fun isolationMode() = io.kotest.core.spec.IsolationMode.InstancePerTest
+    override fun isolationMode() = IsolationMode.InstancePerTest
 
     init {
         "should handle extremely high precision balances and prices without throwing exceptions" {

@@ -11,6 +11,7 @@ import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.impl.KrakenServiceImpl
 import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
 import com.gemini.krakenbot.service.impl.TradeHistoryServiceImpl
+import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.nulls.shouldNotBeNull
@@ -29,7 +30,7 @@ import java.util.Base64
 
 class KrakenE2ETest : StringSpec() {
 
-    override fun isolationMode() = io.kotest.core.spec.IsolationMode.InstancePerTest
+    override fun isolationMode() = IsolationMode.InstancePerTest
 
     init {
         "should execute a full rebalance cycle end-to-end" {

@@ -8,6 +8,7 @@ import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.PortfolioStats
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
+import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
 import kotlinx.coroutines.launch
@@ -17,7 +18,7 @@ import java.math.BigDecimal
 
 class PortfolioManagerLoopTest : StringSpec() {
 
-    override fun isolationMode() = io.kotest.core.spec.IsolationMode.InstancePerTest
+    override fun isolationMode() = IsolationMode.InstancePerTest
 
     private val krakenService = FakeKrakenService()
     private val configService = mockk<ConfigService>(relaxed = true)

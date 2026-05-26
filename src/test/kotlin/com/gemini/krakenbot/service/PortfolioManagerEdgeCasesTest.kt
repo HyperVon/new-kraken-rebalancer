@@ -11,9 +11,11 @@ import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.PortfolioStats
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
+import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.booleans.shouldBeTrue
+import io.mockk.slot
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.yield
@@ -21,7 +23,7 @@ import java.math.BigDecimal
 
 class PortfolioManagerEdgeCasesTest : StringSpec() {
 
-    override fun isolationMode() = io.kotest.core.spec.IsolationMode.InstancePerTest
+    override fun isolationMode() = IsolationMode.InstancePerTest
 
     private val krakenService = FakeKrakenService()
     private val configService = mockk<ConfigService>(relaxed = true)
@@ -120,7 +122,7 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
                 portfolioManager.startRebalancingLoop()
                 portfolioManager.performRebalanceCycle()
 
-                val captor = io.mockk.slot<PortfolioSnapshot>()
+                val captor = slot<PortfolioSnapshot>()
                 verify { tradeHistoryService.addSnapshot(capture(captor)) }
                 captor.captured.fiatDeploymentPercent.toDouble() shouldBe 100.0
             }

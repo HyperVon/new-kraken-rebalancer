@@ -5,17 +5,19 @@ import io.mockk.every
 import io.mockk.mockk
 import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.config.AppConfig
+import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.PortfolioStats
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
+import io.kotest.core.spec.IsolationMode
 import io.kotest.matchers.shouldBe
 import kotlinx.coroutines.test.runTest
 import java.math.BigDecimal
 
 class PortfolioManagerZeroAllocationTest : StringSpec() {
 
-    override fun isolationMode() = io.kotest.core.spec.IsolationMode.InstancePerTest
+    override fun isolationMode() = IsolationMode.InstancePerTest
 
     private val krakenService = FakeKrakenService()
     private val configService = mockk<ConfigService>(relaxed = true)
@@ -42,7 +44,7 @@ class PortfolioManagerZeroAllocationTest : StringSpec() {
                     dryRun = false
                 )
                 val mockConfig = AppConfig(
-                    kraken = com.gemini.krakenbot.config.KrakenCredentials("k", "s"),
+                    kraken = KrakenCredentials("k", "s"),
                     settings = mockSettings,
                     allocations = allAllocations
                 )

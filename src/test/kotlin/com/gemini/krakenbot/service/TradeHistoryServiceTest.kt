@@ -11,12 +11,13 @@ import io.mockk.verify
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.repository.TradeRepository
 import com.gemini.krakenbot.service.impl.TradeHistoryServiceImpl
+import io.kotest.core.spec.IsolationMode
 import java.math.BigDecimal
 import java.time.Instant
 
 class TradeHistoryServiceTest : StringSpec() {
 
-    override fun isolationMode() = io.kotest.core.spec.IsolationMode.InstancePerTest
+    override fun isolationMode() = IsolationMode.InstancePerTest
 
 
     init {
