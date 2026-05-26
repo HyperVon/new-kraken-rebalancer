@@ -4,22 +4,22 @@ import java.math.BigDecimal
 import java.time.Instant
 
 data class PortfolioSnapshot(
-    var timestamp: Instant? = null,
-    var totalValueUSD: BigDecimal? = null,
-    var assets: Map<String, AssetSnapshot>? = null,
-    var actions: List<String>? = null,
-    var drawdownPercent: BigDecimal? = null,
-    var fiatDeploymentPercent: BigDecimal? = null,
-    var effectiveUsdTargetPercent: BigDecimal? = null
+    val timestamp: Instant,
+    val totalValueUSD: BigDecimal,
+    val assets: Map<String, AssetSnapshot>,
+    val actions: List<String>,
+    val drawdownPercent: BigDecimal,
+    val fiatDeploymentPercent: BigDecimal,
+    val effectiveUsdTargetPercent: BigDecimal
 ) {
     data class AssetSnapshot(
-        var symbol: String? = null,
-        var balance: BigDecimal? = null,
-        var price: BigDecimal? = null,
-        var valueUSD: BigDecimal? = null,
-        var targetPercent: BigDecimal? = null,
-        var currentPercent: BigDecimal? = null,
-        var deviationPercent: BigDecimal? = null,
-        var deviationUSD: BigDecimal? = null
+        val symbol: String,
+        val balance: BigDecimal,
+        val price: BigDecimal,
+        val valueUSD: BigDecimal,
+        val targetPercent: BigDecimal,
+        val currentPercent: BigDecimal,
+        val deviationPercent: BigDecimal,
+        val deviationUSD: BigDecimal
     )
 }

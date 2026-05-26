@@ -45,7 +45,10 @@ class FileTradeRepositoryTest : StringSpec({
             timestamp = Instant.parse("2023-01-01T10:00:00Z"),
             totalValueUSD = BigDecimal("15000.50"),
             assets = emptyMap(),
-            actions = listOf("BUY BTC")
+            actions = listOf("BUY BTC"),
+            drawdownPercent = BigDecimal.ZERO,
+            fiatDeploymentPercent = BigDecimal.ZERO,
+            effectiveUsdTargetPercent = BigDecimal.ZERO
         )
 
         repository.save(listOf(snapshot))
