@@ -43,6 +43,7 @@ class DashboardControllerTest : StringSpec() {
         }
 
         beforeTest {
+            stopKoin()
             startKoin {
                 modules(testModule)
             }
