@@ -13,12 +13,12 @@ A production-grade, autonomous portfolio rebalancing engine for the [Kraken](htt
 | Layer | Technology |
 |---|---|
 | **Language** | Kotlin 2.x (JVM) |
-| **Backend** | Ktor 2.3 (Netty engine), Koin 3.5 (DI), Jackson |
+| **Backend** | Ktor 2.3.13 (Netty engine), Koin 3.5.6 (DI), Jackson 2.21 |
 | **HTTP Client** | Ktor CIO Client (async, coroutine-native) |
-| **Concurrency** | Kotlin Coroutines (`kotlinx.coroutines` 1.8) |
+| **Concurrency** | Kotlin Coroutines (`kotlinx.coroutines` 1.11) |
 | **Frontend** | React 19 (TypeScript), Vite 7, Tailwind CSS v4, Chart.js |
 | **API** | Kraken REST API with HMAC-SHA512 authentication |
-| **Testing** | Kotest 5.9 (StringSpec), MockK 1.13, Ktor MockEngine, JaCoCo (95%+ coverage enforced) |
+| **Testing** | Kotest 6.1 (StringSpec), MockK 1.14, Ktor MockEngine, JaCoCo (95%+ coverage enforced) |
 | **Build** | Gradle (Kotlin DSL), npm |
 
 ---

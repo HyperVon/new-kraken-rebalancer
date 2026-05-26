@@ -28,13 +28,16 @@ dependencies {
     implementation("com.fasterxml.jackson.datatype:jackson-datatype-jsr310")
     implementation("org.jetbrains.kotlin:kotlin-reflect")
 
+    // Jackson BOM — pins jackson-core & jackson-databind to a secure, explicit version
+    implementation(platform("com.fasterxml.jackson:jackson-bom:2.21.3"))
+
     // Koin
-    implementation("io.insert-koin:koin-core:3.5.3")
-    implementation("io.insert-koin:koin-logger-slf4j:3.5.3")
-    implementation("io.insert-koin:koin-ktor:3.5.3")
+    implementation("io.insert-koin:koin-core:3.5.6")
+    implementation("io.insert-koin:koin-logger-slf4j:3.5.6")
+    implementation("io.insert-koin:koin-ktor:3.5.6")
     
     // Ktor Server & Client
-    val ktorVersion = "2.3.8"
+    val ktorVersion = "2.3.13"
     implementation("io.ktor:ktor-server-core:$ktorVersion")
     implementation("io.ktor:ktor-server-netty:$ktorVersion")
     implementation("io.ktor:ktor-server-content-negotiation:$ktorVersion")
@@ -44,19 +47,19 @@ dependencies {
     implementation("io.ktor:ktor-client-cio:$ktorVersion")
 
     // Logging
-    implementation("ch.qos.logback:logback-classic:1.4.14")
+    implementation("ch.qos.logback:logback-classic:1.5.32")
 
     // Coroutines
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0")
 
     // Testing
-    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.0")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
     testImplementation("io.ktor:ktor-server-test-host:$ktorVersion")
     testImplementation("io.ktor:ktor-client-mock:$ktorVersion")
-    testImplementation("io.insert-koin:koin-test:3.5.3")
-    testImplementation("io.mockk:mockk:1.13.11")
-    testImplementation("io.kotest:kotest-runner-junit5:5.9.0")
-    testImplementation("io.kotest:kotest-assertions-core:5.9.0")
+    testImplementation("io.insert-koin:koin-test:3.5.6")
+    testImplementation("io.mockk:mockk:1.14.9")
+    testImplementation("io.kotest:kotest-runner-junit5:6.1.11")
+    testImplementation("io.kotest:kotest-assertions-core:6.1.11")
 }
 
 tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile> {

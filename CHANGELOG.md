@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.1.1] - 2026-05-26
+
+### Security
+- **logback-classic `1.4.14` → `1.5.32`**: Resolves three vulnerabilities in the 1.4.x branch, which is no longer actively maintained. Fixes CVE-2024-12798 (arbitrary code execution via `JaninoEventEvaluator`), CVE-2024-12801 (SSRF via `SaxEventRecorder` processing external DTDs), and CVE-2025-11226 (arbitrary code execution via the `new` operator in configuration `<if>` conditions).
+- **Ktor `2.3.8` → `2.3.13`**: Resolves CVE-2024-49580 (response information disclosure via improper `HttpCache` plugin caching), CVE-2023-45612 (XXE in the `ContentNegotiation` plugin with default XML settings), and CVE-2023-45613 (server certificate verification bypass).
+- **Added `jackson-bom:2.21.3`**: Pins `jackson-core` and `jackson-databind` to an explicit, secure version rather than relying on whatever version Ktor's transitive dependency graph resolves. Protects against CVE-2025-52999 (DoS via unbounded recursion on deeply nested JSON, affects `jackson-core < 2.15.0`) and CVE-2025-49128 (information disclosure via reused memory buffers in error messages, affects `< 2.13.0`).
+
+### Changed
+- **Koin `3.5.3` → `3.5.6`**: Upgraded to the official 3.5.x LTS release.
+- **kotlinx-coroutines `1.8.0` → `1.11.0`**: Updated to the latest stable release.
+- **MockK `1.13.11` → `1.14.9`**: Updated to the latest stable release.
+- **Kotest `5.9.0` → `6.1.11`**: Upgraded to the current major version (6.x); the 5.9.x branch is EOL and no longer receives patches.
+
+---
+
 ## [2.1.0] - 2026-05-25
 ### Added
 - **Advanced E2E Kotlin Tests**: Introduced highly rigorous Kotest-based test suites using `MockRestServiceServer` to simulate Kraken API behavior (`KrakenE2ETest`, `SerializationParityTest`, `ResilienceChaosTest`, `PrecisionRoundingFuzzTest`). These strictly validate precision handling, JSON backwards compatibility, and resilient coroutine failure states. Increased test suite to 92 unit tests, achieving **98%+ line coverage** and **96%+ branch coverage**.
