@@ -62,7 +62,7 @@ dependencies {
     testImplementation("io.kotest:kotest-assertions-core:6.1.11")
 }
 
-tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile> {
+tasks.withType<KotlinCompile> {
     compilerOptions {
         freeCompilerArgs.add("-Xjsr305=strict")
     }
