@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Graceful Shutdown**: Application now registers a JVM shutdown hook that stops the rebalancing loop, closes the HTTP client, and stops Koin.
 - **`KrakenSymbolsTest`**: Unit tests for ticker mapping and trading pair construction.
 - **`DashboardControllerTest`**: Test for `400 Bad Request` response on invalid configuration updates.
+- **`AtomicJsonFileTest`**: Added a new test suite covering file I/O atomic writes, directory creation error states, move fallback scenarios, and cleanup routines.
 
 ### Changed
 - **`BigDecimal` Order Volumes**: `KrakenService.executeOrder()` volume parameter changed from `Double` to `BigDecimal`, eliminating floating-point precision loss on volumes sent to the Kraken API. Volumes are normalized to 8 decimal places.
@@ -29,7 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Repository Error Propagation**: `FileTradeRepositoryImpl` and `PortfolioStatsRepositoryImpl` now re-throw `IOException` after logging, instead of silently swallowing write failures.
 - **Dry Run Action Log**: Dry-run order entries in the snapshot action log are now prefixed with `[DRY RUN]` for clearer distinction from live trades.
 - **`FakeKrakenService`**: Updated to support `BigDecimal` volumes and `OrderResult` returns. Added `orderResultFactory` lambda for failure-injection scenarios.
-- **Backend test count**: 92 → 97 unit tests.
+- **Backend test count**: 92 → 122 unit tests, achieving **100% line coverage and 100% branch coverage** across all components.
 
 ### Removed
 - **Deposit Detection Heuristic**: Removed the `detectDeposit()` method and ATH recalibration-on-deposit logic. The heuristic (USD surplus > deviation threshold ≈ deposit) had false-positive risk from normal sell proceeds. ATH is now set on first run or when a genuine new high is reached.

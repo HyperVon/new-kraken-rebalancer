@@ -143,7 +143,7 @@ See **[ALGORITHM.md](ALGORITHM.md)** for a detailed breakdown of the rebalancing
 │   ├── service/                           # Core logic interfaces: PortfolioManager, KrakenService, ConfigService, TradeHistoryService
 │   │   └── impl/                          # Service implementations (coroutine-aware)
 │   └── util/                              # Utilities: AtomicJsonFile, KrakenSymbols
-├── src/test/kotlin/                       # 97 unit tests (98%+ line coverage, 96%+ branch coverage enforced by JaCoCo)
+├── src/test/kotlin/                       # 122 unit tests (100% line and branch coverage enforced by JaCoCo)
 │   └── com/gemini/krakenbot/service/
 │       └── FakeKrakenService.kt           # In-process test double for KrakenService
 ├── frontend/
@@ -231,13 +231,13 @@ Open your browser to **http://localhost:5173**. The frontend proxies API request
 
 ## Testing
 
-The project enforces **95% line and branch coverage** via JaCoCo. All tests are behavioural — they verify actual rebalancing decisions, not just method invocations. Order volumes are asserted with `BigDecimal.compareTo()` to avoid floating-point comparison issues.
+The project enforces **95% line and branch coverage** via JaCoCo (with the current suite achieving **100% line and branch coverage**). All tests are behavioural — they verify actual rebalancing decisions, not just method invocations. Order volumes are asserted with `BigDecimal.compareTo()` to avoid floating-point comparison issues.
 
 ```bash
 ./gradlew test
 ```
 
-**97 tests** across:
+**122 tests** across:
 - `KrakenE2ETest` / `ResilienceChaosTest` / `PrecisionRoundingFuzzTest` / `SerializationParityTest` — advanced E2E black-box and fuzz testing
 - `PortfolioManagerComprehensiveTest` — full rebalance cycles with order result verification
 - `PortfolioManagerFiatCorrectionTest` — deposit/withdrawal distribution logic
@@ -249,6 +249,7 @@ The project enforces **95% line and branch coverage** via JaCoCo. All tests are 
 - `PortfolioManagerDogeTest` — Kraken symbol mapping quirks (BTC→XBT, DOGE→XDG)
 - `KrakenServiceTest` — API signing, error handling, dry run, order failure (using Ktor `MockEngine`)
 - `KrakenSymbolsTest` — ticker mapping and trading pair construction
+- `AtomicJsonFileTest` — file-system atomic write verification under normal and error/unsupported paths
 - `ConfigServiceTest` — validation, hot-reload, persistence, duplicate/blank symbol rejection
 - `DashboardControllerTest` — REST API endpoints, invalid config error responses
 - `TradeHistoryServiceTest` — snapshot storage, size limits
