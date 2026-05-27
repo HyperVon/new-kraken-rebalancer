@@ -13,7 +13,7 @@ import java.nio.file.Files
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.nulls.shouldNotBeNull
-import io.kotest.assertions.throwables.shouldNotThrowAny
+import io.kotest.assertions.throwables.shouldThrow
 
 class PortfolioStatsRepositoryImplTest : StringSpec({
 
@@ -67,6 +67,6 @@ class PortfolioStatsRepositoryImplTest : StringSpec({
         val errRepository = PortfolioStatsRepositoryImpl(mockMapper)
         val stats = PortfolioStats(BigDecimal.TEN)
 
-        shouldNotThrowAny { errRepository.save(stats) }
+        shouldThrow<IOException> { errRepository.save(stats) }
     }
 })

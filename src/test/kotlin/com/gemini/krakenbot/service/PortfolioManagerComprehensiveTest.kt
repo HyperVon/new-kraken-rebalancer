@@ -7,13 +7,18 @@ import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.config.Settings
+import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.booleans.shouldBeTrue
+import io.mockk.every
+import io.mockk.verify
+import io.kotest.matchers.comparables.shouldBeLessThan
 import kotlinx.coroutines.test.runTest
-import kotlin.math.abs
+import java.math.BigDecimal
 
 class PortfolioManagerComprehensiveTest : StringSpec() {
 
@@ -62,11 +67,11 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
 
                 val sell = krakenService.executedOrders.first { it.side == "sell" }
                 sell.pair shouldBe "AUSD"
-                (abs(sell.volume - 1.0) < 0.0001) shouldBe true
+                sell.volume.subtract(BigDecimal.ONE).abs() shouldBeLessThan BigDecimal("0.0001")
 
                 val buy = krakenService.executedOrders.first { it.side == "buy" }
                 buy.pair shouldBe "BUSD"
-                (abs(buy.volume - 1.0) < 0.0001) shouldBe true
+                buy.volume.subtract(BigDecimal.ONE).abs() shouldBeLessThan BigDecimal("0.0001")
             }
         }
 
@@ -81,10 +86,10 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
                 portfolioManager.performRebalanceCycle()
 
                 val buyA = krakenService.executedOrders.first { it.pair == "AUSD" && it.side == "buy" }
-                (abs(buyA.volume - 4.0) < 0.0001) shouldBe true
+                buyA.volume.subtract(BigDecimal.valueOf(4.0)).abs() shouldBeLessThan BigDecimal("0.0001")
 
                 val buyB = krakenService.executedOrders.first { it.pair == "BUSD" && it.side == "buy" }
-                (abs(buyB.volume - 4.0) < 0.0001) shouldBe true
+                buyB.volume.subtract(BigDecimal.valueOf(4.0)).abs() shouldBeLessThan BigDecimal("0.0001")
             }
         }
 
@@ -98,11 +103,11 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
 
                 val sell = krakenService.executedOrders.first { it.side == "sell" }
                 sell.pair shouldBe "AUSD"
-                (abs(sell.volume - 4.5) < 0.0001) shouldBe true
+                sell.volume.subtract(BigDecimal.valueOf(4.5)).abs() shouldBeLessThan BigDecimal("0.0001")
 
                 val buy = krakenService.executedOrders.first { it.side == "buy" }
                 buy.pair shouldBe "BUSD"
-                (abs(buy.volume - 4.5) < 0.05) shouldBe true
+                buy.volume.subtract(BigDecimal.valueOf(4.5)).abs() shouldBeLessThan BigDecimal("0.05")
             }
         }
 
@@ -128,7 +133,7 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
 
                 val sell = krakenService.executedOrders.first { it.side == "sell" }
                 sell.pair shouldBe "AUSD"
-                (abs(sell.volume - 10.0) < 0.0001) shouldBe true
+                sell.volume.subtract(BigDecimal.TEN).abs() shouldBeLessThan BigDecimal("0.0001")
             }
         }
 
@@ -142,7 +147,7 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
 
                 val buy = krakenService.executedOrders.first { it.side == "buy" }
                 buy.pair shouldBe "AUSD"
-                (abs(buy.volume - 10.0) < 0.0001) shouldBe true
+                buy.volume.subtract(BigDecimal.TEN).abs() shouldBeLessThan BigDecimal("0.0001")
             }
         }
 
@@ -156,7 +161,7 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
 
                 val sell = krakenService.executedOrders.first { it.side == "sell" }
                 sell.pair shouldBe "AUSD"
-                (abs(sell.volume - 2.5) < 0.0001) shouldBe true
+                sell.volume.subtract(BigDecimal.valueOf(2.5)).abs() shouldBeLessThan BigDecimal("0.0001")
             }
         }
 
@@ -189,16 +194,26 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
                 every { configService.getConfig() } returns makeConfig(Allocation("A", 100.0), Allocation("USD", 0.0))
                 krakenService.pricesSupplier = { mapOf("AUSD" to 100.0) }
                 krakenService.balanceSupplier = { mapOf("A" to 0.0, "USD" to 1000.0) }
-                // Make executeOrder record the call and then throw.
-                krakenService.executeOrderAction = { _, _, _, _ -> throw RuntimeException("Kraken Down") }
+                krakenService.orderResultFactory = { pair, _, side, volume ->
+                    com.gemini.krakenbot.model.OrderResult(
+                        success = false,
+                        pair = pair,
+                        side = side,
+                        volume = volume,
+                        errorMessage = "Kraken Down"
+                    )
+                }
 
-                try {
-                    portfolioManager.performRebalanceCycle()
-                } catch (_: Exception) {}
+                val snapshots = mutableListOf<PortfolioSnapshot>()
+                every { tradeHistoryService.addSnapshot(any<PortfolioSnapshot>()) } answers { snapshots.add(firstArg()) }
+
+                portfolioManager.performRebalanceCycle()
 
                 val order = krakenService.executedOrders.first()
                 order.pair shouldBe "AUSD"
                 order.side shouldBe "buy"
+
+                snapshots.single().actions.any { it.startsWith("FAILED BUY A") }.shouldBeTrue()
             }
         }
     }

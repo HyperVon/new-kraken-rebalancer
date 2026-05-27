@@ -3,6 +3,7 @@ package com.gemini.krakenbot.controller
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.config.AppConfig
+import com.gemini.krakenbot.config.InvalidConfigurationException
 import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.PortfolioSnapshot
@@ -124,6 +125,34 @@ class DashboardControllerTest : StringSpec() {
             }
 
             verify { configService.updateConfig(any()) }
+        }
+
+        "updateConfig_ReturnsBadRequestOnInvalidConfiguration" {
+            val serverConfig = AppConfig(
+                KrakenCredentials("server-key", "server-secret"),
+                Settings(60L, 2.0, 1.0, true, 0.0, 1.0),
+                listOf(Allocation("USD", 100.0))
+            )
+            every { configService.getConfig() } returns serverConfig
+            every { configService.updateConfig(any()) } throws InvalidConfigurationException("Total allocation percentage must be exactly 100%.")
+
+            val clientConfig = FrontendConfig(
+                serverConfig.settings,
+                listOf(Allocation("USD", 90.0))
+            )
+
+            testApplication {
+                application {
+                    install(ContentNegotiation) { jackson { registerModule(JavaTimeModule()) } }
+                    dashboardRouting()
+                }
+                val response = client.post("/api/config") {
+                    contentType(ContentType.Application.Json)
+                    setBody(objectMapper.writeValueAsString(clientConfig))
+                }
+                response.status shouldBe HttpStatusCode.BadRequest
+                response.bodyAsText().contains("100%") shouldBe true
+            }
         }
     }
 }

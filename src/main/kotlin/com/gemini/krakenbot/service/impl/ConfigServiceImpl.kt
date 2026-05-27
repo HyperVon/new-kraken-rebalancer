@@ -2,7 +2,9 @@ package com.gemini.krakenbot.service.impl
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.gemini.krakenbot.config.AppConfig
+import com.gemini.krakenbot.config.InvalidConfigurationException
 import com.gemini.krakenbot.service.ConfigService
+import com.gemini.krakenbot.util.AtomicJsonFile
 import java.io.File
 import java.io.IOException
 import kotlin.math.abs
@@ -37,7 +39,7 @@ class ConfigServiceImpl(
         validateConfig(newConfig)
         this.appConfig = newConfig
         try {
-            objectMapper.writerWithDefaultPrettyPrinter().writeValue(File(configFilePath), newConfig)
+            AtomicJsonFile.write(objectMapper, File(configFilePath), newConfig)
         } catch (e: IOException) {
             throw RuntimeException("Failed to save configuration", e)
         }
@@ -48,31 +50,56 @@ class ConfigServiceImpl(
 
         when {
             settings.loopDelaySeconds <= 0 -> {
-                throw RuntimeException("Loop delay must be a positive integer.")
+                throw InvalidConfigurationException("Loop delay must be a positive integer.")
             }
             settings.deviationTriggerPercent < 0 -> {
-                throw RuntimeException("Deviation trigger percent must be non-negative.")
+                throw InvalidConfigurationException("Deviation trigger percent must be non-negative.")
             }
             settings.dustThresholdUSD < 0 -> {
-                throw RuntimeException("Dust threshold USD must be non-negative.")
+                throw InvalidConfigurationException("Dust threshold USD must be non-negative.")
             }
             settings.fiatMaxDrawdown !in 0.0..100.0 -> {
-                throw RuntimeException("Fiat max drawdown must be between 0% and 100%.")
+                throw InvalidConfigurationException("Fiat max drawdown must be between 0% and 100%.")
             }
             settings.fiatDeploymentExponent <= 0 -> {
-                throw RuntimeException("Fiat deployment exponent must be positive.")
+                throw InvalidConfigurationException("Fiat deployment exponent must be positive.")
+            }
+        }
+
+        if (config.allocations.isEmpty()) {
+            throw InvalidConfigurationException("At least one allocation is required.")
+        }
+
+        val symbols = config.allocations.map { it.symbol.uppercase() }
+        val duplicateSymbols = symbols.groupingBy { it }.eachCount().filter { it.value > 1 }.keys
+        if (duplicateSymbols.isNotEmpty()) {
+            throw InvalidConfigurationException(
+                "Duplicate allocation symbols are not allowed: ${duplicateSymbols.joinToString(", ")}"
+            )
+        }
+
+        config.allocations.forEach { allocation ->
+            if (allocation.symbol.isBlank()) {
+                throw InvalidConfigurationException("Allocation symbols cannot be blank.")
+            }
+            if (allocation.targetPercent < 0) {
+                throw InvalidConfigurationException(
+                    "Target percent for ${allocation.symbol} cannot be negative."
+                )
             }
         }
 
         val totalPercent = config.allocations.sumOf { it.targetPercent }
 
         if (abs(totalPercent - 100.0) > 0.001) {
-            throw RuntimeException("Total allocation percentage must be exactly 100%. Current sum: $totalPercent")
+            throw InvalidConfigurationException(
+                "Total allocation percentage must be exactly 100%. Current sum: $totalPercent"
+            )
         }
 
         val hasUsd = config.allocations.any { "USD".equals(it.symbol, ignoreCase = true) }
         if (!hasUsd) {
-            throw RuntimeException("One asset must be USD.")
+            throw InvalidConfigurationException("One asset must be USD.")
         }
     }
 }

@@ -15,7 +15,7 @@ import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.nulls.shouldNotBeNull
-import io.kotest.assertions.throwables.shouldNotThrowAny
+import io.kotest.assertions.throwables.shouldThrow
 
 class FileTradeRepositoryTest : StringSpec({
 
@@ -79,6 +79,6 @@ class FileTradeRepositoryTest : StringSpec({
         val mockMapper = mockk<ObjectMapper>(relaxed = true)
         every { mockMapper.writeValue(any<File>(), any<Any>()) } throws IOException("Write failed")
         val repo = FileTradeRepositoryImpl(mockMapper)
-        shouldNotThrowAny { repo.save(emptyList()) }
+        shouldThrow<IOException> { repo.save(emptyList()) }
     }
 })

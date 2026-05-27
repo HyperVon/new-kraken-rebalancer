@@ -73,7 +73,7 @@ class PortfolioManagerDrawdownTest : StringSpec() {
                 order.pair shouldBe "AUSD"
                 order.type shouldBe "market"
                 order.side shouldBe "buy"
-                (abs(order.volume - 3.75) < 0.01).shouldBeTrue()
+                (order.volume.subtract(BigDecimal.valueOf(3.75)).abs() < BigDecimal("0.01")).shouldBeTrue()
 
                 val captor = slot<PortfolioSnapshot>()
                 verify { tradeHistoryService.addSnapshot(capture(captor)) }

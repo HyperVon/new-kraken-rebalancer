@@ -1,6 +1,6 @@
 import { PortfolioSnapshot, FrontendConfig } from '@/types';
 
-class ApiError extends Error {
+export class ApiError extends Error {
     constructor(public status: number, message: string) {
         super(message);
     }
@@ -9,19 +9,28 @@ class ApiError extends Error {
 async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
     const response = await fetch(url, options);
     if (!response.ok) {
-        throw new ApiError(response.status, `HTTP error! status: ${response.status}`);
+        let message = `HTTP error! status: ${response.status}`;
+        try {
+            const body = await response.json();
+            if (body?.error) {
+                message = body.error;
+            }
+        } catch {
+            // ignore parse errors for non-JSON bodies
+        }
+        throw new ApiError(response.status, message);
     }
     return response.json();
 }
 
 export const apiService = {
     getStatus: (): Promise<PortfolioSnapshot> => fetchJson('/api/status'),
-    
+
     getHistory: (): Promise<PortfolioSnapshot[]> => fetchJson('/api/history'),
-    
+
     getSettings: (): Promise<FrontendConfig> => fetchJson('/api/config'),
-    
-    updateSettings: (config: FrontendConfig): Promise<FrontendConfig> => 
+
+    updateSettings: (config: FrontendConfig): Promise<FrontendConfig> =>
         fetchJson('/api/config', {
             method: 'POST',
             headers: {
@@ -30,4 +39,3 @@ export const apiService = {
             body: JSON.stringify(config)
         })
 };
-

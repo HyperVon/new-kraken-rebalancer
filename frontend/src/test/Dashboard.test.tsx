@@ -167,10 +167,29 @@ describe('Dashboard', () => {
     });
 
     it('handles fetch errors gracefully without crashing', async () => {
-        global.fetch.mockRejectedValue(new Error('Network error'));
+        global.fetch.mockImplementation((url) => {
+            if (String(url).includes('/api/status')) {
+                return Promise.reject(new Error('Network error'));
+            }
+            return Promise.resolve({ ok: true, json: async () => [] });
+        });
         await act(async () => { renderWithProviders(<Dashboard />); });
-        // Should not crash; just stop loading
-        await waitFor(() => expect(screen.queryByText('Connecting to KrakenBot...')).not.toBeInTheDocument());
+        await waitFor(() => expect(screen.getByText('Unable to load portfolio status')).toBeInTheDocument());
+    });
+
+    it('shows waiting message when status returns 404', async () => {
+        global.fetch.mockImplementation((url) => {
+            if (String(url).includes('/api/status')) {
+                return Promise.resolve({
+                    ok: false,
+                    status: 404,
+                    json: async () => ({ error: 'No snapshot available yet' })
+                });
+            }
+            return Promise.resolve({ ok: true, json: async () => [] });
+        });
+        await act(async () => { renderWithProviders(<Dashboard />); });
+        await waitFor(() => expect(screen.getByText('Waiting for first rebalance cycle')).toBeInTheDocument());
     });
 
     it('applies sort indicator on column click', async () => {

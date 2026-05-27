@@ -128,13 +128,13 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
             }
         }
 
-        "testGetCurrentPrice_ShortCircuitAndFallback" {
-            val prices = mapOf("ETHEUR" to 3000.0, "ETHUSD" to 3100.0)
+        "testResolvePriceFromTicker_ExplicitPairAndFallback" {
+            val rawPrices = mapOf("ETHEUR" to 3000.0, "ETHUSD" to 3100.0)
 
-            val priceEth = portfolioManager.getCurrentPrice("ETH", prices)
+            val priceEth = portfolioManager.resolvePriceFromTicker("ETH", rawPrices)
             priceEth shouldBe BigDecimal("3100.0")
 
-            val priceMissing = portfolioManager.getCurrentPrice("LTC", prices)
+            val priceMissing = portfolioManager.resolvePriceFromTicker("LTC", rawPrices)
             priceMissing.compareTo(BigDecimal.ZERO) shouldBe 0
         }
 
@@ -143,7 +143,7 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
                 val buyOrders = mapOf("ETH" to BigDecimal.TEN)
                 val sellOrders = mapOf("BTC" to BigDecimal.TEN)
                 val currentValuesUSD = mapOf("USD" to BigDecimal.valueOf(1000.0))
-                val prices = emptyMap<String, Double>()
+                val prices = emptyMap<String, BigDecimal>()
                 val settings = Settings(0L, 2.0, 1.0, false, 0.0, 1.0)
                 val actionLog = mutableListOf<String>()
 
@@ -158,7 +158,7 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
                 val buyOrders = mapOf("ETH" to BigDecimal.TEN)
                 val sellOrders = mapOf("BTC" to BigDecimal.valueOf(100.0))
                 val currentValuesUSD = mapOf("USD" to BigDecimal.valueOf(1000.0))
-                val prices = mapOf("XBTUSD" to 10.0, "ETHUSD" to 5.0)
+                val prices = mapOf("BTC" to BigDecimal.TEN, "ETH" to BigDecimal.valueOf(5))
                 val settings = Settings(0L, 2.0, 1.0, false, 0.0, 1.0)
                 val actionLog = mutableListOf<String>()
 
@@ -167,12 +167,12 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
                 portfolioManager.executeOrders(buyOrders, sellOrders, currentValuesUSD, prices, settings, actionLog)
 
                 krakenService.executedOrders.size shouldBe 2
-                krakenService.executedOrders[0].pair shouldBe "BTCUSD"
+                krakenService.executedOrders[0].pair shouldBe "XBTUSD"
                 krakenService.executedOrders[0].side shouldBe "sell"
-                krakenService.executedOrders[0].volume shouldBe 10.0
+                krakenService.executedOrders[0].volume.compareTo(BigDecimal.TEN) shouldBe 0
                 krakenService.executedOrders[1].pair shouldBe "ETHUSD"
                 krakenService.executedOrders[1].side shouldBe "buy"
-                krakenService.executedOrders[1].volume shouldBe 2.0
+                krakenService.executedOrders[1].volume.compareTo(BigDecimal.valueOf(2)) shouldBe 0
             }
         }
 
@@ -181,7 +181,7 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
                 val buyOrders = mapOf("ETH" to BigDecimal.TEN)
                 val sellOrders = mapOf("BTC" to BigDecimal.valueOf(100.0))
                 val currentValuesUSD = mapOf("USD" to BigDecimal.valueOf(1000.0))
-                val prices = mapOf("XBTUSD" to 10.0, "ETHUSD" to 5.0)
+                val prices = mapOf("BTC" to BigDecimal.TEN, "ETH" to BigDecimal.valueOf(5))
                 val settings = Settings(0L, 2.0, 1.0, false, 0.0, 1.0)
                 val actionLog = mutableListOf<String>()
 
@@ -190,18 +190,25 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
                 portfolioManager.executeOrders(buyOrders, sellOrders, currentValuesUSD, prices, settings, actionLog)
 
                 krakenService.executedOrders.size shouldBe 2
-                krakenService.executedOrders[0].pair shouldBe "BTCUSD"
+                krakenService.executedOrders[0].pair shouldBe "XBTUSD"
                 krakenService.executedOrders[0].side shouldBe "sell"
-                krakenService.executedOrders[0].volume shouldBe 10.0
+                krakenService.executedOrders[0].volume.compareTo(BigDecimal.TEN) shouldBe 0
                 krakenService.executedOrders[1].pair shouldBe "ETHUSD"
                 krakenService.executedOrders[1].side shouldBe "buy"
-                krakenService.executedOrders[1].volume shouldBe 2.0
+                krakenService.executedOrders[1].volume.compareTo(BigDecimal.valueOf(2)) shouldBe 0
             }
         }
 
         "testUpdateAthAndCalculateDrawdown_NewAth" {
             every { portfolioStatsRepository.load() } returns PortfolioStats(BigDecimal("1000.0"))
-            val drawdown = portfolioManager.updateAthAndCalculateDrawdown(BigDecimal("1500.0"))
+            val drawdown = portfolioManager.updateAthAndCalculateDrawdown(BigDecimal("1500.0"), depositDetected = false)
+            drawdown.compareTo(BigDecimal.ZERO) shouldBe 0
+            verify { portfolioStatsRepository.save(any()) }
+        }
+
+        "testUpdateAthAndCalculateDrawdown_RecalibrateOnDeposit" {
+            every { portfolioStatsRepository.load() } returns PortfolioStats(BigDecimal("10000.0"))
+            val drawdown = portfolioManager.updateAthAndCalculateDrawdown(BigDecimal("9000.0"), depositDetected = true)
             drawdown.compareTo(BigDecimal.ZERO) shouldBe 0
             verify { portfolioStatsRepository.save(any()) }
         }
@@ -211,7 +218,7 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
                 val buyOrders = mapOf("ETH" to BigDecimal.TEN)
                 val sellOrders = mapOf("BTC" to BigDecimal.valueOf(100.0))
                 val currentValuesUSD = mapOf("USD" to BigDecimal.valueOf(1000.0))
-                val prices = mapOf("XBTUSD" to 10.0, "ETHUSD" to 5.0)
+                val prices = mapOf("BTC" to BigDecimal.TEN, "ETH" to BigDecimal.valueOf(5))
                 val settings = Settings(0L, 2.0, 1.0, false, 0.0, 1.0)
                 val actionLog = mutableListOf<String>()
 
@@ -220,12 +227,12 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
                 portfolioManager.executeOrders(buyOrders, sellOrders, currentValuesUSD, prices, settings, actionLog)
 
                 krakenService.executedOrders.size shouldBe 2
-                krakenService.executedOrders[0].pair shouldBe "BTCUSD"
+                krakenService.executedOrders[0].pair shouldBe "XBTUSD"
                 krakenService.executedOrders[0].side shouldBe "sell"
-                krakenService.executedOrders[0].volume shouldBe 10.0
+                krakenService.executedOrders[0].volume.compareTo(BigDecimal.TEN) shouldBe 0
                 krakenService.executedOrders[1].pair shouldBe "ETHUSD"
                 krakenService.executedOrders[1].side shouldBe "buy"
-                krakenService.executedOrders[1].volume shouldBe 2.0
+                krakenService.executedOrders[1].volume.compareTo(BigDecimal.valueOf(2)) shouldBe 0
             }
         }
 
@@ -234,7 +241,7 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
                 val buyOrders = mapOf("ETH" to BigDecimal.valueOf(0.5))
                 val sellOrders = emptyMap<String, BigDecimal>()
                 val currentValuesUSD = mapOf("USD" to BigDecimal.valueOf(1000.0))
-                val prices = mapOf("ETHUSD" to 5.0)
+                val prices = mapOf("ETH" to BigDecimal.valueOf(5))
                 val settings = Settings(0L, 2.0, 1.0, false, 0.0, 1.0)
                 val actionLog = mutableListOf<String>()
 

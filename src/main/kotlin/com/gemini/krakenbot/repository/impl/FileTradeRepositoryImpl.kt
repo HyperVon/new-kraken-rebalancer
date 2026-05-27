@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.type.TypeReference
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.repository.TradeRepository
+import com.gemini.krakenbot.util.AtomicJsonFile
 import org.slf4j.LoggerFactory
 import java.io.File
 import java.io.IOException
@@ -17,9 +18,10 @@ class FileTradeRepositoryImpl(
 
     override fun save(history: List<PortfolioSnapshot>) {
         try {
-            objectMapper.writeValue(File(filePath), history)
+            AtomicJsonFile.write(objectMapper, File(filePath), history)
         } catch (e: IOException) {
             log.error("Failed to save trade history to {}", filePath, e)
+            throw e
         }
     }
 

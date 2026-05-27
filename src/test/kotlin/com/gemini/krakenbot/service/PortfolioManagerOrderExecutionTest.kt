@@ -174,7 +174,7 @@ class PortfolioManagerOrderExecutionTest : StringSpec() {
                 krakenService.executedOrders[0].side shouldBe "sell"
                 krakenService.executedOrders[1].pair shouldBe "BUSD"
                 krakenService.executedOrders[1].side shouldBe "buy"
-                (abs(krakenService.executedOrders[1].volume - 19.8) < 0.1).shouldBeTrue()
+                (krakenService.executedOrders[1].volume.subtract(BigDecimal.valueOf(19.8)).abs() < BigDecimal("0.1")).shouldBeTrue()
             }
         }
     }

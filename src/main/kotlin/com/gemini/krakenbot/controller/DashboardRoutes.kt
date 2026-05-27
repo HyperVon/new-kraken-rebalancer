@@ -1,6 +1,7 @@
 package com.gemini.krakenbot.controller
 
 import com.gemini.krakenbot.config.AppConfig
+import com.gemini.krakenbot.config.InvalidConfigurationException
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.TradeHistoryService
 import io.ktor.http.HttpStatusCode
@@ -25,7 +26,7 @@ fun Application.dashboardRouting() {
                 if (snapshot != null) {
                     call.respond(snapshot)
                 } else {
-                    call.respond(HttpStatusCode.NotFound)
+                    call.respond(HttpStatusCode.NotFound, mapOf("error" to "No snapshot available yet"))
                 }
             }
 
@@ -39,12 +40,16 @@ fun Application.dashboardRouting() {
             }
 
             post("/config") {
-                val config = call.receive<FrontendConfig>()
-                val serverCredentials = configService.getConfig().kraken
-                val configWithCredentials = AppConfig(serverCredentials, config.settings, config.allocations)
-                configService.updateConfig(configWithCredentials)
-                val updated = configService.getConfig()
-                call.respond(FrontendConfig(updated.settings, updated.allocations))
+                try {
+                    val config = call.receive<FrontendConfig>()
+                    val serverCredentials = configService.getConfig().kraken
+                    val configWithCredentials = AppConfig(serverCredentials, config.settings, config.allocations)
+                    configService.updateConfig(configWithCredentials)
+                    val updated = configService.getConfig()
+                    call.respond(FrontendConfig(updated.settings, updated.allocations))
+                } catch (e: InvalidConfigurationException) {
+                    call.respond(HttpStatusCode.BadRequest, mapOf("error" to (e.message ?: "Invalid configuration")))
+                }
             }
         }
     }

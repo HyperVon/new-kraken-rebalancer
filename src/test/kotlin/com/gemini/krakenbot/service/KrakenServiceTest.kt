@@ -21,7 +21,9 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
 import kotlinx.coroutines.test.runTest
+import java.math.BigDecimal
 import java.util.Base64
+import io.kotest.matchers.booleans.shouldBeFalse
 import java.util.Collections
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
@@ -85,7 +87,8 @@ class KrakenServiceTest : StringSpec() {
                 val responseJson = "{\"error\":[],\"result\":{\"descr\":{\"order\":\"buy 0.1 XBTUSD @ limit 50000\"},\"txid\":[\"THVR-...-TC\"]}}"
                 val service = createService(responseJson)
 
-                shouldNotThrowAny { service.executeOrder("XBTUSD", "limit", "buy", 0.1) }
+                val result = service.executeOrder("XBTUSD", "limit", "buy", BigDecimal("0.1"))
+                result.success.shouldBeTrue()
             }
         }
 
@@ -96,7 +99,9 @@ class KrakenServiceTest : StringSpec() {
                 val config = AppConfig(KrakenCredentials("k", "s"), settings, emptyList())
                 every { configService.getConfig() } returns config
 
-                shouldNotThrowAny { service.executeOrder("XBTUSD", "limit", "buy", 0.1) }
+                val result = service.executeOrder("XBTUSD", "limit", "buy", BigDecimal("0.1"))
+                result.success.shouldBeTrue()
+                result.dryRun.shouldBeTrue()
             }
         }
 
@@ -131,7 +136,9 @@ class KrakenServiceTest : StringSpec() {
                 val responseJson = "{\"error\":[\"EOrder:Insufficient funds\"]}"
                 val service = createService(responseJson)
 
-                shouldNotThrowAny { service.executeOrder("XBTUSD", "limit", "buy", 1.0) }
+                val result = service.executeOrder("XBTUSD", "limit", "buy", BigDecimal.ONE)
+                result.success.shouldBeFalse()
+                result.errorMessage.shouldNotBeNull()
             }
         }
 

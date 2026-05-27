@@ -3,6 +3,7 @@ package com.gemini.krakenbot.repository.impl
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.gemini.krakenbot.model.PortfolioStats
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
+import com.gemini.krakenbot.util.AtomicJsonFile
 import org.slf4j.LoggerFactory
 import java.io.File
 import java.io.IOException
@@ -29,9 +30,10 @@ class PortfolioStatsRepositoryImpl(
 
     override fun save(stats: PortfolioStats) {
         try {
-            objectMapper.writeValue(File(filePath), stats)
+            AtomicJsonFile.write(objectMapper, File(filePath), stats)
         } catch (e: IOException) {
             log.error("Failed to save portfolio stats", e)
+            throw e
         }
     }
 }

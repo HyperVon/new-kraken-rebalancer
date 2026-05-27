@@ -180,7 +180,7 @@ class KrakenE2ETest : StringSpec() {
 
             // Verify
             capturedOrderPayload.shouldNotBeNull()
-            capturedOrderPayload.contains("pair=BTCUSD").shouldBeTrue()
+            capturedOrderPayload.contains("pair=XBTUSD").shouldBeTrue()
             capturedOrderPayload.contains("type=buy").shouldBeTrue()
             capturedOrderPayload.contains("ordertype=market").shouldBeTrue()
             capturedOrderPayload.contains("volume=0.1").shouldBeTrue()
