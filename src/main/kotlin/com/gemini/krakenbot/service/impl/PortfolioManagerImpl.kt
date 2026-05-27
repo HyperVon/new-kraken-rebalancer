@@ -65,12 +65,7 @@ class PortfolioManagerImpl(
 
         log.info("Total Portfolio Value: $${totalPortfolioValueUSD.setScale(2, RoundingMode.HALF_UP)}")
 
-        val depositDetected = detectDeposit(totalPortfolioValueUSD, currentValuesUSD)
-        if (depositDetected) {
-            actionLog.add("Deposit detected (USD surplus). ATH will be recalibrated if needed.")
-        }
-
-        val drawdownPct = updateAthAndCalculateDrawdown(totalPortfolioValueUSD, depositDetected)
+        val drawdownPct = updateAthAndCalculateDrawdown(totalPortfolioValueUSD)
         val fiatDeploymentPct = calculateFiatDeployment(drawdownPct)
 
         if (fiatDeploymentPct > BigDecimal.ZERO) {
@@ -182,31 +177,27 @@ class PortfolioManagerImpl(
     }
 
     internal fun updateAthAndCalculateDrawdown(
-        totalPortfolioValueUSD: BigDecimal,
-        depositDetected: Boolean
+        totalPortfolioValueUSD: BigDecimal
     ): BigDecimal {
         val stats = portfolioStatsRepository.load()
         var ath = stats.allTimeHigh
 
-        val newHigh = ath == null || totalPortfolioValueUSD > ath
-        val recalibrateOnDeposit = depositDetected && ath != null && totalPortfolioValueUSD <= ath
-
-        if (newHigh || recalibrateOnDeposit) {
+        if (ath == null || ath <= BigDecimal.ZERO) {
             ath = totalPortfolioValueUSD
-            stats.allTimeHigh = ath
-            try {
-                portfolioStatsRepository.save(stats)
-            } catch (e: IOException) {
-                log.error("Failed to persist portfolio ATH", e)
-            }
-            if (recalibrateOnDeposit) {
-                log.info("Deposit detected: ATH recalibrated to $${ath.setScale(2, RoundingMode.HALF_UP)}")
-            } else {
-                log.info("New All-Time High detected: $${ath.setScale(2, RoundingMode.HALF_UP)}")
-            }
+            log.info("Initial ATH set to $${ath.setScale(2, RoundingMode.HALF_UP)}")
+        } else if (totalPortfolioValueUSD > ath) {
+            ath = totalPortfolioValueUSD
+            log.info("New All-Time High detected: $${ath.setScale(2, RoundingMode.HALF_UP)}")
         }
 
-        return if (ath != null && ath > BigDecimal.ZERO && totalPortfolioValueUSD < ath) {
+        stats.allTimeHigh = ath
+        try {
+            portfolioStatsRepository.save(stats)
+        } catch (e: IOException) {
+            log.error("Failed to persist portfolio ATH", e)
+        }
+
+        return if (ath > BigDecimal.ZERO && totalPortfolioValueUSD < ath) {
             val diff = ath - totalPortfolioValueUSD
             diff.divide(ath, 4, RoundingMode.HALF_UP) * BigDecimal.valueOf(100)
         } else {
@@ -250,28 +241,6 @@ class PortfolioManagerImpl(
         } else {
             BigDecimal.ONE
         }
-    }
-
-    internal fun detectDeposit(
-        totalPortfolioValueUSD: BigDecimal,
-        currentValuesUSD: Map<String, BigDecimal>
-    ): Boolean {
-        val s = configService.getConfig().settings
-        val baseUsdTarget = configService.getConfig().allocations
-            .filter { it.symbol.equals("USD", ignoreCase = true) }
-            .sumOf { it.targetPercent.toBigDecimal() }
-        if (baseUsdTarget <= BigDecimal.ZERO) return false
-
-        val targetPct = baseUsdTarget.divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP)
-        val targetValue = totalPortfolioValueUSD.multiply(targetPct)
-        val currentVal = currentValuesUSD["USD"] ?: BigDecimal.ZERO
-        val deviationUSD = currentVal.subtract(targetValue)
-
-        if (targetValue <= BigDecimal.ZERO || deviationUSD <= BigDecimal.ZERO) return false
-
-        val deviationPct = deviationUSD.divide(targetValue, 4, RoundingMode.HALF_UP)
-            .multiply(BigDecimal.valueOf(100))
-        return deviationPct.toDouble() >= s.deviationTriggerPercent
     }
 
     internal fun analyzeDeviations(
@@ -419,8 +388,8 @@ class PortfolioManagerImpl(
     }
 
     private suspend fun refreshUsdBalanceAfterSells(projectedCash: BigDecimal): BigDecimal {
-        val maxAttempts = 5
-        val delayMs = 500L
+        val maxAttempts = 3
+        val delayMs = 250L
         var bestCash = projectedCash
 
         repeat(maxAttempts) { attempt ->

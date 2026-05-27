@@ -201,14 +201,9 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
 
         "testUpdateAthAndCalculateDrawdown_NewAth" {
             every { portfolioStatsRepository.load() } returns PortfolioStats(BigDecimal("1000.0"))
-            val drawdown = portfolioManager.updateAthAndCalculateDrawdown(BigDecimal("1500.0"), depositDetected = false)
-            drawdown.compareTo(BigDecimal.ZERO) shouldBe 0
-            verify { portfolioStatsRepository.save(any()) }
-        }
-
-        "testUpdateAthAndCalculateDrawdown_RecalibrateOnDeposit" {
-            every { portfolioStatsRepository.load() } returns PortfolioStats(BigDecimal("10000.0"))
-            val drawdown = portfolioManager.updateAthAndCalculateDrawdown(BigDecimal("9000.0"), depositDetected = true)
+            val drawdown = portfolioManager.updateAthAndCalculateDrawdown(
+                BigDecimal("1500.0")
+            )
             drawdown.compareTo(BigDecimal.ZERO) shouldBe 0
             verify { portfolioStatsRepository.save(any()) }
         }
