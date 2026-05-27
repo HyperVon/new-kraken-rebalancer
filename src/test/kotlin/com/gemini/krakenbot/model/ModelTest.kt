@@ -2,8 +2,8 @@ package com.gemini.krakenbot.model
 
 import com.gemini.krakenbot.config.Settings
 import io.kotest.core.spec.style.StringSpec
-import io.kotest.matchers.shouldBe
 import io.kotest.matchers.nulls.shouldNotBeNull
+import io.kotest.matchers.shouldBe
 import java.math.BigDecimal
 import java.time.Instant
 

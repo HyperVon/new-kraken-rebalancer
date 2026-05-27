@@ -14,19 +14,16 @@ import com.gemini.krakenbot.service.impl.TradeHistoryServiceImpl
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.booleans.shouldBeTrue
-import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.nulls.shouldBeNull
-import io.ktor.client.HttpClient
-import io.ktor.client.engine.mock.MockEngine
-import io.ktor.client.engine.mock.respond
-import io.ktor.http.HttpHeaders
-import io.ktor.http.HttpStatusCode
-import io.ktor.http.headersOf
+import io.kotest.matchers.nulls.shouldNotBeNull
+import io.ktor.client.*
+import io.ktor.client.engine.mock.*
+import io.ktor.http.*
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
 import java.io.File
-import java.util.Base64
+import java.util.*
 
 class KrakenE2ETest : StringSpec() {
 
@@ -180,7 +177,7 @@ class KrakenE2ETest : StringSpec() {
 
             // Verify
             capturedOrderPayload.shouldNotBeNull()
-            capturedOrderPayload.contains("pair=BTCUSD").shouldBeTrue()
+            capturedOrderPayload.contains("pair=XBTUSD").shouldBeTrue()
             capturedOrderPayload.contains("type=buy").shouldBeTrue()
             capturedOrderPayload.contains("ordertype=market").shouldBeTrue()
             capturedOrderPayload.contains("volume=0.1").shouldBeTrue()

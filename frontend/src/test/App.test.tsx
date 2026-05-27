@@ -1,6 +1,6 @@
-import { render, screen } from '@testing-library/react';
-import { describe, it, expect, vi } from 'vitest';
-import { MemoryRouter } from 'react-router-dom';
+import {render, screen} from '@testing-library/react';
+import {describe, expect, it, vi} from 'vitest';
+import {MemoryRouter} from 'react-router-dom';
 import App from '../App';
 
 // Mock Dashboard so App test remains isolated

@@ -3,17 +3,17 @@ package com.gemini.krakenbot.service.impl
 import com.fasterxml.jackson.core.JsonProcessingException
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.gemini.krakenbot.model.OrderResult
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.KrakenService
+import io.ktor.client.*
+import io.ktor.client.request.*
+import io.ktor.client.statement.*
 import org.slf4j.LoggerFactory
-import io.ktor.client.HttpClient
-import io.ktor.client.request.get
-import io.ktor.client.request.post
-import io.ktor.client.request.header
-import io.ktor.client.request.setBody
-import io.ktor.client.statement.bodyAsText
+import java.math.BigDecimal
+import java.math.RoundingMode
 import java.security.MessageDigest
-import java.util.Base64
+import java.util.*
 import java.util.concurrent.atomic.AtomicLong
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
@@ -48,10 +48,18 @@ class KrakenServiceImpl(
         }.toMap()
     }
 
-    override suspend fun executeOrder(pair: String, type: String, side: String, volume: Double) {
+    override suspend fun executeOrder(pair: String, type: String, side: String, volume: BigDecimal): OrderResult {
+        val normalizedVolume = volume.setScale(8, RoundingMode.HALF_UP).stripTrailingZeros()
+
         if (configService.getConfig().settings.dryRun) {
-            log.info("[DRY RUN] Would execute order: {} {} {} volume={}", type, side, pair, volume)
-            return
+            log.info("[DRY RUN] Would execute order: {} {} {} volume={}", type, side, pair, normalizedVolume.toPlainString())
+            return OrderResult(
+                success = true,
+                pair = pair,
+                side = side,
+                volume = normalizedVolume,
+                dryRun = true
+            )
         }
 
         val path = "/$API_VERSION/private/AddOrder"
@@ -59,14 +67,23 @@ class KrakenServiceImpl(
             "pair" to pair,
             "type" to side,
             "ordertype" to type,
-            "volume" to volume.toString()
+            "volume" to normalizedVolume.toPlainString()
         )
 
-        try {
+        return try {
             val resp = queryPrivate(path, params)
             log.info("Order Executed: {}", resp.toString())
+            OrderResult(success = true, pair = pair, side = side, volume = normalizedVolume)
         } catch (e: Exception) {
-            log.error("Failed to execute order: {} {} {} volume={}", type, side, pair, volume, e)
+            val message = e.message ?: e.javaClass.simpleName
+            log.error("Failed to execute order: {} {} {} volume={}", type, side, pair, normalizedVolume.toPlainString(), e)
+            OrderResult(
+                success = false,
+                pair = pair,
+                side = side,
+                volume = normalizedVolume,
+                errorMessage = message
+            )
         }
     }
 

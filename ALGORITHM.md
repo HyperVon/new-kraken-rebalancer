@@ -15,7 +15,7 @@ flowchart TD
     end
 
     SNAP --> ATH{New ATH?}
-    ATH -- Yes --> SAVE_ATH[Update ATH in portfolio-stats.json]
+    ATH -- Yes --> SAVE_ATH["Update ATH in portfolio-stats.json\n(atomic write)"]
     ATH -- No --> DD
     SAVE_ATH --> DD
 
@@ -38,8 +38,13 @@ flowchart TD
     ANALYSIS --> EXEC
 
     subgraph EXEC["Phase 3: Execution"]
-        E1["Execute SELL orders first\n(generate USD liquidity)"] --> E2["Execute BUY orders second\n(verify cash sufficiency)"]
-        E2 --> E3["Record Snapshot\n& Trade History"]
+        E1["Execute SELL orders first\n(generate USD liquidity)"] --> E1R{"Order\nSucceeded?"}
+        E1R -- Yes --> E1C["Update projected cash"]
+        E1R -- No --> E1F["Log failure, skip cash update"]
+        E1C --> E2
+        E1F --> E2
+        E2["Refresh USD balance\n(retry up to 3×250ms)"] --> E3["Execute BUY orders second\n(verify cash sufficiency)"]
+        E3 --> E4["Record Snapshot\n& Trade History\n(atomic write)"]
     end
 
     EXEC --> SLEEP["Sleep (configurable delay)"]
@@ -80,7 +85,7 @@ The system determines what trades are necessary to restore the portfolio to its 
 ### 1. Target Calculation & Dynamic Adjustment
     Normally, the target value is `Total Portfolio Value * Target %`. However, the system implements a **Dynamic Fiat Deployment Strategy**:
 
-    1.  **ATH Tracking**: The bot tracks the portfolio's All-Time High (ATH) value in `portfolio-stats.json`.
+    1.  **ATH Tracking**: The bot tracks the portfolio's All-Time High (ATH) value in `portfolio-stats.json`. ATH is set on first run or updated whenever a new high is reached.
     2.  **Drawdown Calculation**:
         `Drawdown % = (ATH - Current Value) / ATH * 100`
     3.  **Fiat Deployment Percentage**:
@@ -127,16 +132,21 @@ The system determines what trades are necessary to restore the portfolio to its 
 
 ## Phase 3: Execution
 
-The system executes the calculated orders in a specific sequence to ensure liquidity.
+The system executes the calculated orders in a specific sequence to ensure liquidity. Each order returns a structured `OrderResult` indicating success or failure.
 
 1.  **Sell Orders First**: All SELL orders are executed immediately to generate USD.
-2.  **Buy Orders Second**:
-    *   The system calculates the projected cash available (Current USD + Proceeds from Sells).
-    *   It verifies that sufficient cash exists for the planned BUY orders.
-    *   If cash is insufficient (rare, usually due to price slippage), buy orders may be reduced.
-3.  **Order Placement**:
+    *   Only successful sells update the projected cash balance. Failed sells are logged but do not inflate the available cash.
+2.  **USD Balance Refresh**: After sells complete (if not in dry-run mode), the system polls the Kraken API up to 3 times at 250ms intervals to fetch the settled USD balance. It accepts the balance once it reaches 95% of the projected amount, or uses the best observed value.
+3.  **Buy Orders Second**:
+    *   The system verifies that sufficient cash exists for each planned BUY order.
+    *   If cash is insufficient (rare, usually due to price slippage or failed sells), buy orders are reduced to 99% of available cash.
+    *   Only successful buys deduct from the available cash balance.
+4.  **Order Placement**:
     *   Orders are placed as **Market Orders** for immediate execution.
     *   "Dust" orders (below the configured `dustThresholdUSD`) are skipped to avoid API errors.
+    *   Order volumes use `BigDecimal` with 8 decimal places of precision.
+    *   In dry-run mode, orders are logged with a `[DRY RUN]` prefix but not sent to Kraken.
+5.  **Persistence**: The cycle snapshot (including all trade actions and their outcomes) is saved to `trade-history.json` using an atomic write-then-rename operation to prevent file corruption.
 
 ---
 

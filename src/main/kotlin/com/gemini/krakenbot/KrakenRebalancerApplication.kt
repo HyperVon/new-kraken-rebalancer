@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.SerializationFeature
 import com.gemini.krakenbot.config.appModule
 import com.gemini.krakenbot.controller.dashboardRouting
 import com.gemini.krakenbot.service.PortfolioManager
+import io.ktor.client.*
 import io.ktor.http.*
 import io.ktor.serialization.jackson.*
 import io.ktor.server.application.*
@@ -17,6 +18,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import org.koin.core.context.GlobalContext
 import org.koin.core.context.startKoin
+import org.koin.core.context.stopKoin
 import org.koin.logger.slf4jLogger
 
 fun main() {
@@ -27,13 +29,19 @@ fun main() {
 
     val koin = GlobalContext.get()
     val portfolioManager = koin.get<PortfolioManager>()
-    
-    // Start the background rebalancing loop
+    val httpClient = koin.get<HttpClient>()
+
     portfolioManager.startRebalancingLoop()
     val applicationScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     applicationScope.launch {
         portfolioManager.runLoop()
     }
+
+    Runtime.getRuntime().addShutdownHook(Thread {
+        portfolioManager.stopRebalancingLoop()
+        httpClient.close()
+        stopKoin()
+    })
 
     embeddedServer(Netty, port = 8080, host = "0.0.0.0") {
         install(ContentNegotiation) {
@@ -42,6 +50,7 @@ fun main() {
                 disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)
             }
         }
+
         install(CORS) {
             anyHost()
             allowMethod(HttpMethod.Options)
@@ -51,7 +60,7 @@ fun main() {
             allowHeader(HttpHeaders.Authorization)
             allowHeader(HttpHeaders.ContentType)
         }
-        
+
         dashboardRouting()
     }.start(wait = true)
 }

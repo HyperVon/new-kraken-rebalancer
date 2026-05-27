@@ -1,7 +1,7 @@
-import { render, screen, waitFor, act } from '@testing-library/react';
+import {act, render, screen, waitFor} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
+import {QueryClient, QueryClientProvider} from '@tanstack/react-query';
 import Dashboard from '../components/Dashboard';
 
 const createTestQueryClient = () => new QueryClient({
@@ -167,10 +167,29 @@ describe('Dashboard', () => {
     });
 
     it('handles fetch errors gracefully without crashing', async () => {
-        global.fetch.mockRejectedValue(new Error('Network error'));
+        global.fetch.mockImplementation((url) => {
+            if (String(url).includes('/api/status')) {
+                return Promise.reject(new Error('Network error'));
+            }
+            return Promise.resolve({ ok: true, json: async () => [] });
+        });
         await act(async () => { renderWithProviders(<Dashboard />); });
-        // Should not crash; just stop loading
-        await waitFor(() => expect(screen.queryByText('Connecting to KrakenBot...')).not.toBeInTheDocument());
+        await waitFor(() => expect(screen.getByText('Unable to load portfolio status')).toBeInTheDocument());
+    });
+
+    it('shows waiting message when status returns 404', async () => {
+        global.fetch.mockImplementation((url) => {
+            if (String(url).includes('/api/status')) {
+                return Promise.resolve({
+                    ok: false,
+                    status: 404,
+                    json: async () => ({ error: 'No snapshot available yet' })
+                });
+            }
+            return Promise.resolve({ ok: true, json: async () => [] });
+        });
+        await act(async () => { renderWithProviders(<Dashboard />); });
+        await waitFor(() => expect(screen.getByText('Waiting for first rebalance cycle')).toBeInTheDocument());
     });
 
     it('applies sort indicator on column click', async () => {
@@ -517,5 +536,32 @@ describe('Dashboard', () => {
         const dataCells = rows.slice(1).map(r => r.querySelector('td')?.textContent);
         expect(dataCells[0]).toBe('ETH');
         expect(dataCells[1]).toBe('BTC');
+    });
+
+    it('handles null status and cleanup gracefully', async () => {
+        global.fetch.mockImplementation((url) => {
+            if (url === '/api/status') {
+                return Promise.resolve({ ok: true, json: () => Promise.resolve(null) });
+            }
+            if (url === '/api/history') {
+                return Promise.resolve({ ok: true, json: () => Promise.resolve(mockHistory) });
+            }
+            return Promise.reject(new Error('Unknown URL'));
+        });
+
+        let unmount: () => void = () => {};
+        await act(async () => {
+            const res = renderWithProviders(<Dashboard />);
+            unmount = res.unmount;
+        });
+
+        await waitFor(() => {
+            expect(screen.getByText('OFFLINE')).toBeInTheDocument();
+            expect(screen.getByText('-')).toBeInTheDocument();
+        });
+
+        await act(async () => {
+            unmount();
+        });
     });
 });

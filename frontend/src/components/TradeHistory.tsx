@@ -1,6 +1,6 @@
 import React from 'react';
-import { PortfolioSnapshot } from '@/types';
-import { Activity, CircleDashed } from 'lucide-react';
+import {PortfolioSnapshot} from '@/types';
+import {Activity, CircleDashed} from 'lucide-react';
 
 interface TradeHistoryProps {
     history: PortfolioSnapshot[];

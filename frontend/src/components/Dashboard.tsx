@@ -1,12 +1,12 @@
-import React, { useState, useEffect } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { useNavigate } from 'react-router-dom';
-import { Settings as SettingsIcon, TrendingUp, Wallet, Coins } from 'lucide-react';
+import React, {useEffect, useState} from 'react';
+import {useQuery} from '@tanstack/react-query';
+import {useNavigate} from 'react-router-dom';
+import {Coins, Settings as SettingsIcon, TrendingUp, Wallet} from 'lucide-react';
 import StatusCard from './StatusCard';
 import AllocationChart from './AllocationChart';
 import TradeHistory from './TradeHistory';
-import { apiService } from '@/services/api';
-import { AssetSnapshot } from '@/types';
+import {ApiError, apiService} from '@/services/api';
+import {AssetSnapshot} from '@/types';
 
 const ALLOWED_SORT_KEYS = new Set(['symbol', 'price', 'valueUSD', 'targetPercent', 'currentPercent', 'deviationPercent']);
 
@@ -15,10 +15,11 @@ const Dashboard: React.FC = () => {
     const [sortConfig, setSortConfig] = useState<{key: keyof AssetSnapshot | string, direction: 'asc' | 'desc'}>({ key: 'deviationPercent', direction: 'asc' });
     const [timeSinceUpdate, setTimeSinceUpdate] = useState(0);
 
-    const { data: status, isLoading: isStatusLoading } = useQuery({
+    const { data: status, isLoading: isStatusLoading, isError: isStatusError, error: statusError, isFetched: isStatusFetched } = useQuery({
         queryKey: ['status'],
         queryFn: apiService.getStatus,
         refetchInterval: 5000,
+        retry: false,
     });
 
     const { data: history = [], isLoading: isHistoryLoading } = useQuery({
@@ -42,7 +43,7 @@ const Dashboard: React.FC = () => {
         return () => clearInterval(interval);
     }, [status]);
 
-    if ((isStatusLoading || isHistoryLoading) && !status) return (
+    if ((isStatusLoading || isHistoryLoading) && !status && !isStatusFetched) return (
         <div className="flex items-center justify-center min-h-screen">
             <div className="animate-pulse flex flex-col items-center gap-4">
                 <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
@@ -51,7 +52,32 @@ const Dashboard: React.FC = () => {
         </div>
     );
 
-    const isStale = timeSinceUpdate > 90;
+    const isWaitingForFirstCycle = isStatusError && statusError instanceof ApiError && statusError.status === 404;
+    if (isWaitingForFirstCycle) {
+        return (
+            <div className="flex items-center justify-center min-h-screen">
+                <div className="text-center space-y-3 max-w-md px-6">
+                    <h2 className="text-xl font-semibold text-slate-200">Waiting for first rebalance cycle</h2>
+                    <p className="text-slate-400 text-sm">
+                        The rebalancer is running. Portfolio data will appear here after the first cycle completes.
+                    </p>
+                </div>
+            </div>
+        );
+    }
+
+    if (isStatusError && !status) {
+        return (
+            <div className="flex items-center justify-center min-h-screen">
+                <div className="text-center space-y-3 max-w-md px-6">
+                    <h2 className="text-xl font-semibold text-rose-400">Unable to load portfolio status</h2>
+                    <p className="text-slate-400 text-sm">{(statusError as Error).message}</p>
+                </div>
+            </div>
+        );
+    }
+
+    const isStale = status ? timeSinceUpdate > 90 : true;
     const formatCurrency = (val: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(val);
 
     const totalValue = status ? status.totalValueUSD : 0;
@@ -140,9 +166,10 @@ const Dashboard: React.FC = () => {
                         Kraken Rebalancer
                     </h1>
                     <div className={`px-2.5 py-0.5 rounded-full text-xs font-bold tracking-wider shadow-lg ${
+                        !status ? 'bg-slate-500/20 text-slate-400' :
                         isStale ? 'bg-yellow-500/20 text-yellow-400 shadow-yellow-500/20' : 'bg-emerald-500/20 text-emerald-400 shadow-emerald-500/20 animate-pulse'
                     }`}>
-                        {isStale ? 'DELAYED' : 'LIVE'}
+                        {!status ? 'OFFLINE' : isStale ? 'DELAYED' : 'LIVE'}
                     </div>
                 </div>
 

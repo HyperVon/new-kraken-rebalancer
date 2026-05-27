@@ -7,8 +7,10 @@ import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.KrakenService
 import com.gemini.krakenbot.service.PortfolioManager
 import com.gemini.krakenbot.service.TradeHistoryService
+import com.gemini.krakenbot.util.KrakenSymbols
 import kotlinx.coroutines.delay
 import org.slf4j.LoggerFactory
+import java.io.IOException
 import java.math.BigDecimal
 import java.math.RoundingMode
 import java.time.Instant
@@ -67,9 +69,11 @@ class PortfolioManagerImpl(
         val fiatDeploymentPct = calculateFiatDeployment(drawdownPct)
 
         if (fiatDeploymentPct > BigDecimal.ZERO) {
-            log.info("Drawdown Detected: {}%. Fiat Deployment: {}%", 
+            log.info(
+                "Drawdown Detected: {}%. Fiat Deployment: {}%",
                 drawdownPct.setScale(2, RoundingMode.HALF_UP),
-                fiatDeploymentPct.setScale(2, RoundingMode.HALF_UP))
+                fiatDeploymentPct.setScale(2, RoundingMode.HALF_UP)
+            )
         }
 
         val effectiveUsdTarget = calculateEffectiveUsdTarget(fiatDeploymentPct)
@@ -77,18 +81,26 @@ class PortfolioManagerImpl(
 
         val buyOrders = mutableMapOf<String, BigDecimal>()
         val sellOrders = mutableMapOf<String, BigDecimal>()
-        
-        analyzeDeviations(totalPortfolioValueUSD, currentValuesUSD, effectiveUsdTarget, cryptoScaleFactor,
-            buyOrders, sellOrders, actionLog)
+        analyzeDeviations(
+            totalPortfolioValueUSD, currentValuesUSD, effectiveUsdTarget, cryptoScaleFactor,
+            buyOrders, sellOrders, actionLog
+        )
 
         val s = configService.getConfig().settings
         executeOrders(buyOrders, sellOrders, currentValuesUSD, prices, s, actionLog)
 
-        val snapshot = buildSnapshot(balances, prices, currentValuesUSD,
+        val snapshot = buildSnapshot(
+            balances, prices, currentValuesUSD,
             totalPortfolioValueUSD, effectiveUsdTarget, cryptoScaleFactor,
-            drawdownPct, fiatDeploymentPct, actionLog)
-            
-        tradeHistoryService.addSnapshot(snapshot)
+            drawdownPct, fiatDeploymentPct, actionLog
+        )
+
+        try {
+            tradeHistoryService.addSnapshot(snapshot)
+        } catch (e: IOException) {
+            log.error("Failed to persist trade history snapshot", e)
+            actionLog.add("ERROR: Failed to persist trade history: ${e.message}")
+        }
 
         log.info("--- Cycle Complete ---")
     }
@@ -99,18 +111,35 @@ class PortfolioManagerImpl(
         return balances
     }
 
-    internal suspend fun fetchPrices(): Map<String, Double> {
+    internal suspend fun fetchPrices(): Map<String, BigDecimal> {
         val allocations = configService.getConfig().allocations
-        val pairs = allocations
-            .filter { !it.symbol.equals("USD", ignoreCase = true) }
-            .joinToString(",") { "${mapToKrakenTicker(it.symbol)}USD" }
-            
-        return if (pairs.isNotEmpty()) krakenService.getTickerPrices(pairs) else emptyMap()
+        val nonUsd = allocations.filter { !it.symbol.equals("USD", ignoreCase = true) }
+        if (nonUsd.isEmpty()) return emptyMap()
+
+        val pairs = nonUsd.joinToString(",") { KrakenSymbols.tradingPair(it.symbol) }
+        val rawPrices = krakenService.getTickerPrices(pairs)
+
+        return nonUsd.associate { allocation ->
+            allocation.symbol to resolvePriceFromTicker(allocation.symbol, rawPrices)
+        }
+    }
+
+    internal fun resolvePriceFromTicker(symbol: String, rawPrices: Map<String, Double>): BigDecimal {
+        val expectedPair = KrakenSymbols.tradingPair(symbol)
+        rawPrices[expectedPair]?.let { return BigDecimal.valueOf(it) }
+
+        val krakenTicker = KrakenSymbols.toKrakenTicker(symbol)
+        for ((key, value) in rawPrices) {
+            if (key.contains(krakenTicker) && key.contains("USD")) {
+                return BigDecimal.valueOf(value)
+            }
+        }
+        return BigDecimal.ZERO
     }
 
     private fun calculatePortfolioValues(
-        balances: Map<String, Double>, 
-        prices: Map<String, Double>,
+        balances: Map<String, Double>,
+        prices: Map<String, BigDecimal>,
         currentValuesUSD: MutableMap<String, BigDecimal>
     ): BigDecimal? {
         var totalPortfolioValueUSD = BigDecimal.ZERO
@@ -122,7 +151,7 @@ class PortfolioManagerImpl(
             var price = BigDecimal.ONE
 
             if (!symbol.equals("USD", ignoreCase = true)) {
-                val p = getCurrentPrice(symbol, prices)
+                val p = prices[symbol] ?: BigDecimal.ZERO
                 if (p.compareTo(BigDecimal.ZERO) == 0) {
                     log.error("Price not found for {}. Aborting rebalance cycle to prevent erroneous trades.", symbol)
                     return null
@@ -142,23 +171,33 @@ class PortfolioManagerImpl(
         return balances[symbol]
             ?: balances["X$symbol"]
             ?: balances["Z$symbol"]
-            ?: balances[mapToKrakenTicker(symbol)]
-            ?: balances["X${mapToKrakenTicker(symbol)}"]
+            ?: balances[KrakenSymbols.toKrakenTicker(symbol)]
+            ?: balances["X${KrakenSymbols.toKrakenTicker(symbol)}"]
             ?: 0.0
     }
 
-    internal fun updateAthAndCalculateDrawdown(totalPortfolioValueUSD: BigDecimal): BigDecimal {
+    internal fun updateAthAndCalculateDrawdown(
+        totalPortfolioValueUSD: BigDecimal
+    ): BigDecimal {
         val stats = portfolioStatsRepository.load()
         var ath = stats.allTimeHigh
-        
-        if (ath == null || totalPortfolioValueUSD > ath) {
+
+        if (ath == null || ath <= BigDecimal.ZERO) {
             ath = totalPortfolioValueUSD
-            stats.allTimeHigh = ath
-            portfolioStatsRepository.save(stats)
-            log.info("New All-Time High detected: $$ath")
+            log.info("Initial ATH set to $${ath.setScale(2, RoundingMode.HALF_UP)}")
+        } else if (totalPortfolioValueUSD > ath) {
+            ath = totalPortfolioValueUSD
+            log.info("New All-Time High detected: $${ath.setScale(2, RoundingMode.HALF_UP)}")
         }
 
-        return if (ath != null && ath > BigDecimal.ZERO && totalPortfolioValueUSD < ath) {
+        stats.allTimeHigh = ath
+        try {
+            portfolioStatsRepository.save(stats)
+        } catch (e: IOException) {
+            log.error("Failed to persist portfolio ATH", e)
+        }
+
+        return if (ath > BigDecimal.ZERO && totalPortfolioValueUSD < ath) {
             val diff = ath - totalPortfolioValueUSD
             diff.divide(ath, 4, RoundingMode.HALF_UP) * BigDecimal.valueOf(100)
         } else {
@@ -243,9 +282,11 @@ class PortfolioManagerImpl(
 
             allDeviations[a.symbol] = deviationUSD
 
-            log.info("Analysis [{}]: Dev: {}% ($ {}). Threshold: {}%",
+            log.info(
+                "Analysis [{}]: Dev: {}% ($ {}). Threshold: {}%",
                 a.symbol, deviationPct, deviationUSD.setScale(2, RoundingMode.HALF_UP),
-                s.deviationTriggerPercent)
+                s.deviationTriggerPercent
+            )
 
             if (deviationPct.toDouble() >= s.deviationTriggerPercent) {
                 actionLog.add("Deviation Triggered details: ${a.symbol} Dev: $deviationPct%")
@@ -253,15 +294,19 @@ class PortfolioManagerImpl(
 
             if (a.symbol.equals("USD", ignoreCase = true)) {
                 if (deviationPct.toDouble() >= s.deviationTriggerPercent) {
-                    log.info("Asset USD Deviation: {}% (Trigger: {}%). USD Dev: {}",
-                        deviationPct, s.deviationTriggerPercent, deviationUSD)
+                    log.info(
+                        "Asset USD Deviation: {}% (Trigger: {}%). USD Dev: {}",
+                        deviationPct, s.deviationTriggerPercent, deviationUSD
+                    )
                     usdTriggered = true
                     usdDeviationAmount = deviationUSD
                 }
             } else {
                 if (deviationPct.toDouble() >= s.deviationTriggerPercent) {
-                    log.info("Asset {} Deviation: {}% (Trigger: {}%). USD Dev: {}",
-                        a.symbol, deviationPct, s.deviationTriggerPercent, deviationUSD)
+                    log.info(
+                        "Asset {} Deviation: {}% (Trigger: {}%). USD Dev: {}",
+                        a.symbol, deviationPct, s.deviationTriggerPercent, deviationUSD
+                    )
 
                     if (deviationUSD > BigDecimal.ZERO) {
                         sellOrders[a.symbol] = deviationUSD
@@ -277,13 +322,14 @@ class PortfolioManagerImpl(
             actionLog.add("USD Deviation Triggered. Enforcing fiat correction.")
             distributeFiatCorrection(usdDeviationAmount, allDeviations, buyOrders, sellOrders, actionLog)
         }
+
     }
 
     internal suspend fun executeOrders(
         buyOrders: Map<String, BigDecimal>,
         sellOrders: Map<String, BigDecimal>,
         currentValuesUSD: Map<String, BigDecimal>,
-        prices: Map<String, Double>,
+        prices: Map<String, BigDecimal>,
         s: Settings,
         actionLog: MutableList<String>
     ) {
@@ -297,31 +343,22 @@ class PortfolioManagerImpl(
                 continue
             }
 
-            val price = getCurrentPrice(symbol, prices)
+            val price = prices[symbol] ?: BigDecimal.ZERO
             if (price.compareTo(BigDecimal.ZERO) == 0) continue
 
             val volume = usdToSell.divide(price, 8, RoundingMode.HALF_UP)
-            krakenService.executeOrder("${symbol}USD", "market", "sell", volume.toDouble())
-            projectedCash = projectedCash.add(usdToSell)
-            executedSells = true
-            actionLog.add("SELL $symbol Volume: $volume Value: $$usdToSell")
+            val pair = KrakenSymbols.tradingPair(symbol)
+            val result = krakenService.executeOrder(pair, "market", "sell", volume)
+            logOrderResult(result, actionLog, symbol, volume, usdToSell, "SELL")
+            if (result.success) {
+                projectedCash = projectedCash.add(usdToSell)
+                executedSells = true
+            }
         }
 
         var actualCash = projectedCash
         if (executedSells && !s.dryRun) {
-            try {
-                delay(100.milliseconds)
-                val updatedBalances = krakenService.getBalances()
-                if (updatedBalances.isNotEmpty()) {
-                    val usdBalance = resolveBalance("USD", updatedBalances)
-                    if (usdBalance > 0) {
-                        actualCash = BigDecimal.valueOf(usdBalance)
-                        log.info("Updated USD balance after sells: $$actualCash")
-                    }
-                }
-            } catch (e: Exception) {
-                log.warn("Failed to fetch updated USD balance before buys, using previous snapshot.", e)
-            }
+            actualCash = refreshUsdBalanceAfterSells(projectedCash)
         }
 
         for ((symbol, originalCost) in buyOrders) {
@@ -337,19 +374,70 @@ class PortfolioManagerImpl(
                 continue
             }
 
-            val price = getCurrentPrice(symbol, prices)
+            val price = prices[symbol] ?: BigDecimal.ZERO
             if (price.compareTo(BigDecimal.ZERO) == 0) continue
 
             val volume = cost.divide(price, 8, RoundingMode.HALF_UP)
-            krakenService.executeOrder("${symbol}USD", "market", "buy", volume.toDouble())
-            actualCash = actualCash.subtract(cost)
-            actionLog.add("BUY $symbol Volume: $volume Cost: $$cost")
+            val pair = KrakenSymbols.tradingPair(symbol)
+            val result = krakenService.executeOrder(pair, "market", "buy", volume)
+            logOrderResult(result, actionLog, symbol, volume, cost, "BUY")
+            if (result.success) {
+                actualCash = actualCash.subtract(cost)
+            }
+        }
+    }
+
+    private suspend fun refreshUsdBalanceAfterSells(projectedCash: BigDecimal): BigDecimal {
+        val maxAttempts = 3
+        val delayMs = 250L
+        var bestCash = projectedCash
+
+        repeat(maxAttempts) { attempt ->
+            delay(delayMs.milliseconds)
+            try {
+                val updatedBalances = krakenService.getBalances()
+                if (updatedBalances.isNotEmpty()) {
+                    val usdBalance = resolveBalance("USD", updatedBalances)
+                    if (usdBalance > 0) {
+                        bestCash = BigDecimal.valueOf(usdBalance)
+                        log.info("Updated USD balance after sells (attempt {}): $${bestCash}", attempt + 1)
+                        if (bestCash >= projectedCash.multiply(BigDecimal("0.95"))) {
+                            return bestCash
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                log.warn("Failed to fetch updated USD balance (attempt {})", attempt + 1, e)
+            }
+        }
+
+        log.warn("Using best observed USD balance after sell refresh: $${bestCash}")
+        return bestCash
+    }
+
+    private fun logOrderResult(
+        result: com.gemini.krakenbot.model.OrderResult,
+        actionLog: MutableList<String>,
+        symbol: String,
+        volume: BigDecimal,
+        usdAmount: BigDecimal,
+        side: String
+    ) {
+        if (result.success) {
+            val prefix = if (result.dryRun) "[DRY RUN] " else ""
+            if (side == "SELL") {
+                actionLog.add("${prefix}SELL $symbol Volume: $volume Value: $$usdAmount")
+            } else {
+                actionLog.add("${prefix}BUY $symbol Volume: $volume Cost: $$usdAmount")
+            }
+        } else {
+            actionLog.add("FAILED $side $symbol: ${result.errorMessage}")
         }
     }
 
     private fun buildSnapshot(
         balances: Map<String, Double>,
-        prices: Map<String, Double>,
+        prices: Map<String, BigDecimal>,
         currentValuesUSD: Map<String, BigDecimal>,
         totalPortfolioValueUSD: BigDecimal,
         effectiveUsdTarget: BigDecimal,
@@ -364,7 +452,11 @@ class PortfolioManagerImpl(
             val symbol = a.symbol
             val balance = BigDecimal.valueOf(resolveBalance(symbol, balances))
             val valUSD = currentValuesUSD[symbol] ?: BigDecimal.ZERO
-            val price = if (!symbol.equals("USD", ignoreCase = true)) getCurrentPrice(symbol, prices) else BigDecimal.ONE
+            val price = if (!symbol.equals("USD", ignoreCase = true)) {
+                prices[symbol] ?: BigDecimal.ONE
+            } else {
+                BigDecimal.ONE
+            }
 
             val baseTargetPct = BigDecimal.valueOf(a.targetPercent)
             var snapshotTargetPct = baseTargetPct
@@ -383,12 +475,14 @@ class PortfolioManagerImpl(
                     .multiply(BigDecimal.valueOf(100))
             }
 
-            val targetVal = totalPortfolioValueUSD.multiply(calcTargetPct).divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP)
+            val targetVal = totalPortfolioValueUSD.multiply(calcTargetPct)
+                .divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP)
             val deviationUSD = valUSD.subtract(targetVal)
             var devPct = BigDecimal.ZERO
 
             if (targetVal > BigDecimal.ZERO) {
-                devPct = deviationUSD.divide(targetVal, 4, RoundingMode.HALF_UP).multiply(BigDecimal.valueOf(100))
+                devPct = deviationUSD.divide(targetVal, 4, RoundingMode.HALF_UP)
+                    .multiply(BigDecimal.valueOf(100))
             }
 
             assetSnapshots[symbol] = PortfolioSnapshot.AssetSnapshot(
@@ -436,8 +530,12 @@ class PortfolioManagerImpl(
             return
         }
 
-        log.info("Distributing Fiat Correction ($${deviationAbs.setScale(2, RoundingMode.HALF_UP)}) among ${candidates.size} candidates. Total Counter-Dev: $${totalCounterDev.setScale(2, RoundingMode.HALF_UP)}")
-        actionLog.add("Distributing Fiat Correction ($${deviationAbs.setScale(2, RoundingMode.HALF_UP)}) among ${candidates.size} candidates.")
+        log.info(
+            "Distributing Fiat Correction ($${deviationAbs.setScale(2, RoundingMode.HALF_UP)}) among ${candidates.size} candidates. Total Counter-Dev: $${totalCounterDev.setScale(2, RoundingMode.HALF_UP)}"
+        )
+        actionLog.add(
+            "Distributing Fiat Correction ($${deviationAbs.setScale(2, RoundingMode.HALF_UP)}) among ${candidates.size} candidates."
+        )
 
         for (symbol in candidates) {
             val assetDev = allDevs[symbol]!!.abs()
@@ -450,23 +548,5 @@ class PortfolioManagerImpl(
                 sellOrders[symbol] = share
             }
         }
-    }
-
-    private fun mapToKrakenTicker(symbol: String): String {
-        return when (symbol.uppercase()) {
-            "BTC" -> "XBT"
-            "DOGE" -> "XDG"
-            else -> symbol
-        }
-    }
-
-    internal fun getCurrentPrice(symbol: String, prices: Map<String, Double>): BigDecimal {
-        val krakenSymbol = mapToKrakenTicker(symbol)
-        for (k in prices.keys) {
-            if (k.contains(krakenSymbol) && k.contains("USD")) {
-                return BigDecimal.valueOf(prices[k]!!)
-            }
-        }
-        return BigDecimal.ZERO
     }
 }

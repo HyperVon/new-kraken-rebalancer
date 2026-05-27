@@ -5,24 +5,21 @@ import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.service.impl.KrakenServiceImpl
+import io.kotest.assertions.throwables.shouldThrow
+import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
-import io.kotest.matchers.shouldBe
+import io.kotest.matchers.booleans.shouldBeFalse
 import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.nulls.shouldNotBeNull
-import io.kotest.assertions.throwables.shouldThrow
-import io.kotest.assertions.throwables.shouldNotThrowAny
-import io.kotest.core.spec.IsolationMode
+import io.kotest.matchers.shouldBe
+import io.ktor.client.*
+import io.ktor.client.engine.mock.*
+import io.ktor.http.*
 import io.mockk.every
 import io.mockk.mockk
-import io.ktor.client.HttpClient
-import io.ktor.client.engine.mock.MockEngine
-import io.ktor.client.engine.mock.respond
-import io.ktor.http.HttpHeaders
-import io.ktor.http.HttpStatusCode
-import io.ktor.http.headersOf
 import kotlinx.coroutines.test.runTest
-import java.util.Base64
-import java.util.Collections
+import java.math.BigDecimal
+import java.util.*
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -85,7 +82,8 @@ class KrakenServiceTest : StringSpec() {
                 val responseJson = "{\"error\":[],\"result\":{\"descr\":{\"order\":\"buy 0.1 XBTUSD @ limit 50000\"},\"txid\":[\"THVR-...-TC\"]}}"
                 val service = createService(responseJson)
 
-                shouldNotThrowAny { service.executeOrder("XBTUSD", "limit", "buy", 0.1) }
+                val result = service.executeOrder("XBTUSD", "limit", "buy", BigDecimal("0.1"))
+                result.success.shouldBeTrue()
             }
         }
 
@@ -96,7 +94,9 @@ class KrakenServiceTest : StringSpec() {
                 val config = AppConfig(KrakenCredentials("k", "s"), settings, emptyList())
                 every { configService.getConfig() } returns config
 
-                shouldNotThrowAny { service.executeOrder("XBTUSD", "limit", "buy", 0.1) }
+                val result = service.executeOrder("XBTUSD", "limit", "buy", BigDecimal("0.1"))
+                result.success.shouldBeTrue()
+                result.dryRun.shouldBeTrue()
             }
         }
 
@@ -131,7 +131,30 @@ class KrakenServiceTest : StringSpec() {
                 val responseJson = "{\"error\":[\"EOrder:Insufficient funds\"]}"
                 val service = createService(responseJson)
 
-                shouldNotThrowAny { service.executeOrder("XBTUSD", "limit", "buy", 1.0) }
+                val result = service.executeOrder("XBTUSD", "limit", "buy", BigDecimal.ONE)
+                result.success.shouldBeFalse()
+                result.errorMessage.shouldNotBeNull()
+            }
+        }
+
+        "executeOrder_ExceptionWithNullMessage" {
+            runTest {
+                val objectMapper = jacksonObjectMapper()
+                configService = mockk(relaxed = true)
+                val credentials = KrakenCredentials("public-key", Base64.getEncoder().encodeToString("secret-key".toByteArray()))
+                val settings = Settings(60L, 2.0, 1.0, false, 0.0, 1.0)
+                val config = AppConfig(credentials, settings, emptyList())
+                every { configService.getConfig() } returns config
+
+                val mockEngine = MockEngine { request ->
+                    throw RuntimeException(null as String?)
+                }
+                val httpClient = HttpClient(mockEngine)
+                val service = KrakenServiceImpl(configService, objectMapper, httpClient)
+
+                val result = service.executeOrder("XBTUSD", "limit", "buy", BigDecimal.ONE)
+                result.success.shouldBeFalse()
+                result.errorMessage shouldBe "RuntimeException"
             }
         }
 

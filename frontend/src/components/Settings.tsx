@@ -1,10 +1,10 @@
-import React, { useState, useEffect } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useNavigate } from 'react-router-dom';
+import React, {useEffect, useState} from 'react';
+import {useMutation, useQuery, useQueryClient} from '@tanstack/react-query';
+import {useNavigate} from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { ArrowLeft, Save, Plus, Trash2, ShieldAlert } from 'lucide-react';
-import { apiService } from '@/services/api';
-import { FrontendConfig, Settings as SettingsType, Allocation } from '@/types';
+import {ArrowLeft, Plus, Save, ShieldAlert, Trash2} from 'lucide-react';
+import {apiService} from '@/services/api';
+import {Allocation, FrontendConfig, Settings as SettingsType} from '@/types';
 
 const ALLOWED_SETTING_KEYS = new Set<keyof SettingsType>([
     'loopDelaySeconds',
@@ -70,8 +70,14 @@ const Settings: React.FC = () => {
     if (fetchError) return <div className="text-rose-500 p-8">Error: {(fetchError as Error).message}</div>;
     if (!config) return null;
 
+    const parseNumberInput = (raw: string, fallback: number): number => {
+        const parsed = Number(raw);
+        return Number.isFinite(parsed) ? parsed : fallback;
+    };
+
     const handleSettingChange = (field: keyof SettingsType, value: any) => {
         if (!ALLOWED_SETTING_KEYS.has(field)) return;
+        if (typeof value === 'number' && !Number.isFinite(value)) return;
         setConfig(prev => {
             /* v8 ignore start */
             if (!prev) return null;
@@ -96,7 +102,7 @@ const Settings: React.FC = () => {
                 return {
                     ...alloc,
                     /* v8 ignore start */
-                    [field]: field === 'targetPercent' ? parseFloat(value) || 0 : value
+                    [field]: field === 'targetPercent' ? parseNumberInput(value, alloc.targetPercent || 0) : value
                     /* v8 ignore stop */
                 } as any;
             }
@@ -207,19 +213,26 @@ const Settings: React.FC = () => {
                             <label className="text-sm font-medium text-slate-400">Loop Interval (Seconds)</label>
                             <input
                                 type="number"
+                                min={1}
                                 className="input-glass"
                                 value={settings.loopDelaySeconds || 0}
-                                onChange={(e) => handleSettingChange('loopDelaySeconds', parseInt(e.target.value))}
+                                onChange={(e) => handleSettingChange('loopDelaySeconds', parseNumberInput(e.target.value, settings.loopDelaySeconds || 60))}
                             />
                         </div>
                         <div className="space-y-2">
-                            <label className="text-sm font-medium text-slate-400">Deviation Trigger (%)</label>
+                            <label
+                                className="text-sm font-medium text-slate-400"
+                                title="Minimum deviation before trading. 0% triggers on any imbalance (very frequent trades)."
+                            >
+                                Deviation Trigger (%)
+                            </label>
                             <input
                                 type="number"
                                 step="0.1"
+                                min={0}
                                 className="input-glass"
                                 value={settings.deviationTriggerPercent || 0}
-                                onChange={(e) => handleSettingChange('deviationTriggerPercent', parseFloat(e.target.value))}
+                                onChange={(e) => handleSettingChange('deviationTriggerPercent', parseNumberInput(e.target.value, settings.deviationTriggerPercent || 0))}
                             />
                         </div>
                         <div className="space-y-2">
@@ -229,7 +242,7 @@ const Settings: React.FC = () => {
                                 step="0.5"
                                 className="input-glass"
                                 value={settings.dustThresholdUSD || 0}
-                                onChange={(e) => handleSettingChange('dustThresholdUSD', parseFloat(e.target.value))}
+                                onChange={(e) => handleSettingChange('dustThresholdUSD', parseNumberInput(e.target.value, settings.dustThresholdUSD || 0))}
                             />
                         </div>
                         <div className="space-y-2">
@@ -239,7 +252,7 @@ const Settings: React.FC = () => {
                                 step="1.0"
                                 className="input-glass"
                                 value={settings.fiatMaxDrawdown ?? 0}
-                                onChange={(e) => handleSettingChange('fiatMaxDrawdown', parseFloat(e.target.value))}
+                                onChange={(e) => handleSettingChange('fiatMaxDrawdown', parseNumberInput(e.target.value, settings.fiatMaxDrawdown ?? 0))}
                             />
                         </div>
                         <div className="space-y-2">
@@ -249,7 +262,7 @@ const Settings: React.FC = () => {
                                 step="0.1"
                                 className="input-glass"
                                 value={settings.fiatDeploymentExponent ?? 1.0}
-                                onChange={(e) => handleSettingChange('fiatDeploymentExponent', parseFloat(e.target.value))}
+                                onChange={(e) => handleSettingChange('fiatDeploymentExponent', parseNumberInput(e.target.value, settings.fiatDeploymentExponent ?? 1))}
                             />
                         </div>
                         <div className="flex items-center pt-8">
@@ -355,6 +368,14 @@ const Settings: React.FC = () => {
                     <button
                         data-testid="test-trigger-remove-bounds-type"
                         onClick={() => (removeAllocation as any)('not-a-number' as any)}
+                    />
+                    <button
+                        data-testid="test-trigger-setting-nan"
+                        onClick={() => (handleSettingChange as any)('loopDelaySeconds', NaN)}
+                    />
+                    <button
+                        data-testid="test-trigger-save-config"
+                        onClick={() => (saveConfig as any)()}
                     />
                 </div>
             )}

@@ -1,8 +1,8 @@
 package com.gemini.krakenbot.config
 
 import io.kotest.core.spec.style.StringSpec
-import io.kotest.matchers.shouldBe
 import io.kotest.matchers.booleans.shouldBeTrue
+import io.kotest.matchers.shouldBe
 
 class SettingsTest : StringSpec({
     "constructor_defaultsNullValues" {

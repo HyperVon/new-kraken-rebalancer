@@ -1,8 +1,8 @@
 import React from 'react';
-import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, Tooltip, Legend } from 'chart.js';
-import { Bar } from 'react-chartjs-2';
-import { PieChart } from 'lucide-react';
-import { AssetSnapshot } from '@/types';
+import {BarElement, CategoryScale, Chart as ChartJS, Legend, LinearScale, Tooltip} from 'chart.js';
+import {Bar} from 'react-chartjs-2';
+import {PieChart} from 'lucide-react';
+import {AssetSnapshot} from '@/types';
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Tooltip, Legend);
 

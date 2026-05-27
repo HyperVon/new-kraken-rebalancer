@@ -36,7 +36,7 @@ A production-grade, autonomous portfolio rebalancing engine for the [Kraken](htt
 - Configurable deployment curve via an exponent parameter (linear, aggressive, or conservative)
 
 ### Intelligent Fiat Correction
-- Detects deposits/withdrawals by recognizing when only USD triggers a deviation
+- Recognizes when only USD triggers a deviation threshold (e.g., after a deposit or withdrawal)
 - Distributes surplus cash proportionally among the most underweight assets
 - Handles withdrawals by selling from the most overweight assets
 
@@ -54,9 +54,13 @@ A production-grade, autonomous portfolio rebalancing engine for the [Kraken](htt
 
 ### Safety & Reliability
 - **Dry Run Mode** — test your strategy without executing real trades
+- **Structured Order Results** — each order returns success/failure status; failed orders don't corrupt cash projections
+- **Atomic File Writes** — config, stats, and trade history use write-then-rename to prevent corruption
+- **Graceful Shutdown** — JVM shutdown hook cleanly stops the loop, closes connections, and tears down DI
 - Dust threshold filtering to avoid minimum order size errors
 - Automatic error recovery — API failures don't crash the rebalancing loop
 - Price validation — aborts cycle if any asset price is unavailable
+- **BigDecimal Precision** — order volumes use `BigDecimal` (8 decimal places) to eliminate floating-point rounding
 
 ---
 
@@ -133,12 +137,13 @@ See **[ALGORITHM.md](ALGORITHM.md)** for a detailed breakdown of the rebalancing
 │   ├── config/                            # Data classes: AppConfig, Settings, Allocation, KrakenCredentials
 │   │   └── AppModule.kt                  # Koin dependency injection module
 │   ├── controller/                        # Ktor routes: DashboardRoutes, FrontendConfig
-│   ├── model/                             # Domain: PortfolioSnapshot, PortfolioStats
+│   ├── model/                             # Domain: PortfolioSnapshot, PortfolioStats, OrderResult
 │   ├── repository/                        # Persistence interfaces: TradeRepository, PortfolioStatsRepository
 │   │   └── impl/                          # File-backed implementations
-│   └── service/                           # Core logic interfaces: PortfolioManager, KrakenService, ConfigService, TradeHistoryService
-│       └── impl/                          # Service implementations (coroutine-aware)
-├── src/test/kotlin/                       # 92 unit tests (98%+ line coverage, 96%+ branch coverage enforced by JaCoCo)
+│   ├── service/                           # Core logic interfaces: PortfolioManager, KrakenService, ConfigService, TradeHistoryService
+│   │   └── impl/                          # Service implementations (coroutine-aware)
+│   └── util/                              # Utilities: AtomicJsonFile, KrakenSymbols
+├── src/test/kotlin/                       # 122 unit tests (100% line and branch coverage enforced by JaCoCo)
 │   └── com/gemini/krakenbot/service/
 │       └── FakeKrakenService.kt           # In-process test double for KrakenService
 ├── frontend/
@@ -226,14 +231,17 @@ Open your browser to **http://localhost:5173**. The frontend proxies API request
 
 ## Testing
 
-The project enforces **95% line and branch coverage** via JaCoCo. All tests are behavioural — they verify actual rebalancing decisions, not just method invocations.
+### Backend Testing
+
+The backend enforces **95% line and branch coverage** via JaCoCo (with the current suite achieving **100% line and branch coverage**). All tests are behavioural — they verify actual rebalancing decisions, not just method invocations. Order volumes are asserted with `BigDecimal.compareTo()` to avoid floating-point comparison issues.
 
 ```bash
 ./gradlew test
 ```
 
-**92 tests** across:
+**122 tests** across:
 - `KrakenE2ETest` / `ResilienceChaosTest` / `PrecisionRoundingFuzzTest` / `SerializationParityTest` — advanced E2E black-box and fuzz testing
+- `PortfolioManagerComprehensiveTest` — full rebalance cycles with order result verification
 - `PortfolioManagerFiatCorrectionTest` — deposit/withdrawal distribution logic
 - `PortfolioManagerDrawdownTest` — ATH tracking and dynamic deployment
 - `PortfolioManagerOrderExecutionTest` — sell-first/buy-second sequencing
@@ -241,10 +249,31 @@ The project enforces **95% line and branch coverage** via JaCoCo. All tests are 
 - `PortfolioManagerZeroAllocationTest` — edge case: 0% target allocation
 - `PortfolioManagerEdgeCasesTest` — dust thresholds, price gaps, zero balances
 - `PortfolioManagerDogeTest` — Kraken symbol mapping quirks (BTC→XBT, DOGE→XDG)
-- `KrakenServiceTest` — API signing, error handling, dry run (using Ktor `MockEngine`)
-- `ConfigServiceTest` — validation, hot-reload, persistence
+- `KrakenServiceTest` — API signing, error handling, dry run, order failure (using Ktor `MockEngine`)
+- `KrakenSymbolsTest` — ticker mapping and trading pair construction
+- `AtomicJsonFileTest` — file-system atomic write verification under normal and error/unsupported paths
+- `ConfigServiceTest` — validation, hot-reload, persistence, duplicate/blank symbol rejection
+- `DashboardControllerTest` — REST API endpoints, invalid config error responses
 - `TradeHistoryServiceTest` — snapshot storage, size limits
-- `FileTradeRepositoryTest` / `PortfolioStatsRepositoryTest` — file I/O
+- `FileTradeRepositoryTest` / `PortfolioStatsRepositoryTest` — file I/O, atomic writes, error propagation
+
+### Frontend Testing
+
+The frontend enforces **95% statement, branch, function, and line coverage** via Vitest (with the current suite achieving **100% statements, 100% lines, 100% functions, and >99% branch coverage**).
+
+```bash
+cd frontend
+npm run test:coverage
+```
+
+**110 tests** across:
+- `api.test.ts` — API client requests, response status mapping, and JSON parse/network error resilience.
+- `Settings.test.tsx` — Settings validation UI, allocation targets validation, number input parser fallbacks, and backdoor debug/simulation tools.
+- `Dashboard.test.tsx` — Dashboard state render cycles, status updates, chart integration, offline badges, and cleanup/unmount behavior.
+- `StatusCard.test.tsx` — Metrics display, value-aging alerts, status banners, and system flags.
+- `AllocationChart.test.tsx` — Chart.js canvas binding, percentage distribution, and target allocation indicators.
+- `TradeHistory.test.tsx` — Actions history grid, dry-run flags rendering, timestamp formatting, and table state.
+- `App.test.tsx` — App shell structure and routing.
 
 ### Test Design Principles
 

@@ -32,3 +32,13 @@ The Vite dev server proxies `/api/*` requests to `http://localhost:8080` (the Sp
 ```bash
 npm run build   # Outputs to dist/
 ```
+
+## Testing
+
+```bash
+npm run test           # Run tests in watch mode
+npm run test:coverage  # Run tests with coverage reporting
+```
+
+The frontend uses **Vitest** and **React Testing Library** for unit and integration testing. Coverage is enforced in CI to be at least **95%** across statements, branches, functions, and lines (currently at **100% statements, 100% lines, 100% functions, and >99% branch coverage**).
+
