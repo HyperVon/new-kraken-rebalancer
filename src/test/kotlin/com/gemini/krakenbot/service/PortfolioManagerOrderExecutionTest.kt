@@ -1,8 +1,5 @@
 package com.gemini.krakenbot.service
 
-import io.kotest.core.spec.style.StringSpec
-import io.mockk.every
-import io.mockk.mockk
 import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.KrakenCredentials
@@ -11,11 +8,13 @@ import com.gemini.krakenbot.model.PortfolioStats
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
 import io.kotest.core.spec.IsolationMode
-import io.kotest.matchers.shouldBe
+import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.booleans.shouldBeTrue
+import io.kotest.matchers.shouldBe
+import io.mockk.every
+import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
 import java.math.BigDecimal
-import kotlin.math.abs
 
 class PortfolioManagerOrderExecutionTest : StringSpec() {
 

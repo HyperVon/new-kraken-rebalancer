@@ -1,8 +1,8 @@
 package com.gemini.krakenbot.config
 
 import com.fasterxml.jackson.databind.ObjectMapper
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule
 import com.fasterxml.jackson.databind.SerializationFeature
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.repository.TradeRepository
@@ -16,8 +16,8 @@ import com.gemini.krakenbot.service.impl.ConfigServiceImpl
 import com.gemini.krakenbot.service.impl.KrakenServiceImpl
 import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
 import com.gemini.krakenbot.service.impl.TradeHistoryServiceImpl
-import io.ktor.client.HttpClient
-import io.ktor.client.engine.cio.CIO
+import io.ktor.client.*
+import io.ktor.client.engine.cio.*
 import org.koin.dsl.module
 
 val appModule = module {

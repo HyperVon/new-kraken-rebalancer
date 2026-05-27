@@ -4,16 +4,16 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.gemini.krakenbot.model.PortfolioStats
 import com.gemini.krakenbot.repository.impl.PortfolioStatsRepositoryImpl
+import io.kotest.assertions.throwables.shouldThrow
+import io.kotest.core.spec.style.StringSpec
+import io.kotest.matchers.nulls.shouldNotBeNull
+import io.kotest.matchers.shouldBe
 import io.mockk.every
 import io.mockk.mockk
 import java.io.File
 import java.io.IOException
 import java.math.BigDecimal
 import java.nio.file.Files
-import io.kotest.core.spec.style.StringSpec
-import io.kotest.matchers.shouldBe
-import io.kotest.matchers.nulls.shouldNotBeNull
-import io.kotest.assertions.throwables.shouldThrow
 
 class PortfolioStatsRepositoryImplTest : StringSpec({
 

@@ -1,5 +1,5 @@
-import { render, screen } from '@testing-library/react';
-import { describe, it, expect, vi } from 'vitest';
+import {render, screen} from '@testing-library/react';
+import {describe, expect, it, vi} from 'vitest';
 import AllocationChart from '../components/AllocationChart';
 
 // Mock chart.js and react-chartjs-2 to avoid canvas rendering issues in jsdom

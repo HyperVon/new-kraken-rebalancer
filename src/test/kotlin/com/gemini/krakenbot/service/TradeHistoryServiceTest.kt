@@ -1,17 +1,16 @@
 package com.gemini.krakenbot.service
 
-import io.kotest.core.spec.style.StringSpec
-import io.kotest.matchers.shouldBe
-import io.kotest.matchers.booleans.shouldBeTrue
-import io.kotest.matchers.nulls.shouldBeNull
-import io.mockk.every
-import io.mockk.mockk
-import io.mockk.verify
-
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.repository.TradeRepository
 import com.gemini.krakenbot.service.impl.TradeHistoryServiceImpl
 import io.kotest.core.spec.IsolationMode
+import io.kotest.core.spec.style.StringSpec
+import io.kotest.matchers.booleans.shouldBeTrue
+import io.kotest.matchers.nulls.shouldBeNull
+import io.kotest.matchers.shouldBe
+import io.mockk.every
+import io.mockk.mockk
+import io.mockk.verify
 import java.math.BigDecimal
 import java.time.Instant
 

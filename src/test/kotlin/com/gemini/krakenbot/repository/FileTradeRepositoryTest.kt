@@ -4,6 +4,11 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.repository.impl.FileTradeRepositoryImpl
+import io.kotest.assertions.throwables.shouldThrow
+import io.kotest.core.spec.style.StringSpec
+import io.kotest.matchers.booleans.shouldBeTrue
+import io.kotest.matchers.nulls.shouldNotBeNull
+import io.kotest.matchers.shouldBe
 import io.mockk.every
 import io.mockk.mockk
 import java.io.File
@@ -11,11 +16,6 @@ import java.io.FileWriter
 import java.io.IOException
 import java.math.BigDecimal
 import java.time.Instant
-import io.kotest.core.spec.style.StringSpec
-import io.kotest.matchers.shouldBe
-import io.kotest.matchers.booleans.shouldBeTrue
-import io.kotest.matchers.nulls.shouldNotBeNull
-import io.kotest.assertions.throwables.shouldThrow
 
 class FileTradeRepositoryTest : StringSpec({
 

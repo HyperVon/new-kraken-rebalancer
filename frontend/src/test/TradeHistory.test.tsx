@@ -1,5 +1,5 @@
-import { render, screen } from '@testing-library/react';
-import { describe, it, expect } from 'vitest';
+import {render, screen} from '@testing-library/react';
+import {describe, expect, it} from 'vitest';
 import TradeHistory from '../components/TradeHistory';
 
 describe('TradeHistory', () => {

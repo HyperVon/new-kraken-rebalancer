@@ -10,20 +10,17 @@ import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.TradeHistoryService
 import com.gemini.krakenbot.service.impl.KrakenServiceImpl
 import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
-import io.kotest.core.spec.style.StringSpec
 import io.kotest.assertions.throwables.shouldNotThrowAny
 import io.kotest.core.spec.IsolationMode
+import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.nulls.shouldNotBeNull
-import io.ktor.client.HttpClient
-import io.ktor.client.engine.mock.MockEngine
-import io.ktor.client.engine.mock.respond
-import io.ktor.http.HttpHeaders
-import io.ktor.http.HttpStatusCode
-import io.ktor.http.headersOf
+import io.ktor.client.*
+import io.ktor.client.engine.mock.*
+import io.ktor.http.*
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
-import java.util.Base64
+import java.util.*
 
 class PrecisionRoundingFuzzTest : StringSpec() {
 

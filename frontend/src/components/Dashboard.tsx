@@ -1,12 +1,12 @@
-import React, { useState, useEffect } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { useNavigate } from 'react-router-dom';
-import { Settings as SettingsIcon, TrendingUp, Wallet, Coins } from 'lucide-react';
+import React, {useEffect, useState} from 'react';
+import {useQuery} from '@tanstack/react-query';
+import {useNavigate} from 'react-router-dom';
+import {Coins, Settings as SettingsIcon, TrendingUp, Wallet} from 'lucide-react';
 import StatusCard from './StatusCard';
 import AllocationChart from './AllocationChart';
 import TradeHistory from './TradeHistory';
-import { apiService, ApiError } from '@/services/api';
-import { AssetSnapshot } from '@/types';
+import {ApiError, apiService} from '@/services/api';
+import {AssetSnapshot} from '@/types';
 
 const ALLOWED_SORT_KEYS = new Set(['symbol', 'price', 'valueUSD', 'targetPercent', 'currentPercent', 'deviationPercent']);
 

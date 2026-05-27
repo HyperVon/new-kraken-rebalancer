@@ -1,4 +1,4 @@
-import { PortfolioSnapshot, FrontendConfig } from '@/types';
+import {FrontendConfig, PortfolioSnapshot} from '@/types';
 
 export class ApiError extends Error {
     constructor(public status: number, message: string) {

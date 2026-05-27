@@ -1,10 +1,10 @@
-import React, { useState, useEffect } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useNavigate } from 'react-router-dom';
+import React, {useEffect, useState} from 'react';
+import {useMutation, useQuery, useQueryClient} from '@tanstack/react-query';
+import {useNavigate} from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { ArrowLeft, Save, Plus, Trash2, ShieldAlert } from 'lucide-react';
-import { apiService } from '@/services/api';
-import { FrontendConfig, Settings as SettingsType, Allocation } from '@/types';
+import {ArrowLeft, Plus, Save, ShieldAlert, Trash2} from 'lucide-react';
+import {apiService} from '@/services/api';
+import {Allocation, FrontendConfig, Settings as SettingsType} from '@/types';
 
 const ALLOWED_SETTING_KEYS = new Set<keyof SettingsType>([
     'loopDelaySeconds',

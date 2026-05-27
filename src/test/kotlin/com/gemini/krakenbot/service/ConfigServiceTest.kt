@@ -1,25 +1,19 @@
 package com.gemini.krakenbot.service
 
-import io.mockk.every
-import io.mockk.mockk
-
 import com.fasterxml.jackson.databind.ObjectMapper
-import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.fasterxml.jackson.databind.ObjectWriter
-import com.gemini.krakenbot.config.Allocation
-import com.gemini.krakenbot.config.AppConfig
-import com.gemini.krakenbot.config.InvalidConfigurationException
-import com.gemini.krakenbot.config.KrakenCredentials
-import com.gemini.krakenbot.config.Settings
+import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import com.gemini.krakenbot.config.*
 import com.gemini.krakenbot.service.impl.ConfigServiceImpl
-import java.io.File
-import java.io.IOException
-
+import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.StringSpec
-import io.kotest.matchers.shouldBe
 import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.nulls.shouldNotBeNull
-import io.kotest.assertions.throwables.shouldThrow
+import io.kotest.matchers.shouldBe
+import io.mockk.every
+import io.mockk.mockk
+import java.io.File
+import java.io.IOException
 import java.nio.file.Files
 
 class ConfigServiceTest : StringSpec({
@@ -107,6 +101,28 @@ class ConfigServiceTest : StringSpec({
         val invalidConfig = AppConfig(
             oldConfig.kraken, oldConfig.settings,
             listOf(Allocation("USD", 110.0), Allocation("BTC", -10.0))
+        )
+
+        shouldThrow<InvalidConfigurationException> { configService.updateConfig(invalidConfig) }
+    }
+
+    "validateConfig_EmptyAllocations" {
+        configService.loadConfig()
+        val oldConfig = configService.getConfig()
+        val invalidConfig = AppConfig(
+            oldConfig.kraken, oldConfig.settings,
+            emptyList()
+        )
+
+        shouldThrow<InvalidConfigurationException> { configService.updateConfig(invalidConfig) }
+    }
+
+    "validateConfig_BlankSymbol" {
+        configService.loadConfig()
+        val oldConfig = configService.getConfig()
+        val invalidConfig = AppConfig(
+            oldConfig.kraken, oldConfig.settings,
+            listOf(Allocation("USD", 50.0), Allocation("  ", 50.0))
         )
 
         shouldThrow<InvalidConfigurationException> { configService.updateConfig(invalidConfig) }
