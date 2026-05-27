@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.2.0] - 2026-05-26
+
+### Added
+- **`OrderResult` Model**: `KrakenService.executeOrder()` now returns a structured `OrderResult` (success/failure, pair, side, volume, dry-run flag, error message) instead of returning `Unit`. Failed orders no longer corrupt projected cash accounting.
+- **`AtomicJsonFile` Utility**: All JSON file persistence (config, trade history, portfolio stats) now uses atomic write-then-rename to prevent data corruption from partial writes during crashes or power loss.
+- **`KrakenSymbols` Utility**: Centralized Kraken ticker mapping (BTC→XBT, DOGE→XDG) and USD trading pair construction into a dedicated, tested utility object — replacing ad-hoc inline mapping.
+- **`InvalidConfigurationException`**: Configuration validation errors now throw a dedicated exception (instead of generic `RuntimeException`), returned to the frontend as structured `400 Bad Request` JSON responses with user-readable messages.
+- **Expanded Config Validation**: Added server-side validation for empty allocations, duplicate symbols, blank symbols, and negative target percentages.
+- **Dashboard Startup States**: Frontend now shows a "Waiting for first rebalance cycle" message on `404` (instead of an error), and a clear error state for network failures.
+- **Frontend Input Safety**: Numeric settings inputs use `parseNumberInput()` with fallback values to prevent `NaN`/`Infinity` from reaching the configuration. Added `min` attributes and a tooltip on deviation trigger.
+- **Graceful Shutdown**: Application now registers a JVM shutdown hook that stops the rebalancing loop, closes the HTTP client, and stops Koin.
+- **`KrakenSymbolsTest`**: Unit tests for ticker mapping and trading pair construction.
+- **`DashboardControllerTest`**: Test for `400 Bad Request` response on invalid configuration updates.
+
+### Changed
+- **`BigDecimal` Order Volumes**: `KrakenService.executeOrder()` volume parameter changed from `Double` to `BigDecimal`, eliminating floating-point precision loss on volumes sent to the Kraken API. Volumes are normalized to 8 decimal places.
+- **Price Map Type**: Internal price maps changed from `Map<String, Double>` (keyed by Kraken pair name) to `Map<String, BigDecimal>` (keyed by allocation symbol), eliminating fuzzy key matching and floating-point conversion at the call site.
+- **Sell-Before-Buy Cash Tracking**: Projected cash and actual cash are now only updated on `result.success`, preventing a failed sell from inflating the available balance used for subsequent buys.
+- **USD Balance Refresh**: `refreshUsdBalanceAfterSells()` now retries up to 3 times at 250ms intervals (750ms worst case) with a 95% settlement threshold, replacing the previous single 100ms delay.
+- **Repository Error Propagation**: `FileTradeRepositoryImpl` and `PortfolioStatsRepositoryImpl` now re-throw `IOException` after logging, instead of silently swallowing write failures.
+- **Dry Run Action Log**: Dry-run order entries in the snapshot action log are now prefixed with `[DRY RUN]` for clearer distinction from live trades.
+- **`FakeKrakenService`**: Updated to support `BigDecimal` volumes and `OrderResult` returns. Added `orderResultFactory` lambda for failure-injection scenarios.
+- **Backend test count**: 92 → 97 unit tests.
+
+### Removed
+- **Deposit Detection Heuristic**: Removed the `detectDeposit()` method and ATH recalibration-on-deposit logic. The heuristic (USD surplus > deviation threshold ≈ deposit) had false-positive risk from normal sell proceeds. ATH is now set on first run or when a genuine new high is reached.
+
+---
+
 ## [2.1.1] - 2026-05-26
 
 ### Security
