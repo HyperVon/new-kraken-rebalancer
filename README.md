@@ -231,7 +231,9 @@ Open your browser to **http://localhost:5173**. The frontend proxies API request
 
 ## Testing
 
-The project enforces **95% line and branch coverage** via JaCoCo (with the current suite achieving **100% line and branch coverage**). All tests are behavioural — they verify actual rebalancing decisions, not just method invocations. Order volumes are asserted with `BigDecimal.compareTo()` to avoid floating-point comparison issues.
+### Backend Testing
+
+The backend enforces **95% line and branch coverage** via JaCoCo (with the current suite achieving **100% line and branch coverage**). All tests are behavioural — they verify actual rebalancing decisions, not just method invocations. Order volumes are asserted with `BigDecimal.compareTo()` to avoid floating-point comparison issues.
 
 ```bash
 ./gradlew test
@@ -254,6 +256,24 @@ The project enforces **95% line and branch coverage** via JaCoCo (with the curre
 - `DashboardControllerTest` — REST API endpoints, invalid config error responses
 - `TradeHistoryServiceTest` — snapshot storage, size limits
 - `FileTradeRepositoryTest` / `PortfolioStatsRepositoryTest` — file I/O, atomic writes, error propagation
+
+### Frontend Testing
+
+The frontend enforces **95% statement, branch, function, and line coverage** via Vitest (with the current suite achieving **100% statements, 100% lines, 100% functions, and >99% branch coverage**).
+
+```bash
+cd frontend
+npm run test:coverage
+```
+
+**110 tests** across:
+- `api.test.ts` — API client requests, response status mapping, and JSON parse/network error resilience.
+- `Settings.test.tsx` — Settings validation UI, allocation targets validation, number input parser fallbacks, and backdoor debug/simulation tools.
+- `Dashboard.test.tsx` — Dashboard state render cycles, status updates, chart integration, offline badges, and cleanup/unmount behavior.
+- `StatusCard.test.tsx` — Metrics display, value-aging alerts, status banners, and system flags.
+- `AllocationChart.test.tsx` — Chart.js canvas binding, percentage distribution, and target allocation indicators.
+- `TradeHistory.test.tsx` — Actions history grid, dry-run flags rendering, timestamp formatting, and table state.
+- `App.test.tsx` — App shell structure and routing.
 
 ### Test Design Principles
 

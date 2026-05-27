@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`KrakenSymbolsTest`**: Unit tests for ticker mapping and trading pair construction.
 - **`DashboardControllerTest`**: Test for `400 Bad Request` response on invalid configuration updates.
 - **`AtomicJsonFileTest`**: Added a new test suite covering file I/O atomic writes, directory creation error states, move fallback scenarios, and cleanup routines.
+- **Frontend Unit Testing**: Added a complete frontend unit test suite of 110 tests using Vitest and React Testing Library to cover settings validation, dashboard rendering, status updates, chart integration, and API clients.
 
 ### Changed
 - **`BigDecimal` Order Volumes**: `KrakenService.executeOrder()` volume parameter changed from `Double` to `BigDecimal`, eliminating floating-point precision loss on volumes sent to the Kraken API. Volumes are normalized to 8 decimal places.
@@ -30,7 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Repository Error Propagation**: `FileTradeRepositoryImpl` and `PortfolioStatsRepositoryImpl` now re-throw `IOException` after logging, instead of silently swallowing write failures.
 - **Dry Run Action Log**: Dry-run order entries in the snapshot action log are now prefixed with `[DRY RUN]` for clearer distinction from live trades.
 - **`FakeKrakenService`**: Updated to support `BigDecimal` volumes and `OrderResult` returns. Added `orderResultFactory` lambda for failure-injection scenarios.
-- **Backend test count**: 92 → 122 unit tests, achieving **100% line coverage and 100% branch coverage** across all components.
+- **Backend & Frontend Test Suites**: Increased backend test count from 92 to 122 unit tests, achieving **100% line coverage and 100% branch coverage** across all components. Added **110 frontend unit tests** with Vitest, achieving **100% statements, 100% lines, 100% functions, and >99% branch coverage**.
 
 ### Removed
 - **Deposit Detection Heuristic**: Removed the `detectDeposit()` method and ATH recalibration-on-deposit logic. The heuristic (USD surplus > deviation threshold ≈ deposit) had false-positive risk from normal sell proceeds. ATH is now set on first run or when a genuine new high is reached.
