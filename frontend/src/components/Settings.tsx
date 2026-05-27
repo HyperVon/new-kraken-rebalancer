@@ -369,6 +369,14 @@ const Settings: React.FC = () => {
                         data-testid="test-trigger-remove-bounds-type"
                         onClick={() => (removeAllocation as any)('not-a-number' as any)}
                     />
+                    <button
+                        data-testid="test-trigger-setting-nan"
+                        onClick={() => (handleSettingChange as any)('loopDelaySeconds', NaN)}
+                    />
+                    <button
+                        data-testid="test-trigger-save-config"
+                        onClick={() => (saveConfig as any)()}
+                    />
                 </div>
             )}
         </div>

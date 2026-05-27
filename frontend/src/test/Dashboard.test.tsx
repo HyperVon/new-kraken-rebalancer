@@ -537,4 +537,31 @@ describe('Dashboard', () => {
         expect(dataCells[0]).toBe('ETH');
         expect(dataCells[1]).toBe('BTC');
     });
+
+    it('handles null status and cleanup gracefully', async () => {
+        global.fetch.mockImplementation((url) => {
+            if (url === '/api/status') {
+                return Promise.resolve({ ok: true, json: () => Promise.resolve(null) });
+            }
+            if (url === '/api/history') {
+                return Promise.resolve({ ok: true, json: () => Promise.resolve(mockHistory) });
+            }
+            return Promise.reject(new Error('Unknown URL'));
+        });
+
+        let unmount: () => void = () => {};
+        await act(async () => {
+            const res = renderWithProviders(<Dashboard />);
+            unmount = res.unmount;
+        });
+
+        await waitFor(() => {
+            expect(screen.getByText('OFFLINE')).toBeInTheDocument();
+            expect(screen.getByText('-')).toBeInTheDocument();
+        });
+
+        await act(async () => {
+            unmount();
+        });
+    });
 });

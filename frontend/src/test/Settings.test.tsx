@@ -1,4 +1,4 @@
-import {render, screen, waitFor} from '@testing-library/react';
+import {fireEvent, render, screen, waitFor} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import {QueryClient, QueryClientProvider} from '@tanstack/react-query';
@@ -383,5 +383,59 @@ describe('Settings', () => {
 
         // All 4 default allocations should still be present
         ['USD', 'BTC', 'ETH', 'SOL'].forEach(s => expect(screen.getByText(s)).toBeInTheDocument());
+    });
+
+    it('covers additional edge cases for parseNumberInput, invalid setting inputs, and save config verification', async () => {
+        const user = userEvent.setup();
+        await renderSettings();
+
+        // 1. Trigger parseNumberInput fallback (non-finite parsed number)
+        const input = screen.getByDisplayValue('60');
+        fireEvent.change(input, { target: { value: 'abc' } });
+
+        // 2. Trigger handleSettingChange with NaN setting value
+        const triggerSettingNanBtn = screen.getByTestId('test-trigger-setting-nan');
+        await user.click(triggerSettingNanBtn);
+        expect(screen.getByDisplayValue('0')).toBeInTheDocument(); // should be ignored
+
+        // 3. Trigger saveConfig when total is not 100%
+        // We modify targetPercent values to make it not sum to 100%
+        // Remove SOL (15%) to make it 85%
+        const btns = screen.getAllByTitle('Remove Asset');
+        await user.click(btns[3]); // Remove SOL
+
+        // Trigger saveConfig backdoor directly
+        const triggerSaveConfigBtn = screen.getByTestId('test-trigger-save-config');
+        await user.click(triggerSaveConfigBtn);
+        
+        const toast = await import('react-hot-toast');
+        expect(toast.default.error).toHaveBeenCalledWith(expect.stringContaining('Total allocation must be 100%'));
+    });
+
+    it('covers fiat max drawdown and exponent overrides when they are undefined', async () => {
+        // 4. Trigger fiatMaxDrawdown and fiatDeploymentExponent onChange when they are null/undefined
+        const sparseConfig = {
+            settings: {
+                loopDelaySeconds: 60,
+                deviationTriggerPercent: 3.0,
+                dustThresholdUSD: 5.0,
+                dryRun: true,
+            },
+            allocations: [
+                { symbol: 'USD', targetPercent: 100 }
+            ]
+        };
+        
+        global.fetch.mockResolvedValueOnce({ ok: true, json: () => Promise.resolve(sparseConfig) });
+        renderWithProviders(<Settings />);
+        await waitFor(() => expect(screen.queryByText('Loading settings...')).not.toBeInTheDocument());
+
+        const drawdownInput = screen.getByDisplayValue('0');
+        fireEvent.change(drawdownInput, { target: { value: '15' } });
+        expect(drawdownInput).toHaveValue(15);
+
+        const exponentInput = screen.getByDisplayValue('1');
+        fireEvent.change(exponentInput, { target: { value: '2.5' } });
+        expect(exponentInput).toHaveValue(2.5);
     });
 });
