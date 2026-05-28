@@ -203,13 +203,22 @@ The backend starts on port **8080** and begins the rebalancing loop immediately.
 
 ### 3. Start the Frontend
 
+#### Dev Mode (Hot-Reloading)
 ```bash
 cd frontend
-npm install   # First time setup, or after pulling updates to install new dependencies
+npm install
 npm run dev
 ```
-
 Open your browser to **http://localhost:5173**. The frontend proxies API requests to the backend automatically.
+
+#### Production Mode (Local Preview)
+```bash
+cd frontend
+npm install
+npm run build      # Compiles and optimizes assets into /dist
+npm run preview    # Serves the production build locally
+```
+Open your browser to **http://localhost:4173**. This serves the static build and proxies API requests to the backend automatically.
 
 ---
 
