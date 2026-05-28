@@ -15,13 +15,13 @@ const StatusCard = ({ title, value, subValue, type = 'neutral', icon }: StatusCa
     let borderClass = 'border-slate-800 hover:border-slate-700';
 
     if (type === 'success') {
-        valueClass += 'bg-gradient-to-br from-emerald-400 to-teal-500';
+        valueClass += 'bg-linear-to-br from-emerald-400 to-teal-500';
         borderClass = 'border-emerald-500/20 hover:border-emerald-500/40 shadow-[0_0_15px_rgba(16,185,129,0.05)]';
     } else if (type === 'danger') {
-        valueClass += 'bg-gradient-to-br from-rose-400 to-red-500';
+        valueClass += 'bg-linear-to-br from-rose-400 to-red-500';
         borderClass = 'border-rose-500/20 hover:border-rose-500/40 shadow-[0_0_15px_rgba(244,63,94,0.05)]';
     } else {
-        valueClass += 'bg-gradient-to-br from-white to-slate-400';
+        valueClass += 'bg-linear-to-br from-white to-slate-400';
     }
 
     return (

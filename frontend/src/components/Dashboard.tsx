@@ -189,7 +189,7 @@ const Dashboard = () => {
             {/* Header */}
             <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 pb-4 border-b border-slate-800">
                 <div className="flex items-center gap-3">
-                    <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-400 to-emerald-400 bg-clip-text text-transparent">
+                    <h1 className="text-2xl font-bold bg-linear-to-r from-blue-400 to-emerald-400 bg-clip-text text-transparent">
                         Kraken Rebalancer
                     </h1>
                     <div className={`px-2.5 py-0.5 rounded-full text-xs font-bold tracking-wider shadow-lg ${
