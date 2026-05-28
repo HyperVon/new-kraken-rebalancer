@@ -23,7 +23,7 @@ const TradeHistory = ({ history }: TradeHistoryProps) => {
                 <Activity size={18} className="text-blue-400" />
                 Recent Activity
             </h2>
-            <div className="overflow-y-auto max-h-[400px] -mx-6 px-6 pr-4 custom-scrollbar">
+            <div className="overflow-y-auto max-h-100 -mx-6 px-6 pr-4 custom-scrollbar">
                 <table className="w-full text-left border-collapse">
                     <thead className="sticky top-0 bg-slate-900/90 backdrop-blur-md z-10">
                         <tr className="text-xs uppercase text-slate-500 tracking-wider">
