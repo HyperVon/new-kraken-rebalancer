@@ -41,7 +41,7 @@ A production-grade, autonomous portfolio rebalancing engine for the [Kraken](htt
 - Handles withdrawals by selling from the most overweight assets
 
 ### Live Dashboard
-- Real-time portfolio overview with auto-refresh (5-second polling)
+- Real-time portfolio overview with push updates (via Ktor Server-Sent Events)
 - Horizontal bar chart showing asset allocation by value
 - Sortable asset performance table with deviation indicators
 - Trade history log with BUY/SELL badges

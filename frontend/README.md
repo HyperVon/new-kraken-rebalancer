@@ -12,7 +12,7 @@ A React-based dashboard for monitoring and configuring the Kraken Rebalancer.
 
 | Component | Description |
 |---|---|
-| `Dashboard` | Main view — status cards, allocation chart, asset table, and trade history. Polls `/api/status` and `/api/history` every 5 seconds. |
+| `Dashboard` | Main view — status cards, allocation chart, asset table, and trade history. Subscribes to `/api/status/stream` via SSE for real-time snapshots, and automatically syncs the trade log. |
 | `StatusCard` | Reusable card displaying a metric (Total Portfolio, Cash, Crypto Assets) with optional sub-values. |
 | `AllocationChart` | Horizontal bar chart showing top assets by USD value using Chart.js. |
 | `TradeHistory` | Scrollable table of recent rebalance cycle actions with BUY/SELL/INFO badges. |
