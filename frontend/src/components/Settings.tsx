@@ -1,4 +1,4 @@
-import React, {useEffect, useState} from 'react';
+import {useEffect, useState} from 'react';
 import {useMutation, useQuery, useQueryClient} from '@tanstack/react-query';
 import {useNavigate} from 'react-router-dom';
 import toast from 'react-hot-toast';
@@ -15,12 +15,14 @@ const ALLOWED_SETTING_KEYS = new Set<keyof SettingsType>([
     'fiatDeploymentExponent'
 ]);
 
+declare const process: { env: { NODE_ENV: string } };
+
 const ALLOWED_ALLOCATION_KEYS = new Set<keyof Allocation>([
     'symbol',
     'targetPercent'
 ]);
 
-const Settings: React.FC = () => {
+const Settings = () => {
     const navigate = useNavigate();
     const queryClient = useQueryClient();
     const [config, setConfig] = useState<FrontendConfig | null>(null);
@@ -55,10 +57,11 @@ const Settings: React.FC = () => {
             });
         }
     });
-
+    // Sync remote config into local state for editing (legitimate form pattern)
     useEffect(() => {
         if (remoteConfig) {
-            setConfig(JSON.parse(JSON.stringify(remoteConfig)));
+            // eslint-disable-next-line react-hooks/set-state-in-effect
+            setConfig(JSON.parse(JSON.stringify(remoteConfig)) as FrontendConfig);
         }
     }, [remoteConfig]);
 
@@ -75,7 +78,7 @@ const Settings: React.FC = () => {
         return Number.isFinite(parsed) ? parsed : fallback;
     };
 
-    const handleSettingChange = (field: keyof SettingsType, value: any) => {
+    const handleSettingChange = (field: keyof SettingsType, value: string | number | boolean) => {
         if (!ALLOWED_SETTING_KEYS.has(field)) return;
         if (typeof value === 'number' && !Number.isFinite(value)) return;
         setConfig(prev => {
@@ -104,7 +107,7 @@ const Settings: React.FC = () => {
                     /* v8 ignore start */
                     [field]: field === 'targetPercent' ? parseNumberInput(value, alloc.targetPercent || 0) : value
                     /* v8 ignore stop */
-                } as any;
+                } as Allocation;
             }
             return alloc;
         });
@@ -177,7 +180,7 @@ const Settings: React.FC = () => {
     const allocations = config.allocations || [];
     const totalAllocated = allocations.reduce((sum, a) => sum + (a.targetPercent || 0), 0);
     const isValidTotal = Math.abs(totalAllocated - 100) <= 0.01;
-    const settings = config.settings || {} as SettingsType;
+    const settings = config.settings ?? ({} as SettingsType);
 
     return (
         <div className="max-w-4xl mx-auto p-4 md:p-8 space-y-8">
@@ -291,7 +294,7 @@ const Settings: React.FC = () => {
                     </div>
 
                     <div className="space-y-3 mb-6">
-                        {allocations.map((alloc: any, idx: number) => (
+                        {allocations.map((alloc: Allocation, idx: number) => (
                             <div key={idx} className="flex items-center gap-4 bg-slate-900/40 p-3 rounded-xl border border-slate-800/50 hover:border-slate-700 transition-colors">
                                 <div className="w-24 font-bold text-lg text-slate-200">{alloc.symbol}</div>
                                 <div className="flex-1 relative">
@@ -339,43 +342,43 @@ const Settings: React.FC = () => {
                 <div data-testid="test-backdoor" style={{ display: 'none' }}>
                     <button
                         data-testid="test-trigger-setting"
-                        onClick={() => (handleSettingChange as any)('invalidSettingKey', 'value')}
+                        onClick={() => (handleSettingChange as (f: string, v: string) => void)('invalidSettingKey', 'value')}
                     />
                     <button
                         data-testid="test-trigger-allocation"
-                        onClick={() => (handleAllocationChange as any)(0, 'invalidAllocationKey', 'value')}
+                        onClick={() => (handleAllocationChange as (i: number, f: string, v: string) => void)(0, 'invalidAllocationKey', 'value')}
                     />
                     <button
                         data-testid="test-trigger-allocation-bounds-low"
-                        onClick={() => (handleAllocationChange as any)(-1, 'targetPercent', '50')}
+                        onClick={() => handleAllocationChange(-1, 'targetPercent', '50')}
                     />
                     <button
                         data-testid="test-trigger-allocation-bounds-high"
-                        onClick={() => (handleAllocationChange as any)(999, 'targetPercent', '50')}
+                        onClick={() => handleAllocationChange(999, 'targetPercent', '50')}
                     />
                     <button
                         data-testid="test-trigger-allocation-bounds-type"
-                        onClick={() => (handleAllocationChange as any)('not-a-number' as any, 'targetPercent', '50')}
+                        onClick={() => (handleAllocationChange as unknown as (i: string, f: string, v: string) => void)('not-a-number', 'targetPercent', '50')}
                     />
                     <button
                         data-testid="test-trigger-remove-bounds-low"
-                        onClick={() => (removeAllocation as any)(-1)}
+                        onClick={() => removeAllocation(-1)}
                     />
                     <button
                         data-testid="test-trigger-remove-bounds-high"
-                        onClick={() => (removeAllocation as any)(999)}
+                        onClick={() => removeAllocation(999)}
                     />
                     <button
                         data-testid="test-trigger-remove-bounds-type"
-                        onClick={() => (removeAllocation as any)('not-a-number' as any)}
+                        onClick={() => (removeAllocation as unknown as (i: string) => void)('not-a-number')}
                     />
                     <button
                         data-testid="test-trigger-setting-nan"
-                        onClick={() => (handleSettingChange as any)('loopDelaySeconds', NaN)}
+                        onClick={() => handleSettingChange('loopDelaySeconds', NaN)}
                     />
                     <button
                         data-testid="test-trigger-save-config"
-                        onClick={() => (saveConfig as any)()}
+                        onClick={() => saveConfig()}
                     />
                 </div>
             )}

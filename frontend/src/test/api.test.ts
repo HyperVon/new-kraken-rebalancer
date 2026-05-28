@@ -17,7 +17,7 @@ describe('apiService', () => {
         vi.mocked(fetch).mockResolvedValueOnce({
             ok: true,
             json: async () => mockSnapshot
-        } as Response);
+        } as unknown as Response);
 
         const result = await apiService.getStatus();
         expect(result).toEqual(mockSnapshot);
@@ -29,7 +29,7 @@ describe('apiService', () => {
             ok: false,
             status: 500,
             json: async () => { throw new Error('parse error'); }
-        } as Response);
+        } as unknown as Response);
 
         await expect(apiService.getStatus()).rejects.toThrow(new ApiError(500, 'HTTP error! status: 500'));
     });
@@ -39,7 +39,7 @@ describe('apiService', () => {
             ok: false,
             status: 400,
             json: async () => ({ error: 'Invalid config target' })
-        } as Response);
+        } as unknown as Response);
 
         await expect(apiService.getStatus()).rejects.toThrow(new ApiError(400, 'Invalid config target'));
     });
@@ -49,7 +49,7 @@ describe('apiService', () => {
             ok: false,
             status: 400,
             json: async () => ({})
-        } as Response);
+        } as unknown as Response);
 
         await expect(apiService.getStatus()).rejects.toThrow(new ApiError(400, 'HTTP error! status: 400'));
     });
@@ -59,7 +59,7 @@ describe('apiService', () => {
             ok: false,
             status: 400,
             json: async () => null
-        } as Response);
+        } as unknown as Response);
 
         await expect(apiService.getStatus()).rejects.toThrow(new ApiError(400, 'HTTP error! status: 400'));
     });
@@ -69,7 +69,7 @@ describe('apiService', () => {
         vi.mocked(fetch).mockResolvedValueOnce({
             ok: true,
             json: async () => mockConfig
-        } as Response);
+        } as unknown as Response);
 
         const result = await apiService.updateSettings(mockConfig);
         expect(result).toEqual(mockConfig);

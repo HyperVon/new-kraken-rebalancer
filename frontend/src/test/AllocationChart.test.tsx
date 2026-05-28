@@ -4,9 +4,9 @@ import AllocationChart from '../components/AllocationChart';
 
 // Mock chart.js and react-chartjs-2 to avoid canvas rendering issues in jsdom
 vi.mock('react-chartjs-2', () => ({
-    Bar: ({ data }) => (
+    Bar: ({ data }: { data: any }) => (
         <div data-testid="mock-bar-chart">
-            {data.labels.map((label, i) => (
+            {data.labels.map((label: any, i: number) => (
                 <span key={label} data-testid={`chart-label-${label}`}>
                     {label}: ${data.datasets[0].data[i]}
                 </span>
@@ -41,7 +41,7 @@ describe('AllocationChart', () => {
         const assets = {
             BTC: { symbol: 'BTC', valueUSD: 5000 },
             ETH: { symbol: 'ETH', valueUSD: 3000 },
-        };
+        } as any;
 
         render(<AllocationChart assets={assets} />);
 
@@ -53,7 +53,7 @@ describe('AllocationChart', () => {
             SOL: { symbol: 'SOL', valueUSD: 1000 },
             BTC: { symbol: 'BTC', valueUSD: 5000 },
             ETH: { symbol: 'ETH', valueUSD: 3000 },
-        };
+        } as any;
 
         render(<AllocationChart assets={assets} />);
 
@@ -67,7 +67,7 @@ describe('AllocationChart', () => {
     });
 
     it('limits display to top 15 assets', () => {
-        const assets = {};
+        const assets: Record<string, any> = {};
         for (let i = 1; i <= 20; i++) {
             assets[`COIN${i}`] = { symbol: `COIN${i}`, valueUSD: i * 100 };
         }
@@ -84,7 +84,7 @@ describe('AllocationChart', () => {
         const assets = {
             BTC: { symbol: 'BTC', valueUSD: 50000 },
             ETH: { symbol: 'ETH', valueUSD: 10000 },
-        };
+        } as any;
 
         render(<AllocationChart assets={assets} />);
 
@@ -95,7 +95,7 @@ describe('AllocationChart', () => {
     it('renders chart when only a single asset is present', () => {
         const assets = {
             BTC: { symbol: 'BTC', valueUSD: 50000 },
-        };
+        } as any;
 
         render(<AllocationChart assets={assets} />);
 
@@ -107,7 +107,7 @@ describe('AllocationChart', () => {
         const assets = [
             { symbol: 'BTC', valueUSD: 50000 },
             { symbol: 'ETH', valueUSD: 10000 },
-        ];
+        ] as any;
 
         render(<AllocationChart assets={assets} />);
 
@@ -119,14 +119,14 @@ describe('AllocationChart', () => {
 
 describe('AllocationChart helpers', () => {
     it('formatTooltipLabel formats currency correctly', async () => {
-        const { formatTooltipLabel } = await import('../components/AllocationChart');
+        const { formatTooltipLabel } = await import('../utils/chartFormatters');
         expect(formatTooltipLabel({ raw: 50000 })).toBe('$50,000.00');
         expect(formatTooltipLabel({ raw: 0 })).toBe('$0.00');
         expect(formatTooltipLabel({ raw: 1234.56 })).toBe('$1,234.56');
     });
 
     it('formatTickLabel prepends dollar sign', async () => {
-        const { formatTickLabel } = await import('../components/AllocationChart');
+        const { formatTickLabel } = await import('../utils/chartFormatters');
         expect(formatTickLabel(1000)).toBe('$1000');
         expect(formatTickLabel(0)).toBe('$0');
         expect(formatTickLabel('500')).toBe('$500');

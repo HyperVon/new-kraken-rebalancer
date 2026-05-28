@@ -4,7 +4,7 @@ import TradeHistory from '../components/TradeHistory';
 
 describe('TradeHistory', () => {
     it('renders empty state when history is null', () => {
-        render(<TradeHistory history={null} />);
+        render(<TradeHistory history={null as any} />);
 
         expect(screen.getByText('Recent Activity')).toBeInTheDocument();
         expect(screen.getByText('No trading history available.')).toBeInTheDocument();
@@ -22,7 +22,7 @@ describe('TradeHistory', () => {
             actions: ['BUY 0.5 BTC @ $50,000']
         }];
 
-        render(<TradeHistory history={history} />);
+        render(<TradeHistory history={history as any} />);
 
         expect(screen.getByText('BUY')).toBeInTheDocument();
         expect(screen.getByText('BUY 0.5 BTC @ $50,000')).toBeInTheDocument();
@@ -35,7 +35,7 @@ describe('TradeHistory', () => {
             actions: ['SELL 1.0 ETH @ $3,000']
         }];
 
-        render(<TradeHistory history={history} />);
+        render(<TradeHistory history={history as any} />);
 
         expect(screen.getByText('SELL')).toBeInTheDocument();
         expect(screen.getByText('SELL 1.0 ETH @ $3,000')).toBeInTheDocument();
@@ -48,7 +48,7 @@ describe('TradeHistory', () => {
             actions: ['Rebalance cycle complete']
         }];
 
-        render(<TradeHistory history={history} />);
+        render(<TradeHistory history={history as any} />);
 
         expect(screen.getByText('INFO')).toBeInTheDocument();
         expect(screen.getByText('INFO')).toHaveClass('badge');
@@ -65,7 +65,7 @@ describe('TradeHistory', () => {
             ]
         }];
 
-        render(<TradeHistory history={history} />);
+        render(<TradeHistory history={history as any} />);
 
         expect(screen.getByText('BUY')).toBeInTheDocument();
         expect(screen.getByText('SELL')).toBeInTheDocument();
@@ -77,7 +77,7 @@ describe('TradeHistory', () => {
             actions: []
         }];
 
-        render(<TradeHistory history={history} />);
+        render(<TradeHistory history={history as any} />);
 
         expect(screen.getByText('No trades executed (Cycle complete)')).toBeInTheDocument();
     });
@@ -88,7 +88,7 @@ describe('TradeHistory', () => {
             actions: null
         }];
 
-        render(<TradeHistory history={history} />);
+        render(<TradeHistory history={history as any} />);
 
         expect(screen.getByText('No trades executed (Cycle complete)')).toBeInTheDocument();
     });
@@ -105,7 +105,7 @@ describe('TradeHistory', () => {
             }
         ];
 
-        render(<TradeHistory history={history} />);
+        render(<TradeHistory history={history as any} />);
 
         expect(screen.getByText('BUY')).toBeInTheDocument();
         expect(screen.getByText('SELL')).toBeInTheDocument();
@@ -120,7 +120,7 @@ describe('TradeHistory', () => {
             actions: ['BUY 1.0 BTC @ $50,000']
         }];
 
-        render(<TradeHistory history={history} />);
+        render(<TradeHistory history={history as any} />);
 
         // Should render without crashing - the component handles numeric timestamps
         expect(screen.getByText('BUY')).toBeInTheDocument();
@@ -132,7 +132,7 @@ describe('TradeHistory', () => {
             actions: ['BUY 0.5 BTC']
         }];
 
-        render(<TradeHistory history={history} />);
+        render(<TradeHistory history={history as any} />);
 
         expect(screen.getByText('Time')).toBeInTheDocument();
         expect(screen.getByText('Action')).toBeInTheDocument();
@@ -144,7 +144,7 @@ describe('TradeHistory', () => {
             actions: ['buy 0.5 BTC @ $50,000', 'sell 1.0 ETH @ $3,000']
         }];
 
-        render(<TradeHistory history={history} />);
+        render(<TradeHistory history={history as any} />);
 
         const badges = screen.getAllByText('BUY');
         expect(badges).toHaveLength(1);

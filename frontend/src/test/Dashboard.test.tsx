@@ -2,13 +2,14 @@ import {act, render, screen, waitFor} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import {QueryClient, QueryClientProvider} from '@tanstack/react-query';
+import type {ReactNode} from 'react';
 import Dashboard from '../components/Dashboard';
 
 const createTestQueryClient = () => new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0 } }
 });
 
-const renderWithProviders = (ui) => {
+const renderWithProviders = (ui: ReactNode) => {
     const queryClient = createTestQueryClient();
     return render(
         <QueryClientProvider client={queryClient}>
@@ -21,16 +22,16 @@ const renderWithProviders = (ui) => {
 const mockNavigate = vi.fn();
 vi.mock('react-router-dom', () => ({
     useNavigate: () => mockNavigate,
-    BrowserRouter: ({ children }: any) => <div>{children}</div>,
+    BrowserRouter: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }));
 
 // Mock child components to isolate Dashboard logic
 vi.mock('../components/AllocationChart', () => ({
-    default: ({ assets }) => <div data-testid="allocation-chart">{assets ? 'Chart Loaded' : 'No Chart'}</div>
+    default: ({ assets }: { assets: any }) => <div data-testid="allocation-chart">{assets ? 'Chart Loaded' : 'No Chart'}</div>
 }));
 
 vi.mock('../components/TradeHistory', () => ({
-    default: ({ history }) => <div data-testid="trade-history">{history.length} trades</div>
+    default: ({ history }: { history: any[] }) => <div data-testid="trade-history">{history.length} trades</div>
 }));
 
 vi.mock('../components/Settings', () => ({
@@ -38,7 +39,7 @@ vi.mock('../components/Settings', () => ({
 }));
 
 vi.mock('../components/StatusCard', () => ({
-    default: ({ title, value, subValue, type }) => (
+    default: ({ title, value, subValue, type: _type }: { title: string; value: any; subValue?: any; type?: string }) => (
         <div data-testid={`status-card-${title.replace(/\s+/g, '-').toLowerCase()}`}>
             <span data-testid="card-title">{title}</span>
             <span data-testid="card-value">{value}</span>
@@ -65,7 +66,7 @@ describe('Dashboard', () => {
 
     beforeEach(() => {
         vi.useFakeTimers({ shouldAdvanceTime: true });
-        global.fetch = vi.fn();
+        vi.stubGlobal('fetch', vi.fn());
     });
 
     afterEach(() => {
@@ -74,12 +75,12 @@ describe('Dashboard', () => {
     });
 
     const setupFetchMocks = () => {
-        global.fetch.mockImplementation((url) => {
+        vi.mocked(fetch).mockImplementation((url: any) => {
             if (url === '/api/status') {
-                return Promise.resolve({ ok: true, json: () => Promise.resolve(mockStatus) });
+                return Promise.resolve({ ok: true, json: () => Promise.resolve(mockStatus) } as Response);
             }
             if (url === '/api/history') {
-                return Promise.resolve({ ok: true, json: () => Promise.resolve(mockHistory) });
+                return Promise.resolve({ ok: true, json: () => Promise.resolve(mockHistory) } as Response);
             }
             return Promise.reject(new Error('Unknown URL'));
         });
@@ -167,26 +168,26 @@ describe('Dashboard', () => {
     });
 
     it('handles fetch errors gracefully without crashing', async () => {
-        global.fetch.mockImplementation((url) => {
+        vi.mocked(fetch).mockImplementation((url: any) => {
             if (String(url).includes('/api/status')) {
                 return Promise.reject(new Error('Network error'));
             }
-            return Promise.resolve({ ok: true, json: async () => [] });
+            return Promise.resolve({ ok: true, json: async () => [] } as Response);
         });
         await act(async () => { renderWithProviders(<Dashboard />); });
         await waitFor(() => expect(screen.getByText('Unable to load portfolio status')).toBeInTheDocument());
     });
 
     it('shows waiting message when status returns 404', async () => {
-        global.fetch.mockImplementation((url) => {
+        vi.mocked(fetch).mockImplementation((url: any) => {
             if (String(url).includes('/api/status')) {
                 return Promise.resolve({
                     ok: false,
                     status: 404,
                     json: async () => ({ error: 'No snapshot available yet' })
-                });
+                } as Response);
             }
-            return Promise.resolve({ ok: true, json: async () => [] });
+            return Promise.resolve({ ok: true, json: async () => [] } as Response);
         });
         await act(async () => { renderWithProviders(<Dashboard />); });
         await waitFor(() => expect(screen.getByText('Waiting for first rebalance cycle')).toBeInTheDocument());
@@ -240,8 +241,8 @@ describe('Dashboard', () => {
         await act(async () => { renderWithProviders(<Dashboard />); });
         await waitFor(() => {
             // BTC has +5% deviation (overweight = text-rose-400)
-            const btcRow = screen.getByText('BTC').closest('tr');
-            const devCell = btcRow.querySelector('.text-rose-400');
+            const btcRow = screen.getByText('BTC').closest('tr')!;
+            const devCell = btcRow.querySelector('.text-rose-400')!;
             expect(devCell).not.toBeNull();
             expect(devCell.textContent).toContain('5.00%');
         });
@@ -252,8 +253,8 @@ describe('Dashboard', () => {
         await act(async () => { renderWithProviders(<Dashboard />); });
         await waitFor(() => {
             // ETH has -5% deviation (underweight = text-emerald-400)
-            const ethRow = screen.getByText('ETH').closest('tr');
-            const devCell = ethRow.querySelector('.text-emerald-400');
+            const ethRow = screen.getByText('ETH').closest('tr')!;
+            const devCell = ethRow.querySelector('.text-emerald-400')!;
             expect(devCell).not.toBeNull();
             expect(devCell.textContent).toContain('-5.00%');
         });
@@ -271,26 +272,26 @@ describe('Dashboard', () => {
         await waitFor(() => expect(screen.getByText(/\d+s ago/)).toBeInTheDocument());
     });
 
-    it('shows DELAYED badge when data is stale', async () => {
-        // Create a timestamp more than 90 seconds in the past
-        const staleTime = new Date(Date.now() - 120000).toISOString();
-        const staleStatus = { ...mockStatus, timestamp: staleTime };
-        global.fetch.mockImplementation((url) => {
+    it('shows LIVE badge in green when data is fresh', async () => {
+        setupFetchMocks();
+        await act(async () => { renderWithProviders(<Dashboard />); });
+        await waitFor(() => expect(screen.getByText('LIVE')).toBeInTheDocument());
+        // Change the mock implementation to return stale timestamp (100 seconds ago)
+        const staleStatus = { ...mockStatus, timestamp: new Date(Date.now() - 100 * 1000).toISOString() };
+        vi.mocked(fetch).mockImplementation((url: any) => {
             if (url === '/api/status') {
-                return Promise.resolve({ ok: true, json: () => Promise.resolve(staleStatus) });
+                return Promise.resolve({ ok: true, json: () => Promise.resolve(staleStatus) } as Response);
             }
-            if (url === '/api/history') {
-                return Promise.resolve({ ok: true, json: () => Promise.resolve(mockHistory) });
-            }
-            return Promise.reject(new Error('Unknown URL'));
+            return Promise.resolve({ ok: true, json: () => Promise.resolve(mockHistory) } as Response);
         });
 
         await act(async () => { renderWithProviders(<Dashboard />); });
         await waitFor(() => expect(screen.getByText('DELAYED')).toBeInTheDocument());
     });
 
-    it('shows loading state when status is loading', async () => {
-        global.fetch.mockImplementation(() => new Promise(() => {}));
+    it('displays STALE badge and time elapsed when data is stale', async () => {
+        // Mock infinite pending promise for fetch to prevent interval updates during transition
+        vi.mocked(fetch).mockImplementation(() => new Promise(() => {}));
         await act(async () => { renderWithProviders(<Dashboard />); });
         expect(screen.getByText('Connecting to KrakenBot...')).toBeInTheDocument();
     });
@@ -303,20 +304,20 @@ describe('Dashboard', () => {
                 BTC: { symbol: 'BTC', valueUSD: 25000, currentPercent: 50, targetPercent: 50, deviationPercent: 0, deviationUSD: 0, price: 50000 },
             }
         };
-        global.fetch.mockImplementation((url) => {
+        vi.mocked(fetch).mockImplementation((url: any) => {
             if (url === '/api/status') {
-                return Promise.resolve({ ok: true, json: () => Promise.resolve(zeroDevStatus) });
+                return Promise.resolve({ ok: true, json: () => Promise.resolve(zeroDevStatus) } as Response);
             }
             if (url === '/api/history') {
-                return Promise.resolve({ ok: true, json: () => Promise.resolve(mockHistory) });
+                return Promise.resolve({ ok: true, json: () => Promise.resolve(mockHistory) } as Response);
             }
             return Promise.reject(new Error('Unknown URL'));
         });
 
         await act(async () => { renderWithProviders(<Dashboard />); });
         await waitFor(() => {
-            const btcRow = screen.getByText('BTC').closest('tr');
-            const devCell = btcRow.querySelector('.text-slate-400');
+            const btcRow = screen.getByText('BTC').closest('tr')!;
+            const devCell = btcRow.querySelector('.text-slate-400')!;
             expect(devCell).not.toBeNull();
             expect(devCell.textContent).toContain('0.00%');
         });
@@ -330,12 +331,12 @@ describe('Dashboard', () => {
                 ETH: { symbol: 'ETH', valueUSD: 15000, currentPercent: 30, targetPercent: 35, deviationPercent: -5, deviationUSD: -2500, price: 3000 },
             }
         };
-        global.fetch.mockImplementation((url) => {
+        vi.mocked(fetch).mockImplementation((url: any) => {
             if (url === '/api/status') {
-                return Promise.resolve({ ok: true, json: () => Promise.resolve(noUsdStatus) });
+                return Promise.resolve({ ok: true, json: () => Promise.resolve(noUsdStatus) } as Response);
             }
             if (url === '/api/history') {
-                return Promise.resolve({ ok: true, json: () => Promise.resolve(mockHistory) });
+                return Promise.resolve({ ok: true, json: () => Promise.resolve(mockHistory) } as Response);
             }
             return Promise.reject(new Error('Unknown URL'));
         });
@@ -402,12 +403,12 @@ describe('Dashboard', () => {
                 ETH: { symbol: 'ETH', valueUSD: 20000, currentPercent: 40, targetPercent: 40, deviationPercent: 0, deviationUSD: 0, price: 3000 },
             }
         };
-        global.fetch.mockImplementation((url) => {
+        vi.mocked(fetch).mockImplementation((url: any) => {
             if (url === '/api/status') {
-                return Promise.resolve({ ok: true, json: () => Promise.resolve(equalStatus) });
+                return Promise.resolve({ ok: true, json: () => Promise.resolve(equalStatus) } as Response);
             }
             if (url === '/api/history') {
-                return Promise.resolve({ ok: true, json: () => Promise.resolve(mockHistory) });
+                return Promise.resolve({ ok: true, json: () => Promise.resolve(mockHistory) } as Response);
             }
             return Promise.reject(new Error('Unknown URL'));
         });
@@ -429,12 +430,12 @@ describe('Dashboard', () => {
                 USD: { ...mockStatus.assets.USD, deviationPercent: 3.5, deviationUSD: 1750 },
             }
         };
-        global.fetch.mockImplementation((url) => {
+        vi.mocked(fetch).mockImplementation((url: any) => {
             if (url === '/api/status') {
-                return Promise.resolve({ ok: true, json: () => Promise.resolve(statusWithEffective) });
+                return Promise.resolve({ ok: true, json: () => Promise.resolve(statusWithEffective) } as Response);
             }
             if (url === '/api/history') {
-                return Promise.resolve({ ok: true, json: () => Promise.resolve(mockHistory) });
+                return Promise.resolve({ ok: true, json: () => Promise.resolve(mockHistory) } as Response);
             }
             return Promise.reject(new Error('Unknown URL'));
         });
@@ -456,12 +457,12 @@ describe('Dashboard', () => {
                 USD: { ...mockStatus.assets.USD, deviationPercent: -2.5, deviationUSD: -1250 },
             }
         };
-        global.fetch.mockImplementation((url) => {
+        vi.mocked(fetch).mockImplementation((url: any) => {
             if (url === '/api/status') {
-                return Promise.resolve({ ok: true, json: () => Promise.resolve(statusWithNegDev) });
+                return Promise.resolve({ ok: true, json: () => Promise.resolve(statusWithNegDev) } as Response);
             }
             if (url === '/api/history') {
-                return Promise.resolve({ ok: true, json: () => Promise.resolve(mockHistory) });
+                return Promise.resolve({ ok: true, json: () => Promise.resolve(mockHistory) } as Response);
             }
             return Promise.reject(new Error('Unknown URL'));
         });
@@ -481,12 +482,12 @@ describe('Dashboard', () => {
                 USD: { ...mockStatus.assets.USD, deviationPercent: 3.0, deviationUSD: 1500 },
             }
         };
-        global.fetch.mockImplementation((url) => {
+        vi.mocked(fetch).mockImplementation((url: any) => {
             if (url === '/api/status') {
-                return Promise.resolve({ ok: true, json: () => Promise.resolve(statusWithPosDev) });
+                return Promise.resolve({ ok: true, json: () => Promise.resolve(statusWithPosDev) } as Response);
             }
             if (url === '/api/history') {
-                return Promise.resolve({ ok: true, json: () => Promise.resolve(mockHistory) });
+                return Promise.resolve({ ok: true, json: () => Promise.resolve(mockHistory) } as Response);
             }
             return Promise.reject(new Error('Unknown URL'));
         });
@@ -500,12 +501,12 @@ describe('Dashboard', () => {
 
     it('displays drawdownPercent of 0.00% when drawdown is 0', async () => {
         const statusNoDraw = { ...mockStatus, drawdownPercent: 0 };
-        global.fetch.mockImplementation((url) => {
+        vi.mocked(fetch).mockImplementation((url: any) => {
             if (url === '/api/status') {
-                return Promise.resolve({ ok: true, json: () => Promise.resolve(statusNoDraw) });
+                return Promise.resolve({ ok: true, json: () => Promise.resolve(statusNoDraw) } as Response);
             }
             if (url === '/api/history') {
-                return Promise.resolve({ ok: true, json: () => Promise.resolve(mockHistory) });
+                return Promise.resolve({ ok: true, json: () => Promise.resolve(mockHistory) } as Response);
             }
             return Promise.reject(new Error('Unknown URL'));
         });
@@ -539,12 +540,12 @@ describe('Dashboard', () => {
     });
 
     it('handles null status and cleanup gracefully', async () => {
-        global.fetch.mockImplementation((url) => {
+        vi.mocked(fetch).mockImplementation((url: any) => {
             if (url === '/api/status') {
-                return Promise.resolve({ ok: true, json: () => Promise.resolve(null) });
+                return Promise.resolve({ ok: true, json: () => Promise.resolve(null) } as Response);
             }
             if (url === '/api/history') {
-                return Promise.resolve({ ok: true, json: () => Promise.resolve(mockHistory) });
+                return Promise.resolve({ ok: true, json: () => Promise.resolve(mockHistory) } as Response);
             }
             return Promise.reject(new Error('Unknown URL'));
         });

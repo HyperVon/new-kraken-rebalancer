@@ -1,21 +1,16 @@
-import React from 'react';
-import {BarElement, CategoryScale, Chart as ChartJS, Legend, LinearScale, Tooltip} from 'chart.js';
+import {BarElement, CategoryScale, Chart as ChartJS, Legend, LinearScale, Tooltip, ChartOptions} from 'chart.js';
 import {Bar} from 'react-chartjs-2';
 import {PieChart} from 'lucide-react';
 import {AssetSnapshot} from '@/types';
+import {formatTooltipLabel, formatTickLabel} from '@/utils/chartFormatters';
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Tooltip, Legend);
 
 interface AllocationChartProps {
-    assets: AssetSnapshot[] | { [key: string]: AssetSnapshot } | undefined;
+    assets: AssetSnapshot[] | Record<string, AssetSnapshot> | null | undefined;
 }
 
-export const formatTooltipLabel = (context: { raw: number }) =>
-    new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(context.raw);
-
-export const formatTickLabel = (value: number | string) => '$' + value;
-
-const AllocationChart: React.FC<AllocationChartProps> = ({ assets }) => {
+const AllocationChart = ({ assets }: AllocationChartProps) => {
     if (!assets || Object.keys(assets).length === 0) {
         return (
             <div className="glass-panel flex flex-col items-center justify-center py-16 text-slate-500">
@@ -30,7 +25,7 @@ const AllocationChart: React.FC<AllocationChartProps> = ({ assets }) => {
     const sortedAssets = assetsArray.sort((a, b) => b.valueUSD - a.valueUSD);
     const topAssets = sortedAssets.slice(0, 15);
 
-    const chartLabels = topAssets.map(a => a.asset || (a as any).symbol);
+    const chartLabels = topAssets.map(a => a.symbol);
     const chartValues = topAssets.map(a => a.valueUSD);
 
     const data = {
@@ -48,7 +43,7 @@ const AllocationChart: React.FC<AllocationChartProps> = ({ assets }) => {
         ],
     };
 
-    const options = {
+    const options: ChartOptions<'bar'> = {
         indexAxis: 'y' as const,
         maintainAspectRatio: false,
         plugins: {
@@ -65,7 +60,7 @@ const AllocationChart: React.FC<AllocationChartProps> = ({ assets }) => {
                 cornerRadius: 8,
                 callbacks: {
                     /* v8 ignore next */
-                    label: (context: any) => formatTooltipLabel(context)
+                    label: (context) => formatTooltipLabel({ raw: context.raw as number })
                 }
             }
         },
@@ -73,12 +68,14 @@ const AllocationChart: React.FC<AllocationChartProps> = ({ assets }) => {
             x: {
                 grid: {
                     color: 'rgba(51, 65, 85, 0.3)',
-                    drawBorder: false,
+                },
+                border: {
+                    display: false,
                 },
                 ticks: {
                     color: '#94a3b8',
                     /* v8 ignore next */
-                    callback: (value: any) => formatTickLabel(value),
+                    callback: (value: number | string) => formatTickLabel(value),
                     font: {
                         family: 'Inter',
                     }
@@ -87,7 +84,9 @@ const AllocationChart: React.FC<AllocationChartProps> = ({ assets }) => {
             y: {
                 grid: {
                     display: false,
-                    drawBorder: false,
+                },
+                border: {
+                    display: false,
                 },
                 ticks: {
                     color: '#e2e8f0',

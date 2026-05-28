@@ -1,4 +1,4 @@
-import React, {useEffect, useState} from 'react';
+import {useEffect, useState} from 'react';
 import {useQuery} from '@tanstack/react-query';
 import {useNavigate} from 'react-router-dom';
 import {Coins, Settings as SettingsIcon, TrendingUp, Wallet} from 'lucide-react';
@@ -10,7 +10,9 @@ import {AssetSnapshot} from '@/types';
 
 const ALLOWED_SORT_KEYS = new Set(['symbol', 'price', 'valueUSD', 'targetPercent', 'currentPercent', 'deviationPercent']);
 
-const Dashboard: React.FC = () => {
+declare const process: { env: { NODE_ENV: string } };
+
+const Dashboard = () => {
     const navigate = useNavigate();
     const [sortConfig, setSortConfig] = useState<{key: keyof AssetSnapshot | string, direction: 'asc' | 'desc'}>({ key: 'deviationPercent', direction: 'asc' });
     const [timeSinceUpdate, setTimeSinceUpdate] = useState(0);
@@ -95,7 +97,7 @@ const Dashboard: React.FC = () => {
 
     const totalPortfolioSub = (
         <div className="flex items-center gap-3 text-xs font-medium text-slate-400">
-            <span title="Current Drawdown" className={status?.drawdownPercent > 0 ? 'text-rose-400 font-semibold' : ''}>
+            <span title="Current Drawdown" className={(status?.drawdownPercent ?? 0) > 0 ? 'text-rose-400 font-semibold' : ''}>
                 Drawdown: {status?.drawdownPercent !== undefined ? status.drawdownPercent.toFixed(2) : '0.00'}%
             </span>
         </div>
@@ -106,8 +108,8 @@ const Dashboard: React.FC = () => {
             <span title="Current Allocation">{usdAsset.currentPercent?.toFixed(2)}%</span>
             <span className="text-slate-700">|</span>
             <span title="Target Allocation">
-                Target: {status.effectiveUsdTargetPercent !== undefined ? status.effectiveUsdTargetPercent.toFixed(2) : usdAsset.targetPercent?.toFixed(2)}%
-                {status.effectiveUsdTargetPercent !== undefined && Math.abs(status.effectiveUsdTargetPercent - usdAsset.targetPercent) > 0.01 &&
+                Target: {status?.effectiveUsdTargetPercent !== undefined ? status.effectiveUsdTargetPercent.toFixed(2) : usdAsset.targetPercent?.toFixed(2)}%
+                {status?.effectiveUsdTargetPercent !== undefined && Math.abs(status.effectiveUsdTargetPercent - usdAsset.targetPercent) > 0.01 &&
                     <span className="opacity-60 ml-1">(Base: {usdAsset.targetPercent?.toFixed(2)}%)</span>
                 }
             </span>
@@ -139,14 +141,16 @@ const Dashboard: React.FC = () => {
 
     const getSortedAssets = () => {
         if (!status || !status.assets) return [];
-        let assets = Object.values(status.assets).filter(a => a.symbol !== 'USD');
+        const assets = Object.values(status.assets).filter(a => a.symbol !== 'USD');
 
-        const sortKey = ALLOWED_SORT_KEYS.has(sortConfig.key) ? sortConfig.key : 'deviationPercent';
+        const sortKey = (ALLOWED_SORT_KEYS.has(sortConfig.key) ? sortConfig.key : 'deviationPercent') as keyof AssetSnapshot;
 
         /* v8 ignore start */
-        return assets.sort((a: any, b: any) => {
-            if (a[sortKey] < b[sortKey]) return sortConfig.direction === 'asc' ? -1 : 1;
-            if (a[sortKey] > b[sortKey]) return sortConfig.direction === 'asc' ? 1 : -1;
+        return assets.sort((a, b) => {
+            const aVal = a[sortKey];
+            const bVal = b[sortKey];
+            if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
+            if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
             return 0;
         });
         /* v8 ignore stop */
@@ -272,7 +276,7 @@ const Dashboard: React.FC = () => {
                 <button
                     data-testid="test-trigger-sort"
                     style={{ display: 'none' }}
-                    onClick={() => (requestSort as any)('invalidSortKey')}
+                    onClick={() => requestSort('invalidSortKey')}
                 />
             )}
         </div>

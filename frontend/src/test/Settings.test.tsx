@@ -3,13 +3,14 @@ import userEvent from '@testing-library/user-event';
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import {QueryClient, QueryClientProvider} from '@tanstack/react-query';
 import {BrowserRouter} from 'react-router-dom';
+import type {ReactNode} from 'react';
 import Settings from '../components/Settings';
 
 const createTestQueryClient = () => new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0 } }
 });
 
-const renderWithProviders = (ui) => {
+const renderWithProviders = (ui: ReactNode) => {
     const queryClient = createTestQueryClient();
     return render(
         <QueryClientProvider client={queryClient}>
@@ -46,36 +47,34 @@ describe('Settings', () => {
         ]
     };
 
-    let mockOnBack;
 
     beforeEach(() => {
-        mockOnBack = vi.fn();
-        global.fetch = vi.fn();
+        vi.stubGlobal('fetch', vi.fn());
     });
 
     afterEach(() => { vi.restoreAllMocks(); });
 
     const renderSettings = async (config = mockConfig) => {
-        global.fetch.mockResolvedValueOnce({ ok: true, json: () => Promise.resolve(config) });
+        vi.mocked(fetch).mockResolvedValueOnce({ ok: true, json: () => Promise.resolve(config) } as unknown as Response);
         renderWithProviders(<Settings />);
         await waitFor(() => expect(screen.queryByText('Loading settings...')).not.toBeInTheDocument());
     };
 
     it('displays loading state initially', () => {
-        global.fetch.mockReturnValueOnce(new Promise(() => {}));
+        vi.mocked(fetch).mockReturnValueOnce(new Promise(() => {}) as any);
         renderWithProviders(<Settings />);
         expect(screen.getByText('Loading settings...')).toBeInTheDocument();
     });
 
     it('displays error when fetch fails', async () => {
-        global.fetch.mockResolvedValueOnce({ ok: false });
+        vi.mocked(fetch).mockResolvedValueOnce({ ok: false } as unknown as Response);
         renderWithProviders(<Settings />);
         // React Query retries by default, but we disabled it in createTestQueryClient
         await waitFor(() => expect(screen.getByText(/Error:/)).toBeInTheDocument());
     });
 
     it('displays error when fetch throws', async () => {
-        global.fetch.mockRejectedValueOnce(new Error('Network error'));
+        vi.mocked(fetch).mockRejectedValueOnce(new Error('Network error'));
         renderWithProviders(<Settings />);
         await waitFor(() => expect(screen.getByText(/Error: Network error/)).toBeInTheDocument());
     });
@@ -189,7 +188,7 @@ describe('Settings', () => {
     it('shows success message on save', async () => {
         const user = userEvent.setup();
         await renderSettings();
-        global.fetch.mockResolvedValueOnce({ ok: true, json: () => Promise.resolve(mockConfig) });
+        vi.mocked(fetch).mockResolvedValueOnce({ ok: true, json: () => Promise.resolve(mockConfig) } as unknown as Response);
         await user.click(screen.getByText('Save Configuration'));
         const toast = await import('react-hot-toast');
         await waitFor(() => expect(toast.default.success).toHaveBeenCalledWith('Configuration saved successfully!', expect.any(Object)));
@@ -198,7 +197,7 @@ describe('Settings', () => {
     it('shows error message on save failure', async () => {
         const user = userEvent.setup();
         await renderSettings();
-        global.fetch.mockResolvedValueOnce({ ok: false });
+        vi.mocked(fetch).mockResolvedValueOnce({ ok: false } as unknown as Response);
         await user.click(screen.getByText('Save Configuration'));
         const toast = await import('react-hot-toast');
         await waitFor(() => expect(toast.default.error).toHaveBeenCalled());
@@ -207,7 +206,7 @@ describe('Settings', () => {
     it('shows Saving... while save in progress', async () => {
         const user = userEvent.setup();
         await renderSettings();
-        global.fetch.mockReturnValueOnce(new Promise(() => {}));
+        vi.mocked(fetch).mockReturnValueOnce(new Promise(() => {}) as any);
         await user.click(screen.getByText('Save Configuration'));
         expect(screen.getByText('Saving...')).toBeInTheDocument();
     });
@@ -224,13 +223,15 @@ describe('Settings', () => {
     it('sends correct payload on save', async () => {
         const user = userEvent.setup();
         await renderSettings();
-        global.fetch.mockResolvedValueOnce({ ok: true, json: () => Promise.resolve(mockConfig) });
+        vi.mocked(fetch).mockResolvedValueOnce({ ok: true, json: () => Promise.resolve(mockConfig) } as unknown as Response);
         await user.click(screen.getByText('Save Configuration'));
         await waitFor(() => {
-            const postCall = global.fetch.mock.calls[1];
+            const postCall = vi.mocked(fetch).mock.calls[1];
+            expect(postCall).toBeDefined();
             expect(postCall[0]).toBe('/api/config');
-            expect(postCall[1].method).toBe('POST');
-            const body = JSON.parse(postCall[1].body);
+            const requestInit = postCall[1]!;
+            expect(requestInit.method).toBe('POST');
+            const body = JSON.parse((requestInit.body as string) || '{}');
             expect(body.allocations).toHaveLength(4);
         });
     });
@@ -319,7 +320,7 @@ describe('Settings', () => {
     });
 
     it('returns null when config has not loaded yet', async () => {
-        global.fetch.mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({ settings: {}, allocations: [] }) });
+        vi.mocked(fetch).mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({ settings: {}, allocations: [] }) } as unknown as Response);
         renderWithProviders(<Settings />);
         await waitFor(() => expect(screen.queryByText('Loading settings...')).not.toBeInTheDocument());
         expect(screen.getByText('Settings')).toBeInTheDocument();
@@ -327,7 +328,7 @@ describe('Settings', () => {
 
     it('handles config with missing settings and allocations keys', async () => {
         // This covers the || {} and || [] fallback branches
-        global.fetch.mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({}) });
+        vi.mocked(fetch).mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({}) } as unknown as Response);
         renderWithProviders(<Settings />);
         await waitFor(() => expect(screen.queryByText('Loading settings...')).not.toBeInTheDocument());
         expect(screen.getByText('Settings')).toBeInTheDocument();
@@ -426,7 +427,7 @@ describe('Settings', () => {
             ]
         };
         
-        global.fetch.mockResolvedValueOnce({ ok: true, json: () => Promise.resolve(sparseConfig) });
+        vi.mocked(fetch).mockResolvedValueOnce({ ok: true, json: () => Promise.resolve(sparseConfig) } as unknown as Response);
         renderWithProviders(<Settings />);
         await waitFor(() => expect(screen.queryByText('Loading settings...')).not.toBeInTheDocument());
 

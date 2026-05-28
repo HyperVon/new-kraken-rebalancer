@@ -1,14 +1,16 @@
-import React from 'react';
+
+
+import type {ReactNode} from 'react';
 
 interface StatusCardProps {
     title: string;
     value: string | number;
-    subValue?: React.ReactNode;
+    subValue?: ReactNode;
     type?: 'neutral' | 'success' | 'danger';
-    icon?: React.ReactNode;
+    icon?: ReactNode;
 }
 
-const StatusCard: React.FC<StatusCardProps> = ({ title, value, subValue, type = 'neutral', icon }) => {
+const StatusCard = ({ title, value, subValue, type = 'neutral', icon }: StatusCardProps) => {
     let valueClass = 'text-2xl font-bold font-mono tracking-tight bg-clip-text text-transparent ';
     let borderClass = 'border-slate-800 hover:border-slate-700';
 

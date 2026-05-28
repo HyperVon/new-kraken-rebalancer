@@ -1,4 +1,4 @@
-import React from 'react';
+
 import {PortfolioSnapshot} from '@/types';
 import {Activity, CircleDashed} from 'lucide-react';
 
@@ -6,7 +6,7 @@ interface TradeHistoryProps {
     history: PortfolioSnapshot[];
 }
 
-const TradeHistory: React.FC<TradeHistoryProps> = ({ history }) => {
+const TradeHistory = ({ history }: TradeHistoryProps) => {
     if (!history || history.length === 0) {
         return (
             <div className="glass-panel flex flex-col items-center justify-center py-16 text-slate-500">

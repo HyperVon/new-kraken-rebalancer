@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+
+## [2.2.1] - 2026-05-28
+
+### Fixed
+- **TypeScript Strict Mode Compile Errors**: Fixed strict compilation errors across components (`AllocationChart`, `Dashboard`, `Settings`) and test suites (`AllocationChart.test`, `api.test`, `Dashboard.test`, `Settings.test`, `TradeHistory.test`).
+- **Vitest Configuration Type Safety**: Resolved a `defineConfig` type checking error in `vite.config.ts` by importing from `'vitest/config'`.
+- **ESLint & IDE Warnings**: Replaced base `no-unused-vars` rule with `@typescript-eslint/no-unused-vars` to prevent false positives on TypeScript imports and types, and configured overrides for test files. Added `css.unknownAtRules: "ignore"` to `.vscode/settings.json` to quiet editor warnings for Tailwind directives.
+
+### Removed
+- **Unused Styling File**: Deleted `App.css` which was unreferenced in the frontend application.
+
 ## [2.2.0] - 2026-05-26
 
 ### Added
