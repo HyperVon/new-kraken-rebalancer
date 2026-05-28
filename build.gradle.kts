@@ -32,12 +32,13 @@ dependencies {
     implementation(platform("com.fasterxml.jackson:jackson-bom:2.21.3"))
 
     // Koin
-    implementation("io.insert-koin:koin-core:3.5.6")
-    implementation("io.insert-koin:koin-logger-slf4j:3.5.6")
-    implementation("io.insert-koin:koin-ktor:3.5.6")
+    var koinVersion = "4.2.1"
+    implementation("io.insert-koin:koin-core:${koinVersion}")
+    implementation("io.insert-koin:koin-logger-slf4j:${koinVersion}")
+    implementation("io.insert-koin:koin-ktor:${koinVersion}")
     
     // Ktor Server & Client
-    val ktorVersion = "2.3.13"
+    val ktorVersion = "3.5.0"
     implementation("io.ktor:ktor-server-core:$ktorVersion")
     implementation("io.ktor:ktor-server-netty:$ktorVersion")
     implementation("io.ktor:ktor-server-content-negotiation:$ktorVersion")
@@ -48,19 +49,21 @@ dependencies {
     implementation("io.ktor:ktor-client-cio:$ktorVersion")
 
     // Logging
-    implementation("ch.qos.logback:logback-classic:1.5.32")
+    implementation("ch.qos.logback:logback-classic:1.5.33")
 
     // Coroutines
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.0")
+    val kotlinXCoroutinesVersion = "1.11.0"
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:${kotlinXCoroutinesVersion}")
 
     // Testing
-    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.0")
+    val koTestVersion = "6.1.11"
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:${kotlinXCoroutinesVersion}")
     testImplementation("io.ktor:ktor-server-test-host:$ktorVersion")
     testImplementation("io.ktor:ktor-client-mock:$ktorVersion")
-    testImplementation("io.insert-koin:koin-test:3.5.6")
+    testImplementation("io.insert-koin:koin-test:${koinVersion}")
     testImplementation("io.mockk:mockk:1.14.9")
-    testImplementation("io.kotest:kotest-runner-junit5:6.1.11")
-    testImplementation("io.kotest:kotest-assertions-core:6.1.11")
+    testImplementation("io.kotest:kotest-runner-junit5:${koTestVersion}")
+    testImplementation("io.kotest:kotest-assertions-core:${koTestVersion}")
 }
 
 tasks.withType<KotlinCompile> {

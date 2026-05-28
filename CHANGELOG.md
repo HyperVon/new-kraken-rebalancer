@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ---
 
 
+## [2.2.3] - 2026-05-28
+
+### Changed
+- **Backend Dependency Upgrades**: Upgraded core backend framework and library versions in `build.gradle.kts` to their latest stable major and minor releases:
+  - **Ktor**: Upgraded from `2.3.13` to `3.5.0` (major version 3 upgrade)
+  - **Koin**: Upgraded from `3.5.6` to `4.2.1` (major version 4 upgrade)
+  - **Kotlinx Coroutines**: Upgraded from `1.8.0` to `1.11.0`
+  - **Logback Classic**: Upgraded from `1.5.32` to `1.5.33`
+
 ## [2.2.2] - 2026-05-28
 
 ### Changed
