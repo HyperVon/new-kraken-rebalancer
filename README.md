@@ -108,7 +108,7 @@ graph LR
         KA[Kraken API]
     end
 
-    Frontend -- "REST API\n/api/*" --> DC
+    Frontend -- "REST API & SSE Stream\n/api/*" --> DC
     PM -- "Coroutine Loop\n(configurable interval)" --> PM
     KS -- "HMAC-SHA512\nAuthenticated" --> KA
 ```
@@ -126,6 +126,14 @@ flowchart LR
 ```
 
 See **[ALGORITHM.md](ALGORITHM.md)** for a detailed breakdown of the rebalancing logic, fiat correction strategy, and dynamic deployment math.
+
+### Real-Time Event Streaming
+
+To eliminate unnecessary network polling, the system uses a reactive, push-based architecture to synchronize the frontend dashboard with the backend rebalancing loop:
+
+1. **Kotlin SharedFlow**: `TradeHistoryServiceImpl` maintains a `MutableSharedFlow` as a hot event broadcaster. Whenever a rebalance cycle records a new `PortfolioSnapshot`, the snapshot is emitted to the flow using `tryEmit()`.
+2. **Ktor Server-Sent Events (SSE)**: The `/api/status/stream` route installs Ktor 3's native `SSE` plugin. When a client connects, Ktor pushes the latest cached snapshot and then suspends, collecting subsequent snapshots from the `SharedFlow` and streaming them over a single, persistent HTTP connection.
+3. **React EventSource Integration**: The React `Dashboard` utilizes the browser's native `EventSource` API to listen to the SSE stream. On message reception, it directly updates React Query's `status` cache and invalidates the `history` query, triggering an instantaneous update across all components without periodic background HTTP polls.
 
 ---
 
@@ -223,6 +231,7 @@ Open your browser to **http://localhost:5173**. The frontend proxies API request
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/api/status` | Returns the latest portfolio snapshot |
+| `GET` | `/api/status/stream` | Server-Sent Events (SSE) stream for real-time portfolio snapshot updates |
 | `GET` | `/api/history` | Returns the last 50 portfolio snapshots |
 | `GET` | `/api/config` | Returns the current configuration |
 | `POST` | `/api/config` | Updates and persists configuration (validated server-side) |
