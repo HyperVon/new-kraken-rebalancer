@@ -12,6 +12,7 @@ import io.ktor.server.engine.*
 import io.ktor.server.netty.*
 import io.ktor.server.plugins.contentnegotiation.*
 import io.ktor.server.plugins.cors.routing.*
+import io.ktor.server.sse.SSE
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -44,6 +45,7 @@ fun main() {
     })
 
     embeddedServer(Netty, port = 8080, host = "0.0.0.0") {
+        install(SSE)
         install(ContentNegotiation) {
             jackson {
                 findAndRegisterModules()

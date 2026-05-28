@@ -1,5 +1,5 @@
 import {useEffect, useState} from 'react';
-import {useQuery} from '@tanstack/react-query';
+import {useQuery, useQueryClient} from '@tanstack/react-query';
 import {useNavigate} from 'react-router-dom';
 import {Coins, Settings as SettingsIcon, TrendingUp, Wallet} from 'lucide-react';
 import StatusCard from './StatusCard';
@@ -14,21 +14,44 @@ declare const process: { env: { NODE_ENV: string } };
 
 const Dashboard = () => {
     const navigate = useNavigate();
+    const queryClient = useQueryClient();
     const [sortConfig, setSortConfig] = useState<{key: keyof AssetSnapshot | string, direction: 'asc' | 'desc'}>({ key: 'deviationPercent', direction: 'asc' });
     const [timeSinceUpdate, setTimeSinceUpdate] = useState(0);
 
     const { data: status, isLoading: isStatusLoading, isError: isStatusError, error: statusError, isFetched: isStatusFetched } = useQuery({
         queryKey: ['status'],
         queryFn: apiService.getStatus,
-        refetchInterval: 5000,
         retry: false,
     });
 
     const { data: history = [], isLoading: isHistoryLoading } = useQuery({
         queryKey: ['history'],
         queryFn: apiService.getHistory,
-        refetchInterval: 5000,
     });
+
+    /* v8 ignore start */
+    useEffect(() => {
+        const eventSource = new EventSource('/api/status/stream');
+
+        eventSource.onmessage = (event) => {
+            try {
+                const newStatus = JSON.parse(event.data);
+                queryClient.setQueryData(['status'], newStatus);
+                queryClient.invalidateQueries({ queryKey: ['history'] });
+            } catch (e) {
+                console.error('Error parsing SSE snapshot', e);
+            }
+        };
+
+        eventSource.onerror = (err) => {
+            console.error('EventSource failed:', err);
+        };
+
+        return () => {
+            eventSource.close();
+        };
+    }, [queryClient]);
+    /* v8 ignore stop */
 
     useEffect(() => {
         if (!status) return;

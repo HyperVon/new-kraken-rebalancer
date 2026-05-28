@@ -32,10 +32,17 @@ class DashboardControllerTest : StringSpec() {
     private val configService = mockk<ConfigService>(relaxed = true)
     private val objectMapper = jacksonObjectMapper().registerModule(JavaTimeModule())
 
+    private fun Application.configureTestEnv() {
+        install(io.ktor.server.sse.SSE)
+        install(ContentNegotiation) { jackson { registerModule(JavaTimeModule()) } }
+        dashboardRouting()
+    }
+
     init {
         val testModule = module {
             single { tradeHistoryService }
             single { configService }
+            single { objectMapper }
         }
 
         beforeTest {
@@ -55,8 +62,7 @@ class DashboardControllerTest : StringSpec() {
 
             testApplication {
                 application {
-                    install(ContentNegotiation) { jackson { registerModule(JavaTimeModule()) } }
-                    dashboardRouting()
+                    configureTestEnv()
                 }
                 val response = client.get("/api/status")
                 response.status shouldBe HttpStatusCode.OK
@@ -69,8 +75,7 @@ class DashboardControllerTest : StringSpec() {
 
             testApplication {
                 application {
-                    install(ContentNegotiation) { jackson { registerModule(JavaTimeModule()) } }
-                    dashboardRouting()
+                    configureTestEnv()
                 }
                 val response = client.get("/api/history")
                 response.status shouldBe HttpStatusCode.OK
@@ -87,8 +92,7 @@ class DashboardControllerTest : StringSpec() {
 
             testApplication {
                 application {
-                    install(ContentNegotiation) { jackson { registerModule(JavaTimeModule()) } }
-                    dashboardRouting()
+                    configureTestEnv()
                 }
                 val response = client.get("/api/config")
                 response.status shouldBe HttpStatusCode.OK
@@ -110,8 +114,7 @@ class DashboardControllerTest : StringSpec() {
 
             testApplication {
                 application {
-                    install(ContentNegotiation) { jackson { registerModule(JavaTimeModule()) } }
-                    dashboardRouting()
+                    configureTestEnv()
                 }
                 val response = client.post("/api/config") {
                     contentType(ContentType.Application.Json)
@@ -139,8 +142,7 @@ class DashboardControllerTest : StringSpec() {
 
             testApplication {
                 application {
-                    install(ContentNegotiation) { jackson { registerModule(JavaTimeModule()) } }
-                    dashboardRouting()
+                    configureTestEnv()
                 }
                 val response = client.post("/api/config") {
                     contentType(ContentType.Application.Json)
@@ -156,8 +158,7 @@ class DashboardControllerTest : StringSpec() {
 
             testApplication {
                 application {
-                    install(ContentNegotiation) { jackson { registerModule(JavaTimeModule()) } }
-                    dashboardRouting()
+                    configureTestEnv()
                 }
                 val response = client.get("/api/status")
                 response.status shouldBe HttpStatusCode.NotFound
@@ -181,8 +182,7 @@ class DashboardControllerTest : StringSpec() {
 
             testApplication {
                 application {
-                    install(ContentNegotiation) { jackson { registerModule(JavaTimeModule()) } }
-                    dashboardRouting()
+                    configureTestEnv()
                 }
                 val response = client.post("/api/config") {
                     contentType(ContentType.Application.Json)

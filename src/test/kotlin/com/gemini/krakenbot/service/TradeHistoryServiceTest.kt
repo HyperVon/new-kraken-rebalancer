@@ -13,6 +13,8 @@ import io.mockk.mockk
 import io.mockk.verify
 import java.math.BigDecimal
 import java.time.Instant
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.yield
 
 class TradeHistoryServiceTest : StringSpec() {
 
@@ -58,6 +60,32 @@ class TradeHistoryServiceTest : StringSpec() {
             every { repository.load() } returns emptyList()
             tradeHistoryService.init()
             tradeHistoryService.getHistory().isEmpty().shouldBeTrue()
+        }
+
+        "getHistoryFlow_EmitsSnapshotsOnAdd" {
+            kotlinx.coroutines.test.runTest {
+                val repository = mockk<TradeRepository>(relaxed = true)
+                val tradeHistoryService = TradeHistoryServiceImpl(repository)
+                val snapshots = mutableListOf<PortfolioSnapshot>()
+                
+                val job = launch {
+                    tradeHistoryService.getHistoryFlow().collect {
+                        snapshots.add(it)
+                    }
+                }
+                
+                yield()
+                
+                val s1 = PortfolioSnapshot(Instant.now(), BigDecimal.ZERO, emptyMap(), emptyList(), BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO)
+                tradeHistoryService.addSnapshot(s1)
+                
+                yield()
+                
+                snapshots.size shouldBe 1
+                snapshots.first() shouldBe s1
+                
+                job.cancel()
+            }
         }
 
         "getLatestSnapshot_ReturnsNullWhenEmpty" {

@@ -18,6 +18,8 @@ import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
 import com.gemini.krakenbot.service.impl.TradeHistoryServiceImpl
 import io.ktor.client.*
 import io.ktor.client.engine.cio.*
+import org.koin.core.module.dsl.bind
+import org.koin.core.module.dsl.singleOf
 import org.koin.dsl.module
 
 val appModule = module {
@@ -29,9 +31,9 @@ val appModule = module {
         }
     }
     single<ConfigService> { ConfigServiceImpl(get()) }
-    single<TradeRepository> { FileTradeRepositoryImpl(get()) }
-    single<PortfolioStatsRepository> { PortfolioStatsRepositoryImpl(get()) }
+    singleOf(::FileTradeRepositoryImpl) { bind<TradeRepository>() }
+    singleOf(::PortfolioStatsRepositoryImpl) { bind<PortfolioStatsRepository>() }
     single<TradeHistoryService> { TradeHistoryServiceImpl(get()).apply { init() } }
-    single<KrakenService> { KrakenServiceImpl(get(), get(), get()) }
-    single<PortfolioManager> { PortfolioManagerImpl(get(), get(), get(), get()) }
+    singleOf(::KrakenServiceImpl) { bind<KrakenService>() }
+    singleOf(::PortfolioManagerImpl) { bind<PortfolioManager>() }
 }

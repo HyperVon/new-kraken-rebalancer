@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ---
 
 
+## [2.2.4] - 2026-05-28
+
+### Added
+- **Server-Sent Events (SSE) Real-Time Stream**: Replaced the frontend's 5-second polling of the `/api/status` endpoint with a native Ktor 3.5.0 SSE status stream (`/api/status/stream`).
+  - Added Ktor server-sse plugin to the backend.
+  - Implemented `getHistoryFlow()` using a Kotlin Coroutines `MutableSharedFlow` in `TradeHistoryService` to publish snapshots in real-time.
+  - Refactored `Dashboard.tsx` to subscribe to the SSE stream via EventSource, updating React Query's cache directly and invalidating history logs on emissions.
+  - Added unit test coverage for the snapshot event flow and mocked `EventSource` globally in the frontend test environment.
+
+### Changed
+- **Koin 4 Constructor DI Modernization**: Refactored `AppModule.kt` to leverage Koin 4's new constructor-based injection (`singleOf` and `bind`). Retained explicit declaration for `ConfigServiceImpl` to safely resolve constructor parameters with default values.
+
 ## [2.2.3] - 2026-05-28
 
 ### Changed

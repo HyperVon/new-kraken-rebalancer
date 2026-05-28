@@ -9,14 +9,31 @@ import io.ktor.server.application.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
+import io.ktor.server.sse.*
+import io.ktor.sse.*
 import org.koin.ktor.ext.inject
+import com.fasterxml.jackson.databind.ObjectMapper
 
 fun Application.dashboardRouting() {
     val tradeHistoryService: TradeHistoryService by inject()
     val configService: ConfigService by inject()
+    val objectMapper: ObjectMapper by inject()
 
     routing {
         route("/api") {
+            sse("/status/stream") {
+                val latest = tradeHistoryService.getLatestSnapshot()
+                if (latest != null) {
+                    val json = objectMapper.writeValueAsString(latest)
+                    send(ServerSentEvent(data = json))
+                }
+
+                tradeHistoryService.getHistoryFlow().collect { snapshot ->
+                    val json = objectMapper.writeValueAsString(snapshot)
+                    send(ServerSentEvent(data = json))
+                }
+            }
+
             get("/status") {
                 val snapshot = tradeHistoryService.getLatestSnapshot()
                 if (snapshot != null) {
