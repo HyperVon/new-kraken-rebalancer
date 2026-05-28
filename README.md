@@ -218,7 +218,7 @@ npm install
 npm run build      # Compiles and optimizes assets into /dist
 npm run preview    # Serves the production build locally
 ```
-Open your browser to **http://localhost:4173**. This serves the static build and proxies API requests to the backend automatically.
+Open your browser to **http://localhost:5173**. This serves the static build and proxies API requests to the backend automatically.
 
 ---
 
