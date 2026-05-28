@@ -105,7 +105,7 @@ const AllocationChart = ({ assets }: AllocationChartProps) => {
                 <PieChart size={18} className="text-blue-400" />
                 Portfolio Allocation (Top Assets)
             </h2>
-            <div className="relative h-[350px] w-full">
+            <div className="relative h-87.5 w-full">
                 <Bar data={data} options={options} />
             </div>
         </div>
