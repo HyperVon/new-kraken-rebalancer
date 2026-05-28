@@ -4,7 +4,7 @@ A React-based dashboard for monitoring and configuring the Kraken Rebalancer.
 
 ## Tech Stack
 
-- **React 19** with **TypeScript** and Vite 7 for type-safe, fast HMR development
+- **React 19** with **TypeScript** and Vite 8 for type-safe, fast HMR development
 - **Chart.js** (via react-chartjs-2) for portfolio allocation visualization
 - **Tailwind CSS v4** for utility-first responsive styling and theme configuration
 
@@ -25,7 +25,7 @@ npm install   # First time setup, or after pulling updates to install new depend
 npm run dev   # Starts dev server on http://localhost:5173
 ```
 
-The Vite dev server proxies `/api/*` requests to `http://localhost:8080` (the Spring Boot backend).
+The Vite dev server proxies `/api/*` requests to `http://localhost:8080` (the Ktor backend).
 
 ## Build
 

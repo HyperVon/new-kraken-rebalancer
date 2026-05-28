@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ---
 
 
+## [2.2.2] - 2026-05-28
+
+### Changed
+- **Vite Configuration Streamlining**: Replaced the third-party `vite-tsconfig-paths` plugin with Vite 8's native, built-in `resolve.tsconfigPaths` configuration, eliminating an unnecessary devDependency and resolving compilation warnings.
+- **Git Ignoring of Build State**: Added `*.tsbuildinfo` to `.gitignore` to prevent TypeScript's incremental cache files from polluting git commits.
+- **Dependency Upgrades**: Upgraded devDependencies including `vite` (v8.0.14), `typescript` (v6.0.3), `eslint` (v10.4.0), `@eslint/js` (v10.0.1), `@vitejs/plugin-react` (v6.0.2), `globals` (v17.6.0), and `eslint-plugin-react-refresh` (v0.5.2) to their latest stable releases.
+
 ## [2.2.1] - 2026-05-28
 
 ### Fixed
