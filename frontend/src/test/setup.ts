@@ -13,4 +13,4 @@ class MockEventSource extends EventTarget {
     close() {}
 }
 
-global.EventSource = MockEventSource as any;
+globalThis.EventSource = MockEventSource as any;
