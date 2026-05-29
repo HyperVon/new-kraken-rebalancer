@@ -2,24 +2,23 @@ package com.gemini.krakenbot.view.component
 
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.view.util.Formatter
+import com.gemini.krakenbot.view.util.Layouts.glassPanel
+import com.gemini.krakenbot.view.util.ViewText
 import kotlinx.html.*
 
 class PerformanceTableComponent {
     fun DIV.render(latest: PortfolioSnapshot) {
-        div("glass-panel") {
-            h2("glass-panel-title") {
-                +"Asset Performance"
-            }
+        glassPanel(ViewText.ASSET_PERFORMANCE) {
             div("table-wrapper") {
                 table {
                     thead {
                         tr {
-                            th { attributes["class"] = "sortable"; attributes["onclick"] = "sortTable(this, 0)"; +"Asset" }
-                            th { attributes["class"] = "sortable"; attributes["onclick"] = "sortTable(this, 1)"; +"Price" }
-                            th { attributes["class"] = "sortable"; attributes["onclick"] = "sortTable(this, 2)"; +"Value" }
-                            th { attributes["class"] = "sortable"; attributes["onclick"] = "sortTable(this, 3)"; +"Target %" }
-                            th { attributes["class"] = "sortable"; attributes["onclick"] = "sortTable(this, 4)"; +"Current %" }
-                            th { attributes["class"] = "sortable asc"; attributes["onclick"] = "sortTable(this, 5)"; +"Dev %" }
+                            th { attributes["class"] = "sortable"; attributes["onclick"] = "sortTable(this, 0)"; +ViewText.HEADER_ASSET }
+                            th { attributes["class"] = "sortable"; attributes["onclick"] = "sortTable(this, 1)"; +ViewText.HEADER_PRICE }
+                            th { attributes["class"] = "sortable"; attributes["onclick"] = "sortTable(this, 2)"; +ViewText.HEADER_VALUE }
+                            th { attributes["class"] = "sortable"; attributes["onclick"] = "sortTable(this, 3)"; +ViewText.HEADER_TARGET_PCT }
+                            th { attributes["class"] = "sortable"; attributes["onclick"] = "sortTable(this, 4)"; +ViewText.HEADER_CURRENT_PCT }
+                            th { attributes["class"] = "sortable asc"; attributes["onclick"] = "sortTable(this, 5)"; +ViewText.HEADER_DEV_PCT }
                         }
                     }
                     tbody {
@@ -55,3 +54,4 @@ class PerformanceTableComponent {
         }
     }
 }
+

@@ -2,18 +2,14 @@ package com.gemini.krakenbot.view.component
 
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.view.util.Formatter
+import com.gemini.krakenbot.view.util.Icons
+import com.gemini.krakenbot.view.util.Layouts.glassPanel
+import com.gemini.krakenbot.view.util.ViewText
 import kotlinx.html.*
 
 class AllocationChartComponent {
     fun DIV.render(latest: PortfolioSnapshot) {
-        div("glass-panel") {
-            h2("glass-panel-title") {
-                unsafe {
-                    +"""<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M12 2v20"></path><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>"""
-                }
-                +"Portfolio Allocation (Top Assets)"
-            }
-
+        glassPanel(ViewText.PORTFOLIO_ALLOCATION, Icons.DOLLAR_CIRCLE) {
             div("allocation-chart-container") {
                 val sorted = latest.assets.values.sortedByDescending { it.valueUSD }
                 val topAssets = sorted.take(15)
@@ -37,3 +33,4 @@ class AllocationChartComponent {
         }
     }
 }
+

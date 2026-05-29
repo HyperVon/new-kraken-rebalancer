@@ -1,33 +1,28 @@
 package com.gemini.krakenbot.view.component
 
 import com.gemini.krakenbot.model.PortfolioSnapshot
+import com.gemini.krakenbot.view.util.Icons
+import com.gemini.krakenbot.view.util.Icons.icon
+import com.gemini.krakenbot.view.util.Layouts.glassPanel
+import com.gemini.krakenbot.view.util.ViewText
 import kotlinx.html.*
 
 class RecentActivityComponent {
     fun DIV.render(history: List<PortfolioSnapshot>) {
-        div("glass-panel") {
-            h2("glass-panel-title") {
-                unsafe {
-                    +"""<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>"""
-                }
-                +"Recent Activity"
-            }
-
+        glassPanel(ViewText.RECENT_ACTIVITY, Icons.PULSE) {
             if (history.isEmpty()) {
                 div("empty-history-box") {
-                    unsafe {
-                        +"""<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a10 10 0 1 0 10 10H12V2z"></path></svg>"""
-                    }
-                    h3 { +"Recent Activity" }
-                    p { +"No trading history available." }
+                    icon(Icons.EMPTY_PIE)
+                    h3 { +ViewText.RECENT_ACTIVITY }
+                    p { +ViewText.NO_TRADING_HISTORY }
                 }
             } else {
                 div("table-wrapper custom-scrollbar max-h-100") {
                     table {
                         thead {
                             tr {
-                                th { +"Time" }
-                                th { +"Action" }
+                                th { +ViewText.HEADER_TIME }
+                                th { +ViewText.HEADER_ACTION }
                             }
                         }
                         tbody {
@@ -42,7 +37,7 @@ class RecentActivityComponent {
                                                 span {
                                                     style = "width: 0.375rem; height: 0.375rem; border-radius: 50%; background-color: var(--color-text-muted);"
                                                 }
-                                                +"No trades executed (Cycle complete)"
+                                                +ViewText.NO_TRADES_EXECUTED
                                             }
                                         }
                                     }
@@ -73,3 +68,4 @@ class RecentActivityComponent {
         }
     }
 }
+

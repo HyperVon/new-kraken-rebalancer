@@ -1,6 +1,11 @@
 package com.gemini.krakenbot.view.component
 
 import com.gemini.krakenbot.config.AppConfig
+import com.gemini.krakenbot.view.util.Icons
+import com.gemini.krakenbot.view.util.Icons.icon
+import com.gemini.krakenbot.view.util.Layouts.formGroup
+import com.gemini.krakenbot.view.util.Layouts.formSection
+import com.gemini.krakenbot.view.util.ViewText
 import kotlinx.html.*
 
 class SettingsFormComponent {
@@ -15,18 +20,14 @@ class SettingsFormComponent {
                     div("header-title-section") {
                         a(href = "/", classes = "btn btn-secondary") {
                             style = "padding: 0.5rem;"
-                            unsafe {
-                                +"""<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>"""
-                            }
+                            icon(Icons.BACK_ARROW)
                         }
-                        h1 { +"Settings" }
+                        h1 { +ViewText.SETTINGS_TITLE }
                     }
                     button(type = ButtonType.submit, classes = "btn btn-primary") {
                         id = "save-button"
-                        unsafe {
-                            +"""<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>"""
-                        }
-                        span { +"Save Configuration" }
+                        icon(Icons.FLOPPY_DISK)
+                        span { +ViewText.SAVE_CONFIGURATION }
                     }
                 }
 
@@ -49,25 +50,16 @@ class SettingsFormComponent {
     }
 
     private fun DIV.renderGlobalParametersSection(config: AppConfig) {
-        div("form-section") {
-            h3("form-section-title") {
-                unsafe {
-                    +"""<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>"""
-                }
-                +"Global Parameters"
-            }
-
+        formSection(ViewText.GLOBAL_PARAMETERS, Icons.SHIELD_EXCLAMATION) {
             div("grid-2col") {
-                div("form-group") {
-                    label(classes = "form-label") { +"Loop Interval (Seconds)" }
+                formGroup(ViewText.LOOP_INTERVAL) {
                     input(type = InputType.number, name = "loopDelaySeconds", classes = "input-glass") {
                         min = "1"
                         value = config.settings.loopDelaySeconds.toString()
                     }
                 }
 
-                div("form-group") {
-                    label(classes = "form-label") { +"Deviation Trigger (%)" }
+                formGroup(ViewText.DEVIATION_TRIGGER) {
                     input(type = InputType.number, name = "deviationTriggerPercent", classes = "input-glass") {
                         step = "0.1"
                         min = "0"
@@ -75,24 +67,21 @@ class SettingsFormComponent {
                     }
                 }
 
-                div("form-group") {
-                    label(classes = "form-label") { +"Dust Threshold ($)" }
+                formGroup(ViewText.DUST_THRESHOLD) {
                     input(type = InputType.number, name = "dustThresholdUSD", classes = "input-glass") {
                         step = "0.5"
                         value = config.settings.dustThresholdUSD.toString()
                     }
                 }
 
-                div("form-group") {
-                    label(classes = "form-label") { +"Fiat Max Drawdown (%)" }
+                formGroup(ViewText.FIAT_MAX_DRAWDOWN) {
                     input(type = InputType.number, name = "fiatMaxDrawdown", classes = "input-glass") {
                         step = "1.0"
                         value = config.settings.fiatMaxDrawdown.toString()
                     }
                 }
 
-                div("form-group") {
-                    label(classes = "form-label") { +"Fiat Deployment Exponent" }
+                formGroup(ViewText.FIAT_DEPLOYMENT_EXPONENT) {
                     input(type = InputType.number, name = "fiatDeploymentExponent", classes = "input-glass") {
                         step = "0.1"
                         value = config.settings.fiatDeploymentExponent.toString()
@@ -106,7 +95,7 @@ class SettingsFormComponent {
                             checked = config.settings.dryRun
                         }
                         div("checkbox-custom") {}
-                        span { +"Dry Run Mode (Safe)" }
+                        span { +ViewText.DRY_RUN_MODE }
                     }
                 }
             }
@@ -119,11 +108,11 @@ class SettingsFormComponent {
                 style = "display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem;"
                 h3 {
                     style = "font-size: 1.125rem; font-weight: 600; color: white; margin: 0;"
-                    +"Target Allocations"
+                    +ViewText.TARGET_ALLOCATIONS
                 }
                 div("status-badge live") {
                     id = "total-allocated-display"
-                    +"Total: 0.00%"
+                    +ViewText.TOTAL_INITIAL
                 }
             }
 
@@ -143,7 +132,7 @@ class SettingsFormComponent {
                         }
                         button(type = ButtonType.button, classes = "btn btn-danger") {
                             attributes["onclick"] = "this.closest('.allocation-edit-row').remove(); updateAllocationTotal();"
-                            +"Remove"
+                            +ViewText.REMOVE
                         }
                     }
                 }
@@ -152,16 +141,14 @@ class SettingsFormComponent {
             div("add-asset-box") {
                 input(type = InputType.text, classes = "input-glass") {
                     id = "new-symbol-input"
-                    placeholder = "New Symbol (e.g. DOT)"
+                    placeholder = ViewText.NEW_SYMBOL_PLACEHOLDER
                     style = "text-transform: uppercase; flex-grow: 1;"
                     attributes["onkeydown"] = "if(event.key === 'Enter') { event.preventDefault(); addAssetRow(); }"
                 }
                 button(type = ButtonType.button, classes = "btn btn-secondary") {
                     attributes["onclick"] = "addAssetRow()"
-                    unsafe {
-                        +"""<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>"""
-                    }
-                    span { +"Add Asset" }
+                    icon(Icons.PLUS)
+                    span { +ViewText.ADD_ASSET }
                 }
             }
         }
@@ -181,7 +168,7 @@ class SettingsFormComponent {
                     <button type="button" class="btn btn-danger" onclick="this.closest('.allocation-edit-row').remove(); updateAllocationTotal();">Remove</button>
                 </div>
             </template>
-            """
+            """.trimIndent()
         }
     }
 
@@ -235,7 +222,7 @@ class SettingsFormComponent {
                 }
                 
                 updateAllocationTotal();
-                """
+                """.trimIndent()
             }
         }
     }

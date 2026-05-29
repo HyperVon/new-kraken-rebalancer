@@ -1,6 +1,9 @@
 package com.gemini.krakenbot.view.component
 
 import com.gemini.krakenbot.model.PortfolioSnapshot
+import com.gemini.krakenbot.view.util.Icons
+import com.gemini.krakenbot.view.util.Icons.icon
+import com.gemini.krakenbot.view.util.ViewText
 import kotlinx.html.*
 import java.time.Instant
 import java.time.ZoneId
@@ -32,15 +35,15 @@ class DashboardFragmentComponent(
     private fun DIV.renderHeaderSection(latest: PortfolioSnapshot, timeSinceUpdate: Long, isStale: Boolean) {
         header {
             div("header-title-section") {
-                h1 { +"Kraken Rebalancer" }
+                h1 { +ViewText.APP_TITLE }
                 val badgeClass = if (isStale) "status-badge delayed" else "status-badge live"
-                val badgeText = if (isStale) "DELAYED" else "LIVE"
+                val badgeText = if (isStale) ViewText.DELAYED else ViewText.LIVE
                 div(badgeClass) { +badgeText }
             }
 
             div("header-actions") {
                 div("data-age-container") {
-                    div("data-age-label") { +"Data Age" }
+                    div("data-age-label") { +ViewText.DATA_AGE }
                     val ageClass = if (isStale) "data-age-value stale" else "data-age-value"
                     div(ageClass) { +"${timeSinceUpdate}s ago" }
                     div("data-age-time") {
@@ -49,12 +52,11 @@ class DashboardFragmentComponent(
                     }
                 }
                 a(href = "/settings", classes = "btn btn-secondary") {
-                    unsafe {
-                        +"""<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.1a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"></path><circle cx="12" cy="12" r="3"></circle></svg>"""
-                    }
-                    span { +"Settings" }
+                    icon(Icons.COG)
+                    span { +ViewText.SETTINGS_TITLE }
                 }
             }
         }
     }
 }
+

@@ -154,7 +154,7 @@ To eliminate unnecessary network polling, the system uses a reactive, push-based
 │   ├── view/                              # HTML templates & components (kotlinx.html DSL)
 │   │   ├── DashboardView.kt              # Facade class delegating to components
 │   │   ├── component/                    # Modular components (Shell, Grid, Form, etc.)
-│   │   └── util/                         # View utilities (Formatter formatting helpers)
+│   │   └── util/                         # View utilities (Formatter, Icons, ViewText, Layouts)
 │   └── util/                              # Utilities: AtomicJsonFile, KrakenSymbols
 ├── src/test/kotlin/                       # Unit tests (100% overall coverage achieved across all packages and metrics)
 │   └── com/gemini/krakenbot/
@@ -162,7 +162,8 @@ To eliminate unnecessary network polling, the system uses a reactive, push-based
 │           └── FakeKrakenService.kt       # In-process test double for KrakenService
 ├── src/main/resources/                    # Static resources
 │   └── static/
-│       └── style.css                      # Dashboard stylesheet
+│       ├── style.css                      # Dashboard stylesheet
+│       └── dashboard.js                   # Dashboard client-side scripts
 ├── ALGORITHM.md                           # Detailed algorithm documentation
 ├── rebalancer-config-template.json        # Configuration template
 └── build.gradle.kts                       # Gradle build with JaCoCo coverage enforcement

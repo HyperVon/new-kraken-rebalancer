@@ -5,6 +5,7 @@ import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.view.component.DashboardFragmentComponent
 import com.gemini.krakenbot.view.component.DashboardShellComponent
 import com.gemini.krakenbot.view.component.SettingsFormComponent
+import com.gemini.krakenbot.view.util.ViewText
 import kotlinx.html.*
 
 class DashboardView(
@@ -21,7 +22,7 @@ class DashboardView(
         head {
             meta(charset = "utf-8")
             meta(name = "viewport", content = "width=device-width, initial-scale=1.0")
-            title("Settings - Kraken Rebalancer")
+            title("${ViewText.SETTINGS_TITLE} - ${ViewText.APP_TITLE}")
             link(rel = "stylesheet", href = "/static/style.css")
             script(src = "https://unpkg.com/htmx.org@2.0.4") {}
         }
@@ -34,3 +35,4 @@ class DashboardView(
         with(fragmentComponent) { render(latest, history) }
     }
 }
+
