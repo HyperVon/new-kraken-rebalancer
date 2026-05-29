@@ -794,4 +794,48 @@ th.sortable.desc::after {
   font-family: monospace;
 }
 
+/* Button icon padding modifier */
+.btn-icon {
+  padding: 0.5rem;
+}
+
+/* Error message banner styling */
+.error-banner {
+  background-color: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  color: #fecaca;
+  padding: 1rem;
+  border-radius: 0.5rem;
+  margin-bottom: 1.5rem;
+  font-weight: 500;
+}
+
+/* Centered form group alignment */
+.form-group-centered {
+  justify-content: center;
+  padding-top: 1rem;
+}
+
+/* Settings section header styling */
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.25rem;
+}
+
+.section-header h3 {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: white;
+  margin: 0;
+}
+
+/* Add asset box input uppercase text handling */
+.add-asset-box input {
+  text-transform: uppercase;
+  flex-grow: 1;
+}
+
+
 

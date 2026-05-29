@@ -37,5 +37,13 @@ object CssClasses {
     // Performance Table helpers
     const val PERFORMANCE_DEV_CONTAINER = "performance-dev-container"
     const val PERFORMANCE_DEV_USD_LABEL = "performance-dev-usd-label"
+
+    // Button modifiers
+    const val BTN_ICON = "btn-icon"
+
+    // Settings helpers
+    const val ERROR_BANNER = "error-banner"
+    const val FORM_GROUP_CENTERED = "form-group-centered"
+    const val SECTION_HEADER = "section-header"
 }
 

@@ -23,8 +23,7 @@ class SettingsFormComponent {
 
                 header {
                     div("header-title-section") {
-                        a(href = Routes.ROOT, classes = CssClasses.BTN_SECONDARY) {
-                            style = "padding: 0.5rem;"
+                        a(href = Routes.ROOT, classes = "${CssClasses.BTN_SECONDARY} ${CssClasses.BTN_ICON}") {
                             icon(Icons.BACK_ARROW)
                         }
                         h1 { +ViewText.SETTINGS_TITLE }
@@ -37,8 +36,7 @@ class SettingsFormComponent {
                 }
 
                 if (errorMessage != null) {
-                    div {
-                        style = "background-color: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.3); color: #fecaca; padding: 1rem; border-radius: 0.5rem; margin-bottom: 1.5rem; font-weight: 500;"
+                    div(CssClasses.ERROR_BANNER) {
                         +errorMessage
                     }
                 }
@@ -92,8 +90,7 @@ class SettingsFormComponent {
                     }
                 }
 
-                div("form-group") {
-                    style = "justify-content: center; padding-top: 1rem;"
+                div("form-group ${CssClasses.FORM_GROUP_CENTERED}") {
                     label("checkbox-container") {
                         input(type = InputType.checkBox, name = FormFields.DRY_RUN) {
                             checked = config.settings.dryRun
@@ -108,10 +105,8 @@ class SettingsFormComponent {
 
     private fun DIV.renderTargetAllocationsSection(config: AppConfig) {
         div("form-section") {
-            div {
-                style = "display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem;"
+            div(CssClasses.SECTION_HEADER) {
                 h3 {
-                    style = "font-size: 1.125rem; font-weight: 600; color: white; margin: 0;"
                     +ViewText.TARGET_ALLOCATIONS
                 }
                 div("status-badge live") {
@@ -146,7 +141,6 @@ class SettingsFormComponent {
                 input(type = InputType.text, classes = CssClasses.INPUT_GLASS) {
                     id = "new-symbol-input"
                     placeholder = ViewText.NEW_SYMBOL_PLACEHOLDER
-                    style = "text-transform: uppercase; flex-grow: 1;"
                     attributes[HtmlAttrs.ONKEYDOWN] = "if(event.key === 'Enter') { event.preventDefault(); addAssetRow(); }"
                 }
                 button(type = ButtonType.button, classes = CssClasses.BTN_SECONDARY) {
