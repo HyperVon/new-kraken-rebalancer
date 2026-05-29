@@ -837,5 +837,20 @@ th.sortable.desc::after {
   flex-grow: 1;
 }
 
+/* Dashboard waiting/no-snapshot state elements */
+.dashboard-waiting-title {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #e2e8f0;
+}
+
+.dashboard-waiting-text {
+  color: #94a3b8;
+  font-size: 0.875rem;
+  text-align: center;
+  max-width: 24rem;
+}
+
+
 
 

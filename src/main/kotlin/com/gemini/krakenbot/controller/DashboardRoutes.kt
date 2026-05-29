@@ -8,6 +8,7 @@ import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.TradeHistoryService
 import com.gemini.krakenbot.view.DashboardView
+import com.gemini.krakenbot.view.util.CssClasses
 import com.gemini.krakenbot.view.util.FormFields
 import com.gemini.krakenbot.view.util.HtmxHeaders
 import com.gemini.krakenbot.view.util.Routes
@@ -117,13 +118,11 @@ private suspend fun RoutingContext.handleGetDashboardFragment(
     val history = tradeHistoryService.getHistory()
 
     if (latest == null) {
-        val noSnapshotHtml = createHTML(prettyPrint = false).div("spinner-container") {
-            h2 {
-                style = "font-size: 1.25rem; font-weight: 600; color: #e2e8f0;"
+        val noSnapshotHtml = createHTML(prettyPrint = false).div(CssClasses.SPINNER_CONTAINER) {
+            h2(CssClasses.DASHBOARD_WAITING_TITLE) {
                 +ViewText.WAITING_FIRST_CYCLE
             }
-            p {
-                style = "color: #94a3b8; font-size: 0.875rem; text-align: center; max-width: 24rem;"
+            p(CssClasses.DASHBOARD_WAITING_TEXT) {
                 +ViewText.REBALANCER_RUNNING
             }
         }

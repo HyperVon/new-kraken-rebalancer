@@ -100,5 +100,9 @@ object CssClasses {
     const val STATUS_CARD_SUB = "status-card-sub"
     const val FORM_SECTION_TITLE = "form-section-title"
     const val FORM_LABEL = "form-label"
+
+    // Dashboard waiting state elements
+    const val DASHBOARD_WAITING_TITLE = "dashboard-waiting-title"
+    const val DASHBOARD_WAITING_TEXT = "dashboard-waiting-text"
 }
 
