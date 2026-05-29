@@ -24,8 +24,6 @@ jobs:
         include:
         - language: java-kotlin
           build-mode: manual
-        - language: javascript-typescript
-          build-mode: none
           
     steps:
     - name: Checkout repository
