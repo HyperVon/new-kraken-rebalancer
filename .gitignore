@@ -24,3 +24,8 @@ rebalancer-config.json
 trade-history.json
 portfolio-stats.json
 
+# Local directories
+/bin/
+.kotlin/
+
+
