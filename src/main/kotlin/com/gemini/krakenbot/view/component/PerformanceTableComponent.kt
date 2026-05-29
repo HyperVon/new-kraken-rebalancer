@@ -55,11 +55,9 @@ class PerformanceTableComponent {
                                 td { +"${Formatter.formatPercent(asset.targetPercent)}%" }
                                 td { +"${Formatter.formatPercent(asset.currentPercent)}%" }
                                 td(devClass) {
-                                    div {
-                                        style = "display: flex; flex-direction: column; line-height: 1.1;"
+                                    div(CssClasses.PERFORMANCE_DEV_CONTAINER) {
                                         span { +"$sign${Formatter.formatPercent(dev)}%" }
-                                        span {
-                                            style = "font-size: 0.675rem; opacity: 0.7; font-family: monospace;"
+                                        span(CssClasses.PERFORMANCE_DEV_USD_LABEL) {
                                             val devUSD = asset.deviationUSD
                                             val usdSign = if (devUSD.signum() >= 0) "+" else ""
                                             +"($usdSign$${Formatter.formatCurrency(devUSD)})"

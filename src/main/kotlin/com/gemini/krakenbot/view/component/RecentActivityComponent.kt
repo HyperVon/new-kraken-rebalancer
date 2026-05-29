@@ -13,9 +13,9 @@ import java.time.format.DateTimeFormatter
 class RecentActivityComponent {
 
     private enum class TradeAction(val badgeClass: String, val label: String) {
-        BUY("badge badge-buy", "BUY"),
-        SELL("badge badge-sell", "SELL"),
-        INFO("badge badge-info", "INFO");
+        BUY(CssClasses.BADGE_BUY, "BUY"),
+        SELL(CssClasses.BADGE_SELL, "SELL"),
+        INFO(CssClasses.BADGE_INFO, "INFO");
 
         companion object {
             fun from(action: String): TradeAction {
@@ -34,13 +34,13 @@ class RecentActivityComponent {
     fun DIV.render(history: List<PortfolioSnapshot>) {
         glassPanel(ViewText.RECENT_ACTIVITY, Icons.PULSE) {
             if (history.isEmpty()) {
-                div("empty-history-box") {
+                div(CssClasses.EMPTY_HISTORY_BOX) {
                     icon(Icons.EMPTY_PIE)
                     h3 { +ViewText.RECENT_ACTIVITY }
                     p { +ViewText.NO_TRADING_HISTORY }
                 }
             } else {
-                div("${CssClasses.TABLE_WRAPPER} custom-scrollbar max-h-100") {
+                div("${CssClasses.TABLE_WRAPPER} ${CssClasses.CUSTOM_SCROLLBAR_MAX_H_100}") {
                     table {
                         thead {
                             tr {
@@ -68,11 +68,8 @@ class RecentActivityComponent {
         tr(CssClasses.HOVERABLE) {
             td(CssClasses.MONO_COL) { +timeStr }
             td {
-                span {
-                    style = "color: var(--color-text-muted); font-style: italic; display: flex; align-items: center; gap: 0.5rem;"
-                    span {
-                        style = "width: 0.375rem; height: 0.375rem; border-radius: 50%; background-color: var(--color-text-muted);"
-                    }
+                span(CssClasses.RECENT_ACTIVITY_EMPTY_TEXT) {
+                    span(CssClasses.RECENT_ACTIVITY_DOT_MARKER) {}
                     +ViewText.NO_TRADES_EXECUTED
                 }
             }
@@ -84,8 +81,7 @@ class RecentActivityComponent {
         tr(CssClasses.HOVERABLE) {
             td(CssClasses.MONO_COL) { +timeStr }
             td {
-                div {
-                    style = "display: flex; align-items: center; gap: 0.75rem;"
+                div(CssClasses.RECENT_ACTIVITY_ROW_CONTAINER) {
                     span(tradeAction.badgeClass) { +tradeAction.label }
                     span { +action }
                 }
