@@ -18,6 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **DashboardView Class**: HTML rendering logic centralized in `DashboardView` using Kotlin's `kotlinx.html` type-safe HTML builder, enabling full-stack Kotlin development without a separate frontend stack.
 
 ### Changed
+- **Modular Component Refactoring (OOP/OOD)**: Decomposed the single, large `DashboardView` class (700+ lines) into clean, self-contained components under `com.gemini.krakenbot.view.component` (`DashboardShellComponent`, `OverviewGridComponent`, `AllocationChartComponent`, `PerformanceTableComponent`, `RecentActivityComponent`, `DashboardFragmentComponent`, and `SettingsFormComponent`). Refactored `DashboardView` as a clean Facade class leveraging constructor-based Dependency Injection via Koin.
+- **Formatter Utility**: Created `Formatter` object under `com.gemini.krakenbot.view.util` to centralize formatting functions.
 - **100% Test Coverage Enforcement**: Restored the view package to the JaCoCo verification limits and expanded the test suite to achieve exactly **100% line, branch, method, class, and instruction coverage** across the entire codebase. Refactored view rendering logic to eliminate unreachable compiler-generated null checks, and implemented comprehensive Ktor client SSE flow tests.
 - **Warning Suppressions**: Configured `applicationDefaultJvmArgs` and test `jvmArgs` with `"-Xshare:off"` and `"--sun-misc-unsafe-memory-access=allow"` to suppress Class Data Sharing and terminally deprecated Unsafe memory-access warnings.
 - **Git State Ignoring**: Added `bin/` and `.kotlin/` to `.gitignore`.

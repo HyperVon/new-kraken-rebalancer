@@ -151,8 +151,10 @@ To eliminate unnecessary network polling, the system uses a reactive, push-based
 │   │   └── impl/                          # File-backed implementations
 │   ├── service/                           # Core logic interfaces: PortfolioManager, KrakenService, ConfigService, TradeHistoryService
 │   │   └── impl/                          # Service implementations (coroutine-aware)
-│   ├── view/                              # HTML templates (kotlinx.html DSL)
-│   │   └── DashboardView.kt              # Server-side rendered dashboard & settings pages
+│   ├── view/                              # HTML templates & components (kotlinx.html DSL)
+│   │   ├── DashboardView.kt              # Facade class delegating to components
+│   │   ├── component/                    # Modular components (Shell, Grid, Form, etc.)
+│   │   └── util/                         # View utilities (Formatter formatting helpers)
 │   └── util/                              # Utilities: AtomicJsonFile, KrakenSymbols
 ├── src/test/kotlin/                       # Unit tests (100% overall coverage achieved across all packages and metrics)
 │   └── com/gemini/krakenbot/
