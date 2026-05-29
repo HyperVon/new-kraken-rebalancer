@@ -39,104 +39,7 @@ class DashboardView {
                     }
                 }
             }
-            script {
-                unsafe {
-                    +"""
-                    var currentSortCol = 5;    // Defaults to Dev % column (index 5)
-                    var currentSortDir = 'asc'; // Defaults to 'asc'
-
-                    function updateAge() {
-                        var ageEl = document.querySelector('.data-age-value');
-                        var timeEl = document.querySelector('.data-age-time');
-                        if (ageEl && timeEl) {
-                            var epochStr = timeEl.getAttribute('data-epoch');
-                            if (epochStr) {
-                                var epoch = parseInt(epochStr, 10);
-                                var now = Date.now();
-                                var diff = Math.floor(Math.max(0, now - epoch) / 1000);
-                                ageEl.textContent = diff + 's ago';
-                                var delayedClass = diff > 90 ? 'data-age-value stale' : 'data-age-value';
-                                if (ageEl.className !== delayedClass) {
-                                    ageEl.className = delayedClass;
-                                }
-                                
-                                // Localize the time display to expected HH:mm:ss local format
-                                var date = new Date(epoch);
-                                var hh = ('0' + date.getHours()).slice(-2);
-                                var mm = ('0' + date.getMinutes()).slice(-2);
-                                var ss = ('0' + date.getSeconds()).slice(-2);
-                                var localTimeStr = hh + ':' + mm + ':' + ss;
-                                if (timeEl.textContent.trim() !== localTimeStr) {
-                                    timeEl.textContent = localTimeStr;
-                                }
-
-                                var badgeEl = document.querySelector('.status-badge');
-                                if (badgeEl) {
-                                    var badgeClass = diff > 90 ? 'status-badge delayed' : 'status-badge live';
-                                    var badgeText = diff > 90 ? 'DELAYED' : 'LIVE';
-                                    if (badgeEl.className !== badgeClass) {
-                                        badgeEl.className = badgeClass;
-                                        badgeEl.textContent = badgeText;
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    function reapplySort() {
-                        var headers = document.querySelectorAll('th.sortable');
-                        if (headers.length > currentSortCol) {
-                            var header = headers[currentSortCol];
-                            sortTable(header, currentSortCol, currentSortDir);
-                        }
-                    }
-
-                    var ageTimer = setInterval(updateAge, 1000);
-                    document.addEventListener('DOMContentLoaded', function() {
-                        updateAge();
-                        reapplySort();
-                    });
-                    document.addEventListener('htmx:afterSwap', function() {
-                        updateAge();
-                        reapplySort();
-                    });
-
-                    function sortTable(header, colIdx, forceDir) {
-                        var table = header.closest('table');
-                        var tbody = table.querySelector('tbody');
-                        var rows = Array.from(tbody.querySelectorAll('tr.hoverable'));
-                        var isAsc = header.classList.contains('asc');
-                        var sortAsc = (forceDir !== undefined) ? (forceDir === 'asc') : !isAsc;
-                        var key = colIdx === 0 ? 'string' : 'float';
-
-                        rows.sort(function(a, b) {
-                            var aText = a.children[colIdx].textContent.trim().replace(/[$,%]/g, '');
-                            var bText = b.children[colIdx].textContent.trim().replace(/[$,%]/g, '');
-                            if (key === 'float') {
-                                var aVal = parseFloat(aText) || 0;
-                                var bVal = parseFloat(bText) || 0;
-                                return sortAsc ? aVal - bVal : bVal - aVal;
-                            } else {
-                                return sortAsc
-                                    ? aText.localeCompare(bText)
-                                    : bText.localeCompare(aText);
-                            }
-                        });
-
-                        table.querySelectorAll('th.sortable').forEach(function(th) {
-                            th.classList.remove('asc', 'desc');
-                        });
-                        header.classList.add(sortAsc ? 'asc' : 'desc');
-
-                        rows.forEach(function(row) { tbody.append(row); });
-
-                        // Keep track of the user's latest sort criteria so swaps can re-apply them stably
-                        currentSortCol = colIdx;
-                        currentSortDir = sortAsc ? 'asc' : 'desc';
-                    }
-                    """
-                }
-            }
+            renderShellScript()
         }
     }
 
@@ -167,6 +70,12 @@ class DashboardView {
         val timeSinceUpdate = 0L.coerceAtLeast(Instant.now().epochSecond - latest.timestamp.epochSecond)
         val isStale = timeSinceUpdate > 90
 
+        renderHeaderSection(latest, timeSinceUpdate, isStale)
+        renderOverviewGrid(totalValue, usdAsset, usdValue, cryptoValue, cryptoPercent, cryptoTargetPercent, cryptoCount, latest)
+        renderDetailsAndActivity(latest, history)
+    }
+
+    private fun DIV.renderHeaderSection(latest: PortfolioSnapshot, timeSinceUpdate: Long, isStale: Boolean) {
         header {
             div("header-title-section") {
                 h1 { +"Kraken Rebalancer" }
@@ -193,7 +102,18 @@ class DashboardView {
                 }
             }
         }
+    }
 
+    private fun DIV.renderOverviewGrid(
+        totalValue: BigDecimal,
+        usdAsset: PortfolioSnapshot.AssetSnapshot?,
+        usdValue: BigDecimal,
+        cryptoValue: BigDecimal,
+        cryptoPercent: Double,
+        cryptoTargetPercent: Double,
+        cryptoCount: Int,
+        latest: PortfolioSnapshot
+    ) {
         div("overview-grid") {
             div("glass-panel status-card") {
                 div("status-card-header") {
@@ -267,77 +187,87 @@ class DashboardView {
                 }
             }
         }
+    }
 
+    private fun DIV.renderDetailsAndActivity(latest: PortfolioSnapshot, history: List<PortfolioSnapshot>) {
         div("detail-grid") {
-            div("glass-panel") {
-                h2("glass-panel-title") {
-                    unsafe {
-                        +"""<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M12 2v20"></path><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>"""
-                    }
-                    +"Portfolio Allocation (Top Assets)"
+            renderAllocationChart(latest)
+            renderPerformanceTable(latest)
+        }
+        renderRecentActivitySection(history)
+    }
+
+    private fun DIV.renderAllocationChart(latest: PortfolioSnapshot) {
+        div("glass-panel") {
+            h2("glass-panel-title") {
+                unsafe {
+                    +"""<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M12 2v20"></path><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>"""
                 }
+                +"Portfolio Allocation (Top Assets)"
+            }
 
-                div("allocation-chart-container") {
-                    val sorted = latest.assets.values.sortedByDescending { it.valueUSD }
-                    val topAssets = sorted.take(15)
-                    val maxVal = topAssets.firstOrNull()?.valueUSD?.toDouble() ?: 1.0
+            div("allocation-chart-container") {
+                val sorted = latest.assets.values.sortedByDescending { it.valueUSD }
+                val topAssets = sorted.take(15)
+                val maxVal = topAssets.firstOrNull()?.valueUSD?.toDouble() ?: 1.0
 
-                    topAssets.forEach { asset ->
-                        val fillPct = if (maxVal > 0) (asset.valueUSD.toDouble() / maxVal * 100).toInt() else 0
-                        div("allocation-bar-row") {
-                            div("allocation-bar-label") { +asset.symbol }
-                            div("allocation-bar-track") {
-                                div("allocation-bar-fill") {
-                                    style = "width: $fillPct%;"
-                                }
+                topAssets.forEach { asset ->
+                    val fillPct = if (maxVal > 0) (asset.valueUSD.toDouble() / maxVal * 100).toInt() else 0
+                    div("allocation-bar-row") {
+                        div("allocation-bar-label") { +asset.symbol }
+                        div("allocation-bar-track") {
+                            div("allocation-bar-fill") {
+                                style = "width: $fillPct%;"
                             }
-                            div("allocation-bar-value") {
-                                +"$${formatCurrency(asset.valueUSD)} (${formatPercent(asset.currentPercent)}%)"
-                            }
+                        }
+                        div("allocation-bar-value") {
+                            +"$${formatCurrency(asset.valueUSD)} (${formatPercent(asset.currentPercent)}%)"
                         }
                     }
                 }
             }
+        }
+    }
 
-            div("glass-panel") {
-                h2("glass-panel-title") {
-                    +"Asset Performance"
-                }
-                div("table-wrapper") {
-                    table {
-                        thead {
-                            tr {
-                                th { attributes["class"] = "sortable"; attributes["onclick"] = "sortTable(this, 0)"; +"Asset" }
-                                th { attributes["class"] = "sortable"; attributes["onclick"] = "sortTable(this, 1)"; +"Price" }
-                                th { attributes["class"] = "sortable"; attributes["onclick"] = "sortTable(this, 2)"; +"Value" }
-                                th { attributes["class"] = "sortable"; attributes["onclick"] = "sortTable(this, 3)"; +"Target %" }
-                                th { attributes["class"] = "sortable"; attributes["onclick"] = "sortTable(this, 4)"; +"Current %" }
-                                th { attributes["class"] = "sortable asc"; attributes["onclick"] = "sortTable(this, 5)"; +"Dev %" }
-                            }
+    private fun DIV.renderPerformanceTable(latest: PortfolioSnapshot) {
+        div("glass-panel") {
+            h2("glass-panel-title") {
+                +"Asset Performance"
+            }
+            div("table-wrapper") {
+                table {
+                    thead {
+                        tr {
+                            th { attributes["class"] = "sortable"; attributes["onclick"] = "sortTable(this, 0)"; +"Asset" }
+                            th { attributes["class"] = "sortable"; attributes["onclick"] = "sortTable(this, 1)"; +"Price" }
+                            th { attributes["class"] = "sortable"; attributes["onclick"] = "sortTable(this, 2)"; +"Value" }
+                            th { attributes["class"] = "sortable"; attributes["onclick"] = "sortTable(this, 3)"; +"Target %" }
+                            th { attributes["class"] = "sortable"; attributes["onclick"] = "sortTable(this, 4)"; +"Current %" }
+                            th { attributes["class"] = "sortable asc"; attributes["onclick"] = "sortTable(this, 5)"; +"Dev %" }
                         }
-                        tbody {
-                            val cryptoOnly = latest.assets.values.filter { it.symbol != "USD" }.sortedBy { it.deviationPercent }
-                            cryptoOnly.forEach { asset ->
-                                val dev = asset.deviationPercent
-                                val devClass = getDeviationClass(dev)
-                                val sign = getDeviationSign(dev)
+                    }
+                    tbody {
+                        val cryptoOnly = latest.assets.values.filter { it.symbol != "USD" }.sortedBy { it.deviationPercent }
+                        cryptoOnly.forEach { asset ->
+                            val dev = asset.deviationPercent
+                            val devClass = getDeviationClass(dev)
+                            val sign = getDeviationSign(dev)
 
-                                tr("hoverable") {
-                                    td("symbol-col") { +asset.symbol }
-                                    td("mono-col") { +"$${formatCurrency(asset.price)}" }
-                                    td("mono-col") { +"$${formatCurrency(asset.valueUSD)}" }
-                                    td { +"${formatPercent(asset.targetPercent)}%" }
-                                    td { +"${formatPercent(asset.currentPercent)}%" }
-                                    td(devClass) {
-                                        div {
-                                            style = "display: flex; flex-direction: column; line-height: 1.1;"
-                                            span { +"$sign${formatPercent(dev)}%" }
-                                            span {
-                                                style = "font-size: 0.675rem; opacity: 0.7; font-family: monospace;"
-                                                val devUSD = asset.deviationUSD
-                                                val usdSign = if (devUSD.signum() >= 0) "+" else ""
-                                                +"($usdSign$${formatCurrency(devUSD)})"
-                                            }
+                            tr("hoverable") {
+                                td("symbol-col") { +asset.symbol }
+                                td("mono-col") { +"$${formatCurrency(asset.price)}" }
+                                td("mono-col") { +"$${formatCurrency(asset.valueUSD)}" }
+                                td { +"${formatPercent(asset.targetPercent)}%" }
+                                td { +"${formatPercent(asset.currentPercent)}%" }
+                                td(devClass) {
+                                    div {
+                                        style = "display: flex; flex-direction: column; line-height: 1.1;"
+                                        span { +"$sign${formatPercent(dev)}%" }
+                                        span {
+                                            style = "font-size: 0.675rem; opacity: 0.7; font-family: monospace;"
+                                            val devUSD = asset.deviationUSD
+                                            val usdSign = if (devUSD.signum() >= 0) "+" else ""
+                                            +"($usdSign$${formatCurrency(devUSD)})"
                                         }
                                     }
                                 }
@@ -347,7 +277,9 @@ class DashboardView {
                 }
             }
         }
+    }
 
+    private fun DIV.renderRecentActivitySection(history: List<PortfolioSnapshot>) {
         div("glass-panel") {
             h2("glass-panel-title") {
                 unsafe {
@@ -450,124 +382,136 @@ class DashboardView {
                 }
 
                 div("glass-panel") {
-                    div("form-section") {
-                        h3("form-section-title") {
-                            unsafe {
-                                +"""<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>"""
-                            }
-                            +"Global Parameters"
-                        }
-
-                        div("grid-2col") {
-                            div("form-group") {
-                                label(classes = "form-label") { +"Loop Interval (Seconds)" }
-                                input(type = InputType.number, name = "loopDelaySeconds", classes = "input-glass") {
-                                    min = "1"
-                                    value = config.settings.loopDelaySeconds.toString()
-                                }
-                            }
-
-                            div("form-group") {
-                                label(classes = "form-label") { +"Deviation Trigger (%)" }
-                                input(type = InputType.number, name = "deviationTriggerPercent", classes = "input-glass") {
-                                    step = "0.1"
-                                    min = "0"
-                                    value = config.settings.deviationTriggerPercent.toString()
-                                }
-                            }
-
-                            div("form-group") {
-                                label(classes = "form-label") { +"Dust Threshold ($)" }
-                                input(type = InputType.number, name = "dustThresholdUSD", classes = "input-glass") {
-                                    step = "0.5"
-                                    value = config.settings.dustThresholdUSD.toString()
-                                }
-                            }
-
-                            div("form-group") {
-                                label(classes = "form-label") { +"Fiat Max Drawdown (%)" }
-                                input(type = InputType.number, name = "fiatMaxDrawdown", classes = "input-glass") {
-                                    step = "1.0"
-                                    value = config.settings.fiatMaxDrawdown.toString()
-                                }
-                            }
-
-                            div("form-group") {
-                                label(classes = "form-label") { +"Fiat Deployment Exponent" }
-                                input(type = InputType.number, name = "fiatDeploymentExponent", classes = "input-glass") {
-                                    step = "0.1"
-                                    value = config.settings.fiatDeploymentExponent.toString()
-                                }
-                            }
-
-                            div("form-group") {
-                                style = "justify-content: center; padding-top: 1rem;"
-                                label("checkbox-container") {
-                                    input(type = InputType.checkBox, name = "dryRun") {
-                                        checked = config.settings.dryRun
-                                    }
-                                    div("checkbox-custom") {}
-                                    span { +"Dry Run Mode (Safe)" }
-                                }
-                            }
-                        }
-                    }
-
-                    div("form-section") {
-                        div {
-                            style = "display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem;"
-                            h3 {
-                                style = "font-size: 1.125rem; font-weight: 600; color: white; margin: 0;"
-                                +"Target Allocations"
-                            }
-                            div("status-badge live") {
-                                id = "total-allocated-display"
-                                +"Total: 0.00%"
-                            }
-                        }
-
-                        div("allocation-list-container") {
-                            id = "allocations-container"
-                            config.allocations.forEach { alloc ->
-                                div("allocation-edit-row") {
-                                    div("allocation-edit-symbol") { +alloc.symbol }
-                                    input(type = InputType.hidden, name = "symbols") { value = alloc.symbol }
-                                    div("allocation-edit-input-wrapper") {
-                                        input(type = InputType.number, name = "targets", classes = "input-glass") {
-                                            step = "0.1"
-                                            value = alloc.targetPercent.toString()
-                                            attributes["oninput"] = "updateAllocationTotal()"
-                                        }
-                                        span("percent-suffix") { +"%" }
-                                    }
-                                    button(type = ButtonType.button, classes = "btn btn-danger") {
-                                        attributes["onclick"] = "this.closest('.allocation-edit-row').remove(); updateAllocationTotal();"
-                                        +"Remove"
-                                    }
-                                }
-                            }
-                        }
-
-                        div("add-asset-box") {
-                            input(type = InputType.text, classes = "input-glass") {
-                                id = "new-symbol-input"
-                                placeholder = "New Symbol (e.g. DOT)"
-                                style = "text-transform: uppercase; flex-grow: 1;"
-                                attributes["onkeydown"] = "if(event.key === 'Enter') { event.preventDefault(); addAssetRow(); }"
-                            }
-                            button(type = ButtonType.button, classes = "btn btn-secondary") {
-                                attributes["onclick"] = "addAssetRow()"
-                                unsafe {
-                                    +"""<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>"""
-                                }
-                                span { +"Add Asset" }
-                            }
-                        }
-                    }
+                    renderGlobalParametersSection(config)
+                    renderTargetAllocationsSection(config)
                 }
             }
         }
 
+        renderSettingsTemplate()
+        renderSettingsScript()
+    }
+
+    private fun DIV.renderGlobalParametersSection(config: AppConfig) {
+        div("form-section") {
+            h3("form-section-title") {
+                unsafe {
+                    +"""<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>"""
+                }
+                +"Global Parameters"
+            }
+
+            div("grid-2col") {
+                div("form-group") {
+                    label(classes = "form-label") { +"Loop Interval (Seconds)" }
+                    input(type = InputType.number, name = "loopDelaySeconds", classes = "input-glass") {
+                        min = "1"
+                        value = config.settings.loopDelaySeconds.toString()
+                    }
+                }
+
+                div("form-group") {
+                    label(classes = "form-label") { +"Deviation Trigger (%)" }
+                    input(type = InputType.number, name = "deviationTriggerPercent", classes = "input-glass") {
+                        step = "0.1"
+                        min = "0"
+                        value = config.settings.deviationTriggerPercent.toString()
+                    }
+                }
+
+                div("form-group") {
+                    label(classes = "form-label") { +"Dust Threshold ($)" }
+                    input(type = InputType.number, name = "dustThresholdUSD", classes = "input-glass") {
+                        step = "0.5"
+                        value = config.settings.dustThresholdUSD.toString()
+                    }
+                }
+
+                div("form-group") {
+                    label(classes = "form-label") { +"Fiat Max Drawdown (%)" }
+                    input(type = InputType.number, name = "fiatMaxDrawdown", classes = "input-glass") {
+                        step = "1.0"
+                        value = config.settings.fiatMaxDrawdown.toString()
+                    }
+                }
+
+                div("form-group") {
+                    label(classes = "form-label") { +"Fiat Deployment Exponent" }
+                    input(type = InputType.number, name = "fiatDeploymentExponent", classes = "input-glass") {
+                        step = "0.1"
+                        value = config.settings.fiatDeploymentExponent.toString()
+                    }
+                }
+
+                div("form-group") {
+                    style = "justify-content: center; padding-top: 1rem;"
+                    label("checkbox-container") {
+                        input(type = InputType.checkBox, name = "dryRun") {
+                            checked = config.settings.dryRun
+                        }
+                        div("checkbox-custom") {}
+                        span { +"Dry Run Mode (Safe)" }
+                    }
+                }
+            }
+        }
+    }
+
+    private fun DIV.renderTargetAllocationsSection(config: AppConfig) {
+        div("form-section") {
+            div {
+                style = "display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem;"
+                h3 {
+                    style = "font-size: 1.125rem; font-weight: 600; color: white; margin: 0;"
+                    +"Target Allocations"
+                }
+                div("status-badge live") {
+                    id = "total-allocated-display"
+                    +"Total: 0.00%"
+                }
+            }
+
+            div("allocation-list-container") {
+                id = "allocations-container"
+                config.allocations.forEach { alloc ->
+                    div("allocation-edit-row") {
+                        div("allocation-edit-symbol") { +alloc.symbol }
+                        input(type = InputType.hidden, name = "symbols") { value = alloc.symbol }
+                        div("allocation-edit-input-wrapper") {
+                            input(type = InputType.number, name = "targets", classes = "input-glass") {
+                                step = "0.1"
+                                value = alloc.targetPercent.toString()
+                                attributes["oninput"] = "updateAllocationTotal()"
+                            }
+                            span("percent-suffix") { +"%" }
+                        }
+                        button(type = ButtonType.button, classes = "btn btn-danger") {
+                            attributes["onclick"] = "this.closest('.allocation-edit-row').remove(); updateAllocationTotal();"
+                            +"Remove"
+                        }
+                    }
+                }
+            }
+
+            div("add-asset-box") {
+                input(type = InputType.text, classes = "input-glass") {
+                    id = "new-symbol-input"
+                    placeholder = "New Symbol (e.g. DOT)"
+                    style = "text-transform: uppercase; flex-grow: 1;"
+                    attributes["onkeydown"] = "if(event.key === 'Enter') { event.preventDefault(); addAssetRow(); }"
+                }
+                button(type = ButtonType.button, classes = "btn btn-secondary") {
+                    attributes["onclick"] = "addAssetRow()"
+                    unsafe {
+                        +"""<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>"""
+                    }
+                    span { +"Add Asset" }
+                }
+            }
+        }
+    }
+
+    private fun BODY.renderSettingsTemplate() {
         unsafe {
             +"""
             <template id="allocation-row-template">
@@ -583,7 +527,9 @@ class DashboardView {
             </template>
             """
         }
+    }
 
+    private fun BODY.renderSettingsScript() {
         script {
             unsafe {
                 +"""
@@ -633,6 +579,107 @@ class DashboardView {
                 }
                 
                 updateAllocationTotal();
+                """
+            }
+        }
+    }
+
+    private fun BODY.renderShellScript() {
+        script {
+            unsafe {
+                +"""
+                var currentSortCol = 5;    // Defaults to Dev % column (index 5)
+                var currentSortDir = 'asc'; // Defaults to 'asc'
+
+                function updateAge() {
+                    var ageEl = document.querySelector('.data-age-value');
+                    var timeEl = document.querySelector('.data-age-time');
+                    if (ageEl && timeEl) {
+                        var epochStr = timeEl.getAttribute('data-epoch');
+                        if (epochStr) {
+                            var epoch = parseInt(epochStr, 10);
+                            var now = Date.now();
+                            var diff = Math.floor(Math.max(0, now - epoch) / 1000);
+                            ageEl.textContent = diff + 's ago';
+                            var delayedClass = diff > 90 ? 'data-age-value stale' : 'data-age-value';
+                            if (ageEl.className !== delayedClass) {
+                                ageEl.className = delayedClass;
+                            }
+                            
+                            // Localize the time display to expected HH:mm:ss local format
+                            var date = new Date(epoch);
+                            var hh = ('0' + date.getHours()).slice(-2);
+                            var mm = ('0' + date.getMinutes()).slice(-2);
+                            var ss = ('0' + date.getSeconds()).slice(-2);
+                            var localTimeStr = hh + ':' + mm + ':' + ss;
+                            if (timeEl.textContent.trim() !== localTimeStr) {
+                                timeEl.textContent = localTimeStr;
+                            }
+
+                            var badgeEl = document.querySelector('.status-badge');
+                            if (badgeEl) {
+                                var badgeClass = diff > 90 ? 'status-badge delayed' : 'status-badge live';
+                                var badgeText = diff > 90 ? 'DELAYED' : 'LIVE';
+                                if (badgeEl.className !== badgeClass) {
+                                    badgeEl.className = badgeClass;
+                                    badgeEl.textContent = badgeText;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                function reapplySort() {
+                    var headers = document.querySelectorAll('th.sortable');
+                    if (headers.length > currentSortCol) {
+                        var header = headers[currentSortCol];
+                        sortTable(header, currentSortCol, currentSortDir);
+                    }
+                }
+
+                var ageTimer = setInterval(updateAge, 1000);
+                document.addEventListener('DOMContentLoaded', function() {
+                    updateAge();
+                    reapplySort();
+                });
+                document.addEventListener('htmx:afterSwap', function() {
+                    updateAge();
+                    reapplySort();
+                });
+
+                function sortTable(header, colIdx, forceDir) {
+                    var table = header.closest('table');
+                    var tbody = table.querySelector('tbody');
+                    var rows = Array.from(tbody.querySelectorAll('tr.hoverable'));
+                    var isAsc = header.classList.contains('asc');
+                    var sortAsc = (forceDir !== undefined) ? (forceDir === 'asc') : !isAsc;
+                    var key = colIdx === 0 ? 'string' : 'float';
+
+                    rows.sort(function(a, b) {
+                        var aText = a.children[colIdx].textContent.trim().replace(/[$,%]/g, '');
+                        var bText = b.children[colIdx].textContent.trim().replace(/[$,%]/g, '');
+                        if (key === 'float') {
+                            var aVal = parseFloat(aText) || 0;
+                            var bVal = parseFloat(bText) || 0;
+                            return sortAsc ? aVal - bVal : bVal - aVal;
+                        } else {
+                            return sortAsc
+                                ? aText.localeCompare(bText)
+                                : bText.localeCompare(aText);
+                        }
+                    });
+
+                    table.querySelectorAll('th.sortable').forEach(function(th) {
+                        th.classList.remove('asc', 'desc');
+                    });
+                    header.classList.add(sortAsc ? 'asc' : 'desc');
+
+                    rows.forEach(function(row) { tbody.append(row); });
+
+                    // Keep track of the user's latest sort criteria so swaps can re-apply them stably
+                    currentSortCol = colIdx;
+                    currentSortDir = sortAsc ? 'asc' : 'desc';
+                }
                 """
             }
         }

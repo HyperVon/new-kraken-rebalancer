@@ -89,7 +89,6 @@ tasks.jacocoTestReport {
             fileTree(it) {
                 exclude("**/model/**")
                 exclude("**/config/**")
-                exclude("**/view/**")
                 exclude("**/KrakenRebalancerApplication*")
             }
         })
@@ -102,7 +101,6 @@ tasks.jacocoTestCoverageVerification {
             fileTree(it) {
                 exclude("**/model/**")
                 exclude("**/config/**")
-                exclude("**/view/**")
                 exclude("**/KrakenRebalancerApplication*")
             }
         })
