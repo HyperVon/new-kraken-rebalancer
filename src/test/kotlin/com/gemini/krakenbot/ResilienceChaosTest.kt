@@ -10,6 +10,7 @@ import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.TradeHistoryService
 import com.gemini.krakenbot.service.impl.KrakenServiceImpl
 import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
+import com.gemini.krakenbot.util.KrakenSymbols
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
@@ -32,7 +33,7 @@ class ResilienceChaosTest : StringSpec() {
             val appConfig = AppConfig(
                 KrakenCredentials("apiKey", "secret"),
                 Settings(60L, 2.0, 1.0, false, 50.0, 1.0),
-                listOf(Allocation("BTC", 50.0))
+                listOf(Allocation(KrakenSymbols.BTC, 50.0))
             )
             val mockConfigService = mockk<ConfigService>(relaxed = true)
             every { mockConfigService.getConfig() } returns appConfig
@@ -58,7 +59,7 @@ class ResilienceChaosTest : StringSpec() {
             val appConfig = AppConfig(
                 KrakenCredentials("apiKey", "secret"),
                 Settings(60L, 2.0, 1.0, false, 50.0, 1.0),
-                listOf(Allocation("BTC", 50.0))
+                listOf(Allocation(KrakenSymbols.BTC, 50.0))
             )
             val mockConfigService = mockk<ConfigService>(relaxed = true)
             every { mockConfigService.getConfig() } returns appConfig

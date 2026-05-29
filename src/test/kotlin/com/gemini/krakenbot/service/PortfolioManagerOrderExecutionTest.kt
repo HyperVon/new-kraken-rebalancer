@@ -7,6 +7,7 @@ import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.PortfolioStats
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
+import com.gemini.krakenbot.util.KrakenSymbols
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.booleans.shouldBeTrue
@@ -36,7 +37,7 @@ class PortfolioManagerOrderExecutionTest : StringSpec() {
             runTest {
                 val allocA = Allocation("A", 10.0)
                 val allocB = Allocation("B", 90.0)
-                val allocUSD = Allocation("USD", 0.0)
+                val allocUSD = Allocation(KrakenSymbols.USD, 0.0)
                 val allAllocations = listOf(allocA, allocB, allocUSD)
 
                 val mockSettings = Settings(
@@ -53,7 +54,7 @@ class PortfolioManagerOrderExecutionTest : StringSpec() {
 
                 every { configService.getConfig() } returns mockConfig
 
-                val balances = mapOf("A" to 5.0, "B" to 50.0, "USD" to 0.0)
+                val balances = mapOf("A" to 5.0, "B" to 50.0, KrakenSymbols.USD to 0.0)
                 krakenService.balanceSupplier = { balances }
 
                 val prices = mapOf("AUSD" to 100.0, "BUSD" to 10.0)
@@ -72,7 +73,7 @@ class PortfolioManagerOrderExecutionTest : StringSpec() {
         "testExecution_SkipDustSells" {
             runTest {
                 val allocA = Allocation("A", 10.0)
-                val allocUSD = Allocation("USD", 90.0)
+                val allocUSD = Allocation(KrakenSymbols.USD, 90.0)
                 val allAllocations = listOf(allocA, allocUSD)
 
                 val mockSettings = Settings(
@@ -89,7 +90,7 @@ class PortfolioManagerOrderExecutionTest : StringSpec() {
 
                 every { configService.getConfig() } returns mockConfig
 
-                val balances = mapOf("A" to 1.05, "USD" to 895.0)
+                val balances = mapOf("A" to 1.05, KrakenSymbols.USD to 895.0)
                 krakenService.balanceSupplier = { balances }
 
                 val prices = mapOf("AUSD" to 100.0)
@@ -117,7 +118,7 @@ class PortfolioManagerOrderExecutionTest : StringSpec() {
                 )
                 every { configService.getConfig() } returns mockConfig
 
-                val initialBalances = mapOf("A" to 5.0, "B" to 50.0, "USD" to 0.0)
+                val initialBalances = mapOf("A" to 5.0, "B" to 50.0, KrakenSymbols.USD to 0.0)
                 
                 var callCount = 0
                 krakenService.balanceSupplier = {
@@ -154,8 +155,8 @@ class PortfolioManagerOrderExecutionTest : StringSpec() {
                 )
                 every { configService.getConfig() } returns mockConfig
 
-                val initialBalances = mapOf("A" to 5.0, "B" to 50.0, "USD" to 0.0)
-                val updatedBalances = mapOf("A" to 2.0, "B" to 50.0, "USD" to 200.0)
+                val initialBalances = mapOf("A" to 5.0, "B" to 50.0, KrakenSymbols.USD to 0.0)
+                val updatedBalances = mapOf("A" to 2.0, "B" to 50.0, KrakenSymbols.USD to 200.0)
 
                 var callCount = 0
                 krakenService.balanceSupplier = {

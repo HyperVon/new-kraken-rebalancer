@@ -6,6 +6,7 @@ import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
+import com.gemini.krakenbot.util.KrakenSymbols
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
@@ -34,7 +35,7 @@ class PortfolioManagerDogeTest : StringSpec() {
                 val settings = Settings(60L, 2.0, 1.0, true, 0.0, 1.0)
                 val config = AppConfig(
                     KrakenCredentials("k", "s"), settings,
-                    listOf(Allocation("DOGE", 50.0), Allocation("USD", 50.0))
+                    listOf(Allocation(KrakenSymbols.DOGE, 50.0), Allocation(KrakenSymbols.USD, 50.0))
                 )
                 every { configService.getConfig() } returns config
 
@@ -58,7 +59,7 @@ class PortfolioManagerDogeTest : StringSpec() {
                 val settings = Settings(60L, 2.0, 1.0, true, 0.0, 1.0)
                 val config = AppConfig(
                     KrakenCredentials("k", "s"), settings,
-                    listOf(Allocation("BTC", 50.0), Allocation("USD", 50.0))
+                    listOf(Allocation(KrakenSymbols.BTC, 50.0), Allocation(KrakenSymbols.USD, 50.0))
                 )
                 every { configService.getConfig() } returns config
 

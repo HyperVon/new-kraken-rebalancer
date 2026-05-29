@@ -11,6 +11,7 @@ import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.impl.KrakenServiceImpl
 import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
 import com.gemini.krakenbot.service.impl.TradeHistoryServiceImpl
+import com.gemini.krakenbot.util.KrakenSymbols
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.booleans.shouldBeTrue
@@ -37,7 +38,7 @@ class KrakenE2ETest : StringSpec() {
             val appConfig = AppConfig(
                 KrakenCredentials("apiKey", validSecret),
                 Settings(60L, 2.0, 1.0, false, 50.0, 1.0),
-                listOf(Allocation("BTC", 50.0), Allocation("USD", 50.0))
+                listOf(Allocation(KrakenSymbols.BTC, 50.0), Allocation(KrakenSymbols.USD, 50.0))
             )
 
             val mockConfigService = mockk<ConfigService>(relaxed = true)
@@ -115,7 +116,7 @@ class KrakenE2ETest : StringSpec() {
             val appConfig = AppConfig(
                 KrakenCredentials("apiKey", validSecret),
                 Settings(60L, 2.0, 1.0, false, 50.0, 1.0),
-                listOf(Allocation("BTC", 50.0), Allocation("USD", 50.0))
+                listOf(Allocation(KrakenSymbols.BTC, 50.0), Allocation(KrakenSymbols.USD, 50.0))
             )
 
             val mockConfigService = mockk<ConfigService>(relaxed = true)
