@@ -12,12 +12,19 @@ import io.kotest.matchers.string.shouldNotContain
 import kotlinx.html.html
 import kotlinx.html.div
 import kotlinx.html.stream.createHTML
+import com.gemini.krakenbot.view.component.*
 import java.math.BigDecimal
 import java.time.Instant
 
 @Suppress("unused")
 class DashboardViewTest : StringSpec({
-    val view = DashboardView()
+    val shell = DashboardShellComponent()
+    val overview = OverviewGridComponent()
+    val chart = AllocationChartComponent()
+    val table = PerformanceTableComponent()
+    val activity = RecentActivityComponent()
+    val fragment = DashboardFragmentComponent(overview, chart, table, activity)
+    val view = DashboardView(shell, SettingsFormComponent(), fragment)
 
     val baseConfig = AppConfig(
         KrakenCredentials("apiKey", "privateKey"),

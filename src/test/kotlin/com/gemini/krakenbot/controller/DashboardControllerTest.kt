@@ -7,6 +7,7 @@ import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.TradeHistoryService
 import com.gemini.krakenbot.view.DashboardView
+import com.gemini.krakenbot.view.component.*
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
@@ -48,7 +49,14 @@ class DashboardControllerTest : StringSpec() {
             single { tradeHistoryService }
             single { configService }
             single { objectMapper }
-            single { DashboardView() }
+            single { DashboardShellComponent() }
+            single { SettingsFormComponent() }
+            single { OverviewGridComponent() }
+            single { AllocationChartComponent() }
+            single { PerformanceTableComponent() }
+            single { RecentActivityComponent() }
+            single { DashboardFragmentComponent(get(), get(), get(), get()) }
+            single { DashboardView(get(), get(), get()) }
         }
 
         beforeTest {
