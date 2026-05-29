@@ -188,7 +188,7 @@ header {
 /* Overview cards grid */
 .overview-grid {
   display: grid;
-  grid-template-cols: 1fr;
+  grid-template-columns: 1fr;
   gap: 1rem;
   margin-bottom: 1.25rem;
 }
