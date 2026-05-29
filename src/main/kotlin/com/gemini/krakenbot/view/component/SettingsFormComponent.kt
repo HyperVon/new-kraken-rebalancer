@@ -50,7 +50,6 @@ class SettingsFormComponent {
             }
         }
 
-        renderSettingsTemplate()
         renderSettingsScript()
     }
 
@@ -156,24 +155,6 @@ class SettingsFormComponent {
                     span { +ViewText.ADD_ASSET }
                 }
             }
-        }
-    }
-
-    private fun BODY.renderSettingsTemplate() {
-        unsafe {
-            +"""
-            <template id="allocation-row-template">
-                <div class="allocation-edit-row">
-                    <div class="allocation-edit-symbol symbol-label"></div>
-                    <input type="hidden" name="symbols">
-                    <div class="allocation-edit-input-wrapper">
-                        <input type="number" step="0.1" name="targets" class="input-glass" oninput="updateAllocationTotal()">
-                        <span class="percent-suffix">%</span>
-                    </div>
-                    <button type="button" class="btn btn-danger" onclick="this.closest('.allocation-edit-row').remove(); updateAllocationTotal();">Remove</button>
-                </div>
-            </template>
-            """.trimIndent()
         }
     }
 
