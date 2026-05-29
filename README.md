@@ -18,7 +18,7 @@ A production-grade, autonomous portfolio rebalancing engine for the [Kraken](htt
 | **Concurrency** | Kotlin Coroutines (`kotlinx.coroutines` 1.11.0) |
 | **Frontend** | Server-side HTML (kotlinx.html DSL + HTMX), Ktor SSE |
 | **API** | Kraken REST API with HMAC-SHA512 authentication |
-| **Testing** | Kotest 6.1 (StringSpec), MockK 1.14, Ktor MockEngine, JaCoCo (95%+ coverage enforced) |
+| **Testing** | Kotest 6.1 (StringSpec), MockK 1.14, Ktor MockEngine, JaCoCo (95%+ coverage enforced, 100% achieved) |
 | **Build** | Gradle (Kotlin DSL) |
 
 ---
@@ -154,7 +154,7 @@ To eliminate unnecessary network polling, the system uses a reactive, push-based
 │   ├── view/                              # HTML templates (kotlinx.html DSL)
 │   │   └── DashboardView.kt              # Server-side rendered dashboard & settings pages
 │   └── util/                              # Utilities: AtomicJsonFile, KrakenSymbols
-├── src/test/kotlin/                       # Backend unit tests (100% line and branch coverage enforced by JaCoCo)
+├── src/test/kotlin/                       # Unit tests (100% overall coverage achieved across all packages and metrics)
 │   └── com/gemini/krakenbot/
 │       └── service/
 │           └── FakeKrakenService.kt       # In-process test double for KrakenService
@@ -232,13 +232,13 @@ Open your browser to **http://localhost:8080**. The dashboard is served directly
 
 ## Testing
 
-The backend enforces **95% line and branch coverage** via JaCoCo (with the current suite achieving **100% line and branch coverage**). All tests are behavioural — they verify actual rebalancing decisions, not just method invocations. Order volumes are asserted with `BigDecimal.compareTo()` to avoid floating-point comparison issues.
+The project enforces **95% line, branch, method, and instruction coverage** via JaCoCo, with the test suite achieving exactly **100% line, branch, method, class, and instruction coverage** across the entire codebase (including view rendering and routing). All tests are behavioural — they verify actual rebalancing decisions, not just method invocations. Order volumes are asserted with `BigDecimal.compareTo()` to avoid floating-point comparison issues.
 
 ```bash
 ./gradlew test
 ```
 
-**122+ tests** across:
+**135 tests** across:
 - `KrakenE2ETest` / `ResilienceChaosTest` / `PrecisionRoundingFuzzTest` / `SerializationParityTest` — advanced E2E black-box and fuzz testing
 - `PortfolioManagerComprehensiveTest` — full rebalance cycles with order result verification
 - `PortfolioManagerFiatCorrectionTest` — deposit/withdrawal distribution logic

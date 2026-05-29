@@ -17,6 +17,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Ktor SSE Integration with HTMX**: SSE events from `/api/status/stream` trigger automatic dashboard fragment refresh using HTMX's SSE extension (`hx-ext="sse"`, `sse-swap="message"`), eliminating the need for a separate React/TypeScript build pipeline.
 - **DashboardView Class**: HTML rendering logic centralized in `DashboardView` using Kotlin's `kotlinx.html` type-safe HTML builder, enabling full-stack Kotlin development without a separate frontend stack.
 
+### Changed
+- **100% Test Coverage Enforcement**: Restored the view package to the JaCoCo verification limits and expanded the test suite to achieve exactly **100% line, branch, method, class, and instruction coverage** across the entire codebase. Refactored view rendering logic to eliminate unreachable compiler-generated null checks, and implemented comprehensive Ktor client SSE flow tests.
+- **Warning Suppressions**: Configured `applicationDefaultJvmArgs` and test `jvmArgs` with `"-Xshare:off"` and `"--sun-misc-unsafe-memory-access=allow"` to suppress Class Data Sharing and terminally deprecated Unsafe memory-access warnings.
+- **Git State Ignoring**: Added `bin/` and `.kotlin/` to `.gitignore`.
+
 ### Removed
 - **React/Vite Frontend**: Removed the entire `frontend/` directory including React 19, TypeScript, Vite 8, Tailwind CSS v4, Chart.js, Vitest, and 110 frontend unit tests.
 - **Frontend CI Job**: Removed the frontend build, lint, and test steps from the GitHub Actions workflow.

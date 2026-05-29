@@ -140,25 +140,53 @@ class DashboardViewTest : StringSpec({
 
     "renderDashboardFragment_edgeCases_coversUncoveredBranches" {
         val now = Instant.now()
+        val emptyAssetsLatest = PortfolioSnapshot(
+            timestamp = now,
+            totalValueUSD = BigDecimal.ZERO,
+            assets = emptyMap(), // covers empty assets / maxVal default path
+            actions = listOf("INFO Rebalancer initialized"),
+            drawdownPercent = BigDecimal.ZERO,
+            fiatDeploymentPercent = BigDecimal.ZERO,
+            effectiveUsdTargetPercent = BigDecimal("10.0")
+        )
+        createHTML().div {
+            with(view) {
+                renderDashboardFragment(emptyAssetsLatest, emptyList())
+            }
+        }
+
         val latest = PortfolioSnapshot(
             timestamp = now,
             totalValueUSD = BigDecimal.ZERO,
-            assets = emptyMap(), // usdAsset is null, maxVal <= 0
+            assets = mapOf(
+                "BTC" to PortfolioSnapshot.AssetSnapshot("BTC", BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO)
+            ), // covers maxVal <= 0 in renderAllocationChart
             actions = listOf("INFO Rebalancer initialized"), // neither BUY nor SELL
             drawdownPercent = BigDecimal.ZERO, // drawdown is 0
             fiatDeploymentPercent = BigDecimal.ZERO,
             effectiveUsdTargetPercent = BigDecimal("10.0")
         )
 
+        val noActionsSnapshot = PortfolioSnapshot(
+            timestamp = now.minusSeconds(60),
+            totalValueUSD = BigDecimal.ZERO,
+            assets = emptyMap(),
+            actions = emptyList(), // covers empty actions inside the recent activity table
+            drawdownPercent = BigDecimal.ZERO,
+            fiatDeploymentPercent = BigDecimal.ZERO,
+            effectiveUsdTargetPercent = BigDecimal("10.0")
+        )
+
         val html = createHTML().div {
             with(view) {
-                renderDashboardFragment(latest, listOf(latest))
+                renderDashboardFragment(latest, listOf(latest, noActionsSnapshot))
             }
         }
 
         html shouldContain "No USD Data"
         html shouldContain "Drawdown: 0.00%"
         html shouldContain "badge badge-info\">INFO"
+        html shouldContain "No trades executed (Cycle complete)"
     }
 
     "renderDashboardFragment_usdTargetEqual_doesNotPrintBaseTarget" {

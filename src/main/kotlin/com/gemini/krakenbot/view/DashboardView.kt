@@ -209,7 +209,7 @@ class DashboardView {
             div("allocation-chart-container") {
                 val sorted = latest.assets.values.sortedByDescending { it.valueUSD }
                 val topAssets = sorted.take(15)
-                val maxVal = topAssets.firstOrNull()?.valueUSD?.toDouble() ?: 1.0
+                val maxVal = if (topAssets.isNotEmpty()) topAssets.first().valueUSD.toDouble() else 1.0
 
                 topAssets.forEach { asset ->
                     val fillPct = if (maxVal > 0) (asset.valueUSD.toDouble() / maxVal * 100).toInt() else 0
