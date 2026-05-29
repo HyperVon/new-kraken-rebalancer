@@ -27,8 +27,8 @@ class DashboardShellComponent {
                         attributes[HtmxAttrs.HX_GET] = Routes.FRAGMENT_DASHBOARD
                         attributes[HtmxAttrs.HX_TRIGGER] = "load, sse:message"
 
-                        div("spinner-container") {
-                            div("spinner") {}
+                        div(CssClasses.SPINNER_CONTAINER) {
+                            div(CssClasses.SPINNER) {}
                             p { +ViewText.CONNECTING }
                         }
                     }

@@ -13,6 +13,7 @@ import kotlinx.html.html
 import kotlinx.html.div
 import kotlinx.html.stream.createHTML
 import com.gemini.krakenbot.view.component.*
+import com.gemini.krakenbot.view.util.CssClasses
 import com.gemini.krakenbot.view.util.FormFields
 import com.gemini.krakenbot.view.util.Routes
 import com.gemini.krakenbot.view.util.ViewText
@@ -66,7 +67,7 @@ class DashboardViewTest : StringSpec({
         html shouldContain "value=\"60\""
         html shouldContain "name=\"${FormFields.DEVIATION_TRIGGER_PERCENT}\""
         html shouldContain "value=\"2.0\""
-        html shouldNotContain "background-color: rgba(239, 68, 68, 0.15)"
+        html shouldNotContain CssClasses.ERROR_BANNER
     }
 
     "renderSettingsPage_withError_displaysError" {
@@ -77,6 +78,7 @@ class DashboardViewTest : StringSpec({
             }
         }
         html shouldContain errMsg
+        html shouldContain CssClasses.ERROR_BANNER
     }
 
     "renderDashboardFragment_withLiveSnapshotAndHistory_rendersCorrectly" {
@@ -117,12 +119,12 @@ class DashboardViewTest : StringSpec({
         html shouldContain "90.00% | ${ViewText.TARGET_PREFIX}90.00% | 2${ViewText.ASSETS_SUFFIX}"
         
         // Allocation bars
-        html shouldContain "allocation-bar-label\">BTC"
-        html shouldContain "allocation-bar-label\">ETH"
+        html shouldContain "${CssClasses.ALLOCATION_BAR_LABEL}\">BTC"
+        html shouldContain "${CssClasses.ALLOCATION_BAR_LABEL}\">ETH"
         
         // Recent activity badges
-        html shouldContain "badge badge-buy\">BUY"
-        html shouldContain "badge badge-sell\">SELL"
+        html shouldContain "${CssClasses.BADGE_BUY}\">BUY"
+        html shouldContain "${CssClasses.BADGE_SELL}\">SELL"
     }
 
     "renderDashboardFragment_withStaleData_rendersDelayedBadge" {
@@ -197,7 +199,7 @@ class DashboardViewTest : StringSpec({
 
         html shouldContain ViewText.NO_USD_DATA
         html shouldContain "${ViewText.DRAWDOWN_PREFIX}0.00%"
-        html shouldContain "badge badge-info\">INFO"
+        html shouldContain "${CssClasses.BADGE_INFO}\">INFO"
         html shouldContain ViewText.NO_TRADES_EXECUTED
     }
 

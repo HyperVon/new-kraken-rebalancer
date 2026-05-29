@@ -27,7 +27,7 @@ class DashboardFragmentComponent(
         renderHeaderSection(latest, timeSinceUpdate, isStale)
         with(overviewGridComponent) { render(latest) }
 
-        div("detail-grid") {
+        div(CssClasses.DETAIL_GRID) {
             with(allocationChartComponent) { render(latest) }
             with(performanceTableComponent) { render(latest) }
         }
@@ -37,19 +37,19 @@ class DashboardFragmentComponent(
 
     private fun DIV.renderHeaderSection(latest: PortfolioSnapshot, timeSinceUpdate: Long, isStale: Boolean) {
         header {
-            div("header-title-section") {
+            div(CssClasses.HEADER_TITLE_SECTION) {
                 h1 { +ViewText.APP_TITLE }
-                val badgeClass = if (isStale) "status-badge delayed" else "status-badge live"
+                val badgeClass = if (isStale) CssClasses.STATUS_BADGE_DELAYED else CssClasses.STATUS_BADGE_LIVE
                 val badgeText = if (isStale) ViewText.DELAYED else ViewText.LIVE
                 div(badgeClass) { +badgeText }
             }
 
-            div("header-actions") {
-                div("data-age-container") {
-                    div("data-age-label") { +ViewText.DATA_AGE }
-                    val ageClass = if (isStale) "data-age-value stale" else "data-age-value"
+            div(CssClasses.HEADER_ACTIONS) {
+                div(CssClasses.DATA_AGE_CONTAINER) {
+                    div(CssClasses.DATA_AGE_LABEL) { +ViewText.DATA_AGE }
+                    val ageClass = if (isStale) CssClasses.DATA_AGE_VALUE_STALE else CssClasses.DATA_AGE_VALUE
                     div(ageClass) { +"${timeSinceUpdate}s ago" }
-                    div("data-age-time") {
+                    div(CssClasses.DATA_AGE_TIME) {
                         attributes[HtmlAttrs.DATA_EPOCH] = latest.timestamp.toEpochMilli().toString()
                         +timeFormatter.format(latest.timestamp)
                     }

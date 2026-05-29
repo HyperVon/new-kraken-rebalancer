@@ -1,6 +1,7 @@
 package com.gemini.krakenbot.view.component
 
 import com.gemini.krakenbot.model.PortfolioSnapshot
+import com.gemini.krakenbot.view.util.CssClasses
 import com.gemini.krakenbot.view.util.Formatter
 import com.gemini.krakenbot.view.util.Icons
 import com.gemini.krakenbot.view.util.Layouts.statusCard
@@ -22,7 +23,7 @@ class OverviewGridComponent {
         val cryptoTargetPercent = assetsList.sumOf { it.targetPercent.toDouble() }
         val cryptoCount = assetsList.size
 
-        div("overview-grid") {
+        div(CssClasses.OVERVIEW_GRID) {
             statusCard(
                 title = ViewText.TOTAL_PORTFOLIO,
                 iconSvg = Icons.TREND_UP,
@@ -30,7 +31,7 @@ class OverviewGridComponent {
             ) {
                 val drawdown = latest.drawdownPercent
                 val isDrawdown = drawdown.signum() > 0
-                val colorClass = if (isDrawdown) "text-danger" else ""
+                val colorClass = if (isDrawdown) CssClasses.TEXT_DANGER else ""
                 span(colorClass) {
                     +"${ViewText.DRAWDOWN_PREFIX}${Formatter.formatPercent(drawdown)}%"
                 }

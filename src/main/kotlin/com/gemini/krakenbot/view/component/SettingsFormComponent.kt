@@ -22,7 +22,7 @@ class SettingsFormComponent {
                 attributes[HtmxAttrs.HX_SWAP] = "innerHTML"
 
                 header {
-                    div("header-title-section") {
+                    div(CssClasses.HEADER_TITLE_SECTION) {
                         a(href = Routes.ROOT, classes = "${CssClasses.BTN_SECONDARY} ${CssClasses.BTN_ICON}") {
                             icon(Icons.BACK_ARROW)
                         }
@@ -53,7 +53,7 @@ class SettingsFormComponent {
 
     private fun DIV.renderGlobalParametersSection(config: AppConfig) {
         formSection(ViewText.GLOBAL_PARAMETERS, Icons.SHIELD_EXCLAMATION) {
-            div("grid-2col") {
+            div(CssClasses.GRID_2COL) {
                 formGroup(ViewText.LOOP_INTERVAL) {
                     input(type = InputType.number, name = FormFields.LOOP_DELAY_SECONDS, classes = CssClasses.INPUT_GLASS) {
                         min = "1"
@@ -91,11 +91,11 @@ class SettingsFormComponent {
                 }
 
                 div("form-group ${CssClasses.FORM_GROUP_CENTERED}") {
-                    label("checkbox-container") {
+                    label(classes = CssClasses.CHECKBOX_CONTAINER) {
                         input(type = InputType.checkBox, name = FormFields.DRY_RUN) {
                             checked = config.settings.dryRun
                         }
-                        div("checkbox-custom") {}
+                        div(CssClasses.CHECKBOX_CUSTOM) {}
                         span { +ViewText.DRY_RUN_MODE }
                     }
                 }
@@ -104,7 +104,7 @@ class SettingsFormComponent {
     }
 
     private fun DIV.renderTargetAllocationsSection(config: AppConfig) {
-        div("form-section") {
+        div(CssClasses.FORM_SECTION) {
             div(CssClasses.SECTION_HEADER) {
                 h3 {
                     +ViewText.TARGET_ALLOCATIONS
@@ -115,19 +115,19 @@ class SettingsFormComponent {
                 }
             }
 
-            div("allocation-list-container") {
+            div(CssClasses.ALLOCATION_LIST_CONTAINER) {
                 id = "allocations-container"
                 config.allocations.forEach { alloc ->
-                    div("allocation-edit-row") {
-                        div("allocation-edit-symbol") { +alloc.symbol }
+                    div(CssClasses.ALLOCATION_EDIT_ROW) {
+                        div(CssClasses.ALLOCATION_EDIT_SYMBOL) { +alloc.symbol }
                         input(type = InputType.hidden, name = FormFields.SYMBOLS) { value = alloc.symbol }
-                        div("allocation-edit-input-wrapper") {
+                        div(CssClasses.ALLOCATION_EDIT_INPUT_WRAPPER) {
                             input(type = InputType.number, name = FormFields.TARGETS, classes = CssClasses.INPUT_GLASS) {
                                 step = "0.1"
                                 value = alloc.targetPercent.toString()
                                 attributes[HtmlAttrs.ONINPUT] = "updateAllocationTotal()"
                             }
-                            span("percent-suffix") { +"%" }
+                            span(CssClasses.PERCENT_SUFFIX) { +"%" }
                         }
                         button(type = ButtonType.button, classes = CssClasses.BTN_DANGER) {
                             attributes[HtmlAttrs.ONCLICK] = "this.closest('.allocation-edit-row').remove(); updateAllocationTotal();"
@@ -137,7 +137,7 @@ class SettingsFormComponent {
                 }
             }
 
-            div("add-asset-box") {
+            div(CssClasses.ADD_ASSET_BOX) {
                 input(type = InputType.text, classes = CssClasses.INPUT_GLASS) {
                     id = "new-symbol-input"
                     placeholder = ViewText.NEW_SYMBOL_PLACEHOLDER
