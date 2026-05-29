@@ -250,6 +250,17 @@ class DashboardControllerTest : StringSpec() {
             }
         }
 
+        "getStaticResource_ReturnsSettingsJsFile" {
+            testApplication {
+                application {
+                    configureTestEnv()
+                }
+                val response = client.get("/static/settings.js")
+                response.status shouldBe HttpStatusCode.OK
+                response.headers[HttpHeaders.ContentType] shouldContain "javascript"
+            }
+        }
+
         "postSettings_WithMissingOrInvalidParams_UsesDefaultsAndHandlesValidation" {
             val serverConfig = AppConfig(
                 KrakenCredentials("server-key", "server-secret"),

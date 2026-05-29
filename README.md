@@ -163,7 +163,8 @@ To eliminate unnecessary network polling, the system uses a reactive, push-based
 ├── src/main/resources/                    # Static resources
 │   └── static/
 │       ├── style.css                      # Dashboard stylesheet
-│       └── dashboard.js                   # Dashboard client-side scripts
+│       ├── dashboard.js                   # Dashboard client-side scripts
+│       └── settings.js                    # Settings form client-side scripts
 ├── ALGORITHM.md                           # Detailed algorithm documentation
 ├── rebalancer-config-template.json        # Configuration template
 └── build.gradle.kts                       # Gradle build with JaCoCo coverage enforcement

@@ -13,6 +13,7 @@ import kotlinx.html.html
 import kotlinx.html.div
 import kotlinx.html.stream.createHTML
 import com.gemini.krakenbot.view.component.*
+import com.gemini.krakenbot.view.util.ViewText
 import java.math.BigDecimal
 import java.time.Instant
 
@@ -42,12 +43,12 @@ class DashboardViewTest : StringSpec({
                 renderDashboardShell()
             }
         }
-        html shouldContain "title>Kraken Rebalancer"
+        html shouldContain "title>${ViewText.APP_TITLE}"
         html shouldContain "link href=\"/static/style.css\" rel=\"stylesheet\""
         html shouldContain "script src=\"https://unpkg.com/htmx.org@2.0.4\""
         html shouldContain "hx-ext=\"sse\""
         html shouldContain "sse-connect=\"/api/status/stream\""
-        html shouldContain "Connecting to KrakenRebalancer..."
+        html shouldContain ViewText.CONNECTING
     }
 
     "renderSettingsPage_withNoError_containsForm" {
@@ -56,7 +57,7 @@ class DashboardViewTest : StringSpec({
                 renderSettingsPage(baseConfig, null)
             }
         }
-        html shouldContain "title>Settings - Kraken Rebalancer"
+        html shouldContain "title>${ViewText.SETTINGS_TITLE} - ${ViewText.APP_TITLE}"
         html shouldContain "name=\"loopDelaySeconds\""
         html shouldContain "value=\"60\""
         html shouldContain "name=\"deviationTriggerPercent\""
@@ -98,18 +99,18 @@ class DashboardViewTest : StringSpec({
             }
         }
 
-        html shouldContain "LIVE"
-        html shouldNotContain "DELAYED"
-        html shouldContain "Total Portfolio"
+        html shouldContain ViewText.LIVE
+        html shouldNotContain ViewText.DELAYED
+        html shouldContain ViewText.TOTAL_PORTFOLIO
         html shouldContain "$10,000.00"
-        html shouldContain "Drawdown: 5.00%"
-        html shouldContain "Cash (USD)"
+        html shouldContain "${ViewText.DRAWDOWN_PREFIX}5.00%"
+        html shouldContain ViewText.CASH_USD
         html shouldContain "$1,000.00"
-        html shouldContain "10.00% | Target: 7.50% (Base: 10.00%)"
-        html shouldContain "Dev: 0.00%"
-        html shouldContain "Crypto Assets"
+        html shouldContain "10.00% | ${ViewText.TARGET_PREFIX}7.50% (${ViewText.BASE_PREFIX}10.00%)"
+        html shouldContain "${ViewText.DEV_PREFIX}0.00%"
+        html shouldContain ViewText.CRYPTO_ASSETS
         html shouldContain "$9,000.00"
-        html shouldContain "90.00% | Target: 90.00% | 2 Assets"
+        html shouldContain "90.00% | ${ViewText.TARGET_PREFIX}90.00% | 2${ViewText.ASSETS_SUFFIX}"
         
         // Allocation bars
         html shouldContain "allocation-bar-label\">BTC"
@@ -140,9 +141,9 @@ class DashboardViewTest : StringSpec({
             }
         }
 
-        html shouldContain "DELAYED"
-        html shouldNotContain "LIVE"
-        html shouldContain "No trading history available."
+        html shouldContain ViewText.DELAYED
+        html shouldNotContain ViewText.LIVE
+        html shouldContain ViewText.NO_TRADING_HISTORY
     }
 
     "renderDashboardFragment_edgeCases_coversUncoveredBranches" {
@@ -190,10 +191,10 @@ class DashboardViewTest : StringSpec({
             }
         }
 
-        html shouldContain "No USD Data"
-        html shouldContain "Drawdown: 0.00%"
+        html shouldContain ViewText.NO_USD_DATA
+        html shouldContain "${ViewText.DRAWDOWN_PREFIX}0.00%"
         html shouldContain "badge badge-info\">INFO"
-        html shouldContain "No trades executed (Cycle complete)"
+        html shouldContain ViewText.NO_TRADES_EXECUTED
     }
 
     "renderDashboardFragment_usdTargetEqual_doesNotPrintBaseTarget" {
@@ -216,7 +217,7 @@ class DashboardViewTest : StringSpec({
             }
         }
 
-        html shouldContain "10.00% | Target: 10.00%"
+        html shouldContain "10.00% | ${ViewText.TARGET_PREFIX}10.00%"
         html shouldNotContain "(Base: 10.00%)"
     }
 })
