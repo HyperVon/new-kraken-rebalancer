@@ -24,13 +24,21 @@ class PortfolioManagerOrderExecutionTest : StringSpec() {
     private val krakenService = FakeKrakenService()
     private val configService = mockk<ConfigService>(relaxed = true)
     private val tradeHistoryService = mockk<TradeHistoryService>(relaxed = true)
-    private val portfolioStatsRepository = mockk<PortfolioStatsRepository>(relaxed = true)
+    private val portfolioStatsRepository =
+        mockk<PortfolioStatsRepository>(relaxed = true)
     private lateinit var portfolioManager: PortfolioManagerImpl
 
     init {
         beforeTest {
-            every { portfolioStatsRepository.load() } returns PortfolioStats(BigDecimal.ZERO)
-            portfolioManager = PortfolioManagerImpl(krakenService, configService, tradeHistoryService, portfolioStatsRepository)
+            every { portfolioStatsRepository.load() } returns PortfolioStats(
+                BigDecimal.ZERO
+            )
+            portfolioManager = PortfolioManagerImpl(
+                krakenService,
+                configService,
+                tradeHistoryService,
+                portfolioStatsRepository
+            )
         }
 
         "testExecutionOrder_SellsBeforeBuys" {
@@ -54,7 +62,8 @@ class PortfolioManagerOrderExecutionTest : StringSpec() {
 
                 every { configService.getConfig() } returns mockConfig
 
-                val balances = mapOf("A" to 5.0, "B" to 50.0, KrakenSymbols.USD to 0.0)
+                val balances =
+                    mapOf("A" to 5.0, "B" to 50.0, KrakenSymbols.USD to 0.0)
                 krakenService.balanceSupplier = { balances }
 
                 val prices = mapOf("AUSD" to 100.0, "BUSD" to 10.0)
@@ -104,7 +113,8 @@ class PortfolioManagerOrderExecutionTest : StringSpec() {
 
         "testExecution_CashVerificationFallback" {
             runTest {
-                val allAllocations = listOf(Allocation("A", 10.0), Allocation("B", 90.0))
+                val allAllocations =
+                    listOf(Allocation("A", 10.0), Allocation("B", 90.0))
                 val mockSettings = Settings(
                     loopDelaySeconds = 0L,
                     deviationTriggerPercent = 1.0,
@@ -118,12 +128,15 @@ class PortfolioManagerOrderExecutionTest : StringSpec() {
                 )
                 every { configService.getConfig() } returns mockConfig
 
-                val initialBalances = mapOf("A" to 5.0, "B" to 50.0, KrakenSymbols.USD to 0.0)
-                
+                val initialBalances =
+                    mapOf("A" to 5.0, "B" to 50.0, KrakenSymbols.USD to 0.0)
+
                 var callCount = 0
                 krakenService.balanceSupplier = {
                     callCount++
-                    if (callCount == 1) initialBalances else throw RuntimeException("API Error during verification!")
+                    if (callCount == 1) initialBalances else throw RuntimeException(
+                        "API Error during verification!"
+                    )
                 }
 
                 val prices = mapOf("AUSD" to 100.0, "BUSD" to 10.0)
@@ -141,7 +154,8 @@ class PortfolioManagerOrderExecutionTest : StringSpec() {
 
         "testExecution_PartialFillCashUpdate" {
             runTest {
-                val allAllocations = listOf(Allocation("A", 10.0), Allocation("B", 90.0))
+                val allAllocations =
+                    listOf(Allocation("A", 10.0), Allocation("B", 90.0))
                 val mockSettings = Settings(
                     loopDelaySeconds = 0L,
                     deviationTriggerPercent = 1.0,
@@ -155,8 +169,10 @@ class PortfolioManagerOrderExecutionTest : StringSpec() {
                 )
                 every { configService.getConfig() } returns mockConfig
 
-                val initialBalances = mapOf("A" to 5.0, "B" to 50.0, KrakenSymbols.USD to 0.0)
-                val updatedBalances = mapOf("A" to 2.0, "B" to 50.0, KrakenSymbols.USD to 200.0)
+                val initialBalances =
+                    mapOf("A" to 5.0, "B" to 50.0, KrakenSymbols.USD to 0.0)
+                val updatedBalances =
+                    mapOf("A" to 2.0, "B" to 50.0, KrakenSymbols.USD to 200.0)
 
                 var callCount = 0
                 krakenService.balanceSupplier = {
@@ -174,7 +190,11 @@ class PortfolioManagerOrderExecutionTest : StringSpec() {
                 krakenService.executedOrders[0].side shouldBe "sell"
                 krakenService.executedOrders[1].pair shouldBe "BUSD"
                 krakenService.executedOrders[1].side shouldBe "buy"
-                (krakenService.executedOrders[1].volume.subtract(BigDecimal.valueOf(19.8)).abs() < BigDecimal("0.1")).shouldBeTrue()
+                (krakenService.executedOrders[1].volume.subtract(
+                    BigDecimal.valueOf(
+                        19.8
+                    )
+                ).abs() < BigDecimal("0.1")).shouldBeTrue()
             }
         }
     }

@@ -21,27 +21,33 @@ class AtomicJsonFileTest : StringSpec({
         val target = File("build/test-atomic/success.json")
         target.parentFile?.mkdirs()
         target.delete()
-        
+
         AtomicJsonFile.write(objectMapper, target, mapOf("hello" to "world"))
         target.exists() shouldBe true
-        objectMapper.readValue(target, Map::class.java)["hello"] shouldBe "world"
+        objectMapper.readValue(
+            target,
+            Map::class.java
+        )["hello"] shouldBe "world"
         target.delete()
     }
 
     "should write json file successfully with no parent directory" {
         val target = File("success-no-parent.json")
         target.delete()
-        
+
         AtomicJsonFile.write(objectMapper, target, mapOf("hello" to "world"))
         target.exists() shouldBe true
-        objectMapper.readValue(target, Map::class.java)["hello"] shouldBe "world"
+        objectMapper.readValue(
+            target,
+            Map::class.java
+        )["hello"] shouldBe "world"
         target.delete()
     }
 
     "should create parent directory if it does not exist" {
         val parent = File("build/test-atomic/nested-dir")
         if (parent.exists()) parent.deleteRecursively()
-        
+
         val target = File(parent, "nested.json")
         AtomicJsonFile.write(objectMapper, target, mapOf("a" to 1))
         target.exists() shouldBe true
@@ -54,8 +60,11 @@ class AtomicJsonFileTest : StringSpec({
         notADirFile.parentFile?.mkdirs()
         notADirFile.delete()
         notADirFile.createNewFile() // makes it a regular file
-        
-        val parent = File(notADirFile, "nested-subdir") // parent does not exist, and cannot be created because its parent is a file
+
+        val parent = File(
+            notADirFile,
+            "nested-subdir"
+        ) // parent does not exist, and cannot be created because its parent is a file
         val target = File(parent, "nested.json")
         shouldThrow<IOException> {
             AtomicJsonFile.write(objectMapper, target, mapOf("a" to 1))
@@ -70,8 +79,17 @@ class AtomicJsonFileTest : StringSpec({
         target.delete()
 
         every {
-            Files.move(any(), any(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
-        } throws AtomicMoveNotSupportedException("source", "target", "Atomic move not supported")
+            Files.move(
+                any(),
+                any(),
+                StandardCopyOption.REPLACE_EXISTING,
+                StandardCopyOption.ATOMIC_MOVE
+            )
+        } throws AtomicMoveNotSupportedException(
+            "source",
+            "target",
+            "Atomic move not supported"
+        )
 
         every {
             Files.move(any(), any(), StandardCopyOption.REPLACE_EXISTING)
@@ -85,7 +103,10 @@ class AtomicJsonFileTest : StringSpec({
 
         AtomicJsonFile.write(objectMapper, target, mapOf("fallback" to true))
         target.exists() shouldBe true
-        objectMapper.readValue(target, Map::class.java)["fallback"] shouldBe true
+        objectMapper.readValue(
+            target,
+            Map::class.java
+        )["fallback"] shouldBe true
 
         unmockkStatic(Files::class)
         target.delete()
@@ -98,15 +119,28 @@ class AtomicJsonFileTest : StringSpec({
         target.delete()
 
         every {
-            Files.move(any(), any(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
+            Files.move(
+                any(),
+                any(),
+                StandardCopyOption.REPLACE_EXISTING,
+                StandardCopyOption.ATOMIC_MOVE
+            )
         } throws IOException("Move failed")
 
         shouldThrow<IOException> {
-            AtomicJsonFile.write(objectMapper, target, mapOf("should" to "fail"))
+            AtomicJsonFile.write(
+                objectMapper,
+                target,
+                mapOf("should" to "fail")
+            )
         }
 
         val files = target.parentFile?.listFiles() ?: emptyArray()
-        files.any { it.name.startsWith("fail-cleanup.json") && it.name.endsWith(".tmp") } shouldBe false
+        files.any {
+            it.name.startsWith("fail-cleanup.json") && it.name.endsWith(
+                ".tmp"
+            )
+        } shouldBe false
 
         unmockkStatic(Files::class)
         target.delete()

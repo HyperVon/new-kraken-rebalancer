@@ -31,7 +31,11 @@ class PortfolioManagerImpl(
     ) : this(
         configService,
         tradeHistoryService,
-        PortfolioAnalyzer(krakenService, configService, portfolioStatsRepository),
+        PortfolioAnalyzer(
+            krakenService,
+            configService,
+            portfolioStatsRepository
+        ),
         krakenService
     )
 
@@ -68,7 +72,10 @@ class PortfolioManagerImpl(
         while (isRunning) {
             val settings = configService.getConfig().settings
             try {
-                log.info("Starting Rebalance Cycle. DryRun: {}", settings.dryRun)
+                log.info(
+                    "Starting Rebalance Cycle. DryRun: {}",
+                    settings.dryRun
+                )
                 performRebalanceCycle()
             } catch (e: Exception) {
                 log.error("Error in rebalancing cycle", e)
@@ -84,9 +91,18 @@ class PortfolioManagerImpl(
         val balances = fetchBalances()
         val prices = fetchPrices()
         val currentValuesUSD = mutableMapOf<String, BigDecimal>()
-        val totalPortfolioValueUSD = calculatePortfolioValues(balances, prices, currentValuesUSD) ?: return
+        val totalPortfolioValueUSD =
+            calculatePortfolioValues(balances, prices, currentValuesUSD)
+                ?: return
 
-        log.info("Total Portfolio Value: $${totalPortfolioValueUSD.setScale(2, RoundingMode.HALF_UP)}")
+        log.info(
+            "Total Portfolio Value: $${
+                totalPortfolioValueUSD.setScale(
+                    2,
+                    RoundingMode.HALF_UP
+                )
+            }"
+        )
 
         val drawdownPct = updateAthAndCalculateDrawdown(totalPortfolioValueUSD)
         val fiatDeploymentPct = calculateFiatDeployment(drawdownPct)
@@ -105,12 +121,24 @@ class PortfolioManagerImpl(
         val buyOrders = mutableMapOf<String, BigDecimal>()
         val sellOrders = mutableMapOf<String, BigDecimal>()
         analyzeDeviations(
-            totalPortfolioValueUSD, currentValuesUSD, effectiveUsdTarget, cryptoScaleFactor,
-            buyOrders, sellOrders, actionLog
+            totalPortfolioValueUSD,
+            currentValuesUSD,
+            effectiveUsdTarget,
+            cryptoScaleFactor,
+            buyOrders,
+            sellOrders,
+            actionLog
         )
 
         val s = configService.getConfig().settings
-        executeOrders(buyOrders, sellOrders, currentValuesUSD, prices, s, actionLog)
+        executeOrders(
+            buyOrders,
+            sellOrders,
+            currentValuesUSD,
+            prices,
+            s,
+            actionLog
+        )
 
         val snapshot = buildSnapshot(
             balances, prices, currentValuesUSD,
@@ -129,16 +157,30 @@ class PortfolioManagerImpl(
     }
 
     // Delegate to PortfolioAnalyzer for compatibility with existing tests
-    internal suspend fun fetchBalances(): Map<String, Double> = portfolioAnalyzer.fetchBalances()
-    internal suspend fun fetchPrices(): Map<String, BigDecimal> = portfolioAnalyzer.fetchPrices()
-    internal fun resolvePriceFromTicker(symbol: String, rawPrices: Map<String, Double>): BigDecimal =
+    internal suspend fun fetchBalances(): Map<String, Double> =
+        portfolioAnalyzer.fetchBalances()
+
+    internal suspend fun fetchPrices(): Map<String, BigDecimal> =
+        portfolioAnalyzer.fetchPrices()
+
+    internal fun resolvePriceFromTicker(
+        symbol: String,
+        rawPrices: Map<String, Double>
+    ): BigDecimal =
         portfolioAnalyzer.resolvePriceFromTicker(symbol, rawPrices)
+
     internal fun updateAthAndCalculateDrawdown(totalPortfolioValueUSD: BigDecimal): BigDecimal =
         portfolioAnalyzer.updateAthAndCalculateDrawdown(totalPortfolioValueUSD)
+
     internal fun calculateFiatDeployment(drawdownPct: BigDecimal): BigDecimal =
-        portfolioAnalyzer.calculateFiatDeployment(drawdownPct, configService.getConfig().settings)
+        portfolioAnalyzer.calculateFiatDeployment(
+            drawdownPct,
+            configService.getConfig().settings
+        )
+
     internal fun calculateEffectiveUsdTarget(fiatDeploymentPct: BigDecimal): BigDecimal =
         portfolioAnalyzer.calculateEffectiveUsdTarget(fiatDeploymentPct)
+
     internal fun calculateCryptoScaleFactor(effectiveUsdTarget: BigDecimal): BigDecimal =
         portfolioAnalyzer.calculateCryptoScaleFactor(effectiveUsdTarget)
 
@@ -152,8 +194,13 @@ class PortfolioManagerImpl(
         sellOrders: MutableMap<String, BigDecimal>,
         actionLog: MutableList<String>
     ) = orderExecutor.analyzeDeviations(
-        totalPortfolioValueUSD, currentValuesUSD, effectiveUsdTarget, cryptoScaleFactor,
-        buyOrders, sellOrders, actionLog
+        totalPortfolioValueUSD,
+        currentValuesUSD,
+        effectiveUsdTarget,
+        cryptoScaleFactor,
+        buyOrders,
+        sellOrders,
+        actionLog
     )
 
     internal suspend fun executeOrders(
@@ -163,7 +210,14 @@ class PortfolioManagerImpl(
         prices: Map<String, BigDecimal>,
         s: Settings,
         actionLog: MutableList<String>
-    ) = orderExecutor.executeOrders(buyOrders, sellOrders, currentValuesUSD, prices, s, actionLog)
+    ) = orderExecutor.executeOrders(
+        buyOrders,
+        sellOrders,
+        currentValuesUSD,
+        prices,
+        s,
+        actionLog
+    )
 
     internal fun distributeFiatCorrection(
         usdDev: BigDecimal,
@@ -171,7 +225,13 @@ class PortfolioManagerImpl(
         buyOrders: MutableMap<String, BigDecimal>,
         sellOrders: MutableMap<String, BigDecimal>,
         actionLog: MutableList<String>
-    ) = orderExecutor.distributeFiatCorrection(usdDev, allDevs, buyOrders, sellOrders, actionLog)
+    ) = orderExecutor.distributeFiatCorrection(
+        usdDev,
+        allDevs,
+        buyOrders,
+        sellOrders,
+        actionLog
+    )
 
     private fun buildSnapshot(
         balances: Map<String, Double>,
@@ -184,17 +244,24 @@ class PortfolioManagerImpl(
         fiatDeploymentPct: BigDecimal,
         actionLog: List<String>
     ): PortfolioSnapshot {
-        val assetSnapshots = mutableMapOf<String, PortfolioSnapshot.AssetSnapshot>()
+        val assetSnapshots =
+            mutableMapOf<String, PortfolioSnapshot.AssetSnapshot>()
 
         for (a in configService.getConfig().allocations) {
             val symbol = a.symbol
-            val balance = BigDecimal.valueOf(portfolioAnalyzer.resolveBalance(symbol, balances))
+            val balance = BigDecimal.valueOf(
+                portfolioAnalyzer.resolveBalance(
+                    symbol,
+                    balances
+                )
+            )
             val valUSD = currentValuesUSD[symbol] ?: BigDecimal.ZERO
-            val price = if (!symbol.equals(KrakenSymbols.USD, ignoreCase = true)) {
-                prices[symbol] ?: BigDecimal.ONE
-            } else {
-                BigDecimal.ONE
-            }
+            val price =
+                if (!symbol.equals(KrakenSymbols.USD, ignoreCase = true)) {
+                    prices[symbol] ?: BigDecimal.ONE
+                } else {
+                    BigDecimal.ONE
+                }
 
             val baseTargetPct = BigDecimal.valueOf(a.targetPercent)
             var snapshotTargetPct = baseTargetPct
@@ -209,7 +276,11 @@ class PortfolioManagerImpl(
 
             var currentPct = BigDecimal.ZERO
             if (totalPortfolioValueUSD > BigDecimal.ZERO) {
-                currentPct = valUSD.divide(totalPortfolioValueUSD, 4, RoundingMode.HALF_UP)
+                currentPct = valUSD.divide(
+                    totalPortfolioValueUSD,
+                    4,
+                    RoundingMode.HALF_UP
+                )
                     .multiply(BigDecimal.valueOf(100))
             }
 
@@ -224,7 +295,14 @@ class PortfolioManagerImpl(
             }
 
             assetSnapshots[symbol] = PortfolioSnapshot.AssetSnapshot(
-                symbol, balance, price, valUSD, snapshotTargetPct, currentPct, devPct, deviationUSD
+                symbol,
+                balance,
+                price,
+                valUSD,
+                snapshotTargetPct,
+                currentPct,
+                devPct,
+                deviationUSD
             )
         }
 
@@ -243,9 +321,16 @@ class PortfolioManagerImpl(
         balances: Map<String, Double>,
         prices: Map<String, BigDecimal>,
         currentValuesUSD: MutableMap<String, BigDecimal>
-    ): BigDecimal? = portfolioAnalyzer.calculatePortfolioValues(balances, prices, currentValuesUSD)
+    ): BigDecimal? = portfolioAnalyzer.calculatePortfolioValues(
+        balances,
+        prices,
+        currentValuesUSD
+    )
 
-    private fun resolveBalance(symbol: String, balances: Map<String, Double>): Double =
+    private fun resolveBalance(
+        symbol: String,
+        balances: Map<String, Double>
+    ): Double =
         portfolioAnalyzer.resolveBalance(symbol, balances)
 
     private fun logOrderResult(
@@ -255,5 +340,12 @@ class PortfolioManagerImpl(
         volume: BigDecimal,
         usdAmount: BigDecimal,
         side: String
-    ) = orderExecutor.logOrderResult(result, actionLog, symbol, volume, usdAmount, side)
+    ) = orderExecutor.logOrderResult(
+        result,
+        actionLog,
+        symbol,
+        volume,
+        usdAmount,
+        side
+    )
 }

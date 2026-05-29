@@ -27,34 +27,43 @@ class PortfolioManagerDrawdownTest : StringSpec() {
     private val krakenService = FakeKrakenService()
     private val configService = mockk<ConfigService>(relaxed = true)
     private val tradeHistoryService = mockk<TradeHistoryService>(relaxed = true)
-    private val portfolioStatsRepository = mockk<PortfolioStatsRepository>(relaxed = true)
+    private val portfolioStatsRepository =
+        mockk<PortfolioStatsRepository>(relaxed = true)
     private lateinit var portfolioManager: PortfolioManagerImpl
 
     init {
         beforeTest {
-            portfolioManager = PortfolioManagerImpl(krakenService, configService, tradeHistoryService, portfolioStatsRepository)
-            
+            portfolioManager = PortfolioManagerImpl(
+                krakenService,
+                configService,
+                tradeHistoryService,
+                portfolioStatsRepository
+            )
+
             val settings = Settings(60L, 2.0, 1.0, false, 50.0, 1.0)
-            val appConfig = AppConfig(KrakenCredentials("k", "s"), settings, emptyList())
+            val appConfig =
+                AppConfig(KrakenCredentials("k", "s"), settings, emptyList())
             every { configService.getConfig() } returns appConfig
         }
 
         "testDrawdownAndFiatDeployment" {
             runTest {
-                every { portfolioStatsRepository.load() } returns PortfolioStats(BigDecimal("2000.0"))
+                every { portfolioStatsRepository.load() } returns PortfolioStats(
+                    BigDecimal("2000.0")
+                )
 
                 val allocs = listOf(
                     Allocation("A", 50.0),
                     Allocation(KrakenSymbols.USD, 50.0)
                 )
-                
+
                 val appConfig = AppConfig(
                     KrakenCredentials("k", "s"),
-                    Settings(60L, 2.0, 1.0, false, 50.0, 1.0), 
+                    Settings(60L, 2.0, 1.0, false, 50.0, 1.0),
                     allocs
                 )
                 every { configService.getConfig() } returns appConfig
-                
+
                 val prices = mapOf("AUSD" to 100.0)
                 krakenService.pricesSupplier = { prices }
 
@@ -71,7 +80,8 @@ class PortfolioManagerDrawdownTest : StringSpec() {
                 order.pair shouldBe "AUSD"
                 order.type shouldBe "market"
                 order.side shouldBe "buy"
-                (order.volume.subtract(BigDecimal.valueOf(3.75)).abs() < BigDecimal("0.01")).shouldBeTrue()
+                (order.volume.subtract(BigDecimal.valueOf(3.75))
+                    .abs() < BigDecimal("0.01")).shouldBeTrue()
 
                 val captor = slot<PortfolioSnapshot>()
                 verify { tradeHistoryService.addSnapshot(capture(captor)) }
@@ -89,10 +99,10 @@ class PortfolioManagerDrawdownTest : StringSpec() {
                 every { portfolioStatsRepository.load() } returns stats
 
                 val allocs = listOf(Allocation(KrakenSymbols.USD, 100.0))
-                
+
                 val appConfig = AppConfig(
                     KrakenCredentials("k", "s"),
-                    Settings(60L, 2.0, 1.0, false, 50.0, 1.0), 
+                    Settings(60L, 2.0, 1.0, false, 50.0, 1.0),
                     allocs
                 )
                 every { configService.getConfig() } returns appConfig

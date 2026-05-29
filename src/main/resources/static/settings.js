@@ -3,13 +3,13 @@ function updateAllocationTotal() {
     const total = targets.reduce((sum, val) => sum + val, 0.0);
     const totalDisplay = document.getElementById('total-allocated-display');
     totalDisplay.textContent = 'Total: ' + total.toFixed(2) + '%';
-    
+
     const saveButton = document.getElementById('save-button');
     const isValid = Math.abs(total - 100.0) <= 0.01;
-    
+
     const symbols = Array.from(document.querySelectorAll('input[name="symbols"]')).map(input => input.value.toUpperCase());
     const hasUsd = symbols.includes('USD');
-    
+
     if (isValid && hasUsd) {
         totalDisplay.className = 'status-badge live';
         saveButton.removeAttribute('disabled');
@@ -23,17 +23,17 @@ function addAssetRow() {
     const symbolInput = document.getElementById('new-symbol-input');
     const symbol = symbolInput.value.trim().toUpperCase();
     if (!symbol) return;
-    
+
     const existingSymbols = Array.from(document.querySelectorAll('input[name="symbols"]')).map(input => input.value.toUpperCase());
     if (existingSymbols.includes(symbol)) {
         alert('Symbol already exists');
         return;
     }
-    
+
     const container = document.getElementById('allocations-container');
     const row = document.createElement('div');
     row.className = 'allocation-edit-row';
-    
+
     row.innerHTML = `
         <div class="allocation-edit-symbol symbol-label">${symbol}</div>
         <input type="hidden" name="symbols" value="${symbol}">
@@ -43,7 +43,7 @@ function addAssetRow() {
         </div>
         <button type="button" class="btn btn-danger" onclick="this.closest('.allocation-edit-row').remove(); updateAllocationTotal();">Remove</button>
     `;
-    
+
     container.appendChild(row);
     symbolInput.value = '';
     updateAllocationTotal();

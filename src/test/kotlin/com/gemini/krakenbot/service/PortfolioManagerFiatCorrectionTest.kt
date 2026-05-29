@@ -37,45 +37,78 @@ class PortfolioManagerFiatCorrectionTest : StringSpec() {
         )
         every { configService.getConfig() } returns config
 
-        return PortfolioManagerImpl(FakeKrakenService(), configService, tradeHistoryService, repo)
+        return PortfolioManagerImpl(
+            FakeKrakenService(),
+            configService,
+            tradeHistoryService,
+            repo
+        )
     }
 
     init {
         "testDistributeFiatCorrection_Deposit_OnlyBuysUnderweight" {
-            val portfolioManager = makePortfolioManager(Allocation("A", 50.0), Allocation("B", 50.0))
+            val portfolioManager = makePortfolioManager(
+                Allocation("A", 50.0),
+                Allocation("B", 50.0)
+            )
 
             val usdDev = BigDecimal.valueOf(100.0)
             // A is overweight (+10), B is underweight (-10) → only B should receive a buy
-            val allDevs = mapOf("A" to BigDecimal.valueOf(10.0), "B" to BigDecimal.valueOf(-10.0))
+            val allDevs = mapOf(
+                "A" to BigDecimal.valueOf(10.0),
+                "B" to BigDecimal.valueOf(-10.0)
+            )
             val buyOrders = mutableMapOf<String, BigDecimal>()
             val sellOrders = mutableMapOf<String, BigDecimal>()
 
-            portfolioManager.distributeFiatCorrection(usdDev, allDevs, buyOrders, sellOrders, mutableListOf())
+            portfolioManager.distributeFiatCorrection(
+                usdDev,
+                allDevs,
+                buyOrders,
+                sellOrders,
+                mutableListOf()
+            )
 
             buyOrders.containsKey("B").shouldBeTrue()
-            buyOrders.getOrDefault("A", BigDecimal.ZERO).compareTo(BigDecimal.ZERO) shouldBe 0
+            buyOrders.getOrDefault("A", BigDecimal.ZERO)
+                .compareTo(BigDecimal.ZERO) shouldBe 0
             sellOrders.isEmpty().shouldBeTrue()
         }
 
         "testDistributeFiatCorrection_Withdrawal_OnlySellsOverweight" {
-            val portfolioManager = makePortfolioManager(Allocation("A", 50.0), Allocation("B", 50.0))
+            val portfolioManager = makePortfolioManager(
+                Allocation("A", 50.0),
+                Allocation("B", 50.0)
+            )
 
             val usdDev = BigDecimal.valueOf(-100.0)
             // A is overweight (+10), B is underweight (-10) → only A should receive a sell
-            val allDevs = mapOf("A" to BigDecimal.valueOf(10.0), "B" to BigDecimal.valueOf(-10.0))
+            val allDevs = mapOf(
+                "A" to BigDecimal.valueOf(10.0),
+                "B" to BigDecimal.valueOf(-10.0)
+            )
             val buyOrders = mutableMapOf<String, BigDecimal>()
             val sellOrders = mutableMapOf<String, BigDecimal>()
 
-            portfolioManager.distributeFiatCorrection(usdDev, allDevs, buyOrders, sellOrders, mutableListOf())
+            portfolioManager.distributeFiatCorrection(
+                usdDev,
+                allDevs,
+                buyOrders,
+                sellOrders,
+                mutableListOf()
+            )
 
             sellOrders.containsKey("A").shouldBeTrue()
-            sellOrders.getOrDefault("B", BigDecimal.ZERO).compareTo(BigDecimal.ZERO) shouldBe 0
+            sellOrders.getOrDefault("B", BigDecimal.ZERO)
+                .compareTo(BigDecimal.ZERO) shouldBe 0
             buyOrders.isEmpty().shouldBeTrue()
         }
 
         "testDistributeFiatCorrection_ProportionalDistribution" {
             val portfolioManager = makePortfolioManager(
-                Allocation("A", 30.0), Allocation("B", 30.0), Allocation("C", 40.0)
+                Allocation("A", 30.0),
+                Allocation("B", 30.0),
+                Allocation("C", 40.0)
             )
 
             val usdDev = BigDecimal.valueOf(100.0)
@@ -90,11 +123,20 @@ class PortfolioManagerFiatCorrectionTest : StringSpec() {
             val buyOrders = mutableMapOf<String, BigDecimal>()
             val sellOrders = mutableMapOf<String, BigDecimal>()
 
-            portfolioManager.distributeFiatCorrection(usdDev, allDevs, buyOrders, sellOrders, mutableListOf())
+            portfolioManager.distributeFiatCorrection(
+                usdDev,
+                allDevs,
+                buyOrders,
+                sellOrders,
+                mutableListOf()
+            )
 
-            (buyOrders.getOrDefault("A", BigDecimal.ZERO).compareTo(BigDecimal.valueOf(80.0))) shouldBe 0
-            (buyOrders.getOrDefault("B", BigDecimal.ZERO).compareTo(BigDecimal.valueOf(20.0))) shouldBe 0
-            buyOrders.getOrDefault("C", BigDecimal.ZERO).compareTo(BigDecimal.ZERO) shouldBe 0
+            (buyOrders.getOrDefault("A", BigDecimal.ZERO)
+                .compareTo(BigDecimal.valueOf(80.0))) shouldBe 0
+            (buyOrders.getOrDefault("B", BigDecimal.ZERO)
+                .compareTo(BigDecimal.valueOf(20.0))) shouldBe 0
+            buyOrders.getOrDefault("C", BigDecimal.ZERO)
+                .compareTo(BigDecimal.ZERO) shouldBe 0
         }
     }
 }

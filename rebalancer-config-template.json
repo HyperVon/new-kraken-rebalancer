@@ -1,28 +1,28 @@
 {
-    "kraken": {
-        "apiKey": "YOUR_KRAKEN_API_KEY",
-        "privateKey": "YOUR_KRAKEN_PRIVATE_KEY"
+  "kraken": {
+    "apiKey": "YOUR_KRAKEN_API_KEY",
+    "privateKey": "YOUR_KRAKEN_PRIVATE_KEY"
+  },
+  "settings": {
+    "loopDelaySeconds": 60,
+    "deviationTriggerPercent": 5.0,
+    "dustThresholdUSD": 5.0,
+    "dryRun": true,
+    "fiatMaxDrawdown": 30.0,
+    "fiatDeploymentExponent": 1.0
+  },
+  "allocations": [
+    {
+      "symbol": "BTC",
+      "targetPercent": 50
     },
-    "settings": {
-        "loopDelaySeconds": 60,
-        "deviationTriggerPercent": 5.0,
-        "dustThresholdUSD": 5.0,
-        "dryRun": true,
-        "fiatMaxDrawdown": 30.0,
-        "fiatDeploymentExponent": 1.0
+    {
+      "symbol": "ETH",
+      "targetPercent": 45
     },
-    "allocations": [
-        {
-            "symbol": "BTC",
-            "targetPercent": 50
-        },
-        {
-            "symbol": "ETH",
-            "targetPercent": 45
-        },
-        {
-            "symbol": "USD",
-            "targetPercent": 5
-        }
-    ]
+    {
+      "symbol": "USD",
+      "targetPercent": 5
+    }
+  ]
 }

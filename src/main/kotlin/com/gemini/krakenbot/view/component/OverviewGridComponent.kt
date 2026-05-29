@@ -1,13 +1,15 @@
 package com.gemini.krakenbot.view.component
 
 import com.gemini.krakenbot.model.PortfolioSnapshot
+import com.gemini.krakenbot.util.KrakenSymbols
 import com.gemini.krakenbot.view.util.CssClasses
 import com.gemini.krakenbot.view.util.Formatter
 import com.gemini.krakenbot.view.util.Icons
 import com.gemini.krakenbot.view.util.Layouts.statusCard
 import com.gemini.krakenbot.view.util.ViewText
-import com.gemini.krakenbot.util.KrakenSymbols
-import kotlinx.html.*
+import kotlinx.html.DIV
+import kotlinx.html.div
+import kotlinx.html.span
 import java.math.BigDecimal
 import kotlin.math.abs
 
@@ -18,9 +20,11 @@ class OverviewGridComponent {
         val usdValue = usdAsset?.valueUSD ?: BigDecimal.ZERO
         val cryptoValue = totalValue - usdValue
 
-        val assetsList = latest.assets.values.filter { it.symbol != KrakenSymbols.USD }
+        val assetsList =
+            latest.assets.values.filter { it.symbol != KrakenSymbols.USD }
         val cryptoPercent = assetsList.sumOf { it.currentPercent.toDouble() }
-        val cryptoTargetPercent = assetsList.sumOf { it.targetPercent.toDouble() }
+        val cryptoTargetPercent =
+            assetsList.sumOf { it.targetPercent.toDouble() }
         val cryptoCount = assetsList.size
 
         div(CssClasses.OVERVIEW_GRID) {
@@ -33,7 +37,11 @@ class OverviewGridComponent {
                 val isDrawdown = drawdown.signum() > 0
                 val colorClass = if (isDrawdown) CssClasses.TEXT_DANGER else ""
                 span(colorClass) {
-                    +"${ViewText.DRAWDOWN_PREFIX}${Formatter.formatPercent(drawdown)}%"
+                    +"${ViewText.DRAWDOWN_PREFIX}${
+                        Formatter.formatPercent(
+                            drawdown
+                        )
+                    }%"
                 }
             }
 
@@ -52,13 +60,25 @@ class OverviewGridComponent {
                     val devSign = Formatter.getDeviationSign(dev)
 
                     span {
-                        +"${Formatter.formatPercent(currentPct)}% | ${ViewText.TARGET_PREFIX}${Formatter.formatPercent(targetPct)}%"
+                        +"${Formatter.formatPercent(currentPct)}% | ${ViewText.TARGET_PREFIX}${
+                            Formatter.formatPercent(
+                                targetPct
+                            )
+                        }%"
                         if (abs(targetPct.toDouble() - baseTargetPct.toDouble()) > 0.01) {
-                            +" (${ViewText.BASE_PREFIX}${Formatter.formatPercent(baseTargetPct)}%)"
+                            +" (${ViewText.BASE_PREFIX}${
+                                Formatter.formatPercent(
+                                    baseTargetPct
+                                )
+                            }%)"
                         }
                         +" | "
                         span(devClass) {
-                            +"${ViewText.DEV_PREFIX}$devSign${Formatter.formatPercent(dev)}%"
+                            +"${ViewText.DEV_PREFIX}$devSign${
+                                Formatter.formatPercent(
+                                    dev
+                                )
+                            }%"
                         }
                     }
                 } else {
@@ -72,7 +92,11 @@ class OverviewGridComponent {
                 value = "$${Formatter.formatCurrency(cryptoValue)}"
             ) {
                 span {
-                    +"${Formatter.formatPercent(cryptoPercent)}% | ${ViewText.TARGET_PREFIX}${Formatter.formatPercent(cryptoTargetPercent)}% | $cryptoCount${ViewText.ASSETS_SUFFIX}"
+                    +"${Formatter.formatPercent(cryptoPercent)}% | ${ViewText.TARGET_PREFIX}${
+                        Formatter.formatPercent(
+                            cryptoTargetPercent
+                        )
+                    }% | $cryptoCount${ViewText.ASSETS_SUFFIX}"
                 }
             }
         }

@@ -11,10 +11,10 @@ import io.kotest.matchers.shouldBe
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
-import java.math.BigDecimal
-import java.time.Instant
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.yield
+import java.math.BigDecimal
+import java.time.Instant
 
 class TradeHistoryServiceTest : StringSpec() {
 
@@ -25,7 +25,15 @@ class TradeHistoryServiceTest : StringSpec() {
         "init_LoadsHistoryFromRepository" {
             val repository = mockk<TradeRepository>(relaxed = true)
             val tradeHistoryService = TradeHistoryServiceImpl(repository)
-            val snapshot = PortfolioSnapshot(Instant.now(), BigDecimal.ZERO, emptyMap(), emptyList(), BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO)
+            val snapshot = PortfolioSnapshot(
+                Instant.now(),
+                BigDecimal.ZERO,
+                emptyMap(),
+                emptyList(),
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO
+            )
             every { repository.load() } returns listOf(snapshot)
             tradeHistoryService.init()
             tradeHistoryService.getHistory().size shouldBe 1
@@ -35,8 +43,24 @@ class TradeHistoryServiceTest : StringSpec() {
         "addSnapshot_AddsToFrontAndSaves" {
             val repository = mockk<TradeRepository>(relaxed = true)
             val tradeHistoryService = TradeHistoryServiceImpl(repository)
-            val s1 = PortfolioSnapshot(Instant.now(), BigDecimal.ZERO, emptyMap(), emptyList(), BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO)
-            val s2 = PortfolioSnapshot(Instant.now(), BigDecimal.ZERO, emptyMap(), emptyList(), BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO)
+            val s1 = PortfolioSnapshot(
+                Instant.now(),
+                BigDecimal.ZERO,
+                emptyMap(),
+                emptyList(),
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO
+            )
+            val s2 = PortfolioSnapshot(
+                Instant.now(),
+                BigDecimal.ZERO,
+                emptyMap(),
+                emptyList(),
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO
+            )
             tradeHistoryService.addSnapshot(s1)
             tradeHistoryService.addSnapshot(s2)
             tradeHistoryService.getHistory().size shouldBe 2
@@ -48,7 +72,17 @@ class TradeHistoryServiceTest : StringSpec() {
             val repository = mockk<TradeRepository>(relaxed = true)
             val tradeHistoryService = TradeHistoryServiceImpl(repository)
             for (i in 0 until 60) {
-                tradeHistoryService.addSnapshot(PortfolioSnapshot(Instant.now(), BigDecimal.ZERO, emptyMap(), emptyList(), BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO))
+                tradeHistoryService.addSnapshot(
+                    PortfolioSnapshot(
+                        Instant.now(),
+                        BigDecimal.ZERO,
+                        emptyMap(),
+                        emptyList(),
+                        BigDecimal.ZERO,
+                        BigDecimal.ZERO,
+                        BigDecimal.ZERO
+                    )
+                )
             }
             tradeHistoryService.getHistory().size shouldBe 50
             verify(atLeast = 1) { repository.save(any()) }
@@ -67,23 +101,31 @@ class TradeHistoryServiceTest : StringSpec() {
                 val repository = mockk<TradeRepository>(relaxed = true)
                 val tradeHistoryService = TradeHistoryServiceImpl(repository)
                 val snapshots = mutableListOf<PortfolioSnapshot>()
-                
+
                 val job = launch {
                     tradeHistoryService.getHistoryFlow().collect {
                         snapshots.add(it)
                     }
                 }
-                
+
                 yield()
-                
-                val s1 = PortfolioSnapshot(Instant.now(), BigDecimal.ZERO, emptyMap(), emptyList(), BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO)
+
+                val s1 = PortfolioSnapshot(
+                    Instant.now(),
+                    BigDecimal.ZERO,
+                    emptyMap(),
+                    emptyList(),
+                    BigDecimal.ZERO,
+                    BigDecimal.ZERO,
+                    BigDecimal.ZERO
+                )
                 tradeHistoryService.addSnapshot(s1)
-                
+
                 yield()
-                
+
                 snapshots.size shouldBe 1
                 snapshots.first() shouldBe s1
-                
+
                 job.cancel()
             }
         }

@@ -53,15 +53,19 @@ class ConfigServiceImpl(
             settings.loopDelaySeconds <= 0 -> {
                 throw InvalidConfigurationException("Loop delay must be a positive integer.")
             }
+
             settings.deviationTriggerPercent < 0 -> {
                 throw InvalidConfigurationException("Deviation trigger percent must be non-negative.")
             }
+
             settings.dustThresholdUSD < 0 -> {
                 throw InvalidConfigurationException("Dust threshold USD must be non-negative.")
             }
+
             settings.fiatMaxDrawdown !in 0.0..100.0 -> {
                 throw InvalidConfigurationException("Fiat max drawdown must be between 0% and 100%.")
             }
+
             settings.fiatDeploymentExponent <= 0 -> {
                 throw InvalidConfigurationException("Fiat deployment exponent must be positive.")
             }
@@ -72,10 +76,15 @@ class ConfigServiceImpl(
         }
 
         val symbols = config.allocations.map { it.symbol.uppercase() }
-        val duplicateSymbols = symbols.groupingBy { it }.eachCount().filter { it.value > 1 }.keys
+        val duplicateSymbols =
+            symbols.groupingBy { it }.eachCount().filter { it.value > 1 }.keys
         if (duplicateSymbols.isNotEmpty()) {
             throw InvalidConfigurationException(
-                "Duplicate allocation symbols are not allowed: ${duplicateSymbols.joinToString(", ")}"
+                "Duplicate allocation symbols are not allowed: ${
+                    duplicateSymbols.joinToString(
+                        ", "
+                    )
+                }"
             )
         }
 
@@ -98,7 +107,12 @@ class ConfigServiceImpl(
             )
         }
 
-        val hasUsd = config.allocations.any { KrakenSymbols.USD.equals(it.symbol, ignoreCase = true) }
+        val hasUsd = config.allocations.any {
+            KrakenSymbols.USD.equals(
+                it.symbol,
+                ignoreCase = true
+            )
+        }
         if (!hasUsd) {
             throw InvalidConfigurationException("One asset must be USD.")
         }

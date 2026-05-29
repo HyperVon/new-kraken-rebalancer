@@ -23,13 +23,21 @@ class PortfolioManagerZeroAllocationTest : StringSpec() {
     private val krakenService = FakeKrakenService()
     private val configService = mockk<ConfigService>(relaxed = true)
     private val tradeHistoryService = mockk<TradeHistoryService>(relaxed = true)
-    private val portfolioStatsRepository = mockk<PortfolioStatsRepository>(relaxed = true)
+    private val portfolioStatsRepository =
+        mockk<PortfolioStatsRepository>(relaxed = true)
     private lateinit var portfolioManager: PortfolioManagerImpl
 
     init {
         beforeTest {
-            every { portfolioStatsRepository.load() } returns PortfolioStats(BigDecimal.ZERO)
-            portfolioManager = PortfolioManagerImpl(krakenService, configService, tradeHistoryService, portfolioStatsRepository)
+            every { portfolioStatsRepository.load() } returns PortfolioStats(
+                BigDecimal.ZERO
+            )
+            portfolioManager = PortfolioManagerImpl(
+                krakenService,
+                configService,
+                tradeHistoryService,
+                portfolioStatsRepository
+            )
         }
 
         "testZeroAllocationToOtherAssetRebalance" {
@@ -66,7 +74,7 @@ class PortfolioManagerZeroAllocationTest : StringSpec() {
 
                 portfolioManager.performRebalanceCycle()
 
-                krakenService.executedOrders.any { 
+                krakenService.executedOrders.any {
                     it.pair == "AUSD" && it.type == "market" && it.side == "sell"
                 } shouldBe true
             }

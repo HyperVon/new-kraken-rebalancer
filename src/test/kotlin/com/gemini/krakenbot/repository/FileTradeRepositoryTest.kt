@@ -29,7 +29,8 @@ class FileTradeRepositoryTest : StringSpec({
         objectMapper = jacksonObjectMapper()
         objectMapper.findAndRegisterModules()
         repository = FileTradeRepositoryImpl(objectMapper)
-        val field = FileTradeRepositoryImpl::class.java.getDeclaredField("filePath")
+        val field =
+            FileTradeRepositoryImpl::class.java.getDeclaredField("filePath")
         field.isAccessible = true
         field.set(repository, testFileName)
     }
@@ -77,7 +78,12 @@ class FileTradeRepositoryTest : StringSpec({
 
     "testSaveError" {
         val mockMapper = mockk<ObjectMapper>(relaxed = true)
-        every { mockMapper.writeValue(any<File>(), any<Any>()) } throws IOException("Write failed")
+        every {
+            mockMapper.writeValue(
+                any<File>(),
+                any<Any>()
+            )
+        } throws IOException("Write failed")
         val repo = FileTradeRepositoryImpl(mockMapper)
         shouldThrow<IOException> { repo.save(emptyList()) }
     }

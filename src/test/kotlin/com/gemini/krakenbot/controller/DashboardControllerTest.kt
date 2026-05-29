@@ -2,6 +2,7 @@ package com.gemini.krakenbot.controller
 
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.config.*
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.service.ConfigService
@@ -16,33 +17,33 @@ import com.gemini.krakenbot.view.util.ViewText
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
+import io.ktor.client.plugins.sse.*
 import io.ktor.client.request.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
 import io.ktor.server.application.*
 import io.ktor.server.testing.*
-import io.ktor.client.plugins.sse.*
-import kotlinx.coroutines.flow.take
-import kotlinx.coroutines.flow.toList
 import io.mockk.every
 import io.mockk.mockk
-import io.mockk.verify
 import io.mockk.slot
+import io.mockk.verify
+import kotlinx.coroutines.flow.take
+import kotlinx.coroutines.flow.toList
 import org.koin.core.context.startKoin
 import org.koin.core.context.stopKoin
 import org.koin.dsl.module
-import com.gemini.krakenbot.TestFixtures
-
 import java.math.BigDecimal
 import java.time.Instant
 
 class DashboardControllerTest : StringSpec() {
 
-    override fun isolationMode() = io.kotest.core.spec.IsolationMode.InstancePerTest
+    override fun isolationMode() =
+        io.kotest.core.spec.IsolationMode.InstancePerTest
 
     private val tradeHistoryService = mockk<TradeHistoryService>(relaxed = true)
     private val configService = mockk<ConfigService>(relaxed = true)
-    private val objectMapper = jacksonObjectMapper().registerModule(JavaTimeModule())
+    private val objectMapper =
+        jacksonObjectMapper().registerModule(JavaTimeModule())
 
     private fun Application.configureTestEnv() {
         install(io.ktor.server.sse.SSE)
@@ -108,9 +109,36 @@ class DashboardControllerTest : StringSpec() {
                 nowTime,
                 BigDecimal("15000.00"),
                 mapOf(
-                    KrakenSymbols.USD to PortfolioSnapshot.AssetSnapshot(KrakenSymbols.USD, BigDecimal("5000.0"), BigDecimal("1.0"), BigDecimal("5000.0"), BigDecimal("33.33"), BigDecimal("33.33"), BigDecimal("0.0"), BigDecimal("0.0")),
-                    KrakenSymbols.BTC to PortfolioSnapshot.AssetSnapshot(KrakenSymbols.BTC, BigDecimal("0.1"), BigDecimal("50000.0"), BigDecimal("5000.0"), BigDecimal("33.33"), BigDecimal("33.33"), BigDecimal("5.0"), BigDecimal("250.0")),
-                    KrakenSymbols.ETH to PortfolioSnapshot.AssetSnapshot(KrakenSymbols.ETH, BigDecimal("2.5"), BigDecimal("2000.0"), BigDecimal("5000.0"), BigDecimal("33.33"), BigDecimal("33.33"), BigDecimal("-2.0"), BigDecimal("-100.0"))
+                    KrakenSymbols.USD to PortfolioSnapshot.AssetSnapshot(
+                        KrakenSymbols.USD,
+                        BigDecimal("5000.0"),
+                        BigDecimal("1.0"),
+                        BigDecimal("5000.0"),
+                        BigDecimal("33.33"),
+                        BigDecimal("33.33"),
+                        BigDecimal("0.0"),
+                        BigDecimal("0.0")
+                    ),
+                    KrakenSymbols.BTC to PortfolioSnapshot.AssetSnapshot(
+                        KrakenSymbols.BTC,
+                        BigDecimal("0.1"),
+                        BigDecimal("50000.0"),
+                        BigDecimal("5000.0"),
+                        BigDecimal("33.33"),
+                        BigDecimal("33.33"),
+                        BigDecimal("5.0"),
+                        BigDecimal("250.0")
+                    ),
+                    KrakenSymbols.ETH to PortfolioSnapshot.AssetSnapshot(
+                        KrakenSymbols.ETH,
+                        BigDecimal("2.5"),
+                        BigDecimal("2000.0"),
+                        BigDecimal("5000.0"),
+                        BigDecimal("33.33"),
+                        BigDecimal("33.33"),
+                        BigDecimal("-2.0"),
+                        BigDecimal("-100.0")
+                    )
                 ),
                 listOf("BUY BTC 0.1"),
                 BigDecimal.ZERO,
@@ -127,19 +155,19 @@ class DashboardControllerTest : StringSpec() {
                 val response = client.get(Routes.FRAGMENT_DASHBOARD)
                 response.status shouldBe HttpStatusCode.OK
                 response.headers[HttpHeaders.ContentType] shouldContain "text/html"
-                
+
                 val body = response.bodyAsText()
                 body shouldContain ViewText.TOTAL_PORTFOLIO
                 body shouldContain ViewText.CASH_USD
                 body shouldContain ViewText.CRYPTO_ASSETS
                 body shouldContain "BUY BTC 0.1"
-                
+
                 // Verify epoch data-attribute exists and matches
                 body shouldContain "data-epoch=\"${nowTime.toEpochMilli()}\""
-                
+
                 // Verify default sort UI indicator
                 body shouldContain "class=\"sortable asc\" onclick=\"sortTable(this, 5)\">Dev %"
-                
+
                 // Verify that default sorting (Dev % ASC) sorts the crypto assets properly (ETH before BTC)
                 val ethIdx = body.indexOf("symbol-col\">ETH")
                 val btcIdx = body.indexOf("symbol-col\">BTC")
@@ -171,7 +199,10 @@ class DashboardControllerTest : StringSpec() {
 
         "postSettings_SucceedsAndSetsHxRedirectHeader" {
             val serverConfig = AppConfig(
-                KrakenCredentials(TestFixtures.TEST_SERVER_API_KEY, TestFixtures.TEST_SERVER_API_SECRET),
+                KrakenCredentials(
+                    TestFixtures.TEST_SERVER_API_KEY,
+                    TestFixtures.TEST_SERVER_API_SECRET
+                ),
                 Settings(60L, 2.0, 1.0, true, 0.0, 1.0),
                 listOf(Allocation(KrakenSymbols.USD, 100.0))
             )
@@ -194,7 +225,10 @@ class DashboardControllerTest : StringSpec() {
                             FormFields.TARGETS to listOf("100.0")
                         ).formUrlEncode()
                     )
-                    header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
+                    header(
+                        HttpHeaders.ContentType,
+                        ContentType.Application.FormUrlEncoded.toString()
+                    )
                 }
                 response.status shouldBe HttpStatusCode.OK
                 response.headers[HtmxHeaders.HX_REDIRECT] shouldBe Routes.ROOT
@@ -205,12 +239,17 @@ class DashboardControllerTest : StringSpec() {
 
         "postSettings_OnValidationError_ReturnsErrorHtmlBody" {
             val serverConfig = AppConfig(
-                KrakenCredentials(TestFixtures.TEST_SERVER_API_KEY, TestFixtures.TEST_SERVER_API_SECRET),
+                KrakenCredentials(
+                    TestFixtures.TEST_SERVER_API_KEY,
+                    TestFixtures.TEST_SERVER_API_SECRET
+                ),
                 Settings(60L, 2.0, 1.0, true, 0.0, 1.0),
                 listOf(Allocation(KrakenSymbols.USD, 100.0))
             )
             every { configService.getConfig() } returns serverConfig
-            every { configService.updateConfig(any()) } throws InvalidConfigurationException("Total allocation percentage must be exactly 100%.")
+            every { configService.updateConfig(any()) } throws InvalidConfigurationException(
+                "Total allocation percentage must be exactly 100%."
+            )
 
             testApplication {
                 application {
@@ -226,7 +265,10 @@ class DashboardControllerTest : StringSpec() {
                             FormFields.TARGETS to listOf("90.0") // sum != 100
                         ).formUrlEncode()
                     )
-                    header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
+                    header(
+                        HttpHeaders.ContentType,
+                        ContentType.Application.FormUrlEncoded.toString()
+                    )
                 }
                 response.status shouldBe HttpStatusCode.OK
                 response.bodyAsText() shouldContain "Total allocation percentage must be exactly 100%."
@@ -268,13 +310,18 @@ class DashboardControllerTest : StringSpec() {
 
         "postSettings_WithMissingOrInvalidParams_UsesDefaultsAndHandlesValidation" {
             val serverConfig = AppConfig(
-                KrakenCredentials(TestFixtures.TEST_SERVER_API_KEY, TestFixtures.TEST_SERVER_API_SECRET),
+                KrakenCredentials(
+                    TestFixtures.TEST_SERVER_API_KEY,
+                    TestFixtures.TEST_SERVER_API_SECRET
+                ),
                 Settings(60L, 2.0, 1.0, true, 0.0, 1.0),
                 listOf(Allocation(KrakenSymbols.USD, 100.0))
             )
             every { configService.getConfig() } returns serverConfig
             val capturedConfig = slot<AppConfig>()
-            every { configService.updateConfig(capture(capturedConfig)) } throws InvalidConfigurationException("Mocked validation error")
+            every { configService.updateConfig(capture(capturedConfig)) } throws InvalidConfigurationException(
+                "Mocked validation error"
+            )
 
             testApplication {
                 application {
@@ -289,11 +336,17 @@ class DashboardControllerTest : StringSpec() {
                             FormFields.FIAT_MAX_DRAWDOWN to listOf("invalid"),
                             FormFields.FIAT_DEPLOYMENT_EXPONENT to listOf("invalid"),
                             // "dryRun" is absent, meaning false
-                            FormFields.SYMBOLS to listOf(KrakenSymbols.BTC, KrakenSymbols.ETH),
+                            FormFields.SYMBOLS to listOf(
+                                KrakenSymbols.BTC,
+                                KrakenSymbols.ETH
+                            ),
                             FormFields.TARGETS to listOf("invalid", "30.0")
                         ).formUrlEncode()
                     )
-                    header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
+                    header(
+                        HttpHeaders.ContentType,
+                        ContentType.Application.FormUrlEncoded.toString()
+                    )
                 }
                 response.status shouldBe HttpStatusCode.OK
                 response.bodyAsText() shouldContain "Mocked validation error"
@@ -314,13 +367,18 @@ class DashboardControllerTest : StringSpec() {
 
         "postSettings_WithAbsentParamsAndNullErrorMessage_UsesDefaultsAndFallbackMessage" {
             val serverConfig = AppConfig(
-                KrakenCredentials(TestFixtures.TEST_SERVER_API_KEY, TestFixtures.TEST_SERVER_API_SECRET),
+                KrakenCredentials(
+                    TestFixtures.TEST_SERVER_API_KEY,
+                    TestFixtures.TEST_SERVER_API_SECRET
+                ),
                 Settings(60L, 2.0, 1.0, true, 0.0, 1.0),
                 listOf(Allocation(KrakenSymbols.USD, 100.0))
             )
             every { configService.getConfig() } returns serverConfig
             val capturedConfig = slot<AppConfig>()
-            every { configService.updateConfig(capture(capturedConfig)) } throws InvalidConfigurationException(null)
+            every { configService.updateConfig(capture(capturedConfig)) } throws InvalidConfigurationException(
+                null
+            )
 
             testApplication {
                 application {
@@ -330,7 +388,10 @@ class DashboardControllerTest : StringSpec() {
                     setBody(
                         parametersOf().formUrlEncode()
                     )
-                    header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
+                    header(
+                        HttpHeaders.ContentType,
+                        ContentType.Application.FormUrlEncoded.toString()
+                    )
                 }
                 response.status shouldBe HttpStatusCode.OK
                 response.bodyAsText() shouldContain "Invalid configuration"
@@ -366,7 +427,9 @@ class DashboardControllerTest : StringSpec() {
             )
 
             every { tradeHistoryService.getLatestSnapshot() } returns snapshot1
-            every { tradeHistoryService.getHistoryFlow() } returns kotlinx.coroutines.flow.flowOf(snapshot2)
+            every { tradeHistoryService.getHistoryFlow() } returns kotlinx.coroutines.flow.flowOf(
+                snapshot2
+            )
 
             testApplication {
                 val client = createClient {
@@ -377,8 +440,12 @@ class DashboardControllerTest : StringSpec() {
                 }
                 client.sse(Routes.API_STATUS_STREAM) {
                     val events = incoming.take(2).toList()
-                    events[0].data shouldBe objectMapper.writeValueAsString(snapshot1)
-                    events[1].data shouldBe objectMapper.writeValueAsString(snapshot2)
+                    events[0].data shouldBe objectMapper.writeValueAsString(
+                        snapshot1
+                    )
+                    events[1].data shouldBe objectMapper.writeValueAsString(
+                        snapshot2
+                    )
                 }
             }
         }

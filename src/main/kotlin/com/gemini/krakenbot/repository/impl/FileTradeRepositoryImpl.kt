@@ -13,7 +13,8 @@ class FileTradeRepositoryImpl(
     private val objectMapper: ObjectMapper
 ) : TradeRepository {
 
-    private val log = LoggerFactory.getLogger(FileTradeRepositoryImpl::class.java)
+    private val log =
+        LoggerFactory.getLogger(FileTradeRepositoryImpl::class.java)
     private val filePath = "trade-history.json"
 
     override fun save(history: List<PortfolioSnapshot>) {
@@ -31,9 +32,15 @@ class FileTradeRepositoryImpl(
             return emptyList()
         }
         return try {
-            objectMapper.readValue(file, object : TypeReference<List<PortfolioSnapshot>>() {})
+            objectMapper.readValue(
+                file,
+                object : TypeReference<List<PortfolioSnapshot>>() {})
         } catch (e: Exception) {
-            log.error("Failed to load trade history from {}. Starting with empty history.", filePath, e)
+            log.error(
+                "Failed to load trade history from {}. Starting with empty history.",
+                filePath,
+                e
+            )
             emptyList()
         }
     }

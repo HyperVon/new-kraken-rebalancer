@@ -29,13 +29,22 @@ class PortfolioManagerLoopTest : StringSpec() {
         beforeTest {
             val repo = mockk<PortfolioStatsRepository>(relaxed = true)
             every { repo.load() } returns PortfolioStats(BigDecimal.ZERO)
-            portfolioManager = PortfolioManagerImpl(krakenService, configService, tradeHistoryService, repo)
+            portfolioManager = PortfolioManagerImpl(
+                krakenService,
+                configService,
+                tradeHistoryService,
+                repo
+            )
         }
 
         "startRebalancingLoop_RunsWhenEnabled" {
             runTest {
                 val settings = Settings(60L, 2.0, 1.0, true, 0.0, 1.0)
-                val config = AppConfig(KrakenCredentials("k", "s"), settings, emptyList())
+                val config = AppConfig(
+                    KrakenCredentials("k", "s"),
+                    settings,
+                    emptyList()
+                )
                 every { configService.getConfig() } returns config
                 krakenService.balanceSupplier = { emptyMap() }
 
@@ -54,12 +63,16 @@ class PortfolioManagerLoopTest : StringSpec() {
         "stopRebalancingLoop_StopsExecution" {
             runTest {
                 val settings = Settings(60L, 2.0, 1.0, true, 0.0, 1.0)
-                val config = AppConfig(KrakenCredentials("k", "s"), settings, emptyList())
+                val config = AppConfig(
+                    KrakenCredentials("k", "s"),
+                    settings,
+                    emptyList()
+                )
                 every { configService.getConfig() } returns config
 
                 portfolioManager.startRebalancingLoop()
                 portfolioManager.stopRebalancingLoop()
-                
+
                 portfolioManager.runLoop()
 
                 krakenService.getBalancesCallCount shouldBe 0
@@ -69,10 +82,15 @@ class PortfolioManagerLoopTest : StringSpec() {
         "checkAndRunCycle_HandlesExceptionGracefully" {
             runTest {
                 val settings = Settings(60L, 2.0, 1.0, true, 0.0, 1.0)
-                val config = AppConfig(KrakenCredentials("k", "s"), settings, emptyList())
+                val config = AppConfig(
+                    KrakenCredentials("k", "s"),
+                    settings,
+                    emptyList()
+                )
                 every { configService.getConfig() } returns config
 
-                krakenService.balanceSupplier = { throw RuntimeException("API Error!") }
+                krakenService.balanceSupplier =
+                    { throw RuntimeException("API Error!") }
 
                 portfolioManager.startRebalancingLoop()
                 val job = launch {

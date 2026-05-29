@@ -29,7 +29,9 @@ class RecentActivityComponent {
         }
     }
 
-    private val activityTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd hh:mm:ss a").withZone(ZoneId.systemDefault())
+    private val activityTimeFormatter =
+        DateTimeFormatter.ofPattern("yyyy-MM-dd hh:mm:ss a")
+            .withZone(ZoneId.systemDefault())
 
     fun DIV.render(history: List<PortfolioSnapshot>) {
         glassPanel(ViewText.RECENT_ACTIVITY, Icons.PULSE) {
@@ -50,11 +52,17 @@ class RecentActivityComponent {
                         }
                         tbody {
                             history.forEach { snapshot ->
-                                val timeStr = activityTimeFormatter.format(snapshot.timestamp)
+                                val timeStr =
+                                    activityTimeFormatter.format(snapshot.timestamp)
                                 if (snapshot.actions.isEmpty()) {
                                     renderEmptyActionsRow(timeStr)
                                 } else {
-                                    snapshot.actions.forEach { action -> renderActionRow(timeStr, action) }
+                                    snapshot.actions.forEach { action ->
+                                        renderActionRow(
+                                            timeStr,
+                                            action
+                                        )
+                                    }
                                 }
                             }
                         }

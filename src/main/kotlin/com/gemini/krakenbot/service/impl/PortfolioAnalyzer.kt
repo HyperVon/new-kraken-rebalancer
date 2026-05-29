@@ -1,8 +1,6 @@
 package com.gemini.krakenbot.service.impl
 
-import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.config.Settings
-import com.gemini.krakenbot.model.PortfolioStats
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.KrakenService
@@ -28,18 +26,30 @@ class PortfolioAnalyzer(
 
     suspend fun fetchPrices(): Map<String, BigDecimal> {
         val allocations = configService.getConfig().allocations
-        val nonUsd = allocations.filter { !it.symbol.equals(KrakenSymbols.USD, ignoreCase = true) }
+        val nonUsd = allocations.filter {
+            !it.symbol.equals(
+                KrakenSymbols.USD,
+                ignoreCase = true
+            )
+        }
         if (nonUsd.isEmpty()) return emptyMap()
 
-        val pairs = nonUsd.joinToString(",") { KrakenSymbols.tradingPair(it.symbol) }
+        val pairs =
+            nonUsd.joinToString(",") { KrakenSymbols.tradingPair(it.symbol) }
         val rawPrices = krakenService.getTickerPrices(pairs)
 
         return nonUsd.associate { allocation ->
-            allocation.symbol to resolvePriceFromTicker(allocation.symbol, rawPrices)
+            allocation.symbol to resolvePriceFromTicker(
+                allocation.symbol,
+                rawPrices
+            )
         }
     }
 
-    fun resolvePriceFromTicker(symbol: String, rawPrices: Map<String, Double>): BigDecimal {
+    fun resolvePriceFromTicker(
+        symbol: String,
+        rawPrices: Map<String, Double>
+    ): BigDecimal {
         val expectedPair = KrakenSymbols.tradingPair(symbol)
         rawPrices[expectedPair]?.let { return BigDecimal.valueOf(it) }
 
@@ -68,7 +78,10 @@ class PortfolioAnalyzer(
             if (!symbol.equals(KrakenSymbols.USD, ignoreCase = true)) {
                 val p = prices[symbol] ?: BigDecimal.ZERO
                 if (p.compareTo(BigDecimal.ZERO) == 0) {
-                    log.error("Price not found for {}. Aborting rebalance cycle to prevent erroneous trades.", symbol)
+                    log.error(
+                        "Price not found for {}. Aborting rebalance cycle to prevent erroneous trades.",
+                        symbol
+                    )
                     return null
                 }
                 price = p
@@ -97,10 +110,24 @@ class PortfolioAnalyzer(
 
         if (ath == null || ath <= BigDecimal.ZERO) {
             ath = totalPortfolioValueUSD
-            log.info("Initial ATH set to $${ath.setScale(2, RoundingMode.HALF_UP)}")
+            log.info(
+                "Initial ATH set to $${
+                    ath.setScale(
+                        2,
+                        RoundingMode.HALF_UP
+                    )
+                }"
+            )
         } else if (totalPortfolioValueUSD > ath) {
             ath = totalPortfolioValueUSD
-            log.info("New All-Time High detected: $${ath.setScale(2, RoundingMode.HALF_UP)}")
+            log.info(
+                "New All-Time High detected: $${
+                    ath.setScale(
+                        2,
+                        RoundingMode.HALF_UP
+                    )
+                }"
+            )
         }
 
         stats.allTimeHigh = ath
@@ -118,14 +145,18 @@ class PortfolioAnalyzer(
         }
     }
 
-    fun calculateFiatDeployment(drawdownPct: BigDecimal, settings: Settings): BigDecimal {
+    fun calculateFiatDeployment(
+        drawdownPct: BigDecimal,
+        settings: Settings
+    ): BigDecimal {
         if (settings.fiatMaxDrawdown <= 0.0) return BigDecimal.ZERO
 
         val maxDD = BigDecimal.valueOf(settings.fiatMaxDrawdown)
         var ratio = drawdownPct.divide(maxDD, 4, RoundingMode.HALF_UP)
         if (ratio > BigDecimal.ONE) ratio = BigDecimal.ONE
 
-        val deployDouble = ratio.toDouble().pow(settings.fiatDeploymentExponent) * 100.0
+        val deployDouble =
+            ratio.toDouble().pow(settings.fiatDeploymentExponent) * 100.0
         return BigDecimal.valueOf(deployDouble)
     }
 
@@ -135,7 +166,11 @@ class PortfolioAnalyzer(
             .sumOf { it.targetPercent.toBigDecimal() }
 
         return if (fiatDeploymentPct > BigDecimal.ZERO) {
-            val factor = BigDecimal.ONE - fiatDeploymentPct.divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP)
+            val factor = BigDecimal.ONE - fiatDeploymentPct.divide(
+                BigDecimal.valueOf(100),
+                4,
+                RoundingMode.HALF_UP
+            )
             baseUsdTarget * factor
         } else {
             baseUsdTarget
@@ -149,7 +184,11 @@ class PortfolioAnalyzer(
 
         val remainingForCrypto = BigDecimal.valueOf(100) - effectiveUsdTarget
         return if (totalNonUsdTarget > BigDecimal.ZERO) {
-            remainingForCrypto.divide(totalNonUsdTarget, 8, RoundingMode.HALF_UP)
+            remainingForCrypto.divide(
+                totalNonUsdTarget,
+                8,
+                RoundingMode.HALF_UP
+            )
         } else {
             BigDecimal.ONE
         }

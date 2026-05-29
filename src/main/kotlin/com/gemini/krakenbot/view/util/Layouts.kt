@@ -1,11 +1,14 @@
 package com.gemini.krakenbot.view.util
 
-import com.gemini.krakenbot.view.util.CssClasses
 import com.gemini.krakenbot.view.util.Icons.icon
 import kotlinx.html.*
 
 object Layouts {
-    fun FlowContent.glassPanel(title: String, iconSvg: String? = null, block: DIV.() -> Unit) {
+    fun FlowContent.glassPanel(
+        title: String,
+        iconSvg: String? = null,
+        block: DIV.() -> Unit
+    ) {
         div(CssClasses.GLASS_PANEL) {
             h2(CssClasses.GLASS_PANEL_TITLE) {
                 if (iconSvg != null) icon(iconSvg)
@@ -13,10 +16,17 @@ object Layouts {
             }
             block()
         }
-     }
+    }
 
-    fun FlowContent.statusCard(title: String, iconSvg: String, value: String, isSuccess: Boolean = false, block: DIV.() -> Unit) {
-        val cardClass = if (isSuccess) CssClasses.STATUS_CARD_SUCCESS else CssClasses.STATUS_CARD
+    fun FlowContent.statusCard(
+        title: String,
+        iconSvg: String,
+        value: String,
+        isSuccess: Boolean = false,
+        block: DIV.() -> Unit
+    ) {
+        val cardClass =
+            if (isSuccess) CssClasses.STATUS_CARD_SUCCESS else CssClasses.STATUS_CARD
         div(cardClass) {
             div(CssClasses.STATUS_CARD_HEADER) {
                 span(CssClasses.STATUS_CARD_TITLE) { +title }

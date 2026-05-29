@@ -34,13 +34,18 @@ class OrderExecutor(
         configService.getConfig().allocations.forEach { a ->
             var targetPct = BigDecimal.valueOf(a.targetPercent)
 
-            targetPct = if (a.symbol.equals(KrakenSymbols.USD, ignoreCase = true)) {
-                effectiveUsdTarget
-            } else {
-                targetPct.multiply(cryptoScaleFactor)
-            }
+            targetPct =
+                if (a.symbol.equals(KrakenSymbols.USD, ignoreCase = true)) {
+                    effectiveUsdTarget
+                } else {
+                    targetPct.multiply(cryptoScaleFactor)
+                }
 
-            targetPct = targetPct.divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP)
+            targetPct = targetPct.divide(
+                BigDecimal.valueOf(100),
+                4,
+                RoundingMode.HALF_UP
+            )
             val targetValue = totalPortfolioValueUSD.multiply(targetPct)
             val currentVal = currentValuesUSD[a.symbol] ?: BigDecimal.ZERO
 
@@ -48,7 +53,8 @@ class OrderExecutor(
             var deviationPct = BigDecimal.ZERO
 
             if (targetValue > BigDecimal.ZERO) {
-                deviationPct = deviationUSD.abs().divide(targetValue, 4, RoundingMode.HALF_UP)
+                deviationPct = deviationUSD.abs()
+                    .divide(targetValue, 4, RoundingMode.HALF_UP)
                     .multiply(BigDecimal.valueOf(100))
             } else if (currentVal > BigDecimal.ZERO) {
                 deviationPct = BigDecimal.valueOf(100.0)
@@ -58,7 +64,9 @@ class OrderExecutor(
 
             log.info(
                 "Analysis [{}]: Dev: {}% ($ {}). Threshold: {}%",
-                a.symbol, deviationPct, deviationUSD.setScale(2, RoundingMode.HALF_UP),
+                a.symbol,
+                deviationPct,
+                deviationUSD.setScale(2, RoundingMode.HALF_UP),
                 s.deviationTriggerPercent
             )
 
@@ -79,7 +87,10 @@ class OrderExecutor(
                 if (deviationPct.toDouble() >= s.deviationTriggerPercent) {
                     log.info(
                         "Asset {} Deviation: {}% (Trigger: {}%). USD Dev: {}",
-                        a.symbol, deviationPct, s.deviationTriggerPercent, deviationUSD
+                        a.symbol,
+                        deviationPct,
+                        s.deviationTriggerPercent,
+                        deviationUSD
                     )
 
                     if (deviationUSD > BigDecimal.ZERO) {
@@ -94,7 +105,13 @@ class OrderExecutor(
         if (buyOrders.isEmpty() && sellOrders.isEmpty() && usdTriggered) {
             log.info("USD Deviation triggered but no individual asset triggers. Enforcing fiat correction.")
             actionLog.add("USD Deviation Triggered. Enforcing fiat correction.")
-            distributeFiatCorrection(usdDeviationAmount, allDeviations, buyOrders, sellOrders, actionLog)
+            distributeFiatCorrection(
+                usdDeviationAmount,
+                allDeviations,
+                buyOrders,
+                sellOrders,
+                actionLog
+            )
         }
     }
 
@@ -106,7 +123,8 @@ class OrderExecutor(
         s: Settings,
         actionLog: MutableList<String>
     ) {
-        var projectedCash = currentValuesUSD[KrakenSymbols.USD] ?: BigDecimal.ZERO
+        var projectedCash =
+            currentValuesUSD[KrakenSymbols.USD] ?: BigDecimal.ZERO
         var executedSells = false
 
         for ((symbol, usdToSell) in sellOrders) {
@@ -121,7 +139,8 @@ class OrderExecutor(
 
             val volume = usdToSell.divide(price, 8, RoundingMode.HALF_UP)
             val pair = KrakenSymbols.tradingPair(symbol)
-            val result = krakenService.executeOrder(pair, "market", "sell", volume)
+            val result =
+                krakenService.executeOrder(pair, "market", "sell", volume)
             logOrderResult(result, actionLog, symbol, volume, usdToSell, "SELL")
             if (result.success) {
                 projectedCash = projectedCash.add(usdToSell)
@@ -137,7 +156,12 @@ class OrderExecutor(
         for ((symbol, originalCost) in buyOrders) {
             var cost = originalCost
             if (cost > actualCash) {
-                log.warn("Not enough cash to buy {}. Cost: {}, Cash: {}. Reducing.", symbol, cost, actualCash)
+                log.warn(
+                    "Not enough cash to buy {}. Cost: {}, Cash: {}. Reducing.",
+                    symbol,
+                    cost,
+                    actualCash
+                )
                 cost = actualCash.multiply(BigDecimal.valueOf(0.99))
             }
 
@@ -152,7 +176,8 @@ class OrderExecutor(
 
             val volume = cost.divide(price, 8, RoundingMode.HALF_UP)
             val pair = KrakenSymbols.tradingPair(symbol)
-            val result = krakenService.executeOrder(pair, "market", "buy", volume)
+            val result =
+                krakenService.executeOrder(pair, "market", "buy", volume)
             logOrderResult(result, actionLog, symbol, volume, cost, "BUY")
             if (result.success) {
                 actualCash = actualCash.subtract(cost)
@@ -170,17 +195,27 @@ class OrderExecutor(
             try {
                 val updatedBalances = krakenService.getBalances()
                 if (updatedBalances.isNotEmpty()) {
-                    val usdBalance = portfolioAnalyzer.resolveBalance(KrakenSymbols.USD, updatedBalances)
+                    val usdBalance = portfolioAnalyzer.resolveBalance(
+                        KrakenSymbols.USD,
+                        updatedBalances
+                    )
                     if (usdBalance > 0) {
                         bestCash = BigDecimal.valueOf(usdBalance)
-                        log.info("Updated USD balance after sells (attempt {}): $${bestCash}", attempt + 1)
+                        log.info(
+                            "Updated USD balance after sells (attempt {}): $${bestCash}",
+                            attempt + 1
+                        )
                         if (bestCash >= projectedCash.multiply(BigDecimal("0.95"))) {
                             return bestCash
                         }
                     }
                 }
             } catch (e: Exception) {
-                log.warn("Failed to fetch updated USD balance (attempt {})", attempt + 1, e)
+                log.warn(
+                    "Failed to fetch updated USD balance (attempt {})",
+                    attempt + 1,
+                    e
+                )
             }
         }
 
@@ -238,15 +273,31 @@ class OrderExecutor(
         }
 
         log.info(
-            "Distributing Fiat Correction ($${deviationAbs.setScale(2, RoundingMode.HALF_UP)}) among ${candidates.size} candidates. Total Counter-Dev: $${totalCounterDev.setScale(2, RoundingMode.HALF_UP)}"
+            "Distributing Fiat Correction ($${
+                deviationAbs.setScale(
+                    2,
+                    RoundingMode.HALF_UP
+                )
+            }) among ${candidates.size} candidates. Total Counter-Dev: $${
+                totalCounterDev.setScale(
+                    2,
+                    RoundingMode.HALF_UP
+                )
+            }"
         )
         actionLog.add(
-            "Distributing Fiat Correction ($${deviationAbs.setScale(2, RoundingMode.HALF_UP)}) among ${candidates.size} candidates."
+            "Distributing Fiat Correction ($${
+                deviationAbs.setScale(
+                    2,
+                    RoundingMode.HALF_UP
+                )
+            }) among ${candidates.size} candidates."
         )
 
         for (symbol in candidates) {
             val assetDev = allDevs[symbol]!!.abs()
-            val ratio = assetDev.divide(totalCounterDev, 8, RoundingMode.HALF_UP)
+            val ratio =
+                assetDev.divide(totalCounterDev, 8, RoundingMode.HALF_UP)
             val share = deviationAbs.multiply(ratio)
 
             if (isDeposit) {

@@ -25,7 +25,8 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
     private val krakenService = FakeKrakenService()
     private val configService = mockk<ConfigService>(relaxed = true)
     private val tradeHistoryService = mockk<TradeHistoryService>(relaxed = true)
-    private val portfolioStatsRepository = mockk<PortfolioStatsRepository>(relaxed = true)
+    private val portfolioStatsRepository =
+        mockk<PortfolioStatsRepository>(relaxed = true)
     private lateinit var portfolioManager: PortfolioManagerImpl
 
     /** Builds an [AppConfig] with the given allocations and default settings (2% deviation, 1 USD dust). */
@@ -39,15 +40,23 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
         beforeTest {
             krakenService.executedOrders.clear()
             portfolioManager = PortfolioManagerImpl(
-                krakenService, configService, tradeHistoryService, portfolioStatsRepository
+                krakenService,
+                configService,
+                tradeHistoryService,
+                portfolioStatsRepository
             )
         }
 
         "Scenario: Balanced Portfolio - No Trades Expected" {
             runTest {
-                every { configService.getConfig() } returns makeConfig(Allocation("A", 50.0), Allocation("B", 50.0))
-                krakenService.pricesSupplier = { mapOf("AUSD" to 100.0, "BUSD" to 100.0) }
-                krakenService.balanceSupplier = { mapOf("A" to 10.0, "B" to 10.0) }
+                every { configService.getConfig() } returns makeConfig(
+                    Allocation("A", 50.0),
+                    Allocation("B", 50.0)
+                )
+                krakenService.pricesSupplier =
+                    { mapOf("AUSD" to 100.0, "BUSD" to 100.0) }
+                krakenService.balanceSupplier =
+                    { mapOf("A" to 10.0, "B" to 10.0) }
 
                 portfolioManager.performRebalanceCycle()
 
@@ -57,63 +66,99 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
 
         "Scenario: Simple Rebalance - Asset A Overweight, B Underweight" {
             runTest {
-                every { configService.getConfig() } returns makeConfig(Allocation("A", 50.0), Allocation("B", 50.0))
-                krakenService.pricesSupplier = { mapOf("AUSD" to 100.0, "BUSD" to 100.0) }
-                krakenService.balanceSupplier = { mapOf("A" to 11.0, "B" to 9.0) }
+                every { configService.getConfig() } returns makeConfig(
+                    Allocation("A", 50.0),
+                    Allocation("B", 50.0)
+                )
+                krakenService.pricesSupplier =
+                    { mapOf("AUSD" to 100.0, "BUSD" to 100.0) }
+                krakenService.balanceSupplier =
+                    { mapOf("A" to 11.0, "B" to 9.0) }
 
                 portfolioManager.performRebalanceCycle()
 
-                val sell = krakenService.executedOrders.first { it.side == "sell" }
+                val sell =
+                    krakenService.executedOrders.first { it.side == "sell" }
                 sell.pair shouldBe "AUSD"
-                sell.volume.subtract(BigDecimal.ONE).abs() shouldBeLessThan BigDecimal("0.0001")
+                sell.volume.subtract(BigDecimal.ONE)
+                    .abs() shouldBeLessThan BigDecimal("0.0001")
 
-                val buy = krakenService.executedOrders.first { it.side == "buy" }
+                val buy =
+                    krakenService.executedOrders.first { it.side == "buy" }
                 buy.pair shouldBe "BUSD"
-                buy.volume.subtract(BigDecimal.ONE).abs() shouldBeLessThan BigDecimal("0.0001")
+                buy.volume.subtract(BigDecimal.ONE)
+                    .abs() shouldBeLessThan BigDecimal("0.0001")
             }
         }
 
         "Scenario: Fiat Deposit - Distribute Excess Cash" {
             runTest {
                 every { configService.getConfig() } returns makeConfig(
-                    Allocation("A", 40.0), Allocation("B", 40.0), Allocation(KrakenSymbols.USD, 20.0)
+                    Allocation("A", 40.0),
+                    Allocation("B", 40.0),
+                    Allocation(KrakenSymbols.USD, 20.0)
                 )
-                krakenService.pricesSupplier = { mapOf("AUSD" to 100.0, "BUSD" to 100.0) }
-                krakenService.balanceSupplier = { mapOf("A" to 4.0, "B" to 4.0, KrakenSymbols.USD to 1200.0) }
+                krakenService.pricesSupplier =
+                    { mapOf("AUSD" to 100.0, "BUSD" to 100.0) }
+                krakenService.balanceSupplier = {
+                    mapOf(
+                        "A" to 4.0,
+                        "B" to 4.0,
+                        KrakenSymbols.USD to 1200.0
+                    )
+                }
 
                 portfolioManager.performRebalanceCycle()
 
-                val buyA = krakenService.executedOrders.first { it.pair == "AUSD" && it.side == "buy" }
-                buyA.volume.subtract(BigDecimal.valueOf(4.0)).abs() shouldBeLessThan BigDecimal("0.0001")
+                val buyA =
+                    krakenService.executedOrders.first { it.pair == "AUSD" && it.side == "buy" }
+                buyA.volume.subtract(BigDecimal.valueOf(4.0))
+                    .abs() shouldBeLessThan BigDecimal("0.0001")
 
-                val buyB = krakenService.executedOrders.first { it.pair == "BUSD" && it.side == "buy" }
-                buyB.volume.subtract(BigDecimal.valueOf(4.0)).abs() shouldBeLessThan BigDecimal("0.0001")
+                val buyB =
+                    krakenService.executedOrders.first { it.pair == "BUSD" && it.side == "buy" }
+                buyB.volume.subtract(BigDecimal.valueOf(4.0))
+                    .abs() shouldBeLessThan BigDecimal("0.0001")
             }
         }
 
         "Scenario: Fiat Withdrawal - Prevent Buys if No Cash" {
             runTest {
-                every { configService.getConfig() } returns makeConfig(Allocation("A", 10.0), Allocation("B", 90.0))
-                krakenService.pricesSupplier = { mapOf("AUSD" to 100.0, "BUSD" to 100.0) }
-                krakenService.balanceSupplier = { mapOf("A" to 5.0, "B" to 0.0, KrakenSymbols.USD to 0.0) }
+                every { configService.getConfig() } returns makeConfig(
+                    Allocation("A", 10.0),
+                    Allocation("B", 90.0)
+                )
+                krakenService.pricesSupplier =
+                    { mapOf("AUSD" to 100.0, "BUSD" to 100.0) }
+                krakenService.balanceSupplier =
+                    { mapOf("A" to 5.0, "B" to 0.0, KrakenSymbols.USD to 0.0) }
 
                 portfolioManager.performRebalanceCycle()
 
-                val sell = krakenService.executedOrders.first { it.side == "sell" }
+                val sell =
+                    krakenService.executedOrders.first { it.side == "sell" }
                 sell.pair shouldBe "AUSD"
-                sell.volume.subtract(BigDecimal.valueOf(4.5)).abs() shouldBeLessThan BigDecimal("0.0001")
+                sell.volume.subtract(BigDecimal.valueOf(4.5))
+                    .abs() shouldBeLessThan BigDecimal("0.0001")
 
-                val buy = krakenService.executedOrders.first { it.side == "buy" }
+                val buy =
+                    krakenService.executedOrders.first { it.side == "buy" }
                 buy.pair shouldBe "BUSD"
-                buy.volume.subtract(BigDecimal.valueOf(4.5)).abs() shouldBeLessThan BigDecimal("0.05")
+                buy.volume.subtract(BigDecimal.valueOf(4.5))
+                    .abs() shouldBeLessThan BigDecimal("0.05")
             }
         }
 
         "Scenario: Dust Thresholds - Skip Tiny Orders" {
             runTest {
-                every { configService.getConfig() } returns makeConfig(Allocation("A", 50.0), Allocation("B", 50.0))
-                krakenService.pricesSupplier = { mapOf("AUSD" to 100.0, "BUSD" to 100.0) }
-                krakenService.balanceSupplier = { mapOf("A" to 10.005, "B" to 9.995) }
+                every { configService.getConfig() } returns makeConfig(
+                    Allocation("A", 50.0),
+                    Allocation("B", 50.0)
+                )
+                krakenService.pricesSupplier =
+                    { mapOf("AUSD" to 100.0, "BUSD" to 100.0) }
+                krakenService.balanceSupplier =
+                    { mapOf("A" to 10.005, "B" to 9.995) }
 
                 portfolioManager.performRebalanceCycle()
 
@@ -123,49 +168,70 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
 
         "Scenario: 0% Allocation - Sell Everything" {
             runTest {
-                every { configService.getConfig() } returns makeConfig(Allocation("A", 0.0), Allocation(KrakenSymbols.USD, 100.0))
+                every { configService.getConfig() } returns makeConfig(
+                    Allocation("A", 0.0),
+                    Allocation(KrakenSymbols.USD, 100.0)
+                )
                 krakenService.pricesSupplier = { mapOf("AUSD" to 100.0) }
-                krakenService.balanceSupplier = { mapOf("A" to 10.0, KrakenSymbols.USD to 0.0) }
+                krakenService.balanceSupplier =
+                    { mapOf("A" to 10.0, KrakenSymbols.USD to 0.0) }
 
                 portfolioManager.performRebalanceCycle()
 
-                val sell = krakenService.executedOrders.first { it.side == "sell" }
+                val sell =
+                    krakenService.executedOrders.first { it.side == "sell" }
                 sell.pair shouldBe "AUSD"
-                sell.volume.subtract(BigDecimal.TEN).abs() shouldBeLessThan BigDecimal("0.0001")
+                sell.volume.subtract(BigDecimal.TEN)
+                    .abs() shouldBeLessThan BigDecimal("0.0001")
             }
         }
 
         "Scenario: New Asset Entry - Buy from Scratch" {
             runTest {
-                every { configService.getConfig() } returns makeConfig(Allocation("A", 100.0), Allocation(KrakenSymbols.USD, 0.0))
+                every { configService.getConfig() } returns makeConfig(
+                    Allocation("A", 100.0),
+                    Allocation(KrakenSymbols.USD, 0.0)
+                )
                 krakenService.pricesSupplier = { mapOf("AUSD" to 100.0) }
-                krakenService.balanceSupplier = { mapOf("A" to 0.0, KrakenSymbols.USD to 1000.0) }
+                krakenService.balanceSupplier =
+                    { mapOf("A" to 0.0, KrakenSymbols.USD to 1000.0) }
 
                 portfolioManager.performRebalanceCycle()
 
-                val buy = krakenService.executedOrders.first { it.side == "buy" }
+                val buy =
+                    krakenService.executedOrders.first { it.side == "buy" }
                 buy.pair shouldBe "AUSD"
-                buy.volume.subtract(BigDecimal.TEN).abs() shouldBeLessThan BigDecimal("0.0001")
+                buy.volume.subtract(BigDecimal.TEN)
+                    .abs() shouldBeLessThan BigDecimal("0.0001")
             }
         }
 
         "Scenario: Market Moon - All Assets Overweight (Sell to Rebalance)" {
             runTest {
-                every { configService.getConfig() } returns makeConfig(Allocation("A", 50.0), Allocation(KrakenSymbols.USD, 50.0))
+                every { configService.getConfig() } returns makeConfig(
+                    Allocation("A", 50.0),
+                    Allocation(KrakenSymbols.USD, 50.0)
+                )
                 krakenService.pricesSupplier = { mapOf("AUSD" to 200.0) }
-                krakenService.balanceSupplier = { mapOf("A" to 10.0, KrakenSymbols.USD to 1000.0) }
+                krakenService.balanceSupplier =
+                    { mapOf("A" to 10.0, KrakenSymbols.USD to 1000.0) }
 
                 portfolioManager.performRebalanceCycle()
 
-                val sell = krakenService.executedOrders.first { it.side == "sell" }
+                val sell =
+                    krakenService.executedOrders.first { it.side == "sell" }
                 sell.pair shouldBe "AUSD"
-                sell.volume.subtract(BigDecimal.valueOf(2.5)).abs() shouldBeLessThan BigDecimal("0.0001")
+                sell.volume.subtract(BigDecimal.valueOf(2.5))
+                    .abs() shouldBeLessThan BigDecimal("0.0001")
             }
         }
 
         "Scenario: Price Lookup Failure - Abort Cycle" {
             runTest {
-                every { configService.getConfig() } returns makeConfig(Allocation("A", 100.0), Allocation(KrakenSymbols.USD, 0.0))
+                every { configService.getConfig() } returns makeConfig(
+                    Allocation("A", 100.0),
+                    Allocation(KrakenSymbols.USD, 0.0)
+                )
                 krakenService.pricesSupplier = { emptyMap() }
                 krakenService.balanceSupplier = { mapOf("A" to 10.0) }
 
@@ -177,9 +243,13 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
 
         "Scenario: Partial Price Lookup Failure - Skip Asset" {
             runTest {
-                every { configService.getConfig() } returns makeConfig(Allocation("A", 50.0), Allocation("B", 50.0))
+                every { configService.getConfig() } returns makeConfig(
+                    Allocation("A", 50.0),
+                    Allocation("B", 50.0)
+                )
                 krakenService.pricesSupplier = { mapOf("BUSD" to 100.0) }
-                krakenService.balanceSupplier = { mapOf("A" to 10.0, "B" to 20.0) }
+                krakenService.balanceSupplier =
+                    { mapOf("A" to 10.0, "B" to 20.0) }
 
                 portfolioManager.performRebalanceCycle()
 
@@ -189,9 +259,13 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
 
         "Scenario: API Exception - Safe Recovery" {
             runTest {
-                every { configService.getConfig() } returns makeConfig(Allocation("A", 100.0), Allocation(KrakenSymbols.USD, 0.0))
+                every { configService.getConfig() } returns makeConfig(
+                    Allocation("A", 100.0),
+                    Allocation(KrakenSymbols.USD, 0.0)
+                )
                 krakenService.pricesSupplier = { mapOf("AUSD" to 100.0) }
-                krakenService.balanceSupplier = { mapOf("A" to 0.0, KrakenSymbols.USD to 1000.0) }
+                krakenService.balanceSupplier =
+                    { mapOf("A" to 0.0, KrakenSymbols.USD to 1000.0) }
                 krakenService.orderResultFactory = { pair, _, side, volume ->
                     com.gemini.krakenbot.model.OrderResult(
                         success = false,
@@ -203,7 +277,11 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
                 }
 
                 val snapshots = mutableListOf<PortfolioSnapshot>()
-                every { tradeHistoryService.addSnapshot(any<PortfolioSnapshot>()) } answers { snapshots.add(firstArg()) }
+                every { tradeHistoryService.addSnapshot(any<PortfolioSnapshot>()) } answers {
+                    snapshots.add(
+                        firstArg()
+                    )
+                }
 
                 portfolioManager.performRebalanceCycle()
 
@@ -211,7 +289,8 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
                 order.pair shouldBe "AUSD"
                 order.side shouldBe "buy"
 
-                snapshots.single().actions.any { it.startsWith("FAILED BUY A") }.shouldBeTrue()
+                snapshots.single().actions.any { it.startsWith("FAILED BUY A") }
+                    .shouldBeTrue()
             }
         }
     }

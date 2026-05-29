@@ -11,7 +11,10 @@ class DashboardShellComponent {
     fun HTML.render() {
         head {
             meta(charset = "utf-8")
-            meta(name = "viewport", content = "width=device-width, initial-scale=1.0")
+            meta(
+                name = "viewport",
+                content = "width=device-width, initial-scale=1.0"
+            )
             title(ViewText.APP_TITLE)
             link(rel = "stylesheet", href = Routes.STATIC_STYLE_CSS)
             script(src = "https://unpkg.com/htmx.org@2.0.4") {}

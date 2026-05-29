@@ -1,13 +1,16 @@
 # Contributing to new-kraken-rebalancer
 
-Thank you for your interest in contributing! This project is a production-grade autonomous portfolio rebalancer for the Kraken exchange. Contributions that improve reliability, safety, and functionality are very welcome.
+Thank you for your interest in contributing! This project is a production-grade
+autonomous portfolio rebalancer for the Kraken exchange. Contributions that
+improve reliability, safety, and functionality are very welcome.
 
 ## Getting Started
 
 ### Prerequisites
 
 - JDK 21+
-- Gradle (the `./gradlew` wrapper is included — no separate installation required)
+- Gradle (the `./gradlew` wrapper is included — no separate installation
+  required)
 - A Kraken account (for testing with real API — use **dry-run mode**)
 - Basic familiarity with Kotlin, Ktor, Koin, and kotlinx.html
 
@@ -37,13 +40,17 @@ Thank you for your interest in contributing! This project is a production-grade 
 
 ### Reporting Bugs
 
-- Search [existing issues](https://github.com/HyperVon/new-kraken-rebalancer/issues) first
+-
+Search [existing issues](https://github.com/HyperVon/new-kraken-rebalancer/issues)
+first
 - Use the **Bug Report** issue template
 - Include relevant logs (redact any API keys or account details)
 
 ### Suggesting Features
 
-- Open a [Feature Request](https://github.com/HyperVon/new-kraken-rebalancer/issues/new/choose) issue first to discuss before implementing
+- Open
+  a [Feature Request](https://github.com/HyperVon/new-kraken-rebalancer/issues/new/choose)
+  issue first to discuss before implementing
 - Explain the use case and how it benefits users
 
 ### Submitting a Pull Request
@@ -53,17 +60,24 @@ Thank you for your interest in contributing! This project is a production-grade 
    git checkout -b feature/your-feature-name
    ```
 2. Make your changes, keeping commits focused and descriptive
-3. Ensure existing tests pass: `./gradlew test` (requires a valid `rebalancer-config.json`)
+3. Ensure existing tests pass: `./gradlew test` (requires a valid
+   `rebalancer-config.json`)
 4. Open a pull request against `main` with a clear description of what and why
 
 ## Code Guidelines
 
-- **Language:** Kotlin for all development; server-side HTML (kotlinx.html DSL) for the frontend
-- **Style:** Follow existing code formatting conventions; use idiomatic Kotlin (data classes, coroutines, extension functions)
-- **Safety first:** Any change touching order execution must be tested with `dryRun: true`
-- **No credentials:** Never include API keys, secrets, or real account data in commits
-- **Tests:** Add or update tests for any non-trivial logic changes. The project enforces **95%+ coverage** via JaCoCo.
-- **Coroutines:** Any method interacting with `KrakenService` must be a `suspend` function and tested with `runTest`
+- **Language:** Kotlin for all development; server-side HTML (kotlinx.html DSL)
+  for the frontend
+- **Style:** Follow existing code formatting conventions; use idiomatic Kotlin (
+  data classes, coroutines, extension functions)
+- **Safety first:** Any change touching order execution must be tested with
+  `dryRun: true`
+- **No credentials:** Never include API keys, secrets, or real account data in
+  commits
+- **Tests:** Add or update tests for any non-trivial logic changes. The project
+  enforces **95%+ coverage** via JaCoCo.
+- **Coroutines:** Any method interacting with `KrakenService` must be a
+  `suspend` function and tested with `runTest`
 
 ## Areas Where Help is Welcome
 
@@ -75,8 +89,12 @@ Thank you for your interest in contributing! This project is a production-grade 
 
 ## Code of Conduct
 
-This project follows the [Contributor Covenant Code of Conduct](CODE_OF_CONDUCT.md). By participating, you agree to uphold these standards.
+This project follows
+the [Contributor Covenant Code of Conduct](CODE_OF_CONDUCT.md). By
+participating, you agree to uphold these standards.
 
 ## Questions?
 
-Open a [GitHub Discussion](https://github.com/HyperVon/new-kraken-rebalancer/discussions) or file an issue — happy to help get you set up.
+Open
+a [GitHub Discussion](https://github.com/HyperVon/new-kraken-rebalancer/discussions)
+or file an issue — happy to help get you set up.

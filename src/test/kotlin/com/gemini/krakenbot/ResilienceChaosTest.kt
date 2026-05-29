@@ -29,55 +29,75 @@ class ResilienceChaosTest : StringSpec() {
 
     init {
         "should not crash the application when Kraken API returns 502 Bad Gateway" {
-        runTest {
-            val appConfig = AppConfig(
-                KrakenCredentials("apiKey", "secret"),
-                Settings(60L, 2.0, 1.0, false, 50.0, 1.0),
-                listOf(Allocation(KrakenSymbols.BTC, 50.0))
-            )
-            val mockConfigService = mockk<ConfigService>(relaxed = true)
-            every { mockConfigService.getConfig() } returns appConfig
+            runTest {
+                val appConfig = AppConfig(
+                    KrakenCredentials("apiKey", "secret"),
+                    Settings(60L, 2.0, 1.0, false, 50.0, 1.0),
+                    listOf(Allocation(KrakenSymbols.BTC, 50.0))
+                )
+                val mockConfigService = mockk<ConfigService>(relaxed = true)
+                every { mockConfigService.getConfig() } returns appConfig
 
-            val mockEngine = MockEngine { respond("Bad Gateway", HttpStatusCode.BadGateway) }
-            val httpClient = HttpClient(mockEngine)
-            
-            val krakenService = KrakenServiceImpl(mockConfigService, jacksonObjectMapper(), httpClient)
-            val portfolioManager = PortfolioManagerImpl(
-                krakenService, mockConfigService, mockk<TradeHistoryService>(relaxed = true), mockk<PortfolioStatsRepository>(relaxed = true)
-            )
+                val mockEngine = MockEngine {
+                    respond(
+                        "Bad Gateway",
+                        HttpStatusCode.BadGateway
+                    )
+                }
+                val httpClient = HttpClient(mockEngine)
 
-            // Prove that the network failure correctly propagates an exception
-            // This ensures our mock is working, while runLoop() is responsible for catching it (see PortfolioManagerImpl)
-            shouldThrow<Exception> {
-                portfolioManager.performRebalanceCycle()
+                val krakenService = KrakenServiceImpl(
+                    mockConfigService,
+                    jacksonObjectMapper(),
+                    httpClient
+                )
+                val portfolioManager = PortfolioManagerImpl(
+                    krakenService,
+                    mockConfigService,
+                    mockk<TradeHistoryService>(relaxed = true),
+                    mockk<PortfolioStatsRepository>(relaxed = true)
+                )
+
+                // Prove that the network failure correctly propagates an exception
+                // This ensures our mock is working, while runLoop() is responsible for catching it (see PortfolioManagerImpl)
+                shouldThrow<Exception> {
+                    portfolioManager.performRebalanceCycle()
+                }
+            }
+        }
+
+        "should not crash the application when an IOException occurs (Network failure)" {
+            runTest {
+                val appConfig = AppConfig(
+                    KrakenCredentials("apiKey", "secret"),
+                    Settings(60L, 2.0, 1.0, false, 50.0, 1.0),
+                    listOf(Allocation(KrakenSymbols.BTC, 50.0))
+                )
+                val mockConfigService = mockk<ConfigService>(relaxed = true)
+                every { mockConfigService.getConfig() } returns appConfig
+
+                val mockEngine =
+                    MockEngine { throw IOException("Connection reset by peer") }
+                val httpClient = HttpClient(mockEngine)
+
+                val krakenService = KrakenServiceImpl(
+                    mockConfigService,
+                    jacksonObjectMapper(),
+                    httpClient
+                )
+                val portfolioManager = PortfolioManagerImpl(
+                    krakenService,
+                    mockConfigService,
+                    mockk<TradeHistoryService>(relaxed = true),
+                    mockk<PortfolioStatsRepository>(relaxed = true)
+                )
+
+                // Prove that the network failure correctly propagates an exception
+                // This ensures our mock is working, while runLoop() is responsible for catching it (see PortfolioManagerImpl)
+                shouldThrow<Exception> {
+                    portfolioManager.performRebalanceCycle()
+                }
             }
         }
     }
-
-    "should not crash the application when an IOException occurs (Network failure)" {
-        runTest {
-            val appConfig = AppConfig(
-                KrakenCredentials("apiKey", "secret"),
-                Settings(60L, 2.0, 1.0, false, 50.0, 1.0),
-                listOf(Allocation(KrakenSymbols.BTC, 50.0))
-            )
-            val mockConfigService = mockk<ConfigService>(relaxed = true)
-            every { mockConfigService.getConfig() } returns appConfig
-
-            val mockEngine = MockEngine { throw IOException("Connection reset by peer") }
-            val httpClient = HttpClient(mockEngine)
-            
-            val krakenService = KrakenServiceImpl(mockConfigService, jacksonObjectMapper(), httpClient)
-            val portfolioManager = PortfolioManagerImpl(
-                krakenService, mockConfigService, mockk<TradeHistoryService>(relaxed = true), mockk<PortfolioStatsRepository>(relaxed = true)
-            )
-
-            // Prove that the network failure correctly propagates an exception
-            // This ensures our mock is working, while runLoop() is responsible for catching it (see PortfolioManagerImpl)
-            shouldThrow<Exception> {
-                portfolioManager.performRebalanceCycle()
-            }
-        }
-    }
-}
 }

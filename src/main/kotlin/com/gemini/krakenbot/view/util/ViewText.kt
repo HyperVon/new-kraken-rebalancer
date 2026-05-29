@@ -13,7 +13,8 @@ object ViewText {
     const val NO_TRADES_EXECUTED = "No trades executed (Cycle complete)"
     const val CONNECTING = "Connecting to KrakenRebalancer..."
     const val WAITING_FIRST_CYCLE = "Waiting for first rebalance cycle"
-    const val REBALANCER_RUNNING = "The rebalancer is running. Portfolio data will appear here after the first cycle completes."
+    const val REBALANCER_RUNNING =
+        "The rebalancer is running. Portfolio data will appear here after the first cycle completes."
     const val GLOBAL_PARAMETERS = "Global Parameters"
     const val LOOP_INTERVAL = "Loop Interval (Seconds)"
     const val DEVIATION_TRIGGER = "Deviation Trigger (%)"

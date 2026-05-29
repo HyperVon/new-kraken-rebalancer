@@ -2,24 +2,29 @@
 
 ## Supported Versions
 
-Only the latest release on the `main` branch is actively maintained and receives security updates.
+Only the latest release on the `main` branch is actively maintained and receives
+security updates.
 
-| Version | Supported          |
-| ------- | ------------------ |
-| latest (main) | :white_check_mark: |
-| older releases | :x: |
+| Version        | Supported          |
+|----------------|--------------------|
+| latest (main)  | :white_check_mark: |
+| older releases | :x:                |
 
 ## Reporting a Vulnerability
 
 **Please do not report security vulnerabilities through public GitHub issues.**
 
-This project manages live cryptocurrency portfolio data and interacts with the Kraken exchange API. Security vulnerabilities should be treated with care.
+This project manages live cryptocurrency portfolio data and interacts with the
+Kraken exchange API. Security vulnerabilities should be treated with care.
 
 ### How to Report
 
-Please use GitHub's **[Private Vulnerability Reporting](https://github.com/HyperVon/new-kraken-rebalancer/security/advisories/new)** feature to submit a vulnerability report confidentially.
+Please use GitHub's *
+*[Private Vulnerability Reporting](https://github.com/HyperVon/new-kraken-rebalancer/security/advisories/new)
+** feature to submit a vulnerability report confidentially.
 
-Alternatively, you may open a GitHub Security Advisory directly from the **Security** tab of this repository.
+Alternatively, you may open a GitHub Security Advisory directly from the *
+*Security** tab of this repository.
 
 ### What to Include
 
@@ -33,15 +38,21 @@ Please include as much of the following as possible:
 ### What to Expect
 
 - **Acknowledgement**: Within 48 hours of submission
-- **Status update**: Within 7 days with an assessment of severity and planned resolution
-- **Resolution**: Critical vulnerabilities will be prioritized and patched as quickly as possible
+- **Status update**: Within 7 days with an assessment of severity and planned
+  resolution
+- **Resolution**: Critical vulnerabilities will be prioritized and patched as
+  quickly as possible
 
 ## Security Considerations for Users
 
-This application handles sensitive Kraken API credentials and executes live trades. When deploying:
+This application handles sensitive Kraken API credentials and executes live
+trades. When deploying:
 
-- **Never commit your `rebalancer-config.json`** — it contains your API keys and is listed in `.gitignore` for this reason
-- Run with the **minimum required API permissions** on Kraken (Query Funds, Query Open Orders, Create & Modify Orders)
-- Consider running in **dry-run mode** (`dryRun: true`) before enabling live trading
+- **Never commit your `rebalancer-config.json`** — it contains your API keys and
+  is listed in `.gitignore` for this reason
+- Run with the **minimum required API permissions** on Kraken (Query Funds,
+  Query Open Orders, Create & Modify Orders)
+- Consider running in **dry-run mode** (`dryRun: true`) before enabling live
+  trading
 - Restrict access to the machine running this application
 - Regularly rotate your Kraken API keys

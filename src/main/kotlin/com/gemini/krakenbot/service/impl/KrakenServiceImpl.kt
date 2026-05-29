@@ -47,11 +47,23 @@ class KrakenServiceImpl(
         }.toMap()
     }
 
-    override suspend fun executeOrder(pair: String, type: String, side: String, volume: BigDecimal): OrderResult {
-        val normalizedVolume = volume.setScale(8, RoundingMode.HALF_UP).stripTrailingZeros()
+    override suspend fun executeOrder(
+        pair: String,
+        type: String,
+        side: String,
+        volume: BigDecimal
+    ): OrderResult {
+        val normalizedVolume =
+            volume.setScale(8, RoundingMode.HALF_UP).stripTrailingZeros()
 
         if (configService.getConfig().settings.dryRun) {
-            log.info("[DRY RUN] Would execute order: {} {} {} volume={}", type, side, pair, normalizedVolume.toPlainString())
+            log.info(
+                "[DRY RUN] Would execute order: {} {} {} volume={}",
+                type,
+                side,
+                pair,
+                normalizedVolume.toPlainString()
+            )
             return OrderResult(
                 success = true,
                 pair = pair,
@@ -72,10 +84,22 @@ class KrakenServiceImpl(
         return try {
             val resp = queryPrivate(path, params)
             log.info("Order Executed: {}", resp.toString())
-            OrderResult(success = true, pair = pair, side = side, volume = normalizedVolume)
+            OrderResult(
+                success = true,
+                pair = pair,
+                side = side,
+                volume = normalizedVolume
+            )
         } catch (e: Exception) {
             val message = e.message ?: e.javaClass.simpleName
-            log.error("Failed to execute order: {} {} {} volume={}", type, side, pair, normalizedVolume.toPlainString(), e)
+            log.error(
+                "Failed to execute order: {} {} {} volume={}",
+                type,
+                side,
+                pair,
+                normalizedVolume.toPlainString(),
+                e
+            )
             OrderResult(
                 success = false,
                 pair = pair,
@@ -91,8 +115,14 @@ class KrakenServiceImpl(
         try {
             val root: JsonNode = objectMapper.readTree(responseBody)
             if (root.has("error") && !root.path("error").isEmpty) {
-                log.error("Kraken Public API Error for path {}: {}", path, root.path("error"))
-                throw RuntimeException("Kraken Public API Error: " + root.path("error").toString())
+                log.error(
+                    "Kraken Public API Error for path {}: {}",
+                    path,
+                    root.path("error")
+                )
+                throw RuntimeException(
+                    "Kraken Public API Error: " + root.path("error").toString()
+                )
             }
             return root
         } catch (e: JsonProcessingException) {
@@ -100,7 +130,10 @@ class KrakenServiceImpl(
         }
     }
 
-    private suspend fun queryPrivate(path: String, data: Map<String, String>): JsonNode {
+    private suspend fun queryPrivate(
+        path: String,
+        data: Map<String, String>
+    ): JsonNode {
         val maxRetries = 5
         var retryCount = 0
 
@@ -109,7 +142,8 @@ class KrakenServiceImpl(
             val payload = data.toMutableMap()
             payload["nonce"] = nonce
 
-            val postData = payload.entries.joinToString("&") { "${it.key}=${it.value}" }
+            val postData =
+                payload.entries.joinToString("&") { "${it.key}=${it.value}" }
             val signature = signRequest(path, nonce, postData)
 
             val apiKey = configService.getConfig().kraken.apiKey
@@ -127,7 +161,11 @@ class KrakenServiceImpl(
                 if (!root.path("error").isEmpty) {
                     val errorMsg = root.path("error").toString()
                     if (errorMsg.contains("Invalid nonce") && retryCount < maxRetries) {
-                        log.warn("Invalid nonce detected. Adjusting nonce generator and retrying (Attempt {}/{})", retryCount + 1, maxRetries)
+                        log.warn(
+                            "Invalid nonce detected. Adjusting nonce generator and retrying (Attempt {}/{})",
+                            retryCount + 1,
+                            maxRetries
+                        )
                         nonceGenerator.addAndGet(5000) // jump ahead to resolve collisions
                         retryCount++
                         continue
@@ -136,12 +174,19 @@ class KrakenServiceImpl(
                 }
                 return root.path("result")
             } catch (e: JsonProcessingException) {
-                throw RuntimeException("Failed to parse private API response", e)
+                throw RuntimeException(
+                    "Failed to parse private API response",
+                    e
+                )
             }
         }
     }
 
-    private fun signRequest(path: String, nonce: String, postData: String): String {
+    private fun signRequest(
+        path: String,
+        nonce: String,
+        postData: String
+    ): String {
         try {
             val sha2 = MessageDigest.getInstance(KrakenSymbols.SHA_256)
                 .digest((nonce + postData).toByteArray(Charsets.UTF_8))
@@ -150,8 +195,10 @@ class KrakenServiceImpl(
             val hmacMessage = pathBytes + sha2
 
             val mac = Mac.getInstance(KrakenSymbols.HMAC_SHA512)
-            val secretDecoded = Base64.getDecoder().decode(configService.getConfig().kraken.privateKey)
-            val secretSpec = SecretKeySpec(secretDecoded, KrakenSymbols.HMAC_SHA512)
+            val secretDecoded = Base64.getDecoder()
+                .decode(configService.getConfig().kraken.privateKey)
+            val secretSpec =
+                SecretKeySpec(secretDecoded, KrakenSymbols.HMAC_SHA512)
             mac.init(secretSpec)
 
             val sigBytes = mac.doFinal(hmacMessage)

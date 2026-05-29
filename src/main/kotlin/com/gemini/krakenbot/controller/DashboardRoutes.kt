@@ -8,11 +8,7 @@ import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.TradeHistoryService
 import com.gemini.krakenbot.view.DashboardView
-import com.gemini.krakenbot.view.util.CssClasses
-import com.gemini.krakenbot.view.util.FormFields
-import com.gemini.krakenbot.view.util.HtmxHeaders
-import com.gemini.krakenbot.view.util.Routes
-import com.gemini.krakenbot.view.util.ViewText
+import com.gemini.krakenbot.view.util.*
 import io.ktor.http.*
 import io.ktor.server.application.*
 import io.ktor.server.html.*
@@ -22,7 +18,10 @@ import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import io.ktor.server.sse.*
 import io.ktor.sse.*
-import kotlinx.html.*
+import kotlinx.html.div
+import kotlinx.html.h2
+import kotlinx.html.html
+import kotlinx.html.p
 import kotlinx.html.stream.createHTML
 import org.koin.ktor.ext.inject
 
@@ -74,12 +73,17 @@ private suspend fun RoutingContext.handlePostSettings(
     configService: ConfigService
 ) {
     val params = call.receiveParameters()
-    val loopDelaySeconds = params[FormFields.LOOP_DELAY_SECONDS]?.toLongOrNull() ?: 60L
-    val deviationTriggerPercent = params[FormFields.DEVIATION_TRIGGER_PERCENT]?.toDoubleOrNull() ?: 2.0
-    val dustThresholdUSD = params[FormFields.DUST_THRESHOLD_USD]?.toDoubleOrNull() ?: 1.0
+    val loopDelaySeconds =
+        params[FormFields.LOOP_DELAY_SECONDS]?.toLongOrNull() ?: 60L
+    val deviationTriggerPercent =
+        params[FormFields.DEVIATION_TRIGGER_PERCENT]?.toDoubleOrNull() ?: 2.0
+    val dustThresholdUSD =
+        params[FormFields.DUST_THRESHOLD_USD]?.toDoubleOrNull() ?: 1.0
     val dryRun = params[FormFields.DRY_RUN] != null
-    val fiatMaxDrawdown = params[FormFields.FIAT_MAX_DRAWDOWN]?.toDoubleOrNull() ?: 0.0
-    val fiatDeploymentExponent = params[FormFields.FIAT_DEPLOYMENT_EXPONENT]?.toDoubleOrNull() ?: 1.0
+    val fiatMaxDrawdown =
+        params[FormFields.FIAT_MAX_DRAWDOWN]?.toDoubleOrNull() ?: 0.0
+    val fiatDeploymentExponent =
+        params[FormFields.FIAT_DEPLOYMENT_EXPONENT]?.toDoubleOrNull() ?: 1.0
 
     val symbols = params.getAll(FormFields.SYMBOLS) ?: emptyList()
     val targets = params.getAll(FormFields.TARGETS) ?: emptyList()
@@ -91,7 +95,14 @@ private suspend fun RoutingContext.handlePostSettings(
     val currentConfig = configService.getConfig()
     val updatedConfig = AppConfig(
         currentConfig.kraken,
-        Settings(loopDelaySeconds, deviationTriggerPercent, dustThresholdUSD, dryRun, fiatMaxDrawdown, fiatDeploymentExponent),
+        Settings(
+            loopDelaySeconds,
+            deviationTriggerPercent,
+            dustThresholdUSD,
+            dryRun,
+            fiatMaxDrawdown,
+            fiatDeploymentExponent
+        ),
         allocations
     )
 
@@ -102,10 +113,14 @@ private suspend fun RoutingContext.handlePostSettings(
     } catch (e: InvalidConfigurationException) {
         val errHtml = createHTML(prettyPrint = false).html {
             with(dashboardView) {
-                renderSettingsPage(updatedConfig, e.message ?: "Invalid configuration")
+                renderSettingsPage(
+                    updatedConfig,
+                    e.message ?: "Invalid configuration"
+                )
             }
         }
-        val formBody = errHtml.substringAfter("<body>").substringBefore("</body>")
+        val formBody =
+            errHtml.substringAfter("<body>").substringBefore("</body>")
         call.respondText(formBody, ContentType.Text.Html)
     }
 }
@@ -118,14 +133,15 @@ private suspend fun RoutingContext.handleGetDashboardFragment(
     val history = tradeHistoryService.getHistory()
 
     if (latest == null) {
-        val noSnapshotHtml = createHTML(prettyPrint = false).div(CssClasses.SPINNER_CONTAINER) {
-            h2(CssClasses.DASHBOARD_WAITING_TITLE) {
-                +ViewText.WAITING_FIRST_CYCLE
+        val noSnapshotHtml =
+            createHTML(prettyPrint = false).div(CssClasses.SPINNER_CONTAINER) {
+                h2(CssClasses.DASHBOARD_WAITING_TITLE) {
+                    +ViewText.WAITING_FIRST_CYCLE
+                }
+                p(CssClasses.DASHBOARD_WAITING_TEXT) {
+                    +ViewText.REBALANCER_RUNNING
+                }
             }
-            p(CssClasses.DASHBOARD_WAITING_TEXT) {
-                +ViewText.REBALANCER_RUNNING
-            }
-        }
         call.respondText(noSnapshotHtml, ContentType.Text.Html)
         return
     }

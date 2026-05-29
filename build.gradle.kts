@@ -17,7 +17,8 @@ java {
 
 application {
     mainClass.set("com.gemini.krakenbot.KrakenRebalancerApplicationKt")
-    applicationDefaultJvmArgs = listOf("-Xshare:off", "--sun-misc-unsafe-memory-access=allow")
+    applicationDefaultJvmArgs =
+        listOf("-Xshare:off", "--sun-misc-unsafe-memory-access=allow")
 }
 
 repositories {
@@ -37,7 +38,7 @@ dependencies {
     implementation("io.insert-koin:koin-core:${koinVersion}")
     implementation("io.insert-koin:koin-logger-slf4j:${koinVersion}")
     implementation("io.insert-koin:koin-ktor:${koinVersion}")
-    
+
     // Ktor Server & Client
     val ktorVersion = "3.5.0"
     implementation("io.ktor:ktor-server-core:$ktorVersion")

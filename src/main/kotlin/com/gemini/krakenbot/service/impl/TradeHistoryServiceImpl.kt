@@ -3,10 +3,10 @@ package com.gemini.krakenbot.service.impl
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.repository.TradeRepository
 import com.gemini.krakenbot.service.TradeHistoryService
-import java.util.concurrent.CopyOnWriteArrayList
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import java.util.concurrent.CopyOnWriteArrayList
 
 class TradeHistoryServiceImpl(
     private val repository: TradeRepository
@@ -14,7 +14,8 @@ class TradeHistoryServiceImpl(
 
     private val history = CopyOnWriteArrayList<PortfolioSnapshot>()
     private val maxHistorySize = 50
-    private val snapshotFlow = MutableSharedFlow<PortfolioSnapshot>(extraBufferCapacity = 16)
+    private val snapshotFlow =
+        MutableSharedFlow<PortfolioSnapshot>(extraBufferCapacity = 16)
 
     override fun init() {
         val loaded = repository.load()

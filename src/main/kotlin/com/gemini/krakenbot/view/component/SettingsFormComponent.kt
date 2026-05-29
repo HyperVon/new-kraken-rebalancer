@@ -1,17 +1,10 @@
 package com.gemini.krakenbot.view.component
 
 import com.gemini.krakenbot.config.AppConfig
-import com.gemini.krakenbot.view.util.CssClasses
-import com.gemini.krakenbot.view.util.FormFields
-import com.gemini.krakenbot.view.util.HtmlAttrs
-import com.gemini.krakenbot.view.util.HtmlIds
-import com.gemini.krakenbot.view.util.HtmxAttrs
-import com.gemini.krakenbot.view.util.Icons
+import com.gemini.krakenbot.view.util.*
 import com.gemini.krakenbot.view.util.Icons.icon
 import com.gemini.krakenbot.view.util.Layouts.formGroup
 import com.gemini.krakenbot.view.util.Layouts.formSection
-import com.gemini.krakenbot.view.util.Routes
-import com.gemini.krakenbot.view.util.ViewText
 import kotlinx.html.*
 
 class SettingsFormComponent {
@@ -24,12 +17,18 @@ class SettingsFormComponent {
 
                 header {
                     div(CssClasses.HEADER_TITLE_SECTION) {
-                        a(href = Routes.ROOT, classes = "${CssClasses.BTN_SECONDARY} ${CssClasses.BTN_ICON}") {
+                        a(
+                            href = Routes.ROOT,
+                            classes = "${CssClasses.BTN_SECONDARY} ${CssClasses.BTN_ICON}"
+                        ) {
                             icon(Icons.BACK_ARROW)
                         }
                         h1 { +ViewText.SETTINGS_TITLE }
                     }
-                    button(type = ButtonType.submit, classes = CssClasses.BTN_PRIMARY) {
+                    button(
+                        type = ButtonType.submit,
+                        classes = CssClasses.BTN_PRIMARY
+                    ) {
                         id = HtmlIds.SAVE_BUTTON
                         icon(Icons.FLOPPY_DISK)
                         span { +ViewText.SAVE_CONFIGURATION }
@@ -56,44 +55,69 @@ class SettingsFormComponent {
         formSection(ViewText.GLOBAL_PARAMETERS, Icons.SHIELD_EXCLAMATION) {
             div(CssClasses.GRID_2COL) {
                 formGroup(ViewText.LOOP_INTERVAL) {
-                    input(type = InputType.number, name = FormFields.LOOP_DELAY_SECONDS, classes = CssClasses.INPUT_GLASS) {
+                    input(
+                        type = InputType.number,
+                        name = FormFields.LOOP_DELAY_SECONDS,
+                        classes = CssClasses.INPUT_GLASS
+                    ) {
                         min = "1"
                         value = config.settings.loopDelaySeconds.toString()
                     }
                 }
 
                 formGroup(ViewText.DEVIATION_TRIGGER) {
-                    input(type = InputType.number, name = FormFields.DEVIATION_TRIGGER_PERCENT, classes = CssClasses.INPUT_GLASS) {
+                    input(
+                        type = InputType.number,
+                        name = FormFields.DEVIATION_TRIGGER_PERCENT,
+                        classes = CssClasses.INPUT_GLASS
+                    ) {
                         step = "0.1"
                         min = "0"
-                        value = config.settings.deviationTriggerPercent.toString()
+                        value =
+                            config.settings.deviationTriggerPercent.toString()
                     }
                 }
 
                 formGroup(ViewText.DUST_THRESHOLD) {
-                    input(type = InputType.number, name = FormFields.DUST_THRESHOLD_USD, classes = CssClasses.INPUT_GLASS) {
+                    input(
+                        type = InputType.number,
+                        name = FormFields.DUST_THRESHOLD_USD,
+                        classes = CssClasses.INPUT_GLASS
+                    ) {
                         step = "0.5"
                         value = config.settings.dustThresholdUSD.toString()
                     }
                 }
 
                 formGroup(ViewText.FIAT_MAX_DRAWDOWN) {
-                    input(type = InputType.number, name = FormFields.FIAT_MAX_DRAWDOWN, classes = CssClasses.INPUT_GLASS) {
+                    input(
+                        type = InputType.number,
+                        name = FormFields.FIAT_MAX_DRAWDOWN,
+                        classes = CssClasses.INPUT_GLASS
+                    ) {
                         step = "1.0"
                         value = config.settings.fiatMaxDrawdown.toString()
                     }
                 }
 
                 formGroup(ViewText.FIAT_DEPLOYMENT_EXPONENT) {
-                    input(type = InputType.number, name = FormFields.FIAT_DEPLOYMENT_EXPONENT, classes = CssClasses.INPUT_GLASS) {
+                    input(
+                        type = InputType.number,
+                        name = FormFields.FIAT_DEPLOYMENT_EXPONENT,
+                        classes = CssClasses.INPUT_GLASS
+                    ) {
                         step = "0.1"
-                        value = config.settings.fiatDeploymentExponent.toString()
+                        value =
+                            config.settings.fiatDeploymentExponent.toString()
                     }
                 }
 
                 div("${CssClasses.FORM_GROUP} ${CssClasses.FORM_GROUP_CENTERED}") {
                     label(classes = CssClasses.CHECKBOX_CONTAINER) {
-                        input(type = InputType.checkBox, name = FormFields.DRY_RUN) {
+                        input(
+                            type = InputType.checkBox,
+                            name = FormFields.DRY_RUN
+                        ) {
                             checked = config.settings.dryRun
                         }
                         div(CssClasses.CHECKBOX_CUSTOM) {}
@@ -121,17 +145,29 @@ class SettingsFormComponent {
                 config.allocations.forEach { alloc ->
                     div(CssClasses.ALLOCATION_EDIT_ROW) {
                         div(CssClasses.ALLOCATION_EDIT_SYMBOL) { +alloc.symbol }
-                        input(type = InputType.hidden, name = FormFields.SYMBOLS) { value = alloc.symbol }
+                        input(
+                            type = InputType.hidden,
+                            name = FormFields.SYMBOLS
+                        ) { value = alloc.symbol }
                         div(CssClasses.ALLOCATION_EDIT_INPUT_WRAPPER) {
-                            input(type = InputType.number, name = FormFields.TARGETS, classes = CssClasses.INPUT_GLASS) {
+                            input(
+                                type = InputType.number,
+                                name = FormFields.TARGETS,
+                                classes = CssClasses.INPUT_GLASS
+                            ) {
                                 step = "0.1"
                                 value = alloc.targetPercent.toString()
-                                attributes[HtmlAttrs.ONINPUT] = "updateAllocationTotal()"
+                                attributes[HtmlAttrs.ONINPUT] =
+                                    "updateAllocationTotal()"
                             }
                             span(CssClasses.PERCENT_SUFFIX) { +"%" }
                         }
-                        button(type = ButtonType.button, classes = CssClasses.BTN_DANGER) {
-                            attributes[HtmlAttrs.ONCLICK] = "this.closest('.allocation-edit-row').remove(); updateAllocationTotal();"
+                        button(
+                            type = ButtonType.button,
+                            classes = CssClasses.BTN_DANGER
+                        ) {
+                            attributes[HtmlAttrs.ONCLICK] =
+                                "this.closest('.allocation-edit-row').remove(); updateAllocationTotal();"
                             +ViewText.REMOVE
                         }
                     }
@@ -142,9 +178,13 @@ class SettingsFormComponent {
                 input(type = InputType.text, classes = CssClasses.INPUT_GLASS) {
                     id = HtmlIds.NEW_SYMBOL_INPUT
                     placeholder = ViewText.NEW_SYMBOL_PLACEHOLDER
-                    attributes[HtmlAttrs.ONKEYDOWN] = "if(event.key === 'Enter') { event.preventDefault(); addAssetRow(); }"
+                    attributes[HtmlAttrs.ONKEYDOWN] =
+                        "if(event.key === 'Enter') { event.preventDefault(); addAssetRow(); }"
                 }
-                button(type = ButtonType.button, classes = CssClasses.BTN_SECONDARY) {
+                button(
+                    type = ButtonType.button,
+                    classes = CssClasses.BTN_SECONDARY
+                ) {
                     attributes[HtmlAttrs.ONCLICK] = "addAssetRow()"
                     icon(Icons.PLUS)
                     span { +ViewText.ADD_ASSET }

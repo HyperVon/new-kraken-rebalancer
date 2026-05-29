@@ -27,7 +27,8 @@ class PortfolioStatsRepositoryImplTest : StringSpec({
         if (f.exists()) f.delete()
         objectMapper = jacksonObjectMapper()
         repository = PortfolioStatsRepositoryImpl(objectMapper)
-        val field = PortfolioStatsRepositoryImpl::class.java.getDeclaredField("filePath")
+        val field =
+            PortfolioStatsRepositoryImpl::class.java.getDeclaredField("filePath")
         field.isAccessible = true
         field.set(repository, testFileName)
     }
@@ -63,7 +64,12 @@ class PortfolioStatsRepositoryImplTest : StringSpec({
 
     "save_HandlesIOException" {
         val mockMapper = mockk<ObjectMapper>(relaxed = true)
-        every { mockMapper.writeValue(any<File>(), any<Any>()) } throws IOException("simulated error")
+        every {
+            mockMapper.writeValue(
+                any<File>(),
+                any<Any>()
+            )
+        } throws IOException("simulated error")
 
         val errRepository = PortfolioStatsRepositoryImpl(mockMapper)
         val stats = PortfolioStats(BigDecimal.TEN)

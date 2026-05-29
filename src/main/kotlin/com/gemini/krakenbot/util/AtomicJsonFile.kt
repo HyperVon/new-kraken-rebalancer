@@ -14,13 +14,23 @@ object AtomicJsonFile {
         if (!parent.exists() && !parent.mkdirs()) {
             throw IOException("Failed to create directory: ${parent.absolutePath}")
         }
-        val temp = File(parent, "${target.name}.${System.currentTimeMillis()}.tmp")
+        val temp =
+            File(parent, "${target.name}.${System.currentTimeMillis()}.tmp")
         try {
             objectMapper.writeValue(temp, value)
             try {
-                Files.move(temp.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
+                Files.move(
+                    temp.toPath(),
+                    target.toPath(),
+                    StandardCopyOption.REPLACE_EXISTING,
+                    StandardCopyOption.ATOMIC_MOVE
+                )
             } catch (_: AtomicMoveNotSupportedException) {
-                Files.move(temp.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING)
+                Files.move(
+                    temp.toPath(),
+                    target.toPath(),
+                    StandardCopyOption.REPLACE_EXISTING
+                )
             }
         } finally {
             if (temp.exists()) {

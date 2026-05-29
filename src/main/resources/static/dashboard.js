@@ -15,7 +15,7 @@ function updateAge() {
             if (ageEl.className !== delayedClass) {
                 ageEl.className = delayedClass;
             }
-            
+
             // Localize the time display to expected hh:mm:ss a local format
             var date = new Date(epoch);
             var hours = date.getHours();
@@ -52,11 +52,11 @@ function reapplySort() {
 }
 
 var ageTimer = setInterval(updateAge, 1000);
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', function () {
     updateAge();
     reapplySort();
 });
-document.addEventListener('htmx:afterSwap', function() {
+document.addEventListener('htmx:afterSwap', function () {
     updateAge();
     reapplySort();
 });
@@ -69,7 +69,7 @@ function sortTable(header, colIdx, forceDir) {
     var sortAsc = (forceDir !== undefined) ? (forceDir === 'asc') : !isAsc;
     var key = colIdx === 0 ? 'string' : 'float';
 
-    rows.sort(function(a, b) {
+    rows.sort(function (a, b) {
         var aText = a.children[colIdx].textContent.trim().replace(/[$,%]/g, '');
         var bText = b.children[colIdx].textContent.trim().replace(/[$,%]/g, '');
         if (key === 'float') {
@@ -83,12 +83,14 @@ function sortTable(header, colIdx, forceDir) {
         }
     });
 
-    table.querySelectorAll('th.sortable').forEach(function(th) {
+    table.querySelectorAll('th.sortable').forEach(function (th) {
         th.classList.remove('asc', 'desc');
     });
     header.classList.add(sortAsc ? 'asc' : 'desc');
 
-    rows.forEach(function(row) { tbody.append(row); });
+    rows.forEach(function (row) {
+        tbody.append(row);
+    });
 
     // Keep track of the user's latest sort criteria so swaps can re-apply them stably
     currentSortCol = colIdx;

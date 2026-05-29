@@ -17,15 +17,17 @@ class KrakenRebalancerApplicationTest : StringSpec(), KoinTest {
             val configFile = File("rebalancer-config.json")
             val existed = configFile.exists()
             if (!existed) {
-                configFile.writeText("""
+                configFile.writeText(
+                    """
                     {
                       "kraken": { "apiKey": "k", "privateKey": "s" },
                       "settings": { "loopDelaySeconds": 60, "deviationTriggerPercent": 2.0, "dustThresholdUSD": 1.0, "dryRun": true, "fiatMaxDrawdown": 0.0, "fiatDeploymentExponent": 1.0 },
                       "allocations": [ { "symbol": "USD", "targetPercent": 100.0 } ]
                     }
-                """.trimIndent())
+                """.trimIndent()
+                )
             }
-            
+
             try {
                 stopKoin() // Ensure clean state
                 startKoin {

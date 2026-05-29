@@ -12,12 +12,7 @@ import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.KrakenService
 import com.gemini.krakenbot.service.PortfolioManager
 import com.gemini.krakenbot.service.TradeHistoryService
-import com.gemini.krakenbot.service.impl.ConfigServiceImpl
-import com.gemini.krakenbot.service.impl.KrakenServiceImpl
-import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
-import com.gemini.krakenbot.service.impl.TradeHistoryServiceImpl
-import com.gemini.krakenbot.service.impl.PortfolioAnalyzer
-import com.gemini.krakenbot.service.impl.OrderExecutor
+import com.gemini.krakenbot.service.impl.*
 import com.gemini.krakenbot.view.DashboardView
 import com.gemini.krakenbot.view.component.*
 import io.ktor.client.*
@@ -28,7 +23,7 @@ import org.koin.dsl.module
 
 val appModule = module {
     single<HttpClient> { HttpClient(CIO) }
-    single<ObjectMapper> { 
+    single<ObjectMapper> {
         jacksonObjectMapper().apply {
             registerModule(JavaTimeModule())
             disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)

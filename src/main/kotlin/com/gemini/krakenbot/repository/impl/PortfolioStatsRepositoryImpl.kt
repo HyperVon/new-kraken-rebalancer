@@ -13,7 +13,8 @@ class PortfolioStatsRepositoryImpl(
     private val objectMapper: ObjectMapper
 ) : PortfolioStatsRepository {
 
-    private val log = LoggerFactory.getLogger(PortfolioStatsRepositoryImpl::class.java)
+    private val log =
+        LoggerFactory.getLogger(PortfolioStatsRepositoryImpl::class.java)
     private val filePath = "portfolio-stats.json"
 
     override fun load(): PortfolioStats {

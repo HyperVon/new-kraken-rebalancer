@@ -1,6 +1,8 @@
 # Rebalancing Algorithm
 
-This document details the operational logic of the Kraken Rebalancer. The system is designed to autonomously maintain a specific portfolio allocation across a set of assets (cryptocurrencies & fiat).
+This document details the operational logic of the Kraken Rebalancer. The system
+is designed to autonomously maintain a specific portfolio allocation across a
+set of assets (cryptocurrencies & fiat).
 
 ## Overview
 
@@ -55,14 +57,19 @@ flowchart TD
 ## Core Concepts
 
 ### 1. Portfolio Definition
+
 The portfolio is defined by a set of target allocations summing to 100%.
 **Example:**
+
 - **BTC**: 50%
 - **ETH**: 45%
 - **USD**: 5%
 
 ### 2. Operational Loop
-The application runs a continuous "Rebalance Cycle" with a configurable delay (e.g., every 60 seconds). Each cycle consists of three phases: **Snapshot**, **Analysis**, and **Execution**.
+
+The application runs a continuous "Rebalance Cycle" with a configurable delay (
+e.g., every 60 seconds). Each cycle consists of three phases: **Snapshot**, *
+*Analysis**, and **Execution**.
 
 ---
 
@@ -70,19 +77,23 @@ The application runs a continuous "Rebalance Cycle" with a configurable delay (e
 
 In this phase, the system builds a complete view of the current portfolio state.
 
-1.  **Fetch Balances**: Retrieves the current balance of all configured assets from the Kraken API.
-2.  **Fetch Prices**: Retrieves the current market price (in USD) for all non-USD assets.
-3.  **Calculate Valuation**:
-    *   Calculates the USD value of every asset (`Balance * Price`).
-    *   Sums these values to determine the **Total Portfolio Value**.
+1. **Fetch Balances**: Retrieves the current balance of all configured assets
+   from the Kraken API.
+2. **Fetch Prices**: Retrieves the current market price (in USD) for all non-USD
+   assets.
+3. **Calculate Valuation**:
+    * Calculates the USD value of every asset (`Balance * Price`).
+    * Sums these values to determine the **Total Portfolio Value**.
 
 ---
 
 ## Phase 2: Analysis
 
-The system determines what trades are necessary to restore the portfolio to its target state.
+The system determines what trades are necessary to restore the portfolio to its
+target state.
 
 ### 1. Target Calculation & Dynamic Adjustment
+
     Normally, the target value is `Total Portfolio Value * Target %`. However, the system implements a **Dynamic Fiat Deployment Strategy**:
 
     1.  **ATH Tracking**: The bot tracks the portfolio's All-Time High (ATH) value in `portfolio-stats.json`. ATH is set on first run or updated whenever a new high is reached.
@@ -108,45 +119,67 @@ The system determines what trades are necessary to restore the portfolio to its 
 
     Using these effective targets, the **Ideal Value** for each asset is calculated.
 
-2.  **Deviation Calculation**:
-    The difference between current and target value is calculated:
-    `Deviation (USD) = Current Value - Target Value`
-    `Deviation (%) = |Deviation (USD)| / Target Value * 100`
+2. **Deviation Calculation**:
+   The difference between current and target value is calculated:
+   `Deviation (USD) = Current Value - Target Value`
+   `Deviation (%) = |Deviation (USD)| / Target Value * 100`
 
-3.  **Trigger Logic**:
-    A rebalance is only attempted if an asset's `Deviation (%)` exceeds the configured `deviationTriggerPercent` (e.g., 5%).
+3. **Trigger Logic**:
+   A rebalance is only attempted if an asset's `Deviation (%)` exceeds the
+   configured `deviationTriggerPercent` (e.g., 5%).
 
-    *   **Scenario A: Standard Rebalance**
-        If a crypto asset (e.g., BTC) exceeds the threshold:
-        *   **Overweight (> 0)**: A **SELL** order is generated for the excess USD amount.
-        *   **Underweight (< 0)**: A **BUY** order is generated for the deficit USD amount.
+    * **Scenario A: Standard Rebalance**
+      If a crypto asset (e.g., BTC) exceeds the threshold:
+        * **Overweight (> 0)**: A **SELL** order is generated for the excess USD
+          amount.
+        * **Underweight (< 0)**: A **BUY** order is generated for the deficit
+          USD amount.
 
-    *   **Scenario B: Fiat Correction (Deposit/Withdrawal)**
-        If *only* the USD asset triggers the threshold (e.g., due to a fresh deposit of cash), the system recognizes this as a "Fiat Correction" event.
-        *   The surplus (or deficit) of USD is distributed intelligently among assets that counter-balance the deviation.
-        *   **Surplus (Deposit)**: Buys are distributed among **Underweight** assets only, proportional to their current USD deficit.
-        *   **Shortage (Withdrawal)**: Sells are distributed among **Overweight** assets only, proportional to their current USD surplus.
-        *   *Note: This concentrates the rebalancing power into the assets that are furthest from their targets, effectively clearing dust thresholds.*
+    * **Scenario B: Fiat Correction (Deposit/Withdrawal)**
+      If *only* the USD asset triggers the threshold (e.g., due to a fresh
+      deposit of cash), the system recognizes this as a "Fiat Correction" event.
+        * The surplus (or deficit) of USD is distributed intelligently among
+          assets that counter-balance the deviation.
+        * **Surplus (Deposit)**: Buys are distributed among **Underweight**
+          assets only, proportional to their current USD deficit.
+        * **Shortage (Withdrawal)**: Sells are distributed among **Overweight**
+          assets only, proportional to their current USD surplus.
+        * *Note: This concentrates the rebalancing power into the assets that
+          are furthest from their targets, effectively clearing dust
+          thresholds.*
 
 ---
 
 ## Phase 3: Execution
 
-The system executes the calculated orders in a specific sequence to ensure liquidity. Each order returns a structured `OrderResult` indicating success or failure.
+The system executes the calculated orders in a specific sequence to ensure
+liquidity. Each order returns a structured `OrderResult` indicating success or
+failure.
 
-1.  **Sell Orders First**: All SELL orders are executed immediately to generate USD.
-    *   Only successful sells update the projected cash balance. Failed sells are logged but do not inflate the available cash.
-2.  **USD Balance Refresh**: After sells complete (if not in dry-run mode), the system polls the Kraken API up to 3 times at 250ms intervals to fetch the settled USD balance. It accepts the balance once it reaches 95% of the projected amount, or uses the best observed value.
-3.  **Buy Orders Second**:
-    *   The system verifies that sufficient cash exists for each planned BUY order.
-    *   If cash is insufficient (rare, usually due to price slippage or failed sells), buy orders are reduced to 99% of available cash.
-    *   Only successful buys deduct from the available cash balance.
-4.  **Order Placement**:
-    *   Orders are placed as **Market Orders** for immediate execution.
-    *   "Dust" orders (below the configured `dustThresholdUSD`) are skipped to avoid API errors.
-    *   Order volumes use `BigDecimal` with 8 decimal places of precision.
-    *   In dry-run mode, orders are logged with a `[DRY RUN]` prefix but not sent to Kraken.
-5.  **Persistence**: The cycle snapshot (including all trade actions and their outcomes) is saved to `trade-history.json` using an atomic write-then-rename operation to prevent file corruption.
+1. **Sell Orders First**: All SELL orders are executed immediately to generate
+   USD.
+    * Only successful sells update the projected cash balance. Failed sells are
+      logged but do not inflate the available cash.
+2. **USD Balance Refresh**: After sells complete (if not in dry-run mode), the
+   system polls the Kraken API up to 3 times at 250ms intervals to fetch the
+   settled USD balance. It accepts the balance once it reaches 95% of the
+   projected amount, or uses the best observed value.
+3. **Buy Orders Second**:
+    * The system verifies that sufficient cash exists for each planned BUY
+      order.
+    * If cash is insufficient (rare, usually due to price slippage or failed
+      sells), buy orders are reduced to 99% of available cash.
+    * Only successful buys deduct from the available cash balance.
+4. **Order Placement**:
+    * Orders are placed as **Market Orders** for immediate execution.
+    * "Dust" orders (below the configured `dustThresholdUSD`) are skipped to
+      avoid API errors.
+    * Order volumes use `BigDecimal` with 8 decimal places of precision.
+    * In dry-run mode, orders are logged with a `[DRY RUN]` prefix but not sent
+      to Kraken.
+5. **Persistence**: The cycle snapshot (including all trade actions and their
+   outcomes) is saved to `trade-history.json` using an atomic write-then-rename
+   operation to prevent file corruption.
 
 ---
 

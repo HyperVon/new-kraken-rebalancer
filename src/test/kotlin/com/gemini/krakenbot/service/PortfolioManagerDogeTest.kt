@@ -27,7 +27,12 @@ class PortfolioManagerDogeTest : StringSpec() {
         beforeTest {
             krakenService.executedOrders.clear()
             val repo = mockk<PortfolioStatsRepository>(relaxed = true)
-            portfolioManager = PortfolioManagerImpl(krakenService, configService, tradeHistoryService, repo)
+            portfolioManager = PortfolioManagerImpl(
+                krakenService,
+                configService,
+                tradeHistoryService,
+                repo
+            )
         }
 
         "testDogeMapping" {
@@ -35,11 +40,15 @@ class PortfolioManagerDogeTest : StringSpec() {
                 val settings = Settings(60L, 2.0, 1.0, true, 0.0, 1.0)
                 val config = AppConfig(
                     KrakenCredentials("k", "s"), settings,
-                    listOf(Allocation(KrakenSymbols.DOGE, 50.0), Allocation(KrakenSymbols.USD, 50.0))
+                    listOf(
+                        Allocation(KrakenSymbols.DOGE, 50.0),
+                        Allocation(KrakenSymbols.USD, 50.0)
+                    )
                 )
                 every { configService.getConfig() } returns config
 
-                krakenService.balanceSupplier = { mapOf("XDG" to 1000.0, "ZUSD" to 500.0) }
+                krakenService.balanceSupplier =
+                    { mapOf("XDG" to 1000.0, "ZUSD" to 500.0) }
                 krakenService.pricesSupplier = { pairs ->
                     if (pairs.contains("XDGUSD")) mapOf("XDGUSD" to 0.10) else emptyMap()
                 }
@@ -59,11 +68,15 @@ class PortfolioManagerDogeTest : StringSpec() {
                 val settings = Settings(60L, 2.0, 1.0, true, 0.0, 1.0)
                 val config = AppConfig(
                     KrakenCredentials("k", "s"), settings,
-                    listOf(Allocation(KrakenSymbols.BTC, 50.0), Allocation(KrakenSymbols.USD, 50.0))
+                    listOf(
+                        Allocation(KrakenSymbols.BTC, 50.0),
+                        Allocation(KrakenSymbols.USD, 50.0)
+                    )
                 )
                 every { configService.getConfig() } returns config
 
-                krakenService.balanceSupplier = { mapOf("XXBT" to 1.0, "ZUSD" to 50000.0) }
+                krakenService.balanceSupplier =
+                    { mapOf("XXBT" to 1.0, "ZUSD" to 50000.0) }
                 krakenService.pricesSupplier = { pairs ->
                     if (pairs.contains("XXBTZUSD") || pairs.contains("XBTUSD"))
                         mapOf("XXBTZUSD" to 50000.0)
