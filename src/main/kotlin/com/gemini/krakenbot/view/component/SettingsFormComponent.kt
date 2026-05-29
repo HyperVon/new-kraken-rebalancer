@@ -1,66 +1,69 @@
 package com.gemini.krakenbot.view.component
 
 import com.gemini.krakenbot.config.AppConfig
+import com.gemini.krakenbot.view.util.CssClasses
+import com.gemini.krakenbot.view.util.FormFields
+import com.gemini.krakenbot.view.util.HtmlAttrs
+import com.gemini.krakenbot.view.util.HtmlIds
+import com.gemini.krakenbot.view.util.HtmxAttrs
 import com.gemini.krakenbot.view.util.Icons
 import com.gemini.krakenbot.view.util.Icons.icon
 import com.gemini.krakenbot.view.util.Layouts.formGroup
 import com.gemini.krakenbot.view.util.Layouts.formSection
+import com.gemini.krakenbot.view.util.Routes
 import com.gemini.krakenbot.view.util.ViewText
 import kotlinx.html.*
 
 class SettingsFormComponent {
     fun BODY.render(config: AppConfig, errorMessage: String?) {
-        div("container") {
+        div(CssClasses.CONTAINER) {
             form {
-                attributes["hx-post"] = "/settings"
-                attributes["hx-target"] = "body"
-                attributes["hx-swap"] = "innerHTML"
+                attributes[HtmxAttrs.HX_POST] = Routes.SETTINGS
+                attributes[HtmxAttrs.HX_TARGET] = "body"
+                attributes[HtmxAttrs.HX_SWAP] = "innerHTML"
 
                 header {
-                    div("header-title-section") {
-                        a(href = "/", classes = "btn btn-secondary") {
-                            style = "padding: 0.5rem;"
+                    div(CssClasses.HEADER_TITLE_SECTION) {
+                        a(href = Routes.ROOT, classes = "${CssClasses.BTN_SECONDARY} ${CssClasses.BTN_ICON}") {
                             icon(Icons.BACK_ARROW)
                         }
                         h1 { +ViewText.SETTINGS_TITLE }
                     }
-                    button(type = ButtonType.submit, classes = "btn btn-primary") {
-                        id = "save-button"
+                    button(type = ButtonType.submit, classes = CssClasses.BTN_PRIMARY) {
+                        id = HtmlIds.SAVE_BUTTON
                         icon(Icons.FLOPPY_DISK)
                         span { +ViewText.SAVE_CONFIGURATION }
                     }
                 }
 
                 if (errorMessage != null) {
-                    div {
-                        style = "background-color: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.3); color: #fecaca; padding: 1rem; border-radius: 0.5rem; margin-bottom: 1.5rem; font-weight: 500;"
+                    div(CssClasses.ERROR_BANNER) {
                         +errorMessage
                     }
                 }
 
-                div("glass-panel") {
+                div(CssClasses.GLASS_PANEL) {
                     renderGlobalParametersSection(config)
                     renderTargetAllocationsSection(config)
                 }
             }
         }
 
-        renderSettingsTemplate()
         renderSettingsScript()
     }
 
     private fun DIV.renderGlobalParametersSection(config: AppConfig) {
         formSection(ViewText.GLOBAL_PARAMETERS, Icons.SHIELD_EXCLAMATION) {
-            div("grid-2col") {
+            div(CssClasses.GRID_2COL) {
                 formGroup(ViewText.LOOP_INTERVAL) {
-                    input(type = InputType.number, name = "loopDelaySeconds", classes = "input-glass") {
+                    input(type = InputType.number, name = FormFields.LOOP_DELAY_SECONDS, classes = CssClasses.INPUT_GLASS) {
                         min = "1"
                         value = config.settings.loopDelaySeconds.toString()
                     }
                 }
 
                 formGroup(ViewText.DEVIATION_TRIGGER) {
-                    input(type = InputType.number, name = "deviationTriggerPercent", classes = "input-glass") {
+                    input(type = InputType.number, name = FormFields.DEVIATION_TRIGGER_PERCENT, classes = CssClasses.INPUT_GLASS) {
                         step = "0.1"
                         min = "0"
                         value = config.settings.deviationTriggerPercent.toString()
@@ -68,33 +71,32 @@ class SettingsFormComponent {
                 }
 
                 formGroup(ViewText.DUST_THRESHOLD) {
-                    input(type = InputType.number, name = "dustThresholdUSD", classes = "input-glass") {
+                    input(type = InputType.number, name = FormFields.DUST_THRESHOLD_USD, classes = CssClasses.INPUT_GLASS) {
                         step = "0.5"
                         value = config.settings.dustThresholdUSD.toString()
                     }
                 }
 
                 formGroup(ViewText.FIAT_MAX_DRAWDOWN) {
-                    input(type = InputType.number, name = "fiatMaxDrawdown", classes = "input-glass") {
+                    input(type = InputType.number, name = FormFields.FIAT_MAX_DRAWDOWN, classes = CssClasses.INPUT_GLASS) {
                         step = "1.0"
                         value = config.settings.fiatMaxDrawdown.toString()
                     }
                 }
 
                 formGroup(ViewText.FIAT_DEPLOYMENT_EXPONENT) {
-                    input(type = InputType.number, name = "fiatDeploymentExponent", classes = "input-glass") {
+                    input(type = InputType.number, name = FormFields.FIAT_DEPLOYMENT_EXPONENT, classes = CssClasses.INPUT_GLASS) {
                         step = "0.1"
                         value = config.settings.fiatDeploymentExponent.toString()
                     }
                 }
 
-                div("form-group") {
-                    style = "justify-content: center; padding-top: 1rem;"
-                    label("checkbox-container") {
-                        input(type = InputType.checkBox, name = "dryRun") {
+                div("${CssClasses.FORM_GROUP} ${CssClasses.FORM_GROUP_CENTERED}") {
+                    label(classes = CssClasses.CHECKBOX_CONTAINER) {
+                        input(type = InputType.checkBox, name = FormFields.DRY_RUN) {
                             checked = config.settings.dryRun
                         }
-                        div("checkbox-custom") {}
+                        div(CssClasses.CHECKBOX_CUSTOM) {}
                         span { +ViewText.DRY_RUN_MODE }
                     }
                 }
@@ -103,50 +105,47 @@ class SettingsFormComponent {
     }
 
     private fun DIV.renderTargetAllocationsSection(config: AppConfig) {
-        div("form-section") {
-            div {
-                style = "display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem;"
+        div(CssClasses.FORM_SECTION) {
+            div(CssClasses.SECTION_HEADER) {
                 h3 {
-                    style = "font-size: 1.125rem; font-weight: 600; color: white; margin: 0;"
                     +ViewText.TARGET_ALLOCATIONS
                 }
-                div("status-badge live") {
-                    id = "total-allocated-display"
+                div(CssClasses.STATUS_BADGE_LIVE) {
+                    id = HtmlIds.TOTAL_ALLOCATED_DISPLAY
                     +ViewText.TOTAL_INITIAL
                 }
             }
 
-            div("allocation-list-container") {
-                id = "allocations-container"
+            div(CssClasses.ALLOCATION_LIST_CONTAINER) {
+                id = HtmlIds.ALLOCATIONS_CONTAINER
                 config.allocations.forEach { alloc ->
-                    div("allocation-edit-row") {
-                        div("allocation-edit-symbol") { +alloc.symbol }
-                        input(type = InputType.hidden, name = "symbols") { value = alloc.symbol }
-                        div("allocation-edit-input-wrapper") {
-                            input(type = InputType.number, name = "targets", classes = "input-glass") {
+                    div(CssClasses.ALLOCATION_EDIT_ROW) {
+                        div(CssClasses.ALLOCATION_EDIT_SYMBOL) { +alloc.symbol }
+                        input(type = InputType.hidden, name = FormFields.SYMBOLS) { value = alloc.symbol }
+                        div(CssClasses.ALLOCATION_EDIT_INPUT_WRAPPER) {
+                            input(type = InputType.number, name = FormFields.TARGETS, classes = CssClasses.INPUT_GLASS) {
                                 step = "0.1"
                                 value = alloc.targetPercent.toString()
-                                attributes["oninput"] = "updateAllocationTotal()"
+                                attributes[HtmlAttrs.ONINPUT] = "updateAllocationTotal()"
                             }
-                            span("percent-suffix") { +"%" }
+                            span(CssClasses.PERCENT_SUFFIX) { +"%" }
                         }
-                        button(type = ButtonType.button, classes = "btn btn-danger") {
-                            attributes["onclick"] = "this.closest('.allocation-edit-row').remove(); updateAllocationTotal();"
+                        button(type = ButtonType.button, classes = CssClasses.BTN_DANGER) {
+                            attributes[HtmlAttrs.ONCLICK] = "this.closest('.allocation-edit-row').remove(); updateAllocationTotal();"
                             +ViewText.REMOVE
                         }
                     }
                 }
             }
 
-            div("add-asset-box") {
-                input(type = InputType.text, classes = "input-glass") {
-                    id = "new-symbol-input"
+            div(CssClasses.ADD_ASSET_BOX) {
+                input(type = InputType.text, classes = CssClasses.INPUT_GLASS) {
+                    id = HtmlIds.NEW_SYMBOL_INPUT
                     placeholder = ViewText.NEW_SYMBOL_PLACEHOLDER
-                    style = "text-transform: uppercase; flex-grow: 1;"
-                    attributes["onkeydown"] = "if(event.key === 'Enter') { event.preventDefault(); addAssetRow(); }"
+                    attributes[HtmlAttrs.ONKEYDOWN] = "if(event.key === 'Enter') { event.preventDefault(); addAssetRow(); }"
                 }
-                button(type = ButtonType.button, classes = "btn btn-secondary") {
-                    attributes["onclick"] = "addAssetRow()"
+                button(type = ButtonType.button, classes = CssClasses.BTN_SECONDARY) {
+                    attributes[HtmlAttrs.ONCLICK] = "addAssetRow()"
                     icon(Icons.PLUS)
                     span { +ViewText.ADD_ASSET }
                 }
@@ -154,25 +153,7 @@ class SettingsFormComponent {
         }
     }
 
-    private fun BODY.renderSettingsTemplate() {
-        unsafe {
-            +"""
-            <template id="allocation-row-template">
-                <div class="allocation-edit-row">
-                    <div class="allocation-edit-symbol symbol-label"></div>
-                    <input type="hidden" name="symbols">
-                    <div class="allocation-edit-input-wrapper">
-                        <input type="number" step="0.1" name="targets" class="input-glass" oninput="updateAllocationTotal()">
-                        <span class="percent-suffix">%</span>
-                    </div>
-                    <button type="button" class="btn btn-danger" onclick="this.closest('.allocation-edit-row').remove(); updateAllocationTotal();">Remove</button>
-                </div>
-            </template>
-            """.trimIndent()
-        }
-    }
-
     private fun BODY.renderSettingsScript() {
-        script(src = "/static/settings.js") {}
+        script(src = Routes.STATIC_SETTINGS_JS) {}
     }
 }

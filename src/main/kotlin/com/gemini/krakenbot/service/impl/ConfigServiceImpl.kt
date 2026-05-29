@@ -5,6 +5,7 @@ import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.InvalidConfigurationException
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.util.AtomicJsonFile
+import com.gemini.krakenbot.util.KrakenSymbols
 import java.io.File
 import java.io.IOException
 import kotlin.math.abs
@@ -97,7 +98,7 @@ class ConfigServiceImpl(
             )
         }
 
-        val hasUsd = config.allocations.any { "USD".equals(it.symbol, ignoreCase = true) }
+        val hasUsd = config.allocations.any { KrakenSymbols.USD.equals(it.symbol, ignoreCase = true) }
         if (!hasUsd) {
             throw InvalidConfigurationException("One asset must be USD.")
         }

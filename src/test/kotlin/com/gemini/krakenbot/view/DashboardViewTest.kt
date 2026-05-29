@@ -13,7 +13,12 @@ import kotlinx.html.html
 import kotlinx.html.div
 import kotlinx.html.stream.createHTML
 import com.gemini.krakenbot.view.component.*
+import com.gemini.krakenbot.view.util.CssClasses
+import com.gemini.krakenbot.view.util.FormFields
+import com.gemini.krakenbot.view.util.Routes
 import com.gemini.krakenbot.view.util.ViewText
+import com.gemini.krakenbot.TestFixtures
+import com.gemini.krakenbot.util.KrakenSymbols
 import java.math.BigDecimal
 import java.time.Instant
 
@@ -28,12 +33,12 @@ class DashboardViewTest : StringSpec({
     val view = DashboardView(shell, SettingsFormComponent(), fragment)
 
     val baseConfig = AppConfig(
-        KrakenCredentials("apiKey", "privateKey"),
+        KrakenCredentials(TestFixtures.TEST_API_KEY, "privateKey"),
         Settings(60L, 2.0, 5.0, true, 20.0, 1.0),
         listOf(
-            Allocation("USD", 10.0),
-            Allocation("BTC", 50.0),
-            Allocation("ETH", 40.0)
+            Allocation(KrakenSymbols.USD, 10.0),
+            Allocation(KrakenSymbols.BTC, 50.0),
+            Allocation(KrakenSymbols.ETH, 40.0)
         )
     )
 
@@ -44,10 +49,10 @@ class DashboardViewTest : StringSpec({
             }
         }
         html shouldContain "title>${ViewText.APP_TITLE}"
-        html shouldContain "link href=\"/static/style.css\" rel=\"stylesheet\""
+        html shouldContain "link href=\"${Routes.STATIC_STYLE_CSS}\" rel=\"stylesheet\""
         html shouldContain "script src=\"https://unpkg.com/htmx.org@2.0.4\""
         html shouldContain "hx-ext=\"sse\""
-        html shouldContain "sse-connect=\"/api/status/stream\""
+        html shouldContain "sse-connect=\"${Routes.API_STATUS_STREAM}\""
         html shouldContain ViewText.CONNECTING
     }
 
@@ -58,11 +63,11 @@ class DashboardViewTest : StringSpec({
             }
         }
         html shouldContain "title>${ViewText.SETTINGS_TITLE} - ${ViewText.APP_TITLE}"
-        html shouldContain "name=\"loopDelaySeconds\""
+        html shouldContain "name=\"${FormFields.LOOP_DELAY_SECONDS}\""
         html shouldContain "value=\"60\""
-        html shouldContain "name=\"deviationTriggerPercent\""
+        html shouldContain "name=\"${FormFields.DEVIATION_TRIGGER_PERCENT}\""
         html shouldContain "value=\"2.0\""
-        html shouldNotContain "background-color: rgba(239, 68, 68, 0.15)"
+        html shouldNotContain CssClasses.ERROR_BANNER
     }
 
     "renderSettingsPage_withError_displaysError" {
@@ -73,6 +78,7 @@ class DashboardViewTest : StringSpec({
             }
         }
         html shouldContain errMsg
+        html shouldContain CssClasses.ERROR_BANNER
     }
 
     "renderDashboardFragment_withLiveSnapshotAndHistory_rendersCorrectly" {
@@ -81,9 +87,9 @@ class DashboardViewTest : StringSpec({
             timestamp = now,
             totalValueUSD = BigDecimal("10000.00"),
             assets = mapOf(
-                "USD" to PortfolioSnapshot.AssetSnapshot("USD", BigDecimal("1000.0"), BigDecimal("1.0"), BigDecimal("1000.0"), BigDecimal("10.0"), BigDecimal("10.0"), BigDecimal("0.0"), BigDecimal("0.0")),
-                "BTC" to PortfolioSnapshot.AssetSnapshot("BTC", BigDecimal("0.1"), BigDecimal("50000.0"), BigDecimal("5000.0"), BigDecimal("50.0"), BigDecimal("50.0"), BigDecimal("5.0"), BigDecimal("250.0")),
-                "ETH" to PortfolioSnapshot.AssetSnapshot("ETH", BigDecimal("2.0"), BigDecimal("2000.0"), BigDecimal("4000.0"), BigDecimal("40.0"), BigDecimal("40.0"), BigDecimal("-2.5"), BigDecimal("-100.0"))
+                KrakenSymbols.USD to PortfolioSnapshot.AssetSnapshot(KrakenSymbols.USD, BigDecimal("1000.0"), BigDecimal("1.0"), BigDecimal("1000.0"), BigDecimal("10.0"), BigDecimal("10.0"), BigDecimal("0.0"), BigDecimal("0.0")),
+                KrakenSymbols.BTC to PortfolioSnapshot.AssetSnapshot(KrakenSymbols.BTC, BigDecimal("0.1"), BigDecimal("50000.0"), BigDecimal("5000.0"), BigDecimal("50.0"), BigDecimal("50.0"), BigDecimal("5.0"), BigDecimal("250.0")),
+                KrakenSymbols.ETH to PortfolioSnapshot.AssetSnapshot(KrakenSymbols.ETH, BigDecimal("2.0"), BigDecimal("2000.0"), BigDecimal("4000.0"), BigDecimal("40.0"), BigDecimal("40.0"), BigDecimal("-2.5"), BigDecimal("-100.0"))
             ),
             actions = listOf("BUY BTC Volume: 0.05 Value: $2500.0", "SELL ETH Volume: 1.0 Value: $2000.0"),
             drawdownPercent = BigDecimal("5.0"),
@@ -113,12 +119,12 @@ class DashboardViewTest : StringSpec({
         html shouldContain "90.00% | ${ViewText.TARGET_PREFIX}90.00% | 2${ViewText.ASSETS_SUFFIX}"
         
         // Allocation bars
-        html shouldContain "allocation-bar-label\">BTC"
-        html shouldContain "allocation-bar-label\">ETH"
+        html shouldContain "${CssClasses.ALLOCATION_BAR_LABEL}\">BTC"
+        html shouldContain "${CssClasses.ALLOCATION_BAR_LABEL}\">ETH"
         
         // Recent activity badges
-        html shouldContain "badge badge-buy\">BUY"
-        html shouldContain "badge badge-sell\">SELL"
+        html shouldContain "${CssClasses.BADGE_BUY}\">BUY"
+        html shouldContain "${CssClasses.BADGE_SELL}\">SELL"
     }
 
     "renderDashboardFragment_withStaleData_rendersDelayedBadge" {
@@ -127,7 +133,7 @@ class DashboardViewTest : StringSpec({
             timestamp = oldTime,
             totalValueUSD = BigDecimal("1000.00"),
             assets = mapOf(
-                "USD" to PortfolioSnapshot.AssetSnapshot("USD", BigDecimal("1000.0"), BigDecimal("1.0"), BigDecimal("1000.0"), BigDecimal("100.0"), BigDecimal("100.0"), BigDecimal("0.0"), BigDecimal("0.0"))
+                KrakenSymbols.USD to PortfolioSnapshot.AssetSnapshot(KrakenSymbols.USD, BigDecimal("1000.0"), BigDecimal("1.0"), BigDecimal("1000.0"), BigDecimal("100.0"), BigDecimal("100.0"), BigDecimal("0.0"), BigDecimal("0.0"))
             ),
             actions = emptyList(),
             drawdownPercent = BigDecimal.ZERO,
@@ -167,7 +173,7 @@ class DashboardViewTest : StringSpec({
             timestamp = now,
             totalValueUSD = BigDecimal.ZERO,
             assets = mapOf(
-                "BTC" to PortfolioSnapshot.AssetSnapshot("BTC", BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO)
+                KrakenSymbols.BTC to PortfolioSnapshot.AssetSnapshot(KrakenSymbols.BTC, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO)
             ), // covers maxVal <= 0 in renderAllocationChart
             actions = listOf("INFO Rebalancer initialized"), // neither BUY nor SELL
             drawdownPercent = BigDecimal.ZERO, // drawdown is 0
@@ -193,7 +199,7 @@ class DashboardViewTest : StringSpec({
 
         html shouldContain ViewText.NO_USD_DATA
         html shouldContain "${ViewText.DRAWDOWN_PREFIX}0.00%"
-        html shouldContain "badge badge-info\">INFO"
+        html shouldContain "${CssClasses.BADGE_INFO}\">INFO"
         html shouldContain ViewText.NO_TRADES_EXECUTED
     }
 
@@ -203,7 +209,7 @@ class DashboardViewTest : StringSpec({
             timestamp = now,
             totalValueUSD = BigDecimal("1000.00"),
             assets = mapOf(
-                "USD" to PortfolioSnapshot.AssetSnapshot("USD", BigDecimal("100.0"), BigDecimal("1.0"), BigDecimal("100.0"), BigDecimal("10.0"), BigDecimal("10.0"), BigDecimal("0.0"), BigDecimal("0.0"))
+                KrakenSymbols.USD to PortfolioSnapshot.AssetSnapshot(KrakenSymbols.USD, BigDecimal("100.0"), BigDecimal("1.0"), BigDecimal("100.0"), BigDecimal("10.0"), BigDecimal("10.0"), BigDecimal("0.0"), BigDecimal("0.0"))
             ),
             actions = emptyList(),
             drawdownPercent = BigDecimal.ZERO,

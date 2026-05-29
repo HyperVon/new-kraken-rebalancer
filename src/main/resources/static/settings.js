@@ -31,14 +31,20 @@ function addAssetRow() {
     }
     
     const container = document.getElementById('allocations-container');
-    const template = document.getElementById('allocation-row-template');
-    const clone = template.content.cloneNode(true);
+    const row = document.createElement('div');
+    row.className = 'allocation-edit-row';
     
-    clone.querySelector('.symbol-label').textContent = symbol;
-    clone.querySelector('input[name="symbols"]').value = symbol;
-    clone.querySelector('input[name="targets"]').value = "0.0";
+    row.innerHTML = `
+        <div class="allocation-edit-symbol symbol-label">${symbol}</div>
+        <input type="hidden" name="symbols" value="${symbol}">
+        <div class="allocation-edit-input-wrapper">
+            <input type="number" step="0.1" name="targets" class="input-glass" value="0.0" oninput="updateAllocationTotal()">
+            <span class="percent-suffix">%</span>
+        </div>
+        <button type="button" class="btn btn-danger" onclick="this.closest('.allocation-edit-row').remove(); updateAllocationTotal();">Remove</button>
+    `;
     
-    container.appendChild(clone);
+    container.appendChild(row);
     symbolInput.value = '';
     updateAllocationTotal();
 }

@@ -98,10 +98,15 @@ graph LR
         DC[DashboardRoutes] --> THS[TradeHistoryService]
         DC --> CS[ConfigService]
         DC --> DV[DashboardView]
-        PM[PortfolioManager] --> KS[KrakenService]
-        PM --> CS
+        PM[PortfolioManager] --> PA[PortfolioAnalyzer]
+        PM --> OE[OrderExecutor]
         PM --> THS
-        PM --> PSR[PortfolioStatsRepository]
+        PA --> KS[KrakenService]
+        PA --> CS
+        PA --> PSR[PortfolioStatsRepository]
+        OE --> KS
+        OE --> CS
+        OE --> PA
         THS --> FTR[FileTradeRepository]
     end
 
@@ -242,7 +247,7 @@ The project enforces **95% line, branch, method, and instruction coverage** via 
 ./gradlew test
 ```
 
-**135 tests** across:
+**137 tests** across:
 - `KrakenE2ETest` / `ResilienceChaosTest` / `PrecisionRoundingFuzzTest` / `SerializationParityTest` — advanced E2E black-box and fuzz testing
 - `PortfolioManagerComprehensiveTest` — full rebalance cycles with order result verification
 - `PortfolioManagerFiatCorrectionTest` — deposit/withdrawal distribution logic

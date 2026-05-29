@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
+## [3.1.0] - 2026-05-29
+
+### Changed
+- **Centralized CSS Class Names**: Extracted all remaining hardcoded HTML class name strings from Kotlin view components (`DashboardShellComponent`, `DashboardFragmentComponent`, `OverviewGridComponent`, `AllocationChartComponent`, `SettingsFormComponent`, `Layouts`) into constants in `CssClasses.kt`, achieving complete separation of styling tokens from markup logic.
+- **Centralized HTML Element IDs**: Created a `HtmlIds` object in `HtmlAttrs.kt` to centralize all element IDs (e.g. `save-button`, `total-allocated-display`, `allocations-container`, `new-symbol-input`), replacing all raw string literals in `SettingsFormComponent`.
+- **Settings Row Template Refactoring**: Removed the `unsafe` raw HTML template block (`renderSettingsTemplate`) from `SettingsFormComponent.kt` and moved allocation row DOM generation to `settings.js`, keeping Kotlin views 100% type-safe.
+- **Extracted Inline CSS to Stylesheet**: Moved inline `style="..."` attributes from `PerformanceTableComponent`, `SettingsFormComponent`, and the dashboard waiting-state layout into dedicated CSS classes in `style.css`, referenced via `CssClasses` constants.
+- **AM/PM Local Timezone Timestamps**: Standardized all dashboard timestamps to display in the local machine timezone using a 12-hour AM/PM format — both the data age indicator (`DashboardFragmentComponent`) and the Recent Activity log table (`RecentActivityComponent` + `dashboard.js`).
+- **Service Layer SRP Refactoring**: Decomposed `PortfolioManagerImpl` (553 lines) into `PortfolioAnalyzer` (price resolution, value calculation, ATH/drawdown tracking, deployment ratios) and `OrderExecutor` (deviation analysis, order sizing, cash tracking, fiat correction). `PortfolioManagerImpl` is now a lightweight orchestrator facade (223 lines).
+- **Test Suite Symbol Constants**: Replaced all hardcoded asset symbol string literals (`"USD"`, `"BTC"`, `"ETH"`, `"XBT"`, `"DOGE"`) across the entire test suite with `KrakenSymbols` constants, achieving type-safe, compile-time-verified symbol references in all test files.
+
+### Fixed
+- **CSS Property Typo**: Corrected `grid-template-cols` to the valid `grid-template-columns` property in two locations in `style.css` (lines 191 and 479), resolving IDE lint warnings.
+- **CSS Vendor Prefix Compatibility**: Added the standard `background-clip` property alongside `-webkit-background-clip` in `style.css` to resolve browser compatibility warnings.
+
+---
 ## [3.0.0] - 2026-05-28
 
 ### Added
@@ -19,6 +35,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - **Modular Component Refactoring (OOP/OOD)**: Decomposed the single, large `DashboardView` class (700+ lines) into clean, self-contained components under `com.gemini.krakenbot.view.component` (`DashboardShellComponent`, `OverviewGridComponent`, `AllocationChartComponent`, `PerformanceTableComponent`, `RecentActivityComponent`, `DashboardFragmentComponent`, and `SettingsFormComponent`). Refactored `DashboardView` as a clean Facade class leveraging constructor-based Dependency Injection via Koin.
+- **Service Layer OOP Refactoring**: Decomposed the large, complex `PortfolioManagerImpl` class (550+ lines) into clean, SRP-compliant components `PortfolioAnalyzer` and `OrderExecutor`, refactoring `PortfolioManagerImpl` as a lightweight orchestrator facade that manages the background rebalancing run loop.
+- **AM/PM and Timezone Formatting**: Standardized timestamp presentation across the dashboard to display in the local machine timezone and 12-hour AM/PM format (both for the last updated data age and the Recent Activity log table).
+- **Settings Row Template Refactoring**: Removed unsafe raw HTML template definition block from `SettingsFormComponent.kt` and moved the DOM generation logic dynamically to `settings.js` to keep Kotlin views 100% type-safe.
+- **CSS Styling Refactoring**: Eliminated hardcoded inline CSS style strings from `RecentActivityComponent.kt`, moving them to dedicated stylesheet classes in `style.css` for better separation of styling and markup.
 - **Centralized View Assets & Layout DSL**: Created `Layouts`, `Icons`, and `ViewText` under `com.gemini.krakenbot.view.util` to centralize HTML layout structures, SVG icons, and copy text, eliminating raw string duplication and inline CSS definitions in view components.
 - **Formatter Utility**: Created `Formatter` object under `com.gemini.krakenbot.view.util` to centralize formatting functions.
 - **External JavaScript Resources**: Moved inline scripts from Ktor view templates to static `/static/dashboard.js` and `/static/settings.js` files, adding unit testing to verify static delivery.

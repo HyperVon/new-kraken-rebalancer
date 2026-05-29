@@ -8,6 +8,11 @@ import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.TradeHistoryService
 import com.gemini.krakenbot.view.DashboardView
+import com.gemini.krakenbot.view.util.CssClasses
+import com.gemini.krakenbot.view.util.FormFields
+import com.gemini.krakenbot.view.util.HtmxHeaders
+import com.gemini.krakenbot.view.util.Routes
+import com.gemini.krakenbot.view.util.ViewText
 import io.ktor.http.*
 import io.ktor.server.application.*
 import io.ktor.server.html.*
@@ -31,7 +36,7 @@ fun Application.dashboardRouting() {
     routing {
         staticResources("/static", "static")
 
-        get("/") {
+        get(Routes.ROOT) {
             call.respondHtml(HttpStatusCode.OK) {
                 with(dashboardView) {
                     renderDashboardShell()
@@ -39,7 +44,7 @@ fun Application.dashboardRouting() {
             }
         }
 
-        get("/settings") {
+        get(Routes.SETTINGS) {
             val config = configService.getConfig()
             call.respondHtml(HttpStatusCode.OK) {
                 with(dashboardView) {
@@ -48,16 +53,16 @@ fun Application.dashboardRouting() {
             }
         }
 
-        post("/settings") {
+        post(Routes.SETTINGS) {
             handlePostSettings(dashboardView, configService)
         }
 
-        get("/fragments/dashboard") {
+        get(Routes.FRAGMENT_DASHBOARD) {
             handleGetDashboardFragment(dashboardView, tradeHistoryService)
         }
 
-        route("/api") {
-            sse("/status/stream") {
+        route(Routes.API_ROUTE_PREFIX) {
+            sse(Routes.API_STATUS_STREAM.removePrefix(Routes.API_ROUTE_PREFIX)) {
                 handleSseStream(tradeHistoryService, objectMapper)
             }
         }
@@ -69,15 +74,15 @@ private suspend fun RoutingContext.handlePostSettings(
     configService: ConfigService
 ) {
     val params = call.receiveParameters()
-    val loopDelaySeconds = params["loopDelaySeconds"]?.toLongOrNull() ?: 60L
-    val deviationTriggerPercent = params["deviationTriggerPercent"]?.toDoubleOrNull() ?: 2.0
-    val dustThresholdUSD = params["dustThresholdUSD"]?.toDoubleOrNull() ?: 1.0
-    val dryRun = params["dryRun"] != null
-    val fiatMaxDrawdown = params["fiatMaxDrawdown"]?.toDoubleOrNull() ?: 0.0
-    val fiatDeploymentExponent = params["fiatDeploymentExponent"]?.toDoubleOrNull() ?: 1.0
+    val loopDelaySeconds = params[FormFields.LOOP_DELAY_SECONDS]?.toLongOrNull() ?: 60L
+    val deviationTriggerPercent = params[FormFields.DEVIATION_TRIGGER_PERCENT]?.toDoubleOrNull() ?: 2.0
+    val dustThresholdUSD = params[FormFields.DUST_THRESHOLD_USD]?.toDoubleOrNull() ?: 1.0
+    val dryRun = params[FormFields.DRY_RUN] != null
+    val fiatMaxDrawdown = params[FormFields.FIAT_MAX_DRAWDOWN]?.toDoubleOrNull() ?: 0.0
+    val fiatDeploymentExponent = params[FormFields.FIAT_DEPLOYMENT_EXPONENT]?.toDoubleOrNull() ?: 1.0
 
-    val symbols = params.getAll("symbols") ?: emptyList()
-    val targets = params.getAll("targets") ?: emptyList()
+    val symbols = params.getAll(FormFields.SYMBOLS) ?: emptyList()
+    val targets = params.getAll(FormFields.TARGETS) ?: emptyList()
 
     val allocations = symbols.zip(targets).map { (symbol, targetStr) ->
         Allocation(symbol, targetStr.toDoubleOrNull() ?: 0.0)
@@ -92,7 +97,7 @@ private suspend fun RoutingContext.handlePostSettings(
 
     try {
         configService.updateConfig(updatedConfig)
-        call.response.header("HX-Redirect", "/")
+        call.response.header(HtmxHeaders.HX_REDIRECT, Routes.ROOT)
         call.respond(HttpStatusCode.OK)
     } catch (e: InvalidConfigurationException) {
         val errHtml = createHTML(prettyPrint = false).html {
@@ -113,14 +118,12 @@ private suspend fun RoutingContext.handleGetDashboardFragment(
     val history = tradeHistoryService.getHistory()
 
     if (latest == null) {
-        val noSnapshotHtml = createHTML(prettyPrint = false).div("spinner-container") {
-            h2 {
-                style = "font-size: 1.25rem; font-weight: 600; color: #e2e8f0;"
-                +"Waiting for first rebalance cycle"
+        val noSnapshotHtml = createHTML(prettyPrint = false).div(CssClasses.SPINNER_CONTAINER) {
+            h2(CssClasses.DASHBOARD_WAITING_TITLE) {
+                +ViewText.WAITING_FIRST_CYCLE
             }
-            p {
-                style = "color: #94a3b8; font-size: 0.875rem; text-align: center; max-width: 24rem;"
-                +"The rebalancer is running. Portfolio data will appear here after the first cycle completes."
+            p(CssClasses.DASHBOARD_WAITING_TEXT) {
+                +ViewText.REBALANCER_RUNNING
             }
         }
         call.respondText(noSnapshotHtml, ContentType.Text.Html)

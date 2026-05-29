@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.gemini.krakenbot.model.OrderResult
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.KrakenService
+import com.gemini.krakenbot.util.KrakenSymbols
 import io.ktor.client.*
 import io.ktor.client.request.*
 import io.ktor.client.statement.*
@@ -142,15 +143,15 @@ class KrakenServiceImpl(
 
     private fun signRequest(path: String, nonce: String, postData: String): String {
         try {
-            val sha2 = MessageDigest.getInstance("SHA-256")
+            val sha2 = MessageDigest.getInstance(KrakenSymbols.SHA_256)
                 .digest((nonce + postData).toByteArray(Charsets.UTF_8))
 
             val pathBytes = path.toByteArray(Charsets.UTF_8)
             val hmacMessage = pathBytes + sha2
 
-            val mac = Mac.getInstance("HmacSHA512")
+            val mac = Mac.getInstance(KrakenSymbols.HMAC_SHA512)
             val secretDecoded = Base64.getDecoder().decode(configService.getConfig().kraken.privateKey)
-            val secretSpec = SecretKeySpec(secretDecoded, "HmacSHA512")
+            val secretSpec = SecretKeySpec(secretDecoded, KrakenSymbols.HMAC_SHA512)
             mac.init(secretSpec)
 
             val sigBytes = mac.doFinal(hmacMessage)

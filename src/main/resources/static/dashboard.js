@@ -16,12 +16,16 @@ function updateAge() {
                 ageEl.className = delayedClass;
             }
             
-            // Localize the time display to expected HH:mm:ss local format
+            // Localize the time display to expected hh:mm:ss a local format
             var date = new Date(epoch);
-            var hh = ('0' + date.getHours()).slice(-2);
+            var hours = date.getHours();
+            var ampm = hours >= 12 ? 'PM' : 'AM';
+            hours = hours % 12;
+            hours = hours ? hours : 12; // 0 should be 12
+            var hh = ('0' + hours).slice(-2);
             var mm = ('0' + date.getMinutes()).slice(-2);
             var ss = ('0' + date.getSeconds()).slice(-2);
-            var localTimeStr = hh + ':' + mm + ':' + ss;
+            var localTimeStr = hh + ':' + mm + ':' + ss + ' ' + ampm;
             if (timeEl.textContent.trim() !== localTimeStr) {
                 timeEl.textContent = localTimeStr;
             }
