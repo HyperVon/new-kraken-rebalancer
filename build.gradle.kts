@@ -17,6 +17,7 @@ java {
 
 application {
     mainClass.set("com.gemini.krakenbot.KrakenRebalancerApplicationKt")
+    applicationDefaultJvmArgs = listOf("-Xshare:off", "--sun-misc-unsafe-memory-access=allow")
 }
 
 repositories {
@@ -77,6 +78,7 @@ tasks.withType<KotlinCompile> {
 tasks.withType<Test> {
     useJUnitPlatform()
     finalizedBy(tasks.jacocoTestReport)
+    jvmArgs("-Xshare:off", "--sun-misc-unsafe-memory-access=allow")
 }
 
 tasks.jacocoTestReport {
