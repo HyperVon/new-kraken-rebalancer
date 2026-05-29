@@ -90,7 +90,7 @@ class SettingsFormComponent {
                     }
                 }
 
-                div("form-group ${CssClasses.FORM_GROUP_CENTERED}") {
+                div("${CssClasses.FORM_GROUP} ${CssClasses.FORM_GROUP_CENTERED}") {
                     label(classes = CssClasses.CHECKBOX_CONTAINER) {
                         input(type = InputType.checkBox, name = FormFields.DRY_RUN) {
                             checked = config.settings.dryRun
@@ -109,7 +109,7 @@ class SettingsFormComponent {
                 h3 {
                     +ViewText.TARGET_ALLOCATIONS
                 }
-                div("status-badge live") {
+                div(CssClasses.STATUS_BADGE_LIVE) {
                     id = "total-allocated-display"
                     +ViewText.TOTAL_INITIAL
                 }
