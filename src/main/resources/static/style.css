@@ -476,7 +476,7 @@ tr.hoverable:hover {
 
 .grid-2col {
   display: grid;
-  grid-template-cols: 1fr;
+  grid-template-columns: 1fr;
   gap: 1.25rem;
 }
 
