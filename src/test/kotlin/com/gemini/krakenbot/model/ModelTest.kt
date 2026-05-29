@@ -1,6 +1,7 @@
 package com.gemini.krakenbot.model
 
 import com.gemini.krakenbot.config.Settings
+import com.gemini.krakenbot.util.KrakenSymbols
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
@@ -10,17 +11,17 @@ import java.time.Instant
 class ModelTest : StringSpec({
     "testPortfolioSnapshot" {
         val asset = PortfolioSnapshot.AssetSnapshot(
-            symbol = "BTC", balance = BigDecimal.ONE, price = BigDecimal.TEN, valueUSD = BigDecimal.TEN,
+            symbol = KrakenSymbols.BTC, balance = BigDecimal.ONE, price = BigDecimal.TEN, valueUSD = BigDecimal.TEN,
             targetPercent = BigDecimal.ONE, currentPercent = BigDecimal.ONE, deviationPercent = BigDecimal.ZERO, deviationUSD = BigDecimal.ZERO
         )
         val asset2 = asset.copy()
         asset2 shouldBe asset
         asset.hashCode() shouldBe asset2.hashCode()
         asset.toString().shouldNotBeNull()
-        asset.symbol shouldBe "BTC"
+        asset.symbol shouldBe KrakenSymbols.BTC
         
         val snapshot = PortfolioSnapshot(
-            timestamp = Instant.EPOCH, totalValueUSD = BigDecimal.TEN, assets = mapOf("BTC" to asset),
+            timestamp = Instant.EPOCH, totalValueUSD = BigDecimal.TEN, assets = mapOf(KrakenSymbols.BTC to asset),
             actions = listOf("BUY"), drawdownPercent = BigDecimal.ZERO, fiatDeploymentPercent = BigDecimal.ZERO, effectiveUsdTargetPercent = BigDecimal.ZERO
         )
         val snapshot2 = snapshot.copy()
