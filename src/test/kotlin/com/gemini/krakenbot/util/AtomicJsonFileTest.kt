@@ -13,6 +13,7 @@ import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 
+@Suppress("unused")
 class AtomicJsonFileTest : StringSpec({
     val objectMapper = ObjectMapper()
 

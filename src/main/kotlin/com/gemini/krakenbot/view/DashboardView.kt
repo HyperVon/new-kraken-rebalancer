@@ -7,6 +7,7 @@ import java.math.BigDecimal
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import kotlin.math.abs
 
 class DashboardView {
 
@@ -163,7 +164,7 @@ class DashboardView {
         val cryptoTargetPercent = assetsList.sumOf { it.targetPercent.toDouble() }
         val cryptoCount = assetsList.size
 
-        val timeSinceUpdate = Math.max(0L, Instant.now().epochSecond - latest.timestamp.epochSecond)
+        val timeSinceUpdate = 0L.coerceAtLeast(Instant.now().epochSecond - latest.timestamp.epochSecond)
         val isStale = timeSinceUpdate > 90
 
         header {
@@ -230,12 +231,12 @@ class DashboardView {
                         val targetPct = latest.effectiveUsdTargetPercent
                         val baseTargetPct = usdAsset.targetPercent
                         val dev = usdAsset.deviationPercent
-                        val devClass = if (dev.signum() > 0) "text-danger" else if (dev.signum() < 0) "text-success" else ""
-                        val devSign = if (dev.signum() > 0) "+" else ""
+                        val devClass = getDeviationClass(dev)
+                        val devSign = getDeviationSign(dev)
 
                         span {
                             +"${formatPercent(currentPct)}% | Target: ${formatPercent(targetPct)}%"
-                            if (Math.abs(targetPct.toDouble() - baseTargetPct.toDouble()) > 0.01) {
+                            if (abs(targetPct.toDouble() - baseTargetPct.toDouble()) > 0.01) {
                                 +" (Base: ${formatPercent(baseTargetPct)}%)"
                             }
                             +" | "
@@ -318,8 +319,8 @@ class DashboardView {
                             val cryptoOnly = latest.assets.values.filter { it.symbol != "USD" }.sortedBy { it.deviationPercent }
                             cryptoOnly.forEach { asset ->
                                 val dev = asset.deviationPercent
-                                val devClass = if (dev.signum() < 0) "text-success" else if (dev.signum() > 0) "text-danger" else ""
-                                val sign = if (dev.signum() > 0) "+" else ""
+                                val devClass = getDeviationClass(dev)
+                                val sign = getDeviationSign(dev)
 
                                 tr("hoverable") {
                                     td("symbol-col") { +asset.symbol }
@@ -647,5 +648,13 @@ class DashboardView {
 
     private fun formatPercent(value: Double): String {
         return String.format("%.2f", value)
+    }
+
+    private fun getDeviationClass(deviation: BigDecimal): String {
+        return if (deviation.signum() > 0) "text-danger" else if (deviation.signum() < 0) "text-success" else ""
+    }
+
+    private fun getDeviationSign(deviation: BigDecimal): String {
+        return if (deviation.signum() > 0) "+" else ""
     }
 }

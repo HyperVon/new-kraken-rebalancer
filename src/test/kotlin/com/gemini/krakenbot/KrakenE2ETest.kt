@@ -25,6 +25,7 @@ import kotlinx.coroutines.test.runTest
 import java.io.File
 import java.util.*
 
+@Suppress("unused")
 class KrakenE2ETest : StringSpec() {
 
     override fun isolationMode() = IsolationMode.InstancePerTest

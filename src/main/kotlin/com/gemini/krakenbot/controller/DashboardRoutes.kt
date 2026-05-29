@@ -21,6 +21,7 @@ import kotlinx.html.*
 import kotlinx.html.stream.createHTML
 import org.koin.ktor.ext.inject
 
+@Suppress("GrazieInspection")
 fun Application.dashboardRouting() {
     val tradeHistoryService: TradeHistoryService by inject()
     val configService: ConfigService by inject()

@@ -21,6 +21,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.yield
 import java.math.BigDecimal
 
+@Suppress("unused")
 class PortfolioManagerEdgeCasesTest : StringSpec() {
 
     override fun isolationMode() = IsolationMode.InstancePerTest
