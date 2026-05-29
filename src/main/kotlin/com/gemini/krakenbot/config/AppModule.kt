@@ -16,6 +16,7 @@ import com.gemini.krakenbot.service.impl.ConfigServiceImpl
 import com.gemini.krakenbot.service.impl.KrakenServiceImpl
 import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
 import com.gemini.krakenbot.service.impl.TradeHistoryServiceImpl
+import com.gemini.krakenbot.view.DashboardView
 import io.ktor.client.*
 import io.ktor.client.engine.cio.*
 import org.koin.core.module.dsl.bind
@@ -36,4 +37,5 @@ val appModule = module {
     single<TradeHistoryService> { TradeHistoryServiceImpl(get()).apply { init() } }
     singleOf(::KrakenServiceImpl) { bind<KrakenService>() }
     singleOf(::PortfolioManagerImpl) { bind<PortfolioManager>() }
+    singleOf(::DashboardView)
 }

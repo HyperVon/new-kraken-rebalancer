@@ -21,6 +21,7 @@ import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
 import java.io.IOException
 
+@Suppress("unused")
 class ResilienceChaosTest : StringSpec() {
 
     override fun isolationMode() = IsolationMode.InstancePerTest

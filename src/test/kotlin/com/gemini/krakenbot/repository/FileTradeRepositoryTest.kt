@@ -19,23 +19,23 @@ import java.time.Instant
 
 class FileTradeRepositoryTest : StringSpec({
 
-    val TEST_FILE = "test-trade-history.json"
+    val testFileName = "test-trade-history.json"
     lateinit var repository: FileTradeRepositoryImpl
     lateinit var objectMapper: ObjectMapper
 
     beforeTest {
-        val f = File(TEST_FILE)
+        val f = File(testFileName)
         if (f.exists()) f.delete()
         objectMapper = jacksonObjectMapper()
         objectMapper.findAndRegisterModules()
         repository = FileTradeRepositoryImpl(objectMapper)
         val field = FileTradeRepositoryImpl::class.java.getDeclaredField("filePath")
         field.isAccessible = true
-        field.set(repository, TEST_FILE)
+        field.set(repository, testFileName)
     }
 
     afterTest {
-        val f = File(TEST_FILE)
+        val f = File(testFileName)
         if (f.exists()) f.delete()
     }
 
@@ -65,7 +65,7 @@ class FileTradeRepositoryTest : StringSpec({
     }
 
     "testLoadCorruptedFile" {
-        val file = File(TEST_FILE)
+        val file = File(testFileName)
         FileWriter(file).use { writer ->
             writer.write("{ incomplete json ")
         }

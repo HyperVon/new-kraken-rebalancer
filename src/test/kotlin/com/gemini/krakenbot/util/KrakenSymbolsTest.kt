@@ -3,6 +3,7 @@ package com.gemini.krakenbot.util
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
 
+@Suppress("unused")
 class KrakenSymbolsTest : StringSpec({
     "toKrakenTicker_mapsKnownSymbols" {
         KrakenSymbols.toKrakenTicker("btc") shouldBe "XBT"

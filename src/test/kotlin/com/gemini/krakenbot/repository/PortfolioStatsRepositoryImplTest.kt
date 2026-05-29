@@ -15,24 +15,25 @@ import java.io.IOException
 import java.math.BigDecimal
 import java.nio.file.Files
 
+@Suppress("unused")
 class PortfolioStatsRepositoryImplTest : StringSpec({
 
-    val TEST_FILE = "test-portfolio-stats.json"
+    val testFileName = "test-portfolio-stats.json"
     lateinit var repository: PortfolioStatsRepositoryImpl
     lateinit var objectMapper: ObjectMapper
 
     beforeTest {
-        val f = File(TEST_FILE)
+        val f = File(testFileName)
         if (f.exists()) f.delete()
         objectMapper = jacksonObjectMapper()
         repository = PortfolioStatsRepositoryImpl(objectMapper)
         val field = PortfolioStatsRepositoryImpl::class.java.getDeclaredField("filePath")
         field.isAccessible = true
-        field.set(repository, TEST_FILE)
+        field.set(repository, testFileName)
     }
 
     afterTest {
-        val f = File(TEST_FILE)
+        val f = File(testFileName)
         if (f.exists()) f.delete()
     }
 
@@ -52,7 +53,7 @@ class PortfolioStatsRepositoryImplTest : StringSpec({
     }
 
     "load_HandlesIOException" {
-        val file = File(TEST_FILE)
+        val file = File(testFileName)
         Files.writeString(file.toPath(), "{invalid json}")
 
         val stats = repository.load()

@@ -13,7 +13,7 @@ class TradeHistoryServiceImpl(
 ) : TradeHistoryService {
 
     private val history = CopyOnWriteArrayList<PortfolioSnapshot>()
-    private val MAX_HISTORY_SIZE = 50
+    private val maxHistorySize = 50
     private val snapshotFlow = MutableSharedFlow<PortfolioSnapshot>(extraBufferCapacity = 16)
 
     override fun init() {
@@ -25,7 +25,7 @@ class TradeHistoryServiceImpl(
 
     override fun addSnapshot(snapshot: PortfolioSnapshot) {
         history.add(0, snapshot)
-        if (history.size > MAX_HISTORY_SIZE) {
+        if (history.size > maxHistorySize) {
             history.removeAt(history.size - 1)
         }
         repository.save(ArrayList(history))

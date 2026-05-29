@@ -25,14 +25,12 @@ class KrakenServiceImpl(
 ) : KrakenService {
 
     private val log = LoggerFactory.getLogger(KrakenServiceImpl::class.java)
-    private val API_URL = "https://api.kraken.com"
-    private val API_VERSION = "0"
-
-
+    private val apiUrl = "https://api.kraken.com"
+    private val apiVersion = "0"
     private val nonceGenerator = AtomicLong(System.currentTimeMillis() * 1000)
 
     override suspend fun getBalances(): Map<String, Double> {
-        val path = "/$API_VERSION/private/Balance"
+        val path = "/$apiVersion/private/Balance"
         val response = queryPrivate(path, emptyMap())
         return response.properties().associate { (key, value) ->
             key to value.asDouble()
@@ -40,7 +38,7 @@ class KrakenServiceImpl(
     }
 
     override suspend fun getTickerPrices(pairs: String): Map<String, Double> {
-        val path = "/$API_VERSION/public/Ticker?pair=$pairs"
+        val path = "/$apiVersion/public/Ticker?pair=$pairs"
         val result = queryPublic(path).path("result")
         return result.properties().mapNotNull { (key, value) ->
             val c = value.path("c")
@@ -62,7 +60,7 @@ class KrakenServiceImpl(
             )
         }
 
-        val path = "/$API_VERSION/private/AddOrder"
+        val path = "/$apiVersion/private/AddOrder"
         val params = mapOf(
             "pair" to pair,
             "type" to side,
@@ -88,7 +86,7 @@ class KrakenServiceImpl(
     }
 
     private suspend fun queryPublic(path: String): JsonNode {
-        val responseBody = httpClient.get(API_URL + path).bodyAsText()
+        val responseBody = httpClient.get(apiUrl + path).bodyAsText()
         try {
             val root: JsonNode = objectMapper.readTree(responseBody)
             if (root.has("error") && !root.path("error").isEmpty) {
@@ -116,7 +114,7 @@ class KrakenServiceImpl(
             val apiKey = configService.getConfig().kraken.apiKey
             if (apiKey.isBlank()) throw RuntimeException("API Key is null")
 
-            val responseBody = httpClient.post(API_URL + path) {
+            val responseBody = httpClient.post(apiUrl + path) {
                 header("API-Key", apiKey)
                 header("API-Sign", signature)
                 header("Content-Type", "application/x-www-form-urlencoded")

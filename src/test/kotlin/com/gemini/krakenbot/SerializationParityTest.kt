@@ -9,6 +9,7 @@ import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.shouldBe
 import java.math.BigDecimal
 
+@Suppress("unused")
 class SerializationParityTest : StringSpec({
 
     val mapper = jacksonObjectMapper().findAndRegisterModules()

@@ -9,7 +9,7 @@ Thank you for your interest in contributing! This project is a production-grade 
 - JDK 21+
 - Gradle (the `./gradlew` wrapper is included — no separate installation required)
 - A Kraken account (for testing with real API — use **dry-run mode**)
-- Basic familiarity with Kotlin, Ktor, Koin, and React (TypeScript)
+- Basic familiarity with Kotlin, Ktor, Koin, and kotlinx.html
 
 ### Local Setup
 
@@ -58,7 +58,7 @@ Thank you for your interest in contributing! This project is a production-grade 
 
 ## Code Guidelines
 
-- **Language:** Kotlin for all backend development; TypeScript and React for frontend development
+- **Language:** Kotlin for all development; server-side HTML (kotlinx.html DSL) for the frontend
 - **Style:** Follow existing code formatting conventions; use idiomatic Kotlin (data classes, coroutines, extension functions)
 - **Safety first:** Any change touching order execution must be tested with `dryRun: true`
 - **No credentials:** Never include API keys, secrets, or real account data in commits
