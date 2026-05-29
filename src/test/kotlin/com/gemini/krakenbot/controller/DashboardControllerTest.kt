@@ -15,9 +15,15 @@ import io.ktor.client.statement.*
 import io.ktor.http.*
 import io.ktor.server.application.*
 import io.ktor.server.testing.*
+import io.ktor.client.plugins.sse.*
+import io.ktor.sse.*
+import kotlinx.coroutines.flow.take
+import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.flow.collect
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
+import io.mockk.slot
 import org.koin.core.context.startKoin
 import org.koin.core.context.stopKoin
 import org.koin.dsl.module
@@ -211,6 +217,144 @@ class DashboardControllerTest : StringSpec() {
                 }
                 response.status shouldBe HttpStatusCode.OK
                 response.bodyAsText() shouldContain "Total allocation percentage must be exactly 100%."
+            }
+        }
+
+        "getStaticResource_ReturnsCssFile" {
+            testApplication {
+                application {
+                    configureTestEnv()
+                }
+                val response = client.get("/static/style.css")
+                response.status shouldBe HttpStatusCode.OK
+                response.headers[HttpHeaders.ContentType] shouldContain "text/css"
+            }
+        }
+
+        "postSettings_WithMissingOrInvalidParams_UsesDefaultsAndHandlesValidation" {
+            val serverConfig = AppConfig(
+                KrakenCredentials("server-key", "server-secret"),
+                Settings(60L, 2.0, 1.0, true, 0.0, 1.0),
+                listOf(Allocation("USD", 100.0))
+            )
+            every { configService.getConfig() } returns serverConfig
+            val capturedConfig = slot<AppConfig>()
+            every { configService.updateConfig(capture(capturedConfig)) } throws InvalidConfigurationException("Mocked validation error")
+
+            testApplication {
+                application {
+                    configureTestEnv()
+                }
+                val response = client.post("/settings") {
+                    setBody(
+                        parametersOf(
+                            "loopDelaySeconds" to listOf("invalid"),
+                            "deviationTriggerPercent" to listOf("invalid"),
+                            "dustThresholdUSD" to listOf("invalid"),
+                            "fiatMaxDrawdown" to listOf("invalid"),
+                            "fiatDeploymentExponent" to listOf("invalid"),
+                            // "dryRun" is absent, meaning false
+                            "symbols" to listOf("BTC", "ETH"),
+                            "targets" to listOf("invalid", "30.0")
+                        ).formUrlEncode()
+                    )
+                    header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
+                }
+                response.status shouldBe HttpStatusCode.OK
+                response.bodyAsText() shouldContain "Mocked validation error"
+            }
+
+            capturedConfig.captured.settings.loopDelaySeconds shouldBe 60L
+            capturedConfig.captured.settings.deviationTriggerPercent shouldBe 2.0
+            capturedConfig.captured.settings.dustThresholdUSD shouldBe 1.0
+            capturedConfig.captured.settings.dryRun shouldBe false
+            capturedConfig.captured.settings.fiatMaxDrawdown shouldBe 0.0
+            capturedConfig.captured.settings.fiatDeploymentExponent shouldBe 1.0
+            capturedConfig.captured.allocations.size shouldBe 2
+            capturedConfig.captured.allocations[0].symbol shouldBe "BTC"
+            capturedConfig.captured.allocations[0].targetPercent shouldBe 0.0
+            capturedConfig.captured.allocations[1].symbol shouldBe "ETH"
+            capturedConfig.captured.allocations[1].targetPercent shouldBe 30.0
+        }
+
+        "sseStatusStream_EmitsInitialAndFlowSnapshots" {
+            val snapshot1 = PortfolioSnapshot(
+                Instant.now(),
+                BigDecimal("10000.0"),
+                emptyMap(),
+                emptyList(),
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO
+            )
+            val snapshot2 = PortfolioSnapshot(
+                Instant.now().plusSeconds(60),
+                BigDecimal("12000.0"),
+                emptyMap(),
+                emptyList(),
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO
+            )
+
+            every { tradeHistoryService.getLatestSnapshot() } returns snapshot1
+            every { tradeHistoryService.getHistoryFlow() } returns kotlinx.coroutines.flow.flowOf(snapshot2)
+
+            testApplication {
+                val client = createClient {
+                    install(SSE)
+                }
+                application {
+                    configureTestEnv()
+                }
+                client.sse("/api/status/stream") {
+                    val events = incoming.take(2).toList()
+                    events[0].data shouldBe objectMapper.writeValueAsString(snapshot1)
+                    events[1].data shouldBe objectMapper.writeValueAsString(snapshot2)
+                }
+            }
+        }
+
+        "sseStatusStream_HandlesCancellationException" {
+            every { tradeHistoryService.getLatestSnapshot() } returns null
+            every { tradeHistoryService.getHistoryFlow() } returns kotlinx.coroutines.flow.flow {
+                throw kotlinx.coroutines.CancellationException("Simulated cancel")
+            }
+
+            testApplication {
+                val client = createClient {
+                    install(SSE)
+                }
+                application {
+                    configureTestEnv()
+                }
+                try {
+                    client.sse("/api/status/stream") {
+                        incoming.collect {}
+                    }
+                } catch (e: Exception) {
+                    // Expect cancellation exception or channel close
+                }
+            }
+        }
+
+        "sseStatusStream_HandlesGenericExceptionGracefully" {
+            every { tradeHistoryService.getLatestSnapshot() } returns null
+            every { tradeHistoryService.getHistoryFlow() } returns kotlinx.coroutines.flow.flow {
+                throw RuntimeException("Simulated error")
+            }
+
+            testApplication {
+                val client = createClient {
+                    install(SSE)
+                }
+                application {
+                    configureTestEnv()
+                }
+                client.sse("/api/status/stream") {
+                    val events = incoming.toList()
+                    events.isEmpty() shouldBe true
+                }
             }
         }
     }
