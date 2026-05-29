@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
+## [3.1.0] - 2026-05-29
+
+### Changed
+- **Centralized CSS Class Names**: Extracted all remaining hardcoded HTML class name strings from Kotlin view components (`DashboardShellComponent`, `DashboardFragmentComponent`, `OverviewGridComponent`, `AllocationChartComponent`, `SettingsFormComponent`, `Layouts`) into constants in `CssClasses.kt`, achieving complete separation of styling tokens from markup logic.
+- **Centralized HTML Element IDs**: Created a `HtmlIds` object in `HtmlAttrs.kt` to centralize all element IDs (e.g. `save-button`, `total-allocated-display`, `allocations-container`, `new-symbol-input`), replacing all raw string literals in `SettingsFormComponent`.
+- **Settings Row Template Refactoring**: Removed the `unsafe` raw HTML template block (`renderSettingsTemplate`) from `SettingsFormComponent.kt` and moved allocation row DOM generation to `settings.js`, keeping Kotlin views 100% type-safe.
+- **Extracted Inline CSS to Stylesheet**: Moved inline `style="..."` attributes from `PerformanceTableComponent`, `SettingsFormComponent`, and the dashboard waiting-state layout into dedicated CSS classes in `style.css`, referenced via `CssClasses` constants.
+- **AM/PM Local Timezone Timestamps**: Standardized all dashboard timestamps to display in the local machine timezone using a 12-hour AM/PM format — both the data age indicator (`DashboardFragmentComponent`) and the Recent Activity log table (`RecentActivityComponent` + `dashboard.js`).
+- **Service Layer SRP Refactoring**: Decomposed `PortfolioManagerImpl` (553 lines) into `PortfolioAnalyzer` (price resolution, value calculation, ATH/drawdown tracking, deployment ratios) and `OrderExecutor` (deviation analysis, order sizing, cash tracking, fiat correction). `PortfolioManagerImpl` is now a lightweight orchestrator facade (223 lines).
+- **Test Suite Symbol Constants**: Replaced all hardcoded asset symbol string literals (`"USD"`, `"BTC"`, `"ETH"`, `"XBT"`, `"DOGE"`) across the entire test suite with `KrakenSymbols` constants, achieving type-safe, compile-time-verified symbol references in all test files.
+
+### Fixed
+- **CSS Property Typo**: Corrected `grid-template-cols` to the valid `grid-template-columns` property in two locations in `style.css` (lines 191 and 479), resolving IDE lint warnings.
+- **CSS Vendor Prefix Compatibility**: Added the standard `background-clip` property alongside `-webkit-background-clip` in `style.css` to resolve browser compatibility warnings.
+
+---
 ## [3.0.0] - 2026-05-28
 
 ### Added
