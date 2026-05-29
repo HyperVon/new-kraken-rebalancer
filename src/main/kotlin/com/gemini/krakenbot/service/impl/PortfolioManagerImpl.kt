@@ -113,7 +113,7 @@ class PortfolioManagerImpl(
 
     internal suspend fun fetchPrices(): Map<String, BigDecimal> {
         val allocations = configService.getConfig().allocations
-        val nonUsd = allocations.filter { !it.symbol.equals("USD", ignoreCase = true) }
+        val nonUsd = allocations.filter { !it.symbol.equals(KrakenSymbols.USD, ignoreCase = true) }
         if (nonUsd.isEmpty()) return emptyMap()
 
         val pairs = nonUsd.joinToString(",") { KrakenSymbols.tradingPair(it.symbol) }
@@ -130,7 +130,7 @@ class PortfolioManagerImpl(
 
         val krakenTicker = KrakenSymbols.toKrakenTicker(symbol)
         for ((key, value) in rawPrices) {
-            if (key.contains(krakenTicker) && key.contains("USD")) {
+            if (key.contains(krakenTicker) && key.contains(KrakenSymbols.USD)) {
                 return BigDecimal.valueOf(value)
             }
         }
@@ -150,7 +150,7 @@ class PortfolioManagerImpl(
             val bal = BigDecimal.valueOf(balance)
             var price = BigDecimal.ONE
 
-            if (!symbol.equals("USD", ignoreCase = true)) {
+            if (!symbol.equals(KrakenSymbols.USD, ignoreCase = true)) {
                 val p = prices[symbol] ?: BigDecimal.ZERO
                 if (p.compareTo(BigDecimal.ZERO) == 0) {
                     log.error("Price not found for {}. Aborting rebalance cycle to prevent erroneous trades.", symbol)
@@ -219,7 +219,7 @@ class PortfolioManagerImpl(
 
     private fun calculateEffectiveUsdTarget(fiatDeploymentPct: BigDecimal): BigDecimal {
         val baseUsdTarget = configService.getConfig().allocations
-            .filter { it.symbol.equals("USD", ignoreCase = true) }
+            .filter { it.symbol.equals(KrakenSymbols.USD, ignoreCase = true) }
             .sumOf { it.targetPercent.toBigDecimal() }
 
         return if (fiatDeploymentPct > BigDecimal.ZERO) {
@@ -232,7 +232,7 @@ class PortfolioManagerImpl(
 
     private fun calculateCryptoScaleFactor(effectiveUsdTarget: BigDecimal): BigDecimal {
         val totalNonUsdTarget = configService.getConfig().allocations
-            .filter { !it.symbol.equals("USD", ignoreCase = true) }
+            .filter { !it.symbol.equals(KrakenSymbols.USD, ignoreCase = true) }
             .sumOf { it.targetPercent.toBigDecimal() }
 
         val remainingForCrypto = BigDecimal.valueOf(100) - effectiveUsdTarget
@@ -260,7 +260,7 @@ class PortfolioManagerImpl(
         configService.getConfig().allocations.forEach { a ->
             var targetPct = BigDecimal.valueOf(a.targetPercent)
 
-            targetPct = if (a.symbol.equals("USD", ignoreCase = true)) {
+            targetPct = if (a.symbol.equals(KrakenSymbols.USD, ignoreCase = true)) {
                 effectiveUsdTarget
             } else {
                 targetPct.multiply(cryptoScaleFactor)
@@ -292,7 +292,7 @@ class PortfolioManagerImpl(
                 actionLog.add("Deviation Triggered details: ${a.symbol} Dev: $deviationPct%")
             }
 
-            if (a.symbol.equals("USD", ignoreCase = true)) {
+            if (a.symbol.equals(KrakenSymbols.USD, ignoreCase = true)) {
                 if (deviationPct.toDouble() >= s.deviationTriggerPercent) {
                     log.info(
                         "Asset USD Deviation: {}% (Trigger: {}%). USD Dev: {}",
@@ -333,7 +333,7 @@ class PortfolioManagerImpl(
         s: Settings,
         actionLog: MutableList<String>
     ) {
-        var projectedCash = currentValuesUSD["USD"] ?: BigDecimal.ZERO
+        var projectedCash = currentValuesUSD[KrakenSymbols.USD] ?: BigDecimal.ZERO
         var executedSells = false
 
         for ((symbol, usdToSell) in sellOrders) {
@@ -397,7 +397,7 @@ class PortfolioManagerImpl(
             try {
                 val updatedBalances = krakenService.getBalances()
                 if (updatedBalances.isNotEmpty()) {
-                    val usdBalance = resolveBalance("USD", updatedBalances)
+                    val usdBalance = resolveBalance(KrakenSymbols.USD, updatedBalances)
                     if (usdBalance > 0) {
                         bestCash = BigDecimal.valueOf(usdBalance)
                         log.info("Updated USD balance after sells (attempt {}): $${bestCash}", attempt + 1)
@@ -452,7 +452,7 @@ class PortfolioManagerImpl(
             val symbol = a.symbol
             val balance = BigDecimal.valueOf(resolveBalance(symbol, balances))
             val valUSD = currentValuesUSD[symbol] ?: BigDecimal.ZERO
-            val price = if (!symbol.equals("USD", ignoreCase = true)) {
+            val price = if (!symbol.equals(KrakenSymbols.USD, ignoreCase = true)) {
                 prices[symbol] ?: BigDecimal.ONE
             } else {
                 BigDecimal.ONE
@@ -462,7 +462,7 @@ class PortfolioManagerImpl(
             var snapshotTargetPct = baseTargetPct
             val calcTargetPct: BigDecimal
 
-            if (symbol.equals("USD", ignoreCase = true)) {
+            if (symbol.equals(KrakenSymbols.USD, ignoreCase = true)) {
                 calcTargetPct = effectiveUsdTarget
             } else {
                 calcTargetPct = baseTargetPct.multiply(cryptoScaleFactor)
@@ -514,7 +514,7 @@ class PortfolioManagerImpl(
         val candidates = mutableListOf<String>()
 
         for ((symbol, d) in allDevs) {
-            if (symbol.equals("USD", ignoreCase = true)) continue
+            if (symbol.equals(KrakenSymbols.USD, ignoreCase = true)) continue
 
             if (isDeposit && d < BigDecimal.ZERO) {
                 candidates.add(symbol)

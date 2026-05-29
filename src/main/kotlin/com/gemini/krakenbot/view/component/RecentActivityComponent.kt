@@ -1,6 +1,7 @@
 package com.gemini.krakenbot.view.component
 
 import com.gemini.krakenbot.model.PortfolioSnapshot
+import com.gemini.krakenbot.view.util.CssClasses
 import com.gemini.krakenbot.view.util.Icons
 import com.gemini.krakenbot.view.util.Icons.icon
 import com.gemini.krakenbot.view.util.Layouts.glassPanel
@@ -8,6 +9,24 @@ import com.gemini.krakenbot.view.util.ViewText
 import kotlinx.html.*
 
 class RecentActivityComponent {
+
+    private enum class TradeAction(val badgeClass: String, val label: String) {
+        BUY("badge badge-buy", "BUY"),
+        SELL("badge badge-sell", "SELL"),
+        INFO("badge badge-info", "INFO");
+
+        companion object {
+            fun from(action: String): TradeAction {
+                val upper = action.uppercase()
+                return when {
+                    upper.startsWith("BUY") -> BUY
+                    upper.startsWith("SELL") -> SELL
+                    else -> INFO
+                }
+            }
+        }
+    }
+
     fun DIV.render(history: List<PortfolioSnapshot>) {
         glassPanel(ViewText.RECENT_ACTIVITY, Icons.PULSE) {
             if (history.isEmpty()) {
@@ -17,7 +36,7 @@ class RecentActivityComponent {
                     p { +ViewText.NO_TRADING_HISTORY }
                 }
             } else {
-                div("table-wrapper custom-scrollbar max-h-100") {
+                div("${CssClasses.TABLE_WRAPPER} custom-scrollbar max-h-100") {
                     table {
                         thead {
                             tr {
@@ -29,36 +48,9 @@ class RecentActivityComponent {
                             history.forEach { snapshot ->
                                 val timeStr = snapshot.timestamp.toString().replace("T", " ").substringBefore(".")
                                 if (snapshot.actions.isEmpty()) {
-                                    tr("hoverable") {
-                                        td("mono-col") { +timeStr }
-                                        td {
-                                            span {
-                                                style = "color: var(--color-text-muted); font-style: italic; display: flex; align-items: center; gap: 0.5rem;"
-                                                span {
-                                                    style = "width: 0.375rem; height: 0.375rem; border-radius: 50%; background-color: var(--color-text-muted);"
-                                                }
-                                                +ViewText.NO_TRADES_EXECUTED
-                                            }
-                                        }
-                                    }
+                                    renderEmptyActionsRow(timeStr)
                                 } else {
-                                    snapshot.actions.forEach { action ->
-                                        val isBuy = action.uppercase().startsWith("BUY")
-                                        val isSell = action.uppercase().startsWith("SELL")
-                                        val badgeClass = if (isBuy) "badge badge-buy" else if (isSell) "badge badge-sell" else "badge badge-info"
-                                        val badgeText = if (isBuy) "BUY" else if (isSell) "SELL" else "INFO"
-
-                                        tr("hoverable") {
-                                            td("mono-col") { +timeStr }
-                                            td {
-                                                div {
-                                                    style = "display: flex; align-items: center; gap: 0.75rem;"
-                                                    span(badgeClass) { +badgeText }
-                                                    span { +action }
-                                                }
-                                            }
-                                        }
-                                    }
+                                    snapshot.actions.forEach { action -> renderActionRow(timeStr, action) }
                                 }
                             }
                         }
@@ -67,5 +59,33 @@ class RecentActivityComponent {
             }
         }
     }
-}
 
+    private fun TBODY.renderEmptyActionsRow(timeStr: String) {
+        tr(CssClasses.HOVERABLE) {
+            td(CssClasses.MONO_COL) { +timeStr }
+            td {
+                span {
+                    style = "color: var(--color-text-muted); font-style: italic; display: flex; align-items: center; gap: 0.5rem;"
+                    span {
+                        style = "width: 0.375rem; height: 0.375rem; border-radius: 50%; background-color: var(--color-text-muted);"
+                    }
+                    +ViewText.NO_TRADES_EXECUTED
+                }
+            }
+        }
+    }
+
+    private fun TBODY.renderActionRow(timeStr: String, action: String) {
+        val tradeAction = TradeAction.from(action)
+        tr(CssClasses.HOVERABLE) {
+            td(CssClasses.MONO_COL) { +timeStr }
+            td {
+                div {
+                    style = "display: flex; align-items: center; gap: 0.75rem;"
+                    span(tradeAction.badgeClass) { +tradeAction.label }
+                    span { +action }
+                }
+            }
+        }
+    }
+}

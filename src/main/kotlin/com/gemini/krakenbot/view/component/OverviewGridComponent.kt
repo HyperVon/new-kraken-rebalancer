@@ -5,6 +5,7 @@ import com.gemini.krakenbot.view.util.Formatter
 import com.gemini.krakenbot.view.util.Icons
 import com.gemini.krakenbot.view.util.Layouts.statusCard
 import com.gemini.krakenbot.view.util.ViewText
+import com.gemini.krakenbot.util.KrakenSymbols
 import kotlinx.html.*
 import java.math.BigDecimal
 import kotlin.math.abs
@@ -12,11 +13,11 @@ import kotlin.math.abs
 class OverviewGridComponent {
     fun DIV.render(latest: PortfolioSnapshot) {
         val totalValue = latest.totalValueUSD
-        val usdAsset = latest.assets["USD"]
+        val usdAsset = latest.assets[KrakenSymbols.USD]
         val usdValue = usdAsset?.valueUSD ?: BigDecimal.ZERO
         val cryptoValue = totalValue - usdValue
 
-        val assetsList = latest.assets.values.filter { it.symbol != "USD" }
+        val assetsList = latest.assets.values.filter { it.symbol != KrakenSymbols.USD }
         val cryptoPercent = assetsList.sumOf { it.currentPercent.toDouble() }
         val cryptoTargetPercent = assetsList.sumOf { it.targetPercent.toDouble() }
         val cryptoCount = assetsList.size

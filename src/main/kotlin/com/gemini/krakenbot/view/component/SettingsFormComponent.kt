@@ -1,30 +1,35 @@
 package com.gemini.krakenbot.view.component
 
 import com.gemini.krakenbot.config.AppConfig
+import com.gemini.krakenbot.view.util.CssClasses
+import com.gemini.krakenbot.view.util.FormFields
+import com.gemini.krakenbot.view.util.HtmlAttrs
+import com.gemini.krakenbot.view.util.HtmxAttrs
 import com.gemini.krakenbot.view.util.Icons
 import com.gemini.krakenbot.view.util.Icons.icon
 import com.gemini.krakenbot.view.util.Layouts.formGroup
 import com.gemini.krakenbot.view.util.Layouts.formSection
+import com.gemini.krakenbot.view.util.Routes
 import com.gemini.krakenbot.view.util.ViewText
 import kotlinx.html.*
 
 class SettingsFormComponent {
     fun BODY.render(config: AppConfig, errorMessage: String?) {
-        div("container") {
+        div(CssClasses.CONTAINER) {
             form {
-                attributes["hx-post"] = "/settings"
-                attributes["hx-target"] = "body"
-                attributes["hx-swap"] = "innerHTML"
+                attributes[HtmxAttrs.HX_POST] = Routes.SETTINGS
+                attributes[HtmxAttrs.HX_TARGET] = "body"
+                attributes[HtmxAttrs.HX_SWAP] = "innerHTML"
 
                 header {
                     div("header-title-section") {
-                        a(href = "/", classes = "btn btn-secondary") {
+                        a(href = Routes.ROOT, classes = CssClasses.BTN_SECONDARY) {
                             style = "padding: 0.5rem;"
                             icon(Icons.BACK_ARROW)
                         }
                         h1 { +ViewText.SETTINGS_TITLE }
                     }
-                    button(type = ButtonType.submit, classes = "btn btn-primary") {
+                    button(type = ButtonType.submit, classes = CssClasses.BTN_PRIMARY) {
                         id = "save-button"
                         icon(Icons.FLOPPY_DISK)
                         span { +ViewText.SAVE_CONFIGURATION }
@@ -38,7 +43,7 @@ class SettingsFormComponent {
                     }
                 }
 
-                div("glass-panel") {
+                div(CssClasses.GLASS_PANEL) {
                     renderGlobalParametersSection(config)
                     renderTargetAllocationsSection(config)
                 }
@@ -53,14 +58,14 @@ class SettingsFormComponent {
         formSection(ViewText.GLOBAL_PARAMETERS, Icons.SHIELD_EXCLAMATION) {
             div("grid-2col") {
                 formGroup(ViewText.LOOP_INTERVAL) {
-                    input(type = InputType.number, name = "loopDelaySeconds", classes = "input-glass") {
+                    input(type = InputType.number, name = FormFields.LOOP_DELAY_SECONDS, classes = CssClasses.INPUT_GLASS) {
                         min = "1"
                         value = config.settings.loopDelaySeconds.toString()
                     }
                 }
 
                 formGroup(ViewText.DEVIATION_TRIGGER) {
-                    input(type = InputType.number, name = "deviationTriggerPercent", classes = "input-glass") {
+                    input(type = InputType.number, name = FormFields.DEVIATION_TRIGGER_PERCENT, classes = CssClasses.INPUT_GLASS) {
                         step = "0.1"
                         min = "0"
                         value = config.settings.deviationTriggerPercent.toString()
@@ -68,21 +73,21 @@ class SettingsFormComponent {
                 }
 
                 formGroup(ViewText.DUST_THRESHOLD) {
-                    input(type = InputType.number, name = "dustThresholdUSD", classes = "input-glass") {
+                    input(type = InputType.number, name = FormFields.DUST_THRESHOLD_USD, classes = CssClasses.INPUT_GLASS) {
                         step = "0.5"
                         value = config.settings.dustThresholdUSD.toString()
                     }
                 }
 
                 formGroup(ViewText.FIAT_MAX_DRAWDOWN) {
-                    input(type = InputType.number, name = "fiatMaxDrawdown", classes = "input-glass") {
+                    input(type = InputType.number, name = FormFields.FIAT_MAX_DRAWDOWN, classes = CssClasses.INPUT_GLASS) {
                         step = "1.0"
                         value = config.settings.fiatMaxDrawdown.toString()
                     }
                 }
 
                 formGroup(ViewText.FIAT_DEPLOYMENT_EXPONENT) {
-                    input(type = InputType.number, name = "fiatDeploymentExponent", classes = "input-glass") {
+                    input(type = InputType.number, name = FormFields.FIAT_DEPLOYMENT_EXPONENT, classes = CssClasses.INPUT_GLASS) {
                         step = "0.1"
                         value = config.settings.fiatDeploymentExponent.toString()
                     }
@@ -91,7 +96,7 @@ class SettingsFormComponent {
                 div("form-group") {
                     style = "justify-content: center; padding-top: 1rem;"
                     label("checkbox-container") {
-                        input(type = InputType.checkBox, name = "dryRun") {
+                        input(type = InputType.checkBox, name = FormFields.DRY_RUN) {
                             checked = config.settings.dryRun
                         }
                         div("checkbox-custom") {}
@@ -121,17 +126,17 @@ class SettingsFormComponent {
                 config.allocations.forEach { alloc ->
                     div("allocation-edit-row") {
                         div("allocation-edit-symbol") { +alloc.symbol }
-                        input(type = InputType.hidden, name = "symbols") { value = alloc.symbol }
+                        input(type = InputType.hidden, name = FormFields.SYMBOLS) { value = alloc.symbol }
                         div("allocation-edit-input-wrapper") {
-                            input(type = InputType.number, name = "targets", classes = "input-glass") {
+                            input(type = InputType.number, name = FormFields.TARGETS, classes = CssClasses.INPUT_GLASS) {
                                 step = "0.1"
                                 value = alloc.targetPercent.toString()
-                                attributes["oninput"] = "updateAllocationTotal()"
+                                attributes[HtmlAttrs.ONINPUT] = "updateAllocationTotal()"
                             }
                             span("percent-suffix") { +"%" }
                         }
-                        button(type = ButtonType.button, classes = "btn btn-danger") {
-                            attributes["onclick"] = "this.closest('.allocation-edit-row').remove(); updateAllocationTotal();"
+                        button(type = ButtonType.button, classes = CssClasses.BTN_DANGER) {
+                            attributes[HtmlAttrs.ONCLICK] = "this.closest('.allocation-edit-row').remove(); updateAllocationTotal();"
                             +ViewText.REMOVE
                         }
                     }
@@ -139,14 +144,14 @@ class SettingsFormComponent {
             }
 
             div("add-asset-box") {
-                input(type = InputType.text, classes = "input-glass") {
+                input(type = InputType.text, classes = CssClasses.INPUT_GLASS) {
                     id = "new-symbol-input"
                     placeholder = ViewText.NEW_SYMBOL_PLACEHOLDER
                     style = "text-transform: uppercase; flex-grow: 1;"
-                    attributes["onkeydown"] = "if(event.key === 'Enter') { event.preventDefault(); addAssetRow(); }"
+                    attributes[HtmlAttrs.ONKEYDOWN] = "if(event.key === 'Enter') { event.preventDefault(); addAssetRow(); }"
                 }
-                button(type = ButtonType.button, classes = "btn btn-secondary") {
-                    attributes["onclick"] = "addAssetRow()"
+                button(type = ButtonType.button, classes = CssClasses.BTN_SECONDARY) {
+                    attributes[HtmlAttrs.ONCLICK] = "addAssetRow()"
                     icon(Icons.PLUS)
                     span { +ViewText.ADD_ASSET }
                 }
@@ -173,6 +178,6 @@ class SettingsFormComponent {
     }
 
     private fun BODY.renderSettingsScript() {
-        script(src = "/static/settings.js") {}
+        script(src = Routes.STATIC_SETTINGS_JS) {}
     }
 }

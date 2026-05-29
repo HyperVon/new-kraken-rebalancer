@@ -1,11 +1,12 @@
 package com.gemini.krakenbot.view.util
 
+import com.gemini.krakenbot.view.util.CssClasses
 import com.gemini.krakenbot.view.util.Icons.icon
 import kotlinx.html.*
 
 object Layouts {
     fun FlowContent.glassPanel(title: String, iconSvg: String? = null, block: DIV.() -> Unit) {
-        div("glass-panel") {
+        div(CssClasses.GLASS_PANEL) {
             h2("glass-panel-title") {
                 if (iconSvg != null) icon(iconSvg)
                 +title

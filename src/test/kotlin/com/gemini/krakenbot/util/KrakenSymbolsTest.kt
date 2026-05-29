@@ -6,13 +6,13 @@ import io.kotest.matchers.shouldBe
 @Suppress("unused")
 class KrakenSymbolsTest : StringSpec({
     "toKrakenTicker_mapsKnownSymbols" {
-        KrakenSymbols.toKrakenTicker("btc") shouldBe "XBT"
-        KrakenSymbols.toKrakenTicker("DOGE") shouldBe "XDG"
-        KrakenSymbols.toKrakenTicker("eth") shouldBe "ETH"
+        KrakenSymbols.toKrakenTicker("btc") shouldBe KrakenSymbols.XBT  // lowercase tests case-insensitivity
+        KrakenSymbols.toKrakenTicker(KrakenSymbols.DOGE) shouldBe KrakenSymbols.XDG
+        KrakenSymbols.toKrakenTicker("eth") shouldBe KrakenSymbols.ETH  // lowercase tests case-insensitivity
     }
 
     "tradingPair_buildsUsdPair" {
-        KrakenSymbols.tradingPair("BTC") shouldBe "XBTUSD"
-        KrakenSymbols.tradingPair("DOGE") shouldBe "XDGUSD"
+        KrakenSymbols.tradingPair(KrakenSymbols.BTC) shouldBe KrakenSymbols.BTC_USD_PAIR
+        KrakenSymbols.tradingPair(KrakenSymbols.DOGE) shouldBe "XDGUSD"
     }
 })

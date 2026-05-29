@@ -8,6 +8,10 @@ import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.TradeHistoryService
 import com.gemini.krakenbot.view.DashboardView
 import com.gemini.krakenbot.view.component.*
+import com.gemini.krakenbot.view.util.FormFields
+import com.gemini.krakenbot.view.util.HtmxHeaders
+import com.gemini.krakenbot.view.util.Routes
+import com.gemini.krakenbot.view.util.ViewText
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
@@ -28,6 +32,8 @@ import io.mockk.slot
 import org.koin.core.context.startKoin
 import org.koin.core.context.stopKoin
 import org.koin.dsl.module
+import com.gemini.krakenbot.TestFixtures
+import com.gemini.krakenbot.util.KrakenSymbols
 import java.math.BigDecimal
 import java.time.Instant
 
@@ -75,11 +81,11 @@ class DashboardControllerTest : StringSpec() {
                 application {
                     configureTestEnv()
                 }
-                val response = client.get("/")
+                val response = client.get(Routes.ROOT)
                 response.status shouldBe HttpStatusCode.OK
                 response.headers[HttpHeaders.ContentType] shouldContain "text/html"
-                response.bodyAsText() shouldContain "Kraken Rebalancer"
-                response.bodyAsText() shouldContain "sse-connect=\"/api/status/stream\""
+                response.bodyAsText() shouldContain ViewText.APP_TITLE
+                response.bodyAsText() shouldContain "sse-connect=\"${Routes.API_STATUS_STREAM}\""
             }
         }
 
@@ -90,10 +96,10 @@ class DashboardControllerTest : StringSpec() {
                 application {
                     configureTestEnv()
                 }
-                val response = client.get("/fragments/dashboard")
+                val response = client.get(Routes.FRAGMENT_DASHBOARD)
                 response.status shouldBe HttpStatusCode.OK
                 response.headers[HttpHeaders.ContentType] shouldContain "text/html"
-                response.bodyAsText() shouldContain "Waiting for first rebalance cycle"
+                response.bodyAsText() shouldContain ViewText.WAITING_FIRST_CYCLE
             }
         }
 
@@ -103,9 +109,9 @@ class DashboardControllerTest : StringSpec() {
                 nowTime,
                 BigDecimal("15000.00"),
                 mapOf(
-                    "USD" to PortfolioSnapshot.AssetSnapshot("USD", BigDecimal("5000.0"), BigDecimal("1.0"), BigDecimal("5000.0"), BigDecimal("33.33"), BigDecimal("33.33"), BigDecimal("0.0"), BigDecimal("0.0")),
-                    "BTC" to PortfolioSnapshot.AssetSnapshot("BTC", BigDecimal("0.1"), BigDecimal("50000.0"), BigDecimal("5000.0"), BigDecimal("33.33"), BigDecimal("33.33"), BigDecimal("5.0"), BigDecimal("250.0")),
-                    "ETH" to PortfolioSnapshot.AssetSnapshot("ETH", BigDecimal("2.5"), BigDecimal("2000.0"), BigDecimal("5000.0"), BigDecimal("33.33"), BigDecimal("33.33"), BigDecimal("-2.0"), BigDecimal("-100.0"))
+                    KrakenSymbols.USD to PortfolioSnapshot.AssetSnapshot(KrakenSymbols.USD, BigDecimal("5000.0"), BigDecimal("1.0"), BigDecimal("5000.0"), BigDecimal("33.33"), BigDecimal("33.33"), BigDecimal("0.0"), BigDecimal("0.0")),
+                    KrakenSymbols.BTC to PortfolioSnapshot.AssetSnapshot(KrakenSymbols.BTC, BigDecimal("0.1"), BigDecimal("50000.0"), BigDecimal("5000.0"), BigDecimal("33.33"), BigDecimal("33.33"), BigDecimal("5.0"), BigDecimal("250.0")),
+                    KrakenSymbols.ETH to PortfolioSnapshot.AssetSnapshot(KrakenSymbols.ETH, BigDecimal("2.5"), BigDecimal("2000.0"), BigDecimal("5000.0"), BigDecimal("33.33"), BigDecimal("33.33"), BigDecimal("-2.0"), BigDecimal("-100.0"))
                 ),
                 listOf("BUY BTC 0.1"),
                 BigDecimal.ZERO,
@@ -119,14 +125,14 @@ class DashboardControllerTest : StringSpec() {
                 application {
                     configureTestEnv()
                 }
-                val response = client.get("/fragments/dashboard")
+                val response = client.get(Routes.FRAGMENT_DASHBOARD)
                 response.status shouldBe HttpStatusCode.OK
                 response.headers[HttpHeaders.ContentType] shouldContain "text/html"
                 
                 val body = response.bodyAsText()
-                body shouldContain "Total Portfolio"
-                body shouldContain "Cash (USD)"
-                body shouldContain "Crypto Assets"
+                body shouldContain ViewText.TOTAL_PORTFOLIO
+                body shouldContain ViewText.CASH_USD
+                body shouldContain ViewText.CRYPTO_ASSETS
                 body shouldContain "BUY BTC 0.1"
                 
                 // Verify epoch data-attribute exists and matches
@@ -156,17 +162,17 @@ class DashboardControllerTest : StringSpec() {
                 application {
                     configureTestEnv()
                 }
-                val response = client.get("/settings")
+                val response = client.get(Routes.SETTINGS)
                 response.status shouldBe HttpStatusCode.OK
                 response.headers[HttpHeaders.ContentType] shouldContain "text/html"
-                response.bodyAsText() shouldContain "Global Parameters"
-                response.bodyAsText() shouldContain "loopDelaySeconds"
+                response.bodyAsText() shouldContain ViewText.GLOBAL_PARAMETERS
+                response.bodyAsText() shouldContain FormFields.LOOP_DELAY_SECONDS
             }
         }
 
         "postSettings_SucceedsAndSetsHxRedirectHeader" {
             val serverConfig = AppConfig(
-                KrakenCredentials("server-key", "server-secret"),
+                KrakenCredentials(TestFixtures.TEST_SERVER_API_KEY, TestFixtures.TEST_SERVER_API_SECRET),
                 Settings(60L, 2.0, 1.0, true, 0.0, 1.0),
                 listOf(Allocation("USD", 100.0))
             )
@@ -176,23 +182,23 @@ class DashboardControllerTest : StringSpec() {
                 application {
                     configureTestEnv()
                 }
-                val response = client.post("/settings") {
+                val response = client.post(Routes.SETTINGS) {
                     setBody(
                         parametersOf(
-                            "loopDelaySeconds" to listOf("120"),
-                            "deviationTriggerPercent" to listOf("3.5"),
-                            "dustThresholdUSD" to listOf("2.0"),
-                            "fiatMaxDrawdown" to listOf("5.0"),
-                            "fiatDeploymentExponent" to listOf("1.5"),
-                            "dryRun" to listOf("on"),
-                            "symbols" to listOf("USD"),
-                            "targets" to listOf("100.0")
+                            FormFields.LOOP_DELAY_SECONDS to listOf("120"),
+                            FormFields.DEVIATION_TRIGGER_PERCENT to listOf("3.5"),
+                            FormFields.DUST_THRESHOLD_USD to listOf("2.0"),
+                            FormFields.FIAT_MAX_DRAWDOWN to listOf("5.0"),
+                            FormFields.FIAT_DEPLOYMENT_EXPONENT to listOf("1.5"),
+                            FormFields.DRY_RUN to listOf("on"),
+                            FormFields.SYMBOLS to listOf("USD"),
+                            FormFields.TARGETS to listOf("100.0")
                         ).formUrlEncode()
                     )
                     header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
                 }
                 response.status shouldBe HttpStatusCode.OK
-                response.headers["HX-Redirect"] shouldBe "/"
+                response.headers[HtmxHeaders.HX_REDIRECT] shouldBe Routes.ROOT
             }
 
             verify { configService.updateConfig(any()) }
@@ -200,7 +206,7 @@ class DashboardControllerTest : StringSpec() {
 
         "postSettings_OnValidationError_ReturnsErrorHtmlBody" {
             val serverConfig = AppConfig(
-                KrakenCredentials("server-key", "server-secret"),
+                KrakenCredentials(TestFixtures.TEST_SERVER_API_KEY, TestFixtures.TEST_SERVER_API_SECRET),
                 Settings(60L, 2.0, 1.0, true, 0.0, 1.0),
                 listOf(Allocation("USD", 100.0))
             )
@@ -211,14 +217,14 @@ class DashboardControllerTest : StringSpec() {
                 application {
                     configureTestEnv()
                 }
-                val response = client.post("/settings") {
+                val response = client.post(Routes.SETTINGS) {
                     setBody(
                         parametersOf(
-                            "loopDelaySeconds" to listOf("60"),
-                            "deviationTriggerPercent" to listOf("2.0"),
-                            "dustThresholdUSD" to listOf("1.0"),
-                            "symbols" to listOf("USD"),
-                            "targets" to listOf("90.0") // sum != 100
+                            FormFields.LOOP_DELAY_SECONDS to listOf("60"),
+                            FormFields.DEVIATION_TRIGGER_PERCENT to listOf("2.0"),
+                            FormFields.DUST_THRESHOLD_USD to listOf("1.0"),
+                            FormFields.SYMBOLS to listOf("USD"),
+                            FormFields.TARGETS to listOf("90.0") // sum != 100
                         ).formUrlEncode()
                     )
                     header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
@@ -233,7 +239,7 @@ class DashboardControllerTest : StringSpec() {
                 application {
                     configureTestEnv()
                 }
-                val response = client.get("/static/style.css")
+                val response = client.get(Routes.STATIC_STYLE_CSS)
                 response.status shouldBe HttpStatusCode.OK
                 response.headers[HttpHeaders.ContentType] shouldContain "text/css"
             }
@@ -244,7 +250,7 @@ class DashboardControllerTest : StringSpec() {
                 application {
                     configureTestEnv()
                 }
-                val response = client.get("/static/dashboard.js")
+                val response = client.get(Routes.STATIC_DASHBOARD_JS)
                 response.status shouldBe HttpStatusCode.OK
                 response.headers[HttpHeaders.ContentType] shouldContain "javascript"
             }
@@ -255,7 +261,7 @@ class DashboardControllerTest : StringSpec() {
                 application {
                     configureTestEnv()
                 }
-                val response = client.get("/static/settings.js")
+                val response = client.get(Routes.STATIC_SETTINGS_JS)
                 response.status shouldBe HttpStatusCode.OK
                 response.headers[HttpHeaders.ContentType] shouldContain "javascript"
             }
@@ -263,7 +269,7 @@ class DashboardControllerTest : StringSpec() {
 
         "postSettings_WithMissingOrInvalidParams_UsesDefaultsAndHandlesValidation" {
             val serverConfig = AppConfig(
-                KrakenCredentials("server-key", "server-secret"),
+                KrakenCredentials(TestFixtures.TEST_SERVER_API_KEY, TestFixtures.TEST_SERVER_API_SECRET),
                 Settings(60L, 2.0, 1.0, true, 0.0, 1.0),
                 listOf(Allocation("USD", 100.0))
             )
@@ -275,17 +281,17 @@ class DashboardControllerTest : StringSpec() {
                 application {
                     configureTestEnv()
                 }
-                val response = client.post("/settings") {
+                val response = client.post(Routes.SETTINGS) {
                     setBody(
                         parametersOf(
-                            "loopDelaySeconds" to listOf("invalid"),
-                            "deviationTriggerPercent" to listOf("invalid"),
-                            "dustThresholdUSD" to listOf("invalid"),
-                            "fiatMaxDrawdown" to listOf("invalid"),
-                            "fiatDeploymentExponent" to listOf("invalid"),
+                            FormFields.LOOP_DELAY_SECONDS to listOf("invalid"),
+                            FormFields.DEVIATION_TRIGGER_PERCENT to listOf("invalid"),
+                            FormFields.DUST_THRESHOLD_USD to listOf("invalid"),
+                            FormFields.FIAT_MAX_DRAWDOWN to listOf("invalid"),
+                            FormFields.FIAT_DEPLOYMENT_EXPONENT to listOf("invalid"),
                             // "dryRun" is absent, meaning false
-                            "symbols" to listOf("BTC", "ETH"),
-                            "targets" to listOf("invalid", "30.0")
+                            FormFields.SYMBOLS to listOf("BTC", "ETH"),
+                            FormFields.TARGETS to listOf("invalid", "30.0")
                         ).formUrlEncode()
                     )
                     header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
@@ -309,7 +315,7 @@ class DashboardControllerTest : StringSpec() {
 
         "postSettings_WithAbsentParamsAndNullErrorMessage_UsesDefaultsAndFallbackMessage" {
             val serverConfig = AppConfig(
-                KrakenCredentials("server-key", "server-secret"),
+                KrakenCredentials(TestFixtures.TEST_SERVER_API_KEY, TestFixtures.TEST_SERVER_API_SECRET),
                 Settings(60L, 2.0, 1.0, true, 0.0, 1.0),
                 listOf(Allocation("USD", 100.0))
             )
@@ -321,7 +327,7 @@ class DashboardControllerTest : StringSpec() {
                 application {
                     configureTestEnv()
                 }
-                val response = client.post("/settings") {
+                val response = client.post(Routes.SETTINGS) {
                     setBody(
                         parametersOf().formUrlEncode()
                     )
@@ -370,7 +376,7 @@ class DashboardControllerTest : StringSpec() {
                 application {
                     configureTestEnv()
                 }
-                client.sse("/api/status/stream") {
+                client.sse(Routes.API_STATUS_STREAM) {
                     val events = incoming.take(2).toList()
                     events[0].data shouldBe objectMapper.writeValueAsString(snapshot1)
                     events[1].data shouldBe objectMapper.writeValueAsString(snapshot2)
@@ -392,7 +398,7 @@ class DashboardControllerTest : StringSpec() {
                     configureTestEnv()
                 }
                 try {
-                    client.sse("/api/status/stream") {
+                    client.sse(Routes.API_STATUS_STREAM) {
                         incoming.collect {}
                     }
                 } catch (e: Exception) {
@@ -414,7 +420,7 @@ class DashboardControllerTest : StringSpec() {
                 application {
                     configureTestEnv()
                 }
-                client.sse("/api/status/stream") {
+                client.sse(Routes.API_STATUS_STREAM) {
                     val events = incoming.toList()
                     events.isEmpty() shouldBe true
                 }

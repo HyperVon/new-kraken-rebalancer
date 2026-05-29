@@ -1,8 +1,11 @@
 package com.gemini.krakenbot.view.component
 
 import com.gemini.krakenbot.model.PortfolioSnapshot
+import com.gemini.krakenbot.view.util.CssClasses
+import com.gemini.krakenbot.view.util.HtmlAttrs
 import com.gemini.krakenbot.view.util.Icons
 import com.gemini.krakenbot.view.util.Icons.icon
+import com.gemini.krakenbot.view.util.Routes
 import com.gemini.krakenbot.view.util.ViewText
 import kotlinx.html.*
 import java.time.Instant
@@ -23,12 +26,12 @@ class DashboardFragmentComponent(
 
         renderHeaderSection(latest, timeSinceUpdate, isStale)
         with(overviewGridComponent) { render(latest) }
-        
+
         div("detail-grid") {
             with(allocationChartComponent) { render(latest) }
             with(performanceTableComponent) { render(latest) }
         }
-        
+
         with(recentActivityComponent) { render(history) }
     }
 
@@ -47,11 +50,11 @@ class DashboardFragmentComponent(
                     val ageClass = if (isStale) "data-age-value stale" else "data-age-value"
                     div(ageClass) { +"${timeSinceUpdate}s ago" }
                     div("data-age-time") {
-                        attributes["data-epoch"] = latest.timestamp.toEpochMilli().toString()
+                        attributes[HtmlAttrs.DATA_EPOCH] = latest.timestamp.toEpochMilli().toString()
                         +timeFormatter.format(latest.timestamp)
                     }
                 }
-                a(href = "/settings", classes = "btn btn-secondary") {
+                a(href = Routes.SETTINGS, classes = CssClasses.BTN_SECONDARY) {
                     icon(Icons.COG)
                     span { +ViewText.SETTINGS_TITLE }
                 }
@@ -59,4 +62,3 @@ class DashboardFragmentComponent(
         }
     }
 }
-
