@@ -19,3 +19,12 @@ object HtmxAttrs {
     const val HX_TRIGGER = "hx-trigger"
     const val SSE_CONNECT = "sse-connect"
 }
+
+/** Centralized HTML element IDs used in view layout templates and client scripts. */
+object HtmlIds {
+    const val SAVE_BUTTON = "save-button"
+    const val TOTAL_ALLOCATED_DISPLAY = "total-allocated-display"
+    const val ALLOCATIONS_CONTAINER = "allocations-container"
+    const val NEW_SYMBOL_INPUT = "new-symbol-input"
+}
+

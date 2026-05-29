@@ -4,6 +4,7 @@ import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.view.util.CssClasses
 import com.gemini.krakenbot.view.util.FormFields
 import com.gemini.krakenbot.view.util.HtmlAttrs
+import com.gemini.krakenbot.view.util.HtmlIds
 import com.gemini.krakenbot.view.util.HtmxAttrs
 import com.gemini.krakenbot.view.util.Icons
 import com.gemini.krakenbot.view.util.Icons.icon
@@ -29,7 +30,7 @@ class SettingsFormComponent {
                         h1 { +ViewText.SETTINGS_TITLE }
                     }
                     button(type = ButtonType.submit, classes = CssClasses.BTN_PRIMARY) {
-                        id = "save-button"
+                        id = HtmlIds.SAVE_BUTTON
                         icon(Icons.FLOPPY_DISK)
                         span { +ViewText.SAVE_CONFIGURATION }
                     }
@@ -110,13 +111,13 @@ class SettingsFormComponent {
                     +ViewText.TARGET_ALLOCATIONS
                 }
                 div(CssClasses.STATUS_BADGE_LIVE) {
-                    id = "total-allocated-display"
+                    id = HtmlIds.TOTAL_ALLOCATED_DISPLAY
                     +ViewText.TOTAL_INITIAL
                 }
             }
 
             div(CssClasses.ALLOCATION_LIST_CONTAINER) {
-                id = "allocations-container"
+                id = HtmlIds.ALLOCATIONS_CONTAINER
                 config.allocations.forEach { alloc ->
                     div(CssClasses.ALLOCATION_EDIT_ROW) {
                         div(CssClasses.ALLOCATION_EDIT_SYMBOL) { +alloc.symbol }
@@ -139,7 +140,7 @@ class SettingsFormComponent {
 
             div(CssClasses.ADD_ASSET_BOX) {
                 input(type = InputType.text, classes = CssClasses.INPUT_GLASS) {
-                    id = "new-symbol-input"
+                    id = HtmlIds.NEW_SYMBOL_INPUT
                     placeholder = ViewText.NEW_SYMBOL_PLACEHOLDER
                     attributes[HtmlAttrs.ONKEYDOWN] = "if(event.key === 'Enter') { event.preventDefault(); addAssetRow(); }"
                 }
