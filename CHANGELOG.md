@@ -6,7 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
+## [3.0.0] - 2026-05-28
 
+### Added
+- **HTMX-Powered Dashboard**: Replaced the React/Vite frontend with a server-side rendered HTML interface using the kotlinx.html DSL and HTMX for dynamic content swapping.
+  - Dashboard shell renders initial HTML via `DashboardView.renderDashboardShell()`
+  - Dashboard fragment (`GET /fragments/dashboard`) returns partial HTML swapped into the shell via `hx-get` triggered by `load` and SSE events
+  - Settings form uses `hx-post` for AJAX submission with server-side validation errors returning HTML fragments
+  - Settings page includes client-side JavaScript for allocation row management and total validation
+- **Ktor SSE Integration with HTMX**: SSE events from `/api/status/stream` trigger automatic dashboard fragment refresh using HTMX's SSE extension (`hx-ext="sse"`, `sse-swap="message"`), eliminating the need for a separate React/TypeScript build pipeline.
+- **DashboardView Class**: HTML rendering logic centralized in `DashboardView` using Kotlin's `kotlinx.html` type-safe HTML builder, enabling full-stack Kotlin development without a separate frontend stack.
+
+### Removed
+- **React/Vite Frontend**: Removed the entire `frontend/` directory including React 19, TypeScript, Vite 8, Tailwind CSS v4, Chart.js, Vitest, and 110 frontend unit tests.
+- **Frontend CI Job**: Removed the frontend build, lint, and test steps from the GitHub Actions workflow.
+- **Separate Frontend Build Step**: The application now runs as a single `./gradlew run` command — no `npm install`, `npm run dev`, or build pipeline needed.
 
 ## [2.2.4] - 2026-05-28
 
@@ -14,8 +28,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Server-Sent Events (SSE) Real-Time Stream**: Replaced the frontend's 5-second polling of the `/api/status` endpoint with a native Ktor 3.5.0 SSE status stream (`/api/status/stream`).
   - Added Ktor server-sse plugin to the backend.
   - Implemented `getHistoryFlow()` using a Kotlin Coroutines `MutableSharedFlow` in `TradeHistoryService` to publish snapshots in real-time.
-  - Refactored `Dashboard.tsx` to subscribe to the SSE stream via EventSource, updating React Query's cache directly and invalidating history logs on emissions.
-  - Added unit test coverage for the snapshot event flow and mocked `EventSource` globally in the frontend test environment.
 
 ### Changed
 - **Koin 4 Constructor DI Modernization**: Refactored `AppModule.kt` to leverage Koin 4's new constructor-based injection (`singleOf` and `bind`). Retained explicit declaration for `ConfigServiceImpl` to safely resolve constructor parameters with default values.

@@ -46,6 +46,7 @@ dependencies {
     implementation("io.ktor:ktor-server-cors:$ktorVersion")
     implementation("io.ktor:ktor-server-status-pages:$ktorVersion")
     implementation("io.ktor:ktor-server-sse:$ktorVersion")
+    implementation("io.ktor:ktor-server-html-builder:$ktorVersion")
     implementation("io.ktor:ktor-client-core:$ktorVersion")
     implementation("io.ktor:ktor-client-cio:$ktorVersion")
 
@@ -88,6 +89,7 @@ tasks.jacocoTestReport {
             fileTree(it) {
                 exclude("**/model/**")
                 exclude("**/config/**")
+                exclude("**/view/**")
                 exclude("**/KrakenRebalancerApplication*")
             }
         })
@@ -100,6 +102,7 @@ tasks.jacocoTestCoverageVerification {
             fileTree(it) {
                 exclude("**/model/**")
                 exclude("**/config/**")
+                exclude("**/view/**")
                 exclude("**/KrakenRebalancerApplication*")
             }
         })

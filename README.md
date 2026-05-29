@@ -16,10 +16,10 @@ A production-grade, autonomous portfolio rebalancing engine for the [Kraken](htt
 | **Backend** | Ktor 3.5.0 (Netty engine), Koin 4.2.1 (DI), Jackson 2.21 |
 | **HTTP Client** | Ktor CIO Client (async, coroutine-native) |
 | **Concurrency** | Kotlin Coroutines (`kotlinx.coroutines` 1.11.0) |
-| **Frontend** | React 19 (TypeScript), Vite 8, Tailwind CSS v4, Chart.js |
+| **Frontend** | Server-side HTML (kotlinx.html DSL + HTMX), Ktor SSE |
 | **API** | Kraken REST API with HMAC-SHA512 authentication |
 | **Testing** | Kotest 6.1 (StringSpec), MockK 1.14, Ktor MockEngine, JaCoCo (95%+ coverage enforced) |
-| **Build** | Gradle (Kotlin DSL), npm |
+| **Build** | Gradle (Kotlin DSL) |
 
 ---
 
@@ -46,6 +46,7 @@ A production-grade, autonomous portfolio rebalancing engine for the [Kraken](htt
 - Sortable asset performance table with deviation indicators
 - Trade history log with BUY/SELL badges
 - Live/Delayed status indicator with data age tracking
+- **Hypermedia-powered** — uses HTMX for dynamic content swapping and form submissions without writing JavaScript
 
 ### Hot-Reload Configuration
 - Modify all settings (allocations, thresholds, assets) via the web UI
@@ -87,16 +88,16 @@ All configuration is managed through the web UI — loop interval, deviation tri
 
 ```mermaid
 graph LR
-    subgraph Frontend["Frontend (React + Vite)"]
-        D[Dashboard] --> SC[StatusCard]
-        D --> AC[AllocationChart]
-        D --> TH[TradeHistory]
-        D --> S[Settings]
+    subgraph Frontend["Frontend (HTMX + Server-Side HTML)"]
+        D[Dashboard Shell] --> DF[Dashboard Fragment]
+        D --> SF[Settings Fragment]
+        DF --> SS[SSE Stream]
     end
 
     subgraph Backend["Backend (Ktor + Koin)"]
         DC[DashboardRoutes] --> THS[TradeHistoryService]
         DC --> CS[ConfigService]
+        DC --> DV[DashboardView]
         PM[PortfolioManager] --> KS[KrakenService]
         PM --> CS
         PM --> THS
@@ -129,11 +130,11 @@ See **[ALGORITHM.md](ALGORITHM.md)** for a detailed breakdown of the rebalancing
 
 ### Real-Time Event Streaming
 
-To eliminate unnecessary network polling, the system uses a reactive, push-based architecture to synchronize the frontend dashboard with the backend rebalancing loop:
+To eliminate unnecessary network polling, the system uses a reactive, push-based architecture to synchronize the dashboard with the backend rebalancing loop:
 
 1. **Kotlin SharedFlow**: `TradeHistoryServiceImpl` maintains a `MutableSharedFlow` as a hot event broadcaster. Whenever a rebalance cycle records a new `PortfolioSnapshot`, the snapshot is emitted to the flow using `tryEmit()`.
 2. **Ktor Server-Sent Events (SSE)**: The `/api/status/stream` route installs Ktor 3's native `SSE` plugin. When a client connects, Ktor pushes the latest cached snapshot and then suspends, collecting subsequent snapshots from the `SharedFlow` and streaming them over a single, persistent HTTP connection.
-3. **React EventSource Integration**: The React `Dashboard` utilizes the browser's native `EventSource` API to listen to the SSE stream. On message reception, it directly updates React Query's `status` cache and invalidates the `history` query, triggering an instantaneous update across all components without periodic background HTTP polls.
+3. **HTMX SSE Extension**: The dashboard shell uses `hx-ext="sse"` and `sse-connect="/api/status/stream"`. A div with `sse-swap="message"` and `hx-trigger="sse:message"` automatically fetches updated dashboard fragments from `/fragments/dashboard` whenever a new snapshot arrives over the SSE stream.
 
 ---
 
@@ -144,25 +145,22 @@ To eliminate unnecessary network polling, the system uses a reactive, push-based
 │   ├── KrakenRebalancerApplication.kt    # Entry point, Ktor server & Koin DI bootstrap
 │   ├── config/                            # Data classes: AppConfig, Settings, Allocation, KrakenCredentials
 │   │   └── AppModule.kt                  # Koin dependency injection module
-│   ├── controller/                        # Ktor routes: DashboardRoutes, FrontendConfig
+│   ├── controller/                        # Ktor routes: DashboardRoutes
 │   ├── model/                             # Domain: PortfolioSnapshot, PortfolioStats, OrderResult
 │   ├── repository/                        # Persistence interfaces: TradeRepository, PortfolioStatsRepository
 │   │   └── impl/                          # File-backed implementations
 │   ├── service/                           # Core logic interfaces: PortfolioManager, KrakenService, ConfigService, TradeHistoryService
 │   │   └── impl/                          # Service implementations (coroutine-aware)
+│   ├── view/                              # HTML templates (kotlinx.html DSL)
+│   │   └── DashboardView.kt              # Server-side rendered dashboard & settings pages
 │   └── util/                              # Utilities: AtomicJsonFile, KrakenSymbols
-├── src/test/kotlin/                       # 122 unit tests (100% line and branch coverage enforced by JaCoCo)
-│   └── com/gemini/krakenbot/service/
-│       └── FakeKrakenService.kt           # In-process test double for KrakenService
-├── frontend/
-│   └── src/
-│       ├── assets/                        # Static assets (e.g., images, icons)
-│       ├── components/                    # Dashboard, Settings, AllocationChart, TradeHistory, StatusCard
-│       ├── services/                      # API client configurations
-│       ├── test/                          # Frontend unit and component tests
-│       ├── types/                         # TypeScript definitions
-│       ├── index.css                      # Dark theme design system
-│       └── App.tsx                        # Root component
+├── src/test/kotlin/                       # Backend unit tests (100% line and branch coverage enforced by JaCoCo)
+│   └── com/gemini/krakenbot/
+│       └── service/
+│           └── FakeKrakenService.kt       # In-process test double for KrakenService
+├── src/main/resources/                    # Static resources
+│   └── static/
+│       └── style.css                      # Dashboard stylesheet
 ├── ALGORITHM.md                           # Detailed algorithm documentation
 ├── rebalancer-config-template.json        # Configuration template
 └── build.gradle.kts                       # Gradle build with JaCoCo coverage enforcement
@@ -176,7 +174,6 @@ To eliminate unnecessary network polling, the system uses a reactive, push-based
 
 - JDK 25 or higher
 - Gradle (or use the included `./gradlew` wrapper — no installation required)
-- Node.js (LTS version) and npm
 - A Kraken account with API Keys (Permissions: **Query Funds**, **Create & Modify Orders**)
 
 ### 1. Clone & Configure
@@ -193,7 +190,7 @@ Edit `rebalancer-config.json`:
 - Set `dryRun` to `true` for initial testing
 - Optionally configure `fiatMaxDrawdown` and `fiatDeploymentExponent` for dynamic cash deployment
 
-### 2. Start the Backend
+### 2. Start the Application
 
 ```bash
 ./gradlew run
@@ -201,24 +198,9 @@ Edit `rebalancer-config.json`:
 
 The backend starts on port **8080** and begins the rebalancing loop immediately.
 
-### 3. Start the Frontend
+### 3. Open Dashboard
 
-#### Dev Mode (Hot-Reloading)
-```bash
-cd frontend
-npm install
-npm run dev
-```
-Open your browser to **http://localhost:5173**. The frontend proxies API requests to the backend automatically.
-
-#### Production Mode (Local Preview)
-```bash
-cd frontend
-npm install
-npm run build      # Compiles and optimizes assets into /dist
-npm run preview    # Serves the production build locally
-```
-Open your browser to **http://localhost:5173**. This serves the static build and proxies API requests to the backend automatically.
+Open your browser to **http://localhost:8080**. The dashboard is served directly from the backend — no separate frontend build step required.
 
 ---
 
@@ -239,17 +221,16 @@ Open your browser to **http://localhost:5173**. This serves the static build and
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/api/status` | Returns the latest portfolio snapshot |
+| `GET` | `/` | Main dashboard shell (HTML) |
+| `GET` | `/settings` | Settings page (HTML) |
+| `POST` | `/settings` | Submit settings form (HTMX) |
+| `GET` | `/fragments/dashboard` | Dashboard fragment (HTMX) |
 | `GET` | `/api/status/stream` | Server-Sent Events (SSE) stream for real-time portfolio snapshot updates |
-| `GET` | `/api/history` | Returns the last 50 portfolio snapshots |
-| `GET` | `/api/config` | Returns the current configuration |
-| `POST` | `/api/config` | Updates and persists configuration (validated server-side) |
+| `GET` | `/static/*` | Static assets (CSS) |
 
 ---
 
 ## Testing
-
-### Backend Testing
 
 The backend enforces **95% line and branch coverage** via JaCoCo (with the current suite achieving **100% line and branch coverage**). All tests are behavioural — they verify actual rebalancing decisions, not just method invocations. Order volumes are asserted with `BigDecimal.compareTo()` to avoid floating-point comparison issues.
 
@@ -257,7 +238,7 @@ The backend enforces **95% line and branch coverage** via JaCoCo (with the curre
 ./gradlew test
 ```
 
-**122 tests** across:
+**122+ tests** across:
 - `KrakenE2ETest` / `ResilienceChaosTest` / `PrecisionRoundingFuzzTest` / `SerializationParityTest` — advanced E2E black-box and fuzz testing
 - `PortfolioManagerComprehensiveTest` — full rebalance cycles with order result verification
 - `PortfolioManagerFiatCorrectionTest` — deposit/withdrawal distribution logic
@@ -274,24 +255,6 @@ The backend enforces **95% line and branch coverage** via JaCoCo (with the curre
 - `DashboardControllerTest` — REST API endpoints, invalid config error responses
 - `TradeHistoryServiceTest` — snapshot storage, size limits
 - `FileTradeRepositoryTest` / `PortfolioStatsRepositoryTest` — file I/O, atomic writes, error propagation
-
-### Frontend Testing
-
-The frontend enforces **95% statement, branch, function, and line coverage** via Vitest (with the current suite achieving **100% statements, 100% lines, 100% functions, and >99% branch coverage**).
-
-```bash
-cd frontend
-npm run test:coverage
-```
-
-**110 tests** across:
-- `api.test.ts` — API client requests, response status mapping, and JSON parse/network error resilience.
-- `Settings.test.tsx` — Settings validation UI, allocation targets validation, number input parser fallbacks, and backdoor debug/simulation tools.
-- `Dashboard.test.tsx` — Dashboard state render cycles, status updates, chart integration, offline badges, and cleanup/unmount behavior.
-- `StatusCard.test.tsx` — Metrics display, value-aging alerts, status banners, and system flags.
-- `AllocationChart.test.tsx` — Chart.js canvas binding, percentage distribution, and target allocation indicators.
-- `TradeHistory.test.tsx` — Actions history grid, dry-run flags rendering, timestamp formatting, and table state.
-- `App.test.tsx` — App shell structure and routing.
 
 ### Test Design Principles
 

@@ -24,7 +24,3 @@ rebalancer-config.json
 trade-history.json
 portfolio-stats.json
 
-# Frontend build
-frontend/node_modules/
-frontend/dist/
-frontend/coverage
