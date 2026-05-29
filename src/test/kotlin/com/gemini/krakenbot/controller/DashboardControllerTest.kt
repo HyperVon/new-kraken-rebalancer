@@ -277,6 +277,39 @@ class DashboardControllerTest : StringSpec() {
             capturedConfig.captured.allocations[1].targetPercent shouldBe 30.0
         }
 
+        "postSettings_WithAbsentParamsAndNullErrorMessage_UsesDefaultsAndFallbackMessage" {
+            val serverConfig = AppConfig(
+                KrakenCredentials("server-key", "server-secret"),
+                Settings(60L, 2.0, 1.0, true, 0.0, 1.0),
+                listOf(Allocation("USD", 100.0))
+            )
+            every { configService.getConfig() } returns serverConfig
+            val capturedConfig = slot<AppConfig>()
+            every { configService.updateConfig(capture(capturedConfig)) } throws InvalidConfigurationException(null)
+
+            testApplication {
+                application {
+                    configureTestEnv()
+                }
+                val response = client.post("/settings") {
+                    setBody(
+                        parametersOf().formUrlEncode()
+                    )
+                    header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
+                }
+                response.status shouldBe HttpStatusCode.OK
+                response.bodyAsText() shouldContain "Invalid configuration"
+            }
+
+            capturedConfig.captured.settings.loopDelaySeconds shouldBe 60L
+            capturedConfig.captured.settings.deviationTriggerPercent shouldBe 2.0
+            capturedConfig.captured.settings.dustThresholdUSD shouldBe 1.0
+            capturedConfig.captured.settings.dryRun shouldBe false
+            capturedConfig.captured.settings.fiatMaxDrawdown shouldBe 0.0
+            capturedConfig.captured.settings.fiatDeploymentExponent shouldBe 1.0
+            capturedConfig.captured.allocations shouldBe emptyList()
+        }
+
         "sseStatusStream_EmitsInitialAndFlowSnapshots" {
             val snapshot1 = PortfolioSnapshot(
                 Instant.now(),
