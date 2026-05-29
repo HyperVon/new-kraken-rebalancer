@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - **Modular Component Refactoring (OOP/OOD)**: Decomposed the single, large `DashboardView` class (700+ lines) into clean, self-contained components under `com.gemini.krakenbot.view.component` (`DashboardShellComponent`, `OverviewGridComponent`, `AllocationChartComponent`, `PerformanceTableComponent`, `RecentActivityComponent`, `DashboardFragmentComponent`, and `SettingsFormComponent`). Refactored `DashboardView` as a clean Facade class leveraging constructor-based Dependency Injection via Koin.
+- **Service Layer OOP Refactoring**: Decomposed the large, complex `PortfolioManagerImpl` class (550+ lines) into clean, SRP-compliant components `PortfolioAnalyzer` and `OrderExecutor`, refactoring `PortfolioManagerImpl` as a lightweight orchestrator facade that manages the background rebalancing run loop.
+- **AM/PM and Timezone Formatting**: Standardized timestamp presentation across the dashboard to display in the local machine timezone and 12-hour AM/PM format (both for the last updated data age and the Recent Activity log table).
 - **Centralized View Assets & Layout DSL**: Created `Layouts`, `Icons`, and `ViewText` under `com.gemini.krakenbot.view.util` to centralize HTML layout structures, SVG icons, and copy text, eliminating raw string duplication and inline CSS definitions in view components.
 - **Formatter Utility**: Created `Formatter` object under `com.gemini.krakenbot.view.util` to centralize formatting functions.
 - **External JavaScript Resources**: Moved inline scripts from Ktor view templates to static `/static/dashboard.js` and `/static/settings.js` files, adding unit testing to verify static delivery.

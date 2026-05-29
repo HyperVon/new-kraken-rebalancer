@@ -16,6 +16,8 @@ import com.gemini.krakenbot.service.impl.ConfigServiceImpl
 import com.gemini.krakenbot.service.impl.KrakenServiceImpl
 import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
 import com.gemini.krakenbot.service.impl.TradeHistoryServiceImpl
+import com.gemini.krakenbot.service.impl.PortfolioAnalyzer
+import com.gemini.krakenbot.service.impl.OrderExecutor
 import com.gemini.krakenbot.view.DashboardView
 import com.gemini.krakenbot.view.component.*
 import io.ktor.client.*
@@ -37,7 +39,16 @@ val appModule = module {
     singleOf(::PortfolioStatsRepositoryImpl) { bind<PortfolioStatsRepository>() }
     single<TradeHistoryService> { TradeHistoryServiceImpl(get()).apply { init() } }
     singleOf(::KrakenServiceImpl) { bind<KrakenService>() }
-    singleOf(::PortfolioManagerImpl) { bind<PortfolioManager>() }
+    singleOf(::PortfolioAnalyzer)
+    singleOf(::OrderExecutor)
+    single<PortfolioManager> {
+        PortfolioManagerImpl(
+            configService = get(),
+            tradeHistoryService = get(),
+            portfolioAnalyzer = get(),
+            orderExecutor = get()
+        )
+    }
     singleOf(::DashboardShellComponent)
     singleOf(::SettingsFormComponent)
     singleOf(::OverviewGridComponent)

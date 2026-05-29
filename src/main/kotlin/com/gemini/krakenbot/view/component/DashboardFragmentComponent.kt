@@ -18,7 +18,7 @@ class DashboardFragmentComponent(
     private val performanceTableComponent: PerformanceTableComponent,
     private val recentActivityComponent: RecentActivityComponent
 ) {
-    private val timeFormatter = DateTimeFormatter.ofPattern("HH:mm:ss").withZone(ZoneId.systemDefault())
+    private val timeFormatter = DateTimeFormatter.ofPattern("hh:mm:ss a").withZone(ZoneId.systemDefault())
 
     fun DIV.render(latest: PortfolioSnapshot, history: List<PortfolioSnapshot>) {
         val timeSinceUpdate = 0L.coerceAtLeast(Instant.now().epochSecond - latest.timestamp.epochSecond)

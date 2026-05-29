@@ -21,10 +21,8 @@ import io.ktor.http.*
 import io.ktor.server.application.*
 import io.ktor.server.testing.*
 import io.ktor.client.plugins.sse.*
-import io.ktor.sse.*
 import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.flow.toList
-import kotlinx.coroutines.flow.collect
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
@@ -401,7 +399,7 @@ class DashboardControllerTest : StringSpec() {
                     client.sse(Routes.API_STATUS_STREAM) {
                         incoming.collect {}
                     }
-                } catch (e: Exception) {
+                } catch (_: Exception) {
                     // Expect cancellation exception or channel close
                 }
             }

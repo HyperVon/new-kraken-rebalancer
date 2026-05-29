@@ -7,6 +7,8 @@ import com.gemini.krakenbot.view.util.Icons.icon
 import com.gemini.krakenbot.view.util.Layouts.glassPanel
 import com.gemini.krakenbot.view.util.ViewText
 import kotlinx.html.*
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 
 class RecentActivityComponent {
 
@@ -27,6 +29,8 @@ class RecentActivityComponent {
         }
     }
 
+    private val activityTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd hh:mm:ss a").withZone(ZoneId.systemDefault())
+
     fun DIV.render(history: List<PortfolioSnapshot>) {
         glassPanel(ViewText.RECENT_ACTIVITY, Icons.PULSE) {
             if (history.isEmpty()) {
@@ -46,7 +50,7 @@ class RecentActivityComponent {
                         }
                         tbody {
                             history.forEach { snapshot ->
-                                val timeStr = snapshot.timestamp.toString().replace("T", " ").substringBefore(".")
+                                val timeStr = activityTimeFormatter.format(snapshot.timestamp)
                                 if (snapshot.actions.isEmpty()) {
                                     renderEmptyActionsRow(timeStr)
                                 } else {
