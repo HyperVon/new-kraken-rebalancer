@@ -71,6 +71,16 @@ The application runs a continuous "Rebalance Cycle" with a configurable delay (
 e.g., every 60 seconds). Each cycle consists of three phases: **Snapshot**, *
 *Analysis**, and **Execution**.
 
+### 3. Architectural Separation of Concerns
+
+To maintain the Single Responsibility Principle (SRP) and keep domain logic highly testable, the core engine is decoupled into specific implementation (`impl`) classes:
+
+*   **`PortfolioManagerImpl` (The Orchestrator)**: Manages the continuous coroutine loop. It acts as a lightweight facade that delegates the actual domain logic to the analyzer and executor, and coordinates the final persistence of the snapshot.
+*   **`PortfolioAnalyzer` (The Brain)**: Responsible for Phase 1 and 2. It resolves prices, tracks the All-Time High (ATH), calculates dynamic fiat deployment ratios, computes deviations, and determines the exact `BUY`/`SELL` amounts required.
+*   **`OrderExecutor` (The Brawn)**: Responsible for Phase 3. It takes the calculated orders and safely executes them against the Kraken API. It manages the strict sell-before-buy sequence, projected vs. actual cash tracking, and dust-threshold filtering.
+*   **Persistence Impls (`FileTradeRepositoryImpl`, `PortfolioStatsRepositoryImpl`, `ConfigServiceImpl`)**: Handle data storage using atomic write-then-rename file operations (`AtomicJsonFile`) to prevent data corruption during crashes.
+*   **`TradeHistoryServiceImpl`**: Maintains a reactive `MutableSharedFlow` that broadcasts portfolio snapshots to the Ktor Server-Sent Events (SSE) stream in real-time.
+
 ---
 
 ## Phase 1: Snapshot
