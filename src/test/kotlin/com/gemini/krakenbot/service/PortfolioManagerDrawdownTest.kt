@@ -1,18 +1,26 @@
 package com.gemini.krakenbot.service
 
-import com.gemini.krakenbot.config.*
+import com.gemini.krakenbot.config.Allocation
+import com.gemini.krakenbot.config.AppConfig
+import com.gemini.krakenbot.config.KrakenCredentials
+import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.PortfolioStats
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
+import com.gemini.krakenbot.service.impl.OrderExecutor
+import com.gemini.krakenbot.service.impl.PortfolioAnalyzer
 import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
 import com.gemini.krakenbot.util.KrakenSymbols
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.shouldBe
-import io.mockk.*
-import java.math.BigDecimal
+import io.mockk.every
+import io.mockk.mockk
+import io.mockk.slot
+import io.mockk.verify
 import kotlinx.coroutines.test.runTest
+import java.math.BigDecimal
 
 class PortfolioManagerDrawdownTest : StringSpec() {
 
@@ -24,14 +32,22 @@ class PortfolioManagerDrawdownTest : StringSpec() {
     private val portfolioStatsRepository =
         mockk<PortfolioStatsRepository>(relaxed = true)
     private lateinit var portfolioManager: PortfolioManagerImpl
+    private lateinit var portfolioAnalyzer: PortfolioAnalyzer
+    private lateinit var orderExecutor: OrderExecutor
 
     init {
         beforeTest {
-            portfolioManager = PortfolioManagerImpl(
+            portfolioAnalyzer = PortfolioAnalyzer(
                 krakenService,
                 configService,
-                tradeHistoryService,
                 portfolioStatsRepository
+            )
+            orderExecutor = OrderExecutor(krakenService, portfolioAnalyzer)
+            portfolioManager = PortfolioManagerImpl(
+                configService,
+                tradeHistoryService,
+                portfolioAnalyzer,
+                orderExecutor
             )
 
             val settings = Settings(
@@ -43,16 +59,22 @@ class PortfolioManagerDrawdownTest : StringSpec() {
                 1.0
             )
             val appConfig =
-                AppConfig(KrakenCredentials(
-                    "k",
-                    "s"
-                ), settings, emptyList())
+                AppConfig(
+                    KrakenCredentials(
+                        "k",
+                        "s"
+                    ),
+                    settings,
+                    emptyList()
+                )
             every { configService.getConfig() } returns appConfig
         }
 
         "testDrawdownAndFiatDeployment" {
             runTest {
-                every { portfolioStatsRepository.load() } returns PortfolioStats(
+                every {
+                    portfolioStatsRepository.load()
+                } returns PortfolioStats(
                     BigDecimal("2000.0")
                 )
 
@@ -109,7 +131,10 @@ class PortfolioManagerDrawdownTest : StringSpec() {
                 val stats = PortfolioStats(BigDecimal("1000.0"))
                 every { portfolioStatsRepository.load() } returns stats
 
-                val allocs = listOf(Allocation(KrakenSymbols.USD, 100.0))
+                val allocs = listOf(Allocation(
+                    KrakenSymbols.USD,
+                    100.0
+                ))
 
                 val appConfig = AppConfig(
                     KrakenCredentials("k", "s"),

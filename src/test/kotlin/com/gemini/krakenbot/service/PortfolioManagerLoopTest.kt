@@ -5,6 +5,8 @@ import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.PortfolioStats
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
+import com.gemini.krakenbot.service.impl.OrderExecutor
+import com.gemini.krakenbot.service.impl.PortfolioAnalyzer
 import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
@@ -24,16 +26,27 @@ class PortfolioManagerLoopTest : StringSpec() {
     private val configService = mockk<ConfigService>(relaxed = true)
     private val tradeHistoryService = mockk<TradeHistoryService>(relaxed = true)
     private lateinit var portfolioManager: PortfolioManagerImpl
+    private lateinit var portfolioAnalyzer: PortfolioAnalyzer
+    private lateinit var orderExecutor: OrderExecutor
 
     init {
         beforeTest {
             val repo = mockk<PortfolioStatsRepository>(relaxed = true)
-            every { repo.load() } returns PortfolioStats(BigDecimal.ZERO)
+            every {
+                repo.load()
+            } returns PortfolioStats(BigDecimal.ZERO)
+            portfolioAnalyzer =
+                PortfolioAnalyzer(
+                    krakenService,
+                    configService,
+                    repo
+                )
+            orderExecutor = OrderExecutor(krakenService, portfolioAnalyzer)
             portfolioManager = PortfolioManagerImpl(
-                krakenService,
                 configService,
                 tradeHistoryService,
-                repo
+                portfolioAnalyzer,
+                orderExecutor
             )
         }
 

@@ -1,8 +1,13 @@
 package com.gemini.krakenbot.service
 
-import com.gemini.krakenbot.config.*
+import com.gemini.krakenbot.config.Allocation
+import com.gemini.krakenbot.config.AppConfig
+import com.gemini.krakenbot.config.KrakenCredentials
+import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.PortfolioStats
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
+import com.gemini.krakenbot.service.impl.OrderExecutor
+import com.gemini.krakenbot.service.impl.PortfolioAnalyzer
 import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
 import com.gemini.krakenbot.util.KrakenSymbols
 import io.kotest.core.spec.IsolationMode
@@ -10,8 +15,8 @@ import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
 import io.mockk.every
 import io.mockk.mockk
-import java.math.BigDecimal
 import kotlinx.coroutines.test.runTest
+import java.math.BigDecimal
 
 class PortfolioManagerZeroAllocationTest : StringSpec() {
 
@@ -23,17 +28,27 @@ class PortfolioManagerZeroAllocationTest : StringSpec() {
     private val portfolioStatsRepository =
         mockk<PortfolioStatsRepository>(relaxed = true)
     private lateinit var portfolioManager: PortfolioManagerImpl
+    private lateinit var portfolioAnalyzer: PortfolioAnalyzer
+    private lateinit var orderExecutor: OrderExecutor
 
     init {
         beforeTest {
-            every { portfolioStatsRepository.load() } returns PortfolioStats(
+            every {
+                portfolioStatsRepository.load()
+            } returns PortfolioStats(
                 BigDecimal.ZERO
             )
-            portfolioManager = PortfolioManagerImpl(
+            portfolioAnalyzer = PortfolioAnalyzer(
                 krakenService,
                 configService,
-                tradeHistoryService,
                 portfolioStatsRepository
+            )
+            orderExecutor = OrderExecutor(krakenService, portfolioAnalyzer)
+            portfolioManager = PortfolioManagerImpl(
+                configService,
+                tradeHistoryService,
+                portfolioAnalyzer,
+                orderExecutor
             )
         }
 

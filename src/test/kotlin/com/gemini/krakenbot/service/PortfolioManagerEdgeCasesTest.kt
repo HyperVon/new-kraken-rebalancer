@@ -1,21 +1,30 @@
 package com.gemini.krakenbot.service
 
-import com.gemini.krakenbot.config.*
+import com.gemini.krakenbot.config.Allocation
+import com.gemini.krakenbot.config.AppConfig
+import com.gemini.krakenbot.config.KrakenCredentials
+import com.gemini.krakenbot.config.Settings
+import com.gemini.krakenbot.model.OrderResult
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.PortfolioStats
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
+import com.gemini.krakenbot.service.impl.OrderExecutor
+import com.gemini.krakenbot.service.impl.PortfolioAnalyzer
 import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
 import com.gemini.krakenbot.util.KrakenSymbols
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.shouldBe
-import io.mockk.*
-import java.io.IOException
-import java.math.BigDecimal
+import io.mockk.every
+import io.mockk.mockk
+import io.mockk.slot
+import io.mockk.verify
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.yield
+import java.io.IOException
+import java.math.BigDecimal
 
 @Suppress("unused")
 class PortfolioManagerEdgeCasesTest : StringSpec() {
@@ -28,17 +37,25 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
     private val portfolioStatsRepository =
         mockk<PortfolioStatsRepository>(relaxed = true)
     private lateinit var portfolioManager: PortfolioManagerImpl
+    private lateinit var portfolioAnalyzer: PortfolioAnalyzer
+    private lateinit var orderExecutor: OrderExecutor
 
     init {
         beforeTest {
             every { portfolioStatsRepository.load() } returns PortfolioStats(
                 BigDecimal.ZERO
             )
-            portfolioManager = PortfolioManagerImpl(
+            portfolioAnalyzer = PortfolioAnalyzer(
                 krakenService,
                 configService,
-                tradeHistoryService,
                 portfolioStatsRepository
+            )
+            orderExecutor = OrderExecutor(krakenService, portfolioAnalyzer)
+            portfolioManager = PortfolioManagerImpl(
+                configService,
+                tradeHistoryService,
+                portfolioAnalyzer,
+                orderExecutor
             )
         }
 
@@ -143,7 +160,7 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
             val buyOrders = mutableMapOf<String, BigDecimal>()
             val sellOrders = mutableMapOf<String, BigDecimal>()
 
-            portfolioManager.distributeFiatCorrection(
+            portfolioAnalyzer.distributeFiatCorrection(
                 BigDecimal("100.0"),
                 allDevs,
                 buyOrders,
@@ -157,7 +174,9 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
 
         "testFiatDeploymentRatioExceedsOne" {
             runTest {
-                every { portfolioStatsRepository.load() } returns PortfolioStats(
+                every {
+                    portfolioStatsRepository.load()
+                } returns PortfolioStats(
                     BigDecimal("2000.0")
                 )
 
@@ -195,14 +214,15 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
         "testResolvePriceFromTicker_ExplicitPairAndFallback" {
             val rawPrices = mapOf("ETHEUR" to 3000.0, "ETHUSD" to 3100.0)
 
-            val priceEth = portfolioManager.resolvePriceFromTicker(
+            val priceEth = portfolioAnalyzer.resolvePriceFromTicker(
                 KrakenSymbols.ETH,
                 rawPrices
             )
             priceEth shouldBe BigDecimal("3100.0")
 
             val priceMissing =
-                portfolioManager.resolvePriceFromTicker("LTC", rawPrices)
+                portfolioAnalyzer
+                    .resolvePriceFromTicker("LTC", rawPrices)
             priceMissing.compareTo(BigDecimal.ZERO) shouldBe 0
         }
 
@@ -223,7 +243,7 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
                 )
                 val actionLog = mutableListOf<String>()
 
-                portfolioManager.executeOrders(
+                orderExecutor.executeOrders(
                     buyOrders,
                     sellOrders,
                     currentValuesUSD,
@@ -260,7 +280,7 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
                 krakenService.balanceSupplier =
                     { throw RuntimeException("balances api error") }
 
-                portfolioManager.executeOrders(
+                orderExecutor.executeOrders(
                     buyOrders,
                     sellOrders,
                     currentValuesUSD,
@@ -306,7 +326,7 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
 
                 krakenService.balanceSupplier = { emptyMap() }
 
-                portfolioManager.executeOrders(
+                orderExecutor.executeOrders(
                     buyOrders,
                     sellOrders,
                     currentValuesUSD,
@@ -333,7 +353,7 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
             every { portfolioStatsRepository.load() } returns PortfolioStats(
                 BigDecimal("1000.0")
             )
-            val drawdown = portfolioManager.updateAthAndCalculateDrawdown(
+            val drawdown = portfolioAnalyzer.updateAthAndCalculateDrawdown(
                 BigDecimal("1500.0")
             )
             drawdown.compareTo(BigDecimal.ZERO) shouldBe 0
@@ -364,7 +384,7 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
                 krakenService.balanceSupplier =
                     { mapOf(KrakenSymbols.BTC to 1.0, "ZUSD" to 0.0) }
 
-                portfolioManager.executeOrders(
+                orderExecutor.executeOrders(
                     buyOrders,
                     sellOrders,
                     currentValuesUSD,
@@ -405,7 +425,7 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
                 )
                 val actionLog = mutableListOf<String>()
 
-                portfolioManager.executeOrders(
+                orderExecutor.executeOrders(
                     buyOrders,
                     sellOrders,
                     currentValuesUSD,
@@ -448,7 +468,7 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
                 allocs
             )
 
-            portfolioManager.analyzeDeviations(
+            portfolioAnalyzer.analyzeDeviations(
                 totalVal,
                 currentValuesUSD,
                 effUsdTarget,
@@ -465,7 +485,10 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
             runTest {
                 krakenService.balanceSupplier =
                     { mapOf(KrakenSymbols.USD to 1000.0) }
-                val allocs = listOf(Allocation(KrakenSymbols.USD, 100.0))
+                val allocs = listOf(Allocation(
+                    KrakenSymbols.USD,
+                    100.0
+                ))
                 val settings = Settings(
                     0L,
                     2.0,
@@ -475,10 +498,19 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
                     1.0
                 )
                 val config =
-                    AppConfig(KrakenCredentials("k", "s"), settings, allocs)
+                    AppConfig(
+                        KrakenCredentials(
+                            "k",
+                            "s"
+                        ),
+                        settings,
+                        allocs
+                    )
                 every { configService.getConfig() } returns config
 
-                every { tradeHistoryService.addSnapshot(any()) } throws IOException(
+                every {
+                    tradeHistoryService.addSnapshot(any())
+                } throws IOException(
                     "Disk full"
                 )
 
@@ -494,7 +526,7 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
                 "BTCEUR" to 60000.0,
                 "XBTUSD" to 61000.0
             )
-            val price = portfolioManager.resolvePriceFromTicker(
+            val price = portfolioAnalyzer.resolvePriceFromTicker(
                 KrakenSymbols.BTC,
                 rawPrices
             )
@@ -503,7 +535,7 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
             val rawPricesOnlyEur = mapOf(
                 "XBTEUR" to 55000.0
             )
-            val priceEurOnly = portfolioManager.resolvePriceFromTicker(
+            val priceEurOnly = portfolioAnalyzer.resolvePriceFromTicker(
                 KrakenSymbols.BTC,
                 rawPricesOnlyEur
             )
@@ -533,16 +565,7 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
                 allocs
             )
 
-            val calculatePortfolioValuesMethod =
-                PortfolioManagerImpl::class.java.getDeclaredMethod(
-                    "calculatePortfolioValues",
-                    Map::class.java,
-                    Map::class.java,
-                    MutableMap::class.java
-                ).apply { isAccessible = true }
-
-            val total = calculatePortfolioValuesMethod.invoke(
-                portfolioManager,
+            val total = portfolioAnalyzer.calculatePortfolioValues(
                 balances,
                 prices,
                 currentValuesUSD
@@ -551,40 +574,27 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
         }
 
         "testResolveBalance_FallbackChain" {
-            val resolveBalanceMethod =
-                PortfolioManagerImpl::class.java.getDeclaredMethod(
-                    "resolveBalance",
-                    String::class.java,
-                    Map::class.java
-                ).apply { isAccessible = true }
-
-            resolveBalanceMethod.invoke(
-                portfolioManager,
+            portfolioAnalyzer.resolveBalance(
                 KrakenSymbols.BTC,
                 mapOf(KrakenSymbols.BTC to 1.1)
             ) shouldBe 1.1
-            resolveBalanceMethod.invoke(
-                portfolioManager,
+            portfolioAnalyzer.resolveBalance(
                 KrakenSymbols.BTC,
                 mapOf("XBTC" to 1.2)
             ) shouldBe 1.2
-            resolveBalanceMethod.invoke(
-                portfolioManager,
+            portfolioAnalyzer.resolveBalance(
                 KrakenSymbols.USD,
                 mapOf("ZUSD" to 1.3)
             ) shouldBe 1.3
-            resolveBalanceMethod.invoke(
-                portfolioManager,
+            portfolioAnalyzer.resolveBalance(
                 KrakenSymbols.BTC,
                 mapOf(KrakenSymbols.XBT to 1.4)
             ) shouldBe 1.4
-            resolveBalanceMethod.invoke(
-                portfolioManager,
+            portfolioAnalyzer.resolveBalance(
                 KrakenSymbols.BTC,
                 mapOf("XXBT" to 1.5)
             ) shouldBe 1.5
-            resolveBalanceMethod.invoke(
-                portfolioManager,
+            portfolioAnalyzer.resolveBalance(
                 KrakenSymbols.BTC,
                 mapOf(KrakenSymbols.ETH to 1.6)
             ) shouldBe 0.0
@@ -595,7 +605,10 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
                 BigDecimal("-500.0")
             )
             val drawdown =
-                portfolioManager.updateAthAndCalculateDrawdown(BigDecimal("1000.0"))
+                portfolioAnalyzer
+                    .updateAthAndCalculateDrawdown(
+                        BigDecimal("1000.0")
+                    )
             drawdown.compareTo(BigDecimal.ZERO) shouldBe 0
             verify {
                 portfolioStatsRepository.save(match {
@@ -611,7 +624,8 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
                 null
             )
             val drawdown =
-                portfolioManager.updateAthAndCalculateDrawdown(BigDecimal("1200.0"))
+                portfolioAnalyzer.updateAthAndCalculateDrawdown(
+                    BigDecimal("1200.0"))
             drawdown.compareTo(BigDecimal.ZERO) shouldBe 0
             verify {
                 portfolioStatsRepository.save(match {
@@ -623,15 +637,21 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
         }
 
         "testUpdateAthAndCalculateDrawdown_StatsSaveIOException" {
-            every { portfolioStatsRepository.load() } returns PortfolioStats(
+            every {
+                portfolioStatsRepository.load()
+            } returns PortfolioStats(
                 BigDecimal("1000.0")
             )
-            every { portfolioStatsRepository.save(any()) } throws IOException(
+            every {
+                portfolioStatsRepository.save(any())
+            } throws IOException(
                 "Save failed"
             )
 
             val drawdown =
-                portfolioManager.updateAthAndCalculateDrawdown(BigDecimal("800.0"))
+                portfolioAnalyzer.updateAthAndCalculateDrawdown(
+                    BigDecimal("800.0")
+                )
             drawdown.compareTo(BigDecimal("20.0")) shouldBe 0
         }
 
@@ -662,7 +682,7 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
                 allocs
             )
 
-            portfolioManager.analyzeDeviations(
+            portfolioAnalyzer.analyzeDeviations(
                 totalVal,
                 currentValuesUSD,
                 effUsdTarget,
@@ -671,7 +691,9 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
                 sellOrders,
                 actionLog
             )
-            buyOrders[KrakenSymbols.BTC]?.compareTo(BigDecimal("250.0")) shouldBe 0
+            buyOrders[KrakenSymbols.BTC]?.compareTo(
+                BigDecimal("250.0")
+            ) shouldBe 0
         }
 
         "testAnalyzeDeviations_USDTriggerOnlyEnforcesFiatCorrection" {
@@ -703,7 +725,7 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
             val sellOrders = mutableMapOf<String, BigDecimal>()
             val actionLog = mutableListOf<String>()
 
-            portfolioManager.analyzeDeviations(
+            portfolioAnalyzer.analyzeDeviations(
                 BigDecimal("1000.0"),
                 currentValuesUSD,
                 BigDecimal("20.0"),
@@ -714,8 +736,12 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
             )
 
             buyOrders.isNotEmpty() shouldBe true
-            buyOrders[KrakenSymbols.BTC]!!.compareTo(BigDecimal("20.0")) shouldBe 0
-            buyOrders[KrakenSymbols.ETH]!!.compareTo(BigDecimal("20.0")) shouldBe 0
+            buyOrders[KrakenSymbols.BTC]!!.compareTo(
+                BigDecimal("20.0")
+            ) shouldBe 0
+            buyOrders[KrakenSymbols.ETH]!!.compareTo(
+                BigDecimal("20.0")
+            ) shouldBe 0
         }
 
         "testExecuteOrders_DryRunAndSellsSuccess" {
@@ -737,7 +763,7 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
                 val actionLog = mutableListOf<String>()
 
                 krakenService.orderResultFactory = { pair, type, side, volume ->
-                    com.gemini.krakenbot.model.OrderResult(
+                    OrderResult(
                         success = true,
                         pair = pair,
                         side = side,
@@ -746,7 +772,7 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
                     )
                 }
 
-                portfolioManager.executeOrders(
+                orderExecutor.executeOrders(
                     buyOrders,
                     sellOrders,
                     currentValuesUSD,
@@ -755,7 +781,9 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
                     actionLog
                 )
 
-                actionLog.any { it.contains("[DRY RUN] SELL BTC") } shouldBe true
+                actionLog.any {
+                    it.contains("[DRY RUN] SELL BTC")
+                } shouldBe true
             }
         }
 
@@ -778,7 +806,7 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
                 val actionLog = mutableListOf<String>()
 
                 krakenService.orderResultFactory = { pair, type, side, volume ->
-                    com.gemini.krakenbot.model.OrderResult(
+                    OrderResult(
                         success = false,
                         pair = pair,
                         side = side,
@@ -787,7 +815,7 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
                     )
                 }
 
-                portfolioManager.executeOrders(
+                orderExecutor.executeOrders(
                     buyOrders,
                     sellOrders,
                     currentValuesUSD,
@@ -796,7 +824,9 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
                     actionLog
                 )
 
-                actionLog.any { it.contains("FAILED SELL BTC: Invalid amount") } shouldBe true
+                actionLog.any {
+                    it.contains("FAILED SELL BTC: Invalid amount")
+                } shouldBe true
             }
         }
 
@@ -821,7 +851,7 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
                 krakenService.balanceSupplier =
                     { mapOf(KrakenSymbols.USD to 1050.0) }
 
-                portfolioManager.executeOrders(
+                orderExecutor.executeOrders(
                     buyOrders,
                     sellOrders,
                     currentValuesUSD,
@@ -836,7 +866,7 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
                 krakenService.balanceSupplier =
                     { mapOf(KrakenSymbols.USD to 900.0) }
 
-                portfolioManager.executeOrders(
+                orderExecutor.executeOrders(
                     buyOrders,
                     sellOrders,
                     currentValuesUSD,
@@ -849,22 +879,10 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
             }
         }
 
-        "testLogOrderResult_Reflection" {
-            val logOrderResultMethod =
-                PortfolioManagerImpl::class.java.getDeclaredMethod(
-                    "logOrderResult",
-                    com.gemini.krakenbot.model.OrderResult::class.java,
-                    MutableList::class.java,
-                    String::class.java,
-                    BigDecimal::class.java,
-                    BigDecimal::class.java,
-                    String::class.java
-                ).apply { isAccessible = true }
-
+        "testLogOrderResult" {
             val log1 = mutableListOf<String>()
-            logOrderResultMethod.invoke(
-                portfolioManager,
-                com.gemini.krakenbot.model.OrderResult(
+            orderExecutor.logOrderResult(
+                OrderResult(
                     true,
                     "XBTUSD",
                     "sell",
@@ -876,9 +894,8 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
             log1.first() shouldBe "[DRY RUN] SELL BTC Volume: 1 Value: $10"
 
             val log2 = mutableListOf<String>()
-            logOrderResultMethod.invoke(
-                portfolioManager,
-                com.gemini.krakenbot.model.OrderResult(
+            orderExecutor.logOrderResult(
+                OrderResult(
                     true,
                     "XBTUSD",
                     "buy",

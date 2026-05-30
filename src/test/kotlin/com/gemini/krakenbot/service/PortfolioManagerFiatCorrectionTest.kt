@@ -1,7 +1,11 @@
 package com.gemini.krakenbot.service
 
-import com.gemini.krakenbot.config.*
+import com.gemini.krakenbot.config.Allocation
+import com.gemini.krakenbot.config.AppConfig
+import com.gemini.krakenbot.config.KrakenCredentials
+import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
+import com.gemini.krakenbot.service.impl.PortfolioAnalyzer
 import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
@@ -11,18 +15,12 @@ import io.mockk.every
 import io.mockk.mockk
 import java.math.BigDecimal
 
-/**
- * Tests for [PortfolioManagerImpl.distributeFiatCorrection].
- *
- * This method is synchronous (no suspend), so no [kotlinx.coroutines.test.runTest] wrapper is needed.
- * We still use [FakeKrakenService] to stay consistent with the rest of the test suite.
- */
 class PortfolioManagerFiatCorrectionTest : StringSpec() {
 
     override fun isolationMode() = IsolationMode.InstancePerTest
 
     /** Creates a [PortfolioManagerImpl] wired with a given [AppConfig]. */
-    private fun makePortfolioManager(vararg allocs: Allocation): PortfolioManagerImpl {
+    private fun makePortfolioAnalyzer(vararg allocs: Allocation): PortfolioAnalyzer {
         val configService = mockk<ConfigService>(relaxed = true)
         val tradeHistoryService = mockk<TradeHistoryService>(relaxed = true)
         val repo = mockk<PortfolioStatsRepository>(relaxed = true)
@@ -41,17 +39,16 @@ class PortfolioManagerFiatCorrectionTest : StringSpec() {
         )
         every { configService.getConfig() } returns config
 
-        return PortfolioManagerImpl(
+        return PortfolioAnalyzer(
             FakeKrakenService(),
             configService,
-            tradeHistoryService,
             repo
         )
     }
 
     init {
         "testDistributeFiatCorrection_Deposit_OnlyBuysUnderweight" {
-            val portfolioManager = makePortfolioManager(
+            val portfolioAnalyzer = makePortfolioAnalyzer(
                 Allocation("A", 50.0),
                 Allocation("B", 50.0)
             )
@@ -65,7 +62,7 @@ class PortfolioManagerFiatCorrectionTest : StringSpec() {
             val buyOrders = mutableMapOf<String, BigDecimal>()
             val sellOrders = mutableMapOf<String, BigDecimal>()
 
-            portfolioManager.distributeFiatCorrection(
+            portfolioAnalyzer.distributeFiatCorrection(
                 usdDev,
                 allDevs,
                 buyOrders,
@@ -80,7 +77,7 @@ class PortfolioManagerFiatCorrectionTest : StringSpec() {
         }
 
         "testDistributeFiatCorrection_Withdrawal_OnlySellsOverweight" {
-            val portfolioManager = makePortfolioManager(
+            val portfolioAnalyzer = makePortfolioAnalyzer(
                 Allocation("A", 50.0),
                 Allocation("B", 50.0)
             )
@@ -94,7 +91,7 @@ class PortfolioManagerFiatCorrectionTest : StringSpec() {
             val buyOrders = mutableMapOf<String, BigDecimal>()
             val sellOrders = mutableMapOf<String, BigDecimal>()
 
-            portfolioManager.distributeFiatCorrection(
+            portfolioAnalyzer.distributeFiatCorrection(
                 usdDev,
                 allDevs,
                 buyOrders,
@@ -109,7 +106,7 @@ class PortfolioManagerFiatCorrectionTest : StringSpec() {
         }
 
         "testDistributeFiatCorrection_ProportionalDistribution" {
-            val portfolioManager = makePortfolioManager(
+            val portfolioAnalyzer = makePortfolioAnalyzer(
                 Allocation("A", 30.0),
                 Allocation("B", 30.0),
                 Allocation("C", 40.0)
@@ -127,7 +124,7 @@ class PortfolioManagerFiatCorrectionTest : StringSpec() {
             val buyOrders = mutableMapOf<String, BigDecimal>()
             val sellOrders = mutableMapOf<String, BigDecimal>()
 
-            portfolioManager.distributeFiatCorrection(
+            portfolioAnalyzer.distributeFiatCorrection(
                 usdDev,
                 allDevs,
                 buyOrders,

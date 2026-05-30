@@ -1,27 +1,32 @@
 package com.gemini.krakenbot
 
-import io.ktor.client.*
-import io.ktor.client.engine.mock.*
-import io.ktor.http.*
-import java.util.*
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
-import com.gemini.krakenbot.config.*
+import com.gemini.krakenbot.config.Allocation
+import com.gemini.krakenbot.config.AppConfig
+import com.gemini.krakenbot.config.KrakenCredentials
+import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.repository.impl.FileTradeRepositoryImpl
 import com.gemini.krakenbot.repository.impl.PortfolioStatsRepositoryImpl
 import com.gemini.krakenbot.service.ConfigService
-import com.gemini.krakenbot.service.impl.KrakenServiceImpl
-import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
-import com.gemini.krakenbot.service.impl.TradeHistoryServiceImpl
+import com.gemini.krakenbot.service.impl.*
 import com.gemini.krakenbot.util.KrakenSymbols
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.nulls.shouldNotBeNull
+import io.ktor.client.*
+import io.ktor.client.engine.mock.*
+import io.ktor.http.*
+import io.ktor.http.content.*
 import io.mockk.every
 import io.mockk.mockk
-import java.io.File
 import kotlinx.coroutines.test.runTest
+import java.io.File
+import java.util.*
+
+private const val APPLICATION_JSON = "application/json" 
+private const val FILE_PATH = "filePath"
 
 @Suppress("unused")
 class KrakenE2ETest : StringSpec() {
@@ -32,7 +37,9 @@ class KrakenE2ETest : StringSpec() {
         "should execute a full rebalance cycle end-to-end" {
             runTest {
                 val validSecret =
-                    Base64.getEncoder().encodeToString("secret".toByteArray())
+                    Base64
+                        .getEncoder()
+                        .encodeToString("secret".toByteArray())
                 val appConfig = AppConfig(
                     KrakenCredentials("apiKey", validSecret),
                     Settings(
@@ -62,7 +69,7 @@ class KrakenE2ETest : StringSpec() {
                                 status = HttpStatusCode.OK,
                                 headers = headersOf(
                                     HttpHeaders.ContentType,
-                                    "application/json"
+                                    APPLICATION_JSON
                                 )
                             )
                         }
@@ -73,29 +80,31 @@ class KrakenE2ETest : StringSpec() {
                                 status = HttpStatusCode.OK,
                                 headers = headersOf(
                                     HttpHeaders.ContentType,
-                                    "application/json"
+                                    APPLICATION_JSON
                                 )
                             )
                         }
 
                         "/0/private/AddOrder" -> {
                             capturedOrderPayload =
-                                (request.body as io.ktor.http.content.TextContent).text
+                                (request.body as TextContent).text
                             respond(
                                 content =
                                     "{\"error\":[],\"result\":{\"descr\":{\"order\":\"buy\"},\"txid\":[\"TX-1\"]}}",
                                 status = HttpStatusCode.OK,
                                 headers = headersOf(
                                     HttpHeaders.ContentType,
-                                    "application/json"
+                                    APPLICATION_JSON
                                 )
                             )
                         }
 
-                        else -> respond(
-                            "{\"error\":[\"Unknown path\"]}",
-                            HttpStatusCode.NotFound
-                        )
+                        else -> {
+                            respond(
+                                "{\"error\":[\"Unknown path\"]}",
+                                HttpStatusCode.NotFound
+                            )
+                        }
                     }
                 }
 
@@ -111,13 +120,17 @@ class KrakenE2ETest : StringSpec() {
 
                 val statsRepo = PortfolioStatsRepositoryImpl(objectMapper)
                 val statsRepoField =
-                    PortfolioStatsRepositoryImpl::class.java.getDeclaredField("filePath")
+                    PortfolioStatsRepositoryImpl::class.java.getDeclaredField(
+                        FILE_PATH
+                    )
                 statsRepoField.isAccessible = true
                 statsRepoField.set(statsRepo, statsFile.name)
 
                 val tradesRepo = FileTradeRepositoryImpl(objectMapper)
                 val tradesRepoField =
-                    FileTradeRepositoryImpl::class.java.getDeclaredField("filePath")
+                    FileTradeRepositoryImpl::class.java.getDeclaredField(
+                        FILE_PATH
+                    )
                 tradesRepoField.isAccessible = true
                 tradesRepoField.set(tradesRepo, tradesFile.name)
 
@@ -127,13 +140,21 @@ class KrakenE2ETest : StringSpec() {
                     objectMapper,
                     httpClient
                 )
-                val tradeHistoryService = TradeHistoryServiceImpl(tradesRepo)
+                val tradeHistoryService = 
+                    TradeHistoryServiceImpl(tradesRepo)
 
-                val portfolioManager = PortfolioManagerImpl(
+                val portfolioAnalyzer = PortfolioAnalyzer(
                     krakenService,
                     mockConfigService,
-                    tradeHistoryService,
                     statsRepo
+                )
+                val orderExecutor =
+                    OrderExecutor(krakenService, portfolioAnalyzer)
+                val portfolioManager = PortfolioManagerImpl(
+                    mockConfigService,
+                    tradeHistoryService,
+                    portfolioAnalyzer,
+                    orderExecutor
                 )
 
                 // Execute E2E Rebalance
@@ -180,7 +201,7 @@ class KrakenE2ETest : StringSpec() {
                                 status = HttpStatusCode.OK,
                                 headers = headersOf(
                                     HttpHeaders.ContentType,
-                                    "application/json"
+                                    APPLICATION_JSON
                                 )
                             )
                         }
@@ -191,21 +212,21 @@ class KrakenE2ETest : StringSpec() {
                                 status = HttpStatusCode.OK,
                                 headers = headersOf(
                                     HttpHeaders.ContentType,
-                                    "application/json"
+                                    APPLICATION_JSON
                                 )
                             )
                         }
 
                         "/0/private/AddOrder" -> {
                             capturedOrderPayload =
-                                (request.body as io.ktor.http.content.TextContent).text
+                                (request.body as TextContent).text
                             respond(
                                 content =
                                     "{\"error\":[],\"result\":{\"descr\":{\"order\":\"buy\"},\"txid\":[\"TX-1\"]}}",
                                 status = HttpStatusCode.OK,
                                 headers = headersOf(
                                     HttpHeaders.ContentType,
-                                    "application/json"
+                                    APPLICATION_JSON
                                 )
                             )
                         }
@@ -228,13 +249,17 @@ class KrakenE2ETest : StringSpec() {
 
                 val statsRepo = PortfolioStatsRepositoryImpl(objectMapper)
                 val statsRepoField =
-                    PortfolioStatsRepositoryImpl::class.java.getDeclaredField("filePath")
+                    PortfolioStatsRepositoryImpl::class.java.getDeclaredField(
+                        FILE_PATH
+                    )
                 statsRepoField.isAccessible = true
                 statsRepoField.set(statsRepo, statsFile.name)
 
                 val tradesRepo = FileTradeRepositoryImpl(objectMapper)
                 val tradesRepoField =
-                    FileTradeRepositoryImpl::class.java.getDeclaredField("filePath")
+                    FileTradeRepositoryImpl::class.java.getDeclaredField(
+                        FILE_PATH
+                    )
                 tradesRepoField.isAccessible = true
                 tradesRepoField.set(tradesRepo, tradesFile.name)
 
@@ -245,11 +270,14 @@ class KrakenE2ETest : StringSpec() {
                 )
                 val tradeHistoryService = TradeHistoryServiceImpl(tradesRepo)
 
+                val portfolioAnalyzer = PortfolioAnalyzer(krakenService, mockConfigService, statsRepo)
+                val orderExecutor =
+                    OrderExecutor(krakenService, portfolioAnalyzer)
                 val portfolioManager = PortfolioManagerImpl(
-                    krakenService,
                     mockConfigService,
                     tradeHistoryService,
-                    statsRepo
+                    portfolioAnalyzer,
+                    orderExecutor
                 )
 
                 portfolioManager.performRebalanceCycle()

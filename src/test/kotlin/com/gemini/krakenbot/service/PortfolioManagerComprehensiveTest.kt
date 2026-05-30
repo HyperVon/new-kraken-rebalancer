@@ -1,9 +1,14 @@
 package com.gemini.krakenbot.service
 
-import com.gemini.krakenbot.config.*
+import com.gemini.krakenbot.config.Allocation
+import com.gemini.krakenbot.config.AppConfig
+import com.gemini.krakenbot.config.KrakenCredentials
+import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.OrderResult
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
+import com.gemini.krakenbot.service.impl.OrderExecutor
+import com.gemini.krakenbot.service.impl.PortfolioAnalyzer
 import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
 import com.gemini.krakenbot.util.KrakenSymbols
 import io.kotest.core.spec.IsolationMode
@@ -13,8 +18,10 @@ import io.kotest.matchers.comparables.shouldBeLessThan
 import io.kotest.matchers.shouldBe
 import io.mockk.every
 import io.mockk.mockk
-import java.math.BigDecimal
 import kotlinx.coroutines.test.runTest
+import java.math.BigDecimal
+
+private const val string = "0.0001"
 
 class PortfolioManagerComprehensiveTest : StringSpec() {
 
@@ -26,8 +33,12 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
     private val portfolioStatsRepository =
         mockk<PortfolioStatsRepository>(relaxed = true)
     private lateinit var portfolioManager: PortfolioManagerImpl
+    private lateinit var portfolioAnalyzer: PortfolioAnalyzer
+    private lateinit var orderExecutor: OrderExecutor
 
-    /** Builds an [AppConfig] with the given allocations and default settings (2% deviation, 1 USD dust). */
+    /** Builds an [AppConfig] with the given allocations and
+     * default settings (2% deviation, 1 USD dust).
+     * */
     private fun makeConfig(vararg allocs: Allocation) = AppConfig(
         KrakenCredentials("k", "s"),
         Settings(
@@ -44,11 +55,17 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
     init {
         beforeTest {
             krakenService.executedOrders.clear()
-            portfolioManager = PortfolioManagerImpl(
+            portfolioAnalyzer = PortfolioAnalyzer(
                 krakenService,
                 configService,
-                tradeHistoryService,
                 portfolioStatsRepository
+            )
+            orderExecutor = OrderExecutor(krakenService, portfolioAnalyzer)
+            portfolioManager = PortfolioManagerImpl(
+                configService,
+                tradeHistoryService,
+                portfolioAnalyzer,
+                orderExecutor
             )
         }
 
@@ -283,8 +300,14 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
         "Scenario: Partial Price Lookup Failure - Skip Asset" {
             runTest {
                 every { configService.getConfig() } returns makeConfig(
-                    Allocation("A", 50.0),
-                    Allocation("B", 50.0)
+                    Allocation(
+                        "A",
+                        50.0
+                    ),
+                    Allocation(
+                        "B",
+                        50.0
+                    )
                 )
                 krakenService.pricesSupplier = { mapOf("BUSD" to 100.0) }
                 krakenService.balanceSupplier =
@@ -292,7 +315,9 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
 
                 portfolioManager.performRebalanceCycle()
 
-                krakenService.executedOrders.none { it.pair == "AUSD" } shouldBe true
+                krakenService.executedOrders.none {
+                    it.pair == "AUSD"
+                } shouldBe true
             }
         }
 
@@ -322,7 +347,9 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
                 }
 
                 val snapshots = mutableListOf<PortfolioSnapshot>()
-                every { tradeHistoryService.addSnapshot(any<PortfolioSnapshot>()) } answers {
+                every {
+                    tradeHistoryService.addSnapshot(any<PortfolioSnapshot>())
+                } answers {
                     snapshots.add(
                         firstArg()
                     )
@@ -334,8 +361,9 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
                 order.pair shouldBe "AUSD"
                 order.side shouldBe "buy"
 
-                snapshots.single().actions.any { it.startsWith("FAILED BUY A") }
-                    .shouldBeTrue()
+                snapshots.single().actions.any {
+                    it.startsWith("FAILED BUY A")
+                }.shouldBeTrue()
             }
         }
     }

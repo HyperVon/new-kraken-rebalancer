@@ -8,6 +8,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [3.1.1] - 2026-05-30
+
+### Fixed
+
+- **Test Suite Reflection Errors**: Fixed `NoSuchMethodException` failures in `PortfolioManagerEdgeCasesTest` caused by the service layer refactoring. Updated the test suite to directly invoke the newly exposed public and internal methods on `PortfolioAnalyzer` and `OrderExecutor` instead of using reflection against the old `PortfolioManagerImpl`.
+
+---
+
 ## [3.1.0] - 2026-05-29
 
 ### Changed

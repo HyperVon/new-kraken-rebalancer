@@ -1,7 +1,12 @@
 package com.gemini.krakenbot.service
 
-import com.gemini.krakenbot.config.*
+import com.gemini.krakenbot.config.Allocation
+import com.gemini.krakenbot.config.AppConfig
+import com.gemini.krakenbot.config.KrakenCredentials
+import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
+import com.gemini.krakenbot.service.impl.OrderExecutor
+import com.gemini.krakenbot.service.impl.PortfolioAnalyzer
 import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
 import com.gemini.krakenbot.util.KrakenSymbols
 import io.kotest.core.spec.IsolationMode
@@ -19,16 +24,25 @@ class PortfolioManagerDogeTest : StringSpec() {
     private val configService = mockk<ConfigService>(relaxed = true)
     private val tradeHistoryService = mockk<TradeHistoryService>(relaxed = true)
     private lateinit var portfolioManager: PortfolioManagerImpl
+    private lateinit var portfolioAnalyzer: PortfolioAnalyzer
+    private lateinit var orderExecutor: OrderExecutor
 
     init {
         beforeTest {
             krakenService.executedOrders.clear()
             val repo = mockk<PortfolioStatsRepository>(relaxed = true)
+            portfolioAnalyzer =
+                PortfolioAnalyzer(
+                    krakenService,
+                    configService,
+                    repo
+                )
+            orderExecutor = OrderExecutor(krakenService, portfolioAnalyzer)
             portfolioManager = PortfolioManagerImpl(
-                krakenService,
                 configService,
                 tradeHistoryService,
-                repo
+                portfolioAnalyzer,
+                orderExecutor
             )
         }
 
@@ -43,7 +57,10 @@ class PortfolioManagerDogeTest : StringSpec() {
                     1.0
                 )
                 val config = AppConfig(
-                    KrakenCredentials("k", "s"), settings,
+                    KrakenCredentials(
+                        "k",
+                        "s"
+                    ), settings,
                     listOf(
                         Allocation(
                             KrakenSymbols.DOGE,
@@ -60,7 +77,11 @@ class PortfolioManagerDogeTest : StringSpec() {
                 krakenService.balanceSupplier =
                     { mapOf("XDG" to 1000.0, "ZUSD" to 500.0) }
                 krakenService.pricesSupplier = { pairs ->
-                    if (pairs.contains("XDGUSD")) mapOf("XDGUSD" to 0.10) else emptyMap()
+                    if (pairs.contains("XDGUSD")) {
+                        mapOf("XDGUSD" to 0.10)
+                    } else {
+                        emptyMap()
+                    }
                 }
 
                 portfolioManager.performRebalanceCycle()
@@ -84,7 +105,10 @@ class PortfolioManagerDogeTest : StringSpec() {
                     1.0
                 )
                 val config = AppConfig(
-                    KrakenCredentials("k", "s"), settings,
+                    KrakenCredentials(
+                        "k",
+                        "s"
+                    ), settings,
                     listOf(
                         Allocation(
                             KrakenSymbols.BTC,
