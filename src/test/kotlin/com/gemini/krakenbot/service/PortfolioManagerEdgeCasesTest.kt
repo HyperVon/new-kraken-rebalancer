@@ -1,9 +1,6 @@
 package com.gemini.krakenbot.service
 
-import com.gemini.krakenbot.config.Allocation
-import com.gemini.krakenbot.config.AppConfig
-import com.gemini.krakenbot.config.KrakenCredentials
-import com.gemini.krakenbot.config.Settings
+import com.gemini.krakenbot.config.*
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.PortfolioStats
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
@@ -13,15 +10,12 @@ import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.shouldBe
-import io.mockk.every
-import io.mockk.mockk
-import io.mockk.slot
-import io.mockk.verify
+import io.mockk.*
+import java.io.IOException
+import java.math.BigDecimal
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.yield
-import java.io.IOException
-import java.math.BigDecimal
 
 @Suppress("unused")
 class PortfolioManagerEdgeCasesTest : StringSpec() {

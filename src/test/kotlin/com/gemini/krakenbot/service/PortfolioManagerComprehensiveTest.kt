@@ -1,9 +1,6 @@
 package com.gemini.krakenbot.service
 
-import com.gemini.krakenbot.config.Allocation
-import com.gemini.krakenbot.config.AppConfig
-import com.gemini.krakenbot.config.KrakenCredentials
-import com.gemini.krakenbot.config.Settings
+import com.gemini.krakenbot.config.*
 import com.gemini.krakenbot.model.OrderResult
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
@@ -16,8 +13,8 @@ import io.kotest.matchers.comparables.shouldBeLessThan
 import io.kotest.matchers.shouldBe
 import io.mockk.every
 import io.mockk.mockk
-import kotlinx.coroutines.test.runTest
 import java.math.BigDecimal
+import kotlinx.coroutines.test.runTest
 
 class PortfolioManagerComprehensiveTest : StringSpec() {
 

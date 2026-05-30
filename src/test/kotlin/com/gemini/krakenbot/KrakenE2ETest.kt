@@ -1,10 +1,11 @@
 package com.gemini.krakenbot
 
+import io.ktor.client.*
+import io.ktor.client.engine.mock.*
+import io.ktor.http.*
+import java.util.*
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
-import com.gemini.krakenbot.config.Allocation
-import com.gemini.krakenbot.config.AppConfig
-import com.gemini.krakenbot.config.KrakenCredentials
-import com.gemini.krakenbot.config.Settings
+import com.gemini.krakenbot.config.*
 import com.gemini.krakenbot.repository.impl.FileTradeRepositoryImpl
 import com.gemini.krakenbot.repository.impl.PortfolioStatsRepositoryImpl
 import com.gemini.krakenbot.service.ConfigService
@@ -17,14 +18,10 @@ import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.nulls.shouldNotBeNull
-import io.ktor.client.*
-import io.ktor.client.engine.mock.*
-import io.ktor.http.*
 import io.mockk.every
 import io.mockk.mockk
-import kotlinx.coroutines.test.runTest
 import java.io.File
-import java.util.*
+import kotlinx.coroutines.test.runTest
 
 @Suppress("unused")
 class KrakenE2ETest : StringSpec() {

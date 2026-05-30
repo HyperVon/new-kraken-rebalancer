@@ -1,9 +1,5 @@
 package com.gemini.krakenbot
 
-import com.fasterxml.jackson.databind.SerializationFeature
-import com.gemini.krakenbot.config.appModule
-import com.gemini.krakenbot.controller.dashboardRouting
-import com.gemini.krakenbot.service.PortfolioManager
 import io.ktor.client.*
 import io.ktor.http.*
 import io.ktor.serialization.jackson.*
@@ -13,10 +9,11 @@ import io.ktor.server.netty.*
 import io.ktor.server.plugins.contentnegotiation.*
 import io.ktor.server.plugins.cors.routing.*
 import io.ktor.server.sse.*
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.launch
+import com.fasterxml.jackson.databind.SerializationFeature
+import com.gemini.krakenbot.config.appModule
+import com.gemini.krakenbot.controller.dashboardRouting
+import com.gemini.krakenbot.service.PortfolioManager
+import kotlinx.coroutines.*
 import org.koin.core.context.GlobalContext
 import org.koin.core.context.startKoin
 import org.koin.core.context.stopKoin

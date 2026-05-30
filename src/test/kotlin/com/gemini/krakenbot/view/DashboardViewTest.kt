@@ -1,13 +1,10 @@
 package com.gemini.krakenbot.view
 
+import com.gemini.krakenbot.view.component.*
 import com.gemini.krakenbot.TestFixtures
-import com.gemini.krakenbot.config.Allocation
-import com.gemini.krakenbot.config.AppConfig
-import com.gemini.krakenbot.config.KrakenCredentials
-import com.gemini.krakenbot.config.Settings
+import com.gemini.krakenbot.config.*
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.util.KrakenSymbols
-import com.gemini.krakenbot.view.component.*
 import com.gemini.krakenbot.view.util.CssClasses.ALLOCATION_BAR_LABEL
 import com.gemini.krakenbot.view.util.CssClasses.BADGE_BUY
 import com.gemini.krakenbot.view.util.CssClasses.BADGE_INFO
@@ -36,11 +33,11 @@ import com.gemini.krakenbot.view.util.ViewText.TOTAL_PORTFOLIO
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldNotContain
+import java.math.BigDecimal
+import java.time.Instant
 import kotlinx.html.div
 import kotlinx.html.html
 import kotlinx.html.stream.createHTML
-import java.math.BigDecimal
-import java.time.Instant
 
 @Suppress("unused")
 class DashboardViewTest : StringSpec({
