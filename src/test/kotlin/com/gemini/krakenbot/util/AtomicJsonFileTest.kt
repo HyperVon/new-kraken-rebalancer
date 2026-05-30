@@ -22,7 +22,11 @@ class AtomicJsonFileTest : StringSpec({
         target.parentFile?.mkdirs()
         target.delete()
 
-        AtomicJsonFile.write(objectMapper, target, mapOf("hello" to "world"))
+        AtomicJsonFile.write(
+            objectMapper,
+            target,
+            mapOf("hello" to "world")
+        )
         target.exists() shouldBe true
         objectMapper.readValue(
             target,
@@ -35,7 +39,11 @@ class AtomicJsonFileTest : StringSpec({
         val target = File("success-no-parent.json")
         target.delete()
 
-        AtomicJsonFile.write(objectMapper, target, mapOf("hello" to "world"))
+        AtomicJsonFile.write(
+            objectMapper,
+            target,
+            mapOf("hello" to "world")
+        )
         target.exists() shouldBe true
         objectMapper.readValue(
             target,
@@ -92,7 +100,11 @@ class AtomicJsonFileTest : StringSpec({
         )
 
         every {
-            Files.move(any(), any(), StandardCopyOption.REPLACE_EXISTING)
+            Files.move(
+                any(),
+                any(),
+                StandardCopyOption.REPLACE_EXISTING
+            )
         } answers {
             val src = firstArg<java.nio.file.Path>()
             val dst = secondArg<java.nio.file.Path>()
@@ -101,7 +113,11 @@ class AtomicJsonFileTest : StringSpec({
             dst
         }
 
-        AtomicJsonFile.write(objectMapper, target, mapOf("fallback" to true))
+        AtomicJsonFile.write(
+            objectMapper,
+            target,
+            mapOf("fallback" to true)
+        )
         target.exists() shouldBe true
         objectMapper.readValue(
             target,

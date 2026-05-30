@@ -2,10 +2,23 @@ package com.gemini.krakenbot.view.component
 
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.view.util.CssClasses
-import com.gemini.krakenbot.view.util.Icons
+import com.gemini.krakenbot.view.util.CssClasses.CUSTOM_SCROLLBAR_MAX_H_100
+import com.gemini.krakenbot.view.util.CssClasses.EMPTY_HISTORY_BOX
+import com.gemini.krakenbot.view.util.CssClasses.HOVERABLE
+import com.gemini.krakenbot.view.util.CssClasses.MONO_COL
+import com.gemini.krakenbot.view.util.CssClasses.RECENT_ACTIVITY_DOT_MARKER
+import com.gemini.krakenbot.view.util.CssClasses.RECENT_ACTIVITY_EMPTY_TEXT
+import com.gemini.krakenbot.view.util.CssClasses.RECENT_ACTIVITY_ROW_CONTAINER
+import com.gemini.krakenbot.view.util.CssClasses.TABLE_WRAPPER
+import com.gemini.krakenbot.view.util.Icons.EMPTY_PIE
+import com.gemini.krakenbot.view.util.Icons.PULSE
 import com.gemini.krakenbot.view.util.Icons.icon
 import com.gemini.krakenbot.view.util.Layouts.glassPanel
-import com.gemini.krakenbot.view.util.ViewText
+import com.gemini.krakenbot.view.util.ViewText.HEADER_ACTION
+import com.gemini.krakenbot.view.util.ViewText.HEADER_TIME
+import com.gemini.krakenbot.view.util.ViewText.NO_TRADES_EXECUTED
+import com.gemini.krakenbot.view.util.ViewText.NO_TRADING_HISTORY
+import com.gemini.krakenbot.view.util.ViewText.RECENT_ACTIVITY
 import kotlinx.html.*
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -34,20 +47,20 @@ class RecentActivityComponent {
             .withZone(ZoneId.systemDefault())
 
     fun DIV.render(history: List<PortfolioSnapshot>) {
-        glassPanel(ViewText.RECENT_ACTIVITY, Icons.PULSE) {
+        glassPanel(RECENT_ACTIVITY, PULSE) {
             if (history.isEmpty()) {
-                div(CssClasses.EMPTY_HISTORY_BOX) {
-                    icon(Icons.EMPTY_PIE)
-                    h3 { +ViewText.RECENT_ACTIVITY }
-                    p { +ViewText.NO_TRADING_HISTORY }
+                div(EMPTY_HISTORY_BOX) {
+                    icon(EMPTY_PIE)
+                    h3 { +RECENT_ACTIVITY }
+                    p { +NO_TRADING_HISTORY }
                 }
             } else {
-                div("${CssClasses.TABLE_WRAPPER} ${CssClasses.CUSTOM_SCROLLBAR_MAX_H_100}") {
+                div("$TABLE_WRAPPER $CUSTOM_SCROLLBAR_MAX_H_100") {
                     table {
                         thead {
                             tr {
-                                th { +ViewText.HEADER_TIME }
-                                th { +ViewText.HEADER_ACTION }
+                                th { +HEADER_TIME }
+                                th { +HEADER_ACTION }
                             }
                         }
                         tbody {
@@ -73,12 +86,12 @@ class RecentActivityComponent {
     }
 
     private fun TBODY.renderEmptyActionsRow(timeStr: String) {
-        tr(CssClasses.HOVERABLE) {
-            td(CssClasses.MONO_COL) { +timeStr }
+        tr(HOVERABLE) {
+            td(MONO_COL) { +timeStr }
             td {
-                span(CssClasses.RECENT_ACTIVITY_EMPTY_TEXT) {
-                    span(CssClasses.RECENT_ACTIVITY_DOT_MARKER) {}
-                    +ViewText.NO_TRADES_EXECUTED
+                span(RECENT_ACTIVITY_EMPTY_TEXT) {
+                    span(RECENT_ACTIVITY_DOT_MARKER) {}
+                    +NO_TRADES_EXECUTED
                 }
             }
         }
@@ -86,10 +99,10 @@ class RecentActivityComponent {
 
     private fun TBODY.renderActionRow(timeStr: String, action: String) {
         val tradeAction = TradeAction.from(action)
-        tr(CssClasses.HOVERABLE) {
-            td(CssClasses.MONO_COL) { +timeStr }
+        tr(HOVERABLE) {
+            td(MONO_COL) { +timeStr }
             td {
-                div(CssClasses.RECENT_ACTIVITY_ROW_CONTAINER) {
+                div(RECENT_ACTIVITY_ROW_CONTAINER) {
                     span(tradeAction.badgeClass) { +tradeAction.label }
                     span { +action }
                 }

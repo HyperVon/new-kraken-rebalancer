@@ -32,7 +32,14 @@ class PortfolioManagerFiatCorrectionTest : StringSpec() {
 
         val config = AppConfig(
             KrakenCredentials("k", "s"),
-            Settings(60L, 2.0, 1.0, false, 0.0, 1.0),
+            Settings(
+                60L,
+                2.0,
+                1.0,
+                false,
+                0.0,
+                1.0
+            ),
             allocs.toList()
         )
         every { configService.getConfig() } returns config

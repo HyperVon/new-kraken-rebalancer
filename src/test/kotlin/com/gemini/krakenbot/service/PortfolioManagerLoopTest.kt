@@ -39,7 +39,14 @@ class PortfolioManagerLoopTest : StringSpec() {
 
         "startRebalancingLoop_RunsWhenEnabled" {
             runTest {
-                val settings = Settings(60L, 2.0, 1.0, true, 0.0, 1.0)
+                val settings = Settings(
+                    60L,
+                    2.0,
+                    1.0,
+                    true,
+                    0.0,
+                    1.0
+                )
                 val config = AppConfig(
                     KrakenCredentials("k", "s"),
                     settings,
@@ -62,7 +69,14 @@ class PortfolioManagerLoopTest : StringSpec() {
 
         "stopRebalancingLoop_StopsExecution" {
             runTest {
-                val settings = Settings(60L, 2.0, 1.0, true, 0.0, 1.0)
+                val settings = Settings(
+                    60L,
+                    2.0,
+                    1.0,
+                    true,
+                    0.0,
+                    1.0
+                )
                 val config = AppConfig(
                     KrakenCredentials("k", "s"),
                     settings,
@@ -81,7 +95,14 @@ class PortfolioManagerLoopTest : StringSpec() {
 
         "checkAndRunCycle_HandlesExceptionGracefully" {
             runTest {
-                val settings = Settings(60L, 2.0, 1.0, true, 0.0, 1.0)
+                val settings = Settings(
+                    60L,
+                    2.0,
+                    1.0,
+                    true,
+                    0.0,
+                    1.0
+                )
                 val config = AppConfig(
                     KrakenCredentials("k", "s"),
                     settings,

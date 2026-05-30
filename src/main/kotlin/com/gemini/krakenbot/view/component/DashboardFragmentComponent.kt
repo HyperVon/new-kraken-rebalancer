@@ -1,8 +1,26 @@
 package com.gemini.krakenbot.view.component
 
 import com.gemini.krakenbot.model.PortfolioSnapshot
-import com.gemini.krakenbot.view.util.*
+import com.gemini.krakenbot.view.util.CssClasses.BTN_SECONDARY
+import com.gemini.krakenbot.view.util.CssClasses.DATA_AGE_CONTAINER
+import com.gemini.krakenbot.view.util.CssClasses.DATA_AGE_LABEL
+import com.gemini.krakenbot.view.util.CssClasses.DATA_AGE_TIME
+import com.gemini.krakenbot.view.util.CssClasses.DATA_AGE_VALUE
+import com.gemini.krakenbot.view.util.CssClasses.DATA_AGE_VALUE_STALE
+import com.gemini.krakenbot.view.util.CssClasses.DETAIL_GRID
+import com.gemini.krakenbot.view.util.CssClasses.HEADER_ACTIONS
+import com.gemini.krakenbot.view.util.CssClasses.HEADER_TITLE_SECTION
+import com.gemini.krakenbot.view.util.CssClasses.STATUS_BADGE_DELAYED
+import com.gemini.krakenbot.view.util.CssClasses.STATUS_BADGE_LIVE
+import com.gemini.krakenbot.view.util.HtmlAttrs.DATA_EPOCH
+import com.gemini.krakenbot.view.util.Icons.COG
 import com.gemini.krakenbot.view.util.Icons.icon
+import com.gemini.krakenbot.view.util.Routes.SETTINGS
+import com.gemini.krakenbot.view.util.ViewText.APP_TITLE
+import com.gemini.krakenbot.view.util.ViewText.DATA_AGE
+import com.gemini.krakenbot.view.util.ViewText.DELAYED
+import com.gemini.krakenbot.view.util.ViewText.LIVE
+import com.gemini.krakenbot.view.util.ViewText.SETTINGS_TITLE
 import kotlinx.html.*
 import java.time.Instant
 import java.time.ZoneId
@@ -14,21 +32,23 @@ class DashboardFragmentComponent(
     private val performanceTableComponent: PerformanceTableComponent,
     private val recentActivityComponent: RecentActivityComponent
 ) {
-    private val timeFormatter = DateTimeFormatter.ofPattern("hh:mm:ss a")
-        .withZone(ZoneId.systemDefault())
+    private val timeFormatter =
+        DateTimeFormatter.ofPattern("hh:mm:ss a").withZone(ZoneId.systemDefault())
 
     fun DIV.render(
         latest: PortfolioSnapshot,
         history: List<PortfolioSnapshot>
     ) {
         val timeSinceUpdate =
-            0L.coerceAtLeast(Instant.now().epochSecond - latest.timestamp.epochSecond)
+            0L.coerceAtLeast(
+                Instant.now().epochSecond - latest.timestamp.epochSecond
+            )
         val isStale = timeSinceUpdate > 90
 
         renderHeaderSection(latest, timeSinceUpdate, isStale)
         with(overviewGridComponent) { render(latest) }
 
-        div(CssClasses.DETAIL_GRID) {
+        div(DETAIL_GRID) {
             with(allocationChartComponent) { render(latest) }
             with(performanceTableComponent) { render(latest) }
         }
@@ -42,29 +62,29 @@ class DashboardFragmentComponent(
         isStale: Boolean
     ) {
         header {
-            div(CssClasses.HEADER_TITLE_SECTION) {
-                h1 { +ViewText.APP_TITLE }
+            div(HEADER_TITLE_SECTION) {
+                h1 { +APP_TITLE }
                 val badgeClass =
-                    if (isStale) CssClasses.STATUS_BADGE_DELAYED else CssClasses.STATUS_BADGE_LIVE
-                val badgeText = if (isStale) ViewText.DELAYED else ViewText.LIVE
+                    if (isStale) STATUS_BADGE_DELAYED else STATUS_BADGE_LIVE
+                val badgeText = if (isStale) DELAYED else LIVE
                 div(badgeClass) { +badgeText }
             }
 
-            div(CssClasses.HEADER_ACTIONS) {
-                div(CssClasses.DATA_AGE_CONTAINER) {
-                    div(CssClasses.DATA_AGE_LABEL) { +ViewText.DATA_AGE }
+            div(HEADER_ACTIONS) {
+                div(DATA_AGE_CONTAINER) {
+                    div(DATA_AGE_LABEL) { +DATA_AGE }
                     val ageClass =
-                        if (isStale) CssClasses.DATA_AGE_VALUE_STALE else CssClasses.DATA_AGE_VALUE
+                        if (isStale) DATA_AGE_VALUE_STALE else DATA_AGE_VALUE
                     div(ageClass) { +"${timeSinceUpdate}s ago" }
-                    div(CssClasses.DATA_AGE_TIME) {
-                        attributes[HtmlAttrs.DATA_EPOCH] =
+                    div(DATA_AGE_TIME) {
+                        attributes[DATA_EPOCH] =
                             latest.timestamp.toEpochMilli().toString()
                         +timeFormatter.format(latest.timestamp)
                     }
                 }
-                a(href = Routes.SETTINGS, classes = CssClasses.BTN_SECONDARY) {
-                    icon(Icons.COG)
-                    span { +ViewText.SETTINGS_TITLE }
+                a(href = SETTINGS, classes = BTN_SECONDARY) {
+                    icon(COG)
+                    span { +SETTINGS_TITLE }
                 }
             }
         }

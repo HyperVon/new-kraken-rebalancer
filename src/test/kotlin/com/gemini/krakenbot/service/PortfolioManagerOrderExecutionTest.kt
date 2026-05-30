@@ -45,7 +45,10 @@ class PortfolioManagerOrderExecutionTest : StringSpec() {
             runTest {
                 val allocA = Allocation("A", 10.0)
                 val allocB = Allocation("B", 90.0)
-                val allocUSD = Allocation(KrakenSymbols.USD, 0.0)
+                val allocUSD = Allocation(
+                    KrakenSymbols.USD,
+                    0.0
+                )
                 val allAllocations = listOf(allocA, allocB, allocUSD)
 
                 val mockSettings = Settings(
@@ -82,7 +85,10 @@ class PortfolioManagerOrderExecutionTest : StringSpec() {
         "testExecution_SkipDustSells" {
             runTest {
                 val allocA = Allocation("A", 10.0)
-                val allocUSD = Allocation(KrakenSymbols.USD, 90.0)
+                val allocUSD = Allocation(
+                    KrakenSymbols.USD,
+                    90.0
+                )
                 val allAllocations = listOf(allocA, allocUSD)
 
                 val mockSettings = Settings(
@@ -107,14 +113,22 @@ class PortfolioManagerOrderExecutionTest : StringSpec() {
 
                 portfolioManager.performRebalanceCycle()
 
-                krakenService.executedOrders.none { it.pair == "AUSD" && it.side == "sell" } shouldBe true
+                krakenService.executedOrders.none {
+                    it.pair == "AUSD" && it.side == "sell"
+                } shouldBe true
             }
         }
 
         "testExecution_CashVerificationFallback" {
             runTest {
                 val allAllocations =
-                    listOf(Allocation("A", 10.0), Allocation("B", 90.0))
+                    listOf(Allocation(
+                        "A",
+                        10.0
+                    ), Allocation(
+                        "B",
+                        90.0
+                    ))
                 val mockSettings = Settings(
                     loopDelaySeconds = 0L,
                     deviationTriggerPercent = 1.0,
@@ -155,7 +169,13 @@ class PortfolioManagerOrderExecutionTest : StringSpec() {
         "testExecution_PartialFillCashUpdate" {
             runTest {
                 val allAllocations =
-                    listOf(Allocation("A", 10.0), Allocation("B", 90.0))
+                    listOf(Allocation(
+                        "A",
+                        10.0
+                    ), Allocation(
+                        "B",
+                        90.0
+                    ))
                 val mockSettings = Settings(
                     loopDelaySeconds = 0L,
                     deviationTriggerPercent = 1.0,

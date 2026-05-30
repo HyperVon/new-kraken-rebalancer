@@ -8,10 +8,31 @@ import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.util.KrakenSymbols
 import com.gemini.krakenbot.view.component.*
-import com.gemini.krakenbot.view.util.CssClasses
-import com.gemini.krakenbot.view.util.FormFields
-import com.gemini.krakenbot.view.util.Routes
-import com.gemini.krakenbot.view.util.ViewText
+import com.gemini.krakenbot.view.util.CssClasses.ALLOCATION_BAR_LABEL
+import com.gemini.krakenbot.view.util.CssClasses.BADGE_BUY
+import com.gemini.krakenbot.view.util.CssClasses.BADGE_INFO
+import com.gemini.krakenbot.view.util.CssClasses.BADGE_SELL
+import com.gemini.krakenbot.view.util.CssClasses.ERROR_BANNER
+import com.gemini.krakenbot.view.util.FormFields.DEVIATION_TRIGGER_PERCENT
+import com.gemini.krakenbot.view.util.FormFields.LOOP_DELAY_SECONDS
+import com.gemini.krakenbot.view.util.Routes.API_STATUS_STREAM
+import com.gemini.krakenbot.view.util.Routes.STATIC_STYLE_CSS
+import com.gemini.krakenbot.view.util.ViewText.APP_TITLE
+import com.gemini.krakenbot.view.util.ViewText.ASSETS_SUFFIX
+import com.gemini.krakenbot.view.util.ViewText.BASE_PREFIX
+import com.gemini.krakenbot.view.util.ViewText.CASH_USD
+import com.gemini.krakenbot.view.util.ViewText.CONNECTING
+import com.gemini.krakenbot.view.util.ViewText.CRYPTO_ASSETS
+import com.gemini.krakenbot.view.util.ViewText.DELAYED
+import com.gemini.krakenbot.view.util.ViewText.DEV_PREFIX
+import com.gemini.krakenbot.view.util.ViewText.DRAWDOWN_PREFIX
+import com.gemini.krakenbot.view.util.ViewText.LIVE
+import com.gemini.krakenbot.view.util.ViewText.NO_TRADES_EXECUTED
+import com.gemini.krakenbot.view.util.ViewText.NO_TRADING_HISTORY
+import com.gemini.krakenbot.view.util.ViewText.NO_USD_DATA
+import com.gemini.krakenbot.view.util.ViewText.SETTINGS_TITLE
+import com.gemini.krakenbot.view.util.ViewText.TARGET_PREFIX
+import com.gemini.krakenbot.view.util.ViewText.TOTAL_PORTFOLIO
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldNotContain
@@ -28,12 +49,31 @@ class DashboardViewTest : StringSpec({
     val chart = AllocationChartComponent()
     val table = PerformanceTableComponent()
     val activity = RecentActivityComponent()
-    val fragment = DashboardFragmentComponent(overview, chart, table, activity)
-    val view = DashboardView(shell, SettingsFormComponent(), fragment)
+    val fragment = DashboardFragmentComponent(
+        overview,
+        chart,
+        table,
+        activity
+    )
+    val view = DashboardView(
+        shell,
+        SettingsFormComponent(),
+        fragment
+    )
 
     val baseConfig = AppConfig(
-        KrakenCredentials(TestFixtures.TEST_API_KEY, "privateKey"),
-        Settings(60L, 2.0, 5.0, true, 20.0, 1.0),
+        KrakenCredentials(
+            TestFixtures.TEST_API_KEY,
+            "privateKey"
+        ),
+        Settings(
+            60L,
+            2.0,
+            5.0,
+            true,
+            20.0,
+            1.0
+        ),
         listOf(
             Allocation(KrakenSymbols.USD, 10.0),
             Allocation(KrakenSymbols.BTC, 50.0),
@@ -47,12 +87,12 @@ class DashboardViewTest : StringSpec({
                 renderDashboardShell()
             }
         }
-        html shouldContain "title>${ViewText.APP_TITLE}"
-        html shouldContain "link href=\"${Routes.STATIC_STYLE_CSS}\" rel=\"stylesheet\""
+        html shouldContain "title>${APP_TITLE}"
+        html shouldContain "link href=\"${STATIC_STYLE_CSS}\" rel=\"stylesheet\""
         html shouldContain "script src=\"https://unpkg.com/htmx.org@2.0.4\""
         html shouldContain "hx-ext=\"sse\""
-        html shouldContain "sse-connect=\"${Routes.API_STATUS_STREAM}\""
-        html shouldContain ViewText.CONNECTING
+        html shouldContain "sse-connect=\"${API_STATUS_STREAM}\""
+        html shouldContain CONNECTING
     }
 
     "renderSettingsPage_withNoError_containsForm" {
@@ -61,12 +101,12 @@ class DashboardViewTest : StringSpec({
                 renderSettingsPage(baseConfig, null)
             }
         }
-        html shouldContain "title>${ViewText.SETTINGS_TITLE} - ${ViewText.APP_TITLE}"
-        html shouldContain "name=\"${FormFields.LOOP_DELAY_SECONDS}\""
+        html shouldContain "title>${SETTINGS_TITLE} - ${APP_TITLE}"
+        html shouldContain "name=\"${LOOP_DELAY_SECONDS}\""
         html shouldContain "value=\"60\""
-        html shouldContain "name=\"${FormFields.DEVIATION_TRIGGER_PERCENT}\""
+        html shouldContain "name=\"${DEVIATION_TRIGGER_PERCENT}\""
         html shouldContain "value=\"2.0\""
-        html shouldNotContain CssClasses.ERROR_BANNER
+        html shouldNotContain ERROR_BANNER
     }
 
     "renderSettingsPage_withError_displaysError" {
@@ -77,7 +117,7 @@ class DashboardViewTest : StringSpec({
             }
         }
         html shouldContain errMsg
-        html shouldContain CssClasses.ERROR_BANNER
+        html shouldContain ERROR_BANNER
     }
 
     "renderDashboardFragment_withLiveSnapshotAndHistory_rendersCorrectly" {
@@ -134,26 +174,26 @@ class DashboardViewTest : StringSpec({
             }
         }
 
-        html shouldContain ViewText.LIVE
-        html shouldNotContain ViewText.DELAYED
-        html shouldContain ViewText.TOTAL_PORTFOLIO
+        html shouldContain LIVE
+        html shouldNotContain DELAYED
+        html shouldContain TOTAL_PORTFOLIO
         html shouldContain "$10,000.00"
-        html shouldContain "${ViewText.DRAWDOWN_PREFIX}5.00%"
-        html shouldContain ViewText.CASH_USD
+        html shouldContain "${DRAWDOWN_PREFIX}5.00%"
+        html shouldContain CASH_USD
         html shouldContain "$1,000.00"
-        html shouldContain "10.00% | ${ViewText.TARGET_PREFIX}7.50% (${ViewText.BASE_PREFIX}10.00%)"
-        html shouldContain "${ViewText.DEV_PREFIX}0.00%"
-        html shouldContain ViewText.CRYPTO_ASSETS
+        html shouldContain "10.00% | ${TARGET_PREFIX}7.50% (${BASE_PREFIX}10.00%)"
+        html shouldContain "${DEV_PREFIX}0.00%"
+        html shouldContain CRYPTO_ASSETS
         html shouldContain "$9,000.00"
-        html shouldContain "90.00% | ${ViewText.TARGET_PREFIX}90.00% | 2${ViewText.ASSETS_SUFFIX}"
+        html shouldContain "90.00% | ${TARGET_PREFIX}90.00% | 2${ASSETS_SUFFIX}"
 
         // Allocation bars
-        html shouldContain "${CssClasses.ALLOCATION_BAR_LABEL}\">BTC"
-        html shouldContain "${CssClasses.ALLOCATION_BAR_LABEL}\">ETH"
+        html shouldContain "${ALLOCATION_BAR_LABEL}\">BTC"
+        html shouldContain "${ALLOCATION_BAR_LABEL}\">ETH"
 
         // Recent activity badges
-        html shouldContain "${CssClasses.BADGE_BUY}\">BUY"
-        html shouldContain "${CssClasses.BADGE_SELL}\">SELL"
+        html shouldContain "${BADGE_BUY}\">BUY"
+        html shouldContain "${BADGE_SELL}\">SELL"
     }
 
     "renderDashboardFragment_withStaleData_rendersDelayedBadge" {
@@ -185,9 +225,9 @@ class DashboardViewTest : StringSpec({
             }
         }
 
-        html shouldContain ViewText.DELAYED
-        html shouldNotContain ViewText.LIVE
-        html shouldContain ViewText.NO_TRADING_HISTORY
+        html shouldContain DELAYED
+        html shouldNotContain LIVE
+        html shouldContain NO_TRADING_HISTORY
     }
 
     "renderDashboardFragment_edgeCases_coversUncoveredBranches" {
@@ -247,10 +287,10 @@ class DashboardViewTest : StringSpec({
             }
         }
 
-        html shouldContain ViewText.NO_USD_DATA
-        html shouldContain "${ViewText.DRAWDOWN_PREFIX}0.00%"
-        html shouldContain "${CssClasses.BADGE_INFO}\">INFO"
-        html shouldContain ViewText.NO_TRADES_EXECUTED
+        html shouldContain NO_USD_DATA
+        html shouldContain "${DRAWDOWN_PREFIX}0.00%"
+        html shouldContain "${BADGE_INFO}\">INFO"
+        html shouldContain NO_TRADES_EXECUTED
     }
 
     "renderDashboardFragment_usdTargetEqual_doesNotPrintBaseTarget" {
@@ -282,7 +322,7 @@ class DashboardViewTest : StringSpec({
             }
         }
 
-        html shouldContain "10.00% | ${ViewText.TARGET_PREFIX}10.00%"
+        html shouldContain "10.00% | ${TARGET_PREFIX}10.00%"
         html shouldNotContain "(Base: 10.00%)"
     }
 })

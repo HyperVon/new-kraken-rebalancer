@@ -21,7 +21,10 @@ class PortfolioStatsRepositoryImpl(
         val file = File(filePath)
         if (file.exists()) {
             try {
-                return objectMapper.readValue(file, PortfolioStats::class.java)
+                return objectMapper.readValue(
+                    file,
+                    PortfolioStats::class.java
+                )
             } catch (e: IOException) {
                 log.error("Failed to load portfolio stats", e)
             }
@@ -31,7 +34,11 @@ class PortfolioStatsRepositoryImpl(
 
     override fun save(stats: PortfolioStats) {
         try {
-            AtomicJsonFile.write(objectMapper, File(filePath), stats)
+            AtomicJsonFile.write(
+                objectMapper,
+                File(filePath),
+                stats
+            )
         } catch (e: IOException) {
             log.error("Failed to save portfolio stats", e)
             throw e

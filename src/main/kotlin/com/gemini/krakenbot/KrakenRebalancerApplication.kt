@@ -33,7 +33,8 @@ fun main() {
     val httpClient = koin.get<HttpClient>()
 
     portfolioManager.startRebalancingLoop()
-    val applicationScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+    val applicationScope =
+        CoroutineScope(Dispatchers.Default + SupervisorJob())
     applicationScope.launch {
         portfolioManager.runLoop()
     }

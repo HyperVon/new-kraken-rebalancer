@@ -5,8 +5,9 @@ import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.view.component.DashboardFragmentComponent
 import com.gemini.krakenbot.view.component.DashboardShellComponent
 import com.gemini.krakenbot.view.component.SettingsFormComponent
-import com.gemini.krakenbot.view.util.Routes
-import com.gemini.krakenbot.view.util.ViewText
+import com.gemini.krakenbot.view.util.Routes.STATIC_STYLE_CSS
+import com.gemini.krakenbot.view.util.ViewText.APP_TITLE
+import com.gemini.krakenbot.view.util.ViewText.SETTINGS_TITLE
 import kotlinx.html.*
 
 class DashboardView(
@@ -26,8 +27,8 @@ class DashboardView(
                 name = "viewport",
                 content = "width=device-width, initial-scale=1.0"
             )
-            title("${ViewText.SETTINGS_TITLE} - ${ViewText.APP_TITLE}")
-            link(rel = "stylesheet", href = Routes.STATIC_STYLE_CSS)
+            title("$SETTINGS_TITLE - $APP_TITLE")
+            link(rel = "stylesheet", href = STATIC_STYLE_CSS)
             script(src = "https://unpkg.com/htmx.org@2.0.4") {}
         }
         body {

@@ -40,9 +40,19 @@ class PortfolioManagerDrawdownTest : StringSpec() {
                 portfolioStatsRepository
             )
 
-            val settings = Settings(60L, 2.0, 1.0, false, 50.0, 1.0)
+            val settings = Settings(
+                60L,
+                2.0,
+                1.0,
+                false,
+                50.0,
+                1.0
+            )
             val appConfig =
-                AppConfig(KrakenCredentials("k", "s"), settings, emptyList())
+                AppConfig(KrakenCredentials(
+                    "k",
+                    "s"
+                ), settings, emptyList())
             every { configService.getConfig() } returns appConfig
         }
 
@@ -59,7 +69,14 @@ class PortfolioManagerDrawdownTest : StringSpec() {
 
                 val appConfig = AppConfig(
                     KrakenCredentials("k", "s"),
-                    Settings(60L, 2.0, 1.0, false, 50.0, 1.0),
+                    Settings(
+                        60L,
+                        2.0,
+                        1.0,
+                        false,
+                        50.0,
+                        1.0
+                    ),
                     allocs
                 )
                 every { configService.getConfig() } returns appConfig
@@ -102,7 +119,14 @@ class PortfolioManagerDrawdownTest : StringSpec() {
 
                 val appConfig = AppConfig(
                     KrakenCredentials("k", "s"),
-                    Settings(60L, 2.0, 1.0, false, 50.0, 1.0),
+                    Settings(
+                        60L,
+                        2.0,
+                        1.0,
+                        false,
+                        50.0,
+                        1.0
+                    ),
                     allocs
                 )
                 every { configService.getConfig() } returns appConfig

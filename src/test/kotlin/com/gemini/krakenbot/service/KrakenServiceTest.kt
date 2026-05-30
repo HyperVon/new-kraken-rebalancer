@@ -37,10 +37,22 @@ class KrakenServiceTest : StringSpec() {
 
         val credentials = KrakenCredentials(
             "public-key",
-            Base64.getEncoder().encodeToString("secret-key".toByteArray())
+            Base64.getEncoder()
+                .encodeToString("secret-key".toByteArray())
         )
-        val settings = Settings(60L, 2.0, 1.0, false, 0.0, 1.0)
-        val config = AppConfig(credentials, settings, emptyList())
+        val settings = Settings(
+            60L,
+            2.0,
+            1.0,
+            false,
+            0.0,
+            1.0
+        )
+        val config = AppConfig(
+            credentials,
+            settings,
+            emptyList()
+        )
         every { configService.getConfig() } returns config
 
         val mockEngine = MockEngine { request ->
@@ -101,7 +113,14 @@ class KrakenServiceTest : StringSpec() {
         "executeOrder_DryRun" {
             runTest {
                 val service = createService("")
-                val settings = Settings(60L, 2.0, 1.0, true, 0.0, 1.0)
+                val settings = Settings(
+                    60L,
+                    2.0,
+                    1.0,
+                    true,
+                    0.0,
+                    1.0
+                )
                 val config = AppConfig(
                     KrakenCredentials("k", "s"),
                     settings,
@@ -136,14 +155,18 @@ class KrakenServiceTest : StringSpec() {
                 val responseJson = "{\"error\":[\"EQuery:Unknown asset pair\"]}"
                 val service = createService(responseJson)
 
-                shouldThrow<RuntimeException> { service.getTickerPrices("INVALID") }
+                shouldThrow<RuntimeException> {
+                    service.getTickerPrices("INVALID")
+                }
             }
         }
 
         "queryPublic_JsonProcessingException" {
             runTest {
                 val service = createService("{invalid-json")
-                shouldThrow<RuntimeException> { service.getTickerPrices("XBTUSD") }
+                shouldThrow<RuntimeException> {
+                    service.getTickerPrices("XBTUSD")
+                }
             }
         }
 
@@ -172,8 +195,19 @@ class KrakenServiceTest : StringSpec() {
                     Base64.getEncoder()
                         .encodeToString("secret-key".toByteArray())
                 )
-                val settings = Settings(60L, 2.0, 1.0, false, 0.0, 1.0)
-                val config = AppConfig(credentials, settings, emptyList())
+                val settings = Settings(
+                    60L,
+                    2.0,
+                    1.0,
+                    false,
+                    0.0,
+                    1.0
+                )
+                val config = AppConfig(
+                    credentials,
+                    settings,
+                    emptyList()
+                )
                 every { configService.getConfig() } returns config
 
                 val mockEngine = MockEngine { request ->
@@ -240,7 +274,14 @@ class KrakenServiceTest : StringSpec() {
                 val mockConfigService = mockk<ConfigService>(relaxed = true)
                 val config = AppConfig(
                     KrakenCredentials("", "secret"),
-                    Settings(60L, 2.0, 1.0, false, 0.0, 1.0),
+                    Settings(
+                        60L,
+                        2.0,
+                        1.0,
+                        false,
+                        0.0,
+                        1.0
+                    ),
                     emptyList()
                 )
                 every { mockConfigService.getConfig() } returns config
@@ -279,7 +320,14 @@ class KrakenServiceTest : StringSpec() {
                 val mockConfigService = mockk<ConfigService>(relaxed = true)
                 val config = AppConfig(
                     KrakenCredentials("apiKey", "invalid_base64_!@#$"),
-                    Settings(60L, 2.0, 1.0, false, 0.0, 1.0),
+                    Settings(
+                        60L,
+                        2.0,
+                        1.0,
+                        false,
+                        0.0,
+                        1.0
+                    ),
                     emptyList()
                 )
                 every { mockConfigService.getConfig() } returns config
@@ -318,7 +366,14 @@ class KrakenServiceTest : StringSpec() {
                     Base64.getEncoder().encodeToString("secret".toByteArray())
                 val config = AppConfig(
                     KrakenCredentials("k", validSecret),
-                    Settings(60L, 2.0, 1.0, false, 0.0, 1.0),
+                    Settings(
+                        60L,
+                        2.0,
+                        1.0,
+                        false,
+                        0.0,
+                        1.0
+                    ),
                     emptyList()
                 )
                 every { mockConfigService.getConfig() } returns config
@@ -353,7 +408,14 @@ class KrakenServiceTest : StringSpec() {
                     Base64.getEncoder().encodeToString("secret".toByteArray())
                 val config = AppConfig(
                     KrakenCredentials("k", validSecret),
-                    Settings(60L, 2.0, 1.0, false, 0.0, 1.0),
+                    Settings(
+                        60L,
+                        2.0,
+                        1.0,
+                        false,
+                        0.0,
+                        1.0
+                    ),
                     emptyList()
                 )
                 every { mockConfigService.getConfig() } returns config

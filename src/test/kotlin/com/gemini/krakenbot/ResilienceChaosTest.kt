@@ -32,8 +32,18 @@ class ResilienceChaosTest : StringSpec() {
             runTest {
                 val appConfig = AppConfig(
                     KrakenCredentials("apiKey", "secret"),
-                    Settings(60L, 2.0, 1.0, false, 50.0, 1.0),
-                    listOf(Allocation(KrakenSymbols.BTC, 50.0))
+                    Settings(
+                        60L,
+                        2.0,
+                        1.0,
+                        false,
+                        50.0,
+                        1.0
+                    ),
+                    listOf(Allocation(
+                        KrakenSymbols.BTC,
+                        50.0
+                    ))
                 )
                 val mockConfigService = mockk<ConfigService>(relaxed = true)
                 every { mockConfigService.getConfig() } returns appConfig
@@ -59,7 +69,8 @@ class ResilienceChaosTest : StringSpec() {
                 )
 
                 // Prove that the network failure correctly propagates an exception
-                // This ensures our mock is working, while runLoop() is responsible for catching it (see PortfolioManagerImpl)
+                // This ensures our mock is working, while runLoop() is responsible
+                // for catching it (see PortfolioManagerImpl)
                 shouldThrow<Exception> {
                     portfolioManager.performRebalanceCycle()
                 }
@@ -70,8 +81,18 @@ class ResilienceChaosTest : StringSpec() {
             runTest {
                 val appConfig = AppConfig(
                     KrakenCredentials("apiKey", "secret"),
-                    Settings(60L, 2.0, 1.0, false, 50.0, 1.0),
-                    listOf(Allocation(KrakenSymbols.BTC, 50.0))
+                    Settings(
+                        60L,
+                        2.0,
+                        1.0,
+                        false,
+                        50.0,
+                        1.0
+                    ),
+                    listOf(Allocation(
+                        KrakenSymbols.BTC,
+                        50.0
+                    ))
                 )
                 val mockConfigService = mockk<ConfigService>(relaxed = true)
                 every { mockConfigService.getConfig() } returns appConfig
@@ -93,7 +114,8 @@ class ResilienceChaosTest : StringSpec() {
                 )
 
                 // Prove that the network failure correctly propagates an exception
-                // This ensures our mock is working, while runLoop() is responsible for catching it (see PortfolioManagerImpl)
+                // This ensures our mock is working, while runLoop() is responsible
+                // for catching it (see PortfolioManagerImpl)
                 shouldThrow<Exception> {
                     portfolioManager.performRebalanceCycle()
                 }

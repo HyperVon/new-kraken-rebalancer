@@ -16,10 +16,20 @@ object Formatter {
     }
 
     fun getDeviationClass(deviation: BigDecimal): String {
-        return if (deviation.signum() > 0) "text-danger" else if (deviation.signum() < 0) "text-success" else ""
+        return if (deviation.signum() > 0) {
+            "text-danger"
+        } else if (deviation.signum() < 0) {
+            "text-success"
+        } else {
+            ""
+        }
     }
 
     fun getDeviationSign(deviation: BigDecimal): String {
-        return if (deviation.signum() > 0) "+" else ""
+        return if (deviation.signum() > 0) {
+            "+"
+        } else {
+            ""
+        }
     }
 }

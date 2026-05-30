@@ -51,7 +51,8 @@ class PortfolioManagerImpl(
         OrderExecutor(krakenService, configService, portfolioAnalyzer)
     )
 
-    private val log = LoggerFactory.getLogger(PortfolioManagerImpl::class.java)
+    private val log =
+        LoggerFactory.getLogger(PortfolioManagerImpl::class.java)
 
     @Volatile
     private var isRunning = false
@@ -284,13 +285,23 @@ class PortfolioManagerImpl(
                     .multiply(BigDecimal.valueOf(100))
             }
 
-            val targetVal = totalPortfolioValueUSD.multiply(calcTargetPct)
-                .divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP)
+            val targetVal = totalPortfolioValueUSD
+                .multiply(calcTargetPct)
+                .divide(
+                    BigDecimal.valueOf(100),
+                    4,
+                    RoundingMode.HALF_UP
+                )
             val deviationUSD = valUSD.subtract(targetVal)
             var devPct = BigDecimal.ZERO
 
             if (targetVal > BigDecimal.ZERO) {
-                devPct = deviationUSD.divide(targetVal, 4, RoundingMode.HALF_UP)
+                devPct = deviationUSD
+                    .divide(
+                        targetVal,
+                        4,
+                        RoundingMode.HALF_UP
+                    )
                     .multiply(BigDecimal.valueOf(100))
             }
 

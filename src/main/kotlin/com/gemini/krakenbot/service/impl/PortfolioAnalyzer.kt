@@ -35,7 +35,9 @@ class PortfolioAnalyzer(
         if (nonUsd.isEmpty()) return emptyMap()
 
         val pairs =
-            nonUsd.joinToString(",") { KrakenSymbols.tradingPair(it.symbol) }
+            nonUsd.joinToString(",") {
+                KrakenSymbols.tradingPair(it.symbol)
+            }
         val rawPrices = krakenService.getTickerPrices(pairs)
 
         return nonUsd.associate { allocation ->
@@ -55,7 +57,8 @@ class PortfolioAnalyzer(
 
         val krakenTicker = KrakenSymbols.toKrakenTicker(symbol)
         for ((key, value) in rawPrices) {
-            if (key.contains(krakenTicker) && key.contains(KrakenSymbols.USD)) {
+            if (key.contains(krakenTicker) &&
+                key.contains(KrakenSymbols.USD)) {
                 return BigDecimal.valueOf(value)
             }
         }
@@ -139,7 +142,11 @@ class PortfolioAnalyzer(
 
         return if (ath > BigDecimal.ZERO && totalPortfolioValueUSD < ath) {
             val diff = ath - totalPortfolioValueUSD
-            diff.divide(ath, 4, RoundingMode.HALF_UP) * BigDecimal.valueOf(100)
+            diff.divide(
+                ath,
+                4,
+                RoundingMode.HALF_UP
+            ) * BigDecimal.valueOf(100)
         } else {
             BigDecimal.ZERO
         }
@@ -152,7 +159,11 @@ class PortfolioAnalyzer(
         if (settings.fiatMaxDrawdown <= 0.0) return BigDecimal.ZERO
 
         val maxDD = BigDecimal.valueOf(settings.fiatMaxDrawdown)
-        var ratio = drawdownPct.divide(maxDD, 4, RoundingMode.HALF_UP)
+        var ratio = drawdownPct.divide(
+            maxDD,
+            4,
+            RoundingMode.HALF_UP
+        )
         if (ratio > BigDecimal.ONE) ratio = BigDecimal.ONE
 
         val deployDouble =
@@ -161,7 +172,8 @@ class PortfolioAnalyzer(
     }
 
     fun calculateEffectiveUsdTarget(fiatDeploymentPct: BigDecimal): BigDecimal {
-        val baseUsdTarget = configService.getConfig().allocations
+        val baseUsdTarget = configService.getConfig()
+            .allocations
             .filter { it.symbol.equals(KrakenSymbols.USD, ignoreCase = true) }
             .sumOf { it.targetPercent.toBigDecimal() }
 
@@ -178,7 +190,8 @@ class PortfolioAnalyzer(
     }
 
     fun calculateCryptoScaleFactor(effectiveUsdTarget: BigDecimal): BigDecimal {
-        val totalNonUsdTarget = configService.getConfig().allocations
+        val totalNonUsdTarget = configService.getConfig()
+            .allocations
             .filter { !it.symbol.equals(KrakenSymbols.USD, ignoreCase = true) }
             .sumOf { it.targetPercent.toBigDecimal() }
 

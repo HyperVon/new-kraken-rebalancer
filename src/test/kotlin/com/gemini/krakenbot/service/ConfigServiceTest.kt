@@ -24,21 +24,35 @@ class ConfigServiceTest : StringSpec({
     lateinit var tempFile: File
 
     fun createValidConfig(file: File) {
-        val settings = Settings(60L, 2.0, 1.0, true, 0.0, 1.0)
+        val settings = Settings(
+            60L,
+            2.0,
+            1.0,
+            true,
+            0.0,
+            1.0
+        )
         val config = AppConfig(
             KrakenCredentials("k", "s"),
             settings,
-            listOf(Allocation(KrakenSymbols.USD, 100.0))
+            listOf(Allocation(
+                KrakenSymbols.USD,
+                100.0
+            ))
         )
         objectMapper.writeValue(file, config)
     }
 
     beforeTest {
         objectMapper = jacksonObjectMapper()
-        tempFile = Files.createTempDirectory("test").resolve("test-config.json")
-            .toFile()
+        tempFile =
+            Files
+                .createTempDirectory("test")
+                .resolve("test-config.json")
+                .toFile()
         createValidConfig(tempFile)
-        configService = ConfigServiceImpl(objectMapper, tempFile.absolutePath)
+        configService =
+            ConfigServiceImpl(objectMapper, tempFile.absolutePath)
     }
 
     "loadConfig_Success" {
@@ -72,7 +86,10 @@ class ConfigServiceTest : StringSpec({
         configService.updateConfig(newConfig)
 
         configService.getConfig().allocations.size shouldBe 2
-        val readBack = objectMapper.readValue(tempFile, AppConfig::class.java)
+        val readBack = objectMapper.readValue(
+            tempFile,
+            AppConfig::class.java
+        )
         readBack.allocations.size shouldBe 2
     }
 
@@ -81,7 +98,10 @@ class ConfigServiceTest : StringSpec({
         val oldConfig = configService.getConfig()
         val invalidConfig = AppConfig(
             oldConfig.kraken, oldConfig.settings,
-            listOf(Allocation(KrakenSymbols.USD, 90.0))
+            listOf(Allocation(
+                KrakenSymbols.USD,
+                90.0
+            ))
         )
 
         shouldThrow<InvalidConfigurationException> {
@@ -96,7 +116,10 @@ class ConfigServiceTest : StringSpec({
         val oldConfig = configService.getConfig()
         val invalidConfig = AppConfig(
             oldConfig.kraken, oldConfig.settings,
-            listOf(Allocation(KrakenSymbols.BTC, 100.0))
+            listOf(Allocation(
+                KrakenSymbols.BTC,
+                100.0
+            ))
         )
 
         shouldThrow<InvalidConfigurationException> {
@@ -112,8 +135,14 @@ class ConfigServiceTest : StringSpec({
         val invalidConfig = AppConfig(
             oldConfig.kraken, oldConfig.settings,
             listOf(
-                Allocation(KrakenSymbols.BTC, 50.0),
-                Allocation(KrakenSymbols.BTC.lowercase(), 50.0)
+                Allocation(
+                    KrakenSymbols.BTC,
+                    50.0
+                ),
+                Allocation(
+                    KrakenSymbols.BTC.lowercase(),
+                    50.0
+                )
             )
         )
 
@@ -130,8 +159,14 @@ class ConfigServiceTest : StringSpec({
         val invalidConfig = AppConfig(
             oldConfig.kraken, oldConfig.settings,
             listOf(
-                Allocation(KrakenSymbols.USD, 110.0),
-                Allocation(KrakenSymbols.BTC, -10.0)
+                Allocation(
+                    KrakenSymbols.USD,
+                    110.0
+                ),
+                Allocation(
+                    KrakenSymbols.BTC,
+                    -10.0
+                )
             )
         )
 
@@ -162,7 +197,13 @@ class ConfigServiceTest : StringSpec({
         val oldConfig = configService.getConfig()
         val invalidConfig = AppConfig(
             oldConfig.kraken, oldConfig.settings,
-            listOf(Allocation(KrakenSymbols.USD, 50.0), Allocation("  ", 50.0))
+            listOf(Allocation(
+                KrakenSymbols.USD,
+                50.0
+            ), Allocation(
+                "  ",
+                50.0
+            ))
         )
 
         shouldThrow<InvalidConfigurationException> {
@@ -253,8 +294,18 @@ class ConfigServiceTest : StringSpec({
             )
         } returns AppConfig(
             KrakenCredentials("a", "b"),
-            Settings(1, 1.0, 1.0, true, 0.0, 1.0),
-            listOf(Allocation(KrakenSymbols.USD, 100.0))
+            Settings(
+                1,
+                1.0,
+                1.0,
+                true,
+                0.0,
+                1.0
+            ),
+            listOf(Allocation(
+                KrakenSymbols.USD,
+                100.0
+            ))
         )
         every {
             mockWriter.writeValue(
@@ -263,14 +314,27 @@ class ConfigServiceTest : StringSpec({
             )
         } throws IOException("Write error")
 
-        configService = ConfigServiceImpl(mockMapper, tempFile.absolutePath)
+        configService = ConfigServiceImpl(
+            mockMapper,
+            tempFile.absolutePath
+        )
 
         shouldThrow<RuntimeException> {
             configService.updateConfig(
                 AppConfig(
                     KrakenCredentials("a", "b"),
-                    Settings(1, 1.0, 1.0, true, 0.0, 1.0),
-                    listOf(Allocation(KrakenSymbols.USD, 100.0))
+                    Settings(
+                        1,
+                        1.0,
+                        1.0,
+                        true,
+                        0.0,
+                        1.0
+                    ),
+                    listOf(Allocation(
+                        KrakenSymbols.USD,
+                        100.0
+                    ))
                 )
             )
         }

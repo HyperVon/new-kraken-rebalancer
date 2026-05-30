@@ -31,7 +31,7 @@ dependencies {
     implementation("org.jetbrains.kotlin:kotlin-reflect")
 
     // Jackson BOM — pins jackson-core & jackson-databind to a secure, explicit version
-    implementation(platform("com.fasterxml.jackson:jackson-bom:2.21.3"))
+    implementation(platform("com.fasterxml.jackson:jackson-bom:2.21.4"))
 
     // Koin
     var koinVersion = "4.2.1"
@@ -65,7 +65,7 @@ dependencies {
     testImplementation("io.ktor:ktor-server-test-host:$ktorVersion")
     testImplementation("io.ktor:ktor-client-mock:$ktorVersion")
     testImplementation("io.insert-koin:koin-test:${koinVersion}")
-    testImplementation("io.mockk:mockk:1.14.9")
+    testImplementation("io.mockk:mockk:1.14.11")
     testImplementation("io.kotest:kotest-runner-junit5:${koTestVersion}")
     testImplementation("io.kotest:kotest-assertions-core:${koTestVersion}")
 }

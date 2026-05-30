@@ -37,12 +37,25 @@ class PortfolioManagerDogeTest : StringSpec() {
 
         "testDogeMapping" {
             runTest {
-                val settings = Settings(60L, 2.0, 1.0, true, 0.0, 1.0)
+                val settings = Settings(
+                    60L,
+                    2.0,
+                    1.0,
+                    true,
+                    0.0,
+                    1.0
+                )
                 val config = AppConfig(
                     KrakenCredentials("k", "s"), settings,
                     listOf(
-                        Allocation(KrakenSymbols.DOGE, 50.0),
-                        Allocation(KrakenSymbols.USD, 50.0)
+                        Allocation(
+                            KrakenSymbols.DOGE,
+                            50.0
+                        ),
+                        Allocation(
+                            KrakenSymbols.USD,
+                            50.0
+                        )
                     )
                 )
                 every { configService.getConfig() } returns config
@@ -65,12 +78,25 @@ class PortfolioManagerDogeTest : StringSpec() {
 
         "testBtcMapping" {
             runTest {
-                val settings = Settings(60L, 2.0, 1.0, true, 0.0, 1.0)
+                val settings = Settings(
+                    60L,
+                    2.0,
+                    1.0,
+                    true,
+                    0.0,
+                    1.0
+                )
                 val config = AppConfig(
                     KrakenCredentials("k", "s"), settings,
                     listOf(
-                        Allocation(KrakenSymbols.BTC, 50.0),
-                        Allocation(KrakenSymbols.USD, 50.0)
+                        Allocation(
+                            KrakenSymbols.BTC,
+                            50.0
+                        ),
+                        Allocation(
+                            KrakenSymbols.USD,
+                            50.0
+                        )
                     )
                 )
                 every { configService.getConfig() } returns config
@@ -78,7 +104,8 @@ class PortfolioManagerDogeTest : StringSpec() {
                 krakenService.balanceSupplier =
                     { mapOf("XXBT" to 1.0, "ZUSD" to 50000.0) }
                 krakenService.pricesSupplier = { pairs ->
-                    if (pairs.contains("XXBTZUSD") || pairs.contains("XBTUSD"))
+                    if (pairs.contains("XXBTZUSD") ||
+                        pairs.contains("XBTUSD"))
                         mapOf("XXBTZUSD" to 50000.0)
                     else emptyMap()
                 }

@@ -14,6 +14,7 @@ import com.gemini.krakenbot.view.util.FormFields
 import com.gemini.krakenbot.view.util.HtmxHeaders
 import com.gemini.krakenbot.view.util.Routes
 import com.gemini.krakenbot.view.util.ViewText
+import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
@@ -27,6 +28,8 @@ import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
 import io.mockk.verify
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.flow.toList
 import org.koin.core.context.startKoin
@@ -37,8 +40,7 @@ import java.time.Instant
 
 class DashboardControllerTest : StringSpec() {
 
-    override fun isolationMode() =
-        io.kotest.core.spec.IsolationMode.InstancePerTest
+    override fun isolationMode() = IsolationMode.InstancePerTest
 
     private val tradeHistoryService = mockk<TradeHistoryService>(relaxed = true)
     private val configService = mockk<ConfigService>(relaxed = true)
@@ -61,8 +63,17 @@ class DashboardControllerTest : StringSpec() {
             single { AllocationChartComponent() }
             single { PerformanceTableComponent() }
             single { RecentActivityComponent() }
-            single { DashboardFragmentComponent(get(), get(), get(), get()) }
-            single { DashboardView(get(), get(), get()) }
+            single { DashboardFragmentComponent(
+                get(),
+                get(),
+                get(),
+                get()
+            ) }
+            single { DashboardView(
+                get(),
+                get(),
+                get()
+            ) }
         }
 
         beforeTest {
@@ -180,8 +191,18 @@ class DashboardControllerTest : StringSpec() {
         "getSettingsPage_ReturnsSettingsForm" {
             val config = AppConfig(
                 KrakenCredentials("real-api-key", "real-private-key"),
-                Settings(60L, 2.0, 1.0, true, 0.0, 1.0),
-                listOf(Allocation(KrakenSymbols.USD, 100.0))
+                Settings(
+                    60L,
+                    2.0,
+                    1.0,
+                    true,
+                    0.0,
+                    1.0
+                ),
+                listOf(Allocation(
+                    KrakenSymbols.USD,
+                    100.0
+                ))
             )
             every { configService.getConfig() } returns config
 
@@ -203,8 +224,18 @@ class DashboardControllerTest : StringSpec() {
                     TestFixtures.TEST_SERVER_API_KEY,
                     TestFixtures.TEST_SERVER_API_SECRET
                 ),
-                Settings(60L, 2.0, 1.0, true, 0.0, 1.0),
-                listOf(Allocation(KrakenSymbols.USD, 100.0))
+                Settings(
+                    60L,
+                    2.0,
+                    1.0,
+                    true,
+                    0.0,
+                    1.0
+                ),
+                listOf(Allocation(
+                    KrakenSymbols.USD,
+                    100.0
+                ))
             )
             every { configService.getConfig() } returns serverConfig
 
@@ -243,8 +274,18 @@ class DashboardControllerTest : StringSpec() {
                     TestFixtures.TEST_SERVER_API_KEY,
                     TestFixtures.TEST_SERVER_API_SECRET
                 ),
-                Settings(60L, 2.0, 1.0, true, 0.0, 1.0),
-                listOf(Allocation(KrakenSymbols.USD, 100.0))
+                Settings(
+                    60L,
+                    2.0,
+                    1.0,
+                    true,
+                    0.0,
+                    1.0
+                ),
+                listOf(Allocation(
+                    KrakenSymbols.USD,
+                    100.0
+                ))
             )
             every { configService.getConfig() } returns serverConfig
             every { configService.updateConfig(any()) } throws InvalidConfigurationException(
@@ -314,12 +355,24 @@ class DashboardControllerTest : StringSpec() {
                     TestFixtures.TEST_SERVER_API_KEY,
                     TestFixtures.TEST_SERVER_API_SECRET
                 ),
-                Settings(60L, 2.0, 1.0, true, 0.0, 1.0),
-                listOf(Allocation(KrakenSymbols.USD, 100.0))
+                Settings(
+                    60L,
+                    2.0,
+                    1.0,
+                    true,
+                    0.0,
+                    1.0
+                ),
+                listOf(Allocation(
+                    KrakenSymbols.USD,
+                    100.0
+                ))
             )
             every { configService.getConfig() } returns serverConfig
             val capturedConfig = slot<AppConfig>()
-            every { configService.updateConfig(capture(capturedConfig)) } throws InvalidConfigurationException(
+            every {
+                configService.updateConfig(capture(capturedConfig))
+            } throws InvalidConfigurationException(
                 "Mocked validation error"
             )
 
@@ -371,12 +424,24 @@ class DashboardControllerTest : StringSpec() {
                     TestFixtures.TEST_SERVER_API_KEY,
                     TestFixtures.TEST_SERVER_API_SECRET
                 ),
-                Settings(60L, 2.0, 1.0, true, 0.0, 1.0),
-                listOf(Allocation(KrakenSymbols.USD, 100.0))
+                Settings(
+                    60L,
+                    2.0,
+                    1.0,
+                    true,
+                    0.0,
+                    1.0
+                ),
+                listOf(Allocation(
+                    KrakenSymbols.USD,
+                    100.0
+                ))
             )
             every { configService.getConfig() } returns serverConfig
             val capturedConfig = slot<AppConfig>()
-            every { configService.updateConfig(capture(capturedConfig)) } throws InvalidConfigurationException(
+            every {
+                configService.updateConfig(capture(capturedConfig))
+            } throws InvalidConfigurationException(
                 null
             )
 
@@ -427,9 +492,7 @@ class DashboardControllerTest : StringSpec() {
             )
 
             every { tradeHistoryService.getLatestSnapshot() } returns snapshot1
-            every { tradeHistoryService.getHistoryFlow() } returns kotlinx.coroutines.flow.flowOf(
-                snapshot2
-            )
+            every { tradeHistoryService.getHistoryFlow() } returns flowOf(snapshot2)
 
             testApplication {
                 val client = createClient {
@@ -452,7 +515,7 @@ class DashboardControllerTest : StringSpec() {
 
         "sseStatusStream_HandlesCancellationException" {
             every { tradeHistoryService.getLatestSnapshot() } returns null
-            every { tradeHistoryService.getHistoryFlow() } returns kotlinx.coroutines.flow.flow {
+            every { tradeHistoryService.getHistoryFlow() } returns flow {
                 throw kotlinx.coroutines.CancellationException("Simulated cancel")
             }
 
@@ -475,7 +538,7 @@ class DashboardControllerTest : StringSpec() {
 
         "sseStatusStream_HandlesGenericExceptionGracefully" {
             every { tradeHistoryService.getLatestSnapshot() } returns null
-            every { tradeHistoryService.getHistoryFlow() } returns kotlinx.coroutines.flow.flow {
+            every { tradeHistoryService.getHistoryFlow() } returns flow {
                 throw RuntimeException("Simulated error")
             }
 

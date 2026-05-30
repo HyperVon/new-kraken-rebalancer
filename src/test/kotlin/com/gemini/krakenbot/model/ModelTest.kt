@@ -42,7 +42,14 @@ class ModelTest : StringSpec({
     }
 
     "testSettings" {
-        val settings = Settings(60, 2.0, 1.0, true, 50.0, 1.0)
+        val settings = Settings(
+            60,
+            2.0,
+            1.0,
+            true,
+            50.0,
+            1.0
+        )
         val settings5 = settings.copy()
         settings5 shouldBe settings
         settings.hashCode() shouldBe settings5.hashCode()

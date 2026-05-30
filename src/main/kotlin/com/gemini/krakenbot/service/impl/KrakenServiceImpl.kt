@@ -25,26 +25,32 @@ class KrakenServiceImpl(
     private val httpClient: HttpClient
 ) : KrakenService {
 
-    private val log = LoggerFactory.getLogger(KrakenServiceImpl::class.java)
+    private val log =
+        LoggerFactory.getLogger(KrakenServiceImpl::class.java)
     private val apiUrl = "https://api.kraken.com"
     private val apiVersion = "0"
-    private val nonceGenerator = AtomicLong(System.currentTimeMillis() * 1000)
+    private val nonceGenerator =
+        AtomicLong(System.currentTimeMillis() * 1000)
 
     override suspend fun getBalances(): Map<String, Double> {
         val path = "/$apiVersion/private/Balance"
         val response = queryPrivate(path, emptyMap())
-        return response.properties().associate { (key, value) ->
-            key to value.asDouble()
-        }
+        return response.properties()
+            .associate { (key, value) ->
+                key to value.asDouble()
+            }
     }
 
     override suspend fun getTickerPrices(pairs: String): Map<String, Double> {
         val path = "/$apiVersion/public/Ticker?pair=$pairs"
         val result = queryPublic(path).path("result")
-        return result.properties().mapNotNull { (key, value) ->
-            val c = value.path("c")
-            if (c.isArray && !c.isEmpty) key to c.get(0).asDouble() else null
-        }.toMap()
+        return result.properties()
+            .mapNotNull { (key, value) ->
+                val c = value.path("c")
+                if (c.isArray && !c.isEmpty) key to c.get(0)
+                    .asDouble() else null
+            }
+            .toMap()
     }
 
     override suspend fun executeOrder(
@@ -54,7 +60,10 @@ class KrakenServiceImpl(
         volume: BigDecimal
     ): OrderResult {
         val normalizedVolume =
-            volume.setScale(8, RoundingMode.HALF_UP).stripTrailingZeros()
+            volume.setScale(
+                8,
+                RoundingMode.HALF_UP
+            ).stripTrailingZeros()
 
         if (configService.getConfig().settings.dryRun) {
             log.info(
@@ -114,14 +123,16 @@ class KrakenServiceImpl(
         val responseBody = httpClient.get(apiUrl + path).bodyAsText()
         try {
             val root: JsonNode = objectMapper.readTree(responseBody)
-            if (root.has("error") && !root.path("error").isEmpty) {
+            if (root.has("error") &&
+                !root.path("error").isEmpty) {
                 log.error(
                     "Kraken Public API Error for path {}: {}",
                     path,
                     root.path("error")
                 )
                 throw RuntimeException(
-                    "Kraken Public API Error: " + root.path("error").toString()
+                    "Kraken Public API Error: " +
+                            root.path("error").toString()
                 )
             }
             return root
@@ -143,7 +154,9 @@ class KrakenServiceImpl(
             payload["nonce"] = nonce
 
             val postData =
-                payload.entries.joinToString("&") { "${it.key}=${it.value}" }
+                payload.entries.joinToString("&") {
+                    "${it.key}=${it.value}"
+                }
             val signature = signRequest(path, nonce, postData)
 
             val apiKey = configService.getConfig().kraken.apiKey

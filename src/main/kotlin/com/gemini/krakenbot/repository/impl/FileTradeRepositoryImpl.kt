@@ -19,7 +19,11 @@ class FileTradeRepositoryImpl(
 
     override fun save(history: List<PortfolioSnapshot>) {
         try {
-            AtomicJsonFile.write(objectMapper, File(filePath), history)
+            AtomicJsonFile.write(
+                objectMapper,
+                File(filePath),
+                history
+            )
         } catch (e: IOException) {
             log.error("Failed to save trade history to {}", filePath, e)
             throw e

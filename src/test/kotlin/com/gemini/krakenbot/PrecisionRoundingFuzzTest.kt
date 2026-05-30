@@ -35,7 +35,14 @@ class PrecisionRoundingFuzzTest : StringSpec() {
                     Base64.getEncoder().encodeToString("secret".toByteArray())
                 val appConfig = AppConfig(
                     KrakenCredentials("apiKey", validSecret),
-                    Settings(60L, 2.0, 1.0, false, 50.0, 1.0),
+                    Settings(
+                        60L,
+                        2.0,
+                        1.0,
+                        false,
+                        50.0,
+                        1.0
+                    ),
                     listOf(
                         Allocation(KrakenSymbols.BTC, 50.0),
                         Allocation(KrakenSymbols.USD, 50.0)
@@ -51,7 +58,8 @@ class PrecisionRoundingFuzzTest : StringSpec() {
                     when (request.url.encodedPath) {
                         "/0/private/Balance" -> {
                             respond(
-                                content = "{\"error\":[],\"result\":{\"XXBT\":0.3333333333333333,\"ZUSD\":31415.9265358979323846}}",
+                                content =
+                                    "{\"error\":[],\"result\":{\"XXBT\":0.3333333333333333,\"ZUSD\":31415.9265358979323846}}",
                                 status = HttpStatusCode.OK,
                                 headers = headersOf(
                                     HttpHeaders.ContentType,
@@ -75,7 +83,8 @@ class PrecisionRoundingFuzzTest : StringSpec() {
                             capturedOrderPayload =
                                 (request.body as io.ktor.http.content.TextContent).text
                             respond(
-                                content = "{\"error\":[],\"result\":{\"descr\":{\"order\":\"buy\"},\"txid\":[\"TX-1\"]}}",
+                                content =
+                                    "{\"error\":[],\"result\":{\"descr\":{\"order\":\"buy\"},\"txid\":[\"TX-1\"]}}",
                                 status = HttpStatusCode.OK,
                                 headers = headersOf(
                                     HttpHeaders.ContentType,

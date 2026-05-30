@@ -25,7 +25,6 @@ import kotlinx.html.p
 import kotlinx.html.stream.createHTML
 import org.koin.ktor.ext.inject
 
-@Suppress("GrazieInspection")
 fun Application.dashboardRouting() {
     val tradeHistoryService: TradeHistoryService by inject()
     val configService: ConfigService by inject()
@@ -171,7 +170,7 @@ private suspend fun ServerSSESession.handleSseStream(
         }
     } catch (e: kotlinx.coroutines.CancellationException) {
         throw e
-    } catch (e: Exception) {
+    } catch (_: Exception) {
         // Handle client disconnect / closed channel gracefully without logging annoying stack traces
     }
 }
