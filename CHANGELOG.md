@@ -8,6 +8,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [3.1.3] - 2026-05-30
+
+### Changed
+
+- **Extracted Icon SVGs**: Moved large, hardcoded SVG string constants out of `Icons.kt` and into dedicated `.svg` files within the `src/main/resources/icons` directory, loaded dynamically at runtime via the classpath.
+
+---
+
 ## [3.1.2] - 2026-05-30
 
 ### Fixed
