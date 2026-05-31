@@ -99,6 +99,7 @@ tasks.jacocoTestReport {
 }
 
 tasks.jacocoTestCoverageVerification {
+    dependsOn(tasks.classes)
     classDirectories.setFrom(
         files(classDirectories.files.map {
             fileTree(it) {

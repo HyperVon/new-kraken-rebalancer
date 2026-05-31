@@ -8,6 +8,15 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [3.1.2] - 2026-05-30
+
+### Fixed
+
+- **Kraken API Nonce Collision**: Fixed an issue where switching application environments caused an `EAPI:Invalid nonce` error. Upgraded the retry mechanism in `KrakenServiceImpl` to use an exponentially increasing bump to successfully bridge significant machine-to-machine clock skew.
+- **Gradle Build Configuration**: Fixed a configuration issue with `jacocoTestCoverageVerification` in `build.gradle.kts` by adding an explicit dependency on `tasks.classes`, resolving build failures.
+
+---
+
 ## [3.1.1] - 2026-05-30
 
 ### Added

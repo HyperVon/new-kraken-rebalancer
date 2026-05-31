@@ -174,12 +174,14 @@ class KrakenServiceImpl(
                 if (!root.path("error").isEmpty) {
                     val errorMsg = root.path("error").toString()
                     if (errorMsg.contains("Invalid nonce") && retryCount < maxRetries) {
+                        val bumpAmount = 100_000_000L * (1L shl retryCount)
                         log.warn(
-                            "Invalid nonce detected. Adjusting nonce generator and retrying (Attempt {}/{})",
+                            "Invalid nonce detected. Adjusting nonce generator by {} and retrying (Attempt {}/{})",
+                            bumpAmount,
                             retryCount + 1,
                             maxRetries
                         )
-                        nonceGenerator.addAndGet(5000) // jump ahead to resolve collisions
+                        nonceGenerator.addAndGet(bumpAmount) // jump ahead to resolve collisions
                         retryCount++
                         continue
                     }
