@@ -1,12 +1,14 @@
 name: "CodeQL Advanced"
 
-on:
-  push:
-    branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
-  schedule:
-    - cron: '0 0 * * 0'
+# Disable CodeQL analysis because Kotlin 2.4.0 is not yet supported by CodeQL.
+# To re-enable when Kotlin 2.4.0+ is supported, uncomment the triggers below.
+# on:
+#   push:
+#     branches: [ "main" ]
+#   pull_request:
+#     branches: [ "main" ]
+#   schedule:
+#     - cron: '0 0 * * 0'
 
 permissions:
   actions: read
