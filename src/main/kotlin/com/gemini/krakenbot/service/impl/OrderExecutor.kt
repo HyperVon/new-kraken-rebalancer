@@ -1,10 +1,9 @@
 package com.gemini.krakenbot.service.impl
 
 import com.gemini.krakenbot.config.Settings
-import com.gemini.krakenbot.model.OrderResult
-import com.gemini.krakenbot.service.ConfigService
-import com.gemini.krakenbot.service.KrakenService
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.OrderResult
+import com.gemini.krakenbot.service.KrakenService
 import kotlinx.coroutines.delay
 import org.slf4j.LoggerFactory
 import java.math.BigDecimal

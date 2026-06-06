@@ -4,8 +4,8 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.databind.ObjectWriter
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.gemini.krakenbot.config.*
-import com.gemini.krakenbot.service.impl.ConfigServiceImpl
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.service.impl.ConfigServiceImpl
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.booleans.shouldBeTrue

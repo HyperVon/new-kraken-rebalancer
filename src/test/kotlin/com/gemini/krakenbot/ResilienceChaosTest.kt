@@ -5,6 +5,7 @@ import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.config.Settings
+import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.TradeHistoryService
@@ -12,7 +13,6 @@ import com.gemini.krakenbot.service.impl.KrakenServiceImpl
 import com.gemini.krakenbot.service.impl.OrderExecutor
 import com.gemini.krakenbot.service.impl.PortfolioAnalyzer
 import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
-import com.gemini.krakenbot.model.Asset
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec

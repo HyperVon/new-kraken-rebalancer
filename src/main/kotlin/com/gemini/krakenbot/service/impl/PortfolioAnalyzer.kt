@@ -1,10 +1,10 @@
 package com.gemini.krakenbot.service.impl
 
 import com.gemini.krakenbot.config.Settings
+import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.KrakenService
-import com.gemini.krakenbot.model.Asset
 import org.slf4j.LoggerFactory
 import java.math.BigDecimal
 import java.math.RoundingMode

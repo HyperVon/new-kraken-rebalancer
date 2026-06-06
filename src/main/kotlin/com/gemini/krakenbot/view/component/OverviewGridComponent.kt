@@ -1,7 +1,7 @@
 package com.gemini.krakenbot.view.component
 
-import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.view.util.CssClasses.OVERVIEW_GRID
 import com.gemini.krakenbot.view.util.CssClasses.TEXT_DANGER
 import com.gemini.krakenbot.view.util.Formatter.formatCurrency

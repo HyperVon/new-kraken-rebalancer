@@ -1,11 +1,9 @@
 package com.gemini.krakenbot.service.impl
 
 import com.gemini.krakenbot.model.PortfolioSnapshot
-import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.PortfolioManager
 import com.gemini.krakenbot.service.TradeHistoryService
-
 import kotlinx.coroutines.delay
 import org.slf4j.LoggerFactory
 import java.io.IOException

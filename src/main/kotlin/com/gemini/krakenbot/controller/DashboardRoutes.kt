@@ -1,5 +1,13 @@
 package com.gemini.krakenbot.controller
 
+import com.fasterxml.jackson.databind.ObjectMapper
+import com.gemini.krakenbot.config.Allocation
+import com.gemini.krakenbot.config.AppConfig
+import com.gemini.krakenbot.config.InvalidConfigurationException
+import com.gemini.krakenbot.config.Settings
+import com.gemini.krakenbot.service.ConfigService
+import com.gemini.krakenbot.service.TradeHistoryService
+import com.gemini.krakenbot.view.DashboardView
 import com.gemini.krakenbot.view.util.*
 import io.ktor.http.*
 import io.ktor.server.application.*
@@ -10,13 +18,10 @@ import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import io.ktor.server.sse.*
 import io.ktor.sse.*
-import com.fasterxml.jackson.databind.ObjectMapper
-import com.gemini.krakenbot.config.*
-import com.gemini.krakenbot.model.Asset
-import com.gemini.krakenbot.service.ConfigService
-import com.gemini.krakenbot.service.TradeHistoryService
-import com.gemini.krakenbot.view.DashboardView
-import kotlinx.html.*
+import kotlinx.html.div
+import kotlinx.html.h2
+import kotlinx.html.html
+import kotlinx.html.p
 import kotlinx.html.stream.createHTML
 import org.koin.ktor.ext.inject
 

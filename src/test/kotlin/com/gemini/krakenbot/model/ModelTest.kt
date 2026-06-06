@@ -1,7 +1,6 @@
 package com.gemini.krakenbot.model
 
 import com.gemini.krakenbot.config.Settings
-import com.gemini.krakenbot.model.Asset
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe

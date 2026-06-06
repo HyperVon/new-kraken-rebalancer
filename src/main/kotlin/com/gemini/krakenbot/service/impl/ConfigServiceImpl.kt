@@ -5,7 +5,6 @@ import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.InvalidConfigurationException
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.util.AtomicJsonFile
-import com.gemini.krakenbot.model.Asset
 import java.io.File
 import java.io.IOException
 import kotlin.math.abs
