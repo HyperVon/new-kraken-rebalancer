@@ -296,7 +296,7 @@ with `BigDecimal.compareTo()` to avoid floating-point comparison issues.
 ./gradlew test
 ```
 
-**137 tests** across:
+**138 tests** across:
 
 - `KrakenE2ETest` / `ResilienceChaosTest` / `PrecisionRoundingFuzzTest` /
   `SerializationParityTest` — advanced E2E black-box and fuzz testing
@@ -323,6 +323,7 @@ with `BigDecimal.compareTo()` to avoid floating-point comparison issues.
 
 ### Test Design Principles
 
+- **Class Initializers**: All test suites are structured using standard class body `init { ... }` blocks (e.g., `class ExampleTest : StringSpec() { init { ... } }`) instead of constructor lambdas, making them fully compatible with build runners and IDE test discovery tools.
 - **`FakeKrakenService`** — an in-process test double for `KrakenService` used
   by all `PortfolioManager` tests. Avoids fragile `coEvery` stubbing of
   `suspend` functions in concurrent coroutine contexts.
