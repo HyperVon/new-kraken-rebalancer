@@ -17,7 +17,7 @@ several months.**
 
 | Layer           | Technology                                                                                           |
 |-----------------|------------------------------------------------------------------------------------------------------|
-| **Language**    | Kotlin 2.x (JVM)                                                                                     |
+| **Language**    | Kotlin 2.4.0 (JVM)                                                                                   |
 | **Backend**     | Ktor 3.5.0 (Netty engine), Koin 4.2.1 (DI), Jackson 2.21                                             |
 | **HTTP Client** | Ktor CIO Client (async, coroutine-native)                                                            |
 | **Concurrency** | Kotlin Coroutines (`kotlinx.coroutines` 1.11.0)                                                      |
@@ -200,7 +200,7 @@ architecture to synchronize the dashboard with the backend rebalancing loop:
 │   │   ├── DashboardView.kt              # Facade class delegating to components
 │   │   ├── component/                    # Modular components (Shell, Grid, Form, etc.)
 │   │   └── util/                         # View utilities (Formatter, Icons, ViewText, Layouts)
-│   └── util/                              # Utilities: AtomicJsonFile, KrakenSymbols
+│   └── util/                              # Utilities: AtomicJsonFile
 ├── src/test/kotlin/                       # Unit tests (100% overall coverage achieved across all packages and metrics)
 │   └── com/gemini/krakenbot/
 │       └── service/
@@ -296,7 +296,7 @@ with `BigDecimal.compareTo()` to avoid floating-point comparison issues.
 ./gradlew test
 ```
 
-**137 tests** across:
+**138 tests** across:
 
 - `KrakenE2ETest` / `ResilienceChaosTest` / `PrecisionRoundingFuzzTest` /
   `SerializationParityTest` — advanced E2E black-box and fuzz testing
@@ -311,7 +311,7 @@ with `BigDecimal.compareTo()` to avoid floating-point comparison issues.
 - `PortfolioManagerDogeTest` — Kraken symbol mapping quirks (BTC→XBT, DOGE→XDG)
 - `KrakenServiceTest` — API signing, error handling, dry run, order failure (
   using Ktor `MockEngine`)
-- `KrakenSymbolsTest` — ticker mapping and trading pair construction
+- `ModelTest` — unit tests for models including `Asset` mapping
 - `AtomicJsonFileTest` — file-system atomic write verification under normal and
   error/unsupported paths
 - `ConfigServiceTest` — validation, hot-reload, persistence, duplicate/blank
@@ -323,6 +323,7 @@ with `BigDecimal.compareTo()` to avoid floating-point comparison issues.
 
 ### Test Design Principles
 
+- **Class Initializers**: All test suites are structured using standard class body `init { ... }` blocks (e.g., `class ExampleTest : StringSpec() { init { ... } }`) instead of constructor lambdas, making them fully compatible with build runners and IDE test discovery tools. `@Suppress("unused")` is applied where IDE static analysis triggers warnings because Kotest loads specs dynamically via reflection.
 - **`FakeKrakenService`** — an in-process test double for `KrakenService` used
   by all `PortfolioManager` tests. Avoids fragile `coEvery` stubbing of
   `suspend` functions in concurrent coroutine contexts.

@@ -16,12 +16,14 @@ class DashboardView(
     private val fragmentComponent: DashboardFragmentComponent
 ) {
 
-    fun HTML.renderDashboardShell() {
-        with(shellComponent) { render() }
+    context(html: HTML)
+    fun renderDashboardShell() {
+        shellComponent.render()
     }
 
-    fun HTML.renderSettingsPage(config: AppConfig, errorMessage: String?) {
-        head {
+    context(html: HTML)
+    fun renderSettingsPage(config: AppConfig, errorMessage: String?) {
+        html.head {
             meta(charset = "utf-8")
             meta(
                 name = "viewport",
@@ -31,16 +33,17 @@ class DashboardView(
             link(rel = "stylesheet", href = STATIC_STYLE_CSS)
             script(src = "https://unpkg.com/htmx.org@2.0.4") {}
         }
-        body {
-            with(settingsFormComponent) { render(config, errorMessage) }
+        html.body {
+            settingsFormComponent.render(config, errorMessage)
         }
     }
 
-    fun DIV.renderDashboardFragment(
+    context(div: DIV)
+    fun renderDashboardFragment(
         latest: PortfolioSnapshot,
         history: List<PortfolioSnapshot>
     ) {
-        with(fragmentComponent) { render(latest, history) }
+        fragmentComponent.render(latest, history)
     }
 }
 

@@ -4,12 +4,12 @@ import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.config.Settings
+import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.PortfolioStats
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.service.impl.OrderExecutor
 import com.gemini.krakenbot.service.impl.PortfolioAnalyzer
 import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
-import com.gemini.krakenbot.util.KrakenSymbols
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
@@ -39,16 +39,16 @@ class PortfolioManagerZeroAllocationTest : StringSpec() {
                 BigDecimal.ZERO
             )
             portfolioAnalyzer = PortfolioAnalyzer(
-                krakenService,
-                configService,
-                portfolioStatsRepository
+                krakenService = krakenService,
+                configService = configService,
+                portfolioStatsRepository = portfolioStatsRepository
             )
             orderExecutor = OrderExecutor(krakenService, portfolioAnalyzer)
             portfolioManager = PortfolioManagerImpl(
-                configService,
-                tradeHistoryService,
-                portfolioAnalyzer,
-                orderExecutor
+                configService = configService,
+                tradeHistoryService = tradeHistoryService,
+                portfolioAnalyzer = portfolioAnalyzer,
+                orderExecutor = orderExecutor
             )
         }
 
@@ -74,7 +74,7 @@ class PortfolioManagerZeroAllocationTest : StringSpec() {
                 val balances = mapOf(
                     "A" to 10.0,
                     "B" to 0.0,
-                    KrakenSymbols.USD to 100.0
+                    Asset.USD to 100.0
                 )
                 krakenService.balanceSupplier = { balances }
 

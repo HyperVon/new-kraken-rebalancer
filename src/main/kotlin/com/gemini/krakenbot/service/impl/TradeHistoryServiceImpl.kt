@@ -27,21 +27,16 @@ class TradeHistoryServiceImpl(
     override fun addSnapshot(snapshot: PortfolioSnapshot) {
         history.add(0, snapshot)
         if (history.size > maxHistorySize) {
-            history.removeAt(history.size - 1)
+            history.removeLast()
         }
         repository.save(ArrayList(history))
         snapshotFlow.tryEmit(snapshot)
     }
 
-    override fun getHistory(): List<PortfolioSnapshot> {
-        return ArrayList(history)
-    }
+    override fun getHistory(): List<PortfolioSnapshot> = ArrayList(history)
 
-    override fun getLatestSnapshot(): PortfolioSnapshot? {
-        return history.firstOrNull()
-    }
+    override fun getLatestSnapshot(): PortfolioSnapshot? = history.firstOrNull()
 
-    override fun getHistoryFlow(): Flow<PortfolioSnapshot> {
-        return snapshotFlow.asSharedFlow()
-    }
+    override fun getHistoryFlow(): Flow<PortfolioSnapshot> =
+        snapshotFlow.asSharedFlow()
 }

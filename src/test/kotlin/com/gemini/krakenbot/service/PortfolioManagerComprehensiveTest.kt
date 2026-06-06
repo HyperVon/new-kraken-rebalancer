@@ -4,13 +4,13 @@ import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.config.Settings
+import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderResult
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.service.impl.OrderExecutor
 import com.gemini.krakenbot.service.impl.PortfolioAnalyzer
 import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
-import com.gemini.krakenbot.util.KrakenSymbols
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.booleans.shouldBeTrue
@@ -40,32 +40,32 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
      * default settings (2% deviation, 1 USD dust).
      * */
     private fun makeConfig(vararg allocs: Allocation) = AppConfig(
-        KrakenCredentials("k", "s"),
-        Settings(
-            60L,
-            2.0,
-            1.0,
-            false,
-            0.0,
-            1.0
+        kraken = KrakenCredentials(apiKey = "k", privateKey = "s"),
+        settings = Settings(
+            loopDelaySeconds = 60L,
+            deviationTriggerPercent = 2.0,
+            dustThresholdUSD = 1.0,
+            dryRun = false,
+            fiatMaxDrawdown = 0.0,
+            fiatDeploymentExponent = 1.0
         ),
-        allocs.toList()
+        allocations = allocs.toList()
     )
 
     init {
         beforeTest {
             krakenService.executedOrders.clear()
             portfolioAnalyzer = PortfolioAnalyzer(
-                krakenService,
-                configService,
-                portfolioStatsRepository
+                krakenService = krakenService,
+                configService = configService,
+                portfolioStatsRepository = portfolioStatsRepository
             )
             orderExecutor = OrderExecutor(krakenService, portfolioAnalyzer)
             portfolioManager = PortfolioManagerImpl(
-                configService,
-                tradeHistoryService,
-                portfolioAnalyzer,
-                orderExecutor
+                configService = configService,
+                tradeHistoryService = tradeHistoryService,
+                portfolioAnalyzer = portfolioAnalyzer,
+                orderExecutor = orderExecutor
             )
         }
 
@@ -118,7 +118,7 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
                 every { configService.getConfig() } returns makeConfig(
                     Allocation("A", 40.0),
                     Allocation("B", 40.0),
-                    Allocation(KrakenSymbols.USD, 20.0)
+                    Allocation(Asset.USD, 20.0)
                 )
                 krakenService.pricesSupplier =
                     { mapOf("AUSD" to 100.0, "BUSD" to 100.0) }
@@ -126,7 +126,7 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
                     mapOf(
                         "A" to 4.0,
                         "B" to 4.0,
-                        KrakenSymbols.USD to 1200.0
+                        Asset.USD to 1200.0
                     )
                 }
 
@@ -157,7 +157,7 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
                 krakenService.pricesSupplier =
                     { mapOf("AUSD" to 100.0, "BUSD" to 100.0) }
                 krakenService.balanceSupplier =
-                    { mapOf("A" to 5.0, "B" to 0.0, KrakenSymbols.USD to 0.0) }
+                    { mapOf("A" to 5.0, "B" to 0.0, Asset.USD to 0.0) }
 
                 portfolioManager.performRebalanceCycle()
 
@@ -206,13 +206,13 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
                         0.0
                     ),
                     Allocation(
-                        KrakenSymbols.USD,
+                        Asset.USD,
                         100.0
                     )
                 )
                 krakenService.pricesSupplier = { mapOf("AUSD" to 100.0) }
                 krakenService.balanceSupplier =
-                    { mapOf("A" to 10.0, KrakenSymbols.USD to 0.0) }
+                    { mapOf("A" to 10.0, Asset.USD to 0.0) }
 
                 portfolioManager.performRebalanceCycle()
 
@@ -232,13 +232,13 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
                         100.0
                     ),
                     Allocation(
-                        KrakenSymbols.USD,
+                        Asset.USD,
                         0.0
                     )
                 )
                 krakenService.pricesSupplier = { mapOf("AUSD" to 100.0) }
                 krakenService.balanceSupplier =
-                    { mapOf("A" to 0.0, KrakenSymbols.USD to 1000.0) }
+                    { mapOf("A" to 0.0, Asset.USD to 1000.0) }
 
                 portfolioManager.performRebalanceCycle()
 
@@ -258,13 +258,13 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
                         50.0
                     ),
                     Allocation(
-                        KrakenSymbols.USD,
+                        Asset.USD,
                         50.0
                     )
                 )
                 krakenService.pricesSupplier = { mapOf("AUSD" to 200.0) }
                 krakenService.balanceSupplier =
-                    { mapOf("A" to 10.0, KrakenSymbols.USD to 1000.0) }
+                    { mapOf("A" to 10.0, Asset.USD to 1000.0) }
 
                 portfolioManager.performRebalanceCycle()
 
@@ -284,7 +284,7 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
                         100.0
                     ),
                     Allocation(
-                        KrakenSymbols.USD,
+                        Asset.USD,
                         0.0
                     )
                 )
@@ -329,13 +329,13 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
                         100.0
                     ),
                     Allocation(
-                        KrakenSymbols.USD,
+                        Asset.USD,
                         0.0
                     )
                 )
                 krakenService.pricesSupplier = { mapOf("AUSD" to 100.0) }
                 krakenService.balanceSupplier =
-                    { mapOf("A" to 0.0, KrakenSymbols.USD to 1000.0) }
+                    { mapOf("A" to 0.0, Asset.USD to 1000.0) }
                 krakenService.orderResultFactory = { pair, _, side, volume ->
                     OrderResult(
                         success = false,

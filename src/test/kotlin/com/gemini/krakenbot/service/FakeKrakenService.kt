@@ -10,8 +10,8 @@ import java.math.BigDecimal
  * All suppliers and the optional [executeOrderAction] can be reassigned between tests.
  */
 class FakeKrakenService : KrakenService {
-    var balanceSupplier: () -> Map<String, Double> = { emptyMap() }
-    var pricesSupplier: (String) -> Map<String, Double> = { emptyMap() }
+    var balanceSupplier: () -> RawBalances = { emptyMap() }
+    var pricesSupplier: (String) -> RawPrices = { emptyMap() }
 
     /** If set, invoked after recording the order (may throw for legacy tests). */
     var executeOrderAction: ((String, String, String, BigDecimal) -> Unit)? =
@@ -31,12 +31,12 @@ class FakeKrakenService : KrakenService {
         val volume: BigDecimal
     )
 
-    override suspend fun getBalances(): Map<String, Double> {
+    override suspend fun getBalances(): RawBalances {
         getBalancesCallCount++
         return balanceSupplier()
     }
 
-    override suspend fun getTickerPrices(pairs: String): Map<String, Double> {
+    override suspend fun getTickerPrices(pairs: String): RawPrices {
         return pricesSupplier(pairs)
     }
 

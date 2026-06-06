@@ -5,11 +5,11 @@ import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.config.Settings
+import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.repository.impl.FileTradeRepositoryImpl
 import com.gemini.krakenbot.repository.impl.PortfolioStatsRepositoryImpl
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.impl.*
-import com.gemini.krakenbot.util.KrakenSymbols
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.booleans.shouldBeTrue
@@ -25,7 +25,7 @@ import kotlinx.coroutines.test.runTest
 import java.io.File
 import java.util.*
 
-private const val APPLICATION_JSON = "application/json" 
+private const val APPLICATION_JSON = "application/json"
 private const val FILE_PATH = "filePath"
 
 @Suppress("unused")
@@ -41,18 +41,21 @@ class KrakenE2ETest : StringSpec() {
                         .getEncoder()
                         .encodeToString("secret".toByteArray())
                 val appConfig = AppConfig(
-                    KrakenCredentials("apiKey", validSecret),
-                    Settings(
-                        60L,
-                        2.0,
-                        1.0,
-                        false,
-                        50.0,
-                        1.0
+                    kraken = KrakenCredentials(
+                        apiKey = "apiKey",
+                        privateKey = validSecret
                     ),
-                    listOf(
-                        Allocation(KrakenSymbols.BTC, 50.0),
-                        Allocation(KrakenSymbols.USD, 50.0)
+                    settings = Settings(
+                        loopDelaySeconds = 60L,
+                        deviationTriggerPercent = 2.0,
+                        dustThresholdUSD = 1.0,
+                        dryRun = false,
+                        fiatMaxDrawdown = 50.0,
+                        fiatDeploymentExponent = 1.0
+                    ),
+                    allocations = listOf(
+                        Allocation(Asset.BTC, 50.0),
+                        Allocation(Asset.USD, 50.0)
                     )
                 )
 
@@ -136,25 +139,25 @@ class KrakenE2ETest : StringSpec() {
 
                 // Services
                 val krakenService = KrakenServiceImpl(
-                    mockConfigService,
-                    objectMapper,
-                    httpClient
+                    configService = mockConfigService,
+                    objectMapper = objectMapper,
+                    httpClient = httpClient
                 )
-                val tradeHistoryService = 
+                val tradeHistoryService =
                     TradeHistoryServiceImpl(tradesRepo)
 
                 val portfolioAnalyzer = PortfolioAnalyzer(
-                    krakenService,
-                    mockConfigService,
-                    statsRepo
+                    krakenService = krakenService,
+                    configService = mockConfigService,
+                    portfolioStatsRepository = statsRepo
                 )
                 val orderExecutor =
                     OrderExecutor(krakenService, portfolioAnalyzer)
                 val portfolioManager = PortfolioManagerImpl(
-                    mockConfigService,
-                    tradeHistoryService,
-                    portfolioAnalyzer,
-                    orderExecutor
+                    configService = mockConfigService,
+                    tradeHistoryService = tradeHistoryService,
+                    portfolioAnalyzer = portfolioAnalyzer,
+                    orderExecutor = orderExecutor
                 )
 
                 // Execute E2E Rebalance
@@ -173,18 +176,21 @@ class KrakenE2ETest : StringSpec() {
                 val validSecret =
                     Base64.getEncoder().encodeToString("secret".toByteArray())
                 val appConfig = AppConfig(
-                    KrakenCredentials("apiKey", validSecret),
-                    Settings(
-                        60L,
-                        2.0,
-                        1.0,
-                        false,
-                        50.0,
-                        1.0
+                    kraken = KrakenCredentials(
+                        apiKey = "apiKey",
+                        privateKey = validSecret
                     ),
-                    listOf(
-                        Allocation(KrakenSymbols.BTC, 50.0),
-                        Allocation(KrakenSymbols.USD, 50.0)
+                    settings = Settings(
+                        loopDelaySeconds = 60L,
+                        deviationTriggerPercent = 2.0,
+                        dustThresholdUSD = 1.0,
+                        dryRun = false,
+                        fiatMaxDrawdown = 50.0,
+                        fiatDeploymentExponent = 1.0
+                    ),
+                    allocations = listOf(
+                        Allocation(Asset.BTC, 50.0),
+                        Allocation(Asset.USD, 50.0)
                     )
                 )
 
@@ -264,20 +270,24 @@ class KrakenE2ETest : StringSpec() {
                 tradesRepoField.set(tradesRepo, tradesFile.name)
 
                 val krakenService = KrakenServiceImpl(
-                    mockConfigService,
-                    objectMapper,
-                    httpClient
+                    configService = mockConfigService,
+                    objectMapper = objectMapper,
+                    httpClient = httpClient
                 )
                 val tradeHistoryService = TradeHistoryServiceImpl(tradesRepo)
 
-                val portfolioAnalyzer = PortfolioAnalyzer(krakenService, mockConfigService, statsRepo)
+                val portfolioAnalyzer = PortfolioAnalyzer(
+                    krakenService = krakenService,
+                    configService = mockConfigService,
+                    portfolioStatsRepository = statsRepo
+                )
                 val orderExecutor =
                     OrderExecutor(krakenService, portfolioAnalyzer)
                 val portfolioManager = PortfolioManagerImpl(
-                    mockConfigService,
-                    tradeHistoryService,
-                    portfolioAnalyzer,
-                    orderExecutor
+                    configService = mockConfigService,
+                    tradeHistoryService = tradeHistoryService,
+                    portfolioAnalyzer = portfolioAnalyzer,
+                    orderExecutor = orderExecutor
                 )
 
                 portfolioManager.performRebalanceCycle()

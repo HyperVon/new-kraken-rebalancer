@@ -22,27 +22,26 @@ class PortfolioManagerFiatCorrectionTest : StringSpec() {
     /** Creates a [PortfolioManagerImpl] wired with a given [AppConfig]. */
     private fun makePortfolioAnalyzer(vararg allocs: Allocation): PortfolioAnalyzer {
         val configService = mockk<ConfigService>(relaxed = true)
-        val tradeHistoryService = mockk<TradeHistoryService>(relaxed = true)
         val repo = mockk<PortfolioStatsRepository>(relaxed = true)
 
         val config = AppConfig(
-            KrakenCredentials("k", "s"),
-            Settings(
-                60L,
-                2.0,
-                1.0,
-                false,
-                0.0,
-                1.0
+            kraken = KrakenCredentials(apiKey = "k", privateKey = "s"),
+            settings = Settings(
+                loopDelaySeconds = 60L,
+                deviationTriggerPercent = 2.0,
+                dustThresholdUSD = 1.0,
+                dryRun = false,
+                fiatMaxDrawdown = 0.0,
+                fiatDeploymentExponent = 1.0
             ),
-            allocs.toList()
+            allocations = allocs.toList()
         )
         every { configService.getConfig() } returns config
 
         return PortfolioAnalyzer(
-            FakeKrakenService(),
-            configService,
-            repo
+            krakenService = FakeKrakenService(),
+            configService = configService,
+            portfolioStatsRepository = repo
         )
     }
 
@@ -63,11 +62,11 @@ class PortfolioManagerFiatCorrectionTest : StringSpec() {
             val sellOrders = mutableMapOf<String, BigDecimal>()
 
             portfolioAnalyzer.distributeFiatCorrection(
-                usdDev,
-                allDevs,
-                buyOrders,
-                sellOrders,
-                mutableListOf()
+                usdDev = usdDev,
+                allDevs = allDevs,
+                buyOrders = buyOrders,
+                sellOrders = sellOrders,
+                actionLog = mutableListOf()
             )
 
             buyOrders.containsKey("B").shouldBeTrue()
@@ -92,11 +91,11 @@ class PortfolioManagerFiatCorrectionTest : StringSpec() {
             val sellOrders = mutableMapOf<String, BigDecimal>()
 
             portfolioAnalyzer.distributeFiatCorrection(
-                usdDev,
-                allDevs,
-                buyOrders,
-                sellOrders,
-                mutableListOf()
+                usdDev = usdDev,
+                allDevs = allDevs,
+                buyOrders = buyOrders,
+                sellOrders = sellOrders,
+                actionLog = mutableListOf()
             )
 
             sellOrders.containsKey("A").shouldBeTrue()
@@ -125,17 +124,17 @@ class PortfolioManagerFiatCorrectionTest : StringSpec() {
             val sellOrders = mutableMapOf<String, BigDecimal>()
 
             portfolioAnalyzer.distributeFiatCorrection(
-                usdDev,
-                allDevs,
-                buyOrders,
-                sellOrders,
-                mutableListOf()
+                usdDev = usdDev,
+                allDevs = allDevs,
+                buyOrders = buyOrders,
+                sellOrders = sellOrders,
+                actionLog = mutableListOf()
             )
 
-            (buyOrders.getOrDefault("A", BigDecimal.ZERO)
-                .compareTo(BigDecimal.valueOf(80.0))) shouldBe 0
-            (buyOrders.getOrDefault("B", BigDecimal.ZERO)
-                .compareTo(BigDecimal.valueOf(20.0))) shouldBe 0
+            buyOrders.getOrDefault("A", BigDecimal.ZERO)
+                .compareTo(BigDecimal.valueOf(80.0)) shouldBe 0
+            buyOrders.getOrDefault("B", BigDecimal.ZERO)
+                .compareTo(BigDecimal.valueOf(20.0)) shouldBe 0
             buyOrders.getOrDefault("C", BigDecimal.ZERO)
                 .compareTo(BigDecimal.ZERO) shouldBe 0
         }

@@ -6,7 +6,8 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.gemini.krakenbot.model.OrderResult
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.KrakenService
-import com.gemini.krakenbot.util.KrakenSymbols
+import com.gemini.krakenbot.service.RawBalances
+import com.gemini.krakenbot.service.RawPrices
 import io.ktor.client.*
 import io.ktor.client.request.*
 import io.ktor.client.statement.*
@@ -14,10 +15,10 @@ import org.slf4j.LoggerFactory
 import java.math.BigDecimal
 import java.math.RoundingMode
 import java.security.MessageDigest
-import java.util.*
 import java.util.concurrent.atomic.AtomicLong
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
+import kotlin.io.encoding.Base64
 
 class KrakenServiceImpl(
     private val configService: ConfigService,
@@ -32,7 +33,7 @@ class KrakenServiceImpl(
     private val nonceGenerator =
         AtomicLong(System.currentTimeMillis() * 1000)
 
-    override suspend fun getBalances(): Map<String, Double> {
+    override suspend fun getBalances(): RawBalances {
         val path = "/$apiVersion/private/Balance"
         val response = queryPrivate(path, emptyMap())
         return response.properties()
@@ -41,7 +42,7 @@ class KrakenServiceImpl(
             }
     }
 
-    override suspend fun getTickerPrices(pairs: String): Map<String, Double> {
+    override suspend fun getTickerPrices(pairs: String): RawPrices {
         val path = "/$apiVersion/public/Ticker?pair=$pairs"
         val result = queryPublic(path).path("result")
         return result.properties()
@@ -100,7 +101,7 @@ class KrakenServiceImpl(
                 volume = normalizedVolume
             )
         } catch (e: Exception) {
-            val message = e.message ?: e.javaClass.simpleName
+            val message = e.message.orEmpty().ifEmpty { e.javaClass.simpleName }
             log.error(
                 "Failed to execute order: {} {} {} volume={}",
                 type,
@@ -124,7 +125,8 @@ class KrakenServiceImpl(
         try {
             val root: JsonNode = objectMapper.readTree(responseBody)
             if (root.has("error") &&
-                !root.path("error").isEmpty) {
+                !root.path("error").isEmpty
+            ) {
                 log.error(
                     "Kraken Public API Error for path {}: {}",
                     path,
@@ -145,6 +147,9 @@ class KrakenServiceImpl(
         path: String,
         data: Map<String, String>
     ): JsonNode {
+        val apiKey = configService.getConfig().kraken.apiKey.value
+        check(apiKey.isNotBlank()) { "API Key is null" }
+
         val maxRetries = 5
         var retryCount = 0
 
@@ -158,9 +163,6 @@ class KrakenServiceImpl(
                     "${it.key}=${it.value}"
                 }
             val signature = signRequest(path, nonce, postData)
-
-            val apiKey = configService.getConfig().kraken.apiKey
-            if (apiKey.isBlank()) throw RuntimeException("API Key is null")
 
             val responseBody = httpClient.post(apiUrl + path) {
                 header("API-Key", apiKey)
@@ -203,23 +205,28 @@ class KrakenServiceImpl(
         postData: String
     ): String {
         try {
-            val sha2 = MessageDigest.getInstance(KrakenSymbols.SHA_256)
+            val sha2 = MessageDigest.getInstance(SHA_256)
                 .digest((nonce + postData).toByteArray(Charsets.UTF_8))
 
             val pathBytes = path.toByteArray(Charsets.UTF_8)
             val hmacMessage = pathBytes + sha2
 
-            val mac = Mac.getInstance(KrakenSymbols.HMAC_SHA512)
-            val secretDecoded = Base64.getDecoder()
-                .decode(configService.getConfig().kraken.privateKey)
+            val mac = Mac.getInstance(HMAC_SHA512)
+            val secretDecoded =
+                Base64.decode(configService.getConfig().kraken.privateKey.value)
             val secretSpec =
-                SecretKeySpec(secretDecoded, KrakenSymbols.HMAC_SHA512)
+                SecretKeySpec(secretDecoded, HMAC_SHA512)
             mac.init(secretSpec)
 
             val sigBytes = mac.doFinal(hmacMessage)
-            return Base64.getEncoder().encodeToString(sigBytes)
+            return Base64.encode(sigBytes)
         } catch (e: Exception) {
             throw RuntimeException("Failed to sign request", e)
         }
+    }
+
+    private companion object {
+        const val HMAC_SHA512 = "HmacSHA512"
+        const val SHA_256 = "SHA-256"
     }
 }

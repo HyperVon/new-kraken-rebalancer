@@ -1,7 +1,7 @@
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
 plugins {
-    kotlin("jvm") version "2.3.21"
+    kotlin("jvm") version "2.4.0"
     application
     jacoco
 }
@@ -31,7 +31,7 @@ dependencies {
     implementation("org.jetbrains.kotlin:kotlin-reflect")
 
     // Jackson BOM — pins jackson-core & jackson-databind to a secure, explicit version
-    implementation(platform("com.fasterxml.jackson:jackson-bom:2.21.4"))
+    implementation(platform("com.fasterxml.jackson:jackson-bom:2.22.0"))
 
     // Koin
     var koinVersion = "4.2.1"
@@ -53,7 +53,7 @@ dependencies {
     implementation("io.ktor:ktor-client-cio:$ktorVersion")
 
     // Logging
-    implementation("ch.qos.logback:logback-classic:1.5.33")
+    implementation("ch.qos.logback:logback-classic:1.5.34")
 
     // Coroutines
     val kotlinXCoroutinesVersion = "1.11.0"

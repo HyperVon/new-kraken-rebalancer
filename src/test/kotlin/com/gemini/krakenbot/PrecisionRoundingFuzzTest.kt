@@ -5,6 +5,7 @@ import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.config.Settings
+import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.TradeHistoryService
@@ -12,7 +13,6 @@ import com.gemini.krakenbot.service.impl.KrakenServiceImpl
 import com.gemini.krakenbot.service.impl.OrderExecutor
 import com.gemini.krakenbot.service.impl.PortfolioAnalyzer
 import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
-import com.gemini.krakenbot.util.KrakenSymbols
 import io.kotest.assertions.throwables.shouldNotThrowAny
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
@@ -37,18 +37,21 @@ class PrecisionRoundingFuzzTest : StringSpec() {
                 val validSecret =
                     Base64.getEncoder().encodeToString("secret".toByteArray())
                 val appConfig = AppConfig(
-                    KrakenCredentials("apiKey", validSecret),
-                    Settings(
-                        60L,
-                        2.0,
-                        1.0,
-                        false,
-                        50.0,
-                        1.0
+                    kraken = KrakenCredentials(
+                        apiKey = "apiKey",
+                        privateKey = validSecret
                     ),
-                    listOf(
-                        Allocation(KrakenSymbols.BTC, 50.0),
-                        Allocation(KrakenSymbols.USD, 50.0)
+                    settings = Settings(
+                        loopDelaySeconds = 60L,
+                        deviationTriggerPercent = 2.0,
+                        dustThresholdUSD = 1.0,
+                        dryRun = false,
+                        fiatMaxDrawdown = 50.0,
+                        fiatDeploymentExponent = 1.0
+                    ),
+                    allocations = listOf(
+                        Allocation(Asset.BTC, 50.0),
+                        Allocation(Asset.USD, 50.0)
                     )
                 )
 
@@ -107,24 +110,24 @@ class PrecisionRoundingFuzzTest : StringSpec() {
                 val objectMapper =
                     jacksonObjectMapper().findAndRegisterModules()
                 val krakenService = KrakenServiceImpl(
-                    mockConfigService,
-                    objectMapper,
-                    httpClient
+                    configService = mockConfigService,
+                    objectMapper = objectMapper,
+                    httpClient = httpClient
                 )
 
                 val portfolioAnalyzer =
                     PortfolioAnalyzer(
-                        krakenService,
-                        mockConfigService,
-                        mockk<PortfolioStatsRepository>(relaxed = true)
+                        krakenService = krakenService,
+                        configService = mockConfigService,
+                        portfolioStatsRepository = mockk<PortfolioStatsRepository>(relaxed = true)
                     )
                 val orderExecutor =
                     OrderExecutor(krakenService, portfolioAnalyzer)
                 val portfolioManager = PortfolioManagerImpl(
-                    mockConfigService,
-                    mockk<TradeHistoryService>(relaxed = true),
-                    portfolioAnalyzer,
-                    orderExecutor
+                    configService = mockConfigService,
+                    tradeHistoryService = mockk<TradeHistoryService>(relaxed = true),
+                    portfolioAnalyzer = portfolioAnalyzer,
+                    orderExecutor = orderExecutor
                 )
 
                 shouldNotThrowAny {

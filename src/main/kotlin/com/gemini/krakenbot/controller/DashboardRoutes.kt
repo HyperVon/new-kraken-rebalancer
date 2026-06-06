@@ -1,5 +1,13 @@
 package com.gemini.krakenbot.controller
 
+import com.fasterxml.jackson.databind.ObjectMapper
+import com.gemini.krakenbot.config.Allocation
+import com.gemini.krakenbot.config.AppConfig
+import com.gemini.krakenbot.config.InvalidConfigurationException
+import com.gemini.krakenbot.config.Settings
+import com.gemini.krakenbot.service.ConfigService
+import com.gemini.krakenbot.service.TradeHistoryService
+import com.gemini.krakenbot.view.DashboardView
 import com.gemini.krakenbot.view.util.*
 import io.ktor.http.*
 import io.ktor.server.application.*
@@ -10,12 +18,11 @@ import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import io.ktor.server.sse.*
 import io.ktor.sse.*
-import com.fasterxml.jackson.databind.ObjectMapper
-import com.gemini.krakenbot.config.*
-import com.gemini.krakenbot.service.ConfigService
-import com.gemini.krakenbot.service.TradeHistoryService
-import com.gemini.krakenbot.view.DashboardView
-import kotlinx.html.*
+import kotlinx.coroutines.CancellationException
+import kotlinx.html.div
+import kotlinx.html.h2
+import kotlinx.html.html
+import kotlinx.html.p
 import kotlinx.html.stream.createHTML
 import org.koin.ktor.ext.inject
 
@@ -30,18 +37,14 @@ fun Application.dashboardRouting() {
 
         get(Routes.ROOT) {
             call.respondHtml(HttpStatusCode.OK) {
-                with(dashboardView) {
-                    renderDashboardShell()
-                }
+                dashboardView.renderDashboardShell()
             }
         }
 
         get(Routes.SETTINGS) {
             val config = configService.getConfig()
             call.respondHtml(HttpStatusCode.OK) {
-                with(dashboardView) {
-                    renderSettingsPage(config, null)
-                }
+                dashboardView.renderSettingsPage(config, null)
             }
         }
 
@@ -87,16 +90,16 @@ private suspend fun RoutingContext.handlePostSettings(
 
     val currentConfig = configService.getConfig()
     val updatedConfig = AppConfig(
-        currentConfig.kraken,
-        Settings(
-            loopDelaySeconds,
-            deviationTriggerPercent,
-            dustThresholdUSD,
-            dryRun,
-            fiatMaxDrawdown,
-            fiatDeploymentExponent
+        kraken = currentConfig.kraken,
+        settings = Settings(
+            loopDelaySeconds = loopDelaySeconds,
+            deviationTriggerPercent = deviationTriggerPercent,
+            dustThresholdUSD = dustThresholdUSD,
+            dryRun = dryRun,
+            fiatMaxDrawdown = fiatMaxDrawdown,
+            fiatDeploymentExponent = fiatDeploymentExponent
         ),
-        allocations
+        allocations = allocations
     )
 
     try {
@@ -105,12 +108,10 @@ private suspend fun RoutingContext.handlePostSettings(
         call.respond(HttpStatusCode.OK)
     } catch (e: InvalidConfigurationException) {
         val errHtml = createHTML(prettyPrint = false).html {
-            with(dashboardView) {
-                renderSettingsPage(
-                    updatedConfig,
-                    e.message ?: "Invalid configuration"
-                )
-            }
+            dashboardView.renderSettingsPage(
+                updatedConfig,
+                e.message ?: "Invalid configuration"
+            )
         }
         val formBody =
             errHtml.substringAfter("<body>").substringBefore("</body>")
@@ -140,9 +141,7 @@ private suspend fun RoutingContext.handleGetDashboardFragment(
     }
 
     val html = createHTML(prettyPrint = false).div {
-        with(dashboardView) {
-            renderDashboardFragment(latest, history)
-        }
+        dashboardView.renderDashboardFragment(latest, history)
     }
     call.respondText(html, ContentType.Text.Html)
 }
@@ -162,7 +161,7 @@ private suspend fun ServerSSESession.handleSseStream(
             val json = objectMapper.writeValueAsString(snapshot)
             send(ServerSentEvent(data = json))
         }
-    } catch (e: kotlinx.coroutines.CancellationException) {
+    } catch (e: CancellationException) {
         throw e
     } catch (_: Exception) {
         // Handle client disconnect / closed channel gracefully without logging annoying stack traces

@@ -8,6 +8,29 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [4.0.0] - 2026-06-06
+
+### Added
+
+- **Gradle Configuration Cache**: Enabled Gradle configuration caching in `gradle.properties` to decrease build startup times and speed up local test runs.
+- **Asset Unit Tests**: Expanded `ModelTest.kt` with comprehensive unit tests for the `Asset` value class (covering ticker mapping, USD checks, and trading pair formatting).
+- **Typealiases for Pipeline Clarity**: Introduced clean semantic typealiases (`RawBalances`, `RawPrices`, `AssetPrices`, `AssetValues`, `AssetDeviations`, `RebalanceOrders`, `MutableRebalanceOrders`) across components like `PortfolioAnalyzer`, `OrderExecutor`, and `PortfolioManagerImpl` to define semantic data structures and remove raw map/list boilerplate.
+
+### Changed
+
+- **Kotlin 2.4.0 Named Context Parameters**: Refactored HTML layout rendering methods in all view files to use Kotlin 2.4.0 named context parameters (e.g. `context(html: HTML)`) instead of receiver extension functions, eliminating boilerplate `with()` blocks.
+- **Side-Effect Free Services**: Refactored `PortfolioAnalyzer` to eliminate mutating side-effects on argument parameters. Methods like `calculatePortfolioValues` and `analyzeDeviations` now return immutable, structured data objects (`PortfolioValues` and `AnalysisResult`).
+- **Complete Deletion of `KrakenSymbols`**: Completely removed the deprecated `KrakenSymbols` utility class and its corresponding test class (`KrakenSymbolsTest.kt`).
+- **Asset Value Class Consolidation**: Migrated standard asset constants and ticker/pair mappings directly into the `Asset` inline value class.
+- **Localized Cryptographic Strings**: Moved HMAC-SHA512 and SHA-256 algorithm name constants into the private companion object of `KrakenServiceImpl`.
+- **View Imports Cleanup**: Refactored layout components (`PerformanceTableComponent`, `RecentActivityComponent`, `SettingsFormComponent`) to import parent utility objects (`CssClasses`, `ViewText`, `Icons`, `FormFields`) instead of dozens of nested static constants, significantly reducing import boilerplate.
+- **Standardized Koin DI**: Converted manually scoped instantiation blocks in `AppModule.kt` to modern constructor-based bindings via Koin 4's `singleOf`.
+- **Test Suite Modernization & Class Initializers**: Refactored all test suites across the project from constructor-lambda `StringSpec({ ... })` structure to standard class body `init { ... }` blocks. This ensures build tools and IDE test runners correctly discover all test suites, and re-added `@Suppress("unused")` to specific test classes where IDE warnings persisted due to reflection-based dynamic test discovery limitations.
+- **Loop & Scope Refactorings**: Replaced index-based range loops with Kotlin's standard `repeat` blocks where loop indexes were unused (e.g. in concurrent nonce generation and dummy snapshot list creation), and eliminated redundant `with(view)` wrapper scopes in layout component unit tests.
+- **Disabled CodeQL Advanced Workflow**: Cleanly disabled CodeQL scans on pushes and pull requests because CodeQL does not yet support Kotlin 2.4.0 (causing fatal build interception failures). This workflow should be re-enabled (by changing the target branches back to `"main"` in `.github/workflows/codeql.yml`) once CodeQL releases official compatibility with Kotlin 2.4.0+.
+
+---
+
 ## [3.1.3] - 2026-05-30
 
 ### Changed

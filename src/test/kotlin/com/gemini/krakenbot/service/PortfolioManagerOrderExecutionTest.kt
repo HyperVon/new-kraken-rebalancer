@@ -4,12 +4,12 @@ import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.config.Settings
+import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.PortfolioStats
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.service.impl.OrderExecutor
 import com.gemini.krakenbot.service.impl.PortfolioAnalyzer
 import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
-import com.gemini.krakenbot.util.KrakenSymbols
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.booleans.shouldBeTrue
@@ -38,16 +38,16 @@ class PortfolioManagerOrderExecutionTest : StringSpec() {
                 portfolioStatsRepository.load()
             } returns PortfolioStats(BigDecimal.ZERO)
             portfolioAnalyzer = PortfolioAnalyzer(
-                krakenService,
-                configService,
-                portfolioStatsRepository
+                krakenService = krakenService,
+                configService = configService,
+                portfolioStatsRepository = portfolioStatsRepository
             )
             orderExecutor = OrderExecutor(krakenService, portfolioAnalyzer)
             portfolioManager = PortfolioManagerImpl(
-                configService,
-                tradeHistoryService,
-                portfolioAnalyzer,
-                orderExecutor
+                configService = configService,
+                tradeHistoryService = tradeHistoryService,
+                portfolioAnalyzer = portfolioAnalyzer,
+                orderExecutor = orderExecutor
             )
         }
 
@@ -56,7 +56,7 @@ class PortfolioManagerOrderExecutionTest : StringSpec() {
                 val allocA = Allocation("A", 10.0)
                 val allocB = Allocation("B", 90.0)
                 val allocUSD = Allocation(
-                    KrakenSymbols.USD,
+                    Asset.USD,
                     0.0
                 )
                 val allAllocations = listOf(allocA, allocB, allocUSD)
@@ -76,7 +76,7 @@ class PortfolioManagerOrderExecutionTest : StringSpec() {
                 every { configService.getConfig() } returns mockConfig
 
                 val balances =
-                    mapOf("A" to 5.0, "B" to 50.0, KrakenSymbols.USD to 0.0)
+                    mapOf("A" to 5.0, "B" to 50.0, Asset.USD to 0.0)
                 krakenService.balanceSupplier = { balances }
 
                 val prices = mapOf("AUSD" to 100.0, "BUSD" to 10.0)
@@ -96,7 +96,7 @@ class PortfolioManagerOrderExecutionTest : StringSpec() {
             runTest {
                 val allocA = Allocation("A", 10.0)
                 val allocUSD = Allocation(
-                    KrakenSymbols.USD,
+                    Asset.USD,
                     90.0
                 )
                 val allAllocations = listOf(allocA, allocUSD)
@@ -115,7 +115,7 @@ class PortfolioManagerOrderExecutionTest : StringSpec() {
 
                 every { configService.getConfig() } returns mockConfig
 
-                val balances = mapOf("A" to 1.05, KrakenSymbols.USD to 895.0)
+                val balances = mapOf("A" to 1.05, Asset.USD to 895.0)
                 krakenService.balanceSupplier = { balances }
 
                 val prices = mapOf("AUSD" to 100.0)
@@ -132,13 +132,15 @@ class PortfolioManagerOrderExecutionTest : StringSpec() {
         "testExecution_CashVerificationFallback" {
             runTest {
                 val allAllocations =
-                    listOf(Allocation(
-                        "A",
-                        10.0
-                    ), Allocation(
-                        "B",
-                        90.0
-                    ))
+                    listOf(
+                        Allocation(
+                            "A",
+                            10.0
+                        ), Allocation(
+                            "B",
+                            90.0
+                        )
+                    )
                 val mockSettings = Settings(
                     loopDelaySeconds = 0L,
                     deviationTriggerPercent = 1.0,
@@ -153,7 +155,7 @@ class PortfolioManagerOrderExecutionTest : StringSpec() {
                 every { configService.getConfig() } returns mockConfig
 
                 val initialBalances =
-                    mapOf("A" to 5.0, "B" to 50.0, KrakenSymbols.USD to 0.0)
+                    mapOf("A" to 5.0, "B" to 50.0, Asset.USD to 0.0)
 
                 var callCount = 0
                 krakenService.balanceSupplier = {
@@ -183,13 +185,15 @@ class PortfolioManagerOrderExecutionTest : StringSpec() {
         "testExecution_PartialFillCashUpdate" {
             runTest {
                 val allAllocations =
-                    listOf(Allocation(
-                        "A",
-                        10.0
-                    ), Allocation(
-                        "B",
-                        90.0
-                    ))
+                    listOf(
+                        Allocation(
+                            "A",
+                            10.0
+                        ), Allocation(
+                            "B",
+                            90.0
+                        )
+                    )
                 val mockSettings = Settings(
                     loopDelaySeconds = 0L,
                     deviationTriggerPercent = 1.0,
@@ -204,9 +208,9 @@ class PortfolioManagerOrderExecutionTest : StringSpec() {
                 every { configService.getConfig() } returns mockConfig
 
                 val initialBalances =
-                    mapOf("A" to 5.0, "B" to 50.0, KrakenSymbols.USD to 0.0)
+                    mapOf("A" to 5.0, "B" to 50.0, Asset.USD to 0.0)
                 val updatedBalances =
-                    mapOf("A" to 2.0, "B" to 50.0, KrakenSymbols.USD to 200.0)
+                    mapOf("A" to 2.0, "B" to 50.0, Asset.USD to 200.0)
 
                 var callCount = 0
                 krakenService.balanceSupplier = {

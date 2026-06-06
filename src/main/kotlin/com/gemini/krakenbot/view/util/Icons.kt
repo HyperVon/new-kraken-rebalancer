@@ -1,5 +1,6 @@
 package com.gemini.krakenbot.view.util
 
+import kotlinx.html.HTMLTag
 import kotlinx.html.unsafe
 
 object Icons {
@@ -19,7 +20,7 @@ object Icons {
     val SHIELD_EXCLAMATION = loadIcon("shield_exclamation.svg")
     val PLUS = loadIcon("plus.svg")
 
-    fun kotlinx.html.HTMLTag.icon(rawSvg: String) {
+    fun HTMLTag.icon(rawSvg: String) {
         unsafe { +rawSvg }
     }
 }

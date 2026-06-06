@@ -36,22 +36,22 @@ class KrakenServiceTest : StringSpec() {
         configService = mockk(relaxed = true)
 
         val credentials = KrakenCredentials(
-            "public-key",
-            Base64.getEncoder()
+            apiKey = "public-key",
+            privateKey = Base64.getEncoder()
                 .encodeToString("secret-key".toByteArray())
         )
         val settings = Settings(
-            60L,
-            2.0,
-            1.0,
-            false,
-            0.0,
-            1.0
+            loopDelaySeconds = 60L,
+            deviationTriggerPercent = 2.0,
+            dustThresholdUSD = 1.0,
+            dryRun = false,
+            fiatMaxDrawdown = 0.0,
+            fiatDeploymentExponent = 1.0
         )
         val config = AppConfig(
-            credentials,
-            settings,
-            emptyList()
+            kraken = credentials,
+            settings = settings,
+            allocations = emptyList()
         )
         every { configService.getConfig() } returns config
 
@@ -75,9 +75,9 @@ class KrakenServiceTest : StringSpec() {
 
                 val balances = service.getBalances()
 
-                (balances["XXBTZUSD"]) shouldBe 63000.0
-                (balances["XETHZUSD"]) shouldBe 3000.0
-                (balances["USD"]) shouldBe 5000.0
+                balances["XXBTZUSD"] shouldBe 63000.0
+                balances["XETHZUSD"] shouldBe 3000.0
+                balances["USD"] shouldBe 5000.0
             }
         }
 
@@ -89,8 +89,8 @@ class KrakenServiceTest : StringSpec() {
 
                 val prices = service.getTickerPrices("XXBTZUSD,XETHZUSD")
 
-                (prices["XXBTZUSD"]) shouldBe 65000.0
-                (prices["XETHZUSD"]) shouldBe 3200.0
+                prices["XXBTZUSD"] shouldBe 65000.0
+                prices["XETHZUSD"] shouldBe 3200.0
             }
         }
 
@@ -101,10 +101,10 @@ class KrakenServiceTest : StringSpec() {
                 val service = createService(responseJson)
 
                 val result = service.executeOrder(
-                    "XBTUSD",
-                    "limit",
-                    "buy",
-                    BigDecimal("0.1")
+                    pair = "XBTUSD",
+                    type = "limit",
+                    side = "buy",
+                    volume = BigDecimal("0.1")
                 )
                 result.success.shouldBeTrue()
             }
@@ -114,25 +114,25 @@ class KrakenServiceTest : StringSpec() {
             runTest {
                 val service = createService("")
                 val settings = Settings(
-                    60L,
-                    2.0,
-                    1.0,
-                    true,
-                    0.0,
-                    1.0
+                    loopDelaySeconds = 60L,
+                    deviationTriggerPercent = 2.0,
+                    dustThresholdUSD = 1.0,
+                    dryRun = true,
+                    fiatMaxDrawdown = 0.0,
+                    fiatDeploymentExponent = 1.0
                 )
                 val config = AppConfig(
-                    KrakenCredentials("k", "s"),
-                    settings,
-                    emptyList()
+                    kraken = KrakenCredentials(apiKey = "k", privateKey = "s"),
+                    settings = settings,
+                    allocations = emptyList()
                 )
                 every { configService.getConfig() } returns config
 
                 val result = service.executeOrder(
-                    "XBTUSD",
-                    "limit",
-                    "buy",
-                    BigDecimal("0.1")
+                    pair = "XBTUSD",
+                    type = "limit",
+                    side = "buy",
+                    volume = BigDecimal("0.1")
                 )
                 result.success.shouldBeTrue()
                 result.dryRun.shouldBeTrue()
@@ -176,10 +176,10 @@ class KrakenServiceTest : StringSpec() {
                 val service = createService(responseJson)
 
                 val result = service.executeOrder(
-                    "XBTUSD",
-                    "limit",
-                    "buy",
-                    BigDecimal.ONE
+                    pair = "XBTUSD",
+                    type = "limit",
+                    side = "buy",
+                    volume = BigDecimal.ONE
                 )
                 result.success.shouldBeFalse()
                 result.errorMessage.shouldNotBeNull()
@@ -191,22 +191,22 @@ class KrakenServiceTest : StringSpec() {
                 val objectMapper = jacksonObjectMapper()
                 configService = mockk(relaxed = true)
                 val credentials = KrakenCredentials(
-                    "public-key",
-                    Base64.getEncoder()
+                    apiKey = "public-key",
+                    privateKey = Base64.getEncoder()
                         .encodeToString("secret-key".toByteArray())
                 )
                 val settings = Settings(
-                    60L,
-                    2.0,
-                    1.0,
-                    false,
-                    0.0,
-                    1.0
+                    loopDelaySeconds = 60L,
+                    deviationTriggerPercent = 2.0,
+                    dustThresholdUSD = 1.0,
+                    dryRun = false,
+                    fiatMaxDrawdown = 0.0,
+                    fiatDeploymentExponent = 1.0
                 )
                 val config = AppConfig(
-                    credentials,
-                    settings,
-                    emptyList()
+                    kraken = credentials,
+                    settings = settings,
+                    allocations = emptyList()
                 )
                 every { configService.getConfig() } returns config
 
@@ -218,10 +218,10 @@ class KrakenServiceTest : StringSpec() {
                     KrakenServiceImpl(configService, objectMapper, httpClient)
 
                 val result = service.executeOrder(
-                    "XBTUSD",
-                    "limit",
-                    "buy",
-                    BigDecimal.ONE
+                    pair = "XBTUSD",
+                    type = "limit",
+                    side = "buy",
+                    volume = BigDecimal.ONE
                 )
                 result.success.shouldBeFalse()
                 result.errorMessage shouldBe "RuntimeException"
@@ -241,7 +241,7 @@ class KrakenServiceTest : StringSpec() {
                 service::class.java.getDeclaredField("nonceGenerator")
                     .apply { isAccessible = true }.get(service)
                         as AtomicLong
-            (nonceGen).shouldNotBeNull()
+            nonceGen.shouldNotBeNull()
 
             val numThreads = 10
             val incrementsPerThread = 1000
@@ -251,10 +251,10 @@ class KrakenServiceTest : StringSpec() {
             val executor = Executors.newFixedThreadPool(numThreads)
             val latch = CountDownLatch(numThreads)
 
-            for (i in 0 until numThreads) {
+            repeat(numThreads) {
                 executor.submit {
                     try {
-                        for (j in 0 until incrementsPerThread) {
+                        repeat(incrementsPerThread) {
                             generatedNonces.add(nonceGen.incrementAndGet())
                         }
                     } finally {
@@ -263,7 +263,7 @@ class KrakenServiceTest : StringSpec() {
                 }
             }
 
-            (latch.await(5, TimeUnit.SECONDS).shouldBeTrue())
+            latch.await(5, TimeUnit.SECONDS).shouldBeTrue()
             executor.shutdown()
 
             generatedNonces.size shouldBe (numThreads * incrementsPerThread)
@@ -273,24 +273,27 @@ class KrakenServiceTest : StringSpec() {
             runTest {
                 val mockConfigService = mockk<ConfigService>(relaxed = true)
                 val config = AppConfig(
-                    KrakenCredentials("", "secret"),
-                    Settings(
-                        60L,
-                        2.0,
-                        1.0,
-                        false,
-                        0.0,
-                        1.0
+                    kraken = KrakenCredentials(
+                        apiKey = "",
+                        privateKey = "secret"
                     ),
-                    emptyList()
+                    settings = Settings(
+                        loopDelaySeconds = 60L,
+                        deviationTriggerPercent = 2.0,
+                        dustThresholdUSD = 1.0,
+                        dryRun = false,
+                        fiatMaxDrawdown = 0.0,
+                        fiatDeploymentExponent = 1.0
+                    ),
+                    allocations = emptyList()
                 )
                 every { mockConfigService.getConfig() } returns config
 
                 val mockEngine = MockEngine { respond(content = "") }
                 val localService = KrakenServiceImpl(
-                    mockConfigService,
-                    jacksonObjectMapper(),
-                    HttpClient(mockEngine)
+                    configService = mockConfigService,
+                    objectMapper = jacksonObjectMapper(),
+                    httpClient = HttpClient(mockEngine)
                 )
 
                 val ex =
@@ -319,24 +322,27 @@ class KrakenServiceTest : StringSpec() {
             runTest {
                 val mockConfigService = mockk<ConfigService>(relaxed = true)
                 val config = AppConfig(
-                    KrakenCredentials("apiKey", "invalid_base64_!@#$"),
-                    Settings(
-                        60L,
-                        2.0,
-                        1.0,
-                        false,
-                        0.0,
-                        1.0
+                    kraken = KrakenCredentials(
+                        apiKey = "apiKey",
+                        privateKey = "invalid_base64_!@#$"
                     ),
-                    emptyList()
+                    settings = Settings(
+                        loopDelaySeconds = 60L,
+                        deviationTriggerPercent = 2.0,
+                        dustThresholdUSD = 1.0,
+                        dryRun = false,
+                        fiatMaxDrawdown = 0.0,
+                        fiatDeploymentExponent = 1.0
+                    ),
+                    allocations = emptyList()
                 )
                 every { mockConfigService.getConfig() } returns config
 
                 val mockEngine = MockEngine { respond(content = "") }
                 val localService = KrakenServiceImpl(
-                    mockConfigService,
-                    jacksonObjectMapper(),
-                    HttpClient(mockEngine)
+                    configService = mockConfigService,
+                    objectMapper = jacksonObjectMapper(),
+                    httpClient = HttpClient(mockEngine)
                 )
 
                 shouldThrow<RuntimeException> { localService.getBalances() }
@@ -349,7 +355,7 @@ class KrakenServiceTest : StringSpec() {
                 val successJson =
                     "{\"error\":[],\"result\":{\"XXBTZUSD\":63000.0}}"
                 var attempt = 0
-                val mockEngine = MockEngine { request ->
+                val mockEngine = MockEngine { _ ->
                     val content = if (attempt++ == 0) errorJson else successJson
                     respond(
                         content = content,
@@ -365,23 +371,26 @@ class KrakenServiceTest : StringSpec() {
                 val validSecret =
                     Base64.getEncoder().encodeToString("secret".toByteArray())
                 val config = AppConfig(
-                    KrakenCredentials("k", validSecret),
-                    Settings(
-                        60L,
-                        2.0,
-                        1.0,
-                        false,
-                        0.0,
-                        1.0
+                    kraken = KrakenCredentials(
+                        apiKey = "k",
+                        privateKey = validSecret
                     ),
-                    emptyList()
+                    settings = Settings(
+                        loopDelaySeconds = 60L,
+                        deviationTriggerPercent = 2.0,
+                        dustThresholdUSD = 1.0,
+                        dryRun = false,
+                        fiatMaxDrawdown = 0.0,
+                        fiatDeploymentExponent = 1.0
+                    ),
+                    allocations = emptyList()
                 )
                 every { mockConfigService.getConfig() } returns config
 
                 val service = KrakenServiceImpl(
-                    mockConfigService,
-                    jacksonObjectMapper(),
-                    HttpClient(mockEngine)
+                    configService = mockConfigService,
+                    objectMapper = jacksonObjectMapper(),
+                    httpClient = HttpClient(mockEngine)
                 )
 
                 val balances = service.getBalances()
@@ -407,23 +416,26 @@ class KrakenServiceTest : StringSpec() {
                 val validSecret =
                     Base64.getEncoder().encodeToString("secret".toByteArray())
                 val config = AppConfig(
-                    KrakenCredentials("k", validSecret),
-                    Settings(
-                        60L,
-                        2.0,
-                        1.0,
-                        false,
-                        0.0,
-                        1.0
+                    kraken = KrakenCredentials(
+                        apiKey = "k",
+                        privateKey = validSecret
                     ),
-                    emptyList()
+                    settings = Settings(
+                        loopDelaySeconds = 60L,
+                        deviationTriggerPercent = 2.0,
+                        dustThresholdUSD = 1.0,
+                        dryRun = false,
+                        fiatMaxDrawdown = 0.0,
+                        fiatDeploymentExponent = 1.0
+                    ),
+                    allocations = emptyList()
                 )
                 every { mockConfigService.getConfig() } returns config
 
                 val service = KrakenServiceImpl(
-                    mockConfigService,
-                    jacksonObjectMapper(),
-                    HttpClient(mockEngine)
+                    configService = mockConfigService,
+                    objectMapper = jacksonObjectMapper(),
+                    httpClient = HttpClient(mockEngine)
                 )
 
                 val ex = shouldThrow<RuntimeException> { service.getBalances() }

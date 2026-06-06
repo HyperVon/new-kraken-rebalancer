@@ -33,9 +33,11 @@ class DashboardFragmentComponent(
     private val recentActivityComponent: RecentActivityComponent
 ) {
     private val timeFormatter =
-        DateTimeFormatter.ofPattern("hh:mm:ss a").withZone(ZoneId.systemDefault())
+        DateTimeFormatter.ofPattern("hh:mm:ss a")
+            .withZone(ZoneId.systemDefault())
 
-    fun DIV.render(
+    context(div: DIV)
+    fun render(
         latest: PortfolioSnapshot,
         history: List<PortfolioSnapshot>
     ) {
@@ -46,22 +48,23 @@ class DashboardFragmentComponent(
         val isStale = timeSinceUpdate > 90
 
         renderHeaderSection(latest, timeSinceUpdate, isStale)
-        with(overviewGridComponent) { render(latest) }
+        overviewGridComponent.render(latest)
 
-        div(DETAIL_GRID) {
-            with(allocationChartComponent) { render(latest) }
-            with(performanceTableComponent) { render(latest) }
+        div.div(DETAIL_GRID) {
+            allocationChartComponent.render(latest)
+            performanceTableComponent.render(latest)
         }
 
-        with(recentActivityComponent) { render(history) }
+        recentActivityComponent.render(history)
     }
 
-    private fun DIV.renderHeaderSection(
+    context(div: DIV)
+    private fun renderHeaderSection(
         latest: PortfolioSnapshot,
         timeSinceUpdate: Long,
         isStale: Boolean
     ) {
-        header {
+        div.header {
             div(HEADER_TITLE_SECTION) {
                 h1 { +APP_TITLE }
                 val badgeClass =

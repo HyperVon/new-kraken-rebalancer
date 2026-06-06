@@ -1,59 +1,42 @@
 package com.gemini.krakenbot.view.component
 
 import com.gemini.krakenbot.model.PortfolioSnapshot
-import com.gemini.krakenbot.util.KrakenSymbols
-import com.gemini.krakenbot.view.util.CssClasses.HOVERABLE
-import com.gemini.krakenbot.view.util.CssClasses.MONO_COL
-import com.gemini.krakenbot.view.util.CssClasses.PERFORMANCE_DEV_CONTAINER
-import com.gemini.krakenbot.view.util.CssClasses.PERFORMANCE_DEV_USD_LABEL
-import com.gemini.krakenbot.view.util.CssClasses.SORTABLE
-import com.gemini.krakenbot.view.util.CssClasses.SORTABLE_ASC
-import com.gemini.krakenbot.view.util.CssClasses.SYMBOL_COL
-import com.gemini.krakenbot.view.util.CssClasses.TABLE_WRAPPER
-import com.gemini.krakenbot.view.util.Formatter.formatCurrency
-import com.gemini.krakenbot.view.util.Formatter.formatPercent
-import com.gemini.krakenbot.view.util.Formatter.getDeviationClass
-import com.gemini.krakenbot.view.util.Formatter.getDeviationSign
-import com.gemini.krakenbot.view.util.HtmlAttrs.CLASS
-import com.gemini.krakenbot.view.util.HtmlAttrs.ONCLICK
+import com.gemini.krakenbot.view.util.CssClasses
+import com.gemini.krakenbot.view.util.Formatter
+import com.gemini.krakenbot.view.util.HtmlAttrs
 import com.gemini.krakenbot.view.util.Layouts.glassPanel
-import com.gemini.krakenbot.view.util.ViewText.ASSET_PERFORMANCE
-import com.gemini.krakenbot.view.util.ViewText.HEADER_ASSET
-import com.gemini.krakenbot.view.util.ViewText.HEADER_CURRENT_PCT
-import com.gemini.krakenbot.view.util.ViewText.HEADER_DEV_PCT
-import com.gemini.krakenbot.view.util.ViewText.HEADER_PRICE
-import com.gemini.krakenbot.view.util.ViewText.HEADER_TARGET_PCT
-import com.gemini.krakenbot.view.util.ViewText.HEADER_VALUE
+import com.gemini.krakenbot.view.util.ViewText
 import kotlinx.html.*
 
 class PerformanceTableComponent {
 
     private data class ColumnHeader(
         val label: String,
-        val cssClass: String = SORTABLE
+        val cssClass: String = CssClasses.SORTABLE
     )
 
     private companion object {
         val COLUMNS = listOf(
-            ColumnHeader(HEADER_ASSET),
-            ColumnHeader(HEADER_PRICE),
-            ColumnHeader(HEADER_VALUE),
-            ColumnHeader(HEADER_TARGET_PCT),
-            ColumnHeader(HEADER_CURRENT_PCT),
-            ColumnHeader(HEADER_DEV_PCT, SORTABLE_ASC)
+            ColumnHeader(ViewText.HEADER_ASSET),
+            ColumnHeader(ViewText.HEADER_PRICE),
+            ColumnHeader(ViewText.HEADER_VALUE),
+            ColumnHeader(ViewText.HEADER_TARGET_PCT),
+            ColumnHeader(ViewText.HEADER_CURRENT_PCT),
+            ColumnHeader(ViewText.HEADER_DEV_PCT, CssClasses.SORTABLE_ASC)
         )
     }
 
-    fun DIV.render(latest: PortfolioSnapshot) {
-        glassPanel(ASSET_PERFORMANCE) {
-            div(TABLE_WRAPPER) {
+    context(div: DIV)
+    fun render(latest: PortfolioSnapshot) {
+        div.glassPanel(ViewText.ASSET_PERFORMANCE) {
+            div(CssClasses.TABLE_WRAPPER) {
                 table {
                     thead {
                         tr {
                             COLUMNS.forEachIndexed { index, col ->
                                 th {
-                                    attributes[CLASS] = col.cssClass
-                                    attributes[ONCLICK] =
+                                    attributes[HtmlAttrs.CLASS] = col.cssClass
+                                    attributes[HtmlAttrs.ONCLICK] =
                                         "sortTable(this, $index)"
                                     +col.label
                                 }
@@ -62,46 +45,46 @@ class PerformanceTableComponent {
                     }
                     tbody {
                         val cryptoOnly = latest.assets.values
-                            .filter { it.symbol != KrakenSymbols.USD }
+                            .filter { !it.symbol.isUsd }
                             .sortedBy { it.deviationPercent }
                         cryptoOnly.forEach { asset ->
                             val dev = asset.deviationPercent
-                            val devClass = getDeviationClass(dev)
-                            val sign = getDeviationSign(dev)
+                            val devClass = Formatter.getDeviationClass(dev)
+                            val sign = Formatter.getDeviationSign(dev)
 
-                            tr(HOVERABLE) {
-                                td(SYMBOL_COL) { +asset.symbol }
-                                td(MONO_COL) {
+                            tr(CssClasses.HOVERABLE) {
+                                td(CssClasses.SYMBOL_COL) { +asset.symbol.value }
+                                td(CssClasses.MONO_COL) {
                                     +"$${
-                                        formatCurrency(
+                                        Formatter.formatCurrency(
                                             asset.price
                                         )
                                     }"
                                 }
-                                td(MONO_COL) {
+                                td(CssClasses.MONO_COL) {
                                     +"$${
-                                        formatCurrency(
+                                        Formatter.formatCurrency(
                                             asset.valueUSD
                                         )
                                     }"
                                 }
-                                td { +"${formatPercent(asset.targetPercent)}%" }
-                                td { +"${formatPercent(asset.currentPercent)}%" }
+                                td { +"${Formatter.formatPercent(asset.targetPercent)}%" }
+                                td { +"${Formatter.formatPercent(asset.currentPercent)}%" }
                                 td(devClass) {
-                                    div(PERFORMANCE_DEV_CONTAINER) {
+                                    div(CssClasses.PERFORMANCE_DEV_CONTAINER) {
                                         span {
                                             +"$sign${
-                                                formatPercent(
+                                                Formatter.formatPercent(
                                                     dev
                                                 )
                                             }%"
                                         }
-                                        span(PERFORMANCE_DEV_USD_LABEL) {
+                                        span(CssClasses.PERFORMANCE_DEV_USD_LABEL) {
                                             val devUSD = asset.deviationUSD
                                             val usdSign =
                                                 if (devUSD.signum() >= 0) "+" else ""
                                             +"($usdSign$${
-                                                formatCurrency(
+                                                Formatter.formatCurrency(
                                                     devUSD
                                                 )
                                             })"

@@ -1,33 +1,44 @@
 package com.gemini.krakenbot.controller
 
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule
+import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.config.*
+import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.PortfolioSnapshot
+import com.gemini.krakenbot.service.ConfigService
+import com.gemini.krakenbot.service.TradeHistoryService
+import com.gemini.krakenbot.view.DashboardView
 import com.gemini.krakenbot.view.component.*
+import com.gemini.krakenbot.view.util.FormFields
+import com.gemini.krakenbot.view.util.HtmxHeaders
+import com.gemini.krakenbot.view.util.Routes
+import com.gemini.krakenbot.view.util.ViewText
+import io.kotest.core.spec.IsolationMode
+import io.kotest.core.spec.style.StringSpec
+import io.kotest.matchers.shouldBe
+import io.kotest.matchers.string.shouldContain
 import io.ktor.client.plugins.sse.*
 import io.ktor.client.request.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
 import io.ktor.server.application.*
 import io.ktor.server.testing.*
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule
-import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
-import com.gemini.krakenbot.TestFixtures
-import com.gemini.krakenbot.model.PortfolioSnapshot
-import com.gemini.krakenbot.service.ConfigService
-import com.gemini.krakenbot.service.TradeHistoryService
-import com.gemini.krakenbot.util.KrakenSymbols
-import com.gemini.krakenbot.view.DashboardView
-import com.gemini.krakenbot.view.util.*
-import io.kotest.core.spec.IsolationMode
-import io.kotest.core.spec.style.StringSpec
-import io.kotest.matchers.shouldBe
-import io.kotest.matchers.string.shouldContain
-import io.mockk.*
-import java.math.BigDecimal
-import java.time.Instant
-import kotlinx.coroutines.flow.*
+import io.mockk.every
+import io.mockk.mockk
+import io.mockk.slot
+import io.mockk.verify
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.take
+import kotlinx.coroutines.flow.toList
 import org.koin.core.context.startKoin
 import org.koin.core.context.stopKoin
 import org.koin.dsl.module
+import java.math.BigDecimal
+import java.time.Instant
+import io.ktor.client.plugins.sse.SSE as ClientSSE
+import io.ktor.server.sse.SSE as ServerSSE
 
 class DashboardControllerTest : StringSpec() {
 
@@ -39,7 +50,7 @@ class DashboardControllerTest : StringSpec() {
         jacksonObjectMapper().registerModule(JavaTimeModule())
 
     private fun Application.configureTestEnv() {
-        install(io.ktor.server.sse.SSE)
+        install(ServerSSE)
         dashboardRouting()
     }
 
@@ -54,17 +65,21 @@ class DashboardControllerTest : StringSpec() {
             single { AllocationChartComponent() }
             single { PerformanceTableComponent() }
             single { RecentActivityComponent() }
-            single { DashboardFragmentComponent(
-                get(),
-                get(),
-                get(),
-                get()
-            ) }
-            single { DashboardView(
-                get(),
-                get(),
-                get()
-            ) }
+            single {
+                DashboardFragmentComponent(
+                    overviewGridComponent = get(),
+                    allocationChartComponent = get(),
+                    performanceTableComponent = get(),
+                    recentActivityComponent = get()
+                )
+            }
+            single {
+                DashboardView(
+                    shellComponent = get(),
+                    settingsFormComponent = get(),
+                    fragmentComponent = get()
+                )
+            }
         }
 
         beforeTest {
@@ -108,44 +123,44 @@ class DashboardControllerTest : StringSpec() {
         "getDashboardFragment_WithSnapshot_ReturnsPopulatedHtml" {
             val nowTime = Instant.now()
             val snapshot = PortfolioSnapshot(
-                nowTime,
-                BigDecimal("15000.00"),
-                mapOf(
-                    KrakenSymbols.USD to PortfolioSnapshot.AssetSnapshot(
-                        KrakenSymbols.USD,
-                        BigDecimal("5000.0"),
-                        BigDecimal("1.0"),
-                        BigDecimal("5000.0"),
-                        BigDecimal("33.33"),
-                        BigDecimal("33.33"),
-                        BigDecimal("0.0"),
-                        BigDecimal("0.0")
+                timestamp = nowTime,
+                totalValueUSD = BigDecimal("15000.00"),
+                assets = mapOf(
+                    Asset.USD to PortfolioSnapshot.AssetSnapshot(
+                        symbol = Asset.USD,
+                        balance = BigDecimal("5000.0"),
+                        price = BigDecimal("1.0"),
+                        valueUSD = BigDecimal("5000.0"),
+                        targetPercent = BigDecimal("33.33"),
+                        currentPercent = BigDecimal("33.33"),
+                        deviationPercent = BigDecimal("0.0"),
+                        deviationUSD = BigDecimal("0.0")
                     ),
-                    KrakenSymbols.BTC to PortfolioSnapshot.AssetSnapshot(
-                        KrakenSymbols.BTC,
-                        BigDecimal("0.1"),
-                        BigDecimal("50000.0"),
-                        BigDecimal("5000.0"),
-                        BigDecimal("33.33"),
-                        BigDecimal("33.33"),
-                        BigDecimal("5.0"),
-                        BigDecimal("250.0")
+                    Asset.BTC to PortfolioSnapshot.AssetSnapshot(
+                        symbol = Asset.BTC,
+                        balance = BigDecimal("0.1"),
+                        price = BigDecimal("50000.0"),
+                        valueUSD = BigDecimal("5000.0"),
+                        targetPercent = BigDecimal("33.33"),
+                        currentPercent = BigDecimal("33.33"),
+                        deviationPercent = BigDecimal("5.0"),
+                        deviationUSD = BigDecimal("250.0")
                     ),
-                    KrakenSymbols.ETH to PortfolioSnapshot.AssetSnapshot(
-                        KrakenSymbols.ETH,
-                        BigDecimal("2.5"),
-                        BigDecimal("2000.0"),
-                        BigDecimal("5000.0"),
-                        BigDecimal("33.33"),
-                        BigDecimal("33.33"),
-                        BigDecimal("-2.0"),
-                        BigDecimal("-100.0")
+                    Asset.ETH to PortfolioSnapshot.AssetSnapshot(
+                        symbol = Asset.ETH,
+                        balance = BigDecimal("2.5"),
+                        price = BigDecimal("2000.0"),
+                        valueUSD = BigDecimal("5000.0"),
+                        targetPercent = BigDecimal("33.33"),
+                        currentPercent = BigDecimal("33.33"),
+                        deviationPercent = BigDecimal("-2.0"),
+                        deviationUSD = BigDecimal("-100.0")
                     )
                 ),
-                listOf("BUY BTC 0.1"),
-                BigDecimal.ZERO,
-                BigDecimal.ZERO,
-                BigDecimal("33.33")
+                actions = listOf("BUY BTC 0.1"),
+                drawdownPercent = BigDecimal.ZERO,
+                fiatDeploymentPercent = BigDecimal.ZERO,
+                effectiveUsdTargetPercent = BigDecimal("33.33")
             )
             every { tradeHistoryService.getLatestSnapshot() } returns snapshot
             every { tradeHistoryService.getHistory() } returns listOf(snapshot)
@@ -181,19 +196,21 @@ class DashboardControllerTest : StringSpec() {
 
         "getSettingsPage_ReturnsSettingsForm" {
             val config = AppConfig(
-                KrakenCredentials("real-api-key", "real-private-key"),
-                Settings(
-                    60L,
-                    2.0,
-                    1.0,
-                    true,
-                    0.0,
-                    1.0
+                kraken = KrakenCredentials("real-api-key", "real-private-key"),
+                settings = Settings(
+                    loopDelaySeconds = 60L,
+                    deviationTriggerPercent = 2.0,
+                    dustThresholdUSD = 1.0,
+                    dryRun = true,
+                    fiatMaxDrawdown = 0.0,
+                    fiatDeploymentExponent = 1.0
                 ),
-                listOf(Allocation(
-                    KrakenSymbols.USD,
-                    100.0
-                ))
+                allocations = listOf(
+                    Allocation(
+                        symbol = Asset.USD,
+                        targetPercent = 100.0
+                    )
+                )
             )
             every { configService.getConfig() } returns config
 
@@ -211,22 +228,24 @@ class DashboardControllerTest : StringSpec() {
 
         "postSettings_SucceedsAndSetsHxRedirectHeader" {
             val serverConfig = AppConfig(
-                KrakenCredentials(
-                    TestFixtures.TEST_SERVER_API_KEY,
-                    TestFixtures.TEST_SERVER_API_SECRET
+                kraken = KrakenCredentials(
+                    apiKey = TestFixtures.TEST_SERVER_API_KEY,
+                    privateKey = TestFixtures.TEST_SERVER_API_SECRET
                 ),
-                Settings(
-                    60L,
-                    2.0,
-                    1.0,
-                    true,
-                    0.0,
-                    1.0
+                settings = Settings(
+                    loopDelaySeconds = 60L,
+                    deviationTriggerPercent = 2.0,
+                    dustThresholdUSD = 1.0,
+                    dryRun = true,
+                    fiatMaxDrawdown = 0.0,
+                    fiatDeploymentExponent = 1.0
                 ),
-                listOf(Allocation(
-                    KrakenSymbols.USD,
-                    100.0
-                ))
+                allocations = listOf(
+                    Allocation(
+                        symbol = Asset.USD,
+                        targetPercent = 100.0
+                    )
+                )
             )
             every { configService.getConfig() } returns serverConfig
 
@@ -243,7 +262,7 @@ class DashboardControllerTest : StringSpec() {
                             FormFields.FIAT_MAX_DRAWDOWN to listOf("5.0"),
                             FormFields.FIAT_DEPLOYMENT_EXPONENT to listOf("1.5"),
                             FormFields.DRY_RUN to listOf("on"),
-                            FormFields.SYMBOLS to listOf(KrakenSymbols.USD),
+                            FormFields.SYMBOLS to listOf(Asset.USD),
                             FormFields.TARGETS to listOf("100.0")
                         ).formUrlEncode()
                     )
@@ -261,22 +280,24 @@ class DashboardControllerTest : StringSpec() {
 
         "postSettings_OnValidationError_ReturnsErrorHtmlBody" {
             val serverConfig = AppConfig(
-                KrakenCredentials(
-                    TestFixtures.TEST_SERVER_API_KEY,
-                    TestFixtures.TEST_SERVER_API_SECRET
+                kraken = KrakenCredentials(
+                    apiKey = TestFixtures.TEST_SERVER_API_KEY,
+                    privateKey = TestFixtures.TEST_SERVER_API_SECRET
                 ),
-                Settings(
-                    60L,
-                    2.0,
-                    1.0,
-                    true,
-                    0.0,
-                    1.0
+                settings = Settings(
+                    loopDelaySeconds = 60L,
+                    deviationTriggerPercent = 2.0,
+                    dustThresholdUSD = 1.0,
+                    dryRun = true,
+                    fiatMaxDrawdown = 0.0,
+                    fiatDeploymentExponent = 1.0
                 ),
-                listOf(Allocation(
-                    KrakenSymbols.USD,
-                    100.0
-                ))
+                allocations = listOf(
+                    Allocation(
+                        symbol = Asset.USD,
+                        targetPercent = 100.0
+                    )
+                )
             )
             every { configService.getConfig() } returns serverConfig
             every { configService.updateConfig(any()) } throws InvalidConfigurationException(
@@ -293,7 +314,7 @@ class DashboardControllerTest : StringSpec() {
                             FormFields.LOOP_DELAY_SECONDS to listOf("60"),
                             FormFields.DEVIATION_TRIGGER_PERCENT to listOf("2.0"),
                             FormFields.DUST_THRESHOLD_USD to listOf("1.0"),
-                            FormFields.SYMBOLS to listOf(KrakenSymbols.USD),
+                            FormFields.SYMBOLS to listOf(Asset.USD),
                             FormFields.TARGETS to listOf("90.0") // sum != 100
                         ).formUrlEncode()
                     )
@@ -342,22 +363,24 @@ class DashboardControllerTest : StringSpec() {
 
         "postSettings_WithMissingOrInvalidParams_UsesDefaultsAndHandlesValidation" {
             val serverConfig = AppConfig(
-                KrakenCredentials(
-                    TestFixtures.TEST_SERVER_API_KEY,
-                    TestFixtures.TEST_SERVER_API_SECRET
+                kraken = KrakenCredentials(
+                    apiKey = TestFixtures.TEST_SERVER_API_KEY,
+                    privateKey = TestFixtures.TEST_SERVER_API_SECRET
                 ),
-                Settings(
-                    60L,
-                    2.0,
-                    1.0,
-                    true,
-                    0.0,
-                    1.0
+                settings = Settings(
+                    loopDelaySeconds = 60L,
+                    deviationTriggerPercent = 2.0,
+                    dustThresholdUSD = 1.0,
+                    dryRun = true,
+                    fiatMaxDrawdown = 0.0,
+                    fiatDeploymentExponent = 1.0
                 ),
-                listOf(Allocation(
-                    KrakenSymbols.USD,
-                    100.0
-                ))
+                allocations = listOf(
+                    Allocation(
+                        symbol = Asset.USD,
+                        targetPercent = 100.0
+                    )
+                )
             )
             every { configService.getConfig() } returns serverConfig
             val capturedConfig = slot<AppConfig>()
@@ -381,8 +404,8 @@ class DashboardControllerTest : StringSpec() {
                             FormFields.FIAT_DEPLOYMENT_EXPONENT to listOf("invalid"),
                             // "dryRun" is absent, meaning false
                             FormFields.SYMBOLS to listOf(
-                                KrakenSymbols.BTC,
-                                KrakenSymbols.ETH
+                                Asset.BTC,
+                                Asset.ETH
                             ),
                             FormFields.TARGETS to listOf("invalid", "30.0")
                         ).formUrlEncode()
@@ -403,30 +426,32 @@ class DashboardControllerTest : StringSpec() {
             capturedConfig.captured.settings.fiatMaxDrawdown shouldBe 0.0
             capturedConfig.captured.settings.fiatDeploymentExponent shouldBe 1.0
             capturedConfig.captured.allocations.size shouldBe 2
-            capturedConfig.captured.allocations[0].symbol shouldBe KrakenSymbols.BTC
+            capturedConfig.captured.allocations[0].symbol.value shouldBe Asset.BTC
             capturedConfig.captured.allocations[0].targetPercent shouldBe 0.0
-            capturedConfig.captured.allocations[1].symbol shouldBe KrakenSymbols.ETH
+            capturedConfig.captured.allocations[1].symbol.value shouldBe Asset.ETH
             capturedConfig.captured.allocations[1].targetPercent shouldBe 30.0
         }
 
         "postSettings_WithAbsentParamsAndNullErrorMessage_UsesDefaultsAndFallbackMessage" {
             val serverConfig = AppConfig(
-                KrakenCredentials(
-                    TestFixtures.TEST_SERVER_API_KEY,
-                    TestFixtures.TEST_SERVER_API_SECRET
+                kraken = KrakenCredentials(
+                    apiKey = TestFixtures.TEST_SERVER_API_KEY,
+                    privateKey = TestFixtures.TEST_SERVER_API_SECRET
                 ),
-                Settings(
-                    60L,
-                    2.0,
-                    1.0,
-                    true,
-                    0.0,
-                    1.0
+                settings = Settings(
+                    loopDelaySeconds = 60L,
+                    deviationTriggerPercent = 2.0,
+                    dustThresholdUSD = 1.0,
+                    dryRun = true,
+                    fiatMaxDrawdown = 0.0,
+                    fiatDeploymentExponent = 1.0
                 ),
-                listOf(Allocation(
-                    KrakenSymbols.USD,
-                    100.0
-                ))
+                allocations = listOf(
+                    Allocation(
+                        symbol = Asset.USD,
+                        targetPercent = 100.0
+                    )
+                )
             )
             every { configService.getConfig() } returns serverConfig
             val capturedConfig = slot<AppConfig>()
@@ -464,30 +489,32 @@ class DashboardControllerTest : StringSpec() {
 
         "sseStatusStream_EmitsInitialAndFlowSnapshots" {
             val snapshot1 = PortfolioSnapshot(
-                Instant.now(),
-                BigDecimal("10000.0"),
-                emptyMap(),
-                emptyList(),
-                BigDecimal.ZERO,
-                BigDecimal.ZERO,
-                BigDecimal.ZERO
+                timestamp = Instant.now(),
+                totalValueUSD = BigDecimal("10000.0"),
+                assets = emptyMap(),
+                actions = emptyList(),
+                drawdownPercent = BigDecimal.ZERO,
+                fiatDeploymentPercent = BigDecimal.ZERO,
+                effectiveUsdTargetPercent = BigDecimal.ZERO
             )
             val snapshot2 = PortfolioSnapshot(
-                Instant.now().plusSeconds(60),
-                BigDecimal("12000.0"),
-                emptyMap(),
-                emptyList(),
-                BigDecimal.ZERO,
-                BigDecimal.ZERO,
-                BigDecimal.ZERO
+                timestamp = Instant.now().plusSeconds(60),
+                totalValueUSD = BigDecimal("12000.0"),
+                assets = emptyMap(),
+                actions = emptyList(),
+                drawdownPercent = BigDecimal.ZERO,
+                fiatDeploymentPercent = BigDecimal.ZERO,
+                effectiveUsdTargetPercent = BigDecimal.ZERO
             )
 
             every { tradeHistoryService.getLatestSnapshot() } returns snapshot1
-            every { tradeHistoryService.getHistoryFlow() } returns flowOf(snapshot2)
+            every { tradeHistoryService.getHistoryFlow() } returns flowOf(
+                snapshot2
+            )
 
             testApplication {
                 val client = createClient {
-                    install(SSE)
+                    install(ClientSSE)
                 }
                 application {
                     configureTestEnv()
@@ -512,7 +539,7 @@ class DashboardControllerTest : StringSpec() {
 
             testApplication {
                 val client = createClient {
-                    install(SSE)
+                    install(ClientSSE)
                 }
                 application {
                     configureTestEnv()
@@ -535,7 +562,7 @@ class DashboardControllerTest : StringSpec() {
 
             testApplication {
                 val client = createClient {
-                    install(SSE)
+                    install(ClientSSE)
                 }
                 application {
                     configureTestEnv()

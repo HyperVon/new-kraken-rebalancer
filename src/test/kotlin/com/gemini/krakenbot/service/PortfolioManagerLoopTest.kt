@@ -37,33 +37,33 @@ class PortfolioManagerLoopTest : StringSpec() {
             } returns PortfolioStats(BigDecimal.ZERO)
             portfolioAnalyzer =
                 PortfolioAnalyzer(
-                    krakenService,
-                    configService,
-                    repo
+                    krakenService = krakenService,
+                    configService = configService,
+                    portfolioStatsRepository = repo
                 )
             orderExecutor = OrderExecutor(krakenService, portfolioAnalyzer)
             portfolioManager = PortfolioManagerImpl(
-                configService,
-                tradeHistoryService,
-                portfolioAnalyzer,
-                orderExecutor
+                configService = configService,
+                tradeHistoryService = tradeHistoryService,
+                portfolioAnalyzer = portfolioAnalyzer,
+                orderExecutor = orderExecutor
             )
         }
 
         "startRebalancingLoop_RunsWhenEnabled" {
             runTest {
                 val settings = Settings(
-                    60L,
-                    2.0,
-                    1.0,
-                    true,
-                    0.0,
-                    1.0
+                    loopDelaySeconds = 60L,
+                    deviationTriggerPercent = 2.0,
+                    dustThresholdUSD = 1.0,
+                    dryRun = true,
+                    fiatMaxDrawdown = 0.0,
+                    fiatDeploymentExponent = 1.0
                 )
                 val config = AppConfig(
-                    KrakenCredentials("k", "s"),
-                    settings,
-                    emptyList()
+                    kraken = KrakenCredentials(apiKey = "k", privateKey = "s"),
+                    settings = settings,
+                    allocations = emptyList()
                 )
                 every { configService.getConfig() } returns config
                 krakenService.balanceSupplier = { emptyMap() }
@@ -83,17 +83,17 @@ class PortfolioManagerLoopTest : StringSpec() {
         "stopRebalancingLoop_StopsExecution" {
             runTest {
                 val settings = Settings(
-                    60L,
-                    2.0,
-                    1.0,
-                    true,
-                    0.0,
-                    1.0
+                    loopDelaySeconds = 60L,
+                    deviationTriggerPercent = 2.0,
+                    dustThresholdUSD = 1.0,
+                    dryRun = true,
+                    fiatMaxDrawdown = 0.0,
+                    fiatDeploymentExponent = 1.0
                 )
                 val config = AppConfig(
-                    KrakenCredentials("k", "s"),
-                    settings,
-                    emptyList()
+                    kraken = KrakenCredentials(apiKey = "k", privateKey = "s"),
+                    settings = settings,
+                    allocations = emptyList()
                 )
                 every { configService.getConfig() } returns config
 
@@ -109,17 +109,17 @@ class PortfolioManagerLoopTest : StringSpec() {
         "checkAndRunCycle_HandlesExceptionGracefully" {
             runTest {
                 val settings = Settings(
-                    60L,
-                    2.0,
-                    1.0,
-                    true,
-                    0.0,
-                    1.0
+                    loopDelaySeconds = 60L,
+                    deviationTriggerPercent = 2.0,
+                    dustThresholdUSD = 1.0,
+                    dryRun = true,
+                    fiatMaxDrawdown = 0.0,
+                    fiatDeploymentExponent = 1.0
                 )
                 val config = AppConfig(
-                    KrakenCredentials("k", "s"),
-                    settings,
-                    emptyList()
+                    kraken = KrakenCredentials(apiKey = "k", privateKey = "s"),
+                    settings = settings,
+                    allocations = emptyList()
                 )
                 every { configService.getConfig() } returns config
 

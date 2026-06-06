@@ -17,74 +17,76 @@ import java.io.IOException
 import java.math.BigDecimal
 import java.time.Instant
 
-class FileTradeRepositoryTest : StringSpec({
+class FileTradeRepositoryTest : StringSpec() {
 
-    val testFileName = "test-trade-history.json"
-    lateinit var repository: FileTradeRepositoryImpl
-    lateinit var objectMapper: ObjectMapper
+    private val testFileName = "test-trade-history.json"
+    private lateinit var repository: FileTradeRepositoryImpl
+    private lateinit var objectMapper: ObjectMapper
 
-    beforeTest {
-        val f = File(testFileName)
-        if (f.exists()) f.delete()
-        objectMapper = jacksonObjectMapper()
-        objectMapper.findAndRegisterModules()
-        repository = FileTradeRepositoryImpl(objectMapper)
-        val field =
-            FileTradeRepositoryImpl::class.java.getDeclaredField("filePath")
-        field.isAccessible = true
-        field.set(repository, testFileName)
-    }
-
-    afterTest {
-        val f = File(testFileName)
-        if (f.exists()) f.delete()
-    }
-
-    "testSaveAndLoad" {
-        val snapshot = PortfolioSnapshot(
-            timestamp = Instant.parse("2023-01-01T10:00:00Z"),
-            totalValueUSD = BigDecimal("15000.50"),
-            assets = emptyMap(),
-            actions = listOf("BUY BTC"),
-            drawdownPercent = BigDecimal.ZERO,
-            fiatDeploymentPercent = BigDecimal.ZERO,
-            effectiveUsdTargetPercent = BigDecimal.ZERO
-        )
-
-        repository.save(listOf(snapshot))
-        val loaded = repository.load()
-
-        loaded.size shouldBe 1
-        loaded[0].totalValueUSD shouldBe BigDecimal("15000.50")
-        loaded[0].actions shouldBe snapshot.actions
-    }
-
-    "testLoadNonExistentFile" {
-        val loaded = repository.load()
-        loaded.shouldNotBeNull()
-        loaded.isEmpty().shouldBeTrue()
-    }
-
-    "testLoadCorruptedFile" {
-        val file = File(testFileName)
-        FileWriter(file).use { writer ->
-            writer.write("{ incomplete json ")
+    init {
+        beforeTest {
+            val f = File(testFileName)
+            if (f.exists()) f.delete()
+            objectMapper = jacksonObjectMapper()
+            objectMapper.findAndRegisterModules()
+            repository = FileTradeRepositoryImpl(objectMapper)
+            val field =
+                FileTradeRepositoryImpl::class.java.getDeclaredField("filePath")
+            field.isAccessible = true
+            field.set(repository, testFileName)
         }
 
-        val loaded = repository.load()
-        loaded.shouldNotBeNull()
-        loaded.isEmpty().shouldBeTrue()
-    }
+        afterTest {
+            val f = File(testFileName)
+            if (f.exists()) f.delete()
+        }
 
-    "testSaveError" {
-        val mockMapper = mockk<ObjectMapper>(relaxed = true)
-        every {
-            mockMapper.writeValue(
-                any<File>(),
-                any<Any>()
+        "testSaveAndLoad" {
+            val snapshot = PortfolioSnapshot(
+                timestamp = Instant.parse("2023-01-01T10:00:00Z"),
+                totalValueUSD = BigDecimal("15000.50"),
+                assets = emptyMap(),
+                actions = listOf("BUY BTC"),
+                drawdownPercent = BigDecimal.ZERO,
+                fiatDeploymentPercent = BigDecimal.ZERO,
+                effectiveUsdTargetPercent = BigDecimal.ZERO
             )
-        } throws IOException("Write failed")
-        val repo = FileTradeRepositoryImpl(mockMapper)
-        shouldThrow<IOException> { repo.save(emptyList()) }
+
+            repository.save(listOf(snapshot))
+            val loaded = repository.load()
+
+            loaded.size shouldBe 1
+            loaded[0].totalValueUSD shouldBe BigDecimal("15000.50")
+            loaded[0].actions shouldBe snapshot.actions
+        }
+
+        "testLoadNonExistentFile" {
+            val loaded = repository.load()
+            loaded.shouldNotBeNull()
+            loaded.isEmpty().shouldBeTrue()
+        }
+
+        "testLoadCorruptedFile" {
+            val file = File(testFileName)
+            FileWriter(file).use { writer ->
+                writer.write("{ incomplete json ")
+            }
+
+            val loaded = repository.load()
+            loaded.shouldNotBeNull()
+            loaded.isEmpty().shouldBeTrue()
+        }
+
+        "testSaveError" {
+            val mockMapper = mockk<ObjectMapper>(relaxed = true)
+            every {
+                mockMapper.writeValue(
+                    any<File>(),
+                    any<Any>()
+                )
+            } throws IOException("Write failed")
+            val repo = FileTradeRepositoryImpl(mockMapper)
+            shouldThrow<IOException> { repo.save(emptyList()) }
+        }
     }
-})
+}

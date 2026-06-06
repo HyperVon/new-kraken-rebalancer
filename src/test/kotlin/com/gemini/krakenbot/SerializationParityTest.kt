@@ -10,23 +10,24 @@ import io.kotest.matchers.shouldBe
 import java.math.BigDecimal
 
 @Suppress("unused")
-class SerializationParityTest : StringSpec({
+class SerializationParityTest : StringSpec() {
 
-    val mapper = jacksonObjectMapper().findAndRegisterModules()
+    private val mapper = jacksonObjectMapper().findAndRegisterModules()
 
-    "should parse legacy Java PortfolioStats JSON accurately" {
-        val legacyJson = """
+    init {
+        "should parse legacy Java PortfolioStats JSON accurately" {
+            val legacyJson = """
             {
               "allTimeHigh": 123456.789101112
             }
         """.trimIndent()
 
-        val parsed: PortfolioStats = mapper.readValue(legacyJson)
-        parsed.allTimeHigh?.compareTo(BigDecimal("123456.789101112")) shouldBe 0
-    }
+            val parsed: PortfolioStats = mapper.readValue(legacyJson)
+            parsed.allTimeHigh?.compareTo(BigDecimal("123456.789101112")) shouldBe 0
+        }
 
-    "should parse legacy Java PortfolioSnapshot JSON accurately" {
-        val legacyJson = """
+        "should parse legacy Java PortfolioSnapshot JSON accurately" {
+            val legacyJson = """
             [
               {
                 "timestamp": 1672567200.000000000,
@@ -53,25 +54,26 @@ class SerializationParityTest : StringSpec({
             ]
         """.trimIndent()
 
-        val parsed: List<PortfolioSnapshot> = mapper.readValue(legacyJson)
-        parsed shouldHaveSize 1
-        val snapshot = parsed[0]
+            val parsed: List<PortfolioSnapshot> = mapper.readValue(legacyJson)
+            parsed shouldHaveSize 1
+            val snapshot = parsed[0]
 
-        snapshot.totalValueUSD.compareTo(BigDecimal("15000.50")) shouldBe 0
-        snapshot.drawdownPercent.compareTo(BigDecimal("5.0")) shouldBe 0
-        snapshot.fiatDeploymentPercent.compareTo(BigDecimal("10.0")) shouldBe 0
-        snapshot.effectiveUsdTargetPercent.compareTo(BigDecimal("40.0")) shouldBe 0
-        snapshot.actions shouldHaveSize 1
-        snapshot.actions[0] shouldBe "SELL 0.125 XXBTZUSD"
+            snapshot.totalValueUSD.compareTo(BigDecimal("15000.50")) shouldBe 0
+            snapshot.drawdownPercent.compareTo(BigDecimal("5.0")) shouldBe 0
+            snapshot.fiatDeploymentPercent.compareTo(BigDecimal("10.0")) shouldBe 0
+            snapshot.effectiveUsdTargetPercent.compareTo(BigDecimal("40.0")) shouldBe 0
+            snapshot.actions shouldHaveSize 1
+            snapshot.actions[0] shouldBe "SELL 0.125 XXBTZUSD"
 
-        val btcAsset = snapshot.assets["XXBTZUSD"]
-        btcAsset?.symbol shouldBe "XXBTZUSD"
-        btcAsset?.balance?.compareTo(BigDecimal("0.5")) shouldBe 0
-        btcAsset?.price?.compareTo(BigDecimal("20000.0")) shouldBe 0
-        btcAsset?.valueUSD?.compareTo(BigDecimal("10000.0")) shouldBe 0
-        btcAsset?.targetPercent?.compareTo(BigDecimal("50.0")) shouldBe 0
-        btcAsset?.currentPercent?.compareTo(BigDecimal("66.6666")) shouldBe 0
-        btcAsset?.deviationPercent?.compareTo(BigDecimal("16.6666")) shouldBe 0
-        btcAsset?.deviationUSD?.compareTo(BigDecimal("2500.25")) shouldBe 0
+            val btcAsset = snapshot.assets["XXBTZUSD"]
+            btcAsset?.symbol?.value shouldBe "XXBTZUSD"
+            btcAsset?.balance?.compareTo(BigDecimal("0.5")) shouldBe 0
+            btcAsset?.price?.compareTo(BigDecimal("20000.0")) shouldBe 0
+            btcAsset?.valueUSD?.compareTo(BigDecimal("10000.0")) shouldBe 0
+            btcAsset?.targetPercent?.compareTo(BigDecimal("50.0")) shouldBe 0
+            btcAsset?.currentPercent?.compareTo(BigDecimal("66.6666")) shouldBe 0
+            btcAsset?.deviationPercent?.compareTo(BigDecimal("16.6666")) shouldBe 0
+            btcAsset?.deviationUSD?.compareTo(BigDecimal("2500.25")) shouldBe 0
+        }
     }
-})
+}

@@ -1,9 +1,9 @@
 package com.gemini.krakenbot.service.impl
 
 import com.gemini.krakenbot.config.Settings
-import com.gemini.krakenbot.service.ConfigService
+import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.OrderResult
 import com.gemini.krakenbot.service.KrakenService
-import com.gemini.krakenbot.util.KrakenSymbols
 import kotlinx.coroutines.delay
 import org.slf4j.LoggerFactory
 import java.math.BigDecimal
@@ -17,33 +17,33 @@ class OrderExecutor(
     private val log = LoggerFactory.getLogger(OrderExecutor::class.java)
 
     suspend fun executeOrders(
-        buyOrders: Map<String, BigDecimal>,
-        sellOrders: Map<String, BigDecimal>,
-        currentValuesUSD: Map<String, BigDecimal>,
-        prices: Map<String, BigDecimal>,
-        s: Settings,
+        buyOrders: RebalanceOrders,
+        sellOrders: RebalanceOrders,
+        currentValuesUSD: AssetValues,
+        prices: AssetPrices,
+        settings: Settings,
         actionLog: MutableList<String>
     ) {
         var projectedCash =
-            currentValuesUSD[KrakenSymbols.USD] ?: BigDecimal.ZERO
+            currentValuesUSD[Asset.USD] ?: BigDecimal.ZERO
         var executedSells = false
 
         for ((symbol, usdToSell) in sellOrders) {
-            if (usdToSell < BigDecimal.valueOf(s.dustThresholdUSD)) {
+            if (usdToSell < BigDecimal.valueOf(settings.dustThresholdUSD)) {
                 log.info("Skipping dust sell for {} ($ {})", symbol, usdToSell)
                 actionLog.add("Skipping dust sell for $symbol ($$usdToSell)")
                 continue
             }
 
             val price = prices[symbol] ?: BigDecimal.ZERO
-            if (price.compareTo(BigDecimal.ZERO) == 0) continue
+            if (price.signum() == 0) continue
 
             val volume = usdToSell.divide(
                 price,
                 8,
                 RoundingMode.HALF_UP
             )
-            val pair = KrakenSymbols.tradingPair(symbol)
+            val pair = Asset.tradingPair(symbol)
             val result =
                 krakenService.executeOrder(
                     pair,
@@ -52,12 +52,12 @@ class OrderExecutor(
                     volume
                 )
             logOrderResult(
-                result,
-                actionLog,
-                symbol,
-                volume,
-                usdToSell,
-                "SELL"
+                result = result,
+                actionLog = actionLog,
+                symbol = symbol,
+                volume = volume,
+                usdAmount = usdToSell,
+                side = "SELL"
             )
             if (result.success) {
                 projectedCash = projectedCash.add(usdToSell)
@@ -66,7 +66,7 @@ class OrderExecutor(
         }
 
         var actualCash = projectedCash
-        if (executedSells && !s.dryRun) {
+        if (executedSells && !settings.dryRun) {
             actualCash = refreshUsdBalanceAfterSells(projectedCash)
         }
 
@@ -82,31 +82,31 @@ class OrderExecutor(
                 cost = actualCash.multiply(BigDecimal.valueOf(0.99))
             }
 
-            if (cost < BigDecimal.valueOf(s.dustThresholdUSD)) {
+            if (cost < BigDecimal.valueOf(settings.dustThresholdUSD)) {
                 log.info("Skipping dust buy for {} ($ {})", symbol, cost)
                 actionLog.add("Skipping dust buy for $symbol ($$cost)")
                 continue
             }
 
             val price = prices[symbol] ?: BigDecimal.ZERO
-            if (price.compareTo(BigDecimal.ZERO) == 0) continue
+            if (price.signum() == 0) continue
 
             val volume = cost.divide(price, 8, RoundingMode.HALF_UP)
-            val pair = KrakenSymbols.tradingPair(symbol)
+            val pair = Asset.tradingPair(symbol)
             val result =
                 krakenService.executeOrder(
-                    pair,
-                    "market",
-                    "buy",
-                    volume
+                    pair = pair,
+                    type = "market",
+                    side = "buy",
+                    volume = volume
                 )
             logOrderResult(
-                result,
-                actionLog,
-                symbol,
-                volume,
-                cost,
-                "BUY"
+                result = result,
+                actionLog = actionLog,
+                symbol = symbol,
+                volume = volume,
+                usdAmount = cost,
+                side = "BUY"
             )
             if (result.success) {
                 actualCash = actualCash.subtract(cost)
@@ -125,7 +125,7 @@ class OrderExecutor(
                 val updatedBalances = krakenService.getBalances()
                 if (updatedBalances.isNotEmpty()) {
                     val usdBalance = portfolioAnalyzer.resolveBalance(
-                        KrakenSymbols.USD,
+                        Asset.USD,
                         updatedBalances
                     )
                     if (usdBalance > 0) {
@@ -153,7 +153,7 @@ class OrderExecutor(
     }
 
     internal fun logOrderResult(
-        result: com.gemini.krakenbot.model.OrderResult,
+        result: OrderResult,
         actionLog: MutableList<String>,
         symbol: String,
         volume: BigDecimal,

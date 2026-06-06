@@ -4,13 +4,13 @@ import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.config.Settings
+import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.PortfolioStats
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.service.impl.OrderExecutor
 import com.gemini.krakenbot.service.impl.PortfolioAnalyzer
 import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
-import com.gemini.krakenbot.util.KrakenSymbols
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.booleans.shouldBeTrue
@@ -38,34 +38,34 @@ class PortfolioManagerDrawdownTest : StringSpec() {
     init {
         beforeTest {
             portfolioAnalyzer = PortfolioAnalyzer(
-                krakenService,
-                configService,
-                portfolioStatsRepository
+                krakenService = krakenService,
+                configService = configService,
+                portfolioStatsRepository = portfolioStatsRepository
             )
             orderExecutor = OrderExecutor(krakenService, portfolioAnalyzer)
             portfolioManager = PortfolioManagerImpl(
-                configService,
-                tradeHistoryService,
-                portfolioAnalyzer,
-                orderExecutor
+                configService = configService,
+                tradeHistoryService = tradeHistoryService,
+                portfolioAnalyzer = portfolioAnalyzer,
+                orderExecutor = orderExecutor
             )
 
             val settings = Settings(
-                60L,
-                2.0,
-                1.0,
-                false,
-                50.0,
-                1.0
+                loopDelaySeconds = 60L,
+                deviationTriggerPercent = 2.0,
+                dustThresholdUSD = 1.0,
+                dryRun = false,
+                fiatMaxDrawdown = 50.0,
+                fiatDeploymentExponent = 1.0
             )
             val appConfig =
                 AppConfig(
-                    KrakenCredentials(
-                        "k",
-                        "s"
+                    kraken = KrakenCredentials(
+                        apiKey = "k",
+                        privateKey = "s"
                     ),
-                    settings,
-                    emptyList()
+                    settings = settings,
+                    allocations = emptyList()
                 )
             every { configService.getConfig() } returns appConfig
         }
@@ -80,20 +80,20 @@ class PortfolioManagerDrawdownTest : StringSpec() {
 
                 val allocs = listOf(
                     Allocation("A", 50.0),
-                    Allocation(KrakenSymbols.USD, 50.0)
+                    Allocation(Asset.USD, 50.0)
                 )
 
                 val appConfig = AppConfig(
-                    KrakenCredentials("k", "s"),
-                    Settings(
-                        60L,
-                        2.0,
-                        1.0,
-                        false,
-                        50.0,
-                        1.0
+                    kraken = KrakenCredentials("k", "s"),
+                    settings = Settings(
+                        loopDelaySeconds = 60L,
+                        deviationTriggerPercent = 2.0,
+                        dustThresholdUSD = 1.0,
+                        dryRun = false,
+                        fiatMaxDrawdown = 50.0,
+                        fiatDeploymentExponent = 1.0
                     ),
-                    allocs
+                    allocations = allocs
                 )
                 every { configService.getConfig() } returns appConfig
 
@@ -102,7 +102,7 @@ class PortfolioManagerDrawdownTest : StringSpec() {
 
                 val balances = mapOf(
                     "A" to 7.5,
-                    KrakenSymbols.USD to 750.0
+                    Asset.USD to 750.0
                 )
                 krakenService.balanceSupplier = { balances }
 
@@ -131,27 +131,29 @@ class PortfolioManagerDrawdownTest : StringSpec() {
                 val stats = PortfolioStats(BigDecimal("1000.0"))
                 every { portfolioStatsRepository.load() } returns stats
 
-                val allocs = listOf(Allocation(
-                    KrakenSymbols.USD,
-                    100.0
-                ))
+                val allocs = listOf(
+                    Allocation(
+                        symbol = Asset.USD,
+                        targetPercent = 100.0
+                    )
+                )
 
                 val appConfig = AppConfig(
-                    KrakenCredentials("k", "s"),
-                    Settings(
-                        60L,
-                        2.0,
-                        1.0,
-                        false,
-                        50.0,
-                        1.0
+                    kraken = KrakenCredentials("k", "s"),
+                    settings = Settings(
+                        loopDelaySeconds = 60L,
+                        deviationTriggerPercent = 2.0,
+                        dustThresholdUSD = 1.0,
+                        dryRun = false,
+                        fiatMaxDrawdown = 50.0,
+                        fiatDeploymentExponent = 1.0
                     ),
-                    allocs
+                    allocations = allocs
                 )
                 every { configService.getConfig() } returns appConfig
                 krakenService.pricesSupplier = { emptyMap() }
 
-                val balances = mapOf(KrakenSymbols.USD to 1500.0)
+                val balances = mapOf(Asset.USD to 1500.0)
                 krakenService.balanceSupplier = { balances }
 
                 portfolioManager.performRebalanceCycle()
