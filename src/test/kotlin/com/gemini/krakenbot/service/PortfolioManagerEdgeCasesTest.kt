@@ -743,6 +743,44 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
             ) shouldBe 0
         }
 
+        "testAnalyzeDeviations_dustDeviationIsIgnored" {
+            val totalVal = BigDecimal.valueOf(1000.0)
+            val currentValuesUSD = mapOf(
+                Asset.USD to BigDecimal("0.0001"),
+                Asset.BTC to BigDecimal("999.9999")
+            )
+            val effUsdTarget = BigDecimal.ZERO
+            val cryptoScale = BigDecimal("2.0")
+            val allocs = listOf(
+                Allocation(Asset.USD, 50.0),
+                Allocation(Asset.BTC, 50.0)
+            )
+            val settings = Settings(
+                0L,
+                2.0,
+                5.0,
+                true,
+                0.0,
+                1.0
+            )
+            every { configService.getConfig() } returns AppConfig(
+                KrakenCredentials("k", "s"),
+                settings,
+                allocs
+            )
+
+            val result = portfolioAnalyzer.analyzeDeviations(
+                totalVal,
+                currentValuesUSD,
+                effUsdTarget,
+                cryptoScale
+            )
+
+            result.buyOrders.isEmpty() shouldBe true
+            result.sellOrders.isEmpty() shouldBe true
+            result.actionLog.none { it.contains("USD Dev") } shouldBe true
+        }
+
         "testExecuteOrders_DryRunAndSellsSuccess" {
             runTest {
                 val buyOrders = emptyMap<String, BigDecimal>()

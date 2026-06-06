@@ -263,14 +263,16 @@ class PortfolioAnalyzer(
                 s.deviationTriggerPercent
             )
 
-            if (deviationPct.toDouble() >= s.deviationTriggerPercent) {
+            val isDeviationSignificant = deviationUSD.abs() >= BigDecimal.valueOf(s.dustThresholdUSD)
+
+            if (deviationPct.toDouble() >= s.deviationTriggerPercent && isDeviationSignificant) {
                 actionLog.add(
                     "Deviation Triggered details: $symbolVal Dev: $deviationPct%"
                 )
             }
 
             if (symbol.isUsd) {
-                if (deviationPct.toDouble() >= s.deviationTriggerPercent) {
+                if (deviationPct.toDouble() >= s.deviationTriggerPercent && isDeviationSignificant) {
                     log.info(
                         "Asset USD Deviation: {}% (Trigger: {}%). USD Dev: {}",
                         deviationPct,
@@ -281,7 +283,7 @@ class PortfolioAnalyzer(
                     usdDeviationAmount = deviationUSD
                 }
             } else {
-                if (deviationPct.toDouble() >= s.deviationTriggerPercent) {
+                if (deviationPct.toDouble() >= s.deviationTriggerPercent && isDeviationSignificant) {
                     log.info(
                         "Asset {} Deviation: {}% (Trigger: {}%). USD Dev: {}",
                         symbolVal,
