@@ -9,7 +9,7 @@ import com.gemini.krakenbot.repository.impl.FileTradeRepositoryImpl
 import com.gemini.krakenbot.repository.impl.PortfolioStatsRepositoryImpl
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.impl.*
-import com.gemini.krakenbot.util.KrakenSymbols
+import com.gemini.krakenbot.model.Asset
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.booleans.shouldBeTrue
@@ -51,8 +51,8 @@ class KrakenE2ETest : StringSpec() {
                         1.0
                     ),
                     listOf(
-                        Allocation(KrakenSymbols.BTC, 50.0),
-                        Allocation(KrakenSymbols.USD, 50.0)
+                        Allocation(Asset.BTC, 50.0),
+                        Allocation(Asset.USD, 50.0)
                     )
                 )
 
@@ -183,8 +183,8 @@ class KrakenE2ETest : StringSpec() {
                         1.0
                     ),
                     listOf(
-                        Allocation(KrakenSymbols.BTC, 50.0),
-                        Allocation(KrakenSymbols.USD, 50.0)
+                        Allocation(Asset.BTC, 50.0),
+                        Allocation(Asset.USD, 50.0)
                     )
                 )
 

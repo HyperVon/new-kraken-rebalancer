@@ -33,14 +33,7 @@ val appModule = module {
     singleOf(::KrakenServiceImpl) { bind<KrakenService>() }
     singleOf(::PortfolioAnalyzer)
     singleOf(::OrderExecutor)
-    single<PortfolioManager> {
-        PortfolioManagerImpl(
-            configService = get(),
-            tradeHistoryService = get(),
-            portfolioAnalyzer = get(),
-            orderExecutor = get()
-        )
-    }
+    singleOf(::PortfolioManagerImpl) { bind<PortfolioManager>() }
     singleOf(::DashboardShellComponent)
     singleOf(::SettingsFormComponent)
     singleOf(::OverviewGridComponent)

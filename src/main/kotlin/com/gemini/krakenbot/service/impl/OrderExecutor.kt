@@ -1,9 +1,10 @@
 package com.gemini.krakenbot.service.impl
 
 import com.gemini.krakenbot.config.Settings
+import com.gemini.krakenbot.model.OrderResult
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.KrakenService
-import com.gemini.krakenbot.util.KrakenSymbols
+import com.gemini.krakenbot.model.Asset
 import kotlinx.coroutines.delay
 import org.slf4j.LoggerFactory
 import java.math.BigDecimal
@@ -25,7 +26,7 @@ class OrderExecutor(
         actionLog: MutableList<String>
     ) {
         var projectedCash =
-            currentValuesUSD[KrakenSymbols.USD] ?: BigDecimal.ZERO
+            currentValuesUSD[Asset.USD] ?: BigDecimal.ZERO
         var executedSells = false
 
         for ((symbol, usdToSell) in sellOrders) {
@@ -43,7 +44,7 @@ class OrderExecutor(
                 8,
                 RoundingMode.HALF_UP
             )
-            val pair = KrakenSymbols.tradingPair(symbol)
+            val pair = Asset.tradingPair(symbol)
             val result =
                 krakenService.executeOrder(
                     pair,
@@ -92,7 +93,7 @@ class OrderExecutor(
             if (price.signum() == 0) continue
 
             val volume = cost.divide(price, 8, RoundingMode.HALF_UP)
-            val pair = KrakenSymbols.tradingPair(symbol)
+            val pair = Asset.tradingPair(symbol)
             val result =
                 krakenService.executeOrder(
                     pair,
@@ -125,7 +126,7 @@ class OrderExecutor(
                 val updatedBalances = krakenService.getBalances()
                 if (updatedBalances.isNotEmpty()) {
                     val usdBalance = portfolioAnalyzer.resolveBalance(
-                        KrakenSymbols.USD,
+                        Asset.USD,
                         updatedBalances
                     )
                     if (usdBalance > 0) {
@@ -153,7 +154,7 @@ class OrderExecutor(
     }
 
     internal fun logOrderResult(
-        result: com.gemini.krakenbot.model.OrderResult,
+        result: OrderResult,
         actionLog: MutableList<String>,
         symbol: String,
         volume: BigDecimal,

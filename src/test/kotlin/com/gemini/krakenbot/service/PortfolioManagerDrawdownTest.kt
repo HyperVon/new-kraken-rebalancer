@@ -10,7 +10,7 @@ import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.service.impl.OrderExecutor
 import com.gemini.krakenbot.service.impl.PortfolioAnalyzer
 import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
-import com.gemini.krakenbot.util.KrakenSymbols
+import com.gemini.krakenbot.model.Asset
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.booleans.shouldBeTrue
@@ -80,7 +80,7 @@ class PortfolioManagerDrawdownTest : StringSpec() {
 
                 val allocs = listOf(
                     Allocation("A", 50.0),
-                    Allocation(KrakenSymbols.USD, 50.0)
+                    Allocation(Asset.USD, 50.0)
                 )
 
                 val appConfig = AppConfig(
@@ -102,7 +102,7 @@ class PortfolioManagerDrawdownTest : StringSpec() {
 
                 val balances = mapOf(
                     "A" to 7.5,
-                    KrakenSymbols.USD to 750.0
+                    Asset.USD to 750.0
                 )
                 krakenService.balanceSupplier = { balances }
 
@@ -132,7 +132,7 @@ class PortfolioManagerDrawdownTest : StringSpec() {
                 every { portfolioStatsRepository.load() } returns stats
 
                 val allocs = listOf(Allocation(
-                    KrakenSymbols.USD,
+                    Asset.USD,
                     100.0
                 ))
 
@@ -151,7 +151,7 @@ class PortfolioManagerDrawdownTest : StringSpec() {
                 every { configService.getConfig() } returns appConfig
                 krakenService.pricesSupplier = { emptyMap() }
 
-                val balances = mapOf(KrakenSymbols.USD to 1500.0)
+                val balances = mapOf(Asset.USD to 1500.0)
                 krakenService.balanceSupplier = { balances }
 
                 portfolioManager.performRebalanceCycle()

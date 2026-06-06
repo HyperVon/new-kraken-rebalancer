@@ -17,8 +17,9 @@ import kotlinx.html.div
 import kotlinx.html.style
 
 class AllocationChartComponent {
-    fun DIV.render(latest: PortfolioSnapshot) {
-        glassPanel(PORTFOLIO_ALLOCATION, DOLLAR_CIRCLE) {
+    context(div: DIV)
+    fun render(latest: PortfolioSnapshot) {
+        div.glassPanel(PORTFOLIO_ALLOCATION, DOLLAR_CIRCLE) {
             div(ALLOCATION_CHART_CONTAINER) {
                 val sorted =
                     latest.assets.values.sortedByDescending { it.valueUSD }

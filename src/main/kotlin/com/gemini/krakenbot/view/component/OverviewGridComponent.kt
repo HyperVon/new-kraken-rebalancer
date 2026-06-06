@@ -1,7 +1,7 @@
 package com.gemini.krakenbot.view.component
 
 import com.gemini.krakenbot.model.PortfolioSnapshot
-import com.gemini.krakenbot.util.KrakenSymbols
+import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.view.util.CssClasses.OVERVIEW_GRID
 import com.gemini.krakenbot.view.util.CssClasses.TEXT_DANGER
 import com.gemini.krakenbot.view.util.Formatter.formatCurrency
@@ -28,20 +28,21 @@ import java.math.BigDecimal
 import kotlin.math.abs
 
 class OverviewGridComponent {
-    fun DIV.render(latest: PortfolioSnapshot) {
+    context(div: DIV)
+    fun render(latest: PortfolioSnapshot) {
         val totalValue = latest.totalValueUSD
-        val usdAsset = latest.assets[KrakenSymbols.USD]
+        val usdAsset = latest.assets[Asset.USD]
         val usdValue = usdAsset?.valueUSD ?: BigDecimal.ZERO
         val cryptoValue = totalValue - usdValue
 
         val assetsList =
-            latest.assets.values.filter { it.symbol.value != KrakenSymbols.USD }
+            latest.assets.values.filter { !it.symbol.isUsd }
         val cryptoPercent = assetsList.sumOf { it.currentPercent.toDouble() }
         val cryptoTargetPercent =
             assetsList.sumOf { it.targetPercent.toDouble() }
         val cryptoCount = assetsList.size
 
-        div(OVERVIEW_GRID) {
+        div.div(OVERVIEW_GRID) {
             statusCard(
                 title = TOTAL_PORTFOLIO,
                 iconSvg = TREND_UP,

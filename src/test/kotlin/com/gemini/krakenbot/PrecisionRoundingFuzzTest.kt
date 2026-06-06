@@ -12,7 +12,7 @@ import com.gemini.krakenbot.service.impl.KrakenServiceImpl
 import com.gemini.krakenbot.service.impl.OrderExecutor
 import com.gemini.krakenbot.service.impl.PortfolioAnalyzer
 import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
-import com.gemini.krakenbot.util.KrakenSymbols
+import com.gemini.krakenbot.model.Asset
 import io.kotest.assertions.throwables.shouldNotThrowAny
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
@@ -47,8 +47,8 @@ class PrecisionRoundingFuzzTest : StringSpec() {
                         1.0
                     ),
                     listOf(
-                        Allocation(KrakenSymbols.BTC, 50.0),
-                        Allocation(KrakenSymbols.USD, 50.0)
+                        Allocation(Asset.BTC, 50.0),
+                        Allocation(Asset.USD, 50.0)
                     )
                 )
 

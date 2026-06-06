@@ -17,8 +17,9 @@ import kotlinx.html.*
 
 class DashboardShellComponent {
 
-    fun HTML.render() {
-        head {
+    context(html: HTML)
+    fun render() {
+        html.head {
             meta(charset = "utf-8")
             meta(
                 name = "viewport",
@@ -29,7 +30,7 @@ class DashboardShellComponent {
             script(src = "https://unpkg.com/htmx.org@2.0.4") {}
             script(src = "https://unpkg.com/htmx-ext-sse@2.2.2/sse.js") {}
         }
-        body {
+        html.body {
             div(CONTAINER) {
                 div {
                     attributes[HX_EXT] = "sse"

@@ -5,7 +5,7 @@ import com.fasterxml.jackson.databind.ObjectWriter
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.gemini.krakenbot.config.*
 import com.gemini.krakenbot.service.impl.ConfigServiceImpl
-import com.gemini.krakenbot.util.KrakenSymbols
+import com.gemini.krakenbot.model.Asset
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.booleans.shouldBeTrue
@@ -36,7 +36,7 @@ class ConfigServiceTest : StringSpec({
             KrakenCredentials("k", "s"),
             settings,
             listOf(Allocation(
-                KrakenSymbols.USD,
+                Asset.USD,
                 100.0
             ))
         )
@@ -58,7 +58,7 @@ class ConfigServiceTest : StringSpec({
     "loadConfig_Success" {
         configService.loadConfig()
         configService.getConfig().shouldNotBeNull()
-        configService.getConfig().allocations.first().symbol.value shouldBe KrakenSymbols.USD
+        configService.getConfig().allocations.first().symbol.value shouldBe Asset.USD
     }
 
     "loadConfig_FileNotFound" {
@@ -78,8 +78,8 @@ class ConfigServiceTest : StringSpec({
         val newConfig = AppConfig(
             oldConfig.kraken, oldConfig.settings,
             listOf(
-                Allocation(KrakenSymbols.USD, 50.0),
-                Allocation(KrakenSymbols.BTC, 50.0)
+                Allocation(Asset.USD, 50.0),
+                Allocation(Asset.BTC, 50.0)
             )
         )
 
@@ -99,7 +99,7 @@ class ConfigServiceTest : StringSpec({
         val invalidConfig = AppConfig(
             oldConfig.kraken, oldConfig.settings,
             listOf(Allocation(
-                KrakenSymbols.USD,
+                Asset.USD,
                 90.0
             ))
         )
@@ -117,7 +117,7 @@ class ConfigServiceTest : StringSpec({
         val invalidConfig = AppConfig(
             oldConfig.kraken, oldConfig.settings,
             listOf(Allocation(
-                KrakenSymbols.BTC,
+                Asset.BTC,
                 100.0
             ))
         )
@@ -136,11 +136,11 @@ class ConfigServiceTest : StringSpec({
             oldConfig.kraken, oldConfig.settings,
             listOf(
                 Allocation(
-                    KrakenSymbols.BTC,
+                    Asset.BTC,
                     50.0
                 ),
                 Allocation(
-                    KrakenSymbols.BTC.lowercase(),
+                    Asset.BTC.lowercase(),
                     50.0
                 )
             )
@@ -160,11 +160,11 @@ class ConfigServiceTest : StringSpec({
             oldConfig.kraken, oldConfig.settings,
             listOf(
                 Allocation(
-                    KrakenSymbols.USD,
+                    Asset.USD,
                     110.0
                 ),
                 Allocation(
-                    KrakenSymbols.BTC,
+                    Asset.BTC,
                     -10.0
                 )
             )
@@ -198,7 +198,7 @@ class ConfigServiceTest : StringSpec({
         val invalidConfig = AppConfig(
             oldConfig.kraken, oldConfig.settings,
             listOf(Allocation(
-                KrakenSymbols.USD,
+                Asset.USD,
                 50.0
             ), Allocation(
                 "  ",
@@ -303,7 +303,7 @@ class ConfigServiceTest : StringSpec({
                 1.0
             ),
             listOf(Allocation(
-                KrakenSymbols.USD,
+                Asset.USD,
                 100.0
             ))
         )
@@ -332,7 +332,7 @@ class ConfigServiceTest : StringSpec({
                         1.0
                     ),
                     listOf(Allocation(
-                        KrakenSymbols.USD,
+                        Asset.USD,
                         100.0
                     ))
                 )

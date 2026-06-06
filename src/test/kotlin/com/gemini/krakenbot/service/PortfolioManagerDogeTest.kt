@@ -8,7 +8,7 @@ import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.service.impl.OrderExecutor
 import com.gemini.krakenbot.service.impl.PortfolioAnalyzer
 import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
-import com.gemini.krakenbot.util.KrakenSymbols
+import com.gemini.krakenbot.model.Asset
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
@@ -63,11 +63,11 @@ class PortfolioManagerDogeTest : StringSpec() {
                     ), settings,
                     listOf(
                         Allocation(
-                            KrakenSymbols.DOGE,
+                            Asset.DOGE,
                             50.0
                         ),
                         Allocation(
-                            KrakenSymbols.USD,
+                            Asset.USD,
                             50.0
                         )
                     )
@@ -111,11 +111,11 @@ class PortfolioManagerDogeTest : StringSpec() {
                     ), settings,
                     listOf(
                         Allocation(
-                            KrakenSymbols.BTC,
+                            Asset.BTC,
                             50.0
                         ),
                         Allocation(
-                            KrakenSymbols.USD,
+                            Asset.USD,
                             50.0
                         )
                     )

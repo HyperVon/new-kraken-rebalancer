@@ -17,7 +17,7 @@ several months.**
 
 | Layer           | Technology                                                                                           |
 |-----------------|------------------------------------------------------------------------------------------------------|
-| **Language**    | Kotlin 2.x (JVM)                                                                                     |
+| **Language**    | Kotlin 2.4.0 (JVM)                                                                                   |
 | **Backend**     | Ktor 3.5.0 (Netty engine), Koin 4.2.1 (DI), Jackson 2.21                                             |
 | **HTTP Client** | Ktor CIO Client (async, coroutine-native)                                                            |
 | **Concurrency** | Kotlin Coroutines (`kotlinx.coroutines` 1.11.0)                                                      |
@@ -200,7 +200,7 @@ architecture to synchronize the dashboard with the backend rebalancing loop:
 │   │   ├── DashboardView.kt              # Facade class delegating to components
 │   │   ├── component/                    # Modular components (Shell, Grid, Form, etc.)
 │   │   └── util/                         # View utilities (Formatter, Icons, ViewText, Layouts)
-│   └── util/                              # Utilities: AtomicJsonFile, KrakenSymbols
+│   └── util/                              # Utilities: AtomicJsonFile
 ├── src/test/kotlin/                       # Unit tests (100% overall coverage achieved across all packages and metrics)
 │   └── com/gemini/krakenbot/
 │       └── service/
@@ -311,7 +311,7 @@ with `BigDecimal.compareTo()` to avoid floating-point comparison issues.
 - `PortfolioManagerDogeTest` — Kraken symbol mapping quirks (BTC→XBT, DOGE→XDG)
 - `KrakenServiceTest` — API signing, error handling, dry run, order failure (
   using Ktor `MockEngine`)
-- `KrakenSymbolsTest` — ticker mapping and trading pair construction
+- `ModelTest` — unit tests for models including `Asset` mapping
 - `AtomicJsonFileTest` — file-system atomic write verification under normal and
   error/unsupported paths
 - `ConfigServiceTest` — validation, hot-reload, persistence, duplicate/blank

@@ -14,7 +14,7 @@ import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.TradeHistoryService
-import com.gemini.krakenbot.util.KrakenSymbols
+import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.view.DashboardView
 import com.gemini.krakenbot.view.util.*
 import io.kotest.core.spec.IsolationMode
@@ -111,8 +111,8 @@ class DashboardControllerTest : StringSpec() {
                 nowTime,
                 BigDecimal("15000.00"),
                 mapOf(
-                    KrakenSymbols.USD to PortfolioSnapshot.AssetSnapshot(
-                        KrakenSymbols.USD,
+                    Asset.USD to PortfolioSnapshot.AssetSnapshot(
+                        Asset.USD,
                         BigDecimal("5000.0"),
                         BigDecimal("1.0"),
                         BigDecimal("5000.0"),
@@ -121,8 +121,8 @@ class DashboardControllerTest : StringSpec() {
                         BigDecimal("0.0"),
                         BigDecimal("0.0")
                     ),
-                    KrakenSymbols.BTC to PortfolioSnapshot.AssetSnapshot(
-                        KrakenSymbols.BTC,
+                    Asset.BTC to PortfolioSnapshot.AssetSnapshot(
+                        Asset.BTC,
                         BigDecimal("0.1"),
                         BigDecimal("50000.0"),
                         BigDecimal("5000.0"),
@@ -131,8 +131,8 @@ class DashboardControllerTest : StringSpec() {
                         BigDecimal("5.0"),
                         BigDecimal("250.0")
                     ),
-                    KrakenSymbols.ETH to PortfolioSnapshot.AssetSnapshot(
-                        KrakenSymbols.ETH,
+                    Asset.ETH to PortfolioSnapshot.AssetSnapshot(
+                        Asset.ETH,
                         BigDecimal("2.5"),
                         BigDecimal("2000.0"),
                         BigDecimal("5000.0"),
@@ -191,7 +191,7 @@ class DashboardControllerTest : StringSpec() {
                     1.0
                 ),
                 listOf(Allocation(
-                    KrakenSymbols.USD,
+                    Asset.USD,
                     100.0
                 ))
             )
@@ -224,7 +224,7 @@ class DashboardControllerTest : StringSpec() {
                     1.0
                 ),
                 listOf(Allocation(
-                    KrakenSymbols.USD,
+                    Asset.USD,
                     100.0
                 ))
             )
@@ -243,7 +243,7 @@ class DashboardControllerTest : StringSpec() {
                             FormFields.FIAT_MAX_DRAWDOWN to listOf("5.0"),
                             FormFields.FIAT_DEPLOYMENT_EXPONENT to listOf("1.5"),
                             FormFields.DRY_RUN to listOf("on"),
-                            FormFields.SYMBOLS to listOf(KrakenSymbols.USD),
+                            FormFields.SYMBOLS to listOf(Asset.USD),
                             FormFields.TARGETS to listOf("100.0")
                         ).formUrlEncode()
                     )
@@ -274,7 +274,7 @@ class DashboardControllerTest : StringSpec() {
                     1.0
                 ),
                 listOf(Allocation(
-                    KrakenSymbols.USD,
+                    Asset.USD,
                     100.0
                 ))
             )
@@ -293,7 +293,7 @@ class DashboardControllerTest : StringSpec() {
                             FormFields.LOOP_DELAY_SECONDS to listOf("60"),
                             FormFields.DEVIATION_TRIGGER_PERCENT to listOf("2.0"),
                             FormFields.DUST_THRESHOLD_USD to listOf("1.0"),
-                            FormFields.SYMBOLS to listOf(KrakenSymbols.USD),
+                            FormFields.SYMBOLS to listOf(Asset.USD),
                             FormFields.TARGETS to listOf("90.0") // sum != 100
                         ).formUrlEncode()
                     )
@@ -355,7 +355,7 @@ class DashboardControllerTest : StringSpec() {
                     1.0
                 ),
                 listOf(Allocation(
-                    KrakenSymbols.USD,
+                    Asset.USD,
                     100.0
                 ))
             )
@@ -381,8 +381,8 @@ class DashboardControllerTest : StringSpec() {
                             FormFields.FIAT_DEPLOYMENT_EXPONENT to listOf("invalid"),
                             // "dryRun" is absent, meaning false
                             FormFields.SYMBOLS to listOf(
-                                KrakenSymbols.BTC,
-                                KrakenSymbols.ETH
+                                Asset.BTC,
+                                Asset.ETH
                             ),
                             FormFields.TARGETS to listOf("invalid", "30.0")
                         ).formUrlEncode()
@@ -403,9 +403,9 @@ class DashboardControllerTest : StringSpec() {
             capturedConfig.captured.settings.fiatMaxDrawdown shouldBe 0.0
             capturedConfig.captured.settings.fiatDeploymentExponent shouldBe 1.0
             capturedConfig.captured.allocations.size shouldBe 2
-            capturedConfig.captured.allocations[0].symbol.value shouldBe KrakenSymbols.BTC
+            capturedConfig.captured.allocations[0].symbol.value shouldBe Asset.BTC
             capturedConfig.captured.allocations[0].targetPercent shouldBe 0.0
-            capturedConfig.captured.allocations[1].symbol.value shouldBe KrakenSymbols.ETH
+            capturedConfig.captured.allocations[1].symbol.value shouldBe Asset.ETH
             capturedConfig.captured.allocations[1].targetPercent shouldBe 30.0
         }
 
@@ -424,7 +424,7 @@ class DashboardControllerTest : StringSpec() {
                     1.0
                 ),
                 listOf(Allocation(
-                    KrakenSymbols.USD,
+                    Asset.USD,
                     100.0
                 ))
             )

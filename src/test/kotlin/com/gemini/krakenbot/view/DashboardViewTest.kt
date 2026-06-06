@@ -4,7 +4,7 @@ import com.gemini.krakenbot.view.component.*
 import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.config.*
 import com.gemini.krakenbot.model.PortfolioSnapshot
-import com.gemini.krakenbot.util.KrakenSymbols
+import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.view.util.CssClasses.ALLOCATION_BAR_LABEL
 import com.gemini.krakenbot.view.util.CssClasses.BADGE_BUY
 import com.gemini.krakenbot.view.util.CssClasses.BADGE_INFO
@@ -72,9 +72,9 @@ class DashboardViewTest : StringSpec({
             1.0
         ),
         listOf(
-            Allocation(KrakenSymbols.USD, 10.0),
-            Allocation(KrakenSymbols.BTC, 50.0),
-            Allocation(KrakenSymbols.ETH, 40.0)
+            Allocation(Asset.USD, 10.0),
+            Allocation(Asset.BTC, 50.0),
+            Allocation(Asset.ETH, 40.0)
         )
     )
 
@@ -123,8 +123,8 @@ class DashboardViewTest : StringSpec({
             timestamp = now,
             totalValueUSD = BigDecimal("10000.00"),
             assets = mapOf(
-                KrakenSymbols.USD to PortfolioSnapshot.AssetSnapshot(
-                    KrakenSymbols.USD,
+                Asset.USD to PortfolioSnapshot.AssetSnapshot(
+                    Asset.USD,
                     BigDecimal("1000.0"),
                     BigDecimal("1.0"),
                     BigDecimal("1000.0"),
@@ -133,8 +133,8 @@ class DashboardViewTest : StringSpec({
                     BigDecimal("0.0"),
                     BigDecimal("0.0")
                 ),
-                KrakenSymbols.BTC to PortfolioSnapshot.AssetSnapshot(
-                    KrakenSymbols.BTC,
+                Asset.BTC to PortfolioSnapshot.AssetSnapshot(
+                    Asset.BTC,
                     BigDecimal("0.1"),
                     BigDecimal("50000.0"),
                     BigDecimal("5000.0"),
@@ -143,8 +143,8 @@ class DashboardViewTest : StringSpec({
                     BigDecimal("5.0"),
                     BigDecimal("250.0")
                 ),
-                KrakenSymbols.ETH to PortfolioSnapshot.AssetSnapshot(
-                    KrakenSymbols.ETH,
+                Asset.ETH to PortfolioSnapshot.AssetSnapshot(
+                    Asset.ETH,
                     BigDecimal("2.0"),
                     BigDecimal("2000.0"),
                     BigDecimal("4000.0"),
@@ -199,8 +199,8 @@ class DashboardViewTest : StringSpec({
             timestamp = oldTime,
             totalValueUSD = BigDecimal("1000.00"),
             assets = mapOf(
-                KrakenSymbols.USD to PortfolioSnapshot.AssetSnapshot(
-                    KrakenSymbols.USD,
+                Asset.USD to PortfolioSnapshot.AssetSnapshot(
+                    Asset.USD,
                     BigDecimal("1000.0"),
                     BigDecimal("1.0"),
                     BigDecimal("1000.0"),
@@ -248,8 +248,8 @@ class DashboardViewTest : StringSpec({
             timestamp = now,
             totalValueUSD = BigDecimal.ZERO,
             assets = mapOf(
-                KrakenSymbols.BTC to PortfolioSnapshot.AssetSnapshot(
-                    KrakenSymbols.BTC,
+                Asset.BTC to PortfolioSnapshot.AssetSnapshot(
+                    Asset.BTC,
                     BigDecimal.ZERO,
                     BigDecimal.ZERO,
                     BigDecimal.ZERO,
@@ -296,8 +296,8 @@ class DashboardViewTest : StringSpec({
             timestamp = now,
             totalValueUSD = BigDecimal("1000.00"),
             assets = mapOf(
-                KrakenSymbols.USD to PortfolioSnapshot.AssetSnapshot(
-                    KrakenSymbols.USD,
+                Asset.USD to PortfolioSnapshot.AssetSnapshot(
+                    Asset.USD,
                     BigDecimal("100.0"),
                     BigDecimal("1.0"),
                     BigDecimal("100.0"),

@@ -5,7 +5,7 @@ import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.InvalidConfigurationException
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.util.AtomicJsonFile
-import com.gemini.krakenbot.util.KrakenSymbols
+import com.gemini.krakenbot.model.Asset
 import java.io.File
 import java.io.IOException
 import kotlin.math.abs
@@ -110,12 +110,7 @@ class ConfigServiceImpl(
             "Total allocation percentage must be exactly 100%. Current sum: $totalPercent"
         }
 
-        val hasUsd = config.allocations.any {
-            KrakenSymbols.USD.equals(
-                it.symbol.value,
-                ignoreCase = true
-            )
-        }
+        val hasUsd = config.allocations.any { it.symbol.isUsd }
         require(hasUsd) { "One asset must be USD." }
     }
 }

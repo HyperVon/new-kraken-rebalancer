@@ -8,6 +8,25 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [4.0.0] - 2026-06-06
+
+### Added
+
+- **Gradle Configuration Cache**: Enabled Gradle configuration caching in `gradle.properties` to decrease build startup times and speed up local test runs.
+- **Asset Unit Tests**: Expanded `ModelTest.kt` with comprehensive unit tests for the `Asset` value class (covering ticker mapping, USD checks, and trading pair formatting).
+
+### Changed
+
+- **Kotlin 2.4.0 Named Context Parameters**: Refactored HTML layout rendering methods in all view files to use Kotlin 2.4.0 named context parameters (e.g. `context(html: HTML)`) instead of receiver extension functions, eliminating boilerplate `with()` blocks.
+- **Side-Effect Free Services**: Refactored `PortfolioAnalyzer` to eliminate mutating side-effects on argument parameters. Methods like `calculatePortfolioValues` and `analyzeDeviations` now return immutable, structured data objects (`PortfolioValues` and `AnalysisResult`).
+- **Complete Deletion of `KrakenSymbols`**: Completely removed the deprecated `KrakenSymbols` utility class and its corresponding test class (`KrakenSymbolsTest.kt`).
+- **Asset Value Class Consolidation**: Migrated standard asset constants and ticker/pair mappings directly into the `Asset` inline value class.
+- **Localized Cryptographic Strings**: Moved HMAC-SHA512 and SHA-256 algorithm name constants into the private companion object of `KrakenServiceImpl`.
+- **View Imports Cleanup**: Refactored layout components (`PerformanceTableComponent`, `RecentActivityComponent`, `SettingsFormComponent`) to import parent utility objects (`CssClasses`, `ViewText`, `Icons`, `FormFields`) instead of dozens of nested static constants, significantly reducing import boilerplate.
+- **Standardized Koin DI**: Converted manually scoped instantiation blocks in `AppModule.kt` to modern constructor-based bindings via Koin 4's `singleOf`.
+
+---
+
 ## [3.1.3] - 2026-05-30
 
 ### Changed

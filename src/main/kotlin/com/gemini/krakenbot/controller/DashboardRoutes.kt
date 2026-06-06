@@ -31,18 +31,14 @@ fun Application.dashboardRouting() {
 
         get(Routes.ROOT) {
             call.respondHtml(HttpStatusCode.OK) {
-                with(dashboardView) {
-                    renderDashboardShell()
-                }
+                dashboardView.renderDashboardShell()
             }
         }
 
         get(Routes.SETTINGS) {
             val config = configService.getConfig()
             call.respondHtml(HttpStatusCode.OK) {
-                with(dashboardView) {
-                    renderSettingsPage(config, null)
-                }
+                dashboardView.renderSettingsPage(config, null)
             }
         }
 
@@ -106,12 +102,10 @@ private suspend fun RoutingContext.handlePostSettings(
         call.respond(HttpStatusCode.OK)
     } catch (e: InvalidConfigurationException) {
         val errHtml = createHTML(prettyPrint = false).html {
-            with(dashboardView) {
-                renderSettingsPage(
-                    updatedConfig,
-                    e.message ?: "Invalid configuration"
-                )
-            }
+            dashboardView.renderSettingsPage(
+                updatedConfig,
+                e.message ?: "Invalid configuration"
+            )
         }
         val formBody =
             errHtml.substringAfter("<body>").substringBefore("</body>")
@@ -141,9 +135,7 @@ private suspend fun RoutingContext.handleGetDashboardFragment(
     }
 
     val html = createHTML(prettyPrint = false).div {
-        with(dashboardView) {
-            renderDashboardFragment(latest, history)
-        }
+        dashboardView.renderDashboardFragment(latest, history)
     }
     call.respondText(html, ContentType.Text.Html)
 }

@@ -1,7 +1,7 @@
 package com.gemini.krakenbot.model
 
 import com.gemini.krakenbot.config.Settings
-import com.gemini.krakenbot.util.KrakenSymbols
+import com.gemini.krakenbot.model.Asset
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
@@ -9,9 +9,37 @@ import java.math.BigDecimal
 import java.time.Instant
 
 class ModelTest : StringSpec({
+    "testAssetMappings" {
+        val btc = Asset(Asset.BTC)
+        btc.krakenTicker shouldBe Asset.XBT
+        btc.tradingPair shouldBe "XBTUSD"
+        btc.isUsd shouldBe false
+
+        val doge = Asset(Asset.DOGE)
+        doge.krakenTicker shouldBe Asset.XDG
+        doge.tradingPair shouldBe "XDGUSD"
+
+        val usd = Asset(Asset.USD)
+        usd.isUsd shouldBe true
+        usd.tradingPair shouldBe "USDUSD"
+
+        val eth = Asset(Asset.ETH)
+        eth.krakenTicker shouldBe Asset.ETH
+        eth.tradingPair shouldBe "ETHUSD"
+
+        Asset.toKrakenTicker("btc") shouldBe Asset.XBT
+        Asset.toKrakenTicker("doge") shouldBe Asset.XDG
+        Asset.toKrakenTicker("eth") shouldBe "ETH"
+
+        Asset.tradingPair("btc") shouldBe "XBTUSD"
+        Asset.tradingPair("eth") shouldBe "ETHUSD"
+
+        Asset.BTC_USD_PAIR shouldBe "XBTUSD"
+    }
+
     "testPortfolioSnapshot" {
         val asset = PortfolioSnapshot.AssetSnapshot(
-            symbol = KrakenSymbols.BTC,
+            symbol = Asset.BTC,
             balance = BigDecimal.ONE,
             price = BigDecimal.TEN,
             valueUSD = BigDecimal.TEN,
@@ -24,12 +52,12 @@ class ModelTest : StringSpec({
         asset2 shouldBe asset
         asset.hashCode() shouldBe asset2.hashCode()
         asset.toString().shouldNotBeNull()
-        asset.symbol.value shouldBe KrakenSymbols.BTC
+        asset.symbol.value shouldBe Asset.BTC
 
         val snapshot = PortfolioSnapshot(
             timestamp = Instant.EPOCH,
             totalValueUSD = BigDecimal.TEN,
-            assets = mapOf(KrakenSymbols.BTC to asset),
+            assets = mapOf(Asset.BTC to asset),
             actions = listOf("BUY"),
             drawdownPercent = BigDecimal.ZERO,
             fiatDeploymentPercent = BigDecimal.ZERO,

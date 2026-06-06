@@ -5,7 +5,7 @@ import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.PortfolioManager
 import com.gemini.krakenbot.service.TradeHistoryService
-import com.gemini.krakenbot.util.KrakenSymbols
+
 import kotlinx.coroutines.delay
 import org.slf4j.LoggerFactory
 import java.io.IOException
@@ -61,9 +61,8 @@ class PortfolioManagerImpl(
 
         val balances = portfolioAnalyzer.fetchBalances()
         val prices = portfolioAnalyzer.fetchPrices()
-        val currentValuesUSD = mutableMapOf<String, BigDecimal>()
-        val totalPortfolioValueUSD =
-            portfolioAnalyzer.calculatePortfolioValues(balances, prices, currentValuesUSD)
+        val (totalPortfolioValueUSD, currentValuesUSD) =
+            portfolioAnalyzer.calculatePortfolioValues(balances, prices)
                 ?: return
 
         log.info(
@@ -98,17 +97,14 @@ class PortfolioManagerImpl(
         val cryptoScaleFactor =
             portfolioAnalyzer.calculateCryptoScaleFactor(effectiveUsdTarget)
 
-        val buyOrders = mutableMapOf<String, BigDecimal>()
-        val sellOrders = mutableMapOf<String, BigDecimal>()
-        portfolioAnalyzer.analyzeDeviations(
-            totalPortfolioValueUSD,
-            currentValuesUSD,
-            effectiveUsdTarget,
-            cryptoScaleFactor,
-            buyOrders,
-            sellOrders,
-            actionLog
-        )
+        val (buyOrders, sellOrders, cycleActions) =
+            portfolioAnalyzer.analyzeDeviations(
+                totalPortfolioValueUSD,
+                currentValuesUSD,
+                effectiveUsdTarget,
+                cryptoScaleFactor
+            )
+        actionLog.addAll(cycleActions)
 
         val s = configService.getConfig().settings
         orderExecutor.executeOrders(
@@ -151,8 +147,7 @@ class PortfolioManagerImpl(
         val assetSnapshots =
             mutableMapOf<String, PortfolioSnapshot.AssetSnapshot>()
 
-        for (a in configService.getConfig().allocations) {
-            val symbol = a.symbol
+        for ((symbol, targetPercent) in configService.getConfig().allocations) {
             val balance = BigDecimal.valueOf(
                 portfolioAnalyzer.resolveBalance(
                     symbol.value,
@@ -161,17 +156,17 @@ class PortfolioManagerImpl(
             )
             val valUSD = currentValuesUSD[symbol.value] ?: BigDecimal.ZERO
             val price =
-                if (!symbol.value.equals(KrakenSymbols.USD, ignoreCase = true)) {
+                if (!symbol.isUsd) {
                     prices[symbol.value] ?: BigDecimal.ONE
                 } else {
                     BigDecimal.ONE
                 }
 
-            val baseTargetPct = BigDecimal.valueOf(a.targetPercent)
+            val baseTargetPct = BigDecimal.valueOf(targetPercent)
             var snapshotTargetPct = baseTargetPct
             val calcTargetPct: BigDecimal
 
-            if (symbol.value.equals(KrakenSymbols.USD, ignoreCase = true)) {
+            if (symbol.isUsd) {
                 calcTargetPct = effectiveUsdTarget
             } else {
                 calcTargetPct = baseTargetPct.multiply(cryptoScaleFactor)

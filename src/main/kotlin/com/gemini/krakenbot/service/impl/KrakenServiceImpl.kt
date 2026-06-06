@@ -6,7 +6,6 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.gemini.krakenbot.model.OrderResult
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.KrakenService
-import com.gemini.krakenbot.util.KrakenSymbols
 import io.ktor.client.*
 import io.ktor.client.request.*
 import io.ktor.client.statement.*
@@ -14,7 +13,7 @@ import org.slf4j.LoggerFactory
 import java.math.BigDecimal
 import java.math.RoundingMode
 import java.security.MessageDigest
-import java.util.*
+import kotlin.io.encoding.Base64
 import java.util.concurrent.atomic.AtomicLong
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
@@ -145,6 +144,9 @@ class KrakenServiceImpl(
         path: String,
         data: Map<String, String>
     ): JsonNode {
+        val apiKey = configService.getConfig().kraken.apiKey.value
+        check(apiKey.isNotBlank()) { "API Key is null" }
+
         val maxRetries = 5
         var retryCount = 0
 
@@ -158,9 +160,6 @@ class KrakenServiceImpl(
                     "${it.key}=${it.value}"
                 }
             val signature = signRequest(path, nonce, postData)
-
-            val apiKey = configService.getConfig().kraken.apiKey.value
-            check(apiKey.isNotBlank()) { "API Key is null" }
 
             val responseBody = httpClient.post(apiUrl + path) {
                 header("API-Key", apiKey)
@@ -203,23 +202,27 @@ class KrakenServiceImpl(
         postData: String
     ): String {
         try {
-            val sha2 = MessageDigest.getInstance(KrakenSymbols.SHA_256)
+            val sha2 = MessageDigest.getInstance(SHA_256)
                 .digest((nonce + postData).toByteArray(Charsets.UTF_8))
 
             val pathBytes = path.toByteArray(Charsets.UTF_8)
             val hmacMessage = pathBytes + sha2
 
-            val mac = Mac.getInstance(KrakenSymbols.HMAC_SHA512)
-            val secretDecoded = Base64.getDecoder()
-                .decode(configService.getConfig().kraken.privateKey.value)
+            val mac = Mac.getInstance(HMAC_SHA512)
+            val secretDecoded = Base64.decode(configService.getConfig().kraken.privateKey.value)
             val secretSpec =
-                SecretKeySpec(secretDecoded, KrakenSymbols.HMAC_SHA512)
+                SecretKeySpec(secretDecoded, HMAC_SHA512)
             mac.init(secretSpec)
 
             val sigBytes = mac.doFinal(hmacMessage)
-            return Base64.getEncoder().encodeToString(sigBytes)
+            return Base64.encode(sigBytes)
         } catch (e: Exception) {
             throw RuntimeException("Failed to sign request", e)
         }
+    }
+
+    private companion object {
+        const val HMAC_SHA512 = "HmacSHA512"
+        const val SHA_256 = "SHA-256"
     }
 }
