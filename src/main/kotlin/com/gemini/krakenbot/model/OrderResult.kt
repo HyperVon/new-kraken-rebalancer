@@ -22,7 +22,13 @@ sealed interface OrderResult {
             return if (success) {
                 Success(pair, side, volume, dryRun)
             } else {
-                Failure(pair, side, volume, dryRun, errorMessage ?: "Unknown error")
+                Failure(
+                    pair,
+                    side,
+                    volume,
+                    dryRun,
+                    errorMessage ?: "Unknown error"
+                )
             }
         }
     }

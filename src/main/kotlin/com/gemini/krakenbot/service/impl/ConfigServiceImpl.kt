@@ -25,7 +25,7 @@ class ConfigServiceImpl(
         val configFile = File(configFilePath)
         check(configFile.exists()) {
             "Configuration file 'rebalancer-config.json' " +
-                "not found in the application directory."
+                    "not found in the application directory."
         }
         appConfig = objectMapper.readValue(
             configFile,

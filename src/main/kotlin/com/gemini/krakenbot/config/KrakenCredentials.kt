@@ -17,7 +17,10 @@ data class KrakenCredentials(
     val privateKey: PrivateKey
 ) {
     companion object {
-        operator fun invoke(apiKey: String, privateKey: String): KrakenCredentials =
+        operator fun invoke(
+            apiKey: String,
+            privateKey: String
+        ): KrakenCredentials =
             KrakenCredentials(ApiKey(apiKey), PrivateKey(privateKey))
     }
 }

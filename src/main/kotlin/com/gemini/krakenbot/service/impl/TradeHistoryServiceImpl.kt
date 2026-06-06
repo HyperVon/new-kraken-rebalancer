@@ -37,5 +37,6 @@ class TradeHistoryServiceImpl(
 
     override fun getLatestSnapshot(): PortfolioSnapshot? = history.firstOrNull()
 
-    override fun getHistoryFlow(): Flow<PortfolioSnapshot> = snapshotFlow.asSharedFlow()
+    override fun getHistoryFlow(): Flow<PortfolioSnapshot> =
+        snapshotFlow.asSharedFlow()
 }

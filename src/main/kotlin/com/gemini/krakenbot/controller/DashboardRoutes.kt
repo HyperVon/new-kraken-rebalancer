@@ -18,6 +18,7 @@ import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import io.ktor.server.sse.*
 import io.ktor.sse.*
+import kotlinx.coroutines.CancellationException
 import kotlinx.html.div
 import kotlinx.html.h2
 import kotlinx.html.html
@@ -89,16 +90,16 @@ private suspend fun RoutingContext.handlePostSettings(
 
     val currentConfig = configService.getConfig()
     val updatedConfig = AppConfig(
-        currentConfig.kraken,
-        Settings(
-            loopDelaySeconds,
-            deviationTriggerPercent,
-            dustThresholdUSD,
-            dryRun,
-            fiatMaxDrawdown,
-            fiatDeploymentExponent
+        kraken = currentConfig.kraken,
+        settings = Settings(
+            loopDelaySeconds = loopDelaySeconds,
+            deviationTriggerPercent = deviationTriggerPercent,
+            dustThresholdUSD = dustThresholdUSD,
+            dryRun = dryRun,
+            fiatMaxDrawdown = fiatMaxDrawdown,
+            fiatDeploymentExponent = fiatDeploymentExponent
         ),
-        allocations
+        allocations = allocations
     )
 
     try {
@@ -160,7 +161,7 @@ private suspend fun ServerSSESession.handleSseStream(
             val json = objectMapper.writeValueAsString(snapshot)
             send(ServerSentEvent(data = json))
         }
-    } catch (e: kotlinx.coroutines.CancellationException) {
+    } catch (e: CancellationException) {
         throw e
     } catch (_: Exception) {
         // Handle client disconnect / closed channel gracefully without logging annoying stack traces

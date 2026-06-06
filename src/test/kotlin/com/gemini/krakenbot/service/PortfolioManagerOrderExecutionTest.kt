@@ -38,16 +38,16 @@ class PortfolioManagerOrderExecutionTest : StringSpec() {
                 portfolioStatsRepository.load()
             } returns PortfolioStats(BigDecimal.ZERO)
             portfolioAnalyzer = PortfolioAnalyzer(
-                krakenService,
-                configService,
-                portfolioStatsRepository
+                krakenService = krakenService,
+                configService = configService,
+                portfolioStatsRepository = portfolioStatsRepository
             )
             orderExecutor = OrderExecutor(krakenService, portfolioAnalyzer)
             portfolioManager = PortfolioManagerImpl(
-                configService,
-                tradeHistoryService,
-                portfolioAnalyzer,
-                orderExecutor
+                configService = configService,
+                tradeHistoryService = tradeHistoryService,
+                portfolioAnalyzer = portfolioAnalyzer,
+                orderExecutor = orderExecutor
             )
         }
 
@@ -132,13 +132,15 @@ class PortfolioManagerOrderExecutionTest : StringSpec() {
         "testExecution_CashVerificationFallback" {
             runTest {
                 val allAllocations =
-                    listOf(Allocation(
-                        "A",
-                        10.0
-                    ), Allocation(
-                        "B",
-                        90.0
-                    ))
+                    listOf(
+                        Allocation(
+                            "A",
+                            10.0
+                        ), Allocation(
+                            "B",
+                            90.0
+                        )
+                    )
                 val mockSettings = Settings(
                     loopDelaySeconds = 0L,
                     deviationTriggerPercent = 1.0,
@@ -183,13 +185,15 @@ class PortfolioManagerOrderExecutionTest : StringSpec() {
         "testExecution_PartialFillCashUpdate" {
             runTest {
                 val allAllocations =
-                    listOf(Allocation(
-                        "A",
-                        10.0
-                    ), Allocation(
-                        "B",
-                        90.0
-                    ))
+                    listOf(
+                        Allocation(
+                            "A",
+                            10.0
+                        ), Allocation(
+                            "B",
+                            90.0
+                        )
+                    )
                 val mockSettings = Settings(
                     loopDelaySeconds = 0L,
                     deviationTriggerPercent = 1.0,

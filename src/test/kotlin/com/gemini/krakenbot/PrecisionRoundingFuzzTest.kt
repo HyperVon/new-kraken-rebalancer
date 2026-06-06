@@ -26,7 +26,6 @@ import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
 import java.util.*
 
-@Suppress("unused")
 class PrecisionRoundingFuzzTest : StringSpec() {
 
     override fun isolationMode() = IsolationMode.InstancePerTest
@@ -37,16 +36,19 @@ class PrecisionRoundingFuzzTest : StringSpec() {
                 val validSecret =
                     Base64.getEncoder().encodeToString("secret".toByteArray())
                 val appConfig = AppConfig(
-                    KrakenCredentials("apiKey", validSecret),
-                    Settings(
-                        60L,
-                        2.0,
-                        1.0,
-                        false,
-                        50.0,
-                        1.0
+                    kraken = KrakenCredentials(
+                        apiKey = "apiKey",
+                        privateKey = validSecret
                     ),
-                    listOf(
+                    settings = Settings(
+                        loopDelaySeconds = 60L,
+                        deviationTriggerPercent = 2.0,
+                        dustThresholdUSD = 1.0,
+                        dryRun = false,
+                        fiatMaxDrawdown = 50.0,
+                        fiatDeploymentExponent = 1.0
+                    ),
+                    allocations = listOf(
                         Allocation(Asset.BTC, 50.0),
                         Allocation(Asset.USD, 50.0)
                     )
@@ -107,24 +109,24 @@ class PrecisionRoundingFuzzTest : StringSpec() {
                 val objectMapper =
                     jacksonObjectMapper().findAndRegisterModules()
                 val krakenService = KrakenServiceImpl(
-                    mockConfigService,
-                    objectMapper,
-                    httpClient
+                    configService = mockConfigService,
+                    objectMapper = objectMapper,
+                    httpClient = httpClient
                 )
 
                 val portfolioAnalyzer =
                     PortfolioAnalyzer(
-                        krakenService,
-                        mockConfigService,
-                        mockk<PortfolioStatsRepository>(relaxed = true)
+                        krakenService = krakenService,
+                        configService = mockConfigService,
+                        portfolioStatsRepository = mockk<PortfolioStatsRepository>(relaxed = true)
                     )
                 val orderExecutor =
                     OrderExecutor(krakenService, portfolioAnalyzer)
                 val portfolioManager = PortfolioManagerImpl(
-                    mockConfigService,
-                    mockk<TradeHistoryService>(relaxed = true),
-                    portfolioAnalyzer,
-                    orderExecutor
+                    configService = mockConfigService,
+                    tradeHistoryService = mockk<TradeHistoryService>(relaxed = true),
+                    portfolioAnalyzer = portfolioAnalyzer,
+                    orderExecutor = orderExecutor
                 )
 
                 shouldNotThrowAny {

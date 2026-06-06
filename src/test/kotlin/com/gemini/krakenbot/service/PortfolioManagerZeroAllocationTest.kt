@@ -39,16 +39,16 @@ class PortfolioManagerZeroAllocationTest : StringSpec() {
                 BigDecimal.ZERO
             )
             portfolioAnalyzer = PortfolioAnalyzer(
-                krakenService,
-                configService,
-                portfolioStatsRepository
+                krakenService = krakenService,
+                configService = configService,
+                portfolioStatsRepository = portfolioStatsRepository
             )
             orderExecutor = OrderExecutor(krakenService, portfolioAnalyzer)
             portfolioManager = PortfolioManagerImpl(
-                configService,
-                tradeHistoryService,
-                portfolioAnalyzer,
-                orderExecutor
+                configService = configService,
+                tradeHistoryService = tradeHistoryService,
+                portfolioAnalyzer = portfolioAnalyzer,
+                orderExecutor = orderExecutor
             )
         }
 

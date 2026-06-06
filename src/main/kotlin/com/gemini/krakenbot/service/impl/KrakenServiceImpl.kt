@@ -6,6 +6,8 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.gemini.krakenbot.model.OrderResult
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.KrakenService
+import com.gemini.krakenbot.service.RawBalances
+import com.gemini.krakenbot.service.RawPrices
 import io.ktor.client.*
 import io.ktor.client.request.*
 import io.ktor.client.statement.*
@@ -31,7 +33,7 @@ class KrakenServiceImpl(
     private val nonceGenerator =
         AtomicLong(System.currentTimeMillis() * 1000)
 
-    override suspend fun getBalances(): Map<String, Double> {
+    override suspend fun getBalances(): RawBalances {
         val path = "/$apiVersion/private/Balance"
         val response = queryPrivate(path, emptyMap())
         return response.properties()
@@ -40,7 +42,7 @@ class KrakenServiceImpl(
             }
     }
 
-    override suspend fun getTickerPrices(pairs: String): Map<String, Double> {
+    override suspend fun getTickerPrices(pairs: String): RawPrices {
         val path = "/$apiVersion/public/Ticker?pair=$pairs"
         val result = queryPublic(path).path("result")
         return result.properties()
@@ -123,7 +125,8 @@ class KrakenServiceImpl(
         try {
             val root: JsonNode = objectMapper.readTree(responseBody)
             if (root.has("error") &&
-                !root.path("error").isEmpty) {
+                !root.path("error").isEmpty
+            ) {
                 log.error(
                     "Kraken Public API Error for path {}: {}",
                     path,
@@ -209,7 +212,8 @@ class KrakenServiceImpl(
             val hmacMessage = pathBytes + sha2
 
             val mac = Mac.getInstance(HMAC_SHA512)
-            val secretDecoded = Base64.decode(configService.getConfig().kraken.privateKey.value)
+            val secretDecoded =
+                Base64.decode(configService.getConfig().kraken.privateKey.value)
             val secretSpec =
                 SecretKeySpec(secretDecoded, HMAC_SHA512)
             mac.init(secretSpec)

@@ -17,326 +17,349 @@ import java.io.File
 import java.io.IOException
 import java.nio.file.Files
 
-class ConfigServiceTest : StringSpec({
+class ConfigServiceTest : StringSpec() {
 
-    lateinit var configService: ConfigService
-    lateinit var objectMapper: ObjectMapper
-    lateinit var tempFile: File
+    private lateinit var configService: ConfigService
+    private lateinit var objectMapper: ObjectMapper
+    private lateinit var tempFile: File
 
-    fun createValidConfig(file: File) {
+    private fun createValidConfig(file: File) {
         val settings = Settings(
-            60L,
-            2.0,
-            1.0,
-            true,
-            0.0,
-            1.0
+            loopDelaySeconds = 60L,
+            deviationTriggerPercent = 2.0,
+            dustThresholdUSD = 1.0,
+            dryRun = true,
+            fiatMaxDrawdown = 0.0,
+            fiatDeploymentExponent = 1.0
         )
         val config = AppConfig(
-            KrakenCredentials("k", "s"),
-            settings,
-            listOf(Allocation(
-                Asset.USD,
-                100.0
-            ))
+            kraken = KrakenCredentials("k", "s"),
+            settings = settings,
+            allocations = listOf(
+                element = Allocation(
+                    symbol = Asset.USD,
+                    targetPercent = 100.0
+                )
+            )
         )
         objectMapper.writeValue(file, config)
     }
 
-    beforeTest {
-        objectMapper = jacksonObjectMapper()
-        tempFile =
-            Files
-                .createTempDirectory("test")
-                .resolve("test-config.json")
-                .toFile()
-        createValidConfig(tempFile)
-        configService =
-            ConfigServiceImpl(objectMapper, tempFile.absolutePath)
-    }
-
-    "loadConfig_Success" {
-        configService.loadConfig()
-        configService.getConfig().shouldNotBeNull()
-        configService.getConfig().allocations.first().symbol.value shouldBe Asset.USD
-    }
-
-    "loadConfig_FileNotFound" {
-        val missingFile = File(tempFile.parent, "missing.json")
-        val ex = shouldThrow<RuntimeException> {
-            ConfigServiceImpl(
-                objectMapper,
-                missingFile.absolutePath
-            )
+    init {
+        beforeTest {
+            objectMapper = jacksonObjectMapper()
+            tempFile =
+                Files
+                    .createTempDirectory("test")
+                    .resolve("test-config.json")
+                    .toFile()
+            createValidConfig(tempFile)
+            configService =
+                ConfigServiceImpl(objectMapper, tempFile.absolutePath)
         }
-        ex.message!!.contains("not found").shouldBeTrue()
-    }
 
-    "updateConfig_Success" {
-        configService.loadConfig()
-        val oldConfig = configService.getConfig()
-        val newConfig = AppConfig(
-            oldConfig.kraken, oldConfig.settings,
-            listOf(
-                Allocation(Asset.USD, 50.0),
-                Allocation(Asset.BTC, 50.0)
-            )
-        )
-
-        configService.updateConfig(newConfig)
-
-        configService.getConfig().allocations.size shouldBe 2
-        val readBack = objectMapper.readValue(
-            tempFile,
-            AppConfig::class.java
-        )
-        readBack.allocations.size shouldBe 2
-    }
-
-    "validateConfig_InvalidTotal" {
-        configService.loadConfig()
-        val oldConfig = configService.getConfig()
-        val invalidConfig = AppConfig(
-            oldConfig.kraken, oldConfig.settings,
-            listOf(Allocation(
-                Asset.USD,
-                90.0
-            ))
-        )
-
-        shouldThrow<InvalidConfigurationException> {
-            configService.updateConfig(
-                invalidConfig
-            )
+        "loadConfig_Success" {
+            configService.loadConfig()
+            configService.getConfig().shouldNotBeNull()
+            configService.getConfig().allocations.first().symbol.value shouldBe Asset.USD
         }
-    }
 
-    "validateConfig_NoUSD" {
-        configService.loadConfig()
-        val oldConfig = configService.getConfig()
-        val invalidConfig = AppConfig(
-            oldConfig.kraken, oldConfig.settings,
-            listOf(Allocation(
-                Asset.BTC,
-                100.0
-            ))
-        )
-
-        shouldThrow<InvalidConfigurationException> {
-            configService.updateConfig(
-                invalidConfig
-            )
+        "loadConfig_FileNotFound" {
+            val missingFile = File(tempFile.parent, "missing.json")
+            val ex = shouldThrow<RuntimeException> {
+                ConfigServiceImpl(
+                    objectMapper,
+                    missingFile.absolutePath
+                )
+            }
+            ex.message!!.contains("not found").shouldBeTrue()
         }
-    }
 
-    "validateConfig_DuplicateSymbols" {
-        configService.loadConfig()
-        val oldConfig = configService.getConfig()
-        val invalidConfig = AppConfig(
-            oldConfig.kraken, oldConfig.settings,
-            listOf(
-                Allocation(
-                    Asset.BTC,
-                    50.0
-                ),
-                Allocation(
-                    Asset.BTC.lowercase(),
-                    50.0
+        "updateConfig_Success" {
+            configService.loadConfig()
+            val oldConfig = configService.getConfig()
+            val newConfig = AppConfig(
+                oldConfig.kraken, oldConfig.settings,
+                listOf(
+                    Allocation(Asset.USD, 50.0),
+                    Allocation(Asset.BTC, 50.0)
                 )
             )
-        )
 
-        shouldThrow<InvalidConfigurationException> {
-            configService.updateConfig(
-                invalidConfig
-            )
-        }
-    }
+            configService.updateConfig(newConfig)
 
-    "validateConfig_NegativeTargetPercent" {
-        configService.loadConfig()
-        val oldConfig = configService.getConfig()
-        val invalidConfig = AppConfig(
-            oldConfig.kraken, oldConfig.settings,
-            listOf(
-                Allocation(
-                    Asset.USD,
-                    110.0
-                ),
-                Allocation(
-                    Asset.BTC,
-                    -10.0
-                )
-            )
-        )
-
-        shouldThrow<InvalidConfigurationException> {
-            configService.updateConfig(
-                invalidConfig
-            )
-        }
-    }
-
-    "validateConfig_EmptyAllocations" {
-        configService.loadConfig()
-        val oldConfig = configService.getConfig()
-        val invalidConfig = AppConfig(
-            oldConfig.kraken, oldConfig.settings,
-            emptyList()
-        )
-
-        shouldThrow<InvalidConfigurationException> {
-            configService.updateConfig(
-                invalidConfig
-            )
-        }
-    }
-
-    "validateConfig_BlankSymbol" {
-        configService.loadConfig()
-        val oldConfig = configService.getConfig()
-        val invalidConfig = AppConfig(
-            oldConfig.kraken, oldConfig.settings,
-            listOf(Allocation(
-                Asset.USD,
-                50.0
-            ), Allocation(
-                "  ",
-                50.0
-            ))
-        )
-
-        shouldThrow<InvalidConfigurationException> {
-            configService.updateConfig(
-                invalidConfig
-            )
-        }
-    }
-
-    "validateConfig_BadSettings" {
-        configService.loadConfig()
-        val oldConfig = configService.getConfig()
-        val badLoopDelay = AppConfig(
-            oldConfig.kraken,
-            oldConfig.settings.copy(loopDelaySeconds = 0),
-            oldConfig.allocations
-        )
-        shouldThrow<InvalidConfigurationException> {
-            configService.updateConfig(
-                badLoopDelay
-            )
-        }
-
-        val badDev = AppConfig(
-            oldConfig.kraken,
-            oldConfig.settings.copy(deviationTriggerPercent = -1.0),
-            oldConfig.allocations
-        )
-        shouldThrow<InvalidConfigurationException> {
-            configService.updateConfig(
-                badDev
-            )
-        }
-
-        val badDust = AppConfig(
-            oldConfig.kraken,
-            oldConfig.settings.copy(dustThresholdUSD = -1.0),
-            oldConfig.allocations
-        )
-        shouldThrow<InvalidConfigurationException> {
-            configService.updateConfig(
-                badDust
-            )
-        }
-
-        val badFiatDrawdown1 = AppConfig(
-            oldConfig.kraken,
-            oldConfig.settings.copy(fiatMaxDrawdown = -1.0),
-            oldConfig.allocations
-        )
-        shouldThrow<InvalidConfigurationException> {
-            configService.updateConfig(
-                badFiatDrawdown1
-            )
-        }
-
-        val badFiatDrawdown2 = AppConfig(
-            oldConfig.kraken,
-            oldConfig.settings.copy(fiatMaxDrawdown = 101.0),
-            oldConfig.allocations
-        )
-        shouldThrow<InvalidConfigurationException> {
-            configService.updateConfig(
-                badFiatDrawdown2
-            )
-        }
-
-        val badFiatExp = AppConfig(
-            oldConfig.kraken,
-            oldConfig.settings.copy(fiatDeploymentExponent = 0.0),
-            oldConfig.allocations
-        )
-        shouldThrow<InvalidConfigurationException> {
-            configService.updateConfig(
-                badFiatExp
-            )
-        }
-    }
-
-    "saveConfig_Exception" {
-        val mockMapper = mockk<ObjectMapper>(relaxed = true)
-        val mockWriter = mockk<ObjectWriter>(relaxed = true)
-        every { mockMapper.writerWithDefaultPrettyPrinter() } returns mockWriter
-        every {
-            mockMapper.readValue(
-                any<File>(),
+            configService.getConfig().allocations.size shouldBe 2
+            val readBack = objectMapper.readValue(
+                tempFile,
                 AppConfig::class.java
             )
-        } returns AppConfig(
-            KrakenCredentials("a", "b"),
-            Settings(
-                1,
-                1.0,
-                1.0,
-                true,
-                0.0,
-                1.0
-            ),
-            listOf(Allocation(
-                Asset.USD,
-                100.0
-            ))
-        )
-        every {
-            mockWriter.writeValue(
-                any<File>(),
-                any<Any>()
-            )
-        } throws IOException("Write error")
+            readBack.allocations.size shouldBe 2
+        }
 
-        configService = ConfigServiceImpl(
-            mockMapper,
-            tempFile.absolutePath
-        )
-
-        shouldThrow<RuntimeException> {
-            configService.updateConfig(
-                AppConfig(
-                    KrakenCredentials("a", "b"),
-                    Settings(
-                        1,
-                        1.0,
-                        1.0,
-                        true,
-                        0.0,
-                        1.0
-                    ),
-                    listOf(Allocation(
-                        Asset.USD,
-                        100.0
-                    ))
+        "validateConfig_InvalidTotal" {
+            configService.loadConfig()
+            val oldConfig = configService.getConfig()
+            val invalidConfig = AppConfig(
+                kraken = oldConfig.kraken,
+                settings = oldConfig.settings,
+                allocations = listOf(
+                    Allocation(
+                        symbol = Asset.USD,
+                        targetPercent = 90.0
+                    )
                 )
             )
+
+            shouldThrow<InvalidConfigurationException> {
+                configService.updateConfig(
+                    invalidConfig
+                )
+            }
+        }
+
+        "validateConfig_NoUSD" {
+            configService.loadConfig()
+            val oldConfig = configService.getConfig()
+            val invalidConfig = AppConfig(
+                kraken = oldConfig.kraken,
+                settings = oldConfig.settings,
+                allocations = listOf(
+                    Allocation(
+                        symbol = Asset.BTC,
+                        targetPercent = 100.0
+                    )
+                )
+            )
+
+            shouldThrow<InvalidConfigurationException> {
+                configService.updateConfig(
+                    invalidConfig
+                )
+            }
+        }
+
+        "validateConfig_DuplicateSymbols" {
+            configService.loadConfig()
+            val oldConfig = configService.getConfig()
+            val invalidConfig = AppConfig(
+                kraken = oldConfig.kraken,
+                settings = oldConfig.settings,
+                allocations = listOf(
+                    Allocation(
+                        symbol = Asset.BTC,
+                        targetPercent = 50.0
+                    ),
+                    Allocation(
+                        symbol = Asset.BTC.lowercase(),
+                        targetPercent = 50.0
+                    )
+                )
+            )
+
+            shouldThrow<InvalidConfigurationException> {
+                configService.updateConfig(
+                    invalidConfig
+                )
+            }
+        }
+
+        "validateConfig_NegativeTargetPercent" {
+            configService.loadConfig()
+            val oldConfig = configService.getConfig()
+            val invalidConfig = AppConfig(
+                kraken = oldConfig.kraken,
+                settings = oldConfig.settings,
+                allocations = listOf(
+                    Allocation(
+                        symbol = Asset.USD,
+                        targetPercent = 110.0
+                    ),
+                    Allocation(
+                        symbol = Asset.BTC,
+                        targetPercent = -10.0
+                    )
+                )
+            )
+
+            shouldThrow<InvalidConfigurationException> {
+                configService.updateConfig(
+                    invalidConfig
+                )
+            }
+        }
+
+        "validateConfig_EmptyAllocations" {
+            configService.loadConfig()
+            val oldConfig = configService.getConfig()
+            val invalidConfig = AppConfig(
+                kraken = oldConfig.kraken,
+                settings = oldConfig.settings,
+                allocations = emptyList()
+            )
+
+            shouldThrow<InvalidConfigurationException> {
+                configService.updateConfig(
+                    invalidConfig
+                )
+            }
+        }
+
+        "validateConfig_BlankSymbol" {
+            configService.loadConfig()
+            val oldConfig = configService.getConfig()
+            val invalidConfig = AppConfig(
+                kraken = oldConfig.kraken,
+                settings = oldConfig.settings,
+                allocations = listOf(
+                    Allocation(
+                        symbol = Asset.USD,
+                        targetPercent = 50.0
+                    ), Allocation(
+                        symbol = "  ",
+                        targetPercent = 50.0
+                    )
+                )
+            )
+
+            shouldThrow<InvalidConfigurationException> {
+                configService.updateConfig(
+                    invalidConfig
+                )
+            }
+        }
+
+        "validateConfig_BadSettings" {
+            configService.loadConfig()
+            val oldConfig = configService.getConfig()
+            val badLoopDelay = AppConfig(
+                kraken = oldConfig.kraken,
+                settings = oldConfig.settings.copy(loopDelaySeconds = 0),
+                allocations = oldConfig.allocations
+            )
+            shouldThrow<InvalidConfigurationException> {
+                configService.updateConfig(
+                    badLoopDelay
+                )
+            }
+
+            val badDev = AppConfig(
+                kraken = oldConfig.kraken,
+                settings = oldConfig.settings.copy(deviationTriggerPercent = -1.0),
+                allocations = oldConfig.allocations
+            )
+            shouldThrow<InvalidConfigurationException> {
+                configService.updateConfig(
+                    badDev
+                )
+            }
+
+            val badDust = AppConfig(
+                kraken = oldConfig.kraken,
+                settings = oldConfig.settings.copy(dustThresholdUSD = -1.0),
+                allocations = oldConfig.allocations
+            )
+            shouldThrow<InvalidConfigurationException> {
+                configService.updateConfig(
+                    badDust
+                )
+            }
+
+            val badFiatDrawdown1 = AppConfig(
+                kraken = oldConfig.kraken,
+                settings = oldConfig.settings.copy(fiatMaxDrawdown = -1.0),
+                allocations = oldConfig.allocations
+            )
+            shouldThrow<InvalidConfigurationException> {
+                configService.updateConfig(
+                    badFiatDrawdown1
+                )
+            }
+
+            val badFiatDrawdown2 = AppConfig(
+                kraken = oldConfig.kraken,
+                settings = oldConfig.settings.copy(fiatMaxDrawdown = 101.0),
+                allocations = oldConfig.allocations
+            )
+            shouldThrow<InvalidConfigurationException> {
+                configService.updateConfig(
+                    badFiatDrawdown2
+                )
+            }
+
+            val badFiatExp = AppConfig(
+                kraken = oldConfig.kraken,
+                settings = oldConfig.settings.copy(fiatDeploymentExponent = 0.0),
+                allocations = oldConfig.allocations
+            )
+            shouldThrow<InvalidConfigurationException> {
+                configService.updateConfig(
+                    badFiatExp
+                )
+            }
+        }
+
+        "saveConfig_Exception" {
+            val mockMapper = mockk<ObjectMapper>(relaxed = true)
+            val mockWriter = mockk<ObjectWriter>(relaxed = true)
+            every { mockMapper.writerWithDefaultPrettyPrinter() } returns mockWriter
+            every {
+                mockMapper.readValue(
+                    any<File>(),
+                    AppConfig::class.java
+                )
+            } returns AppConfig(
+                kraken = KrakenCredentials("a", "b"),
+                settings = Settings(
+                    loopDelaySeconds = 1,
+                    deviationTriggerPercent = 1.0,
+                    dustThresholdUSD = 1.0,
+                    dryRun = true,
+                    fiatMaxDrawdown = 0.0,
+                    fiatDeploymentExponent = 1.0
+                ),
+                allocations = listOf(
+                    Allocation(
+                        symbol = Asset.USD,
+                        targetPercent = 100.0
+                    )
+                )
+            )
+            every {
+                mockWriter.writeValue(
+                    any<File>(),
+                    any<Any>()
+                )
+            } throws IOException("Write error")
+
+            configService = ConfigServiceImpl(
+                mockMapper,
+                tempFile.absolutePath
+            )
+
+            shouldThrow<RuntimeException> {
+                configService.updateConfig(
+                    AppConfig(
+                        kraken = KrakenCredentials(
+                            apiKey = "a",
+                            privateKey = "b"
+                        ),
+                        settings = Settings(
+                            loopDelaySeconds = 1,
+                            deviationTriggerPercent = 1.0,
+                            dustThresholdUSD = 1.0,
+                            dryRun = true,
+                            fiatMaxDrawdown = 0.0,
+                            fiatDeploymentExponent = 1.0
+                        ),
+                        allocations = listOf(
+                            Allocation(
+                                symbol = Asset.USD,
+                                targetPercent = 100.0
+                            )
+                        )
+                    )
+                )
+            }
         }
     }
-})
+}

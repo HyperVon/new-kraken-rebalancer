@@ -51,7 +51,7 @@ class PerformanceTableComponent {
                             val dev = asset.deviationPercent
                             val devClass = Formatter.getDeviationClass(dev)
                             val sign = Formatter.getDeviationSign(dev)
- 
+
                             tr(CssClasses.HOVERABLE) {
                                 td(CssClasses.SYMBOL_COL) { +asset.symbol.value }
                                 td(CssClasses.MONO_COL) {

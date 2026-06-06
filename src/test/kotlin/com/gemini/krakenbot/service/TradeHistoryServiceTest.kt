@@ -27,13 +27,13 @@ class TradeHistoryServiceTest : StringSpec() {
             val repository = mockk<TradeRepository>(relaxed = true)
             val tradeHistoryService = TradeHistoryServiceImpl(repository)
             val snapshot = PortfolioSnapshot(
-                Instant.now(),
-                BigDecimal.ZERO,
-                emptyMap(),
-                emptyList(),
-                BigDecimal.ZERO,
-                BigDecimal.ZERO,
-                BigDecimal.ZERO
+                timestamp = Instant.now(),
+                totalValueUSD = BigDecimal.ZERO,
+                assets = emptyMap(),
+                actions = emptyList(),
+                drawdownPercent = BigDecimal.ZERO,
+                fiatDeploymentPercent = BigDecimal.ZERO,
+                effectiveUsdTargetPercent = BigDecimal.ZERO
             )
             every { repository.load() } returns listOf(snapshot)
             tradeHistoryService.init()
@@ -45,22 +45,22 @@ class TradeHistoryServiceTest : StringSpec() {
             val repository = mockk<TradeRepository>(relaxed = true)
             val tradeHistoryService = TradeHistoryServiceImpl(repository)
             val s1 = PortfolioSnapshot(
-                Instant.now(),
-                BigDecimal.ZERO,
-                emptyMap(),
-                emptyList(),
-                BigDecimal.ZERO,
-                BigDecimal.ZERO,
-                BigDecimal.ZERO
+                timestamp = Instant.now(),
+                totalValueUSD = BigDecimal.ZERO,
+                assets = emptyMap(),
+                actions = emptyList(),
+                drawdownPercent = BigDecimal.ZERO,
+                fiatDeploymentPercent = BigDecimal.ZERO,
+                effectiveUsdTargetPercent = BigDecimal.ZERO
             )
             val s2 = PortfolioSnapshot(
-                Instant.now(),
-                BigDecimal.ZERO,
-                emptyMap(),
-                emptyList(),
-                BigDecimal.ZERO,
-                BigDecimal.ZERO,
-                BigDecimal.ZERO
+                timestamp = Instant.now(),
+                totalValueUSD = BigDecimal.ZERO,
+                assets = emptyMap(),
+                actions = emptyList(),
+                drawdownPercent = BigDecimal.ZERO,
+                fiatDeploymentPercent = BigDecimal.ZERO,
+                effectiveUsdTargetPercent = BigDecimal.ZERO
             )
             tradeHistoryService.addSnapshot(s1)
             tradeHistoryService.addSnapshot(s2)
@@ -72,16 +72,16 @@ class TradeHistoryServiceTest : StringSpec() {
         "addSnapshot_LimitsHistorySize" {
             val repository = mockk<TradeRepository>(relaxed = true)
             val tradeHistoryService = TradeHistoryServiceImpl(repository)
-            for (i in 0 until 60) {
+            repeat(60) {
                 tradeHistoryService.addSnapshot(
                     PortfolioSnapshot(
-                        Instant.now(),
-                        BigDecimal.ZERO,
-                        emptyMap(),
-                        emptyList(),
-                        BigDecimal.ZERO,
-                        BigDecimal.ZERO,
-                        BigDecimal.ZERO
+                        timestamp = Instant.now(),
+                        totalValueUSD = BigDecimal.ZERO,
+                        assets = emptyMap(),
+                        actions = emptyList(),
+                        drawdownPercent = BigDecimal.ZERO,
+                        fiatDeploymentPercent = BigDecimal.ZERO,
+                        effectiveUsdTargetPercent = BigDecimal.ZERO
                     )
                 )
             }
@@ -112,13 +112,13 @@ class TradeHistoryServiceTest : StringSpec() {
                 yield()
 
                 val s1 = PortfolioSnapshot(
-                    Instant.now(),
-                    BigDecimal.ZERO,
-                    emptyMap(),
-                    emptyList(),
-                    BigDecimal.ZERO,
-                    BigDecimal.ZERO,
-                    BigDecimal.ZERO
+                    timestamp = Instant.now(),
+                    totalValueUSD = BigDecimal.ZERO,
+                    assets = emptyMap(),
+                    actions = emptyList(),
+                    drawdownPercent = BigDecimal.ZERO,
+                    fiatDeploymentPercent = BigDecimal.ZERO,
+                    effectiveUsdTargetPercent = BigDecimal.ZERO
                 )
                 tradeHistoryService.addSnapshot(s1)
 

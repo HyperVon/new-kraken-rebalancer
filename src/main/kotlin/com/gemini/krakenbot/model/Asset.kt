@@ -36,7 +36,8 @@ value class Asset(@get:JsonValue val value: String) {
             else -> symbol.uppercase()
         }
 
-        fun tradingPair(symbol: String): String = "${toKrakenTicker(symbol)}$USD"
+        fun tradingPair(symbol: String): String =
+            "${toKrakenTicker(symbol)}$USD"
 
         val BTC_USD_PAIR: String = tradingPair(BTC)
     }

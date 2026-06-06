@@ -17,11 +17,11 @@ class OrderExecutor(
     private val log = LoggerFactory.getLogger(OrderExecutor::class.java)
 
     suspend fun executeOrders(
-        buyOrders: Map<String, BigDecimal>,
-        sellOrders: Map<String, BigDecimal>,
-        currentValuesUSD: Map<String, BigDecimal>,
-        prices: Map<String, BigDecimal>,
-        s: Settings,
+        buyOrders: RebalanceOrders,
+        sellOrders: RebalanceOrders,
+        currentValuesUSD: AssetValues,
+        prices: AssetPrices,
+        settings: Settings,
         actionLog: MutableList<String>
     ) {
         var projectedCash =
@@ -29,7 +29,7 @@ class OrderExecutor(
         var executedSells = false
 
         for ((symbol, usdToSell) in sellOrders) {
-            if (usdToSell < BigDecimal.valueOf(s.dustThresholdUSD)) {
+            if (usdToSell < BigDecimal.valueOf(settings.dustThresholdUSD)) {
                 log.info("Skipping dust sell for {} ($ {})", symbol, usdToSell)
                 actionLog.add("Skipping dust sell for $symbol ($$usdToSell)")
                 continue
@@ -52,12 +52,12 @@ class OrderExecutor(
                     volume
                 )
             logOrderResult(
-                result,
-                actionLog,
-                symbol,
-                volume,
-                usdToSell,
-                "SELL"
+                result = result,
+                actionLog = actionLog,
+                symbol = symbol,
+                volume = volume,
+                usdAmount = usdToSell,
+                side = "SELL"
             )
             if (result.success) {
                 projectedCash = projectedCash.add(usdToSell)
@@ -66,7 +66,7 @@ class OrderExecutor(
         }
 
         var actualCash = projectedCash
-        if (executedSells && !s.dryRun) {
+        if (executedSells && !settings.dryRun) {
             actualCash = refreshUsdBalanceAfterSells(projectedCash)
         }
 
@@ -82,7 +82,7 @@ class OrderExecutor(
                 cost = actualCash.multiply(BigDecimal.valueOf(0.99))
             }
 
-            if (cost < BigDecimal.valueOf(s.dustThresholdUSD)) {
+            if (cost < BigDecimal.valueOf(settings.dustThresholdUSD)) {
                 log.info("Skipping dust buy for {} ($ {})", symbol, cost)
                 actionLog.add("Skipping dust buy for $symbol ($$cost)")
                 continue
@@ -95,18 +95,18 @@ class OrderExecutor(
             val pair = Asset.tradingPair(symbol)
             val result =
                 krakenService.executeOrder(
-                    pair,
-                    "market",
-                    "buy",
-                    volume
+                    pair = pair,
+                    type = "market",
+                    side = "buy",
+                    volume = volume
                 )
             logOrderResult(
-                result,
-                actionLog,
-                symbol,
-                volume,
-                cost,
-                "BUY"
+                result = result,
+                actionLog = actionLog,
+                symbol = symbol,
+                volume = volume,
+                usdAmount = cost,
+                side = "BUY"
             )
             if (result.success) {
                 actualCash = actualCash.subtract(cost)

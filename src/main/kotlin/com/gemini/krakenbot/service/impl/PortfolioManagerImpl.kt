@@ -3,6 +3,7 @@ package com.gemini.krakenbot.service.impl
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.PortfolioManager
+import com.gemini.krakenbot.service.RawBalances
 import com.gemini.krakenbot.service.TradeHistoryService
 import kotlinx.coroutines.delay
 import org.slf4j.LoggerFactory
@@ -97,27 +98,32 @@ class PortfolioManagerImpl(
 
         val (buyOrders, sellOrders, cycleActions) =
             portfolioAnalyzer.analyzeDeviations(
-                totalPortfolioValueUSD,
-                currentValuesUSD,
-                effectiveUsdTarget,
-                cryptoScaleFactor
+                totalPortfolioValueUSD = totalPortfolioValueUSD,
+                currentValuesUSD = currentValuesUSD,
+                effectiveUsdTarget = effectiveUsdTarget,
+                cryptoScaleFactor = cryptoScaleFactor
             )
         actionLog.addAll(cycleActions)
 
-        val s = configService.getConfig().settings
         orderExecutor.executeOrders(
-            buyOrders,
-            sellOrders,
-            currentValuesUSD,
-            prices,
-            s,
-            actionLog
+            buyOrders = buyOrders,
+            sellOrders = sellOrders,
+            currentValuesUSD = currentValuesUSD,
+            prices = prices,
+            settings = configService.getConfig().settings,
+            actionLog = actionLog
         )
 
         val snapshot = buildSnapshot(
-            balances, prices, currentValuesUSD,
-            totalPortfolioValueUSD, effectiveUsdTarget, cryptoScaleFactor,
-            drawdownPct, fiatDeploymentPct, actionLog
+            balances = balances,
+            prices = prices,
+            currentValuesUSD = currentValuesUSD,
+            totalPortfolioValueUSD = totalPortfolioValueUSD,
+            effectiveUsdTarget = effectiveUsdTarget,
+            cryptoScaleFactor = cryptoScaleFactor,
+            drawdownPct = drawdownPct,
+            fiatDeploymentPct = fiatDeploymentPct,
+            actionLog = actionLog
         )
 
         try {
@@ -132,9 +138,9 @@ class PortfolioManagerImpl(
 
 
     private fun buildSnapshot(
-        balances: Map<String, Double>,
-        prices: Map<String, BigDecimal>,
-        currentValuesUSD: Map<String, BigDecimal>,
+        balances: RawBalances,
+        prices: AssetPrices,
+        currentValuesUSD: AssetValues,
         totalPortfolioValueUSD: BigDecimal,
         effectiveUsdTarget: BigDecimal,
         cryptoScaleFactor: BigDecimal,
@@ -148,8 +154,8 @@ class PortfolioManagerImpl(
         for ((symbol, targetPercent) in configService.getConfig().allocations) {
             val balance = BigDecimal.valueOf(
                 portfolioAnalyzer.resolveBalance(
-                    symbol.value,
-                    balances
+                    symbol = symbol.value,
+                    balances = balances
                 )
             )
             val valUSD = currentValuesUSD[symbol.value] ?: BigDecimal.ZERO
@@ -202,14 +208,14 @@ class PortfolioManagerImpl(
             }
 
             assetSnapshots[symbol.value] = PortfolioSnapshot.AssetSnapshot(
-                symbol,
-                balance,
-                price,
-                valUSD,
-                snapshotTargetPct,
-                currentPct,
-                devPct,
-                deviationUSD
+                symbol = symbol,
+                balance = balance,
+                price = price,
+                valueUSD = valUSD,
+                targetPercent = snapshotTargetPct,
+                currentPercent = currentPct,
+                deviationPercent = devPct,
+                deviationUSD = deviationUSD
             )
         }
 

@@ -24,7 +24,6 @@ import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
 import java.io.IOException
 
-@Suppress("unused")
 class ResilienceChaosTest : StringSpec() {
 
     override fun isolationMode() = IsolationMode.InstancePerTest
@@ -33,19 +32,24 @@ class ResilienceChaosTest : StringSpec() {
         "should not crash the application when Kraken API returns 502 Bad Gateway" {
             runTest {
                 val appConfig = AppConfig(
-                    KrakenCredentials("apiKey", "secret"),
-                    Settings(
-                        60L,
-                        2.0,
-                        1.0,
-                        false,
-                        50.0,
-                        1.0
+                    kraken = KrakenCredentials(
+                        apiKey = "apiKey",
+                        privateKey = "secret"
                     ),
-                    listOf(Allocation(
-                        Asset.BTC,
-                        50.0
-                    ))
+                    settings = Settings(
+                        loopDelaySeconds = 60L,
+                        deviationTriggerPercent = 2.0,
+                        dustThresholdUSD = 1.0,
+                        dryRun = false,
+                        fiatMaxDrawdown = 50.0,
+                        fiatDeploymentExponent = 1.0
+                    ),
+                    allocations = listOf(
+                        Allocation(
+                            symbol = Asset.BTC,
+                            targetPercent = 50.0
+                        )
+                    )
                 )
                 val mockConfigService = mockk<ConfigService>(relaxed = true)
                 every { mockConfigService.getConfig() } returns appConfig
@@ -59,23 +63,23 @@ class ResilienceChaosTest : StringSpec() {
                 val httpClient = HttpClient(mockEngine)
 
                 val krakenService = KrakenServiceImpl(
-                    mockConfigService,
-                    jacksonObjectMapper(),
-                    httpClient
+                    configService = mockConfigService,
+                    objectMapper = jacksonObjectMapper(),
+                    httpClient = httpClient
                 )
                 val portfolioAnalyzer =
                     PortfolioAnalyzer(
-                        krakenService,
-                        mockConfigService,
-                        mockk<PortfolioStatsRepository>(relaxed = true)
+                        krakenService = krakenService,
+                        configService = mockConfigService,
+                        portfolioStatsRepository = mockk<PortfolioStatsRepository>(relaxed = true)
                     )
                 val orderExecutor =
                     OrderExecutor(krakenService, portfolioAnalyzer)
                 val portfolioManager = PortfolioManagerImpl(
-                    mockConfigService,
-                    mockk<TradeHistoryService>(relaxed = true),
-                    portfolioAnalyzer,
-                    orderExecutor
+                    configService = mockConfigService,
+                    tradeHistoryService = mockk<TradeHistoryService>(relaxed = true),
+                    portfolioAnalyzer = portfolioAnalyzer,
+                    orderExecutor = orderExecutor
                 )
 
                 // Prove that the network failure correctly propagates an exception
@@ -90,19 +94,24 @@ class ResilienceChaosTest : StringSpec() {
         "should not crash the application when an IOException occurs (Network failure)" {
             runTest {
                 val appConfig = AppConfig(
-                    KrakenCredentials("apiKey", "secret"),
-                    Settings(
-                        60L,
-                        2.0,
-                        1.0,
-                        false,
-                        50.0,
-                        1.0
+                    kraken = KrakenCredentials(
+                        apiKey = "apiKey",
+                        privateKey = "secret"
                     ),
-                    listOf(Allocation(
-                        Asset.BTC,
-                        50.0
-                    ))
+                    settings = Settings(
+                        loopDelaySeconds = 60L,
+                        deviationTriggerPercent = 2.0,
+                        dustThresholdUSD = 1.0,
+                        dryRun = false,
+                        fiatMaxDrawdown = 50.0,
+                        fiatDeploymentExponent = 1.0
+                    ),
+                    allocations = listOf(
+                        Allocation(
+                            symbol = Asset.BTC,
+                            targetPercent = 50.0
+                        )
+                    )
                 )
                 val mockConfigService = mockk<ConfigService>(relaxed = true)
                 every { mockConfigService.getConfig() } returns appConfig
@@ -112,23 +121,23 @@ class ResilienceChaosTest : StringSpec() {
                 val httpClient = HttpClient(mockEngine)
 
                 val krakenService = KrakenServiceImpl(
-                    mockConfigService,
-                    jacksonObjectMapper(),
-                    httpClient
+                    configService = mockConfigService,
+                    objectMapper = jacksonObjectMapper(),
+                    httpClient = httpClient
                 )
                 val portfolioAnalyzer =
                     PortfolioAnalyzer(
-                        krakenService,
-                        mockConfigService,
-                        mockk<PortfolioStatsRepository>(relaxed = true)
+                        krakenService = krakenService,
+                        configService = mockConfigService,
+                        portfolioStatsRepository = mockk<PortfolioStatsRepository>(relaxed = true)
                     )
                 val orderExecutor =
                     OrderExecutor(krakenService, portfolioAnalyzer)
                 val portfolioManager = PortfolioManagerImpl(
-                    mockConfigService,
-                    mockk<TradeHistoryService>(relaxed = true),
-                    portfolioAnalyzer,
-                    orderExecutor
+                    configService = mockConfigService,
+                    tradeHistoryService = mockk<TradeHistoryService>(relaxed = true),
+                    portfolioAnalyzer = portfolioAnalyzer,
+                    orderExecutor = orderExecutor
                 )
 
                 // Prove that the network failure correctly propagates an exception

@@ -40,32 +40,32 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
      * default settings (2% deviation, 1 USD dust).
      * */
     private fun makeConfig(vararg allocs: Allocation) = AppConfig(
-        KrakenCredentials("k", "s"),
-        Settings(
-            60L,
-            2.0,
-            1.0,
-            false,
-            0.0,
-            1.0
+        kraken = KrakenCredentials(apiKey = "k", privateKey = "s"),
+        settings = Settings(
+            loopDelaySeconds = 60L,
+            deviationTriggerPercent = 2.0,
+            dustThresholdUSD = 1.0,
+            dryRun = false,
+            fiatMaxDrawdown = 0.0,
+            fiatDeploymentExponent = 1.0
         ),
-        allocs.toList()
+        allocations = allocs.toList()
     )
 
     init {
         beforeTest {
             krakenService.executedOrders.clear()
             portfolioAnalyzer = PortfolioAnalyzer(
-                krakenService,
-                configService,
-                portfolioStatsRepository
+                krakenService = krakenService,
+                configService = configService,
+                portfolioStatsRepository = portfolioStatsRepository
             )
             orderExecutor = OrderExecutor(krakenService, portfolioAnalyzer)
             portfolioManager = PortfolioManagerImpl(
-                configService,
-                tradeHistoryService,
-                portfolioAnalyzer,
-                orderExecutor
+                configService = configService,
+                tradeHistoryService = tradeHistoryService,
+                portfolioAnalyzer = portfolioAnalyzer,
+                orderExecutor = orderExecutor
             )
         }
 

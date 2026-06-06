@@ -33,14 +33,14 @@ data class PortfolioSnapshot(
                 deviationPercent: BigDecimal,
                 deviationUSD: BigDecimal
             ): AssetSnapshot = AssetSnapshot(
-                Asset(symbol),
-                balance,
-                price,
-                valueUSD,
-                targetPercent,
-                currentPercent,
-                deviationPercent,
-                deviationUSD
+                symbol = Asset(symbol),
+                balance = balance,
+                price = price,
+                valueUSD = valueUSD,
+                targetPercent = targetPercent,
+                currentPercent = currentPercent,
+                deviationPercent = deviationPercent,
+                deviationUSD = deviationUSD
             )
         }
     }

@@ -33,42 +33,42 @@ class PortfolioManagerDogeTest : StringSpec() {
             val repo = mockk<PortfolioStatsRepository>(relaxed = true)
             portfolioAnalyzer =
                 PortfolioAnalyzer(
-                    krakenService,
-                    configService,
-                    repo
+                    krakenService = krakenService,
+                    configService = configService,
+                    portfolioStatsRepository = repo
                 )
             orderExecutor = OrderExecutor(krakenService, portfolioAnalyzer)
             portfolioManager = PortfolioManagerImpl(
-                configService,
-                tradeHistoryService,
-                portfolioAnalyzer,
-                orderExecutor
+                configService = configService,
+                tradeHistoryService = tradeHistoryService,
+                portfolioAnalyzer = portfolioAnalyzer,
+                orderExecutor = orderExecutor
             )
         }
 
         "testDogeMapping" {
             runTest {
                 val settings = Settings(
-                    60L,
-                    2.0,
-                    1.0,
-                    true,
-                    0.0,
-                    1.0
+                    loopDelaySeconds = 60L,
+                    deviationTriggerPercent = 2.0,
+                    dustThresholdUSD = 1.0,
+                    dryRun = true,
+                    fiatMaxDrawdown = 0.0,
+                    fiatDeploymentExponent = 1.0
                 )
                 val config = AppConfig(
-                    KrakenCredentials(
-                        "k",
-                        "s"
-                    ), settings,
-                    listOf(
+                    kraken = KrakenCredentials(
+                        apiKey = "k",
+                        privateKey = "s"
+                    ), settings = settings,
+                    allocations = listOf(
                         Allocation(
-                            Asset.DOGE,
-                            50.0
+                            symbol = Asset.DOGE,
+                            targetPercent = 50.0
                         ),
                         Allocation(
-                            Asset.USD,
-                            50.0
+                            symbol = Asset.USD,
+                            targetPercent = 50.0
                         )
                     )
                 )
@@ -97,26 +97,26 @@ class PortfolioManagerDogeTest : StringSpec() {
         "testBtcMapping" {
             runTest {
                 val settings = Settings(
-                    60L,
-                    2.0,
-                    1.0,
-                    true,
-                    0.0,
-                    1.0
+                    loopDelaySeconds = 60L,
+                    deviationTriggerPercent = 2.0,
+                    dustThresholdUSD = 1.0,
+                    dryRun = true,
+                    fiatMaxDrawdown = 0.0,
+                    fiatDeploymentExponent = 1.0
                 )
                 val config = AppConfig(
-                    KrakenCredentials(
-                        "k",
-                        "s"
-                    ), settings,
-                    listOf(
+                    kraken = KrakenCredentials(
+                        apiKey = "k",
+                        privateKey = "s"
+                    ), settings = settings,
+                    allocations = listOf(
                         Allocation(
-                            Asset.BTC,
-                            50.0
+                            symbol = Asset.BTC,
+                            targetPercent = 50.0
                         ),
                         Allocation(
-                            Asset.USD,
-                            50.0
+                            symbol = Asset.USD,
+                            targetPercent = 50.0
                         )
                     )
                 )
@@ -126,7 +126,8 @@ class PortfolioManagerDogeTest : StringSpec() {
                     { mapOf("XXBT" to 1.0, "ZUSD" to 50000.0) }
                 krakenService.pricesSupplier = { pairs ->
                     if (pairs.contains("XXBTZUSD") ||
-                        pairs.contains("XBTUSD"))
+                        pairs.contains("XBTUSD")
+                    )
                         mapOf("XXBTZUSD" to 50000.0)
                     else emptyMap()
                 }

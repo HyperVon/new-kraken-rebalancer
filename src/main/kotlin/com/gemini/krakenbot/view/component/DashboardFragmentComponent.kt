@@ -33,7 +33,8 @@ class DashboardFragmentComponent(
     private val recentActivityComponent: RecentActivityComponent
 ) {
     private val timeFormatter =
-        DateTimeFormatter.ofPattern("hh:mm:ss a").withZone(ZoneId.systemDefault())
+        DateTimeFormatter.ofPattern("hh:mm:ss a")
+            .withZone(ZoneId.systemDefault())
 
     context(div: DIV)
     fun render(
