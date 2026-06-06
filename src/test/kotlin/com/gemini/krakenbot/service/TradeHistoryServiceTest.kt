@@ -12,6 +12,7 @@ import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.yield
 import java.math.BigDecimal
 import java.time.Instant
@@ -97,7 +98,7 @@ class TradeHistoryServiceTest : StringSpec() {
         }
 
         "getHistoryFlow_EmitsSnapshotsOnAdd" {
-            kotlinx.coroutines.test.runTest {
+            runTest {
                 val repository = mockk<TradeRepository>(relaxed = true)
                 val tradeHistoryService = TradeHistoryServiceImpl(repository)
                 val snapshots = mutableListOf<PortfolioSnapshot>()
