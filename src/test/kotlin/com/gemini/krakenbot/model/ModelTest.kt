@@ -24,7 +24,7 @@ class ModelTest : StringSpec({
         asset2 shouldBe asset
         asset.hashCode() shouldBe asset2.hashCode()
         asset.toString().shouldNotBeNull()
-        asset.symbol shouldBe KrakenSymbols.BTC
+        asset.symbol.value shouldBe KrakenSymbols.BTC
 
         val snapshot = PortfolioSnapshot(
             timestamp = Instant.EPOCH,

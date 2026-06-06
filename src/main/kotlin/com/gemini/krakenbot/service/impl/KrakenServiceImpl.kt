@@ -100,7 +100,7 @@ class KrakenServiceImpl(
                 volume = normalizedVolume
             )
         } catch (e: Exception) {
-            val message = e.message ?: e.javaClass.simpleName
+            val message = e.message.orEmpty().ifEmpty { e.javaClass.simpleName }
             log.error(
                 "Failed to execute order: {} {} {} volume={}",
                 type,
@@ -159,8 +159,8 @@ class KrakenServiceImpl(
                 }
             val signature = signRequest(path, nonce, postData)
 
-            val apiKey = configService.getConfig().kraken.apiKey
-            if (apiKey.isBlank()) throw RuntimeException("API Key is null")
+            val apiKey = configService.getConfig().kraken.apiKey.value
+            check(apiKey.isNotBlank()) { "API Key is null" }
 
             val responseBody = httpClient.post(apiUrl + path) {
                 header("API-Key", apiKey)
@@ -211,7 +211,7 @@ class KrakenServiceImpl(
 
             val mac = Mac.getInstance(KrakenSymbols.HMAC_SHA512)
             val secretDecoded = Base64.getDecoder()
-                .decode(configService.getConfig().kraken.privateKey)
+                .decode(configService.getConfig().kraken.privateKey.value)
             val secretSpec =
                 SecretKeySpec(secretDecoded, KrakenSymbols.HMAC_SHA512)
             mac.init(secretSpec)

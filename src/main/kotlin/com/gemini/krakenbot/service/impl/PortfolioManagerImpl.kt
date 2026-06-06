@@ -1,6 +1,7 @@
 package com.gemini.krakenbot.service.impl
 
 import com.gemini.krakenbot.model.PortfolioSnapshot
+import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.PortfolioManager
 import com.gemini.krakenbot.service.TradeHistoryService
@@ -154,14 +155,14 @@ class PortfolioManagerImpl(
             val symbol = a.symbol
             val balance = BigDecimal.valueOf(
                 portfolioAnalyzer.resolveBalance(
-                    symbol,
+                    symbol.value,
                     balances
                 )
             )
-            val valUSD = currentValuesUSD[symbol] ?: BigDecimal.ZERO
+            val valUSD = currentValuesUSD[symbol.value] ?: BigDecimal.ZERO
             val price =
-                if (!symbol.equals(KrakenSymbols.USD, ignoreCase = true)) {
-                    prices[symbol] ?: BigDecimal.ONE
+                if (!symbol.value.equals(KrakenSymbols.USD, ignoreCase = true)) {
+                    prices[symbol.value] ?: BigDecimal.ONE
                 } else {
                     BigDecimal.ONE
                 }
@@ -170,7 +171,7 @@ class PortfolioManagerImpl(
             var snapshotTargetPct = baseTargetPct
             val calcTargetPct: BigDecimal
 
-            if (symbol.equals(KrakenSymbols.USD, ignoreCase = true)) {
+            if (symbol.value.equals(KrakenSymbols.USD, ignoreCase = true)) {
                 calcTargetPct = effectiveUsdTarget
             } else {
                 calcTargetPct = baseTargetPct.multiply(cryptoScaleFactor)
@@ -207,7 +208,7 @@ class PortfolioManagerImpl(
                     .multiply(BigDecimal.valueOf(100))
             }
 
-            assetSnapshots[symbol] = PortfolioSnapshot.AssetSnapshot(
+            assetSnapshots[symbol.value] = PortfolioSnapshot.AssetSnapshot(
                 symbol,
                 balance,
                 price,

@@ -403,9 +403,9 @@ class DashboardControllerTest : StringSpec() {
             capturedConfig.captured.settings.fiatMaxDrawdown shouldBe 0.0
             capturedConfig.captured.settings.fiatDeploymentExponent shouldBe 1.0
             capturedConfig.captured.allocations.size shouldBe 2
-            capturedConfig.captured.allocations[0].symbol shouldBe KrakenSymbols.BTC
+            capturedConfig.captured.allocations[0].symbol.value shouldBe KrakenSymbols.BTC
             capturedConfig.captured.allocations[0].targetPercent shouldBe 0.0
-            capturedConfig.captured.allocations[1].symbol shouldBe KrakenSymbols.ETH
+            capturedConfig.captured.allocations[1].symbol.value shouldBe KrakenSymbols.ETH
             capturedConfig.captured.allocations[1].targetPercent shouldBe 30.0
         }
 

@@ -62,15 +62,15 @@ class PerformanceTableComponent {
                     }
                     tbody {
                         val cryptoOnly = latest.assets.values
-                            .filter { it.symbol != KrakenSymbols.USD }
+                            .filter { it.symbol.value != KrakenSymbols.USD }
                             .sortedBy { it.deviationPercent }
                         cryptoOnly.forEach { asset ->
                             val dev = asset.deviationPercent
                             val devClass = getDeviationClass(dev)
                             val sign = getDeviationSign(dev)
-
+ 
                             tr(HOVERABLE) {
-                                td(SYMBOL_COL) { +asset.symbol }
+                                td(SYMBOL_COL) { +asset.symbol.value }
                                 td(MONO_COL) {
                                     +"$${
                                         formatCurrency(

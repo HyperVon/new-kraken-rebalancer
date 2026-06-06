@@ -19,17 +19,14 @@ class PortfolioStatsRepositoryImpl(
 
     override fun load(): PortfolioStats {
         val file = File(filePath)
-        if (file.exists()) {
-            try {
-                return objectMapper.readValue(
-                    file,
-                    PortfolioStats::class.java
-                )
-            } catch (e: IOException) {
-                log.error("Failed to load portfolio stats", e)
-            }
+        if (!file.exists()) return PortfolioStats(BigDecimal.ZERO)
+
+        return runCatching {
+            objectMapper.readValue(file, PortfolioStats::class.java)
+        }.getOrElse { e ->
+            log.error("Failed to load portfolio stats", e)
+            PortfolioStats(BigDecimal.ZERO)
         }
-        return PortfolioStats(BigDecimal.ZERO)
     }
 
     override fun save(stats: PortfolioStats) {

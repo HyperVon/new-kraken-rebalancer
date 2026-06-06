@@ -36,7 +36,7 @@ class OrderExecutor(
             }
 
             val price = prices[symbol] ?: BigDecimal.ZERO
-            if (price.compareTo(BigDecimal.ZERO) == 0) continue
+            if (price.signum() == 0) continue
 
             val volume = usdToSell.divide(
                 price,
@@ -89,7 +89,7 @@ class OrderExecutor(
             }
 
             val price = prices[symbol] ?: BigDecimal.ZERO
-            if (price.compareTo(BigDecimal.ZERO) == 0) continue
+            if (price.signum() == 0) continue
 
             val volume = cost.divide(price, 8, RoundingMode.HALF_UP)
             val pair = KrakenSymbols.tradingPair(symbol)

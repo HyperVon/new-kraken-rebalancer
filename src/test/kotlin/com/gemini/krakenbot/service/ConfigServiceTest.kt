@@ -58,7 +58,7 @@ class ConfigServiceTest : StringSpec({
     "loadConfig_Success" {
         configService.loadConfig()
         configService.getConfig().shouldNotBeNull()
-        configService.getConfig().allocations.first().symbol shouldBe KrakenSymbols.USD
+        configService.getConfig().allocations.first().symbol.value shouldBe KrakenSymbols.USD
     }
 
     "loadConfig_FileNotFound" {

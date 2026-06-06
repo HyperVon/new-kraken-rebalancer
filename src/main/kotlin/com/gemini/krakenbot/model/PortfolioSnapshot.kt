@@ -13,7 +13,7 @@ data class PortfolioSnapshot(
     val effectiveUsdTargetPercent: BigDecimal
 ) {
     data class AssetSnapshot(
-        val symbol: String,
+        val symbol: Asset,
         val balance: BigDecimal,
         val price: BigDecimal,
         val valueUSD: BigDecimal,
@@ -21,5 +21,27 @@ data class PortfolioSnapshot(
         val currentPercent: BigDecimal,
         val deviationPercent: BigDecimal,
         val deviationUSD: BigDecimal
-    )
+    ) {
+        companion object {
+            operator fun invoke(
+                symbol: String,
+                balance: BigDecimal,
+                price: BigDecimal,
+                valueUSD: BigDecimal,
+                targetPercent: BigDecimal,
+                currentPercent: BigDecimal,
+                deviationPercent: BigDecimal,
+                deviationUSD: BigDecimal
+            ): AssetSnapshot = AssetSnapshot(
+                Asset(symbol),
+                balance,
+                price,
+                valueUSD,
+                targetPercent,
+                currentPercent,
+                deviationPercent,
+                deviationUSD
+            )
+        }
+    }
 }

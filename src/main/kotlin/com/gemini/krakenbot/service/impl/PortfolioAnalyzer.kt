@@ -6,7 +6,6 @@ import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.KrakenService
 import com.gemini.krakenbot.util.KrakenSymbols
 import org.slf4j.LoggerFactory
-import java.io.IOException
 import java.math.BigDecimal
 import java.math.RoundingMode
 import kotlin.math.pow
@@ -27,7 +26,7 @@ class PortfolioAnalyzer(
     suspend fun fetchPrices(): Map<String, BigDecimal> {
         val allocations = configService.getConfig().allocations
         val nonUsd = allocations.filter {
-            !it.symbol.equals(
+            !it.symbol.value.equals(
                 KrakenSymbols.USD,
                 ignoreCase = true
             )
@@ -36,13 +35,13 @@ class PortfolioAnalyzer(
 
         val pairs =
             nonUsd.joinToString(",") {
-                KrakenSymbols.tradingPair(it.symbol)
+                KrakenSymbols.tradingPair(it.symbol.value)
             }
         val rawPrices = krakenService.getTickerPrices(pairs)
 
         return nonUsd.associate { allocation ->
-            allocation.symbol to resolvePriceFromTicker(
-                allocation.symbol,
+            allocation.symbol.value to resolvePriceFromTicker(
+                allocation.symbol.value,
                 rawPrices
             )
         }
@@ -73,14 +72,14 @@ class PortfolioAnalyzer(
         var totalPortfolioValueUSD = BigDecimal.ZERO
 
         for (a in configService.getConfig().allocations) {
-            val symbol = a.symbol
+            val symbol = a.symbol.value
             val balance = resolveBalance(symbol, balances)
             val bal = BigDecimal.valueOf(balance)
             var price = BigDecimal.ONE
 
             if (!symbol.equals(KrakenSymbols.USD, ignoreCase = true)) {
                 val p = prices[symbol] ?: BigDecimal.ZERO
-                if (p.compareTo(BigDecimal.ZERO) == 0) {
+                if (p.signum() == 0) {
                     log.error(
                         "Price not found for {}. Aborting rebalance cycle to prevent erroneous trades.",
                         symbol
@@ -111,34 +110,24 @@ class PortfolioAnalyzer(
         val stats = portfolioStatsRepository.load()
         var ath = stats.allTimeHigh
 
-        if (ath == null || ath <= BigDecimal.ZERO) {
-            ath = totalPortfolioValueUSD
-            log.info(
-                "Initial ATH set to $${
-                    ath.setScale(
-                        2,
-                        RoundingMode.HALF_UP
-                    )
-                }"
-            )
-        } else if (totalPortfolioValueUSD > ath) {
-            ath = totalPortfolioValueUSD
-            log.info(
-                "New All-Time High detected: $${
-                    ath.setScale(
-                        2,
-                        RoundingMode.HALF_UP
-                    )
-                }"
-            )
+        when {
+            ath == null || ath <= BigDecimal.ZERO -> {
+                ath = totalPortfolioValueUSD
+                log.info(
+                    "Initial ATH set to ${ath.setScale(2, RoundingMode.HALF_UP)}"
+                )
+            }
+            totalPortfolioValueUSD > ath -> {
+                ath = totalPortfolioValueUSD
+                log.info(
+                    "New All-Time High detected: ${ath.setScale(2, RoundingMode.HALF_UP)}"
+                )
+            }
         }
 
         stats.allTimeHigh = ath
-        try {
-            portfolioStatsRepository.save(stats)
-        } catch (e: IOException) {
-            log.error("Failed to persist portfolio ATH", e)
-        }
+        runCatching { portfolioStatsRepository.save(stats) }
+            .onFailure { e -> log.error("Failed to persist portfolio ATH", e) }
 
         return if (ath > BigDecimal.ZERO && totalPortfolioValueUSD < ath) {
             val diff = ath - totalPortfolioValueUSD
@@ -164,7 +153,7 @@ class PortfolioAnalyzer(
             4,
             RoundingMode.HALF_UP
         )
-        if (ratio > BigDecimal.ONE) ratio = BigDecimal.ONE
+        ratio = ratio.coerceAtMost(BigDecimal.ONE)
 
         val deployDouble =
             ratio.toDouble().pow(settings.fiatDeploymentExponent) * 100.0
@@ -174,7 +163,7 @@ class PortfolioAnalyzer(
     fun calculateEffectiveUsdTarget(fiatDeploymentPct: BigDecimal): BigDecimal {
         val baseUsdTarget = configService.getConfig()
             .allocations
-            .filter { it.symbol.equals(KrakenSymbols.USD, ignoreCase = true) }
+            .filter { it.symbol.value.equals(KrakenSymbols.USD, ignoreCase = true) }
             .sumOf { it.targetPercent.toBigDecimal() }
 
         return if (fiatDeploymentPct > BigDecimal.ZERO) {
@@ -192,7 +181,7 @@ class PortfolioAnalyzer(
     fun calculateCryptoScaleFactor(effectiveUsdTarget: BigDecimal): BigDecimal {
         val totalNonUsdTarget = configService.getConfig()
             .allocations
-            .filter { !it.symbol.equals(KrakenSymbols.USD, ignoreCase = true) }
+            .filter { !it.symbol.value.equals(KrakenSymbols.USD, ignoreCase = true) }
             .sumOf { it.targetPercent.toBigDecimal() }
 
         val remainingForCrypto = BigDecimal.valueOf(100) - effectiveUsdTarget
@@ -221,10 +210,11 @@ class PortfolioAnalyzer(
         val allDeviations = mutableMapOf<String, BigDecimal>()
 
         configService.getConfig().allocations.forEach { a ->
+            val symbolVal = a.symbol.value
             var targetPct = BigDecimal.valueOf(a.targetPercent)
 
             targetPct =
-                if (a.symbol.equals(KrakenSymbols.USD, ignoreCase = true)) {
+                if (symbolVal.equals(KrakenSymbols.USD, ignoreCase = true)) {
                     effectiveUsdTarget
                 } else {
                     targetPct.multiply(cryptoScaleFactor)
@@ -237,7 +227,7 @@ class PortfolioAnalyzer(
             )
             val targetValue =
                 totalPortfolioValueUSD.multiply(targetPct)
-            val currentVal = currentValuesUSD[a.symbol] ?: BigDecimal.ZERO
+            val currentVal = currentValuesUSD[symbolVal] ?: BigDecimal.ZERO
 
             val deviationUSD = currentVal.subtract(targetValue)
             var deviationPct = BigDecimal.ZERO
@@ -256,11 +246,11 @@ class PortfolioAnalyzer(
                 deviationPct = BigDecimal.valueOf(100.0)
             }
 
-            allDeviations[a.symbol] = deviationUSD
+            allDeviations[symbolVal] = deviationUSD
 
             log.info(
                 "Analysis [{}]: Dev: {}% ($ {}). Threshold: {}%",
-                a.symbol,
+                symbolVal,
                 deviationPct,
                 deviationUSD.setScale(2, RoundingMode.HALF_UP),
                 s.deviationTriggerPercent
@@ -268,11 +258,11 @@ class PortfolioAnalyzer(
 
             if (deviationPct.toDouble() >= s.deviationTriggerPercent) {
                 actionLog.add(
-                    "Deviation Triggered details: ${a.symbol} Dev: $deviationPct%"
+                    "Deviation Triggered details: $symbolVal Dev: $deviationPct%"
                 )
             }
 
-            if (a.symbol.equals(KrakenSymbols.USD, ignoreCase = true)) {
+            if (symbolVal.equals(KrakenSymbols.USD, ignoreCase = true)) {
                 if (deviationPct.toDouble() >= s.deviationTriggerPercent) {
                     log.info(
                         "Asset USD Deviation: {}% (Trigger: {}%). USD Dev: {}",
@@ -287,16 +277,16 @@ class PortfolioAnalyzer(
                 if (deviationPct.toDouble() >= s.deviationTriggerPercent) {
                     log.info(
                         "Asset {} Deviation: {}% (Trigger: {}%). USD Dev: {}",
-                        a.symbol,
+                        symbolVal,
                         deviationPct,
                         s.deviationTriggerPercent,
                         deviationUSD
                     )
 
                     if (deviationUSD > BigDecimal.ZERO) {
-                        sellOrders[a.symbol] = deviationUSD
+                        sellOrders[symbolVal] = deviationUSD
                     } else {
-                        buyOrders[a.symbol] = deviationUSD.abs()
+                        buyOrders[symbolVal] = deviationUSD.abs()
                     }
                 }
             }
@@ -340,7 +330,7 @@ class PortfolioAnalyzer(
             }
         }
 
-        if (totalCounterDev.compareTo(BigDecimal.ZERO) == 0) {
+        if (totalCounterDev.signum() == 0) {
             log.info("Fiat correction required but no suitable " +
                     "counter-balancing assets found.")
             return

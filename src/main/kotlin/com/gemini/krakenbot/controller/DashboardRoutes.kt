@@ -12,6 +12,7 @@ import io.ktor.server.sse.*
 import io.ktor.sse.*
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.gemini.krakenbot.config.*
+import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.TradeHistoryService
 import com.gemini.krakenbot.view.DashboardView

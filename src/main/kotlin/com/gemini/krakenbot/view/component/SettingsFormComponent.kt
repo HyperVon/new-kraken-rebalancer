@@ -207,11 +207,11 @@ class SettingsFormComponent {
                 id = ALLOCATIONS_CONTAINER
                 config.allocations.forEach { alloc ->
                     div(ALLOCATION_EDIT_ROW) {
-                        div(ALLOCATION_EDIT_SYMBOL) { +alloc.symbol }
+                        div(ALLOCATION_EDIT_SYMBOL) { +alloc.symbol.value }
                         input(
                             type = InputType.hidden,
                             name = SYMBOLS
-                        ) { value = alloc.symbol }
+                        ) { value = alloc.symbol.value }
                         div(ALLOCATION_EDIT_INPUT_WRAPPER) {
                             input(
                                 type = number,

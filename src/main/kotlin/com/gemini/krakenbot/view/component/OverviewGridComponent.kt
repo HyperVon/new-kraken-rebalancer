@@ -35,7 +35,7 @@ class OverviewGridComponent {
         val cryptoValue = totalValue - usdValue
 
         val assetsList =
-            latest.assets.values.filter { it.symbol != KrakenSymbols.USD }
+            latest.assets.values.filter { it.symbol.value != KrakenSymbols.USD }
         val cryptoPercent = assetsList.sumOf { it.currentPercent.toDouble() }
         val cryptoTargetPercent =
             assetsList.sumOf { it.targetPercent.toDouble() }

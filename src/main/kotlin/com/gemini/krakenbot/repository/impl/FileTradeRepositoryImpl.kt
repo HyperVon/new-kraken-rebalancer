@@ -32,14 +32,14 @@ class FileTradeRepositoryImpl(
 
     override fun load(): List<PortfolioSnapshot> {
         val file = File(filePath)
-        if (!file.exists()) {
-            return emptyList()
-        }
-        return try {
+        if (!file.exists()) return emptyList()
+
+        return runCatching {
             objectMapper.readValue(
                 file,
-                object : TypeReference<List<PortfolioSnapshot>>() {})
-        } catch (e: Exception) {
+                object : TypeReference<List<PortfolioSnapshot>>() {}
+            )
+        }.getOrElse { e ->
             log.error(
                 "Failed to load trade history from {}. Starting with empty history.",
                 filePath,

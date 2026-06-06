@@ -34,7 +34,7 @@ class AllocationChartComponent {
                             (asset.valueUSD.toDouble() / maxVal * 100).toInt()
                         } else 0
                     div(ALLOCATION_BAR_ROW) {
-                        div(ALLOCATION_BAR_LABEL) { +asset.symbol }
+                        div(ALLOCATION_BAR_LABEL) { +asset.symbol.value }
                         div(ALLOCATION_BAR_TRACK) {
                             div(ALLOCATION_BAR_FILL) {
                                 style = "width: $fillPct%;"
