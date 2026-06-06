@@ -17,6 +17,8 @@ jobs:
   analyze:
     name: Analyze (${{ matrix.language }})
     runs-on: ubuntu-latest
+    env:
+      CODEQL_EXTRACTOR_JAVA_AGENT_DISABLE_KOTLIN: true
     
     strategy:
       fail-fast: false
