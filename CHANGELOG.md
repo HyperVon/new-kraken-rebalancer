@@ -25,7 +25,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Localized Cryptographic Strings**: Moved HMAC-SHA512 and SHA-256 algorithm name constants into the private companion object of `KrakenServiceImpl`.
 - **View Imports Cleanup**: Refactored layout components (`PerformanceTableComponent`, `RecentActivityComponent`, `SettingsFormComponent`) to import parent utility objects (`CssClasses`, `ViewText`, `Icons`, `FormFields`) instead of dozens of nested static constants, significantly reducing import boilerplate.
 - **Standardized Koin DI**: Converted manually scoped instantiation blocks in `AppModule.kt` to modern constructor-based bindings via Koin 4's `singleOf`.
-- **Test Suite Modernization & Class Initializers**: Refactored all test suites across the project from constructor-lambda `StringSpec({ ... })` structure to standard class body `init { ... }` blocks. This ensures build tools and IDE test runners correctly discover all test suites and allowed the removal of obsolete `@Suppress("unused")` annotations.
+- **Test Suite Modernization & Class Initializers**: Refactored all test suites across the project from constructor-lambda `StringSpec({ ... })` structure to standard class body `init { ... }` blocks. This ensures build tools and IDE test runners correctly discover all test suites, and re-added `@Suppress("unused")` to specific test classes where IDE warnings persisted due to reflection-based dynamic test discovery limitations.
 - **Loop & Scope Refactorings**: Replaced index-based range loops with Kotlin's standard `repeat` blocks where loop indexes were unused (e.g. in concurrent nonce generation and dummy snapshot list creation), and eliminated redundant `with(view)` wrapper scopes in layout component unit tests.
 
 ---

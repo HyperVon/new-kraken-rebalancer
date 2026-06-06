@@ -323,7 +323,7 @@ with `BigDecimal.compareTo()` to avoid floating-point comparison issues.
 
 ### Test Design Principles
 
-- **Class Initializers**: All test suites are structured using standard class body `init { ... }` blocks (e.g., `class ExampleTest : StringSpec() { init { ... } }`) instead of constructor lambdas, making them fully compatible with build runners and IDE test discovery tools.
+- **Class Initializers**: All test suites are structured using standard class body `init { ... }` blocks (e.g., `class ExampleTest : StringSpec() { init { ... } }`) instead of constructor lambdas, making them fully compatible with build runners and IDE test discovery tools. `@Suppress("unused")` is applied where IDE static analysis triggers warnings because Kotest loads specs dynamically via reflection.
 - **`FakeKrakenService`** — an in-process test double for `KrakenService` used
   by all `PortfolioManager` tests. Avoids fragile `coEvery` stubbing of
   `suspend` functions in concurrent coroutine contexts.
