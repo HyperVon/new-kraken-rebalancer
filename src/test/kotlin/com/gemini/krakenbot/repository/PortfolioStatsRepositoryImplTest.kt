@@ -15,6 +15,7 @@ import java.io.IOException
 import java.math.BigDecimal
 import java.nio.file.Files
 
+@Suppress("unused")
 class PortfolioStatsRepositoryImplTest : StringSpec() {
 
     private val testFileName = "test-portfolio-stats.json"

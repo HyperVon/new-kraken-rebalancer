@@ -28,6 +28,7 @@ import java.util.*
 private const val APPLICATION_JSON = "application/json"
 private const val FILE_PATH = "filePath"
 
+@Suppress("unused")
 class KrakenE2ETest : StringSpec() {
 
     override fun isolationMode() = IsolationMode.InstancePerTest

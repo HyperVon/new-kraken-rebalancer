@@ -42,6 +42,7 @@ import kotlinx.html.stream.createHTML
 import java.math.BigDecimal
 import java.time.Instant
 
+@Suppress("unused")
 class DashboardViewTest : StringSpec() {
     private val shell = DashboardShellComponent()
     private val overview = OverviewGridComponent()

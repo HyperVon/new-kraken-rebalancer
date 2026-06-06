@@ -14,6 +14,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 
+@Suppress("unused")
 class AtomicJsonFileTest : StringSpec() {
     private val objectMapper = ObjectMapper()
 
