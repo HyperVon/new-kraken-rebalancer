@@ -2,25 +2,11 @@ package com.gemini.krakenbot.view.component
 
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.PortfolioSnapshot
-import com.gemini.krakenbot.view.util.CssClasses.OVERVIEW_GRID
-import com.gemini.krakenbot.view.util.CssClasses.TEXT_DANGER
-import com.gemini.krakenbot.view.util.Formatter.formatCurrency
-import com.gemini.krakenbot.view.util.Formatter.formatPercent
-import com.gemini.krakenbot.view.util.Formatter.getDeviationClass
-import com.gemini.krakenbot.view.util.Formatter.getDeviationSign
-import com.gemini.krakenbot.view.util.Icons.CIRCLES
-import com.gemini.krakenbot.view.util.Icons.TREND_UP
-import com.gemini.krakenbot.view.util.Icons.WALLET
+import com.gemini.krakenbot.view.util.CssClasses
+import com.gemini.krakenbot.view.util.Formatter
+import com.gemini.krakenbot.view.util.Icons
 import com.gemini.krakenbot.view.util.Layouts.statusCard
-import com.gemini.krakenbot.view.util.ViewText.ASSETS_SUFFIX
-import com.gemini.krakenbot.view.util.ViewText.BASE_PREFIX
-import com.gemini.krakenbot.view.util.ViewText.CASH_USD
-import com.gemini.krakenbot.view.util.ViewText.CRYPTO_ASSETS
-import com.gemini.krakenbot.view.util.ViewText.DEV_PREFIX
-import com.gemini.krakenbot.view.util.ViewText.DRAWDOWN_PREFIX
-import com.gemini.krakenbot.view.util.ViewText.NO_USD_DATA
-import com.gemini.krakenbot.view.util.ViewText.TARGET_PREFIX
-import com.gemini.krakenbot.view.util.ViewText.TOTAL_PORTFOLIO
+import com.gemini.krakenbot.view.util.ViewText
 import kotlinx.html.DIV
 import kotlinx.html.div
 import kotlinx.html.span
@@ -42,18 +28,18 @@ class OverviewGridComponent {
             assetsList.sumOf { it.targetPercent.toDouble() }
         val cryptoCount = assetsList.size
 
-        div.div(OVERVIEW_GRID) {
+        div.div(CssClasses.OVERVIEW_GRID) {
             statusCard(
-                title = TOTAL_PORTFOLIO,
-                iconSvg = TREND_UP,
-                value = "$${formatCurrency(totalValue)}"
+                title = ViewText.TOTAL_PORTFOLIO,
+                iconSvg = Icons.TREND_UP,
+                value = "$${Formatter.formatCurrency(totalValue)}"
             ) {
                 val drawdown = latest.drawdownPercent
                 val isDrawdown = drawdown.signum() > 0
-                val colorClass = if (isDrawdown) TEXT_DANGER else ""
+                val colorClass = if (isDrawdown) CssClasses.TEXT_DANGER else ""
                 span(colorClass) {
-                    +"${DRAWDOWN_PREFIX}${
-                        formatPercent(
+                    +"${ViewText.DRAWDOWN_PREFIX}${
+                        Formatter.formatPercent(
                             drawdown
                         )
                     }%"
@@ -61,9 +47,9 @@ class OverviewGridComponent {
             }
 
             statusCard(
-                title = CASH_USD,
-                iconSvg = WALLET,
-                value = "$${formatCurrency(usdValue)}",
+                title = ViewText.CASH_USD,
+                iconSvg = Icons.WALLET,
+                value = "$${Formatter.formatCurrency(usdValue)}",
                 isSuccess = true
             ) {
                 if (usdAsset != null) {
@@ -71,47 +57,47 @@ class OverviewGridComponent {
                     val targetPct = latest.effectiveUsdTargetPercent
                     val baseTargetPct = usdAsset.targetPercent
                     val dev = usdAsset.deviationPercent
-                    val devClass = getDeviationClass(dev)
-                    val devSign = getDeviationSign(dev)
+                    val devClass = Formatter.getDeviationClass(dev)
+                    val devSign = Formatter.getDeviationSign(dev)
 
                     span {
-                        +"${formatPercent(currentPct)}% | ${TARGET_PREFIX}${
-                            formatPercent(
+                        +"${Formatter.formatPercent(currentPct)}% | ${ViewText.TARGET_PREFIX}${
+                            Formatter.formatPercent(
                                 targetPct
                             )
                         }%"
                         if (abs(targetPct.toDouble() - baseTargetPct.toDouble()) > 0.01) {
-                            +" (${BASE_PREFIX}${
-                                formatPercent(
+                            +" (${ViewText.BASE_PREFIX}${
+                                Formatter.formatPercent(
                                     baseTargetPct
                                 )
                             }%)"
                         }
                         +" | "
                         span(devClass) {
-                            +"${DEV_PREFIX}$devSign${
-                                formatPercent(
+                            +"${ViewText.DEV_PREFIX}$devSign${
+                                Formatter.formatPercent(
                                     dev
                                 )
                             }%"
                         }
                     }
                 } else {
-                    +NO_USD_DATA
+                    +ViewText.NO_USD_DATA
                 }
             }
 
             statusCard(
-                title = CRYPTO_ASSETS,
-                iconSvg = CIRCLES,
-                value = "$${formatCurrency(cryptoValue)}"
+                title = ViewText.CRYPTO_ASSETS,
+                iconSvg = Icons.CIRCLES,
+                value = "$${Formatter.formatCurrency(cryptoValue)}"
             ) {
                 span {
-                    +"${formatPercent(cryptoPercent)}% | ${TARGET_PREFIX}${
-                        formatPercent(
+                    +"${Formatter.formatPercent(cryptoPercent)}% | ${ViewText.TARGET_PREFIX}${
+                        Formatter.formatPercent(
                             cryptoTargetPercent
                         )
-                    }% | $cryptoCount${ASSETS_SUFFIX}"
+                    }% | $cryptoCount${ViewText.ASSETS_SUFFIX}"
                 }
             }
         }

@@ -8,6 +8,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [4.0.1] - 2026-06-07
+
+### Changed
+
+- **Clean View Imports Refactoring**: Fully refactored all remaining HTML layout components in the `com.gemini.krakenbot.view.component` package (`AllocationChartComponent`, `DashboardFragmentComponent`, `DashboardShellComponent`, `OverviewGridComponent`) to reference utility constants, routes, properties, and attributes via their parent utility objects rather than static/member imports, resolving wildcard and static import boilerplate across the view layer.
+
+---
+
 ## [4.0.0] - 2026-06-06
 
 ### Added

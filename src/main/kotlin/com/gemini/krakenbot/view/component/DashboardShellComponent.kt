@@ -1,18 +1,9 @@
 package com.gemini.krakenbot.view.component
 
-import com.gemini.krakenbot.view.util.CssClasses.CONTAINER
-import com.gemini.krakenbot.view.util.CssClasses.SPINNER
-import com.gemini.krakenbot.view.util.CssClasses.SPINNER_CONTAINER
-import com.gemini.krakenbot.view.util.HtmxAttrs.HX_EXT
-import com.gemini.krakenbot.view.util.HtmxAttrs.HX_GET
-import com.gemini.krakenbot.view.util.HtmxAttrs.HX_TRIGGER
-import com.gemini.krakenbot.view.util.HtmxAttrs.SSE_CONNECT
-import com.gemini.krakenbot.view.util.Routes.API_STATUS_STREAM
-import com.gemini.krakenbot.view.util.Routes.FRAGMENT_DASHBOARD
-import com.gemini.krakenbot.view.util.Routes.STATIC_DASHBOARD_JS
-import com.gemini.krakenbot.view.util.Routes.STATIC_STYLE_CSS
-import com.gemini.krakenbot.view.util.ViewText.APP_TITLE
-import com.gemini.krakenbot.view.util.ViewText.CONNECTING
+import com.gemini.krakenbot.view.util.CssClasses
+import com.gemini.krakenbot.view.util.HtmxAttrs
+import com.gemini.krakenbot.view.util.Routes
+import com.gemini.krakenbot.view.util.ViewText
 import kotlinx.html.*
 
 class DashboardShellComponent {
@@ -25,29 +16,29 @@ class DashboardShellComponent {
                 name = "viewport",
                 content = "width=device-width, initial-scale=1.0"
             )
-            title(APP_TITLE)
-            link(rel = "stylesheet", href = STATIC_STYLE_CSS)
+            title(ViewText.APP_TITLE)
+            link(rel = "stylesheet", href = Routes.STATIC_STYLE_CSS)
             script(src = "https://unpkg.com/htmx.org@2.0.4") {}
             script(src = "https://unpkg.com/htmx-ext-sse@2.2.2/sse.js") {}
         }
         html.body {
-            div(CONTAINER) {
+            div(CssClasses.CONTAINER) {
                 div {
-                    attributes[HX_EXT] = "sse"
-                    attributes[SSE_CONNECT] = API_STATUS_STREAM
+                    attributes[HtmxAttrs.HX_EXT] = "sse"
+                    attributes[HtmxAttrs.SSE_CONNECT] = Routes.API_STATUS_STREAM
 
                     div {
-                        attributes[HX_GET] = FRAGMENT_DASHBOARD
-                        attributes[HX_TRIGGER] = "load, sse:message"
+                        attributes[HtmxAttrs.HX_GET] = Routes.FRAGMENT_DASHBOARD
+                        attributes[HtmxAttrs.HX_TRIGGER] = "load, sse:message"
 
-                        div(SPINNER_CONTAINER) {
-                            div(SPINNER) {}
-                            p { +CONNECTING }
+                        div(CssClasses.SPINNER_CONTAINER) {
+                            div(CssClasses.SPINNER) {}
+                            p { +ViewText.CONNECTING }
                         }
                     }
                 }
             }
-            script(src = STATIC_DASHBOARD_JS) {}
+            script(src = Routes.STATIC_DASHBOARD_JS) {}
         }
     }
 }
