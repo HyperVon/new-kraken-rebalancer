@@ -1,8 +1,10 @@
 package repository
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -271,5 +273,42 @@ func TestWriteAtomicJSON_SimplePath(t *testing.T) {
 	}
 }
 
+func TestWriteAtomicJSON_SyncError(t *testing.T) {
+	origSync := syncFile
+	defer func() { syncFile = origSync }()
+	syncFile = func(f *os.File) error {
+		return errors.New("injected sync error")
+	}
 
+	tempDir, err := os.MkdirTemp("", "rebalancer-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
 
+	filePath := filepath.Join(tempDir, "test.json")
+	err = WriteAtomicJSON(filePath, TestData{Name: "sync-fail"})
+	if err == nil || !strings.Contains(err.Error(), "injected sync error") {
+		t.Errorf("Expected injected sync error, got %v", err)
+	}
+}
+
+func TestWriteAtomicJSON_CloseError(t *testing.T) {
+	origClose := closeFile
+	defer func() { closeFile = origClose }()
+	closeFile = func(f *os.File) error {
+		return errors.New("injected close error")
+	}
+
+	tempDir, err := os.MkdirTemp("", "rebalancer-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	filePath := filepath.Join(tempDir, "test.json")
+	err = WriteAtomicJSON(filePath, TestData{Name: "close-fail"})
+	if err == nil || !strings.Contains(err.Error(), "injected close error") {
+		t.Errorf("Expected injected close error, got %v", err)
+	}
+}

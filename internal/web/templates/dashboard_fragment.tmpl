@@ -46,9 +46,9 @@
             <div class="status-card-icon">{{icon "wallet"}}</div>
         </div>
         {{$usdAsset := index .Latest.Assets "USD"}}
-        <div class="status-card-value">${{if $usdAsset}}{{currency $usdAsset.ValueUSD}}{{else}}0.00{{end}}</div>
+        <div class="status-card-value">${{if $usdAsset.Symbol}}{{currency $usdAsset.ValueUSD}}{{else}}0.00{{end}}</div>
         <div class="status-card-sub">
-            {{if $usdAsset}}
+            {{if $usdAsset.Symbol}}
                 <span>
                     {{percent $usdAsset.CurrentPercent}}% | Target: {{percent .Latest.EffectiveUsdTargetPercent}}%
                     {{if usdTargetAdjusted $usdAsset.TargetPercent .Latest.EffectiveUsdTargetPercent}}

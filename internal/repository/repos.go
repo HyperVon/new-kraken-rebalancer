@@ -22,6 +22,9 @@ type PortfolioStatsRepository interface {
 	Load() (model.PortfolioStats, error)
 }
 
+var syncFile = func(f *os.File) error { return f.Sync() }
+var closeFile = func(f *os.File) error { return f.Close() }
+
 // WriteAtomicJSON writes JSON to a temp file and renames it to the target atomically.
 func WriteAtomicJSON(filePath string, value interface{}) error {
 	dir := filepath.Dir(filePath)
@@ -45,16 +48,16 @@ func WriteAtomicJSON(filePath string, value interface{}) error {
 	encoder := json.NewEncoder(tempFile)
 	encoder.SetIndent("", "  ")
 	if err := encoder.Encode(value); err != nil {
-		_ = tempFile.Close()
+		_ = closeFile(tempFile)
 		return fmt.Errorf("failed to encode JSON: %w", err)
 	}
 
-	if err := tempFile.Sync(); err != nil {
-		_ = tempFile.Close()
+	if err := syncFile(tempFile); err != nil {
+		_ = closeFile(tempFile)
 		return fmt.Errorf("failed to sync temp file: %w", err)
 	}
 
-	if err := tempFile.Close(); err != nil {
+	if err := closeFile(tempFile); err != nil {
 		return fmt.Errorf("failed to close temp file: %w", err)
 	}
 

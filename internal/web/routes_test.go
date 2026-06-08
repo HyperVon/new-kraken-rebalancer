@@ -436,5 +436,3 @@ func TestRoutes_TemplateErrors(t *testing.T) {
 		t.Errorf("Expected 500 error for GET /fragments/dashboard, got %d", rr4.Code)
 	}
 }
-
-

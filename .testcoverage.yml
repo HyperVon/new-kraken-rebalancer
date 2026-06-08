@@ -1,7 +1,7 @@
 profile: coverage.out
 
 threshold:
-  package: 90.0
+  package: 95.0
   total: 95.0
 
 exclude:

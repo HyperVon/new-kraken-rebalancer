@@ -13,8 +13,6 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-
-
 // MockHTTPClient helper
 type MockHTTPClient struct {
 	DoFunc func(req *http.Request) (*http.Response, error)

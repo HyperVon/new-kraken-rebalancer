@@ -46,8 +46,8 @@ func TestExecuteOrders_DryRunAndDust(t *testing.T) {
 		"ETH": decimal.NewFromFloat(0.5),  // Dust!
 	}
 	sellOrders := map[string]decimal.Decimal{
-		"LTC": decimal.NewFromFloat(8.0),  // Above dust
-		"XRP": decimal.NewFromFloat(0.4),  // Dust!
+		"LTC": decimal.NewFromFloat(8.0), // Above dust
+		"XRP": decimal.NewFromFloat(0.4), // Dust!
 	}
 	currentValuesUSD := map[string]decimal.Decimal{
 		"USD": decimal.NewFromFloat(100.0),

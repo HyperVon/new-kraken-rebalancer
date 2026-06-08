@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.1.0] - 2026-06-08
+
+### Added
+
+- **Kotlin Test Parity**: Ported all remaining 138 test scenarios from the Kotlin version to Go:
+  - Fuzz rounding tests for high-precision balances and ticker prices (`precision_fuzz_test.go`).
+  - Kraken API resilience, Bad Gateway handling, and invalid-nonce retry chaos tests (`resilience_chaos_test.go`).
+  - Comprehensive portfolio manager rebalance scenarios, covering DOGE asset name mapping, 0% targets for full-portfolio liquidations, ATH-based drawdown deployment percentages, sequence sorting (SELLs run before BUYs), dust thresholds, and proportional fiat adjustment corrections (`manager_comprehensive_test.go`).
+  - Dashboard HTML fragment structure, CSS badges, stale data indicators, and USD-target-equal formatting view parity tests (`view_parity_test.go`).
+
+### Changed
+
+- **Strict Test Coverage Gate**: Raised the package-level code coverage threshold from `90.0%` to `95.0%` in `.testcoverage.yml` to enforce high code quality standards.
+- **Mockable Filesystem Hooks**: Refactored the atomic JSON repository writer (`repos.go`) to use mockable package-level variables for `Sync` and `Close` calls. Added corresponding tests to cover file write errors, raising `internal/repository` package coverage to 100.0%.
+
+---
 
 ## [5.0.0] - 2026-06-08
 

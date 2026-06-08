@@ -239,4 +239,3 @@ func (m *PortfolioManagerImpl) buildSnapshot(
 		EffectiveUsdTargetPercent: effectiveUsdTarget,
 	}
 }
-

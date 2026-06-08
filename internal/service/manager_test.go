@@ -33,7 +33,7 @@ func (m *MockHistoryService) GetLatestSnapshot() (model.PortfolioSnapshot, bool)
 	}
 	return m.snapshots[len(m.snapshots)-1], true
 }
-func (m *MockHistoryService) Subscribe() <-chan model.PortfolioSnapshot { return nil }
+func (m *MockHistoryService) Subscribe() <-chan model.PortfolioSnapshot     { return nil }
 func (m *MockHistoryService) Unsubscribe(ch <-chan model.PortfolioSnapshot) {}
 
 type MockManagerKrakenService struct {

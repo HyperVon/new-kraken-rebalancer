@@ -257,6 +257,26 @@ To run the unit test suite covering configuration validations, routing, and calc
 go test -v ./...
 ```
 
+### Code Coverage
+
+To generate a test coverage profile:
+
+```bash
+go test -coverprofile=coverage.out ./...
+```
+
+To verify package coverage against the strict `95.0%` thresholds configured in `.testcoverage.yml`:
+
+```bash
+go run github.com/vladopajic/go-test-coverage/v2@latest --config=.testcoverage.yml
+```
+
+To inspect covered and uncovered lines visually in your browser:
+
+```bash
+go tool cover -html=coverage.out
+```
+
 ---
 
 ## License

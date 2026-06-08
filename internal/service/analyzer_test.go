@@ -364,5 +364,3 @@ func TestAnalyzeDeviations_FiatCorrectionWithdrawal(t *testing.T) {
 		t.Errorf("Expected BTC and ETH to get 25.0 sell orders each, got BTC: %s, ETH: %s", res.SellOrders["BTC"].String(), res.SellOrders["ETH"].String())
 	}
 }
-
-
