@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"flag"
 	"log"
 	"net/http"
 	"os"
@@ -19,16 +20,21 @@ import (
 func main() {
 	log.Println("Starting Kraken Rebalancer Application...")
 
+	// Define command-line flags
+	configFilePath := flag.String("config", "rebalancer-config.json", "Path to the configuration JSON file")
+	historyFilePath := flag.String("history", "trade-history.json", "Path to the trade history JSON file")
+	statsFilePath := flag.String("stats", "portfolio-stats.json", "Path to the portfolio stats ATH JSON file")
+	flag.Parse()
+
 	// Initialize configuration
-	configFilePath := "rebalancer-config.json"
-	configService, err := config.NewFileConfigService(configFilePath)
+	configService, err := config.NewFileConfigService(*configFilePath)
 	if err != nil {
 		log.Fatalf("Critical error initializing config service: %v", err)
 	}
 
 	// Initialize repositories
-	tradeRepo := repository.NewFileTradeRepository("trade-history.json")
-	statsRepo := repository.NewFilePortfolioStatsRepository("portfolio-stats.json")
+	tradeRepo := repository.NewFileTradeRepository(*historyFilePath)
+	statsRepo := repository.NewFilePortfolioStatsRepository(*statsFilePath)
 
 	// Initialize services
 	tradeHistoryService := service.NewTradeHistoryServiceImpl(tradeRepo)

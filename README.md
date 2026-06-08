@@ -175,13 +175,31 @@ Edit `rebalancer-config.json`:
 
 ### 2. Start the Application
 
+You can run the application directly from source code:
+
 ```bash
 go run main.go
 ```
 
 The backend starts on port **8080** and begins the rebalancing loop immediately.
 
-### 3. Open Dashboard
+### 3. Build a Self-Contained Executable
+
+Since the frontend HTML templates, CSS/JS resources, and SVG icons are embedded directly inside the binary using `go:embed`, you can build a single, fully self-contained binary:
+
+```bash
+go build -o rebalancer main.go
+```
+
+For production deployment, you can strip debugging symbols and optimize the binary size:
+
+```bash
+go build -ldflags="-s -w" -o rebalancer main.go
+```
+
+The resulting `rebalancer` executable can be run independently on any system of the target architecture.
+
+### 4. Open Dashboard
 
 Open your browser to **http://localhost:8080**. The dashboard is served directly from the backend — no separate frontend build step required.
 
@@ -197,6 +215,24 @@ Open your browser to **http://localhost:8080**. The dashboard is served directly
 | `dryRun`                  | `bool`    | `true`  | If true, logs intended trades without executing them                                  |
 | `fiatMaxDrawdown`         | `float64` | `0.0`   | Portfolio drawdown % at which 100% of USD is deployed (0 = disabled)                  |
 | `fiatDeploymentExponent`  | `float64` | `1.0`   | Controls deployment curve: `1.0` = linear, `<1.0` = aggressive, `>1.0` = conservative |
+
+---
+
+## Command-Line Flags
+
+By default, the rebalancer binary looks for its config and state files in the current working directory. You can customize these paths using command-line flags when launching the executable:
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `-config` | Path to the configuration JSON file | `rebalancer-config.json` |
+| `-history` | Path to the trade history JSON file | `trade-history.json` |
+| `-stats` | Path to the portfolio stats ATH JSON file | `portfolio-stats.json` |
+
+For example, to run the rebalancer with external configs in `/etc` and state files in `/var/lib`:
+
+```bash
+./rebalancer -config /etc/rebalancer/config.json -history /var/lib/rebalancer/history.json -stats /var/lib/rebalancer/stats.json
+```
 
 ---
 
