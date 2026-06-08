@@ -24,9 +24,10 @@ var iconsFS embed.FS
 
 // Compiled templates
 var Templates *template.Template
+var FuncMap template.FuncMap
 
 func InitTemplates() {
-	funcMap := template.FuncMap{
+	FuncMap = template.FuncMap{
 		"icon": func(name string) template.HTML {
 			data, err := iconsFS.ReadFile("icons/" + name + ".svg")
 			if err != nil {
@@ -177,7 +178,7 @@ func InitTemplates() {
 	if err != nil {
 		panic(err)
 	}
-	Templates = template.Must(template.New("").Funcs(funcMap).ParseFS(subFS, "*.tmpl"))
+	Templates = template.Must(template.New("").Funcs(FuncMap).ParseFS(subFS, "*.tmpl"))
 }
 
 func formatCurrency(d decimal.Decimal) string {

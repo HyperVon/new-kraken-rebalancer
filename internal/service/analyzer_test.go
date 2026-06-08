@@ -1,6 +1,7 @@
 package service
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/HyperVon/new-kraken-rebalancer/internal/config"
@@ -244,3 +245,124 @@ func TestAnalyzeDeviationsAndFiatCorrection(t *testing.T) {
 		t.Errorf("Expected BTC and ETH to get 50.0 buy orders each, got BTC: %s, ETH: %s", res3.BuyOrders["BTC"].String(), res3.BuyOrders["ETH"].String())
 	}
 }
+
+type FailStatsRepo struct {
+	LoadErr error
+	SaveErr error
+}
+
+func (f *FailStatsRepo) Load() (model.PortfolioStats, error) {
+	return model.PortfolioStats{}, f.LoadErr
+}
+
+func (f *FailStatsRepo) Save(stats model.PortfolioStats) error {
+	return f.SaveErr
+}
+
+func TestUpdateAthAndCalculateDrawdown_Errors(t *testing.T) {
+	// 1. Stats Load fails
+	repo := &FailStatsRepo{LoadErr: errors.New("load error")}
+	analyzer := NewPortfolioAnalyzer(nil, nil, repo)
+	dd := analyzer.UpdateAthAndCalculateDrawdown(decimal.NewFromFloat(100.0))
+	if !dd.IsZero() {
+		t.Errorf("Expected 0 drawdown, got %v", dd)
+	}
+
+	// 2. Stats Save fails
+	repo2 := &FailStatsRepo{SaveErr: errors.New("save error")}
+	analyzer2 := NewPortfolioAnalyzer(nil, nil, repo2)
+	dd2 := analyzer2.UpdateAthAndCalculateDrawdown(decimal.NewFromFloat(100.0))
+	if !dd2.IsZero() {
+		t.Errorf("Expected 0 drawdown, got %v", dd2)
+	}
+}
+
+func TestCalculateFiatDeployment_EdgeCases(t *testing.T) {
+	analyzer := NewPortfolioAnalyzer(nil, nil, nil)
+
+	// Max drawdown is <= 0
+	settings := config.Settings{FiatMaxDrawdown: 0.0}
+	d1 := analyzer.CalculateFiatDeployment(decimal.NewFromFloat(10.0), settings)
+	if !d1.IsZero() {
+		t.Errorf("Expected 0 deployment for 0 max drawdown, got %v", d1)
+	}
+
+	settings.FiatMaxDrawdown = -5.0
+	d2 := analyzer.CalculateFiatDeployment(decimal.NewFromFloat(10.0), settings)
+	if !d2.IsZero() {
+		t.Errorf("Expected 0 deployment for negative max drawdown, got %v", d2)
+	}
+
+	// Ratio > 1 (drawdown exceeds max drawdown)
+	settings.FiatMaxDrawdown = 20.0
+	settings.FiatDeploymentExponent = 1.0
+	d3 := analyzer.CalculateFiatDeployment(decimal.NewFromFloat(30.0), settings)
+	if !d3.Equal(decimal.NewFromFloat(100.0)) {
+		t.Errorf("Expected 100.0 deployment when drawdown exceeds max drawdown, got %v", d3)
+	}
+}
+
+func TestAnalyzeDeviations_ZeroTargetPositiveCurrent(t *testing.T) {
+	cfg := config.AppConfig{
+		Settings: config.Settings{
+			DeviationTriggerPercent: 5.0,
+			DustThresholdUSD:        5.0,
+		},
+		Allocations: []config.Allocation{
+			{Symbol: "USD", TargetPercent: 100.0},
+			{Symbol: "BTC", TargetPercent: 0.0},
+		},
+	}
+	cfgService := &MockConfigService{cfg: cfg}
+	analyzer := NewPortfolioAnalyzer(nil, cfgService, nil)
+
+	currentValuesUSD := map[string]decimal.Decimal{
+		"USD": decimal.NewFromFloat(900.0),
+		"BTC": decimal.NewFromFloat(100.0),
+	}
+
+	res := analyzer.AnalyzeDeviations(decimal.NewFromFloat(1000.0), currentValuesUSD, decimal.NewFromFloat(100.0), decimal.NewFromFloat(1.0))
+	// Target value for BTC is 1000 * 0% = $0.
+	// Current is $100. Deviation is $100 surplus. Pct is 100%.
+	if len(res.SellOrders) != 1 || res.SellOrders["BTC"].Cmp(decimal.NewFromFloat(100.0)) != 0 {
+		t.Errorf("Expected BTC sell order of 100.0, got: %v", res.SellOrders)
+	}
+}
+
+func TestAnalyzeDeviations_FiatCorrectionWithdrawal(t *testing.T) {
+	cfg := config.AppConfig{
+		Settings: config.Settings{
+			DeviationTriggerPercent: 10.0,
+			DustThresholdUSD:        1.0,
+		},
+		Allocations: []config.Allocation{
+			{Symbol: "USD", TargetPercent: 10.0},
+			{Symbol: "BTC", TargetPercent: 45.0},
+			{Symbol: "ETH", TargetPercent: 45.0},
+		},
+	}
+	cfgService := &MockConfigService{cfg: cfg}
+	analyzer := NewPortfolioAnalyzer(nil, cfgService, nil)
+
+	// USD target is 10% ($100), current USD is $50. Deficit = $50. Dev = 50% > 10% (triggers!).
+	// BTC target is 45% ($450), current BTC is $475. Surplus = $25. Dev = 5.5% < 10% (no trigger).
+	// ETH target is 45% ($450), current ETH is $475. Surplus = $25. Dev = 5.5% < 10% (no trigger).
+	// USD triggers fiat correction, so the $50 deficit is distributed among overweight assets (BTC and ETH) proportionally.
+	currentValues := map[string]decimal.Decimal{
+		"USD": decimal.NewFromFloat(50.0),
+		"BTC": decimal.NewFromFloat(475.0),
+		"ETH": decimal.NewFromFloat(475.0),
+	}
+
+	res := analyzer.AnalyzeDeviations(decimal.NewFromFloat(1000.0), currentValues, decimal.NewFromFloat(10.0), decimal.NewFromFloat(1.0))
+
+	// Should trigger sell orders for BTC ($25) and ETH ($25) to correct USD
+	if len(res.SellOrders) != 2 {
+		t.Errorf("Expected 2 sell orders, got %d", len(res.SellOrders))
+	}
+	if res.SellOrders["BTC"].Cmp(decimal.NewFromFloat(25.0)) != 0 || res.SellOrders["ETH"].Cmp(decimal.NewFromFloat(25.0)) != 0 {
+		t.Errorf("Expected BTC and ETH to get 25.0 sell orders each, got BTC: %s, ETH: %s", res.SellOrders["BTC"].String(), res.SellOrders["ETH"].String())
+	}
+}
+
+
