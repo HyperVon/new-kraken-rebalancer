@@ -46,7 +46,9 @@ type KrakenServiceImpl struct {
 	client        HTTPClient
 	apiURL        string
 	apiVersion    string
-	nonce         int64
+	// nonce must be accessed atomically using the sync/atomic package
+	// because multiple goroutines might run rebalance/ticker loops concurrently.
+	nonce int64
 }
 
 // NewKrakenServiceImpl creates a new KrakenServiceImpl.
@@ -59,7 +61,8 @@ func NewKrakenServiceImpl(configService config.ConfigService, client HTTPClient)
 		client:        client,
 		apiURL:        "https://api.kraken.com",
 		apiVersion:    "0",
-		nonce:         time.Now().UnixNano() / int64(time.Microsecond),
+		// Initialize the nonce to current unix timestamp in microseconds.
+		nonce: time.Now().UnixNano() / int64(time.Microsecond),
 	}
 }
 
@@ -130,6 +133,7 @@ func (s *KrakenServiceImpl) GetTickerPrices(pairs string) (RawPrices, error) {
 }
 
 func (s *KrakenServiceImpl) ExecuteOrder(pair, orderType, side string, volume decimal.Decimal) (model.OrderResult, error) {
+	// Kraken requires rounding to 8 decimal places for crypto volumes.
 	normalizedVolume := volume.Round(8).Truncate(8)
 	cfg := s.configService.GetConfig()
 
@@ -167,6 +171,8 @@ func (s *KrakenServiceImpl) queryPublic(path string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed public API connection: %w", err)
 	}
+	// defer resp.Body.Close() ensures the response stream is cleaned up
+	// once queryPublic exits, preventing memory/socket leaks.
 	defer resp.Body.Close()
 
 	bodyBytes, err := io.ReadAll(resp.Body)
@@ -191,6 +197,8 @@ func (s *KrakenServiceImpl) queryPrivate(path string, params url.Values) (interf
 	}
 
 	for {
+		// atomic.AddInt64 dynamically increments the 64-bit nonce by 1 safely
+		// in a multi-threaded execution context (similar to Java's AtomicLong).
 		currentNonce := atomic.AddInt64(&s.nonce, 1)
 		nonceStr := strconv.FormatInt(currentNonce, 10)
 
@@ -240,7 +248,10 @@ func (s *KrakenServiceImpl) queryPrivate(path string, params url.Values) (interf
 
 		if len(root.Error) > 0 {
 			errorMsg := strings.Join(root.Error, ", ")
+			// If Kraken rejects the transaction due to an out-of-order nonce timestamp error,
+			// we bump our local atomic nonce generator exponentially and retry the request up to 5 times.
 			if strings.Contains(errorMsg, "Invalid nonce") && retryCount < maxRetries {
+				// (1 << retryCount) is a bitwise shift performing exponential scaling (e.g. 1, 2, 4, 8, 16)
 				bumpAmount := int64(100_000_000 * (1 << retryCount))
 				log.Printf("Invalid nonce detected. Adjusting nonce generator by %d and retrying (Attempt %d/%d)", bumpAmount, retryCount+1, maxRetries)
 				atomic.AddInt64(&s.nonce, bumpAmount)
@@ -254,6 +265,8 @@ func (s *KrakenServiceImpl) queryPrivate(path string, params url.Values) (interf
 	}
 }
 
+// signRequest generates Kraken's specific API authentication signature.
+// Formula: base64(hmac_sha512(url_path + sha256(nonce + post_data), base64_decoded(private_key)))
 func (s *KrakenServiceImpl) signRequest(path string, nonce string, postData string) (string, error) {
 	cfg := s.configService.GetConfig()
 	privateKeyDecoded, err := base64.StdEncoding.DecodeString(cfg.Kraken.PrivateKey)
@@ -276,6 +289,8 @@ func (s *KrakenServiceImpl) signRequest(path string, nonce string, postData stri
 	return base64.StdEncoding.EncodeToString(macSum), nil
 }
 
+// convertToFloat converts dynamic interfaces (string or float64) to float64.
+// Go requires explicit type assertions (switch v.(type)) because it does not support implicit casting.
 func convertToFloat(v interface{}) (float64, error) {
 	switch val := v.(type) {
 	case float64:
