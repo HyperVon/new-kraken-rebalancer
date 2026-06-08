@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+
+## [5.0.0] - 2026-06-08
+
+### Added
+
+- **Full Go Rewrite**: Completely migrated the entire codebase from Kotlin 2.4.0 (JVM) and Gradle to Go 1.26.4.
+- **Embedded Web Assets**: Used Go's native `go:embed` package to package HTML templates, static resources (CSS, JS), and SVG icons directly within the single compiled binary.
+- **Broadcaster Concurrency Pattern**: Replaced Kotlin's reactive `MutableSharedFlow` with a native channel-based pub-sub broadcaster in `TradeHistoryService` to support Server-Sent Events (SSE) stream client handlers.
+- **Decimal Precision**: Integrated `github.com/shopspring/decimal` for all calculations, ensuring exact parity with Kotlin's `BigDecimal` and eliminating floating-point rounding errors on trade volume calculations.
+- **Graceful Shutdown**: Added standard signal interception (`SIGINT`, `SIGTERM`) to notify background loop contexts to terminate cleanly and close HTTP server connections via `http.Server.Shutdown(...)`.
+- **Go Unit Tests**: Implemented a comprehensive Go unit testing suite across core logic, configuration validations, and web handler routing.
+
+### Removed
+
+- **Kotlin & Gradle Stack**: Removed all Kotlin sources (`src/`), Gradle build configurations (`build.gradle.kts`, `settings.gradle.kts`, `gradlew`, etc.), and JVM dependency configurations.
+
 ---
 
 ## [4.0.1] - 2026-06-07

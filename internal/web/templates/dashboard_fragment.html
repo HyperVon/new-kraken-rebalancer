@@ -1,0 +1,202 @@
+<header>
+    <div class="header-title-section">
+        <h1>Kraken Rebalancer</h1>
+        <div class="status-badge {{if .IsStale}}delayed{{else}}live{{end}}">
+            {{if .IsStale}}DELAYED{{else}}LIVE{{end}}
+        </div>
+    </div>
+
+    <div class="header-actions">
+        <div class="data-age-container">
+            <div class="data-age-label">Data Age</div>
+            <div class="data-age-value {{if .IsStale}}stale{{end}}">{{.TimeSince}}s ago</div>
+            <div class="data-age-time" data-epoch="{{.Latest.Timestamp.UnixMilli}}">
+                {{.FormattedTime}}
+            </div>
+        </div>
+        <a href="/settings" class="btn btn-secondary">
+            {{icon "cog"}}
+            <span>Settings</span>
+        </a>
+    </div>
+</header>
+
+<!-- Overview Grid -->
+<div class="overview-grid">
+    <!-- Total Portfolio -->
+    <div class="status-card">
+        <div class="status-card-header">
+            <span class="status-card-title">Total Portfolio</span>
+            <div class="status-card-icon">{{icon "trend_up"}}</div>
+        </div>
+        <div class="status-card-value">${{currency .Latest.TotalValueUSD}}</div>
+        <div class="status-card-sub">
+            {{if gt .Latest.DrawdownPercent.Sign 0}}
+                <span class="text-danger">Drawdown: {{percent .Latest.DrawdownPercent}}%</span>
+            {{else}}
+                <span>Drawdown: 0.00%</span>
+            {{end}}
+        </div>
+    </div>
+
+    <!-- Cash USD -->
+    <div class="status-card success">
+        <div class="status-card-header">
+            <span class="status-card-title">Cash USD</span>
+            <div class="status-card-icon">{{icon "wallet"}}</div>
+        </div>
+        {{$usdAsset := index .Latest.Assets "USD"}}
+        <div class="status-card-value">${{if $usdAsset}}{{currency $usdAsset.ValueUSD}}{{else}}0.00{{end}}</div>
+        <div class="status-card-sub">
+            {{if $usdAsset}}
+                <span>
+                    {{percent $usdAsset.CurrentPercent}}% | Target: {{percent .Latest.EffectiveUsdTargetPercent}}%
+                    {{if usdTargetAdjusted $usdAsset.TargetPercent .Latest.EffectiveUsdTargetPercent}}
+                        (Base: {{percent $usdAsset.TargetPercent}}%)
+                    {{end}}
+                    | 
+                    <span class="{{devClass $usdAsset.DeviationPercent}}">
+                        Dev: {{devSign $usdAsset.DeviationPercent}}{{percent $usdAsset.DeviationPercent}}%
+                    </span>
+                </span>
+            {{else}}
+                <span>No USD Data</span>
+            {{end}}
+        </div>
+    </div>
+
+    <!-- Crypto Assets -->
+    <div class="status-card">
+        <div class="status-card-header">
+            <span class="status-card-title">Crypto Assets</span>
+            <div class="status-card-icon">{{icon "circles"}}</div>
+        </div>
+        <div class="status-card-value">${{currency (cryptoValue .Latest)}}</div>
+        <div class="status-card-sub">
+            <span>
+                {{percent (cryptoPct .Latest)}}% | Target: {{percent (cryptoTargetPct .Latest)}}% | {{cryptoCount .Latest}} Assets
+            </span>
+        </div>
+    </div>
+</div>
+
+<!-- Details Grid -->
+<div class="detail-grid">
+    <!-- Allocation Chart -->
+    <div class="glass-panel">
+        <h2 class="glass-panel-title">
+            {{icon "dollar_circle"}}
+            Portfolio Allocation
+        </h2>
+        <div class="allocation-chart-container">
+            {{$maxVal := maxUSD .Latest}}
+            {{range $asset := sortedAssets .Latest}}
+                {{$fillPct := fillPercent $asset.ValueUSD $maxVal}}
+                <div class="allocation-bar-row">
+                    <div class="allocation-bar-label">{{$asset.Symbol.String}}</div>
+                    <div class="allocation-bar-track">
+                        <div class="allocation-bar-fill" style="width: {{$fillPct}}%;"></div>
+                    </div>
+                    <div class="allocation-bar-value">
+                        ${{currency $asset.ValueUSD}} ({{percent $asset.CurrentPercent}}%)
+                    </div>
+                </div>
+            {{end}}
+        </div>
+    </div>
+
+    <!-- Asset Performance -->
+    <div class="glass-panel">
+        <h2 class="glass-panel-title">
+            {{icon "trend_up"}}
+            Asset Performance
+        </h2>
+        <div class="table-wrapper">
+            <table>
+                <thead>
+                    <tr>
+                        <th class="sortable" onclick="sortTable(this, 0)">Asset</th>
+                        <th class="sortable" onclick="sortTable(this, 1)">Price</th>
+                        <th class="sortable" onclick="sortTable(this, 2)">Value</th>
+                        <th class="sortable" onclick="sortTable(this, 3)">Target %</th>
+                        <th class="sortable" onclick="sortTable(this, 4)">Current %</th>
+                        <th class="sortable asc" onclick="sortTable(this, 5)">Dev %</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {{range $asset := performanceAssets .Latest}}
+                        <tr class="hoverable">
+                            <td class="symbol-col">{{$asset.Symbol.String}}</td>
+                            <td class="mono-col">${{currency $asset.Price}}</td>
+                            <td class="mono-col">${{currency $asset.ValueUSD}}</td>
+                            <td>{{percent $asset.TargetPercent}}%</td>
+                            <td>{{percent $asset.CurrentPercent}}%</td>
+                            <td class="{{devClass $asset.DeviationPercent}}">
+                                <div class="performance-dev-container">
+                                    <span>{{devSign $asset.DeviationPercent}}{{percent $asset.DeviationPercent}}%</span>
+                                    <span class="performance-dev-usd-label">
+                                        ({{usdSign $asset.DeviationUSD}}${{currency (abs $asset.DeviationUSD)}})
+                                    </span>
+                                </div>
+                            </td>
+                        </tr>
+                    {{end}}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Recent Activity -->
+<div class="glass-panel">
+    <h2 class="glass-panel-title">
+        {{icon "pulse"}}
+        Recent Activity
+    </h2>
+    {{if not .History}}
+        <div class="empty-history-box">
+            {{icon "empty_pie"}}
+            <h3>Recent Activity</h3>
+            <p>No trading history available.</p>
+        </div>
+    {{else}}
+        <div class="table-wrapper max-h-100 custom-scrollbar">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Time</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {{range $snapshot := .History}}
+                        {{$timeStr := dateTime $snapshot.Timestamp}}
+                        {{if not $snapshot.Actions}}
+                            <tr class="hoverable">
+                                <td class="mono-col">{{$timeStr}}</td>
+                                <td>
+                                    <span class="recent-activity-empty-text">
+                                        <span class="recent-activity-dot-marker"></span>
+                                        No trades executed
+                                    </span>
+                                </td>
+                            </tr>
+                        {{else}}
+                            {{range $action := $snapshot.Actions}}
+                                <tr class="hoverable">
+                                    <td class="mono-col">{{$timeStr}}</td>
+                                    <td>
+                                        <div class="recent-activity-row-container">
+                                            <span class="badge {{badgeClass $action}}">{{badgeLabel $action}}</span>
+                                            <span>{{$action}}</span>
+                                        </div>
+                                    </td>
+                                </tr>
+                            {{end}}
+                        {{end}}
+                    {{end}}
+                </tbody>
+            </table>
+        </div>
+    {{end}}
+</div>

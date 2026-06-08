@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Settings - Kraken Rebalancer</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+</head>
+<body>
+    <div class="container">
+        <form hx-post="/settings" hx-target="body" hx-swap="innerHTML">
+            <header>
+                <div class="header-title-section">
+                    <a href="/" class="btn btn-secondary btn-icon">
+                        {{icon "back_arrow"}}
+                    </a>
+                    <h1>Settings</h1>
+                </div>
+                <button type="submit" class="btn btn-primary" id="save-button">
+                    {{icon "floppy_disk"}}
+                    <span>Save Configuration</span>
+                </button>
+            </header>
+
+            {{if .ErrorMessage}}
+                <div style="background-color: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.4); color: #ef4444; padding: 1rem; border-radius: 0.75rem; margin-bottom: 1.25rem; font-weight: 500;">
+                    {{.ErrorMessage}}
+                </div>
+            {{end}}
+
+            <div class="glass-panel">
+                <!-- Global Parameters Section -->
+                <div class="form-section">
+                    <h3 class="form-section-title">
+                        {{icon "shield_exclamation"}}
+                        Global Parameters
+                    </h3>
+                    <div class="grid-2col">
+                        <div class="form-group">
+                            <label class="form-label">Loop Interval (Seconds)</label>
+                            <input type="number" name="loopDelaySeconds" class="input-glass" min="1" value="{{.Config.Settings.LoopDelaySeconds}}">
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label">Deviation Trigger (%)</label>
+                            <input type="number" step="0.1" name="deviationTriggerPercent" class="input-glass" min="0" value="{{.Config.Settings.DeviationTriggerPercent}}">
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label">Dust Threshold (USD)</label>
+                            <input type="number" step="0.5" name="dustThresholdUSD" class="input-glass" value="{{.Config.Settings.DustThresholdUSD}}">
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label">Fiat Max Drawdown (%)</label>
+                            <input type="number" step="1.0" name="fiatMaxDrawdown" class="input-glass" value="{{.Config.Settings.FiatMaxDrawdown}}">
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label">Fiat Deployment Exponent</label>
+                            <input type="number" step="0.1" name="fiatDeploymentExponent" class="input-glass" value="{{.Config.Settings.FiatDeploymentExponent}}">
+                        </div>
+
+                        <div class="form-group" style="justify-content: center;">
+                            <label class="checkbox-container">
+                                <input type="checkbox" name="dryRun" {{if .Config.Settings.DryRun}}checked{{end}}>
+                                <div class="checkbox-custom"></div>
+                                <span>Dry Run Mode</span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Target Allocations Section -->
+                <div class="form-section">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem;">
+                        <h3 style="font-family: var(--font-heading); font-size: 1.125rem; font-weight: 600; color: white; display: flex; align-items: center; gap: 0.5rem;">
+                            Target Allocations
+                        </h3>
+                        <div class="status-badge live" id="total-allocated-display">
+                            Total: 100.00%
+                        </div>
+                    </div>
+
+                    <div class="allocation-list-container" id="allocations-container">
+                        {{range $alloc := .Config.Allocations}}
+                            <div class="allocation-edit-row">
+                                <div class="allocation-edit-symbol symbol-label">{{$alloc.Symbol.String}}</div>
+                                <input type="hidden" name="symbols" value="{{$alloc.Symbol.String}}">
+                                <div class="allocation-edit-input-wrapper">
+                                    <input type="number" step="0.1" name="targets" class="input-glass" value="{{$alloc.TargetPercent}}" oninput="updateAllocationTotal()">
+                                    <span class="percent-suffix">%</span>
+                                </div>
+                                <button type="button" class="btn btn-danger" onclick="this.closest('.allocation-edit-row').remove(); updateAllocationTotal();">
+                                    Remove
+                                </button>
+                            </div>
+                        {{end}}
+                    </div>
+
+                    <div class="add-asset-box">
+                        <input type="text" class="input-glass" id="new-symbol-input" placeholder="e.g. SOL" onkeydown="if(event.key === 'Enter') { event.preventDefault(); addAssetRow(); }">
+                        <button type="button" class="btn btn-secondary" onclick="addAssetRow()">
+                            {{icon "plus"}}
+                            <span>Add Asset</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </form>
+    </div>
+    <script src="/static/settings.js"></script>
+</body>
+</html>
