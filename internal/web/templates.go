@@ -13,7 +13,7 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-//go:embed templates/*.html
+//go:embed templates/*.tmpl
 var templatesFS embed.FS
 
 //go:embed static/*
@@ -177,7 +177,7 @@ func InitTemplates() {
 	if err != nil {
 		panic(err)
 	}
-	Templates = template.Must(template.New("").Funcs(funcMap).ParseFS(subFS, "*.html"))
+	Templates = template.Must(template.New("").Funcs(funcMap).ParseFS(subFS, "*.tmpl"))
 }
 
 func formatCurrency(d decimal.Decimal) string {

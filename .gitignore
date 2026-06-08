@@ -28,4 +28,11 @@ portfolio-stats.json
 /bin/
 .kotlin/
 
+# Go artifacts
+/rebalancer
+/rebalancer.exe
+/rebalancer.test
+*.out
+
+
 

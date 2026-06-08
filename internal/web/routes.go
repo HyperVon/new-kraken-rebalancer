@@ -25,8 +25,8 @@ func RegisterHandlers(
 	// Main page shell
 	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		if err := Templates.ExecuteTemplate(w, "shell.html", nil); err != nil {
-			log.Printf("Error executing template shell.html: %v", err)
+		if err := Templates.ExecuteTemplate(w, "shell.tmpl", nil); err != nil {
+			log.Printf("Error executing template shell.tmpl: %v", err)
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		}
 	})
@@ -38,8 +38,8 @@ func RegisterHandlers(
 			"Config":       configService.GetConfig(),
 			"ErrorMessage": "",
 		}
-		if err := Templates.ExecuteTemplate(w, "settings.html", data); err != nil {
-			log.Printf("Error executing template settings.html: %v", err)
+		if err := Templates.ExecuteTemplate(w, "settings.tmpl", data); err != nil {
+			log.Printf("Error executing template settings.tmpl: %v", err)
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		}
 	})
@@ -107,8 +107,8 @@ func RegisterHandlers(
 			"Config":       updatedConfig,
 			"ErrorMessage": err.Error(),
 		}
-		if err := Templates.ExecuteTemplate(w, "settings.html", data); err != nil {
-			log.Printf("Error executing template settings.html on validation failure: %v", err)
+		if err := Templates.ExecuteTemplate(w, "settings.tmpl", data); err != nil {
+			log.Printf("Error executing template settings.tmpl on validation failure: %v", err)
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		}
 	})
@@ -146,8 +146,8 @@ func RegisterHandlers(
 			"FormattedTime": formattedTime,
 		}
 
-		if err := Templates.ExecuteTemplate(w, "dashboard_fragment.html", data); err != nil {
-			log.Printf("Error executing template dashboard_fragment.html: %v", err)
+		if err := Templates.ExecuteTemplate(w, "dashboard_fragment.tmpl", data); err != nil {
+			log.Printf("Error executing template dashboard_fragment.tmpl: %v", err)
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		}
 	})
