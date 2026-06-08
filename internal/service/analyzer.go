@@ -27,9 +27,9 @@ type AnalysisResult struct {
 
 // PortfolioAnalyzer calculates valuations, deviations, and corrections.
 type PortfolioAnalyzer struct {
-	krakenService    KrakenService
-	configService    config.ConfigService
-	statsRepository  repository.PortfolioStatsRepository
+	krakenService   KrakenService
+	configService   config.ConfigService
+	statsRepository repository.PortfolioStatsRepository
 }
 
 // NewPortfolioAnalyzer creates a new PortfolioAnalyzer.

@@ -234,7 +234,7 @@ func TestAnalyzeDeviationsAndFiatCorrection(t *testing.T) {
 		"ETH": decimal.NewFromFloat(400.0),
 	}
 	res3 := analyzer.AnalyzeDeviations(decimal.NewFromFloat(1000.0), currentValuesUSDFiatCorr, decimal.NewFromFloat(10.0), decimal.NewFromFloat(1.0))
-	
+
 	// Surplus USD ($100) should be distributed among BTC and ETH proportional to their counter deviations
 	// Deficit is $50 for BTC and $50 for ETH. Ratio is 50/50, so each gets $50 of the USD correction.
 	if len(res3.BuyOrders) != 2 {

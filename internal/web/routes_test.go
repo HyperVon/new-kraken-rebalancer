@@ -17,7 +17,7 @@ type MockConfigService struct {
 	cfg config.AppConfig
 }
 
-func (m *MockConfigService) LoadConfig() error { return nil }
+func (m *MockConfigService) LoadConfig() error           { return nil }
 func (m *MockConfigService) GetConfig() config.AppConfig { return m.cfg }
 func (m *MockConfigService) UpdateConfig(newConfig config.AppConfig) error {
 	m.cfg = newConfig
