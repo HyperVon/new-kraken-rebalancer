@@ -240,7 +240,3 @@ func (m *PortfolioManagerImpl) buildSnapshot(
 	}
 }
 
-// Helper to formatting errors wrapper
-func fmtErr(msg string, args ...interface{}) error {
-	return errors.New(fmt.Sprintf(msg, args...))
-}
