@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -51,14 +51,14 @@ func (m *PortfolioManagerImpl) StartRebalancingLoop() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.isRunning = true
-	log.Println("Rebalancing loop started.")
+	slog.Info("Rebalancing loop started")
 }
 
 func (m *PortfolioManagerImpl) StopRebalancingLoop() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.isRunning = false
-	log.Println("Rebalancing loop stopped.")
+	slog.Info("Rebalancing loop stopped")
 }
 
 func (m *PortfolioManagerImpl) RunLoop(ctx context.Context) {
@@ -77,10 +77,10 @@ func (m *PortfolioManagerImpl) RunLoop(ctx context.Context) {
 		}
 
 		cfg := m.configService.GetConfig()
-		log.Printf("Starting Rebalance Cycle. DryRun: %t", cfg.Settings.DryRun)
+		slog.Info("Starting rebalance cycle", "dryRun", cfg.Settings.DryRun)
 
 		if err := m.PerformRebalanceCycle(); err != nil {
-			log.Printf("Error in rebalancing cycle: %v", err)
+			slog.Error("Error in rebalancing cycle", "error", err)
 		}
 
 		delaySeconds := cfg.Settings.LoopDelaySeconds
@@ -97,8 +97,8 @@ func (m *PortfolioManagerImpl) RunLoop(ctx context.Context) {
 }
 
 func (m *PortfolioManagerImpl) PerformRebalanceCycle() error {
-	log.Println("--- Starting Snapshot Phase ---")
-	actionLog := make([]string, 0)
+	slog.Info("--- Starting Snapshot Phase ---")
+	var actionLog []string
 
 	balances, err := m.analyzer.FetchBalances()
 	if err != nil {
@@ -118,16 +118,16 @@ func (m *PortfolioManagerImpl) PerformRebalanceCycle() error {
 	totalPortfolioValueUSD := portfolioValues.TotalValueUSD
 	currentValuesUSD := portfolioValues.CurrentValuesUSD
 
-	log.Printf("Total Portfolio Value: $%s", totalPortfolioValueUSD.Round(2).String())
+	slog.Info("Portfolio valued", "totalUSD", totalPortfolioValueUSD.Round(2))
 
 	drawdownPct := m.analyzer.UpdateAthAndCalculateDrawdown(totalPortfolioValueUSD)
 	cfg := m.configService.GetConfig()
 	fiatDeploymentPct := m.analyzer.CalculateFiatDeployment(drawdownPct, cfg.Settings)
 
 	if fiatDeploymentPct.GreaterThan(decimal.Zero) {
-		log.Printf("Drawdown Detected: %s%%. Fiat Deployment: %s%%",
-			drawdownPct.Round(2).String(),
-			fiatDeploymentPct.Round(2).String(),
+		slog.Info("Drawdown detected",
+			"drawdownPct", drawdownPct.Round(2),
+			"fiatDeploymentPct", fiatDeploymentPct.Round(2),
 		)
 	}
 
@@ -159,10 +159,10 @@ func (m *PortfolioManagerImpl) PerformRebalanceCycle() error {
 	)
 
 	if err := m.tradeHistoryService.AddSnapshot(snapshot); err != nil {
-		log.Printf("Failed to persist trade history snapshot: %v", err)
+		slog.Error("Failed to persist trade history snapshot", "error", err)
 	}
 
-	log.Println("--- Cycle Complete ---")
+	slog.Info("--- Cycle Complete ---")
 	return nil
 }
 
@@ -193,8 +193,8 @@ func (m *PortfolioManagerImpl) buildSnapshot(
 			}
 		}
 
-		baseTargetPct := decimal.NewFromFloat(alloc.TargetPercent)
-		var snapshotTargetPct = baseTargetPct
+		baseTargetPct := alloc.TargetPercent
+		snapshotTargetPct := baseTargetPct
 		var calcTargetPct decimal.Decimal
 
 		if alloc.Symbol.IsUSD() {

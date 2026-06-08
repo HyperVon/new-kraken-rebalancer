@@ -4,13 +4,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math"
 	"os"
 	"strings"
 	"sync"
 
 	"github.com/HyperVon/new-kraken-rebalancer/internal/model"
 	"github.com/HyperVon/new-kraken-rebalancer/internal/repository"
+	"github.com/shopspring/decimal"
 )
 
 // KrakenCredentials holds API access keys.
@@ -21,18 +21,18 @@ type KrakenCredentials struct {
 
 // Settings holds rebalancing parameters.
 type Settings struct {
-	LoopDelaySeconds        int64   `json:"loopDelaySeconds"`
-	DeviationTriggerPercent float64 `json:"deviationTriggerPercent"`
-	DustThresholdUSD        float64 `json:"dustThresholdUSD"`
-	DryRun                  bool    `json:"dryRun"`
-	FiatMaxDrawdown         float64 `json:"fiatMaxDrawdown"`
-	FiatDeploymentExponent  float64 `json:"fiatDeploymentExponent"`
+	LoopDelaySeconds        int64           `json:"loopDelaySeconds"`
+	DeviationTriggerPercent decimal.Decimal `json:"deviationTriggerPercent"`
+	DustThresholdUSD        decimal.Decimal `json:"dustThresholdUSD"`
+	DryRun                  bool            `json:"dryRun"`
+	FiatMaxDrawdown         decimal.Decimal `json:"fiatMaxDrawdown"`
+	FiatDeploymentExponent  decimal.Decimal `json:"fiatDeploymentExponent"`
 }
 
 // Allocation maps an asset symbol to its target portfolio percentage.
 type Allocation struct {
-	Symbol        model.Asset `json:"symbol"`
-	TargetPercent float64     `json:"targetPercent"`
+	Symbol        model.Asset     `json:"symbol"`
+	TargetPercent decimal.Decimal `json:"targetPercent"`
 }
 
 // AppConfig is the root configuration structure.
@@ -78,16 +78,16 @@ func (s *FileConfigService) LoadConfig() error {
 		return fmt.Errorf("failed to read configuration file: %w", err)
 	}
 
-	var config AppConfig
-	if err := json.Unmarshal(data, &config); err != nil {
+	var cfg AppConfig
+	if err := json.Unmarshal(data, &cfg); err != nil {
 		return fmt.Errorf("failed to parse configuration JSON: %w", err)
 	}
 
-	if err := validateConfig(config); err != nil {
+	if err := validateConfig(cfg); err != nil {
 		return err
 	}
 
-	s.appConfig = config
+	s.appConfig = cfg
 	return nil
 }
 
@@ -113,47 +113,52 @@ func (s *FileConfigService) UpdateConfig(newConfig AppConfig) error {
 	return nil
 }
 
-func validateConfig(config AppConfig) error {
-	settings := config.Settings
+var (
+	zero    = decimal.Zero
+	hundred = decimal.NewFromInt(100)
+)
+
+func validateConfig(cfg AppConfig) error {
+	settings := cfg.Settings
 
 	if settings.LoopDelaySeconds <= 0 {
 		return errors.New("loop delay must be a positive integer")
 	}
-	if settings.DeviationTriggerPercent < 0 {
+	if settings.DeviationTriggerPercent.LessThan(zero) {
 		return errors.New("deviation trigger percent must be non-negative")
 	}
-	if settings.DustThresholdUSD < 0 {
+	if settings.DustThresholdUSD.LessThan(zero) {
 		return errors.New("dust threshold USD must be non-negative")
 	}
-	if settings.FiatMaxDrawdown < 0.0 || settings.FiatMaxDrawdown > 100.0 {
+	if settings.FiatMaxDrawdown.LessThan(zero) || settings.FiatMaxDrawdown.GreaterThan(hundred) {
 		return errors.New("fiat max drawdown must be between 0% and 100%")
 	}
-	if settings.FiatDeploymentExponent <= 0 {
+	if settings.FiatDeploymentExponent.LessThanOrEqual(zero) {
 		return errors.New("fiat deployment exponent must be positive")
 	}
 
-	if len(config.Allocations) == 0 {
+	if len(cfg.Allocations) == 0 {
 		return errors.New("at least one allocation is required")
 	}
 
 	symbolsSeen := make(map[string]bool)
 	var duplicateSymbols []string
-	totalPercent := 0.0
+	totalPercent := decimal.Zero
 	hasUsd := false
 
-	for _, alloc := range config.Allocations {
+	for _, alloc := range cfg.Allocations {
 		sym := strings.ToUpper(strings.TrimSpace(string(alloc.Symbol)))
 		if sym == "" {
 			return errors.New("allocation symbols cannot be blank")
 		}
-		if alloc.TargetPercent < 0 {
+		if alloc.TargetPercent.LessThan(zero) {
 			return fmt.Errorf("target percent for %s cannot be negative", alloc.Symbol)
 		}
 		if symbolsSeen[sym] {
 			duplicateSymbols = append(duplicateSymbols, sym)
 		}
 		symbolsSeen[sym] = true
-		totalPercent += alloc.TargetPercent
+		totalPercent = totalPercent.Add(alloc.TargetPercent)
 		if alloc.Symbol.IsUSD() {
 			hasUsd = true
 		}
@@ -163,8 +168,8 @@ func validateConfig(config AppConfig) error {
 		return fmt.Errorf("duplicate allocation symbols are not allowed: %s", strings.Join(duplicateSymbols, ", "))
 	}
 
-	if math.Abs(totalPercent-100.0) > 0.001 {
-		return fmt.Errorf("total allocation percentage must be exactly 100%%. Current sum: %f", totalPercent)
+	if totalPercent.Sub(hundred).Abs().GreaterThan(decimal.NewFromFloat(0.001)) {
+		return fmt.Errorf("total allocation percentage must be exactly 100%%. Current sum: %s", totalPercent.StringFixed(6))
 	}
 
 	if !hasUsd {

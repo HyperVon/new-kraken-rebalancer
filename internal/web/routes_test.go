@@ -16,6 +16,10 @@ import (
 	"github.com/shopspring/decimal"
 )
 
+func d(f float64) decimal.Decimal {
+	return decimal.NewFromFloat(f)
+}
+
 // MockConfigService mock implementation
 type MockConfigService struct {
 	cfg config.AppConfig
@@ -64,12 +68,12 @@ func TestRoutes(t *testing.T) {
 	cfg := config.AppConfig{
 		Settings: config.Settings{
 			LoopDelaySeconds:        60,
-			DeviationTriggerPercent: 5.0,
-			DustThresholdUSD:        5.0,
+			DeviationTriggerPercent: d(5.0),
+			DustThresholdUSD:        d(5.0),
 		},
 		Allocations: []config.Allocation{
-			{Symbol: "USD", TargetPercent: 10.0},
-			{Symbol: "BTC", TargetPercent: 90.0},
+			{Symbol: "USD", TargetPercent: d(10.0)},
+			{Symbol: "BTC", TargetPercent: d(90.0)},
 		},
 	}
 	cfgService := &MockConfigService{cfg: cfg}
@@ -177,7 +181,7 @@ func TestPostSettings(t *testing.T) {
 
 	cfg := config.AppConfig{
 		Allocations: []config.Allocation{
-			{Symbol: "USD", TargetPercent: 10.0},
+			{Symbol: "USD", TargetPercent: d(10.0)},
 		},
 	}
 	cfgService := &MockConfigService{cfg: cfg}
@@ -326,55 +330,81 @@ func (n *NonFlusherResponseWriter) WriteHeader(statusCode int) {
 }
 
 func TestSSEStream(t *testing.T) {
-	cfgService := &MockConfigService{}
-	historyService := &MockHistoryService{}
-
-	mux := http.NewServeMux()
-	RegisterHandlers(mux, cfgService, historyService)
-
 	// 1. Streaming unsupported (NonFlusher)
-	req1 := httptest.NewRequest("GET", "/api/status/stream", nil)
-	rw1 := NewNonFlusherResponseWriter()
-	mux.ServeHTTP(rw1, req1)
-	if rw1.statusCode != http.StatusInternalServerError {
-		t.Errorf("Expected 500 error for non-flusher connection, got %d", rw1.statusCode)
-	}
+	t.Run("streaming unsupported", func(t *testing.T) {
+		cfgService := &MockConfigService{}
+		historyService := &MockHistoryService{}
+		mux := http.NewServeMux()
+		RegisterHandlers(mux, cfgService, historyService)
+
+		req1 := httptest.NewRequest("GET", "/api/status/stream", nil)
+		rw1 := NewNonFlusherResponseWriter()
+		mux.ServeHTTP(rw1, req1)
+		if rw1.statusCode != http.StatusInternalServerError {
+			t.Errorf("Expected 500 error for non-flusher connection, got %d", rw1.statusCode)
+		}
+	})
 
 	// 2. Normal streaming lifecycle and client context cancellation
-	ctx, cancel := context.WithCancel(context.Background())
+	t.Run("context cancellation", func(t *testing.T) {
+		cfgService := &MockConfigService{}
+		historyService := &MockHistoryService{}
+		mux := http.NewServeMux()
+		RegisterHandlers(mux, cfgService, historyService)
 
-	// Push initial snapshot into history so it sends it immediately
-	snap := model.PortfolioSnapshot{TotalValueUSD: decimal.NewFromFloat(320.0)}
-	historyService.AddSnapshot(snap)
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
 
-	req2 := httptest.NewRequest("GET", "/api/status/stream", nil)
-	req2 = req2.WithContext(ctx)
-	rr2 := httptest.NewRecorder()
+		snap := model.PortfolioSnapshot{TotalValueUSD: decimal.NewFromFloat(320.0)}
+		historyService.AddSnapshot(snap)
 
-	// Launch in a goroutine and cancel context after 50ms
-	go func() {
-		time.Sleep(50 * time.Millisecond)
-		cancel()
-		// Push another snapshot to check channel read but context is cancelled
-		historyService.subCh <- model.PortfolioSnapshot{TotalValueUSD: decimal.NewFromFloat(500.0)}
-	}()
+		req2 := httptest.NewRequest("GET", "/api/status/stream", nil)
+		req2 = req2.WithContext(ctx)
+		rr2 := httptest.NewRecorder()
 
-	mux.ServeHTTP(rr2, req2)
+		_ = historyService.Subscribe()
 
-	if !strings.Contains(rr2.Body.String(), "320") {
-		t.Errorf("Expected initial stream message to contain '320', got: %s", rr2.Body.String())
-	}
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			time.Sleep(50 * time.Millisecond)
+			cancel()
+			select {
+			case historyService.subCh <- model.PortfolioSnapshot{TotalValueUSD: decimal.NewFromFloat(500.0)}:
+			case <-ctx.Done():
+			}
+		}()
+
+		mux.ServeHTTP(rr2, req2)
+		<-done
+
+		if !strings.Contains(rr2.Body.String(), "320") {
+			t.Errorf("Expected initial stream message to contain '320', got: %s", rr2.Body.String())
+		}
+	})
 
 	// 3. SSE Stream exits when channel is closed (isOpen == false)
-	req3 := httptest.NewRequest("GET", "/api/status/stream", nil)
-	rr3 := httptest.NewRecorder()
+	t.Run("channel closed", func(t *testing.T) {
+		cfgService := &MockConfigService{}
+		historyService := &MockHistoryService{}
+		mux := http.NewServeMux()
+		RegisterHandlers(mux, cfgService, historyService)
 
-	go func() {
-		time.Sleep(50 * time.Millisecond)
-		close(historyService.subCh)
-	}()
+		req3 := httptest.NewRequest("GET", "/api/status/stream", nil)
+		rr3 := httptest.NewRecorder()
 
-	mux.ServeHTTP(rr3, req3)
+		_ = historyService.Subscribe()
+
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			time.Sleep(50 * time.Millisecond)
+			close(historyService.subCh)
+		}()
+
+		mux.ServeHTTP(rr3, req3)
+		<-done
+	})
 }
 
 func TestRoutes_TemplateErrors(t *testing.T) {
@@ -384,7 +414,7 @@ func TestRoutes_TemplateErrors(t *testing.T) {
 
 	cfg := config.AppConfig{
 		Allocations: []config.Allocation{
-			{Symbol: "USD", TargetPercent: 100.0},
+			{Symbol: "USD", TargetPercent: d(100.0)},
 		},
 	}
 	cfgService := &MockConfigService{cfg: cfg}

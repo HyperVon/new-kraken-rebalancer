@@ -9,7 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -46,8 +46,7 @@ type KrakenServiceImpl struct {
 	client        HTTPClient
 	apiURL        string
 	apiVersion    string
-	// nonce must be accessed atomically using the sync/atomic package
-	// because multiple goroutines might run rebalance/ticker loops concurrently.
+	// nonce must be accessed atomically — concurrent goroutines may run rebalance loops.
 	nonce int64
 }
 
@@ -61,8 +60,7 @@ func NewKrakenServiceImpl(configService config.ConfigService, client HTTPClient)
 		client:        client,
 		apiURL:        "https://api.kraken.com",
 		apiVersion:    "0",
-		// Initialize the nonce to current unix timestamp in microseconds.
-		nonce: time.Now().UnixNano() / int64(time.Microsecond),
+		nonce:         time.Now().UnixNano() / int64(time.Microsecond),
 	}
 }
 
@@ -73,16 +71,16 @@ func (s *KrakenServiceImpl) GetBalances() (RawBalances, error) {
 		return nil, err
 	}
 
-	resultMap, ok := resultVal.(map[string]interface{})
+	resultMap, ok := resultVal.(map[string]any)
 	if !ok {
 		return nil, errors.New("invalid response structure for balances: result is not a map")
 	}
 
-	balances := make(RawBalances)
+	balances := make(RawBalances, len(resultMap))
 	for k, v := range resultMap {
 		valFloat, err := convertToFloat(v)
 		if err != nil {
-			log.Printf("Warning: failed to convert balance for %s: %v", k, err)
+			slog.Warn("Failed to convert balance", "asset", k, "error", err)
 			continue
 		}
 		balances[k] = valFloat
@@ -98,8 +96,8 @@ func (s *KrakenServiceImpl) GetTickerPrices(pairs string) (RawPrices, error) {
 	}
 
 	var root struct {
-		Error  []string               `json:"error"`
-		Result map[string]interface{} `json:"result"`
+		Error  []string       `json:"error"`
+		Result map[string]any `json:"result"`
 	}
 
 	if err := json.Unmarshal(responseBody, &root); err != nil {
@@ -110,9 +108,9 @@ func (s *KrakenServiceImpl) GetTickerPrices(pairs string) (RawPrices, error) {
 		return nil, fmt.Errorf("kraken public API error: %s", strings.Join(root.Error, ", "))
 	}
 
-	prices := make(RawPrices)
+	prices := make(RawPrices, len(root.Result))
 	for key, value := range root.Result {
-		pairMap, ok := value.(map[string]interface{})
+		pairMap, ok := value.(map[string]any)
 		if !ok {
 			continue
 		}
@@ -120,7 +118,7 @@ func (s *KrakenServiceImpl) GetTickerPrices(pairs string) (RawPrices, error) {
 		if !exists {
 			continue
 		}
-		cSlice, ok := cVal.([]interface{})
+		cSlice, ok := cVal.([]any)
 		if !ok || len(cSlice) == 0 {
 			continue
 		}
@@ -133,13 +131,18 @@ func (s *KrakenServiceImpl) GetTickerPrices(pairs string) (RawPrices, error) {
 }
 
 func (s *KrakenServiceImpl) ExecuteOrder(pair, orderType, side string, volume decimal.Decimal) (model.OrderResult, error) {
-	// Kraken requires rounding to 8 decimal places for crypto volumes.
 	normalizedVolume := volume.Round(8).Truncate(8)
 	cfg := s.configService.GetConfig()
 
 	if cfg.Settings.DryRun {
-		log.Printf("[DRY RUN] Would execute order: %s %s %s volume=%s", orderType, side, pair, normalizedVolume.String())
-		return model.NewOrderResult(true, pair, side, normalizedVolume, true, ""), nil
+		slog.Info("Dry run order", "type", orderType, "side", side, "pair", pair, "volume", normalizedVolume)
+		return model.OrderResult{
+			Success: true,
+			Pair:    pair,
+			Side:    side,
+			Volume:  normalizedVolume,
+			DryRun:  true,
+		}, nil
 	}
 
 	path := fmt.Sprintf("/%s/private/AddOrder", s.apiVersion)
@@ -151,17 +154,28 @@ func (s *KrakenServiceImpl) ExecuteOrder(pair, orderType, side string, volume de
 
 	_, err := s.queryPrivate(path, params)
 	if err != nil {
-		log.Printf("Failed to execute order: %s %s %s volume=%s: %v", orderType, side, pair, normalizedVolume.String(), err)
-		return model.NewOrderResult(false, pair, side, normalizedVolume, false, err.Error()), err
+		slog.Error("Order execution failed", "type", orderType, "side", side, "pair", pair, "volume", normalizedVolume, "error", err)
+		return model.OrderResult{
+			Success:      false,
+			Pair:         pair,
+			Side:         side,
+			Volume:       normalizedVolume,
+			ErrorMessage: err.Error(),
+		}, err
 	}
 
-	log.Printf("Order Executed: %s %s %s volume=%s", orderType, side, pair, normalizedVolume.String())
-	return model.NewOrderResult(true, pair, side, normalizedVolume, false, ""), nil
+	slog.Info("Order executed", "type", orderType, "side", side, "pair", pair, "volume", normalizedVolume)
+	return model.OrderResult{
+		Success: true,
+		Pair:    pair,
+		Side:    side,
+		Volume:  normalizedVolume,
+	}, nil
 }
 
 func (s *KrakenServiceImpl) queryPublic(path string) ([]byte, error) {
 	resp, err := s.client.Do(&http.Request{
-		Method: "GET",
+		Method: http.MethodGet,
 		URL: &url.URL{
 			Scheme: "https",
 			Host:   "api.kraken.com",
@@ -171,25 +185,22 @@ func (s *KrakenServiceImpl) queryPublic(path string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed public API connection: %w", err)
 	}
-	// defer resp.Body.Close() ensures the response stream is cleaned up
-	// once queryPublic exits, preventing memory/socket leaks.
 	defer resp.Body.Close()
 
-	bodyBytes, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-	return bodyBytes, nil
+	return io.ReadAll(resp.Body)
 }
 
-func (s *KrakenServiceImpl) queryPrivate(path string, params url.Values) (interface{}, error) {
+// queryPrivate sends an authenticated request to Kraken and handles nonce-retry logic.
+// If Kraken rejects a request with "Invalid nonce", the nonce is bumped exponentially
+// and the request is retried up to 5 times.
+func (s *KrakenServiceImpl) queryPrivate(path string, params url.Values) (any, error) {
 	cfg := s.configService.GetConfig()
 	apiKey := cfg.Kraken.APIKey
 	if apiKey == "" {
 		return nil, errors.New("API Key is blank")
 	}
 
-	maxRetries := 5
+	const maxRetries = 5
 	retryCount := 0
 
 	if params == nil {
@@ -197,8 +208,6 @@ func (s *KrakenServiceImpl) queryPrivate(path string, params url.Values) (interf
 	}
 
 	for {
-		// atomic.AddInt64 dynamically increments the 64-bit nonce by 1 safely
-		// in a multi-threaded execution context (similar to Java's AtomicLong).
 		currentNonce := atomic.AddInt64(&s.nonce, 1)
 		nonceStr := strconv.FormatInt(currentNonce, 10)
 
@@ -217,7 +226,7 @@ func (s *KrakenServiceImpl) queryPrivate(path string, params url.Values) (interf
 		}
 
 		reqURL := s.apiURL + path
-		req, err := http.NewRequest("POST", reqURL, strings.NewReader(postData))
+		req, err := http.NewRequest(http.MethodPost, reqURL, strings.NewReader(postData))
 		if err != nil {
 			return nil, err
 		}
@@ -226,72 +235,80 @@ func (s *KrakenServiceImpl) queryPrivate(path string, params url.Values) (interf
 		req.Header.Set("API-Sign", signature)
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-		resp, err := s.client.Do(req)
-		if err != nil {
-			return nil, fmt.Errorf("failed private API connection: %w", err)
+		result, shouldRetry, err := s.doPrivateRequest(req, retryCount, maxRetries)
+		if shouldRetry {
+			retryCount++
+			continue
 		}
-		defer resp.Body.Close()
-
-		bodyBytes, err := io.ReadAll(resp.Body)
-		if err != nil {
-			return nil, err
-		}
-
-		var root struct {
-			Error  []string    `json:"error"`
-			Result interface{} `json:"result"`
-		}
-
-		if err := json.Unmarshal(bodyBytes, &root); err != nil {
-			return nil, fmt.Errorf("failed to parse JSON response: %w", err)
-		}
-
-		if len(root.Error) > 0 {
-			errorMsg := strings.Join(root.Error, ", ")
-			// If Kraken rejects the transaction due to an out-of-order nonce timestamp error,
-			// we bump our local atomic nonce generator exponentially and retry the request up to 5 times.
-			if strings.Contains(errorMsg, "Invalid nonce") && retryCount < maxRetries {
-				// (1 << retryCount) is a bitwise shift performing exponential scaling (e.g. 1, 2, 4, 8, 16)
-				bumpAmount := int64(100_000_000 * (1 << retryCount))
-				log.Printf("Invalid nonce detected. Adjusting nonce generator by %d and retrying (Attempt %d/%d)", bumpAmount, retryCount+1, maxRetries)
-				atomic.AddInt64(&s.nonce, bumpAmount)
-				retryCount++
-				continue
-			}
-			return nil, fmt.Errorf("kraken API error: %s", errorMsg)
-		}
-
-		return root.Result, nil
+		return result, err
 	}
 }
 
-// signRequest generates Kraken's specific API authentication signature.
-// Formula: base64(hmac_sha512(url_path + sha256(nonce + post_data), base64_decoded(private_key)))
-func (s *KrakenServiceImpl) signRequest(path string, nonce string, postData string) (string, error) {
+// doPrivateRequest executes one private API call and returns (result, shouldRetry, error).
+// Extracting this ensures resp.Body is closed at function exit — not deferred inside a loop.
+func (s *KrakenServiceImpl) doPrivateRequest(req *http.Request, retryCount, maxRetries int) (any, bool, error) {
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return nil, false, fmt.Errorf("failed private API connection: %w", err)
+	}
+	defer resp.Body.Close()
+
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, false, err
+	}
+
+	var root struct {
+		Error  []string `json:"error"`
+		Result any      `json:"result"`
+	}
+
+	if err := json.Unmarshal(bodyBytes, &root); err != nil {
+		return nil, false, fmt.Errorf("failed to parse JSON response: %w", err)
+	}
+
+	if len(root.Error) > 0 {
+		errorMsg := strings.Join(root.Error, ", ")
+
+		if strings.Contains(errorMsg, "Invalid nonce") && retryCount < maxRetries {
+			bumpAmount := int64(100_000_000 * (1 << retryCount))
+			slog.Warn("Invalid nonce, retrying",
+				"bumpAmount", bumpAmount,
+				"attempt", retryCount+1,
+				"maxRetries", maxRetries,
+			)
+			atomic.AddInt64(&s.nonce, bumpAmount)
+			return nil, true, nil
+		}
+		return nil, false, fmt.Errorf("kraken API error: %s", errorMsg)
+	}
+
+	return root.Result, false, nil
+}
+
+// signRequest generates Kraken's API authentication signature:
+// base64(hmac_sha512(url_path + sha256(nonce + post_data), base64_decoded(private_key)))
+func (s *KrakenServiceImpl) signRequest(path, nonce, postData string) (string, error) {
 	cfg := s.configService.GetConfig()
 	privateKeyDecoded, err := base64.StdEncoding.DecodeString(cfg.Kraken.PrivateKey)
 	if err != nil {
 		return "", fmt.Errorf("failed to decode private key: %w", err)
 	}
 
-	// Step 1: sha256(nonce + postData)
 	sha := sha256.New()
 	sha.Write([]byte(nonce + postData))
 	shaSum := sha.Sum(nil)
 
-	// Step 2: hmac_sha512(path + shaSum, privateKey)
 	mac := hmac.New(sha512.New, privateKeyDecoded)
 	mac.Write([]byte(path))
 	mac.Write(shaSum)
 	macSum := mac.Sum(nil)
 
-	// Step 3: base64_encode(hmacSum)
 	return base64.StdEncoding.EncodeToString(macSum), nil
 }
 
-// convertToFloat converts dynamic interfaces (string or float64) to float64.
-// Go requires explicit type assertions (switch v.(type)) because it does not support implicit casting.
-func convertToFloat(v interface{}) (float64, error) {
+// convertToFloat converts dynamic JSON values (string or float64) to float64.
+func convertToFloat(v any) (float64, error) {
 	switch val := v.(type) {
 	case float64:
 		return val, nil

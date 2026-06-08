@@ -79,14 +79,14 @@ func TestPortfolioManager_PerformRebalanceCycle_Success(t *testing.T) {
 		Kraken: config.KrakenCredentials{APIKey: "key"},
 		Settings: config.Settings{
 			LoopDelaySeconds:        10,
-			DeviationTriggerPercent: 5.0,
-			DustThresholdUSD:        1.0,
-			FiatMaxDrawdown:         30.0,
-			FiatDeploymentExponent:  1.0,
+			DeviationTriggerPercent: d(5.0),
+			DustThresholdUSD:        d(1.0),
+			FiatMaxDrawdown:         d(30.0),
+			FiatDeploymentExponent:  d(1.0),
 		},
 		Allocations: []config.Allocation{
-			{Symbol: "USD", TargetPercent: 10.0},
-			{Symbol: "BTC", TargetPercent: 90.0},
+			{Symbol: "USD", TargetPercent: d(10.0)},
+			{Symbol: "BTC", TargetPercent: d(90.0)},
 		},
 	}
 	cfgService := &MockConfigService{cfg: cfg}
@@ -97,7 +97,7 @@ func TestPortfolioManager_PerformRebalanceCycle_Success(t *testing.T) {
 		prices:   RawPrices{"XXBTZUSD": 600.0},
 	}
 
-	statsRepo := &MockStatsRepo{stats: model.PortfolioStats{AllTimeHigh: decimal.NewFromFloat(1000.0)}}
+	statsRepo := &MockStatsRepo{stats: model.PortfolioStats{AllTimeHigh: d(1000.0)}}
 	analyzer := NewPortfolioAnalyzer(kraken, cfgService, statsRepo)
 	executor := NewOrderExecutor(kraken, analyzer)
 
@@ -108,14 +108,12 @@ func TestPortfolioManager_PerformRebalanceCycle_Success(t *testing.T) {
 		t.Fatalf("Expected cycle success, got err: %v", err)
 	}
 
-	// Total: 100 USD + 1.5 * 600 = $1000 USD.
-	// History should have 1 snapshot.
 	if len(history.snapshots) != 1 {
 		t.Fatalf("Expected 1 snapshot, got %d", len(history.snapshots))
 	}
 
 	snap := history.snapshots[0]
-	if !snap.TotalValueUSD.Equal(decimal.NewFromFloat(1000.0)) {
+	if !snap.TotalValueUSD.Equal(d(1000.0)) {
 		t.Errorf("Expected total value 1000.0, got %v", snap.TotalValueUSD)
 	}
 }
@@ -123,8 +121,8 @@ func TestPortfolioManager_PerformRebalanceCycle_Success(t *testing.T) {
 func TestPortfolioManager_PerformRebalanceCycle_Errors(t *testing.T) {
 	cfg := config.AppConfig{
 		Allocations: []config.Allocation{
-			{Symbol: "USD", TargetPercent: 10.0},
-			{Symbol: "BTC", TargetPercent: 90.0},
+			{Symbol: "USD", TargetPercent: d(10.0)},
+			{Symbol: "BTC", TargetPercent: d(90.0)},
 		},
 	}
 	cfgService := &MockConfigService{cfg: cfg}
@@ -132,9 +130,7 @@ func TestPortfolioManager_PerformRebalanceCycle_Errors(t *testing.T) {
 	statsRepo := &MockStatsRepo{}
 
 	// 1. Balances fail
-	kraken1 := &MockManagerKrakenService{
-		balances: nil,
-	}
+	kraken1 := &MockManagerKrakenService{balances: nil}
 	analyzer1 := NewPortfolioAnalyzer(kraken1, cfgService, statsRepo)
 	executor1 := NewOrderExecutor(kraken1, analyzer1)
 	mgr1 := NewPortfolioManagerImpl(cfgService, history, analyzer1, executor1)
@@ -158,11 +154,10 @@ func TestPortfolioManager_PerformRebalanceCycle_Errors(t *testing.T) {
 		t.Errorf("Expected fetch prices error, got %v", err)
 	}
 
-	// 3. Aborted due to missing price for active asset in portfolio values
+	// 3. Aborted due to missing price
 	kraken3 := &MockManagerKrakenService{
 		balances: RawBalances{"ZUSD": 100.0, "XXBT": 1.0},
-		// Missing BTC price!
-		prices: RawPrices{},
+		prices:   RawPrices{},
 	}
 	analyzer3 := NewPortfolioAnalyzer(kraken3, cfgService, statsRepo)
 	executor3 := NewOrderExecutor(kraken3, analyzer3)
@@ -173,7 +168,7 @@ func TestPortfolioManager_PerformRebalanceCycle_Errors(t *testing.T) {
 		t.Errorf("Expected aborted due to missing prices, got %v", err)
 	}
 
-	// 4. Save history warning is logged but no error returned
+	// 4. Save history warning logged but no error returned
 	kraken4 := &MockManagerKrakenService{
 		balances: RawBalances{"ZUSD": 100.0},
 		prices:   RawPrices{"XXBTZUSD": 600.0},
@@ -196,10 +191,10 @@ func TestPortfolioManager_PerformRebalanceCycle_Errors(t *testing.T) {
 func TestPortfolioManager_RunLoop(t *testing.T) {
 	cfg := config.AppConfig{
 		Settings: config.Settings{
-			LoopDelaySeconds: 1, // tick every 1s
+			LoopDelaySeconds: 1,
 		},
 		Allocations: []config.Allocation{
-			{Symbol: "USD", TargetPercent: 100.0},
+			{Symbol: "USD", TargetPercent: d(100.0)},
 		},
 	}
 	cfgService := &MockConfigService{cfg: cfg}
@@ -216,9 +211,9 @@ func TestPortfolioManager_RunLoop(t *testing.T) {
 	// 1. Loop not running, context cancelled -> exits immediately
 	ctxCancel, cancel := context.WithCancel(context.Background())
 	cancel()
-	mgr.RunLoop(ctxCancel) // should not block
+	mgr.RunLoop(ctxCancel)
 
-	// 2. Loop running, context cancelled -> exits after running or inside select
+	// 2. Loop running, context cancelled -> exits after running
 	mgr.StartRebalancingLoop()
 
 	ctx, cancel2 := context.WithCancel(context.Background())
@@ -229,11 +224,10 @@ func TestPortfolioManager_RunLoop(t *testing.T) {
 		mgr.RunLoop(ctx)
 	}()
 
-	// Wait briefly to let it run, then cancel
 	time.Sleep(150 * time.Millisecond)
 	cancel2()
 
-	wg.Wait() // should return cleanly
+	wg.Wait()
 	if len(history.snapshots) == 0 {
 		t.Error("Expected at least one rebalance cycle to have run")
 	}

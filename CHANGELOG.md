@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.2.0] - 2026-06-08
+
+### Added
+
+- **Leveled Structured Logging**: Fully integrated Go's native `log/slog` library for structured, modern logging across the entire application, replacing all flat standard logger calls.
+- **Log Level Flag**: Added a command-line flag `-loglevel` to customize logging verbosity (`debug`, `info`, `warn`, `error`).
+- **Decimal Fields in Config**: Promoted all config settings and allocation percentage targets from `float64` to `decimal.Decimal` right at the type and serialization level, eliminating floating-point rounding bugs.
+
+### Changed
+
+- **Idiomatic Code Cleanups**: Removed all beginner tutorial-style comments explaining basic Go features (mutexes, channels, defer, embeds, etc.) to keep the codebase focused on architecture and business logic.
+- **Type-Safe Web Form Mapping**: Refactored web forms settings and template functions to work natively with `decimal.Decimal` fields.
+- **Synchronized Tests**: Refactored SSE stream test suite to run in subtests and cleanly synchronize background goroutines, resolving concurrent data races under `-race` test runs.
+
 ## [5.1.0] - 2026-06-08
 
 ### Added

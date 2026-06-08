@@ -23,15 +23,15 @@ func TestPrecisionRoundingFuzz(t *testing.T) {
 		},
 		Settings: config.Settings{
 			LoopDelaySeconds:        60,
-			DeviationTriggerPercent: 2.0,
-			DustThresholdUSD:        1.0,
+			DeviationTriggerPercent: d(2.0),
+			DustThresholdUSD:        d(1.0),
 			DryRun:                  false,
-			FiatMaxDrawdown:         50.0,
-			FiatDeploymentExponent:  1.0,
+			FiatMaxDrawdown:         d(50.0),
+			FiatDeploymentExponent:  d(1.0),
 		},
 		Allocations: []config.Allocation{
-			{Symbol: "BTC", TargetPercent: 50.0},
-			{Symbol: "USD", TargetPercent: 50.0},
+			{Symbol: "BTC", TargetPercent: d(50.0)},
+			{Symbol: "USD", TargetPercent: d(50.0)},
 		},
 	}
 
@@ -80,7 +80,6 @@ func TestPrecisionRoundingFuzz(t *testing.T) {
 		t.Fatalf("Expected AddOrder call, but it was not captured")
 	}
 
-	// Verify that the volume parameter is rounded to 1 to 8 decimal places and doesn't have a giant precision
 	re := regexp.MustCompile(`volume=(\d+\.\d{1,8})(&|$)`)
 	match := re.FindStringSubmatch(capturedOrderPayload)
 	if len(match) == 0 {

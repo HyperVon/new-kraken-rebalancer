@@ -4,20 +4,24 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/shopspring/decimal"
 )
+
+func d(f float64) decimal.Decimal { return decimal.NewFromFloat(f) }
 
 func TestValidateConfig(t *testing.T) {
 	validConfig := AppConfig{
 		Settings: Settings{
 			LoopDelaySeconds:        60,
-			DeviationTriggerPercent: 5.0,
-			DustThresholdUSD:        5.0,
-			FiatMaxDrawdown:         30.0,
-			FiatDeploymentExponent:  1.0,
+			DeviationTriggerPercent: d(5.0),
+			DustThresholdUSD:        d(5.0),
+			FiatMaxDrawdown:         d(30.0),
+			FiatDeploymentExponent:  d(1.0),
 		},
 		Allocations: []Allocation{
-			{Symbol: "USD", TargetPercent: 10.0},
-			{Symbol: "BTC", TargetPercent: 90.0},
+			{Symbol: "USD", TargetPercent: d(10.0)},
+			{Symbol: "BTC", TargetPercent: d(90.0)},
 		},
 	}
 
@@ -35,35 +39,35 @@ func TestValidateConfig(t *testing.T) {
 
 	// Test DeviationTriggerPercent
 	invalid = validConfig
-	invalid.Settings.DeviationTriggerPercent = -0.1
+	invalid.Settings.DeviationTriggerPercent = d(-0.1)
 	if err := validateConfig(invalid); err == nil {
 		t.Error("Expected error for negative deviation trigger")
 	}
 
 	// Test DustThresholdUSD
 	invalid = validConfig
-	invalid.Settings.DustThresholdUSD = -5.0
+	invalid.Settings.DustThresholdUSD = d(-5.0)
 	if err := validateConfig(invalid); err == nil {
 		t.Error("Expected error for negative dust threshold")
 	}
 
 	// Test FiatMaxDrawdown negative
 	invalid = validConfig
-	invalid.Settings.FiatMaxDrawdown = -1.0
+	invalid.Settings.FiatMaxDrawdown = d(-1.0)
 	if err := validateConfig(invalid); err == nil {
 		t.Error("Expected error for negative fiat max drawdown")
 	}
 
 	// Test FiatMaxDrawdown > 100
 	invalid = validConfig
-	invalid.Settings.FiatMaxDrawdown = 101.0
+	invalid.Settings.FiatMaxDrawdown = d(101.0)
 	if err := validateConfig(invalid); err == nil {
 		t.Error("Expected error for fiat max drawdown > 100")
 	}
 
 	// Test FiatDeploymentExponent
 	invalid = validConfig
-	invalid.Settings.FiatDeploymentExponent = 0
+	invalid.Settings.FiatDeploymentExponent = d(0)
 	if err := validateConfig(invalid); err == nil {
 		t.Error("Expected error for non-positive deployment exponent")
 	}
@@ -78,8 +82,8 @@ func TestValidateConfig(t *testing.T) {
 	// Test blank symbols
 	invalid = validConfig
 	invalid.Allocations = []Allocation{
-		{Symbol: "", TargetPercent: 10.0},
-		{Symbol: "BTC", TargetPercent: 90.0},
+		{Symbol: "", TargetPercent: d(10.0)},
+		{Symbol: "BTC", TargetPercent: d(90.0)},
 	}
 	if err := validateConfig(invalid); err == nil {
 		t.Error("Expected error for blank symbol")
@@ -88,8 +92,8 @@ func TestValidateConfig(t *testing.T) {
 	// Test negative allocation target
 	invalid = validConfig
 	invalid.Allocations = []Allocation{
-		{Symbol: "USD", TargetPercent: 110.0},
-		{Symbol: "BTC", TargetPercent: -10.0},
+		{Symbol: "USD", TargetPercent: d(110.0)},
+		{Symbol: "BTC", TargetPercent: d(-10.0)},
 	}
 	if err := validateConfig(invalid); err == nil {
 		t.Error("Expected error for negative allocation target")
@@ -98,9 +102,9 @@ func TestValidateConfig(t *testing.T) {
 	// Test duplicate symbols
 	invalid = validConfig
 	invalid.Allocations = []Allocation{
-		{Symbol: "USD", TargetPercent: 10.0},
-		{Symbol: "BTC", TargetPercent: 45.0},
-		{Symbol: "BTC", TargetPercent: 45.0},
+		{Symbol: "USD", TargetPercent: d(10.0)},
+		{Symbol: "BTC", TargetPercent: d(45.0)},
+		{Symbol: "BTC", TargetPercent: d(45.0)},
 	}
 	if err := validateConfig(invalid); err == nil {
 		t.Error("Expected error for duplicate allocation symbols")
@@ -109,8 +113,8 @@ func TestValidateConfig(t *testing.T) {
 	// Test total allocation sum != 100
 	invalid = validConfig
 	invalid.Allocations = []Allocation{
-		{Symbol: "USD", TargetPercent: 10.0},
-		{Symbol: "BTC", TargetPercent: 80.0},
+		{Symbol: "USD", TargetPercent: d(10.0)},
+		{Symbol: "BTC", TargetPercent: d(80.0)},
 	}
 	if err := validateConfig(invalid); err == nil {
 		t.Error("Expected error for total allocation sum != 100")
@@ -119,8 +123,8 @@ func TestValidateConfig(t *testing.T) {
 	// Test missing USD
 	invalid = validConfig
 	invalid.Allocations = []Allocation{
-		{Symbol: "BTC", TargetPercent: 50.0},
-		{Symbol: "ETH", TargetPercent: 50.0},
+		{Symbol: "BTC", TargetPercent: d(50.0)},
+		{Symbol: "ETH", TargetPercent: d(50.0)},
 	}
 	if err := validateConfig(invalid); err == nil {
 		t.Error("Expected error for missing USD asset")

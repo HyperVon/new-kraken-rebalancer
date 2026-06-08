@@ -2,7 +2,9 @@ package repository
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sync"
@@ -22,19 +24,13 @@ type PortfolioStatsRepository interface {
 	Load() (model.PortfolioStats, error)
 }
 
-// syncFile and closeFile are package-level variable function pointers.
-// In production, they call standard os.File Sync and Close.
-// In tests, they can be overridden/stubbed to inject disk-write failures,
-// allowing us to test failure recovery paths and achieve 100% test coverage.
+// syncFile and closeFile are overridable for testing disk-write failure paths.
 var syncFile = func(f *os.File) error { return f.Sync() }
 var closeFile = func(f *os.File) error { return f.Close() }
 
 // WriteAtomicJSON writes JSON to a temp file and renames it to the target atomically.
-// This is a standard production safety pattern: writing directly to a state file
-// can result in corruption if the application exits or loses power mid-write.
-// Instead, we write to a temporary file, flush it, close it, and then rename it
-// to the target path (renaming is an atomic OS call).
-func WriteAtomicJSON(filePath string, value interface{}) error {
+// This prevents corruption if the process exits mid-write — rename is an atomic OS call.
+func WriteAtomicJSON(filePath string, value any) error {
 	dir := filepath.Dir(filePath)
 	if dir != "" && dir != "." {
 		if err := os.MkdirAll(dir, 0755); err != nil {
@@ -48,9 +44,6 @@ func WriteAtomicJSON(filePath string, value interface{}) error {
 	}
 	tempName := tempFile.Name()
 
-	// defer registers a function call that executes automatically when the surrounding
-	// function (WriteAtomicJSON) exits, whether it returns normally or via an error.
-	// This ensures our temporary file is cleaned up even if encoder or sync calls fail.
 	defer func() {
 		if tempName != "" {
 			_ = os.Remove(tempName)
@@ -64,24 +57,20 @@ func WriteAtomicJSON(filePath string, value interface{}) error {
 		return fmt.Errorf("failed to encode JSON: %w", err)
 	}
 
-	// Sync forces the operating system to flush in-memory file buffers to the physical disk.
 	if err := syncFile(tempFile); err != nil {
 		_ = closeFile(tempFile)
 		return fmt.Errorf("failed to sync temp file: %w", err)
 	}
 
-	// File must be closed before renaming on some operating systems (e.g. Windows).
 	if err := closeFile(tempFile); err != nil {
 		return fmt.Errorf("failed to close temp file: %w", err)
 	}
 
-	// Rename atomically replaces the target file with our fully-written temp file.
 	if err := os.Rename(tempName, filePath); err != nil {
 		return fmt.Errorf("failed to atomically move temp file to %s: %w", filePath, err)
 	}
 
-	// Clear tempName to prevent the deferred os.Remove from cleaning it up on exit.
-	tempName = ""
+	tempName = "" // prevent deferred cleanup of the now-renamed file
 	return nil
 }
 
@@ -106,9 +95,7 @@ func (r *FileTradeRepository) Load() ([]model.PortfolioSnapshot, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	// os.IsNotExist is a standard helper in Go to check if an error returned by
-	// a filesystem call indicates that the file does not exist yet.
-	if _, err := os.Stat(r.filePath); os.IsNotExist(err) {
+	if _, err := os.Stat(r.filePath); errors.Is(err, fs.ErrNotExist) {
 		return []model.PortfolioSnapshot{}, nil
 	}
 
@@ -145,7 +132,7 @@ func (r *FilePortfolioStatsRepository) Load() (model.PortfolioStats, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if _, err := os.Stat(r.filePath); os.IsNotExist(err) {
+	if _, err := os.Stat(r.filePath); errors.Is(err, fs.ErrNotExist) {
 		return model.PortfolioStats{}, nil
 	}
 

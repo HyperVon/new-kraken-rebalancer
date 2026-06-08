@@ -59,7 +59,7 @@ func TestDashboardViewParity_Live(t *testing.T) {
 
 	history := []model.PortfolioSnapshot{latest}
 
-	data := map[string]interface{}{
+	data := map[string]any{
 		"Latest":        latest,
 		"History":       history,
 		"TimeSince":     0,
@@ -130,7 +130,7 @@ func TestDashboardViewParity_Stale(t *testing.T) {
 		Actions: nil,
 	}
 
-	data := map[string]interface{}{
+	data := map[string]any{
 		"Latest":        latest,
 		"History":       nil,
 		"TimeSince":     100,
@@ -194,7 +194,7 @@ func TestDashboardViewParity_EdgeCases(t *testing.T) {
 
 	history := []model.PortfolioSnapshot{latest, noActionsSnapshot}
 
-	data := map[string]interface{}{
+	data := map[string]any{
 		"Latest":        latest,
 		"History":       history,
 		"TimeSince":     0,
@@ -248,7 +248,7 @@ func TestDashboardViewParity_UsdTargetEqual(t *testing.T) {
 		},
 	}
 
-	data := map[string]interface{}{
+	data := map[string]any{
 		"Latest":        latest,
 		"History":       nil,
 		"TimeSince":     0,

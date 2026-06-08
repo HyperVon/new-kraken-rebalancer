@@ -35,22 +35,22 @@ func (m *MockExecutorKrakenService) ExecuteOrder(pair, orderType, side string, v
 func TestExecuteOrders_DryRunAndDust(t *testing.T) {
 	kraken := &MockExecutorKrakenService{
 		ExecuteOrderFunc: func(pair, orderType, side string, volume decimal.Decimal) (model.OrderResult, error) {
-			return model.NewOrderResult(true, pair, side, volume, true, ""), nil
+			return model.OrderResult{Success: true, Pair: pair, Side: side, Volume: volume, DryRun: true}, nil
 		},
 	}
 	analyzer := NewPortfolioAnalyzer(nil, nil, nil)
 	executor := NewOrderExecutor(kraken, analyzer)
 
 	buyOrders := map[string]decimal.Decimal{
-		"BTC": decimal.NewFromFloat(10.0), // Above dust
-		"ETH": decimal.NewFromFloat(0.5),  // Dust!
+		"BTC": d(10.0),
+		"ETH": d(0.5),
 	}
 	sellOrders := map[string]decimal.Decimal{
-		"LTC": decimal.NewFromFloat(8.0), // Above dust
-		"XRP": decimal.NewFromFloat(0.4), // Dust!
+		"LTC": d(8.0),
+		"XRP": d(0.4),
 	}
 	currentValuesUSD := map[string]decimal.Decimal{
-		"USD": decimal.NewFromFloat(100.0),
+		"USD": d(100.0),
 	}
 	prices := RawPrices{
 		"BTC": 50000.0,
@@ -60,14 +60,13 @@ func TestExecuteOrders_DryRunAndDust(t *testing.T) {
 	}
 
 	settings := config.Settings{
-		DustThresholdUSD: 1.00,
+		DustThresholdUSD: d(1.00),
 		DryRun:           true,
 	}
 
 	var actionLog []string
 	executor.ExecuteOrders(buyOrders, sellOrders, currentValuesUSD, prices, settings, &actionLog)
 
-	// Verify skipping dust and executing normal ones
 	expectedLogs := []string{
 		"Skipping dust sell for XRP ($0.4)",
 		"[DRY RUN] SELL LTC Volume: 0.08 Value: $8",
@@ -92,8 +91,7 @@ func TestExecuteOrders_DryRunAndDust(t *testing.T) {
 func TestExecuteOrders_LiveExecutionOrder(t *testing.T) {
 	kraken := &MockExecutorKrakenService{
 		ExecuteOrderFunc: func(pair, orderType, side string, volume decimal.Decimal) (model.OrderResult, error) {
-			// Live call success
-			return model.NewOrderResult(true, pair, side, volume, false, ""), nil
+			return model.OrderResult{Success: true, Pair: pair, Side: side, Volume: volume}, nil
 		},
 		GetBalancesFunc: func() (RawBalances, error) {
 			return RawBalances{"ZUSD": 108.0}, nil
@@ -103,13 +101,13 @@ func TestExecuteOrders_LiveExecutionOrder(t *testing.T) {
 	executor := NewOrderExecutor(kraken, analyzer)
 
 	buyOrders := map[string]decimal.Decimal{
-		"BTC": decimal.NewFromFloat(10.0),
+		"BTC": d(10.0),
 	}
 	sellOrders := map[string]decimal.Decimal{
-		"LTC": decimal.NewFromFloat(8.0),
+		"LTC": d(8.0),
 	}
 	currentValuesUSD := map[string]decimal.Decimal{
-		"USD": decimal.NewFromFloat(100.0),
+		"USD": d(100.0),
 	}
 	prices := RawPrices{
 		"BTC": 50000.0,
@@ -117,7 +115,7 @@ func TestExecuteOrders_LiveExecutionOrder(t *testing.T) {
 	}
 
 	settings := config.Settings{
-		DustThresholdUSD: 1.00,
+		DustThresholdUSD: d(1.00),
 		DryRun:           false,
 	}
 
@@ -149,20 +147,20 @@ func TestExecuteOrders_ReduceCashAndFailures(t *testing.T) {
 			if side == "sell" {
 				return model.OrderResult{}, errors.New("execution order failed")
 			}
-			return model.NewOrderResult(true, pair, side, volume, false, ""), nil
+			return model.OrderResult{Success: true, Pair: pair, Side: side, Volume: volume}, nil
 		},
 	}
 	analyzer := NewPortfolioAnalyzer(nil, nil, nil)
 	executor := NewOrderExecutor(kraken, analyzer)
 
 	buyOrders := map[string]decimal.Decimal{
-		"BTC": decimal.NewFromFloat(200.0), // Exceeds USD balance of 100.0!
+		"BTC": d(200.0),
 	}
 	sellOrders := map[string]decimal.Decimal{
-		"LTC": decimal.NewFromFloat(50.0),
+		"LTC": d(50.0),
 	}
 	currentValuesUSD := map[string]decimal.Decimal{
-		"USD": decimal.NewFromFloat(100.0),
+		"USD": d(100.0),
 	}
 	prices := RawPrices{
 		"BTC": 50000.0,
@@ -170,7 +168,7 @@ func TestExecuteOrders_ReduceCashAndFailures(t *testing.T) {
 	}
 
 	settings := config.Settings{
-		DustThresholdUSD: 1.00,
+		DustThresholdUSD: d(1.00),
 		DryRun:           false,
 	}
 
@@ -197,27 +195,24 @@ func TestExecuteOrders_ReduceCashAndFailures(t *testing.T) {
 }
 
 func TestRefreshUsdBalanceAfterSells_Attempts(t *testing.T) {
-	// Setup executor
 	analyzer := NewPortfolioAnalyzer(nil, nil, nil)
 
-	// Case 1: First attempt succeeds and is >= threshold
 	callCount1 := 0
 	kraken1 := &MockExecutorKrakenService{
 		GetBalancesFunc: func() (RawBalances, error) {
 			callCount1++
-			return RawBalances{"ZUSD": 98.0}, nil // 98 >= 95 (projected 100 * 0.95)
+			return RawBalances{"ZUSD": 98.0}, nil
 		},
 	}
 	executor1 := NewOrderExecutor(kraken1, analyzer)
-	cash1 := executor1.refreshUsdBalanceAfterSells(decimal.NewFromFloat(100.0))
+	cash1 := executor1.refreshUsdBalanceAfterSells(d(100.0))
 	if callCount1 != 1 {
 		t.Errorf("Expected 1 call, got %d", callCount1)
 	}
-	if !cash1.Equal(decimal.NewFromFloat(98.0)) {
+	if !cash1.Equal(d(98.0)) {
 		t.Errorf("Expected 98.0 cash, got %v", cash1)
 	}
 
-	// Case 2: First attempt fails, second attempt succeeds
 	callCount2 := 0
 	kraken2 := &MockExecutorKrakenService{
 		GetBalancesFunc: func() (RawBalances, error) {
@@ -229,34 +224,33 @@ func TestRefreshUsdBalanceAfterSells_Attempts(t *testing.T) {
 		},
 	}
 	executor2 := NewOrderExecutor(kraken2, analyzer)
-	cash2 := executor2.refreshUsdBalanceAfterSells(decimal.NewFromFloat(100.0))
+	cash2 := executor2.refreshUsdBalanceAfterSells(d(100.0))
 	if callCount2 != 2 {
 		t.Errorf("Expected 2 calls, got %d", callCount2)
 	}
-	if !cash2.Equal(decimal.NewFromFloat(99.0)) {
+	if !cash2.Equal(d(99.0)) {
 		t.Errorf("Expected 99.0 cash, got %v", cash2)
 	}
 
-	// Case 3: All attempts fail or return below threshold (keeps last observed)
 	callCount3 := 0
 	kraken3 := &MockExecutorKrakenService{
 		GetBalancesFunc: func() (RawBalances, error) {
 			callCount3++
 			if callCount3 == 1 {
-				return RawBalances{"ZUSD": 90.0}, nil // below threshold (95)
+				return RawBalances{"ZUSD": 90.0}, nil
 			}
 			if callCount3 == 2 {
-				return RawBalances{"ZUSD": 92.0}, nil // below threshold (95)
+				return RawBalances{"ZUSD": 92.0}, nil
 			}
 			return RawBalances{"ZUSD": 91.0}, nil
 		},
 	}
 	executor3 := NewOrderExecutor(kraken3, analyzer)
-	cash3 := executor3.refreshUsdBalanceAfterSells(decimal.NewFromFloat(100.0))
+	cash3 := executor3.refreshUsdBalanceAfterSells(d(100.0))
 	if callCount3 != 3 {
 		t.Errorf("Expected 3 calls, got %d", callCount3)
 	}
-	if !cash3.Equal(decimal.NewFromFloat(91.0)) {
+	if !cash3.Equal(d(91.0)) {
 		t.Errorf("Expected 91.0 cash, got %v", cash3)
 	}
 }
@@ -267,20 +261,19 @@ func TestExecuteOrders_MissingPrices(t *testing.T) {
 	executor := NewOrderExecutor(kraken, analyzer)
 
 	buyOrders := map[string]decimal.Decimal{
-		"BTC": decimal.NewFromFloat(10.0),
+		"BTC": d(10.0),
 	}
 	sellOrders := map[string]decimal.Decimal{
-		"LTC": decimal.NewFromFloat(8.0),
+		"LTC": d(8.0),
 	}
 	currentValuesUSD := map[string]decimal.Decimal{
-		"USD": decimal.NewFromFloat(100.0),
+		"USD": d(100.0),
 	}
 
-	// Missing prices (no prices maps matching BTC/LTC)
 	prices := RawPrices{}
 
 	settings := config.Settings{
-		DustThresholdUSD: 1.00,
+		DustThresholdUSD: d(1.00),
 		DryRun:           true,
 	}
 

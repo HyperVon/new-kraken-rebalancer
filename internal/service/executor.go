@@ -2,7 +2,7 @@ package service
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 	"sort"
 	"time"
 
@@ -36,18 +36,10 @@ func (e *OrderExecutor) ExecuteOrders(
 	projectedCash := currentValuesUSD["USD"]
 	executedSells := false
 
-	// Iterate sell orders in sorted key order for deterministic log output and testing
-	var sellSymbols []string
-	for sym := range sellOrders {
-		sellSymbols = append(sellSymbols, sym)
-	}
-	sort.Strings(sellSymbols)
-
-	for _, symbol := range sellSymbols {
+	for _, symbol := range sortedKeys(sellOrders) {
 		usdToSell := sellOrders[symbol]
-		dustThreshold := decimal.NewFromFloat(settings.DustThresholdUSD)
-		if usdToSell.LessThan(dustThreshold) {
-			log.Printf("Skipping dust sell for %s ($ %s)", symbol, usdToSell.Round(2).String())
+		if usdToSell.LessThan(settings.DustThresholdUSD) {
+			slog.Debug("Skipping dust sell", "symbol", symbol, "amount", usdToSell.Round(2))
 			*actionLog = append(*actionLog, fmt.Sprintf("Skipping dust sell for %s ($%s)", symbol, usdToSell.Round(2).String()))
 			continue
 		}
@@ -76,25 +68,21 @@ func (e *OrderExecutor) ExecuteOrders(
 		actualCash = e.refreshUsdBalanceAfterSells(projectedCash)
 	}
 
-	// Iterate buy orders in sorted key order for deterministic log output and testing
-	var buySymbols []string
-	for sym := range buyOrders {
-		buySymbols = append(buySymbols, sym)
-	}
-	sort.Strings(buySymbols)
-
-	for _, symbol := range buySymbols {
+	for _, symbol := range sortedKeys(buyOrders) {
 		originalCost := buyOrders[symbol]
 		cost := originalCost
 
 		if cost.GreaterThan(actualCash) {
-			log.Printf("Warning: Not enough cash to buy %s. Cost: %s, Cash: %s. Reducing.", symbol, cost.Round(2).String(), actualCash.Round(2).String())
+			slog.Warn("Insufficient cash for buy — reducing order",
+				"symbol", symbol,
+				"cost", cost.Round(2),
+				"cash", actualCash.Round(2),
+			)
 			cost = actualCash.Mul(decimal.NewFromFloat(0.99))
 		}
 
-		dustThreshold := decimal.NewFromFloat(settings.DustThresholdUSD)
-		if cost.LessThan(dustThreshold) {
-			log.Printf("Skipping dust buy for %s ($ %s)", symbol, cost.Round(2).String())
+		if cost.LessThan(settings.DustThresholdUSD) {
+			slog.Debug("Skipping dust buy", "symbol", symbol, "amount", cost.Round(2))
 			*actionLog = append(*actionLog, fmt.Sprintf("Skipping dust buy for %s ($%s)", symbol, cost.Round(2).String()))
 			continue
 		}
@@ -119,15 +107,15 @@ func (e *OrderExecutor) ExecuteOrders(
 }
 
 func (e *OrderExecutor) refreshUsdBalanceAfterSells(projectedCash decimal.Decimal) decimal.Decimal {
-	maxAttempts := 3
+	const maxAttempts = 3
 	delayDuration := 250 * time.Millisecond
 	bestCash := projectedCash
 
-	for attempt := 0; attempt < maxAttempts; attempt++ {
+	for attempt := range maxAttempts {
 		time.Sleep(delayDuration)
 		updatedBalances, err := e.krakenService.GetBalances()
 		if err != nil {
-			log.Printf("Warning: Failed to fetch updated USD balance (attempt %d): %v", attempt+1, err)
+			slog.Warn("Failed to fetch updated USD balance", "attempt", attempt+1, "error", err)
 			continue
 		}
 
@@ -135,7 +123,7 @@ func (e *OrderExecutor) refreshUsdBalanceAfterSells(projectedCash decimal.Decima
 			usdBalanceFloat := e.analyzer.ResolveBalance("USD", updatedBalances)
 			if usdBalanceFloat > 0 {
 				bestCash = decimal.NewFromFloat(usdBalanceFloat)
-				log.Printf("Updated USD balance after sells (attempt %d): $%s", attempt+1, bestCash.Round(2).String())
+				slog.Info("Updated USD balance after sells", "attempt", attempt+1, "balance", bestCash.Round(2))
 				threshold := projectedCash.Mul(decimal.NewFromFloat(0.95))
 				if bestCash.GreaterThanOrEqual(threshold) {
 					return bestCash
@@ -144,7 +132,7 @@ func (e *OrderExecutor) refreshUsdBalanceAfterSells(projectedCash decimal.Decima
 		}
 	}
 
-	log.Printf("Warning: Using best observed USD balance after sell refresh: $%s", bestCash.Round(2).String())
+	slog.Warn("Using best observed USD balance after sell refresh", "balance", bestCash.Round(2))
 	return bestCash
 }
 
@@ -176,4 +164,14 @@ func (e *OrderExecutor) logOrderResult(
 		}
 		*actionLog = append(*actionLog, fmt.Sprintf("FAILED %s %s: %s", side, symbol, errMsg))
 	}
+}
+
+// sortedKeys returns the keys of a map in sorted order for deterministic iteration.
+func sortedKeys(m map[string]decimal.Decimal) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }

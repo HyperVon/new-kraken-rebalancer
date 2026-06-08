@@ -74,15 +74,3 @@ type OrderResult struct {
 	Success      bool            `json:"success"`
 	ErrorMessage string          `json:"errorMessage,omitempty"`
 }
-
-// NewOrderResult creates an OrderResult.
-func NewOrderResult(success bool, pair, side string, volume decimal.Decimal, dryRun bool, errMsg string) OrderResult {
-	return OrderResult{
-		Pair:         pair,
-		Side:         side,
-		Volume:       volume,
-		DryRun:       dryRun,
-		Success:      success,
-		ErrorMessage: errMsg,
-	}
-}

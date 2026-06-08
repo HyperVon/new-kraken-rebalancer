@@ -17,14 +17,14 @@ func TestResilienceChaos_BadGateway(t *testing.T) {
 		},
 		Settings: config.Settings{
 			LoopDelaySeconds:        60,
-			DeviationTriggerPercent: 2.0,
-			DustThresholdUSD:        1.0,
+			DeviationTriggerPercent: d(2.0),
+			DustThresholdUSD:        d(1.0),
 			DryRun:                  false,
-			FiatMaxDrawdown:         50.0,
-			FiatDeploymentExponent:  1.0,
+			FiatMaxDrawdown:         d(50.0),
+			FiatDeploymentExponent:  d(1.0),
 		},
 		Allocations: []config.Allocation{
-			{Symbol: "BTC", TargetPercent: 50.0},
+			{Symbol: "BTC", TargetPercent: d(50.0)},
 		},
 	}
 	mockConfigService := &MockConfigService{cfg: appConfig}
@@ -57,14 +57,14 @@ func TestResilienceChaos_NetworkError(t *testing.T) {
 		},
 		Settings: config.Settings{
 			LoopDelaySeconds:        60,
-			DeviationTriggerPercent: 2.0,
-			DustThresholdUSD:        1.0,
+			DeviationTriggerPercent: d(2.0),
+			DustThresholdUSD:        d(1.0),
 			DryRun:                  false,
-			FiatMaxDrawdown:         50.0,
-			FiatDeploymentExponent:  1.0,
+			FiatMaxDrawdown:         d(50.0),
+			FiatDeploymentExponent:  d(1.0),
 		},
 		Allocations: []config.Allocation{
-			{Symbol: "BTC", TargetPercent: 50.0},
+			{Symbol: "BTC", TargetPercent: d(50.0)},
 		},
 	}
 	mockConfigService := &MockConfigService{cfg: appConfig}

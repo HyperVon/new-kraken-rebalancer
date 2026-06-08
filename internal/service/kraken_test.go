@@ -25,7 +25,6 @@ func (m *MockHTTPClient) Do(req *http.Request) (*http.Response, error) {
 	return nil, errors.New("unimplemented mock")
 }
 
-// Helper to make response
 func makeResponse(statusCode int, body string) *http.Response {
 	return &http.Response{
 		StatusCode: statusCode,
@@ -68,7 +67,7 @@ func TestGetBalances_Success(t *testing.T) {
 
 	httpClient := &MockHTTPClient{
 		DoFunc: func(req *http.Request) (*http.Response, error) {
-			if req.Method != "POST" || !strings.Contains(req.URL.Path, "/0/private/Balance") {
+			if req.Method != http.MethodPost || !strings.Contains(req.URL.Path, "/0/private/Balance") {
 				return nil, errors.New("wrong request")
 			}
 			body := `{"error":[],"result":{"ZUSD":1000.5,"XXBT":"0.12345"}}`
@@ -228,7 +227,6 @@ func TestExecuteOrder_DryRun(t *testing.T) {
 	if !res.Success {
 		t.Error("Expected Success to be true")
 	}
-	// Rounded to 8 decimals
 	expectedVol := decimal.NewFromFloat(0.12345679)
 	if !res.Volume.Equal(expectedVol) {
 		t.Errorf("Expected volume %v, got %v", expectedVol, res.Volume)
@@ -247,7 +245,6 @@ func TestExecuteOrder_Live(t *testing.T) {
 	}
 	cfgService := &MockConfigService{cfg: cfg}
 
-	// Success case
 	httpClient := &MockHTTPClient{
 		DoFunc: func(req *http.Request) (*http.Response, error) {
 			body := `{"error":[],"result":{"descr":{"order":"buy 0.12345678 XBTUSD"},"txid":["TXID123"]}}`
@@ -317,7 +314,6 @@ func TestQueryPrivate_Errors(t *testing.T) {
 	cfgServiceValid := &MockConfigService{cfg: cfgValid}
 	httpClientReadFail := &MockHTTPClient{
 		DoFunc: func(req *http.Request) (*http.Response, error) {
-			// A response body that fails to read
 			return &http.Response{
 				StatusCode: http.StatusOK,
 				Body:       io.NopCloser(errReader{}),
@@ -363,10 +359,8 @@ func TestQueryPrivate_NonceRetry(t *testing.T) {
 		DoFunc: func(req *http.Request) (*http.Response, error) {
 			callCount++
 			if callCount == 1 {
-				// Return Invalid Nonce
 				return makeResponse(http.StatusOK, `{"error":["EAPI:Invalid nonce"],"result":null}`), nil
 			}
-			// Success on second try
 			return makeResponse(http.StatusOK, `{"error":[],"result":{"status":"success"}}`), nil
 		},
 	}
@@ -381,7 +375,7 @@ func TestQueryPrivate_NonceRetry(t *testing.T) {
 		t.Errorf("Expected 2 HTTP calls (1 retry), got %d", callCount)
 	}
 
-	resultMap, ok := res.(map[string]interface{})
+	resultMap, ok := res.(map[string]any)
 	if !ok || resultMap["status"] != "success" {
 		t.Errorf("Expected success response, got %v", res)
 	}
@@ -398,7 +392,6 @@ func TestQueryPrivate_NonceRetryFailure(t *testing.T) {
 
 	httpClient := &MockHTTPClient{
 		DoFunc: func(req *http.Request) (*http.Response, error) {
-			// Always return Invalid Nonce
 			return makeResponse(http.StatusOK, `{"error":["EAPI:Invalid nonce"],"result":null}`), nil
 		},
 	}

@@ -2,7 +2,7 @@ package service
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 	"math"
 	"strings"
 
@@ -62,7 +62,7 @@ func (a *PortfolioAnalyzer) FetchPrices() (RawPrices, error) {
 		return make(RawPrices), nil
 	}
 
-	var pairs []string
+	pairs := make([]string, 0, len(nonUsd))
 	for _, alloc := range nonUsd {
 		pairs = append(pairs, alloc.Symbol.TradingPair())
 	}
@@ -72,7 +72,7 @@ func (a *PortfolioAnalyzer) FetchPrices() (RawPrices, error) {
 		return nil, err
 	}
 
-	prices := make(RawPrices)
+	prices := make(RawPrices, len(nonUsd))
 	for _, alloc := range nonUsd {
 		symbol := alloc.Symbol.String()
 		prices[symbol] = a.resolvePriceFromTicker(symbol, rawPrices)
@@ -99,7 +99,7 @@ func (a *PortfolioAnalyzer) resolvePriceFromTicker(symbol string, rawPrices RawP
 
 func (a *PortfolioAnalyzer) CalculatePortfolioValues(balances RawBalances, prices RawPrices) *PortfolioValues {
 	cfg := a.configService.GetConfig()
-	currentValuesUSD := make(map[string]decimal.Decimal)
+	currentValuesUSD := make(map[string]decimal.Decimal, len(cfg.Allocations))
 	totalPortfolioValueUSD := decimal.Zero
 
 	for _, alloc := range cfg.Allocations {
@@ -111,7 +111,7 @@ func (a *PortfolioAnalyzer) CalculatePortfolioValues(balances RawBalances, price
 		if !alloc.Symbol.IsUSD() {
 			priceFloat, exists := prices[symbol]
 			if !exists || priceFloat <= 0 {
-				log.Printf("Price not found or invalid for %s. Aborting rebalance cycle to prevent erroneous trades.", symbol)
+				slog.Warn("Price not found or invalid — aborting cycle to prevent erroneous trades", "symbol", symbol)
 				return nil
 			}
 			priceDec = decimal.NewFromFloat(priceFloat)
@@ -152,19 +152,19 @@ func (a *PortfolioAnalyzer) ResolveBalance(symbol string, balances RawBalances) 
 func (a *PortfolioAnalyzer) UpdateAthAndCalculateDrawdown(totalPortfolioValueUSD decimal.Decimal) decimal.Decimal {
 	stats, err := a.statsRepository.Load()
 	if err != nil {
-		log.Printf("Warning: failed to load stats: %v", err)
+		slog.Warn("Failed to load stats", "error", err)
 	}
 
 	ath := stats.AllTimeHigh
 
 	if ath.IsZero() || totalPortfolioValueUSD.GreaterThan(ath) {
 		ath = totalPortfolioValueUSD
-		log.Printf("All-Time High updated: %s", ath.Round(2).String())
+		slog.Info("All-Time High updated", "ath", ath.Round(2))
 	}
 
 	stats.AllTimeHigh = ath
 	if err := a.statsRepository.Save(stats); err != nil {
-		log.Printf("Failed to persist portfolio ATH: %v", err)
+		slog.Error("Failed to persist portfolio ATH", "error", err)
 	}
 
 	if ath.GreaterThan(decimal.Zero) && totalPortfolioValueUSD.LessThan(ath) {
@@ -175,18 +175,18 @@ func (a *PortfolioAnalyzer) UpdateAthAndCalculateDrawdown(totalPortfolioValueUSD
 }
 
 func (a *PortfolioAnalyzer) CalculateFiatDeployment(drawdownPct decimal.Decimal, settings config.Settings) decimal.Decimal {
-	if settings.FiatMaxDrawdown <= 0.0 {
+	if settings.FiatMaxDrawdown.LessThanOrEqual(decimal.Zero) {
 		return decimal.Zero
 	}
 
-	maxDD := decimal.NewFromFloat(settings.FiatMaxDrawdown)
-	ratio := drawdownPct.DivRound(maxDD, 4)
+	ratio := drawdownPct.DivRound(settings.FiatMaxDrawdown, 4)
 	if ratio.GreaterThan(decimal.NewFromInt(1)) {
 		ratio = decimal.NewFromInt(1)
 	}
 
 	ratioFloat, _ := ratio.Float64()
-	deployDouble := math.Pow(ratioFloat, settings.FiatDeploymentExponent) * 100.0
+	exponent, _ := settings.FiatDeploymentExponent.Float64()
+	deployDouble := math.Pow(ratioFloat, exponent) * 100.0
 	return decimal.NewFromFloat(deployDouble)
 }
 
@@ -195,7 +195,7 @@ func (a *PortfolioAnalyzer) CalculateEffectiveUsdTarget(fiatDeploymentPct decima
 	baseUsdTarget := decimal.Zero
 	for _, alloc := range cfg.Allocations {
 		if alloc.Symbol.IsUSD() {
-			baseUsdTarget = baseUsdTarget.Add(decimal.NewFromFloat(alloc.TargetPercent))
+			baseUsdTarget = baseUsdTarget.Add(alloc.TargetPercent)
 		}
 	}
 
@@ -211,7 +211,7 @@ func (a *PortfolioAnalyzer) CalculateCryptoScaleFactor(effectiveUsdTarget decima
 	totalNonUsdTarget := decimal.Zero
 	for _, alloc := range cfg.Allocations {
 		if !alloc.Symbol.IsUSD() {
-			totalNonUsdTarget = totalNonUsdTarget.Add(decimal.NewFromFloat(alloc.TargetPercent))
+			totalNonUsdTarget = totalNonUsdTarget.Add(alloc.TargetPercent)
 		}
 	}
 
@@ -240,7 +240,7 @@ func (a *PortfolioAnalyzer) AnalyzeDeviations(
 
 	for _, alloc := range cfg.Allocations {
 		symbolVal := alloc.Symbol.String()
-		targetPct := decimal.NewFromFloat(alloc.TargetPercent)
+		targetPct := alloc.TargetPercent
 
 		if alloc.Symbol.IsUSD() {
 			targetPct = effectiveUsdTarget
@@ -263,37 +263,36 @@ func (a *PortfolioAnalyzer) AnalyzeDeviations(
 
 		allDeviations[symbolVal] = deviationUSD
 
-		log.Printf("Analysis [%s]: Dev: %s%% ($ %s). Threshold: %.2f%%",
-			symbolVal,
-			deviationPct.Round(2).String(),
-			deviationUSD.Round(2).String(),
-			settings.DeviationTriggerPercent,
+		slog.Debug("Asset analysis",
+			"symbol", symbolVal,
+			"deviationPct", deviationPct.Round(2),
+			"deviationUSD", deviationUSD.Round(2),
+			"threshold", settings.DeviationTriggerPercent,
 		)
 
-		isDeviationSignificant := deviationUSD.Abs().GreaterThanOrEqual(decimal.NewFromFloat(settings.DustThresholdUSD))
+		isDeviationSignificant := deviationUSD.Abs().GreaterThanOrEqual(settings.DustThresholdUSD)
 
-		triggerVal := decimal.NewFromFloat(settings.DeviationTriggerPercent)
-		if deviationPct.GreaterThanOrEqual(triggerVal) && isDeviationSignificant {
+		if deviationPct.GreaterThanOrEqual(settings.DeviationTriggerPercent) && isDeviationSignificant {
 			actionLog = append(actionLog, fmt.Sprintf("Deviation Triggered details: %s Dev: %s%%", symbolVal, deviationPct.Round(2).String()))
 		}
 
 		if alloc.Symbol.IsUSD() {
-			if deviationPct.GreaterThanOrEqual(triggerVal) && isDeviationSignificant {
-				log.Printf("Asset USD Deviation: %s%% (Trigger: %.2f%%). USD Dev: %s",
-					deviationPct.Round(2).String(),
-					settings.DeviationTriggerPercent,
-					deviationUSD.Round(2).String(),
+			if deviationPct.GreaterThanOrEqual(settings.DeviationTriggerPercent) && isDeviationSignificant {
+				slog.Info("USD deviation triggered",
+					"deviationPct", deviationPct.Round(2),
+					"threshold", settings.DeviationTriggerPercent,
+					"deviationUSD", deviationUSD.Round(2),
 				)
 				usdTriggered = true
 				usdDeviationAmount = deviationUSD
 			}
 		} else {
-			if deviationPct.GreaterThanOrEqual(triggerVal) && isDeviationSignificant {
-				log.Printf("Asset %s Deviation: %s%% (Trigger: %.2f%%). USD Dev: %s",
-					symbolVal,
-					deviationPct.Round(2).String(),
-					settings.DeviationTriggerPercent,
-					deviationUSD.Round(2).String(),
+			if deviationPct.GreaterThanOrEqual(settings.DeviationTriggerPercent) && isDeviationSignificant {
+				slog.Info("Asset deviation triggered",
+					"symbol", symbolVal,
+					"deviationPct", deviationPct.Round(2),
+					"threshold", settings.DeviationTriggerPercent,
+					"deviationUSD", deviationUSD.Round(2),
 				)
 
 				if deviationUSD.GreaterThan(decimal.Zero) {
@@ -306,7 +305,7 @@ func (a *PortfolioAnalyzer) AnalyzeDeviations(
 	}
 
 	if len(buyOrders) == 0 && len(sellOrders) == 0 && usdTriggered {
-		log.Println("USD Deviation triggered but no individual asset triggers. Enforcing fiat correction.")
+		slog.Info("USD deviation triggered with no individual asset triggers — enforcing fiat correction")
 		actionLog = append(actionLog, "USD Deviation Triggered. Enforcing fiat correction.")
 		a.distributeFiatCorrection(usdDeviationAmount, allDeviations, buyOrders, sellOrders, &actionLog)
 	}
@@ -345,14 +344,14 @@ func (a *PortfolioAnalyzer) distributeFiatCorrection(
 	}
 
 	if totalCounterDev.IsZero() {
-		log.Println("Fiat correction required but no suitable counter-balancing assets found.")
+		slog.Warn("Fiat correction required but no suitable counter-balancing assets found")
 		return
 	}
 
-	log.Printf("Distributing Fiat Correction ($%s) among %d candidates. Total Counter-Dev: $%s",
-		deviationAbs.Round(2).String(),
-		len(candidates),
-		totalCounterDev.Round(2).String(),
+	slog.Info("Distributing fiat correction",
+		"amount", deviationAbs.Round(2),
+		"candidates", len(candidates),
+		"totalCounterDev", totalCounterDev.Round(2),
 	)
 	*actionLog = append(*actionLog, fmt.Sprintf("Distributing Fiat Correction ($%s) among %d candidates.",
 		deviationAbs.Round(2).String(),

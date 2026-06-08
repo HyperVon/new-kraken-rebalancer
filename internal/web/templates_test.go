@@ -36,7 +36,7 @@ func TestTemplateFuncs(t *testing.T) {
 	}
 
 	// 3. percent function
-	percentFunc := FuncMap["percent"].(func(interface{}) string)
+	percentFunc := FuncMap["percent"].(func(any) string)
 	p1 := percentFunc(decimal.NewFromFloat(12.3456))
 	if p1 != "12.35" {
 		t.Errorf("Expected 12.35, got %s", p1)

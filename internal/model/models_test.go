@@ -40,9 +40,16 @@ func TestAssetMethods(t *testing.T) {
 	}
 }
 
-func TestNewOrderResult(t *testing.T) {
+func TestOrderResult(t *testing.T) {
 	vol := decimal.NewFromFloat(1.23)
-	res := NewOrderResult(true, "XBTUSD", "buy", vol, true, "some error")
+	res := OrderResult{
+		Success:      true,
+		Pair:         "XBTUSD",
+		Side:         "buy",
+		Volume:       vol,
+		DryRun:       true,
+		ErrorMessage: "some error",
+	}
 
 	if res.Pair != "XBTUSD" {
 		t.Errorf("Expected Pair XBTUSD, got %s", res.Pair)

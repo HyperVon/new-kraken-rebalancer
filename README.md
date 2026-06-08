@@ -210,11 +210,11 @@ Open your browser to **http://localhost:8080**. The dashboard is served directly
 | Field                     | Type      | Default | Description                                                                           |
 |---------------------------|-----------|---------|---------------------------------------------------------------------------------------|
 | `loopDelaySeconds`        | `int64`   | `60`    | Seconds between rebalance cycles                                                      |
-| `deviationTriggerPercent` | `float64` | `5.0`   | Minimum deviation % to trigger a trade                                                |
-| `dustThresholdUSD`        | `float64` | `5.0`   | Minimum trade value in USD (below this is skipped)                                    |
+| `deviationTriggerPercent` | `decimal` | `5.0`   | Minimum deviation % to trigger a trade                                                |
+| `dustThresholdUSD`        | `decimal` | `5.0`   | Minimum trade value in USD (below this is skipped)                                    |
 | `dryRun`                  | `bool`    | `true`  | If true, logs intended trades without executing them                                  |
-| `fiatMaxDrawdown`         | `float64` | `0.0`   | Portfolio drawdown % at which 100% of USD is deployed (0 = disabled)                  |
-| `fiatDeploymentExponent`  | `float64` | `1.0`   | Controls deployment curve: `1.0` = linear, `<1.0` = aggressive, `>1.0` = conservative |
+| `fiatMaxDrawdown`         | `decimal` | `0.0`   | Portfolio drawdown % at which 100% of USD is deployed (0 = disabled)                  |
+| `fiatDeploymentExponent`  | `decimal` | `1.0`   | Controls deployment curve: `1.0` = linear, `<1.0` = aggressive, `>1.0` = conservative |
 
 ---
 
@@ -227,6 +227,7 @@ By default, the rebalancer binary looks for its config and state files in the cu
 | `-config` | Path to the configuration JSON file | `rebalancer-config.json` |
 | `-history` | Path to the trade history JSON file | `trade-history.json` |
 | `-stats` | Path to the portfolio stats ATH JSON file | `portfolio-stats.json` |
+| `-loglevel` | Log level (debug, info, warn, error) | `info` |
 
 For example, to run the rebalancer with external configs in `/etc` and state files in `/var/lib`:
 

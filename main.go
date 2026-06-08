@@ -4,10 +4,11 @@ import (
 	"context"
 	"errors"
 	"flag"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -17,19 +18,38 @@ import (
 	"github.com/HyperVon/new-kraken-rebalancer/internal/web"
 )
 
-func main() {
-	log.Println("Starting Kraken Rebalancer Application...")
+const defaultPort = ":8080"
 
+func main() {
 	// Define command-line flags
 	configFilePath := flag.String("config", "rebalancer-config.json", "Path to the configuration JSON file")
 	historyFilePath := flag.String("history", "trade-history.json", "Path to the trade history JSON file")
 	statsFilePath := flag.String("stats", "portfolio-stats.json", "Path to the portfolio stats ATH JSON file")
+	logLevelStr := flag.String("loglevel", "info", "Log level (debug, info, warn, error)")
 	flag.Parse()
+
+	// Initialize slog
+	var level slog.Level
+	switch strings.ToLower(*logLevelStr) {
+	case "debug":
+		level = slog.LevelDebug
+	case "warn":
+		level = slog.LevelWarn
+	case "error":
+		level = slog.LevelError
+	default:
+		level = slog.LevelInfo
+	}
+	h := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level})
+	slog.SetDefault(slog.New(h))
+
+	slog.Info("Starting Kraken Rebalancer Application...")
 
 	// Initialize configuration
 	configService, err := config.NewFileConfigService(*configFilePath)
 	if err != nil {
-		log.Fatalf("Critical error initializing config service: %v", err)
+		slog.Error("Critical error initializing config service", "error", err)
+		os.Exit(1)
 	}
 
 	// Initialize repositories
@@ -39,7 +59,8 @@ func main() {
 	// Initialize services
 	tradeHistoryService := service.NewTradeHistoryServiceImpl(tradeRepo)
 	if err := tradeHistoryService.Init(); err != nil {
-		log.Fatalf("Critical error loading trade history: %v", err)
+		slog.Error("Critical error loading trade history", "error", err)
+		os.Exit(1)
 	}
 
 	krakenService := service.NewKrakenServiceImpl(configService, nil)
@@ -62,7 +83,7 @@ func main() {
 	web.RegisterHandlers(mux, configService, tradeHistoryService)
 
 	server := &http.Server{
-		Addr:    ":8080",
+		Addr:    defaultPort,
 		Handler: mux,
 	}
 
@@ -73,7 +94,7 @@ func main() {
 		signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 		<-sigChan
 
-		log.Println("Shutdown signal received. Stopping services...")
+		slog.Info("Shutdown signal received. Stopping services...")
 
 		// Stop rebalancing loop and cancel context
 		portfolioManager.StopRebalancingLoop()
@@ -84,19 +105,20 @@ func main() {
 		defer cancelShutdown()
 
 		if err := server.Shutdown(shutdownCtx); err != nil {
-			log.Printf("HTTP server shutdown error: %v", err)
+			slog.Error("HTTP server shutdown error", "error", err)
 		} else {
-			log.Println("HTTP server stopped gracefully.")
+			slog.Info("HTTP server stopped gracefully.")
 		}
 
 		close(shutdownDone)
 	}()
 
-	log.Println("Web server starting on port 8080...")
+	slog.Info("Web server starting...", "port", defaultPort)
 	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		log.Fatalf("HTTP server failed: %v", err)
+		slog.Error("HTTP server failed", "error", err)
+		os.Exit(1)
 	}
 
 	<-shutdownDone
-	log.Println("Kraken Rebalancer Application cleanly terminated.")
+	slog.Info("Kraken Rebalancer Application cleanly terminated.")
 }
