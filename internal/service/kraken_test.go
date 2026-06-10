@@ -130,6 +130,12 @@ func TestGetBalances_Errors(t *testing.T) {
 func TestGetTickerPrices_Success(t *testing.T) {
 	httpClient := &MockHTTPClient{
 		DoFunc: func(req *http.Request) (*http.Response, error) {
+			if req.URL.Path != "/0/public/Ticker" {
+				t.Errorf("Expected URL path /0/public/Ticker, got %q", req.URL.Path)
+			}
+			if pairVal := req.URL.Query().Get("pair"); pairVal != "XXBTZUSD,XETHZUSD" {
+				t.Errorf("Expected pair parameter 'XXBTZUSD,XETHZUSD', got %q", pairVal)
+			}
 			body := `{
 				"error": [],
 				"result": {

@@ -174,14 +174,12 @@ func (s *KrakenServiceImpl) ExecuteOrder(pair, orderType, side string, volume de
 }
 
 func (s *KrakenServiceImpl) queryPublic(path string) ([]byte, error) {
-	resp, err := s.client.Do(&http.Request{
-		Method: http.MethodGet,
-		URL: &url.URL{
-			Scheme: "https",
-			Host:   "api.kraken.com",
-			Path:   path,
-		},
-	})
+	reqURL := s.apiURL + path
+	req, err := http.NewRequest(http.MethodGet, reqURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create public request: %w", err)
+	}
+	resp, err := s.client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed public API connection: %w", err)
 	}
