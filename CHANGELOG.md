@@ -8,6 +8,19 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [5.0.0] - 2026-06-17
+
+### Added
+
+- **Full Stack TypeScript Rewrite**: Completely rewrote the Kraken Portfolio Rebalancer from Kotlin/Ktor/HTMX to TypeScript/Express (Backend) and React/Vite (Frontend).
+- **Yarn Workspaces Monorepo**: Configured the project as a clean monorepo with `backend/` and `frontend/` workspaces, managed via Yarn commands from the root directory.
+- **Asynchronous Event Loop Engine**: Ported Ktor coroutine schedules to a Node.js-native asynchronous manager run loop utilizing event loops and timeouts.
+- **Express-Based SSE Stream**: Ported Kotlin SharedFlow status broadcast system to a Node `EventEmitter` and Express Server-Sent Events (SSE) stream.
+- **React SPA Dashboard**: Reworked frontend to a modern React single page application with clientside state management and real-time SSE event syncing.
+- **Premium Glassmorphism Styling**: Retained and polished the dark glassmorphism styling, horizontal allocation charts, and table layout structures.
+- **High Precision Math**: Integrated `decimal.js` across the calculation and execution layers to ensure exact precision arithmetic and avoid floating-point rounding errors.
+- **Automated Testing Suite (Vitest)**: Implemented 96 unit and integration test cases (84 backend, 12 frontend) using Vitest and React Testing Library, achieving full behavioral and code validation.
+
 ## [4.0.1] - 2026-06-07
 
 ### Changed

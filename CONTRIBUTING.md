@@ -8,11 +8,10 @@ improve reliability, safety, and functionality are very welcome.
 
 ### Prerequisites
 
-- JDK 21+
-- Gradle (the `./gradlew` wrapper is included — no separate installation
-  required)
+- Node.js (v18 or higher)
+- Yarn (v1.x)
 - A Kraken account (for testing with real API — use **dry-run mode**)
-- Basic familiarity with Kotlin, Ktor, Koin, and kotlinx.html
+- Basic familiarity with TypeScript, React, Express, and Node.js
 
 ### Local Setup
 
@@ -30,7 +29,8 @@ improve reliability, safety, and functionality are very welcome.
 
 3. **Build the project:**
    ```bash
-   ./gradlew build -x test
+   yarn install
+   yarn build
    ```
 
 4. **Run in dry-run mode** before enabling live trading:
@@ -60,24 +60,19 @@ first
    git checkout -b feature/your-feature-name
    ```
 2. Make your changes, keeping commits focused and descriptive
-3. Ensure existing tests pass: `./gradlew test` (requires a valid
-   `rebalancer-config.json`)
+3. Ensure existing tests pass: `yarn test`
 4. Open a pull request against `main` with a clear description of what and why
 
 ## Code Guidelines
 
-- **Language:** Kotlin for all development; server-side HTML (kotlinx.html DSL)
-  for the frontend
-- **Style:** Follow existing code formatting conventions; use idiomatic Kotlin (
-  data classes, coroutines, extension functions)
+- **Language:** TypeScript for both backend and frontend development; React for the frontend
+- **Style:** Follow existing code formatting conventions; use type-safe TypeScript constructs
 - **Safety first:** Any change touching order execution must be tested with
   `dryRun: true`
 - **No credentials:** Never include API keys, secrets, or real account data in
   commits
 - **Tests:** Add or update tests for any non-trivial logic changes. The project
-  enforces **95%+ coverage** via JaCoCo.
-- **Coroutines:** Any method interacting with `KrakenService` must be a
-  `suspend` function and tested with `runTest`
+  enforces automated test coverage via Vitest.
 
 ## Areas Where Help is Welcome
 

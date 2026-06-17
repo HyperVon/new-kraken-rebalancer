@@ -1,0 +1,19 @@
+{
+  "name": "kraken-rebalancer-monorepo",
+  "private": true,
+  "workspaces": [
+    "backend",
+    "frontend"
+  ],
+  "scripts": {
+    "dev": "concurrently \"yarn workspace backend dev\" \"yarn workspace frontend dev\"",
+    "build:frontend": "yarn workspace frontend build",
+    "build:backend": "yarn workspace backend build",
+    "build": "yarn build:backend && yarn build:frontend",
+    "start": "yarn workspace backend start",
+    "test": "yarn workspace backend test && yarn workspace frontend test"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}

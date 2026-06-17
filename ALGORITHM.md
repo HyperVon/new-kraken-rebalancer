@@ -75,11 +75,11 @@ e.g., every 60 seconds). Each cycle consists of three phases: **Snapshot**, *
 
 To maintain the Single Responsibility Principle (SRP) and keep domain logic highly testable, the core engine is decoupled into specific implementation (`impl`) classes:
 
-*   **`PortfolioManagerImpl` (The Orchestrator)**: Manages the continuous coroutine loop. It acts as a lightweight facade that delegates the actual domain logic to the analyzer and executor, and coordinates the final persistence of the snapshot.
+*   **`PortfolioManagerImpl` (The Orchestrator)**: Manages the continuous asynchronous loop. It acts as a lightweight facade that delegates the actual domain logic to the analyzer and executor, and coordinates the final persistence of the snapshot.
 *   **`PortfolioAnalyzer` (The Brain)**: Responsible for Phase 1 and 2. It resolves prices, tracks the All-Time High (ATH), calculates dynamic fiat deployment ratios, computes deviations, and determines the exact `BUY`/`SELL` amounts required.
 *   **`OrderExecutor` (The Brawn)**: Responsible for Phase 3. It takes the calculated orders and safely executes them against the Kraken API. It manages the strict sell-before-buy sequence, projected vs. actual cash tracking, and dust-threshold filtering.
 *   **Persistence Impls (`FileTradeRepositoryImpl`, `PortfolioStatsRepositoryImpl`, `ConfigServiceImpl`)**: Handle data storage using atomic write-then-rename file operations (`AtomicJsonFile`) to prevent data corruption during crashes.
-*   **`TradeHistoryServiceImpl`**: Maintains a reactive `MutableSharedFlow` that broadcasts portfolio snapshots to the Ktor Server-Sent Events (SSE) stream in real-time.
+*   **`TradeHistoryServiceImpl`**: Maintains an `EventEmitter` that broadcasts portfolio snapshots to the Server-Sent Events (SSE) stream in real-time.
 
 ---
 
@@ -184,7 +184,7 @@ failure.
     * Orders are placed as **Market Orders** for immediate execution.
     * "Dust" orders (below the configured `dustThresholdUSD`) are skipped to
       avoid API errors.
-    * Order volumes use `BigDecimal` with 8 decimal places of precision.
+    * Order volumes use `decimal.js` with 8 decimal places of precision.
     * In dry-run mode, orders are logged with a `[DRY RUN]` prefix but not sent
       to Kraken.
 5. **Persistence**: The cycle snapshot (including all trade actions and their
