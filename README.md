@@ -23,7 +23,7 @@ several months.**
 | **Concurrency** | NestJS Dependency Injection, Loop lifecycle managers                                                 |
 | **Frontend**    | React SPA (Vite), Tailwind CSS v4, HTML5, CSS3, Server-Sent Events (SSE)                             |
 | **API**         | Kraken REST API with HMAC-SHA512 authentication                                                      |
-| **Testing**     | Vitest, Testing Library React, Supertest (100% test coverage)                                        |
+| **Testing**     | Vitest, Testing Library React (100% test coverage)                                                  |
 | **Build/Repo**  | Yarn Workspaces (Monorepo)                                                                           |
 
 ---
