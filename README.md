@@ -19,7 +19,7 @@ several months.**
 |-----------------|------------------------------------------------------------------------------------------------------|
 | **Language**    | TypeScript (both Backend and Frontend)                                                               |
 | **Backend**     | Node.js, NestJS                                                                                      |
-| **HTTP Client** | Axios (with Kraken HMAC-SHA512 private API signing)                                                  |
+| **HTTP Client** | Node.js Native Fetch (with Kraken HMAC-SHA512 private API signing)                                   |
 | **Concurrency** | NestJS Dependency Injection, Loop lifecycle managers                                                 |
 | **Frontend**    | React SPA (Vite), Tailwind CSS v4, HTML5, CSS3, Server-Sent Events (SSE)                             |
 | **API**         | Kraken REST API with HMAC-SHA512 authentication                                                      |
