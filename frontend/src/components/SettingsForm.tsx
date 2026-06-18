@@ -91,29 +91,44 @@ export const SettingsForm: React.FC<SettingsFormProps> = ({
 
   return (
     <form onSubmit={handleSubmit}>
-      <header>
-        <div className="header-title-section">
-          <button type="button" className="btn btn-secondary btn-icon" onClick={onBack}>
-            <BackArrowIcon />
+      <header className="app-header">
+        <div className="header-brand-back">
+          <button 
+            type="button" 
+            className="btn-icon" 
+            onClick={onBack}
+          >
+            <BackArrowIcon size={18} />
           </button>
-          <h1>SETTINGS</h1>
+          <h1 className="header-logo">
+            Settings
+          </h1>
         </div>
-        <button type="submit" className="btn btn-primary" id="save-button" disabled={!isValid || isSaving}>
-          <FloppyDiskIcon />
+        <button 
+          type="submit" 
+          className="btn-primary" 
+          id="save-button" 
+          disabled={!isValid || isSaving}
+        >
+          <FloppyDiskIcon size={18} />
           <span>{isSaving ? 'Saving...' : 'Save Configuration'}</span>
         </button>
       </header>
 
-      {error && <div className="error-banner">{error}</div>}
+      {error && (
+        <div className="error-box">
+          {error}
+        </div>
+      )}
 
-      <div className="glass-panel">
+      <div className="glass-card">
         {/* Global parameters */}
-        <div className="form-section">
-          <div className="form-section-title">
-            <ShieldExclamationIcon />
+        <div className="settings-section">
+          <div className="card-title">
+            <ShieldExclamationIcon size={18} />
             GLOBAL PARAMETERS
           </div>
-          <div className="grid-2col">
+          <div className="settings-grid">
             <div className="form-group">
               <label className="form-label">Loop Interval (Seconds)</label>
               <input
@@ -174,54 +189,64 @@ export const SettingsForm: React.FC<SettingsFormProps> = ({
               />
             </div>
 
-            <div className="form-group form-group-centered">
-              <label className="checkbox-container">
-                <input
-                  type="checkbox"
-                  checked={settings.dryRun}
-                  onChange={e => handleSettingChange('dryRun', e.target.checked)}
-                />
-                <div className="checkbox-custom"></div>
-                <span>Dry Run Mode</span>
+            <div className="form-group-checkbox">
+              <label className="toggle-label">
+                <div className="toggle-wrapper">
+                  <input
+                    type="checkbox"
+                    className="sr-only peer"
+                    checked={settings.dryRun}
+                    onChange={e => handleSettingChange('dryRun', e.target.checked)}
+                  />
+                  <div className="toggle-bg"></div>
+                  <div className="toggle-knob"></div>
+                </div>
+                <span className="toggle-text">Dry Run Mode</span>
               </label>
             </div>
           </div>
         </div>
 
         {/* Target allocations */}
-        <div className="form-section">
-          <div className="section-header">
-            <h3>TARGET ALLOCATIONS</h3>
-            <div className={`status-badge ${isValid ? 'live' : 'delayed'}`} id="total-allocated-display">
+        <div>
+          <div className="settings-allocations-header">
+            <h3 className="settings-allocations-title">TARGET ALLOCATIONS</h3>
+            <div className={`allocation-badge ${
+              isValid ? 'allocation-badge-valid' : 'allocation-badge-invalid'
+            }`} id="total-allocated-display">
               Total: {totalPercent.toFixed(2)}%
             </div>
           </div>
 
-          <div className="allocation-list-container" id="allocations-container">
+          <div className="allocations-list-grid" id="allocations-container">
             {allocations.map((alloc, idx) => (
               <div key={alloc.symbol} className="allocation-edit-row">
-                <div className="allocation-edit-symbol">{alloc.symbol}</div>
-                <div className="allocation-edit-input-wrapper">
+                <div className="allocation-symbol">{alloc.symbol}</div>
+                <div className="allocation-input-wrapper">
                   <input
                     type="number"
                     step="0.1"
-                    className="input-glass"
+                    className="allocation-input"
                     value={alloc.targetPercent}
                     onChange={e => handleAllocationPercentChange(idx, e.target.value)}
                   />
-                  <span className="percent-suffix">%</span>
+                  <span className="allocation-percent-label">%</span>
                 </div>
-                <button type="button" className="btn btn-danger" onClick={() => handleRemoveAllocation(idx)}>
+                <button 
+                  type="button" 
+                  className="btn-remove" 
+                  onClick={() => handleRemoveAllocation(idx)}
+                >
                   Remove
                 </button>
               </div>
             ))}
           </div>
 
-          <div className="add-asset-box">
+          <div className="dashed-box">
             <input
               type="text"
-              className="input-glass"
+              className="add-asset-input"
               placeholder="BTC, ETH, etc..."
               value={newSymbol}
               onChange={e => setNewSymbol(e.target.value)}
@@ -232,8 +257,12 @@ export const SettingsForm: React.FC<SettingsFormProps> = ({
                 }
               }}
             />
-            <button type="button" className="btn btn-secondary" onClick={handleAddAsset}>
-              <PlusIcon />
+            <button 
+              type="button" 
+              className="btn-add-asset" 
+              onClick={handleAddAsset}
+            >
+              <PlusIcon size={16} />
               <span>Add Asset</span>
             </button>
           </div>

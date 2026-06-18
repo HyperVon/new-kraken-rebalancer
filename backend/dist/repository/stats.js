@@ -15,6 +15,12 @@ var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (
 }) : function(o, v) {
     o["default"] = v;
 });
+var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
+    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
+    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
+    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
+    return c > 3 && r && Object.defineProperty(target, key, r), r;
+};
 var __importStar = (this && this.__importStar) || (function () {
     var ownKeys = function(o) {
         ownKeys = Object.getOwnPropertyNames || function (o) {
@@ -32,12 +38,19 @@ var __importStar = (this && this.__importStar) || (function () {
         return result;
     };
 })();
+var __metadata = (this && this.__metadata) || function (k, v) {
+    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
+};
+var __param = (this && this.__param) || function (paramIndex, decorator) {
+    return function (target, key) { decorator(target, key, paramIndex); }
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.PortfolioStatsRepository = void 0;
 const fs = __importStar(require("fs"));
 const decimal_js_1 = require("decimal.js");
 const atomicFile_1 = require("./atomicFile");
-class PortfolioStatsRepository {
+const common_1 = require("@nestjs/common");
+let PortfolioStatsRepository = class PortfolioStatsRepository {
     filePath;
     constructor(filePath = 'portfolio-stats.json') {
         this.filePath = filePath;
@@ -59,5 +72,10 @@ class PortfolioStatsRepository {
     save(stats) {
         atomicFile_1.AtomicJsonFile.writeSync(this.filePath, stats);
     }
-}
+};
 exports.PortfolioStatsRepository = PortfolioStatsRepository;
+exports.PortfolioStatsRepository = PortfolioStatsRepository = __decorate([
+    (0, common_1.Injectable)(),
+    __param(0, (0, common_1.Optional)()),
+    __metadata("design:paramtypes", [String])
+], PortfolioStatsRepository);

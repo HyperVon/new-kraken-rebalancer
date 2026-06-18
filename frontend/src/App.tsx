@@ -5,7 +5,7 @@ import { AllocationChart } from './components/AllocationChart';
 import { PerformanceTable } from './components/PerformanceTable';
 import { RecentActivity } from './components/RecentActivity';
 import { SettingsForm } from './components/SettingsForm';
-import './style.css';
+import './index.css';
 
 interface AssetSnapshot {
   symbol: string;
@@ -169,7 +169,7 @@ export const App: React.FC = () => {
 
   if (view === 'settings' && config) {
     return (
-      <div className="container">
+      <div className="settings-container">
         <SettingsForm
           initialSettings={config.settings}
           initialAllocations={config.allocations}
@@ -183,10 +183,10 @@ export const App: React.FC = () => {
 
   if (!latestSnapshot) {
     return (
-      <div className="container">
+      <div className="main-container">
         <div className="spinner-container">
           <div className="spinner"></div>
-          <p>Connecting to portfolio stream...</p>
+          <p className="loading-text">Connecting to portfolio stream...</p>
         </div>
       </div>
     );
@@ -196,23 +196,36 @@ export const App: React.FC = () => {
   const localTimeStr = new Date(latestSnapshot.timestamp).toLocaleTimeString();
 
   return (
-    <div className="container">
-      <header>
-        <div className="header-title-section">
-          <h1>Kraken Portfolio Rebalancer</h1>
-          <div className={`status-badge ${isStale ? 'delayed' : 'live'}`}>
+    <div className="main-container">
+      {/* Decorative Blur Glow Blobs */}
+      <div className="background-blobs">
+        <div className="blob-blue"></div>
+        <div className="blob-emerald"></div>
+      </div>
+
+      <header className="app-header">
+        <div className="header-brand">
+          <h1 className="header-logo">
+            Kraken Portfolio Rebalancer
+          </h1>
+          <div className={isStale ? 'badge-delayed' : 'badge-live'}>
             {isStale ? 'DELAYED' : 'LIVE'}
           </div>
         </div>
 
         <div className="header-actions">
-          <div className="data-age-container">
-            <div className="data-age-label">DATA AGE</div>
-            <div className={`data-age-value ${isStale ? 'stale' : ''}`}>{timeSinceUpdate}s ago</div>
-            <div className="data-age-time">{localTimeStr}</div>
+          <div className="header-meta">
+            <div className="header-meta-label">DATA AGE</div>
+            <div className={isStale ? 'header-meta-value-stale' : 'header-meta-value'}>
+              {timeSinceUpdate}s ago
+            </div>
+            <div className="header-meta-sub">{localTimeStr}</div>
           </div>
-          <button className="btn btn-secondary" onClick={() => navigateTo('settings')}>
-            <CogIcon />
+          <button 
+            className="btn-secondary" 
+            onClick={() => navigateTo('settings')}
+          >
+            <CogIcon size={18} />
             <span>Settings</span>
           </button>
         </div>
@@ -220,7 +233,7 @@ export const App: React.FC = () => {
 
       <OverviewGrid latest={latestSnapshot} />
 
-      <div className="detail-grid">
+      <div className="dashboard-grid-2">
         <AllocationChart latest={latestSnapshot} />
         <PerformanceTable latest={latestSnapshot} />
       </div>

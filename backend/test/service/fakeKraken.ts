@@ -1,6 +1,6 @@
 import { Decimal } from 'decimal.js';
 import { KrakenService, IKrakenService } from '../../src/service/kraken';
-import { OrderResult, createOrderResult } from '../../src/model/order';
+import { OrderResult } from '../../src/model/order';
 
 export interface OrderCall {
   pair: string;
@@ -40,6 +40,12 @@ export class FakeKrakenService implements IKrakenService {
     if (this.orderResultFactory) {
       return this.orderResultFactory(pair, type, side, volume);
     }
-    return createOrderResult(true, pair, side, volume);
+    return {
+      success: true,
+      pair,
+      side,
+      volume,
+      dryRun: false
+    };
   }
 }

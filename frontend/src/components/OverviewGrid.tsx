@@ -63,62 +63,71 @@ export const OverviewGrid: React.FC<OverviewGridProps> = ({ latest }) => {
   return (
     <div className="overview-grid">
       {/* Portfolio Card */}
-      <div className="glass-panel status-card">
-        <div className="status-card-header">
-          <div className="status-card-title">TOTAL PORTFOLIO</div>
-          <div className="status-card-icon">
-            <TrendUpIcon />
+      <div className="card-portfolio">
+        <div className="card-header">
+          <div className="card-header-title">TOTAL PORTFOLIO</div>
+          <div className="card-icon-blue">
+            <TrendUpIcon size={18} />
           </div>
         </div>
-        <div className="status-card-value">${formatCurrency(totalValue)}</div>
-        <div className="status-card-sub">
-          <span className={latest.drawdownPercent > 0 ? 'text-danger' : ''}>
+        <div className="card-value-primary">
+          ${formatCurrency(totalValue)}
+        </div>
+        <div className="card-footer">
+          <span className="card-footer-label">Peak Tracker</span>
+          <span className={latest.drawdownPercent > 0 ? 'drawdown-active' : 'drawdown-normal'}>
             Drawdown: {formatPercent(latest.drawdownPercent)}%
           </span>
         </div>
       </div>
 
       {/* Cash Card */}
-      <div className="glass-panel status-card success">
-        <div className="status-card-header">
-          <div className="status-card-title">CASH (USD)</div>
-          <div className="status-card-icon">
-            <WalletIcon />
+      <div className="card-cash">
+        <div className="card-header">
+          <div className="card-header-title">CASH (USD)</div>
+          <div className="card-icon-emerald">
+            <WalletIcon size={18} />
           </div>
         </div>
-        <div className="status-card-value">${formatCurrency(usdValue)}</div>
-        <div className="status-card-sub">
+        <div className="card-value-success">
+          ${formatCurrency(usdValue)}
+        </div>
+        <div className="card-footer">
           {usdAsset ? (
-            <span>
-              {formatPercent(usdAsset.currentPercent)}% | Target:{' '}
-              {formatPercent(latest.effectiveUsdTargetPercent)}%
+            <div className="cash-footer-info">
+              <span className="crypto-footer-info">{formatPercent(usdAsset.currentPercent)}%</span>
+              <span className="footer-divider">|</span>
+              <span className="footer-target-text">Target: {formatPercent(latest.effectiveUsdTargetPercent)}%</span>
               {Math.abs(latest.effectiveUsdTargetPercent - usdAsset.targetPercent) > 0.01 && (
-                <> ({formatPercent(usdAsset.targetPercent)}% base)</>
+                <span className="footer-subtext">({formatPercent(usdAsset.targetPercent)}% base)</span>
               )}
-              {' | '}
-              <span className={getDeviationClass(usdAsset.deviationPercent)}>
-                Dev: {getDeviationSign(usdAsset.deviationPercent)}
-                {formatPercent(usdAsset.deviationPercent)}%
+              <span className="footer-divider-end">|</span>
+              <span className={`deviation-pill ${getDeviationClass(usdAsset.deviationPercent)}`}>
+                Dev: {getDeviationSign(usdAsset.deviationPercent)}{formatPercent(usdAsset.deviationPercent)}%
               </span>
-            </span>
+            </div>
           ) : (
-            <span>No USD data</span>
+            <span className="footer-divider italic">No USD data</span>
           )}
         </div>
       </div>
 
       {/* Crypto assets Card */}
-      <div className="glass-panel status-card">
-        <div className="status-card-header">
-          <div className="status-card-title">CRYPTO ASSETS</div>
-          <div className="status-card-icon">
-            <CirclesIcon />
+      <div className="card-crypto">
+        <div className="card-header">
+          <div className="card-header-title">CRYPTO ASSETS</div>
+          <div className="card-icon-violet">
+            <CirclesIcon size={18} />
           </div>
         </div>
-        <div className="status-card-value">${formatCurrency(cryptoValue)}</div>
-        <div className="status-card-sub">
-          <span>
-            {formatPercent(cryptoPercent)}% | Target: {formatPercent(cryptoTargetPercent)}% |{' '}
+        <div className="card-value-violet">
+          ${formatCurrency(cryptoValue)}
+        </div>
+        <div className="card-footer">
+          <span className="crypto-footer-info">
+            {formatPercent(cryptoPercent)}% <span className="footer-divider">/</span> Target: {formatPercent(cryptoTargetPercent)}%
+          </span>
+          <span className="asset-count-badge">
             {cryptoCount} asset{cryptoCount !== 1 ? 's' : ''}
           </span>
         </div>

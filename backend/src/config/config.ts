@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import { AtomicJsonFile } from '../repository/atomicFile';
 
 import { z } from 'zod';
+import { Injectable, Optional } from '@nestjs/common';
 
 export class InvalidConfigurationError extends Error {
   constructor(message: string) {
@@ -38,7 +39,7 @@ export const AppConfigSchema = z.object({
 }).superRefine((data, ctx) => {
   if (!data.settings) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: 'custom',
       message: 'Settings are missing.',
       path: ['settings']
     });
@@ -47,7 +48,7 @@ export const AppConfigSchema = z.object({
 
   if (!data.allocations || data.allocations.length === 0) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: 'custom',
       message: 'At least one allocation is required.',
       path: ['allocations']
     });
@@ -64,7 +65,7 @@ export const AppConfigSchema = z.object({
     .map(([sym]) => sym);
   if (duplicates.length > 0) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: 'custom',
       message: `Duplicate allocation symbols are not allowed: ${duplicates.join(', ')}`,
       path: ['allocations']
     });
@@ -76,14 +77,14 @@ export const AppConfigSchema = z.object({
   for (const alloc of data.allocations) {
     if (!alloc.symbol || alloc.symbol.trim() === '') {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: 'custom',
         message: 'Allocation symbols cannot be blank.',
         path: ['allocations']
       });
     }
     if (alloc.targetPercent < 0) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: 'custom',
         message: `Target percent for ${alloc.symbol} cannot be negative.`,
         path: ['allocations']
       });
@@ -96,7 +97,7 @@ export const AppConfigSchema = z.object({
 
   if (Math.abs(totalPercent - 100.0) > 0.001) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: 'custom',
       message: `Total allocation percentage must be exactly 100%. Current sum: ${totalPercent}`,
       path: ['allocations']
     });
@@ -104,7 +105,7 @@ export const AppConfigSchema = z.object({
 
   if (!hasUsd) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: 'custom',
       message: 'One asset must be USD.',
       path: ['allocations']
     });
@@ -116,11 +117,12 @@ export type Allocation = z.infer<typeof AllocationSchema>;
 export type KrakenCredentials = z.infer<typeof KrakenCredentialsSchema>;
 export type AppConfig = z.infer<typeof AppConfigSchema>;
 
+@Injectable()
 export class ConfigService {
   private readonly configFilePath: string;
   private appConfig!: AppConfig;
 
-  constructor(configFilePath: string = 'rebalancer-config.json') {
+  constructor(@Optional() configFilePath: string = 'rebalancer-config.json') {
     this.configFilePath = configFilePath;
     this.loadConfig();
   }

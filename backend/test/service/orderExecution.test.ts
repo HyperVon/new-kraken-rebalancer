@@ -1,18 +1,32 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, vi, Mock } from 'vitest';
 import { Decimal } from 'decimal.js';
 import { FakeKrakenService } from './fakeKraken';
 import { PortfolioAnalyzer } from '../../src/service/analyzer';
 import { OrderExecutor } from '../../src/service/executor';
 import { PortfolioManager } from '../../src/service/manager';
-import { AppConfig } from '../../src/config/config';
+import { AppConfig, ConfigService } from '../../src/config/config';
+import { TradeHistoryService } from '../../src/service/history';
+import { PortfolioStatsRepository } from '../../src/repository/stats';
 
 Decimal.set({ rounding: Decimal.ROUND_HALF_UP });
 
 describe('PortfolioManager order execution', () => {
   let krakenService: FakeKrakenService;
-  let configService: any;
-  let tradeHistoryService: any;
-  let portfolioStatsRepository: any;
+  let configService: {
+    getConfig: Mock;
+    updateConfig: Mock;
+    loadConfig: Mock;
+  };
+  let tradeHistoryService: {
+    addSnapshot: Mock;
+    getLatestSnapshot: Mock;
+    getHistory: Mock;
+    subscribe: Mock;
+  };
+  let portfolioStatsRepository: {
+    load: Mock;
+    save: Mock;
+  };
   let portfolioAnalyzer: PortfolioAnalyzer;
   let orderExecutor: OrderExecutor;
   let portfolioManager: PortfolioManager;
@@ -37,13 +51,13 @@ describe('PortfolioManager order execution', () => {
 
     portfolioAnalyzer = new PortfolioAnalyzer(
       krakenService,
-      configService,
-      portfolioStatsRepository
+      configService as unknown as ConfigService,
+      portfolioStatsRepository as unknown as PortfolioStatsRepository
     );
     orderExecutor = new OrderExecutor(krakenService, portfolioAnalyzer);
     portfolioManager = new PortfolioManager(
-      configService,
-      tradeHistoryService,
+      configService as unknown as ConfigService,
+      tradeHistoryService as unknown as TradeHistoryService,
       portfolioAnalyzer,
       orderExecutor
     );

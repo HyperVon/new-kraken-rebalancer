@@ -1,8 +1,9 @@
 import { Decimal } from 'decimal.js';
 import { ConfigService, Settings } from '../config/config';
-import { KrakenService, IKrakenService } from './kraken';
+import { KrakenService, IKrakenService, KRAKEN_SERVICE_TOKEN } from './kraken';
 import { PortfolioStatsRepository } from '../repository/stats';
 import { Asset } from '../model/asset';
+import { Injectable, Inject } from '@nestjs/common';
 
 // Configure decimal.js for consistent RoundingMode.HALF_UP matching Kotlin
 Decimal.set({ rounding: Decimal.ROUND_HALF_UP });
@@ -18,13 +19,14 @@ export interface PortfolioValues {
   currentValuesUSD: Record<string, Decimal>;
 }
 
+@Injectable()
 export class PortfolioAnalyzer {
   private readonly krakenService: IKrakenService;
   private readonly configService: ConfigService;
   private readonly portfolioStatsRepository: PortfolioStatsRepository;
 
   constructor(
-    krakenService: IKrakenService,
+    @Inject(KRAKEN_SERVICE_TOKEN) krakenService: IKrakenService,
     configService: ConfigService,
     portfolioStatsRepository: PortfolioStatsRepository
   ) {

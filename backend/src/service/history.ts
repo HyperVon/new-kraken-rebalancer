@@ -1,7 +1,9 @@
 import { EventEmitter } from 'events';
 import { PortfolioSnapshot } from '../model/snapshot';
 import { TradeRepository } from '../repository/trade';
+import { Injectable } from '@nestjs/common';
 
+@Injectable()
 export class TradeHistoryService {
   private readonly repository: TradeRepository;
   private readonly history: PortfolioSnapshot[] = [];

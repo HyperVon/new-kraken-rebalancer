@@ -18,10 +18,10 @@ several months.**
 | Layer           | Technology                                                                                           |
 |-----------------|------------------------------------------------------------------------------------------------------|
 | **Language**    | TypeScript (both Backend and Frontend)                                                               |
-| **Backend**     | Node.js, Express, ts-node                                                                            |
+| **Backend**     | Node.js, NestJS                                                                                      |
 | **HTTP Client** | Axios (with Kraken HMAC-SHA512 private API signing)                                                  |
-| **Concurrency** | Node.js Asynchronous Event Loop & Timers                                                             |
-| **Frontend**    | React SPA (Vite), HTML5, CSS3, Server-Sent Events (SSE)                                              |
+| **Concurrency** | NestJS Dependency Injection, Loop lifecycle managers                                                 |
+| **Frontend**    | React SPA (Vite), Tailwind CSS v4, HTML5, CSS3, Server-Sent Events (SSE)                             |
 | **API**         | Kraken REST API with HMAC-SHA512 authentication                                                      |
 | **Testing**     | Vitest, Testing Library React, Supertest (100% test coverage)                                        |
 | **Build/Repo**  | Yarn Workspaces (Monorepo)                                                                           |
@@ -112,7 +112,7 @@ targets.
 
 ```mermaid
 graph LR
-    subgraph Frontend["Frontend (React SPA)"]
+    subgraph Frontend["Frontend (React SPA + Tailwind v4)"]
         App[App Shell] --> OG[Overview Grid]
         App --> AC[Allocation Chart]
         App --> PT[Performance Table]
@@ -121,9 +121,9 @@ graph LR
         App --> SSE[SSE Client]
     end
 
-    subgraph Backend["Backend (Express + NodeJS)"]
-        R[DashboardRouter] --> THS[TradeHistoryService]
-        R --> CS[ConfigService]
+    subgraph Backend["Backend (NestJS)"]
+        C[DashboardController] --> THS[TradeHistoryService]
+        C --> CS[ConfigService]
         PM[PortfolioManager] --> PA[PortfolioAnalyzer]
         PM --> OE[OrderExecutor]
         PM --> THS
@@ -140,8 +140,8 @@ graph LR
         KA[Kraken API]
     end
 
-    Frontend -- "REST API & SSE Stream\n/api/*" --> R
-    PM -- "Asynchronous Event Loop\n(configurable interval)" --> PM
+    Frontend -- "REST API & SSE Stream\n/api/*" --> C
+    PM -- "NestJS Lifecycle Orchestration" --> PM
     KS -- "HMAC-SHA512\nAuthenticated" --> KA
 ```
 
@@ -166,7 +166,7 @@ To eliminate unnecessary network polling, the system uses a reactive, push-based
 architecture to synchronize the dashboard with the backend rebalancing loop:
 
 1. **Node EventEmitter**: `TradeHistoryServiceImpl` maintains an event emitter. Whenever a rebalance cycle records a new `PortfolioSnapshot`, the snapshot is emitted.
-2. **Server-Sent Events (SSE)**: The `/api/status/stream` route implements a persistent Express SSE connection. When a client connects, the backend pushes the latest cached snapshot and registers an event listener to stream subsequent snapshots as they occur.
+2. **Server-Sent Events (SSE)**: The `/api/status/stream` route in `DashboardController` implements a persistent NestJS SSE stream. When a client connects, the backend pushes the latest cached snapshot and registers an event listener to stream subsequent snapshots as they occur.
 3. **React Client**: The React frontend opens an `EventSource` connection to `/api/status/stream` on mount, automatically updating its state and view dynamically whenever a new snapshot is broadcast.
 
 ---
@@ -176,19 +176,20 @@ architecture to synchronize the dashboard with the backend rebalancing loop:
 ```
 ├── backend/
 │   ├── src/
-│   │   ├── index.ts                      # Entry point, Express server & service bootstrap
+│   │   ├── main.ts                       # Entry point, bootstraps NestJS container
+│   │   ├── app.module.ts                 # Main NestJS module topology
+│   │   ├── controller/                   # NestJS Dashboard SSE controller
 │   │   ├── config/                       # AppConfig and validation definition
 │   │   │   └── config.ts                 
 │   │   ├── model/                        # Type interfaces: snapshot, stats, assets
 │   │   ├── repository/                   # File persistence implementation (trade, stats, atomicFile)
-│   │   ├── routes/                       # Express REST endpoints & SSE controller
 │   │   └── service/                      # Core rebalancer components (analyzer, executor, manager, kraken, history)
 │   └── test/                             # Vitest unit and integration tests (100% coverage)
 ├── frontend/
 │   ├── src/
 │   │   ├── main.tsx                      # Vite entry point
 │   │   ├── App.tsx                       # Client router and SSE state coordinator
-│   │   ├── style.css                     # Dark glassmorphism stylesheet
+│   │   ├── index.css                     # Styles entrypoint configuring Tailwind CSS v4 & custom @utility classes
 │   │   └── components/                   # Modular React views (Grid, Chart, Table, Settings)
 │   ├── test/                             # Vitest & Testing Library component test suites
 │   ├── index.html                        # HTML shell

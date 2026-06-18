@@ -1,11 +1,26 @@
 "use strict";
+var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
+    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
+    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
+    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
+    return c > 3 && r && Object.defineProperty(target, key, r), r;
+};
+var __metadata = (this && this.__metadata) || function (k, v) {
+    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
+};
+var __param = (this && this.__param) || function (paramIndex, decorator) {
+    return function (target, key) { decorator(target, key, paramIndex); }
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.OrderExecutor = void 0;
 const decimal_js_1 = require("decimal.js");
+const kraken_1 = require("./kraken");
+const analyzer_1 = require("./analyzer");
+const common_1 = require("@nestjs/common");
 const asset_1 = require("../model/asset");
 const promises_1 = require("timers/promises");
 decimal_js_1.Decimal.set({ rounding: decimal_js_1.Decimal.ROUND_HALF_UP });
-class OrderExecutor {
+let OrderExecutor = class OrderExecutor {
     krakenService;
     portfolioAnalyzer;
     constructor(krakenService, portfolioAnalyzer) {
@@ -100,5 +115,10 @@ class OrderExecutor {
             actionLog.push(`FAILED ${side} ${symbol}: ${result.errorMessage}`);
         }
     }
-}
+};
 exports.OrderExecutor = OrderExecutor;
+exports.OrderExecutor = OrderExecutor = __decorate([
+    (0, common_1.Injectable)(),
+    __param(0, (0, common_1.Inject)(kraken_1.KRAKEN_SERVICE_TOKEN)),
+    __metadata("design:paramtypes", [Object, analyzer_1.PortfolioAnalyzer])
+], OrderExecutor);

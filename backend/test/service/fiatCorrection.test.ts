@@ -2,7 +2,8 @@ import { describe, it, expect, vi } from 'vitest';
 import { Decimal } from 'decimal.js';
 import { PortfolioAnalyzer } from '../../src/service/analyzer';
 import { FakeKrakenService } from './fakeKraken';
-import { Allocation } from '../../src/config/config';
+import { Allocation, ConfigService } from '../../src/config/config';
+import { PortfolioStatsRepository } from '../../src/repository/stats';
 
 Decimal.set({ rounding: Decimal.ROUND_HALF_UP });
 
@@ -28,7 +29,11 @@ function makePortfolioAnalyzer(...allocs: Allocation[]): PortfolioAnalyzer {
     save: vi.fn()
   };
 
-  return new PortfolioAnalyzer(new FakeKrakenService(), configService as any, repo as any);
+  return new PortfolioAnalyzer(
+    new FakeKrakenService(),
+    configService as unknown as ConfigService,
+    repo as unknown as PortfolioStatsRepository
+  );
 }
 
 describe('PortfolioManager fiat correction', () => {

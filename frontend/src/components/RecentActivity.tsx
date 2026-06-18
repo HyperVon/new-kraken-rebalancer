@@ -40,24 +40,24 @@ const getBadgeDetails = (action: string) => {
 
 export const RecentActivity: React.FC<RecentActivityProps> = ({ history }) => {
   return (
-    <div className="glass-panel">
-      <div className="glass-panel-title">
-        <PulseIcon />
+    <div className="glass-card">
+      <div className="card-title">
+        <PulseIcon size={18} />
         RECENT ACTIVITY
       </div>
       {history.length === 0 ? (
-        <div className="empty-history-box">
-          <EmptyPieIcon />
-          <h3>RECENT ACTIVITY</h3>
-          <p>No trading history</p>
+        <div className="empty-box">
+          <EmptyPieIcon size={48} />
+          <h3 className="empty-box-title">RECENT ACTIVITY</h3>
+          <p className="empty-box-text">No trading history</p>
         </div>
       ) : (
-        <div className="table-wrapper custom-scrollbar max-h-100">
-          <table>
+        <div className="table-wrapper">
+          <table className="custom-table">
             <thead>
-              <tr>
-                <th>TIME</th>
-                <th>ACTION</th>
+              <tr className="table-header-row">
+                <th className="table-th">TIME</th>
+                <th className="table-th">ACTION</th>
               </tr>
             </thead>
             <tbody>
@@ -65,11 +65,11 @@ export const RecentActivity: React.FC<RecentActivityProps> = ({ history }) => {
                 const timeStr = formatTimestamp(snapshot.timestamp);
                 if (snapshot.actions.length === 0) {
                   return (
-                    <tr key={`empty-${snapshotIndex}`} className="hoverable">
-                      <td className="mono-col">{timeStr}</td>
-                      <td>
-                        <span className="recent-activity-empty-text">
-                          <span className="recent-activity-dot-marker"></span>
+                    <tr key={`empty-${snapshotIndex}`} className="table-tr">
+                      <td className="activity-cell-time-empty">{timeStr}</td>
+                      <td className="activity-cell">
+                        <span className="activity-no-trades">
+                          <span className="activity-dot-empty"></span>
                           No trades executed
                         </span>
                       </td>
@@ -79,12 +79,12 @@ export const RecentActivity: React.FC<RecentActivityProps> = ({ history }) => {
                   return snapshot.actions.map((action, actionIndex) => {
                     const badge = getBadgeDetails(action);
                     return (
-                      <tr key={`action-${snapshotIndex}-${actionIndex}`} className="hoverable">
-                        <td className="mono-col">{timeStr}</td>
-                        <td>
-                          <div className="recent-activity-row-container">
+                      <tr key={`action-${snapshotIndex}-${actionIndex}`} className="table-tr">
+                        <td className="activity-cell-time">{timeStr}</td>
+                        <td className="activity-cell">
+                          <div className="activity-content">
                             <span className={badge.className}>{badge.label}</span>
-                            <span>{action}</span>
+                            <span className="activity-action-text">{action}</span>
                           </div>
                         </td>
                       </tr>

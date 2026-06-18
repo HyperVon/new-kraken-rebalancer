@@ -1,19 +1,33 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, vi, Mock } from 'vitest';
 import { Decimal } from 'decimal.js';
 import { FakeKrakenService } from './fakeKraken';
 import { PortfolioAnalyzer } from '../../src/service/analyzer';
 import { OrderExecutor } from '../../src/service/executor';
 import { PortfolioManager } from '../../src/service/manager';
-import { AppConfig, Allocation } from '../../src/config/config';
-import { createOrderResult } from '../../src/model/order';
+import { AppConfig, Allocation, ConfigService } from '../../src/config/config';
+import { TradeHistoryService } from '../../src/service/history';
+import { PortfolioStatsRepository } from '../../src/repository/stats';
+// No order imports needed here
 
 Decimal.set({ rounding: Decimal.ROUND_HALF_UP });
 
 describe('PortfolioManager edge cases', () => {
   let krakenService: FakeKrakenService;
-  let configService: any;
-  let tradeHistoryService: any;
-  let portfolioStatsRepository: any;
+  let configService: {
+    getConfig: Mock;
+    updateConfig: Mock;
+    loadConfig: Mock;
+  };
+  let tradeHistoryService: {
+    addSnapshot: Mock;
+    getLatestSnapshot: Mock;
+    getHistory: Mock;
+    subscribe: Mock;
+  };
+  let portfolioStatsRepository: {
+    load: Mock;
+    save: Mock;
+  };
   let portfolioAnalyzer: PortfolioAnalyzer;
   let orderExecutor: OrderExecutor;
   let portfolioManager: PortfolioManager;
@@ -38,13 +52,13 @@ describe('PortfolioManager edge cases', () => {
 
     portfolioAnalyzer = new PortfolioAnalyzer(
       krakenService,
-      configService,
-      portfolioStatsRepository
+      configService as unknown as ConfigService,
+      portfolioStatsRepository as unknown as PortfolioStatsRepository
     );
     orderExecutor = new OrderExecutor(krakenService, portfolioAnalyzer);
     portfolioManager = new PortfolioManager(
-      configService,
-      tradeHistoryService,
+      configService as unknown as ConfigService,
+      tradeHistoryService as unknown as TradeHistoryService,
       portfolioAnalyzer,
       orderExecutor
     );
@@ -584,8 +598,13 @@ describe('PortfolioManager edge cases', () => {
     };
     const actionLog: string[] = [];
 
-    krakenService.orderResultFactory = (pair, type, side, volume) =>
-      createOrderResult(true, pair, side, volume, true);
+    krakenService.orderResultFactory = (pair, type, side, volume) => ({
+      success: true,
+      pair,
+      side,
+      volume,
+      dryRun: true
+    });
 
     await orderExecutor.executeOrders(
       buyOrders,
@@ -614,8 +633,14 @@ describe('PortfolioManager edge cases', () => {
     };
     const actionLog: string[] = [];
 
-    krakenService.orderResultFactory = (pair, type, side, volume) =>
-      createOrderResult(false, pair, side, volume, false, 'Invalid amount');
+    krakenService.orderResultFactory = (pair, type, side, volume) => ({
+      success: false,
+      pair,
+      side,
+      volume,
+      dryRun: false,
+      errorMessage: 'Invalid amount'
+    });
 
     await orderExecutor.executeOrders(
       buyOrders,
@@ -675,7 +700,7 @@ describe('PortfolioManager edge cases', () => {
   it('testLogOrderResult', () => {
     const log1: string[] = [];
     orderExecutor['logOrderResult'](
-      createOrderResult(true, 'XBTUSD', 'sell', new Decimal(1.0), true),
+      { success: true, pair: 'XBTUSD', side: 'sell', volume: new Decimal(1.0), dryRun: true },
       log1,
       'BTC',
       new Decimal(1.0),
@@ -686,7 +711,7 @@ describe('PortfolioManager edge cases', () => {
 
     const log2: string[] = [];
     orderExecutor['logOrderResult'](
-      createOrderResult(true, 'XBTUSD', 'buy', new Decimal(1.0), false),
+      { success: true, pair: 'XBTUSD', side: 'buy', volume: new Decimal(1.0), dryRun: false },
       log2,
       'BTC',
       new Decimal(1.0),

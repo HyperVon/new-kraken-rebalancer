@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import { Decimal } from 'decimal.js';
 import { PortfolioSnapshot, AssetSnapshot } from '../model/snapshot';
 import { AtomicJsonFile } from './atomicFile';
+import { Injectable, Optional } from '@nestjs/common';
 
 interface RawAssetSnapshot {
   symbol: string;
@@ -24,10 +25,11 @@ interface RawPortfolioSnapshot {
   effectiveUsdTargetPercent?: number | string;
 }
 
+@Injectable()
 export class TradeRepository {
   private readonly filePath: string;
 
-  constructor(filePath: string = 'trade-history.json') {
+  constructor(@Optional() filePath: string = 'trade-history.json') {
     this.filePath = filePath;
   }
 

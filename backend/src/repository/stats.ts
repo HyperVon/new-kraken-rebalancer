@@ -2,11 +2,13 @@ import * as fs from 'fs';
 import { Decimal } from 'decimal.js';
 import { PortfolioStats } from '../model/stats';
 import { AtomicJsonFile } from './atomicFile';
+import { Injectable, Optional } from '@nestjs/common';
 
+@Injectable()
 export class PortfolioStatsRepository {
   private readonly filePath: string;
 
-  constructor(filePath: string = 'portfolio-stats.json') {
+  constructor(@Optional() filePath: string = 'portfolio-stats.json') {
     this.filePath = filePath;
   }
 

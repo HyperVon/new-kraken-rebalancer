@@ -1,6 +1,7 @@
 import { Decimal } from 'decimal.js';
-import { KrakenService, IKrakenService } from './kraken';
+import { KrakenService, IKrakenService, KRAKEN_SERVICE_TOKEN } from './kraken';
 import { PortfolioAnalyzer } from './analyzer';
+import { Injectable, Inject } from '@nestjs/common';
 import { OrderResult } from '../model/order';
 import { Asset } from '../model/asset';
 import { Settings } from '../config/config';
@@ -8,11 +9,15 @@ import { setTimeout } from 'timers/promises';
 
 Decimal.set({ rounding: Decimal.ROUND_HALF_UP });
 
+@Injectable()
 export class OrderExecutor {
   private readonly krakenService: IKrakenService;
   private readonly portfolioAnalyzer: PortfolioAnalyzer;
 
-  constructor(krakenService: IKrakenService, portfolioAnalyzer: PortfolioAnalyzer) {
+  constructor(
+    @Inject(KRAKEN_SERVICE_TOKEN) krakenService: IKrakenService,
+    portfolioAnalyzer: PortfolioAnalyzer
+  ) {
     this.krakenService = krakenService;
     this.portfolioAnalyzer = portfolioAnalyzer;
   }

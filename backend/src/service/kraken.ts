@@ -1,8 +1,11 @@
 import * as crypto from 'crypto';
 import { Decimal } from 'decimal.js';
 import { ConfigService } from '../config/config';
-import { OrderResult, createOrderResult } from '../model/order';
+import { OrderResult } from '../model/order';
 import { Asset } from '../model/asset';
+import { Injectable } from '@nestjs/common';
+
+export const KRAKEN_SERVICE_TOKEN = 'IKrakenService';
 
 export interface IKrakenService {
   getBalances(): Promise<Record<string, number>>;
@@ -15,6 +18,7 @@ export interface IKrakenService {
   ): Promise<OrderResult>;
 }
 
+@Injectable()
 export class KrakenService implements IKrakenService {
   private readonly configService: ConfigService;
   private readonly apiUrl = 'https://api.kraken.com';
@@ -75,7 +79,13 @@ export class KrakenService implements IKrakenService {
       console.log(
         `[DRY RUN] Would execute order: ${type} ${side} ${pair} volume=${volStr}`
       );
-      return createOrderResult(true, pair, side, normalizedVolume, true);
+      return {
+        success: true,
+        pair,
+        side,
+        volume: normalizedVolume,
+        dryRun: true
+      };
     }
 
     const path = `/${this.apiVersion}/private/AddOrder`;
@@ -89,14 +99,27 @@ export class KrakenService implements IKrakenService {
     try {
       const resp = await this.queryPrivate(path, params);
       console.log(`Order Executed: ${JSON.stringify(resp)}`);
-      return createOrderResult(true, pair, side, normalizedVolume, false);
+      return {
+        success: true,
+        pair,
+        side,
+        volume: normalizedVolume,
+        dryRun: false
+      };
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e);
       console.error(
         `Failed to execute order: ${type} ${side} ${pair} volume=${volStr}`,
         e
       );
-      return createOrderResult(false, pair, side, normalizedVolume, false, message);
+      return {
+        success: false,
+        pair,
+        side,
+        volume: normalizedVolume,
+        dryRun: false,
+        errorMessage: message
+      };
     }
   }
 

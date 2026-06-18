@@ -8,6 +8,26 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [6.0.0] - 2026-06-18
+
+### Added
+
+- **NestJS Backend Migration**: Restructured the backend architecture from a manual Express configuration to a modern, modular **NestJS** application framework.
+  - Decorated core services (`PortfolioManager`, `PortfolioAnalyzer`, `OrderExecutor`, repositories, etc.) with NestJS `@Injectable()` for constructor dependency injection.
+  - Implemented NestJS controllers (`DashboardController`) utilizing routing decorators and SSE streams (`/api/status/stream`).
+  - Configured modular topology (`AppModule`) and bootstrapped the server container (`main.ts`).
+  - Resolved dynamic mocks and fully typed the Vitest backend suites to work seamlessly with NestJS injections.
+- **Tailwind CSS v4 Integration & 100% Styles Extraction**: Migrated the frontend styling from a custom 869-line stylesheet (`style.css`) to utility-first **Tailwind CSS v4** with native Vite integration.
+  - Extracted **100% of all styling/layout Tailwind utility classes** out of the React TSX files (`App.tsx`, `OverviewGrid.tsx`, `SettingsForm.tsx`, `PerformanceTable.tsx`, `RecentActivity.tsx`, `AllocationChart.tsx`) into clean, semantic `@utility` component rules in `index.css`.
+  - Implemented CSS nested rules (e.g. `&:hover .child-class`) within parent utilities to drive hover interactions natively in stylesheet code, completely removing the need for `group` utility markup in JSX.
+  - Created a `visually-hidden` utility definition to map `sr-only` accessibility patterns while avoiding self-referential compiler loops.
+  - Retained essential test class selectors (`.symbol-col` and `.allocation-edit-row`) directly in the JSX components, keeping the automated test runners green.
+
+### Changed
+
+- **Code Clean-up**: Converted all React components to follow 100% semantic JSX structure, significantly improving codebase readability, structure, and maintainability.
+- **Production Builds**: Succeeded compiling the entire monorepo production bundles cleanly with zero warnings or errors.
+
 ## [5.0.0] - 2026-06-17
 
 ### Added

@@ -15,6 +15,12 @@ var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (
 }) : function(o, v) {
     o["default"] = v;
 });
+var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
+    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
+    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
+    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
+    return c > 3 && r && Object.defineProperty(target, key, r), r;
+};
 var __importStar = (this && this.__importStar) || (function () {
     var ownKeys = function(o) {
         ownKeys = Object.getOwnPropertyNames || function (o) {
@@ -32,11 +38,18 @@ var __importStar = (this && this.__importStar) || (function () {
         return result;
     };
 })();
+var __metadata = (this && this.__metadata) || function (k, v) {
+    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
+};
+var __param = (this && this.__param) || function (paramIndex, decorator) {
+    return function (target, key) { decorator(target, key, paramIndex); }
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ConfigService = exports.AppConfigSchema = exports.KrakenCredentialsSchema = exports.AllocationSchema = exports.SettingsSchema = exports.InvalidConfigurationError = void 0;
 const fs = __importStar(require("fs"));
 const atomicFile_1 = require("../repository/atomicFile");
 const zod_1 = require("zod");
+const common_1 = require("@nestjs/common");
 class InvalidConfigurationError extends Error {
     constructor(message) {
         super(message);
@@ -69,7 +82,7 @@ exports.AppConfigSchema = zod_1.z.object({
 }).superRefine((data, ctx) => {
     if (!data.settings) {
         ctx.addIssue({
-            code: zod_1.z.ZodIssueCode.custom,
+            code: 'custom',
             message: 'Settings are missing.',
             path: ['settings']
         });
@@ -77,7 +90,7 @@ exports.AppConfigSchema = zod_1.z.object({
     }
     if (!data.allocations || data.allocations.length === 0) {
         ctx.addIssue({
-            code: zod_1.z.ZodIssueCode.custom,
+            code: 'custom',
             message: 'At least one allocation is required.',
             path: ['allocations']
         });
@@ -93,7 +106,7 @@ exports.AppConfigSchema = zod_1.z.object({
         .map(([sym]) => sym);
     if (duplicates.length > 0) {
         ctx.addIssue({
-            code: zod_1.z.ZodIssueCode.custom,
+            code: 'custom',
             message: `Duplicate allocation symbols are not allowed: ${duplicates.join(', ')}`,
             path: ['allocations']
         });
@@ -103,14 +116,14 @@ exports.AppConfigSchema = zod_1.z.object({
     for (const alloc of data.allocations) {
         if (!alloc.symbol || alloc.symbol.trim() === '') {
             ctx.addIssue({
-                code: zod_1.z.ZodIssueCode.custom,
+                code: 'custom',
                 message: 'Allocation symbols cannot be blank.',
                 path: ['allocations']
             });
         }
         if (alloc.targetPercent < 0) {
             ctx.addIssue({
-                code: zod_1.z.ZodIssueCode.custom,
+                code: 'custom',
                 message: `Target percent for ${alloc.symbol} cannot be negative.`,
                 path: ['allocations']
             });
@@ -122,20 +135,20 @@ exports.AppConfigSchema = zod_1.z.object({
     }
     if (Math.abs(totalPercent - 100.0) > 0.001) {
         ctx.addIssue({
-            code: zod_1.z.ZodIssueCode.custom,
+            code: 'custom',
             message: `Total allocation percentage must be exactly 100%. Current sum: ${totalPercent}`,
             path: ['allocations']
         });
     }
     if (!hasUsd) {
         ctx.addIssue({
-            code: zod_1.z.ZodIssueCode.custom,
+            code: 'custom',
             message: 'One asset must be USD.',
             path: ['allocations']
         });
     }
 });
-class ConfigService {
+let ConfigService = class ConfigService {
     configFilePath;
     appConfig;
     constructor(configFilePath = 'rebalancer-config.json') {
@@ -172,5 +185,10 @@ class ConfigService {
             throw new InvalidConfigurationError(firstError.message);
         }
     }
-}
+};
 exports.ConfigService = ConfigService;
+exports.ConfigService = ConfigService = __decorate([
+    (0, common_1.Injectable)(),
+    __param(0, (0, common_1.Optional)()),
+    __metadata("design:paramtypes", [String])
+], ConfigService);

@@ -5,10 +5,12 @@ import { PortfolioAnalyzer } from './analyzer';
 import { OrderExecutor } from './executor';
 import { PortfolioSnapshot, AssetSnapshot } from '../model/snapshot';
 import { Asset } from '../model/asset';
+import { Injectable, OnApplicationBootstrap, OnApplicationShutdown } from '@nestjs/common';
 
 Decimal.set({ rounding: Decimal.ROUND_HALF_UP });
 
-export class PortfolioManager {
+@Injectable()
+export class PortfolioManager implements OnApplicationBootstrap, OnApplicationShutdown {
   private readonly configService: ConfigService;
   private readonly tradeHistoryService: TradeHistoryService;
   private readonly portfolioAnalyzer: PortfolioAnalyzer;
@@ -27,6 +29,14 @@ export class PortfolioManager {
     this.tradeHistoryService = tradeHistoryService;
     this.portfolioAnalyzer = portfolioAnalyzer;
     this.orderExecutor = orderExecutor;
+  }
+
+  onApplicationBootstrap(): void {
+    this.startRebalancingLoop();
+  }
+
+  onApplicationShutdown(): void {
+    this.stopRebalancingLoop();
   }
 
   startRebalancingLoop(): void {

@@ -15,6 +15,12 @@ var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (
 }) : function(o, v) {
     o["default"] = v;
 });
+var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
+    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
+    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
+    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
+    return c > 3 && r && Object.defineProperty(target, key, r), r;
+};
 var __importStar = (this && this.__importStar) || (function () {
     var ownKeys = function(o) {
         ownKeys = Object.getOwnPropertyNames || function (o) {
@@ -32,11 +38,16 @@ var __importStar = (this && this.__importStar) || (function () {
         return result;
     };
 })();
+var __metadata = (this && this.__metadata) || function (k, v) {
+    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
+};
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.KrakenService = void 0;
+exports.KrakenService = exports.KRAKEN_SERVICE_TOKEN = void 0;
 const crypto = __importStar(require("crypto"));
-const order_1 = require("../model/order");
-class KrakenService {
+const config_1 = require("../config/config");
+const common_1 = require("@nestjs/common");
+exports.KRAKEN_SERVICE_TOKEN = 'IKrakenService';
+let KrakenService = class KrakenService {
     configService;
     apiUrl = 'https://api.kraken.com';
     apiVersion = '0';
@@ -84,7 +95,13 @@ class KrakenService {
         }
         if (config.settings.dryRun) {
             console.log(`[DRY RUN] Would execute order: ${type} ${side} ${pair} volume=${volStr}`);
-            return (0, order_1.createOrderResult)(true, pair, side, normalizedVolume, true);
+            return {
+                success: true,
+                pair,
+                side,
+                volume: normalizedVolume,
+                dryRun: true
+            };
         }
         const path = `/${this.apiVersion}/private/AddOrder`;
         const params = {
@@ -96,12 +113,25 @@ class KrakenService {
         try {
             const resp = await this.queryPrivate(path, params);
             console.log(`Order Executed: ${JSON.stringify(resp)}`);
-            return (0, order_1.createOrderResult)(true, pair, side, normalizedVolume, false);
+            return {
+                success: true,
+                pair,
+                side,
+                volume: normalizedVolume,
+                dryRun: false
+            };
         }
         catch (e) {
             const message = e instanceof Error ? e.message : String(e);
             console.error(`Failed to execute order: ${type} ${side} ${pair} volume=${volStr}`, e);
-            return (0, order_1.createOrderResult)(false, pair, side, normalizedVolume, false, message);
+            return {
+                success: false,
+                pair,
+                side,
+                volume: normalizedVolume,
+                dryRun: false,
+                errorMessage: message
+            };
         }
     }
     async queryPublic(path) {
@@ -179,5 +209,9 @@ class KrakenService {
         hmac.update(hmacMessage);
         return hmac.digest('base64');
     }
-}
+};
 exports.KrakenService = KrakenService;
+exports.KrakenService = KrakenService = __decorate([
+    (0, common_1.Injectable)(),
+    __metadata("design:paramtypes", [config_1.ConfigService])
+], KrakenService);

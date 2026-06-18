@@ -1,14 +1,24 @@
-import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi, afterEach, Mock } from 'vitest';
 import { Decimal } from 'decimal.js';
 import { FakeKrakenService } from './fakeKraken';
 import { PortfolioAnalyzer } from '../../src/service/analyzer';
 import { OrderExecutor } from '../../src/service/executor';
 import { PortfolioManager } from '../../src/service/manager';
+import { ConfigService } from '../../src/config/config';
+import { TradeHistoryService } from '../../src/service/history';
+import { PortfolioStatsRepository } from '../../src/repository/stats';
 
 describe('PortfolioManager loop handling', () => {
   let krakenService: FakeKrakenService;
-  let configService: any;
-  let tradeHistoryService: any;
+  let configService: {
+    getConfig: Mock;
+  };
+  let tradeHistoryService: {
+    addSnapshot: Mock;
+    getLatestSnapshot: Mock;
+    getHistory: Mock;
+    subscribe: Mock;
+  };
   let portfolioManager: PortfolioManager;
 
   beforeEach(() => {
@@ -34,15 +44,22 @@ describe('PortfolioManager loop handling', () => {
       getHistory: vi.fn(() => []),
       subscribe: vi.fn(() => () => {})
     };
-    const repo = {
+    const repo: {
+      load: Mock;
+      save: Mock;
+    } = {
       load: vi.fn(() => ({ allTimeHigh: new Decimal(0) })),
       save: vi.fn()
     };
-    const portfolioAnalyzer = new PortfolioAnalyzer(krakenService, configService, repo as any);
+    const portfolioAnalyzer = new PortfolioAnalyzer(
+      krakenService,
+      configService as unknown as ConfigService,
+      repo as unknown as PortfolioStatsRepository
+    );
     const orderExecutor = new OrderExecutor(krakenService, portfolioAnalyzer);
     portfolioManager = new PortfolioManager(
-      configService,
-      tradeHistoryService,
+      configService as unknown as ConfigService,
+      tradeHistoryService as unknown as TradeHistoryService,
       portfolioAnalyzer,
       orderExecutor
     );

@@ -26,41 +26,41 @@ export const AllocationChart: React.FC<AllocationChartProps> = ({ latest }) => {
   const maxVal = sortedAssets.length > 0 ? sortedAssets[0].valueUSD : 1.0;
 
   return (
-    <div className="glass-panel">
-      <div className="glass-panel-title">
-        <DollarCircleIcon />
+    <div className="glass-card">
+      <div className="card-title">
+        <DollarCircleIcon size={18} />
         PORTFOLIO ALLOCATION
       </div>
-      <div className="allocation-chart-container">
+      <div className="chart-container">
         {sortedAssets.map(asset => {
           const fillPct = maxVal > 0 ? Math.round((asset.valueUSD / maxVal) * 100) : 0;
           const targetValUSD = (latest.totalValueUSD * asset.targetPercent) / 100;
           const targetFillPct = Math.min(100, maxVal > 0 ? Math.round((targetValUSD / maxVal) * 100) : 0);
 
           return (
-            <div key={asset.symbol} className="allocation-bar-row">
-              <div className="allocation-bar-label">{asset.symbol}</div>
-              <div className="allocation-bar-track" style={{ position: 'relative', overflow: 'visible' }}>
-                <div className="allocation-bar-fill" style={{ width: `${fillPct}%` }}></div>
+            <div key={asset.symbol} className="chart-row">
+              <div className="chart-symbol">
+                {asset.symbol}
+              </div>
+              <div className="chart-track-wrapper">
+                <div 
+                  className="chart-track-fill" 
+                  style={{ width: `${fillPct}%` }}
+                ></div>
                 <div
-                  className="allocation-bar-target-marker"
-                  style={{
-                    position: 'absolute',
-                    left: `${targetFillPct}%`,
-                    top: '-2px',
-                    width: '3px',
-                    height: 'calc(100% + 4px)',
-                    backgroundColor: '#38bdf8',
-                    boxShadow: '0 0 8px #38bdf8, 0 0 2px #38bdf8',
-                    borderRadius: '2px',
-                    transform: 'translateX(-50%)',
-                    zIndex: 10
-                  }}
+                  className="chart-target-marker"
+                  style={{ left: `${targetFillPct}%` }}
                   title={`Target: ${formatPercent(asset.targetPercent)}%`}
                 />
               </div>
-              <div className="allocation-bar-value">
-                ${formatCurrency(asset.valueUSD)} ({formatPercent(asset.currentPercent)}% / {formatPercent(asset.targetPercent)}% target)
+              <div className="chart-metrics">
+                <span className="chart-metric-val">${formatCurrency(asset.valueUSD)}</span>
+                <span className="chart-metric-sub">
+                  {formatPercent(asset.currentPercent)}% <span className="chart-metric-divider">/</span> {formatPercent(asset.targetPercent)}% target
+                </span>
+                <span className="visually-hidden">
+                  ${formatCurrency(asset.valueUSD)} ({formatPercent(asset.currentPercent)}% / {formatPercent(asset.targetPercent)}% target)
+                </span>
               </div>
             </div>
           );

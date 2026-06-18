@@ -1,0 +1,557 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&family=Roboto+Mono:wght@400;500;700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-heading: 'Outfit', 'Inter', system-ui, -apple-system, sans-serif;
+  --font-mono: 'Roboto Mono', monospace;
+
+  --color-kraken-blue: #0052ff;
+  --color-success: #10b981;
+  --color-danger: #ef4444;
+  --color-warning: #f59e0b;
+}
+
+/* Premium Tailwind v4 Reusable Utility Components */
+@utility custom-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.15) transparent;
+
+  &::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: rgba(148, 163, 184, 0.15);
+    border-radius: 9999px;
+  }
+
+  &::-webkit-scrollbar-thumb:hover {
+    background: rgba(148, 163, 184, 0.3);
+  }
+}
+
+@utility main-container {
+  @apply relative min-h-screen max-w-7xl mx-auto px-4 pt-6 pb-16 md:px-8 md:pt-8 md:pb-24;
+}
+
+@utility glass-card {
+  @apply backdrop-blur-2xl bg-slate-900/40 border border-white/8 shadow-2xl rounded-2xl p-6 transition-all duration-500 hover:-translate-y-1.5;
+}
+
+@utility card-title {
+  @apply text-xs font-bold text-slate-400 uppercase tracking-widest mb-5 flex items-center gap-2 [&_svg]:text-blue-400;
+}
+
+@utility btn-primary {
+  @apply inline-flex items-center gap-2.5 px-5 py-2.5 rounded-xl text-sm font-bold cursor-pointer border-none transition-all duration-300 select-none active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed bg-gradient-to-br from-blue-600 to-blue-800 text-white shadow-[0_4px_12px_rgba(37,99,235,0.25)] hover:from-blue-500 hover:to-blue-600 hover:shadow-[0_4px_20px_rgba(37,99,235,0.45)];
+}
+
+@utility btn-secondary {
+  @apply inline-flex items-center gap-2.5 px-4.5 py-2.5 rounded-xl text-sm font-semibold cursor-pointer border transition-all duration-300 select-none active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed bg-slate-900/60 border-slate-700/80 hover:border-slate-500 hover:bg-slate-800 text-slate-200 hover:text-white shadow-md hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-blue-500/30;
+}
+
+@utility btn-icon {
+  @apply inline-flex items-center justify-center p-2.5 rounded-xl cursor-pointer border transition-all duration-300 select-none active:scale-95 bg-slate-900/60 border-slate-700/80 text-slate-300 hover:bg-slate-800 hover:border-slate-500 hover:text-white shadow-md focus:outline-none focus:ring-2 focus:ring-blue-500/30;
+}
+
+@utility input-glass {
+  @apply bg-slate-950/40 border border-slate-800 text-slate-100 px-3.5 py-2.5 rounded-xl font-sans text-sm transition-all duration-300 focus:outline-none focus:border-blue-500/80 focus:ring-4 focus:ring-blue-500/15;
+}
+
+@utility table-th {
+  @apply py-3.5 px-3 font-bold text-slate-500 text-[10px] uppercase tracking-widest;
+}
+
+@utility table-tr {
+  @apply border-b border-slate-800/60 last:border-0 hover:bg-slate-950/20 transition-all duration-200;
+
+  &:hover .symbol-col {
+    @apply text-blue-400;
+  }
+}
+
+@utility table-wrapper {
+  @apply overflow-x-auto -mx-6 px-6 custom-scrollbar max-h-[25rem];
+}
+
+@utility badge {
+  @apply inline-flex items-center justify-center px-2.5 py-0.5 rounded-md text-[9px] font-extrabold tracking-widest border;
+}
+
+@utility badge-buy {
+  @apply bg-emerald-500/10 border-emerald-500/20 text-emerald-400 shadow-[0_0_8px_rgba(16,185,129,0.1)];
+}
+
+@utility badge-sell {
+  @apply bg-rose-500/10 border-rose-500/20 text-rose-400 shadow-[0_0_8px_rgba(244,63,94,0.1)];
+}
+
+@utility badge-info {
+  @apply bg-blue-500/10 border-blue-500/20 text-blue-400 shadow-[0_0_8px_rgba(59,130,246,0.1)];
+}
+
+@utility empty-box {
+  @apply flex flex-col items-center justify-center py-16 px-4 text-slate-500 text-center gap-2 [&_svg]:text-white/10 [&_svg]:mb-2;
+}
+
+@utility spinner-container {
+  @apply flex flex-col items-center justify-center min-h-[calc(100vh-10rem)] gap-4;
+}
+
+@utility spinner {
+  @apply w-12 h-12 border-4 border-kraken-blue border-t-transparent rounded-full animate-spin;
+}
+
+@utility badge-live {
+  @apply px-3 py-1 rounded-full text-[10px] font-extrabold tracking-widest shadow-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shadow-emerald-500/5 animate-pulse;
+}
+
+@utility badge-delayed {
+  @apply px-3 py-1 rounded-full text-[10px] font-extrabold tracking-widest shadow-lg bg-amber-500/10 text-amber-400 border border-amber-500/20;
+}
+
+@utility card-icon-blue {
+  @apply flex items-center justify-center w-9 h-9 rounded-xl bg-blue-500/10 text-blue-400 border border-blue-500/20 transition-all duration-300;
+}
+
+@utility card-icon-emerald {
+  @apply flex items-center justify-center w-9 h-9 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 transition-all duration-300;
+}
+
+@utility card-icon-violet {
+  @apply flex items-center justify-center w-9 h-9 rounded-xl bg-violet-500/10 text-violet-400 border border-violet-500/20 transition-all duration-300;
+}
+
+@utility card-value-primary {
+  @apply text-3xl font-black font-heading tracking-tight bg-gradient-to-br from-white via-slate-100 to-slate-300 bg-clip-text text-transparent;
+}
+
+@utility card-value-success {
+  @apply text-3xl font-black font-heading tracking-tight bg-gradient-to-br from-emerald-400 via-emerald-300 to-teal-500 bg-clip-text text-transparent;
+}
+
+@utility card-value-violet {
+  @apply text-3xl font-black font-heading tracking-tight bg-gradient-to-br from-violet-400 via-purple-300 to-fuchsia-500 bg-clip-text text-transparent;
+}
+
+@utility toggle-bg {
+  @apply w-10 h-6 bg-slate-950/80 rounded-full border border-slate-800 transition-colors duration-300 peer-checked:bg-blue-600 peer-checked:border-blue-500 shadow-inner;
+}
+
+@utility toggle-knob {
+  @apply absolute left-[3px] top-[3px] w-4 h-4 bg-slate-400 rounded-full transition-transform duration-300 peer-checked:translate-x-4 peer-checked:bg-white shadow;
+}
+
+@utility dashed-box {
+  @apply flex gap-3.5 p-4 rounded-xl border border-dashed border-slate-700 bg-slate-950/15 hover:border-slate-500 transition-colors duration-300;
+}
+
+@utility settings-container {
+  @apply max-w-7xl mx-auto px-4 pt-4 pb-12 md:px-6 md:pt-6 md:pb-16;
+}
+
+@utility background-blobs {
+  @apply fixed inset-0 -z-10 overflow-hidden pointer-events-none;
+}
+
+@utility blob-blue {
+  @apply absolute top-[5%] left-[10%] w-[35vw] h-[35vw] max-w-[500px] rounded-full bg-blue-500/8 blur-[100px] animate-pulse;
+  animation-duration: 8000ms;
+}
+
+@utility blob-emerald {
+  @apply absolute bottom-[15%] right-[10%] w-[40vw] h-[40vw] max-w-[600px] rounded-full bg-emerald-500/8 blur-[120px] animate-pulse;
+  animation-duration: 10000ms;
+}
+
+@utility loading-text {
+  @apply text-slate-400 font-medium;
+}
+
+@utility app-header {
+  @apply flex flex-col md:flex-row md:justify-between md:items-center gap-4 pb-6 border-b border-slate-800 mb-8;
+}
+
+@utility header-brand {
+  @apply flex items-center gap-4;
+}
+
+@utility header-brand-back {
+  @apply flex items-center gap-3;
+}
+
+@utility header-logo {
+  @apply font-heading text-3xl font-extrabold bg-gradient-to-r from-blue-400 via-sky-400 to-emerald-400 bg-clip-text text-transparent tracking-tight drop-shadow-sm;
+}
+
+@utility header-actions {
+  @apply flex items-center gap-6;
+}
+
+@utility header-meta {
+  @apply text-right;
+}
+
+@utility header-meta-label {
+  @apply text-[10px] text-slate-500 uppercase tracking-widest font-bold;
+}
+
+@utility header-meta-value {
+  @apply font-mono text-base font-extrabold tracking-tight text-slate-200;
+}
+
+@utility header-meta-value-stale {
+  @apply font-mono text-base font-extrabold tracking-tight text-amber-400;
+}
+
+@utility header-meta-sub {
+  @apply text-[10px] text-slate-500 font-medium;
+}
+
+@utility dashboard-grid-2 {
+  @apply grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8;
+}
+
+@utility overview-grid {
+  @apply grid grid-cols-1 md:grid-cols-3 gap-5 mb-8;
+}
+
+@utility card-portfolio {
+  @apply glass-card flex flex-col gap-3 relative overflow-hidden hover:border-blue-500/30 hover:shadow-[0_0_30px_rgba(59,130,246,0.12)];
+
+  &:hover .card-icon-blue {
+    @apply bg-blue-500/20;
+  }
+}
+
+@utility card-cash {
+  @apply glass-card flex flex-col gap-3 relative overflow-hidden hover:border-emerald-500/30 hover:shadow-[0_0_30px_rgba(16,185,129,0.12)];
+
+  &:hover .card-icon-emerald {
+    @apply bg-emerald-500/20;
+  }
+}
+
+@utility card-crypto {
+  @apply glass-card flex flex-col gap-3 relative overflow-hidden hover:border-violet-500/30 hover:shadow-[0_0_30px_rgba(139,92,246,0.12)];
+
+  &:hover .card-icon-violet {
+    @apply bg-violet-500/20;
+  }
+}
+
+@utility card-header {
+  @apply flex justify-between items-center;
+}
+
+@utility card-header-title {
+  @apply text-xs font-bold text-slate-400 uppercase tracking-widest;
+}
+
+@utility card-footer {
+  @apply mt-auto text-xs text-slate-400 flex items-center justify-between;
+}
+
+@utility card-footer-label {
+  @apply font-medium text-slate-500;
+}
+
+@utility drawdown-active {
+  @apply text-rose-400 font-bold bg-rose-500/10 px-2 py-0.5 rounded-lg border border-rose-500/10;
+}
+
+@utility drawdown-normal {
+  @apply text-slate-400 font-medium;
+}
+
+@utility cash-footer-info {
+  @apply flex flex-wrap gap-x-2 items-center w-full;
+}
+
+@utility footer-divider {
+  @apply text-slate-500;
+}
+
+@utility footer-divider-end {
+  @apply text-slate-500 ml-auto;
+}
+
+@utility footer-target-text {
+  @apply text-slate-400;
+}
+
+@utility footer-subtext {
+  @apply text-[10px] text-slate-500 font-normal;
+}
+
+@utility deviation-pill {
+  @apply px-1.5 py-0.5 rounded font-bold;
+}
+
+@utility crypto-footer-info {
+  @apply font-medium text-slate-300;
+}
+
+@utility asset-count-badge {
+  @apply text-[10px] font-bold uppercase tracking-wider bg-white/5 border border-white/10 px-2 py-0.5 rounded-lg text-slate-400;
+}
+
+@utility error-box {
+  @apply bg-rose-500/10 border border-rose-500/20 text-rose-200 p-4 rounded-xl mb-6 font-medium text-sm shadow-[0_4px_12px_rgba(244,63,94,0.05)];
+}
+
+@utility settings-section {
+  @apply border-b border-slate-800 pb-6 mb-6;
+}
+
+@utility settings-grid {
+  @apply grid grid-cols-1 md:grid-cols-2 gap-5;
+}
+
+@utility form-group {
+  @apply flex flex-col gap-2;
+}
+
+@utility form-label {
+  @apply text-xs font-bold text-slate-400 uppercase tracking-wider;
+}
+
+@utility form-group-checkbox {
+  @apply flex items-center justify-start h-full pt-6;
+}
+
+@utility toggle-label {
+  @apply flex items-center gap-3.5 cursor-pointer select-none text-sm text-slate-300 hover:text-slate-100;
+}
+
+@utility toggle-wrapper {
+  @apply relative;
+}
+
+@utility toggle-text {
+  @apply font-bold text-slate-400 uppercase tracking-wider text-xs;
+}
+
+@utility settings-allocations-header {
+  @apply flex justify-between items-center mb-6;
+}
+
+@utility settings-allocations-title {
+  @apply text-xs font-bold text-slate-400 uppercase tracking-widest m-0;
+}
+
+@utility allocation-badge {
+  @apply px-3 py-1 rounded-full text-[10px] font-extrabold tracking-widest shadow-md;
+}
+
+@utility allocation-badge-valid {
+  @apply bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shadow-emerald-500/5;
+}
+
+@utility allocation-badge-invalid {
+  @apply bg-amber-500/10 text-amber-400 border border-amber-500/20;
+}
+
+@utility allocations-list-grid {
+  @apply grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6;
+}
+
+@utility allocation-edit-row {
+  @apply flex items-center gap-3 bg-slate-950/45 p-3.5 pl-4 pr-3.5 rounded-xl border border-slate-800/80 hover:border-slate-700 transition-all duration-300 shadow-md;
+}
+
+@utility allocation-symbol {
+  @apply w-14 font-extrabold text-[15px] text-slate-200 tracking-wide;
+}
+
+@utility allocation-input-wrapper {
+  @apply relative grow;
+}
+
+@utility allocation-input {
+  @apply input-glass w-full pr-7 py-1.5 px-3;
+}
+
+@utility allocation-percent-label {
+  @apply absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 font-bold text-xs;
+}
+
+@utility btn-remove {
+  @apply inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-[10px] font-extrabold uppercase tracking-widest cursor-pointer border transition-all duration-300 select-none active:scale-95 bg-rose-500/10 border-rose-500/20 text-rose-400 hover:bg-rose-500/25 hover:border-rose-400 shadow-sm;
+}
+
+@utility add-asset-input {
+  @apply input-glass uppercase grow;
+}
+
+@utility btn-add-asset {
+  @apply btn-secondary py-2.5 px-5;
+}
+
+@utility performance-table {
+  @apply w-full border-collapse text-left text-sm;
+}
+
+@utility table-header-row {
+  @apply border-b border-slate-800;
+}
+
+@utility table-th-sortable {
+  @apply table-th cursor-pointer select-none hover:text-slate-100 transition-colors duration-200;
+}
+
+@utility table-th-content {
+  @apply flex items-center gap-1.5;
+}
+
+@utility sort-indicator {
+  @apply text-[9px] text-blue-400;
+}
+
+@utility deviation-badge {
+  @apply inline-flex flex-col px-3 py-1.5 rounded-xl border text-xs font-bold font-mono min-w-[76px] text-center bg-slate-800/30 border-slate-700/40 text-slate-400;
+}
+
+@utility deviation-badge-over {
+  @apply inline-flex flex-col px-3 py-1.5 rounded-xl border text-xs font-bold font-mono min-w-[76px] text-center bg-rose-500/10 border-rose-500/20 text-rose-400 shadow-[0_0_8px_rgba(244,63,94,0.05)];
+}
+
+@utility deviation-badge-under {
+  @apply inline-flex flex-col px-3 py-1.5 rounded-xl border text-xs font-bold font-mono min-w-[76px] text-center bg-emerald-500/10 border-emerald-500/20 text-emerald-400 shadow-[0_0_8px_rgba(16,185,129,0.05)];
+}
+
+@utility symbol-col {
+  @apply py-3.5 px-3 align-middle font-black text-slate-100 text-sm transition-colors duration-200;
+}
+
+@utility performance-cell-price {
+  @apply py-3.5 px-3 align-middle font-mono text-xs text-slate-300;
+}
+
+@utility performance-cell-value {
+  @apply py-3.5 px-3 align-middle font-mono text-xs text-slate-200 font-semibold;
+}
+
+@utility performance-cell {
+  @apply py-3.5 px-3 align-middle text-xs text-slate-300;
+}
+
+@utility performance-cell-action {
+  @apply py-3.5 px-3 align-middle;
+}
+
+@utility dev-percent-text {
+  @apply text-[13px] tracking-tight;
+}
+
+@utility dev-usd-text {
+  @apply text-[9px] opacity-60 font-medium mt-0.5;
+}
+
+@utility empty-box-title {
+  @apply text-slate-400 font-bold text-lg;
+}
+
+@utility empty-box-text {
+  @apply text-sm text-slate-500;
+}
+
+@utility custom-table {
+  @apply w-full border-collapse text-left text-sm;
+}
+
+@utility activity-cell-time-empty {
+  @apply py-3.5 px-3 align-middle font-mono text-xs text-slate-400;
+}
+
+@utility activity-cell {
+  @apply py-3.5 px-3 align-middle;
+}
+
+@utility activity-no-trades {
+  @apply text-slate-500 italic flex items-center gap-2;
+}
+
+@utility activity-dot-empty {
+  @apply w-1.5 h-1.5 rounded-full bg-slate-500;
+}
+
+@utility activity-cell-time {
+  @apply py-3.5 px-3 align-middle font-mono text-xs text-slate-300;
+}
+
+@utility activity-content {
+  @apply flex items-center gap-3;
+}
+
+@utility activity-action-text {
+  @apply text-slate-200 text-xs font-semibold;
+}
+
+@utility chart-container {
+  @apply flex flex-col gap-4 mt-2;
+}
+
+@utility chart-row {
+  @apply flex items-center gap-4 transition-transform duration-200 hover:translate-x-1;
+
+  &:hover .chart-symbol {
+    @apply text-blue-400;
+  }
+}
+
+@utility chart-symbol {
+  @apply w-14 font-extrabold text-slate-200 text-sm tracking-wide transition-colors duration-200;
+}
+
+@utility chart-track-wrapper {
+  @apply grow h-2.5 bg-slate-950/60 rounded-full border border-slate-800/50 relative overflow-visible;
+}
+
+@utility chart-track-fill {
+  @apply h-full rounded-full bg-gradient-to-r from-blue-600 via-sky-500 to-emerald-500 shadow-[0_0_8px_rgba(56,189,248,0.2)] transition-[width] duration-1000 ease-out;
+}
+
+@utility chart-target-marker {
+  @apply absolute top-1/2 -translate-y-1/2 w-1 h-4 bg-sky-400 rounded shadow-[0_0_8px_#38bdf8] z-10 -translate-x-1/2 transition-all duration-500;
+}
+
+@utility chart-metrics {
+  @apply w-[10rem] text-right font-mono text-xs leading-tight;
+}
+
+@utility chart-metric-val {
+  @apply text-slate-200 font-bold block;
+}
+
+@utility chart-metric-sub {
+  @apply text-[10px] text-slate-500 font-medium block mt-0.5;
+}
+
+@utility chart-metric-divider {
+  @apply text-slate-700;
+}
+
+@utility visually-hidden {
+  @apply sr-only;
+}
+
+/* Base style resets and background glow */
+body {
+  background-color: #030712; /* slate-950 */
+  color: #f8fafc; /* slate-50 */
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  min-height: 100vh;
+  line-height: 1.5;
+  background-image: radial-gradient(circle at 15% 50%, rgba(56, 189, 248, 0.06) 0%, transparent 50%),
+    radial-gradient(circle at 85% 30%, rgba(16, 185, 129, 0.06) 0%, transparent 50%);
+  background-attachment: fixed;
+}

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { formatCurrency, formatPercent, getDeviationClass, getDeviationSign } from './OverviewGrid';
+import { formatCurrency, formatPercent, getDeviationSign } from './OverviewGrid';
 
 interface AssetSnapshot {
   symbol: string;
@@ -79,21 +79,25 @@ export const PerformanceTable: React.FC<PerformanceTableProps> = ({ latest }) =>
 
   const headers = ['Asset', 'Price', 'Value', 'Target %', 'Current %', 'Dev %'];
 
-  const getHeaderClass = (index: number) => {
-    if (sortCol !== index) return 'sortable';
-    return `sortable ${sortDir}`;
-  };
-
   return (
-    <div className="glass-panel">
-      <div className="glass-panel-title">ASSET PERFORMANCE</div>
+    <div className="glass-card">
+      <div className="card-title">ASSET PERFORMANCE</div>
       <div className="table-wrapper">
-        <table>
+        <table className="performance-table">
           <thead>
-            <tr>
+            <tr className="table-header-row">
               {headers.map((h, i) => (
-                <th key={h} className={getHeaderClass(i)} onClick={() => handleSort(i)}>
-                  {h}
+                <th 
+                  key={h} 
+                  className="table-th-sortable" 
+                  onClick={() => handleSort(i)}
+                >
+                  <div className="table-th-content">
+                    <span>{h}</span>
+                    <span className="sort-indicator">
+                      {sortCol === i ? (sortDir === 'asc' ? '▲' : '▼') : ''}
+                    </span>
+                  </div>
                 </th>
               ))}
             </tr>
@@ -101,25 +105,31 @@ export const PerformanceTable: React.FC<PerformanceTableProps> = ({ latest }) =>
           <tbody>
             {sortedAssets.map(asset => {
               const dev = asset.deviationPercent;
-              const devClass = getDeviationClass(dev);
               const sign = getDeviationSign(dev);
               const usdSign = asset.deviationUSD > 0.001 ? '+' : '';
+              
+              const isOverweight = dev > 0.001;
+              const isUnderweight = dev < -0.001;
+              const pillClass = isOverweight 
+                ? "deviation-badge-over" 
+                : isUnderweight 
+                  ? "deviation-badge-under" 
+                  : "deviation-badge";
 
               return (
-                <tr key={asset.symbol} className="hoverable">
+                <tr key={asset.symbol} className="table-tr">
                   <td className="symbol-col">{asset.symbol}</td>
-                  <td className="mono-col">${formatCurrency(asset.price)}</td>
-                  <td className="mono-col">${formatCurrency(asset.valueUSD)}</td>
-                  <td>{formatPercent(asset.targetPercent)}%</td>
-                  <td>{formatPercent(asset.currentPercent)}%</td>
-                  <td className={devClass}>
-                    <div className="performance-dev-container">
-                      <span>
-                        {sign}
-                        {formatPercent(dev)}%
+                  <td className="performance-cell-price">${formatCurrency(asset.price)}</td>
+                  <td className="performance-cell-value">${formatCurrency(asset.valueUSD)}</td>
+                  <td className="performance-cell">{formatPercent(asset.targetPercent)}%</td>
+                  <td className="performance-cell">{formatPercent(asset.currentPercent)}%</td>
+                  <td className="performance-cell-action">
+                    <div className={pillClass}>
+                      <span className="dev-percent-text">
+                        {sign}{formatPercent(dev)}%
                       </span>
-                      <span className="performance-dev-usd-label">
-                        ({usdSign}${formatCurrency(asset.deviationUSD)})
+                      <span className="dev-usd-text">
+                        {usdSign}${formatCurrency(asset.deviationUSD)}
                       </span>
                     </div>
                   </td>
