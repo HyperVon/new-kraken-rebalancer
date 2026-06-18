@@ -73,13 +73,13 @@ e.g., every 60 seconds). Each cycle consists of three phases: **Snapshot**, *
 
 ### 3. Architectural Separation of Concerns
 
-To maintain the Single Responsibility Principle (SRP) and keep domain logic highly testable, the core engine is decoupled into specific implementation (`impl`) classes:
+To maintain the Single Responsibility Principle (SRP) and keep domain logic highly testable, the core engine is decoupled into specific services and repositories:
 
-*   **`PortfolioManagerImpl` (The Orchestrator)**: Manages the continuous asynchronous loop. It acts as a lightweight facade that delegates the actual domain logic to the analyzer and executor, and coordinates the final persistence of the snapshot.
-*   **`PortfolioAnalyzer` (The Brain)**: Responsible for Phase 1 and 2. It resolves prices, tracks the All-Time High (ATH), calculates dynamic fiat deployment ratios, computes deviations, and determines the exact `BUY`/`SELL` amounts required.
-*   **`OrderExecutor` (The Brawn)**: Responsible for Phase 3. It takes the calculated orders and safely executes them against the Kraken API. It manages the strict sell-before-buy sequence, projected vs. actual cash tracking, and dust-threshold filtering.
-*   **Persistence Impls (`FileTradeRepositoryImpl`, `PortfolioStatsRepositoryImpl`, `ConfigServiceImpl`)**: Handle data storage using atomic write-then-rename file operations (`AtomicJsonFile`) to prevent data corruption during crashes.
-*   **`TradeHistoryServiceImpl`**: Maintains an `EventEmitter` that broadcasts portfolio snapshots to the Server-Sent Events (SSE) stream in real-time.
+- **`PortfolioManager` (The Orchestrator)**: Manages the continuous asynchronous loop. It acts as a lightweight facade that delegates the actual domain logic to the analyzer and executor, and coordinates the final persistence of the snapshot.
+- **`PortfolioAnalyzer` (The Brain)**: Responsible for Phase 1 and 2. It resolves prices, tracks the All-Time High (ATH), calculates dynamic fiat deployment ratios, computes deviations, and determines the exact `BUY`/`SELL` amounts required.
+- **`OrderExecutor` (The Brawn)**: Responsible for Phase 3. It takes the calculated orders and safely executes them against the Kraken API. It manages the strict sell-before-buy sequence, projected vs. actual cash tracking, and dust-threshold filtering.
+- **Persistence Components (`TradeRepository`, `PortfolioStatsRepository`, `ConfigService`)**: Handle data storage using atomic write-then-rename file operations (`AtomicJsonFile`) to prevent data corruption during crashes.
+- **`TradeHistoryService`**: Maintains an `EventEmitter` that broadcasts portfolio snapshots to the Server-Sent Events (SSE) stream in real-time.
 
 ---
 
@@ -92,8 +92,8 @@ In this phase, the system builds a complete view of the current portfolio state.
 2. **Fetch Prices**: Retrieves the current market price (in USD) for all non-USD
    assets.
 3. **Calculate Valuation**:
-    * Calculates the USD value of every asset (`Balance * Price`).
-    * Sums these values to determine the **Total Portfolio Value**.
+    - Calculates the USD value of every asset (`Balance * Price`).
+    - Sums these values to determine the **Total Portfolio Value**.
 
 ---
 
@@ -104,59 +104,53 @@ target state.
 
 ### 1. Target Calculation & Dynamic Adjustment
 
-    Normally, the target value is `Total Portfolio Value * Target %`. However, the system implements a **Dynamic Fiat Deployment Strategy**:
+Normally, the target value is `Total Portfolio Value * Target %`. However, the system implements a **Dynamic Fiat Deployment Strategy**:
 
-    1.  **ATH Tracking**: The bot tracks the portfolio's All-Time High (ATH) value in `portfolio-stats.json`. ATH is set on first run or updated whenever a new high is reached.
-    2.  **Drawdown Calculation**:
-        `Drawdown % = (ATH - Current Value) / ATH * 100`
-    3.  **Fiat Deployment Percentage**:
-        Based on the configured `fiatMaxDrawdown` (e.g., 30%) and `fiatDeploymentExponent` (e.g., 1.0):
-        `Deployment % = (Drawdown % / Max Drawdown %) ^ Exponent` (Capped at 100%)
+1. **ATH Tracking**: The bot tracks the portfolio's All-Time High (ATH) value in `portfolio-stats.json`. ATH is set on first run or updated whenever a new high is reached.
+2. **Drawdown Calculation**:
+    `Drawdown % = (ATH - Current Value) / ATH * 100`
+3. **Fiat Deployment Percentage**:
+    Based on the configured `fiatMaxDrawdown` (e.g., 30%) and `fiatDeploymentExponent` (e.g., 1.0):
+    `Deployment % = (Drawdown % / Max Drawdown %) ^ Exponent` (Capped at 100%)
 
-        **Examples (Max Drawdown = 30%)**:
-        | Drawdown | Linear (1.0) | Aggressive (0.5) | Conservative (2.0) |
-        | :--- | :--- | :--- | :--- |
-        | **1.5%** (5% of Max) | 5% | 22% | 0.25% |
-        | **7.5%** (25% of Max) | 25% | 50% | 6.25% |
-        | **15%** (50% of Max) | 50% | 71% | 25% |
-        | **22.5%** (75% of Max) | 75% | 87% | 56% |
-        | **30%** (100% of Max) | 100% | 100% | 100% |
+    **Examples (Max Drawdown = 30%)**:
 
-    4.  **Target Adjustment**:
-        The target percentage for USD is reduced by the Deployment %:
-        `Effective USD Target = Base USD Target * (1 - Deployment %)`
-        The removed allocation is redistributed proportionally to the crypto assets, ensuring the total remains 100%.
+    | Drawdown | Linear (1.0) | Aggressive (0.5) | Conservative (2.0) |
+    | :--- | :--- | :--- | :--- |
+    | **1.5%** (5% of Max) | 5% | 22% | 0.25% |
+    | **7.5%** (25% of Max) | 25% | 50% | 6.25% |
+    | **15%** (50% of Max) | 50% | 71% | 25% |
+    | **22.5%** (75% of Max) | 75% | 87% | 56% |
+    | **30%** (100% of Max) | 100% | 100% | 100% |
 
-    Using these effective targets, the **Ideal Value** for each asset is calculated.
+4. **Target Adjustment**:
+    The target percentage for USD is reduced by the Deployment %:
+    `Effective USD Target = Base USD Target * (1 - Deployment %)`
+    The removed allocation is redistributed proportionally to the crypto assets, ensuring the total remains 100%.
 
-2. **Deviation Calculation**:
-   The difference between current and target value is calculated:
-   `Deviation (USD) = Current Value - Target Value`
-   `Deviation (%) = |Deviation (USD)| / Target Value * 100`
+Using these effective targets, the **Ideal Value** for each asset is calculated.
 
-3. **Trigger Logic**:
-   A rebalance is only attempted if an asset's `Deviation (%)` exceeds the
-   configured `deviationTriggerPercent` (e.g., 5%).
+### 2. Deviation Calculation
 
-    * **Scenario A: Standard Rebalance**
-      If a crypto asset (e.g., BTC) exceeds the threshold:
-        * **Overweight (> 0)**: A **SELL** order is generated for the excess USD
-          amount.
-        * **Underweight (< 0)**: A **BUY** order is generated for the deficit
-          USD amount.
+The difference between current and target value is calculated:
+`Deviation (USD) = Current Value - Target Value`
+`Deviation (%) = |Deviation (USD)| / Target Value * 100`
 
-    * **Scenario B: Fiat Correction (Deposit/Withdrawal)**
-      If *only* the USD asset triggers the threshold (e.g., due to a fresh
-      deposit of cash), the system recognizes this as a "Fiat Correction" event.
-        * The surplus (or deficit) of USD is distributed intelligently among
-          assets that counter-balance the deviation.
-        * **Surplus (Deposit)**: Buys are distributed among **Underweight**
-          assets only, proportional to their current USD deficit.
-        * **Shortage (Withdrawal)**: Sells are distributed among **Overweight**
-          assets only, proportional to their current USD surplus.
-        * *Note: This concentrates the rebalancing power into the assets that
-          are furthest from their targets, effectively clearing dust
-          thresholds.*
+### 3. Trigger Logic
+
+A rebalance is only attempted if an asset's `Deviation (%)` exceeds the configured `deviationTriggerPercent` (e.g., 5%).
+
+- **Scenario A: Standard Rebalance**
+  If a crypto asset (e.g., BTC) exceeds the threshold:
+  - **Overweight (> 0)**: A **SELL** order is generated for the excess USD amount.
+  - **Underweight (< 0)**: A **BUY** order is generated for the deficit USD amount.
+
+- **Scenario B: Fiat Correction (Deposit/Withdrawal)**
+  If *only* the USD asset triggers the threshold (e.g., due to a fresh deposit of cash), the system recognizes this as a "Fiat Correction" event.
+  - The surplus (or deficit) of USD is distributed intelligently among assets that counter-balance the deviation.
+  - **Surplus (Deposit)**: Buys are distributed among **Underweight** assets only, proportional to their current USD deficit.
+  - **Shortage (Withdrawal)**: Sells are distributed among **Overweight** assets only, proportional to their current USD surplus.
+  *Note: This concentrates the rebalancing power into the assets that are furthest from their targets, effectively clearing dust thresholds.*
 
 ---
 
@@ -168,24 +162,24 @@ failure.
 
 1. **Sell Orders First**: All SELL orders are executed immediately to generate
    USD.
-    * Only successful sells update the projected cash balance. Failed sells are
+    - Only successful sells update the projected cash balance. Failed sells are
       logged but do not inflate the available cash.
 2. **USD Balance Refresh**: After sells complete (if not in dry-run mode), the
    system polls the Kraken API up to 3 times at 250ms intervals to fetch the
    settled USD balance. It accepts the balance once it reaches 95% of the
    projected amount, or uses the best observed value.
 3. **Buy Orders Second**:
-    * The system verifies that sufficient cash exists for each planned BUY
+    - The system verifies that sufficient cash exists for each planned BUY
       order.
-    * If cash is insufficient (rare, usually due to price slippage or failed
+    - If cash is insufficient (rare, usually due to price slippage or failed
       sells), buy orders are reduced to 99% of available cash.
-    * Only successful buys deduct from the available cash balance.
+    - Only successful buys deduct from the available cash balance.
 4. **Order Placement**:
-    * Orders are placed as **Market Orders** for immediate execution.
-    * "Dust" orders (below the configured `dustThresholdUSD`) are skipped to
+    - Orders are placed as **Market Orders** for immediate execution.
+    - "Dust" orders (below the configured `dustThresholdUSD`) are skipped to
       avoid API errors.
-    * Order volumes use `decimal.js` with 8 decimal places of precision.
-    * In dry-run mode, orders are logged with a `[DRY RUN]` prefix but not sent
+    - Order volumes use `decimal.js` with 8 decimal places of precision.
+    - In dry-run mode, orders are logged with a `[DRY RUN]` prefix but not sent
       to Kraken.
 5. **Persistence**: The cycle snapshot (including all trade actions and their
    outcomes) is saved to `trade-history.json` using an atomic write-then-rename

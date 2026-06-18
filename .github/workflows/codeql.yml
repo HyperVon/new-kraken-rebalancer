@@ -1,12 +1,10 @@
-name: "CodeQL Advanced"
+name: "CodeQL Analysis"
 
-# Disable CodeQL analysis because Kotlin 2.4.0 is not yet supported by CodeQL.
-# To re-enable when Kotlin 2.4.0+ is supported, change branches back to "main" and uncomment schedule if needed.
 on:
   push:
-    branches: [ "disabled-kotlin-2.4-mismatch" ]
+    branches: [ "main", "feature/typescript-rewrite" ]
   pull_request:
-    branches: [ "disabled-kotlin-2.4-mismatch" ]
+    branches: [ "main" ]
 
 permissions:
   actions: read
@@ -17,15 +15,15 @@ jobs:
   analyze:
     name: Analyze (${{ matrix.language }})
     runs-on: ubuntu-latest
-    env:
-      CODEQL_EXTRACTOR_JAVA_AGENT_DISABLE_KOTLIN: true
-    
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - language: java-kotlin
-            build-mode: manual
+        language: [ 'javascript-typescript' ]
 
     steps:
       - name: Checkout repository
@@ -35,20 +33,6 @@ jobs:
         uses: github/codeql-action/init@48ab28a6f5dbc2a99bf1e0131198dd8f1df78169 # v3.28.0
         with:
           languages: ${{ matrix.language }}
-          build-mode: ${{ matrix.build-mode }}
-
-      - name: Set up JDK
-        if: matrix.language == 'java-kotlin'
-        uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9 # v4.0.0
-        with:
-          java-version: '25'
-          distribution: 'temurin'
-
-      - name: Build Kotlin backend
-        if: matrix.language == 'java-kotlin'
-        run: |
-          chmod +x gradlew
-          ./gradlew clean assemble
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@48ab28a6f5dbc2a99bf1e0131198dd8f1df78169 # v3.28.0

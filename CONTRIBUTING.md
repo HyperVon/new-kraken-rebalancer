@@ -11,23 +11,27 @@ improve reliability, safety, and functionality are very welcome.
 - Node.js (v18 or higher)
 - Yarn (v1.x)
 - A Kraken account (for testing with real API — use **dry-run mode**)
-- Basic familiarity with TypeScript, React, Express, and Node.js
+- Basic familiarity with TypeScript, React, NestJS, and Node.js
 
 ### Local Setup
 
 1. **Fork and clone** the repository
+
    ```bash
    git clone https://github.com/YOUR_USERNAME/new-kraken-rebalancer.git
    cd new-kraken-rebalancer
    ```
 
 2. **Create your config file** from the template:
+
    ```bash
    cp rebalancer-config-template.json rebalancer-config.json
    ```
+
    Fill in your Kraken API credentials. **Never commit this file.**
 
 3. **Build the project:**
+
    ```bash
    yarn install
    yarn build
@@ -40,9 +44,7 @@ improve reliability, safety, and functionality are very welcome.
 
 ### Reporting Bugs
 
--
-Search [existing issues](https://github.com/HyperVon/new-kraken-rebalancer/issues)
-first
+- Search [existing issues](https://github.com/HyperVon/new-kraken-rebalancer/issues) first
 - Use the **Bug Report** issue template
 - Include relevant logs (redact any API keys or account details)
 
@@ -56,9 +58,11 @@ first
 ### Submitting a Pull Request
 
 1. Create a feature branch from `main`:
+
    ```bash
    git checkout -b feature/your-feature-name
    ```
+
 2. Make your changes, keeping commits focused and descriptive
 3. Ensure existing tests pass: `yarn test`
 4. Open a pull request against `main` with a clear description of what and why

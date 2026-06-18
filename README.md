@@ -54,7 +54,7 @@ several months.**
 
 ### Live Dashboard
 
-- Real-time portfolio overview with push updates (via Express Server-Sent Events)
+- Real-time portfolio overview with push updates (via Server-Sent Events)
 - Horizontal bar chart showing asset allocation by value
 - Sortable asset performance table with deviation indicators
 - Trade history log with BUY/SELL badges
@@ -133,7 +133,7 @@ graph LR
         OE --> KS
         OE --> CS
         OE --> PA
-        THS --> FTR[FileTradeRepository]
+        THS --> TR[TradeRepository]
     end
 
     subgraph External
@@ -165,7 +165,7 @@ logic, fiat correction strategy, and dynamic deployment math.
 To eliminate unnecessary network polling, the system uses a reactive, push-based
 architecture to synchronize the dashboard with the backend rebalancing loop:
 
-1. **Node EventEmitter**: `TradeHistoryServiceImpl` maintains an event emitter. Whenever a rebalance cycle records a new `PortfolioSnapshot`, the snapshot is emitted.
+1. **Node EventEmitter**: `TradeHistoryService` maintains an event emitter. Whenever a rebalance cycle records a new `PortfolioSnapshot`, the snapshot is emitted.
 2. **Server-Sent Events (SSE)**: The `/api/status/stream` route in `DashboardController` implements a persistent NestJS SSE stream. When a client connects, the backend pushes the latest cached snapshot and registers an event listener to stream subsequent snapshots as they occur.
 3. **React Client**: The React frontend opens an `EventSource` connection to `/api/status/stream` on mount, automatically updating its state and view dynamically whenever a new snapshot is broadcast.
 
@@ -173,7 +173,7 @@ architecture to synchronize the dashboard with the backend rebalancing loop:
 
 ## Project Structure
 
-```
+```text
 ├── backend/
 │   ├── src/
 │   │   ├── main.ts                       # Entry point, bootstraps NestJS container
@@ -238,7 +238,7 @@ To run the application in development mode with hot-reloading for both backend a
 yarn dev
 ```
 
-The frontend will run at **http://localhost:5173** and proxy backend API calls to port **8080**.
+The frontend will run at **<http://localhost:5173>** and proxy backend API calls to port **8080**.
 
 ### 4. Build and Start in Production
 
@@ -249,7 +249,7 @@ yarn build
 yarn start
 ```
 
-The production application is served completely unified on **http://localhost:8080**.
+The production application is served completely unified on **<http://localhost:8080>**.
 
 ---
 
@@ -273,6 +273,7 @@ The production application is served completely unified on **http://localhost:80
 | `GET`  | `/api/config`          | Retrieve current application settings                                    |
 | `POST` | `/api/config`          | Validate and update application settings                                 |
 | `GET`  | `/api/history`         | Get last 50 historical portfolio snapshots                               |
+| `GET`  | `/api/latest`          | Retrieve the latest portfolio snapshot                                   |
 | `GET`  | `/api/status/stream`   | Server-Sent Events (SSE) stream for real-time portfolio snapshot updates |
 
 ---
@@ -288,6 +289,7 @@ yarn test
 ```
 
 Totaling 96 tests across:
+
 - E2E portfolio rebalancing flow validation.
 - Drawdown dynamic deployment calculations.
 - Fiat correction asset distribution.

@@ -19,6 +19,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - Implemented NestJS controllers (`DashboardController`) utilizing routing decorators and SSE streams (`/api/status/stream`).
   - Configured modular topology (`AppModule`) and bootstrapped the server container (`main.ts`).
   - Resolved dynamic mocks and fully typed the Vitest backend suites to work seamlessly with NestJS injections.
+- **Zod Schema Configuration Validation**: Integrated Zod validation schemas (`AppConfigSchema`, `SettingsSchema`, `AllocationSchema`, `KrakenCredentialsSchema`) in `ConfigService` to enforce strict schema validation and business logic rules on configuration settings.
+- **Node.js Native Fetch Integration**: Replaced Axios and custom HTTP clients with native global `fetch` API for all REST API queries, including authenticated Kraken requests.
+- **Standardized Asynchronous Timer Loop**: Refactored the core rebalance cycle loop orchestration inside `PortfolioManager` to use standard asynchronous timers, reducing runtime overhead and simplifying resource tracking.
 - **Tailwind CSS v4 Integration & 100% Styles Extraction**: Migrated the frontend styling from a custom 869-line stylesheet (`style.css`) to utility-first **Tailwind CSS v4** with native Vite integration.
   - Extracted **100% of all styling/layout Tailwind utility classes** out of the React TSX files (`App.tsx`, `OverviewGrid.tsx`, `SettingsForm.tsx`, `PerformanceTable.tsx`, `RecentActivity.tsx`, `AllocationChart.tsx`) into clean, semantic `@utility` component rules in `index.css`.
   - Implemented CSS nested rules (e.g. `&:hover .child-class`) within parent utilities to drive hover interactions natively in stylesheet code, completely removing the need for `group` utility markup in JSX.
@@ -157,14 +160,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **HTMX-Powered Dashboard**: Replaced the React/Vite frontend with a
   server-side rendered HTML interface using the kotlinx.html DSL and HTMX for
   dynamic content swapping.
-    - Dashboard shell renders initial HTML via
-      `DashboardView.renderDashboardShell()`
-    - Dashboard fragment (`GET /fragments/dashboard`) returns partial HTML
-      swapped into the shell via `hx-get` triggered by `load` and SSE events
-    - Settings form uses `hx-post` for AJAX submission with server-side
-      validation errors returning HTML fragments
-    - Settings page includes client-side JavaScript for allocation row
-      management and total validation
+  - Dashboard shell renders initial HTML via
+    `DashboardView.renderDashboardShell()`
+  - Dashboard fragment (`GET /fragments/dashboard`) returns partial HTML
+    swapped into the shell via `hx-get` triggered by `load` and SSE events
+  - Settings form uses `hx-post` for AJAX submission with server-side
+    validation errors returning HTML fragments
+  - Settings page includes client-side JavaScript for allocation row
+    management and total validation
 - **Ktor SSE Integration with HTMX**: SSE events from `/api/status/stream`
   trigger automatic dashboard fragment refresh using HTMX's SSE extension (
   `hx-ext="sse"`, `sse-swap="message"`), eliminating the need for a separate
@@ -239,10 +242,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Server-Sent Events (SSE) Real-Time Stream**: Replaced the frontend's
   5-second polling of the `/api/status` endpoint with a native Ktor 3.5.0 SSE
   status stream (`/api/status/stream`).
-    - Added Ktor server-sse plugin to the backend.
-    - Implemented `getHistoryFlow()` using a Kotlin Coroutines
-      `MutableSharedFlow` in `TradeHistoryService` to publish snapshots in
-      real-time.
+  - Added Ktor server-sse plugin to the backend.
+  - Implemented `getHistoryFlow()` using a Kotlin Coroutines
+    `MutableSharedFlow` in `TradeHistoryService` to publish snapshots in
+    real-time.
 
 ### Changed
 
@@ -258,10 +261,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Backend Dependency Upgrades**: Upgraded core backend framework and library
   versions in `build.gradle.kts` to their latest stable major and minor
   releases:
-    - **Ktor**: Upgraded from `2.3.13` to `3.5.0` (major version 3 upgrade)
-    - **Koin**: Upgraded from `3.5.6` to `4.2.1` (major version 4 upgrade)
-    - **Kotlinx Coroutines**: Upgraded from `1.8.0` to `1.11.0`
-    - **Logback Classic**: Upgraded from `1.5.32` to `1.5.33`
+  - **Ktor**: Upgraded from `2.3.13` to `3.5.0` (major version 3 upgrade)
+  - **Koin**: Upgraded from `3.5.6` to `4.2.1` (major version 4 upgrade)
+  - **Kotlinx Coroutines**: Upgraded from `1.8.0` to `1.11.0`
+  - **Logback Classic**: Upgraded from `1.5.32` to `1.5.33`
 
 ## [2.2.2] - 2026-05-28
 
