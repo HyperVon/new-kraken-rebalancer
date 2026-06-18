@@ -1,5 +1,5 @@
 import { Decimal } from 'decimal.js';
-import { KrakenService } from '../../src/service/kraken';
+import { KrakenService, IKrakenService } from '../../src/service/kraken';
 import { OrderResult, createOrderResult } from '../../src/model/order';
 
 export interface OrderCall {
@@ -9,7 +9,7 @@ export interface OrderCall {
   volume: Decimal;
 }
 
-export class FakeKrakenService implements KrakenService {
+export class FakeKrakenService implements IKrakenService {
   public balanceSupplier: () => Record<string, number> = () => ({});
   public pricesSupplier: (pairs: string) => Record<string, number> = () => ({});
   public executeOrderAction?: (pair: string, type: string, side: 'buy' | 'sell', volume: Decimal) => void;

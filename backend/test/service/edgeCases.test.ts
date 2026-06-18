@@ -3,20 +3,20 @@ import { Decimal } from 'decimal.js';
 import { FakeKrakenService } from './fakeKraken';
 import { PortfolioAnalyzer } from '../../src/service/analyzer';
 import { OrderExecutor } from '../../src/service/executor';
-import { PortfolioManagerImpl } from '../../src/service/manager';
+import { PortfolioManager } from '../../src/service/manager';
 import { AppConfig, Allocation } from '../../src/config/config';
 import { createOrderResult } from '../../src/model/order';
 
 Decimal.set({ rounding: Decimal.ROUND_HALF_UP });
 
-describe('PortfolioManagerEdgeCasesTest', () => {
+describe('PortfolioManager edge cases', () => {
   let krakenService: FakeKrakenService;
   let configService: any;
   let tradeHistoryService: any;
   let portfolioStatsRepository: any;
   let portfolioAnalyzer: PortfolioAnalyzer;
   let orderExecutor: OrderExecutor;
-  let portfolioManager: PortfolioManagerImpl;
+  let portfolioManager: PortfolioManager;
 
   beforeEach(() => {
     krakenService = new FakeKrakenService();
@@ -42,7 +42,7 @@ describe('PortfolioManagerEdgeCasesTest', () => {
       portfolioStatsRepository
     );
     orderExecutor = new OrderExecutor(krakenService, portfolioAnalyzer);
-    portfolioManager = new PortfolioManagerImpl(
+    portfolioManager = new PortfolioManager(
       configService,
       tradeHistoryService,
       portfolioAnalyzer,

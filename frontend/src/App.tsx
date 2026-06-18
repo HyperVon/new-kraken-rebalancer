@@ -141,7 +141,10 @@ export const App: React.FC = () => {
     return () => clearInterval(interval);
   }, [latestSnapshot]);
 
-  const handleSaveConfig = async (settings: any, allocations: any) => {
+  const handleSaveConfig = async (
+    settings: AppConfig['settings'],
+    allocations: AppConfig['allocations']
+  ) => {
     const response = await fetch('/api/config', {
       method: 'POST',
       headers: {

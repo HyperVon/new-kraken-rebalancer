@@ -2,12 +2,12 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { ConfigServiceImpl, InvalidConfigurationException, AppConfig } from '../../src/config/config';
+import { ConfigService, InvalidConfigurationError, AppConfig } from '../../src/config/config';
 import { AtomicJsonFile } from '../../src/repository/atomicFile';
 
-describe('ConfigServiceTest', () => {
+describe('ConfigService', () => {
   let tempFilePath: string;
-  let configService: ConfigServiceImpl;
+  let configService: ConfigService;
 
   const validConfig: AppConfig = {
     kraken: { apiKey: 'k', privateKey: 's' },
@@ -26,7 +26,7 @@ describe('ConfigServiceTest', () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rebalancer-test-'));
     tempFilePath = path.join(tempDir, 'test-config.json');
     fs.writeFileSync(tempFilePath, JSON.stringify(validConfig, null, 2), 'utf8');
-    configService = new ConfigServiceImpl(tempFilePath);
+    configService = new ConfigService(tempFilePath);
   });
 
   afterEach(() => {
@@ -38,19 +38,19 @@ describe('ConfigServiceTest', () => {
     }
   });
 
-  it('loadConfig_Success', () => {
+  it('should successfully load a valid configuration', () => {
     configService.loadConfig();
     const config = configService.getConfig();
     expect(config).toBeDefined();
     expect(config.allocations[0].symbol.toUpperCase()).toBe('USD');
   });
 
-  it('loadConfig_FileNotFound', () => {
+  it('should throw an error if the configuration file is not found', () => {
     const missingFilePath = path.join(path.dirname(tempFilePath), 'missing.json');
-    expect(() => new ConfigServiceImpl(missingFilePath)).toThrow(/not found/);
+    expect(() => new ConfigService(missingFilePath)).toThrow(/not found/);
   });
 
-  it('updateConfig_Success', () => {
+  it('should successfully update config and save it to file', () => {
     configService.loadConfig();
     const oldConfig = configService.getConfig();
     const newConfig: AppConfig = {
@@ -68,7 +68,7 @@ describe('ConfigServiceTest', () => {
     expect(fileContent.allocations.length).toBe(2);
   });
 
-  it('validateConfig_InvalidTotal', () => {
+  it('should throw InvalidConfigurationError if total allocations are not 100%', () => {
     configService.loadConfig();
     const oldConfig = configService.getConfig();
     const invalidConfig: AppConfig = {
@@ -76,10 +76,10 @@ describe('ConfigServiceTest', () => {
       allocations: [{ symbol: 'USD', targetPercent: 90.0 }]
     };
 
-    expect(() => configService.updateConfig(invalidConfig)).toThrow(InvalidConfigurationException);
+    expect(() => configService.updateConfig(invalidConfig)).toThrow(InvalidConfigurationError);
   });
 
-  it('validateConfig_NoUSD', () => {
+  it('should throw InvalidConfigurationError if USD is missing from allocations', () => {
     configService.loadConfig();
     const oldConfig = configService.getConfig();
     const invalidConfig: AppConfig = {
@@ -87,10 +87,10 @@ describe('ConfigServiceTest', () => {
       allocations: [{ symbol: 'BTC', targetPercent: 100.0 }]
     };
 
-    expect(() => configService.updateConfig(invalidConfig)).toThrow(InvalidConfigurationException);
+    expect(() => configService.updateConfig(invalidConfig)).toThrow(InvalidConfigurationError);
   });
 
-  it('validateConfig_DuplicateSymbols', () => {
+  it('should throw InvalidConfigurationError if there are duplicate symbols', () => {
     configService.loadConfig();
     const oldConfig = configService.getConfig();
     const invalidConfig: AppConfig = {
@@ -101,10 +101,10 @@ describe('ConfigServiceTest', () => {
       ]
     };
 
-    expect(() => configService.updateConfig(invalidConfig)).toThrow(InvalidConfigurationException);
+    expect(() => configService.updateConfig(invalidConfig)).toThrow(InvalidConfigurationError);
   });
 
-  it('validateConfig_NegativeTargetPercent', () => {
+  it('should throw InvalidConfigurationError if target percent is negative', () => {
     configService.loadConfig();
     const oldConfig = configService.getConfig();
     const invalidConfig: AppConfig = {
@@ -115,10 +115,10 @@ describe('ConfigServiceTest', () => {
       ]
     };
 
-    expect(() => configService.updateConfig(invalidConfig)).toThrow(InvalidConfigurationException);
+    expect(() => configService.updateConfig(invalidConfig)).toThrow(InvalidConfigurationError);
   });
 
-  it('validateConfig_EmptyAllocations', () => {
+  it('should throw InvalidConfigurationError if allocations list is empty', () => {
     configService.loadConfig();
     const oldConfig = configService.getConfig();
     const invalidConfig: AppConfig = {
@@ -126,10 +126,10 @@ describe('ConfigServiceTest', () => {
       allocations: []
     };
 
-    expect(() => configService.updateConfig(invalidConfig)).toThrow(InvalidConfigurationException);
+    expect(() => configService.updateConfig(invalidConfig)).toThrow(InvalidConfigurationError);
   });
 
-  it('validateConfig_BlankSymbol', () => {
+  it('should throw InvalidConfigurationError if allocation symbol is blank', () => {
     configService.loadConfig();
     const oldConfig = configService.getConfig();
     const invalidConfig: AppConfig = {
@@ -140,10 +140,10 @@ describe('ConfigServiceTest', () => {
       ]
     };
 
-    expect(() => configService.updateConfig(invalidConfig)).toThrow(InvalidConfigurationException);
+    expect(() => configService.updateConfig(invalidConfig)).toThrow(InvalidConfigurationError);
   });
 
-  it('validateConfig_BadSettings', () => {
+  it('should throw InvalidConfigurationError if settings parameters are invalid', () => {
     configService.loadConfig();
     const oldConfig = configService.getConfig();
 
@@ -151,40 +151,40 @@ describe('ConfigServiceTest', () => {
       ...oldConfig,
       settings: { ...oldConfig.settings, loopDelaySeconds: 0 }
     };
-    expect(() => configService.updateConfig(badLoopDelay)).toThrow(InvalidConfigurationException);
+    expect(() => configService.updateConfig(badLoopDelay)).toThrow(InvalidConfigurationError);
 
     const badDev: AppConfig = {
       ...oldConfig,
       settings: { ...oldConfig.settings, deviationTriggerPercent: -1.0 }
     };
-    expect(() => configService.updateConfig(badDev)).toThrow(InvalidConfigurationException);
+    expect(() => configService.updateConfig(badDev)).toThrow(InvalidConfigurationError);
 
     const badDust: AppConfig = {
       ...oldConfig,
       settings: { ...oldConfig.settings, dustThresholdUSD: -1.0 }
     };
-    expect(() => configService.updateConfig(badDust)).toThrow(InvalidConfigurationException);
+    expect(() => configService.updateConfig(badDust)).toThrow(InvalidConfigurationError);
 
     const badFiatDrawdown1: AppConfig = {
       ...oldConfig,
       settings: { ...oldConfig.settings, fiatMaxDrawdown: -1.0 }
     };
-    expect(() => configService.updateConfig(badFiatDrawdown1)).toThrow(InvalidConfigurationException);
+    expect(() => configService.updateConfig(badFiatDrawdown1)).toThrow(InvalidConfigurationError);
 
     const badFiatDrawdown2: AppConfig = {
       ...oldConfig,
       settings: { ...oldConfig.settings, fiatMaxDrawdown: 101.0 }
     };
-    expect(() => configService.updateConfig(badFiatDrawdown2)).toThrow(InvalidConfigurationException);
+    expect(() => configService.updateConfig(badFiatDrawdown2)).toThrow(InvalidConfigurationError);
 
     const badFiatExp: AppConfig = {
       ...oldConfig,
       settings: { ...oldConfig.settings, fiatDeploymentExponent: 0.0 }
     };
-    expect(() => configService.updateConfig(badFiatExp)).toThrow(InvalidConfigurationException);
+    expect(() => configService.updateConfig(badFiatExp)).toThrow(InvalidConfigurationError);
   });
 
-  it('saveConfig_Exception', () => {
+  it('should wrap persistence error into a configuration save error', () => {
     // Mock AtomicJsonFile.writeSync to throw an error on save
     const spy = vi.spyOn(AtomicJsonFile, 'writeSync').mockImplementation(() => {
       throw new Error('Write error');

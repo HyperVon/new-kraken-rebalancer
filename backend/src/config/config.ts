@@ -1,45 +1,122 @@
 import * as fs from 'fs';
 import { AtomicJsonFile } from '../repository/atomicFile';
 
-export class InvalidConfigurationException extends Error {
+import { z } from 'zod';
+
+export class InvalidConfigurationError extends Error {
   constructor(message: string) {
     super(message);
-    this.name = 'InvalidConfigurationException';
+    this.name = 'InvalidConfigurationError';
   }
 }
 
-export interface Settings {
-  loopDelaySeconds: number;
-  deviationTriggerPercent: number;
-  dustThresholdUSD: number;
-  dryRun: boolean;
-  fiatMaxDrawdown: number;
-  fiatDeploymentExponent: number;
-}
+export const SettingsSchema = z.object({
+  loopDelaySeconds: z.number()
+    .int('Loop delay must be a positive integer.')
+    .positive('Loop delay must be a positive integer.'),
+  deviationTriggerPercent: z.number().nonnegative('Deviation trigger percent must be non-negative.'),
+  dustThresholdUSD: z.number().nonnegative('Dust threshold USD must be non-negative.'),
+  dryRun: z.boolean(),
+  fiatMaxDrawdown: z.number().min(0, 'Fiat max drawdown must be between 0% and 100%.').max(100, 'Fiat max drawdown must be between 0% and 100%.'),
+  fiatDeploymentExponent: z.number().positive('Fiat deployment exponent must be positive.'),
+});
 
-export interface Allocation {
-  symbol: string;
-  targetPercent: number;
-}
+export const AllocationSchema = z.object({
+  symbol: z.string(),
+  targetPercent: z.number(),
+});
 
-export interface KrakenCredentials {
-  apiKey: string;
-  privateKey: string;
-}
+export const KrakenCredentialsSchema = z.object({
+  apiKey: z.string(),
+  privateKey: z.string(),
+});
 
-export interface AppConfig {
-  kraken: KrakenCredentials;
-  settings: Settings;
-  allocations: Allocation[];
-}
+export const AppConfigSchema = z.object({
+  kraken: KrakenCredentialsSchema,
+  settings: SettingsSchema,
+  allocations: z.array(AllocationSchema),
+}).superRefine((data, ctx) => {
+  if (!data.settings) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Settings are missing.',
+      path: ['settings']
+    });
+    return;
+  }
 
-export interface ConfigService {
-  loadConfig(): void;
-  getConfig(): AppConfig;
-  updateConfig(newConfig: AppConfig): void;
-}
+  if (!data.allocations || data.allocations.length === 0) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'At least one allocation is required.',
+      path: ['allocations']
+    });
+    return;
+  }
 
-export class ConfigServiceImpl implements ConfigService {
+  const symbols = data.allocations.map(a => a.symbol.toUpperCase());
+  const counts = new Map<string, number>();
+  for (const sym of symbols) {
+    counts.set(sym, (counts.get(sym) || 0) + 1);
+  }
+  const duplicates = Array.from(counts.entries())
+    .filter(([_, count]) => count > 1)
+    .map(([sym]) => sym);
+  if (duplicates.length > 0) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: `Duplicate allocation symbols are not allowed: ${duplicates.join(', ')}`,
+      path: ['allocations']
+    });
+  }
+
+  let totalPercent = 0;
+  let hasUsd = false;
+
+  for (const alloc of data.allocations) {
+    if (!alloc.symbol || alloc.symbol.trim() === '') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Allocation symbols cannot be blank.',
+        path: ['allocations']
+      });
+    }
+    if (alloc.targetPercent < 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Target percent for ${alloc.symbol} cannot be negative.`,
+        path: ['allocations']
+      });
+    }
+    totalPercent += alloc.targetPercent;
+    if (alloc.symbol.toUpperCase() === 'USD') {
+      hasUsd = true;
+    }
+  }
+
+  if (Math.abs(totalPercent - 100.0) > 0.001) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: `Total allocation percentage must be exactly 100%. Current sum: ${totalPercent}`,
+      path: ['allocations']
+    });
+  }
+
+  if (!hasUsd) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'One asset must be USD.',
+      path: ['allocations']
+    });
+  }
+});
+
+export type Settings = z.infer<typeof SettingsSchema>;
+export type Allocation = z.infer<typeof AllocationSchema>;
+export type KrakenCredentials = z.infer<typeof KrakenCredentialsSchema>;
+export type AppConfig = z.infer<typeof AppConfigSchema>;
+
+export class ConfigService {
   private readonly configFilePath: string;
   private appConfig!: AppConfig;
 
@@ -69,70 +146,17 @@ export class ConfigServiceImpl implements ConfigService {
     this.appConfig = newConfig;
     try {
       AtomicJsonFile.writeSync(this.configFilePath, newConfig);
-    } catch (e: any) {
-      throw new Error(`Failed to save configuration: ${e.message}`);
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e);
+      throw new Error(`Failed to save configuration: ${message}`);
     }
   }
 
   private validateConfig(config: AppConfig): void {
-    const settings = config.settings;
-    if (!settings) {
-      throw new InvalidConfigurationException('Settings are missing.');
-    }
-    if (settings.loopDelaySeconds <= 0) {
-      throw new InvalidConfigurationException('Loop delay must be a positive integer.');
-    }
-    if (settings.deviationTriggerPercent < 0) {
-      throw new InvalidConfigurationException('Deviation trigger percent must be non-negative.');
-    }
-    if (settings.dustThresholdUSD < 0) {
-      throw new InvalidConfigurationException('Dust threshold USD must be non-negative.');
-    }
-    if (settings.fiatMaxDrawdown < 0 || settings.fiatMaxDrawdown > 100) {
-      throw new InvalidConfigurationException('Fiat max drawdown must be between 0% and 100%.');
-    }
-    if (settings.fiatDeploymentExponent <= 0) {
-      throw new InvalidConfigurationException('Fiat deployment exponent must be positive.');
-    }
-
-    if (!config.allocations || config.allocations.length === 0) {
-      throw new InvalidConfigurationException('At least one allocation is required.');
-    }
-
-    const symbols = config.allocations.map(a => a.symbol.toUpperCase());
-    const counts = new Map<string, number>();
-    for (const sym of symbols) {
-      counts.set(sym, (counts.get(sym) || 0) + 1);
-    }
-    const duplicates = Array.from(counts.entries())
-      .filter(([_, count]) => count > 1)
-      .map(([sym]) => sym);
-    if (duplicates.length > 0) {
-      throw new InvalidConfigurationException(`Duplicate allocation symbols are not allowed: ${duplicates.join(', ')}`);
-    }
-
-    let totalPercent = 0;
-    let hasUsd = false;
-
-    for (const alloc of config.allocations) {
-      if (!alloc.symbol || alloc.symbol.trim() === '') {
-        throw new InvalidConfigurationException('Allocation symbols cannot be blank.');
-      }
-      if (alloc.targetPercent < 0) {
-        throw new InvalidConfigurationException(`Target percent for ${alloc.symbol} cannot be negative.`);
-      }
-      totalPercent += alloc.targetPercent;
-      if (alloc.symbol.toUpperCase() === 'USD') {
-        hasUsd = true;
-      }
-    }
-
-    if (Math.abs(totalPercent - 100.0) > 0.001) {
-      throw new InvalidConfigurationException(`Total allocation percentage must be exactly 100%. Current sum: ${totalPercent}`);
-    }
-
-    if (!hasUsd) {
-      throw new InvalidConfigurationException('One asset must be USD.');
+    const result = AppConfigSchema.safeParse(config);
+    if (!result.success) {
+      const firstError = result.error.issues[0];
+      throw new InvalidConfigurationError(firstError.message);
     }
   }
 }

@@ -8,13 +8,7 @@ import { Asset } from '../model/asset';
 
 Decimal.set({ rounding: Decimal.ROUND_HALF_UP });
 
-export interface PortfolioManager {
-  startRebalancingLoop(): void;
-  stopRebalancingLoop(): void;
-  performRebalanceCycle(): Promise<void>;
-}
-
-export class PortfolioManagerImpl implements PortfolioManager {
+export class PortfolioManager {
   private readonly configService: ConfigService;
   private readonly tradeHistoryService: TradeHistoryService;
   private readonly portfolioAnalyzer: PortfolioAnalyzer;
@@ -128,9 +122,10 @@ export class PortfolioManagerImpl implements PortfolioManager {
 
     try {
       this.tradeHistoryService.addSnapshot(snapshot);
-    } catch (e: any) {
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e);
       console.error('Failed to persist trade history snapshot', e);
-      actionLog.push(`ERROR: Failed to persist trade history: ${e.message}`);
+      actionLog.push(`ERROR: Failed to persist trade history: ${message}`);
     }
 
     console.log('--- Cycle Complete ---');

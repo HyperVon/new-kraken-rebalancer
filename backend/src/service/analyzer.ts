@@ -1,6 +1,6 @@
 import { Decimal } from 'decimal.js';
-import { ConfigService } from '../config/config';
-import { KrakenService } from './kraken';
+import { ConfigService, Settings } from '../config/config';
+import { KrakenService, IKrakenService } from './kraken';
 import { PortfolioStatsRepository } from '../repository/stats';
 import { Asset } from '../model/asset';
 
@@ -19,12 +19,12 @@ export interface PortfolioValues {
 }
 
 export class PortfolioAnalyzer {
-  private readonly krakenService: KrakenService;
+  private readonly krakenService: IKrakenService;
   private readonly configService: ConfigService;
   private readonly portfolioStatsRepository: PortfolioStatsRepository;
 
   constructor(
-    krakenService: KrakenService,
+    krakenService: IKrakenService,
     configService: ConfigService,
     portfolioStatsRepository: PortfolioStatsRepository
   ) {
@@ -141,7 +141,7 @@ export class PortfolioAnalyzer {
     }
   }
 
-  calculateFiatDeployment(drawdownPct: Decimal, settings: any): Decimal {
+  calculateFiatDeployment(drawdownPct: Decimal, settings: Settings): Decimal {
     if (settings.fiatMaxDrawdown <= 0.0) return new Decimal(0);
 
     const maxDD = new Decimal(settings.fiatMaxDrawdown);

@@ -1,17 +1,21 @@
-import axios from 'axios';
 import * as crypto from 'crypto';
 import { Decimal } from 'decimal.js';
 import { ConfigService } from '../config/config';
 import { OrderResult, createOrderResult } from '../model/order';
 import { Asset } from '../model/asset';
 
-export interface KrakenService {
+export interface IKrakenService {
   getBalances(): Promise<Record<string, number>>;
   getTickerPrices(pairs: string): Promise<Record<string, number>>;
-  executeOrder(pair: string, type: string, side: 'buy' | 'sell', volume: Decimal): Promise<OrderResult>;
+  executeOrder(
+    pair: string,
+    type: string,
+    side: 'buy' | 'sell',
+    volume: Decimal
+  ): Promise<OrderResult>;
 }
 
-export class KrakenServiceImpl implements KrakenService {
+export class KrakenService implements IKrakenService {
   private readonly configService: ConfigService;
   private readonly apiUrl = 'https://api.kraken.com';
   private readonly apiVersion = '0';
@@ -23,7 +27,7 @@ export class KrakenServiceImpl implements KrakenService {
 
   async getBalances(): Promise<Record<string, number>> {
     const path = `/${this.apiVersion}/private/Balance`;
-    const result = await this.queryPrivate(path, {});
+    const result = await this.queryPrivate(path, {}) as Record<string, string>;
     const balances: Record<string, number> = {};
     if (result) {
       for (const key of Object.keys(result)) {
@@ -35,7 +39,7 @@ export class KrakenServiceImpl implements KrakenService {
 
   async getTickerPrices(pairs: string): Promise<Record<string, number>> {
     const path = `/${this.apiVersion}/public/Ticker?pair=${pairs}`;
-    const result = await this.queryPublic(path);
+    const result = await this.queryPublic(path) as { result?: Record<string, { c?: string[] }> };
     const ticker = result.result;
     const prices: Record<string, number> = {};
     if (ticker) {
@@ -86,8 +90,8 @@ export class KrakenServiceImpl implements KrakenService {
       const resp = await this.queryPrivate(path, params);
       console.log(`Order Executed: ${JSON.stringify(resp)}`);
       return createOrderResult(true, pair, side, normalizedVolume, false);
-    } catch (e: any) {
-      const message = e.message || e.constructor.name;
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e);
       console.error(
         `Failed to execute order: ${type} ${side} ${pair} volume=${volStr}`,
         e
@@ -96,9 +100,12 @@ export class KrakenServiceImpl implements KrakenService {
     }
   }
 
-  private async queryPublic(path: string): Promise<any> {
-    const response = await axios.get(this.apiUrl + path);
-    const body = response.data;
+  private async queryPublic(path: string): Promise<unknown> {
+    const response = await fetch(this.apiUrl + path);
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    const body = await response.json() as { error?: string[] };
     if (body.error && Array.isArray(body.error) && body.error.length > 0) {
       console.error(`Kraken Public API Error for path ${path}: ${body.error}`);
       throw new Error(`Kraken Public API Error: ${JSON.stringify(body.error)}`);
@@ -106,7 +113,7 @@ export class KrakenServiceImpl implements KrakenService {
     return body;
   }
 
-  private async queryPrivate(path: string, data: Record<string, string>): Promise<any> {
+  private async queryPrivate(path: string, data: Record<string, string>): Promise<unknown> {
     const config = this.configService.getConfig();
     const apiKey = config.kraken.apiKey;
     const privateKey = config.kraken.privateKey;
@@ -121,21 +128,26 @@ export class KrakenServiceImpl implements KrakenService {
       const nonce = (this.nonceGenerator++).toString();
       const payload = { ...data, nonce };
 
-      const postData = Object.entries(payload)
-        .map(([k, v]) => `${k}=${v}`)
-        .join('&');
+      const postData = new URLSearchParams(payload).toString();
 
       const signature = this.signRequest(path, nonce, postData, privateKey);
 
       try {
-        const response = await axios.post(this.apiUrl + path, postData, {
+        const response = await fetch(this.apiUrl + path, {
+          method: 'POST',
           headers: {
             'API-Key': apiKey,
             'API-Sign': signature,
             'Content-Type': 'application/x-www-form-urlencoded'
-          }
+          },
+          body: postData
         });
-        const body = response.data;
+
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const body = await response.json() as { error?: string[]; result?: unknown };
         if (body.error && Array.isArray(body.error) && body.error.length > 0) {
           const errorMsg = JSON.stringify(body.error);
           if (errorMsg.includes('Invalid nonce') && retryCount < maxRetries) {
@@ -150,8 +162,8 @@ export class KrakenServiceImpl implements KrakenService {
           throw new Error(`Kraken API Error: ${errorMsg}`);
         }
         return body.result;
-      } catch (e: any) {
-        const errorMsg = e.message || '';
+      } catch (e: unknown) {
+        const errorMsg = e instanceof Error ? e.message : String(e);
         if (errorMsg.includes('Invalid nonce') && retryCount < maxRetries) {
           const bumpAmount = BigInt(100_000_000) * (BigInt(1) << BigInt(retryCount));
           this.nonceGenerator += bumpAmount;

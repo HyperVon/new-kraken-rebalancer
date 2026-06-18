@@ -21,11 +21,12 @@ function createDashboardRouter(configService, tradeHistoryService) {
             res.json({ success: true });
         }
         catch (e) {
-            if (e instanceof config_1.InvalidConfigurationException) {
+            if (e instanceof config_1.InvalidConfigurationError) {
                 res.status(400).json({ error: e.message });
             }
             else {
-                res.status(500).json({ error: e.message || 'Internal server error' });
+                const message = e instanceof Error ? e.message : 'Internal server error';
+                res.status(500).json({ error: message });
             }
         }
     });

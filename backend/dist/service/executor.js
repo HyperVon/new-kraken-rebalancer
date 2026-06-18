@@ -3,8 +3,8 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.OrderExecutor = void 0;
 const decimal_js_1 = require("decimal.js");
 const asset_1 = require("../model/asset");
+const promises_1 = require("timers/promises");
 decimal_js_1.Decimal.set({ rounding: decimal_js_1.Decimal.ROUND_HALF_UP });
-const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 class OrderExecutor {
     krakenService;
     portfolioAnalyzer;
@@ -65,7 +65,7 @@ class OrderExecutor {
         const delayMs = 250;
         let bestCash = projectedCash;
         for (let attempt = 0; attempt < maxAttempts; attempt++) {
-            await delay(delayMs);
+            await (0, promises_1.setTimeout)(delayMs);
             try {
                 const updatedBalances = await this.krakenService.getBalances();
                 if (updatedBalances && Object.keys(updatedBalances).length > 0) {

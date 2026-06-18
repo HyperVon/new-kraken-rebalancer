@@ -3,19 +3,19 @@ import { Decimal } from 'decimal.js';
 import { FakeKrakenService } from './fakeKraken';
 import { PortfolioAnalyzer } from '../../src/service/analyzer';
 import { OrderExecutor } from '../../src/service/executor';
-import { PortfolioManagerImpl } from '../../src/service/manager';
+import { PortfolioManager } from '../../src/service/manager';
 import { AppConfig, Allocation } from '../../src/config/config';
 
 Decimal.set({ rounding: Decimal.ROUND_HALF_UP });
 
-describe('PortfolioManagerComprehensiveTest', () => {
+describe('PortfolioManager comprehensive tests', () => {
   let krakenService: FakeKrakenService;
   let configService: any;
   let tradeHistoryService: any;
   let portfolioStatsRepository: any;
   let portfolioAnalyzer: PortfolioAnalyzer;
   let orderExecutor: OrderExecutor;
-  let portfolioManager: PortfolioManagerImpl;
+  let portfolioManager: PortfolioManager;
 
   const makeConfig = (...allocs: Allocation[]): AppConfig => ({
     kraken: { apiKey: 'k', privateKey: 's' },
@@ -54,7 +54,7 @@ describe('PortfolioManagerComprehensiveTest', () => {
       portfolioStatsRepository
     );
     orderExecutor = new OrderExecutor(krakenService, portfolioAnalyzer);
-    portfolioManager = new PortfolioManagerImpl(
+    portfolioManager = new PortfolioManager(
       configService,
       tradeHistoryService,
       portfolioAnalyzer,

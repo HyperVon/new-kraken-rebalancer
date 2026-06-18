@@ -1,9 +1,9 @@
 import { describe, it, expect, vi } from 'vitest';
 import { Decimal } from 'decimal.js';
-import { TradeHistoryServiceImpl } from '../../src/service/history';
+import { TradeHistoryService } from '../../src/service/history';
 import { PortfolioSnapshot } from '../../src/model/snapshot';
 
-describe('TradeHistoryServiceTest', () => {
+describe('TradeHistoryService', () => {
   const mockSnapshot = (): PortfolioSnapshot => ({
     timestamp: new Date().toISOString(),
     totalValueUSD: new Decimal(0),
@@ -14,23 +14,23 @@ describe('TradeHistoryServiceTest', () => {
     effectiveUsdTargetPercent: new Decimal(0)
   });
 
-  it('init_LoadsHistoryFromRepository', () => {
+  it('should load history from repository on initialization', () => {
     const s1 = mockSnapshot();
     const repository = {
       load: vi.fn(() => [s1]),
       save: vi.fn()
     };
-    const tradeHistoryService = new TradeHistoryServiceImpl(repository);
+    const tradeHistoryService = new TradeHistoryService(repository);
     expect(tradeHistoryService.getHistory().length).toBe(1);
     expect(tradeHistoryService.getLatestSnapshot()).toEqual(s1);
   });
 
-  it('addSnapshot_AddsToFrontAndSaves', () => {
+  it('should prepend new snapshots and save history', () => {
     const repository = {
       load: vi.fn(() => []),
       save: vi.fn()
     };
-    const tradeHistoryService = new TradeHistoryServiceImpl(repository);
+    const tradeHistoryService = new TradeHistoryService(repository);
     const s1 = mockSnapshot();
     const s2 = mockSnapshot();
 
@@ -42,12 +42,12 @@ describe('TradeHistoryServiceTest', () => {
     expect(repository.save).toHaveBeenCalledTimes(2);
   });
 
-  it('addSnapshot_LimitsHistorySize', () => {
+  it('should limit history size to 50 items', () => {
     const repository = {
       load: vi.fn(() => []),
       save: vi.fn()
     };
-    const tradeHistoryService = new TradeHistoryServiceImpl(repository);
+    const tradeHistoryService = new TradeHistoryService(repository);
     for (let i = 0; i < 60; i++) {
       tradeHistoryService.addSnapshot(mockSnapshot());
     }
@@ -56,21 +56,21 @@ describe('TradeHistoryServiceTest', () => {
     expect(repository.save).toHaveBeenCalled();
   });
 
-  it('init_HandlesNullLoaded', () => {
+  it('should initialize successfully with empty repository', () => {
     const repository = {
       load: vi.fn(() => []),
       save: vi.fn()
     };
-    const tradeHistoryService = new TradeHistoryServiceImpl(repository);
+    const tradeHistoryService = new TradeHistoryService(repository);
     expect(tradeHistoryService.getHistory().length).toBe(0);
   });
 
-  it('getHistoryFlow_EmitsSnapshotsOnAdd', async () => {
+  it('should emit snapshots to subscribers when added', async () => {
     const repository = {
       load: vi.fn(() => []),
       save: vi.fn()
     };
-    const tradeHistoryService = new TradeHistoryServiceImpl(repository);
+    const tradeHistoryService = new TradeHistoryService(repository);
     const snapshots: PortfolioSnapshot[] = [];
 
     const unsubscribe = tradeHistoryService.subscribe((s) => {
@@ -86,12 +86,12 @@ describe('TradeHistoryServiceTest', () => {
     unsubscribe();
   });
 
-  it('getLatestSnapshot_ReturnsNullWhenEmpty', () => {
+  it('should return null when getLatestSnapshot is called on empty history', () => {
     const repository = {
       load: vi.fn(() => []),
       save: vi.fn()
     };
-    const tradeHistoryService = new TradeHistoryServiceImpl(repository);
+    const tradeHistoryService = new TradeHistoryService(repository);
     expect(tradeHistoryService.getLatestSnapshot()).toBeNull();
   });
 });

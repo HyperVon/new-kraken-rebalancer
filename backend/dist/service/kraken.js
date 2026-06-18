@@ -32,15 +32,11 @@ var __importStar = (this && this.__importStar) || (function () {
         return result;
     };
 })();
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.KrakenServiceImpl = void 0;
-const axios_1 = __importDefault(require("axios"));
+exports.KrakenService = void 0;
 const crypto = __importStar(require("crypto"));
 const order_1 = require("../model/order");
-class KrakenServiceImpl {
+class KrakenService {
     configService;
     apiUrl = 'https://api.kraken.com';
     apiVersion = '0';
@@ -103,14 +99,17 @@ class KrakenServiceImpl {
             return (0, order_1.createOrderResult)(true, pair, side, normalizedVolume, false);
         }
         catch (e) {
-            const message = e.message || e.constructor.name;
+            const message = e instanceof Error ? e.message : String(e);
             console.error(`Failed to execute order: ${type} ${side} ${pair} volume=${volStr}`, e);
             return (0, order_1.createOrderResult)(false, pair, side, normalizedVolume, false, message);
         }
     }
     async queryPublic(path) {
-        const response = await axios_1.default.get(this.apiUrl + path);
-        const body = response.data;
+        const response = await fetch(this.apiUrl + path);
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        const body = await response.json();
         if (body.error && Array.isArray(body.error) && body.error.length > 0) {
             console.error(`Kraken Public API Error for path ${path}: ${body.error}`);
             throw new Error(`Kraken Public API Error: ${JSON.stringify(body.error)}`);
@@ -129,19 +128,22 @@ class KrakenServiceImpl {
         while (true) {
             const nonce = (this.nonceGenerator++).toString();
             const payload = { ...data, nonce };
-            const postData = Object.entries(payload)
-                .map(([k, v]) => `${k}=${v}`)
-                .join('&');
+            const postData = new URLSearchParams(payload).toString();
             const signature = this.signRequest(path, nonce, postData, privateKey);
             try {
-                const response = await axios_1.default.post(this.apiUrl + path, postData, {
+                const response = await fetch(this.apiUrl + path, {
+                    method: 'POST',
                     headers: {
                         'API-Key': apiKey,
                         'API-Sign': signature,
                         'Content-Type': 'application/x-www-form-urlencoded'
-                    }
+                    },
+                    body: postData
                 });
-                const body = response.data;
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const body = await response.json();
                 if (body.error && Array.isArray(body.error) && body.error.length > 0) {
                     const errorMsg = JSON.stringify(body.error);
                     if (errorMsg.includes('Invalid nonce') && retryCount < maxRetries) {
@@ -156,7 +158,7 @@ class KrakenServiceImpl {
                 return body.result;
             }
             catch (e) {
-                const errorMsg = e.message || '';
+                const errorMsg = e instanceof Error ? e.message : String(e);
                 if (errorMsg.includes('Invalid nonce') && retryCount < maxRetries) {
                     const bumpAmount = BigInt(100_000_000) * (BigInt(1) << BigInt(retryCount));
                     this.nonceGenerator += bumpAmount;
@@ -178,4 +180,4 @@ class KrakenServiceImpl {
         return hmac.digest('base64');
     }
 }
-exports.KrakenServiceImpl = KrakenServiceImpl;
+exports.KrakenService = KrakenService;

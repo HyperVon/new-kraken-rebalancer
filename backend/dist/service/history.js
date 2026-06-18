@@ -1,8 +1,8 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.TradeHistoryServiceImpl = void 0;
+exports.TradeHistoryService = void 0;
 const events_1 = require("events");
-class TradeHistoryServiceImpl {
+class TradeHistoryService {
     repository;
     history = [];
     maxHistorySize = 50;
@@ -38,4 +38,4 @@ class TradeHistoryServiceImpl {
         };
     }
 }
-exports.TradeHistoryServiceImpl = TradeHistoryServiceImpl;
+exports.TradeHistoryService = TradeHistoryService;

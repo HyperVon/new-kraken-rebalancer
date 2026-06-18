@@ -2,8 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { Decimal } from 'decimal.js';
 import { Asset } from '../../src/model/asset';
 
-describe('ModelTest', () => {
-  it('testAssetMappings', () => {
+describe('Asset and Portfolio Models', () => {
+  it('should successfully map asset symbols to Kraken tickers and trading pairs', () => {
     const btc = new Asset(Asset.BTC);
     expect(btc.krakenTicker).toBe(Asset.XBT);
     expect(btc.tradingPair).toBe('XBTUSD');
@@ -31,7 +31,7 @@ describe('ModelTest', () => {
     expect(Asset.BTC_USD_PAIR).toBe('XBTUSD');
   });
 
-  it('testPortfolioSnapshot', () => {
+  it('should successfully construct and verify portfolio snapshots', () => {
     const asset = {
       symbol: Asset.BTC,
       balance: new Decimal(1.0),

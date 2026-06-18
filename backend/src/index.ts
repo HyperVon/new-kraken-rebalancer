@@ -4,14 +4,14 @@ import * as path from 'path';
 import * as fs from 'fs';
 import dotenv from 'dotenv';
 
-import { ConfigServiceImpl } from './config/config';
-import { FileTradeRepositoryImpl } from './repository/trade';
-import { PortfolioStatsRepositoryImpl } from './repository/stats';
-import { TradeHistoryServiceImpl } from './service/history';
-import { KrakenServiceImpl } from './service/kraken';
+import { ConfigService } from './config/config';
+import { TradeRepository } from './repository/trade';
+import { PortfolioStatsRepository } from './repository/stats';
+import { TradeHistoryService } from './service/history';
+import { KrakenService } from './service/kraken';
 import { PortfolioAnalyzer } from './service/analyzer';
 import { OrderExecutor } from './service/executor';
-import { PortfolioManagerImpl } from './service/manager';
+import { PortfolioManager } from './service/manager';
 import { createDashboardRouter } from './routes/dashboard';
 
 dotenv.config();
@@ -23,14 +23,14 @@ app.use(cors());
 app.use(express.json());
 
 // Initialize services
-const configService = new ConfigServiceImpl();
-const tradeRepository = new FileTradeRepositoryImpl();
-const portfolioStatsRepository = new PortfolioStatsRepositoryImpl();
-const tradeHistoryService = new TradeHistoryServiceImpl(tradeRepository);
-const krakenService = new KrakenServiceImpl(configService);
+const configService = new ConfigService();
+const tradeRepository = new TradeRepository();
+const portfolioStatsRepository = new PortfolioStatsRepository();
+const tradeHistoryService = new TradeHistoryService(tradeRepository);
+const krakenService = new KrakenService(configService);
 const portfolioAnalyzer = new PortfolioAnalyzer(krakenService, configService, portfolioStatsRepository);
 const orderExecutor = new OrderExecutor(krakenService, portfolioAnalyzer);
-const portfolioManager = new PortfolioManagerImpl(configService, tradeHistoryService, portfolioAnalyzer, orderExecutor);
+const portfolioManager = new PortfolioManager(configService, tradeHistoryService, portfolioAnalyzer, orderExecutor);
 
 // Start rebalancing loop
 portfolioManager.startRebalancingLoop();

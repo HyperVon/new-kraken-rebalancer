@@ -1,10 +1,10 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.PortfolioManagerImpl = void 0;
+exports.PortfolioManager = void 0;
 const decimal_js_1 = require("decimal.js");
 const asset_1 = require("../model/asset");
 decimal_js_1.Decimal.set({ rounding: decimal_js_1.Decimal.ROUND_HALF_UP });
-class PortfolioManagerImpl {
+class PortfolioManager {
     configService;
     tradeHistoryService;
     portfolioAnalyzer;
@@ -74,8 +74,9 @@ class PortfolioManagerImpl {
             this.tradeHistoryService.addSnapshot(snapshot);
         }
         catch (e) {
+            const message = e instanceof Error ? e.message : String(e);
             console.error('Failed to persist trade history snapshot', e);
-            actionLog.push(`ERROR: Failed to persist trade history: ${e.message}`);
+            actionLog.push(`ERROR: Failed to persist trade history: ${message}`);
         }
         console.log('--- Cycle Complete ---');
     }
@@ -130,4 +131,4 @@ class PortfolioManagerImpl {
         };
     }
 }
-exports.PortfolioManagerImpl = PortfolioManagerImpl;
+exports.PortfolioManager = PortfolioManager;

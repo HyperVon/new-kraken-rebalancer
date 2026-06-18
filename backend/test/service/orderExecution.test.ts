@@ -3,19 +3,19 @@ import { Decimal } from 'decimal.js';
 import { FakeKrakenService } from './fakeKraken';
 import { PortfolioAnalyzer } from '../../src/service/analyzer';
 import { OrderExecutor } from '../../src/service/executor';
-import { PortfolioManagerImpl } from '../../src/service/manager';
+import { PortfolioManager } from '../../src/service/manager';
 import { AppConfig } from '../../src/config/config';
 
 Decimal.set({ rounding: Decimal.ROUND_HALF_UP });
 
-describe('PortfolioManagerOrderExecutionTest', () => {
+describe('PortfolioManager order execution', () => {
   let krakenService: FakeKrakenService;
   let configService: any;
   let tradeHistoryService: any;
   let portfolioStatsRepository: any;
   let portfolioAnalyzer: PortfolioAnalyzer;
   let orderExecutor: OrderExecutor;
-  let portfolioManager: PortfolioManagerImpl;
+  let portfolioManager: PortfolioManager;
 
   beforeEach(() => {
     krakenService = new FakeKrakenService();
@@ -41,7 +41,7 @@ describe('PortfolioManagerOrderExecutionTest', () => {
       portfolioStatsRepository
     );
     orderExecutor = new OrderExecutor(krakenService, portfolioAnalyzer);
-    portfolioManager = new PortfolioManagerImpl(
+    portfolioManager = new PortfolioManager(
       configService,
       tradeHistoryService,
       portfolioAnalyzer,
@@ -49,7 +49,7 @@ describe('PortfolioManagerOrderExecutionTest', () => {
     );
   });
 
-  it('testExecutionOrder_SellsBeforeBuys', async () => {
+  it('should execute sell orders before buy orders', async () => {
     const allocs = [
       { symbol: 'A', targetPercent: 10.0 },
       { symbol: 'B', targetPercent: 90.0 },
@@ -82,7 +82,7 @@ describe('PortfolioManagerOrderExecutionTest', () => {
     expect(krakenService.executedOrders[1].side).toBe('buy');
   });
 
-  it('testExecution_SkipDustSells', async () => {
+  it('should skip sell orders below the dust threshold', async () => {
     const allocs = [
       { symbol: 'A', targetPercent: 10.0 },
       { symbol: 'USD', targetPercent: 90.0 }
@@ -111,7 +111,7 @@ describe('PortfolioManagerOrderExecutionTest', () => {
     expect(sellA).toBeUndefined();
   });
 
-  it('testExecution_CashVerificationFallback', async () => {
+  it('should fall back to projected cash when balance verification fails', async () => {
     const allocs = [
       { symbol: 'A', targetPercent: 10.0 },
       { symbol: 'B', targetPercent: 90.0 }
@@ -153,7 +153,7 @@ describe('PortfolioManagerOrderExecutionTest', () => {
     expect(krakenService.executedOrders[1].side).toBe('buy');
   });
 
-  it('testExecution_PartialFillCashUpdate', async () => {
+  it('should adjust buy volume based on updated cash balances after partial sell fills', async () => {
     const allocs = [
       { symbol: 'A', targetPercent: 10.0 },
       { symbol: 'B', targetPercent: 90.0 }

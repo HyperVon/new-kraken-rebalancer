@@ -36,8 +36,8 @@ export const PerformanceTable: React.FC<PerformanceTableProps> = ({ latest }) =>
   };
 
   const sortedAssets = [...cryptoAssets].sort((a, b) => {
-    let aVal: any;
-    let bVal: any;
+    let aVal: string | number;
+    let bVal: string | number;
 
     switch (sortCol) {
       case 0:
@@ -69,11 +69,12 @@ export const PerformanceTable: React.FC<PerformanceTableProps> = ({ latest }) =>
         bVal = b.symbol;
     }
 
-    if (typeof aVal === 'string') {
+    if (typeof aVal === 'string' && typeof bVal === 'string') {
       return sortDir === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
-    } else {
+    } else if (typeof aVal === 'number' && typeof bVal === 'number') {
       return sortDir === 'asc' ? aVal - bVal : bVal - aVal;
     }
+    return 0;
   });
 
   const headers = ['Asset', 'Price', 'Value', 'Target %', 'Current %', 'Dev %'];

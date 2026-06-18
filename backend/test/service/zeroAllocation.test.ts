@@ -3,19 +3,19 @@ import { Decimal } from 'decimal.js';
 import { FakeKrakenService } from './fakeKraken';
 import { PortfolioAnalyzer } from '../../src/service/analyzer';
 import { OrderExecutor } from '../../src/service/executor';
-import { PortfolioManagerImpl } from '../../src/service/manager';
+import { PortfolioManager } from '../../src/service/manager';
 import { AppConfig } from '../../src/config/config';
 
 Decimal.set({ rounding: Decimal.ROUND_HALF_UP });
 
-describe('PortfolioManagerZeroAllocationTest', () => {
+describe('PortfolioManager zero allocation', () => {
   let krakenService: FakeKrakenService;
   let configService: any;
   let tradeHistoryService: any;
   let portfolioStatsRepository: any;
   let portfolioAnalyzer: PortfolioAnalyzer;
   let orderExecutor: OrderExecutor;
-  let portfolioManager: PortfolioManagerImpl;
+  let portfolioManager: PortfolioManager;
 
   beforeEach(() => {
     krakenService = new FakeKrakenService();
@@ -41,7 +41,7 @@ describe('PortfolioManagerZeroAllocationTest', () => {
       portfolioStatsRepository
     );
     orderExecutor = new OrderExecutor(krakenService, portfolioAnalyzer);
-    portfolioManager = new PortfolioManagerImpl(
+    portfolioManager = new PortfolioManager(
       configService,
       tradeHistoryService,
       portfolioAnalyzer,
@@ -49,7 +49,7 @@ describe('PortfolioManagerZeroAllocationTest', () => {
     );
   });
 
-  it('testZeroAllocationToOtherAssetRebalance', async () => {
+  it('should rebalance successfully when target allocation for an asset is zero', async () => {
     const allocs = [
       { symbol: 'A', targetPercent: 0.0 },
       { symbol: 'B', targetPercent: 100.0 }

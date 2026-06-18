@@ -1,6 +1,6 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { OverviewGrid } from '../src/components/OverviewGrid';
 import { AllocationChart } from '../src/components/AllocationChart';
 import { PerformanceTable } from '../src/components/PerformanceTable';
@@ -133,9 +133,9 @@ describe('Frontend Component Tests', () => {
       expect(screen.getByText('USD')).toBeDefined();
       expect(screen.getByText('ETH')).toBeDefined();
 
-      expect(screen.getByText('$5,000.00 (50.00%)')).toBeDefined();
-      expect(screen.getByText('$4,000.00 (40.00%)')).toBeDefined();
-      expect(screen.getByText('$1,000.00 (10.00%)')).toBeDefined();
+      expect(screen.getByText('$5,000.00 (50.00% / 50.00% target)')).toBeDefined();
+      expect(screen.getByText('$4,000.00 (40.00% / 40.00% target)')).toBeDefined();
+      expect(screen.getByText('$1,000.00 (10.00% / 10.00% target)')).toBeDefined();
     });
   });
 
@@ -242,9 +242,13 @@ describe('Frontend Component Tests', () => {
   });
 
   describe('App', () => {
-    it('shows connection spinner while loading data', () => {
+    it('shows connection spinner while loading data', async () => {
       render(<App />);
       expect(screen.getByText('Connecting to portfolio stream...')).toBeDefined();
+      // Wait for fetch completions to resolve inside act transitions
+      await waitFor(() => {
+        expect(global.fetch).toHaveBeenCalledTimes(2);
+      });
     });
 
     it('fetches config/history and establishes SSE updates', async () => {
@@ -284,7 +288,9 @@ describe('Frontend Component Tests', () => {
       };
 
       if (eventInstance.onmessage) {
-        eventInstance.onmessage({ data: JSON.stringify(updatedSnapshot) } as MessageEvent);
+        act(() => {
+          eventInstance.onmessage!({ data: JSON.stringify(updatedSnapshot) } as MessageEvent);
+        });
       }
 
       await waitFor(() => {

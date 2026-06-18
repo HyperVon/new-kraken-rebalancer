@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { ConfigService, InvalidConfigurationException } from '../config/config';
+import { ConfigService, InvalidConfigurationError } from '../config/config';
 import { TradeHistoryService } from '../service/history';
 import { decimalReplacer } from '../repository/atomicFile';
 
@@ -23,11 +23,12 @@ export function createDashboardRouter(
       };
       configService.updateConfig(updatedConfig);
       res.json({ success: true });
-    } catch (e: any) {
-      if (e instanceof InvalidConfigurationException) {
+    } catch (e: unknown) {
+      if (e instanceof InvalidConfigurationError) {
         res.status(400).json({ error: e.message });
       } else {
-        res.status(500).json({ error: e.message || 'Internal server error' });
+        const message = e instanceof Error ? e.message : 'Internal server error';
+        res.status(500).json({ error: message });
       }
     }
   });

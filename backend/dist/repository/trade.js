@@ -33,11 +33,11 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.FileTradeRepositoryImpl = void 0;
+exports.TradeRepository = void 0;
 const fs = __importStar(require("fs"));
 const decimal_js_1 = require("decimal.js");
 const atomicFile_1 = require("./atomicFile");
-class FileTradeRepositoryImpl {
+class TradeRepository {
     filePath;
     constructor(filePath = 'trade-history.json') {
         this.filePath = filePath;
@@ -80,10 +80,10 @@ class FileTradeRepositoryImpl {
             totalValueUSD: new decimal_js_1.Decimal(obj.totalValueUSD),
             assets,
             actions: obj.actions || [],
-            drawdownPercent: new decimal_js_1.Decimal(obj.drawdownPercent || 0),
-            fiatDeploymentPercent: new decimal_js_1.Decimal(obj.fiatDeploymentPercent || 0),
-            effectiveUsdTargetPercent: new decimal_js_1.Decimal(obj.effectiveUsdTargetPercent || 0)
+            drawdownPercent: new decimal_js_1.Decimal(obj.drawdownPercent ?? 0),
+            fiatDeploymentPercent: new decimal_js_1.Decimal(obj.fiatDeploymentPercent ?? 0),
+            effectiveUsdTargetPercent: new decimal_js_1.Decimal(obj.effectiveUsdTargetPercent ?? 0)
         };
     }
 }
-exports.FileTradeRepositoryImpl = FileTradeRepositoryImpl;
+exports.TradeRepository = TradeRepository;

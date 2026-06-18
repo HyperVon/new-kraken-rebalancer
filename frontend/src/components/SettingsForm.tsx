@@ -40,7 +40,7 @@ export const SettingsForm: React.FC<SettingsFormProps> = ({
   const hasUsd = allocations.some(a => a.symbol.toUpperCase() === 'USD');
   const isValid = Math.abs(totalPercent - 100) <= 0.01 && hasUsd;
 
-  const handleSettingChange = (key: keyof Settings, value: any) => {
+  const handleSettingChange = <K extends keyof Settings>(key: K, value: Settings[K]) => {
     setSettings(prev => ({
       ...prev,
       [key]: value
@@ -81,8 +81,9 @@ export const SettingsForm: React.FC<SettingsFormProps> = ({
     setError(null);
     try {
       await onSave(settings, allocations);
-    } catch (err: any) {
-      setError(err.message || 'Failed to save configuration');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to save configuration';
+      setError(message);
     } finally {
       setIsSaving(false);
     }

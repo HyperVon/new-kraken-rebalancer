@@ -33,11 +33,11 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.PortfolioStatsRepositoryImpl = void 0;
+exports.PortfolioStatsRepository = void 0;
 const fs = __importStar(require("fs"));
 const decimal_js_1 = require("decimal.js");
 const atomicFile_1 = require("./atomicFile");
-class PortfolioStatsRepositoryImpl {
+class PortfolioStatsRepository {
     filePath;
     constructor(filePath = 'portfolio-stats.json') {
         this.filePath = filePath;
@@ -60,4 +60,4 @@ class PortfolioStatsRepositoryImpl {
         atomicFile_1.AtomicJsonFile.writeSync(this.filePath, stats);
     }
 }
-exports.PortfolioStatsRepositoryImpl = PortfolioStatsRepositoryImpl;
+exports.PortfolioStatsRepository = PortfolioStatsRepository;

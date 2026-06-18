@@ -58,14 +58,14 @@ const port = process.env.PORT || 8080;
 app.use((0, cors_1.default)());
 app.use(express_1.default.json());
 // Initialize services
-const configService = new config_1.ConfigServiceImpl();
-const tradeRepository = new trade_1.FileTradeRepositoryImpl();
-const portfolioStatsRepository = new stats_1.PortfolioStatsRepositoryImpl();
-const tradeHistoryService = new history_1.TradeHistoryServiceImpl(tradeRepository);
-const krakenService = new kraken_1.KrakenServiceImpl(configService);
+const configService = new config_1.ConfigService();
+const tradeRepository = new trade_1.TradeRepository();
+const portfolioStatsRepository = new stats_1.PortfolioStatsRepository();
+const tradeHistoryService = new history_1.TradeHistoryService(tradeRepository);
+const krakenService = new kraken_1.KrakenService(configService);
 const portfolioAnalyzer = new analyzer_1.PortfolioAnalyzer(krakenService, configService, portfolioStatsRepository);
 const orderExecutor = new executor_1.OrderExecutor(krakenService, portfolioAnalyzer);
-const portfolioManager = new manager_1.PortfolioManagerImpl(configService, tradeHistoryService, portfolioAnalyzer, orderExecutor);
+const portfolioManager = new manager_1.PortfolioManager(configService, tradeHistoryService, portfolioAnalyzer, orderExecutor);
 exports.portfolioManager = portfolioManager;
 // Start rebalancing loop
 portfolioManager.startRebalancingLoop();

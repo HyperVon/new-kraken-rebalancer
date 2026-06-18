@@ -3,19 +3,19 @@ import { Decimal } from 'decimal.js';
 import { FakeKrakenService } from './fakeKraken';
 import { PortfolioAnalyzer } from '../../src/service/analyzer';
 import { OrderExecutor } from '../../src/service/executor';
-import { PortfolioManagerImpl } from '../../src/service/manager';
+import { PortfolioManager } from '../../src/service/manager';
 import { AppConfig } from '../../src/config/config';
 
 Decimal.set({ rounding: Decimal.ROUND_HALF_UP });
 
-describe('PortfolioManagerDogeTest', () => {
+describe('PortfolioManager DOGE and BTC mappings', () => {
   let krakenService: FakeKrakenService;
   let configService: any;
   let tradeHistoryService: any;
   let portfolioStatsRepository: any;
   let portfolioAnalyzer: PortfolioAnalyzer;
   let orderExecutor: OrderExecutor;
-  let portfolioManager: PortfolioManagerImpl;
+  let portfolioManager: PortfolioManager;
 
   beforeEach(() => {
     krakenService = new FakeKrakenService();
@@ -41,7 +41,7 @@ describe('PortfolioManagerDogeTest', () => {
       portfolioStatsRepository
     );
     orderExecutor = new OrderExecutor(krakenService, portfolioAnalyzer);
-    portfolioManager = new PortfolioManagerImpl(
+    portfolioManager = new PortfolioManager(
       configService,
       tradeHistoryService,
       portfolioAnalyzer,
@@ -49,7 +49,7 @@ describe('PortfolioManagerDogeTest', () => {
     );
   });
 
-  it('testDogeMapping', async () => {
+  it('should successfully map and parse DOGE (XDG) balances and prices', async () => {
     const mockConfig: AppConfig = {
       kraken: { apiKey: 'k', privateKey: 's' },
       settings: {
@@ -68,7 +68,7 @@ describe('PortfolioManagerDogeTest', () => {
     configService.getConfig.mockReturnValue(mockConfig);
 
     krakenService.balanceSupplier = () => ({ XDG: 1000.0, ZUSD: 500.0 });
-    krakenService.pricesSupplier = (pairs: string) => {
+    krakenService.pricesSupplier = (pairs: string): Record<string, number> => {
       if (pairs.includes('XDGUSD')) {
         return { XDGUSD: 0.10 };
       }
@@ -80,7 +80,7 @@ describe('PortfolioManagerDogeTest', () => {
     expect(krakenService.getBalancesCallCount).toBe(1);
   });
 
-  it('testBtcMapping', async () => {
+  it('should successfully map and parse BTC (XBT) balances and prices', async () => {
     const mockConfig: AppConfig = {
       kraken: { apiKey: 'k', privateKey: 's' },
       settings: {
@@ -99,7 +99,7 @@ describe('PortfolioManagerDogeTest', () => {
     configService.getConfig.mockReturnValue(mockConfig);
 
     krakenService.balanceSupplier = () => ({ XXBT: 1.0, ZUSD: 50000.0 });
-    krakenService.pricesSupplier = (pairs: string) => {
+    krakenService.pricesSupplier = (pairs: string): Record<string, number> => {
       if (pairs.includes('XXBTZUSD') || pairs.includes('XBTUSD')) {
         return { XXBTZUSD: 50000.0 };
       }

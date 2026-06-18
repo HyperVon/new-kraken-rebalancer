@@ -1,18 +1,18 @@
 import { Decimal } from 'decimal.js';
-import { KrakenService } from './kraken';
+import { KrakenService, IKrakenService } from './kraken';
 import { PortfolioAnalyzer } from './analyzer';
 import { OrderResult } from '../model/order';
 import { Asset } from '../model/asset';
+import { Settings } from '../config/config';
+import { setTimeout } from 'timers/promises';
 
 Decimal.set({ rounding: Decimal.ROUND_HALF_UP });
 
-const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-
 export class OrderExecutor {
-  private readonly krakenService: KrakenService;
+  private readonly krakenService: IKrakenService;
   private readonly portfolioAnalyzer: PortfolioAnalyzer;
 
-  constructor(krakenService: KrakenService, portfolioAnalyzer: PortfolioAnalyzer) {
+  constructor(krakenService: IKrakenService, portfolioAnalyzer: PortfolioAnalyzer) {
     this.krakenService = krakenService;
     this.portfolioAnalyzer = portfolioAnalyzer;
   }
@@ -22,7 +22,7 @@ export class OrderExecutor {
     sellOrders: Record<string, Decimal>,
     currentValuesUSD: Record<string, Decimal>,
     prices: Record<string, Decimal>,
-    settings: any,
+    settings: Settings,
     actionLog: string[]
   ): Promise<void> {
     let projectedCash = currentValuesUSD[Asset.USD] || new Decimal(0);
@@ -91,7 +91,7 @@ export class OrderExecutor {
     let bestCash = projectedCash;
 
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
-      await delay(delayMs);
+      await setTimeout(delayMs);
       try {
         const updatedBalances = await this.krakenService.getBalances();
         if (updatedBalances && Object.keys(updatedBalances).length > 0) {

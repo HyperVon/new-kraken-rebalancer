@@ -3,19 +3,19 @@ import { Decimal } from 'decimal.js';
 import { FakeKrakenService } from './fakeKraken';
 import { PortfolioAnalyzer } from '../../src/service/analyzer';
 import { OrderExecutor } from '../../src/service/executor';
-import { PortfolioManagerImpl } from '../../src/service/manager';
+import { PortfolioManager } from '../../src/service/manager';
 import { AppConfig } from '../../src/config/config';
 
 Decimal.set({ rounding: Decimal.ROUND_HALF_UP });
 
-describe('PortfolioManagerDrawdownTest', () => {
+describe('PortfolioManager drawdown handling', () => {
   let krakenService: FakeKrakenService;
   let configService: any;
   let tradeHistoryService: any;
   let portfolioStatsRepository: any;
   let portfolioAnalyzer: PortfolioAnalyzer;
   let orderExecutor: OrderExecutor;
-  let portfolioManager: PortfolioManagerImpl;
+  let portfolioManager: PortfolioManager;
 
   beforeEach(() => {
     krakenService = new FakeKrakenService();
@@ -41,7 +41,7 @@ describe('PortfolioManagerDrawdownTest', () => {
       portfolioStatsRepository
     );
     orderExecutor = new OrderExecutor(krakenService, portfolioAnalyzer);
-    portfolioManager = new PortfolioManagerImpl(
+    portfolioManager = new PortfolioManager(
       configService,
       tradeHistoryService,
       portfolioAnalyzer,
@@ -64,7 +64,7 @@ describe('PortfolioManagerDrawdownTest', () => {
     configService.getConfig.mockReturnValue(appConfig);
   });
 
-  it('testDrawdownAndFiatDeployment', async () => {
+  it('should successfully calculate drawdown and adjust fiat deployment', async () => {
     portfolioStatsRepository.load.mockReturnValue({
       allTimeHigh: new Decimal('2000.0')
     });
@@ -111,7 +111,7 @@ describe('PortfolioManagerDrawdownTest', () => {
     expect(new Decimal(snapshot.effectiveUsdTargetPercent).eq('25.0')).toBe(true);
   });
 
-  it('testNewATH', async () => {
+  it('should update the portfolio All-Time High when a new ATH is reached', async () => {
     const stats = { allTimeHigh: new Decimal('1000.0') };
     portfolioStatsRepository.load.mockReturnValue(stats);
 

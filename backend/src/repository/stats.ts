@@ -3,12 +3,7 @@ import { Decimal } from 'decimal.js';
 import { PortfolioStats } from '../model/stats';
 import { AtomicJsonFile } from './atomicFile';
 
-export interface PortfolioStatsRepository {
-  load(): PortfolioStats;
-  save(stats: PortfolioStats): void;
-}
-
-export class PortfolioStatsRepositoryImpl implements PortfolioStatsRepository {
+export class PortfolioStatsRepository {
   private readonly filePath: string;
 
   constructor(filePath: string = 'portfolio-stats.json') {

@@ -28,11 +28,11 @@ function makePortfolioAnalyzer(...allocs: Allocation[]): PortfolioAnalyzer {
     save: vi.fn()
   };
 
-  return new PortfolioAnalyzer(new FakeKrakenService(), configService as any, repo);
+  return new PortfolioAnalyzer(new FakeKrakenService(), configService as any, repo as any);
 }
 
-describe('PortfolioManagerFiatCorrectionTest', () => {
-  it('testDistributeFiatCorrection_Deposit_OnlyBuysUnderweight', () => {
+describe('PortfolioManager fiat correction', () => {
+  it('should distribute deposit correction only to underweight assets', () => {
     const portfolioAnalyzer = makePortfolioAnalyzer(
       { symbol: 'A', targetPercent: 50.0 },
       { symbol: 'B', targetPercent: 50.0 }
@@ -53,7 +53,7 @@ describe('PortfolioManagerFiatCorrectionTest', () => {
     expect(Object.keys(sellOrders).length).toBe(0);
   });
 
-  it('testDistributeFiatCorrection_Withdrawal_OnlySellsOverweight', () => {
+  it('should distribute withdrawal correction only to overweight assets', () => {
     const portfolioAnalyzer = makePortfolioAnalyzer(
       { symbol: 'A', targetPercent: 50.0 },
       { symbol: 'B', targetPercent: 50.0 }
@@ -74,7 +74,7 @@ describe('PortfolioManagerFiatCorrectionTest', () => {
     expect(Object.keys(buyOrders).length).toBe(0);
   });
 
-  it('testDistributeFiatCorrection_ProportionalDistribution', () => {
+  it('should distribute correction proportionally based on deviations', () => {
     const portfolioAnalyzer = makePortfolioAnalyzer(
       { symbol: 'A', targetPercent: 30.0 },
       { symbol: 'B', targetPercent: 30.0 },

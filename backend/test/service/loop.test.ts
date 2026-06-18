@@ -3,13 +3,13 @@ import { Decimal } from 'decimal.js';
 import { FakeKrakenService } from './fakeKraken';
 import { PortfolioAnalyzer } from '../../src/service/analyzer';
 import { OrderExecutor } from '../../src/service/executor';
-import { PortfolioManagerImpl } from '../../src/service/manager';
+import { PortfolioManager } from '../../src/service/manager';
 
-describe('PortfolioManagerLoopTest', () => {
+describe('PortfolioManager loop handling', () => {
   let krakenService: FakeKrakenService;
   let configService: any;
   let tradeHistoryService: any;
-  let portfolioManager: PortfolioManagerImpl;
+  let portfolioManager: PortfolioManager;
 
   beforeEach(() => {
     vi.useFakeTimers();
@@ -38,9 +38,9 @@ describe('PortfolioManagerLoopTest', () => {
       load: vi.fn(() => ({ allTimeHigh: new Decimal(0) })),
       save: vi.fn()
     };
-    const portfolioAnalyzer = new PortfolioAnalyzer(krakenService, configService, repo);
+    const portfolioAnalyzer = new PortfolioAnalyzer(krakenService, configService, repo as any);
     const orderExecutor = new OrderExecutor(krakenService, portfolioAnalyzer);
-    portfolioManager = new PortfolioManagerImpl(
+    portfolioManager = new PortfolioManager(
       configService,
       tradeHistoryService,
       portfolioAnalyzer,
@@ -52,7 +52,7 @@ describe('PortfolioManagerLoopTest', () => {
     vi.useRealTimers();
   });
 
-  it('startRebalancingLoop_RunsWhenEnabled', async () => {
+  it('should run the cycle when startRebalancingLoop is enabled', async () => {
     krakenService.balanceSupplier = () => ({});
     portfolioManager.startRebalancingLoop();
     expect(krakenService.getBalancesCallCount).toBe(1);
@@ -61,7 +61,7 @@ describe('PortfolioManagerLoopTest', () => {
     await vi.runOnlyPendingTimersAsync();
   });
 
-  it('stopRebalancingLoop_StopsExecution', async () => {
+  it('should stop execution when stopRebalancingLoop is called', async () => {
     portfolioManager.startRebalancingLoop();
     expect(krakenService.getBalancesCallCount).toBe(1);
 
@@ -70,7 +70,7 @@ describe('PortfolioManagerLoopTest', () => {
     expect(krakenService.getBalancesCallCount).toBe(1);
   });
 
-  it('checkAndRunCycle_HandlesExceptionGracefully', async () => {
+  it('should handle exceptions gracefully during check and run cycle', async () => {
     krakenService.balanceSupplier = () => {
       throw new Error('API Error!');
     };

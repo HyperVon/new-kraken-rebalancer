@@ -2,7 +2,7 @@ import fs from 'fs';
 import * as path from 'path';
 import { Decimal } from 'decimal.js';
 
-export function decimalReplacer(key: string, value: any): any {
+export function decimalReplacer(key: string, value: unknown): unknown {
   if (value instanceof Decimal) {
     return value.toNumber();
   }
