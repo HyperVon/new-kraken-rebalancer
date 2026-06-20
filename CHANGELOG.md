@@ -8,6 +8,20 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [4.0.2] - 2026-06-20
+
+### Added
+
+- **30 Scenario Evaluation Suite**: Extended the Kotest suite (`EvaluationScenariosTest.kt`) to run 30 realistic end-to-end scenarios covering critical rebalancing logic, mathematical boundaries, file writing safety, concurrency broadcast streaming, and exchange failures.
+- **Scenario Evaluation Documentation**: Created [EVALUATION.md](EVALUATION.md) outlining the test design principles, execution guidelines, and detailed results of all 30 scenario runs.
+
+### Changed
+
+- **Platform-Independent Path Resolution**: Replaced the hardcoded user-specific path `/Users/charlesv/` in the evaluation test suite with a relative local fallback (`build/reports/scenarios_evaluation_report.md`), with support for customizable overrides via the `SCENARIOS_REPORT_PATH` environment variable or `scenarios.report.path` JVM system property.
+- **Walkthrough and Readme Updates**: Updated references, test counts, and technical summaries to document the new evaluation suites.
+
+---
+
 ## [4.0.1] - 2026-06-07
 
 ### Changed
@@ -122,13 +136,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **HTMX-Powered Dashboard**: Replaced the React/Vite frontend with a
   server-side rendered HTML interface using the kotlinx.html DSL and HTMX for
   dynamic content swapping.
-    - Dashboard shell renders initial HTML via
+  - Dashboard shell renders initial HTML via
       `DashboardView.renderDashboardShell()`
-    - Dashboard fragment (`GET /fragments/dashboard`) returns partial HTML
+  - Dashboard fragment (`GET /fragments/dashboard`) returns partial HTML
       swapped into the shell via `hx-get` triggered by `load` and SSE events
-    - Settings form uses `hx-post` for AJAX submission with server-side
+  - Settings form uses `hx-post` for AJAX submission with server-side
       validation errors returning HTML fragments
-    - Settings page includes client-side JavaScript for allocation row
+  - Settings page includes client-side JavaScript for allocation row
       management and total validation
 - **Ktor SSE Integration with HTMX**: SSE events from `/api/status/stream`
   trigger automatic dashboard fragment refresh using HTMX's SSE extension (
@@ -204,8 +218,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Server-Sent Events (SSE) Real-Time Stream**: Replaced the frontend's
   5-second polling of the `/api/status` endpoint with a native Ktor 3.5.0 SSE
   status stream (`/api/status/stream`).
-    - Added Ktor server-sse plugin to the backend.
-    - Implemented `getHistoryFlow()` using a Kotlin Coroutines
+  - Added Ktor server-sse plugin to the backend.
+  - Implemented `getHistoryFlow()` using a Kotlin Coroutines
       `MutableSharedFlow` in `TradeHistoryService` to publish snapshots in
       real-time.
 
@@ -223,10 +237,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Backend Dependency Upgrades**: Upgraded core backend framework and library
   versions in `build.gradle.kts` to their latest stable major and minor
   releases:
-    - **Ktor**: Upgraded from `2.3.13` to `3.5.0` (major version 3 upgrade)
-    - **Koin**: Upgraded from `3.5.6` to `4.2.1` (major version 4 upgrade)
-    - **Kotlinx Coroutines**: Upgraded from `1.8.0` to `1.11.0`
-    - **Logback Classic**: Upgraded from `1.5.32` to `1.5.33`
+  - **Ktor**: Upgraded from `2.3.13` to `3.5.0` (major version 3 upgrade)
+  - **Koin**: Upgraded from `3.5.6` to `4.2.1` (major version 4 upgrade)
+  - **Kotlinx Coroutines**: Upgraded from `1.8.0` to `1.11.0`
+  - **Logback Classic**: Upgraded from `1.5.32` to `1.5.33`
 
 ## [2.2.2] - 2026-05-28
 

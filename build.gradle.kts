@@ -79,7 +79,9 @@ tasks.withType<KotlinCompile> {
 tasks.withType<Test> {
     useJUnitPlatform()
     finalizedBy(tasks.jacocoTestReport)
-    jvmArgs("-Xshare:off", "--sun-misc-unsafe-memory-access=allow")
+    jvmArgs("-Xshare:off", "--sun-misc-unsafe-memory-access=allow", "-Xmx4096m")
+    systemProperty("kotlinx.coroutines.debug.enable.creation.stack.trace", "false")
+    systemProperty("kotest.coroutines.debug.disable", "true")
 }
 
 tasks.jacocoTestReport {

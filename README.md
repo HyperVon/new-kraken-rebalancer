@@ -296,8 +296,9 @@ with `BigDecimal.compareTo()` to avoid floating-point comparison issues.
 ./gradlew test
 ```
 
-**138 tests** across:
+**167 tests** across:
 
+- **Scenario Evaluation Suite** (`EvaluationScenariosTest`) — **30 highly realistic scenarios** testing the full end-to-end execution of rebalances, mathematical edge cases, API credentials invalidation, concurrency locks, and SSE client streams. See **[EVALUATION.md](EVALUATION.md)** for descriptions and test results of all 30 scenarios.
 - `KrakenE2ETest` / `ResilienceChaosTest` / `PrecisionRoundingFuzzTest` /
   `SerializationParityTest` — advanced E2E black-box and fuzz testing
 - `PortfolioManagerComprehensiveTest` — full rebalance cycles with order result
