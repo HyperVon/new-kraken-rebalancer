@@ -145,8 +145,8 @@ tasks.check {
 configurations.all {
     resolutionStrategy.eachDependency {
         if (requested.group == "io.netty") {
-            useVersion("4.1.134.Final")
-            because("Fixes Netty security vulnerabilities including HTTP/2 continuation frame flood (CVE-2026-33871)")
+            useVersion("4.1.135.Final")
+            because("Fixes Netty security vulnerabilities including HTTP/2 continuation frame flood (CVE-2026-33871) and newer vulnerabilities (CVE-2026-45536, CVE-2026-45416, CVE-2026-44249)")
         }
     }
 }

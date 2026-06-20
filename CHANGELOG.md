@@ -8,6 +8,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [4.0.3] - 2026-06-20
+
+### Security
+
+- **Forced Netty version to `4.1.135.Final`**: Upgraded Netty dependency from `4.1.134.Final` to `4.1.135.Final` in `build.gradle.kts` to resolve active Dependabot vulnerabilities (CVE-2026-45536, CVE-2026-45416, and CVE-2026-44249).
+
+---
+
 ## [4.0.2] - 2026-06-20
 
 ### Added
