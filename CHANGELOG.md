@@ -8,6 +8,16 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [4.0.4] - 2026-06-20
+
+### Changed
+
+- **Modernized Client-Side Javascript**: Updated static assets [dashboard.js](file:///Users/charlesv/Projects/new-kraken-rebalancer/src/main/resources/static/dashboard.js) and [settings.js](file:///Users/charlesv/Projects/new-kraken-rebalancer/src/main/resources/static/settings.js) to modern ES6+ standards, adopting arrow functions, block-scoped variables (`let`/`const`), template literals, `String.prototype.padStart()`, and `classList.toggle` APIs.
+- **Improved Settings Button State Management**: Refactored settings save button enabled/disabled logic to use boolean `.disabled` element property directly.
+- **Explicit Global Scope Binding**: Explicitly bound dynamic handlers in [settings.js](file:///Users/charlesv/Projects/new-kraken-rebalancer/src/main/resources/static/settings.js) to the `window` object to ensure reliable execution from inline HTML event attributes.
+
+---
+
 ## [4.0.3] - 2026-06-20
 
 ### Security

@@ -1,8 +1,8 @@
-function updateAllocationTotal() {
+const updateAllocationTotal = () => {
     const targets = Array.from(document.querySelectorAll('input[name="targets"]')).map(input => parseFloat(input.value) || 0.0);
     const total = targets.reduce((sum, val) => sum + val, 0.0);
     const totalDisplay = document.getElementById('total-allocated-display');
-    totalDisplay.textContent = 'Total: ' + total.toFixed(2) + '%';
+    totalDisplay.textContent = `Total: ${total.toFixed(2)}%`;
 
     const saveButton = document.getElementById('save-button');
     const isValid = Math.abs(total - 100.0) <= 0.01;
@@ -10,16 +10,13 @@ function updateAllocationTotal() {
     const symbols = Array.from(document.querySelectorAll('input[name="symbols"]')).map(input => input.value.toUpperCase());
     const hasUsd = symbols.includes('USD');
 
-    if (isValid && hasUsd) {
-        totalDisplay.className = 'status-badge live';
-        saveButton.removeAttribute('disabled');
-    } else {
-        totalDisplay.className = 'status-badge delayed';
-        saveButton.setAttribute('disabled', 'true');
-    }
-}
+    const isSuccess = isValid && hasUsd;
+    totalDisplay.classList.toggle('live', isSuccess);
+    totalDisplay.classList.toggle('delayed', !isSuccess);
+    saveButton.disabled = !isSuccess;
+};
 
-function addAssetRow() {
+const addAssetRow = () => {
     const symbolInput = document.getElementById('new-symbol-input');
     const symbol = symbolInput.value.trim().toUpperCase();
     if (!symbol) return;
@@ -47,6 +44,10 @@ function addAssetRow() {
     container.appendChild(row);
     symbolInput.value = '';
     updateAllocationTotal();
-}
+};
+
+// Export to window scope so they can be called from inline HTML attributes
+window.updateAllocationTotal = updateAllocationTotal;
+window.addAssetRow = addAssetRow;
 
 updateAllocationTotal();
