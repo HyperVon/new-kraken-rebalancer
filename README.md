@@ -314,7 +314,7 @@ architecture to synchronize the dashboard with the backend rebalancing loop:
 
 ## Project Structure
 
-```
+```text
 ├── src/main/kotlin/com/gemini/krakenbot/
 │   ├── KrakenRebalancerApplication.kt    # Entry point, Ktor server & Koin DI bootstrap
 │   ├── config/                            # Data classes: AppConfig, Settings, Allocation, KrakenCredentials
