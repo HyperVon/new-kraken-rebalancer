@@ -8,13 +8,26 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [4.0.5] - 2026-06-22
+
+### Added
+
+- **100% Test Coverage Implementation**: Expanded the Kotest unit test suite across multiple modules to achieve exactly 100% test coverage for lines, branches, and methods:
+  - Added unit test to verify generated property getter of `PortfolioValues` data class in [ModelTest.kt](src/test/kotlin/com/gemini/krakenbot/model/ModelTest.kt).
+  - Added unit test to verify that `ConfigServiceImpl` throws `InvalidConfigurationException` if it loads an invalid configuration file during initialization (`loadConfig`) in [ConfigServiceTest.kt](src/test/kotlin/com/gemini/krakenbot/service/ConfigServiceTest.kt).
+  - Added unit test for `OrderExecutor` to simulate a dust sell (selling value less than the dust threshold) in [PortfolioManagerEdgeCasesTest.kt](src/test/kotlin/com/gemini/krakenbot/service/PortfolioManagerEdgeCasesTest.kt).
+  - Added reflection-based test to cover the `Icons.loadIcon` fallback branch on missing resource in [DashboardViewTest.kt](src/test/kotlin/com/gemini/krakenbot/view/DashboardViewTest.kt).
+  - Added reflection-based test to invoke `PerformanceTableComponent$Companion.getCOLUMNS()` to cover the private companion class and method in [DashboardViewTest.kt](src/test/kotlin/com/gemini/krakenbot/view/DashboardViewTest.kt).
+
+---
+
 ## [4.0.4] - 2026-06-20
 
 ### Changed
 
-- **Modernized Client-Side Javascript**: Updated static assets [dashboard.js](file:///Users/charlesv/Projects/new-kraken-rebalancer/src/main/resources/static/dashboard.js) and [settings.js](file:///Users/charlesv/Projects/new-kraken-rebalancer/src/main/resources/static/settings.js) to modern ES6+ standards, adopting arrow functions, block-scoped variables (`let`/`const`), template literals, `String.prototype.padStart()`, and `classList.toggle` APIs.
+- **Modernized Client-Side Javascript**: Updated static assets [dashboard.js](src/main/resources/static/dashboard.js) and [settings.js](src/main/resources/static/settings.js) to modern ES6+ standards, adopting arrow functions, block-scoped variables (`let`/`const`), template literals, `String.prototype.padStart()`, and `classList.toggle` APIs.
 - **Improved Settings Button State Management**: Refactored settings save button enabled/disabled logic to use boolean `.disabled` element property directly.
-- **Explicit Global Scope Binding**: Explicitly bound dynamic handlers in [settings.js](file:///Users/charlesv/Projects/new-kraken-rebalancer/src/main/resources/static/settings.js) to the `window` object to ensure reliable execution from inline HTML event attributes.
+- **Explicit Global Scope Binding**: Explicitly bound dynamic handlers in [settings.js](src/main/resources/static/settings.js) to the `window` object to ensure reliable execution from inline HTML event attributes.
 
 ---
 

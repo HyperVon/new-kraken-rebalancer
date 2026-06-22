@@ -34,8 +34,10 @@ import com.gemini.krakenbot.view.util.ViewText.SETTINGS_TITLE
 import com.gemini.krakenbot.view.util.ViewText.TARGET_PREFIX
 import com.gemini.krakenbot.view.util.ViewText.TOTAL_PORTFOLIO
 import io.kotest.core.spec.style.StringSpec
+import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldNotContain
+import com.gemini.krakenbot.view.util.Icons
 import kotlinx.html.div
 import kotlinx.html.html
 import kotlinx.html.stream.createHTML
@@ -307,6 +309,24 @@ class DashboardViewTest : StringSpec() {
 
             html shouldContain "10.00% | ${TARGET_PREFIX}10.00%"
             html shouldNotContain "(Base: 10.00%)"
+        }
+
+        "Icons_loadIcon_returnsEmptyOnMissingResource" {
+            val method = Icons::class.java.getDeclaredMethod("loadIcon", String::class.java)
+            method.isAccessible = true
+            val result = method.invoke(Icons, "nonexistent.svg")
+            result shouldBe ""
+        }
+
+        "PerformanceTableComponent_Companion_getCOLUMNS" {
+            val companionClass = Class.forName("com.gemini.krakenbot.view.component.PerformanceTableComponent\$Companion")
+            val getCOLUMNS = companionClass.getDeclaredMethod("getCOLUMNS")
+            getCOLUMNS.isAccessible = true
+            val companionField = PerformanceTableComponent::class.java.getDeclaredField("Companion")
+            companionField.isAccessible = true
+            val companionInstance = companionField.get(null)
+            val columns = getCOLUMNS.invoke(companionInstance) as List<*>
+            columns.size shouldBe 6
         }
     }
 }

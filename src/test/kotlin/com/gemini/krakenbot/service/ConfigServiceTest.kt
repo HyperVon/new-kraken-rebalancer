@@ -357,8 +357,31 @@ class ConfigServiceTest : StringSpec() {
                                 targetPercent = 100.0
                             )
                         )
+                    ))
+            }
+        }
+
+        "loadConfig_InvalidConfig" {
+            val invalidConfig = AppConfig(
+                kraken = KrakenCredentials("k", "s"),
+                settings = Settings(
+                    loopDelaySeconds = 60L,
+                    deviationTriggerPercent = 2.0,
+                    dustThresholdUSD = 1.0,
+                    dryRun = true,
+                    fiatMaxDrawdown = 0.0,
+                    fiatDeploymentExponent = 1.0
+                ),
+                allocations = listOf(
+                    Allocation(
+                        symbol = Asset.USD,
+                        targetPercent = 90.0
                     )
                 )
+            )
+            objectMapper.writeValue(tempFile, invalidConfig)
+            shouldThrow<InvalidConfigurationException> {
+                ConfigServiceImpl(objectMapper, tempFile.absolutePath)
             }
         }
     }

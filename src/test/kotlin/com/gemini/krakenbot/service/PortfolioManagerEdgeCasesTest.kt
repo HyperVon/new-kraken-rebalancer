@@ -1035,5 +1035,37 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
             btcSnap!!.valueUSD.compareTo(BigDecimal.ZERO) shouldBe 0
             btcSnap.price.compareTo(BigDecimal.ONE) shouldBe 0
         }
+
+        "testExecuteOrders_SkipDustSells" {
+            runTest {
+                val buyOrders = emptyMap<String, BigDecimal>()
+                val sellOrders =
+                    mapOf(Asset.BTC to BigDecimal.valueOf(0.5)) // $0.50
+                val currentValuesUSD =
+                    mapOf(Asset.USD to BigDecimal.valueOf(1000.0), Asset.BTC to BigDecimal.valueOf(0.5))
+                val prices = mapOf(Asset.BTC to BigDecimal.TEN)
+                val settings = Settings(
+                    loopDelaySeconds = 0L,
+                    deviationTriggerPercent = 2.0,
+                    dustThresholdUSD = 1.0, // $1.00 dust threshold
+                    dryRun = false,
+                    fiatMaxDrawdown = 0.0,
+                    fiatDeploymentExponent = 1.0
+                )
+                val actionLog = mutableListOf<String>()
+
+                orderExecutor.executeOrders(
+                    buyOrders = buyOrders,
+                    sellOrders = sellOrders,
+                    currentValuesUSD = currentValuesUSD,
+                    prices = prices,
+                    settings = settings,
+                    actionLog = actionLog
+                )
+
+                krakenService.executedOrders.isEmpty().shouldBeTrue()
+                actionLog.any { it.contains("Skipping dust sell for BTC") } shouldBe true
+            }
+        }
     }
 }

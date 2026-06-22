@@ -1,6 +1,7 @@
 package com.gemini.krakenbot.model
 
 import com.gemini.krakenbot.config.Settings
+import com.gemini.krakenbot.service.impl.PortfolioValues
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
@@ -90,6 +91,20 @@ class ModelTest : StringSpec() {
             stats2 shouldBe stats
             stats.hashCode() shouldBe stats2.hashCode()
             stats.toString().shouldNotBeNull()
+        }
+
+        "testPortfolioValues" {
+            val pv = PortfolioValues(
+                totalValueUSD = BigDecimal.TEN,
+                currentValuesUSD = mapOf("BTC" to BigDecimal.TEN)
+            )
+            pv.totalValueUSD shouldBe BigDecimal.TEN
+            pv.currentValuesUSD shouldBe mapOf("BTC" to BigDecimal.TEN)
+            
+            val pv2 = pv.copy()
+            pv2 shouldBe pv
+            pv.hashCode() shouldBe pv2.hashCode()
+            pv.toString().shouldNotBeNull()
         }
     }
 }
