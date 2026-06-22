@@ -139,21 +139,21 @@ logic across three languages and ecosystems.
 Building the same application across multiple stacks gave me hands-on experience
 with a wide range of tools and paradigms:
 
-| Category                | Technologies Used                                                                                                            |
-|-------------------------|------------------------------------------------------------------------------------------------------------------------------|
-| **Languages**           | Java 25, Kotlin 2.4, Go 1.26, TypeScript, JavaScript (ES6+)                                                                 |
-| **Backend Frameworks**  | Spring Boot 4, Ktor 2.3 → 3.5, NestJS, Express, Go `net/http`                                                               |
-| **DI / IoC**            | Spring IoC (`@Autowired`), Koin 3.5 → 4.2, NestJS modules                                                                   |
-| **Build Systems**       | Maven, Gradle (Kotlin DSL), npm / yarn, Go modules                                                                           |
-| **Frontend**            | React (JS → TypeScript), Angular (explored), HTMX + kotlinx.html DSL, Tailwind CSS v4, Chart.js                             |
-| **HTTP Clients**        | OkHttp (blocking), Ktor CIO Client (async/coroutine), Node.js native `fetch`, Go `net/http`                                 |
-| **Concurrency**         | Java `ScheduledExecutorService`, Kotlin Coroutines, Go goroutines, Node.js event loop                                        |
-| **Testing**             | JUnit 5 + Mockito, Kotest 6 + MockK, Vitest + React Testing Library, Go `testing` + `go-test-coverage`                      |
-| **Coverage**            | JaCoCo (95% enforced, 100% achieved), Vitest coverage (>99%), Go per-package gates (98.2%)                                   |
-| **Serialization**       | Jackson 2.21, Go `encoding/json`, Zod schema validation                                                                     |
-| **Real-Time**           | Ktor Server-Sent Events (SSE), Kotlin `SharedFlow`, HTMX SSE extension                                                      |
-| **CI / Security**       | GitHub Actions, CodeQL, Dependabot, SHA-pinned actions, CVE patching (Tomcat, Netty, Logback, Jackson)                       |
-| **Code Quality**        | Lombok, ESLint, `go fmt`, Kotlin named context parameters, strict `BigDecimal` precision, atomic file I/O                    |
+| Category                | Technologies Used                                                                                                             |
+|-------------------------|------------------------------------------------------------------------------------------------------------------------------ |
+| **Languages**           | Java 25, Kotlin 2.4, Go 1.26, TypeScript, JavaScript (ES6+)                                                                   |
+| **Backend Frameworks**  | Spring Boot 4, Ktor 2.3 → 3.5, NestJS, Express, Go `net/http`                                                                 |
+| **DI / IoC**            | Spring IoC (`@Autowired`), Koin 3.5 → 4.2, NestJS modules                                                                     |
+| **Build Systems**       | Maven, Gradle (Kotlin DSL), npm / yarn, Go modules                                                                            |
+| **Frontend**            | React (JS → TypeScript), Angular (explored), HTMX + kotlinx.html DSL, Tailwind CSS v4, Chart.js                               |
+| **HTTP Clients**        | OkHttp (blocking), Ktor CIO Client (async/coroutine), Node.js native `fetch`, Go `net/http`                                   |
+| **Concurrency**         | Java `ScheduledExecutorService`, Kotlin Coroutines, Go goroutines, Node.js event loop                                         |
+| **Testing**             | JUnit 5 + Mockito, Kotest 6 + MockK, Vitest + React Testing Library, Go `testing` + `go-test-coverage`                        |
+| **Coverage**            | JaCoCo (95% enforced, 100% achieved), Vitest coverage (>99%), Go per-package gates (98.2%)                                    |
+| **Serialization**       | Jackson 2.21, Go `encoding/json`, Zod schema validation                                                                       |
+| **Real-Time**           | Ktor Server-Sent Events (SSE), Kotlin `SharedFlow`, HTMX SSE extension                                                        |
+| **CI / Security**       | GitHub Actions, CodeQL, Dependabot, SHA-pinned actions, CVE patching (Tomcat, Netty, Logback, Jackson)                        |
+| **Code Quality**        | Lombok, ESLint, `go fmt`, Kotlin named context parameters, strict `BigDecimal` precision, atomic file I/O                     |
 
 ---
 
