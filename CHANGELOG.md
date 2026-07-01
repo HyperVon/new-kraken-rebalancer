@@ -8,6 +8,17 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [4.0.6] - 2026-07-01
+
+### Added
+- **SQLite Database Persistence**: Migrated local trade history and portfolio statistics storage from file-based JSON logging to a local SQLite database (`kraken-rebalancer.db`) using JetBrains Exposed ORM.
+- **Historical Trades Synchronization**: Introduced startup trade synchronization from the Kraken private API (`/0/private/TradesHistory`), enabling the application to seed historical trades dynamically.
+- **Deduplication Logic**: Built unique signature keys for boundary trades using timestamp, trading pair, action side, volume, and fiat amount to prevent duplicate imports during paginated API updates.
+- **Sync Metadata Tracking**: Added `HistorySyncMetadataTable` to record seeding status (`history_seeded`) and avoid duplicate API calls on subsequent runs.
+- **Unit and Integration Test Extensions**: Added robust tests verifying Exposed repository operations, paginated synchronization scenarios, and boundary deduplication logic.
+
+---
+
 ## [4.0.5] - 2026-06-22
 
 ### Added

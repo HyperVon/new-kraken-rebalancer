@@ -19,6 +19,7 @@ several months.**
 |-----------------|------------------------------------------------------------------------------------------------------|
 | **Language**    | Kotlin 2.4.0 (JVM)                                                                                   |
 | **Backend**     | Ktor 3.5.0 (Netty engine), Koin 4.2.1 (DI), Jackson 2.21                                             |
+| **Database**    | SQLite (via JetBrains Exposed ORM 0.61.0)                                                            |
 | **HTTP Client** | Ktor CIO Client (async, coroutine-native)                                                            |
 | **Concurrency** | Kotlin Coroutines (`kotlinx.coroutines` 1.11.0)                                                      |
 | **Frontend**    | Server-side HTML (kotlinx.html DSL + HTMX), Ktor SSE                                                 |
@@ -197,6 +198,13 @@ with a wide range of tools and paradigms:
 - Add or remove assets without restarting the application
 - Allocation validation ensures targets always sum to 100%
 
+### Historical Trades Synchronization
+
+- Automatically synchronizes executed trade history from Kraken API (`/0/private/TradesHistory`) on startup
+- Persists historical trades to the SQLite database
+- Deduplicates boundary trades using cryptographic state signatures (timestamp, pair, side, volume, amount)
+- Tracks synchronization state in `history_sync_metadata` to prevent redundant API queries
+
 ### Safety & Reliability
 
 - **Dry Run Mode** — test your strategy without executing real trades
@@ -260,11 +268,11 @@ graph LR
         PM --> THS
         PA --> KS[KrakenService]
         PA --> CS
-        PA --> PSR[PortfolioStatsRepository]
+        PA --> PSR[PortfolioStatsRepository (SQLite)]
         OE --> KS
         OE --> CS
         OE --> PA
-        THS --> FTR[FileTradeRepository]
+        THS --> TR[TradeRepository (SQLite)]
     end
 
     subgraph External
@@ -322,14 +330,14 @@ architecture to synchronize the dashboard with the backend rebalancing loop:
 │   ├── controller/                        # Ktor routes: DashboardRoutes
 │   ├── model/                             # Domain: PortfolioSnapshot, PortfolioStats, OrderResult
 │   ├── repository/                        # Persistence interfaces: TradeRepository, PortfolioStatsRepository
-│   │   └── impl/                          # File-backed implementations
+│   │   └── impl/                          # SQLite-backed implementations (via Exposed ORM)
 │   ├── service/                           # Core logic interfaces: PortfolioManager, KrakenService, ConfigService, TradeHistoryService
 │   │   └── impl/                          # Service implementations (coroutine-aware)
 │   ├── view/                              # HTML templates & components (kotlinx.html DSL)
 │   │   ├── DashboardView.kt              # Facade class delegating to components
 │   │   ├── component/                    # Modular components (Shell, Grid, Form, etc.)
 │   │   └── util/                         # View utilities (Formatter, Icons, ViewText, Layouts)
-│   └── util/                              # Utilities: AtomicJsonFile
+│   └── table/                             # Exposed table definitions
 ├── src/test/kotlin/                       # Unit tests (100% overall coverage achieved across all packages and metrics)
 │   └── com/gemini/krakenbot/
 │       └── service/
@@ -442,14 +450,11 @@ with `BigDecimal.compareTo()` to avoid floating-point comparison issues.
 - `KrakenServiceTest` — API signing, error handling, dry run, order failure (
   using Ktor `MockEngine`)
 - `ModelTest` — unit tests for models including `Asset` mapping
-- `AtomicJsonFileTest` — file-system atomic write verification under normal and
-  error/unsupported paths
 - `ConfigServiceTest` — validation, hot-reload, persistence, duplicate/blank
   symbol rejection
 - `DashboardControllerTest` — REST API endpoints, invalid config error responses
-- `TradeHistoryServiceTest` — snapshot storage, size limits
-- `FileTradeRepositoryTest` / `PortfolioStatsRepositoryTest` — file I/O, atomic
-  writes, error propagation
+- `TradeHistoryServiceTest` — snapshot storage, size limits, and historical synchronization states
+- `SqliteTradeRepositoryImplTest` / `SqlitePortfolioStatsRepositoryImplTest` — SQLite persistence, Exposed ORM schema initialization, query logic, and transactional error propagation
 
 ### Test Design Principles
 

@@ -137,5 +137,34 @@ class PortfolioManagerLoopTest : StringSpec() {
                 krakenService.getBalancesCallCount shouldBe 1
             }
         }
+
+        "runLoop_HandlesSyncTradesExceptionGracefully" {
+            runTest {
+                val settings = Settings(
+                    loopDelaySeconds = 60L,
+                    deviationTriggerPercent = 2.0,
+                    dustThresholdUSD = 1.0,
+                    dryRun = true,
+                    fiatMaxDrawdown = 0.0,
+                    fiatDeploymentExponent = 1.0
+                )
+                val config = AppConfig(
+                    kraken = KrakenCredentials(apiKey = "k", privateKey = "s"),
+                    settings = settings,
+                    allocations = emptyList()
+                )
+                every { configService.getConfig() } returns config
+
+                io.mockk.coEvery { tradeHistoryService.syncTradesFromKraken() } throws RuntimeException("Sync error!")
+
+                portfolioManager.startRebalancingLoop()
+                val job = launch {
+                    portfolioManager.runLoop()
+                }
+                yield()
+                portfolioManager.stopRebalancingLoop()
+                job.join()
+            }
+        }
     }
 }

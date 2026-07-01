@@ -2,6 +2,7 @@ package com.gemini.krakenbot.config
 
 import com.gemini.krakenbot.repository.table.ActionLogTable
 import com.gemini.krakenbot.repository.table.AssetSnapshotTable
+import com.gemini.krakenbot.repository.table.HistorySyncMetadataTable
 import com.gemini.krakenbot.repository.table.PortfolioSnapshotTable
 import com.gemini.krakenbot.repository.table.PortfolioStatsTable
 import com.gemini.krakenbot.repository.table.TradeTable
@@ -56,12 +57,13 @@ object DatabaseConfig {
         )
 
         transaction(database) {
-            SchemaUtils.createMissingTablesAndColumns(
+            SchemaUtils.create(
                 PortfolioSnapshotTable,
                 AssetSnapshotTable,
                 TradeTable,
                 PortfolioStatsTable,
-                ActionLogTable
+                ActionLogTable,
+                HistorySyncMetadataTable
             )
         }
 

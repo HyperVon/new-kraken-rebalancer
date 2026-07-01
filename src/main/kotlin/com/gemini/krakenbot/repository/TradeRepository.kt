@@ -18,4 +18,7 @@ interface TradeRepository {
     fun getTotalVolumeTraded(): BigDecimal
     fun getFirstSnapshotTime(): Instant?
     fun getLatestSnapshotTime(): Instant?
+    fun getLatestTradeTime(): Instant?
+    fun isHistorySeeded(): Boolean
+    fun setHistorySeeded(seeded: Boolean)
 }

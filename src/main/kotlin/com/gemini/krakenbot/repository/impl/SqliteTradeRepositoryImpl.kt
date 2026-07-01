@@ -7,6 +7,7 @@ import com.gemini.krakenbot.repository.TradeRepository
 import com.gemini.krakenbot.repository.table.ActionLogTable
 import com.gemini.krakenbot.repository.table.AssetSnapshotTable
 import com.gemini.krakenbot.repository.table.PortfolioSnapshotTable
+import com.gemini.krakenbot.repository.table.HistorySyncMetadataTable
 import com.gemini.krakenbot.repository.table.TradeTable
 import org.jetbrains.exposed.sql.Database
 import org.jetbrains.exposed.sql.ResultRow
@@ -14,6 +15,7 @@ import org.jetbrains.exposed.sql.SortOrder
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
 import org.jetbrains.exposed.sql.andWhere
 import org.jetbrains.exposed.sql.insert
+import org.jetbrains.exposed.sql.update
 import org.jetbrains.exposed.sql.selectAll
 import org.jetbrains.exposed.sql.sum
 import org.jetbrains.exposed.sql.transactions.transaction
@@ -252,5 +254,47 @@ class SqliteTradeRepositoryImpl(
             dryRun = row[TradeTable.dryRun],
             errorMessage = row[TradeTable.errorMessage]
         )
+    }
+
+    override fun getLatestTradeTime(): Instant? {
+        return transaction(database) {
+            TradeTable
+                .selectAll()
+                .orderBy(TradeTable.timestamp, SortOrder.DESC)
+                .limit(1)
+                .firstOrNull()
+                ?.let {
+                    Instant.ofEpochMilli(it[TradeTable.timestamp])
+                }
+        }
+    }
+
+    override fun isHistorySeeded(): Boolean {
+        return transaction(database) {
+            HistorySyncMetadataTable
+                .selectAll()
+                .where { HistorySyncMetadataTable.key eq "history_seeded" }
+                .firstOrNull()
+                ?.let { it[HistorySyncMetadataTable.value] == "true" } ?: false
+        }
+    }
+
+    override fun setHistorySeeded(seeded: Boolean) {
+        transaction(database) {
+            val existing = HistorySyncMetadataTable
+                .selectAll()
+                .where { HistorySyncMetadataTable.key eq "history_seeded" }
+                .firstOrNull()
+            if (existing != null) {
+                HistorySyncMetadataTable.update({ HistorySyncMetadataTable.key eq "history_seeded" }) {
+                    it[value] = seeded.toString()
+                }
+            } else {
+                HistorySyncMetadataTable.insert {
+                    it[key] = "history_seeded"
+                    it[value] = seeded.toString()
+                }
+            }
+        }
     }
 }

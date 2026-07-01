@@ -1,5 +1,8 @@
 package com.gemini.krakenbot.service
 
+import com.gemini.krakenbot.config.AppConfig
+import com.gemini.krakenbot.config.KrakenCredentials
+import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.HistoryStats
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.PortfolioStats
@@ -10,8 +13,11 @@ import com.gemini.krakenbot.service.impl.TradeHistoryServiceImpl
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.booleans.shouldBeTrue
+import io.kotest.matchers.booleans.shouldBeFalse
 import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.shouldBe
+import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
@@ -26,11 +32,31 @@ class TradeHistoryServiceTest : StringSpec() {
 
     override fun isolationMode() = IsolationMode.InstancePerTest
 
+    private val repository = mockk<TradeRepository>(relaxed = true)
+    private val statsRepository = mockk<PortfolioStatsRepository>(relaxed = true)
+    private val krakenService = mockk<KrakenService>(relaxed = true)
+    private val configService = mockk<ConfigService>(relaxed = true)
+
+    private fun createService(): TradeHistoryServiceImpl {
+        val appConfig = AppConfig(
+            kraken = KrakenCredentials("test-api-key", "test-private-key"),
+            settings = Settings(
+                loopDelaySeconds = 60,
+                deviationTriggerPercent = 5.0,
+                dustThresholdUSD = 5.0,
+                dryRun = false,
+                fiatMaxDrawdown = 30.0,
+                fiatDeploymentExponent = 1.0
+            ),
+            allocations = emptyList()
+        )
+        every { configService.getConfig() } returns appConfig
+        return TradeHistoryServiceImpl(repository, statsRepository, krakenService, configService)
+    }
+
     init {
         "init_LoadsHistoryFromRepository" {
-            val repository = mockk<TradeRepository>(relaxed = true)
-            val statsRepository = mockk<PortfolioStatsRepository>(relaxed = true)
-            val tradeHistoryService = TradeHistoryServiceImpl(repository, statsRepository)
+            val tradeHistoryService = createService()
             val snapshot = PortfolioSnapshot(
                 timestamp = Instant.now(),
                 totalValueUSD = BigDecimal.ZERO,
@@ -47,9 +73,7 @@ class TradeHistoryServiceTest : StringSpec() {
         }
 
         "addSnapshot_AddsToFrontAndSaves" {
-            val repository = mockk<TradeRepository>(relaxed = true)
-            val statsRepository = mockk<PortfolioStatsRepository>(relaxed = true)
-            val tradeHistoryService = TradeHistoryServiceImpl(repository, statsRepository)
+            val tradeHistoryService = createService()
             val s1 = PortfolioSnapshot(
                 timestamp = Instant.now(),
                 totalValueUSD = BigDecimal.ZERO,
@@ -77,9 +101,7 @@ class TradeHistoryServiceTest : StringSpec() {
         }
 
         "addSnapshot_LimitsHistorySize" {
-            val repository = mockk<TradeRepository>(relaxed = true)
-            val statsRepository = mockk<PortfolioStatsRepository>(relaxed = true)
-            val tradeHistoryService = TradeHistoryServiceImpl(repository, statsRepository)
+            val tradeHistoryService = createService()
             repeat(60) {
                 tradeHistoryService.addSnapshot(
                     PortfolioSnapshot(
@@ -98,9 +120,7 @@ class TradeHistoryServiceTest : StringSpec() {
         }
 
         "init_HandlesNullLoaded" {
-            val repository = mockk<TradeRepository>(relaxed = true)
-            val statsRepository = mockk<PortfolioStatsRepository>(relaxed = true)
-            val tradeHistoryService = TradeHistoryServiceImpl(repository, statsRepository)
+            val tradeHistoryService = createService()
             every { repository.load() } returns emptyList()
             tradeHistoryService.init()
             tradeHistoryService.getHistory().isEmpty().shouldBeTrue()
@@ -108,9 +128,7 @@ class TradeHistoryServiceTest : StringSpec() {
 
         "getHistoryFlow_EmitsSnapshotsOnAdd" {
             runTest {
-                val repository = mockk<TradeRepository>(relaxed = true)
-                val statsRepository = mockk<PortfolioStatsRepository>(relaxed = true)
-                val tradeHistoryService = TradeHistoryServiceImpl(repository, statsRepository)
+                val tradeHistoryService = createService()
                 val snapshots = mutableListOf<PortfolioSnapshot>()
 
                 val job = launch {
@@ -142,16 +160,12 @@ class TradeHistoryServiceTest : StringSpec() {
         }
 
         "getLatestSnapshot_ReturnsNullWhenEmpty" {
-            val repository = mockk<TradeRepository>(relaxed = true)
-            val statsRepository = mockk<PortfolioStatsRepository>(relaxed = true)
-            val tradeHistoryService = TradeHistoryServiceImpl(repository, statsRepository)
+            val tradeHistoryService = createService()
             tradeHistoryService.getLatestSnapshot().shouldBeNull()
         }
 
         "saveTrade_DelegatesToRepository" {
-            val repository = mockk<TradeRepository>(relaxed = true)
-            val statsRepository = mockk<PortfolioStatsRepository>(relaxed = true)
-            val tradeHistoryService = TradeHistoryServiceImpl(repository, statsRepository)
+            val tradeHistoryService = createService()
             val trade = TradeRecord(
                 timestamp = Instant.now(),
                 pair = "XBTUSD",
@@ -167,9 +181,7 @@ class TradeHistoryServiceTest : StringSpec() {
         }
 
         "getSnapshotsInRange_DelegatesToRepository" {
-            val repository = mockk<TradeRepository>(relaxed = true)
-            val statsRepository = mockk<PortfolioStatsRepository>(relaxed = true)
-            val tradeHistoryService = TradeHistoryServiceImpl(repository, statsRepository)
+            val tradeHistoryService = createService()
             val from = Instant.now()
             val to = Instant.now()
             tradeHistoryService.getSnapshotsInRange(from, to)
@@ -177,9 +189,7 @@ class TradeHistoryServiceTest : StringSpec() {
         }
 
         "getTradesInRange_DelegatesToRepository" {
-            val repository = mockk<TradeRepository>(relaxed = true)
-            val statsRepository = mockk<PortfolioStatsRepository>(relaxed = true)
-            val tradeHistoryService = TradeHistoryServiceImpl(repository, statsRepository)
+            val tradeHistoryService = createService()
             val from = Instant.now()
             val to = Instant.now()
             tradeHistoryService.getTradesInRange(from, to)
@@ -187,9 +197,7 @@ class TradeHistoryServiceTest : StringSpec() {
         }
 
         "getHistoryStats_AggregatesCorrectly" {
-            val repository = mockk<TradeRepository>(relaxed = true)
-            val statsRepository = mockk<PortfolioStatsRepository>(relaxed = true)
-            val tradeHistoryService = TradeHistoryServiceImpl(repository, statsRepository)
+            val tradeHistoryService = createService()
 
             every { statsRepository.load() } returns PortfolioStats(BigDecimal("12345.67"))
             every { repository.getTotalTradeCount() } returns 42L
@@ -205,6 +213,171 @@ class TradeHistoryServiceTest : StringSpec() {
             stats.totalVolumeTraded shouldBe BigDecimal("98765.43")
             stats.firstSnapshotTime shouldBe firstTime
             stats.latestSnapshotTime shouldBe latestTime
+        }
+
+        "syncTradesFromKraken_AlreadySeeded" {
+            runTest {
+                every { repository.isHistorySeeded() } returns true
+                val tradeHistoryService = createService()
+
+                tradeHistoryService.syncTradesFromKraken()
+
+                coVerify(exactly = 0) { krakenService.getTradeHistory(any(), any()) }
+                verify(exactly = 0) { repository.setHistorySeeded(any()) }
+            }
+        }
+
+        "syncTradesFromKraken_NoApiKey" {
+            runTest {
+                every { repository.isHistorySeeded() } returns false
+                val emptyConfig = AppConfig(
+                    kraken = KrakenCredentials("", ""),
+                    settings = Settings(
+                        loopDelaySeconds = 60,
+                        deviationTriggerPercent = 5.0,
+                        dustThresholdUSD = 5.0,
+                        dryRun = false,
+                        fiatMaxDrawdown = 30.0,
+                        fiatDeploymentExponent = 1.0
+                    ),
+                    allocations = emptyList()
+                )
+                every { configService.getConfig() } returns emptyConfig
+                val tradeHistoryService = TradeHistoryServiceImpl(repository, statsRepository, krakenService, configService)
+
+                tradeHistoryService.syncTradesFromKraken()
+
+                coVerify(exactly = 0) { krakenService.getTradeHistory(any(), any()) }
+                verify(exactly = 0) { repository.setHistorySeeded(any()) }
+            }
+        }
+
+        "syncTradesFromKraken_SuccessSeeding_NoDuplicates" {
+            runTest {
+                every { repository.isHistorySeeded() } returns false
+                every { repository.getLatestTradeTime() } returns null
+
+                val now = Instant.now()
+                val apiTrades = listOf(
+                    TradeRecord(
+                        timestamp = now,
+                        pair = "XBTUSD",
+                        side = "BUY",
+                        symbol = "BTC",
+                        volume = BigDecimal.ONE,
+                        usdAmount = BigDecimal.TEN,
+                        success = true,
+                        dryRun = false
+                    )
+                )
+                coEvery { krakenService.getTradeHistory(any(), any()) } returns apiTrades andThen emptyList()
+
+                val tradeHistoryService = createService()
+                tradeHistoryService.syncTradesFromKraken()
+
+                coVerify(atLeast = 1) { krakenService.getTradeHistory(any(), any()) }
+                verify(exactly = 1) { repository.saveTrade(any()) }
+                verify(exactly = 1) { repository.setHistorySeeded(true) }
+            }
+        }
+
+        "syncTradesFromKraken_SuccessSeeding_WithDuplicates" {
+            runTest {
+                every { repository.isHistorySeeded() } returns false
+                val latestTime = Instant.ofEpochSecond(1700000000)
+                every { repository.getLatestTradeTime() } returns latestTime
+
+                val duplicateTrade = TradeRecord(
+                    timestamp = latestTime,
+                    pair = "XBTUSD",
+                    side = "BUY",
+                    symbol = "BTC",
+                    volume = BigDecimal.ONE,
+                    usdAmount = BigDecimal.TEN,
+                    success = true,
+                    dryRun = false
+                )
+                every { repository.getTradesInRange(latestTime, any()) } returns listOf(duplicateTrade)
+
+                val newTrade = TradeRecord(
+                    timestamp = latestTime.plusSeconds(60),
+                    pair = "XBTUSD",
+                    side = "SELL",
+                    symbol = "BTC",
+                    volume = BigDecimal.ONE,
+                    usdAmount = BigDecimal.TEN,
+                    success = true,
+                    dryRun = false
+                )
+
+                coEvery { krakenService.getTradeHistory(latestTime.epochSecond, 0) } returns listOf(duplicateTrade, newTrade)
+                coEvery { krakenService.getTradeHistory(latestTime.epochSecond, 50) } returns emptyList()
+
+                val tradeHistoryService = createService()
+                tradeHistoryService.syncTradesFromKraken()
+
+                coVerify(atLeast = 1) { krakenService.getTradeHistory(any(), any()) }
+                verify(exactly = 1) { repository.saveTrade(newTrade) }
+                verify(exactly = 0) { repository.saveTrade(duplicateTrade) }
+                verify(exactly = 1) { repository.setHistorySeeded(true) }
+            }
+        }
+
+        "syncTradesFromKraken_FirstBatchEmpty" {
+            runTest {
+                every { repository.isHistorySeeded() } returns false
+                every { repository.getLatestTradeTime() } returns null
+                coEvery { krakenService.getTradeHistory(any(), any()) } returns emptyList()
+
+                val tradeHistoryService = createService()
+                tradeHistoryService.syncTradesFromKraken()
+
+                verify(exactly = 0) { repository.saveTrade(any()) }
+                verify(exactly = 1) { repository.setHistorySeeded(true) }
+            }
+        }
+
+        "syncTradesFromKraken_PaginationOffset" {
+            runTest {
+                every { repository.isHistorySeeded() } returns false
+                every { repository.getLatestTradeTime() } returns null
+
+                val batch1 = List(50) { i ->
+                    TradeRecord(
+                        timestamp = Instant.ofEpochSecond(1700000000 + i.toLong()),
+                        pair = "XBTUSD",
+                        side = "BUY",
+                        symbol = "BTC",
+                        volume = BigDecimal.ONE,
+                        usdAmount = BigDecimal.TEN,
+                        success = true,
+                        dryRun = false
+                    )
+                }
+                val batch2 = listOf(
+                    TradeRecord(
+                        timestamp = Instant.ofEpochSecond(1700000600),
+                        pair = "XBTUSD",
+                        side = "SELL",
+                        symbol = "BTC",
+                        volume = BigDecimal.ONE,
+                        usdAmount = BigDecimal.TEN,
+                        success = true,
+                        dryRun = false
+                    )
+                )
+
+                coEvery { krakenService.getTradeHistory(null, 0) } returns batch1
+                coEvery { krakenService.getTradeHistory(null, 50) } returns batch2
+
+                val tradeHistoryService = createService()
+                tradeHistoryService.syncTradesFromKraken()
+
+                coVerify(exactly = 1) { krakenService.getTradeHistory(null, 0) }
+                coVerify(exactly = 1) { krakenService.getTradeHistory(null, 50) }
+                verify(exactly = 51) { repository.saveTrade(any()) }
+                verify(exactly = 1) { repository.setHistorySeeded(true) }
+            }
         }
     }
 }

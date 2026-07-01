@@ -629,5 +629,22 @@ class DashboardControllerTest : StringSpec() {
                 response.bodyAsText() shouldContain "\"allTimeHigh\":15000.00"
             }
         }
+
+        "getApiHistorySnapshots_RangeFilters_Branches" {
+            every { tradeHistoryService.getSnapshotsInRange(any(), any()) } returns emptyList()
+            testApplication {
+                application {
+                    configureTestEnv()
+                }
+                // Test "7d" range
+                client.get("${Routes.API_HISTORY_SNAPSHOTS}?range=7d").status shouldBe HttpStatusCode.OK
+                // Test "30d" range
+                client.get("${Routes.API_HISTORY_SNAPSHOTS}?range=30d").status shouldBe HttpStatusCode.OK
+                // Test "90d" range
+                client.get("${Routes.API_HISTORY_SNAPSHOTS}?range=90d").status shouldBe HttpStatusCode.OK
+                // Test fallback else range
+                client.get("${Routes.API_HISTORY_SNAPSHOTS}?range=invalid").status shouldBe HttpStatusCode.OK
+            }
+        }
     }
 }

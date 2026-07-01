@@ -17,7 +17,7 @@ flowchart TD
     end
 
     SNAP --> ATH{New ATH?}
-    ATH -- Yes --> SAVE_ATH["Update ATH in portfolio-stats.json\n(atomic write)"]
+    ATH -- Yes --> SAVE_ATH["Update ATH in SQLite database"]
     ATH -- No --> DD
     SAVE_ATH --> DD
 
@@ -46,7 +46,7 @@ flowchart TD
         E1C --> E2
         E1F --> E2
         E2["Refresh USD balance\n(retry up to 3×250ms)"] --> E3["Execute BUY orders second\n(verify cash sufficiency)"]
-        E3 --> E4["Record Snapshot\n& Trade History\n(atomic write)"]
+        E3 --> E4["Record Snapshot\n& Trade History\nto SQLite database"]
     end
 
     EXEC --> SLEEP["Sleep (configurable delay)"]
@@ -78,7 +78,7 @@ To maintain the Single Responsibility Principle (SRP) and keep domain logic high
 *   **`PortfolioManagerImpl` (The Orchestrator)**: Manages the continuous coroutine loop. It acts as a lightweight facade that delegates the actual domain logic to the analyzer and executor, and coordinates the final persistence of the snapshot.
 *   **`PortfolioAnalyzer` (The Brain)**: Responsible for Phase 1 and 2. It resolves prices, tracks the All-Time High (ATH), calculates dynamic fiat deployment ratios, computes deviations, and determines the exact `BUY`/`SELL` amounts required.
 *   **`OrderExecutor` (The Brawn)**: Responsible for Phase 3. It takes the calculated orders and safely executes them against the Kraken API. It manages the strict sell-before-buy sequence, projected vs. actual cash tracking, and dust-threshold filtering.
-*   **Persistence Impls (`FileTradeRepositoryImpl`, `PortfolioStatsRepositoryImpl`, `ConfigServiceImpl`)**: Handle data storage using atomic write-then-rename file operations (`AtomicJsonFile`) to prevent data corruption during crashes.
+*   **Persistence Impls (`SqliteTradeRepositoryImpl`, `SqlitePortfolioStatsRepositoryImpl`, `ConfigServiceImpl`)**: Config uses atomic write-then-rename file operations to prevent data corruption, while trade logs and portfolio statistics are persisted to SQLite database (using JetBrains Exposed ORM).
 *   **`TradeHistoryServiceImpl`**: Maintains a reactive `MutableSharedFlow` that broadcasts portfolio snapshots to the Ktor Server-Sent Events (SSE) stream in real-time.
 
 ---
@@ -106,7 +106,7 @@ target state.
 
     Normally, the target value is `Total Portfolio Value * Target %`. However, the system implements a **Dynamic Fiat Deployment Strategy**:
 
-    1.  **ATH Tracking**: The bot tracks the portfolio's All-Time High (ATH) value in `portfolio-stats.json`. ATH is set on first run or updated whenever a new high is reached.
+    1.  **ATH Tracking**: The bot tracks the portfolio's All-Time High (ATH) value in the SQLite database. ATH is set on first run or updated whenever a new high is reached.
     2.  **Drawdown Calculation**:
         `Drawdown % = (ATH - Current Value) / ATH * 100`
     3.  **Fiat Deployment Percentage**:
@@ -187,9 +187,7 @@ failure.
     * Order volumes use `BigDecimal` with 8 decimal places of precision.
     * In dry-run mode, orders are logged with a `[DRY RUN]` prefix but not sent
       to Kraken.
-5. **Persistence**: The cycle snapshot (including all trade actions and their
-   outcomes) is saved to `trade-history.json` using an atomic write-then-rename
-   operation to prevent file corruption.
+5. **Persistence**: The cycle snapshot (including all trade actions and their outcomes) is saved directly to the SQLite database (under the trade and snapshot tables).
 
 ---
 

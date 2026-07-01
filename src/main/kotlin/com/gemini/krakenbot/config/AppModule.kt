@@ -37,7 +37,7 @@ val appModule = module {
     single<ConfigService> { ConfigServiceImpl(get()) }
     single<TradeRepository> { SqliteTradeRepositoryImpl(get()) }
     single<PortfolioStatsRepository> { SqlitePortfolioStatsRepositoryImpl(get()) }
-    single<TradeHistoryService> { TradeHistoryServiceImpl(get(), get()).apply { init() } }
+    single<TradeHistoryService> { TradeHistoryServiceImpl(get(), get(), get(), get()).apply { init() } }
     singleOf(::KrakenServiceImpl) { bind<KrakenService>() }
     singleOf(::PortfolioAnalyzer)
     single { OrderExecutor(get(), get(), get()) }

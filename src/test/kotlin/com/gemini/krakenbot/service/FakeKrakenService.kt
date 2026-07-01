@@ -1,6 +1,7 @@
 package com.gemini.krakenbot.service
 
 import com.gemini.krakenbot.model.OrderResult
+import com.gemini.krakenbot.model.TradeRecord
 import java.math.BigDecimal
 
 /**
@@ -12,6 +13,7 @@ import java.math.BigDecimal
 class FakeKrakenService : KrakenService {
     var balanceSupplier: () -> RawBalances = { emptyMap() }
     var pricesSupplier: (String) -> RawPrices = { emptyMap() }
+    var tradeHistorySupplier: (Long?, Int?) -> List<TradeRecord> = { _, _ -> emptyList() }
 
     /** If set, invoked after recording the order (may throw for legacy tests). */
     var executeOrderAction: ((String, String, String, BigDecimal) -> Unit)? =
@@ -38,6 +40,10 @@ class FakeKrakenService : KrakenService {
 
     override suspend fun getTickerPrices(pairs: String): RawPrices {
         return pricesSupplier(pairs)
+    }
+
+    override suspend fun getTradeHistory(startSec: Long?, offset: Int?): List<TradeRecord> {
+        return tradeHistorySupplier(startSec, offset)
     }
 
     override suspend fun executeOrder(

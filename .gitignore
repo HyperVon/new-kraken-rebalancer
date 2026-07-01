@@ -23,6 +23,7 @@ out/
 rebalancer-config.json
 trade-history.json
 portfolio-stats.json
+*.db
 
 # Local directories
 /bin/

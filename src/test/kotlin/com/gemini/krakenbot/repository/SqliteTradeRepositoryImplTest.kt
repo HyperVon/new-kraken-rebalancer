@@ -171,5 +171,43 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
             repository.save(listOf(snapshot))
             repository.load().size shouldBe 1
         }
+
+        "getLatestTradeTime with empty and populated trades" {
+            repository.getLatestTradeTime() shouldBe null
+
+            val now = Instant.now().truncatedTo(ChronoUnit.MILLIS)
+            val trade1 = TradeRecord(
+                timestamp = now.minusSeconds(10),
+                pair = "XBTUSD",
+                side = "BUY",
+                symbol = "BTC",
+                volume = BigDecimal("0.1"),
+                usdAmount = BigDecimal("5000.00"),
+                success = true,
+                dryRun = false
+            )
+            val trade2 = TradeRecord(
+                timestamp = now,
+                pair = "ETHUSD",
+                side = "SELL",
+                symbol = "ETH",
+                volume = BigDecimal("1.0"),
+                usdAmount = BigDecimal("2000.00"),
+                success = true,
+                dryRun = false
+            )
+            repository.saveTrade(trade1)
+            repository.saveTrade(trade2)
+
+            repository.getLatestTradeTime() shouldBe now
+        }
+
+        "isHistorySeeded and setHistorySeeded" {
+            repository.isHistorySeeded() shouldBe false
+            repository.setHistorySeeded(true)
+            repository.isHistorySeeded() shouldBe true
+            repository.setHistorySeeded(false)
+            repository.isHistorySeeded() shouldBe false
+        }
     }
 }

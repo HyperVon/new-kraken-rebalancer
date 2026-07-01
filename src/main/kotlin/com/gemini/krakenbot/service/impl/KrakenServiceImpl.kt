@@ -4,10 +4,13 @@ import com.fasterxml.jackson.core.JsonProcessingException
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.gemini.krakenbot.model.OrderResult
+import com.gemini.krakenbot.model.TradeRecord
+import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.KrakenService
 import com.gemini.krakenbot.service.RawBalances
 import com.gemini.krakenbot.service.RawPrices
+import java.time.Instant
 import io.ktor.client.*
 import io.ktor.client.request.*
 import io.ktor.client.statement.*
@@ -118,6 +121,85 @@ class KrakenServiceImpl(
                 errorMessage = message
             )
         }
+    }
+
+    override suspend fun getTradeHistory(startSec: Long?, offset: Int?): List<TradeRecord> {
+        val apiKey = configService.getConfig().kraken.apiKey.value
+        if (apiKey.isBlank() || apiKey == "YOUR_KRAKEN_API_KEY") {
+            log.warn("Kraken API key is blank or placeholder. Skipping trade history fetch.")
+            return emptyList()
+        }
+
+        val params = mutableMapOf<String, String>()
+        if (startSec != null) {
+            params["start"] = startSec.toString()
+        }
+        if (offset != null) {
+            params["ofs"] = offset.toString()
+        }
+
+        val result = try {
+            queryPrivate("/0/private/TradesHistory", params)
+        } catch (e: Exception) {
+            log.error("Failed to query private TradesHistory endpoint", e)
+            throw e
+        }
+
+        val tradesNode = result.path("trades")
+        if (!tradesNode.isObject) {
+            return emptyList()
+        }
+
+        val allocations = configService.getConfig().allocations.map { it.symbol.value }
+        val tradesList = mutableListOf<TradeRecord>()
+
+        tradesNode.fields().forEach { (_, tradeNode) ->
+            val pair = tradeNode.path("pair").asText()
+            val type = tradeNode.path("type").asText() // "buy" or "sell"
+            val time = tradeNode.path("time").asDouble() // e.g. 1618000000.1234
+            val priceStr = tradeNode.path("price").asText()
+            val costStr = tradeNode.path("cost").asText()
+            val volStr = tradeNode.path("vol").asText()
+
+            // Map pair back to standard symbol
+            val symbol = parseSymbolFromPair(pair, allocations) ?: return@forEach
+
+            val timestamp = Instant.ofEpochMilli((time * 1000).toLong())
+            val side = type.uppercase() // "BUY" or "SELL"
+            val rawVolume = try { BigDecimal(volStr) } catch (e: Exception) { BigDecimal.ZERO }
+            val rawUsdAmount = try { BigDecimal(costStr) } catch (e: Exception) { BigDecimal.ZERO }
+            val volume = rawVolume.setScale(8, RoundingMode.HALF_UP)
+            val usdAmount = rawUsdAmount.setScale(2, RoundingMode.HALF_UP)
+
+            tradesList.add(
+                TradeRecord(
+                    timestamp = timestamp,
+                    pair = pair,
+                    side = side,
+                    symbol = symbol,
+                    volume = volume,
+                    usdAmount = usdAmount,
+                    success = true,
+                    dryRun = false
+                )
+            )
+        }
+        return tradesList
+    }
+
+    private fun parseSymbolFromPair(pair: String, allocations: List<String>): String? {
+        val normalizedPair = pair.uppercase()
+        for (symbol in allocations) {
+            val ticker = Asset.toKrakenTicker(symbol)
+            if (normalizedPair.contains(ticker) || normalizedPair.contains(symbol.uppercase())) {
+                return symbol
+            }
+        }
+        // Fallbacks
+        if (normalizedPair.contains("XBT") || normalizedPair.contains("BTC")) return "BTC"
+        if (normalizedPair.contains("ETH")) return "ETH"
+        if (normalizedPair.contains("XDG") || normalizedPair.contains("DOGE")) return "DOGE"
+        return null
     }
 
     private suspend fun queryPublic(path: String): JsonNode {

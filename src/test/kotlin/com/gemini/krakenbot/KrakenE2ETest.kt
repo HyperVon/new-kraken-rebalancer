@@ -127,7 +127,7 @@ class KrakenE2ETest : StringSpec() {
                     httpClient = httpClient
                 )
                 val tradeHistoryService =
-                    TradeHistoryServiceImpl(tradesRepo, statsRepo)
+                    TradeHistoryServiceImpl(tradesRepo, statsRepo, krakenService, mockConfigService)
 
                 val portfolioAnalyzer = PortfolioAnalyzer(
                     krakenService = krakenService,
@@ -237,7 +237,7 @@ class KrakenE2ETest : StringSpec() {
                     objectMapper = objectMapper,
                     httpClient = httpClient
                 )
-                val tradeHistoryService = TradeHistoryServiceImpl(tradesRepo, statsRepo)
+                val tradeHistoryService = TradeHistoryServiceImpl(tradesRepo, statsRepo, krakenService, mockConfigService)
 
                 val portfolioAnalyzer = PortfolioAnalyzer(
                     krakenService = krakenService,

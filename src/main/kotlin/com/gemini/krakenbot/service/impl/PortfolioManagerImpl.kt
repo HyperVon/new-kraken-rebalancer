@@ -39,6 +39,13 @@ class PortfolioManagerImpl(
     }
 
     override suspend fun runLoop() {
+        try {
+            log.info("Checking and performing historical trades synchronization from Kraken API...")
+            tradeHistoryService.syncTradesFromKraken()
+        } catch (e: Exception) {
+            log.error("Failed to synchronize historical trades on startup", e)
+        }
+
         while (isRunning) {
             val settings = configService.getConfig().settings
             try {
