@@ -1,0 +1,175 @@
+package com.gemini.krakenbot.repository
+
+import com.gemini.krakenbot.config.DatabaseConfig
+import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.PortfolioSnapshot
+import com.gemini.krakenbot.model.TradeRecord
+import com.gemini.krakenbot.repository.impl.SqliteTradeRepositoryImpl
+import io.kotest.core.spec.IsolationMode
+import io.kotest.core.spec.style.StringSpec
+import io.kotest.matchers.comparables.shouldBeEqualComparingTo
+import io.kotest.matchers.shouldBe
+import io.kotest.matchers.shouldNotBe
+import java.math.BigDecimal
+import java.time.Instant
+import java.time.temporal.ChronoUnit
+
+@Suppress("unused")
+class SqliteTradeRepositoryImplTest : StringSpec() {
+
+    override fun isolationMode() = IsolationMode.InstancePerTest
+
+    private val db = DatabaseConfig.init(":memory:")
+    private val repository = SqliteTradeRepositoryImpl(db)
+
+    init {
+        "save and load snapshots" {
+            val now = Instant.now().truncatedTo(ChronoUnit.MILLIS)
+            val snapshot = PortfolioSnapshot(
+                timestamp = now,
+                totalValueUSD = BigDecimal("1000.50"),
+                assets = mapOf(
+                    "BTC" to PortfolioSnapshot.AssetSnapshot(
+                        symbol = Asset("BTC"),
+                        balance = BigDecimal("0.5"),
+                        price = BigDecimal("18000.00"),
+                        valueUSD = BigDecimal("900.00"),
+                        targetPercent = BigDecimal("90.0"),
+                        currentPercent = BigDecimal("90.0"),
+                        deviationPercent = BigDecimal("0.0"),
+                        deviationUSD = BigDecimal("0.0")
+                    ),
+                    "USD" to PortfolioSnapshot.AssetSnapshot(
+                        symbol = Asset("USD"),
+                        balance = BigDecimal("100.50"),
+                        price = BigDecimal.ONE,
+                        valueUSD = BigDecimal("100.50"),
+                        targetPercent = BigDecimal("10.0"),
+                        currentPercent = BigDecimal("10.0"),
+                        deviationPercent = BigDecimal("0.0"),
+                        deviationUSD = BigDecimal("0.0")
+                    )
+                ),
+                actions = listOf("Action 1", "Action 2"),
+                drawdownPercent = BigDecimal("1.25"),
+                fiatDeploymentPercent = BigDecimal("10.0"),
+                effectiveUsdTargetPercent = BigDecimal("10.0")
+            )
+
+            repository.saveSnapshot(snapshot)
+            
+            val loaded = repository.load()
+            loaded.size shouldBe 1
+            val first = loaded.first()
+            first.timestamp shouldBe now
+            first.totalValueUSD.shouldBeEqualComparingTo(BigDecimal("1000.50"))
+            first.drawdownPercent.shouldBeEqualComparingTo(BigDecimal("1.25"))
+            first.fiatDeploymentPercent.shouldBeEqualComparingTo(BigDecimal("10.0"))
+            first.effectiveUsdTargetPercent.shouldBeEqualComparingTo(BigDecimal("10.0"))
+            first.actions shouldBe listOf("Action 1", "Action 2")
+            
+            val btc = first.assets["BTC"]!!
+            btc.symbol.value shouldBe "BTC"
+            btc.balance.shouldBeEqualComparingTo(BigDecimal("0.5"))
+            btc.price.shouldBeEqualComparingTo(BigDecimal("18000.00"))
+            btc.valueUSD.shouldBeEqualComparingTo(BigDecimal("900.00"))
+        }
+
+        "save trade and queries" {
+            val now = Instant.now().truncatedTo(ChronoUnit.MILLIS)
+            val trade1 = TradeRecord(
+                timestamp = now.minusSeconds(10),
+                pair = "XBTUSD",
+                side = "BUY",
+                symbol = "BTC",
+                volume = BigDecimal("0.1"),
+                usdAmount = BigDecimal("5000.00"),
+                success = true,
+                dryRun = false
+            )
+            val trade2 = TradeRecord(
+                timestamp = now,
+                pair = "ETHUSD",
+                side = "SELL",
+                symbol = "ETH",
+                volume = BigDecimal("1.0"),
+                usdAmount = BigDecimal("2000.00"),
+                success = true,
+                dryRun = true
+            )
+            val failedTrade = TradeRecord(
+                timestamp = now.plusSeconds(10),
+                pair = "DOGEUSD",
+                side = "BUY",
+                symbol = "DOGE",
+                volume = BigDecimal("100.0"),
+                usdAmount = BigDecimal("10.00"),
+                success = false,
+                dryRun = false,
+                errorMessage = "API Error"
+            )
+
+            repository.saveTrade(trade1)
+            repository.saveTrade(trade2)
+            repository.saveTrade(failedTrade)
+
+            repository.getTotalTradeCount() shouldBe 2L // only successful
+            repository.getTotalVolumeTraded().shouldBeEqualComparingTo(BigDecimal("7000.00")) // 5000 + 2000
+
+            val trades = repository.getTradesInRange(now.minusSeconds(20), now.plusSeconds(20))
+            trades.size shouldBe 3
+            trades[0].pair shouldBe "DOGEUSD" // sorted desc by timestamp
+            trades[0].success shouldBe false
+            trades[0].errorMessage shouldBe "API Error"
+            trades[1].pair shouldBe "ETHUSD"
+            trades[1].dryRun shouldBe true
+            trades[2].pair shouldBe "XBTUSD"
+        }
+
+        "getSnapshotsInRange and boundary times" {
+            val baseTime = Instant.now().truncatedTo(ChronoUnit.MILLIS)
+            val s1 = PortfolioSnapshot(
+                timestamp = baseTime.minusSeconds(10),
+                totalValueUSD = BigDecimal("1000.00"),
+                assets = emptyMap(),
+                actions = emptyList(),
+                drawdownPercent = BigDecimal.ZERO,
+                fiatDeploymentPercent = BigDecimal.ZERO,
+                effectiveUsdTargetPercent = BigDecimal.ZERO
+            )
+            val s2 = PortfolioSnapshot(
+                timestamp = baseTime,
+                totalValueUSD = BigDecimal("2000.00"),
+                assets = emptyMap(),
+                actions = emptyList(),
+                drawdownPercent = BigDecimal.ZERO,
+                fiatDeploymentPercent = BigDecimal.ZERO,
+                effectiveUsdTargetPercent = BigDecimal.ZERO
+            )
+
+            repository.saveSnapshot(s1)
+            repository.saveSnapshot(s2)
+
+            repository.getFirstSnapshotTime() shouldBe baseTime.minusSeconds(10)
+            repository.getLatestSnapshotTime() shouldBe baseTime
+
+            val inRange = repository.getSnapshotsInRange(baseTime.minusSeconds(5), baseTime.plusSeconds(5))
+            inRange.size shouldBe 1
+            inRange.first().totalValueUSD.shouldBeEqualComparingTo(BigDecimal("2000.00"))
+        }
+
+        "legacy save saves snapshots" {
+            val snapshot = PortfolioSnapshot(
+                timestamp = Instant.now(),
+                totalValueUSD = BigDecimal.ZERO,
+                assets = emptyMap(),
+                actions = emptyList(),
+                drawdownPercent = BigDecimal.ZERO,
+                fiatDeploymentPercent = BigDecimal.ZERO,
+                effectiveUsdTargetPercent = BigDecimal.ZERO
+            )
+            repository.save(listOf(snapshot))
+            repository.load().size shouldBe 1
+        }
+    }
+}

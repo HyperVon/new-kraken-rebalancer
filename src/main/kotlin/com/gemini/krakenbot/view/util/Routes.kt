@@ -3,12 +3,17 @@ package com.gemini.krakenbot.view.util
 object Routes {
     const val ROOT = "/"
     const val SETTINGS = "/settings"
+    const val HISTORY = "/history"
     const val FRAGMENT_DASHBOARD = "/fragments/dashboard"
     const val API_ROUTE_PREFIX = "/api"
     const val API_STATUS_STREAM = "/api/status/stream"
+    const val API_HISTORY_SNAPSHOTS = "/api/history/snapshots"
+    const val API_HISTORY_TRADES = "/api/history/trades"
+    const val API_HISTORY_STATS = "/api/history/stats"
     const val STATIC_STYLE_CSS = "/static/style.css"
     const val STATIC_DASHBOARD_JS = "/static/dashboard.js"
     const val STATIC_SETTINGS_JS = "/static/settings.js"
+    const val STATIC_HISTORY_JS = "/static/history.js"
 }
 
 object HtmxHeaders {

@@ -59,6 +59,14 @@ dependencies {
     val kotlinXCoroutinesVersion = "1.11.0"
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:${kotlinXCoroutinesVersion}")
 
+    // SQLite + Exposed ORM
+    val exposedVersion = "0.61.0"
+    implementation("org.jetbrains.exposed:exposed-core:$exposedVersion")
+    implementation("org.jetbrains.exposed:exposed-dao:$exposedVersion")
+    implementation("org.jetbrains.exposed:exposed-jdbc:$exposedVersion")
+    implementation("org.jetbrains.exposed:exposed-java-time:$exposedVersion")
+    implementation("org.xerial:sqlite-jdbc:3.49.1.0")
+
     // Testing
     val koTestVersion = "6.1.11"
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:${kotlinXCoroutinesVersion}")

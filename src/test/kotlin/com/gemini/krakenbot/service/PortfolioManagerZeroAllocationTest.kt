@@ -43,7 +43,7 @@ class PortfolioManagerZeroAllocationTest : StringSpec() {
                 configService = configService,
                 portfolioStatsRepository = portfolioStatsRepository
             )
-            orderExecutor = OrderExecutor(krakenService, portfolioAnalyzer)
+            orderExecutor = OrderExecutor(krakenService, portfolioAnalyzer, tradeHistoryService)
             portfolioManager = PortfolioManagerImpl(
                 configService = configService,
                 tradeHistoryService = tradeHistoryService,

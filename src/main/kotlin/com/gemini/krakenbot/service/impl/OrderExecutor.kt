@@ -3,16 +3,20 @@ package com.gemini.krakenbot.service.impl
 import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderResult
+import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.service.KrakenService
+import com.gemini.krakenbot.service.TradeHistoryService
 import kotlinx.coroutines.delay
 import org.slf4j.LoggerFactory
 import java.math.BigDecimal
 import java.math.RoundingMode
+import java.time.Instant
 import kotlin.time.Duration.Companion.milliseconds
 
 class OrderExecutor(
     private val krakenService: KrakenService,
-    private val portfolioAnalyzer: PortfolioAnalyzer
+    private val portfolioAnalyzer: PortfolioAnalyzer,
+    private val tradeHistoryService: TradeHistoryService
 ) {
     private val log = LoggerFactory.getLogger(OrderExecutor::class.java)
 
@@ -59,6 +63,7 @@ class OrderExecutor(
                 usdAmount = usdToSell,
                 side = "SELL"
             )
+            recordTrade(result, symbol, pair, "SELL", volume, usdToSell)
             if (result.success) {
                 projectedCash = projectedCash.add(usdToSell)
                 executedSells = true
@@ -108,6 +113,7 @@ class OrderExecutor(
                 usdAmount = cost,
                 side = "BUY"
             )
+            recordTrade(result, symbol, pair, "BUY", volume, cost)
             if (result.success) {
                 actualCash = actualCash.subtract(cost)
             }
@@ -170,6 +176,28 @@ class OrderExecutor(
         } else {
             actionLog.add("FAILED $side $symbol: ${result.errorMessage}")
         }
+    }
+
+    private fun recordTrade(
+        result: OrderResult,
+        symbol: String,
+        pair: String,
+        side: String,
+        volume: BigDecimal,
+        usdAmount: BigDecimal
+    ) {
+        val trade = TradeRecord(
+            timestamp = Instant.now(),
+            pair = pair,
+            side = side,
+            symbol = symbol,
+            volume = volume,
+            usdAmount = usdAmount,
+            success = result.success,
+            dryRun = result.dryRun,
+            errorMessage = result.errorMessage
+        )
+        tradeHistoryService.saveTrade(trade)
     }
 
 }

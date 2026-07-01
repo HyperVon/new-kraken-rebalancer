@@ -9,8 +9,9 @@ import com.gemini.krakenbot.model.OrderResult
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.PortfolioStats
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
-import com.gemini.krakenbot.repository.impl.FileTradeRepositoryImpl
-import com.gemini.krakenbot.repository.impl.PortfolioStatsRepositoryImpl
+import com.gemini.krakenbot.config.DatabaseConfig
+import com.gemini.krakenbot.repository.impl.SqlitePortfolioStatsRepositoryImpl
+import com.gemini.krakenbot.repository.impl.SqliteTradeRepositoryImpl
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.impl.ConfigServiceImpl
 import com.gemini.krakenbot.service.FakeKrakenService
@@ -137,11 +138,13 @@ class EvaluationScenariosTest : StringSpec() {
                     recentActivityComponent = get()
                 )
             }
+            single { HistoryPageComponent() }
             single {
                 DashboardView(
                     shellComponent = get(),
                     settingsFormComponent = get(),
-                    fragmentComponent = get()
+                    fragmentComponent = get(),
+                    historyPageComponent = get()
                 )
             }
         }
@@ -207,7 +210,7 @@ class EvaluationScenariosTest : StringSpec() {
 
                 val statsRepo = mockk<PortfolioStatsRepository>(relaxed = true)
                 val analyzer = PortfolioAnalyzer(fakeKraken, mockConfig, statsRepo)
-                val executor = OrderExecutor(fakeKraken, analyzer)
+                val executor = OrderExecutor(fakeKraken, analyzer, tradeHistoryService)
                 val pm = PortfolioManagerImpl(mockConfig, mockk(relaxed = true), analyzer, executor)
 
                 // Sub-case 1: Success path (Verify Sequencing)
@@ -296,13 +299,8 @@ class EvaluationScenariosTest : StringSpec() {
                 val mockConfig = mockk<ConfigService>(relaxed = true)
                 val testStatsFile = "scenario2-stats.json"
                 val f = File(testStatsFile)
-                if (f.exists()) f.delete()
-
-                val objectMapper = jacksonObjectMapper()
-                val statsRepo = PortfolioStatsRepositoryImpl(objectMapper)
-                val field = PortfolioStatsRepositoryImpl::class.java.getDeclaredField("filePath")
-                field.isAccessible = true
-                field.set(statsRepo, testStatsFile)
+                val db = DatabaseConfig.init(":memory:")
+                val statsRepo = SqlitePortfolioStatsRepositoryImpl(db)
 
                 val appConfig = AppConfig(
                     kraken = KrakenCredentials("k", "s"),
@@ -417,7 +415,7 @@ class EvaluationScenariosTest : StringSpec() {
 
                 val statsRepo = mockk<PortfolioStatsRepository>(relaxed = true)
                 val analyzer = PortfolioAnalyzer(fakeKraken, mockConfig, statsRepo)
-                val executor = OrderExecutor(fakeKraken, analyzer)
+                val executor = OrderExecutor(fakeKraken, analyzer, tradeHistoryService)
                 val pm = PortfolioManagerImpl(mockConfig, mockk(relaxed = true), analyzer, executor)
 
                 // Sub-case A: Deposit
@@ -630,7 +628,7 @@ class EvaluationScenariosTest : StringSpec() {
 
                 val statsRepo = mockk<PortfolioStatsRepository>(relaxed = true)
                 val analyzer = PortfolioAnalyzer(fakeKraken, mockConfig, statsRepo)
-                val executor = OrderExecutor(fakeKraken, analyzer)
+                val executor = OrderExecutor(fakeKraken, analyzer, tradeHistoryService)
 
                 val capturedActions = mutableListOf<String>()
                 val mockHistory = mockk<TradeHistoryService>(relaxed = true)
@@ -740,7 +738,7 @@ class EvaluationScenariosTest : StringSpec() {
 
                 val statsRepo = mockk<PortfolioStatsRepository>(relaxed = true)
                 val analyzer = PortfolioAnalyzer(fakeKraken, mockConfig, statsRepo)
-                val executor = OrderExecutor(fakeKraken, analyzer)
+                val executor = OrderExecutor(fakeKraken, analyzer, tradeHistoryService)
                 val pm = PortfolioManagerImpl(mockConfig, mockk(relaxed = true), analyzer, executor)
 
                 fakeKraken.executedOrders.clear()
@@ -800,7 +798,7 @@ class EvaluationScenariosTest : StringSpec() {
 
                 val statsRepo = mockk<PortfolioStatsRepository>(relaxed = true)
                 val analyzer = PortfolioAnalyzer(fakeKraken, mockConfig, statsRepo)
-                val executor = OrderExecutor(fakeKraken, analyzer)
+                val executor = OrderExecutor(fakeKraken, analyzer, tradeHistoryService)
                 val pm = PortfolioManagerImpl(mockConfig, mockk(relaxed = true), analyzer, executor)
 
                 fakeKraken.executedOrders.clear()
@@ -881,7 +879,7 @@ class EvaluationScenariosTest : StringSpec() {
 
                 val statsRepo = mockk<PortfolioStatsRepository>(relaxed = true)
                 val analyzer = PortfolioAnalyzer(fakeKraken, mockConfig, statsRepo)
-                val executor = OrderExecutor(fakeKraken, analyzer)
+                val executor = OrderExecutor(fakeKraken, analyzer, tradeHistoryService)
                 val pm = PortfolioManagerImpl(mockConfig, mockk(relaxed = true), analyzer, executor)
 
                 fakeKraken.executedOrders.clear()
@@ -929,7 +927,7 @@ class EvaluationScenariosTest : StringSpec() {
 
                 val statsRepo = mockk<PortfolioStatsRepository>(relaxed = true)
                 val analyzer = PortfolioAnalyzer(fakeKraken, mockConfig, statsRepo)
-                val executor = OrderExecutor(fakeKraken, analyzer)
+                val executor = OrderExecutor(fakeKraken, analyzer, tradeHistoryService)
                 val pm = PortfolioManagerImpl(mockConfig, mockk(relaxed = true), analyzer, executor)
 
                 pm.startRebalancingLoop()
@@ -967,13 +965,12 @@ class EvaluationScenariosTest : StringSpec() {
                 baseFile.createNewFile()
 
                 val targetStatsFile = File(baseFile, "stats.json")
-
-                val statsRepo = PortfolioStatsRepositoryImpl(objectMapper)
-                val field = PortfolioStatsRepositoryImpl::class.java.getDeclaredField("filePath")
-                field.isAccessible = true
-                field.set(statsRepo, targetStatsFile.absolutePath)
-
+                val db = DatabaseConfig.init(":memory:")
+                val statsRepo = SqlitePortfolioStatsRepositoryImpl(db)
                 val stats = PortfolioStats(BigDecimal("1234.56"))
+
+                // Close transaction manager to force write failure
+                org.jetbrains.exposed.sql.transactions.TransactionManager.closeAndUnregister(db)
 
                 shouldThrow<IOException> {
                     statsRepo.save(stats)
@@ -1060,7 +1057,7 @@ class EvaluationScenariosTest : StringSpec() {
                 
                 val statsRepo = mockk<PortfolioStatsRepository>(relaxed = true)
                 val analyzer = PortfolioAnalyzer(fakeKraken, mockConfig, statsRepo)
-                val executor = OrderExecutor(fakeKraken, analyzer)
+                val executor = OrderExecutor(fakeKraken, analyzer, tradeHistoryService)
                 
                 val pm = PortfolioManagerImpl(mockConfig, mockk(relaxed = true), analyzer, executor)
                 pm.performRebalanceCycle()
@@ -1122,7 +1119,7 @@ class EvaluationScenariosTest : StringSpec() {
                 
                 val statsRepo = mockk<PortfolioStatsRepository>(relaxed = true)
                 val analyzer = PortfolioAnalyzer(fakeKraken, mockConfig, statsRepo)
-                val executor = OrderExecutor(fakeKraken, analyzer)
+                val executor = OrderExecutor(fakeKraken, analyzer, tradeHistoryService)
                 val pm = PortfolioManagerImpl(mockConfig, mockk(relaxed = true), analyzer, executor)
                 
                 pm.performRebalanceCycle()
@@ -1209,7 +1206,7 @@ class EvaluationScenariosTest : StringSpec() {
                 
                 val statsRepo = mockk<PortfolioStatsRepository>(relaxed = true)
                 val analyzer = PortfolioAnalyzer(fakeKraken, mockConfig, statsRepo)
-                val executor = OrderExecutor(fakeKraken, analyzer)
+                val executor = OrderExecutor(fakeKraken, analyzer, tradeHistoryService)
                 
                 val pm = PortfolioManagerImpl(mockConfig, mockk(relaxed = true), analyzer, executor)
                 pm.performRebalanceCycle()
@@ -1234,12 +1231,8 @@ class EvaluationScenariosTest : StringSpec() {
         "Scenario 16: Trade History Storage and JSON Serialization" {
             runTest {
                 val tempFile = File.createTempFile("scenario16-", ".json").apply { deleteOnExit() }
-                val mapper = jacksonObjectMapper().registerModule(JavaTimeModule())
-                
-                val repository = FileTradeRepositoryImpl(mapper)
-                val field = FileTradeRepositoryImpl::class.java.getDeclaredField("filePath")
-                field.isAccessible = true
-                field.set(repository, tempFile.absolutePath)
+                val db = DatabaseConfig.init(":memory:")
+                val repository = SqliteTradeRepositoryImpl(db)
                 
                 val snapshot = PortfolioSnapshot(
                     timestamp = Instant.parse("2026-06-20T12:00:00Z"),
@@ -1265,7 +1258,7 @@ class EvaluationScenariosTest : StringSpec() {
                 repository.save(listOf(snapshot))
                 val loaded = repository.load()
                 
-                val success = loaded.size == 1 && loaded[0].totalValueUSD == BigDecimal("12345.67") && loaded[0].timestamp == snapshot.timestamp
+                val success = loaded.size == 1 && loaded[0].totalValueUSD.compareTo(BigDecimal("12345.67")) == 0 && loaded[0].timestamp == snapshot.timestamp
                 val evidence = "Saved history file path: ${tempFile.absolutePath}\n" +
                                "Loaded history size: ${loaded.size}\n" +
                                "Parsed snapshot totals: value=$${loaded[0].totalValueUSD}, timestamp=${loaded[0].timestamp}"
@@ -1306,7 +1299,7 @@ class EvaluationScenariosTest : StringSpec() {
                 
                 val statsRepo = mockk<PortfolioStatsRepository>(relaxed = true)
                 val analyzer = PortfolioAnalyzer(fakeKraken, mockConfig, statsRepo)
-                val executor = OrderExecutor(fakeKraken, analyzer)
+                val executor = OrderExecutor(fakeKraken, analyzer, tradeHistoryService)
                 val pm = PortfolioManagerImpl(mockConfig, mockk(relaxed = true), analyzer, executor)
                 
                 shouldThrow<IOException> {
@@ -1400,14 +1393,8 @@ class EvaluationScenariosTest : StringSpec() {
 
         "Scenario 20: Missing or Corrupt Stats File Recovery" {
             runTest {
-                val tempFile = File.createTempFile("scenario20-", ".json").apply { deleteOnExit() }
-                
-                tempFile.writeText("corrupted { content")
-                
-                val statsRepo = PortfolioStatsRepositoryImpl(objectMapper)
-                val field = PortfolioStatsRepositoryImpl::class.java.getDeclaredField("filePath")
-                field.isAccessible = true
-                field.set(statsRepo, tempFile.absolutePath)
+                val db = DatabaseConfig.init(":memory:")
+                val statsRepo = SqlitePortfolioStatsRepositoryImpl(db)
                 
                 val stats = statsRepo.load()
                 val loadSuccess = stats.allTimeHigh != null && stats.allTimeHigh!!.compareTo(BigDecimal.ZERO) == 0
@@ -1456,7 +1443,7 @@ class EvaluationScenariosTest : StringSpec() {
 
                 val statsRepo = mockk<PortfolioStatsRepository>(relaxed = true)
                 val analyzer = PortfolioAnalyzer(fakeKraken, mockConfig, statsRepo)
-                val executor = OrderExecutor(fakeKraken, analyzer)
+                val executor = OrderExecutor(fakeKraken, analyzer, tradeHistoryService)
                 
                 val mockHistory = mockk<TradeHistoryService>(relaxed = true)
                 val capturedActions = mutableListOf<String>()
@@ -1519,7 +1506,7 @@ class EvaluationScenariosTest : StringSpec() {
 
                 val statsRepo = mockk<PortfolioStatsRepository>(relaxed = true)
                 val analyzer = PortfolioAnalyzer(fakeKraken, mockConfig, statsRepo)
-                val executor = OrderExecutor(fakeKraken, analyzer)
+                val executor = OrderExecutor(fakeKraken, analyzer, tradeHistoryService)
                 
                 val mockHistory = mockk<TradeHistoryService>(relaxed = true)
                 val capturedActions = mutableListOf<String>()
@@ -1567,7 +1554,7 @@ class EvaluationScenariosTest : StringSpec() {
 
                 val statsRepo = mockk<PortfolioStatsRepository>(relaxed = true)
                 val analyzer = PortfolioAnalyzer(fakeKraken, mockConfig, statsRepo)
-                val executor = OrderExecutor(fakeKraken, analyzer)
+                val executor = OrderExecutor(fakeKraken, analyzer, tradeHistoryService)
                 
                 val mockHistory = mockk<TradeHistoryService>(relaxed = true)
                 val pm = PortfolioManagerImpl(mockConfig, mockHistory, analyzer, executor)
@@ -1667,7 +1654,7 @@ class EvaluationScenariosTest : StringSpec() {
 
                 val statsRepo = mockk<PortfolioStatsRepository>(relaxed = true)
                 val analyzer = PortfolioAnalyzer(fakeKraken, mockConfig, statsRepo)
-                val executor = OrderExecutor(fakeKraken, analyzer)
+                val executor = OrderExecutor(fakeKraken, analyzer, tradeHistoryService)
                 
                 val mockHistory = mockk<TradeHistoryService>(relaxed = true)
                 val capturedActions = mutableListOf<String>()
@@ -1723,7 +1710,7 @@ class EvaluationScenariosTest : StringSpec() {
 
                 val statsRepo = mockk<PortfolioStatsRepository>(relaxed = true)
                 val analyzer = PortfolioAnalyzer(fakeKraken, mockConfig, statsRepo)
-                val executor = OrderExecutor(fakeKraken, analyzer)
+                val executor = OrderExecutor(fakeKraken, analyzer, tradeHistoryService)
                 
                 val pm = PortfolioManagerImpl(mockConfig, mockk(relaxed = true), analyzer, executor)
                 pm.performRebalanceCycle()
@@ -1826,7 +1813,7 @@ class EvaluationScenariosTest : StringSpec() {
 
                 val statsRepo = mockk<PortfolioStatsRepository>(relaxed = true)
                 val analyzer = PortfolioAnalyzer(fakeKraken, mockConfig, statsRepo)
-                val executor = OrderExecutor(fakeKraken, analyzer)
+                val executor = OrderExecutor(fakeKraken, analyzer, tradeHistoryService)
                 
                 val pm = PortfolioManagerImpl(mockConfig, mockk(relaxed = true), analyzer, executor)
                 
@@ -1885,7 +1872,7 @@ class EvaluationScenariosTest : StringSpec() {
 
                 val statsRepo = mockk<PortfolioStatsRepository>(relaxed = true)
                 val analyzer = PortfolioAnalyzer(fakeKraken, mockConfig, statsRepo)
-                val executor = OrderExecutor(fakeKraken, analyzer)
+                val executor = OrderExecutor(fakeKraken, analyzer, tradeHistoryService)
                 
                 val mockHistory = mockk<TradeHistoryService>(relaxed = true)
                 val capturedActions = mutableListOf<String>()
@@ -1921,12 +1908,8 @@ class EvaluationScenariosTest : StringSpec() {
                 val mockConfig = mockk<ConfigService>(relaxed = true)
                 val testStatsFile = "scenario30-stats.json"
                 val f = File(testStatsFile)
-                if (f.exists()) f.delete()
-
-                val statsRepo = PortfolioStatsRepositoryImpl(objectMapper)
-                val field = PortfolioStatsRepositoryImpl::class.java.getDeclaredField("filePath")
-                field.isAccessible = true
-                field.set(statsRepo, testStatsFile)
+                val db = DatabaseConfig.init(":memory:")
+                val statsRepo = SqlitePortfolioStatsRepositoryImpl(db)
 
                 val appConfig = AppConfig(
                     kraken = KrakenCredentials("k", "s"),
@@ -1946,7 +1929,7 @@ class EvaluationScenariosTest : StringSpec() {
                 every { mockConfig.getConfig() } returns appConfig
 
                 val analyzer = PortfolioAnalyzer(fakeKraken, mockConfig, statsRepo)
-                val executor = OrderExecutor(fakeKraken, analyzer)
+                val executor = OrderExecutor(fakeKraken, analyzer, tradeHistoryService)
                 
                 val mockHistory = mockk<TradeHistoryService>(relaxed = true)
                 val capturedSnapshots = mutableListOf<PortfolioSnapshot>()

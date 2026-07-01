@@ -49,5 +49,32 @@ object ViewText {
     const val HEADER_DEV_PCT = "Dev %"
     const val HEADER_TIME = "Time"
     const val HEADER_ACTION = "Action"
+
+    // History page
+    const val HISTORY_TITLE = "History"
+    const val HISTORY_PORTFOLIO_VALUE = "Portfolio Value Over Time"
+    const val HISTORY_ASSET_HOLDINGS = "Asset Holdings Over Time"
+    const val HISTORY_ALLOCATION_DRIFT = "Allocation Drift Over Time"
+    const val HISTORY_CUMULATIVE_PL = "Cumulative Realized P&L"
+    const val HISTORY_TRADE_LOG = "Trade History"
+    const val HISTORY_ALL_TIME_HIGH = "All-Time High"
+    const val HISTORY_TOTAL_TRADES = "Total Trades"
+    const val HISTORY_TOTAL_VOLUME = "Total Volume Traded"
+    const val HISTORY_DAYS_RUNNING = "Days Running"
+    const val HISTORY_NO_DATA = "No historical data available yet. Data will appear after the first rebalance cycle."
+
+    // Navigation
+    const val NAV_DASHBOARD = "Dashboard"
+    const val NAV_HISTORY = "History"
+    const val NAV_SETTINGS = "Settings"
+
+    // History trade table headers
+    const val HEADER_PAIR = "Pair"
+    const val HEADER_SIDE = "Side"
+    const val HEADER_VOLUME = "Volume"
+    const val HEADER_USD_AMOUNT = "USD Amount"
+    const val HEADER_STATUS = "Status"
+    const val HEADER_DRY_RUN = "Dry Run"
 }
+
 

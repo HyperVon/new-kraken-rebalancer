@@ -41,7 +41,7 @@ class PortfolioManagerLoopTest : StringSpec() {
                     configService = configService,
                     portfolioStatsRepository = repo
                 )
-            orderExecutor = OrderExecutor(krakenService, portfolioAnalyzer)
+            orderExecutor = OrderExecutor(krakenService, portfolioAnalyzer, tradeHistoryService)
             portfolioManager = PortfolioManagerImpl(
                 configService = configService,
                 tradeHistoryService = tradeHistoryService,

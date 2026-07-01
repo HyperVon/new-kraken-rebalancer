@@ -74,11 +74,12 @@ class ResilienceChaosTest : StringSpec() {
                         configService = mockConfigService,
                         portfolioStatsRepository = mockk<PortfolioStatsRepository>(relaxed = true)
                     )
+                val mockTradeHistoryService = mockk<TradeHistoryService>(relaxed = true)
                 val orderExecutor =
-                    OrderExecutor(krakenService, portfolioAnalyzer)
+                    OrderExecutor(krakenService, portfolioAnalyzer, mockTradeHistoryService)
                 val portfolioManager = PortfolioManagerImpl(
                     configService = mockConfigService,
-                    tradeHistoryService = mockk<TradeHistoryService>(relaxed = true),
+                    tradeHistoryService = mockTradeHistoryService,
                     portfolioAnalyzer = portfolioAnalyzer,
                     orderExecutor = orderExecutor
                 )
@@ -132,11 +133,12 @@ class ResilienceChaosTest : StringSpec() {
                         configService = mockConfigService,
                         portfolioStatsRepository = mockk<PortfolioStatsRepository>(relaxed = true)
                     )
+                val mockTradeHistoryService = mockk<TradeHistoryService>(relaxed = true)
                 val orderExecutor =
-                    OrderExecutor(krakenService, portfolioAnalyzer)
+                    OrderExecutor(krakenService, portfolioAnalyzer, mockTradeHistoryService)
                 val portfolioManager = PortfolioManagerImpl(
                     configService = mockConfigService,
-                    tradeHistoryService = mockk<TradeHistoryService>(relaxed = true),
+                    tradeHistoryService = mockTradeHistoryService,
                     portfolioAnalyzer = portfolioAnalyzer,
                     orderExecutor = orderExecutor
                 )

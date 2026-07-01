@@ -19,6 +19,8 @@ object Icons {
     val FLOPPY_DISK = loadIcon("floppy_disk.svg")
     val SHIELD_EXCLAMATION = loadIcon("shield_exclamation.svg")
     val PLUS = loadIcon("plus.svg")
+    val CHART = loadIcon("chart.svg")
+    val CLOCK = loadIcon("clock.svg")
 
     fun HTMLTag.icon(rawSvg: String) {
         unsafe { +rawSvg }

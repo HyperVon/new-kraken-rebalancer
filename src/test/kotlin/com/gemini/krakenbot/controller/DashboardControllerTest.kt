@@ -73,11 +73,13 @@ class DashboardControllerTest : StringSpec() {
                     recentActivityComponent = get()
                 )
             }
+            single { HistoryPageComponent() }
             single {
                 DashboardView(
                     shellComponent = get(),
                     settingsFormComponent = get(),
-                    fragmentComponent = get()
+                    fragmentComponent = get(),
+                    historyPageComponent = get()
                 )
             }
         }
@@ -571,6 +573,60 @@ class DashboardControllerTest : StringSpec() {
                     val events = incoming.toList()
                     events.isEmpty() shouldBe true
                 }
+            }
+        }
+
+        "getHistoryPage_ReturnsHtml" {
+            testApplication {
+                application {
+                    configureTestEnv()
+                }
+                val response = client.get(Routes.HISTORY)
+                response.status shouldBe HttpStatusCode.OK
+                response.bodyAsText() shouldContain "History - Kraken Rebalancer"
+            }
+        }
+
+        "getApiHistorySnapshots_ReturnsJson" {
+            every { tradeHistoryService.getSnapshotsInRange(any(), any()) } returns emptyList()
+            testApplication {
+                application {
+                    configureTestEnv()
+                }
+                val response = client.get("${Routes.API_HISTORY_SNAPSHOTS}?range=24h")
+                response.status shouldBe HttpStatusCode.OK
+                response.bodyAsText() shouldBe "[]"
+            }
+        }
+
+        "getApiHistoryTrades_ReturnsJson" {
+            every { tradeHistoryService.getTradesInRange(any(), any()) } returns emptyList()
+            testApplication {
+                application {
+                    configureTestEnv()
+                }
+                val response = client.get("${Routes.API_HISTORY_TRADES}?range=all")
+                response.status shouldBe HttpStatusCode.OK
+                response.bodyAsText() shouldBe "[]"
+            }
+        }
+
+        "getApiHistoryStats_ReturnsJson" {
+            val stats = com.gemini.krakenbot.model.HistoryStats(
+                allTimeHigh = java.math.BigDecimal("15000.00"),
+                totalTradesExecuted = 12L,
+                totalVolumeTraded = java.math.BigDecimal("50000.00"),
+                firstSnapshotTime = java.time.Instant.now(),
+                latestSnapshotTime = java.time.Instant.now()
+            )
+            every { tradeHistoryService.getHistoryStats() } returns stats
+            testApplication {
+                application {
+                    configureTestEnv()
+                }
+                val response = client.get(Routes.API_HISTORY_STATS)
+                response.status shouldBe HttpStatusCode.OK
+                response.bodyAsText() shouldContain "\"allTimeHigh\":15000.00"
             }
         }
     }

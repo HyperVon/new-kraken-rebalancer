@@ -1,0 +1,14 @@
+package com.gemini.krakenbot.repository.table
+
+import org.jetbrains.exposed.sql.ReferenceOption
+import org.jetbrains.exposed.sql.Table
+
+/** Exposed table definition for action logs — normalizes the List<String> actions from snapshots. */
+object ActionLogTable : Table("action_logs") {
+    val id = integer("id").autoIncrement()
+    val snapshotId = integer("snapshot_id")
+        .references(PortfolioSnapshotTable.id, onDelete = ReferenceOption.CASCADE)
+    val message = text("message")
+
+    override val primaryKey = PrimaryKey(id)
+}

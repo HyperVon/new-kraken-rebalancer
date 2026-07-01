@@ -4,7 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.InvalidConfigurationException
 import com.gemini.krakenbot.service.ConfigService
-import com.gemini.krakenbot.util.AtomicJsonFile
+
 import java.io.File
 import java.io.IOException
 import kotlin.math.abs
@@ -49,11 +49,12 @@ class ConfigServiceImpl(
         }
         this.appConfig = newConfig
         try {
-            AtomicJsonFile.write(
-                objectMapper,
-                File(configFilePath),
-                newConfig
-            )
+            val tempFile = File("$configFilePath.tmp")
+            objectMapper.writerWithDefaultPrettyPrinter()
+                .writeValue(tempFile, newConfig)
+            if (!tempFile.renameTo(File(configFilePath))) {
+                throw IOException("Failed to rename temp file to $configFilePath")
+            }
         } catch (e: IOException) {
             throw RuntimeException("Failed to save configuration", e)
         }
