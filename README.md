@@ -268,11 +268,11 @@ graph LR
         PM --> THS
         PA --> KS[KrakenService]
         PA --> CS
-        PA --> PSR[PortfolioStatsRepository (SQLite)]
+        PA --> PSR["PortfolioStatsRepository (SQLite)"]
         OE --> KS
         OE --> CS
         OE --> PA
-        THS --> TR[TradeRepository (SQLite)]
+        THS --> TR["TradeRepository (SQLite)"]
     end
 
     subgraph External
