@@ -3,7 +3,6 @@ package com.gemini.krakenbot.service
 import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.config.Settings
-import com.gemini.krakenbot.model.HistoryStats
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.PortfolioStats
 import com.gemini.krakenbot.model.TradeRecord
@@ -13,14 +12,9 @@ import com.gemini.krakenbot.service.impl.TradeHistoryServiceImpl
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.booleans.shouldBeTrue
-import io.kotest.matchers.booleans.shouldBeFalse
 import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.shouldBe
-import io.mockk.coEvery
-import io.mockk.coVerify
-import io.mockk.every
-import io.mockk.mockk
-import io.mockk.verify
+import io.mockk.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.yield
@@ -377,6 +371,49 @@ class TradeHistoryServiceTest : StringSpec() {
                 coVerify(exactly = 1) { krakenService.getTradeHistory(null, 50) }
                 verify(exactly = 51) { repository.saveTrade(any()) }
                 verify(exactly = 1) { repository.setHistorySeeded(true) }
+            }
+        }
+
+        "getHistoryStats_NullAllTimeHigh_DefaultsToZero" {
+            val tradeHistoryService = createService()
+
+            every { statsRepository.load() } returns PortfolioStats(null)
+            every { repository.getTotalTradeCount() } returns 0L
+            every { repository.getTotalVolumeTraded() } returns BigDecimal.ZERO
+            every { repository.getFirstSnapshotTime() } returns null
+            every { repository.getLatestSnapshotTime() } returns null
+
+            val stats = tradeHistoryService.getHistoryStats()
+            stats.allTimeHigh.compareTo(BigDecimal.ZERO) shouldBe 0
+            stats.totalTradesExecuted shouldBe 0L
+            stats.totalVolumeTraded.compareTo(BigDecimal.ZERO) shouldBe 0
+            stats.firstSnapshotTime shouldBe null
+            stats.latestSnapshotTime shouldBe null
+        }
+
+        "syncTradesFromKraken_PlaceholderApiKey" {
+            runTest {
+                every { repository.isHistorySeeded() } returns false
+                val placeholderConfig = AppConfig(
+                    kraken = KrakenCredentials("YOUR_KRAKEN_API_KEY", "YOUR_KRAKEN_PRIVATE_KEY"),
+                    settings = Settings(
+                        loopDelaySeconds = 60,
+                        deviationTriggerPercent = 5.0,
+                        dustThresholdUSD = 5.0,
+                        dryRun = false,
+                        fiatMaxDrawdown = 30.0,
+                        fiatDeploymentExponent = 1.0
+                    ),
+                    allocations = emptyList()
+                )
+                every { configService.getConfig() } returns placeholderConfig
+                val tradeHistoryService = TradeHistoryServiceImpl(repository, statsRepository, krakenService, configService)
+
+                tradeHistoryService.syncTradesFromKraken()
+
+                // Should skip synchronization — no trade history calls, no seeding
+                coVerify(exactly = 0) { krakenService.getTradeHistory(any(), any()) }
+                verify(exactly = 0) { repository.setHistorySeeded(any()) }
             }
         }
     }

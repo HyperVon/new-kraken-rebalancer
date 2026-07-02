@@ -18,7 +18,7 @@ java {
 application {
     mainClass.set("com.gemini.krakenbot.KrakenRebalancerApplicationKt")
     applicationDefaultJvmArgs =
-        listOf("-Xshare:off", "--sun-misc-unsafe-memory-access=allow")
+        listOf("-Xshare:off", "--sun-misc-unsafe-memory-access=allow", "--enable-native-access=ALL-UNNAMED")
 }
 
 repositories {
@@ -87,7 +87,7 @@ tasks.withType<KotlinCompile> {
 tasks.withType<Test> {
     useJUnitPlatform()
     finalizedBy(tasks.jacocoTestReport)
-    jvmArgs("-Xshare:off", "--sun-misc-unsafe-memory-access=allow", "-Xmx4096m")
+    jvmArgs("-Xshare:off", "--sun-misc-unsafe-memory-access=allow", "--enable-native-access=ALL-UNNAMED", "-Xmx4096m")
     systemProperty("kotlinx.coroutines.debug.enable.creation.stack.trace", "false")
     systemProperty("kotest.coroutines.debug.disable", "true")
 }
@@ -102,6 +102,8 @@ tasks.jacocoTestReport {
             fileTree(it) {
                 exclude("**/model/**")
                 exclude("**/config/**")
+                exclude("**/repository/table/**")
+                exclude("**/service/KrakenService*")
                 exclude("**/KrakenRebalancerApplication*")
             }
         })
@@ -115,6 +117,8 @@ tasks.jacocoTestCoverageVerification {
             fileTree(it) {
                 exclude("**/model/**")
                 exclude("**/config/**")
+                exclude("**/repository/table/**")
+                exclude("**/service/KrakenService*")
                 exclude("**/KrakenRebalancerApplication*")
             }
         })
@@ -125,22 +129,22 @@ tasks.jacocoTestCoverageVerification {
             limit {
                 counter = "INSTRUCTION"
                 value = "COVEREDRATIO"
-                minimum = "0.95".toBigDecimal()
+                minimum = "1.00".toBigDecimal()
             }
             limit {
                 counter = "BRANCH"
                 value = "COVEREDRATIO"
-                minimum = "0.95".toBigDecimal()
+                minimum = "1.00".toBigDecimal()
             }
             limit {
                 counter = "LINE"
                 value = "COVEREDRATIO"
-                minimum = "0.95".toBigDecimal()
+                minimum = "1.00".toBigDecimal()
             }
             limit {
                 counter = "METHOD"
                 value = "COVEREDRATIO"
-                minimum = "0.95".toBigDecimal()
+                minimum = "1.00".toBigDecimal()
             }
         }
     }

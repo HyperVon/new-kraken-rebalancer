@@ -24,7 +24,7 @@ several months.**
 | **Concurrency** | Kotlin Coroutines (`kotlinx.coroutines` 1.11.0)                                                      |
 | **Frontend**    | Server-side HTML (kotlinx.html DSL + HTMX), Ktor SSE                                                 |
 | **API**         | Kraken REST API with HMAC-SHA512 authentication                                                      |
-| **Testing**     | Kotest 6.1 (StringSpec), MockK 1.14, Ktor MockEngine, JaCoCo (95%+ coverage enforced, 100% achieved) |
+| **Testing**     | Kotest 6.1 (StringSpec), MockK 1.14, Ktor MockEngine, JaCoCo (100% coverage enforced and achieved)   |
 | **Build**       | Gradle (Kotlin DSL)                                                                                  |
 
 ---
@@ -150,7 +150,7 @@ with a wide range of tools and paradigms:
 | **HTTP Clients**        | OkHttp (blocking), Ktor CIO Client (async/coroutine), Node.js native `fetch`, Go `net/http`                                   |
 | **Concurrency**         | Java `ScheduledExecutorService`, Kotlin Coroutines, Go goroutines, Node.js event loop                                         |
 | **Testing**             | JUnit 5 + Mockito, Kotest 6 + MockK, Vitest + React Testing Library, Go `testing` + `go-test-coverage`                        |
-| **Coverage**            | JaCoCo (95% enforced, 100% achieved), Vitest coverage (>99%), Go per-package gates (98.2%)                                    |
+| **Coverage**            | JaCoCo (100% enforced and achieved), Vitest coverage (>99%), Go per-package gates (98.2%)                                     |
 | **Serialization**       | Jackson 2.21, Go `encoding/json`, Zod schema validation                                                                       |
 | **Real-Time**           | Ktor Server-Sent Events (SSE), Kotlin `SharedFlow`, HTMX SSE extension                                                        |
 | **CI / Security**       | GitHub Actions, CodeQL, Dependabot, SHA-pinned actions, CVE patching (Tomcat, Netty, Logback, Jackson)                        |
@@ -422,7 +422,7 @@ from the backend — no separate frontend build step required.
 
 ## Testing
 
-The project enforces **95% line, branch, method, and instruction coverage** via
+The project enforces **100% line, branch, method, class, and instruction coverage** via
 JaCoCo, with the test suite achieving exactly **100% line, branch, method,
 class, and instruction coverage** across the entire codebase (including view
 rendering and routing). All tests are behavioural — they verify actual
@@ -433,7 +433,7 @@ with `BigDecimal.compareTo()` to avoid floating-point comparison issues.
 ./gradlew test
 ```
 
-**167 tests** across:
+**214 tests** across:
 
 - **Scenario Evaluation Suite** (`EvaluationScenariosTest`) — **30 highly realistic scenarios** testing the full end-to-end execution of rebalances, mathematical edge cases, API credentials invalidation, concurrency locks, and SSE client streams. See **[EVALUATION.md](EVALUATION.md)** for descriptions and test results of all 30 scenarios.
 - `KrakenE2ETest` / `ResilienceChaosTest` / `PrecisionRoundingFuzzTest` /

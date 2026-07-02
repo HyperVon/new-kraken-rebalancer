@@ -5,14 +5,36 @@ import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.repository.impl.SqliteTradeRepositoryImpl
+import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.shouldBe
-import io.kotest.matchers.shouldNotBe
+import io.mockk.every
+import io.mockk.mockk
+import io.mockk.mockkStatic
+import io.mockk.unmockkStatic
+import org.jetbrains.exposed.sql.Database
+import org.jetbrains.exposed.sql.Transaction
+import org.jetbrains.exposed.sql.transactions.TransactionManager
+import org.jetbrains.exposed.sql.transactions.transaction
+import org.jetbrains.exposed.sql.transactions.transactionManager
+import java.io.IOException
 import java.math.BigDecimal
 import java.time.Instant
 import java.time.temporal.ChronoUnit
+
+class TradeThrowingTransactionManager(
+    private val delegate: TransactionManager
+) : TransactionManager by delegate {
+    override fun newTransaction(
+        isolation: Int,
+        readOnly: Boolean,
+        outerTransaction: Transaction?
+    ): Transaction {
+        throw IOException("Direct IO failure")
+    }
+}
 
 @Suppress("unused")
 class SqliteTradeRepositoryImplTest : StringSpec() {
@@ -209,5 +231,188 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
             repository.setHistorySeeded(false)
             repository.isHistorySeeded() shouldBe false
         }
+
+        "getFirstSnapshotTime returns null when no snapshots exist" {
+            repository.getFirstSnapshotTime() shouldBe null
+        }
+
+        "getLatestSnapshotTime returns null when no snapshots exist" {
+            repository.getLatestSnapshotTime() shouldBe null
+        }
+
+        "getTotalVolumeTraded returns zero when no trades exist" {
+            repository.getTotalVolumeTraded().shouldBeEqualComparingTo(BigDecimal.ZERO)
+        }
+
+        "getTotalTradeCount returns zero when no trades exist" {
+            repository.getTotalTradeCount() shouldBe 0L
+        }
+
+        "save wraps non-IOException as IOException" {
+            // Use a closed database to trigger an exception
+            val closedDb = DatabaseConfig.init(":memory:")
+            val brokenRepo = SqliteTradeRepositoryImpl(closedDb)
+
+            // Drop a required table to trigger a write failure
+            transaction(closedDb) {
+                exec("DROP TABLE IF EXISTS portfolio_snapshots")
+            }
+
+            val snapshot = PortfolioSnapshot(
+                timestamp = Instant.now(),
+                totalValueUSD = BigDecimal.ZERO,
+                assets = emptyMap(),
+                actions = emptyList(),
+                drawdownPercent = BigDecimal.ZERO,
+                fiatDeploymentPercent = BigDecimal.ZERO,
+                effectiveUsdTargetPercent = BigDecimal.ZERO
+            )
+
+            val thrown = shouldThrow<IOException> {
+                brokenRepo.save(listOf(snapshot))
+            }
+            thrown.message shouldBe "Database write failed"
+        }
+
+        "saveSnapshot wraps non-IOException as IOException" {
+            val closedDb = DatabaseConfig.init(":memory:")
+            val brokenRepo = SqliteTradeRepositoryImpl(closedDb)
+
+            transaction(closedDb) {
+                exec("DROP TABLE IF EXISTS portfolio_snapshots")
+            }
+
+            val snapshot = PortfolioSnapshot(
+                timestamp = Instant.now(),
+                totalValueUSD = BigDecimal.ZERO,
+                assets = emptyMap(),
+                actions = emptyList(),
+                drawdownPercent = BigDecimal.ZERO,
+                fiatDeploymentPercent = BigDecimal.ZERO,
+                effectiveUsdTargetPercent = BigDecimal.ZERO
+            )
+
+            val thrown = shouldThrow<IOException> {
+                brokenRepo.saveSnapshot(snapshot)
+            }
+            thrown.message shouldBe "Database write failed"
+        }
+
+        "saveTrade wraps non-IOException as IOException" {
+            val closedDb = DatabaseConfig.init(":memory:")
+            val brokenRepo = SqliteTradeRepositoryImpl(closedDb)
+
+            transaction(closedDb) {
+                exec("DROP TABLE IF EXISTS trades")
+            }
+
+            val trade = TradeRecord(
+                timestamp = Instant.now(),
+                pair = "XBTUSD",
+                side = "BUY",
+                symbol = "BTC",
+                volume = BigDecimal("0.1"),
+                usdAmount = BigDecimal("5000.00"),
+                success = true,
+                dryRun = false
+            )
+
+            val thrown = shouldThrow<IOException> {
+                brokenRepo.saveTrade(trade)
+            }
+            thrown.message shouldBe "Database write failed"
+        }
+
+        "save rethrows IOException directly without wrapping" {
+            // Clear current transaction if it exists
+            TransactionManager.currentOrNull()?.close()
+            
+            val realTxManager = db.transactionManager
+            val throwingTxManager = TradeThrowingTransactionManager(realTxManager)
+            
+            val mockDb = mockk<Database>(relaxed = true)
+            mockkStatic("org.jetbrains.exposed.sql.transactions.TransactionApiKt")
+            every { mockDb.transactionManager } returns throwingTxManager
+            
+            val ioRepo = SqliteTradeRepositoryImpl(mockDb)
+            val snapshot = PortfolioSnapshot(
+                timestamp = Instant.now(),
+                totalValueUSD = BigDecimal.ZERO,
+                assets = emptyMap(),
+                actions = emptyList(),
+                drawdownPercent = BigDecimal.ZERO,
+                fiatDeploymentPercent = BigDecimal.ZERO,
+                effectiveUsdTargetPercent = BigDecimal.ZERO
+            )
+
+            val thrown = shouldThrow<IOException> {
+                ioRepo.save(listOf(snapshot))
+            }
+            thrown.message shouldBe "Direct IO failure"
+
+            unmockkStatic("org.jetbrains.exposed.sql.transactions.TransactionApiKt")
+        }
+
+        "saveSnapshot rethrows IOException directly without wrapping" {
+            // Clear current transaction if it exists
+            TransactionManager.currentOrNull()?.close()
+            
+            val realTxManager = db.transactionManager
+            val throwingTxManager = TradeThrowingTransactionManager(realTxManager)
+            
+            val mockDb = mockk<Database>(relaxed = true)
+            mockkStatic("org.jetbrains.exposed.sql.transactions.TransactionApiKt")
+            every { mockDb.transactionManager } returns throwingTxManager
+            
+            val ioRepo = SqliteTradeRepositoryImpl(mockDb)
+            val snapshot = PortfolioSnapshot(
+                timestamp = Instant.now(),
+                totalValueUSD = BigDecimal.ZERO,
+                assets = emptyMap(),
+                actions = emptyList(),
+                drawdownPercent = BigDecimal.ZERO,
+                fiatDeploymentPercent = BigDecimal.ZERO,
+                effectiveUsdTargetPercent = BigDecimal.ZERO
+            )
+
+            val thrown = shouldThrow<IOException> {
+                ioRepo.saveSnapshot(snapshot)
+            }
+            thrown.message shouldBe "Direct IO failure"
+
+            unmockkStatic("org.jetbrains.exposed.sql.transactions.TransactionApiKt")
+        }
+
+        "saveTrade rethrows IOException directly without wrapping" {
+            // Clear current transaction if it exists
+            TransactionManager.currentOrNull()?.close()
+            
+            val realTxManager = db.transactionManager
+            val throwingTxManager = TradeThrowingTransactionManager(realTxManager)
+            
+            val mockDb = mockk<Database>(relaxed = true)
+            mockkStatic("org.jetbrains.exposed.sql.transactions.TransactionApiKt")
+            every { mockDb.transactionManager } returns throwingTxManager
+            
+            val ioRepo = SqliteTradeRepositoryImpl(mockDb)
+            val trade = TradeRecord(
+                timestamp = Instant.now(),
+                pair = "XBTUSD",
+                side = "BUY",
+                symbol = "BTC",
+                volume = BigDecimal("0.1"),
+                usdAmount = BigDecimal("5000.00"),
+                success = true,
+                dryRun = false
+            )
+
+            val thrown = shouldThrow<IOException> {
+                ioRepo.saveTrade(trade)
+            }
+            thrown.message shouldBe "Direct IO failure"
+
+            unmockkStatic("org.jetbrains.exposed.sql.transactions.TransactionApiKt")
+        }
     }
 }
+

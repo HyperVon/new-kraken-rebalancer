@@ -1,11 +1,10 @@
 package com.gemini.krakenbot.service
 
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.config.Settings
-import com.gemini.krakenbot.config.Allocation
-import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.service.impl.KrakenServiceImpl
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.IsolationMode
@@ -27,6 +26,7 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 
+@Suppress("unused")
 class KrakenServiceTest : StringSpec() {
 
     override fun isolationMode() = IsolationMode.InstancePerTest
@@ -742,6 +742,210 @@ class KrakenServiceTest : StringSpec() {
                 val first = trades.first()
                 first.volume.compareTo(BigDecimal.ZERO) shouldBe 0
                 first.usdAmount.compareTo(BigDecimal.ZERO) shouldBe 0
+            }
+        }
+
+        "getTradeHistory_FallbackSymbols_HardcodedBtcEthDoge" {
+            runTest {
+                // Allocations list deliberately DOES NOT contain BTC, ETH, or DOGE
+                // so the hardcoded fallback paths in parseSymbolFromPair are exercised
+                val responseJson = """
+                    {
+                        "error": [],
+                        "result": {
+                            "trades": {
+                                "T1": {
+                                    "pair": "XXBTZUSD",
+                                    "time": 1700000000.1234,
+                                    "type": "buy",
+                                    "price": "50000.00",
+                                    "cost": "5000.00",
+                                    "vol": "0.10000000"
+                                },
+                                "T2": {
+                                    "pair": "XETHZUSD",
+                                    "time": 1700000001.1234,
+                                    "type": "sell",
+                                    "price": "2000.00",
+                                    "cost": "200.00",
+                                    "vol": "0.10000000"
+                                },
+                                "T3": {
+                                    "pair": "XXDGZUSD",
+                                    "time": 1700000002.1234,
+                                    "type": "buy",
+                                    "price": "0.10",
+                                    "cost": "10.00",
+                                    "vol": "100.00000000"
+                                },
+                                "T4": {
+                                    "pair": "XLTCZUSD",
+                                    "time": 1700000003.1234,
+                                    "type": "buy",
+                                    "price": "100.00",
+                                    "cost": "100.00",
+                                    "vol": "1.00000000"
+                                }
+                            }
+                        }
+                    }
+                """.trimIndent()
+
+                val objectMapper = jacksonObjectMapper()
+                val mockConfigService = mockk<ConfigService>(relaxed = true)
+                val credentials = KrakenCredentials(
+                    apiKey = "api-key",
+                    privateKey = Base64.getEncoder().encodeToString("secret".toByteArray())
+                )
+                // Allocations with SOL only — no BTC, ETH, or DOGE in the list
+                val config = AppConfig(
+                    kraken = credentials,
+                    settings = Settings(
+                        loopDelaySeconds = 60L,
+                        deviationTriggerPercent = 2.0,
+                        dustThresholdUSD = 1.0,
+                        dryRun = false,
+                        fiatMaxDrawdown = 0.0,
+                        fiatDeploymentExponent = 1.0
+                    ),
+                    allocations = listOf(
+                        Allocation("SOL", 100.0)
+                    )
+                )
+                every { mockConfigService.getConfig() } returns config
+
+                val mockEngine = MockEngine { respond(
+                    content = responseJson,
+                    status = HttpStatusCode.OK,
+                    headers = headersOf(HttpHeaders.ContentType, "application/json")
+                )}
+                val service = KrakenServiceImpl(
+                    configService = mockConfigService,
+                    objectMapper = objectMapper,
+                    httpClient = HttpClient(mockEngine)
+                )
+
+                val trades = service.getTradeHistory()
+
+                // BTC, ETH, and DOGE should be resolved via hardcoded fallbacks; LTC should be filtered out
+                trades.size shouldBe 3
+                trades.any { it.symbol == "BTC" }.shouldBeTrue()
+                trades.any { it.symbol == "ETH" }.shouldBeTrue()
+                trades.any { it.symbol == "DOGE" }.shouldBeTrue()
+            }
+        }
+
+        "getTradeHistory_CalledWithDefaults" {
+            runTest {
+                // This test exercises the KrakenService interface default parameter values
+                // (the $DefaultImpls class generated by Kotlin for default params)
+                val responseJson = """{"error":[],"result":{"trades":{}}}"""
+                val service: KrakenService = createService(responseJson)
+                val trades = service.getTradeHistory()
+                trades.isEmpty().shouldBeTrue()
+            }
+        }
+
+        "getTradeHistory_FallbackSymbols_AlternativePairNames" {
+            runTest {
+                // Tests the || second branches: "BTC" (not XBT), "DOGE" (not XDG)
+                val responseJson = """
+                    {
+                        "error": [],
+                        "result": {
+                            "trades": {
+                                "T1": {
+                                    "pair": "BTCUSD",
+                                    "time": 1700000000.1234,
+                                    "type": "buy",
+                                    "price": "50000.00",
+                                    "cost": "5000.00",
+                                    "vol": "0.10000000"
+                                },
+                                "T2": {
+                                    "pair": "DOGEUSD",
+                                    "time": 1700000001.1234,
+                                    "type": "sell",
+                                    "price": "0.10",
+                                    "cost": "10.00",
+                                    "vol": "100.00000000"
+                                }
+                            }
+                        }
+                    }
+                """.trimIndent()
+
+                val objectMapper = jacksonObjectMapper()
+                val mockConfigService = mockk<ConfigService>(relaxed = true)
+                val credentials = KrakenCredentials(
+                    apiKey = "api-key",
+                    privateKey = Base64.getEncoder().encodeToString("secret".toByteArray())
+                )
+                // No relevant allocations — forces fallback paths
+                val config = AppConfig(
+                    kraken = credentials,
+                    settings = Settings(
+                        loopDelaySeconds = 60L,
+                        deviationTriggerPercent = 2.0,
+                        dustThresholdUSD = 1.0,
+                        dryRun = false,
+                        fiatMaxDrawdown = 0.0,
+                        fiatDeploymentExponent = 1.0
+                    ),
+                    allocations = listOf(
+                        Allocation("SOL", 100.0)
+                    )
+                )
+                every { mockConfigService.getConfig() } returns config
+
+                val mockEngine = MockEngine { respond(
+                    content = responseJson,
+                    status = HttpStatusCode.OK,
+                    headers = headersOf(HttpHeaders.ContentType, "application/json")
+                )}
+                val service = KrakenServiceImpl(
+                    configService = mockConfigService,
+                    objectMapper = objectMapper,
+                    httpClient = HttpClient(mockEngine)
+                )
+
+                val trades = service.getTradeHistory()
+                trades.size shouldBe 2
+                trades.any { it.symbol == "BTC" && it.pair == "BTCUSD" }.shouldBeTrue()
+                trades.any { it.symbol == "DOGE" && it.pair == "DOGEUSD" }.shouldBeTrue()
+            }
+        }
+
+        "getTradeHistory_AllocationMatchesViaSymbolUppercase" {
+            runTest {
+                // Tests line 194: the normalizedPair.contains(symbol.uppercase()) branch
+                // When the pair contains the symbol name but not the Kraken ticker
+                // e.g., pair "BTCUSD" with allocation "BTC" — ticker is "XBT" which won't match,
+                // but "BTC" (symbol.uppercase()) will match
+                val responseJson = """
+                    {
+                        "error": [],
+                        "result": {
+                            "trades": {
+                                "T1": {
+                                    "pair": "BTCUSD",
+                                    "time": 1700000000.1234,
+                                    "type": "buy",
+                                    "price": "50000.00",
+                                    "cost": "5000.00",
+                                    "vol": "0.10000000"
+                                }
+                            }
+                        }
+                    }
+                """.trimIndent()
+
+                // BTC is in the allocations list, so the allocation-level match is exercised
+                // The pair "BTCUSD" contains "BTC" (symbol.uppercase()) but NOT "XBT" (ticker)
+                val service = createService(responseJson)
+                val trades = service.getTradeHistory()
+                trades.size shouldBe 1
+                trades.first().symbol shouldBe "BTC"
             }
         }
     }

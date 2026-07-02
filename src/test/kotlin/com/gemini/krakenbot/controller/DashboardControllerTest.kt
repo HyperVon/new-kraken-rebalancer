@@ -40,6 +40,7 @@ import java.time.Instant
 import io.ktor.client.plugins.sse.SSE as ClientSSE
 import io.ktor.server.sse.SSE as ServerSSE
 
+@Suppress("unused")
 class DashboardControllerTest : StringSpec() {
 
     override fun isolationMode() = IsolationMode.InstancePerTest
@@ -613,11 +614,11 @@ class DashboardControllerTest : StringSpec() {
 
         "getApiHistoryStats_ReturnsJson" {
             val stats = com.gemini.krakenbot.model.HistoryStats(
-                allTimeHigh = java.math.BigDecimal("15000.00"),
+                allTimeHigh = BigDecimal("15000.00"),
                 totalTradesExecuted = 12L,
-                totalVolumeTraded = java.math.BigDecimal("50000.00"),
-                firstSnapshotTime = java.time.Instant.now(),
-                latestSnapshotTime = java.time.Instant.now()
+                totalVolumeTraded = BigDecimal("50000.00"),
+                firstSnapshotTime = Instant.now(),
+                latestSnapshotTime = Instant.now()
             )
             every { tradeHistoryService.getHistoryStats() } returns stats
             testApplication {
@@ -644,6 +645,19 @@ class DashboardControllerTest : StringSpec() {
                 client.get("${Routes.API_HISTORY_SNAPSHOTS}?range=90d").status shouldBe HttpStatusCode.OK
                 // Test fallback else range
                 client.get("${Routes.API_HISTORY_SNAPSHOTS}?range=invalid").status shouldBe HttpStatusCode.OK
+            }
+        }
+
+        "getApiHistorySnapshots_NoRangeParam_DefaultsTo30d" {
+            every { tradeHistoryService.getSnapshotsInRange(any(), any()) } returns emptyList()
+            testApplication {
+                application {
+                    configureTestEnv()
+                }
+                // No range parameter at all — exercises the `?: "30d"` null coalescing
+                val response = client.get(Routes.API_HISTORY_SNAPSHOTS)
+                response.status shouldBe HttpStatusCode.OK
+                response.bodyAsText() shouldBe "[]"
             }
         }
     }

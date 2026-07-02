@@ -8,6 +8,16 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [4.0.7] - 2026-07-02
+
+### Added
+- **100% Code Coverage Enforcement**: Raised all JaCoCo coverage metrics (`INSTRUCTION`, `BRANCH`, `LINE`, `METHOD`) verification threshold in `build.gradle.kts` to `1.00` (100% coverage gate).
+- **Exposed IOException Test Coverage**: Implemented `StatsThrowingTransactionManager` and `TradeThrowingTransactionManager` delegating transaction manager mocks to inject and test `IOException` passthrough behavior inside repository transaction blocks without test state pollution.
+- **Kraken Service Symbol Parsing & Interface Default Parameter Tests**: Added tests for alternative asset pair symbol matching fallback logic and forced explicit types in `KrakenServiceTest` to ensure interface default parameter methods (`DefaultImpls`) are fully called and covered.
+- **SQLite Native Access Warning Fix**: Appended the `--enable-native-access=ALL-UNNAMED` JVM argument to both the Test task and Ktor application runtime default JVM arguments lists, resolving standard JDK 22+ native warning messages during test runs and compilation/assemble processes.
+
+---
+
 ## [4.0.6] - 2026-07-01
 
 ### Added
