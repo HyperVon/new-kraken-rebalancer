@@ -410,7 +410,7 @@ from the backend — no separate frontend build step required.
 | `deviationTriggerPercent` | `Double`  | `5.0`   | Minimum deviation % to trigger a trade                                                |
 | `dustThresholdUSD`        | `Double`  | `5.0`   | Minimum trade value in USD (below this is skipped)                                    |
 | `dryRun`                  | `Boolean` | `true`  | If true, logs intended trades without executing them                                  |
-| `simulation`              | `Boolean` | `false` | If true, runs offline in exchange simulation mode (seeds history if DB is empty)       |
+| `simulation`              | `Boolean` | `false` | If true, runs offline in exchange simulation mode (seeds history if DB is empty)      |
 | `fiatMaxDrawdown`         | `Double`  | `0.0`   | Portfolio drawdown % at which 100% of USD is deployed (0 = disabled)                  |
 | `fiatDeploymentExponent`  | `Double`  | `1.0`   | Controls deployment curve: `1.0` = linear, `<1.0` = aggressive, `>1.0` = conservative |
 
