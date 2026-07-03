@@ -20,6 +20,9 @@ import org.jetbrains.exposed.sql.update
 import org.jetbrains.exposed.sql.selectAll
 import org.jetbrains.exposed.sql.sum
 import org.jetbrains.exposed.sql.transactions.transaction
+import org.jetbrains.exposed.sql.deleteWhere
+import org.jetbrains.exposed.sql.SqlExpressionBuilder.less
+import org.jetbrains.exposed.sql.SqlExpressionBuilder.inList
 import org.slf4j.LoggerFactory
 import java.io.IOException
 import java.math.BigDecimal
@@ -54,7 +57,7 @@ class SqliteTradeRepositoryImpl(
                 .limit(50)
                 .toList()
 
-            snapshotRows.map { row -> buildSnapshotFromRow(row) }
+            buildSnapshotsFromRows(snapshotRows)
         }
     }
 
@@ -83,6 +86,9 @@ class SqliteTradeRepositoryImpl(
                     it[success] = trade.success
                     it[dryRun] = trade.dryRun
                     it[errorMessage] = trade.errorMessage
+                    it[price] = trade.price
+                    it[fee] = trade.fee
+                    it[slippagePercent] = trade.slippagePercent
                 }
             }
         } catch (e: Exception) {
@@ -106,6 +112,9 @@ class SqliteTradeRepositoryImpl(
                     it[success] = newTrade.success
                     it[dryRun] = newTrade.dryRun
                     it[errorMessage] = newTrade.errorMessage
+                    it[price] = newTrade.price
+                    it[fee] = newTrade.fee
+                    it[slippagePercent] = newTrade.slippagePercent
                 }
             }
         } catch (e: Exception) {
@@ -131,7 +140,7 @@ class SqliteTradeRepositoryImpl(
                 .orderBy(PortfolioSnapshotTable.timestamp, SortOrder.ASC)
                 .toList()
 
-            snapshotRows.map { row -> buildSnapshotFromRow(row) }
+            buildSnapshotsFromRows(snapshotRows)
         }
     }
 
@@ -230,13 +239,26 @@ class SqliteTradeRepositoryImpl(
         }
     }
 
-    private fun buildSnapshotFromRow(row: ResultRow): PortfolioSnapshot {
-        val snapshotId = row[PortfolioSnapshotTable.id]
+    private fun buildSnapshotsFromRows(rows: List<ResultRow>): List<PortfolioSnapshot> {
+        if (rows.isEmpty()) return emptyList()
+        val snapshotIds = rows.map { it[PortfolioSnapshotTable.id] }
 
-        val assetSnapshots = AssetSnapshotTable
+        val allAssetSnapshots = AssetSnapshotTable
             .selectAll()
-            .where { AssetSnapshotTable.snapshotId eq snapshotId }
-            .associate { assetRow ->
+            .where { AssetSnapshotTable.snapshotId inList snapshotIds }
+            .groupBy { it[AssetSnapshotTable.snapshotId] }
+
+        val allActionLogs = ActionLogTable
+            .selectAll()
+            .where { ActionLogTable.snapshotId inList snapshotIds }
+            .groupBy { it[ActionLogTable.snapshotId] }
+
+        return rows.map { row ->
+            val snapshotId = row[PortfolioSnapshotTable.id]
+            val assetRows = allAssetSnapshots[snapshotId] ?: emptyList()
+            val actionRows = allActionLogs[snapshotId] ?: emptyList()
+
+            val assetSnapshots = assetRows.associate { assetRow ->
                 val symbol = assetRow[AssetSnapshotTable.symbol]
                 symbol to PortfolioSnapshot.AssetSnapshot(
                     symbol = Asset(symbol),
@@ -250,21 +272,20 @@ class SqliteTradeRepositoryImpl(
                 )
             }
 
-        val actions = ActionLogTable
-            .selectAll()
-            .where { ActionLogTable.snapshotId eq snapshotId }
-            .map { it[ActionLogTable.message] }
+            val actions = actionRows.map { it[ActionLogTable.message] }
 
-        return PortfolioSnapshot(
-            timestamp = Instant.ofEpochMilli(row[PortfolioSnapshotTable.timestamp]),
-            totalValueUSD = row[PortfolioSnapshotTable.totalValueUSD],
-            assets = assetSnapshots,
-            actions = actions,
-            drawdownPercent = row[PortfolioSnapshotTable.drawdownPercent],
-            fiatDeploymentPercent = row[PortfolioSnapshotTable.fiatDeploymentPercent],
-            effectiveUsdTargetPercent = row[PortfolioSnapshotTable.effectiveUsdTargetPercent]
-        )
+            PortfolioSnapshot(
+                timestamp = Instant.ofEpochMilli(row[PortfolioSnapshotTable.timestamp]),
+                totalValueUSD = row[PortfolioSnapshotTable.totalValueUSD],
+                assets = assetSnapshots,
+                actions = actions,
+                drawdownPercent = row[PortfolioSnapshotTable.drawdownPercent],
+                fiatDeploymentPercent = row[PortfolioSnapshotTable.fiatDeploymentPercent],
+                effectiveUsdTargetPercent = row[PortfolioSnapshotTable.effectiveUsdTargetPercent]
+            )
+        }
     }
+
 
     private fun buildTradeFromRow(row: ResultRow): TradeRecord {
         return TradeRecord(
@@ -276,7 +297,10 @@ class SqliteTradeRepositoryImpl(
             usdAmount = row[TradeTable.usdAmount],
             success = row[TradeTable.success],
             dryRun = row[TradeTable.dryRun],
-            errorMessage = row[TradeTable.errorMessage]
+            errorMessage = row[TradeTable.errorMessage],
+            price = row[TradeTable.price],
+            fee = row[TradeTable.fee],
+            slippagePercent = row[TradeTable.slippagePercent]
         )
     }
 
@@ -319,6 +343,20 @@ class SqliteTradeRepositoryImpl(
                     it[value] = seeded.toString()
                 }
             }
+        }
+    }
+    override fun pruneSnapshotsOlderThan(cutoff: Instant): Int {
+        return transaction(database) {
+            val cutoffMillis = cutoff.toEpochMilli()
+            val toDeleteRows = PortfolioSnapshotTable
+                .selectAll()
+                .where { PortfolioSnapshotTable.timestamp less cutoffMillis }
+                .toList()
+
+            PortfolioSnapshotTable.deleteWhere {
+                timestamp less cutoffMillis
+            }
+            toDeleteRows.size
         }
     }
 }

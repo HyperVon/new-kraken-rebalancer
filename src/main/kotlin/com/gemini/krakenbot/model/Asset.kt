@@ -40,5 +40,20 @@ value class Asset(@get:JsonValue val value: String) {
             "${toKrakenTicker(symbol)}$USD"
 
         val BTC_USD_PAIR: String = tradingPair(BTC)
+
+        fun fromTradingPair(pair: String, allocations: List<String>): String? {
+            val normalizedPair = pair.uppercase()
+            for (symbol in allocations) {
+                val ticker = toKrakenTicker(symbol)
+                if (normalizedPair.contains(ticker) || normalizedPair.contains(symbol.uppercase())) {
+                    return symbol
+                }
+            }
+            // Fallbacks
+            if (normalizedPair.contains("XBT") || normalizedPair.contains("BTC")) return "BTC"
+            if (normalizedPair.contains("ETH")) return "ETH"
+            if (normalizedPair.contains("XDG") || normalizedPair.contains("DOGE")) return "DOGE"
+            return null
+        }
     }
 }

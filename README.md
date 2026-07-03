@@ -217,15 +217,16 @@ with a wide range of tools and paradigms:
 - **Dry Run Mode** — test your strategy without executing real trades
 - **Structured Order Results** — each order returns success/failure status;
   failed orders don't corrupt cash projections
-- **Atomic File Writes** — config, stats, and trade history use
-  write-then-rename to prevent corruption
-- **Graceful Shutdown** — JVM shutdown hook cleanly stops the loop, closes
-  connections, and tears down DI
+- **Atomic File Writes** — config updates use write-then-atomic-rename (NIO Files.move with StandardCopyOption.ATOMIC_MOVE) to prevent file system corruption
+- **Graceful Shutdown** — JVM shutdown hook cleanly cancels the coroutine loop scope, closes Ktor HttpClient, and stops Koin DI
+- **Redacted Secret Logging** — value class `toString()` implementations for API credentials return redacts to protect application logs
+- **Rate-Limiting & Retries** — rate limits private API queries to 1 call per second and automatically retries transient socket/HTTP/rate-limit exceptions with exponential backoff
+- **CORS Restrictions** — locks down server allowed origins to local machine addresses (`localhost`, `127.0.0.1`, `::1`), Bonjour multicast DNS domains (`*.local`), and private local subnets (`192.168.x.x`, `10.x.x.x`, etc.) to permit local Wi-Fi access from other devices while blocking public web threats
+- **Database Indexing & Auto Migrations** — database schemas utilize index optimizations for timestamps, and run dynamic `SchemaUtils.createMissingTablesAndColumns` auto-migrations on startup
 - Dust threshold filtering to avoid minimum order size errors
 - Automatic error recovery — API failures don't crash the rebalancing loop
 - Price validation — aborts cycle if any asset price is unavailable
-- **BigDecimal Precision** — order volumes use `BigDecimal` (8 decimal places)
-  to eliminate floating-point rounding
+- **BigDecimal Precision** — all balances, prices, and volumes are tracked via `BigDecimal` to completely eliminate floating-point precision loss
 
 ---
 
@@ -389,8 +390,36 @@ Edit `rebalancer-config.json`:
 
 ### 2. Start the Application
 
+You can start the application using the convenient pre-configured startup scripts (which automatically compile the Fat JAR if it has not yet been built):
+
+- **macOS / Linux**:
+
+  ```bash
+  ./start.sh
+  ```
+
+- **Windows**:
+
+  ```cmd
+  start.bat
+  ```
+
+#### Alternative Startup Methods
+
+If you prefer to run using Gradle directly:
+
 ```bash
 ./gradlew run
+```
+
+Or if you wish to build and execute the Fat JAR manually:
+
+```bash
+# Build the Fat JAR containing all dependencies
+./gradlew fatJar
+
+# Run using the JVM (includes optimal JVM parameters for native SQLite memory access)
+java -Xshare:off --sun-misc-unsafe-memory-access=allow --enable-native-access=ALL-UNNAMED -jar build/libs/kraken-bot-0.0.1-SNAPSHOT-all.jar
 ```
 
 The backend starts on port **8080** and begins the rebalancing loop immediately.
@@ -425,6 +454,7 @@ from the backend — no separate frontend build step required.
 | `POST` | `/settings`            | Submit settings form (HTMX)                                              |
 | `GET`  | `/fragments/dashboard` | Dashboard fragment (HTMX)                                                |
 | `GET`  | `/api/status/stream`   | Server-Sent Events (SSE) stream for real-time portfolio snapshot updates |
+| `GET`  | `/api/health`          | Public health check endpoint returning app status and metrics (JSON)     |
 | `GET`  | `/static/*`            | Static assets (CSS)                                                      |
 
 ---

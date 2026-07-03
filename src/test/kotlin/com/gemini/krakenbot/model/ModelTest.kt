@@ -1,7 +1,7 @@
 package com.gemini.krakenbot.model
 
 import com.gemini.krakenbot.config.Settings
-import com.gemini.krakenbot.service.impl.PortfolioValues
+import com.gemini.krakenbot.service.PortfolioValues
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
@@ -105,6 +105,16 @@ class ModelTest : StringSpec() {
             pv2 shouldBe pv
             pv.hashCode() shouldBe pv2.hashCode()
             pv.toString().shouldNotBeNull()
+        }
+
+        "testServiceCompanions" {
+            com.gemini.krakenbot.service.impl.OrderExecutorImpl.CASH_RESERVE_FACTOR shouldBe BigDecimal("0.99")
+            com.gemini.krakenbot.service.impl.OrderExecutorImpl.FEE_RATE_ESTIMATE shouldBe BigDecimal("0.0026")
+
+            com.gemini.krakenbot.service.impl.PortfolioAnalyzerImpl.HUNDRED shouldBe BigDecimal("100")
+            com.gemini.krakenbot.service.impl.PortfolioAnalyzerImpl.SCALE_PERCENT shouldBe 4
+            com.gemini.krakenbot.service.impl.PortfolioAnalyzerImpl.SCALE_PRICE shouldBe 8
+            com.gemini.krakenbot.service.impl.PortfolioAnalyzerImpl.SCALE_USD shouldBe 2
         }
     }
 }

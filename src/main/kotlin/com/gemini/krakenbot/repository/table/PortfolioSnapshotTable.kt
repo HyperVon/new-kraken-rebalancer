@@ -11,5 +11,9 @@ object PortfolioSnapshotTable : Table("portfolio_snapshots") {
     val fiatDeploymentPercent = decimal("fiat_deployment_percent", 10, 4)
     val effectiveUsdTargetPercent = decimal("effective_usd_target_percent", 10, 4)
 
+    init {
+        index("idx_snapshots_timestamp", false, timestamp)
+    }
+
     override val primaryKey = PrimaryKey(id)
 }

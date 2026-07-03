@@ -16,5 +16,8 @@ data class TradeRecord(
     val usdAmount: BigDecimal,
     val success: Boolean,
     val dryRun: Boolean,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val price: BigDecimal = BigDecimal.ZERO,
+    val fee: BigDecimal = BigDecimal.ZERO,
+    val slippagePercent: BigDecimal? = null
 )

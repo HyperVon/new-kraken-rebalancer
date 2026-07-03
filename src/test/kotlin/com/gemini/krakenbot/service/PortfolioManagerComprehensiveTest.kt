@@ -8,8 +8,9 @@ import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderResult
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
-import com.gemini.krakenbot.service.impl.OrderExecutor
-import com.gemini.krakenbot.service.impl.PortfolioAnalyzer
+import com.gemini.krakenbot.service.impl.OrderExecutorImpl
+import com.gemini.krakenbot.service.*
+import com.gemini.krakenbot.service.impl.PortfolioAnalyzerImpl
 import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
@@ -55,12 +56,12 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
     init {
         beforeTest {
             krakenService.executedOrders.clear()
-            portfolioAnalyzer = PortfolioAnalyzer(
+            portfolioAnalyzer = PortfolioAnalyzerImpl(
                 krakenService = krakenService,
                 configService = configService,
                 portfolioStatsRepository = portfolioStatsRepository
             )
-            orderExecutor = OrderExecutor(krakenService, portfolioAnalyzer, tradeHistoryService)
+            orderExecutor = OrderExecutorImpl(krakenService, portfolioAnalyzer, tradeHistoryService)
             portfolioManager = PortfolioManagerImpl(
                 configService = configService,
                 tradeHistoryService = tradeHistoryService,

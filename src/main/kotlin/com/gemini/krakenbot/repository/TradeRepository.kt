@@ -22,4 +22,5 @@ interface TradeRepository {
     fun getLatestTradeTime(): Instant?
     fun isHistorySeeded(): Boolean
     fun setHistorySeeded(seeded: Boolean)
+    fun pruneSnapshotsOlderThan(cutoff: Instant): Int
 }

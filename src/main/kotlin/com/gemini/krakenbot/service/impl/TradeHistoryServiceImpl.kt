@@ -26,22 +26,18 @@ class TradeHistoryServiceImpl(
 ) : TradeHistoryService {
 
     private val log = LoggerFactory.getLogger(TradeHistoryServiceImpl::class.java)
-    private val history = CopyOnWriteArrayList<PortfolioSnapshot>()
-    private val maxHistorySize = 50
     private val snapshotFlow =
         MutableSharedFlow<PortfolioSnapshot>(extraBufferCapacity = 16)
+    @Volatile
+    private var lastSyncTime: Instant = Instant.EPOCH
 
     override fun init() {
         val loaded = repository.load()
-        if (loaded.isNotEmpty()) {
-            history.addAll(loaded)
-        } else {
+        if (loaded.isEmpty()) {
             val config = configService.getConfig()
             if (config.settings.simulation) {
                 try {
                     seedHistoricalSnapshots()
-                    val reloaded = repository.load()
-                    history.addAll(reloaded)
                 } catch (e: Exception) {
                     log.error("Failed to seed historical snapshots", e)
                 }
@@ -88,7 +84,7 @@ class TradeHistoryServiceImpl(
             val targetUSD = targetPercent / 100.0 * totalPortfolioValue
             // Slightly drifted initial balance (+/- 15%)
             val drift = 0.85 + random.nextDouble() * 0.30
-            val price = currentPrices[symbol] ?: 10.0
+            val price = currentPrices.getValue(symbol)
             currentBalances[symbol] = (targetUSD * drift) / price
         }
 
@@ -97,13 +93,14 @@ class TradeHistoryServiceImpl(
         val stepHours = 6L
         val steps = (15 * 24) / stepHours
 
-        for (step in 0..steps) {
+        var step = 0
+        while (step <= steps) {
             val timestamp = startInstant.plus(step * stepHours, java.time.temporal.ChronoUnit.HOURS)
 
             // 1. Fluctuate prices
             for (symbol in currentPrices.keys) {
                 if (symbol == "USD") continue
-                val price = currentPrices[symbol] ?: 10.0
+                val price = currentPrices.getValue(symbol)
                 // random fluctuation +/- 1.5%
                 val change = (random.nextDouble() - 0.5) * 0.03
                 currentPrices[symbol] = price * (1.0 + change)
@@ -122,7 +119,7 @@ class TradeHistoryServiceImpl(
                 val targetUSD = targetPercent / 100.0 * portfolioValue
                 // Keep it close to target, but let it drift slightly (+/- 3%)
                 val drift = 0.97 + random.nextDouble() * 0.06
-                val price = currentPrices[symbol] ?: 10.0
+                val price = currentPrices.getValue(symbol)
                 currentBalances[symbol] = (targetUSD * drift) / price
             }
 
@@ -159,6 +156,13 @@ class TradeHistoryServiceImpl(
                 )
             }
 
+            var targetUsdPercent = 5.0
+            for (alloc in allocations) {
+                if (alloc.symbol.isUsd) {
+                    targetUsdPercent = alloc.targetPercent
+                }
+            }
+
             val snapshot = PortfolioSnapshot(
                 timestamp = timestamp,
                 totalValueUSD = BigDecimal.valueOf(exactPortfolioValue).setScale(2, RoundingMode.HALF_UP),
@@ -166,24 +170,30 @@ class TradeHistoryServiceImpl(
                 actions = emptyList(),
                 drawdownPercent = BigDecimal.ZERO,
                 fiatDeploymentPercent = BigDecimal.ZERO,
-                effectiveUsdTargetPercent = BigDecimal.valueOf(allocations.firstOrNull { it.symbol.isUsd }?.targetPercent ?: 5.0).setScale(2, RoundingMode.HALF_UP)
+                effectiveUsdTargetPercent = BigDecimal.valueOf(targetUsdPercent).setScale(2, RoundingMode.HALF_UP)
             )
             repository.saveSnapshot(snapshot)
+            step++
         }
     }
 
     override fun addSnapshot(snapshot: PortfolioSnapshot) {
-        history.add(0, snapshot)
-        if (history.size > maxHistorySize) {
-            history.removeLast()
-        }
         repository.saveSnapshot(snapshot)
+        try {
+            val cutoff = Instant.now().minus(90, java.time.temporal.ChronoUnit.DAYS)
+            val pruned = repository.pruneSnapshotsOlderThan(cutoff)
+            if (pruned > 0) {
+                log.info("Pruned {} snapshots older than 90 days", pruned)
+            }
+        } catch (e: Exception) {
+            log.error("Failed to prune old snapshots", e)
+        }
         snapshotFlow.tryEmit(snapshot)
     }
 
-    override fun getHistory(): List<PortfolioSnapshot> = ArrayList(history)
+    override fun getHistory(): List<PortfolioSnapshot> = repository.load()
 
-    override fun getLatestSnapshot(): PortfolioSnapshot? = history.firstOrNull()
+    override fun getLatestSnapshot(): PortfolioSnapshot? = repository.load().firstOrNull()
 
     override fun getHistoryFlow(): Flow<PortfolioSnapshot> =
         snapshotFlow.asSharedFlow()
@@ -218,6 +228,14 @@ class TradeHistoryServiceImpl(
     }
 
     override suspend fun syncTradesFromKraken() {
+        val now = Instant.now()
+        val elapsedSeconds = java.time.Duration.between(lastSyncTime, now).seconds
+        if (elapsedSeconds < 300) {
+            log.info("Skipping trade history synchronization; last run was only {} seconds ago.", elapsedSeconds)
+            return
+        }
+        lastSyncTime = now
+
         val apiKey = configService.getConfig().kraken.apiKey.value
         if (apiKey.isBlank() || apiKey == "YOUR_KRAKEN_API_KEY") {
             log.warn("Kraken API key is blank or placeholder. Skipping trade history synchronization.")
@@ -229,7 +247,7 @@ class TradeHistoryServiceImpl(
 
         // If history is not yet seeded, do a full sync.
         // If history is seeded, do an incremental sync starting from the latest trade minus a 5-minute safety window.
-        val startSec = if (isSeeded && latestTradeTime != null) {
+        val startSec = if (latestTradeTime != null) {
             latestTradeTime.minusSeconds(300).epochSecond
         } else {
             null
@@ -238,11 +256,7 @@ class TradeHistoryServiceImpl(
         log.info("Starting trade history synchronization (isSeeded={}, startSec={})...", isSeeded, startSec)
 
         // Load existing trades in the query window to perform reconciliation and deduplication.
-        val queryStart = if (latestTradeTime != null && isSeeded) {
-            latestTradeTime.minusSeconds(300)
-        } else {
-            Instant.EPOCH
-        }
+        val queryStart = latestTradeTime?.minusSeconds(300) ?: Instant.EPOCH
 
         val originalLocalTrades = repository.getTradesInRange(queryStart, Instant.now()).toMutableList()
 
@@ -264,7 +278,7 @@ class TradeHistoryServiceImpl(
                     val diff = local.timestamp.toEpochMilli() - apiTrade.timestamp.toEpochMilli()
                     val absDiff = if (diff < 0) -diff else diff
                     local.pair == apiTrade.pair &&
-                            local.side.equals(apiTrade.side, ignoreCase = true) &&
+                            local.side.uppercase() == apiTrade.side.uppercase() &&
                             local.volume.compareTo(apiTrade.volume) == 0 &&
                             absDiff < 300_000
                 }

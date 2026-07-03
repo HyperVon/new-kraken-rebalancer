@@ -75,7 +75,7 @@ class SimulatedKrakenService(
             if (symbol == "USD") {
                 balances["USD"] = driftedUSDValue
             } else {
-                val price = simulatedPrices[symbol] ?: 10.0
+                val price = simulatedPrices.getValue(symbol)
                 balances[symbol] = driftedUSDValue / price
             }
         }
@@ -99,7 +99,7 @@ class SimulatedKrakenService(
             val symbol = alloc.symbol.value.uppercase()
             val pair = Asset.tradingPair(symbol)
             val side = if (random.nextBoolean()) "BUY" else "SELL"
-            val price = simulatedPrices[symbol] ?: 10.0
+            val price = simulatedPrices.getValue(symbol)
             // Slight noise on the trade price compared to current price
             val tradePrice = price * (0.95 + random.nextDouble() * 0.10)
             val usdValue = 500.0 + random.nextDouble() * 2500.0
@@ -134,20 +134,20 @@ class SimulatedKrakenService(
 
     override suspend fun getBalances(): RawBalances {
         initializeBalancesAndPricesIfEmpty()
-        return balances.mapValues { it.value }
+        return balances.mapValues { BigDecimal.valueOf(it.value) }
     }
 
     override suspend fun getTickerPrices(pairs: String): RawPrices {
         initializeBalancesAndPricesIfEmpty()
-        // Fluctuate prices on every call to simulate active markets
         fluctuatePrices()
 
-        val results = mutableMapOf<String, Double>()
+        val results = mutableMapOf<String, BigDecimal>()
         val pairList = pairs.split(",")
+        val allocations = configService.getConfig().allocations.map { it.symbol.value }
         for (pair in pairList) {
-            val symbol = parseSymbolFromPair(pair)
+            val symbol = Asset.fromTradingPair(pair, allocations) ?: pair
             val price = simulatedPrices[symbol] ?: 10.0
-            results[pair] = price
+            results[pair] = BigDecimal.valueOf(price)
         }
         return results
     }
@@ -160,7 +160,8 @@ class SimulatedKrakenService(
     ): OrderResult {
         initializeBalancesAndPricesIfEmpty()
 
-        val symbol = parseSymbolFromPair(pair)
+        val allocations = configService.getConfig().allocations.map { it.symbol.value }
+        val symbol = Asset.fromTradingPair(pair, allocations) ?: pair
         val price = simulatedPrices[symbol] ?: 10.0
         val volDouble = volume.toDouble()
         val usdAmountDouble = volDouble * price
@@ -178,7 +179,7 @@ class SimulatedKrakenService(
             )
         }
 
-        val usdBalance = balances["USD"] ?: 0.0
+        val usdBalance = balances.getValue("USD")
         val tokenBalance = balances[symbol] ?: 0.0
 
         if (side.equals("buy", ignoreCase = true)) {
@@ -211,7 +212,6 @@ class SimulatedKrakenService(
             balances["USD"] = usdBalance + usdAmountDouble
         }
 
-        // Add to simulated trades list
         val trade = TradeRecord(
             timestamp = Instant.now(),
             pair = pair,
@@ -220,7 +220,9 @@ class SimulatedKrakenService(
             volume = volume,
             usdAmount = BigDecimal.valueOf(usdAmountDouble).setScale(2, RoundingMode.HALF_UP),
             success = true,
-            dryRun = false
+            dryRun = false,
+            price = BigDecimal.valueOf(price).setScale(8, RoundingMode.HALF_UP),
+            fee = BigDecimal.ZERO
         )
         simulatedTrades.add(trade)
 
@@ -248,14 +250,5 @@ class SimulatedKrakenService(
             return filtered.drop(offset)
         }
         return filtered
-    }
-
-    private fun parseSymbolFromPair(pair: String): String {
-        val normalized = pair.uppercase()
-        if (normalized.contains("XBT") || normalized.contains("BTC")) return "BTC"
-        if (normalized.contains("ETH")) return "ETH"
-        if (normalized.contains("XDG") || normalized.contains("DOGE")) return "DOGE"
-        // Generic fallback: strip "USD"
-        return normalized.removeSuffix("USD").removePrefix("X").removePrefix("Z")
     }
 }

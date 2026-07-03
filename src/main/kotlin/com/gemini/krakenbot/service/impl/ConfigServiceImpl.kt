@@ -7,6 +7,8 @@ import com.gemini.krakenbot.service.ConfigService
 
 import java.io.File
 import java.io.IOException
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import kotlin.math.abs
 
 class ConfigServiceImpl(
@@ -21,14 +23,32 @@ class ConfigServiceImpl(
         loadConfig()
     }
 
+    private fun resolveEnvVars(content: String): String {
+        val regex = "\\\$\\{([^}]+)\\}".toRegex()
+        return regex.replace(content) { matchResult ->
+            val keyAndDefault = matchResult.groupValues[1]
+            val parts = keyAndDefault.split(":", limit = 2)
+            val key = parts[0]
+            val defaultValue = if (parts.size > 1) parts[1] else ""
+            val envValue = System.getenv(key)
+            if (envValue != null && envValue.isNotBlank()) {
+                envValue
+            } else {
+                defaultValue
+            }
+        }
+    }
+
     override fun loadConfig() {
         val configFile = File(configFilePath)
         check(configFile.exists()) {
             "Configuration file 'rebalancer-config.json' " +
                     "not found in the application directory."
         }
+        val rawContent = configFile.readText()
+        val resolvedContent = resolveEnvVars(rawContent)
         appConfig = objectMapper.readValue(
-            configFile,
+            resolvedContent,
             AppConfig::class.java
         )
         try {
@@ -52,9 +72,10 @@ class ConfigServiceImpl(
             val tempFile = File("$configFilePath.tmp")
             objectMapper.writerWithDefaultPrettyPrinter()
                 .writeValue(tempFile, newConfig)
-            if (!tempFile.renameTo(File(configFilePath))) {
-                throw IOException("Failed to rename temp file to $configFilePath")
-            }
+            
+            val sourcePath = tempFile.toPath()
+            val targetPath = File(configFilePath).toPath()
+            Files.move(sourcePath, targetPath, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
         } catch (e: IOException) {
             throw RuntimeException("Failed to save configuration", e)
         }

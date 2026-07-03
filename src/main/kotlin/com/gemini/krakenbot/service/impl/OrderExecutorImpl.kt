@@ -6,6 +6,11 @@ import com.gemini.krakenbot.model.OrderResult
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.service.KrakenService
 import com.gemini.krakenbot.service.TradeHistoryService
+import com.gemini.krakenbot.service.OrderExecutor
+import com.gemini.krakenbot.service.PortfolioAnalyzer
+import com.gemini.krakenbot.service.AssetValues
+import com.gemini.krakenbot.service.AssetPrices
+import com.gemini.krakenbot.service.RebalanceOrders
 import kotlinx.coroutines.delay
 import org.slf4j.LoggerFactory
 import java.math.BigDecimal
@@ -13,14 +18,21 @@ import java.math.RoundingMode
 import java.time.Instant
 import kotlin.time.Duration.Companion.milliseconds
 
-class OrderExecutor(
+class OrderExecutorImpl(
     private val krakenService: KrakenService,
     private val portfolioAnalyzer: PortfolioAnalyzer,
     private val tradeHistoryService: TradeHistoryService
-) {
-    private val log = LoggerFactory.getLogger(OrderExecutor::class.java)
+) : OrderExecutor {
+    private val log = LoggerFactory.getLogger(OrderExecutorImpl::class.java)
 
-    suspend fun executeOrders(
+    companion object {
+        val CASH_RESERVE_FACTOR = BigDecimal("0.99")
+        const val MAX_REFRESH_ATTEMPTS = 3
+        const val REFRESH_DELAY_MS = 250L
+        val FEE_RATE_ESTIMATE = BigDecimal("0.0026") // 0.26% taker fee estimate
+    }
+
+    override suspend fun executeOrders(
         buyOrders: RebalanceOrders,
         sellOrders: RebalanceOrders,
         currentValuesUSD: AssetValues,
@@ -63,7 +75,7 @@ class OrderExecutor(
                 usdAmount = usdToSell,
                 side = "SELL"
             )
-            recordTrade(result, symbol, pair, "SELL", volume, usdToSell)
+            recordTrade(result, symbol, pair, "SELL", volume, usdToSell, prices)
             if (result.success) {
                 projectedCash = projectedCash.add(usdToSell)
                 executedSells = true
@@ -84,7 +96,7 @@ class OrderExecutor(
                     cost,
                     actualCash
                 )
-                cost = actualCash.multiply(BigDecimal.valueOf(0.99))
+                cost = actualCash.multiply(CASH_RESERVE_FACTOR)
             }
 
             if (cost < BigDecimal.valueOf(settings.dustThresholdUSD)) {
@@ -113,7 +125,7 @@ class OrderExecutor(
                 usdAmount = cost,
                 side = "BUY"
             )
-            recordTrade(result, symbol, pair, "BUY", volume, cost)
+            recordTrade(result, symbol, pair, "BUY", volume, cost, prices)
             if (result.success) {
                 actualCash = actualCash.subtract(cost)
             }
@@ -121,12 +133,10 @@ class OrderExecutor(
     }
 
     private suspend fun refreshUsdBalanceAfterSells(projectedCash: BigDecimal): BigDecimal {
-        val maxAttempts = 3
-        val delayMs = 250L
         var bestCash = projectedCash
 
-        repeat(maxAttempts) { attempt ->
-            delay(delayMs.milliseconds)
+        repeat(MAX_REFRESH_ATTEMPTS) { attempt ->
+            delay(REFRESH_DELAY_MS.milliseconds)
             try {
                 val updatedBalances = krakenService.getBalances()
                 if (updatedBalances.isNotEmpty()) {
@@ -134,8 +144,8 @@ class OrderExecutor(
                         Asset.USD,
                         updatedBalances
                     )
-                    if (usdBalance > 0) {
-                        bestCash = BigDecimal.valueOf(usdBalance)
+                    if (usdBalance > BigDecimal.ZERO) {
+                        bestCash = usdBalance
                         log.info(
                             "Updated USD balance after sells (attempt {}): $${bestCash}",
                             attempt + 1
@@ -178,14 +188,25 @@ class OrderExecutor(
         }
     }
 
-    private fun recordTrade(
+    internal fun recordTrade(
         result: OrderResult,
         symbol: String,
         pair: String,
         side: String,
         volume: BigDecimal,
-        usdAmount: BigDecimal
+        usdAmount: BigDecimal,
+        prices: AssetPrices
     ) {
+        val expectedPrice = prices[symbol] ?: BigDecimal.ZERO
+        val executedPrice = if (volume.signum() > 0) usdAmount.divide(volume, 8, RoundingMode.HALF_UP) else BigDecimal.ZERO
+        val slippage = if (expectedPrice.signum() > 0) {
+            val diff = if (side == "BUY") executedPrice.subtract(expectedPrice) else expectedPrice.subtract(executedPrice)
+            diff.divide(expectedPrice, 4, RoundingMode.HALF_UP).multiply(BigDecimal.valueOf(100))
+        } else {
+            BigDecimal.ZERO
+        }
+        val estimatedFee = usdAmount.multiply(FEE_RATE_ESTIMATE).setScale(4, RoundingMode.HALF_UP)
+
         val trade = TradeRecord(
             timestamp = Instant.now(),
             pair = pair,
@@ -195,7 +216,10 @@ class OrderExecutor(
             usdAmount = usdAmount,
             success = result.success,
             dryRun = result.dryRun,
-            errorMessage = result.errorMessage
+            errorMessage = result.errorMessage,
+            price = executedPrice,
+            fee = estimatedFee,
+            slippagePercent = slippage
         )
         tradeHistoryService.saveTrade(trade)
     }

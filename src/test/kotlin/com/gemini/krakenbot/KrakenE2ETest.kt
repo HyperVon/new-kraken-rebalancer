@@ -129,13 +129,13 @@ class KrakenE2ETest : StringSpec() {
                 val tradeHistoryService =
                     TradeHistoryServiceImpl(tradesRepo, statsRepo, krakenService, mockConfigService)
 
-                val portfolioAnalyzer = PortfolioAnalyzer(
+                val portfolioAnalyzer = PortfolioAnalyzerImpl(
                     krakenService = krakenService,
                     configService = mockConfigService,
                     portfolioStatsRepository = statsRepo
                 )
                 val orderExecutor =
-                    OrderExecutor(krakenService, portfolioAnalyzer, tradeHistoryService)
+                    OrderExecutorImpl(krakenService, portfolioAnalyzer, tradeHistoryService)
                 val portfolioManager = PortfolioManagerImpl(
                     configService = mockConfigService,
                     tradeHistoryService = tradeHistoryService,
@@ -239,13 +239,13 @@ class KrakenE2ETest : StringSpec() {
                 )
                 val tradeHistoryService = TradeHistoryServiceImpl(tradesRepo, statsRepo, krakenService, mockConfigService)
 
-                val portfolioAnalyzer = PortfolioAnalyzer(
+                val portfolioAnalyzer = PortfolioAnalyzerImpl(
                     krakenService = krakenService,
                     configService = mockConfigService,
                     portfolioStatsRepository = statsRepo
                 )
                 val orderExecutor =
-                    OrderExecutor(krakenService, portfolioAnalyzer, tradeHistoryService)
+                    OrderExecutorImpl(krakenService, portfolioAnalyzer, tradeHistoryService)
                 val portfolioManager = PortfolioManagerImpl(
                     configService = mockConfigService,
                     tradeHistoryService = tradeHistoryService,

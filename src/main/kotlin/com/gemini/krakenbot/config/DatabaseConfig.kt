@@ -57,7 +57,7 @@ object DatabaseConfig {
         )
 
         transaction(database) {
-            SchemaUtils.create(
+            SchemaUtils.createMissingTablesAndColumns(
                 PortfolioSnapshotTable,
                 AssetSnapshotTable,
                 TradeTable,

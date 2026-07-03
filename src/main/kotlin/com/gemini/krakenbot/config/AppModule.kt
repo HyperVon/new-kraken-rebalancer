@@ -8,22 +8,28 @@ import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.repository.TradeRepository
 import com.gemini.krakenbot.repository.impl.SqlitePortfolioStatsRepositoryImpl
 import com.gemini.krakenbot.repository.impl.SqliteTradeRepositoryImpl
-import com.gemini.krakenbot.service.ConfigService
-import com.gemini.krakenbot.service.KrakenService
-import com.gemini.krakenbot.service.PortfolioManager
-import com.gemini.krakenbot.service.TradeHistoryService
+import com.gemini.krakenbot.service.*
 import com.gemini.krakenbot.service.impl.*
 import com.gemini.krakenbot.view.DashboardView
 import com.gemini.krakenbot.view.component.*
 import io.ktor.client.*
 import io.ktor.client.engine.cio.*
+import io.ktor.client.plugins.*
 import org.jetbrains.exposed.sql.Database
 import org.koin.core.module.dsl.bind
 import org.koin.core.module.dsl.singleOf
 import org.koin.dsl.module
 
 val appModule = module {
-    single<HttpClient> { HttpClient(CIO) }
+    single<HttpClient> {
+        HttpClient(CIO) {
+            install(HttpTimeout) {
+                connectTimeoutMillis = 5000
+                socketTimeoutMillis = 15000
+                requestTimeoutMillis = 15000
+            }
+        }
+    }
     single<ObjectMapper> {
         jacksonObjectMapper().apply {
             registerModule(JavaTimeModule())
@@ -41,8 +47,8 @@ val appModule = module {
     singleOf(::KrakenServiceImpl)
     singleOf(::SimulatedKrakenService)
     single<KrakenService> { DynamicKrakenService(get(), get(), get()) }
-    singleOf(::PortfolioAnalyzer)
-    single { OrderExecutor(get(), get(), get()) }
+    single<PortfolioAnalyzer> { PortfolioAnalyzerImpl(get(), get(), get()) }
+    single<OrderExecutor> { OrderExecutorImpl(get(), get(), get()) }
     singleOf(::PortfolioManagerImpl) { bind<PortfolioManager>() }
     singleOf(::DashboardShellComponent)
     singleOf(::SettingsFormComponent)

@@ -22,6 +22,8 @@ import java.util.concurrent.atomic.AtomicLong
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 import kotlin.io.encoding.Base64
+import kotlinx.coroutines.delay
+import kotlin.time.Duration.Companion.milliseconds
 
 class KrakenServiceImpl(
     private val configService: ConfigService,
@@ -35,13 +37,14 @@ class KrakenServiceImpl(
     private val apiVersion = "0"
     private val nonceGenerator =
         AtomicLong(System.currentTimeMillis() * 1000)
+    private val lastPrivateCallTime = AtomicLong(0)
 
     override suspend fun getBalances(): RawBalances {
         val path = "/$apiVersion/private/Balance"
         val response = queryPrivate(path, emptyMap())
         return response.properties()
             .associate { (key, value) ->
-                key to value.asDouble()
+                key to BigDecimal(value.asText())
             }
     }
 
@@ -51,8 +54,7 @@ class KrakenServiceImpl(
         return result.properties()
             .mapNotNull { (key, value) ->
                 val c = value.path("c")
-                if (c.isArray && !c.isEmpty) key to c.get(0)
-                    .asDouble() else null
+                if (c.isArray && !c.isEmpty) key to BigDecimal(c.get(0).asText()) else null
             }
             .toMap()
     }
@@ -160,14 +162,17 @@ class KrakenServiceImpl(
             val priceStr = tradeNode.path("price").asText()
             val costStr = tradeNode.path("cost").asText()
             val volStr = tradeNode.path("vol").asText()
+            val feeStr = tradeNode.path("fee").asText()
 
-            // Map pair back to standard symbol
-            val symbol = parseSymbolFromPair(pair, allocations) ?: return@forEach
+            // Map pair back to standard symbol using consolidated logic
+            val symbol = Asset.fromTradingPair(pair, allocations) ?: return@forEach
 
             val timestamp = Instant.ofEpochMilli((time * 1000).toLong())
             val side = type.uppercase() // "BUY" or "SELL"
             val rawVolume = try { BigDecimal(volStr) } catch (e: Exception) { BigDecimal.ZERO }
             val rawUsdAmount = try { BigDecimal(costStr) } catch (e: Exception) { BigDecimal.ZERO }
+            val rawPrice = try { BigDecimal(priceStr) } catch (e: Exception) { BigDecimal.ZERO }
+            val rawFee = try { BigDecimal(feeStr) } catch (e: Exception) { BigDecimal.ZERO }
             val volume = rawVolume.setScale(8, RoundingMode.HALF_UP)
             val usdAmount = rawUsdAmount.setScale(2, RoundingMode.HALF_UP)
 
@@ -180,48 +185,67 @@ class KrakenServiceImpl(
                     volume = volume,
                     usdAmount = usdAmount,
                     success = true,
-                    dryRun = false
+                    dryRun = false,
+                    price = rawPrice.setScale(8, RoundingMode.HALF_UP),
+                    fee = rawFee.setScale(4, RoundingMode.HALF_UP)
                 )
             )
         }
         return tradesList
     }
 
-    private fun parseSymbolFromPair(pair: String, allocations: List<String>): String? {
-        val normalizedPair = pair.uppercase()
-        for (symbol in allocations) {
-            val ticker = Asset.toKrakenTicker(symbol)
-            if (normalizedPair.contains(ticker) || normalizedPair.contains(symbol.uppercase())) {
-                return symbol
+    private suspend fun <T> retryOnTransientFailure(
+        actionName: String,
+        block: suspend () -> T
+    ): T {
+        var attempt = 0
+        val maxAttempts = 5
+        var backoffMs = 1000L
+
+        while (true) {
+            try {
+                return block()
+            } catch (e: Exception) {
+                val isRateLimit = e.message?.contains("Rate limit exceeded") == true
+                val isNetworkOrTransient = e is java.io.IOException ||
+                                           e is io.ktor.client.plugins.ResponseException
+
+                if ((isNetworkOrTransient || isRateLimit) && attempt < maxAttempts - 1) {
+                    attempt++
+                    val currentBackoff = if (isRateLimit) backoffMs * 2 else backoffMs
+                    log.warn("Transient failure in {} (attempt {}/{}). Retrying in {}ms... Error: {}",
+                        actionName, attempt, maxAttempts, currentBackoff, e.message)
+                    delay(currentBackoff.milliseconds)
+                    backoffMs *= 2
+                } else {
+                    throw e
+                }
             }
         }
-        // Fallbacks
-        if (normalizedPair.contains("XBT") || normalizedPair.contains("BTC")) return "BTC"
-        if (normalizedPair.contains("ETH")) return "ETH"
-        if (normalizedPair.contains("XDG") || normalizedPair.contains("DOGE")) return "DOGE"
-        return null
     }
 
     private suspend fun queryPublic(path: String): JsonNode {
-        val responseBody = httpClient.get(apiUrl + path).bodyAsText()
-        try {
-            val root: JsonNode = objectMapper.readTree(responseBody)
-            if (root.has("error") &&
-                !root.path("error").isEmpty
-            ) {
-                log.error(
-                    "Kraken Public API Error for path {}: {}",
-                    path,
-                    root.path("error")
-                )
-                throw RuntimeException(
-                    "Kraken Public API Error: " +
-                            root.path("error").toString()
-                )
+        return retryOnTransientFailure("queryPublic($path)") {
+            val responseBody = httpClient.get(apiUrl + path).bodyAsText()
+            try {
+                val root: JsonNode = objectMapper.readTree(responseBody)
+                if (root.has("error") &&
+                    !root.path("error").isEmpty
+                ) {
+                    log.error(
+                        "Kraken Public API Error for path {}: {}",
+                        path,
+                        root.path("error")
+                    )
+                    throw RuntimeException(
+                        "Kraken Public API Error: " +
+                                root.path("error").toString()
+                    )
+                }
+                root
+            } catch (e: JsonProcessingException) {
+                throw RuntimeException("Failed to parse public API response", e)
             }
-            return root
-        } catch (e: JsonProcessingException) {
-            throw RuntimeException("Failed to parse public API response", e)
         }
     }
 
@@ -235,49 +259,59 @@ class KrakenServiceImpl(
         val maxRetries = 5
         var retryCount = 0
 
-        while (true) {
-            val nonce = nonceGenerator.incrementAndGet().toString()
-            val payload = data.toMutableMap()
-            payload["nonce"] = nonce
-
-            val postData =
-                payload.entries.joinToString("&") {
-                    "${it.key}=${it.value}"
+        return retryOnTransientFailure("queryPrivate($path)") {
+            while (true) {
+                val now = System.currentTimeMillis()
+                val elapsed = now - lastPrivateCallTime.get()
+                if (elapsed < 1000L) {
+                    delay((1000L - elapsed).milliseconds)
                 }
-            val signature = signRequest(path, nonce, postData)
+                lastPrivateCallTime.set(System.currentTimeMillis())
 
-            val responseBody = httpClient.post(apiUrl + path) {
-                header("API-Key", apiKey)
-                header("API-Sign", signature)
-                header("Content-Type", "application/x-www-form-urlencoded")
-                setBody(postData)
-            }.bodyAsText()
+                val nonce = nonceGenerator.incrementAndGet().toString()
+                val payload = data.toMutableMap()
+                payload["nonce"] = nonce
 
-            try {
-                val root: JsonNode = objectMapper.readTree(responseBody)
-                if (!root.path("error").isEmpty) {
-                    val errorMsg = root.path("error").toString()
-                    if (errorMsg.contains("Invalid nonce") && retryCount < maxRetries) {
-                        val bumpAmount = 100_000_000L * (1L shl retryCount)
-                        log.warn(
-                            "Invalid nonce detected. Adjusting nonce generator by {} and retrying (Attempt {}/{})",
-                            bumpAmount,
-                            retryCount + 1,
-                            maxRetries
-                        )
-                        nonceGenerator.addAndGet(bumpAmount) // jump ahead to resolve collisions
-                        retryCount++
-                        continue
+                val postData =
+                    payload.entries.joinToString("&") {
+                        "${it.key}=${it.value}"
                     }
-                    throw RuntimeException("Kraken API Error: $errorMsg")
+                val signature = signRequest(path, nonce, postData)
+
+                val responseBody = httpClient.post(apiUrl + path) {
+                    header("API-Key", apiKey)
+                    header("API-Sign", signature)
+                    header("Content-Type", "application/x-www-form-urlencoded")
+                    setBody(postData)
+                }.bodyAsText()
+
+                try {
+                    val root: JsonNode = objectMapper.readTree(responseBody)
+                    if (!root.path("error").isEmpty) {
+                        val errorMsg = root.path("error").toString()
+                        if (errorMsg.contains("Invalid nonce") && retryCount < maxRetries) {
+                            val bumpAmount = 100_000_000L * (1L shl retryCount)
+                            log.warn(
+                                "Invalid nonce detected. Adjusting nonce generator by {} and retrying (Attempt {}/{})",
+                                bumpAmount,
+                                retryCount + 1,
+                                maxRetries
+                            )
+                            nonceGenerator.addAndGet(bumpAmount)
+                            retryCount++
+                            continue
+                        }
+                        throw RuntimeException("Kraken API Error: $errorMsg")
+                    }
+                    return@retryOnTransientFailure root.path("result")
+                } catch (e: JsonProcessingException) {
+                    throw RuntimeException(
+                        "Failed to parse private API response",
+                        e
+                    )
                 }
-                return root.path("result")
-            } catch (e: JsonProcessingException) {
-                throw RuntimeException(
-                    "Failed to parse private API response",
-                    e
-                )
             }
+            throw RuntimeException("Unreachable")
         }
     }
 

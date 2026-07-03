@@ -11,8 +11,8 @@ import java.math.BigDecimal
  * All suppliers and the optional [executeOrderAction] can be reassigned between tests.
  */
 class FakeKrakenService : KrakenService {
-    var balanceSupplier: () -> RawBalances = { emptyMap() }
-    var pricesSupplier: (String) -> RawPrices = { emptyMap() }
+    var balanceSupplier: () -> Map<String, Any> = { emptyMap() }
+    var pricesSupplier: (String) -> Map<String, Any> = { emptyMap() }
     var tradeHistorySupplier: (Long?, Int?) -> List<TradeRecord> = { _, _ -> emptyList() }
 
     /** If set, invoked after recording the order (may throw for legacy tests). */
@@ -35,11 +35,25 @@ class FakeKrakenService : KrakenService {
 
     override suspend fun getBalances(): RawBalances {
         getBalancesCallCount++
-        return balanceSupplier()
+        return balanceSupplier().mapValues { (_, value) ->
+            when (value) {
+                is BigDecimal -> value
+                is Double -> BigDecimal.valueOf(value)
+                is Number -> BigDecimal(value.toString())
+                else -> BigDecimal.ZERO
+            }
+        }
     }
 
     override suspend fun getTickerPrices(pairs: String): RawPrices {
-        return pricesSupplier(pairs)
+        return pricesSupplier(pairs).mapValues { (_, value) ->
+            when (value) {
+                is BigDecimal -> value
+                is Double -> BigDecimal.valueOf(value)
+                is Number -> BigDecimal(value.toString())
+                else -> BigDecimal.ZERO
+            }
+        }
     }
 
     override suspend fun getTradeHistory(startSec: Long?, offset: Int?): List<TradeRecord> {

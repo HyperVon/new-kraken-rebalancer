@@ -5,7 +5,8 @@ import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
-import com.gemini.krakenbot.service.impl.PortfolioAnalyzer
+import com.gemini.krakenbot.service.impl.PortfolioAnalyzerImpl
+import com.gemini.krakenbot.service.*
 import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
@@ -38,7 +39,7 @@ class PortfolioManagerFiatCorrectionTest : StringSpec() {
         )
         every { configService.getConfig() } returns config
 
-        return PortfolioAnalyzer(
+        return PortfolioAnalyzerImpl(
             krakenService = FakeKrakenService(),
             configService = configService,
             portfolioStatsRepository = repo

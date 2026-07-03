@@ -162,3 +162,15 @@ configurations.all {
         }
     }
 }
+
+tasks.register<Jar>("fatJar") {
+    archiveClassifier.set("all")
+    manifest {
+        attributes["Main-Class"] = "com.gemini.krakenbot.KrakenRebalancerApplicationKt"
+    }
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    from(sourceSets.main.get().output)
+    from({
+        configurations.runtimeClasspath.get().filter { it.name.endsWith("jar") }.map { zipTree(it) }
+    })
+}

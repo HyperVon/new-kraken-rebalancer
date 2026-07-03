@@ -80,9 +80,9 @@ class KrakenServiceTest : StringSpec() {
 
                 val balances = service.getBalances()
 
-                balances["XXBTZUSD"] shouldBe 63000.0
-                balances["XETHZUSD"] shouldBe 3000.0
-                balances["USD"] shouldBe 5000.0
+                balances["XXBTZUSD"]?.toDouble() shouldBe 63000.0
+                balances["XETHZUSD"]?.toDouble() shouldBe 3000.0
+                balances["USD"]?.toDouble() shouldBe 5000.0
             }
         }
 
@@ -94,8 +94,8 @@ class KrakenServiceTest : StringSpec() {
 
                 val prices = service.getTickerPrices("XXBTZUSD,XETHZUSD")
 
-                prices["XXBTZUSD"] shouldBe 65000.0
-                prices["XETHZUSD"] shouldBe 3200.0
+                prices["XXBTZUSD"]?.toDouble() shouldBe 65000.0
+                prices["XETHZUSD"]?.toDouble() shouldBe 3200.0
             }
         }
 
@@ -399,7 +399,7 @@ class KrakenServiceTest : StringSpec() {
                 )
 
                 val balances = service.getBalances()
-                balances["XXBTZUSD"] shouldBe 63000.0
+                balances["XXBTZUSD"]?.toDouble() shouldBe 63000.0
             }
         }
 
@@ -723,9 +723,9 @@ class KrakenServiceTest : StringSpec() {
                                     "time": 1700000000.1234,
                                     "type": "buy",
                                     "ordertype": "market",
-                                    "price": "50000.00",
+                                    "price": "invalid_price",
                                     "cost": "invalid_cost",
-                                    "fee": "10.00",
+                                    "fee": "invalid_fee",
                                     "vol": "invalid_vol",
                                     "margin": "0.0",
                                     "misc": ""
@@ -946,6 +946,128 @@ class KrakenServiceTest : StringSpec() {
                 val trades = service.getTradeHistory()
                 trades.size shouldBe 1
                 trades.first().symbol shouldBe "BTC"
+            }
+        }
+
+        "retryOnTransientFailure_SucceedsOnSecondAttempt" {
+            runTest {
+                var attempt = 0
+                val mockEngine = MockEngine { request ->
+                    if (attempt++ == 0) {
+                        // Rate limit error response
+                        respond(
+                            content = "{\"error\":[\"EAPI:Rate limit exceeded\"]}",
+                            status = HttpStatusCode.OK,
+                            headers = headersOf(HttpHeaders.ContentType, "application/json")
+                        )
+                    } else {
+                        // Success response
+                        respond(
+                            content = "{\"error\":[],\"result\":{\"XXBTZUSD\":63000.0}}",
+                            status = HttpStatusCode.OK,
+                            headers = headersOf(HttpHeaders.ContentType, "application/json")
+                        )
+                    }
+                }
+                val mockConfigService = mockk<ConfigService>(relaxed = true)
+                val credentials = KrakenCredentials("k", Base64.getEncoder().encodeToString("secret".toByteArray()))
+                every { mockConfigService.getConfig() } returns AppConfig(credentials, Settings(loopDelaySeconds = 60, deviationTriggerPercent = 2.0, dustThresholdUSD = 1.0, dryRun = false), emptyList())
+
+                val service = KrakenServiceImpl(
+                    configService = mockConfigService,
+                    objectMapper = jacksonObjectMapper(),
+                    httpClient = HttpClient(mockEngine)
+                )
+
+                val balances = service.getBalances()
+                balances["XXBTZUSD"]?.toDouble() shouldBe 63000.0
+                attempt shouldBe 2
+            }
+        }
+
+        "retryOnTransientFailure_FailsExhausted" {
+            runTest {
+                val mockEngine = MockEngine { request ->
+                    respond(
+                        content = "{\"error\":[\"EAPI:Rate limit exceeded\"]}",
+                        status = HttpStatusCode.OK,
+                        headers = headersOf(HttpHeaders.ContentType, "application/json")
+                    )
+                }
+                val mockConfigService = mockk<ConfigService>(relaxed = true)
+                val credentials = KrakenCredentials("k", Base64.getEncoder().encodeToString("secret".toByteArray()))
+                every { mockConfigService.getConfig() } returns AppConfig(credentials, Settings(loopDelaySeconds = 60, deviationTriggerPercent = 2.0, dustThresholdUSD = 1.0, dryRun = false), emptyList())
+
+                val service = KrakenServiceImpl(
+                    configService = mockConfigService,
+                    objectMapper = jacksonObjectMapper(),
+                    httpClient = HttpClient(mockEngine)
+                )
+
+                shouldThrow<RuntimeException> {
+                    service.getBalances()
+                }
+            }
+        }
+
+        "retryOnTransientFailure_SocketTimeoutException_RetrySuccess" {
+            runTest {
+                var attempt = 0
+                val mockEngine = MockEngine { request ->
+                    if (attempt++ == 0) {
+                        throw io.ktor.client.network.sockets.SocketTimeoutException("Simulated socket timeout", null)
+                    } else {
+                        respond(
+                            content = "{\"error\":[],\"result\":{\"XXBTZUSD\":63000.0}}",
+                            status = HttpStatusCode.OK,
+                            headers = headersOf(HttpHeaders.ContentType, "application/json")
+                        )
+                    }
+                }
+                val mockConfigService = mockk<ConfigService>(relaxed = true)
+                val credentials = KrakenCredentials("k", Base64.getEncoder().encodeToString("secret".toByteArray()))
+                every { mockConfigService.getConfig() } returns AppConfig(credentials, Settings(loopDelaySeconds = 60, deviationTriggerPercent = 2.0, dustThresholdUSD = 1.0, dryRun = false), emptyList())
+
+                val service = KrakenServiceImpl(
+                    configService = mockConfigService,
+                    objectMapper = jacksonObjectMapper(),
+                    httpClient = HttpClient(mockEngine)
+                )
+
+                val balances = service.getBalances()
+                balances["XXBTZUSD"]?.toDouble() shouldBe 63000.0
+                attempt shouldBe 2
+            }
+        }
+
+        "retryOnTransientFailure_ClientRequestException_RetrySuccess" {
+            runTest {
+                var attempt = 0
+                val mockEngine = MockEngine { request ->
+                    if (attempt++ == 0) {
+                        val response = mockk<io.ktor.client.statement.HttpResponse>(relaxed = true)
+                        throw io.ktor.client.plugins.ClientRequestException(response, "Simulated rate limit / error")
+                    } else {
+                        respond(
+                            content = "{\"error\":[],\"result\":{\"XXBTZUSD\":63000.0}}",
+                            status = HttpStatusCode.OK,
+                            headers = headersOf(HttpHeaders.ContentType, "application/json")
+                        )
+                    }
+                }
+                val mockConfigService = mockk<ConfigService>(relaxed = true)
+                val credentials = KrakenCredentials("k", Base64.getEncoder().encodeToString("secret".toByteArray()))
+                every { mockConfigService.getConfig() } returns AppConfig(credentials, Settings(loopDelaySeconds = 60, deviationTriggerPercent = 2.0, dustThresholdUSD = 1.0, dryRun = false), emptyList())
+
+                val service = KrakenServiceImpl(
+                    configService = mockConfigService,
+                    objectMapper = jacksonObjectMapper(),
+                    httpClient = HttpClient(mockEngine)
+                )
+
+                val balances = service.getBalances()
+                balances["XXBTZUSD"]?.toDouble() shouldBe 63000.0
+                attempt shouldBe 2
             }
         }
     }

@@ -439,6 +439,96 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
 
             unmockkStatic("org.jetbrains.exposed.sql.transactions.TransactionApiKt")
         }
+
+        "pruneSnapshotsOlderThan prunes records" {
+            val baseTime = Instant.now().truncatedTo(ChronoUnit.MILLIS)
+            val s1 = PortfolioSnapshot(
+                timestamp = baseTime.minus(100, ChronoUnit.DAYS),
+                totalValueUSD = BigDecimal("1000.00"),
+                assets = emptyMap(),
+                actions = emptyList(),
+                drawdownPercent = BigDecimal.ZERO,
+                fiatDeploymentPercent = BigDecimal.ZERO,
+                effectiveUsdTargetPercent = BigDecimal.ZERO
+            )
+            val s2 = PortfolioSnapshot(
+                timestamp = baseTime,
+                totalValueUSD = BigDecimal("2000.00"),
+                assets = emptyMap(),
+                actions = emptyList(),
+                drawdownPercent = BigDecimal.ZERO,
+                fiatDeploymentPercent = BigDecimal.ZERO,
+                effectiveUsdTargetPercent = BigDecimal.ZERO
+            )
+            repository.saveSnapshot(s1)
+            repository.saveSnapshot(s2)
+
+            repository.pruneSnapshotsOlderThan(baseTime.minus(90, ChronoUnit.DAYS)) shouldBe 1
+
+            val loaded = repository.load()
+            loaded.size shouldBe 1
+            loaded.first().timestamp shouldBe baseTime
+        }
+
+        "updateTrade wraps non-IOException as IOException" {
+            val closedDb = DatabaseConfig.init(":memory:")
+            val brokenRepo = SqliteTradeRepositoryImpl(closedDb)
+
+            transaction(closedDb) {
+                exec("DROP TABLE IF EXISTS trades")
+            }
+
+            val trade = TradeRecord(
+                timestamp = Instant.now(),
+                pair = "XBTUSD",
+                side = "BUY",
+                symbol = "BTC",
+                volume = BigDecimal("0.1"),
+                usdAmount = BigDecimal("5000.00"),
+                success = true,
+                dryRun = false
+            )
+
+            val thrown = shouldThrow<IOException> {
+                brokenRepo.updateTrade(trade, trade)
+            }
+            thrown.message shouldBe "Database update failed"
+        }
+
+        "updateTrade rethrows IOException directly without wrapping" {
+            TransactionManager.currentOrNull()?.close()
+            
+            val realTxManager = db.transactionManager
+            val throwingTxManager = TradeThrowingTransactionManager(realTxManager)
+            
+            val mockDb = mockk<Database>(relaxed = true)
+            mockkStatic("org.jetbrains.exposed.sql.transactions.TransactionApiKt")
+            every { mockDb.transactionManager } returns throwingTxManager
+            
+            val ioRepo = SqliteTradeRepositoryImpl(mockDb)
+            val trade = TradeRecord(
+                timestamp = Instant.now(),
+                pair = "XBTUSD",
+                side = "BUY",
+                symbol = "BTC",
+                volume = BigDecimal("0.1"),
+                usdAmount = BigDecimal("5000.00"),
+                success = true,
+                dryRun = false
+            )
+
+            val thrown = shouldThrow<IOException> {
+                ioRepo.updateTrade(trade, trade)
+            }
+            thrown.message shouldBe "Direct IO failure"
+
+            unmockkStatic("org.jetbrains.exposed.sql.transactions.TransactionApiKt")
+        }
+
+        "getSnapshotsInRange returns empty list when no snapshots in range" {
+            val inRange = repository.getSnapshotsInRange(Instant.EPOCH, Instant.EPOCH)
+            inRange.isEmpty() shouldBe true
+        }
     }
 }
 

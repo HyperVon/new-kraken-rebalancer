@@ -8,6 +8,30 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [5.0.0] - 2026-07-03
+
+### Added
+
+- **Health Check API**: Introduced a public `/api/health` Ktor REST endpoint reporting app uptime, total trades executed, total volume traded, last snapshot time, and valuation.
+- **Robust API Retry Handler**: Added `retryOnTransientFailure` wrapping Ktor Client calls to handle connection timeouts, rate limit errors (`EAPI:Rate limit exceeded`), and transient HTTP 5xx errors with exponential backoff.
+- **Throttling & Rate-Limiting**: Enforced a minimum 1-second delay between private Kraken API calls to prevent rate-limit bans.
+- **Environment Variable Resolution**: Added support for resolving credentials and settings in `rebalancer-config.json` via `${VAR_NAME:default}` placeholder syntax on startup.
+- **Pruning Policy**: Implemented automatic SQLite database pruning to keep the database footprint low by deleting snapshots older than 90 days.
+- **Database Indexes**: Added indexes on `timestamp` columns across `trades` and `portfolio_snapshots` tables for high-performance range queries.
+- **Startup Scripts**: Created `start.sh` (macOS/Linux) and `start.bat` (Windows) scripts to automate Fat JAR compilation and launch.
+
+### Changed
+
+- **Decoupled Architecture**: Extracted interfaces for `PortfolioAnalyzer` and `OrderExecutor` to enable cleaner dependency injection (Koin) and isolated testing.
+- **Double to BigDecimal Migration**: Completely migrated maps representing raw exchange balances and ticker prices from `Double` to `BigDecimal`, eliminating floating-point precision loss.
+- **Consolidated Pair Parsing**: Unified trading pair symbol parsing into a single utility helper in `Asset.fromTradingPair`.
+- **Atomic Persistence moves**: Config settings file updates now use atomic OS moves (`StandardCopyOption.ATOMIC_MOVE`) via Java NIO.
+- **Redacted Secret Logging**: Overrode value class `toString()` implementations for `ApiKey` and `PrivateKey` to redact secrets in application logs.
+- **CORS Restrictions**: Restricted Allowed CORS origins to local addresses (`localhost`, `127.0.0.1`, `::1`), Bonjour names (`*.local`), and private local Wi-Fi subnets (`192.168.x.x`, `10.x.x.x`, `172.16-31.x.x`).
+- **Database Auto Migrations**: Configured DB initializer to use `SchemaUtils.createMissingTablesAndColumns` to automatically execute migration scripts on schema extensions.
+
+---
+
 ## [4.0.7] - 2026-07-02
 
 ### Added

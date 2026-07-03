@@ -25,6 +25,7 @@ import kotlinx.html.html
 import kotlinx.html.p
 import kotlinx.html.stream.createHTML
 import org.koin.ktor.ext.inject
+import java.math.BigDecimal
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 
@@ -74,6 +75,22 @@ fun Application.dashboardRouting() {
 
         get(Routes.API_HISTORY_STATS) {
             handleGetHistoryStats(tradeHistoryService, objectMapper)
+        }
+
+        get("/api/health") {
+            val stats = tradeHistoryService.getHistoryStats()
+            val latestSnapshot = tradeHistoryService.getLatestSnapshot()
+            val responseMap = mapOf(
+                "status" to "UP",
+                "timestamp" to Instant.now().toString(),
+                "uptimeSeconds" to java.lang.management.ManagementFactory.getRuntimeMXBean().uptime / 1000,
+                "totalTradesExecuted" to stats.totalTradesExecuted,
+                "totalVolumeTraded" to stats.totalVolumeTraded,
+                "lastSnapshotTime" to (latestSnapshot?.timestamp?.toString() ?: "N/A"),
+                "lastSnapshotTotalValueUSD" to (latestSnapshot?.totalValueUSD ?: BigDecimal.ZERO)
+            )
+            val json = objectMapper.writeValueAsString(responseMap)
+            call.respondText(json, ContentType.Application.Json, HttpStatusCode.OK)
         }
 
         route(Routes.API_ROUTE_PREFIX) {

@@ -45,6 +45,13 @@ class TradeHistoryServiceTest : StringSpec() {
             allocations = emptyList()
         )
         every { configService.getConfig() } returns appConfig
+        
+        val savedSnapshots = mutableListOf<PortfolioSnapshot>()
+        every { repository.saveSnapshot(any()) } answers {
+            savedSnapshots.add(0, firstArg())
+        }
+        every { repository.load() } answers { savedSnapshots.take(50) }
+        
         return TradeHistoryServiceImpl(repository, statsRepository, krakenService, configService)
     }
 
@@ -461,6 +468,344 @@ class TradeHistoryServiceTest : StringSpec() {
                 // Should skip synchronization — no trade history calls, no seeding
                 coVerify(exactly = 0) { krakenService.getTradeHistory(any(), any()) }
                 verify(exactly = 0) { repository.setHistorySeeded(any()) }
+            }
+        }
+
+        "init_InSimulationMode_SeedsHistoricalSnapshots" {
+            val appConfig = AppConfig(
+                kraken = KrakenCredentials("test-api-key", "test-private-key"),
+                settings = Settings(
+                    loopDelaySeconds = 60,
+                    deviationTriggerPercent = 5.0,
+                    dustThresholdUSD = 5.0,
+                    dryRun = false,
+                    simulation = true, // Enable simulation mode!
+                    fiatMaxDrawdown = 30.0,
+                    fiatDeploymentExponent = 1.0
+                ),
+                allocations = listOf(
+                    com.gemini.krakenbot.config.Allocation(com.gemini.krakenbot.model.Asset("UNKNOWN"), 50.0),
+                    com.gemini.krakenbot.config.Allocation(com.gemini.krakenbot.model.Asset("USD"), 50.0)
+                )
+            )
+            every { configService.getConfig() } returns appConfig
+            every { repository.load() } returns emptyList() // DB is empty!
+
+            val tradeHistoryService = TradeHistoryServiceImpl(repository, statsRepository, krakenService, configService)
+            tradeHistoryService.init()
+
+            // It should call saveSnapshot multiple times to seed 15 days of 6-hour interval snapshots (60 snapshots)
+            verify(atLeast = 1) { repository.saveSnapshot(any()) }
+        }
+
+        "init_ThrowsExceptionDuringSeeding_HandledGracefully" {
+            val appConfig = AppConfig(
+                kraken = KrakenCredentials("test-api-key", "test-private-key"),
+                settings = Settings(
+                    loopDelaySeconds = 60,
+                    deviationTriggerPercent = 5.0,
+                    dustThresholdUSD = 5.0,
+                    dryRun = false,
+                    simulation = true,
+                    fiatMaxDrawdown = 30.0,
+                    fiatDeploymentExponent = 1.0
+                ),
+                allocations = listOf(
+                    com.gemini.krakenbot.config.Allocation(com.gemini.krakenbot.model.Asset("BTC"), 50.0),
+                    com.gemini.krakenbot.config.Allocation(com.gemini.krakenbot.model.Asset("USD"), 50.0)
+                )
+            )
+            every { configService.getConfig() } returns appConfig
+            every { repository.load() } returns emptyList()
+            every { repository.saveSnapshot(any()) } throws RuntimeException("Seeding failed")
+
+            val tradeHistoryService = TradeHistoryServiceImpl(repository, statsRepository, krakenService, configService)
+            
+            // Should catch exception and not propagate it
+            tradeHistoryService.init()
+        }
+
+        "addSnapshot_HandlesPruneException" {
+            val tradeHistoryService = createService()
+            every { repository.pruneSnapshotsOlderThan(any()) } throws RuntimeException("Prune failed")
+            
+            val snapshot = PortfolioSnapshot(
+                timestamp = Instant.now(),
+                totalValueUSD = BigDecimal.ZERO,
+                assets = emptyMap(),
+                actions = emptyList(),
+                drawdownPercent = BigDecimal.ZERO,
+                fiatDeploymentPercent = BigDecimal.ZERO,
+                effectiveUsdTargetPercent = BigDecimal.ZERO
+            )
+            
+            // Should catch the exception and complete successfully
+            tradeHistoryService.addSnapshot(snapshot)
+            verify(exactly = 1) { repository.saveSnapshot(snapshot) }
+        }
+
+        "addSnapshot_SuccessfullyPrunes" {
+            val tradeHistoryService = createService()
+            every { repository.pruneSnapshotsOlderThan(any()) } returns 5
+            
+            val snapshot = PortfolioSnapshot(
+                timestamp = Instant.now(),
+                totalValueUSD = BigDecimal.ZERO,
+                assets = emptyMap(),
+                actions = emptyList(),
+                drawdownPercent = BigDecimal.ZERO,
+                fiatDeploymentPercent = BigDecimal.ZERO,
+                effectiveUsdTargetPercent = BigDecimal.ZERO
+            )
+            
+            tradeHistoryService.addSnapshot(snapshot)
+            verify(exactly = 1) { repository.saveSnapshot(snapshot) }
+            verify(exactly = 1) { repository.pruneSnapshotsOlderThan(any()) }
+        }
+
+        "syncTradesFromKraken_ThrottlingWithin300Seconds" {
+            runTest {
+                val service = createService()
+                service.syncTradesFromKraken() // First run sets lastSyncTime
+                
+                // Second run should be skipped due to throttle
+                service.syncTradesFromKraken()
+                coVerify(exactly = 1) { krakenService.getTradeHistory(any(), any()) }
+            }
+        }
+
+        "syncTradesFromKraken_MatchingFailuresSavedAsNew" {
+            runTest {
+                every { repository.isHistorySeeded() } returns true
+                val latestTime = Instant.ofEpochSecond(1700000000)
+                every { repository.getLatestTradeTime() } returns latestTime
+
+                val baseLocal = TradeRecord(
+                    timestamp = latestTime,
+                    pair = "XBTUSD",
+                    side = "BUY",
+                    symbol = "BTC",
+                    volume = BigDecimal.ONE,
+                    usdAmount = BigDecimal.TEN,
+                    success = true,
+                    dryRun = false
+                )
+
+                // Define local trades that fail matching on exactly one attribute
+                val diffPair = baseLocal.copy(pair = "ETHUSD")
+                val diffSide = baseLocal.copy(side = "SELL")
+                val diffVol = baseLocal.copy(volume = BigDecimal.TEN)
+                val diffTime = baseLocal.copy(timestamp = latestTime.minusSeconds(600)) // 10 mins diff
+
+                every { repository.getTradesInRange(any(), any()) } returns listOf(diffPair, diffSide, diffVol, diffTime)
+
+                val apiTrade = baseLocal.copy()
+                coEvery { krakenService.getTradeHistory(any(), any()) } returns listOf(apiTrade) andThen emptyList()
+
+                val tradeHistoryService = createService()
+                tradeHistoryService.syncTradesFromKraken()
+
+                // Since it matched none of the local trades, it should be saved as new
+                verify(exactly = 1) { repository.saveTrade(apiTrade) }
+            }
+        }
+
+        "syncTradesFromKraken_ReconcilesDryRunDifference" {
+            runTest {
+                every { repository.isHistorySeeded() } returns true
+                val latestTime = Instant.ofEpochSecond(1700000000)
+                every { repository.getLatestTradeTime() } returns latestTime
+
+                val localTrade = TradeRecord(
+                    timestamp = latestTime,
+                    pair = "XBTUSD",
+                    side = "BUY",
+                    symbol = "BTC",
+                    volume = BigDecimal.ONE,
+                    usdAmount = BigDecimal.TEN,
+                    success = true,
+                    dryRun = true
+                )
+                every { repository.getTradesInRange(any(), any()) } returns listOf(localTrade)
+
+                val apiTrade = localTrade.copy(dryRun = false)
+
+                coEvery { krakenService.getTradeHistory(any(), 0) } returns listOf(apiTrade)
+                coEvery { krakenService.getTradeHistory(any(), 50) } returns emptyList()
+
+                val tradeHistoryService = createService()
+                tradeHistoryService.syncTradesFromKraken()
+
+                verify(exactly = 1) { repository.updateTrade(localTrade, apiTrade) }
+            }
+        }
+
+        "syncTradesFromKraken_SeededButNoTrades" {
+            runTest {
+                val service = createService()
+                every { repository.isHistorySeeded() } returns true
+                every { repository.getLatestTradeTime() } returns null
+                coEvery { krakenService.getTradeHistory(startSec = null, offset = 0) } returns emptyList()
+
+                service.syncTradesFromKraken()
+                coVerify(exactly = 1) { krakenService.getTradeHistory(startSec = null, offset = 0) }
+            }
+         }
+
+        "syncTradesFromKraken_MultipleBatches" {
+            runTest {
+                val service = createService()
+                every { repository.isHistorySeeded() } returns true
+                every { repository.getLatestTradeTime() } returns null
+                
+                val batch1 = List(50) {
+                    TradeRecord(
+                        timestamp = Instant.now(),
+                        pair = "XBTUSD",
+                        side = "BUY",
+                        symbol = "BTC",
+                        volume = BigDecimal.ONE,
+                        usdAmount = BigDecimal.TEN,
+                        success = true,
+                        dryRun = false
+                    )
+                }
+                
+                coEvery { krakenService.getTradeHistory(startSec = null, offset = 0) } returns batch1
+                coEvery { krakenService.getTradeHistory(startSec = null, offset = 50) } returns emptyList()
+
+                service.syncTradesFromKraken()
+                coVerify(exactly = 1) { krakenService.getTradeHistory(startSec = null, offset = 0) }
+                coVerify(exactly = 1) { krakenService.getTradeHistory(startSec = null, offset = 50) }
+            }
+        }
+
+        "syncTradesFromKraken_MatchingExactTradeSkipsReconciliation" {
+            runTest {
+                every { repository.isHistorySeeded() } returns true
+                val latestTime = Instant.ofEpochSecond(1700000000)
+                every { repository.getLatestTradeTime() } returns latestTime
+
+                val localTrade = TradeRecord(
+                    timestamp = latestTime,
+                    pair = "XBTUSD",
+                    side = "BUY",
+                    symbol = "BTC",
+                    volume = BigDecimal.ONE,
+                    usdAmount = BigDecimal.TEN,
+                    success = true,
+                    dryRun = false
+                )
+                every { repository.getTradesInRange(any(), any()) } returns listOf(localTrade)
+
+                val apiTrade = localTrade.copy()
+
+                coEvery { krakenService.getTradeHistory(any(), 0) } returns listOf(apiTrade)
+                coEvery { krakenService.getTradeHistory(any(), 50) } returns emptyList()
+
+                val tradeHistoryService = createService()
+                tradeHistoryService.syncTradesFromKraken()
+
+                verify(exactly = 0) { repository.updateTrade(any(), any()) }
+                verify(exactly = 0) { repository.saveTrade(any()) }
+            }
+        }
+
+        "syncTradesFromKraken_ReconcilesUsdAmountDifference" {
+            runTest {
+                every { repository.isHistorySeeded() } returns true
+                val latestTime = Instant.ofEpochSecond(1700000000)
+                every { repository.getLatestTradeTime() } returns latestTime
+
+                val localTrade = TradeRecord(
+                    timestamp = latestTime,
+                    pair = "XBTUSD",
+                    side = "BUY",
+                    symbol = "BTC",
+                    volume = BigDecimal.ONE,
+                    usdAmount = BigDecimal.TEN,
+                    success = true,
+                    dryRun = false
+                )
+                every { repository.getTradesInRange(any(), any()) } returns listOf(localTrade)
+
+                val apiTrade = localTrade.copy(usdAmount = BigDecimal.valueOf(11))
+
+                coEvery { krakenService.getTradeHistory(any(), 0) } returns listOf(apiTrade)
+                coEvery { krakenService.getTradeHistory(any(), 50) } returns emptyList()
+
+                val tradeHistoryService = createService()
+                tradeHistoryService.syncTradesFromKraken()
+
+                verify(exactly = 1) { repository.updateTrade(localTrade, apiTrade) }
+            }
+        }
+
+        "syncTradesFromKraken_ReconcilesTimestampDifference" {
+            runTest {
+                every { repository.isHistorySeeded() } returns true
+                val latestTime = Instant.ofEpochSecond(1700000000)
+                every { repository.getLatestTradeTime() } returns latestTime
+
+                val localTrade = TradeRecord(
+                    timestamp = latestTime,
+                    pair = "XBTUSD",
+                    side = "BUY",
+                    symbol = "BTC",
+                    volume = BigDecimal.ONE,
+                    usdAmount = BigDecimal.TEN,
+                    success = true,
+                    dryRun = false
+                )
+                every { repository.getTradesInRange(any(), any()) } returns listOf(localTrade)
+
+                val apiTrade = localTrade.copy(timestamp = latestTime.minusSeconds(120))
+
+                coEvery { krakenService.getTradeHistory(any(), 0) } returns listOf(apiTrade)
+                coEvery { krakenService.getTradeHistory(any(), 50) } returns emptyList()
+
+                val tradeHistoryService = createService()
+                tradeHistoryService.syncTradesFromKraken()
+
+                verify(exactly = 1) { repository.updateTrade(localTrade, apiTrade) }
+            }
+        }
+
+        "syncTradesFromKraken_BlankApiKey" {
+            runTest {
+                val appConfig = AppConfig(
+                    kraken = KrakenCredentials("", "test-private-key"),
+                    settings = Settings(
+                        loopDelaySeconds = 60,
+                        deviationTriggerPercent = 5.0,
+                        dustThresholdUSD = 5.0,
+                        dryRun = false
+                    ),
+                    allocations = emptyList()
+                )
+                val service = createService()
+                every { configService.getConfig() } returns appConfig
+                service.syncTradesFromKraken()
+
+                coVerify(exactly = 0) { krakenService.getTradeHistory(any(), any()) }
+            }
+        }
+
+        "syncTradesFromKraken_Cancelled" {
+            runTest {
+                val service = createService()
+                
+                coEvery { krakenService.getTradeHistory(any(), any()) } coAnswers {
+                    kotlinx.coroutines.delay(10000)
+                    emptyList()
+                }
+
+                val job = launch {
+                    service.syncTradesFromKraken()
+                }
+                yield()
+                job.cancel()
+                job.join()
             }
         }
     }

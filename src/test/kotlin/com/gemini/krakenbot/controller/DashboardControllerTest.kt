@@ -250,7 +250,9 @@ class DashboardControllerTest : StringSpec() {
                     )
                 )
             )
+            val captured = slot<AppConfig>()
             every { configService.getConfig() } returns serverConfig
+            every { configService.updateConfig(capture(captured)) } returns Unit
 
             testApplication {
                 application {
@@ -265,6 +267,7 @@ class DashboardControllerTest : StringSpec() {
                             FormFields.FIAT_MAX_DRAWDOWN to listOf("5.0"),
                             FormFields.FIAT_DEPLOYMENT_EXPONENT to listOf("1.5"),
                             FormFields.DRY_RUN to listOf("on"),
+                            FormFields.SIMULATION to listOf("on"),
                             FormFields.SYMBOLS to listOf(Asset.USD),
                             FormFields.TARGETS to listOf("100.0")
                         ).formUrlEncode()
@@ -278,6 +281,7 @@ class DashboardControllerTest : StringSpec() {
                 response.headers[HtmxHeaders.HX_REDIRECT] shouldBe Routes.ROOT
             }
 
+            captured.captured.settings.simulation shouldBe true
             verify { configService.updateConfig(any()) }
         }
 
@@ -658,6 +662,63 @@ class DashboardControllerTest : StringSpec() {
                 val response = client.get(Routes.API_HISTORY_SNAPSHOTS)
                 response.status shouldBe HttpStatusCode.OK
                 response.bodyAsText() shouldBe "[]"
+            }
+        }
+
+        "getApiHealth_ReturnsJsonWithStats" {
+            val stats = com.gemini.krakenbot.model.HistoryStats(
+                allTimeHigh = BigDecimal("15000.00"),
+                totalTradesExecuted = 12L,
+                totalVolumeTraded = BigDecimal("50000.00"),
+                firstSnapshotTime = Instant.now(),
+                latestSnapshotTime = Instant.now()
+            )
+            val snapshot = PortfolioSnapshot(
+                timestamp = Instant.now(),
+                totalValueUSD = BigDecimal("12000.0"),
+                assets = emptyMap(),
+                actions = emptyList(),
+                drawdownPercent = BigDecimal.ZERO,
+                fiatDeploymentPercent = BigDecimal.ZERO,
+                effectiveUsdTargetPercent = BigDecimal.ZERO
+            )
+            every { tradeHistoryService.getHistoryStats() } returns stats
+            every { tradeHistoryService.getLatestSnapshot() } returns snapshot
+
+            testApplication {
+                application {
+                    configureTestEnv()
+                }
+                val response = client.get("/api/health")
+                response.status shouldBe HttpStatusCode.OK
+                response.headers[HttpHeaders.ContentType] shouldContain "application/json"
+                val body = response.bodyAsText()
+                body shouldContain "\"status\":\"UP\""
+                body shouldContain "\"totalTradesExecuted\":12"
+                body shouldContain "\"totalVolumeTraded\":50000.00"
+            }
+        }
+
+        "getApiHealth_NoLatestSnapshot_ReturnsJsonWithFallback" {
+            val stats = com.gemini.krakenbot.model.HistoryStats(
+                allTimeHigh = BigDecimal("15000.00"),
+                totalTradesExecuted = 12L,
+                totalVolumeTraded = BigDecimal("50000.00"),
+                firstSnapshotTime = Instant.now(),
+                latestSnapshotTime = Instant.now()
+            )
+            every { tradeHistoryService.getHistoryStats() } returns stats
+            every { tradeHistoryService.getLatestSnapshot() } returns null
+
+            testApplication {
+                application {
+                    configureTestEnv()
+                }
+                val response = client.get("/api/health")
+                response.status shouldBe HttpStatusCode.OK
+                val body = response.bodyAsText()
+                body shouldContain "\"lastSnapshotTime\":\"N/A\""
+                body shouldContain "\"lastSnapshotTotalValueUSD\":0"
             }
         }
     }
