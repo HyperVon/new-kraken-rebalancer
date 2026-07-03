@@ -12,6 +12,7 @@ import com.gemini.krakenbot.service.RawBalances
 import com.gemini.krakenbot.service.RawPrices
 import java.time.Instant
 import io.ktor.client.*
+import io.ktor.client.plugins.ResponseException
 import io.ktor.client.request.*
 import io.ktor.client.statement.*
 import org.slf4j.LoggerFactory
@@ -23,6 +24,7 @@ import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 import kotlin.io.encoding.Base64
 import kotlinx.coroutines.delay
+import java.io.IOException
 import kotlin.time.Duration.Companion.milliseconds
 
 class KrakenServiceImpl(
@@ -207,8 +209,8 @@ class KrakenServiceImpl(
                 return block()
             } catch (e: Exception) {
                 val isRateLimit = e.message?.contains("Rate limit exceeded") == true
-                val isNetworkOrTransient = e is java.io.IOException ||
-                                           e is io.ktor.client.plugins.ResponseException
+                val isNetworkOrTransient = e is IOException ||
+                                           e is ResponseException
 
                 if ((isNetworkOrTransient || isRateLimit) && attempt < maxAttempts - 1) {
                     attempt++
@@ -311,6 +313,7 @@ class KrakenServiceImpl(
                     )
                 }
             }
+            @Suppress("KotlinUnreachableCode")
             throw RuntimeException("Unreachable")
         }
     }

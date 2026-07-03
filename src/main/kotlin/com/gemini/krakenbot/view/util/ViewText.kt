@@ -75,7 +75,6 @@ object ViewText {
     const val HEADER_VOLUME = "Volume"
     const val HEADER_USD_AMOUNT = "USD Amount"
     const val HEADER_STATUS = "Status"
-    const val HEADER_DRY_RUN = "Dry Run"
 }
 
 

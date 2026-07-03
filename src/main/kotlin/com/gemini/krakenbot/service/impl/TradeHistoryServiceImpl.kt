@@ -17,6 +17,9 @@ import java.time.Instant
 import java.util.concurrent.CopyOnWriteArrayList
 
 import java.math.RoundingMode
+import java.time.Duration
+import java.time.temporal.ChronoUnit
+import java.util.Random
 
 class TradeHistoryServiceImpl(
     private val repository: TradeRepository,
@@ -76,7 +79,7 @@ class TradeHistoryServiceImpl(
         // Start balances
         val currentBalances = mutableMapOf<String, Double>()
         val totalPortfolioValue = 100000.0
-        val random = java.util.Random()
+        val random = Random()
 
         for (alloc in allocations) {
             val symbol = alloc.symbol.value.uppercase()
@@ -89,13 +92,13 @@ class TradeHistoryServiceImpl(
         }
 
         val now = Instant.now()
-        val startInstant = now.minus(15, java.time.temporal.ChronoUnit.DAYS)
+        val startInstant = now.minus(15, ChronoUnit.DAYS)
         val stepHours = 6L
         val steps = (15 * 24) / stepHours
 
         var step = 0
         while (step <= steps) {
-            val timestamp = startInstant.plus(step * stepHours, java.time.temporal.ChronoUnit.HOURS)
+            val timestamp = startInstant.plus(step * stepHours, ChronoUnit.HOURS)
 
             // 1. Fluctuate prices
             for (symbol in currentPrices.keys) {
@@ -180,7 +183,7 @@ class TradeHistoryServiceImpl(
     override fun addSnapshot(snapshot: PortfolioSnapshot) {
         repository.saveSnapshot(snapshot)
         try {
-            val cutoff = Instant.now().minus(90, java.time.temporal.ChronoUnit.DAYS)
+            val cutoff = Instant.now().minus(90, ChronoUnit.DAYS)
             val pruned = repository.pruneSnapshotsOlderThan(cutoff)
             if (pruned > 0) {
                 log.info("Pruned {} snapshots older than 90 days", pruned)
@@ -229,7 +232,7 @@ class TradeHistoryServiceImpl(
 
     override suspend fun syncTradesFromKraken() {
         val now = Instant.now()
-        val elapsedSeconds = java.time.Duration.between(lastSyncTime, now).seconds
+        val elapsedSeconds = Duration.between(lastSyncTime, now).seconds
         if (elapsedSeconds < 300) {
             log.info("Skipping trade history synchronization; last run was only {} seconds ago.", elapsedSeconds)
             return

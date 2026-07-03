@@ -25,6 +25,7 @@ import kotlinx.html.html
 import kotlinx.html.p
 import kotlinx.html.stream.createHTML
 import org.koin.ktor.ext.inject
+import java.lang.management.ManagementFactory
 import java.math.BigDecimal
 import java.time.Instant
 import java.time.temporal.ChronoUnit
@@ -83,7 +84,7 @@ fun Application.dashboardRouting() {
             val responseMap = mapOf(
                 "status" to "UP",
                 "timestamp" to Instant.now().toString(),
-                "uptimeSeconds" to java.lang.management.ManagementFactory.getRuntimeMXBean().uptime / 1000,
+                "uptimeSeconds" to ManagementFactory.getRuntimeMXBean().uptime / 1000,
                 "totalTradesExecuted" to stats.totalTradesExecuted,
                 "totalVolumeTraded" to stats.totalVolumeTraded,
                 "lastSnapshotTime" to (latestSnapshot?.timestamp?.toString() ?: "N/A"),

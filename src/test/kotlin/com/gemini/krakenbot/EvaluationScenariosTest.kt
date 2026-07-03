@@ -48,9 +48,11 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.yield
+import org.jetbrains.exposed.sql.transactions.TransactionManager
 import org.koin.core.context.startKoin
 import org.koin.core.context.stopKoin
 import org.koin.dsl.module
@@ -971,7 +973,7 @@ class EvaluationScenariosTest : StringSpec() {
                 val stats = PortfolioStats(BigDecimal("1234.56"))
 
                 // Close transaction manager to force write failure
-                org.jetbrains.exposed.sql.transactions.TransactionManager.closeAndUnregister(db)
+                TransactionManager.closeAndUnregister(db)
 
                 shouldThrow<IOException> {
                     statsRepo.save(stats)
@@ -1771,7 +1773,7 @@ class EvaluationScenariosTest : StringSpec() {
                     }
                 }
 
-                jobs.forEach { it.join() }
+                jobs.joinAll()
 
                 val ssePass = results.size == 5
                 val evidence = "Connected 5 clients to SSE endpoint.\n" +

@@ -15,6 +15,9 @@ import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import io.ktor.client.*
 import io.ktor.client.engine.mock.*
+import io.ktor.client.network.sockets.SocketTimeoutException
+import io.ktor.client.plugins.ClientRequestException
+import io.ktor.client.statement.HttpResponse
 import io.ktor.http.*
 import io.mockk.every
 import io.mockk.mockk
@@ -1015,7 +1018,7 @@ class KrakenServiceTest : StringSpec() {
                 var attempt = 0
                 val mockEngine = MockEngine { request ->
                     if (attempt++ == 0) {
-                        throw io.ktor.client.network.sockets.SocketTimeoutException("Simulated socket timeout", null)
+                        throw SocketTimeoutException("Simulated socket timeout", null)
                     } else {
                         respond(
                             content = "{\"error\":[],\"result\":{\"XXBTZUSD\":63000.0}}",
@@ -1045,8 +1048,8 @@ class KrakenServiceTest : StringSpec() {
                 var attempt = 0
                 val mockEngine = MockEngine { request ->
                     if (attempt++ == 0) {
-                        val response = mockk<io.ktor.client.statement.HttpResponse>(relaxed = true)
-                        throw io.ktor.client.plugins.ClientRequestException(response, "Simulated rate limit / error")
+                        val response = mockk<HttpResponse>(relaxed = true)
+                        throw ClientRequestException(response, "Simulated rate limit / error")
                     } else {
                         respond(
                             content = "{\"error\":[],\"result\":{\"XXBTZUSD\":63000.0}}",

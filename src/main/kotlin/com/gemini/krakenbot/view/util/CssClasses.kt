@@ -116,7 +116,6 @@ object CssClasses {
     const val TIME_RANGE_BTN = "time-range-btn"
     const val TIME_RANGE_BTN_ACTIVE = "time-range-btn active"
     const val CHART_CONTAINER = "chart-container"
-    const val HISTORY_EMPTY = "history-empty"
 }
 
 

@@ -5,6 +5,7 @@ import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.config.*
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.HistoryStats
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.TradeHistoryService
@@ -617,7 +618,7 @@ class DashboardControllerTest : StringSpec() {
         }
 
         "getApiHistoryStats_ReturnsJson" {
-            val stats = com.gemini.krakenbot.model.HistoryStats(
+            val stats = HistoryStats(
                 allTimeHigh = BigDecimal("15000.00"),
                 totalTradesExecuted = 12L,
                 totalVolumeTraded = BigDecimal("50000.00"),
@@ -666,7 +667,7 @@ class DashboardControllerTest : StringSpec() {
         }
 
         "getApiHealth_ReturnsJsonWithStats" {
-            val stats = com.gemini.krakenbot.model.HistoryStats(
+            val stats = HistoryStats(
                 allTimeHigh = BigDecimal("15000.00"),
                 totalTradesExecuted = 12L,
                 totalVolumeTraded = BigDecimal("50000.00"),
@@ -700,7 +701,7 @@ class DashboardControllerTest : StringSpec() {
         }
 
         "getApiHealth_NoLatestSnapshot_ReturnsJsonWithFallback" {
-            val stats = com.gemini.krakenbot.model.HistoryStats(
+            val stats = HistoryStats(
                 allTimeHigh = BigDecimal("15000.00"),
                 totalTradesExecuted = 12L,
                 totalVolumeTraded = BigDecimal("50000.00"),
