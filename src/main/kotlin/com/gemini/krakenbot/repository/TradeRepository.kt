@@ -12,6 +12,7 @@ interface TradeRepository {
     // History page query methods
     fun saveSnapshot(snapshot: PortfolioSnapshot)
     fun saveTrade(trade: TradeRecord)
+    fun updateTrade(oldTrade: TradeRecord, newTrade: TradeRecord)
     fun getSnapshotsInRange(from: Instant, to: Instant): List<PortfolioSnapshot>
     fun getTradesInRange(from: Instant, to: Instant): List<TradeRecord>
     fun getTotalTradeCount(): Long

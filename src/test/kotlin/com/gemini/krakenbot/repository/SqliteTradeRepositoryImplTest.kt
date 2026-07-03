@@ -224,6 +224,32 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
             repository.getLatestTradeTime() shouldBe now
         }
 
+        "update trade updates record" {
+            val now = Instant.now().truncatedTo(ChronoUnit.MILLIS)
+            val oldTrade = TradeRecord(
+                timestamp = now,
+                pair = "XBTUSD",
+                side = "BUY",
+                symbol = "BTC",
+                volume = BigDecimal("0.5"),
+                usdAmount = BigDecimal("15000.00"),
+                success = true,
+                dryRun = false
+            )
+            repository.saveTrade(oldTrade)
+
+            val newTrade = oldTrade.copy(
+                timestamp = now.plusSeconds(3),
+                usdAmount = BigDecimal("14980.50")
+            )
+            repository.updateTrade(oldTrade, newTrade)
+
+            val trades = repository.getTradesInRange(now.minusSeconds(10), now.plusSeconds(10))
+            trades.size shouldBe 1
+            trades.first().timestamp shouldBe now.plusSeconds(3)
+            trades.first().usdAmount.shouldBeEqualComparingTo(BigDecimal("14980.50"))
+        }
+
         "isHistorySeeded and setHistorySeeded" {
             repository.isHistorySeeded() shouldBe false
             repository.setHistorySeeded(true)

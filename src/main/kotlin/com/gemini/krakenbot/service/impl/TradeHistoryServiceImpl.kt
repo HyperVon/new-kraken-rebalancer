@@ -218,32 +218,37 @@ class TradeHistoryServiceImpl(
     }
 
     override suspend fun syncTradesFromKraken() {
-        if (repository.isHistorySeeded()) {
-            log.info("Historical trades already seeded in database. Skipping API historical fetch.")
-            return
-        }
-
         val apiKey = configService.getConfig().kraken.apiKey.value
         if (apiKey.isBlank() || apiKey == "YOUR_KRAKEN_API_KEY") {
             log.warn("Kraken API key is blank or placeholder. Skipping trade history synchronization.")
             return
         }
 
-        log.info("Starting historical trades synchronization from Kraken API...")
-
+        val isSeeded = repository.isHistorySeeded()
         val latestTradeTime = repository.getLatestTradeTime()
-        val startSec = latestTradeTime?.epochSecond
 
-        // Load existing boundary signatures to prevent duplicates
-        val existingSignatures = if (latestTradeTime != null) {
-            repository.getTradesInRange(latestTradeTime, Instant.now())
-                .map { "${it.timestamp.toEpochMilli()}_${it.pair}_${it.side.uppercase()}_${it.volume}_${it.usdAmount}" }
-                .toSet()
+        // If history is not yet seeded, do a full sync.
+        // If history is seeded, do an incremental sync starting from the latest trade minus a 5-minute safety window.
+        val startSec = if (isSeeded && latestTradeTime != null) {
+            latestTradeTime.minusSeconds(300).epochSecond
         } else {
-            emptySet()
+            null
         }
 
+        log.info("Starting trade history synchronization (isSeeded={}, startSec={})...", isSeeded, startSec)
+
+        // Load existing trades in the query window to perform reconciliation and deduplication.
+        val queryStart = if (latestTradeTime != null && isSeeded) {
+            latestTradeTime.minusSeconds(300)
+        } else {
+            Instant.EPOCH
+        }
+
+        val originalLocalTrades = repository.getTradesInRange(queryStart, Instant.now()).toMutableList()
+
         var offset = 0
+        var totalAdded = 0
+        var totalReconciled = 0
 
         while (true) {
             log.info("Fetching trade history batch with offset={}", offset)
@@ -252,16 +257,38 @@ class TradeHistoryServiceImpl(
                 break
             }
 
-            var addedInBatch = 0
-            for (trade: TradeRecord in apiTrades) {
-                val signature = "${trade.timestamp.toEpochMilli()}_${trade.pair}_${trade.side.uppercase()}_${trade.volume}_${trade.usdAmount}"
-                if (!existingSignatures.contains(signature)) {
-                    repository.saveTrade(trade)
-                    addedInBatch++
+            for (apiTrade: TradeRecord in apiTrades) {
+                // Look for an existing matching trade in the pre-existing local trades.
+                // Match criteria: same pair, side, volume, and timestamp within 5 minutes.
+                val matchingLocalTrade = originalLocalTrades.find { local ->
+                    val diff = local.timestamp.toEpochMilli() - apiTrade.timestamp.toEpochMilli()
+                    val absDiff = if (diff < 0) -diff else diff
+                    local.pair == apiTrade.pair &&
+                            local.side.equals(apiTrade.side, ignoreCase = true) &&
+                            local.volume.compareTo(apiTrade.volume) == 0 &&
+                            absDiff < 300_000
+                }
+
+                if (matchingLocalTrade != null) {
+                    // Check if we need to update/reconcile it (if the timestamp or usdAmount differs slightly from the official API ones).
+                    if (matchingLocalTrade.timestamp != apiTrade.timestamp ||
+                        matchingLocalTrade.usdAmount.compareTo(apiTrade.usdAmount) != 0 ||
+                        matchingLocalTrade.dryRun != apiTrade.dryRun) {
+
+                        log.info("Reconciling trade record: local (timestamp={}, usdAmount={}) with API (timestamp={}, usdAmount={})",
+                            matchingLocalTrade.timestamp, matchingLocalTrade.usdAmount, apiTrade.timestamp, apiTrade.usdAmount)
+
+                        repository.updateTrade(matchingLocalTrade, apiTrade)
+                        totalReconciled++
+                    }
+                    // Remove matched trade so it cannot be matched again in this sync run
+                    originalLocalTrades.remove(matchingLocalTrade)
+                } else {
+                    // No matching local trade found -> Save it as a new trade record
+                    repository.saveTrade(apiTrade)
+                    totalAdded++
                 }
             }
-
-            log.info("Processed batch: added {} new trades out of {} fetched", addedInBatch, apiTrades.size)
 
             if (apiTrades.size < 50) {
                 break
@@ -269,7 +296,9 @@ class TradeHistoryServiceImpl(
             offset += 50
         }
 
-        repository.setHistorySeeded(true)
-        log.info("Historical trades synchronization completed. Database marked as seeded.")
+        if (!isSeeded) {
+            repository.setHistorySeeded(true)
+        }
+        log.info("Trade history synchronization completed. Added: {} new, Reconciled: {}.", totalAdded, totalReconciled)
     }
 }

@@ -13,6 +13,7 @@ import org.jetbrains.exposed.sql.Database
 import org.jetbrains.exposed.sql.ResultRow
 import org.jetbrains.exposed.sql.SortOrder
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
+import org.jetbrains.exposed.sql.and
 import org.jetbrains.exposed.sql.andWhere
 import org.jetbrains.exposed.sql.insert
 import org.jetbrains.exposed.sql.update
@@ -88,6 +89,29 @@ class SqliteTradeRepositoryImpl(
             log.error("Failed to save trade to database", e)
             if (e is IOException) throw e
             throw IOException("Database write failed", e)
+        }
+    }
+
+    override fun updateTrade(oldTrade: TradeRecord, newTrade: TradeRecord) {
+        try {
+            transaction(database) {
+                TradeTable.update({
+                    (TradeTable.timestamp eq oldTrade.timestamp.toEpochMilli()) and
+                    (TradeTable.pair eq oldTrade.pair) and
+                    (TradeTable.side eq oldTrade.side) and
+                    (TradeTable.volume eq oldTrade.volume)
+                }) {
+                    it[timestamp] = newTrade.timestamp.toEpochMilli()
+                    it[usdAmount] = newTrade.usdAmount
+                    it[success] = newTrade.success
+                    it[dryRun] = newTrade.dryRun
+                    it[errorMessage] = newTrade.errorMessage
+                }
+            }
+        } catch (e: Exception) {
+            log.error("Failed to update trade in database", e)
+            if (e is IOException) throw e
+            throw IOException("Database update failed", e)
         }
     }
 
