@@ -22,6 +22,7 @@ object ViewText {
     const val FIAT_MAX_DRAWDOWN = "Fiat Max Drawdown (%)"
     const val FIAT_DEPLOYMENT_EXPONENT = "Fiat Deployment Exponent"
     const val DRY_RUN_MODE = "Dry Run Mode (Safe)"
+    const val SIMULATION_MODE = "Simulation Mode (Kraken Emulator)"
     const val TARGET_ALLOCATIONS = "Target Allocations"
     const val ADD_ASSET = "Add Asset"
     const val SAVE_CONFIGURATION = "Save Configuration"

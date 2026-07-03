@@ -25,6 +25,7 @@ object FormFields {
     const val DEVIATION_TRIGGER_PERCENT = "deviationTriggerPercent"
     const val DUST_THRESHOLD_USD = "dustThresholdUSD"
     const val DRY_RUN = "dryRun"
+    const val SIMULATION = "simulation"
     const val FIAT_MAX_DRAWDOWN = "fiatMaxDrawdown"
     const val FIAT_DEPLOYMENT_EXPONENT = "fiatDeploymentExponent"
     const val SYMBOLS = "symbols"

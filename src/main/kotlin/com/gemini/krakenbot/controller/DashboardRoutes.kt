@@ -96,6 +96,7 @@ private suspend fun RoutingContext.handlePostSettings(
     val dustThresholdUSD =
         params[FormFields.DUST_THRESHOLD_USD]?.toDoubleOrNull() ?: 1.0
     val dryRun = params[FormFields.DRY_RUN] != null
+    val simulation = params[FormFields.SIMULATION] != null
     val fiatMaxDrawdown =
         params[FormFields.FIAT_MAX_DRAWDOWN]?.toDoubleOrNull() ?: 0.0
     val fiatDeploymentExponent =
@@ -116,6 +117,7 @@ private suspend fun RoutingContext.handlePostSettings(
             deviationTriggerPercent = deviationTriggerPercent,
             dustThresholdUSD = dustThresholdUSD,
             dryRun = dryRun,
+            simulation = simulation,
             fiatMaxDrawdown = fiatMaxDrawdown,
             fiatDeploymentExponent = fiatDeploymentExponent
         ),

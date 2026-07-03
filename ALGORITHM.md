@@ -204,5 +204,6 @@ The behavior is controlled by `rebalancer-config.json`:
 | `deviationTriggerPercent` | Sensitivity of the rebalancer. Lower values track targets closer but trade more frequently (higher fees).                                                                  |
 | `dustThresholdUSD`        | Minimum order value in USD. Trades smaller than this amount are skipped to avoid API errors.                                                                               |
 | `dryRun`                  | If set to `true`, the system performs all calculations and logs intended trades but **does not** send orders to Kraken.                                                    |
+| `simulation`              | If set to `true`, the system runs completely offline in simulation mode using a random walk generator for prices and balances (pre-seeding history if DB is empty).        |
 | `fiatMaxDrawdown`         | The portfolio drawdown percentage at which 100% of the USD allocation should be deployed into assets. Set to `0` to disable.                                               |
 | `fiatDeploymentExponent`  | Controls the aggressiveness of deployment. `1.0` is linear. Values `< 1.0` deploy more cash earlier (aggressive). Values `> 1.0` save cash for deeper dips (conservative). |

@@ -138,36 +138,59 @@ function buildAssetHoldingsChart(snapshots) {
     snapshots.forEach(s => Object.keys(s.assets || {}).forEach(k => symbols.add(k)));
     const symbolList = [...symbols].filter(s => s !== 'USD').sort();
 
+    const baseline = snapshots[0];
+    const baselines = {};
+    symbolList.forEach(sym => {
+        baselines[sym] = baseline.assets[sym] ? Number(baseline.assets[sym].balance) : 0;
+    });
+
     const datasets = symbolList.map((sym, i) => ({
         label: sym,
-        data: snapshots.map(s => ({
-            x: s.timestamp,
-            y: s.assets[sym] ? Number(s.assets[sym].balance) : 0
-        })),
+        data: snapshots.map(s => {
+            const current = s.assets[sym] ? Number(s.assets[sym].balance) : 0;
+            const base = baselines[sym];
+            const pct = base > 0 ? ((current - base) / base) * 100 : 0;
+            return { x: s.timestamp, y: pct };
+        }),
         borderColor: CHART_COLORS[i % CHART_COLORS.length],
         backgroundColor: 'transparent',
         tension: 0.3,
         borderWidth: 2,
         pointRadius: 0,
-        pointHitRadius: 10,
-        yAxisID: `y-${sym}`
+        pointHitRadius: 10
     }));
-
-    const scales = { x: chartDefaults.scales.x };
-    symbolList.forEach((sym, i) => {
-        scales[`y-${sym}`] = {
-            type: 'linear',
-            display: i === 0,
-            position: i === 0 ? 'left' : 'right',
-            grid: { color: i === 0 ? 'rgba(51, 65, 85, 0.3)' : 'transparent' },
-            ticks: { color: CHART_COLORS[i % CHART_COLORS.length] }
-        };
-    });
 
     createOrUpdate('asset-holdings-chart', {
         type: 'line',
         data: { datasets },
-        options: { ...chartDefaults, scales }
+        options: {
+            ...chartDefaults,
+            plugins: {
+                ...chartDefaults.plugins,
+                tooltip: {
+                    ...chartDefaults.plugins.tooltip,
+                    callbacks: {
+                        label: ctx => {
+                            const sym = ctx.dataset.label;
+                            const pctChange = ctx.parsed.y;
+                            const snapshot = snapshots[ctx.dataIndex];
+                            const balance = snapshot.assets[sym] ? Number(snapshot.assets[sym].balance) : 0;
+                            return `${sym}: ${pctChange >= 0 ? '+' : ''}${pctChange.toFixed(2)}% (${balance.toLocaleString('en-US', {minimumFractionDigits: 4, maximumFractionDigits: 8})})`;
+                        }
+                    }
+                }
+            },
+            scales: {
+                ...chartDefaults.scales,
+                y: {
+                    ...chartDefaults.scales.y,
+                    ticks: {
+                        ...chartDefaults.scales.y.ticks,
+                        callback: v => (v >= 0 ? '+' : '') + v + '%'
+                    }
+                }
+            }
+        }
     });
 }
 

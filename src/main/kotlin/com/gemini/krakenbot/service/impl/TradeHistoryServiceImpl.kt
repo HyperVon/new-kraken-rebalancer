@@ -16,6 +16,8 @@ import java.math.BigDecimal
 import java.time.Instant
 import java.util.concurrent.CopyOnWriteArrayList
 
+import java.math.RoundingMode
+
 class TradeHistoryServiceImpl(
     private val repository: TradeRepository,
     private val portfolioStatsRepository: PortfolioStatsRepository,
@@ -33,6 +35,140 @@ class TradeHistoryServiceImpl(
         val loaded = repository.load()
         if (loaded.isNotEmpty()) {
             history.addAll(loaded)
+        } else {
+            val config = configService.getConfig()
+            if (config.settings.simulation) {
+                try {
+                    seedHistoricalSnapshots()
+                    val reloaded = repository.load()
+                    history.addAll(reloaded)
+                } catch (e: Exception) {
+                    log.error("Failed to seed historical snapshots", e)
+                }
+            }
+        }
+    }
+
+    private fun seedHistoricalSnapshots() {
+        log.info("Simulation mode: Seeding historical snapshots in database...")
+        val config = configService.getConfig()
+        val allocations = config.allocations
+
+        val initialPrices = mapOf(
+            "BTC" to 60000.0,
+            "ETH" to 3000.0,
+            "USD" to 1.0,
+            "USDT" to 1.0,
+            "USDC" to 1.0,
+            "XRP" to 0.60,
+            "DOGE" to 0.15,
+            "SOL" to 140.0,
+            "ADA" to 0.50,
+            "DOT" to 6.0,
+            "LINK" to 15.0,
+            "LTC" to 80.0
+        )
+
+        // Start prices
+        val currentPrices = mutableMapOf<String, Double>()
+        for (alloc in allocations) {
+            val symbol = alloc.symbol.value.uppercase()
+            currentPrices[symbol] = initialPrices[symbol] ?: 10.0
+        }
+        currentPrices["USD"] = 1.0
+
+        // Start balances
+        val currentBalances = mutableMapOf<String, Double>()
+        val totalPortfolioValue = 100000.0
+        val random = java.util.Random()
+
+        for (alloc in allocations) {
+            val symbol = alloc.symbol.value.uppercase()
+            val targetPercent = alloc.targetPercent
+            val targetUSD = targetPercent / 100.0 * totalPortfolioValue
+            // Slightly drifted initial balance (+/- 15%)
+            val drift = 0.85 + random.nextDouble() * 0.30
+            val price = currentPrices[symbol] ?: 10.0
+            currentBalances[symbol] = (targetUSD * drift) / price
+        }
+
+        val now = Instant.now()
+        val startInstant = now.minus(15, java.time.temporal.ChronoUnit.DAYS)
+        val stepHours = 6L
+        val steps = (15 * 24) / stepHours
+
+        for (step in 0..steps) {
+            val timestamp = startInstant.plus(step * stepHours, java.time.temporal.ChronoUnit.HOURS)
+
+            // 1. Fluctuate prices
+            for (symbol in currentPrices.keys) {
+                if (symbol == "USD") continue
+                val price = currentPrices[symbol] ?: 10.0
+                // random fluctuation +/- 1.5%
+                val change = (random.nextDouble() - 0.5) * 0.03
+                currentPrices[symbol] = price * (1.0 + change)
+            }
+
+            // 2. Compute portfolio value and rebalance
+            var portfolioValue = 0.0
+            for (symbol in currentBalances.keys) {
+                portfolioValue += currentBalances[symbol]!! * currentPrices[symbol]!!
+            }
+
+            // Rebalance balances towards target allocations
+            for (alloc in allocations) {
+                val symbol = alloc.symbol.value.uppercase()
+                val targetPercent = alloc.targetPercent
+                val targetUSD = targetPercent / 100.0 * portfolioValue
+                // Keep it close to target, but let it drift slightly (+/- 3%)
+                val drift = 0.97 + random.nextDouble() * 0.06
+                val price = currentPrices[symbol] ?: 10.0
+                currentBalances[symbol] = (targetUSD * drift) / price
+            }
+
+            // Recompute exact portfolio value
+            var exactPortfolioValue = 0.0
+            val assetSnapshots = mutableMapOf<String, PortfolioSnapshot.AssetSnapshot>()
+
+            for (alloc in allocations) {
+                val symbol = alloc.symbol.value.uppercase()
+                val balance = currentBalances[symbol]!!
+                val price = currentPrices[symbol]!!
+                val valueUSD = balance * price
+                exactPortfolioValue += valueUSD
+            }
+
+            for (alloc in allocations) {
+                val symbol = alloc.symbol.value.uppercase()
+                val balance = currentBalances[symbol]!!
+                val price = currentPrices[symbol]!!
+                val valueUSD = balance * price
+                val currentPercent = (valueUSD / exactPortfolioValue) * 100.0
+                val deviationPercent = currentPercent - alloc.targetPercent
+                val deviationUSD = deviationPercent / 100.0 * exactPortfolioValue
+
+                assetSnapshots[symbol] = PortfolioSnapshot.AssetSnapshot(
+                    symbol = symbol,
+                    balance = BigDecimal.valueOf(balance).setScale(8, RoundingMode.HALF_UP),
+                    price = BigDecimal.valueOf(price).setScale(8, RoundingMode.HALF_UP),
+                    valueUSD = BigDecimal.valueOf(valueUSD).setScale(2, RoundingMode.HALF_UP),
+                    targetPercent = BigDecimal.valueOf(alloc.targetPercent).setScale(2, RoundingMode.HALF_UP),
+                    currentPercent = BigDecimal.valueOf(currentPercent).setScale(2, RoundingMode.HALF_UP),
+                    deviationPercent = BigDecimal.valueOf(deviationPercent).setScale(2, RoundingMode.HALF_UP),
+                    deviationUSD = BigDecimal.valueOf(deviationUSD).setScale(2, RoundingMode.HALF_UP)
+                )
+            }
+
+            val snapshot = PortfolioSnapshot(
+                timestamp = timestamp,
+                totalValueUSD = BigDecimal.valueOf(exactPortfolioValue).setScale(2, RoundingMode.HALF_UP),
+                assets = assetSnapshots,
+                actions = emptyList(),
+                drawdownPercent = BigDecimal.ZERO,
+                fiatDeploymentPercent = BigDecimal.ZERO,
+                effectiveUsdTargetPercent = BigDecimal.valueOf(allocations.firstOrNull { it.symbol.isUsd }?.targetPercent ?: 5.0).setScale(2, RoundingMode.HALF_UP)
+            )
+            repository.saveSnapshot(snapshot)
         }
     }
 

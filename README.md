@@ -189,6 +189,8 @@ with a wide range of tools and paradigms:
 - Sortable asset performance table with deviation indicators
 - Trade history log with BUY/SELL badges
 - Live/Delayed status indicator with data age tracking
+- **Normalized Holdings Chart** — Displays asset balance timelines relative to a starting baseline (Percentage Change %) to align assets of vastly different magnitudes (e.g. BTC vs XRP) on a shared vertical axis.
+- **Combined Hover Tooltips** — Tooltips combine percentage change metrics with absolute token balances (e.g. `XRP: +0.00% (78,435.0000 XRP)`).
 - **Hypermedia-powered** — uses HTMX for dynamic content swapping and form
   submissions without writing JavaScript
 
@@ -197,6 +199,11 @@ with a wide range of tools and paradigms:
 - Modify all settings (allocations, thresholds, assets) via the web UI
 - Add or remove assets without restarting the application
 - Allocation validation ensures targets always sum to 100%
+
+### Offline Exchange Simulator & Pre-Seeding
+
+- **Offline Simulation Mode** — Run the bot completely offline without a real Kraken API key. Enable `"simulation": true` (dynamic toggling supported via the Settings UI) to execute orders and check balances against a realistic random walk price generator.
+- **Automated Database Seeding** — If started in simulation mode with an empty database, the system generates 15 days (60 cycles) of historical snapshots and trade logs, providing immediately interactive graphs.
 
 ### Historical Trades Synchronization
 
@@ -341,7 +348,8 @@ architecture to synchronize the dashboard with the backend rebalancing loop:
 ├── src/test/kotlin/                       # Unit tests (100% overall coverage achieved across all packages and metrics)
 │   └── com/gemini/krakenbot/
 │       └── service/
-│           └── FakeKrakenService.kt       # In-process test double for KrakenService
+│           ├── FakeKrakenService.kt       # In-process test double for KrakenService
+│           └── SimulatedKrakenServiceTest.kt # Unit tests verifying mock exchange emulator
 ├── src/main/resources/                    # Static resources
 │   └── static/
 │       ├── style.css                      # Dashboard stylesheet
@@ -402,6 +410,7 @@ from the backend — no separate frontend build step required.
 | `deviationTriggerPercent` | `Double`  | `5.0`   | Minimum deviation % to trigger a trade                                                |
 | `dustThresholdUSD`        | `Double`  | `5.0`   | Minimum trade value in USD (below this is skipped)                                    |
 | `dryRun`                  | `Boolean` | `true`  | If true, logs intended trades without executing them                                  |
+| `simulation`              | `Boolean` | `false` | If true, runs offline in exchange simulation mode (seeds history if DB is empty)       |
 | `fiatMaxDrawdown`         | `Double`  | `0.0`   | Portfolio drawdown % at which 100% of USD is deployed (0 = disabled)                  |
 | `fiatDeploymentExponent`  | `Double`  | `1.0`   | Controls deployment curve: `1.0` = linear, `<1.0` = aggressive, `>1.0` = conservative |
 

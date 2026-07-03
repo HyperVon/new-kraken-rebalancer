@@ -135,6 +135,19 @@ class SettingsFormComponent {
                         span { +ViewText.DRY_RUN_MODE }
                     }
                 }
+
+                div("${CssClasses.FORM_GROUP} ${CssClasses.FORM_GROUP_CENTERED}") {
+                    label(classes = CssClasses.CHECKBOX_CONTAINER) {
+                        input(
+                            type = checkBox,
+                            name = FormFields.SIMULATION
+                        ) {
+                            checked = config.settings.simulation
+                        }
+                        div(CssClasses.CHECKBOX_CUSTOM) {}
+                        span { +ViewText.SIMULATION_MODE }
+                    }
+                }
             }
         }
     }
