@@ -38,21 +38,25 @@ The rebalancing engine is strictly separated according to the **Single Responsib
 ## 3. Coding Standards & Safety Constraints
 
 ### BigDecimal Precision
+
 * **NEVER** use `Double` or `Float` for currency amounts, asset values, or order volumes.
 * Always use `BigDecimal` with 8 decimal places (`setScale(8, RoundingMode.HALF_UP)`) for transaction volumes, and 2 decimal places for USD valuations.
 * Perform assertions in tests using `BigDecimal.compareTo() == 0` instead of `.equals()`, as scale differences (e.g. `1.0` vs `1.00`) cause `.equals()` to fail.
 
 ### Path Resolution
+
 * **NEVER** hardcode absolute file paths (e.g., `/tmp/...` or `/Users/...`).
 * Use relative paths, temp directories, or system/environment variables (e.g., `SCENARIOS_REPORT_PATH`) to configure file persistence dynamically.
 
 ### Kraken API Quirks
+
 * Handle symbol mappings correctly. Kraken APIs map standard symbols to local variants:
-    - **BTC** $\rightarrow$ `XBTUSD` (or `XBT` for balances)
-    - **DOGE** $\rightarrow$ `XDGUSD` (or `DOGE`/`XDG` for balances)
+  * **BTC** $\rightarrow$ `XBTUSD` (or `XBT` for balances)
+  * **DOGE** $\rightarrow$ `XDGUSD` (or `DOGE`/`XDG` for balances)
 * Ensure the symbol converter correctly addresses these mapping conventions during API query compilation.
 
 ### Config Watcher & Hot-Reload
+
 * Ensure modified parameters (like loop delay, deviation trigger, dust threshold) reload dynamically at runtime without requiring an application restart.
 
 ---
@@ -62,7 +66,9 @@ The rebalancing engine is strictly separated according to the **Single Responsib
 The test suite enforces a **100% JaCoCo coverage gate** across all packages. If you add or modify code, you must add tests to maintain 100% coverage.
 
 ### Kotest Specs Initialization
+
 * Kotest specs must use standard class body `init { ... }` blocks instead of constructor arguments. This ensures compatibility with Gradle test runners and IDE test discovery:
+
     ```kotlin
     @Suppress("unused")
     class MyServiceTest : StringSpec() {
@@ -73,17 +79,21 @@ The test suite enforces a **100% JaCoCo coverage gate** across all packages. If 
         }
     }
     ```
+
 * Apply `@Suppress("unused")` to spec classes to avoid static analysis complaints since Kotest specs are instantiated reflectively.
 
 ### Test Doubles (Fake Service)
+
 * Do not write complex `coEvery` stubs for concurrent services (like `KrakenService`). Use the in-process `FakeKrakenService.kt` to dynamically adjust prices, mock API failures, and assert executed order calls.
 
 ### Coroutines and Virtual Time
+
 * Always wrap tests calling suspend functions in `runTest`.
 * Avoid real clock delays; let the virtual time scheduler advance time immediately.
 
 ---
 
 ## 5. Walkthrough and Verification Artifacts
-- When completing a task, you must run `./gradlew test` to ensure the compilation and tests succeed.
-- Create or update the `walkthrough.md` in the current conversation directory to report on changes made, tests passed, and verification logs.
+
+* When completing a task, you must run `./gradlew test` to ensure the compilation and tests succeed.
+* Create or update the `walkthrough.md` in the current conversation directory to report on changes made, tests passed, and verification logs.

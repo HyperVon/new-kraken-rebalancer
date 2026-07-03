@@ -11,6 +11,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [4.0.7] - 2026-07-02
 
 ### Added
+
 - **100% Code Coverage Enforcement**: Raised all JaCoCo coverage metrics (`INSTRUCTION`, `BRANCH`, `LINE`, `METHOD`) verification threshold in `build.gradle.kts` to `1.00` (100% coverage gate).
 - **Exposed IOException Test Coverage**: Implemented `StatsThrowingTransactionManager` and `TradeThrowingTransactionManager` delegating transaction manager mocks to inject and test `IOException` passthrough behavior inside repository transaction blocks without test state pollution.
 - **Kraken Service Symbol Parsing & Interface Default Parameter Tests**: Added tests for alternative asset pair symbol matching fallback logic and forced explicit types in `KrakenServiceTest` to ensure interface default parameter methods (`DefaultImpls`) are fully called and covered.
@@ -21,6 +22,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [4.0.6] - 2026-07-01
 
 ### Added
+
 - **SQLite Database Persistence**: Migrated local trade history and portfolio statistics storage from file-based JSON logging to a local SQLite database (`kraken-rebalancer.db`) using JetBrains Exposed ORM.
 - **Historical Trades Synchronization**: Introduced startup trade synchronization from the Kraken private API (`/0/private/TradesHistory`), enabling the application to seed historical trades dynamically.
 - **Deduplication Logic**: Built unique signature keys for boundary trades using timestamp, trading pair, action side, volume, and fiat amount to prevent duplicate imports during paginated API updates.

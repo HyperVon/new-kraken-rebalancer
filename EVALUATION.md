@@ -21,6 +21,7 @@ Upon completion, the suite automatically compiles and updates a detailed report 
 ## Test Suite Architecture & Design
 
 To guarantee robust, reliable, and side-effect-free testing in a public GitHub repository, the suite adheres to the following principles:
+
 - **No Hardcoded Absolute Paths**: All file operations write to relative directories (e.g. `build/`) or platform-independent temp paths. System overrides can be set using environment variables (e.g. `SCENARIOS_REPORT_PATH`).
 - **Fake Exchange Mocking**: Leverages `FakeKrakenService` to inject controlled API responses (balances, prices, order execution failures) rather than using brittle or timing-dependent `coEvery` mocks.
 - **Coroutines & Virtual Time**: Uses Kotlin Coroutines' `runTest` to instantly advance delays and test rebalancing loops without blocking thread execution.
