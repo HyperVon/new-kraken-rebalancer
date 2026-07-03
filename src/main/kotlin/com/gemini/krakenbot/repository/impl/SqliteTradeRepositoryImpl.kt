@@ -345,6 +345,35 @@ class SqliteTradeRepositoryImpl(
             }
         }
     }
+
+    override fun getSyncMetadata(key: String): String? {
+        return transaction(database) {
+            HistorySyncMetadataTable
+                .selectAll()
+                .where { HistorySyncMetadataTable.key eq key }
+                .firstOrNull()
+                ?.get(HistorySyncMetadataTable.value)
+        }
+    }
+
+    override fun setSyncMetadata(key: String, value: String) {
+        transaction(database) {
+            val existing = HistorySyncMetadataTable
+                .selectAll()
+                .where { HistorySyncMetadataTable.key eq key }
+                .firstOrNull()
+            if (existing != null) {
+                HistorySyncMetadataTable.update({ HistorySyncMetadataTable.key eq key }) {
+                    it[HistorySyncMetadataTable.value] = value
+                }
+            } else {
+                HistorySyncMetadataTable.insert {
+                    it[HistorySyncMetadataTable.key] = key
+                    it[HistorySyncMetadataTable.value] = value
+                }
+            }
+        }
+    }
     override fun pruneSnapshotsOlderThan(cutoff: Instant): Int {
         return transaction(database) {
             val cutoffMillis = cutoff.toEpochMilli()

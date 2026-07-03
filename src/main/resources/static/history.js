@@ -349,10 +349,53 @@ async function loadAll(range) {
     updateStats(stats);
 }
 
+async function checkSyncProgress() {
+    try {
+        const status = await fetchJSON('/api/history/sync-progress');
+        const banner = document.getElementById('sync-progress-banner');
+        if (!banner) return true;
+
+        if (status.seeded) {
+            banner.style.display = 'none';
+            return true;
+        }
+
+        banner.style.display = 'block';
+        const offset = Number(status.offset) || 0;
+        const total = Number(status.total) || 0;
+        let pct = 0;
+        if (total > 0) {
+            pct = Math.min(100, Math.round((offset / total) * 100));
+        }
+
+        const bar = document.getElementById('sync-progress-bar');
+        const text = document.getElementById('sync-progress-text');
+
+        if (bar) bar.style.width = `${pct}%`;
+        if (text) text.textContent = `${offset.toLocaleString()} / ${total.toLocaleString()} (${pct}%)`;
+
+        return false;
+    } catch (e) {
+        console.error('Error checking sync progress', e);
+        return false;
+    }
+}
+
 /* ---- Time Range Buttons ---- */
 
-document.addEventListener('DOMContentLoaded', () => {
-    loadAll('30d');
+document.addEventListener('DOMContentLoaded', async () => {
+    const isDone = await checkSyncProgress();
+    if (isDone) {
+        loadAll('30d');
+    } else {
+        const syncInterval = setInterval(async () => {
+            const done = await checkSyncProgress();
+            if (done) {
+                clearInterval(syncInterval);
+                loadAll(currentRange);
+            }
+        }, 3000);
+    }
 
     document.querySelectorAll('.time-range-btn').forEach(btn => {
         btn.addEventListener('click', () => {

@@ -40,6 +40,7 @@ class KrakenServiceImpl(
     private val nonceGenerator =
         AtomicLong(System.currentTimeMillis() * 1000)
     private val lastPrivateCallTime = AtomicLong(0)
+    val lastFetchedCount = java.util.concurrent.atomic.AtomicInteger(0)
 
     override suspend fun getBalances(): RawBalances {
         val path = "/$apiVersion/private/Balance"
@@ -148,6 +149,9 @@ class KrakenServiceImpl(
             log.error("Failed to query private TradesHistory endpoint", e)
             throw e
         }
+
+        val count = result.path("count").asInt(0)
+        lastFetchedCount.set(count)
 
         val tradesNode = result.path("trades")
         if (!tradesNode.isObject) {

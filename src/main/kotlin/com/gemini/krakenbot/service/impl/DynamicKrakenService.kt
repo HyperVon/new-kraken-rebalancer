@@ -9,7 +9,7 @@ import com.gemini.krakenbot.service.RawPrices
 import java.math.BigDecimal
 
 class DynamicKrakenService(
-    private val realService: KrakenServiceImpl,
+    val realService: KrakenServiceImpl,
     private val simulatedService: SimulatedKrakenService,
     private val configService: ConfigService
 ) : KrakenService {

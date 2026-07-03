@@ -25,6 +25,7 @@ class HistoryPageComponent {
         html.body {
             div(CssClasses.CONTAINER) {
                 renderHeader()
+                renderSyncProgressBanner()
                 renderStatsGrid()
                 renderTimeRangeSelector()
                 renderChartSection(
@@ -192,6 +193,36 @@ class HistoryPageComponent {
                             }
                         }
                     }
+                }
+            }
+        }
+    }
+
+    private fun DIV.renderSyncProgressBanner() {
+        div {
+            id = "sync-progress-banner"
+            style = "display: none; margin-bottom: 1.5rem; padding: 1.5rem;"
+            classes = setOf(CssClasses.GLASS_PANEL)
+            div {
+                style = "display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.75rem;"
+                span {
+                    style = "font-weight: 600; color: var(--color-text); display: flex; align-items: center; gap: 0.5rem;"
+                    div {
+                        style = "width: 1rem; height: 1rem; border: 2px solid var(--color-primary); border-top-color: transparent; border-radius: 50%; animation: spin 1s linear infinite;"
+                    }
+                    +"Synchronizing Kraken Trade History..."
+                }
+                span {
+                    id = "sync-progress-text"
+                    style = "font-family: var(--font-mono); font-size: 0.875rem; color: var(--color-text-muted);"
+                    +"0 / 0 (0%)"
+                }
+            }
+            div {
+                style = "width: 100%; height: 0.5rem; background: rgba(255, 255, 255, 0.05); border-radius: 9999px; overflow: hidden;"
+                div {
+                    id = "sync-progress-bar"
+                    style = "width: 0%; height: 100%; background: var(--color-primary); transition: width 0.3s ease; border-radius: 9999px;"
                 }
             }
         }

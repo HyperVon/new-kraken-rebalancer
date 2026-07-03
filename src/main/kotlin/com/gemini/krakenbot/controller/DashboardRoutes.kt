@@ -78,6 +78,19 @@ fun Application.dashboardRouting() {
             handleGetHistoryStats(tradeHistoryService, objectMapper)
         }
 
+        get("/api/history/sync-progress") {
+            val offset = tradeHistoryService.getSyncMetadata("sync_offset")
+            val total = tradeHistoryService.getSyncMetadata("sync_total")
+            val seeded = tradeHistoryService.isHistorySeeded()
+            val responseMap = mapOf(
+                "seeded" to seeded,
+                "offset" to offset,
+                "total" to total
+            )
+            val json = objectMapper.writeValueAsString(responseMap)
+            call.respondText(json, ContentType.Application.Json, HttpStatusCode.OK)
+        }
+
         get("/api/health") {
             val stats = tradeHistoryService.getHistoryStats()
             val latestSnapshot = tradeHistoryService.getLatestSnapshot()

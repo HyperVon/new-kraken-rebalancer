@@ -270,6 +270,17 @@ class TradeHistoryServiceImpl(
         while (true) {
             log.info("Fetching trade history batch with offset={}", offset)
             val apiTrades = krakenService.getTradeHistory(startSec = startSec, offset = offset)
+            val realKrakenService = when (krakenService) {
+                is KrakenServiceImpl -> krakenService
+                is DynamicKrakenService -> krakenService.realService
+                else -> null
+            }
+            val totalCount = realKrakenService?.lastFetchedCount?.get() ?: 0
+            if (!isSeeded) {
+                repository.setSyncMetadata("sync_offset", offset.toString())
+                repository.setSyncMetadata("sync_total", totalCount.toString())
+            }
+
             if (apiTrades.isEmpty()) {
                 break
             }
@@ -315,7 +326,13 @@ class TradeHistoryServiceImpl(
 
         if (!isSeeded) {
             repository.setHistorySeeded(true)
+            repository.setSyncMetadata("sync_offset", "completed")
+            repository.setSyncMetadata("sync_total", "completed")
         }
         log.info("Trade history synchronization completed. Added: {} new, Reconciled: {}.", totalAdded, totalReconciled)
     }
+
+    override fun getSyncMetadata(key: String): String? = repository.getSyncMetadata(key)
+    override fun setSyncMetadata(key: String, value: String) = repository.setSyncMetadata(key, value)
+    override fun isHistorySeeded(): Boolean = repository.isHistorySeeded()
 }
