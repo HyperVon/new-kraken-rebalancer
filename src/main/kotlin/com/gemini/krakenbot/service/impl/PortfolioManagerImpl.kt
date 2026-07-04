@@ -5,12 +5,18 @@ import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.PortfolioManager
 import com.gemini.krakenbot.service.RawBalances
 import com.gemini.krakenbot.service.TradeHistoryService
+import com.gemini.krakenbot.service.PortfolioAnalyzer
+import com.gemini.krakenbot.service.OrderExecutor
+import com.gemini.krakenbot.service.AssetPrices
+import com.gemini.krakenbot.service.AssetValues
 import kotlinx.coroutines.delay
 import org.slf4j.LoggerFactory
+import org.slf4j.MDC
 import java.io.IOException
 import java.math.BigDecimal
 import java.math.RoundingMode
 import java.time.Instant
+import java.util.UUID
 import kotlin.time.Duration.Companion.milliseconds
 
 class PortfolioManagerImpl(
@@ -39,101 +45,124 @@ class PortfolioManagerImpl(
     }
 
     override suspend fun runLoop() {
-        while (isRunning) {
-            val settings = configService.getConfig().settings
-            try {
-                log.info(
-                    "Starting Rebalance Cycle. DryRun: {}",
-                    settings.dryRun
-                )
-                performRebalanceCycle()
-            } catch (e: Exception) {
-                log.error("Error in rebalancing cycle", e)
+        try {
+            log.info("Checking and performing historical trades synchronization from Kraken API...")
+            tradeHistoryService.syncTradesFromKraken()
+        } catch (e: Exception) {
+            log.error("Failed to synchronize historical trades on startup", e)
+        }
+
+        try {
+            while (isRunning) {
+                val settings = configService.getConfig().settings
+                try {
+                    log.info(
+                        "Starting Rebalance Cycle. DryRun: {}",
+                        settings.dryRun
+                    )
+                    try {
+                        tradeHistoryService.syncTradesFromKraken()
+                    } catch (e: Exception) {
+                        log.error("Failed to synchronize historical trades during cycle", e)
+                    }
+                    performRebalanceCycle()
+                } catch (e: Exception) {
+                    log.error("Error in rebalancing cycle", e)
+                }
+                delay((settings.loopDelaySeconds * 1000L).milliseconds)
             }
-            delay((settings.loopDelaySeconds * 1000L).milliseconds)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            log.info("Rebalancing loop coroutine cancelled. Shutting down loop.")
+            throw e
         }
     }
 
     internal suspend fun performRebalanceCycle() {
-        log.info("--- Starting Snapshot Phase ---")
-        val actionLog = mutableListOf<String>()
-
-        val balances = portfolioAnalyzer.fetchBalances()
-        val prices = portfolioAnalyzer.fetchPrices()
-        val (totalPortfolioValueUSD, currentValuesUSD) =
-            portfolioAnalyzer.calculatePortfolioValues(balances, prices)
-                ?: return
-
-        log.info(
-            "Total Portfolio Value: $${
-                totalPortfolioValueUSD.setScale(
-                    2,
-                    RoundingMode.HALF_UP
-                )
-            }"
-        )
-
-        val drawdownPct =
-            portfolioAnalyzer
-                .updateAthAndCalculateDrawdown(totalPortfolioValueUSD)
-        val fiatDeploymentPct =
-            portfolioAnalyzer
-                .calculateFiatDeployment(
-                    drawdownPct,
-                    configService.getConfig().settings
-                )
-
-        if (fiatDeploymentPct > BigDecimal.ZERO) {
-            log.info(
-                "Drawdown Detected: {}%. Fiat Deployment: {}%",
-                drawdownPct.setScale(2, RoundingMode.HALF_UP),
-                fiatDeploymentPct.setScale(2, RoundingMode.HALF_UP)
-            )
-        }
-
-        val effectiveUsdTarget =
-            portfolioAnalyzer.calculateEffectiveUsdTarget(fiatDeploymentPct)
-        val cryptoScaleFactor =
-            portfolioAnalyzer.calculateCryptoScaleFactor(effectiveUsdTarget)
-
-        val (buyOrders, sellOrders, cycleActions) =
-            portfolioAnalyzer.analyzeDeviations(
-                totalPortfolioValueUSD = totalPortfolioValueUSD,
-                currentValuesUSD = currentValuesUSD,
-                effectiveUsdTarget = effectiveUsdTarget,
-                cryptoScaleFactor = cryptoScaleFactor
-            )
-        actionLog.addAll(cycleActions)
-
-        orderExecutor.executeOrders(
-            buyOrders = buyOrders,
-            sellOrders = sellOrders,
-            currentValuesUSD = currentValuesUSD,
-            prices = prices,
-            settings = configService.getConfig().settings,
-            actionLog = actionLog
-        )
-
-        val snapshot = buildSnapshot(
-            balances = balances,
-            prices = prices,
-            currentValuesUSD = currentValuesUSD,
-            totalPortfolioValueUSD = totalPortfolioValueUSD,
-            effectiveUsdTarget = effectiveUsdTarget,
-            cryptoScaleFactor = cryptoScaleFactor,
-            drawdownPct = drawdownPct,
-            fiatDeploymentPct = fiatDeploymentPct,
-            actionLog = actionLog
-        )
-
+        val cycleId = UUID.randomUUID().toString()
+        MDC.put("cycleId", cycleId)
         try {
-            tradeHistoryService.addSnapshot(snapshot)
-        } catch (e: IOException) {
-            log.error("Failed to persist trade history snapshot", e)
-            actionLog.add("ERROR: Failed to persist trade history: ${e.message}")
-        }
+            log.info("--- Starting Snapshot Phase ---")
+            val actionLog = mutableListOf<String>()
 
-        log.info("--- Cycle Complete ---")
+            val balances = portfolioAnalyzer.fetchBalances()
+            val prices = portfolioAnalyzer.fetchPrices()
+            val (totalPortfolioValueUSD, currentValuesUSD) =
+                portfolioAnalyzer.calculatePortfolioValues(balances, prices)
+                    ?: return
+
+            log.info(
+                "Total Portfolio Value: $${
+                    totalPortfolioValueUSD.setScale(
+                        2,
+                        RoundingMode.HALF_UP
+                    )
+                }"
+            )
+
+            val drawdownPct =
+                portfolioAnalyzer
+                    .updateAthAndCalculateDrawdown(totalPortfolioValueUSD)
+            val fiatDeploymentPct =
+                portfolioAnalyzer
+                    .calculateFiatDeployment(
+                        drawdownPct,
+                        configService.getConfig().settings
+                    )
+
+            if (fiatDeploymentPct > BigDecimal.ZERO) {
+                log.info(
+                    "Drawdown Detected: {}%. Fiat Deployment: {}%",
+                    drawdownPct.setScale(2, RoundingMode.HALF_UP),
+                    fiatDeploymentPct.setScale(2, RoundingMode.HALF_UP)
+                )
+            }
+
+            val effectiveUsdTarget =
+                portfolioAnalyzer.calculateEffectiveUsdTarget(fiatDeploymentPct)
+            val cryptoScaleFactor =
+                portfolioAnalyzer.calculateCryptoScaleFactor(effectiveUsdTarget)
+
+            val (buyOrders, sellOrders, cycleActions) =
+                portfolioAnalyzer.analyzeDeviations(
+                    totalPortfolioValueUSD = totalPortfolioValueUSD,
+                    currentValuesUSD = currentValuesUSD,
+                    effectiveUsdTarget = effectiveUsdTarget,
+                    cryptoScaleFactor = cryptoScaleFactor
+                )
+            actionLog.addAll(cycleActions)
+
+            orderExecutor.executeOrders(
+                buyOrders = buyOrders,
+                sellOrders = sellOrders,
+                currentValuesUSD = currentValuesUSD,
+                prices = prices,
+                settings = configService.getConfig().settings,
+                actionLog = actionLog
+            )
+
+            val snapshot = buildSnapshot(
+                balances = balances,
+                prices = prices,
+                currentValuesUSD = currentValuesUSD,
+                totalPortfolioValueUSD = totalPortfolioValueUSD,
+                effectiveUsdTarget = effectiveUsdTarget,
+                cryptoScaleFactor = cryptoScaleFactor,
+                drawdownPct = drawdownPct,
+                fiatDeploymentPct = fiatDeploymentPct,
+                actionLog = actionLog
+            )
+
+            try {
+                tradeHistoryService.addSnapshot(snapshot)
+            } catch (e: IOException) {
+                log.error("Failed to persist trade history snapshot", e)
+                actionLog.add("ERROR: Failed to persist trade history: ${e.message}")
+            }
+
+            log.info("--- Cycle Complete ---")
+        } finally {
+            MDC.remove("cycleId")
+        }
     }
 
 
@@ -152,11 +181,9 @@ class PortfolioManagerImpl(
             mutableMapOf<String, PortfolioSnapshot.AssetSnapshot>()
 
         for ((symbol, targetPercent) in configService.getConfig().allocations) {
-            val balance = BigDecimal.valueOf(
-                portfolioAnalyzer.resolveBalance(
-                    symbol = symbol.value,
-                    balances = balances
-                )
+            val balance = portfolioAnalyzer.resolveBalance(
+                symbol = symbol.value,
+                balances = balances
             )
             val valUSD = currentValuesUSD[symbol.value] ?: BigDecimal.ZERO
             val price =

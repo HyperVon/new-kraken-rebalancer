@@ -1,6 +1,7 @@
 package com.gemini.krakenbot.service
 
 import com.gemini.krakenbot.model.OrderResult
+import com.gemini.krakenbot.model.TradeRecord
 import java.math.BigDecimal
 
 /**
@@ -10,8 +11,9 @@ import java.math.BigDecimal
  * All suppliers and the optional [executeOrderAction] can be reassigned between tests.
  */
 class FakeKrakenService : KrakenService {
-    var balanceSupplier: () -> RawBalances = { emptyMap() }
-    var pricesSupplier: (String) -> RawPrices = { emptyMap() }
+    var balanceSupplier: () -> Map<String, Any> = { emptyMap() }
+    var pricesSupplier: (String) -> Map<String, Any> = { emptyMap() }
+    var tradeHistorySupplier: (Long?, Int?) -> List<TradeRecord> = { _, _ -> emptyList() }
 
     /** If set, invoked after recording the order (may throw for legacy tests). */
     var executeOrderAction: ((String, String, String, BigDecimal) -> Unit)? =
@@ -33,11 +35,29 @@ class FakeKrakenService : KrakenService {
 
     override suspend fun getBalances(): RawBalances {
         getBalancesCallCount++
-        return balanceSupplier()
+        return balanceSupplier().mapValues { (_, value) ->
+            when (value) {
+                is BigDecimal -> value
+                is Double -> BigDecimal.valueOf(value)
+                is Number -> BigDecimal(value.toString())
+                else -> BigDecimal.ZERO
+            }
+        }
     }
 
     override suspend fun getTickerPrices(pairs: String): RawPrices {
-        return pricesSupplier(pairs)
+        return pricesSupplier(pairs).mapValues { (_, value) ->
+            when (value) {
+                is BigDecimal -> value
+                is Double -> BigDecimal.valueOf(value)
+                is Number -> BigDecimal(value.toString())
+                else -> BigDecimal.ZERO
+            }
+        }
+    }
+
+    override suspend fun getTradeHistory(startSec: Long?, offset: Int?): List<TradeRecord> {
+        return tradeHistorySupplier(startSec, offset)
     }
 
     override suspend fun executeOrder(
@@ -56,4 +76,11 @@ class FakeKrakenService : KrakenService {
                 volume = volume
             )
     }
+
+    var ohlcSupplier: (String, Int, Long?) -> List<Pair<Long, BigDecimal>> = { _, _, _ -> emptyList() }
+
+    override suspend fun getOHLC(pair: String, interval: Int, since: Long?): List<Pair<Long, BigDecimal>> {
+        return ohlcSupplier(pair, interval, since)
+    }
 }
+

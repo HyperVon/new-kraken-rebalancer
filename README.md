@@ -19,11 +19,12 @@ several months.**
 |-----------------|------------------------------------------------------------------------------------------------------|
 | **Language**    | Kotlin 2.4.0 (JVM)                                                                                   |
 | **Backend**     | Ktor 3.5.0 (Netty engine), Koin 4.2.1 (DI), Jackson 2.21                                             |
+| **Database**    | SQLite (via JetBrains Exposed ORM 0.61.0)                                                            |
 | **HTTP Client** | Ktor CIO Client (async, coroutine-native)                                                            |
 | **Concurrency** | Kotlin Coroutines (`kotlinx.coroutines` 1.11.0)                                                      |
 | **Frontend**    | Server-side HTML (kotlinx.html DSL + HTMX), Ktor SSE                                                 |
 | **API**         | Kraken REST API with HMAC-SHA512 authentication                                                      |
-| **Testing**     | Kotest 6.1 (StringSpec), MockK 1.14, Ktor MockEngine, JaCoCo (95%+ coverage enforced, 100% achieved) |
+| **Testing**     | Kotest 6.1 (StringSpec), MockK 1.14, Ktor MockEngine, JaCoCo (high coverage enforced and achieved)   |
 | **Build**       | Gradle (Kotlin DSL)                                                                                  |
 
 ---
@@ -149,7 +150,7 @@ with a wide range of tools and paradigms:
 | **HTTP Clients**        | OkHttp (blocking), Ktor CIO Client (async/coroutine), Node.js native `fetch`, Go `net/http`                                   |
 | **Concurrency**         | Java `ScheduledExecutorService`, Kotlin Coroutines, Go goroutines, Node.js event loop                                         |
 | **Testing**             | JUnit 5 + Mockito, Kotest 6 + MockK, Vitest + React Testing Library, Go `testing` + `go-test-coverage`                        |
-| **Coverage**            | JaCoCo (95% enforced, 100% achieved), Vitest coverage (>99%), Go per-package gates (98.2%)                                    |
+| **Coverage**            | JaCoCo (100% enforced and achieved), Vitest coverage (>99%), Go per-package gates (98.2%)                                     |
 | **Serialization**       | Jackson 2.21, Go `encoding/json`, Zod schema validation                                                                       |
 | **Real-Time**           | Ktor Server-Sent Events (SSE), Kotlin `SharedFlow`, HTMX SSE extension                                                        |
 | **CI / Security**       | GitHub Actions, CodeQL, Dependabot, SHA-pinned actions, CVE patching (Tomcat, Netty, Logback, Jackson)                        |
@@ -188,6 +189,8 @@ with a wide range of tools and paradigms:
 - Sortable asset performance table with deviation indicators
 - Trade history log with BUY/SELL badges
 - Live/Delayed status indicator with data age tracking
+- **Normalized Holdings Chart** — Displays asset balance timelines relative to a starting baseline (Percentage Change %) to align assets of vastly different magnitudes (e.g. BTC vs XRP) on a shared vertical axis.
+- **Combined Hover Tooltips** — Tooltips combine percentage change metrics with absolute token balances (e.g. `XRP: +0.00% (78,435.0000 XRP)`).
 - **Hypermedia-powered** — uses HTMX for dynamic content swapping and form
   submissions without writing JavaScript
 
@@ -197,20 +200,33 @@ with a wide range of tools and paradigms:
 - Add or remove assets without restarting the application
 - Allocation validation ensures targets always sum to 100%
 
+### Offline Exchange Simulator & Pre-Seeding
+
+- **Offline Simulation Mode** — Run the bot completely offline without a real Kraken API key. Enable `"simulation": true` (dynamic toggling supported via the Settings UI) to execute orders and check balances against a realistic random walk price generator.
+- **Automated Database Seeding** — If started in simulation mode with an empty database, the system generates 15 days (60 cycles) of historical snapshots and trade logs, providing immediately interactive graphs.
+
+### Historical Trades Synchronization
+
+- Automatically synchronizes executed trade history from Kraken API (`/0/private/TradesHistory`) on startup
+- Persists historical trades to the SQLite database
+- Deduplicates boundary trades using cryptographic state signatures (timestamp, pair, side, volume, amount)
+- Tracks synchronization state in `history_sync_metadata` to prevent redundant API queries
+
 ### Safety & Reliability
 
 - **Dry Run Mode** — test your strategy without executing real trades
 - **Structured Order Results** — each order returns success/failure status;
   failed orders don't corrupt cash projections
-- **Atomic File Writes** — config, stats, and trade history use
-  write-then-rename to prevent corruption
-- **Graceful Shutdown** — JVM shutdown hook cleanly stops the loop, closes
-  connections, and tears down DI
+- **Atomic File Writes** — config updates use write-then-atomic-rename (NIO Files.move with StandardCopyOption.ATOMIC_MOVE) to prevent file system corruption
+- **Graceful Shutdown** — JVM shutdown hook cleanly cancels the coroutine loop scope, closes Ktor HttpClient, and stops Koin DI
+- **Redacted Secret Logging** — value class `toString()` implementations for API credentials return redacts to protect application logs
+- **Rate-Limiting & Retries** — rate limits private API queries to 1 call per second and automatically retries transient socket/HTTP/rate-limit exceptions with exponential backoff
+- **CORS Restrictions** — locks down server allowed origins to local machine addresses (`localhost`, `127.0.0.1`, `::1`), Bonjour multicast DNS domains (`*.local`), and private local subnets (`192.168.x.x`, `10.x.x.x`, etc.) to permit local Wi-Fi access from other devices while blocking public web threats
+- **Database Indexing & Auto Migrations** — database schemas utilize index optimizations for timestamps, and run dynamic `SchemaUtils.createMissingTablesAndColumns` auto-migrations on startup
 - Dust threshold filtering to avoid minimum order size errors
 - Automatic error recovery — API failures don't crash the rebalancing loop
 - Price validation — aborts cycle if any asset price is unavailable
-- **BigDecimal Precision** — order volumes use `BigDecimal` (8 decimal places)
-  to eliminate floating-point rounding
+- **BigDecimal Precision** — all balances, prices, and volumes are tracked via `BigDecimal` to completely eliminate floating-point precision loss
 
 ---
 
@@ -260,11 +276,11 @@ graph LR
         PM --> THS
         PA --> KS[KrakenService]
         PA --> CS
-        PA --> PSR[PortfolioStatsRepository]
+        PA --> PSR["PortfolioStatsRepository (SQLite)"]
         OE --> KS
         OE --> CS
         OE --> PA
-        THS --> FTR[FileTradeRepository]
+        THS --> TR["TradeRepository (SQLite)"]
     end
 
     subgraph External
@@ -322,18 +338,20 @@ architecture to synchronize the dashboard with the backend rebalancing loop:
 │   ├── controller/                        # Ktor routes: DashboardRoutes
 │   ├── model/                             # Domain: PortfolioSnapshot, PortfolioStats, OrderResult
 │   ├── repository/                        # Persistence interfaces: TradeRepository, PortfolioStatsRepository
-│   │   └── impl/                          # File-backed implementations
+│   │   └── impl/                          # SQLite-backed implementations (via Exposed ORM)
 │   ├── service/                           # Core logic interfaces: PortfolioManager, KrakenService, ConfigService, TradeHistoryService
 │   │   └── impl/                          # Service implementations (coroutine-aware)
 │   ├── view/                              # HTML templates & components (kotlinx.html DSL)
 │   │   ├── DashboardView.kt              # Facade class delegating to components
 │   │   ├── component/                    # Modular components (Shell, Grid, Form, etc.)
 │   │   └── util/                         # View utilities (Formatter, Icons, ViewText, Layouts)
-│   └── util/                              # Utilities: AtomicJsonFile
-├── src/test/kotlin/                       # Unit tests (100% overall coverage achieved across all packages and metrics)
+│   └── table/                             # Exposed table definitions
+├── src/test/kotlin/                       # Unit tests (high overall coverage achieved across all packages and metrics)
 │   └── com/gemini/krakenbot/
 │       └── service/
-│           └── FakeKrakenService.kt       # In-process test double for KrakenService
+│           ├── FakeKrakenService.kt       # In-process test double for KrakenService
+│           ├── DynamicKrakenServiceTest.kt # Unit tests verifying dynamic real/simulation routing
+│           └── SimulatedKrakenServiceTest.kt # Unit tests verifying mock exchange emulator
 ├── src/main/resources/                    # Static resources
 │   └── static/
 │       ├── style.css                      # Dashboard stylesheet
@@ -373,8 +391,36 @@ Edit `rebalancer-config.json`:
 
 ### 2. Start the Application
 
+You can start the application using the convenient pre-configured startup scripts (which automatically compile the Fat JAR if it has not yet been built):
+
+- **macOS / Linux**:
+
+  ```bash
+  ./start.sh
+  ```
+
+- **Windows**:
+
+  ```cmd
+  start.bat
+  ```
+
+#### Alternative Startup Methods
+
+If you prefer to run using Gradle directly:
+
 ```bash
 ./gradlew run
+```
+
+Or if you wish to build and execute the Fat JAR manually:
+
+```bash
+# Build the Fat JAR containing all dependencies
+./gradlew fatJar
+
+# Run using the JVM (includes optimal JVM parameters for native SQLite memory access)
+java -Xshare:off --sun-misc-unsafe-memory-access=allow --enable-native-access=ALL-UNNAMED -jar build/libs/kraken-bot-0.0.1-SNAPSHOT-all.jar
 ```
 
 The backend starts on port **8080** and begins the rebalancing loop immediately.
@@ -394,6 +440,7 @@ from the backend — no separate frontend build step required.
 | `deviationTriggerPercent` | `Double`  | `5.0`   | Minimum deviation % to trigger a trade                                                |
 | `dustThresholdUSD`        | `Double`  | `5.0`   | Minimum trade value in USD (below this is skipped)                                    |
 | `dryRun`                  | `Boolean` | `true`  | If true, logs intended trades without executing them                                  |
+| `simulation`              | `Boolean` | `false` | If true, runs offline in exchange simulation mode (seeds history if DB is empty)      |
 | `fiatMaxDrawdown`         | `Double`  | `0.0`   | Portfolio drawdown % at which 100% of USD is deployed (0 = disabled)                  |
 | `fiatDeploymentExponent`  | `Double`  | `1.0`   | Controls deployment curve: `1.0` = linear, `<1.0` = aggressive, `>1.0` = conservative |
 
@@ -401,22 +448,23 @@ from the backend — no separate frontend build step required.
 
 ## API Endpoints
 
-| Method | Path                   | Description                                                              |
-|--------|------------------------|--------------------------------------------------------------------------|
-| `GET`  | `/`                    | Main dashboard shell (HTML)                                              |
-| `GET`  | `/settings`            | Settings page (HTML)                                                     |
-| `POST` | `/settings`            | Submit settings form (HTMX)                                              |
-| `GET`  | `/fragments/dashboard` | Dashboard fragment (HTMX)                                                |
-| `GET`  | `/api/status/stream`   | Server-Sent Events (SSE) stream for real-time portfolio snapshot updates |
-| `GET`  | `/static/*`            | Static assets (CSS)                                                      |
+| Method | Path                         | Description                                                              |
+|--------|------------------------------|--------------------------------------------------------------------------|
+| `GET`  | `/`                          | Main dashboard shell (HTML)                                              |
+| `GET`  | `/settings`                  | Settings page (HTML)                                                     |
+| `POST` | `/settings`                  | Submit settings form (HTMX)                                              |
+| `GET`  | `/fragments/dashboard`       | Dashboard fragment (HTMX)                                                |
+| `GET`  | `/api/status/stream`         | Server-Sent Events (SSE) stream for real-time portfolio snapshot updates |
+| `GET`  | `/api/health`                | Public health check endpoint returning app status and metrics (JSON)     |
+| `GET`  | `/api/history/sync-progress` | Polling endpoint for Kraken trade history sync status (JSON)             |
+| `GET`  | `/static/*`                  | Static assets (CSS)                                                      |
 
 ---
 
 ## Testing
 
-The project enforces **95% line, branch, method, and instruction coverage** via
-JaCoCo, with the test suite achieving exactly **100% line, branch, method,
-class, and instruction coverage** across the entire codebase (including view
+The project enforces **strict line, branch, method, class, and instruction coverage** via
+JaCoCo, with thresholds set at **95% instruction coverage, 90% branch coverage, 95% line coverage, and 95% method coverage** across the entire codebase (including view
 rendering and routing). All tests are behavioural — they verify actual
 rebalancing decisions, not just method invocations. Order volumes are asserted
 with `BigDecimal.compareTo()` to avoid floating-point comparison issues.
@@ -425,7 +473,7 @@ with `BigDecimal.compareTo()` to avoid floating-point comparison issues.
 ./gradlew test
 ```
 
-**167 tests** across:
+**274 tests** across:
 
 - **Scenario Evaluation Suite** (`EvaluationScenariosTest`) — **30 highly realistic scenarios** testing the full end-to-end execution of rebalances, mathematical edge cases, API credentials invalidation, concurrency locks, and SSE client streams. See **[EVALUATION.md](EVALUATION.md)** for descriptions and test results of all 30 scenarios.
 - `KrakenE2ETest` / `ResilienceChaosTest` / `PrecisionRoundingFuzzTest` /
@@ -442,14 +490,12 @@ with `BigDecimal.compareTo()` to avoid floating-point comparison issues.
 - `KrakenServiceTest` — API signing, error handling, dry run, order failure (
   using Ktor `MockEngine`)
 - `ModelTest` — unit tests for models including `Asset` mapping
-- `AtomicJsonFileTest` — file-system atomic write verification under normal and
-  error/unsupported paths
 - `ConfigServiceTest` — validation, hot-reload, persistence, duplicate/blank
   symbol rejection
-- `DashboardControllerTest` — REST API endpoints, invalid config error responses
-- `TradeHistoryServiceTest` — snapshot storage, size limits
-- `FileTradeRepositoryTest` / `PortfolioStatsRepositoryTest` — file I/O, atomic
-  writes, error propagation
+- `DashboardControllerTest` — REST API endpoints, invalid config error responses, and trade history sync status
+- `TradeHistoryServiceTest` — snapshot storage, size limits, and historical synchronization states
+- `DynamicKrakenServiceTest` / `SimulatedKrakenServiceTest` — dynamic real/simulation routing and offline exchange simulation logic
+- `SqliteTradeRepositoryImplTest` / `SqlitePortfolioStatsRepositoryImplTest` — SQLite persistence, Exposed ORM schema initialization, query logic, and transactional error propagation
 
 ### Test Design Principles
 

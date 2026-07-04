@@ -10,8 +10,9 @@ import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.TradeHistoryService
 import com.gemini.krakenbot.service.impl.KrakenServiceImpl
-import com.gemini.krakenbot.service.impl.OrderExecutor
-import com.gemini.krakenbot.service.impl.PortfolioAnalyzer
+import com.gemini.krakenbot.service.impl.OrderExecutorImpl
+import com.gemini.krakenbot.service.*
+import com.gemini.krakenbot.service.impl.PortfolioAnalyzerImpl
 import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
 import io.kotest.assertions.throwables.shouldNotThrowAny
 import io.kotest.core.spec.IsolationMode
@@ -116,16 +117,17 @@ class PrecisionRoundingFuzzTest : StringSpec() {
                 )
 
                 val portfolioAnalyzer =
-                    PortfolioAnalyzer(
+                    PortfolioAnalyzerImpl(
                         krakenService = krakenService,
                         configService = mockConfigService,
                         portfolioStatsRepository = mockk<PortfolioStatsRepository>(relaxed = true)
                     )
+                val tradeHistoryService = mockk<TradeHistoryService>(relaxed = true)
                 val orderExecutor =
-                    OrderExecutor(krakenService, portfolioAnalyzer)
+                    OrderExecutorImpl(krakenService, portfolioAnalyzer, tradeHistoryService)
                 val portfolioManager = PortfolioManagerImpl(
                     configService = mockConfigService,
-                    tradeHistoryService = mockk<TradeHistoryService>(relaxed = true),
+                    tradeHistoryService = tradeHistoryService,
                     portfolioAnalyzer = portfolioAnalyzer,
                     orderExecutor = orderExecutor
                 )

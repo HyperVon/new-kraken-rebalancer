@@ -13,6 +13,8 @@ import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.mockkStatic
+import io.mockk.unmockkStatic
 import java.io.File
 import java.io.IOException
 import java.nio.file.Files
@@ -304,7 +306,7 @@ class ConfigServiceTest : StringSpec() {
             every { mockMapper.writerWithDefaultPrettyPrinter() } returns mockWriter
             every {
                 mockMapper.readValue(
-                    any<File>(),
+                    any<String>(),
                     AppConfig::class.java
                 )
             } returns AppConfig(
@@ -383,6 +385,129 @@ class ConfigServiceTest : StringSpec() {
             shouldThrow<InvalidConfigurationException> {
                 ConfigServiceImpl(objectMapper, tempFile.absolutePath)
             }
+        }
+
+        "loadConfig_ResolveEnvVars" {
+            val content = """
+                {
+                  "kraken": {
+                    "apiKey": "${'$'}{TEST_KRAKEN_API_KEY:default-api-key}",
+                    "privateKey": "${'$'}{TEST_KRAKEN_PRIVATE_KEY:default-private-key}"
+                  },
+                  "settings": {
+                    "loopDelaySeconds": 60,
+                    "deviationTriggerPercent": 2.0,
+                    "dustThresholdUSD": 1.0,
+                    "dryRun": true,
+                    "fiatMaxDrawdown": 0.0,
+                    "fiatDeploymentExponent": 1.0
+                  },
+                  "allocations": [
+                    {
+                      "symbol": "USD",
+                      "targetPercent": 100.0
+                    }
+                  ]
+                }
+            """.trimIndent()
+            tempFile.writeText(content)
+
+            val service = ConfigServiceImpl(objectMapper, tempFile.absolutePath)
+            service.getConfig().kraken.apiKey.value shouldBe "default-api-key"
+            service.getConfig().kraken.privateKey.value shouldBe "default-private-key"
+        }
+
+        "loadConfig_ResolveEnvVars_WithActualEnvValue" {
+            val userHome = System.getenv("HOME") ?: "fallback"
+            val content = """
+                {
+                  "kraken": {
+                    "apiKey": "${'$'}{HOME:fallback-home}",
+                    "privateKey": "some-private-key"
+                  },
+                  "settings": {
+                    "loopDelaySeconds": 60,
+                    "deviationTriggerPercent": 2.0,
+                    "dustThresholdUSD": 1.0,
+                    "dryRun": true,
+                    "fiatMaxDrawdown": 0.0,
+                    "fiatDeploymentExponent": 1.0
+                  },
+                  "allocations": [
+                    {
+                      "symbol": "USD",
+                      "targetPercent": 100.0
+                    }
+                  ]
+                }
+            """.trimIndent()
+            tempFile.writeText(content)
+
+            val service = ConfigServiceImpl(objectMapper, tempFile.absolutePath)
+            service.getConfig().kraken.apiKey.value shouldBe userHome
+        }
+
+        "loadConfig_ResolveEnvVars_NoDefaultValue" {
+            val content = """
+                {
+                  "kraken": {
+                    "apiKey": "${'$'}{NON_EXISTENT_VAR_NO_DEFAULT}",
+                    "privateKey": "some-private-key"
+                  },
+                  "settings": {
+                    "loopDelaySeconds": 60,
+                    "deviationTriggerPercent": 2.0,
+                    "dustThresholdUSD": 1.0,
+                    "dryRun": true,
+                    "fiatMaxDrawdown": 0.0,
+                    "fiatDeploymentExponent": 1.0
+                  },
+                  "allocations": [
+                    {
+                      "symbol": "USD",
+                      "targetPercent": 100.0
+                    }
+                  ]
+                }
+            """.trimIndent()
+            tempFile.writeText(content)
+
+            val service = ConfigServiceImpl(objectMapper, tempFile.absolutePath)
+            service.getConfig().kraken.apiKey.value shouldBe ""
+        }
+
+        "loadConfig_ResolveEnvVars_BlankEnvVar" {
+            mockkStatic(System::class)
+            every { System.getenv("SOME_BLANK_VAR") } returns "  "
+
+            val content = """
+                {
+                  "kraken": {
+                    "apiKey": "${'$'}{SOME_BLANK_VAR:default-val}",
+                    "privateKey": "some-private-key"
+                  },
+                  "settings": {
+                    "loopDelaySeconds": 60,
+                    "deviationTriggerPercent": 2.0,
+                    "dustThresholdUSD": 1.0,
+                    "dryRun": true,
+                    "fiatMaxDrawdown": 0.0,
+                    "fiatDeploymentExponent": 1.0
+                  },
+                  "allocations": [
+                    {
+                      "symbol": "USD",
+                      "targetPercent": 100.0
+                    }
+                  ]
+                }
+            """.trimIndent()
+            tempFile.writeText(content)
+
+            val service = ConfigServiceImpl(objectMapper, tempFile.absolutePath)
+            service.getConfig().kraken.apiKey.value shouldBe "default-val"
+
+            unmockkStatic(System::class)
         }
     }
 }

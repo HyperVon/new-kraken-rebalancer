@@ -4,6 +4,7 @@ import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.view.component.DashboardFragmentComponent
 import com.gemini.krakenbot.view.component.DashboardShellComponent
+import com.gemini.krakenbot.view.component.HistoryPageComponent
 import com.gemini.krakenbot.view.component.SettingsFormComponent
 import com.gemini.krakenbot.view.util.Routes.STATIC_STYLE_CSS
 import com.gemini.krakenbot.view.util.ViewText.APP_TITLE
@@ -13,7 +14,8 @@ import kotlinx.html.*
 class DashboardView(
     private val shellComponent: DashboardShellComponent,
     private val settingsFormComponent: SettingsFormComponent,
-    private val fragmentComponent: DashboardFragmentComponent
+    private val fragmentComponent: DashboardFragmentComponent,
+    private val historyPageComponent: HistoryPageComponent
 ) {
 
     context(html: HTML)
@@ -38,6 +40,11 @@ class DashboardView(
         }
     }
 
+    context(html: HTML)
+    fun renderHistoryPage() {
+        historyPageComponent.render()
+    }
+
     context(div: DIV)
     fun renderDashboardFragment(
         latest: PortfolioSnapshot,
@@ -46,4 +53,5 @@ class DashboardView(
         fragmentComponent.render(latest, history)
     }
 }
+
 

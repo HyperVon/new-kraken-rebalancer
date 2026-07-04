@@ -25,6 +25,10 @@ import kotlinx.html.html
 import kotlinx.html.p
 import kotlinx.html.stream.createHTML
 import org.koin.ktor.ext.inject
+import java.lang.management.ManagementFactory
+import java.math.BigDecimal
+import java.time.Instant
+import java.time.temporal.ChronoUnit
 
 fun Application.dashboardRouting() {
     val tradeHistoryService: TradeHistoryService by inject()
@@ -56,6 +60,53 @@ fun Application.dashboardRouting() {
             handleGetDashboardFragment(dashboardView, tradeHistoryService)
         }
 
+        get(Routes.HISTORY) {
+            call.respondHtml(HttpStatusCode.OK) {
+                dashboardView.renderHistoryPage()
+            }
+        }
+
+        get(Routes.API_HISTORY_SNAPSHOTS) {
+            handleGetHistorySnapshots(tradeHistoryService, objectMapper)
+        }
+
+        get(Routes.API_HISTORY_TRADES) {
+            handleGetHistoryTrades(tradeHistoryService, objectMapper)
+        }
+
+        get(Routes.API_HISTORY_STATS) {
+            handleGetHistoryStats(tradeHistoryService, objectMapper)
+        }
+
+        get("/api/history/sync-progress") {
+            val offset = tradeHistoryService.getSyncMetadata("sync_offset")
+            val total = tradeHistoryService.getSyncMetadata("sync_total")
+            val seeded = tradeHistoryService.isHistorySeeded()
+            val responseMap = mapOf(
+                "seeded" to seeded,
+                "offset" to offset,
+                "total" to total
+            )
+            val json = objectMapper.writeValueAsString(responseMap)
+            call.respondText(json, ContentType.Application.Json, HttpStatusCode.OK)
+        }
+
+        get("/api/health") {
+            val stats = tradeHistoryService.getHistoryStats()
+            val latestSnapshot = tradeHistoryService.getLatestSnapshot()
+            val responseMap = mapOf(
+                "status" to "UP",
+                "timestamp" to Instant.now().toString(),
+                "uptimeSeconds" to ManagementFactory.getRuntimeMXBean().uptime / 1000,
+                "totalTradesExecuted" to stats.totalTradesExecuted,
+                "totalVolumeTraded" to stats.totalVolumeTraded,
+                "lastSnapshotTime" to (latestSnapshot?.timestamp?.toString() ?: "N/A"),
+                "lastSnapshotTotalValueUSD" to (latestSnapshot?.totalValueUSD ?: BigDecimal.ZERO)
+            )
+            val json = objectMapper.writeValueAsString(responseMap)
+            call.respondText(json, ContentType.Application.Json, HttpStatusCode.OK)
+        }
+
         route(Routes.API_ROUTE_PREFIX) {
             sse(Routes.API_STATUS_STREAM.removePrefix(Routes.API_ROUTE_PREFIX)) {
                 handleSseStream(tradeHistoryService, objectMapper)
@@ -76,6 +127,7 @@ private suspend fun RoutingContext.handlePostSettings(
     val dustThresholdUSD =
         params[FormFields.DUST_THRESHOLD_USD]?.toDoubleOrNull() ?: 1.0
     val dryRun = params[FormFields.DRY_RUN] != null
+    val simulation = params[FormFields.SIMULATION] != null
     val fiatMaxDrawdown =
         params[FormFields.FIAT_MAX_DRAWDOWN]?.toDoubleOrNull() ?: 0.0
     val fiatDeploymentExponent =
@@ -96,6 +148,7 @@ private suspend fun RoutingContext.handlePostSettings(
             deviationTriggerPercent = deviationTriggerPercent,
             dustThresholdUSD = dustThresholdUSD,
             dryRun = dryRun,
+            simulation = simulation,
             fiatMaxDrawdown = fiatMaxDrawdown,
             fiatDeploymentExponent = fiatDeploymentExponent
         ),
@@ -144,6 +197,49 @@ private suspend fun RoutingContext.handleGetDashboardFragment(
         dashboardView.renderDashboardFragment(latest, history)
     }
     call.respondText(html, ContentType.Text.Html)
+}
+
+private suspend fun RoutingContext.handleGetHistorySnapshots(
+    tradeHistoryService: TradeHistoryService,
+    objectMapper: ObjectMapper
+) {
+    val (from, to) = parseTimeRange(call)
+    val snapshots = tradeHistoryService.getSnapshotsInRange(from, to)
+    val json = objectMapper.writeValueAsString(snapshots)
+    call.respondText(json, ContentType.Application.Json)
+}
+
+private suspend fun RoutingContext.handleGetHistoryTrades(
+    tradeHistoryService: TradeHistoryService,
+    objectMapper: ObjectMapper
+) {
+    val (from, to) = parseTimeRange(call)
+    val trades = tradeHistoryService.getTradesInRange(from, to)
+    val json = objectMapper.writeValueAsString(trades)
+    call.respondText(json, ContentType.Application.Json)
+}
+
+private suspend fun RoutingContext.handleGetHistoryStats(
+    tradeHistoryService: TradeHistoryService,
+    objectMapper: ObjectMapper
+) {
+    val stats = tradeHistoryService.getHistoryStats()
+    val json = objectMapper.writeValueAsString(stats)
+    call.respondText(json, ContentType.Application.Json)
+}
+
+internal fun parseTimeRange(call: ApplicationCall): Pair<Instant, Instant> {
+    val now = Instant.now()
+    val range = call.parameters["range"] ?: "30d"
+    val from = when (range) {
+        "24h" -> now.minus(1, ChronoUnit.DAYS)
+        "7d" -> now.minus(7, ChronoUnit.DAYS)
+        "30d" -> now.minus(30, ChronoUnit.DAYS)
+        "90d" -> now.minus(90, ChronoUnit.DAYS)
+        "all" -> Instant.EPOCH
+        else -> now.minus(30, ChronoUnit.DAYS)
+    }
+    return Pair(from, now)
 }
 
 private suspend fun ServerSSESession.handleSseStream(

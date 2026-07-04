@@ -5,6 +5,7 @@ import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.config.*
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.HistoryStats
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.TradeHistoryService
@@ -40,6 +41,7 @@ import java.time.Instant
 import io.ktor.client.plugins.sse.SSE as ClientSSE
 import io.ktor.server.sse.SSE as ServerSSE
 
+@Suppress("unused")
 class DashboardControllerTest : StringSpec() {
 
     override fun isolationMode() = IsolationMode.InstancePerTest
@@ -73,11 +75,13 @@ class DashboardControllerTest : StringSpec() {
                     recentActivityComponent = get()
                 )
             }
+            single { HistoryPageComponent() }
             single {
                 DashboardView(
                     shellComponent = get(),
                     settingsFormComponent = get(),
-                    fragmentComponent = get()
+                    fragmentComponent = get(),
+                    historyPageComponent = get()
                 )
             }
         }
@@ -247,7 +251,9 @@ class DashboardControllerTest : StringSpec() {
                     )
                 )
             )
+            val captured = slot<AppConfig>()
             every { configService.getConfig() } returns serverConfig
+            every { configService.updateConfig(capture(captured)) } returns Unit
 
             testApplication {
                 application {
@@ -262,6 +268,7 @@ class DashboardControllerTest : StringSpec() {
                             FormFields.FIAT_MAX_DRAWDOWN to listOf("5.0"),
                             FormFields.FIAT_DEPLOYMENT_EXPONENT to listOf("1.5"),
                             FormFields.DRY_RUN to listOf("on"),
+                            FormFields.SIMULATION to listOf("on"),
                             FormFields.SYMBOLS to listOf(Asset.USD),
                             FormFields.TARGETS to listOf("100.0")
                         ).formUrlEncode()
@@ -275,6 +282,7 @@ class DashboardControllerTest : StringSpec() {
                 response.headers[HtmxHeaders.HX_REDIRECT] shouldBe Routes.ROOT
             }
 
+            captured.captured.settings.simulation shouldBe true
             verify { configService.updateConfig(any()) }
         }
 
@@ -571,6 +579,166 @@ class DashboardControllerTest : StringSpec() {
                     val events = incoming.toList()
                     events.isEmpty() shouldBe true
                 }
+            }
+        }
+
+        "getHistoryPage_ReturnsHtml" {
+            testApplication {
+                application {
+                    configureTestEnv()
+                }
+                val response = client.get(Routes.HISTORY)
+                response.status shouldBe HttpStatusCode.OK
+                response.bodyAsText() shouldContain "History - Kraken Rebalancer"
+            }
+        }
+
+        "getApiHistorySnapshots_ReturnsJson" {
+            every { tradeHistoryService.getSnapshotsInRange(any(), any()) } returns emptyList()
+            testApplication {
+                application {
+                    configureTestEnv()
+                }
+                val response = client.get("${Routes.API_HISTORY_SNAPSHOTS}?range=24h")
+                response.status shouldBe HttpStatusCode.OK
+                response.bodyAsText() shouldBe "[]"
+            }
+        }
+
+        "getApiHistoryTrades_ReturnsJson" {
+            every { tradeHistoryService.getTradesInRange(any(), any()) } returns emptyList()
+            testApplication {
+                application {
+                    configureTestEnv()
+                }
+                val response = client.get("${Routes.API_HISTORY_TRADES}?range=all")
+                response.status shouldBe HttpStatusCode.OK
+                response.bodyAsText() shouldBe "[]"
+            }
+        }
+
+        "getApiHistoryStats_ReturnsJson" {
+            val stats = HistoryStats(
+                allTimeHigh = BigDecimal("15000.00"),
+                totalTradesExecuted = 12L,
+                totalVolumeTraded = BigDecimal("50000.00"),
+                firstSnapshotTime = Instant.now(),
+                latestSnapshotTime = Instant.now()
+            )
+            every { tradeHistoryService.getHistoryStats() } returns stats
+            testApplication {
+                application {
+                    configureTestEnv()
+                }
+                val response = client.get(Routes.API_HISTORY_STATS)
+                response.status shouldBe HttpStatusCode.OK
+                response.bodyAsText() shouldContain "\"allTimeHigh\":15000.00"
+            }
+        }
+
+        "getApiHistorySnapshots_RangeFilters_Branches" {
+            every { tradeHistoryService.getSnapshotsInRange(any(), any()) } returns emptyList()
+            testApplication {
+                application {
+                    configureTestEnv()
+                }
+                // Test "7d" range
+                client.get("${Routes.API_HISTORY_SNAPSHOTS}?range=7d").status shouldBe HttpStatusCode.OK
+                // Test "30d" range
+                client.get("${Routes.API_HISTORY_SNAPSHOTS}?range=30d").status shouldBe HttpStatusCode.OK
+                // Test "90d" range
+                client.get("${Routes.API_HISTORY_SNAPSHOTS}?range=90d").status shouldBe HttpStatusCode.OK
+                // Test fallback else range
+                client.get("${Routes.API_HISTORY_SNAPSHOTS}?range=invalid").status shouldBe HttpStatusCode.OK
+            }
+        }
+
+        "getApiHistorySnapshots_NoRangeParam_DefaultsTo30d" {
+            every { tradeHistoryService.getSnapshotsInRange(any(), any()) } returns emptyList()
+            testApplication {
+                application {
+                    configureTestEnv()
+                }
+                // No range parameter at all — exercises the `?: "30d"` null coalescing
+                val response = client.get(Routes.API_HISTORY_SNAPSHOTS)
+                response.status shouldBe HttpStatusCode.OK
+                response.bodyAsText() shouldBe "[]"
+            }
+        }
+
+        "getApiHealth_ReturnsJsonWithStats" {
+            val stats = HistoryStats(
+                allTimeHigh = BigDecimal("15000.00"),
+                totalTradesExecuted = 12L,
+                totalVolumeTraded = BigDecimal("50000.00"),
+                firstSnapshotTime = Instant.now(),
+                latestSnapshotTime = Instant.now()
+            )
+            val snapshot = PortfolioSnapshot(
+                timestamp = Instant.now(),
+                totalValueUSD = BigDecimal("12000.0"),
+                assets = emptyMap(),
+                actions = emptyList(),
+                drawdownPercent = BigDecimal.ZERO,
+                fiatDeploymentPercent = BigDecimal.ZERO,
+                effectiveUsdTargetPercent = BigDecimal.ZERO
+            )
+            every { tradeHistoryService.getHistoryStats() } returns stats
+            every { tradeHistoryService.getLatestSnapshot() } returns snapshot
+
+            testApplication {
+                application {
+                    configureTestEnv()
+                }
+                val response = client.get("/api/health")
+                response.status shouldBe HttpStatusCode.OK
+                response.headers[HttpHeaders.ContentType] shouldContain "application/json"
+                val body = response.bodyAsText()
+                body shouldContain "\"status\":\"UP\""
+                body shouldContain "\"totalTradesExecuted\":12"
+                body shouldContain "\"totalVolumeTraded\":50000.00"
+            }
+        }
+
+        "getApiHealth_NoLatestSnapshot_ReturnsJsonWithFallback" {
+            val stats = HistoryStats(
+                allTimeHigh = BigDecimal("15000.00"),
+                totalTradesExecuted = 12L,
+                totalVolumeTraded = BigDecimal("50000.00"),
+                firstSnapshotTime = Instant.now(),
+                latestSnapshotTime = Instant.now()
+            )
+            every { tradeHistoryService.getHistoryStats() } returns stats
+            every { tradeHistoryService.getLatestSnapshot() } returns null
+
+            testApplication {
+                application {
+                    configureTestEnv()
+                }
+                val response = client.get("/api/health")
+                response.status shouldBe HttpStatusCode.OK
+                val body = response.bodyAsText()
+                body shouldContain "\"lastSnapshotTime\":\"N/A\""
+                body shouldContain "\"lastSnapshotTotalValueUSD\":0"
+            }
+        }
+
+        "getSyncProgress_ReturnsJson" {
+            every { tradeHistoryService.isHistorySeeded() } returns false
+            every { tradeHistoryService.getSyncMetadata("sync_offset") } returns "123"
+            every { tradeHistoryService.getSyncMetadata("sync_total") } returns "456"
+
+            testApplication {
+                application {
+                    configureTestEnv()
+                }
+                val response = client.get("/api/history/sync-progress")
+                response.status shouldBe HttpStatusCode.OK
+                response.headers[HttpHeaders.ContentType] shouldContain "application/json"
+                val body = response.bodyAsText()
+                body shouldContain "\"seeded\":false"
+                body shouldContain "\"offset\":\"123\""
+                body shouldContain "\"total\":\"456\""
             }
         }
     }

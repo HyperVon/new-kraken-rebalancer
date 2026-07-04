@@ -60,7 +60,8 @@ class DashboardViewTest : StringSpec() {
     private val view = DashboardView(
         shellComponent = shell,
         settingsFormComponent = SettingsFormComponent(),
-        fragmentComponent = fragment
+        fragmentComponent = fragment,
+        historyPageComponent = HistoryPageComponent()
     )
 
     private val baseConfig = AppConfig(
@@ -327,6 +328,13 @@ class DashboardViewTest : StringSpec() {
             val companionInstance = companionField.get(null)
             val columns = getCOLUMNS.invoke(companionInstance) as List<*>
             columns.size shouldBe 6
+        }
+
+        "DashboardView_renderHistoryPage" {
+            val html = createHTML().html {
+                view.renderHistoryPage()
+            }
+            html shouldContain "History - Kraken Rebalancer"
         }
     }
 }

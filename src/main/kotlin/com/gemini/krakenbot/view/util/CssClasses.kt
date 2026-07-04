@@ -104,5 +104,18 @@ object CssClasses {
     // Dashboard waiting state elements
     const val DASHBOARD_WAITING_TITLE = "dashboard-waiting-title"
     const val DASHBOARD_WAITING_TEXT = "dashboard-waiting-text"
+
+    // Navigation
+    const val NAV_BAR = "nav-bar"
+    const val NAV_LINK = "nav-link"
+    const val NAV_LINK_ACTIVE = "nav-link active"
+
+    // History page
+    const val HISTORY_STATS_GRID = "history-stats-grid"
+    const val TIME_RANGE_SELECTOR = "time-range-selector"
+    const val TIME_RANGE_BTN = "time-range-btn"
+    const val TIME_RANGE_BTN_ACTIVE = "time-range-btn active"
+    const val CHART_CONTAINER = "chart-container"
 }
+
 

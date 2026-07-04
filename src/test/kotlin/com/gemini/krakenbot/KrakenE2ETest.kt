@@ -6,8 +6,9 @@ import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.Asset
-import com.gemini.krakenbot.repository.impl.FileTradeRepositoryImpl
-import com.gemini.krakenbot.repository.impl.PortfolioStatsRepositoryImpl
+import com.gemini.krakenbot.config.DatabaseConfig
+import com.gemini.krakenbot.repository.impl.SqlitePortfolioStatsRepositoryImpl
+import com.gemini.krakenbot.repository.impl.SqliteTradeRepositoryImpl
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.impl.*
 import io.kotest.core.spec.IsolationMode
@@ -115,27 +116,9 @@ class KrakenE2ETest : StringSpec() {
                 val objectMapper =
                     jacksonObjectMapper().findAndRegisterModules()
 
-                // Repositories
-                val statsFile = File("e2e-stats.json")
-                val tradesFile = File("e2e-trades.json")
-                if (statsFile.exists()) statsFile.delete()
-                if (tradesFile.exists()) tradesFile.delete()
-
-                val statsRepo = PortfolioStatsRepositoryImpl(objectMapper)
-                val statsRepoField =
-                    PortfolioStatsRepositoryImpl::class.java.getDeclaredField(
-                        FILE_PATH
-                    )
-                statsRepoField.isAccessible = true
-                statsRepoField.set(statsRepo, statsFile.name)
-
-                val tradesRepo = FileTradeRepositoryImpl(objectMapper)
-                val tradesRepoField =
-                    FileTradeRepositoryImpl::class.java.getDeclaredField(
-                        FILE_PATH
-                    )
-                tradesRepoField.isAccessible = true
-                tradesRepoField.set(tradesRepo, tradesFile.name)
+                val db = DatabaseConfig.init(":memory:")
+                val statsRepo = SqlitePortfolioStatsRepositoryImpl(db)
+                val tradesRepo = SqliteTradeRepositoryImpl(db)
 
                 // Services
                 val krakenService = KrakenServiceImpl(
@@ -144,15 +127,15 @@ class KrakenE2ETest : StringSpec() {
                     httpClient = httpClient
                 )
                 val tradeHistoryService =
-                    TradeHistoryServiceImpl(tradesRepo)
+                    TradeHistoryServiceImpl(tradesRepo, statsRepo, krakenService, mockConfigService)
 
-                val portfolioAnalyzer = PortfolioAnalyzer(
+                val portfolioAnalyzer = PortfolioAnalyzerImpl(
                     krakenService = krakenService,
                     configService = mockConfigService,
                     portfolioStatsRepository = statsRepo
                 )
                 val orderExecutor =
-                    OrderExecutor(krakenService, portfolioAnalyzer)
+                    OrderExecutorImpl(krakenService, portfolioAnalyzer, tradeHistoryService)
                 val portfolioManager = PortfolioManagerImpl(
                     configService = mockConfigService,
                     tradeHistoryService = tradeHistoryService,
@@ -165,9 +148,6 @@ class KrakenE2ETest : StringSpec() {
 
                 // Verify no order was executed because the portfolio is perfectly balanced!
                 capturedOrderPayload.shouldBeNull()
-
-                if (statsFile.exists()) statsFile.delete()
-                if (tradesFile.exists()) tradesFile.delete()
             }
         }
 
@@ -248,41 +228,24 @@ class KrakenE2ETest : StringSpec() {
                 val objectMapper =
                     jacksonObjectMapper().findAndRegisterModules()
 
-                val statsFile = File("e2e-stats.json")
-                val tradesFile = File("e2e-trades.json")
-                if (statsFile.exists()) statsFile.delete()
-                if (tradesFile.exists()) tradesFile.delete()
-
-                val statsRepo = PortfolioStatsRepositoryImpl(objectMapper)
-                val statsRepoField =
-                    PortfolioStatsRepositoryImpl::class.java.getDeclaredField(
-                        FILE_PATH
-                    )
-                statsRepoField.isAccessible = true
-                statsRepoField.set(statsRepo, statsFile.name)
-
-                val tradesRepo = FileTradeRepositoryImpl(objectMapper)
-                val tradesRepoField =
-                    FileTradeRepositoryImpl::class.java.getDeclaredField(
-                        FILE_PATH
-                    )
-                tradesRepoField.isAccessible = true
-                tradesRepoField.set(tradesRepo, tradesFile.name)
+                val db = DatabaseConfig.init(":memory:")
+                val statsRepo = SqlitePortfolioStatsRepositoryImpl(db)
+                val tradesRepo = SqliteTradeRepositoryImpl(db)
 
                 val krakenService = KrakenServiceImpl(
                     configService = mockConfigService,
                     objectMapper = objectMapper,
                     httpClient = httpClient
                 )
-                val tradeHistoryService = TradeHistoryServiceImpl(tradesRepo)
+                val tradeHistoryService = TradeHistoryServiceImpl(tradesRepo, statsRepo, krakenService, mockConfigService)
 
-                val portfolioAnalyzer = PortfolioAnalyzer(
+                val portfolioAnalyzer = PortfolioAnalyzerImpl(
                     krakenService = krakenService,
                     configService = mockConfigService,
                     portfolioStatsRepository = statsRepo
                 )
                 val orderExecutor =
-                    OrderExecutor(krakenService, portfolioAnalyzer)
+                    OrderExecutorImpl(krakenService, portfolioAnalyzer, tradeHistoryService)
                 val portfolioManager = PortfolioManagerImpl(
                     configService = mockConfigService,
                     tradeHistoryService = tradeHistoryService,
@@ -298,8 +261,6 @@ class KrakenE2ETest : StringSpec() {
                 capturedOrderPayload.contains("type=buy").shouldBeTrue()
                 capturedOrderPayload.contains("ordertype=market").shouldBeTrue()
                 capturedOrderPayload.contains("volume=0.1").shouldBeTrue()
-                if (statsFile.exists()) statsFile.delete()
-                if (tradesFile.exists()) tradesFile.delete()
             }
         }
     }

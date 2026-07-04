@@ -6,5 +6,6 @@ data class Settings(
     val dustThresholdUSD: Double = 5.0,
     val dryRun: Boolean,
     val fiatMaxDrawdown: Double = 0.0,
-    val fiatDeploymentExponent: Double = 1.0
+    val fiatDeploymentExponent: Double = 1.0,
+    val simulation: Boolean = false
 )

@@ -71,6 +71,10 @@ class DashboardFragmentComponent(
                         +timeFormatter.format(latest.timestamp)
                     }
                 }
+                a(href = Routes.HISTORY, classes = CssClasses.BTN_SECONDARY) {
+                    icon(Icons.CHART)
+                    span { +ViewText.NAV_HISTORY }
+                }
                 a(href = Routes.SETTINGS, classes = CssClasses.BTN_SECONDARY) {
                     icon(Icons.COG)
                     span { +ViewText.SETTINGS_TITLE }

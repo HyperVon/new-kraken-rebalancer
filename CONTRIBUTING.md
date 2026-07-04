@@ -17,18 +17,22 @@ improve reliability, safety, and functionality are very welcome.
 ### Local Setup
 
 1. **Fork and clone** the repository
+
    ```bash
    git clone https://github.com/YOUR_USERNAME/new-kraken-rebalancer.git
    cd new-kraken-rebalancer
    ```
 
 2. **Create your config file** from the template:
+
    ```bash
    cp rebalancer-config-template.json rebalancer-config.json
    ```
+
    Fill in your Kraken API credentials. **Never commit this file.**
 
 3. **Build the project:**
+
    ```bash
    ./gradlew build -x test
    ```
@@ -41,8 +45,10 @@ improve reliability, safety, and functionality are very welcome.
 ### Reporting Bugs
 
 -
+
 Search [existing issues](https://github.com/HyperVon/new-kraken-rebalancer/issues)
 first
+
 - Use the **Bug Report** issue template
 - Include relevant logs (redact any API keys or account details)
 
@@ -56,9 +62,11 @@ first
 ### Submitting a Pull Request
 
 1. Create a feature branch from `main`:
+
    ```bash
    git checkout -b feature/your-feature-name
    ```
+
 2. Make your changes, keeping commits focused and descriptive
 3. Ensure existing tests pass: `./gradlew test` (requires a valid
    `rebalancer-config.json`)

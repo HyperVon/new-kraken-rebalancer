@@ -4,12 +4,12 @@ import com.fasterxml.jackson.annotation.JsonValue
 
 @JvmInline
 value class ApiKey(@get:JsonValue val value: String) {
-    override fun toString(): String = value
+    override fun toString(): String = "***REDACTED***"
 }
 
 @JvmInline
 value class PrivateKey(@get:JsonValue val value: String) {
-    override fun toString(): String = value
+    override fun toString(): String = "***REDACTED***"
 }
 
 data class KrakenCredentials(

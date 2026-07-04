@@ -8,6 +8,64 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [6.0.0] - 2026-07-04
+
+### Added
+
+- **SQLite Trade & Stats Repositories**: Replaced file-based JSON storage with Exposed ORM SQLite database persistence.
+- **90-Day History Page**: Designed and implemented `/history` UI page containing interactive charts for Portfolio Value, Asset Holdings, Allocation Drift, and Cumulative P&L over time.
+- **Sync Progress Tracking**: Implemented a progress banner in UI that polls `/api/history/sync-progress` to display the percentage completion of Kraken trade synchronization on startup.
+- **Dry-Run Checkbox Filter**: Added a UI checkbox in the Trade Log to show/hide dry-run (simulation) trades dynamically.
+- **Historical Snapshot Reconstruction**: Implemented backward walking algorithm in `TradeHistoryServiceImpl` to reconstruct a clean 90-day history from local trades and Kraken public OHLC API data.
+- **Jacoco Test Verification**: Configured Jacoco test coverage verification as a finalizer on the `Test` task with a strict coverage gate.
+
+## [5.0.0] - 2026-07-03
+
+### Added
+
+- **Health Check API**: Introduced a public `/api/health` Ktor REST endpoint reporting app uptime, total trades executed, total volume traded, last snapshot time, and valuation.
+- **Robust API Retry Handler**: Added `retryOnTransientFailure` wrapping Ktor Client calls to handle connection timeouts, rate limit errors (`EAPI:Rate limit exceeded`), and transient HTTP 5xx errors with exponential backoff.
+- **Throttling & Rate-Limiting**: Enforced a minimum 1-second delay between private Kraken API calls to prevent rate-limit bans.
+- **Environment Variable Resolution**: Added support for resolving credentials and settings in `rebalancer-config.json` via `${VAR_NAME:default}` placeholder syntax on startup.
+- **Pruning Policy**: Implemented automatic SQLite database pruning to keep the database footprint low by deleting snapshots older than 90 days.
+- **Database Indexes**: Added indexes on `timestamp` columns across `trades` and `portfolio_snapshots` tables for high-performance range queries.
+- **Startup Scripts**: Created `start.sh` (macOS/Linux) and `start.bat` (Windows) scripts to automate Fat JAR compilation and launch.
+
+### Changed
+
+- **Decoupled Architecture**: Extracted interfaces for `PortfolioAnalyzer` and `OrderExecutor` to enable cleaner dependency injection (Koin) and isolated testing.
+- **Double to BigDecimal Migration**: Completely migrated maps representing raw exchange balances and ticker prices from `Double` to `BigDecimal`, eliminating floating-point precision loss.
+- **Consolidated Pair Parsing**: Unified trading pair symbol parsing into a single utility helper in `Asset.fromTradingPair`.
+- **Atomic Persistence moves**: Config settings file updates now use atomic OS moves (`StandardCopyOption.ATOMIC_MOVE`) via Java NIO.
+- **Redacted Secret Logging**: Overrode value class `toString()` implementations for `ApiKey` and `PrivateKey` to redact secrets in application logs.
+- **CORS Restrictions**: Restricted Allowed CORS origins to local addresses (`localhost`, `127.0.0.1`, `::1`), Bonjour names (`*.local`), and private local Wi-Fi subnets (`192.168.x.x`, `10.x.x.x`, `172.16-31.x.x`).
+- **Database Auto Migrations**: Configured DB initializer to use `SchemaUtils.createMissingTablesAndColumns` to automatically execute migration scripts on schema extensions.
+
+---
+
+## [4.0.7] - 2026-07-02
+
+### Added
+
+- **100% Code Coverage Enforcement**: Raised all JaCoCo coverage metrics (`INSTRUCTION`, `BRANCH`, `LINE`, `METHOD`) verification threshold in `build.gradle.kts` to `1.00` (100% coverage gate).
+- **Exposed IOException Test Coverage**: Implemented `StatsThrowingTransactionManager` and `TradeThrowingTransactionManager` delegating transaction manager mocks to inject and test `IOException` passthrough behavior inside repository transaction blocks without test state pollution.
+- **Kraken Service Symbol Parsing & Interface Default Parameter Tests**: Added tests for alternative asset pair symbol matching fallback logic and forced explicit types in `KrakenServiceTest` to ensure interface default parameter methods (`DefaultImpls`) are fully called and covered.
+- **SQLite Native Access Warning Fix**: Appended the `--enable-native-access=ALL-UNNAMED` JVM argument to both the Test task and Ktor application runtime default JVM arguments lists, resolving standard JDK 22+ native warning messages during test runs and compilation/assemble processes.
+
+---
+
+## [4.0.6] - 2026-07-01
+
+### Added
+
+- **SQLite Database Persistence**: Migrated local trade history and portfolio statistics storage from file-based JSON logging to a local SQLite database (`kraken-rebalancer.db`) using JetBrains Exposed ORM.
+- **Historical Trades Synchronization**: Introduced startup trade synchronization from the Kraken private API (`/0/private/TradesHistory`), enabling the application to seed historical trades dynamically.
+- **Deduplication Logic**: Built unique signature keys for boundary trades using timestamp, trading pair, action side, volume, and fiat amount to prevent duplicate imports during paginated API updates.
+- **Sync Metadata Tracking**: Added `HistorySyncMetadataTable` to record seeding status (`history_seeded`) and avoid duplicate API calls on subsequent runs.
+- **Unit and Integration Test Extensions**: Added robust tests verifying Exposed repository operations, paginated synchronization scenarios, and boundary deduplication logic.
+
+---
+
 ## [4.0.5] - 2026-06-22
 
 ### Added
