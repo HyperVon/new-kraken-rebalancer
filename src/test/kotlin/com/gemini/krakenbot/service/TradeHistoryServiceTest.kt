@@ -22,6 +22,8 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.yield
 import java.math.BigDecimal
 import java.time.Instant
+import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule
 import java.time.temporal.ChronoUnit
 
 
@@ -30,6 +32,7 @@ class TradeHistoryServiceTest : StringSpec() {
 
     override fun isolationMode() = IsolationMode.InstancePerTest
 
+    private val objectMapper = jacksonObjectMapper().registerModule(JavaTimeModule())
     private val repository = mockk<TradeRepository>(relaxed = true)
     private val statsRepository = mockk<PortfolioStatsRepository>(relaxed = true)
     private val krakenService = mockk<KrakenService>(relaxed = true)
@@ -56,7 +59,7 @@ class TradeHistoryServiceTest : StringSpec() {
         }
         every { repository.load() } answers { savedSnapshots.take(50) }
         
-        return TradeHistoryServiceImpl(repository, statsRepository, krakenService, configService)
+        return TradeHistoryServiceImpl(repository, statsRepository, krakenService, configService, objectMapper)
     }
 
     init {
@@ -252,7 +255,7 @@ class TradeHistoryServiceTest : StringSpec() {
                     allocations = emptyList()
                 )
                 every { configService.getConfig() } returns emptyConfig
-                val tradeHistoryService = TradeHistoryServiceImpl(repository, statsRepository, krakenService, configService)
+                val tradeHistoryService = TradeHistoryServiceImpl(repository, statsRepository, krakenService, configService, objectMapper)
 
                 tradeHistoryService.syncTradesFromKraken()
 
@@ -465,7 +468,7 @@ class TradeHistoryServiceTest : StringSpec() {
                     allocations = emptyList()
                 )
                 every { configService.getConfig() } returns placeholderConfig
-                val tradeHistoryService = TradeHistoryServiceImpl(repository, statsRepository, krakenService, configService)
+                val tradeHistoryService = TradeHistoryServiceImpl(repository, statsRepository, krakenService, configService, objectMapper)
 
                 tradeHistoryService.syncTradesFromKraken()
 
@@ -495,7 +498,7 @@ class TradeHistoryServiceTest : StringSpec() {
             every { configService.getConfig() } returns appConfig
             every { repository.load() } returns emptyList() // DB is empty!
 
-            val tradeHistoryService = TradeHistoryServiceImpl(repository, statsRepository, krakenService, configService)
+            val tradeHistoryService = TradeHistoryServiceImpl(repository, statsRepository, krakenService, configService, objectMapper)
             tradeHistoryService.init()
 
             // It should call saveSnapshot multiple times to seed 15 days of 6-hour interval snapshots (60 snapshots)
@@ -523,10 +526,42 @@ class TradeHistoryServiceTest : StringSpec() {
             every { repository.load() } returns emptyList()
             every { repository.saveSnapshot(any()) } throws RuntimeException("Seeding failed")
 
-            val tradeHistoryService = TradeHistoryServiceImpl(repository, statsRepository, krakenService, configService)
+            val tradeHistoryService = TradeHistoryServiceImpl(repository, statsRepository, krakenService, configService, objectMapper)
             
             // Should catch exception and not propagate it
             tradeHistoryService.init()
+        }
+
+        "init_MigratesTradeHistoryJsonIfEmpty" {
+            val file = java.io.File("trade-history.json")
+            try {
+                file.delete()
+                
+                val snapshot = PortfolioSnapshot(
+                    timestamp = Instant.now(),
+                    totalValueUSD = BigDecimal("15000.00"),
+                    assets = emptyMap(),
+                    actions = emptyList(),
+                    drawdownPercent = BigDecimal.ZERO,
+                    fiatDeploymentPercent = BigDecimal.ZERO,
+                    effectiveUsdTargetPercent = BigDecimal.ZERO
+                )
+                
+                file.writeText(objectMapper.writeValueAsString(listOf(snapshot)))
+                
+                val tradeHistoryService = createService()
+                every { repository.load() } returns emptyList()
+                
+                tradeHistoryService.init()
+                
+                verify(exactly = 1) { repository.save(any()) }
+                
+                file.exists() shouldBe false
+                java.io.File("trade-history.json.bak").exists() shouldBe true
+            } finally {
+                file.delete()
+                java.io.File("trade-history.json.bak").delete()
+            }
         }
 
         "addSnapshot_HandlesPruneException" {

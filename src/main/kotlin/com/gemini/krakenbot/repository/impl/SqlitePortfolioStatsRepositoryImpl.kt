@@ -7,13 +7,16 @@ import org.jetbrains.exposed.sql.Database
 import org.jetbrains.exposed.sql.insert
 import org.jetbrains.exposed.sql.selectAll
 import org.jetbrains.exposed.sql.transactions.transaction
+import com.fasterxml.jackson.databind.ObjectMapper
+import java.io.File
 import org.jetbrains.exposed.sql.update
 import org.slf4j.LoggerFactory
 import java.io.IOException
 import java.math.BigDecimal
 
 class SqlitePortfolioStatsRepositoryImpl(
-    private val database: Database
+    private val database: Database,
+    private val objectMapper: ObjectMapper
 ) : PortfolioStatsRepository {
 
     private val log =
@@ -22,13 +25,42 @@ class SqlitePortfolioStatsRepositoryImpl(
     override fun load(): PortfolioStats {
         return try {
             transaction(database) {
-                PortfolioStatsTable
+                val dbStats = PortfolioStatsTable
                     .selectAll()
                     .firstOrNull()
                     ?.let {
                         PortfolioStats(it[PortfolioStatsTable.allTimeHigh])
                     }
-                    ?: PortfolioStats(BigDecimal.ZERO)
+                if (dbStats != null) {
+                    dbStats
+                } else {
+                    val file = File("portfolio-stats.json")
+                    if (file.exists()) {
+                        try {
+                            val fileStats = objectMapper.readValue(file, PortfolioStats::class.java)
+                            if (fileStats != null && fileStats.allTimeHigh != null) {
+                                log.info("Migrating allTimeHigh from portfolio-stats.json: {}", fileStats.allTimeHigh)
+                                PortfolioStatsTable.insert {
+                                    it[allTimeHigh] = fileStats.allTimeHigh!!
+                                }
+                                try {
+                                    file.renameTo(File("portfolio-stats.json.bak"))
+                                    log.info("Renamed portfolio-stats.json to portfolio-stats.json.bak")
+                                } catch (ex: Exception) {
+                                    log.warn("Failed to rename portfolio-stats.json", ex)
+                                }
+                                fileStats
+                            } else {
+                                PortfolioStats(BigDecimal.ZERO)
+                            }
+                        } catch (e: Exception) {
+                            log.error("Failed to migrate portfolio-stats.json", e)
+                            PortfolioStats(BigDecimal.ZERO)
+                        }
+                    } else {
+                        PortfolioStats(BigDecimal.ZERO)
+                    }
+                }
             }
         } catch (e: Exception) {
             log.error("Failed to load portfolio stats", e)

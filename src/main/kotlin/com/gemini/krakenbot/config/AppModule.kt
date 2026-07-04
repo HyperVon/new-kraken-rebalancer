@@ -42,8 +42,8 @@ val appModule = module {
 
     single<ConfigService> { ConfigServiceImpl(get()) }
     single<TradeRepository> { SqliteTradeRepositoryImpl(get()) }
-    single<PortfolioStatsRepository> { SqlitePortfolioStatsRepositoryImpl(get()) }
-    single<TradeHistoryService> { TradeHistoryServiceImpl(get(), get(), get(), get()).apply { init() } }
+    single<PortfolioStatsRepository> { SqlitePortfolioStatsRepositoryImpl(get(), get()) }
+    single<TradeHistoryService> { TradeHistoryServiceImpl(get(), get(), get(), get(), get()).apply { init() } }
     singleOf(::KrakenServiceImpl)
     singleOf(::SimulatedKrakenService)
     single<KrakenService> { DynamicKrakenService(get(), get(), get()) }
