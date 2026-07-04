@@ -2,8 +2,6 @@ package com.gemini.krakenbot.view.component
 
 import com.gemini.krakenbot.view.util.CssClasses
 import com.gemini.krakenbot.view.util.HtmxAttrs
-import com.gemini.krakenbot.view.util.Icons
-import com.gemini.krakenbot.view.util.Icons.icon
 import com.gemini.krakenbot.view.util.Routes
 import com.gemini.krakenbot.view.util.ViewText
 import kotlinx.html.*

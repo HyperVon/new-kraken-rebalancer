@@ -46,7 +46,7 @@ class SqlitePortfolioStatsRepositoryImpl(
                                 }
                                 try {
                                     val sourcePath = file.toPath()
-                                    val targetPath = File(statsFilePath + ".bak").toPath()
+                                    val targetPath = File("$statsFilePath.bak").toPath()
                                     java.nio.file.Files.move(sourcePath, targetPath, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
                                     log.info("Renamed stats file to backup successfully.")
                                 } catch (ex: Exception) {

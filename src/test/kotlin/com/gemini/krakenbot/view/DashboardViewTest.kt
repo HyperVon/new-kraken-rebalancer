@@ -99,7 +99,7 @@ class DashboardViewTest : StringSpec() {
             val html = createHTML().html {
                 view.renderSettingsPage(baseConfig, null)
             }
-            html shouldContain "title>${SETTINGS_TITLE} - ${APP_TITLE}"
+            html shouldContain "title>${SETTINGS_TITLE} - $APP_TITLE"
             html shouldContain "name=\"${LOOP_DELAY_SECONDS}\""
             html shouldContain "value=\"60\""
             html shouldContain "name=\"${DEVIATION_TRIGGER_PERCENT}\""
@@ -320,7 +320,7 @@ class DashboardViewTest : StringSpec() {
         }
 
         "PerformanceTableComponent_Companion_getCOLUMNS" {
-            val companionClass = Class.forName("com.gemini.krakenbot.view.component.PerformanceTableComponent\$Companion")
+            val companionClass = Class.forName($$"com.gemini.krakenbot.view.component.PerformanceTableComponent$Companion")
             val getCOLUMNS = companionClass.getDeclaredMethod("getCOLUMNS")
             getCOLUMNS.isAccessible = true
             val companionField = PerformanceTableComponent::class.java.getDeclaredField("Companion")

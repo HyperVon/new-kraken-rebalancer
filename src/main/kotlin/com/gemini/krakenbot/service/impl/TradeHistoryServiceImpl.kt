@@ -1,5 +1,7 @@
 package com.gemini.krakenbot.service.impl
 
+import com.fasterxml.jackson.databind.ObjectMapper
+import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.HistoryStats
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.TradeRecord
@@ -8,22 +10,20 @@ import com.gemini.krakenbot.repository.TradeRepository
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.KrakenService
 import com.gemini.krakenbot.service.TradeHistoryService
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import org.slf4j.LoggerFactory
-import java.math.BigDecimal
-import java.time.Instant
-import java.util.concurrent.CopyOnWriteArrayList
-
-import com.fasterxml.jackson.databind.ObjectMapper
 import java.io.File
+import java.math.BigDecimal
 import java.math.RoundingMode
 import java.time.Duration
+import java.time.Instant
 import java.time.temporal.ChronoUnit
-import java.util.Random
-import kotlinx.coroutines.delay
-import com.gemini.krakenbot.model.Asset
+import java.util.*
+import kotlin.math.abs
+import kotlin.time.Duration.Companion.milliseconds
 
 
 class TradeHistoryServiceImpl(
@@ -57,7 +57,7 @@ class TradeHistoryServiceImpl(
                         repository.save(snapshots)
                         try {
                             val sourcePath = file.toPath()
-                            val targetPath = File(tradeHistoryFilePath + ".bak").toPath()
+                            val targetPath = File("$tradeHistoryFilePath.bak").toPath()
                             java.nio.file.Files.move(sourcePath, targetPath, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
                             log.info("Renamed trade history file to backup successfully.")
                         } catch (ex: Exception) {
@@ -282,11 +282,7 @@ class TradeHistoryServiceImpl(
 
         // If history is not yet seeded, do a full sync.
         // If history is seeded, do an incremental sync starting from the latest trade minus a 5-minute safety window.
-        val startSec = if (latestTradeTime != null) {
-            latestTradeTime.minusSeconds(300).epochSecond
-        } else {
-            null
-        }
+        val startSec = latestTradeTime?.minusSeconds(300)?.epochSecond
 
         log.info("Starting trade history synchronization (isSeeded={}, startSec={})...", isSeeded, startSec)
 
@@ -324,7 +320,7 @@ class TradeHistoryServiceImpl(
                     val diff = local.timestamp.toEpochMilli() - apiTrade.timestamp.toEpochMilli()
                     val absDiff = if (diff < 0) -diff else diff
                     local.pair == apiTrade.pair &&
-                            local.side.uppercase() == apiTrade.side.uppercase() &&
+                            local.side.equals(apiTrade.side, ignoreCase = true) &&
                             local.volume.compareTo(apiTrade.volume) == 0 &&
                             absDiff < 300_000
                 }
@@ -416,7 +412,10 @@ class TradeHistoryServiceImpl(
                 runningBalances[symbol] = bal
             }
             // Fetch active prices to initialize current prices
-            val pairsStr = allocations.filter { !it.symbol.isUsd }.map { Asset.tradingPair(it.symbol.value) }.joinToString(",")
+            val pairsStr =
+                allocations.filter { !it.symbol.isUsd }.joinToString(",") {
+                    Asset.tradingPair(it.symbol.value)
+                }
             val prices = try {
                 krakenService.getTickerPrices(pairsStr)
             } catch (e: java.lang.Exception) {
@@ -444,7 +443,7 @@ class TradeHistoryServiceImpl(
             } catch (e: java.lang.Exception) {
                 log.error("Failed to fetch OHLC prices for $symbol ($pair)", e)
             }
-            delay(200)
+            delay(200.milliseconds)
         }
 
         // 4. Fetch all trades from database
@@ -573,12 +572,12 @@ class TradeHistoryServiceImpl(
         if (symbol.equals("USD", ignoreCase = true)) return BigDecimal.ONE
 
         val prices = ohlcData[symbol.uppercase()]
-        if (prices != null && prices.isNotEmpty()) {
+        if (!prices.isNullOrEmpty()) {
             val targetSec = timestamp.epochSecond
             var closestPrice = prices[0].second
-            var minDiff = Math.abs(prices[0].first - targetSec)
+            var minDiff = abs(prices[0].first - targetSec)
             for (p in prices) {
-                val diff = Math.abs(p.first - targetSec)
+                val diff = abs(p.first - targetSec)
                 if (diff < minDiff) {
                     minDiff = diff
                     closestPrice = p.second
@@ -588,11 +587,11 @@ class TradeHistoryServiceImpl(
         }
 
         val tPrices = tradePrices[symbol.uppercase()]
-        if (tPrices != null && tPrices.isNotEmpty()) {
+        if (!tPrices.isNullOrEmpty()) {
             var closestPrice = tPrices[0].second
-            var minDiff = Math.abs(tPrices[0].first.toEpochMilli() - timestamp.toEpochMilli())
+            var minDiff = abs(tPrices[0].first.toEpochMilli() - timestamp.toEpochMilli())
             for (p in tPrices) {
-                val diff = Math.abs(p.first.toEpochMilli() - timestamp.toEpochMilli())
+                val diff = abs(p.first.toEpochMilli() - timestamp.toEpochMilli())
                 if (diff < minDiff) {
                     minDiff = diff
                     closestPrice = p.second

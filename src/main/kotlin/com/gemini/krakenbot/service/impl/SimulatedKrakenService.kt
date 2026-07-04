@@ -92,7 +92,7 @@ class SimulatedKrakenService(
 
         val random = ThreadLocalRandom.current()
         // Create 15 fake trades spanning the last 5 days
-        for (i in 1..15) {
+        (1..15).forEach { _ ->
             val hoursAgo = random.nextLong(1, 120)
             val timestamp = now.minus(hoursAgo, ChronoUnit.HOURS)
             val alloc = nonUsd[random.nextInt(nonUsd.size)]

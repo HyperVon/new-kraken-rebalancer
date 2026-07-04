@@ -9,7 +9,6 @@ import com.gemini.krakenbot.model.OrderResult
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.service.impl.OrderExecutorImpl
-import com.gemini.krakenbot.service.*
 import com.gemini.krakenbot.service.impl.PortfolioAnalyzerImpl
 import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
 import io.kotest.core.spec.IsolationMode
@@ -22,8 +21,7 @@ import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
 import java.math.BigDecimal
 
-private const val string = "0.0001"
-
+@Suppress("unused")
 class PortfolioManagerComprehensiveTest : StringSpec() {
 
     override fun isolationMode() = IsolationMode.InstancePerTest

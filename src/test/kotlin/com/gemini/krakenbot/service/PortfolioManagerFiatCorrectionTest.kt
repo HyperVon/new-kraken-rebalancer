@@ -6,7 +6,6 @@ import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.service.impl.PortfolioAnalyzerImpl
-import com.gemini.krakenbot.service.*
 import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
@@ -16,6 +15,7 @@ import io.mockk.every
 import io.mockk.mockk
 import java.math.BigDecimal
 
+@Suppress("unused")
 class PortfolioManagerFiatCorrectionTest : StringSpec() {
 
     override fun isolationMode() = IsolationMode.InstancePerTest

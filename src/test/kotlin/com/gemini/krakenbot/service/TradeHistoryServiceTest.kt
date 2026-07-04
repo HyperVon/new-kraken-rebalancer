@@ -24,7 +24,9 @@ import java.math.BigDecimal
 import java.time.Instant
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule
+import kotlinx.coroutines.delay
 import java.time.temporal.ChronoUnit
+import kotlin.time.Duration.Companion.milliseconds
 
 
 @Suppress("unused")
@@ -837,7 +839,7 @@ class TradeHistoryServiceTest : StringSpec() {
                 val service = createService()
                 
                 coEvery { krakenService.getTradeHistory(any(), any()) } coAnswers {
-                    kotlinx.coroutines.delay(10000)
+                    delay(10000.milliseconds)
                     emptyList()
                 }
 

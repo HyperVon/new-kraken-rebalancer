@@ -10,6 +10,7 @@ import io.kotest.matchers.shouldBe
 import java.math.BigDecimal
 import java.time.Instant
 
+@Suppress("unused")
 class ModelTest : StringSpec() {
     init {
         "testAssetMappings" {

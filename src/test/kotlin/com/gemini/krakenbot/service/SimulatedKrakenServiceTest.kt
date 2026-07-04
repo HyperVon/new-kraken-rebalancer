@@ -4,17 +4,17 @@ import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.config.Settings
-import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.service.impl.SimulatedKrakenService
 import io.kotest.core.spec.style.StringSpec
-import io.kotest.matchers.shouldBe
-import io.kotest.matchers.shouldNotBe
 import io.kotest.matchers.doubles.shouldBeGreaterThan
 import io.kotest.matchers.doubles.shouldBeLessThan
+import io.kotest.matchers.shouldBe
+import io.kotest.matchers.shouldNotBe
 import io.mockk.every
 import io.mockk.mockk
 import java.math.BigDecimal
 
+@Suppress("unused")
 class SimulatedKrakenServiceTest : StringSpec() {
     init {
         "should initialize prices and drifted balances based on config allocations" {

@@ -27,6 +27,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.io.IOException
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.minutes
 
@@ -42,8 +43,7 @@ class KrakenServiceImpl(
     private val apiVersion = "0"
     private val nonceGenerator =
         AtomicLong(System.currentTimeMillis() * 1000)
-    private val lastPrivateCallTime = AtomicLong(0)
-    val lastFetchedCount = java.util.concurrent.atomic.AtomicInteger(0)
+    val lastFetchedCount = AtomicInteger(0)
 
     private val rateLimitMutex = Mutex()
     private var apiCallCounter = 0.0
@@ -182,10 +182,10 @@ class KrakenServiceImpl(
 
             val timestamp = Instant.ofEpochMilli((time * 1000).toLong())
             val side = type.uppercase() // "BUY" or "SELL"
-            val rawVolume = try { BigDecimal(volStr) } catch (e: Exception) { BigDecimal.ZERO }
-            val rawUsdAmount = try { BigDecimal(costStr) } catch (e: Exception) { BigDecimal.ZERO }
-            val rawPrice = try { BigDecimal(priceStr) } catch (e: Exception) { BigDecimal.ZERO }
-            val rawFee = try { BigDecimal(feeStr) } catch (e: Exception) { BigDecimal.ZERO }
+            val rawVolume = try { BigDecimal(volStr) } catch (_: Exception) { BigDecimal.ZERO }
+            val rawUsdAmount = try { BigDecimal(costStr) } catch (_: Exception) { BigDecimal.ZERO }
+            val rawPrice = try { BigDecimal(priceStr) } catch (_: Exception) { BigDecimal.ZERO }
+            val rawFee = try { BigDecimal(feeStr) } catch (_: Exception) { BigDecimal.ZERO }
             val volume = rawVolume.setScale(8, RoundingMode.HALF_UP)
             val usdAmount = rawUsdAmount.setScale(2, RoundingMode.HALF_UP)
 
@@ -238,7 +238,7 @@ class KrakenServiceImpl(
         ohlcNode.forEach { entry ->
             if (entry.isArray && entry.size() >= 5) {
                 val time = entry.get(0).asLong()
-                val closePrice = try { BigDecimal(entry.get(4).asText()) } catch (e: Exception) { BigDecimal.ZERO }
+                val closePrice = try { BigDecimal(entry.get(4).asText()) } catch (_: Exception) { BigDecimal.ZERO }
                 priceList.add(Pair(time, closePrice))
             }
         }

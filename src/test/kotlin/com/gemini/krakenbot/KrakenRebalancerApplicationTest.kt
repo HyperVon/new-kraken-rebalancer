@@ -11,6 +11,7 @@ import org.koin.test.inject
 
 import java.io.File
 
+@Suppress("unused")
 class KrakenRebalancerApplicationTest : StringSpec(), KoinTest {
     init {
         "verify koin modules" {

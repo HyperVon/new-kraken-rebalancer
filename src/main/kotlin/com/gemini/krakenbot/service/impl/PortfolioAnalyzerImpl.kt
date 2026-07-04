@@ -3,18 +3,7 @@ package com.gemini.krakenbot.service.impl
 import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
-import com.gemini.krakenbot.service.ConfigService
-import com.gemini.krakenbot.service.KrakenService
-import com.gemini.krakenbot.service.RawBalances
-import com.gemini.krakenbot.service.RawPrices
-import com.gemini.krakenbot.service.PortfolioAnalyzer
-import com.gemini.krakenbot.service.PortfolioValues
-import com.gemini.krakenbot.service.AnalysisResult
-import com.gemini.krakenbot.service.AssetPrices
-import com.gemini.krakenbot.service.AssetValues
-import com.gemini.krakenbot.service.AssetDeviations
-import com.gemini.krakenbot.service.RebalanceOrders
-import com.gemini.krakenbot.service.MutableRebalanceOrders
+import com.gemini.krakenbot.service.*
 import org.slf4j.LoggerFactory
 import java.math.BigDecimal
 import java.math.RoundingMode
@@ -29,9 +18,9 @@ class PortfolioAnalyzerImpl(
 
     companion object {
         val HUNDRED: BigDecimal = BigDecimal.valueOf(100)
-        val SCALE_PERCENT = 4
-        val SCALE_PRICE = 8
-        val SCALE_USD = 2
+        const val SCALE_PERCENT = 4
+        const val SCALE_PRICE = 8
+        const val SCALE_USD = 2
     }
 
     override suspend fun fetchBalances(): RawBalances {

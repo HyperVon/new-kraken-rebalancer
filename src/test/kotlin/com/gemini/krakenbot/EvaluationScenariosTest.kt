@@ -9,15 +9,13 @@ import com.gemini.krakenbot.model.OrderResult
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.PortfolioStats
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
-import com.gemini.krakenbot.config.DatabaseConfig
 import com.gemini.krakenbot.repository.impl.SqlitePortfolioStatsRepositoryImpl
 import com.gemini.krakenbot.repository.impl.SqliteTradeRepositoryImpl
 import com.gemini.krakenbot.service.ConfigService
-import com.gemini.krakenbot.service.impl.ConfigServiceImpl
 import com.gemini.krakenbot.service.FakeKrakenService
 import com.gemini.krakenbot.service.TradeHistoryService
+import com.gemini.krakenbot.service.impl.ConfigServiceImpl
 import com.gemini.krakenbot.service.impl.OrderExecutorImpl
-import com.gemini.krakenbot.service.*
 import com.gemini.krakenbot.service.impl.PortfolioAnalyzerImpl
 import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
 import com.gemini.krakenbot.view.DashboardView
@@ -29,9 +27,7 @@ import com.gemini.krakenbot.view.util.ViewText
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
-import io.kotest.matchers.booleans.shouldBeFalse
 import io.kotest.matchers.booleans.shouldBeTrue
-import io.kotest.matchers.comparables.shouldBeLessThan
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.ktor.client.plugins.sse.*
@@ -42,16 +38,14 @@ import io.ktor.server.application.*
 import io.ktor.server.testing.*
 import io.mockk.every
 import io.mockk.mockk
-import io.mockk.slot
 import io.mockk.verify
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.flow.toList
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
-import kotlinx.coroutines.yield
 import org.jetbrains.exposed.sql.transactions.TransactionManager
 import org.koin.core.context.startKoin
 import org.koin.core.context.stopKoin
@@ -61,6 +55,8 @@ import java.io.IOException
 import java.math.BigDecimal
 import java.math.RoundingMode
 import java.time.Instant
+import kotlin.math.abs
+import kotlin.time.Duration.Companion.milliseconds
 import io.ktor.client.plugins.sse.SSE as ClientSSE
 import io.ktor.server.sse.SSE as ServerSSE
 
@@ -938,7 +934,7 @@ class EvaluationScenariosTest : StringSpec() {
                     pm.runLoop()
                 }
 
-                delay(2500)
+                delay(2500.milliseconds)
 
                 pm.stopRebalancingLoop()
                 job.join()
@@ -1378,7 +1374,7 @@ class EvaluationScenariosTest : StringSpec() {
                 val resolvedConfig = configService.getConfig()
                 val targetSum = resolvedConfig.allocations.sumOf { it.targetPercent }
                 
-                val success = Math.abs(targetSum - 100.0) <= 0.001
+                val success = abs(targetSum - 100.0) <= 0.001
 
                 val evidence = "Portfolio configured with 15 assets.\n" +
                                "Sum of allocations: $targetSum%\n" +

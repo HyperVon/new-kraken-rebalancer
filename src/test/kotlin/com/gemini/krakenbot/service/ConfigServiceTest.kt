@@ -19,6 +19,7 @@ import java.io.File
 import java.io.IOException
 import java.nio.file.Files
 
+@Suppress("unused")
 class ConfigServiceTest : StringSpec() {
 
     private lateinit var configService: ConfigService
@@ -388,11 +389,11 @@ class ConfigServiceTest : StringSpec() {
         }
 
         "loadConfig_ResolveEnvVars" {
-            val content = """
+            val content = $$"""
                 {
                   "kraken": {
-                    "apiKey": "${'$'}{TEST_KRAKEN_API_KEY:default-api-key}",
-                    "privateKey": "${'$'}{TEST_KRAKEN_PRIVATE_KEY:default-private-key}"
+                    "apiKey": "${TEST_KRAKEN_API_KEY:default-api-key}",
+                    "privateKey": "${TEST_KRAKEN_PRIVATE_KEY:default-private-key}"
                   },
                   "settings": {
                     "loopDelaySeconds": 60,
@@ -419,10 +420,10 @@ class ConfigServiceTest : StringSpec() {
 
         "loadConfig_ResolveEnvVars_WithActualEnvValue" {
             val pathValue = System.getenv("PATH") ?: "fallback"
-            val content = """
+            val content = $$"""
                 {
                   "kraken": {
-                    "apiKey": "${'$'}{PATH:fallback-path}",
+                    "apiKey": "${PATH:fallback-path}",
                     "privateKey": "some-private-key"
                   },
                   "settings": {
@@ -448,10 +449,10 @@ class ConfigServiceTest : StringSpec() {
         }
 
         "loadConfig_ResolveEnvVars_NoDefaultValue" {
-            val content = """
+            val content = $$"""
                 {
                   "kraken": {
-                    "apiKey": "${'$'}{NON_EXISTENT_VAR_NO_DEFAULT}",
+                    "apiKey": "${NON_EXISTENT_VAR_NO_DEFAULT}",
                     "privateKey": "some-private-key"
                   },
                   "settings": {
@@ -480,10 +481,10 @@ class ConfigServiceTest : StringSpec() {
             mockkStatic(System::class)
             every { System.getenv("SOME_BLANK_VAR") } returns "  "
 
-            val content = """
+            val content = $$"""
                 {
                   "kraken": {
-                    "apiKey": "${'$'}{SOME_BLANK_VAR:default-val}",
+                    "apiKey": "${SOME_BLANK_VAR:default-val}",
                     "privateKey": "some-private-key"
                   },
                   "settings": {

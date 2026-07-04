@@ -23,11 +23,9 @@ import io.ktor.http.content.*
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
-import java.io.File
 import java.util.*
 
 private const val APPLICATION_JSON = "application/json"
-private const val FILE_PATH = "filePath"
 
 @Suppress("unused")
 class KrakenE2ETest : StringSpec() {

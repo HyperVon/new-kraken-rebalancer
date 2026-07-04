@@ -24,7 +24,7 @@ class ConfigServiceImpl(
     }
 
     private fun resolveEnvVars(content: String): String {
-        val regex = "\\\$\\{([^}]+)\\}".toRegex()
+        val regex = "\\$\\{([^}]+)}".toRegex()
         return regex.replace(content) { matchResult ->
             val keyAndDefault = matchResult.groupValues[1]
             val parts = keyAndDefault.split(":", limit = 2)

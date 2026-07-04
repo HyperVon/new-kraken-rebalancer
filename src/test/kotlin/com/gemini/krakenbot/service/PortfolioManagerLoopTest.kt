@@ -6,7 +6,6 @@ import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.PortfolioStats
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.service.impl.OrderExecutorImpl
-import com.gemini.krakenbot.service.*
 import com.gemini.krakenbot.service.impl.PortfolioAnalyzerImpl
 import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
 import io.kotest.core.spec.IsolationMode
@@ -19,6 +18,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.yield
 import java.math.BigDecimal
 
+@Suppress("unused")
 class PortfolioManagerLoopTest : StringSpec() {
 
     override fun isolationMode() = IsolationMode.InstancePerTest
