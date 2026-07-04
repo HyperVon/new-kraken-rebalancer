@@ -251,4 +251,9 @@ class SimulatedKrakenService(
         }
         return filtered
     }
+
+    override suspend fun getOHLC(pair: String, interval: Int, since: Long?): List<Pair<Long, BigDecimal>> {
+        return emptyList()
+    }
 }
+

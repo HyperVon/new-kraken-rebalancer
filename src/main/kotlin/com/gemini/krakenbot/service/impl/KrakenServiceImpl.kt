@@ -200,6 +200,53 @@ class KrakenServiceImpl(
         return tradesList
     }
 
+    override suspend fun getOHLC(pair: String, interval: Int, since: Long?): List<Pair<Long, BigDecimal>> {
+        val params = mutableMapOf<String, String>()
+        params["pair"] = pair
+        params["interval"] = interval.toString()
+        if (since != null) {
+            params["since"] = since.toString()
+        }
+        val queryStr = params.map { "${it.key}=${it.value}" }.joinToString("&")
+        val path = "/0/public/OHLC?$queryStr"
+        val result = try {
+            queryPublic(path)
+        } catch (e: Exception) {
+            log.error("Failed to query public OHLC endpoint for pair $pair", e)
+            return emptyList()
+        }
+
+        val resultNode = result.path("result")
+        if (!resultNode.isObject) {
+            return emptyList()
+        }
+
+        var ohlcNode: JsonNode? = null
+        val fields = resultNode.fields()
+        while (fields.hasNext()) {
+            val field = fields.next()
+            if (field.key != "last") {
+                ohlcNode = field.value
+                break
+            }
+        }
+
+        if (ohlcNode == null || !ohlcNode.isArray) {
+            return emptyList()
+        }
+
+        val priceList = mutableListOf<Pair<Long, BigDecimal>>()
+        ohlcNode.forEach { entry ->
+            if (entry.isArray && entry.size() >= 5) {
+                val time = entry.get(0).asLong()
+                val closePrice = try { BigDecimal(entry.get(4).asText()) } catch (e: Exception) { BigDecimal.ZERO }
+                priceList.add(Pair(time, closePrice))
+            }
+        }
+        return priceList
+    }
+
+
     private suspend fun <T> retryOnTransientFailure(
         actionName: String,
         block: suspend () -> T
