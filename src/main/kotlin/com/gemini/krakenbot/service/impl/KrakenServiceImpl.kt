@@ -161,7 +161,7 @@ class KrakenServiceImpl(
         val allocations = configService.getConfig().allocations.map { it.symbol.value }
         val tradesList = mutableListOf<TradeRecord>()
 
-        tradesNode.fields().forEach { (_, tradeNode) ->
+        tradesNode.properties().forEach { (_, tradeNode) ->
             val pair = tradeNode.path("pair").asText()
             val type = tradeNode.path("type").asText() // "buy" or "sell"
             val time = tradeNode.path("time").asDouble() // e.g. 1618000000.1234
@@ -221,15 +221,7 @@ class KrakenServiceImpl(
             return emptyList()
         }
 
-        var ohlcNode: JsonNode? = null
-        val fields = resultNode.fields()
-        while (fields.hasNext()) {
-            val field = fields.next()
-            if (field.key != "last") {
-                ohlcNode = field.value
-                break
-            }
-        }
+        val ohlcNode = resultNode.properties().firstOrNull { it.key != "last" }?.value
 
         if (ohlcNode == null || !ohlcNode.isArray) {
             return emptyList()
