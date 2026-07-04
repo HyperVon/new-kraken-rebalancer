@@ -988,6 +988,40 @@ class KrakenServiceTest : StringSpec() {
             }
         }
 
+        "retryOnTransientFailure_SucceedsOnSecondAttempt_Lockout" {
+            runTest {
+                var attempt = 0
+                val mockEngine = MockEngine { request ->
+                    if (attempt++ == 0) {
+                        respond(
+                            content = "{\"error\":[\"EGeneral:Temporary lockout\"]}",
+                            status = HttpStatusCode.OK,
+                            headers = headersOf(HttpHeaders.ContentType, "application/json")
+                        )
+                    } else {
+                        respond(
+                            content = "{\"error\":[],\"result\":{\"XXBTZUSD\":63000.0}}",
+                            status = HttpStatusCode.OK,
+                            headers = headersOf(HttpHeaders.ContentType, "application/json")
+                        )
+                    }
+                }
+                val mockConfigService = mockk<ConfigService>(relaxed = true)
+                val credentials = KrakenCredentials("k", Base64.getEncoder().encodeToString("secret".toByteArray()))
+                every { mockConfigService.getConfig() } returns AppConfig(credentials, Settings(loopDelaySeconds = 60, deviationTriggerPercent = 2.0, dustThresholdUSD = 1.0, dryRun = false), emptyList())
+
+                val service = KrakenServiceImpl(
+                    configService = mockConfigService,
+                    objectMapper = jacksonObjectMapper(),
+                    httpClient = HttpClient(mockEngine)
+                )
+
+                val balances = service.getBalances()
+                balances["XXBTZUSD"]?.toDouble() shouldBe 63000.0
+                attempt shouldBe 2
+            }
+        }
+
         "retryOnTransientFailure_FailsExhausted" {
             runTest {
                 val mockEngine = MockEngine { request ->

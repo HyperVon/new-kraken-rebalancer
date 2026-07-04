@@ -253,18 +253,23 @@ class KrakenServiceImpl(
                 return block()
             } catch (e: Exception) {
                 val isRateLimit = e.message?.contains("Rate limit exceeded") == true
+                val isLockout = e.message?.contains("Temporary lockout") == true
                 val isNetworkOrTransient = e is IOException ||
                                            e is ResponseException
 
-                if ((isNetworkOrTransient || isRateLimit) && attempt < maxAttempts - 1) {
+                if ((isNetworkOrTransient || isRateLimit || isLockout) && attempt < maxAttempts - 1) {
                     attempt++
-                    val currentBackoff = if (isRateLimit) rateLimitBackoffMs else backoffMs
+                    val currentBackoff = when {
+                        isLockout -> 15 * 60 * 1000L // 15 minutes in milliseconds
+                        isRateLimit -> rateLimitBackoffMs
+                        else -> backoffMs
+                    }
                     log.warn("Transient failure in {} (attempt {}/{}). Retrying in {}ms... Error: {}",
                         actionName, attempt, maxAttempts, currentBackoff, e.message)
                     delay(currentBackoff.milliseconds)
                     if (isRateLimit) {
                         rateLimitBackoffMs *= 2
-                    } else {
+                    } else if (!isLockout) {
                         backoffMs *= 2
                     }
                 } else {
