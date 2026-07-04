@@ -245,7 +245,8 @@ class KrakenServiceImpl(
     ): T {
         var attempt = 0
         val maxAttempts = 5
-        var backoffMs = 1000L
+        var backoffMs = 2000L
+        var rateLimitBackoffMs = 10000L
 
         while (true) {
             try {
@@ -257,11 +258,15 @@ class KrakenServiceImpl(
 
                 if ((isNetworkOrTransient || isRateLimit) && attempt < maxAttempts - 1) {
                     attempt++
-                    val currentBackoff = if (isRateLimit) backoffMs * 2 else backoffMs
+                    val currentBackoff = if (isRateLimit) rateLimitBackoffMs else backoffMs
                     log.warn("Transient failure in {} (attempt {}/{}). Retrying in {}ms... Error: {}",
                         actionName, attempt, maxAttempts, currentBackoff, e.message)
                     delay(currentBackoff.milliseconds)
-                    backoffMs *= 2
+                    if (isRateLimit) {
+                        rateLimitBackoffMs *= 2
+                    } else {
+                        backoffMs *= 2
+                    }
                 } else {
                     throw e
                 }
