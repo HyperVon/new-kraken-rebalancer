@@ -31,11 +31,12 @@ class ConfigServiceImpl(
             val key = parts[0]
             val defaultValue = if (parts.size > 1) parts[1] else ""
             val envValue = System.getenv(key)
-            if (envValue != null && envValue.isNotBlank()) {
+            val resolvedValue = if (envValue != null && envValue.isNotBlank()) {
                 envValue
             } else {
                 defaultValue
             }
+            resolvedValue.replace("\\", "\\\\").replace("\"", "\\\"")
         }
     }
 

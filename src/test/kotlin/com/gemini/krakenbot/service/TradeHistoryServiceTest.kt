@@ -83,7 +83,7 @@ class TradeHistoryServiceTest : StringSpec() {
         "addSnapshot_AddsToFrontAndSaves" {
             val tradeHistoryService = createService()
             val s1 = PortfolioSnapshot(
-                timestamp = Instant.now(),
+                timestamp = Instant.now().minusMillis(10),
                 totalValueUSD = BigDecimal.ZERO,
                 assets = emptyMap(),
                 actions = emptyList(),
