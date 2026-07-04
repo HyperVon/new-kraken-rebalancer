@@ -303,7 +303,7 @@ class EvaluationScenariosTest : StringSpec() {
                 val testStatsFile = "scenario2-stats.json"
                 val f = File(testStatsFile)
                 val db = DatabaseConfig.init(":memory:")
-                val statsRepo = SqlitePortfolioStatsRepositoryImpl(db)
+                val statsRepo = SqlitePortfolioStatsRepositoryImpl(db, objectMapper)
 
                 val appConfig = AppConfig(
                     kraken = KrakenCredentials("k", "s"),
@@ -969,7 +969,7 @@ class EvaluationScenariosTest : StringSpec() {
 
                 val targetStatsFile = File(baseFile, "stats.json")
                 val db = DatabaseConfig.init(":memory:")
-                val statsRepo = SqlitePortfolioStatsRepositoryImpl(db)
+                val statsRepo = SqlitePortfolioStatsRepositoryImpl(db, objectMapper)
                 val stats = PortfolioStats(BigDecimal("1234.56"))
 
                 // Close transaction manager to force write failure
@@ -1397,7 +1397,7 @@ class EvaluationScenariosTest : StringSpec() {
         "Scenario 20: Missing or Corrupt Stats File Recovery" {
             runTest {
                 val db = DatabaseConfig.init(":memory:")
-                val statsRepo = SqlitePortfolioStatsRepositoryImpl(db)
+                val statsRepo = SqlitePortfolioStatsRepositoryImpl(db, objectMapper)
                 
                 val stats = statsRepo.load()
                 val loadSuccess = stats.allTimeHigh != null && stats.allTimeHigh!!.compareTo(BigDecimal.ZERO) == 0
@@ -1912,7 +1912,7 @@ class EvaluationScenariosTest : StringSpec() {
                 val testStatsFile = "scenario30-stats.json"
                 val f = File(testStatsFile)
                 val db = DatabaseConfig.init(":memory:")
-                val statsRepo = SqlitePortfolioStatsRepositoryImpl(db)
+                val statsRepo = SqlitePortfolioStatsRepositoryImpl(db, objectMapper)
 
                 val appConfig = AppConfig(
                     kraken = KrakenCredentials("k", "s"),

@@ -17,6 +17,7 @@ import org.jetbrains.exposed.sql.Database
 import org.jetbrains.exposed.sql.Transaction
 import org.jetbrains.exposed.sql.transactions.TransactionManager
 import org.jetbrains.exposed.sql.transactions.transaction
+import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import java.math.BigDecimal
 import org.jetbrains.exposed.sql.transactions.transactionManager
 import java.io.IOException
@@ -38,8 +39,9 @@ class SqlitePortfolioStatsRepositoryImplTest : StringSpec() {
 
     override fun isolationMode() = IsolationMode.InstancePerTest
 
+    private val objectMapper = jacksonObjectMapper()
     private val db = DatabaseConfig.init(":memory:")
-    private val repository = SqlitePortfolioStatsRepositoryImpl(db)
+    private val repository = SqlitePortfolioStatsRepositoryImpl(db, objectMapper)
 
     init {
         "load returns zero when empty" {
@@ -68,7 +70,7 @@ class SqlitePortfolioStatsRepositoryImplTest : StringSpec() {
         "load returns default stats when database throws exception" {
             // Create a db and drop the stats table to trigger an exception on load
             val brokenDb = DatabaseConfig.init(":memory:")
-            val brokenRepo = SqlitePortfolioStatsRepositoryImpl(brokenDb)
+            val brokenRepo = SqlitePortfolioStatsRepositoryImpl(brokenDb, objectMapper)
 
             transaction(brokenDb) {
                 exec("DROP TABLE IF EXISTS portfolio_stats")
@@ -81,7 +83,7 @@ class SqlitePortfolioStatsRepositoryImplTest : StringSpec() {
 
         "save wraps non-IOException as IOException" {
             val brokenDb = DatabaseConfig.init(":memory:")
-            val brokenRepo = SqlitePortfolioStatsRepositoryImpl(brokenDb)
+            val brokenRepo = SqlitePortfolioStatsRepositoryImpl(brokenDb, objectMapper)
 
             transaction(brokenDb) {
                 exec("DROP TABLE IF EXISTS portfolio_stats")
@@ -107,7 +109,7 @@ class SqlitePortfolioStatsRepositoryImplTest : StringSpec() {
             mockkStatic("org.jetbrains.exposed.sql.transactions.TransactionApiKt")
             every { mockDb.transactionManager } returns throwingTxManager
             
-            val ioRepo = SqlitePortfolioStatsRepositoryImpl(mockDb)
+            val ioRepo = SqlitePortfolioStatsRepositoryImpl(mockDb, objectMapper)
             val stats = PortfolioStats(BigDecimal("10000.00"))
 
             val thrown = shouldThrow<IOException> {
@@ -116,6 +118,28 @@ class SqlitePortfolioStatsRepositoryImplTest : StringSpec() {
             thrown.message shouldBe "Direct IO failure"
 
             unmockkStatic("org.jetbrains.exposed.sql.transactions.TransactionApiKt")
+        }
+
+        "load migrates portfolio-stats.json if database is empty" {
+            val file = java.io.File("portfolio-stats.json")
+            try {
+                file.delete()
+                file.writeText("""{"allTimeHigh": 18000.0}""")
+
+                val stats = repository.load()
+                stats.allTimeHigh.shouldNotBeNull()
+                stats.allTimeHigh!!.shouldBeEqualComparingTo(BigDecimal("18000.00"))
+
+                val loadedFromDb = repository.load()
+                loadedFromDb.allTimeHigh.shouldNotBeNull()
+                loadedFromDb.allTimeHigh!!.shouldBeEqualComparingTo(BigDecimal("18000.00"))
+
+                file.exists() shouldBe false
+                java.io.File("portfolio-stats.json.bak").exists() shouldBe true
+            } finally {
+                file.delete()
+                java.io.File("portfolio-stats.json.bak").delete()
+            }
         }
     }
 }

@@ -16,6 +16,8 @@ import java.math.BigDecimal
 import java.time.Instant
 import java.util.concurrent.CopyOnWriteArrayList
 
+import com.fasterxml.jackson.databind.ObjectMapper
+import java.io.File
 import java.math.RoundingMode
 import java.time.Duration
 import java.time.temporal.ChronoUnit
@@ -28,7 +30,8 @@ class TradeHistoryServiceImpl(
     private val repository: TradeRepository,
     private val portfolioStatsRepository: PortfolioStatsRepository,
     private val krakenService: KrakenService,
-    private val configService: ConfigService
+    private val configService: ConfigService,
+    private val objectMapper: ObjectMapper
 ) : TradeHistoryService {
 
     private val log = LoggerFactory.getLogger(TradeHistoryServiceImpl::class.java)
@@ -40,12 +43,35 @@ class TradeHistoryServiceImpl(
     override fun init() {
         val loaded = repository.load()
         if (loaded.isEmpty()) {
-            val config = configService.getConfig()
-            if (config.settings.simulation) {
+            val file = File("trade-history.json")
+            if (file.exists()) {
+                log.info("Found trade-history.json. Migrating snapshots to database...")
                 try {
-                    seedHistoricalSnapshots()
+                    val snapshots = objectMapper.readValue(
+                        file,
+                        object : com.fasterxml.jackson.core.type.TypeReference<List<PortfolioSnapshot>>() {}
+                    )
+                    if (!snapshots.isNullOrEmpty()) {
+                        log.info("Loaded {} snapshots from trade-history.json. Saving to SQLite...", snapshots.size)
+                        repository.save(snapshots)
+                        try {
+                            file.renameTo(File("trade-history.json.bak"))
+                            log.info("Renamed trade-history.json to trade-history.json.bak")
+                        } catch (ex: Exception) {
+                            log.warn("Failed to rename trade-history.json", ex)
+                        }
+                    }
                 } catch (e: Exception) {
-                    log.error("Failed to seed historical snapshots", e)
+                    log.error("Failed to migrate trade-history.json", e)
+                }
+            } else {
+                val config = configService.getConfig()
+                if (config.settings.simulation) {
+                    try {
+                        seedHistoricalSnapshots()
+                    } catch (e: Exception) {
+                        log.error("Failed to seed historical snapshots", e)
+                    }
                 }
             }
         }

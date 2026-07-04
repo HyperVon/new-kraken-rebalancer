@@ -117,7 +117,7 @@ class KrakenE2ETest : StringSpec() {
                     jacksonObjectMapper().findAndRegisterModules()
 
                 val db = DatabaseConfig.init(":memory:")
-                val statsRepo = SqlitePortfolioStatsRepositoryImpl(db)
+                val statsRepo = SqlitePortfolioStatsRepositoryImpl(db, objectMapper)
                 val tradesRepo = SqliteTradeRepositoryImpl(db)
 
                 // Services
@@ -127,7 +127,7 @@ class KrakenE2ETest : StringSpec() {
                     httpClient = httpClient
                 )
                 val tradeHistoryService =
-                    TradeHistoryServiceImpl(tradesRepo, statsRepo, krakenService, mockConfigService)
+                    TradeHistoryServiceImpl(tradesRepo, statsRepo, krakenService, mockConfigService, objectMapper)
 
                 val portfolioAnalyzer = PortfolioAnalyzerImpl(
                     krakenService = krakenService,
@@ -229,7 +229,7 @@ class KrakenE2ETest : StringSpec() {
                     jacksonObjectMapper().findAndRegisterModules()
 
                 val db = DatabaseConfig.init(":memory:")
-                val statsRepo = SqlitePortfolioStatsRepositoryImpl(db)
+                val statsRepo = SqlitePortfolioStatsRepositoryImpl(db, objectMapper)
                 val tradesRepo = SqliteTradeRepositoryImpl(db)
 
                 val krakenService = KrakenServiceImpl(
@@ -237,7 +237,7 @@ class KrakenE2ETest : StringSpec() {
                     objectMapper = objectMapper,
                     httpClient = httpClient
                 )
-                val tradeHistoryService = TradeHistoryServiceImpl(tradesRepo, statsRepo, krakenService, mockConfigService)
+                val tradeHistoryService = TradeHistoryServiceImpl(tradesRepo, statsRepo, krakenService, mockConfigService, objectMapper)
 
                 val portfolioAnalyzer = PortfolioAnalyzerImpl(
                     krakenService = krakenService,
