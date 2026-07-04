@@ -420,7 +420,8 @@ class TradeHistoryServiceImpl(
 
         // 4. Fetch all trades from database
         val trades = repository.getTradesInRange(Instant.now().minus(95, ChronoUnit.DAYS), Instant.now())
-            .filter { it.success }
+            .filter { it.success && !it.dryRun }
+
 
         val tradePrices = trades.groupBy { it.symbol.uppercase() }
             .mapValues { entry ->

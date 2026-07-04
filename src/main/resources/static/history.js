@@ -245,11 +245,12 @@ function buildCumulativePLChart(trades) {
 
     const sorted = [...trades].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
     let cumulative = 0;
-    const data = sorted.filter(t => t.success).map(t => {
+    const data = sorted.filter(t => t.success && !t.dryRun).map(t => {
         const amt = Number(t.usdAmount);
         cumulative += t.side === 'SELL' ? amt : -amt;
         return { x: t.timestamp, y: cumulative };
     });
+
 
     if (!data.length) return;
 
