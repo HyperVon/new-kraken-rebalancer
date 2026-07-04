@@ -24,6 +24,8 @@ import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 import kotlin.io.encoding.Base64
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.io.IOException
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.minutes
@@ -42,6 +44,10 @@ class KrakenServiceImpl(
         AtomicLong(System.currentTimeMillis() * 1000)
     private val lastPrivateCallTime = AtomicLong(0)
     val lastFetchedCount = java.util.concurrent.atomic.AtomicInteger(0)
+
+    private val rateLimitMutex = Mutex()
+    private var apiCallCounter = 0.0
+    private var lastCallTimestamp = System.currentTimeMillis()
 
     override suspend fun getBalances(): RawBalances {
         val path = "/$apiVersion/private/Balance"
@@ -317,12 +323,29 @@ class KrakenServiceImpl(
 
         return retryOnTransientFailure("queryPrivate($path)") {
             while (true) {
-                val now = System.currentTimeMillis()
-                val elapsed = now - lastPrivateCallTime.get()
-                if (elapsed < 1000L) {
-                    delay((1000L - elapsed).milliseconds)
+                rateLimitMutex.withLock {
+                    val now = System.currentTimeMillis()
+                    val elapsedSeconds = (now - lastCallTimestamp) / 1000.0
+                    apiCallCounter = maxOf(0.0, apiCallCounter - elapsedSeconds * 0.33)
+                    lastCallTimestamp = now
+
+                    val cost = if (path.contains("TradesHistory") || path.contains("Ledgers") || path.contains("ClosedOrders")) 2.0 else 1.0
+                    val safeLimit = 12.0
+
+                    if (apiCallCounter + cost > safeLimit) {
+                        val neededDecay = (apiCallCounter + cost) - safeLimit
+                        val waitSeconds = neededDecay / 0.33
+                        val waitMs = (waitSeconds * 1000).toLong()
+                        if (waitMs > 0) {
+                            log.info("Rate limiter throttling private call to {} (current counter: {}). Delaying for {}ms...", path, apiCallCounter, waitMs)
+                            delay(waitMs.milliseconds)
+                        }
+                        apiCallCounter = safeLimit - cost
+                        lastCallTimestamp = System.currentTimeMillis()
+                    }
+
+                    apiCallCounter += cost
                 }
-                lastPrivateCallTime.set(System.currentTimeMillis())
 
                 val nonce = nonceGenerator.incrementAndGet().toString()
                 val payload = data.toMutableMap()

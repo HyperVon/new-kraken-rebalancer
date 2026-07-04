@@ -1164,6 +1164,34 @@ class KrakenServiceTest : StringSpec() {
                 ohlc[0].second shouldBe BigDecimal.ZERO
             }
         }
+
+        "queryPrivate_RateLimiter_ThrottlesCorrectly" {
+            runTest {
+                var callCount = 0
+                val mockEngine = MockEngine { request ->
+                    callCount++
+                    respond(
+                        content = "{\"error\":[],\"result\":{}}",
+                        status = HttpStatusCode.OK,
+                        headers = headersOf(HttpHeaders.ContentType, "application/json")
+                    )
+                }
+                val mockConfigService = mockk<ConfigService>(relaxed = true)
+                val credentials = KrakenCredentials("k", Base64.getEncoder().encodeToString("secret".toByteArray()))
+                every { mockConfigService.getConfig() } returns AppConfig(credentials, Settings(loopDelaySeconds = 60, deviationTriggerPercent = 2.0, dustThresholdUSD = 1.0, dryRun = false), emptyList())
+
+                val service = KrakenServiceImpl(
+                    configService = mockConfigService,
+                    objectMapper = jacksonObjectMapper(),
+                    httpClient = HttpClient(mockEngine)
+                )
+
+                repeat(8) {
+                    service.getBalances()
+                }
+                callCount shouldBe 8
+            }
+        }
     }
 }
 
