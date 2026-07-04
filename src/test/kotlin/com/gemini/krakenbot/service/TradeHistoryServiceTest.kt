@@ -826,8 +826,11 @@ class TradeHistoryServiceTest : StringSpec() {
                         simulation = false
                     ),
                     allocations = listOf(
-                        Allocation("BTC", 50.0),
-                        Allocation("USD", 50.0)
+                        Allocation("BTC", 30.0),
+                        Allocation("ETH", 30.0),
+                        Allocation("EUR", 20.0),
+                        Allocation("DOGE", 10.0),
+                        Allocation("USD", 10.0)
                     )
                 )
                 every { configService.getConfig() } returns appConfig
@@ -865,8 +868,8 @@ class TradeHistoryServiceTest : StringSpec() {
                     fee = BigDecimal("7.00")
                 )
                 
-                coEvery { krakenService.getTradeHistory(null, 0) } returns listOf(apiTrade1, apiTrade2)
-                coEvery { krakenService.getTradeHistory(null, 50) } returns emptyList()
+                coEvery { krakenService.getTradeHistory(any(), 0) } returns listOf(apiTrade1, apiTrade2)
+                coEvery { krakenService.getTradeHistory(any(), 50) } returns emptyList()
                 
                 every { repository.getTradesInRange(any(), any()) } returns listOf(apiTrade1, apiTrade2)
                 every { repository.saveTrade(any()) } just Runs
@@ -874,19 +877,270 @@ class TradeHistoryServiceTest : StringSpec() {
                 every { repository.setHistorySeeded(true) } just Runs
                 every { repository.setSyncMetadata(any(), any()) } just Runs
                 
-                val mockBalances = mapOf("BTC" to BigDecimal("1.0"), "USD" to BigDecimal("5000.0"))
+                val mockBalances = mapOf(
+                    "BTC" to BigDecimal("1.0"),
+                    "XETH" to BigDecimal("2.0"),
+                    "ZEUR" to BigDecimal("100.0"),
+                    "USD" to BigDecimal("5000.0")
+                )
                 coEvery { krakenService.getBalances() } returns mockBalances
-                coEvery { krakenService.getTickerPrices("BTCUSD") } returns mapOf("BTCUSD" to BigDecimal("30000.0"))
-                coEvery { krakenService.getOHLC("BTCUSD", 1440, any()) } returns listOf(Pair(Instant.now().minus(2, ChronoUnit.DAYS).epochSecond, BigDecimal("30000.0")))
+                coEvery { krakenService.getTickerPrices(any()) } returns mapOf("BTCUSD" to BigDecimal("30000.0"))
+                val dayStart = Instant.now().minus(2, ChronoUnit.DAYS).truncatedTo(ChronoUnit.DAYS).epochSecond
+                coEvery { krakenService.getOHLC("BTCUSD", 1440, any()) } returns listOf(Pair(dayStart, BigDecimal("30000.0")))
+                coEvery { krakenService.getOHLC("ETHUSD", 1440, any()) } returns emptyList()
+                coEvery { krakenService.getOHLC("EURUSD", 1440, any()) } returns emptyList()
+                coEvery { krakenService.getOHLC("DOGEUSD", 1440, any()) } returns emptyList()
                 
                 every { repository.save(any()) } just Runs
 
                 val service = createService()
+                every { configService.getConfig() } returns appConfig
                 service.syncTradesFromKraken()
 
                 verify { repository.save(any()) }
             }
         }
+
+        "syncMetadata_delegatesToRepository" {
+            val service = createService()
+            every { repository.getSyncMetadata("test_key") } returns "test_value"
+            service.getSyncMetadata("test_key") shouldBe "test_value"
+
+            service.setSyncMetadata("test_key", "test_value2")
+            verify { repository.setSyncMetadata("test_key", "test_value2") }
+
+            every { repository.isHistorySeeded() } returns true
+            service.isHistorySeeded() shouldBe true
+        }
+
+        "reconstructHistoricalSnapshots_WithExistingOldestSnapshot" {
+            runTest {
+                val appConfig = AppConfig(
+                    kraken = KrakenCredentials("key", "secret"),
+                    settings = Settings(
+                        loopDelaySeconds = 60,
+                        deviationTriggerPercent = 5.0,
+                        dustThresholdUSD = 5.0,
+                        dryRun = true,
+                        simulation = false
+                    ),
+                    allocations = listOf(
+                        Allocation("BTC", 50.0),
+                        Allocation("USD", 50.0)
+                    )
+                )
+                every { configService.getConfig() } returns appConfig
+
+                every { repository.isHistorySeeded() } returns false
+                every { repository.getLatestTradeTime() } returns null
+                every { repository.getSyncMetadata(any()) } returns null
+
+                val existingSnapshot = PortfolioSnapshot(
+                    timestamp = Instant.now().minus(5, ChronoUnit.DAYS),
+                    totalValueUSD = BigDecimal("10000.00"),
+                    assets = mapOf(
+                        "BTC" to PortfolioSnapshot.AssetSnapshot("BTC", BigDecimal("0.2"), BigDecimal("25000.00"), BigDecimal("5000.00"), BigDecimal("50.00"), BigDecimal("50.00"), BigDecimal.ZERO, BigDecimal.ZERO),
+                        "USD" to PortfolioSnapshot.AssetSnapshot("USD", BigDecimal("5000.00"), BigDecimal.ONE, BigDecimal("5000.00"), BigDecimal("50.00"), BigDecimal("50.00"), BigDecimal.ZERO, BigDecimal.ZERO)
+                    ),
+                    actions = emptyList(),
+                    drawdownPercent = BigDecimal.ZERO,
+                    fiatDeploymentPercent = BigDecimal.ZERO,
+                    effectiveUsdTargetPercent = BigDecimal.ZERO
+                )
+                every { repository.load() } returns listOf(existingSnapshot)
+                every { repository.getTotalTradeCount() } returns 1L
+
+                val apiTrade = TradeRecord(
+                    timestamp = Instant.now().minus(6, ChronoUnit.DAYS),
+                    pair = "BTCUSD",
+                    side = "BUY",
+                    symbol = "BTC",
+                    volume = BigDecimal("0.1"),
+                    usdAmount = BigDecimal("2500.00"),
+                    success = true,
+                    dryRun = false,
+                    price = BigDecimal("25000.00"),
+                    fee = BigDecimal("5.00")
+                )
+
+                coEvery { krakenService.getTradeHistory(any(), 0) } returns listOf(apiTrade)
+                coEvery { krakenService.getTradeHistory(any(), 50) } returns emptyList()
+                every { repository.getTradesInRange(any(), any()) } returns listOf(apiTrade)
+                every { repository.saveTrade(any()) } just Runs
+                every { repository.updateTrade(any(), any()) } just Runs
+                every { repository.setHistorySeeded(true) } just Runs
+                every { repository.setSyncMetadata(any(), any()) } just Runs
+
+                coEvery { krakenService.getOHLC("BTCUSD", 1440, any()) } returns emptyList()
+                every { repository.save(any()) } just Runs
+
+                val service = createService()
+                every { configService.getConfig() } returns appConfig
+                service.syncTradesFromKraken()
+
+                verify { repository.save(any()) }
+            }
+        }
+
+        "reconstructHistoricalSnapshots_FallbackMappingsAndExceptions" {
+            runTest {
+                val appConfig = AppConfig(
+                    kraken = KrakenCredentials("key", "secret"),
+                    settings = Settings(
+                        loopDelaySeconds = 60,
+                        deviationTriggerPercent = 5.0,
+                        dustThresholdUSD = 5.0,
+                        dryRun = true,
+                        simulation = false
+                    ),
+                    allocations = listOf(
+                        Allocation("BTC", 50.0),
+                        Allocation("USD", 50.0)
+                    )
+                )
+                every { configService.getConfig() } returns appConfig
+
+                every { repository.isHistorySeeded() } returns false
+                every { repository.getLatestTradeTime() } returns null
+                every { repository.getSyncMetadata("sync_offset") } returns null
+                every { repository.getSyncMetadata("sync_total") } returns null
+                every { repository.load() } returns emptyList()
+                every { repository.getTotalTradeCount() } returns 1L
+
+                coEvery { krakenService.getBalances() } throws RuntimeException("getBalances error")
+                
+                val apiTrade = TradeRecord(
+                    timestamp = Instant.now().minus(2, ChronoUnit.DAYS),
+                    pair = "BTCUSD",
+                    side = "BUY",
+                    symbol = "BTC",
+                    volume = BigDecimal("0.5"),
+                    usdAmount = BigDecimal("15000.00"),
+                    success = true,
+                    dryRun = false,
+                    price = BigDecimal("30000.00"),
+                    fee = BigDecimal("15.00")
+                )
+                coEvery { krakenService.getTradeHistory(any(), 0) } returns listOf(apiTrade)
+                coEvery { krakenService.getTradeHistory(any(), 50) } returns emptyList()
+                every { repository.getTradesInRange(any(), any()) } returns listOf(apiTrade)
+                every { repository.saveTrade(any()) } just Runs
+                every { repository.updateTrade(any(), any()) } just Runs
+                every { repository.setHistorySeeded(true) } just Runs
+                every { repository.setSyncMetadata(any(), any()) } just Runs
+
+                coEvery { krakenService.getTickerPrices(any()) } throws RuntimeException("getTickerPrices error")
+                coEvery { krakenService.getOHLC(any(), any(), any()) } throws RuntimeException("getOHLC error")
+
+                every { repository.save(any()) } just Runs
+
+                val service = createService()
+                every { configService.getConfig() } returns appConfig
+                service.syncTradesFromKraken()
+            }
+        }
+
+        "reconstructHistoricalSnapshots_FallbackMappingsAndSimulation" {
+            runTest {
+                val appConfig = AppConfig(
+                    kraken = KrakenCredentials("key", "secret"),
+                    settings = Settings(
+                        loopDelaySeconds = 60,
+                        deviationTriggerPercent = 5.0,
+                        dustThresholdUSD = 5.0,
+                        dryRun = true,
+                        simulation = true
+                    ),
+                    allocations = listOf(
+                        Allocation("BTC", 50.0),
+                        Allocation("USD", 50.0)
+                    )
+                )
+                every { configService.getConfig() } returns appConfig
+
+                every { repository.isHistorySeeded() } returns false
+                every { repository.getLatestTradeTime() } returns null
+                every { repository.getSyncMetadata("sync_offset") } returns null
+                every { repository.getSyncMetadata("sync_total") } returns null
+                every { repository.load() } returns emptyList()
+                every { repository.getTotalTradeCount() } returns 1L
+
+                val apiTrade = TradeRecord(
+                    timestamp = Instant.now().minus(2, ChronoUnit.DAYS),
+                    pair = "BTCUSD",
+                    side = "BUY",
+                    symbol = "BTC",
+                    volume = BigDecimal("0.5"),
+                    usdAmount = BigDecimal("15000.00"),
+                    success = true,
+                    dryRun = false,
+                    price = BigDecimal("30000.00"),
+                    fee = BigDecimal("15.00")
+                )
+                coEvery { krakenService.getTradeHistory(any(), 0) } returns listOf(apiTrade)
+                coEvery { krakenService.getTradeHistory(any(), 50) } returns emptyList()
+                every { repository.getTradesInRange(any(), any()) } returns listOf(apiTrade)
+                every { repository.saveTrade(any()) } just Runs
+                every { repository.updateTrade(any(), any()) } just Runs
+                every { repository.setHistorySeeded(true) } just Runs
+                every { repository.setSyncMetadata(any(), any()) } just Runs
+
+                val mockBalances = mapOf(
+                    "XXBT" to BigDecimal("1.0"),
+                    "USD" to BigDecimal("5000.0")
+                )
+                coEvery { krakenService.getBalances() } returns mockBalances
+                coEvery { krakenService.getTickerPrices(any()) } returns mapOf("BTCUSD" to BigDecimal("30000.0"))
+                coEvery { krakenService.getOHLC(any(), any(), any()) } returns emptyList()
+                every { repository.save(any()) } just Runs
+
+                val service = createService()
+                every { configService.getConfig() } returns appConfig
+                service.syncTradesFromKraken()
+            }
+        }
+
+        "syncTradesFromKraken_ApiFailure" {
+            runTest {
+                val appConfig = AppConfig(
+                    kraken = KrakenCredentials("key", "secret"),
+                    settings = Settings(
+                        loopDelaySeconds = 60,
+                        deviationTriggerPercent = 5.0,
+                        dustThresholdUSD = 5.0,
+                        dryRun = true,
+                        simulation = false
+                    ),
+                    allocations = listOf(
+                        Allocation("BTC", 50.0),
+                        Allocation("USD", 50.0)
+                    )
+                )
+                every { configService.getConfig() } returns appConfig
+
+                every { repository.isHistorySeeded() } returns false
+                every { repository.getLatestTradeTime() } returns null
+                every { repository.getSyncMetadata("sync_offset") } returns null
+                every { repository.getSyncMetadata("sync_total") } returns null
+                every { repository.load() } returns emptyList()
+                every { repository.getTotalTradeCount() } returns 0L
+
+                coEvery { krakenService.getTradeHistory(any(), any()) } throws RuntimeException("Kraken API down")
+
+                val service = createService()
+                every { configService.getConfig() } returns appConfig
+                var threw = false
+                try {
+                    service.syncTradesFromKraken()
+                } catch (e: RuntimeException) {
+                    if (e.message == "Kraken API down") {
+                        threw = true
+                    }
+                }
+                threw shouldBe true
+            }
+        }
     }
 }
+
 

@@ -67,6 +67,14 @@ class DynamicKrakenServiceTest : StringSpec() {
             dynamicService.getTradeHistory(12345L, 10)
             coVerify(exactly = 1) { simulatedService.getTradeHistory(12345L, 10) }
             coVerify(exactly = 0) { realService.getTradeHistory(any(), any()) }
+
+            // getOHLC
+            dynamicService.getOHLC("BTCUSD", 1440, null)
+            coVerify(exactly = 1) { simulatedService.getOHLC("BTCUSD", 1440, null) }
+            coVerify(exactly = 0) { realService.getOHLC(any(), any(), any()) }
+
+            // getRealService
+            dynamicService.realService shouldBe realService
         }
 
         "delegates to real service when simulation is false" {
@@ -106,6 +114,14 @@ class DynamicKrakenServiceTest : StringSpec() {
             dynamicService.getTradeHistory(12345L, 10)
             coVerify(exactly = 1) { realService.getTradeHistory(12345L, 10) }
             coVerify(exactly = 0) { simulatedService.getTradeHistory(any(), any()) }
+
+            // getOHLC
+            dynamicService.getOHLC("BTCUSD", 1440, null)
+            coVerify(exactly = 1) { realService.getOHLC("BTCUSD", 1440, null) }
+            coVerify(exactly = 0) { simulatedService.getOHLC(any(), any(), any()) }
+
+            // getRealService
+            dynamicService.realService shouldBe realService
         }
     }
 }

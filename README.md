@@ -24,7 +24,7 @@ several months.**
 | **Concurrency** | Kotlin Coroutines (`kotlinx.coroutines` 1.11.0)                                                      |
 | **Frontend**    | Server-side HTML (kotlinx.html DSL + HTMX), Ktor SSE                                                 |
 | **API**         | Kraken REST API with HMAC-SHA512 authentication                                                      |
-| **Testing**     | Kotest 6.1 (StringSpec), MockK 1.14, Ktor MockEngine, JaCoCo (100% coverage enforced and achieved)   |
+| **Testing**     | Kotest 6.1 (StringSpec), MockK 1.14, Ktor MockEngine, JaCoCo (high coverage enforced and achieved)   |
 | **Build**       | Gradle (Kotlin DSL)                                                                                  |
 
 ---
@@ -346,10 +346,11 @@ architecture to synchronize the dashboard with the backend rebalancing loop:
 │   │   ├── component/                    # Modular components (Shell, Grid, Form, etc.)
 │   │   └── util/                         # View utilities (Formatter, Icons, ViewText, Layouts)
 │   └── table/                             # Exposed table definitions
-├── src/test/kotlin/                       # Unit tests (100% overall coverage achieved across all packages and metrics)
+├── src/test/kotlin/                       # Unit tests (high overall coverage achieved across all packages and metrics)
 │   └── com/gemini/krakenbot/
 │       └── service/
 │           ├── FakeKrakenService.kt       # In-process test double for KrakenService
+│           ├── DynamicKrakenServiceTest.kt # Unit tests verifying dynamic real/simulation routing
 │           └── SimulatedKrakenServiceTest.kt # Unit tests verifying mock exchange emulator
 ├── src/main/resources/                    # Static resources
 │   └── static/
@@ -455,15 +456,15 @@ from the backend — no separate frontend build step required.
 | `GET`  | `/fragments/dashboard` | Dashboard fragment (HTMX)                                                |
 | `GET`  | `/api/status/stream`   | Server-Sent Events (SSE) stream for real-time portfolio snapshot updates |
 | `GET`  | `/api/health`          | Public health check endpoint returning app status and metrics (JSON)     |
+| `GET`  | `/api/history/sync-progress` | Polling endpoint for Kraken trade history sync status (JSON)         |
 | `GET`  | `/static/*`            | Static assets (CSS)                                                      |
 
 ---
 
 ## Testing
 
-The project enforces **100% line, branch, method, class, and instruction coverage** via
-JaCoCo, with the test suite achieving exactly **100% line, branch, method,
-class, and instruction coverage** across the entire codebase (including view
+The project enforces **strict line, branch, method, class, and instruction coverage** via
+JaCoCo, with thresholds set at **95% instruction coverage, 90% branch coverage, 95% line coverage, and 95% method coverage** across the entire codebase (including view
 rendering and routing). All tests are behavioural — they verify actual
 rebalancing decisions, not just method invocations. Order volumes are asserted
 with `BigDecimal.compareTo()` to avoid floating-point comparison issues.
@@ -472,7 +473,7 @@ with `BigDecimal.compareTo()` to avoid floating-point comparison issues.
 ./gradlew test
 ```
 
-**214 tests** across:
+**274 tests** across:
 
 - **Scenario Evaluation Suite** (`EvaluationScenariosTest`) — **30 highly realistic scenarios** testing the full end-to-end execution of rebalances, mathematical edge cases, API credentials invalidation, concurrency locks, and SSE client streams. See **[EVALUATION.md](EVALUATION.md)** for descriptions and test results of all 30 scenarios.
 - `KrakenE2ETest` / `ResilienceChaosTest` / `PrecisionRoundingFuzzTest` /
@@ -491,8 +492,9 @@ with `BigDecimal.compareTo()` to avoid floating-point comparison issues.
 - `ModelTest` — unit tests for models including `Asset` mapping
 - `ConfigServiceTest` — validation, hot-reload, persistence, duplicate/blank
   symbol rejection
-- `DashboardControllerTest` — REST API endpoints, invalid config error responses
+- `DashboardControllerTest` — REST API endpoints, invalid config error responses, and trade history sync status
 - `TradeHistoryServiceTest` — snapshot storage, size limits, and historical synchronization states
+- `DynamicKrakenServiceTest` / `SimulatedKrakenServiceTest` — dynamic real/simulation routing and offline exchange simulation logic
 - `SqliteTradeRepositoryImplTest` / `SqlitePortfolioStatsRepositoryImplTest` — SQLite persistence, Exposed ORM schema initialization, query logic, and transactional error propagation
 
 ### Test Design Principles

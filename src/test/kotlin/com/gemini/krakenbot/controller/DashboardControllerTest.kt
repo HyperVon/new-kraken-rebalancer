@@ -722,5 +722,24 @@ class DashboardControllerTest : StringSpec() {
                 body shouldContain "\"lastSnapshotTotalValueUSD\":0"
             }
         }
+
+        "getSyncProgress_ReturnsJson" {
+            every { tradeHistoryService.isHistorySeeded() } returns false
+            every { tradeHistoryService.getSyncMetadata("sync_offset") } returns "123"
+            every { tradeHistoryService.getSyncMetadata("sync_total") } returns "456"
+
+            testApplication {
+                application {
+                    configureTestEnv()
+                }
+                val response = client.get("/api/history/sync-progress")
+                response.status shouldBe HttpStatusCode.OK
+                response.headers[HttpHeaders.ContentType] shouldContain "application/json"
+                val body = response.bodyAsText()
+                body shouldContain "\"seeded\":false"
+                body shouldContain "\"offset\":\"123\""
+                body shouldContain "\"total\":\"456\""
+            }
+        }
     }
 }

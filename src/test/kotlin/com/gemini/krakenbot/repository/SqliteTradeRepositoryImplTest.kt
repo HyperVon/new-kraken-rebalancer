@@ -529,6 +529,15 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
             val inRange = repository.getSnapshotsInRange(Instant.EPOCH, Instant.EPOCH)
             inRange.isEmpty() shouldBe true
         }
+
+        "save and load sync metadata" {
+            repository.getSyncMetadata("sync_key") shouldBe null
+            repository.setSyncMetadata("sync_key", "sync_val")
+            repository.getSyncMetadata("sync_key") shouldBe "sync_val"
+
+            repository.setSyncMetadata("sync_key", "sync_val_updated")
+            repository.getSyncMetadata("sync_key") shouldBe "sync_val_updated"
+        }
     }
 }
 

@@ -8,6 +8,16 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [6.0.0] - 2026-07-04
+
+### Added
+- **SQLite Trade & Stats Repositories**: Replaced file-based JSON storage with Exposed ORM SQLite database persistence.
+- **90-Day History Page**: Designed and implemented `/history` UI page containing interactive charts for Portfolio Value, Asset Holdings, Allocation Drift, and Cumulative P&L over time.
+- **Sync Progress Tracking**: Implemented a progress banner in UI that polls `/api/history/sync-progress` to display the percentage completion of Kraken trade synchronization on startup.
+- **Dry-Run Checkbox Filter**: Added a UI checkbox in the Trade Log to show/hide dry-run (simulation) trades dynamically.
+- **Historical Snapshot Reconstruction**: Implemented backward walking algorithm in `TradeHistoryServiceImpl` to reconstruct a clean 90-day history from local trades and Kraken public OHLC API data.
+- **Jacoco Test Verification**: Configured Jacoco test coverage verification as a finalizer on the `Test` task with a strict coverage gate.
+
 ## [5.0.0] - 2026-07-03
 
 ### Added

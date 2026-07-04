@@ -1073,5 +1073,63 @@ class KrakenServiceTest : StringSpec() {
                 attempt shouldBe 2
             }
         }
+
+        "getOHLC_Success" {
+            runTest {
+                val responseJson = "{\"error\":[],\"result\":{\"XXBTZUSD\":[[1616662800,\"52000.0\",\"53000.0\",\"51000.0\",\"52500.0\",\"52200.0\",\"100.5\",1234]],\"last\":1616835600}}"
+                val service = createService(responseJson) as KrakenServiceImpl
+                val ohlc = service.getOHLC("XXBTZUSD", 1440, null)
+                ohlc.size shouldBe 1
+                ohlc[0].first shouldBe 1616662800L
+                ohlc[0].second.toDouble() shouldBe 52500.0
+                service.lastFetchedCount.get() shouldBe 0
+            }
+        }
+
+        "getOHLC_Error" {
+            runTest {
+                val service = createService("invalid-json")
+                val ohlc = service.getOHLC("XXBTZUSD", 1440, null)
+                ohlc.isEmpty().shouldBeTrue()
+            }
+        }
+
+        "getOHLC_NonObjectResult" {
+            runTest {
+                val responseJson = "{\"error\":[],\"result\":\"not-an-object\"}"
+                val service = createService(responseJson) as KrakenServiceImpl
+                val ohlc = service.getOHLC("XXBTZUSD", 1440, null)
+                ohlc.isEmpty().shouldBeTrue()
+            }
+        }
+
+        "getOHLC_LastFieldFirst" {
+            runTest {
+                val responseJson = "{\"error\":[],\"result\":{\"last\":1616835600,\"XXBTZUSD\":[[1616662800,\"52000.0\",\"53000.0\",\"51000.0\",\"52500.0\",\"52200.0\",\"100.5\",1234]]}}"
+                val service = createService(responseJson) as KrakenServiceImpl
+                val ohlc = service.getOHLC("XXBTZUSD", 1440, null)
+                ohlc.size shouldBe 1
+            }
+        }
+
+        "getOHLC_NullOrNonArrayOhlcNode" {
+            runTest {
+                val responseJson = "{\"error\":[],\"result\":{\"XXBTZUSD\":\"not-an-array\",\"last\":1616835600}}"
+                val service = createService(responseJson) as KrakenServiceImpl
+                val ohlc = service.getOHLC("XXBTZUSD", 1440, null)
+                ohlc.isEmpty().shouldBeTrue()
+            }
+        }
+
+        "getOHLC_InvalidEntries" {
+            runTest {
+                val responseJson = "{\"error\":[],\"result\":{\"XXBTZUSD\":[\"not-an-array\", [1616662800,\"52000.0\",\"53000.0\",\"51000.0\",\"invalid-price\",\"52200.0\",\"100.5\",1234]]}}"
+                val service = createService(responseJson) as KrakenServiceImpl
+                val ohlc = service.getOHLC("XXBTZUSD", 1440, null)
+                ohlc.size shouldBe 1
+                ohlc[0].second shouldBe BigDecimal.ZERO
+            }
+        }
     }
 }
+

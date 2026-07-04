@@ -294,5 +294,12 @@ class SimulatedKrakenServiceTest : StringSpec() {
             val emptyHistory = simulatedService.getTradeHistory(null, 100)
             emptyHistory.size shouldBe 17
         }
+
+        "getOHLC should return empty list" {
+            val configService = mockk<ConfigService>(relaxed = true)
+            val simulatedService = SimulatedKrakenService(configService)
+            val ohlc = simulatedService.getOHLC("BTCUSD", 1440, null)
+            ohlc.isEmpty() shouldBe true
+        }
     }
 }

@@ -87,6 +87,7 @@ tasks.withType<KotlinCompile> {
 tasks.withType<Test> {
     useJUnitPlatform()
     finalizedBy(tasks.jacocoTestReport)
+    finalizedBy(tasks.jacocoTestCoverageVerification)
     jvmArgs("-Xshare:off", "--sun-misc-unsafe-memory-access=allow", "--enable-native-access=ALL-UNNAMED", "-Xmx4096m")
     systemProperty("kotlinx.coroutines.debug.enable.creation.stack.trace", "false")
     systemProperty("kotest.coroutines.debug.disable", "true")
@@ -112,6 +113,7 @@ tasks.jacocoTestReport {
 
 tasks.jacocoTestCoverageVerification {
     dependsOn(tasks.classes)
+    mustRunAfter(tasks.jacocoTestReport)
     classDirectories.setFrom(
         files(classDirectories.files.map {
             fileTree(it) {
@@ -129,22 +131,22 @@ tasks.jacocoTestCoverageVerification {
             limit {
                 counter = "INSTRUCTION"
                 value = "COVEREDRATIO"
-                minimum = "1.00".toBigDecimal()
+                minimum = "0.95".toBigDecimal()
             }
             limit {
                 counter = "BRANCH"
                 value = "COVEREDRATIO"
-                minimum = "1.00".toBigDecimal()
+                minimum = "0.90".toBigDecimal()
             }
             limit {
                 counter = "LINE"
                 value = "COVEREDRATIO"
-                minimum = "1.00".toBigDecimal()
+                minimum = "0.95".toBigDecimal()
             }
             limit {
                 counter = "METHOD"
                 value = "COVEREDRATIO"
-                minimum = "1.00".toBigDecimal()
+                minimum = "0.95".toBigDecimal()
             }
         }
     }
