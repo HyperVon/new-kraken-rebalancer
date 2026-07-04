@@ -54,6 +54,8 @@ const chartDefaults = {
 
 let charts = {};
 let currentRange = '30d';
+let allTrades = [];
+
 
 async function fetchJSON(url) {
     const res = await fetch(url);
@@ -288,12 +290,16 @@ function renderTradeTable(trades) {
     const tbody = document.getElementById('trade-table-body');
     if (!tbody) return;
 
-    if (!trades.length) {
+    const showDryRun = document.getElementById('show-dry-run-checkbox')?.checked ?? true;
+    const filteredTrades = showDryRun ? trades : trades.filter(t => !t.dryRun);
+
+    if (!filteredTrades.length) {
         tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--color-text-muted);padding:2rem;">No trades found for this period.</td></tr>';
         return;
     }
 
-    tbody.innerHTML = trades.map(t => {
+    tbody.innerHTML = filteredTrades.map(t => {
+
         const time = new Date(t.timestamp).toLocaleString();
         const sideClass = t.side === 'BUY' ? 'badge badge-buy' : 'badge badge-sell';
         const statusText = t.success ? (t.dryRun ? 'DRY RUN' : 'SUCCESS') : 'FAILED';
@@ -341,6 +347,8 @@ async function loadAll(range) {
         fetchJSON(`/api/history/trades?range=${currentRange}`),
         fetchJSON('/api/history/stats')
     ]);
+
+    allTrades = trades;
 
     buildPortfolioValueChart(snapshots);
     buildAssetHoldingsChart(snapshots);
@@ -405,4 +413,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             loadAll(btn.getAttribute('data-range'));
         });
     });
+
+    const checkbox = document.getElementById('show-dry-run-checkbox');
+    if (checkbox) {
+        checkbox.addEventListener('change', () => {
+            renderTradeTable(allTrades);
+        });
+    }
 });

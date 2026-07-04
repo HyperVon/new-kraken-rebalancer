@@ -6,6 +6,8 @@ import com.gemini.krakenbot.view.util.Icons.icon
 import com.gemini.krakenbot.view.util.Routes
 import com.gemini.krakenbot.view.util.ViewText
 import kotlinx.html.*
+import kotlinx.html.InputType.*
+
 
 class HistoryPageComponent {
 
@@ -167,10 +169,26 @@ class HistoryPageComponent {
 
     private fun DIV.renderTradeTable() {
         div(CssClasses.GLASS_PANEL) {
-            h2(CssClasses.GLASS_PANEL_TITLE) {
-                icon(Icons.CHART)
-                +ViewText.HISTORY_TRADE_LOG
+            div {
+                style = "display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;"
+                h2(CssClasses.GLASS_PANEL_TITLE) {
+                    style = "margin-bottom: 0;"
+                    icon(Icons.CHART)
+                    +ViewText.HISTORY_TRADE_LOG
+                }
+                label(classes = CssClasses.CHECKBOX_CONTAINER) {
+                    input(type = checkBox) {
+                        id = "show-dry-run-checkbox"
+                        checked = true
+                    }
+                    div(classes = CssClasses.CHECKBOX_CUSTOM) {}
+                    span {
+                        style = "font-size: 0.875rem; color: var(--color-text-muted);"
+                        +"Show Dry Run Trades"
+                    }
+                }
             }
+
             div(CssClasses.TABLE_WRAPPER) {
                 table {
                     thead {
