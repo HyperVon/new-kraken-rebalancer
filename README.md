@@ -448,16 +448,16 @@ from the backend — no separate frontend build step required.
 
 ## API Endpoints
 
-| Method | Path                   | Description                                                              |
-|--------|------------------------|--------------------------------------------------------------------------|
-| `GET`  | `/`                    | Main dashboard shell (HTML)                                              |
-| `GET`  | `/settings`            | Settings page (HTML)                                                     |
-| `POST` | `/settings`            | Submit settings form (HTMX)                                              |
-| `GET`  | `/fragments/dashboard` | Dashboard fragment (HTMX)                                                |
-| `GET`  | `/api/status/stream`   | Server-Sent Events (SSE) stream for real-time portfolio snapshot updates |
-| `GET`  | `/api/health`          | Public health check endpoint returning app status and metrics (JSON)     |
-| `GET`  | `/api/history/sync-progress` | Polling endpoint for Kraken trade history sync status (JSON)         |
-| `GET`  | `/static/*`            | Static assets (CSS)                                                      |
+| Method | Path                         | Description                                                              |
+|--------|------------------------------|--------------------------------------------------------------------------|
+| `GET`  | `/`                          | Main dashboard shell (HTML)                                              |
+| `GET`  | `/settings`                  | Settings page (HTML)                                                     |
+| `POST` | `/settings`                  | Submit settings form (HTMX)                                              |
+| `GET`  | `/fragments/dashboard`       | Dashboard fragment (HTMX)                                                |
+| `GET`  | `/api/status/stream`         | Server-Sent Events (SSE) stream for real-time portfolio snapshot updates |
+| `GET`  | `/api/health`                | Public health check endpoint returning app status and metrics (JSON)     |
+| `GET`  | `/api/history/sync-progress` | Polling endpoint for Kraken trade history sync status (JSON)             |
+| `GET`  | `/static/*`                  | Static assets (CSS)                                                      |
 
 ---
 
