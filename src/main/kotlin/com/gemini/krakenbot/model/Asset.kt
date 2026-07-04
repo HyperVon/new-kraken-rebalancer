@@ -7,17 +7,13 @@ value class Asset(@get:JsonValue val value: String) {
     override fun toString(): String = value
 
     val krakenTicker: String
-        get() = when (value.uppercase()) {
-            BTC -> XBT
-            DOGE -> XDG
-            else -> value.uppercase()
-        }
+        get() = toKrakenTicker(value)
 
     val tradingPair: String
-        get() = "${krakenTicker}$USD"
+        get() = tradingPair(value)
 
     val isUsd: Boolean
-        get() = value.equals(USD, ignoreCase = true)
+        get() = isUsdSymbol(value)
 
     companion object {
         const val USD = "USD"
@@ -28,12 +24,18 @@ value class Asset(@get:JsonValue val value: String) {
         const val XBT = "XBT"
         const val XDG = "XDG"
 
+        private val KRAKEN_TICKER_BY_SYMBOL = mapOf(
+            BTC to XBT,
+            DOGE to XDG
+        )
+
+        private val FALLBACK_SYMBOLS = listOf(BTC, ETH, DOGE)
+
         operator fun invoke(value: String): Asset = Asset(value)
 
-        fun toKrakenTicker(symbol: String): String = when (symbol.uppercase()) {
-            BTC -> XBT
-            DOGE -> XDG
-            else -> symbol.uppercase()
+        fun toKrakenTicker(symbol: String): String {
+            val normalizedSymbol = normalizedSymbol(symbol)
+            return KRAKEN_TICKER_BY_SYMBOL[normalizedSymbol] ?: normalizedSymbol
         }
 
         fun tradingPair(symbol: String): String =
@@ -43,28 +45,26 @@ value class Asset(@get:JsonValue val value: String) {
 
         fun fromTradingPair(pair: String, allocations: List<String>): String? {
             val normalizedPair = pair.uppercase()
-            // 1. Try matching non-USD symbols first to prevent "USD" matching the quote currency of other assets
-            for (symbol in allocations) {
-                if (symbol.equals("USD", ignoreCase = true)) continue
-                val ticker = toKrakenTicker(symbol)
-                if (normalizedPair.contains(ticker) || normalizedPair.contains(symbol.uppercase())) {
-                    return symbol
-                }
-            }
-            // 2. If no non-USD asset matches, check for USD
-            for (symbol in allocations) {
-                if (symbol.equals("USD", ignoreCase = true)) {
-                    val ticker = toKrakenTicker(symbol)
-                    if (normalizedPair.contains(ticker) || normalizedPair.contains(symbol.uppercase())) {
-                        return symbol
-                    }
-                }
-            }
-            // Fallbacks
-            if (normalizedPair.contains("XBT") || normalizedPair.contains("BTC")) return "BTC"
-            if (normalizedPair.contains("ETH")) return "ETH"
-            if (normalizedPair.contains("XDG") || normalizedPair.contains("DOGE")) return "DOGE"
-            return null
+
+            return allocations
+                .filterNot(::isUsdSymbol)
+                .firstOrNull { symbol -> matchesTradingPair(normalizedPair, symbol) }
+                ?: allocations
+                    .firstOrNull { symbol -> isUsdSymbol(symbol) && matchesTradingPair(normalizedPair, symbol) }
+                ?: FALLBACK_SYMBOLS
+                    .firstOrNull { symbol -> matchesTradingPair(normalizedPair, symbol) }
+        }
+
+        private fun normalizedSymbol(symbol: String): String =
+            symbol.uppercase()
+
+        private fun isUsdSymbol(symbol: String): Boolean =
+            symbol.equals(USD, ignoreCase = true)
+
+        private fun matchesTradingPair(normalizedPair: String, symbol: String): Boolean {
+            val normalizedSymbol = normalizedSymbol(symbol)
+            return normalizedPair.contains(toKrakenTicker(normalizedSymbol)) ||
+                    normalizedPair.contains(normalizedSymbol)
         }
     }
 }
