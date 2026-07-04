@@ -59,7 +59,7 @@ class TradeHistoryServiceTest : StringSpec() {
         }
         every { repository.load() } answers { savedSnapshots.take(50) }
         
-        return TradeHistoryServiceImpl(repository, statsRepository, krakenService, configService, objectMapper)
+        return TradeHistoryServiceImpl(repository, statsRepository, krakenService, configService, objectMapper, "test-trade-history.json")
     }
 
     init {
@@ -255,7 +255,7 @@ class TradeHistoryServiceTest : StringSpec() {
                     allocations = emptyList()
                 )
                 every { configService.getConfig() } returns emptyConfig
-                val tradeHistoryService = TradeHistoryServiceImpl(repository, statsRepository, krakenService, configService, objectMapper)
+                val tradeHistoryService = TradeHistoryServiceImpl(repository, statsRepository, krakenService, configService, objectMapper, "test-trade-history.json")
 
                 tradeHistoryService.syncTradesFromKraken()
 
@@ -468,7 +468,7 @@ class TradeHistoryServiceTest : StringSpec() {
                     allocations = emptyList()
                 )
                 every { configService.getConfig() } returns placeholderConfig
-                val tradeHistoryService = TradeHistoryServiceImpl(repository, statsRepository, krakenService, configService, objectMapper)
+                val tradeHistoryService = TradeHistoryServiceImpl(repository, statsRepository, krakenService, configService, objectMapper, "test-trade-history.json")
 
                 tradeHistoryService.syncTradesFromKraken()
 
@@ -498,7 +498,7 @@ class TradeHistoryServiceTest : StringSpec() {
             every { configService.getConfig() } returns appConfig
             every { repository.load() } returns emptyList() // DB is empty!
 
-            val tradeHistoryService = TradeHistoryServiceImpl(repository, statsRepository, krakenService, configService, objectMapper)
+            val tradeHistoryService = TradeHistoryServiceImpl(repository, statsRepository, krakenService, configService, objectMapper, "test-trade-history.json")
             tradeHistoryService.init()
 
             // It should call saveSnapshot multiple times to seed 15 days of 6-hour interval snapshots (60 snapshots)
@@ -526,16 +526,18 @@ class TradeHistoryServiceTest : StringSpec() {
             every { repository.load() } returns emptyList()
             every { repository.saveSnapshot(any()) } throws RuntimeException("Seeding failed")
 
-            val tradeHistoryService = TradeHistoryServiceImpl(repository, statsRepository, krakenService, configService, objectMapper)
+            val tradeHistoryService = TradeHistoryServiceImpl(repository, statsRepository, krakenService, configService, objectMapper, "test-trade-history.json")
             
             // Should catch exception and not propagate it
             tradeHistoryService.init()
         }
 
         "init_MigratesTradeHistoryJsonIfEmpty" {
-            val file = java.io.File("trade-history.json")
+            val file = java.io.File("test-trade-history.json")
+            val bakFile = java.io.File("test-trade-history.json.bak")
             try {
                 file.delete()
+                bakFile.delete()
                 
                 val snapshot = PortfolioSnapshot(
                     timestamp = Instant.now(),
@@ -557,10 +559,10 @@ class TradeHistoryServiceTest : StringSpec() {
                 verify(exactly = 1) { repository.save(any()) }
                 
                 file.exists() shouldBe false
-                java.io.File("trade-history.json.bak").exists() shouldBe true
+                bakFile.exists() shouldBe true
             } finally {
                 file.delete()
-                java.io.File("trade-history.json.bak").delete()
+                bakFile.delete()
             }
         }
 

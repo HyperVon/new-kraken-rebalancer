@@ -26,6 +26,7 @@ import kotlin.io.encoding.Base64
 import kotlinx.coroutines.delay
 import java.io.IOException
 import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Duration.Companion.minutes
 
 class KrakenServiceImpl(
     private val configService: ConfigService,
@@ -260,7 +261,7 @@ class KrakenServiceImpl(
                 if ((isNetworkOrTransient || isRateLimit || isLockout) && attempt < maxAttempts - 1) {
                     attempt++
                     val currentBackoff = when {
-                        isLockout -> 15 * 60 * 1000L // 15 minutes in milliseconds
+                        isLockout -> 15.minutes.inWholeMilliseconds
                         isRateLimit -> rateLimitBackoffMs
                         else -> backoffMs
                     }

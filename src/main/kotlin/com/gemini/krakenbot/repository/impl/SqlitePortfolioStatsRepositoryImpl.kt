@@ -16,7 +16,8 @@ import java.math.BigDecimal
 
 class SqlitePortfolioStatsRepositoryImpl(
     private val database: Database,
-    private val objectMapper: ObjectMapper
+    private val objectMapper: ObjectMapper,
+    private val statsFilePath: String = "portfolio-stats.json"
 ) : PortfolioStatsRepository {
 
     private val log =
@@ -34,27 +35,29 @@ class SqlitePortfolioStatsRepositoryImpl(
                 if (dbStats != null) {
                     dbStats
                 } else {
-                    val file = File("portfolio-stats.json")
+                    val file = File(statsFilePath)
                     if (file.exists()) {
                         try {
                             val fileStats = objectMapper.readValue(file, PortfolioStats::class.java)
                             if (fileStats != null && fileStats.allTimeHigh != null) {
-                                log.info("Migrating allTimeHigh from portfolio-stats.json: {}", fileStats.allTimeHigh)
+                                log.info("Migrating allTimeHigh from stats file: {}", fileStats.allTimeHigh)
                                 PortfolioStatsTable.insert {
                                     it[allTimeHigh] = fileStats.allTimeHigh!!
                                 }
                                 try {
-                                    file.renameTo(File("portfolio-stats.json.bak"))
-                                    log.info("Renamed portfolio-stats.json to portfolio-stats.json.bak")
+                                    val sourcePath = file.toPath()
+                                    val targetPath = File(statsFilePath + ".bak").toPath()
+                                    java.nio.file.Files.move(sourcePath, targetPath, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+                                    log.info("Renamed stats file to backup successfully.")
                                 } catch (ex: Exception) {
-                                    log.warn("Failed to rename portfolio-stats.json", ex)
+                                    log.warn("Failed to rename stats file to backup", ex)
                                 }
                                 fileStats
                             } else {
                                 PortfolioStats(BigDecimal.ZERO)
                             }
                         } catch (e: Exception) {
-                            log.error("Failed to migrate portfolio-stats.json", e)
+                            log.error("Failed to migrate stats file", e)
                             PortfolioStats(BigDecimal.ZERO)
                         }
                     } else {

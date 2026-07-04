@@ -121,24 +121,27 @@ class SqlitePortfolioStatsRepositoryImplTest : StringSpec() {
         }
 
         "load migrates portfolio-stats.json if database is empty" {
-            val file = java.io.File("portfolio-stats.json")
+            val testFile = java.io.File("test-portfolio-stats.json")
+            val testBakFile = java.io.File("test-portfolio-stats.json.bak")
+            val testRepo = SqlitePortfolioStatsRepositoryImpl(db, objectMapper, "test-portfolio-stats.json")
             try {
-                file.delete()
-                file.writeText("""{"allTimeHigh": 18000.0}""")
+                testFile.delete()
+                testBakFile.delete()
+                testFile.writeText("""{"allTimeHigh": 18000.0}""")
 
-                val stats = repository.load()
+                val stats = testRepo.load()
                 stats.allTimeHigh.shouldNotBeNull()
                 stats.allTimeHigh!!.shouldBeEqualComparingTo(BigDecimal("18000.00"))
 
-                val loadedFromDb = repository.load()
+                val loadedFromDb = testRepo.load()
                 loadedFromDb.allTimeHigh.shouldNotBeNull()
                 loadedFromDb.allTimeHigh!!.shouldBeEqualComparingTo(BigDecimal("18000.00"))
 
-                file.exists() shouldBe false
-                java.io.File("portfolio-stats.json.bak").exists() shouldBe true
+                testFile.exists() shouldBe false
+                testBakFile.exists() shouldBe true
             } finally {
-                file.delete()
-                java.io.File("portfolio-stats.json.bak").delete()
+                testFile.delete()
+                testBakFile.delete()
             }
         }
     }

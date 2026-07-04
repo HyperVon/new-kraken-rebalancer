@@ -31,7 +31,8 @@ class TradeHistoryServiceImpl(
     private val portfolioStatsRepository: PortfolioStatsRepository,
     private val krakenService: KrakenService,
     private val configService: ConfigService,
-    private val objectMapper: ObjectMapper
+    private val objectMapper: ObjectMapper,
+    private val tradeHistoryFilePath: String = "trade-history.json"
 ) : TradeHistoryService {
 
     private val log = LoggerFactory.getLogger(TradeHistoryServiceImpl::class.java)
@@ -43,7 +44,7 @@ class TradeHistoryServiceImpl(
     override fun init() {
         val loaded = repository.load()
         if (loaded.isEmpty()) {
-            val file = File("trade-history.json")
+            val file = File(tradeHistoryFilePath)
             if (file.exists()) {
                 log.info("Found trade-history.json. Migrating snapshots to database...")
                 try {
@@ -55,14 +56,16 @@ class TradeHistoryServiceImpl(
                         log.info("Loaded {} snapshots from trade-history.json. Saving to SQLite...", snapshots.size)
                         repository.save(snapshots)
                         try {
-                            file.renameTo(File("trade-history.json.bak"))
-                            log.info("Renamed trade-history.json to trade-history.json.bak")
+                            val sourcePath = file.toPath()
+                            val targetPath = File(tradeHistoryFilePath + ".bak").toPath()
+                            java.nio.file.Files.move(sourcePath, targetPath, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+                            log.info("Renamed trade history file to backup successfully.")
                         } catch (ex: Exception) {
-                            log.warn("Failed to rename trade-history.json", ex)
+                            log.warn("Failed to rename trade history file to backup", ex)
                         }
                     }
                 } catch (e: Exception) {
-                    log.error("Failed to migrate trade-history.json", e)
+                    log.error("Failed to migrate trade history file", e)
                 }
             } else {
                 val config = configService.getConfig()

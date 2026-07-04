@@ -418,11 +418,11 @@ class ConfigServiceTest : StringSpec() {
         }
 
         "loadConfig_ResolveEnvVars_WithActualEnvValue" {
-            val userHome = System.getenv("HOME") ?: "fallback"
+            val pathValue = System.getenv("PATH") ?: "fallback"
             val content = """
                 {
                   "kraken": {
-                    "apiKey": "${'$'}{HOME:fallback-home}",
+                    "apiKey": "${'$'}{PATH:fallback-path}",
                     "privateKey": "some-private-key"
                   },
                   "settings": {
@@ -444,7 +444,7 @@ class ConfigServiceTest : StringSpec() {
             tempFile.writeText(content)
 
             val service = ConfigServiceImpl(objectMapper, tempFile.absolutePath)
-            service.getConfig().kraken.apiKey.value shouldBe userHome
+            service.getConfig().kraken.apiKey.value shouldBe pathValue
         }
 
         "loadConfig_ResolveEnvVars_NoDefaultValue" {
