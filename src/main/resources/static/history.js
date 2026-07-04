@@ -284,6 +284,35 @@ function buildCumulativePLChart(trades) {
     });
 }
 
+function formatPair(pair) {
+    if (!pair) return '';
+    const p = pair.toUpperCase();
+    const knownBases = {
+        'XBT': 'BTC',
+        'BTC': 'BTC',
+        'XETH': 'ETH',
+        'ETH': 'ETH',
+        'XDG': 'DOGE',
+        'DOGE': 'DOGE',
+        'SOL': 'SOL',
+        'XRP': 'XRP',
+        'LINK': 'LINK',
+        'INJ': 'INJ',
+        'RENDER': 'RENDER',
+        'TAO': 'TAO',
+        'PAXG': 'PAXG',
+        'AVAX': 'AVAX',
+        'TRX': 'TRX'
+    };
+
+    for (const [ticker, standard] of Object.entries(knownBases)) {
+        if (p.includes(ticker)) {
+            return `${standard} <-> USD`;
+        }
+    }
+    return pair;
+}
+
 /* ---- Trade Table ---- */
 
 function renderTradeTable(trades) {
@@ -306,7 +335,7 @@ function renderTradeTable(trades) {
         const statusClass = t.success ? (t.dryRun ? 'badge badge-info' : 'badge badge-buy') : 'badge badge-sell';
         return `<tr class="hoverable">
             <td class="mono-col">${time}</td>
-            <td class="symbol-col">${t.pair}</td>
+            <td class="symbol-col">${formatPair(t.pair)}</td>
             <td><span class="${sideClass}">${t.side}</span></td>
             <td class="mono-col">${Number(t.volume).toFixed(8)}</td>
             <td class="mono-col">${formatUSD(t.usdAmount)}</td>
