@@ -25,6 +25,7 @@ object DatabaseConfig {
     // Keeps dummy connections to prevent SQLite from dropping named in-memory databases
     private val keepAliveConnections = ConcurrentHashMap<String, Connection>()
 
+    @Suppress("DEPRECATION")
     fun init(dbPath: String = "kraken-rebalancer.db"): Database {
         log.info("Initializing SQLite database at: {}", dbPath)
         
