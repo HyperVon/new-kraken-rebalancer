@@ -2,6 +2,7 @@ package com.gemini.krakenbot
 
 import com.fasterxml.jackson.databind.SerializationFeature
 import com.gemini.krakenbot.config.appModule
+import com.gemini.krakenbot.config.ErrorHandlingConfig.configureErrorHandling
 import com.gemini.krakenbot.controller.dashboardRouting
 import com.gemini.krakenbot.service.PortfolioManager
 import io.ktor.client.*
@@ -49,6 +50,7 @@ fun main() {
 
     embeddedServer(Netty, port = 8080, host = "0.0.0.0") {
         install(SSE)
+        configureErrorHandling()
         install(ContentNegotiation) {
             jackson {
                 findAndRegisterModules()

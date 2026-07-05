@@ -2,6 +2,7 @@ package com.gemini.krakenbot.service.impl
 
 import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.Result
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.service.*
 import org.slf4j.LoggerFactory
@@ -69,7 +70,7 @@ class PortfolioAnalyzerImpl(
     override fun calculatePortfolioValues(
         balances: RawBalances,
         prices: AssetPrices
-    ): PortfolioValues? {
+    ): Result<PortfolioValues> {
         val currentValuesUSD = mutableMapOf<String, BigDecimal>()
         var totalPortfolioValueUSD = BigDecimal.ZERO
 
@@ -85,7 +86,9 @@ class PortfolioAnalyzerImpl(
                         "Price not found for {}. Aborting rebalance cycle to prevent erroneous trades.",
                         symbol
                     )
-                    return null
+                    return Result.Failure(
+                        IllegalStateException("Price not found for $symbol")
+                    )
                 }
                 price = p
             }
@@ -95,7 +98,7 @@ class PortfolioAnalyzerImpl(
             totalPortfolioValueUSD = totalPortfolioValueUSD.add(valUSD)
         }
 
-        return PortfolioValues(totalPortfolioValueUSD, currentValuesUSD)
+        return Result.Success(PortfolioValues(totalPortfolioValueUSD, currentValuesUSD))
     }
 
     override fun resolveBalance(symbol: String, balances: RawBalances): BigDecimal {
@@ -215,85 +218,60 @@ class PortfolioAnalyzerImpl(
 
         configService.getConfig().allocations.forEach { (symbol, targetPercent) ->
             val symbolVal = symbol.value
-            var targetPct = BigDecimal.valueOf(targetPercent)
-
-            targetPct =
-                if (symbol.isUsd) {
-                    effectiveUsdTarget
-                } else {
-                    targetPct.multiply(cryptoScaleFactor)
-                }
-
-            targetPct = targetPct.divide(
-                HUNDRED,
-                SCALE_PERCENT,
-                RoundingMode.HALF_UP
-            )
-            val targetValue =
-                totalPortfolioValueUSD.multiply(targetPct)
             val currentVal = currentValuesUSD[symbolVal] ?: BigDecimal.ZERO
 
-            val deviationUSD = currentVal.subtract(targetValue)
-            var deviationPct = BigDecimal.ZERO
+            // Use consolidated calculation logic
+            val metrics = PortfolioCalculations.calculateAssetMetrics(
+                symbol = symbol,
+                baseTargetPercent = BigDecimal.valueOf(targetPercent),
+                currentValueUSD = currentVal,
+                totalPortfolioValueUSD = totalPortfolioValueUSD,
+                effectiveUsdTarget = effectiveUsdTarget,
+                cryptoScaleFactor = cryptoScaleFactor,
+                dustThresholdUSD = s.dustThresholdUSD
+            )
 
-            if (targetValue > BigDecimal.ZERO) {
-                deviationPct =
-                    deviationUSD
-                        .abs()
-                        .divide(
-                            targetValue,
-                            SCALE_PERCENT,
-                            RoundingMode.HALF_UP
-                        )
-                        .multiply(HUNDRED)
-            } else if (currentVal > BigDecimal.ZERO) {
-                deviationPct = HUNDRED
-            }
-
-            allDeviations[symbolVal] = deviationUSD
+            allDeviations[symbolVal] = metrics.deviationUSD
 
             log.info(
                 "Analysis [{}]: Dev: {}% ($ {}). Threshold: {}%",
                 symbolVal,
-                deviationPct,
-                deviationUSD.setScale(SCALE_USD, RoundingMode.HALF_UP),
+                metrics.deviationPercent,
+                metrics.deviationUSD.setScale(SCALE_USD, RoundingMode.HALF_UP),
                 s.deviationTriggerPercent
             )
 
-            val isDeviationSignificant =
-                deviationUSD.abs() >= BigDecimal.valueOf(s.dustThresholdUSD)
-
-            if (deviationPct.toDouble() >= s.deviationTriggerPercent && isDeviationSignificant) {
+            if (metrics.deviationPercent.toDouble() >= s.deviationTriggerPercent && metrics.isSignificant) {
                 actionLog.add(
-                    "Deviation Triggered details: $symbolVal Dev: $deviationPct%"
+                    "Deviation Triggered details: $symbolVal Dev: ${metrics.deviationPercent}%"
                 )
             }
 
             if (symbol.isUsd) {
-                if (deviationPct.toDouble() >= s.deviationTriggerPercent && isDeviationSignificant) {
+                if (metrics.deviationPercent.toDouble() >= s.deviationTriggerPercent && metrics.isSignificant) {
                     log.info(
                         "Asset USD Deviation: {}% (Trigger: {}%). USD Dev: {}",
-                        deviationPct,
+                        metrics.deviationPercent,
                         s.deviationTriggerPercent,
-                        deviationUSD
+                        metrics.deviationUSD
                     )
                     usdTriggered = true
-                    usdDeviationAmount = deviationUSD
+                    usdDeviationAmount = metrics.deviationUSD
                 }
             } else {
-                if (deviationPct.toDouble() >= s.deviationTriggerPercent && isDeviationSignificant) {
+                if (metrics.deviationPercent.toDouble() >= s.deviationTriggerPercent && metrics.isSignificant) {
                     log.info(
                         "Asset {} Deviation: {}% (Trigger: {}%). USD Dev: {}",
                         symbolVal,
-                        deviationPct,
+                        metrics.deviationPercent,
                         s.deviationTriggerPercent,
-                        deviationUSD
+                        metrics.deviationUSD
                     )
 
-                    if (deviationUSD > BigDecimal.ZERO) {
-                        sellOrders[symbolVal] = deviationUSD
+                    if (metrics.deviationUSD > BigDecimal.ZERO) {
+                        sellOrders[symbolVal] = metrics.deviationUSD
                     } else {
-                        buyOrders[symbolVal] = deviationUSD.abs()
+                        buyOrders[symbolVal] = metrics.deviationUSD.abs()
                     }
                 }
             }

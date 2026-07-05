@@ -325,7 +325,7 @@ class EvaluationScenariosTest : StringSpec() {
                 val balances = mapOf("BTC" to 0.1, "ETH" to 2.5, Asset.USD to 0.0).toBigDecimalMap()
                 val prices = mapOf("BTC" to BigDecimal("50000.0"), "ETH" to BigDecimal("2000.0"))
                 // Total portfolio value = 0.1*50000 + 2.5*2000 = $10,000
-                val valInitial = analyzer.calculatePortfolioValues(balances, prices)!!
+                val valInitial = analyzer.calculatePortfolioValues(balances, prices).getOrNull()!!
                 valInitial.totalValueUSD.toDouble() shouldBe 10000.0
 
                 val drawdown1 = analyzer.updateAthAndCalculateDrawdown(valInitial.totalValueUSD)

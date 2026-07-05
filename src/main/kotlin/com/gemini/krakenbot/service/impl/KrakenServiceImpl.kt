@@ -10,6 +10,7 @@ import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.KrakenService
 import com.gemini.krakenbot.service.RawBalances
 import com.gemini.krakenbot.service.RawPrices
+import com.gemini.krakenbot.service.safeParseBigDecimal
 import java.time.Instant
 import io.ktor.client.*
 import io.ktor.client.plugins.ResponseException
@@ -42,20 +43,20 @@ class KrakenServiceImpl(
     private val apiUrl = "https://api.kraken.com"
     private val apiVersion = "0"
     private val nonceGenerator =
-        AtomicLong(System.currentTimeMillis() * 1000)
+       AtomicLong(System.currentTimeMillis() * 1000)
     val lastFetchedCount = AtomicInteger(0)
 
-    private val rateLimitMutex = Mutex()
-    private var apiCallCounter = 0.0
-    private var lastCallTimestamp = System.currentTimeMillis()
+    private val rateLimiter = RateLimiter()
 
     override suspend fun getBalances(): RawBalances {
         val path = "/$apiVersion/private/Balance"
         val response = queryPrivate(path, emptyMap())
         return response.properties()
-            .associate { (key, value) ->
-                key to BigDecimal(value.asText())
+            .mapNotNull { (key, value) ->
+                val amount = safeParseBigDecimal(value.asText())
+                if (amount > BigDecimal.ZERO) key to amount else null
             }
+            .toMap()
     }
 
     override suspend fun getTickerPrices(pairs: String): RawPrices {
@@ -64,7 +65,12 @@ class KrakenServiceImpl(
         return result.properties()
             .mapNotNull { (key, value) ->
                 val c = value.path("c")
-                if (c.isArray && !c.isEmpty) key to BigDecimal(c.get(0).asText()) else null
+                if (c.isArray && !c.isEmpty) {
+                    val price = safeParseBigDecimal(c.get(0).asText())
+                    if (price > BigDecimal.ZERO) key to price else null
+                } else {
+                    null
+                }
             }
             .toMap()
     }
@@ -182,10 +188,10 @@ class KrakenServiceImpl(
 
             val timestamp = Instant.ofEpochMilli((time * 1000).toLong())
             val side = type.uppercase() // "BUY" or "SELL"
-            val rawVolume = try { BigDecimal(volStr) } catch (_: Exception) { BigDecimal.ZERO }
-            val rawUsdAmount = try { BigDecimal(costStr) } catch (_: Exception) { BigDecimal.ZERO }
-            val rawPrice = try { BigDecimal(priceStr) } catch (_: Exception) { BigDecimal.ZERO }
-            val rawFee = try { BigDecimal(feeStr) } catch (_: Exception) { BigDecimal.ZERO }
+            val rawVolume = safeParseBigDecimal(volStr)
+            val rawUsdAmount = safeParseBigDecimal(costStr)
+            val rawPrice = safeParseBigDecimal(priceStr)
+            val rawFee = safeParseBigDecimal(feeStr)
             val volume = rawVolume.setScale(8, RoundingMode.HALF_UP)
             val usdAmount = rawUsdAmount.setScale(2, RoundingMode.HALF_UP)
 
@@ -323,29 +329,8 @@ class KrakenServiceImpl(
 
         return retryOnTransientFailure("queryPrivate($path)") {
             while (true) {
-                rateLimitMutex.withLock {
-                    val now = System.currentTimeMillis()
-                    val elapsedSeconds = (now - lastCallTimestamp) / 1000.0
-                    apiCallCounter = maxOf(0.0, apiCallCounter - elapsedSeconds * 0.33)
-                    lastCallTimestamp = now
-
-                    val cost = if (path.contains("TradesHistory") || path.contains("Ledgers") || path.contains("ClosedOrders")) 2.0 else 1.0
-                    val safeLimit = 12.0
-
-                    if (apiCallCounter + cost > safeLimit) {
-                        val neededDecay = (apiCallCounter + cost) - safeLimit
-                        val waitSeconds = neededDecay / 0.33
-                        val waitMs = (waitSeconds * 1000).toLong()
-                        if (waitMs > 0) {
-                            log.info("Rate limiter throttling private call to {} (current counter: {}). Delaying for {}ms...", path, apiCallCounter, waitMs)
-                            delay(waitMs.milliseconds)
-                        }
-                        apiCallCounter = safeLimit - cost
-                        lastCallTimestamp = System.currentTimeMillis()
-                    }
-
-                    apiCallCounter += cost
-                }
+                val cost = if (path.contains("TradesHistory") || path.contains("Ledgers") || path.contains("ClosedOrders")) 2.0 else 1.0
+                rateLimiter.acquireWithCost(cost)
 
                 val nonce = nonceGenerator.incrementAndGet().toString()
                 val payload = data.toMutableMap()

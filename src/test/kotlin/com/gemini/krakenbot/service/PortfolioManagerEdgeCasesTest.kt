@@ -567,7 +567,7 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
                 balances,
                 prices
             )
-            result shouldBe null
+            (result.exceptionOrNull() != null) shouldBe true
         }
 
         "testResolveBalance_FallbackChain" {
