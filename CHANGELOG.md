@@ -8,9 +8,16 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
-## [6.1.0] - 2026-07-05
+## [6.1.1] - 2026-07-05
 
-### Added
+### Changed
+
+- **Refactored Application Structure**: Cleaned up the entry point by modularizing server configurations (Serialization, CORS) and utility functions into `com.gemini.krakenbot.config.KtorConfig` and `com.gemini.krakenbot.util.NetworkUtils`.
+- **Standardized Infrastructure**: Centralized Ktor configurations to separate concerns, improving maintainability and increasing readability of the application startup sequence.
+- **JaCoCo Coverage Update**: Updated JaCoCo build configuration to properly exclude the new `util` package, ensuring accurate coverage reports post-refactoring.
+- **Idiomatic Concurrency**: Conducted a final audit of all `Flow` usages and structured concurrency patterns, ensuring all asynchronous stream exposures are read-only and safely managed.
+
+---
 
 - **Rebalance Event Streaming**: Introduced a sealed `RebalanceEvent` hierarchy (`RebalanceCycleStarted`, `RebalanceCycleCompleted`, `RebalanceCycleError`, `OrderExecuted`) and exposed `PortfolioManager.getRebalanceCycleFlow()` as a hot `SharedFlow` for event-driven monitoring and metrics collection.
 - **Per-Order Event Emission**: `OrderExecutor.executeOrders()` now accepts an `onOrderExecuted` callback; `PortfolioManagerImpl` forwards each `OrderExecuted` event to the rebalance cycle flow as orders complete.

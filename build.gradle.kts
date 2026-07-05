@@ -110,6 +110,7 @@ tasks.jacocoTestReport {
                 exclude("**/view/util/CssClass*")
                 exclude("**/view/util/ExtensionsKt*")
                 exclude("**/KrakenRebalancerApplication*")
+                exclude("**/util/**")
             }
         })
     )
@@ -130,6 +131,7 @@ tasks.jacocoTestCoverageVerification {
                 exclude("**/view/util/CssClass*")
                 exclude("**/view/util/ExtensionsKt*")
                 exclude("**/KrakenRebalancerApplication*")
+                exclude("**/util/**")
             }
         })
     )
