@@ -40,15 +40,46 @@ val appModule = module {
     // Database
     single<Database> { DatabaseConfig.init() }
 
-    single<ConfigService> { ConfigServiceImpl(get()) }
-    single<TradeRepository> { SqliteTradeRepositoryImpl(get()) }
-    single<PortfolioStatsRepository> { SqlitePortfolioStatsRepositoryImpl(get(), get()) }
-    single<TradeHistoryService> { TradeHistoryServiceImpl(get(), get(), get(), get(), get()).apply { init() } }
+    single<ConfigService> { ConfigServiceImpl(objectMapper = get()) }
+    single<TradeRepository> { SqliteTradeRepositoryImpl(database = get()) }
+    single<PortfolioStatsRepository> {
+        SqlitePortfolioStatsRepositoryImpl(
+            database = get(),
+            objectMapper = get()
+        )
+    }
+    single<TradeHistoryService> {
+        TradeHistoryServiceImpl(
+            repository = get(),
+            portfolioStatsRepository = get(),
+            krakenService = get(),
+            configService = get(),
+            objectMapper = get()
+        ).apply { init() }
+    }
     singleOf(::KrakenServiceImpl)
     singleOf(::SimulatedKrakenService)
-    single<KrakenService> { DynamicKrakenService(get(), get(), get()) }
-    single<PortfolioAnalyzer> { PortfolioAnalyzerImpl(get(), get(), get()) }
-    single<OrderExecutor> { OrderExecutorImpl(get(), get(), get()) }
+    single<KrakenService> {
+        DynamicKrakenService(
+            realService = get(),
+            simulatedService = get(),
+            configService = get()
+        )
+    }
+    single<PortfolioAnalyzer> {
+        PortfolioAnalyzerImpl(
+            krakenService = get(),
+            configService = get(),
+            portfolioStatsRepository = get()
+        )
+    }
+    single<OrderExecutor> {
+        OrderExecutorImpl(
+            krakenService = get(),
+            portfolioAnalyzer = get(),
+            tradeHistoryService = get()
+        )
+    }
     singleOf(::PortfolioManagerImpl) { bind<PortfolioManager>() }
     singleOf(::DashboardShellComponent)
     singleOf(::SettingsFormComponent)

@@ -1,30 +1,22 @@
 package com.gemini.krakenbot.config
 
-import io.ktor.http.ContentType
-import io.ktor.http.HttpStatusCode
+import com.fasterxml.jackson.databind.ObjectMapper
+import io.ktor.http.*
 import io.ktor.server.application.Application
 import io.ktor.server.application.install
-import io.ktor.server.plugins.statuspages.StatusPages
-import io.ktor.server.response.respondText
+import io.ktor.server.plugins.statuspages.*
+import io.ktor.server.response.*
+import org.koin.core.component.KoinComponent
+import org.koin.core.component.inject
 import org.slf4j.LoggerFactory
-import java.time.Instant
 
 /**
  * Error handling and status pages configuration for HTTP responses.
  * Provides consistent error responses with proper logging and HTTP status codes.
  */
-object ErrorHandlingConfig {
+object ErrorHandlingConfig : KoinComponent {
+    private val objectMapper: ObjectMapper by inject()
     private val log = LoggerFactory.getLogger(ErrorHandlingConfig::class.java)
-
-    /**
-     * Standard error response structure.
-     */
-    data class ErrorResponse(
-        val timestamp: String = Instant.now().toString(),
-        val status: Int,
-        val error: String,
-        val message: String
-    )
 
     /**
      * Configure status pages and error handling for the application.
@@ -124,31 +116,20 @@ object ErrorHandlingConfig {
     }
 
     /**
-     * Build a JSON error response string.
+     * Build a JSON error response string using the provided ObjectMapper.
      */
     private fun buildErrorJson(
         status: Int,
         error: String,
         message: String
     ): String {
-        return buildString {
-            append("{")
-            append("\"timestamp\":\"${Instant.now()}\",")
-            append("\"status\":$status,")
-            append("\"error\":\"$error\",")
-            append("\"message\":\"${escapeJson(message)}\"")
-            append("}")
-        }
+        val errorBody = mapOf(
+            "timestamp" to java.time.Instant.now().toString(),
+            "status" to status,
+            "error" to error,
+            "message" to message
+        )
+        return objectMapper.writeValueAsString(errorBody)
     }
 
-    /**
-     * Escape special characters for JSON strings.
-     */
-    private fun escapeJson(value: String): String =
-        value
-            .replace("\\", "\\\\")
-            .replace("\"", "\\\"")
-            .replace("\n", "\\n")
-            .replace("\r", "\\r")
-            .replace("\t", "\\t")
 }
