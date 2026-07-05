@@ -27,7 +27,7 @@ class ResultTest : StringSpec({
         val result: Result<Int> = Result.Success(42)
         val mapped = result.map { it * 2 }
         mapped.shouldBeInstanceOf<Result.Success<Int>>()
-        (mapped as Result.Success).value shouldBe 84
+        mapped.value shouldBe 84
     }
 
     "map preserves Failure" {
@@ -42,7 +42,7 @@ class ResultTest : StringSpec({
             Result.Success(value + 5)
         }
         chained.shouldBeInstanceOf<Result.Success<Int>>()
-        (chained as Result.Success).value shouldBe 15
+        chained.value shouldBe 15
     }
 
     "getOrNull returns value on Success" {
@@ -64,7 +64,7 @@ class ResultTest : StringSpec({
     "runCatching returns Success on no error" {
         val result = Result.runCatching { "hello" }
         result.shouldBeInstanceOf<Result.Success<String>>()
-        (result as Result.Success).value shouldBe "hello"
+        result.value shouldBe "hello"
     }
 
     "runCatching returns Failure on error" {

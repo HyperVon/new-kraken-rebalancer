@@ -1,3 +1,5 @@
+@file:OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+
 package com.gemini.krakenbot.service
 
 import com.fasterxml.jackson.databind.ObjectMapper

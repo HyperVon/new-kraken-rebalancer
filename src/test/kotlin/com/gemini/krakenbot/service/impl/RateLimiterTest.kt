@@ -1,3 +1,5 @@
+@file:OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+
 package com.gemini.krakenbot.service.impl
 
 import io.kotest.core.spec.style.StringSpec

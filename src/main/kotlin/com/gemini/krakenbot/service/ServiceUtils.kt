@@ -3,7 +3,6 @@ package com.gemini.krakenbot.service
 import com.gemini.krakenbot.model.Result
 import java.math.BigDecimal
 import java.math.RoundingMode
-import kotlin.time.Duration
 
 /**
  * Utility functions for service operations including retry logic, parsing, and common patterns.
@@ -42,7 +41,7 @@ suspend inline fun <T> retryWithExponentialBackoff(
  * Safe BigDecimal parsing that returns ZERO on failure instead of throwing.
  * Replaces try-catch patterns for BigDecimal parsing.
  */
-inline fun safeParseBigDecimal(value: String?, default: BigDecimal = BigDecimal.ZERO): BigDecimal =
+fun safeParseBigDecimal(value: String?, default: BigDecimal = BigDecimal.ZERO): BigDecimal =
     value?.let {
         try {
             BigDecimal(it)
@@ -54,7 +53,7 @@ inline fun safeParseBigDecimal(value: String?, default: BigDecimal = BigDecimal.
 /**
  * Safe BigDecimal parsing with scale and rounding.
  */
-inline fun safeParseBigDecimal(
+fun safeParseBigDecimal(
     value: String?,
     scale: Int,
     mode: RoundingMode = RoundingMode.HALF_UP,
@@ -65,5 +64,5 @@ inline fun safeParseBigDecimal(
 /**
  * Extension function for safe collection mapping with default.
  */
-inline fun <K, V> Map<K, V>.getOrDefault(key: K, defaultValue: V): V =
+fun <K, V> Map<K, V>.getOrDefault(key: K, defaultValue: V): V =
     this[key] ?: defaultValue
