@@ -12,6 +12,7 @@ import com.gemini.krakenbot.service.AssetValues
 import com.gemini.krakenbot.service.AssetPrices
 import com.gemini.krakenbot.service.RebalanceOrders
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.*
 import org.slf4j.LoggerFactory
 import java.math.BigDecimal
 import java.math.RoundingMode
@@ -38,7 +39,8 @@ class OrderExecutorImpl(
         currentValuesUSD: AssetValues,
         prices: AssetPrices,
         settings: Settings,
-        actionLog: MutableList<String>
+        actionLog: MutableList<String>,
+        onOrderExecuted: (com.gemini.krakenbot.service.RebalanceEvent) -> Unit
     ) {
         var projectedCash =
             currentValuesUSD[Asset.USD] ?: BigDecimal.ZERO
@@ -76,6 +78,7 @@ class OrderExecutorImpl(
                 side = "SELL"
             )
             recordTrade(result, symbol, pair, "SELL", volume, usdToSell, prices)
+            onOrderExecuted(com.gemini.krakenbot.service.OrderExecuted(result))
             if (result.success) {
                 projectedCash = projectedCash.add(usdToSell)
                 executedSells = true
@@ -126,6 +129,7 @@ class OrderExecutorImpl(
                 side = "BUY"
             )
             recordTrade(result, symbol, pair, "BUY", volume, cost, prices)
+            onOrderExecuted(com.gemini.krakenbot.service.OrderExecuted(result))
             if (result.success) {
                 actualCash = actualCash.subtract(cost)
             }
@@ -133,39 +137,40 @@ class OrderExecutorImpl(
     }
 
     private suspend fun refreshUsdBalanceAfterSells(projectedCash: BigDecimal): BigDecimal {
-        var bestCash = projectedCash
+        return pollUsdBalanceAfterSells(projectedCash).last()
+    }
 
-        repeat(MAX_REFRESH_ATTEMPTS) { attempt ->
-            delay(REFRESH_DELAY_MS.milliseconds)
+    private fun pollUsdBalanceAfterSells(
+        projectedCash: BigDecimal,
+        targetThreshold: BigDecimal = projectedCash.multiply(BigDecimal("0.95"))
+    ): Flow<BigDecimal> = flow {
+        var lastBalance = projectedCash
+        // In the original implementation, the first delay happens BEFORE the first balance fetch.
+        // And it doesn't emit the initial projectedCash.
+
+        var backoffMs = REFRESH_DELAY_MS
+        val maxAttempts = MAX_REFRESH_ATTEMPTS
+
+        repeat(maxAttempts) { attempt ->
+            delay(backoffMs.milliseconds)
             try {
                 val updatedBalances = krakenService.getBalances()
                 if (updatedBalances.isNotEmpty()) {
-                    val usdBalance = portfolioAnalyzer.resolveBalance(
-                        Asset.USD,
-                        updatedBalances
-                    )
+                    val usdBalance = portfolioAnalyzer.resolveBalance(Asset.USD, updatedBalances)
                     if (usdBalance > BigDecimal.ZERO) {
-                        bestCash = usdBalance
-                        log.info(
-                            "Updated USD balance after sells (attempt {}): $${bestCash}",
-                            attempt + 1
-                        )
-                        if (bestCash >= projectedCash.multiply(BigDecimal("0.95"))) {
-                            return bestCash
-                        }
+                        lastBalance = usdBalance
+                        log.info("Updated USD balance after sells (attempt {}): $${lastBalance}", attempt + 1)
+                        emit(lastBalance)
+                        if (lastBalance >= targetThreshold) return@flow
                     }
                 }
             } catch (e: Exception) {
-                log.warn(
-                    "Failed to fetch updated USD balance (attempt {})",
-                    attempt + 1,
-                    e
-                )
+                log.warn("Balance poll failed (attempt {})", attempt + 1, e)
             }
+            backoffMs = (backoffMs * 2).coerceAtMost(32000L)
         }
-
-        log.warn("Using best observed USD balance after sell refresh: $${bestCash}")
-        return bestCash
+        emit(lastBalance)
+        log.warn("Using best observed USD balance after sell refresh: $${lastBalance}")
     }
 
     internal fun logOrderResult(

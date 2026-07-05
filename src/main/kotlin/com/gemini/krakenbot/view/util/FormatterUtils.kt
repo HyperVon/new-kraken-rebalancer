@@ -56,9 +56,12 @@ object FormatterUtils {
     fun formatCompact(value: BigDecimal): String {
         val abs = value.abs()
         return when {
-            abs >= BigDecimal("1000000000") -> "${(value / BigDecimal("1000000000")).setScale(2, RoundingMode.HALF_UP)}B"
-            abs >= BigDecimal("1000000") -> "${(value / BigDecimal("1000000")).setScale(2, RoundingMode.HALF_UP)}M"
-            abs >= BigDecimal("1000") -> "${(value / BigDecimal("1000")).setScale(2, RoundingMode.HALF_UP)}K"
+            abs >= BigDecimal("1000000000") ->
+                "${value.divide(BigDecimal("1000000000"), 2, RoundingMode.HALF_UP).toPlainString()}B"
+            abs >= BigDecimal("1000000") ->
+                "${value.divide(BigDecimal("1000000"), 2, RoundingMode.HALF_UP).toPlainString()}M"
+            abs >= BigDecimal("1000") ->
+                "${value.divide(BigDecimal("1000"), 2, RoundingMode.HALF_UP).toPlainString()}K"
             else -> value.setScale(2, RoundingMode.HALF_UP).toPlainString()
         }
     }

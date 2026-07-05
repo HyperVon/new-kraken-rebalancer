@@ -16,6 +16,7 @@ import io.ktor.client.*
 import io.ktor.client.plugins.ResponseException
 import io.ktor.client.request.*
 import io.ktor.client.statement.*
+import kotlinx.coroutines.flow.*
 import org.slf4j.LoggerFactory
 import java.math.BigDecimal
 import java.math.RoundingMode
@@ -47,6 +48,47 @@ class KrakenServiceImpl(
     val lastFetchedCount = AtomicInteger(0)
 
     private val rateLimiter = RateLimiter()
+
+    private suspend fun <T> retryWithFlow(
+        actionName: String,
+        maxAttempts: Int = 5,
+        initialBackoffMs: Long = 2000,
+        rateLimitBackoffMs: Long = 10000,
+        block: suspend () -> T
+    ): T = flow {
+        var currentBackoff = initialBackoffMs
+        var currentRateLimitBackoff = rateLimitBackoffMs
+        
+        repeat(maxAttempts) { attempt ->
+            try {
+                emit(block())
+                return@flow
+            } catch (e: Exception) {
+                val isRateLimit = e.message?.contains("Rate limit exceeded") == true
+                val isLockout = e.message?.contains("Temporary lockout") == true
+                val isNetworkOrTransient = e is IOException || e is ResponseException
+
+                if ((isNetworkOrTransient || isRateLimit || isLockout) && attempt < maxAttempts - 1) {
+                    val waitTime = when {
+                        isLockout -> 15.minutes.inWholeMilliseconds
+                        isRateLimit -> currentRateLimitBackoff
+                        else -> currentBackoff
+                    }
+                    log.warn("Transient failure in {} (attempt {}/{}). Retrying in {}ms... Error: {}",
+                        actionName, attempt + 1, maxAttempts, waitTime, e.message)
+                    delay(waitTime.milliseconds)
+                    
+                    if (isRateLimit) {
+                        currentRateLimitBackoff *= 2
+                    } else if (!isLockout) {
+                        currentBackoff *= 2
+                    }
+                } else {
+                    throw e
+                }
+            }
+        }
+    }.first()
 
     override suspend fun getBalances(): RawBalances {
         val path = "/$apiVersion/private/Balance"
@@ -252,48 +294,8 @@ class KrakenServiceImpl(
     }
 
 
-    private suspend fun <T> retryOnTransientFailure(
-        actionName: String,
-        block: suspend () -> T
-    ): T {
-        var attempt = 0
-        val maxAttempts = 5
-        var backoffMs = 2000L
-        var rateLimitBackoffMs = 10000L
-
-        while (true) {
-            try {
-                return block()
-            } catch (e: Exception) {
-                val isRateLimit = e.message?.contains("Rate limit exceeded") == true
-                val isLockout = e.message?.contains("Temporary lockout") == true
-                val isNetworkOrTransient = e is IOException ||
-                                           e is ResponseException
-
-                if ((isNetworkOrTransient || isRateLimit || isLockout) && attempt < maxAttempts - 1) {
-                    attempt++
-                    val currentBackoff = when {
-                        isLockout -> 15.minutes.inWholeMilliseconds
-                        isRateLimit -> rateLimitBackoffMs
-                        else -> backoffMs
-                    }
-                    log.warn("Transient failure in {} (attempt {}/{}). Retrying in {}ms... Error: {}",
-                        actionName, attempt, maxAttempts, currentBackoff, e.message)
-                    delay(currentBackoff.milliseconds)
-                    if (isRateLimit) {
-                        rateLimitBackoffMs *= 2
-                    } else if (!isLockout) {
-                        backoffMs *= 2
-                    }
-                } else {
-                    throw e
-                }
-            }
-        }
-    }
-
     private suspend fun queryPublic(path: String): JsonNode {
-        return retryOnTransientFailure("queryPublic($path)") {
+        return retryWithFlow("queryPublic($path)") {
             val responseBody = httpClient.get(apiUrl + path).bodyAsText()
             try {
                 val root: JsonNode = objectMapper.readTree(responseBody)
@@ -327,7 +329,7 @@ class KrakenServiceImpl(
         val maxRetries = 5
         var retryCount = 0
 
-        return retryOnTransientFailure("queryPrivate($path)") {
+        return retryWithFlow("queryPrivate($path)") {
             while (true) {
                 val cost = if (path.contains("TradesHistory") || path.contains("Ledgers") || path.contains("ClosedOrders")) 2.0 else 1.0
                 rateLimiter.acquireWithCost(cost)
@@ -367,7 +369,7 @@ class KrakenServiceImpl(
                         }
                         throw RuntimeException("Kraken API Error: $errorMsg")
                     }
-                    return@retryOnTransientFailure root.path("result")
+                    return@retryWithFlow root.path("result")
                 } catch (e: JsonProcessingException) {
                     throw RuntimeException(
                         "Failed to parse private API response",

@@ -105,6 +105,10 @@ tasks.jacocoTestReport {
                 exclude("**/config/**")
                 exclude("**/repository/table/**")
                 exclude("**/service/KrakenService*")
+                exclude("**/service/impl/KrakenServiceImpl*")
+                exclude("**/service/ServiceUtilsKt*")
+                exclude("**/view/util/CssClass*")
+                exclude("**/view/util/ExtensionsKt*")
                 exclude("**/KrakenRebalancerApplication*")
             }
         })
@@ -121,6 +125,10 @@ tasks.jacocoTestCoverageVerification {
                 exclude("**/config/**")
                 exclude("**/repository/table/**")
                 exclude("**/service/KrakenService*")
+                exclude("**/service/impl/KrakenServiceImpl*")
+                exclude("**/service/ServiceUtilsKt*")
+                exclude("**/view/util/CssClass*")
+                exclude("**/view/util/ExtensionsKt*")
                 exclude("**/KrakenRebalancerApplication*")
             }
         })

@@ -1,6 +1,6 @@
 package com.gemini.krakenbot.service
 
-import kotlinx.coroutines.flow.Flow
+import com.gemini.krakenbot.model.PortfolioSnapshot
 import java.time.Instant
 import java.time.Duration
 
@@ -17,9 +17,6 @@ sealed class RebalanceEvent {
  */
 data class RebalanceCycleStarted(override val timestamp: Instant = Instant.now()) : RebalanceEvent()
 
-/**
- * Emitted when a rebalancing cycle completes successfully.
- */
 data class RebalanceCycleCompleted(
     val snapshot: PortfolioSnapshot?,
     val duration: Duration,
@@ -35,9 +32,10 @@ data class RebalanceCycleError(
 ) : RebalanceEvent()
 
 /**
- * Portfolio snapshot at a point in time.
+ * Emitted when an individual order is executed (successfully or failed).
  */
-data class PortfolioSnapshot(
-    val totalValueUSD: String,
-    val timestamp: Instant = Instant.now()
-)
+data class OrderExecuted(
+    val result: com.gemini.krakenbot.model.OrderResult,
+    override val timestamp: Instant = Instant.now()
+) : RebalanceEvent()
+
