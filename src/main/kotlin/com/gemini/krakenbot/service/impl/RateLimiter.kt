@@ -6,6 +6,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import java.util.concurrent.atomic.AtomicLong
+import kotlin.math.roundToLong
 import kotlin.time.Duration.Companion.milliseconds
 
 /**
@@ -42,7 +43,7 @@ class RateLimiter(
         if (currentCounter + cost > safeLimit) {
             val neededDecay = (currentCounter + cost) - safeLimit
             val waitSeconds = neededDecay / decayRate
-            val waitMs = (waitSeconds * 1000).toLong()
+            val waitMs = (waitSeconds * 1000).roundToLong()
             if (waitMs > 0) {
                 _rateLimitState.emit(RateLimitExceeded(waitMs))
                 delay(waitMs.milliseconds)
