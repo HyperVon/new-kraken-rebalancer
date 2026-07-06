@@ -16,10 +16,11 @@ import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.shouldBe
 import io.mockk.every
 import io.mockk.mockk
-import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import java.math.BigDecimal
+import kotlin.time.Duration.Companion.milliseconds
 
 @Suppress("unused")
 class PortfolioManagerOrderExecutionTest : StringSpec() {
@@ -132,7 +133,7 @@ class PortfolioManagerOrderExecutionTest : StringSpec() {
                 portfolioManager.performRebalanceCycle()
 
                 // Wait a bit for events to be emitted
-                kotlinx.coroutines.delay(100)
+                delay(100.milliseconds)
 
                 events.any { it is OrderExecuted && it.result.side.equals("sell", ignoreCase = true) && it.result.pair == "AUSD" }.shouldBeTrue()
                 events.any { it is OrderExecuted && it.result.side.equals("buy", ignoreCase = true) && it.result.pair == "BUSD" }.shouldBeTrue()

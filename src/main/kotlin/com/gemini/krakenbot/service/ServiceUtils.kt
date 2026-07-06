@@ -1,8 +1,10 @@
 package com.gemini.krakenbot.service
 
 import com.gemini.krakenbot.model.Result
+import kotlinx.coroutines.delay
 import java.math.BigDecimal
 import java.math.RoundingMode
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * Utility functions for service operations including retry logic, parsing, and common patterns.
@@ -28,7 +30,7 @@ suspend inline fun <T> retryWithExponentialBackoff(
         } catch (ex: Exception) {
             lastException = ex
             if (attempt < maxAttempts - 1) {
-                kotlinx.coroutines.delay(delay)
+                delay(delay.milliseconds)
                 delay = (delay * 2).coerceAtMost(maxDelayMs)
             }
         }

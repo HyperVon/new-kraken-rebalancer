@@ -6,6 +6,7 @@ import java.math.BigDecimal
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 
+@Suppress("unused")
 class FormatterUtilsTest : StringSpec({
     "formatCurrency formats values and handles null" {
         FormatterUtils.formatCurrency(BigDecimal("1234.567")) shouldBe "1234.57"

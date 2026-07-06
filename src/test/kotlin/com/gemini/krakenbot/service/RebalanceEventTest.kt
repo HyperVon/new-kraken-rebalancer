@@ -9,6 +9,7 @@ import java.math.BigDecimal
 import java.time.Duration
 import java.time.Instant
 
+@Suppress("unused")
 class RebalanceEventTest : StringSpec({
     "RebalanceCycleStarted carries timestamp" {
         val event = RebalanceCycleStarted()

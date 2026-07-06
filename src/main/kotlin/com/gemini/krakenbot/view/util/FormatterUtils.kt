@@ -38,7 +38,7 @@ object FormatterUtils {
      * Positive deviation (overweight) gets "text-danger" red color.
      */
     fun getDeviationClass(deviation: BigDecimal?): String =
-        if (deviation?.signum() ?: 0 > 0) "text-danger" else ""
+        if ((deviation?.signum() ?: 0) > 0) "text-danger" else ""
 
     /**
      * Get deviation sign for display (+/-).

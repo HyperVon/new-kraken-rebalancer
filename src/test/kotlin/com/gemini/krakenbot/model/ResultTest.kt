@@ -4,6 +4,7 @@ import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
 
+@Suppress("unused")
 class ResultTest : StringSpec({
     "Success.fold calls onSuccess" {
         val result: Result<Int> = Result.Success(42)
