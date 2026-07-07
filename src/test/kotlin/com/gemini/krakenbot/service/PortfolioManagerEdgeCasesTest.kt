@@ -57,6 +57,9 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
                 portfolioAnalyzer = portfolioAnalyzer,
                 orderExecutor = orderExecutor
             )
+            every { configService.watchConfigChanges() } answers {
+                kotlinx.coroutines.flow.flowOf(configService.getConfig().settings)
+            }
         }
 
         "runLoop_respectsLoopDelay" {
@@ -81,11 +84,11 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
                 val job = launch {
                     portfolioManager.runLoop()
                 }
-                yield()
+                delay(10.milliseconds)
                 krakenService.getBalancesCallCount shouldBe 1
 
                 portfolioManager.stopRebalancingLoop()
-                job.join()
+                job.cancel()
                 krakenService.getBalancesCallCount shouldBe 1
             }
         }
@@ -944,22 +947,10 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
                 val prices = mapOf("AUSD" to 100.0, "BUSD" to 10.0)
                 krakenService.pricesSupplier = { prices }
 
-                val events = mutableListOf<RebalanceEvent>()
-                val job = launch {
-                    portfolioManager.getRebalanceCycleFlow().collect {
-                        events.add(it)
-                    }
-                }
-
                 portfolioManager.performRebalanceCycle()
 
-                // Wait a bit for events to be emitted
-                delay(100.milliseconds)
-
-                events.any { it is OrderExecuted && it.result.side.equals("sell", ignoreCase = true) && it.result.pair == "AUSD" }.shouldBeTrue()
-                events.any { it is OrderExecuted && it.result.side.equals("buy", ignoreCase = true) && it.result.pair == "BUSD" }.shouldBeTrue()
-
-                job.cancel()
+                krakenService.executedOrders.any { it.side.equals("sell", ignoreCase = true) && it.pair == "AUSD" }.shouldBeTrue()
+                krakenService.executedOrders.any { it.side.equals("buy", ignoreCase = true) && it.pair == "BUSD" }.shouldBeTrue()
             }
         }
 

@@ -1,10 +1,6 @@
 package com.gemini.krakenbot.service.impl
 
-import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.asSharedFlow
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.math.roundToLong
 import kotlin.time.Duration.Companion.milliseconds
@@ -20,12 +16,7 @@ class RateLimiter(
     private val callCounter = AtomicLong(0)
     private val lastUpdateTimeMs = AtomicLong(System.currentTimeMillis())
 
-    private val _rateLimitState = MutableSharedFlow<RateLimitEvent>(
-        extraBufferCapacity = 16,
-        onBufferOverflow = BufferOverflow.DROP_OLDEST
-    )
 
-    fun getRateLimitFlow(): Flow<RateLimitEvent> = _rateLimitState.asSharedFlow()
 
     suspend fun acquireWithCost(cost: Double): Long {
         val now = System.currentTimeMillis()
@@ -45,7 +36,7 @@ class RateLimiter(
             val waitSeconds = neededDecay / decayRate
             val waitMs = (waitSeconds * 1000).roundToLong()
             if (waitMs > 0) {
-                _rateLimitState.emit(RateLimitExceeded(waitMs))
+
                 delay(waitMs.milliseconds)
                 callCounter.set(((safeLimit - cost) * 1000).toLong())
                 lastUpdateTimeMs.set(System.currentTimeMillis())
@@ -54,7 +45,7 @@ class RateLimiter(
 
         // Increment counter with cost
         callCounter.addAndGet((cost * 1000).toLong())
-        _rateLimitState.emit(RateLimitAcquired(cost))
+
         return callCounter.get()
     }
 
@@ -66,6 +57,4 @@ class RateLimiter(
     }
 }
 
-sealed class RateLimitEvent
-data class RateLimitExceeded(val waitMs: Long) : RateLimitEvent()
-data class RateLimitAcquired(val cost: Double) : RateLimitEvent()
+

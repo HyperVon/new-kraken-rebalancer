@@ -10,8 +10,6 @@ import com.gemini.krakenbot.service.OrderExecutor
 import com.gemini.krakenbot.service.PortfolioAnalyzer
 import com.gemini.krakenbot.service.AssetValues
 import com.gemini.krakenbot.service.AssetPrices
-import com.gemini.krakenbot.service.OrderExecuted
-import com.gemini.krakenbot.service.RebalanceEvent
 import com.gemini.krakenbot.service.RebalanceOrders
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
@@ -41,8 +39,7 @@ class OrderExecutorImpl(
         currentValuesUSD: AssetValues,
         prices: AssetPrices,
         settings: Settings,
-        actionLog: MutableList<String>,
-        onOrderExecuted: (RebalanceEvent) -> Unit
+        actionLog: MutableList<String>
     ) {
         var projectedCash =
             currentValuesUSD[Asset.USD] ?: BigDecimal.ZERO
@@ -80,7 +77,6 @@ class OrderExecutorImpl(
                 side = "SELL"
             )
             recordTrade(result, symbol, pair, "SELL", volume, usdToSell, prices)
-            onOrderExecuted(OrderExecuted(result))
             if (result.success) {
                 projectedCash = projectedCash.add(usdToSell)
                 executedSells = true
@@ -131,7 +127,6 @@ class OrderExecutorImpl(
                 side = "BUY"
             )
             recordTrade(result, symbol, pair, "BUY", volume, cost, prices)
-            onOrderExecuted(OrderExecuted(result))
             if (result.success) {
                 actualCash = actualCash.subtract(cost)
             }

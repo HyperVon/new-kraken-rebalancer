@@ -135,9 +135,7 @@ The experimental branches remain in the repository as complete, working
 reference implementations for anyone interested in comparing the same domain
 logic across three languages and ecosystems.
 
-Ongoing work on the `feature/rebalance-updates` branch adds event-driven
-rebalance monitoring (`RebalanceEvent` flow), reactive config change
-notifications, a Kraken call-counter rate limiter, and flow-based API retry and
+Ongoing work on the `feature/rebalance-updates` branch adds a reactive configuration loop (`watchConfigChanges().collectLatest`), a Kraken call-counter rate limiter, and flow-based API retry and
 trade-history pagination.
 
 ### Technologies Explored
@@ -204,16 +202,7 @@ with a wide range of tools and paradigms:
 - Modify all settings (allocations, thresholds, assets) via the web UI
 - Add or remove assets without restarting the application
 - Allocation validation ensures targets always sum to 100%
-- `ConfigService.watchConfigChanges()` exposes a `Flow<Settings>` with replay
-  for reactive subscribers (emits on load and after every validated update)
-
-### Event-Driven Rebalance Monitoring
-
-- `PortfolioManager.getRebalanceCycleFlow()` emits lifecycle events for each
-  rebalancing cycle: start, completion (with snapshot and duration), errors,
-  and individual order executions (`OrderExecuted` with structured `OrderResult`)
-- Events are broadcast via a hot `MutableSharedFlow` using `tryEmit()` for
-  non-blocking, fire-and-forget delivery to metrics collectors or future UI hooks
+- `ConfigService.watchConfigChanges()` exposes a `Flow<Settings>`, which `PortfolioManagerImpl` uses to reactively abort and restart its rebalancing loop with the new settings without polling.
 
 ### Offline Exchange Simulator & Pre-Seeding
 
@@ -303,7 +292,7 @@ graph LR
         PM[PortfolioManager] --> PA[PortfolioAnalyzer]
         PM --> OE[OrderExecutor]
         PM --> THS
-        PM --> RF["RebalanceEvent Flow"]
+
         PA --> KS[KrakenService]
         PA --> CS
         PA --> PSR["PortfolioStatsRepository (SQLite)"]
@@ -360,14 +349,9 @@ two complementary `SharedFlow` channels:
 
 #### Rebalance Cycle Event Stream (Monitoring)
 
-1. **`RebalanceEvent` sealed hierarchy**: `PortfolioManagerImpl` emits
-   `RebalanceCycleStarted`, `RebalanceCycleCompleted` (with snapshot and
-   duration), `RebalanceCycleError`, and per-order `OrderExecuted` events.
-2. **`getRebalanceCycleFlow()`**: Returns a hot `SharedFlow<RebalanceEvent>`
-   with replay buffer (64 events) for late subscribers — useful for metrics,
-   alerting, or future dashboard integrations.
-3. **Config change flow**: `ConfigService.watchConfigChanges()` provides a
-   separate `Flow<Settings>` with `replay = 1` for reactive config consumers.
+1. **Reactive config loop**: `ConfigService.watchConfigChanges()` provides a
+   `Flow<Settings>`. `PortfolioManagerImpl` wraps its run loop with `collectLatest`
+   to immediately restart the loop on config changes.
 
 ---
 
@@ -383,10 +367,9 @@ two complementary `SharedFlow` channels:
 │   ├── repository/                        # Persistence interfaces: TradeRepository, PortfolioStatsRepository
 │   │   └── impl/                          # SQLite-backed implementations (via Exposed ORM)
 │   ├── service/                           # Core logic interfaces and shared utilities
-│   │   ├── RebalanceEvent.kt             # Sealed rebalance lifecycle events
 │   │   ├── ServiceUtils.kt               # Retry helpers, safe BigDecimal parsing
 │   │   └── impl/                          # Service implementations (coroutine-aware)
-│   │       ├── PortfolioManagerImpl.kt   # Loop orchestrator + RebalanceEvent flow
+│   │       ├── PortfolioManagerImpl.kt   # Loop orchestrator
 │   │       ├── PortfolioAnalyzerImpl.kt  # Snapshot/analysis logic
 │   │       ├── PortfolioCalculations.kt  # Shared target/deviation math
 │   │       ├── OrderExecutorImpl.kt      # Sell-first/buy-second execution
@@ -550,7 +533,6 @@ avoid floating-point comparison issues.
 - `ModelTest` / `ResultTest` — unit tests for domain models and the `Result` type
 - `ConfigServiceTest` — validation, hot-reload, persistence, duplicate/blank
   symbol rejection, and `watchConfigChanges()` flow
-- `RebalanceEventTest` — lifecycle event data classes
 - `ServiceUtilsTest` / `FormatterUtilsTest` — utility function coverage
 - `RateLimiterTest` — call-counter algorithm and rate limit event flow
 - `DashboardControllerTest` — REST API endpoints, invalid config error responses, and trade history sync status

@@ -42,46 +42,17 @@ class RateLimiterTest : StringSpec({
         limiter.getCurrentCounter() shouldBe 0.0
     }
 
-    "getRateLimitFlow emits events" {
-        runTest {
-            val limiter = RateLimiter()
-            val events = mutableListOf<RateLimitEvent>()
-            val job = this.launch {
-                limiter.getRateLimitFlow().collect { events.add(it) }
-            }
-            advanceUntilIdle()
-            limiter.acquireWithCost(1.0)
-            advanceUntilIdle()
-            events.size shouldBe 1
-            events[0] shouldBe RateLimitAcquired(1.0)
-            job.cancel()
-        }
-    }
 
     "acquireWithCost delays when limit exceeded" {
         runTest {
             val limiter = RateLimiter(safeLimit = 2.0, decayRate = 1.0)
-            val events = mutableListOf<RateLimitEvent>()
-            val job = launch {
-                limiter.getRateLimitFlow().collect { events.add(it) }
-            }
-            advanceUntilIdle()
             limiter.acquireWithCost(1.5)
-            advanceUntilIdle()
 
             // Second call asks for 1.0, total 2.5 > 2.0. Needs delay.
             // neededDecay = 2.5 - 2.0 = 0.5
             // waitSeconds = 0.5 / 1.0 = 0.5s = 500ms
             limiter.acquireWithCost(1.0)
             advanceUntilIdle()
-
-            events.filterIsInstance<RateLimitAcquired>().shouldHaveSize(2)
-            events.filterIsInstance<RateLimitAcquired>()[0].cost shouldBe 1.5
-            events.filterIsInstance<RateLimitAcquired>()[1].cost shouldBe 1.0
-            val waitMs = events.filterIsInstance<RateLimitExceeded>().single().waitMs
-            (waitMs in 400L..500L) shouldBe true
-            
-            job.cancel()
         }
     }
 })

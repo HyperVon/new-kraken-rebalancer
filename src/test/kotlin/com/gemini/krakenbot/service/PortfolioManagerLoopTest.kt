@@ -13,8 +13,10 @@ import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
 import io.mockk.every
 import io.mockk.mockk
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
+import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.yield
 import java.math.BigDecimal
 
@@ -49,6 +51,9 @@ class PortfolioManagerLoopTest : StringSpec() {
                 portfolioAnalyzer = portfolioAnalyzer,
                 orderExecutor = orderExecutor
             )
+            every { configService.watchConfigChanges() } answers {
+                kotlinx.coroutines.flow.flowOf(configService.getConfig().settings)
+            }
         }
 
         "startRebalancingLoop_RunsWhenEnabled" {
@@ -73,9 +78,9 @@ class PortfolioManagerLoopTest : StringSpec() {
                 val job = launch {
                     portfolioManager.runLoop()
                 }
-                yield()
+                delay(10.milliseconds)
                 portfolioManager.stopRebalancingLoop()
-                job.join()
+                job.cancel()
 
                 krakenService.getBalancesCallCount shouldBe 1
             }
@@ -131,9 +136,9 @@ class PortfolioManagerLoopTest : StringSpec() {
                 val job = launch {
                     portfolioManager.runLoop()
                 }
-                yield()
+                delay(10.milliseconds)
                 portfolioManager.stopRebalancingLoop()
-                job.join()
+                job.cancel()
 
                 krakenService.getBalancesCallCount shouldBe 1
             }

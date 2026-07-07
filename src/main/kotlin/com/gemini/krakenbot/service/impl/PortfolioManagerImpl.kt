@@ -4,9 +4,7 @@ import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.service.*
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.collectLatest
 import org.slf4j.LoggerFactory
 import org.slf4j.MDC
 import java.io.IOException
@@ -30,12 +28,7 @@ class PortfolioManagerImpl(
     @Volatile
     private var isRunning = false
 
-    private val _eventFlow = MutableSharedFlow<RebalanceEvent>(
-        replay = 64,
-        onBufferOverflow = BufferOverflow.DROP_OLDEST
-    )
 
-    override fun getRebalanceCycleFlow(): Flow<RebalanceEvent> = _eventFlow.asSharedFlow()
 
     @Synchronized
     override fun stopRebalancingLoop() {
@@ -58,34 +51,25 @@ class PortfolioManagerImpl(
         }
 
         try {
-            while (isRunning) {
-                val settings = configService.getConfig().settings
-                val startTime = Instant.now()
-                try {
-                    log.info(
-                        "Starting Rebalance Cycle. DryRun: {}",
-                        settings.dryRun
-                    )
-                    _eventFlow.tryEmit(RebalanceCycleStarted())
+            configService.watchConfigChanges().collectLatest { settings ->
+                while (isRunning) {
+                    val startTime = Instant.now()
                     try {
-                        tradeHistoryService.syncTradesFromKraken()
-                    } catch (e: Exception) {
-                        log.error("Failed to synchronize historical trades during cycle", e)
-                    }
-                    val snapshot = performRebalanceCycle()
-                    
-                    val duration = between(startTime, Instant.now())
-                    _eventFlow.tryEmit(
-                        RebalanceCycleCompleted(
-                            snapshot = snapshot,
-                            duration = duration
+                        log.info(
+                            "Starting Rebalance Cycle. DryRun: {}",
+                            settings.dryRun
                         )
-                    )
-                } catch (e: Exception) {
-                    log.error("Error in rebalancing cycle", e)
-                    _eventFlow.tryEmit(RebalanceCycleError(e))
+                        try {
+                            tradeHistoryService.syncTradesFromKraken()
+                        } catch (e: Exception) {
+                            log.error("Failed to synchronize historical trades during cycle", e)
+                        }
+                        performRebalanceCycle()
+                    } catch (e: Exception) {
+                        log.error("Error in rebalancing cycle", e)
+                    }
+                    delay((settings.loopDelaySeconds * 1000L).milliseconds)
                 }
-                delay((settings.loopDelaySeconds * 1000L).milliseconds)
             }
         } catch (e: kotlinx.coroutines.CancellationException) {
             log.info("Rebalancing loop coroutine cancelled. Shutting down loop.")
@@ -159,10 +143,7 @@ class PortfolioManagerImpl(
                 currentValuesUSD = currentValuesUSD,
                 prices = prices,
                 settings = configService.getConfig().settings,
-                actionLog = actionLog,
-                onOrderExecuted = { 
-                    _eventFlow.tryEmit(it) 
-                }
+                actionLog = actionLog
             )
 
             val snapshot = buildSnapshot(

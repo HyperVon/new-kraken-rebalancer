@@ -11,6 +11,7 @@ import com.gemini.krakenbot.repository.TradeRepository
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.KrakenService
 import com.gemini.krakenbot.service.TradeHistoryService
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import org.slf4j.LoggerFactory
@@ -38,7 +39,10 @@ class TradeHistoryServiceImpl(
 
     private val log = LoggerFactory.getLogger(TradeHistoryServiceImpl::class.java)
     private val snapshotFlow =
-        MutableSharedFlow<PortfolioSnapshot>(extraBufferCapacity = 16)
+        MutableSharedFlow<PortfolioSnapshot>(
+            extraBufferCapacity = 16,
+            onBufferOverflow = BufferOverflow.DROP_OLDEST
+        )
     @Volatile
     private var lastSyncTime: Instant = Instant.EPOCH
 

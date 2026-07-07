@@ -922,6 +922,9 @@ class EvaluationScenariosTest : StringSpec() {
                     allocations = emptyList()
                 )
                 every { mockConfig.getConfig() } returns appConfig
+                every { mockConfig.watchConfigChanges() } answers {
+                    kotlinx.coroutines.flow.flowOf(mockConfig.getConfig().settings)
+                }
                 fakeKraken.balanceSupplier = { emptyMap() }
 
                 val statsRepo = mockk<PortfolioStatsRepository>(relaxed = true)

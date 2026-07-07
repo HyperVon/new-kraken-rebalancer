@@ -36,10 +36,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
-- **Rebalance Event Streaming**: Introduced a sealed `RebalanceEvent` hierarchy (`RebalanceCycleStarted`, `RebalanceCycleCompleted`, `RebalanceCycleError`, `OrderExecuted`) and exposed `PortfolioManager.getRebalanceCycleFlow()` as a hot `SharedFlow` for event-driven monitoring and metrics collection.
-- **Per-Order Event Emission**: `OrderExecutor.executeOrders()` now accepts an `onOrderExecuted` callback; `PortfolioManagerImpl` forwards each `OrderExecuted` event to the rebalance cycle flow as orders complete.
+- **Reactive Configuration Loop**: `PortfolioManagerImpl` now actively reacts to configuration changes using `ConfigService.watchConfigChanges().collectLatest`. The rebalancing loop instantly restarts with updated settings without needing manual polling or waiting for a delay to finish.
 - **Config Change Flow**: Added `ConfigService.watchConfigChanges()` backed by a `MutableSharedFlow<Settings>` with `replay = 1`, emitting settings on load and after every validated config update.
-- **Kraken Call-Counter Rate Limiter**: Implemented `RateLimiter` using Kraken's exponential-decay call counter algorithm with per-endpoint costs (1.0 default, 2.0 for history/ledger endpoints) and a `getRateLimitFlow()` for `RateLimitAcquired` / `RateLimitExceeded` events.
+- **Kraken Call-Counter Rate Limiter**: Implemented `RateLimiter` using Kraken's exponential-decay call counter algorithm with per-endpoint costs (1.0 default, 2.0 for history/ledger endpoints).
 - **Flow-Based API Retry**: Replaced `retryOnTransientFailure` with `retryWithFlow`, a kotlinx `flow`-based retry helper that handles network errors, rate limits, and temporary lockouts (15-minute backoff) with exponential backoff.
 - **Flow-Based Trade History Pagination**: Refactored Kraken trade history sync to emit paginated batches via `getTradeHistoryPaginated()` instead of an inline while-loop.
 - **PortfolioCalculations**: Extracted shared percentage/target math from `PortfolioAnalyzerImpl` and `PortfolioManagerImpl` into a dedicated `PortfolioCalculations` object.
@@ -48,7 +47,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **View Utilities**: Added `FormatterUtils` (currency, percent, compact number, duration, relative time formatting) and `Extensions.kt` (BigDecimal and collection helpers).
 - **Type-Safe CSS Classes**: Expanded `CssClasses.kt` into a sealed `CssClass` hierarchy with nested categories for compile-time-checked CSS token access.
 - **HTTP Error Handling**: Added `ErrorHandlingConfig` with Ktor `StatusPages` for consistent JSON error responses (400, 404, 500).
-- **New Tests**: Added `RebalanceEventTest`, `FormatterUtilsTest`, `ServiceUtilsTest`, `ResultTest`, config watch flow test, rate limiter flow tests, and order-executed event flow tests in portfolio manager suites.
+- **New Tests**: Added `FormatterUtilsTest`, `ServiceUtilsTest`, `ResultTest`, config watch flow test, and rate limiter tests in portfolio manager suites.
 
 ### Changed
 

@@ -86,7 +86,7 @@ first
   enforces **95%+ coverage** via JaCoCo (316 tests as of v6.1.0).
 - **Coroutines:** Any method interacting with `KrakenService` must be a
   `suspend` function and tested with `runTest`. Flow-based APIs (e.g.
-  `getRebalanceCycleFlow()`, `watchConfigChanges()`) should use
+  `watchConfigChanges()`) should use
   `advanceUntilIdle()` in tests and opt in to `ExperimentalCoroutinesApi` where
   required.
 - **Error handling:** Prefer the sealed `Result<T>` type for operations that may
