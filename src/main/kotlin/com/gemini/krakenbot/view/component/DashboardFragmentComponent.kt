@@ -1,7 +1,7 @@
 package com.gemini.krakenbot.view.component
 
 import com.gemini.krakenbot.model.PortfolioSnapshot
-import com.gemini.krakenbot.view.util.CssClasses
+import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.HtmlAttrs
 import com.gemini.krakenbot.view.util.Icons
 import com.gemini.krakenbot.view.util.Icons.icon
@@ -36,7 +36,7 @@ class DashboardFragmentComponent(
         renderHeaderSection(latest, timeSinceUpdate, isStale)
         overviewGridComponent.render(latest)
 
-        div.div(CssClasses.DETAIL_GRID) {
+        div.div(CssClass.Layout.DetailGrid.value) {
             allocationChartComponent.render(latest)
             performanceTableComponent.render(latest)
         }
@@ -51,31 +51,31 @@ class DashboardFragmentComponent(
         isStale: Boolean
     ) {
         div.header {
-            div(CssClasses.HEADER_TITLE_SECTION) {
+            div(CssClass.Layout.HeaderTitleSection.value) {
                 h1 { +ViewText.APP_TITLE }
                 val badgeClass =
-                    if (isStale) CssClasses.STATUS_BADGE_DELAYED else CssClasses.STATUS_BADGE_LIVE
+                    if (isStale) CssClass.StatusCard.Delayed.value else CssClass.StatusCard.Live.value
                 val badgeText = if (isStale) ViewText.DELAYED else ViewText.LIVE
                 div(badgeClass) { +badgeText }
             }
 
-            div(CssClasses.HEADER_ACTIONS) {
-                div(CssClasses.DATA_AGE_CONTAINER) {
-                    div(CssClasses.DATA_AGE_LABEL) { +ViewText.DATA_AGE }
+            div(CssClass.Layout.HeaderActions.value) {
+                div(CssClass.DataAge.Container.value) {
+                    div(CssClass.DataAge.Label.value) { +ViewText.DATA_AGE }
                     val ageClass =
-                        if (isStale) CssClasses.DATA_AGE_VALUE_STALE else CssClasses.DATA_AGE_VALUE
+                        if (isStale) CssClass.DataAge.ValueStale.value else CssClass.DataAge.Value.value
                     div(ageClass) { +"${timeSinceUpdate}s ago" }
-                    div(CssClasses.DATA_AGE_TIME) {
+                    div(CssClass.DataAge.Time.value) {
                         attributes[HtmlAttrs.DATA_EPOCH] =
                             latest.timestamp.toEpochMilli().toString()
                         +timeFormatter.format(latest.timestamp)
                     }
                 }
-                a(href = Routes.HISTORY, classes = CssClasses.BTN_SECONDARY) {
+                a(href = Routes.HISTORY, classes = CssClass.Button.Secondary.value) {
                     icon(Icons.CHART)
                     span { +ViewText.NAV_HISTORY }
                 }
-                a(href = Routes.SETTINGS, classes = CssClasses.BTN_SECONDARY) {
+                a(href = Routes.SETTINGS, classes = CssClass.Button.Secondary.value) {
                     icon(Icons.COG)
                     span { +ViewText.SETTINGS_TITLE }
                 }

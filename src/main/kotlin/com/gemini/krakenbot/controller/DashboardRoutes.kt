@@ -181,11 +181,11 @@ private suspend fun RoutingContext.handleGetDashboardFragment(
 
     if (latest == null) {
         val noSnapshotHtml =
-            createHTML(prettyPrint = false).div(CssClasses.SPINNER_CONTAINER) {
-                h2(CssClasses.DASHBOARD_WAITING_TITLE) {
+            createHTML(prettyPrint = false).div(CssClass.Loading.SpinnerContainer.value) {
+                h2(CssClass.Dashboard.WaitingTitle.value) {
                     +ViewText.WAITING_FIRST_CYCLE
                 }
-                p(CssClasses.DASHBOARD_WAITING_TEXT) {
+                p(CssClass.Dashboard.WaitingText.value) {
                     +ViewText.REBALANCER_RUNNING
                 }
             }

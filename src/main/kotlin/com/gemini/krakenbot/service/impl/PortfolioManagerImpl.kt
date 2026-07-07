@@ -1,22 +1,20 @@
 package com.gemini.krakenbot.service.impl
 
 import com.gemini.krakenbot.model.PortfolioSnapshot
-import com.gemini.krakenbot.service.ConfigService
-import com.gemini.krakenbot.service.PortfolioManager
-import com.gemini.krakenbot.service.RawBalances
-import com.gemini.krakenbot.service.TradeHistoryService
-import com.gemini.krakenbot.service.PortfolioAnalyzer
-import com.gemini.krakenbot.service.OrderExecutor
-import com.gemini.krakenbot.service.AssetPrices
-import com.gemini.krakenbot.service.AssetValues
+import com.gemini.krakenbot.service.*
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import org.slf4j.LoggerFactory
 import org.slf4j.MDC
 import java.io.IOException
 import java.math.BigDecimal
 import java.math.RoundingMode
+import java.time.Duration.between
 import java.time.Instant
-import java.util.UUID
+import java.util.*
 import kotlin.time.Duration.Companion.milliseconds
 
 class PortfolioManagerImpl(
@@ -31,6 +29,13 @@ class PortfolioManagerImpl(
 
     @Volatile
     private var isRunning = false
+
+    private val _eventFlow = MutableSharedFlow<RebalanceEvent>(
+        replay = 64,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST
+    )
+
+    override fun getRebalanceCycleFlow(): Flow<RebalanceEvent> = _eventFlow.asSharedFlow()
 
     @Synchronized
     override fun stopRebalancingLoop() {
@@ -55,19 +60,30 @@ class PortfolioManagerImpl(
         try {
             while (isRunning) {
                 val settings = configService.getConfig().settings
+                val startTime = Instant.now()
                 try {
                     log.info(
                         "Starting Rebalance Cycle. DryRun: {}",
                         settings.dryRun
                     )
+                    _eventFlow.tryEmit(RebalanceCycleStarted())
                     try {
                         tradeHistoryService.syncTradesFromKraken()
                     } catch (e: Exception) {
                         log.error("Failed to synchronize historical trades during cycle", e)
                     }
-                    performRebalanceCycle()
+                    val snapshot = performRebalanceCycle()
+                    
+                    val duration = between(startTime, Instant.now())
+                    _eventFlow.tryEmit(
+                        RebalanceCycleCompleted(
+                            snapshot = snapshot,
+                            duration = duration
+                        )
+                    )
                 } catch (e: Exception) {
                     log.error("Error in rebalancing cycle", e)
+                    _eventFlow.tryEmit(RebalanceCycleError(e))
                 }
                 delay((settings.loopDelaySeconds * 1000L).milliseconds)
             }
@@ -77,7 +93,7 @@ class PortfolioManagerImpl(
         }
     }
 
-    internal suspend fun performRebalanceCycle() {
+    internal suspend fun performRebalanceCycle(): PortfolioSnapshot? {
         val cycleId = UUID.randomUUID().toString()
         MDC.put("cycleId", cycleId)
         try {
@@ -86,9 +102,15 @@ class PortfolioManagerImpl(
 
             val balances = portfolioAnalyzer.fetchBalances()
             val prices = portfolioAnalyzer.fetchPrices()
-            val (totalPortfolioValueUSD, currentValuesUSD) =
-                portfolioAnalyzer.calculatePortfolioValues(balances, prices)
-                    ?: return
+            val calculationResult = portfolioAnalyzer.calculatePortfolioValues(balances, prices)
+
+            val (totalPortfolioValueUSD, currentValuesUSD) = calculationResult.fold(
+                onSuccess = { it },
+                onFailure = {
+                    log.error("Failed to calculate portfolio values: {}", it.message)
+                    return null
+                }
+            )
 
             log.info(
                 "Total Portfolio Value: $${
@@ -137,7 +159,10 @@ class PortfolioManagerImpl(
                 currentValuesUSD = currentValuesUSD,
                 prices = prices,
                 settings = configService.getConfig().settings,
-                actionLog = actionLog
+                actionLog = actionLog,
+                onOrderExecuted = { 
+                    _eventFlow.tryEmit(it) 
+                }
             )
 
             val snapshot = buildSnapshot(
@@ -160,6 +185,7 @@ class PortfolioManagerImpl(
             }
 
             log.info("--- Cycle Complete ---")
+            return snapshot
         } finally {
             MDC.remove("cycleId")
         }
@@ -193,56 +219,26 @@ class PortfolioManagerImpl(
                     BigDecimal.ONE
                 }
 
-            val baseTargetPct = BigDecimal.valueOf(targetPercent)
-            var snapshotTargetPct = baseTargetPct
-            val calcTargetPct: BigDecimal
-
-            if (symbol.isUsd) {
-                calcTargetPct = effectiveUsdTarget
-            } else {
-                calcTargetPct = baseTargetPct.multiply(cryptoScaleFactor)
-                snapshotTargetPct = calcTargetPct
-            }
-
-            var currentPct = BigDecimal.ZERO
-            if (totalPortfolioValueUSD > BigDecimal.ZERO) {
-                currentPct = valUSD.divide(
-                    totalPortfolioValueUSD,
-                    4,
-                    RoundingMode.HALF_UP
-                )
-                    .multiply(BigDecimal.valueOf(100))
-            }
-
-            val targetVal = totalPortfolioValueUSD
-                .multiply(calcTargetPct)
-                .divide(
-                    BigDecimal.valueOf(100),
-                    4,
-                    RoundingMode.HALF_UP
-                )
-            val deviationUSD = valUSD.subtract(targetVal)
-            var devPct = BigDecimal.ZERO
-
-            if (targetVal > BigDecimal.ZERO) {
-                devPct = deviationUSD
-                    .divide(
-                        targetVal,
-                        4,
-                        RoundingMode.HALF_UP
-                    )
-                    .multiply(BigDecimal.valueOf(100))
-            }
+            // Use consolidated calculation logic
+            val metrics = PortfolioCalculations.calculateAssetMetrics(
+                symbol = symbol,
+                baseTargetPercent = BigDecimal.valueOf(targetPercent),
+                currentValueUSD = valUSD,
+                totalPortfolioValueUSD = totalPortfolioValueUSD,
+                effectiveUsdTarget = effectiveUsdTarget,
+                cryptoScaleFactor = cryptoScaleFactor,
+                dustThresholdUSD = configService.getConfig().settings.dustThresholdUSD
+            )
 
             assetSnapshots[symbol.value] = PortfolioSnapshot.AssetSnapshot(
                 symbol = symbol,
                 balance = balance,
                 price = price,
                 valueUSD = valUSD,
-                targetPercent = snapshotTargetPct,
-                currentPercent = currentPct,
-                deviationPercent = devPct,
-                deviationUSD = deviationUSD
+                targetPercent = metrics.calcTargetPercent,
+                currentPercent = metrics.currentPercent,
+                deviationPercent = metrics.deviationPercent,
+                deviationUSD = metrics.deviationUSD
             )
         }
 

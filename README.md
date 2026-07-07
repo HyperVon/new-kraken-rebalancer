@@ -15,17 +15,17 @@ several months.**
 
 ## Tech Stack
 
-| Layer           | Technology                                                                                           |
-|-----------------|------------------------------------------------------------------------------------------------------|
-| **Language**    | Kotlin 2.4.0 (JVM)                                                                                   |
-| **Backend**     | Ktor 3.5.0 (Netty engine), Koin 4.2.1 (DI), Jackson 2.21                                             |
-| **Database**    | SQLite (via JetBrains Exposed ORM 0.61.0)                                                            |
-| **HTTP Client** | Ktor CIO Client (async, coroutine-native)                                                            |
-| **Concurrency** | Kotlin Coroutines (`kotlinx.coroutines` 1.11.0)                                                      |
-| **Frontend**    | Server-side HTML (kotlinx.html DSL + HTMX), Ktor SSE                                                 |
-| **API**         | Kraken REST API with HMAC-SHA512 authentication                                                      |
-| **Testing**     | Kotest 6.1 (StringSpec), MockK 1.14, Ktor MockEngine, JaCoCo (high coverage enforced and achieved)   |
-| **Build**       | Gradle (Kotlin DSL)                                                                                  |
+| Layer           | Technology                                                                            |
+| --------------- | ------------------------------------------------------------------------------------- |
+| **Language**    | Kotlin 2.4.0 (JVM)                                                                    |
+| **Backend**     | Ktor 3.5.0 (Netty engine), Koin 4.2.1 (DI), Jackson 2.22                              |
+| **Database**    | SQLite (via JetBrains Exposed ORM 0.61.0)                                             |
+| **HTTP Client** | Ktor CIO Client (async, coroutine-native)                                             |
+| **Concurrency** | Kotlin Coroutines (`kotlinx.coroutines` 1.11.0)                                       |
+| **Frontend**    | Server-side HTML (kotlinx.html DSL + HTMX), Ktor SSE                                  |
+| **API**         | Kraken REST API with HMAC-SHA512 authentication                                       |
+| **Testing**     | Kotest 6.1 (StringSpec), MockK 1.14, Ktor MockEngine, JaCoCo (95%+ coverage enforced) |
+| **Build**       | Gradle (Kotlin DSL)                                                                   |
 
 ---
 
@@ -135,26 +135,31 @@ The experimental branches remain in the repository as complete, working
 reference implementations for anyone interested in comparing the same domain
 logic across three languages and ecosystems.
 
+Ongoing work on the `feature/rebalance-updates` branch adds event-driven
+rebalance monitoring (`RebalanceEvent` flow), reactive config change
+notifications, a Kraken call-counter rate limiter, and flow-based API retry and
+trade-history pagination.
+
 ### Technologies Explored
 
 Building the same application across multiple stacks gave me hands-on experience
 with a wide range of tools and paradigms:
 
-| Category                | Technologies Used                                                                                                             |
-|-------------------------|------------------------------------------------------------------------------------------------------------------------------ |
-| **Languages**           | Java 25, Kotlin 2.4, Go 1.26, TypeScript, JavaScript (ES6+)                                                                   |
-| **Backend Frameworks**  | Spring Boot 4, Ktor 2.3 → 3.5, NestJS, Express, Go `net/http`                                                                 |
-| **DI / IoC**            | Spring IoC (`@Autowired`), Koin 3.5 → 4.2, NestJS modules                                                                     |
-| **Build Systems**       | Maven, Gradle (Kotlin DSL), npm / yarn, Go modules                                                                            |
-| **Frontend**            | React (JS → TypeScript), Angular (explored), HTMX + kotlinx.html DSL, Tailwind CSS v4, Chart.js                               |
-| **HTTP Clients**        | OkHttp (blocking), Ktor CIO Client (async/coroutine), Node.js native `fetch`, Go `net/http`                                   |
-| **Concurrency**         | Java `ScheduledExecutorService`, Kotlin Coroutines, Go goroutines, Node.js event loop                                         |
-| **Testing**             | JUnit 5 + Mockito, Kotest 6 + MockK, Vitest + React Testing Library, Go `testing` + `go-test-coverage`                        |
-| **Coverage**            | JaCoCo (100% enforced and achieved), Vitest coverage (>99%), Go per-package gates (98.2%)                                     |
-| **Serialization**       | Jackson 2.21, Go `encoding/json`, Zod schema validation                                                                       |
-| **Real-Time**           | Ktor Server-Sent Events (SSE), Kotlin `SharedFlow`, HTMX SSE extension                                                        |
-| **CI / Security**       | GitHub Actions, CodeQL, Dependabot, SHA-pinned actions, CVE patching (Tomcat, Netty, Logback, Jackson)                        |
-| **Code Quality**        | Lombok, ESLint, `go fmt`, Kotlin named context parameters, strict `BigDecimal` precision, atomic file I/O                     |
+| Category               | Technologies Used                                                                                         |
+| ---------------------- | --------------------------------------------------------------------------------------------------------- |
+| **Languages**          | Java 25, Kotlin 2.4, Go 1.26, TypeScript, JavaScript (ES6+)                                               |
+| **Backend Frameworks** | Spring Boot 4, Ktor 2.3 → 3.5, NestJS, Express, Go `net/http`                                             |
+| **DI / IoC**           | Spring IoC (`@Autowired`), Koin 3.5 → 4.2, NestJS modules                                                 |
+| **Build Systems**      | Maven, Gradle (Kotlin DSL), npm / yarn, Go modules                                                        |
+| **Frontend**           | React (JS → TypeScript), Angular (explored), HTMX + kotlinx.html DSL, Tailwind CSS v4, Chart.js           |
+| **HTTP Clients**       | OkHttp (blocking), Ktor CIO Client (async/coroutine), Node.js native `fetch`, Go `net/http`               |
+| **Concurrency**        | Java `ScheduledExecutorService`, Kotlin Coroutines, Go goroutines, Node.js event loop                     |
+| **Testing**            | JUnit 5 + Mockito, Kotest 6 + MockK, Vitest + React Testing Library, Go `testing` + `go-test-coverage`    |
+| **Coverage**           | JaCoCo (95%+ enforced on Kotlin stack), Vitest coverage (>99%), Go per-package gates (98.2%)              |
+| **Serialization**      | Jackson 2.22, Go `encoding/json`, Zod schema validation                                                   |
+| **Real-Time**          | Ktor Server-Sent Events (SSE), Kotlin `SharedFlow` (snapshots + rebalance events), HTMX SSE extension     |
+| **CI / Security**      | GitHub Actions, CodeQL, Dependabot, SHA-pinned actions, CVE patching (Tomcat, Netty, Logback, Jackson)    |
+| **Code Quality**       | Lombok, ESLint, `go fmt`, Kotlin named context parameters, strict `BigDecimal` precision, atomic file I/O |
 
 ---
 
@@ -199,6 +204,16 @@ with a wide range of tools and paradigms:
 - Modify all settings (allocations, thresholds, assets) via the web UI
 - Add or remove assets without restarting the application
 - Allocation validation ensures targets always sum to 100%
+- `ConfigService.watchConfigChanges()` exposes a `Flow<Settings>` with replay
+  for reactive subscribers (emits on load and after every validated update)
+
+### Event-Driven Rebalance Monitoring
+
+- `PortfolioManager.getRebalanceCycleFlow()` emits lifecycle events for each
+  rebalancing cycle: start, completion (with snapshot and duration), errors,
+  and individual order executions (`OrderExecuted` with structured `OrderResult`)
+- Events are broadcast via a hot `MutableSharedFlow` using `tryEmit()` for
+  non-blocking, fire-and-forget delivery to metrics collectors or future UI hooks
 
 ### Offline Exchange Simulator & Pre-Seeding
 
@@ -220,7 +235,7 @@ with a wide range of tools and paradigms:
 - **Atomic File Writes** — config updates use write-then-atomic-rename (NIO Files.move with StandardCopyOption.ATOMIC_MOVE) to prevent file system corruption
 - **Graceful Shutdown** — JVM shutdown hook cleanly cancels the coroutine loop scope, closes Ktor HttpClient, and stops Koin DI
 - **Redacted Secret Logging** — value class `toString()` implementations for API credentials return redacts to protect application logs
-- **Rate-Limiting & Retries** — rate limits private API queries to 1 call per second and automatically retries transient socket/HTTP/rate-limit exceptions with exponential backoff
+- **Rate-Limiting & Retries** — `RateLimiter` implements Kraken's exponential-decay call counter (safe limit 12.0, per-endpoint costs) with observable `RateLimitEvent` flow; `retryWithFlow` automatically retries transient socket/HTTP/rate-limit/lockout errors with exponential backoff (15-minute wait on temporary lockout)
 - **CORS Restrictions** — locks down server allowed origins to local machine addresses (`localhost`, `127.0.0.1`, `::1`), Bonjour multicast DNS domains (`*.local`), and private local subnets (`192.168.x.x`, `10.x.x.x`, etc.) to permit local Wi-Fi access from other devices while blocking public web threats
 - **Database Indexing & Auto Migrations** — database schemas utilize index optimizations for timestamps, and run dynamic `SchemaUtils.createMissingTablesAndColumns` auto-migrations on startup
 - Dust threshold filtering to avoid minimum order size errors
@@ -255,6 +270,20 @@ targets.
 
 ![Settings](docs/images/settings.png)
 
+### History
+
+The dedicated History view provides detailed analysis and charts tracking portfolio metrics over time. Users can select different time ranges (24h, 7d, 30d, 90d, All) to update the charts and trade log. It features:
+
+- **Portfolio Value Over Time** (overall portfolio value in USD + individual asset values)
+- **Asset Holdings Over Time** (% change in asset balance)
+- **Allocation Drift Over Time** (stacked chart showing target vs current asset distributions)
+- **Cumulative P&L** (realized profit & loss over time)
+- **Comprehensive Trade Log Table** (showing all executions, with a toggle to filter/show dry-run trades)
+
+![History Charts](docs/images/history.png)
+
+![Trade History Log](docs/images/history-bottom.png)
+
 ---
 
 ## Architecture
@@ -274,13 +303,16 @@ graph LR
         PM[PortfolioManager] --> PA[PortfolioAnalyzer]
         PM --> OE[OrderExecutor]
         PM --> THS
+        PM --> RF["RebalanceEvent Flow"]
         PA --> KS[KrakenService]
         PA --> CS
         PA --> PSR["PortfolioStatsRepository (SQLite)"]
+        PA --> PC[PortfolioCalculations]
         OE --> KS
         OE --> CS
         OE --> PA
         THS --> TR["TradeRepository (SQLite)"]
+        KS --> RL[RateLimiter]
     end
 
     subgraph External
@@ -309,22 +341,33 @@ logic, fiat correction strategy, and dynamic deployment math.
 
 ### Real-Time Event Streaming
 
-To eliminate unnecessary network polling, the system uses a reactive, push-based
-architecture to synchronize the dashboard with the backend rebalancing loop:
+The dashboard and monitoring hooks use a reactive, push-based architecture with
+two complementary `SharedFlow` channels:
+
+#### Portfolio Snapshot Stream (Dashboard SSE)
 
 1. **Kotlin SharedFlow**: `TradeHistoryServiceImpl` maintains a
-   `MutableSharedFlow` as a hot event broadcaster. Whenever a rebalance cycle
-   records a new `PortfolioSnapshot`, the snapshot is emitted to the flow using
-   `tryEmit()`.
+   `MutableSharedFlow<PortfolioSnapshot>` as a hot event broadcaster. Whenever a
+   rebalance cycle records a new snapshot, it is emitted via `tryEmit()`.
 2. **Ktor Server-Sent Events (SSE)**: The `/api/status/stream` route installs
    Ktor 3's native `SSE` plugin. When a client connects, Ktor pushes the latest
-   cached snapshot and then suspends, collecting subsequent snapshots from the
-   `SharedFlow` and streaming them over a single, persistent HTTP connection.
+   cached snapshot and then collects subsequent snapshots from the
+   `SharedFlow`, streaming them over a single persistent HTTP connection.
 3. **HTMX SSE Extension**: The dashboard shell uses `hx-ext="sse"` and
    `sse-connect="/api/status/stream"`. A div with `sse-swap="message"` and
    `hx-trigger="sse:message"` automatically fetches updated dashboard fragments
-   from `/fragments/dashboard` whenever a new snapshot arrives over the SSE
-   stream.
+   from `/fragments/dashboard` whenever a new snapshot arrives.
+
+#### Rebalance Cycle Event Stream (Monitoring)
+
+1. **`RebalanceEvent` sealed hierarchy**: `PortfolioManagerImpl` emits
+   `RebalanceCycleStarted`, `RebalanceCycleCompleted` (with snapshot and
+   duration), `RebalanceCycleError`, and per-order `OrderExecuted` events.
+2. **`getRebalanceCycleFlow()`**: Returns a hot `SharedFlow<RebalanceEvent>`
+   with replay buffer (64 events) for late subscribers — useful for metrics,
+   alerting, or future dashboard integrations.
+3. **Config change flow**: `ConfigService.watchConfigChanges()` provides a
+   separate `Flow<Settings>` with `replay = 1` for reactive config consumers.
 
 ---
 
@@ -333,20 +376,30 @@ architecture to synchronize the dashboard with the backend rebalancing loop:
 ```text
 ├── src/main/kotlin/com/gemini/krakenbot/
 │   ├── KrakenRebalancerApplication.kt    # Entry point, Ktor server & Koin DI bootstrap
-│   ├── config/                            # Data classes: AppConfig, Settings, Allocation, KrakenCredentials
+│   ├── config/                            # AppConfig, Settings, ErrorHandlingConfig, DatabaseConfig
 │   │   └── AppModule.kt                  # Koin dependency injection module
 │   ├── controller/                        # Ktor routes: DashboardRoutes
-│   ├── model/                             # Domain: PortfolioSnapshot, PortfolioStats, OrderResult
+│   ├── model/                             # Domain: PortfolioSnapshot, OrderResult, Result, TradeRecord
 │   ├── repository/                        # Persistence interfaces: TradeRepository, PortfolioStatsRepository
 │   │   └── impl/                          # SQLite-backed implementations (via Exposed ORM)
-│   ├── service/                           # Core logic interfaces: PortfolioManager, KrakenService, ConfigService, TradeHistoryService
+│   ├── service/                           # Core logic interfaces and shared utilities
+│   │   ├── RebalanceEvent.kt             # Sealed rebalance lifecycle events
+│   │   ├── ServiceUtils.kt               # Retry helpers, safe BigDecimal parsing
 │   │   └── impl/                          # Service implementations (coroutine-aware)
+│   │       ├── PortfolioManagerImpl.kt   # Loop orchestrator + RebalanceEvent flow
+│   │       ├── PortfolioAnalyzerImpl.kt  # Snapshot/analysis logic
+│   │       ├── PortfolioCalculations.kt  # Shared target/deviation math
+│   │       ├── OrderExecutorImpl.kt      # Sell-first/buy-second execution
+│   │       ├── KrakenServiceImpl.kt      # Kraken API client + RateLimiter + retryWithFlow
+│   │       ├── RateLimiter.kt            # Kraken call-counter rate limiter
+│   │       ├── ConfigServiceImpl.kt      # Config persistence + watchConfigChanges flow
+│   │       └── TradeHistoryServiceImpl.kt # Snapshot storage, trade sync, history flow
 │   ├── view/                              # HTML templates & components (kotlinx.html DSL)
 │   │   ├── DashboardView.kt              # Facade class delegating to components
 │   │   ├── component/                    # Modular components (Shell, Grid, Form, etc.)
-│   │   └── util/                         # View utilities (Formatter, Icons, ViewText, Layouts)
+│   │   └── util/                         # CssClass, FormatterUtils, Extensions, Icons, Layouts
 │   └── table/                             # Exposed table definitions
-├── src/test/kotlin/                       # Unit tests (high overall coverage achieved across all packages and metrics)
+├── src/test/kotlin/                       # Unit tests (95%+ coverage enforced via JaCoCo)
 │   └── com/gemini/krakenbot/
 │       └── service/
 │           ├── FakeKrakenService.kt       # In-process test double for KrakenService
@@ -463,17 +516,20 @@ from the backend — no separate frontend build step required.
 
 ## Testing
 
-The project enforces **strict line, branch, method, class, and instruction coverage** via
-JaCoCo, with thresholds set at **95% instruction coverage, 90% branch coverage, 95% line coverage, and 95% method coverage** across the entire codebase (including view
-rendering and routing). All tests are behavioural — they verify actual
-rebalancing decisions, not just method invocations. Order volumes are asserted
-with `BigDecimal.compareTo()` to avoid floating-point comparison issues.
+The project enforces **strict line, branch, method, and instruction coverage** via
+JaCoCo, with thresholds set at **95% instruction coverage, 90% branch coverage,
+95% line coverage, and 95% method coverage**. Certain categories are excluded
+from the gate (model/config data classes, Exposed table definitions, inline
+utility files, CSS constant holders, and the Kraken API client implementation).
+All tests are behavioural — they verify actual rebalancing decisions, not just
+method invocations. Order volumes are asserted with `BigDecimal.compareTo()` to
+avoid floating-point comparison issues.
 
 ```bash
 ./gradlew test
 ```
 
-**274 tests** across:
+**316 tests** across:
 
 - **Scenario Evaluation Suite** (`EvaluationScenariosTest`) — **30 highly realistic scenarios** testing the full end-to-end execution of rebalances, mathematical edge cases, API credentials invalidation, concurrency locks, and SSE client streams. See **[EVALUATION.md](EVALUATION.md)** for descriptions and test results of all 30 scenarios.
 - `KrakenE2ETest` / `ResilienceChaosTest` / `PrecisionRoundingFuzzTest` /
@@ -482,16 +538,21 @@ with `BigDecimal.compareTo()` to avoid floating-point comparison issues.
   verification
 - `PortfolioManagerFiatCorrectionTest` — deposit/withdrawal distribution logic
 - `PortfolioManagerDrawdownTest` — ATH tracking and dynamic deployment
-- `PortfolioManagerOrderExecutionTest` — sell-first/buy-second sequencing
+- `PortfolioManagerOrderExecutionTest` — sell-first/buy-second sequencing and
+  `OrderExecuted` event flow verification
 - `PortfolioManagerLoopTest` — loop lifecycle, error recovery, interruption
 - `PortfolioManagerZeroAllocationTest` — edge case: 0% target allocation
-- `PortfolioManagerEdgeCasesTest` — dust thresholds, price gaps, zero balances
+- `PortfolioManagerEdgeCasesTest` — dust thresholds, price gaps, zero balances,
+  rebalance event flow
 - `PortfolioManagerDogeTest` — Kraken symbol mapping quirks (BTC→XBT, DOGE→XDG)
-- `KrakenServiceTest` — API signing, error handling, dry run, order failure (
-  using Ktor `MockEngine`)
-- `ModelTest` — unit tests for models including `Asset` mapping
+- `KrakenServiceTest` — API signing, error handling, dry run, order failure,
+  retry/lockout behaviour (using Ktor `MockEngine`)
+- `ModelTest` / `ResultTest` — unit tests for domain models and the `Result` type
 - `ConfigServiceTest` — validation, hot-reload, persistence, duplicate/blank
-  symbol rejection
+  symbol rejection, and `watchConfigChanges()` flow
+- `RebalanceEventTest` — lifecycle event data classes
+- `ServiceUtilsTest` / `FormatterUtilsTest` — utility function coverage
+- `RateLimiterTest` — call-counter algorithm and rate limit event flow
 - `DashboardControllerTest` — REST API endpoints, invalid config error responses, and trade history sync status
 - `TradeHistoryServiceTest` — snapshot storage, size limits, and historical synchronization states
 - `DynamicKrakenServiceTest` / `SimulatedKrakenServiceTest` — dynamic real/simulation routing and offline exchange simulation logic

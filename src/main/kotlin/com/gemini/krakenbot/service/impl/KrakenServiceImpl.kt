@@ -3,31 +3,28 @@ package com.gemini.krakenbot.service.impl
 import com.fasterxml.jackson.core.JsonProcessingException
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderResult
 import com.gemini.krakenbot.model.TradeRecord
-import com.gemini.krakenbot.model.Asset
-import com.gemini.krakenbot.service.ConfigService
-import com.gemini.krakenbot.service.KrakenService
-import com.gemini.krakenbot.service.RawBalances
-import com.gemini.krakenbot.service.RawPrices
-import java.time.Instant
+import com.gemini.krakenbot.service.*
 import io.ktor.client.*
-import io.ktor.client.plugins.ResponseException
+import io.ktor.client.plugins.*
 import io.ktor.client.request.*
 import io.ktor.client.statement.*
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flow
 import org.slf4j.LoggerFactory
+import java.io.IOException
 import java.math.BigDecimal
 import java.math.RoundingMode
 import java.security.MessageDigest
+import java.time.Instant
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 import kotlin.io.encoding.Base64
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
-import java.io.IOException
-import java.util.concurrent.atomic.AtomicInteger
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.minutes
 
@@ -42,20 +39,61 @@ class KrakenServiceImpl(
     private val apiUrl = "https://api.kraken.com"
     private val apiVersion = "0"
     private val nonceGenerator =
-        AtomicLong(System.currentTimeMillis() * 1000)
+        AtomicLong(System.currentTimeMillis() * 1000000L)
     val lastFetchedCount = AtomicInteger(0)
 
-    private val rateLimitMutex = Mutex()
-    private var apiCallCounter = 0.0
-    private var lastCallTimestamp = System.currentTimeMillis()
+    private val rateLimiter = RateLimiter()
+
+    private suspend fun <T> retryWithFlow(
+        actionName: String,
+        maxAttempts: Int = 5,
+        initialBackoffMs: Long = 2000,
+        rateLimitBackoffMs: Long = 10000,
+        block: suspend () -> T
+    ): T = flow {
+        var currentBackoff = initialBackoffMs
+        var currentRateLimitBackoff = rateLimitBackoffMs
+        
+        repeat(maxAttempts) { attempt ->
+            try {
+                emit(block())
+                return@flow
+            } catch (e: Exception) {
+                val isRateLimit = e.message?.contains("Rate limit exceeded") == true
+                val isLockout = e.message?.contains("Temporary lockout") == true
+                val isNetworkOrTransient = e is IOException || e is ResponseException
+
+                if ((isNetworkOrTransient || isRateLimit || isLockout) && attempt < maxAttempts - 1) {
+                    val waitTime = when {
+                        isLockout -> 15.minutes.inWholeMilliseconds
+                        isRateLimit -> currentRateLimitBackoff
+                        else -> currentBackoff
+                    }
+                    log.warn("Transient failure in {} (attempt {}/{}). Retrying in {}ms... Error: {}",
+                        actionName, attempt + 1, maxAttempts, waitTime, e.message)
+                    delay(waitTime.milliseconds)
+                    
+                    if (isRateLimit) {
+                        currentRateLimitBackoff *= 2
+                    } else if (!isLockout) {
+                        currentBackoff *= 2
+                    }
+                } else {
+                    throw e
+                }
+            }
+        }
+    }.first()
 
     override suspend fun getBalances(): RawBalances {
         val path = "/$apiVersion/private/Balance"
         val response = queryPrivate(path, emptyMap())
         return response.properties()
-            .associate { (key, value) ->
-                key to BigDecimal(value.asText())
+            .mapNotNull { (key, value) ->
+                val amount = safeParseBigDecimal(value.asText())
+                if (amount > BigDecimal.ZERO) key to amount else null
             }
+            .toMap()
     }
 
     override suspend fun getTickerPrices(pairs: String): RawPrices {
@@ -64,7 +102,12 @@ class KrakenServiceImpl(
         return result.properties()
             .mapNotNull { (key, value) ->
                 val c = value.path("c")
-                if (c.isArray && !c.isEmpty) key to BigDecimal(c.get(0).asText()) else null
+                if (c.isArray && !c.isEmpty) {
+                    val price = safeParseBigDecimal(c.get(0).asText())
+                    if (price > BigDecimal.ZERO) key to price else null
+                } else {
+                    null
+                }
             }
             .toMap()
     }
@@ -182,10 +225,10 @@ class KrakenServiceImpl(
 
             val timestamp = Instant.ofEpochMilli((time * 1000).toLong())
             val side = type.uppercase() // "BUY" or "SELL"
-            val rawVolume = try { BigDecimal(volStr) } catch (_: Exception) { BigDecimal.ZERO }
-            val rawUsdAmount = try { BigDecimal(costStr) } catch (_: Exception) { BigDecimal.ZERO }
-            val rawPrice = try { BigDecimal(priceStr) } catch (_: Exception) { BigDecimal.ZERO }
-            val rawFee = try { BigDecimal(feeStr) } catch (_: Exception) { BigDecimal.ZERO }
+            val rawVolume = safeParseBigDecimal(volStr)
+            val rawUsdAmount = safeParseBigDecimal(costStr)
+            val rawPrice = safeParseBigDecimal(priceStr)
+            val rawFee = safeParseBigDecimal(feeStr)
             val volume = rawVolume.setScale(8, RoundingMode.HALF_UP)
             val usdAmount = rawUsdAmount.setScale(2, RoundingMode.HALF_UP)
 
@@ -246,48 +289,8 @@ class KrakenServiceImpl(
     }
 
 
-    private suspend fun <T> retryOnTransientFailure(
-        actionName: String,
-        block: suspend () -> T
-    ): T {
-        var attempt = 0
-        val maxAttempts = 5
-        var backoffMs = 2000L
-        var rateLimitBackoffMs = 10000L
-
-        while (true) {
-            try {
-                return block()
-            } catch (e: Exception) {
-                val isRateLimit = e.message?.contains("Rate limit exceeded") == true
-                val isLockout = e.message?.contains("Temporary lockout") == true
-                val isNetworkOrTransient = e is IOException ||
-                                           e is ResponseException
-
-                if ((isNetworkOrTransient || isRateLimit || isLockout) && attempt < maxAttempts - 1) {
-                    attempt++
-                    val currentBackoff = when {
-                        isLockout -> 15.minutes.inWholeMilliseconds
-                        isRateLimit -> rateLimitBackoffMs
-                        else -> backoffMs
-                    }
-                    log.warn("Transient failure in {} (attempt {}/{}). Retrying in {}ms... Error: {}",
-                        actionName, attempt, maxAttempts, currentBackoff, e.message)
-                    delay(currentBackoff.milliseconds)
-                    if (isRateLimit) {
-                        rateLimitBackoffMs *= 2
-                    } else if (!isLockout) {
-                        backoffMs *= 2
-                    }
-                } else {
-                    throw e
-                }
-            }
-        }
-    }
-
     private suspend fun queryPublic(path: String): JsonNode {
-        return retryOnTransientFailure("queryPublic($path)") {
+        return retryWithFlow("queryPublic($path)") {
             val responseBody = httpClient.get(apiUrl + path).bodyAsText()
             try {
                 val root: JsonNode = objectMapper.readTree(responseBody)
@@ -321,31 +324,10 @@ class KrakenServiceImpl(
         val maxRetries = 5
         var retryCount = 0
 
-        return retryOnTransientFailure("queryPrivate($path)") {
+        return retryWithFlow("queryPrivate($path)") {
             while (true) {
-                rateLimitMutex.withLock {
-                    val now = System.currentTimeMillis()
-                    val elapsedSeconds = (now - lastCallTimestamp) / 1000.0
-                    apiCallCounter = maxOf(0.0, apiCallCounter - elapsedSeconds * 0.33)
-                    lastCallTimestamp = now
-
-                    val cost = if (path.contains("TradesHistory") || path.contains("Ledgers") || path.contains("ClosedOrders")) 2.0 else 1.0
-                    val safeLimit = 12.0
-
-                    if (apiCallCounter + cost > safeLimit) {
-                        val neededDecay = (apiCallCounter + cost) - safeLimit
-                        val waitSeconds = neededDecay / 0.33
-                        val waitMs = (waitSeconds * 1000).toLong()
-                        if (waitMs > 0) {
-                            log.info("Rate limiter throttling private call to {} (current counter: {}). Delaying for {}ms...", path, apiCallCounter, waitMs)
-                            delay(waitMs.milliseconds)
-                        }
-                        apiCallCounter = safeLimit - cost
-                        lastCallTimestamp = System.currentTimeMillis()
-                    }
-
-                    apiCallCounter += cost
-                }
+                val cost = if (path.contains("TradesHistory") || path.contains("Ledgers") || path.contains("ClosedOrders")) 2.0 else 1.0
+                rateLimiter.acquireWithCost(cost)
 
                 val nonce = nonceGenerator.incrementAndGet().toString()
                 val payload = data.toMutableMap()
@@ -382,7 +364,7 @@ class KrakenServiceImpl(
                         }
                         throw RuntimeException("Kraken API Error: $errorMsg")
                     }
-                    return@retryOnTransientFailure root.path("result")
+                    return@retryWithFlow root.path("result")
                 } catch (e: JsonProcessingException) {
                     throw RuntimeException(
                         "Failed to parse private API response",

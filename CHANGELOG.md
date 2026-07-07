@@ -8,6 +8,60 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [6.2.0] - 2026-07-07
+
+### Added
+
+- **Database Startup Deduplication**: Introduced a database startup clean-up in `SqliteTradeRepositoryImpl` (triggered via `init()` in `TradeHistoryServiceImpl`) to automatically find and prune existing duplicate local trade records caused by the Ktor vs Kraken pair naming convention mismatch.
+- **Total Fees Paid Metric**: Introduced a "Total Fees Paid" metrics card in the upper-right section of the history view (replacing the obsolete days running metric), showing the sum of fees across all successful trades.
+- **Type-safe CSS Sealed Classes**: Migrated all views, Ktor route handlers, and unit test suites to utilize the compilation-safe `CssClass` sealed class structures, and completely removed the legacy `object CssClasses` backward-compatibility helper.
+
+### Fixed
+
+- **Kraken Private API Nonces**: Upgraded private API nonce generator in `KrakenServiceImpl` to nanosecond precision (`System.currentTimeMillis() * 1000000L`) to restore connectivity for accounts that previously connected with higher-resolution nonces.
+- **Dynamic Time Axis Units**: Configured dynamic time scale unit handling in `history.js` to ensure the "7d" view (and other ranges) displays standard daily ticks instead of hourly ticks on chart x-axes.
+- **Trade History Duplication**: Resolved a bug in `TradeHistoryServiceImpl` where standard Ktor pair formats (`XBTUSD`, `ETHUSD`) failed to match official Kraken API formats (`XXBTZUSD`, `XETHZUSD`), causing successful synced trades to get inserted as duplicates. Duplicate checking now matches on resolved asset symbol (using `Asset.fromTradingPair`) instead of raw pair names.
+- **Accurate Sync Start Time**: Updated `getLatestTradeTime` to filter out dry-run trades (`where { TradeTable.dryRun eq false }`). This prevents dry-run trades (which are executed locally at `now`) from falsely advancing the sync watermark and missing actual trades executed while Ktor was offline.
+
+## [6.1.1] - 2026-07-05
+
+### Changed
+
+- **Refactored Application Structure**: Cleaned up the entry point by modularizing server configurations (Serialization, CORS) and utility functions into `com.gemini.krakenbot.config.KtorConfig` and `com.gemini.krakenbot.util.NetworkUtils`.
+- **Standardized Infrastructure**: Centralized Ktor configurations to separate concerns, improving maintainability and increasing readability of the application startup sequence.
+- **JaCoCo Coverage Update**: Updated JaCoCo build configuration to properly exclude the new `util` package, ensuring accurate coverage reports post-refactoring.
+- **Idiomatic Concurrency**: Conducted a final audit of all `Flow` usages and structured concurrency patterns, ensuring all asynchronous stream exposures are read-only and safely managed.
+
+## [6.1.0] - 2026-07-05
+
+### Added
+
+- **Rebalance Event Streaming**: Introduced a sealed `RebalanceEvent` hierarchy (`RebalanceCycleStarted`, `RebalanceCycleCompleted`, `RebalanceCycleError`, `OrderExecuted`) and exposed `PortfolioManager.getRebalanceCycleFlow()` as a hot `SharedFlow` for event-driven monitoring and metrics collection.
+- **Per-Order Event Emission**: `OrderExecutor.executeOrders()` now accepts an `onOrderExecuted` callback; `PortfolioManagerImpl` forwards each `OrderExecuted` event to the rebalance cycle flow as orders complete.
+- **Config Change Flow**: Added `ConfigService.watchConfigChanges()` backed by a `MutableSharedFlow<Settings>` with `replay = 1`, emitting settings on load and after every validated config update.
+- **Kraken Call-Counter Rate Limiter**: Implemented `RateLimiter` using Kraken's exponential-decay call counter algorithm with per-endpoint costs (1.0 default, 2.0 for history/ledger endpoints) and a `getRateLimitFlow()` for `RateLimitAcquired` / `RateLimitExceeded` events.
+- **Flow-Based API Retry**: Replaced `retryOnTransientFailure` with `retryWithFlow`, a kotlinx `flow`-based retry helper that handles network errors, rate limits, and temporary lockouts (15-minute backoff) with exponential backoff.
+- **Flow-Based Trade History Pagination**: Refactored Kraken trade history sync to emit paginated batches via `getTradeHistoryPaginated()` instead of an inline while-loop.
+- **PortfolioCalculations**: Extracted shared percentage/target math from `PortfolioAnalyzerImpl` and `PortfolioManagerImpl` into a dedicated `PortfolioCalculations` object.
+- **Result Type**: Added a sealed `Result<T>` with `fold`, `map`, `flatMap`, and `runCatching` for type-safe error handling in portfolio calculations and service utilities.
+- **Service Utilities**: Added `ServiceUtils.kt` with `retryWithExponentialBackoff`, `safeParseBigDecimal`, and map helpers.
+- **View Utilities**: Added `FormatterUtils` (currency, percent, compact number, duration, relative time formatting) and `Extensions.kt` (BigDecimal and collection helpers).
+- **Type-Safe CSS Classes**: Expanded `CssClasses.kt` into a sealed `CssClass` hierarchy with nested categories for compile-time-checked CSS token access.
+- **HTTP Error Handling**: Added `ErrorHandlingConfig` with Ktor `StatusPages` for consistent JSON error responses (400, 404, 500).
+- **New Tests**: Added `RebalanceEventTest`, `FormatterUtilsTest`, `ServiceUtilsTest`, `ResultTest`, config watch flow test, rate limiter flow tests, and order-executed event flow tests in portfolio manager suites.
+
+### Changed
+
+- **PortfolioAnalyzer Error Handling**: `calculatePortfolioValues()` now returns `Result<PortfolioValues>` instead of throwing, allowing the orchestrator to abort a cycle gracefully on calculation failure.
+- **Jacoco Coverage Scope**: Updated JaCoCo exclusions for inline utility files (`ServiceUtilsKt`, `ExtensionsKt`), CSS constant holders (`CssClass*`), and `KrakenServiceImpl` (integration-heavy, tested via `MockEngine`).
+- **FormatterUtils.formatCompact**: Fixed `BigDecimal` division to use explicit scale instead of Kotlin's integer-scaled division operator.
+
+### Fixed
+
+- **Compiler Warnings**: Removed unnecessary `inline` modifiers from utility functions, eliminated redundant casts in `ResultTest`, and added `@file:OptIn(ExperimentalCoroutinesApi::class)` for coroutine test helpers.
+
+---
+
 ## [6.0.0] - 2026-07-04
 
 ### Added

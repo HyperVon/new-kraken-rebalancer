@@ -16,8 +16,11 @@ import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.shouldBe
 import io.mockk.every
 import io.mockk.mockk
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import java.math.BigDecimal
+import kotlin.time.Duration.Companion.milliseconds
 
 @Suppress("unused")
 class PortfolioManagerOrderExecutionTest : StringSpec() {
@@ -90,6 +93,52 @@ class PortfolioManagerOrderExecutionTest : StringSpec() {
                 krakenService.executedOrders[0].side shouldBe "sell"
                 krakenService.executedOrders[1].pair shouldBe "BUSD"
                 krakenService.executedOrders[1].side shouldBe "buy"
+            }
+        }
+
+        "testEventFlow_EmitsOrderExecutedEvents" {
+            runTest {
+                val allocA = Allocation("A", 10.0)
+                val allocB = Allocation("B", 90.0)
+                val allocUSD = Allocation(Asset.USD, 0.0)
+                val allAllocations = listOf(allocA, allocB, allocUSD)
+
+                val mockSettings = Settings(
+                    loopDelaySeconds = 0L,
+                    deviationTriggerPercent = 1.0,
+                    dustThresholdUSD = 1.0,
+                    dryRun = false
+                )
+                val mockConfig = AppConfig(
+                    kraken = KrakenCredentials("k", "s"),
+                    settings = mockSettings,
+                    allocations = allAllocations
+                )
+
+                every { configService.getConfig() } returns mockConfig
+
+                val balances = mapOf("A" to 5.0, "B" to 50.0, Asset.USD to 0.0)
+                krakenService.balanceSupplier = { balances }
+
+                val prices = mapOf("AUSD" to 100.0, "BUSD" to 10.0)
+                krakenService.pricesSupplier = { prices }
+
+                val events = mutableListOf<RebalanceEvent>()
+                val job = launch {
+                    portfolioManager.getRebalanceCycleFlow().collect {
+                        events.add(it)
+                    }
+                }
+
+                portfolioManager.performRebalanceCycle()
+
+                // Wait a bit for events to be emitted
+                delay(100.milliseconds)
+
+                events.any { it is OrderExecuted && it.result.side.equals("sell", ignoreCase = true) && it.result.pair == "AUSD" }.shouldBeTrue()
+                events.any { it is OrderExecuted && it.result.side.equals("buy", ignoreCase = true) && it.result.pair == "BUSD" }.shouldBeTrue()
+
+                job.cancel()
             }
         }
 

@@ -75,11 +75,13 @@ e.g., every 60 seconds). Each cycle consists of three phases: **Snapshot**, *
 
 To maintain the Single Responsibility Principle (SRP) and keep domain logic highly testable, the core engine is decoupled into specific implementation (`impl`) classes:
 
-- **`PortfolioManagerImpl` (The Orchestrator)**: Manages the continuous coroutine loop. It acts as a lightweight facade that delegates the actual domain logic to the analyzer and executor, and coordinates the final persistence of the snapshot.
-- **`PortfolioAnalyzer` (The Brain)**: Responsible for Phase 1 and 2. It resolves prices, tracks the All-Time High (ATH), calculates dynamic fiat deployment ratios, computes deviations, and determines the exact `BUY`/`SELL` amounts required.
-- **`OrderExecutor` (The Brawn)**: Responsible for Phase 3. It takes the calculated orders and safely executes them against the Kraken API. It manages the strict sell-before-buy sequence, projected vs. actual cash tracking, and dust-threshold filtering.
-- **Persistence Impls (`SqliteTradeRepositoryImpl`, `SqlitePortfolioStatsRepositoryImpl`, `ConfigServiceImpl`)**: Config uses atomic write-then-rename file operations to prevent data corruption, while trade logs and portfolio statistics are persisted to SQLite database (using JetBrains Exposed ORM).
-- **`TradeHistoryServiceImpl`**: Maintains a reactive `MutableSharedFlow` that broadcasts portfolio snapshots to the Ktor Server-Sent Events (SSE) stream in real-time.
+- **`PortfolioManagerImpl` (The Orchestrator)**: Manages the continuous coroutine loop. It acts as a lightweight facade that delegates domain logic to the analyzer and executor, coordinates snapshot persistence, and broadcasts `RebalanceEvent` lifecycle events (including per-order `OrderExecuted` events) via a hot `SharedFlow`.
+- **`PortfolioAnalyzer` (The Brain)**: Responsible for Phase 1 and 2. It resolves prices, tracks the All-Time High (ATH), calculates dynamic fiat deployment ratios, computes deviations, and determines the exact `BUY`/`SELL` amounts required. Portfolio value calculation returns a `Result<PortfolioValues>` for graceful error handling.
+- **`PortfolioCalculations` (Shared Math)**: Consolidated percentage, target, and deviation calculations shared between the analyzer and snapshot builder — eliminates duplicate math across the codebase.
+- **`OrderExecutor` (The Brawn)**: Responsible for Phase 3. It takes the calculated orders and safely executes them against the Kraken API. It manages the strict sell-before-buy sequence, projected vs. actual cash tracking, dust-threshold filtering, and invokes an `onOrderExecuted` callback for each order result.
+- **`KrakenServiceImpl` + `RateLimiter` (The Gateway)**: Handles HMAC-SHA512 authenticated API calls with a Kraken call-counter rate limiter (exponential decay, per-endpoint costs) and `retryWithFlow` for transient failures, rate limits, and temporary lockouts.
+- **Persistence Impls (`SqliteTradeRepositoryImpl`, `SqlitePortfolioStatsRepositoryImpl`, `ConfigServiceImpl`)**: Config uses atomic write-then-rename file operations and exposes `watchConfigChanges()` as a reactive `Flow<Settings>`. Trade logs and portfolio statistics are persisted to SQLite (using JetBrains Exposed ORM).
+- **`TradeHistoryServiceImpl`**: Maintains a reactive `MutableSharedFlow<PortfolioSnapshot>` that broadcasts snapshots to the Ktor Server-Sent Events (SSE) stream in real-time. Trade history sync uses a flow-based paginated fetch from the Kraken API.
 
 ---
 
@@ -191,6 +193,23 @@ failure.
     - In dry-run mode, orders are logged with a `[DRY RUN]` prefix but not sent
       to Kraken.
 5. **Persistence**: The cycle snapshot (including all trade actions and their outcomes) is saved directly to the SQLite database (under the trade and snapshot tables).
+6. **Event Emission**: Throughout the cycle, `PortfolioManagerImpl` emits `RebalanceEvent` instances to `getRebalanceCycleFlow()` — cycle start/completion/error at the loop level, and `OrderExecuted` (with structured `OrderResult`) for each individual order via the `OrderExecutor` callback.
+
+---
+
+## Event-Driven Monitoring
+
+The rebalancing loop exposes a sealed event hierarchy for external monitoring:
+
+| Event | When Emitted | Payload |
+| :------ | :------------- | :-------- |
+| `RebalanceCycleStarted` | Beginning of each cycle | Timestamp |
+| `RebalanceCycleCompleted` | Cycle finishes successfully | Snapshot, duration, timestamp |
+| `RebalanceCycleError` | Unhandled exception in cycle | Throwable, timestamp |
+| `OrderExecuted` | Each order completes (success or failure) | `OrderResult`, timestamp |
+
+Subscribe via `PortfolioManager.getRebalanceCycleFlow()`. Events are broadcast
+non-blocking via `tryEmit()` on a hot `SharedFlow` with replay buffer.
 
 ---
 

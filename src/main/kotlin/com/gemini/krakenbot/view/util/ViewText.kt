@@ -61,7 +61,7 @@ object ViewText {
     const val HISTORY_ALL_TIME_HIGH = "All-Time High"
     const val HISTORY_TOTAL_TRADES = "Total Trades"
     const val HISTORY_TOTAL_VOLUME = "Total Volume Traded"
-    const val HISTORY_DAYS_RUNNING = "Days Running"
+    const val HISTORY_TOTAL_FEES = "Total Fees Paid"
     const val HISTORY_NO_DATA = "No historical data available yet. Data will appear after the first rebalance cycle."
 
     // Navigation

@@ -326,26 +326,26 @@ function updateStats(stats) {
     const ath = document.getElementById('stat-ath');
     const totalTrades = document.getElementById('stat-total-trades');
     const totalVolume = document.getElementById('stat-total-volume');
-    const daysRunning = document.getElementById('stat-days-running');
+    const totalFees = document.getElementById('stat-total-fees');
 
     if (ath) ath.textContent = formatUSD(stats.allTimeHigh);
     if (totalTrades) totalTrades.textContent = stats.totalTradesExecuted.toLocaleString();
     if (totalVolume) totalVolume.textContent = formatUSD(stats.totalVolumeTraded);
-
-    if (daysRunning && stats.firstSnapshotTime) {
-        const first = new Date(stats.firstSnapshotTime);
-        const now = new Date();
-        const days = Math.floor((now - first) / (1000 * 60 * 60 * 24));
-        daysRunning.textContent = days === 0 ? '< 1 day' : `${days} days`;
-    } else if (daysRunning) {
-        daysRunning.textContent = '--';
-    }
+    if (totalFees) totalFees.textContent = formatUSD(stats.totalFeesPaid);
 }
 
 /* ---- Main Load / Refresh ---- */
 
 async function loadAll(range) {
     currentRange = range || currentRange;
+
+    if (currentRange === '24h') {
+        chartDefaults.scales.x.time.unit = 'hour';
+    } else if (currentRange === 'all') {
+        delete chartDefaults.scales.x.time.unit;
+    } else {
+        chartDefaults.scales.x.time.unit = 'day';
+    }
 
     const [snapshots, trades, stats] = await Promise.all([
         fetchJSON(`/api/history/snapshots?range=${currentRange}`),

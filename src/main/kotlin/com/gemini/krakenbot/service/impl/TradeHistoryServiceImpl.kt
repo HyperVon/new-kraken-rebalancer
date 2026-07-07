@@ -1,5 +1,6 @@
 package com.gemini.krakenbot.service.impl
 
+import com.fasterxml.jackson.core.type.TypeReference
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.HistoryStats
@@ -11,13 +12,13 @@ import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.KrakenService
 import com.gemini.krakenbot.service.TradeHistoryService
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.*
 import org.slf4j.LoggerFactory
 import java.io.File
 import java.math.BigDecimal
 import java.math.RoundingMode
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import java.time.Duration
 import java.time.Instant
 import java.time.temporal.ChronoUnit
@@ -42,6 +43,11 @@ class TradeHistoryServiceImpl(
     private var lastSyncTime: Instant = Instant.EPOCH
 
     override fun init() {
+        try {
+            repository.cleanupDuplicateTrades()
+        } catch (e: Exception) {
+            log.error("Failed to run duplicate trade cleanup on startup", e)
+        }
         val loaded = repository.load()
         if (loaded.isEmpty()) {
             val file = File(tradeHistoryFilePath)
@@ -50,7 +56,7 @@ class TradeHistoryServiceImpl(
                 try {
                     val snapshots = objectMapper.readValue(
                         file,
-                        object : com.fasterxml.jackson.core.type.TypeReference<List<PortfolioSnapshot>>() {}
+                        object : TypeReference<List<PortfolioSnapshot>>() {}
                     )
                     if (!snapshots.isNullOrEmpty()) {
                         log.info("Loaded {} snapshots from trade-history.json. Saving to SQLite...", snapshots.size)
@@ -58,7 +64,7 @@ class TradeHistoryServiceImpl(
                         try {
                             val sourcePath = file.toPath()
                             val targetPath = File("$tradeHistoryFilePath.bak").toPath()
-                            java.nio.file.Files.move(sourcePath, targetPath, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+                            Files.move(sourcePath, targetPath, StandardCopyOption.REPLACE_EXISTING)
                             log.info("Renamed trade history file to backup successfully.")
                         } catch (ex: Exception) {
                             log.warn("Failed to rename trade history file to backup", ex)
@@ -257,7 +263,7 @@ class TradeHistoryServiceImpl(
             allTimeHigh = stats.allTimeHigh ?: BigDecimal.ZERO,
             totalTradesExecuted = repository.getTotalTradeCount(),
             totalVolumeTraded = repository.getTotalVolumeTraded(),
-            firstSnapshotTime = repository.getFirstSnapshotTime(),
+            totalFeesPaid = repository.getTotalFeesPaid(),
             latestSnapshotTime = repository.getLatestSnapshotTime()
         )
     }
@@ -291,73 +297,60 @@ class TradeHistoryServiceImpl(
 
         val originalLocalTrades = repository.getTradesInRange(queryStart, Instant.now()).toMutableList()
 
-        var offset = 0
+        val allocations = configService.getConfig().allocations.map { it.symbol.value }
         var totalAdded = 0
         var totalReconciled = 0
 
-        while (true) {
-            log.info("Fetching trade history batch with offset={}", offset)
-            val apiTrades = krakenService.getTradeHistory(startSec = startSec, offset = offset)
-            val realKrakenService = when (krakenService) {
-                is KrakenServiceImpl -> krakenService
-                is DynamicKrakenService -> krakenService.realService
-                else -> null
-            }
-            val totalCount = realKrakenService?.lastFetchedCount?.get() ?: 0
-            if (!isSeeded) {
-                repository.setSyncMetadata("sync_offset", offset.toString())
-                repository.setSyncMetadata("sync_total", totalCount.toString())
-            }
+        getTradeHistoryPaginated(startSec = startSec, pageSize = 50)
+            .collect { apiTrades ->
+                for (apiTrade: TradeRecord in apiTrades) {
+                    // Look for an existing matching trade in the pre-existing local trades.
+                    // Match criteria: same pair, side, volume, and timestamp within 5 minutes.
+                    val matchingLocalTrade = originalLocalTrades.find { local ->
+                        val diff = local.timestamp.toEpochMilli() - apiTrade.timestamp.toEpochMilli()
+                        val absDiff = if (diff < 0) -diff else diff
+                        
+                        val localSymbol = Asset.fromTradingPair(local.pair, allocations) ?: local.symbol
+                        val apiSymbol = Asset.fromTradingPair(apiTrade.pair, allocations) ?: apiTrade.symbol
 
-            if (apiTrades.isEmpty()) {
-                break
-            }
-
-            for (apiTrade: TradeRecord in apiTrades) {
-                // Look for an existing matching trade in the pre-existing local trades.
-                // Match criteria: same pair, side, volume, and timestamp within 5 minutes.
-                val matchingLocalTrade = originalLocalTrades.find { local ->
-                    val diff = local.timestamp.toEpochMilli() - apiTrade.timestamp.toEpochMilli()
-                    val absDiff = if (diff < 0) -diff else diff
-                    local.pair == apiTrade.pair &&
-                            local.side.equals(apiTrade.side, ignoreCase = true) &&
-                            local.volume.compareTo(apiTrade.volume) == 0 &&
-                            absDiff < 300_000
-                }
-
-                if (matchingLocalTrade != null) {
-                    // Check if we need to update/reconcile it (if the timestamp or usdAmount differs slightly from the official API ones).
-                    if (matchingLocalTrade.timestamp != apiTrade.timestamp ||
-                        matchingLocalTrade.usdAmount.compareTo(apiTrade.usdAmount) != 0 ||
-                        matchingLocalTrade.dryRun != apiTrade.dryRun) {
-
-                        log.info("Reconciling trade record: local (timestamp={}, usdAmount={}) with API (timestamp={}, usdAmount={})",
-                            matchingLocalTrade.timestamp, matchingLocalTrade.usdAmount, apiTrade.timestamp, apiTrade.usdAmount)
-
-                        repository.updateTrade(matchingLocalTrade, apiTrade)
-                        totalReconciled++
+                        localSymbol.equals(apiSymbol, ignoreCase = true) &&
+                                local.side.equals(apiTrade.side, ignoreCase = true) &&
+                                local.volume.compareTo(apiTrade.volume) == 0 &&
+                                absDiff < 300_000
                     }
-                    // Remove matched trade so it cannot be matched again in this sync run
-                    originalLocalTrades.remove(matchingLocalTrade)
-                } else {
-                    // No matching local trade found -> Save it as a new trade record
-                    repository.saveTrade(apiTrade)
-                    totalAdded++
+
+                    if (matchingLocalTrade != null) {
+                        // Check if we need to update/reconcile it (if the timestamp or usdAmount differs slightly from the official API ones).
+                        if (matchingLocalTrade.timestamp != apiTrade.timestamp ||
+                            matchingLocalTrade.usdAmount.compareTo(apiTrade.usdAmount) != 0 ||
+                            matchingLocalTrade.dryRun != apiTrade.dryRun) {
+
+                            log.info("Reconciling trade record: local (timestamp={}, usdAmount={}) with API (timestamp={}, usdAmount={})",
+                                matchingLocalTrade.timestamp, matchingLocalTrade.usdAmount, apiTrade.timestamp, apiTrade.usdAmount)
+
+                            repository.updateTrade(matchingLocalTrade, apiTrade)
+                            totalReconciled++
+                        }
+                        // Remove matched trade so it cannot be matched again in this sync run
+                        originalLocalTrades.remove(matchingLocalTrade)
+                    } else {
+                        // No matching local trade found -> Save it as a new trade record
+                        repository.saveTrade(apiTrade)
+                        totalAdded++
+                    }
                 }
             }
-
-            if (apiTrades.size < 50) {
-                break
-            }
-            offset += 50
-        }
 
         val snapshots = repository.load()
         val totalTrades = repository.getTotalTradeCount()
         val isSimulation = configService.getConfig().settings.simulation
 
         if (!isSimulation && totalTrades > 0 && snapshots.size <= 1) {
-            log.info("Historical snapshots are missing or insufficient (found {} snapshots, {} trades). Starting reconstruction...", snapshots.size, totalTrades)
+            log.info(
+                "Historical snapshots are missing or insufficient (found {} snapshots, {} trades). Starting reconstruction...",
+                snapshots.size,
+                totalTrades
+            )
             try {
                 reconstructHistoricalSnapshots()
                 log.info("Historical snapshot reconstruction completed successfully.")
@@ -372,6 +365,38 @@ class TradeHistoryServiceImpl(
             repository.setSyncMetadata("sync_total", "completed")
         }
         log.info("Trade history synchronization completed. Added: {} new, Reconciled: {}.", totalAdded, totalReconciled)
+    }
+
+    private fun getTradeHistoryPaginated(
+        startSec: Long?,
+        pageSize: Int = 50
+    ): Flow<List<TradeRecord>> = flow {
+        var offset = 0
+        val isSeeded = repository.isHistorySeeded()
+
+        while (true) {
+            log.info("Fetching trade history batch with offset={}", offset)
+            val apiTrades = krakenService.getTradeHistory(startSec = startSec, offset = offset)
+            
+            val realKrakenService = when (krakenService) {
+                is KrakenServiceImpl -> krakenService
+                is DynamicKrakenService -> krakenService.realService
+                else -> null
+            }
+            val totalCount = realKrakenService?.lastFetchedCount?.get() ?: 0
+            
+            if (!isSeeded) {
+                repository.setSyncMetadata("sync_offset", offset.toString())
+                repository.setSyncMetadata("sync_total", totalCount.toString())
+            }
+
+            if (apiTrades.isEmpty()) break
+            
+            emit(apiTrades)
+            
+            if (apiTrades.size < pageSize) break
+            offset += pageSize
+        }
     }
 
     private suspend fun reconstructHistoricalSnapshots() {

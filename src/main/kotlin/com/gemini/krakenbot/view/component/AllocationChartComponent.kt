@@ -1,7 +1,7 @@
 package com.gemini.krakenbot.view.component
 
 import com.gemini.krakenbot.model.PortfolioSnapshot
-import com.gemini.krakenbot.view.util.CssClasses
+import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.Formatter
 import com.gemini.krakenbot.view.util.Icons
 import com.gemini.krakenbot.view.util.Layouts.glassPanel
@@ -14,7 +14,7 @@ class AllocationChartComponent {
     context(div: DIV)
     fun render(latest: PortfolioSnapshot) {
         div.glassPanel(ViewText.PORTFOLIO_ALLOCATION, Icons.DOLLAR_CIRCLE) {
-            div(CssClasses.ALLOCATION_CHART_CONTAINER) {
+            div(CssClass.AllocationChart.Container.value) {
                 val sorted =
                     latest.assets.values.sortedByDescending { it.valueUSD }
                 val topAssets = sorted.take(15)
@@ -28,14 +28,14 @@ class AllocationChartComponent {
                         if (maxVal > 0) {
                             (asset.valueUSD.toDouble() / maxVal * 100).toInt()
                         } else 0
-                    div(CssClasses.ALLOCATION_BAR_ROW) {
-                        div(CssClasses.ALLOCATION_BAR_LABEL) { +asset.symbol.value }
-                        div(CssClasses.ALLOCATION_BAR_TRACK) {
-                            div(CssClasses.ALLOCATION_BAR_FILL) {
+                    div(CssClass.AllocationChart.BarRow.value) {
+                        div(CssClass.AllocationChart.BarLabel.value) { +asset.symbol.value }
+                        div(CssClass.AllocationChart.BarTrack.value) {
+                            div(CssClass.AllocationChart.BarFill.value) {
                                 style = "width: $fillPct%;"
                             }
                         }
-                        div(CssClasses.ALLOCATION_BAR_VALUE) {
+                        div(CssClass.AllocationChart.BarValue.value) {
                             +"$${Formatter.formatCurrency(asset.valueUSD)} (${
                                 Formatter.formatPercent(
                                     asset.currentPercent

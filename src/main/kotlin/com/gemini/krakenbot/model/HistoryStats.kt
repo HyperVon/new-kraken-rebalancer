@@ -10,6 +10,6 @@ data class HistoryStats(
     val allTimeHigh: BigDecimal,
     val totalTradesExecuted: Long,
     val totalVolumeTraded: BigDecimal,
-    val firstSnapshotTime: Instant?,
+    val totalFeesPaid: BigDecimal,
     val latestSnapshotTime: Instant?
 )

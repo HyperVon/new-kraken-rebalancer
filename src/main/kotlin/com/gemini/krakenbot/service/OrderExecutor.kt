@@ -9,6 +9,7 @@ interface OrderExecutor {
         currentValuesUSD: AssetValues,
         prices: AssetPrices,
         settings: Settings,
-        actionLog: MutableList<String>
+        actionLog: MutableList<String>,
+        onOrderExecuted: (RebalanceEvent) -> Unit = {}
     )
 }

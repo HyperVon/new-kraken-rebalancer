@@ -20,6 +20,7 @@ import org.jetbrains.exposed.sql.transactions.transaction
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import java.math.BigDecimal
 import org.jetbrains.exposed.sql.transactions.transactionManager
+import java.io.File
 import java.io.IOException
 
 class StatsThrowingTransactionManager(
@@ -121,8 +122,8 @@ class SqlitePortfolioStatsRepositoryImplTest : StringSpec() {
         }
 
         "load migrates portfolio-stats.json if database is empty" {
-            val testFile = java.io.File("test-portfolio-stats.json")
-            val testBakFile = java.io.File("test-portfolio-stats.json.bak")
+            val testFile = File("test-portfolio-stats.json")
+            val testBakFile = File("test-portfolio-stats.json.bak")
             val testRepo = SqlitePortfolioStatsRepositoryImpl(db, objectMapper, "test-portfolio-stats.json")
             try {
                 testFile.delete()

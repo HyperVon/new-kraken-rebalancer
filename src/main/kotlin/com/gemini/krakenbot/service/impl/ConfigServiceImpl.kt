@@ -3,7 +3,12 @@ package com.gemini.krakenbot.service.impl
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.InvalidConfigurationException
+import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.service.ConfigService
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import java.io.File
 import java.io.IOException
 import java.nio.file.Files
@@ -18,6 +23,11 @@ class ConfigServiceImpl(
     @Volatile
     private lateinit var appConfig: AppConfig
 
+    private val _configFlow = MutableSharedFlow<Settings>(
+        replay = 1,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST
+    )
+
     init {
         loadConfig()
     }
@@ -26,6 +36,7 @@ class ConfigServiceImpl(
         val parsedConfig = parseConfig(readResolvedConfigContent())
         val validatedConfig = validateOrThrowInvalidConfiguration(parsedConfig)
         appConfig = validatedConfig
+        _configFlow.tryEmit(validatedConfig.settings)
     }
 
     override fun getConfig(): AppConfig = appConfig
@@ -35,7 +46,11 @@ class ConfigServiceImpl(
         val validatedConfig = validateOrThrowInvalidConfiguration(newConfig)
         appConfig = validatedConfig
         writeConfigAtomically(validatedConfig)
+        _configFlow.tryEmit(validatedConfig.settings)
     }
+
+    override fun watchConfigChanges(): Flow<Settings> =
+        _configFlow.asSharedFlow()
 
     private fun readResolvedConfigContent(): String {
         val configFile = File(configFilePath)

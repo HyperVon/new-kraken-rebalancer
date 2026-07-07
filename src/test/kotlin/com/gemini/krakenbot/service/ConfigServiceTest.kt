@@ -1,3 +1,5 @@
+@file:OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+
 package com.gemini.krakenbot.service
 
 import com.fasterxml.jackson.databind.ObjectMapper
@@ -15,6 +17,9 @@ import io.mockk.every
 import io.mockk.mockk
 import io.mockk.mockkStatic
 import io.mockk.unmockkStatic
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runTest
 import java.io.File
 import java.io.IOException
 import java.nio.file.Files
@@ -509,6 +514,30 @@ class ConfigServiceTest : StringSpec() {
             service.getConfig().kraken.apiKey.value shouldBe "default-val"
 
             unmockkStatic(System::class)
+        }
+
+        "watchConfigChanges emits current settings on subscribe and on update" {
+            runTest {
+                createValidConfig(tempFile)
+                val service = ConfigServiceImpl(objectMapper, tempFile.absolutePath)
+                val events = mutableListOf<Settings>()
+                val job = launch {
+                    service.watchConfigChanges().collect { events.add(it) }
+                }
+                advanceUntilIdle()
+                events.size shouldBe 1
+                events[0].dryRun shouldBe service.getConfig().settings.dryRun
+
+                val updated = service.getConfig().copy(
+                    settings = service.getConfig().settings.copy(dryRun = !service.getConfig().settings.dryRun)
+                )
+                service.updateConfig(updated)
+                advanceUntilIdle()
+                events.size shouldBe 2
+                events[1].dryRun shouldBe updated.settings.dryRun
+
+                job.cancel()
+            }
         }
     }
 }

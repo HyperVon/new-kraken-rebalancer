@@ -107,7 +107,8 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
                 volume = BigDecimal("0.1"),
                 usdAmount = BigDecimal("5000.00"),
                 success = true,
-                dryRun = false
+                dryRun = false,
+                fee = BigDecimal("15.50")
             )
             val trade2 = TradeRecord(
                 timestamp = now,
@@ -117,7 +118,8 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
                 volume = BigDecimal("1.0"),
                 usdAmount = BigDecimal("2000.00"),
                 success = true,
-                dryRun = true
+                dryRun = true,
+                fee = BigDecimal("5.25")
             )
             val failedTrade = TradeRecord(
                 timestamp = now.plusSeconds(10),
@@ -128,7 +130,8 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
                 usdAmount = BigDecimal("10.00"),
                 success = false,
                 dryRun = false,
-                errorMessage = "API Error"
+                errorMessage = "API Error",
+                fee = BigDecimal("1.50")
             )
 
             repository.saveTrade(trade1)
@@ -137,6 +140,7 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
 
             repository.getTotalTradeCount() shouldBe 2L // only successful
             repository.getTotalVolumeTraded().shouldBeEqualComparingTo(BigDecimal("7000.00")) // 5000 + 2000
+            repository.getTotalFeesPaid().shouldBeEqualComparingTo(BigDecimal("20.75")) // 15.50 + 5.25 (ignores failedTrade)
 
             val trades = repository.getTradesInRange(now.minusSeconds(20), now.plusSeconds(20))
             trades.size shouldBe 3
@@ -172,7 +176,6 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
             repository.saveSnapshot(s1)
             repository.saveSnapshot(s2)
 
-            repository.getFirstSnapshotTime() shouldBe baseTime.minusSeconds(10)
             repository.getLatestSnapshotTime() shouldBe baseTime
 
             val inRange = repository.getSnapshotsInRange(baseTime.minusSeconds(5), baseTime.plusSeconds(5))
@@ -258,9 +261,6 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
             repository.isHistorySeeded() shouldBe false
         }
 
-        "getFirstSnapshotTime returns null when no snapshots exist" {
-            repository.getFirstSnapshotTime() shouldBe null
-        }
 
         "getLatestSnapshotTime returns null when no snapshots exist" {
             repository.getLatestSnapshotTime() shouldBe null
@@ -268,6 +268,10 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
 
         "getTotalVolumeTraded returns zero when no trades exist" {
             repository.getTotalVolumeTraded().shouldBeEqualComparingTo(BigDecimal.ZERO)
+        }
+
+        "getTotalFeesPaid returns zero when no trades exist" {
+            repository.getTotalFeesPaid().shouldBeEqualComparingTo(BigDecimal.ZERO)
         }
 
         "getTotalTradeCount returns zero when no trades exist" {

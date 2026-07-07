@@ -8,7 +8,7 @@ improve reliability, safety, and functionality are very welcome.
 
 ### Prerequisites
 
-- JDK 21+
+- JDK 25+
 - Gradle (the `./gradlew` wrapper is included — no separate installation
   required)
 - A Kraken account (for testing with real API — use **dry-run mode**)
@@ -83,9 +83,14 @@ first
 - **No credentials:** Never include API keys, secrets, or real account data in
   commits
 - **Tests:** Add or update tests for any non-trivial logic changes. The project
-  enforces **95%+ coverage** via JaCoCo.
+  enforces **95%+ coverage** via JaCoCo (316 tests as of v6.1.0).
 - **Coroutines:** Any method interacting with `KrakenService` must be a
-  `suspend` function and tested with `runTest`
+  `suspend` function and tested with `runTest`. Flow-based APIs (e.g.
+  `getRebalanceCycleFlow()`, `watchConfigChanges()`) should use
+  `advanceUntilIdle()` in tests and opt in to `ExperimentalCoroutinesApi` where
+  required.
+- **Error handling:** Prefer the sealed `Result<T>` type for operations that may
+  fail without throwing; use `fold`/`map` at call sites.
 
 ## Areas Where Help is Welcome
 

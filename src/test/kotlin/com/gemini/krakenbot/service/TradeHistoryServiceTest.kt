@@ -212,16 +212,15 @@ class TradeHistoryServiceTest : StringSpec() {
             every { statsRepository.load() } returns PortfolioStats(BigDecimal("12345.67"))
             every { repository.getTotalTradeCount() } returns 42L
             every { repository.getTotalVolumeTraded() } returns BigDecimal("98765.43")
-            val firstTime = Instant.now().minusSeconds(86400)
+            every { repository.getTotalFeesPaid() } returns BigDecimal("12.34")
             val latestTime = Instant.now()
-            every { repository.getFirstSnapshotTime() } returns firstTime
             every { repository.getLatestSnapshotTime() } returns latestTime
 
             val stats = tradeHistoryService.getHistoryStats()
             stats.allTimeHigh shouldBe BigDecimal("12345.67")
             stats.totalTradesExecuted shouldBe 42L
             stats.totalVolumeTraded shouldBe BigDecimal("98765.43")
-            stats.firstSnapshotTime shouldBe firstTime
+            stats.totalFeesPaid shouldBe BigDecimal("12.34")
             stats.latestSnapshotTime shouldBe latestTime
         }
 
@@ -443,14 +442,14 @@ class TradeHistoryServiceTest : StringSpec() {
             every { statsRepository.load() } returns PortfolioStats(null)
             every { repository.getTotalTradeCount() } returns 0L
             every { repository.getTotalVolumeTraded() } returns BigDecimal.ZERO
-            every { repository.getFirstSnapshotTime() } returns null
+            every { repository.getTotalFeesPaid() } returns BigDecimal.ZERO
             every { repository.getLatestSnapshotTime() } returns null
 
             val stats = tradeHistoryService.getHistoryStats()
             stats.allTimeHigh.compareTo(BigDecimal.ZERO) shouldBe 0
             stats.totalTradesExecuted shouldBe 0L
             stats.totalVolumeTraded.compareTo(BigDecimal.ZERO) shouldBe 0
-            stats.firstSnapshotTime shouldBe null
+            stats.totalFeesPaid.compareTo(BigDecimal.ZERO) shouldBe 0
             stats.latestSnapshotTime shouldBe null
         }
 
