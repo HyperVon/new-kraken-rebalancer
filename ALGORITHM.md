@@ -194,7 +194,6 @@ failure.
       to Kraken.
 5. **Persistence**: The cycle snapshot (including all trade actions and their outcomes) is saved directly to the SQLite database (under the trade and snapshot tables).
 
-
 ## Configuration
 
 The behavior is controlled by `rebalancer-config.json`:
