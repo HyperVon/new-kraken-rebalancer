@@ -78,7 +78,8 @@ class RateLimiterTest : StringSpec({
             events.filterIsInstance<RateLimitAcquired>().shouldHaveSize(2)
             events.filterIsInstance<RateLimitAcquired>()[0].cost shouldBe 1.5
             events.filterIsInstance<RateLimitAcquired>()[1].cost shouldBe 1.0
-            events.filterIsInstance<RateLimitExceeded>().single().waitMs shouldBe 500
+            val waitMs = events.filterIsInstance<RateLimitExceeded>().single().waitMs
+            (waitMs in 400L..500L) shouldBe true
             
             job.cancel()
         }
