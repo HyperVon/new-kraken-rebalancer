@@ -9,8 +9,8 @@ object Layouts {
         iconSvg: String? = null,
         block: DIV.() -> Unit
     ) {
-        div(CssClasses.GLASS_PANEL) {
-            h2(CssClasses.GLASS_PANEL_TITLE) {
+        div(classes = CssClass.Layout.GlassPanel.value) {
+            h2(classes = CssClass.Utility.GlassPanelTitle.value) {
                 if (iconSvg != null) {
                     icon(iconSvg)
                 }
@@ -29,23 +29,23 @@ object Layouts {
     ) {
         val cardClass =
             if (isSuccess) {
-                CssClasses.STATUS_CARD_SUCCESS
+                CssClass.StatusCard.Success.value
             } else {
-                CssClasses.STATUS_CARD
+                CssClass.StatusCard.Default.value
             }
-        div(cardClass) {
-            div(CssClasses.STATUS_CARD_HEADER) {
-                span(CssClasses.STATUS_CARD_TITLE) { +title }
-                div(CssClasses.STATUS_CARD_ICON) { icon(iconSvg) }
+        div(classes = cardClass) {
+            div(classes = CssClass.StatusCard.Header.value) {
+                span(classes = CssClass.StatusCard.Title.value) { +title }
+                div(classes = CssClass.StatusCard.Icon.value) { icon(iconSvg) }
             }
-            div(CssClasses.STATUS_CARD_VALUE) { +value }
-            div(CssClasses.STATUS_CARD_SUB) { block() }
+            div(classes = CssClass.StatusCard.Value.value) { +value }
+            div(classes = CssClass.StatusCard.Sub.value) { block() }
         }
     }
 
     fun DIV.formSection(title: String, iconSvg: String, block: DIV.() -> Unit) {
-        div(CssClasses.FORM_SECTION) {
-            h3(CssClasses.FORM_SECTION_TITLE) {
+        div(classes = CssClass.Form.Section.value) {
+            h3(classes = CssClass.Form.SectionTitle.value) {
                 icon(iconSvg)
                 +title
             }
@@ -54,8 +54,8 @@ object Layouts {
     }
 
     fun DIV.formGroup(label: String, block: DIV.() -> Unit) {
-        div(CssClasses.FORM_GROUP) {
-            label(classes = CssClasses.FORM_LABEL) { +label }
+        div(classes = CssClass.Form.Group.value) {
+            label(classes = CssClass.Form.Label.value) { +label }
             block()
         }
     }

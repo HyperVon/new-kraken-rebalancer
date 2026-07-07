@@ -202,7 +202,7 @@ failure.
 The rebalancing loop exposes a sealed event hierarchy for external monitoring:
 
 | Event | When Emitted | Payload |
-|:------|:-------------|:--------|
+| :------ | :------------- | :-------- |
 | `RebalanceCycleStarted` | Beginning of each cycle | Timestamp |
 | `RebalanceCycleCompleted` | Cycle finishes successfully | Snapshot, duration, timestamp |
 | `RebalanceCycleError` | Unhandled exception in cycle | Throwable, timestamp |

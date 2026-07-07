@@ -1,7 +1,7 @@
 package com.gemini.krakenbot.view.component
 
 import com.gemini.krakenbot.model.PortfolioSnapshot
-import com.gemini.krakenbot.view.util.CssClasses
+import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.Formatter
 import com.gemini.krakenbot.view.util.HtmlAttrs
 import com.gemini.krakenbot.view.util.Layouts.glassPanel
@@ -12,7 +12,7 @@ class PerformanceTableComponent {
 
     private data class ColumnHeader(
         val label: String,
-        val cssClass: String = CssClasses.SORTABLE
+        val cssClass: String = CssClass.Table.Sortable.value
     )
 
     private companion object {
@@ -22,14 +22,14 @@ class PerformanceTableComponent {
             ColumnHeader(ViewText.HEADER_VALUE),
             ColumnHeader(ViewText.HEADER_TARGET_PCT),
             ColumnHeader(ViewText.HEADER_CURRENT_PCT),
-            ColumnHeader(ViewText.HEADER_DEV_PCT, CssClasses.SORTABLE_ASC)
+            ColumnHeader(ViewText.HEADER_DEV_PCT, CssClass.Table.SortableAsc.value)
         )
     }
 
     context(div: DIV)
     fun render(latest: PortfolioSnapshot) {
         div.glassPanel(ViewText.ASSET_PERFORMANCE) {
-            div(CssClasses.TABLE_WRAPPER) {
+            div(CssClass.Table.Wrapper.value) {
                 table {
                     thead {
                         tr {
@@ -52,16 +52,16 @@ class PerformanceTableComponent {
                             val devClass = Formatter.getDeviationClass(dev)
                             val sign = Formatter.getDeviationSign(dev)
 
-                            tr(CssClasses.HOVERABLE) {
-                                td(CssClasses.SYMBOL_COL) { +asset.symbol.value }
-                                td(CssClasses.MONO_COL) {
+                            tr(CssClass.Table.Hoverable.value) {
+                                td(CssClass.Table.SymbolCol.value) { +asset.symbol.value }
+                                td(CssClass.Table.MonoCol.value) {
                                     +"$${
                                         Formatter.formatCurrency(
                                             asset.price
                                         )
                                     }"
                                 }
-                                td(CssClasses.MONO_COL) {
+                                td(CssClass.Table.MonoCol.value) {
                                     +"$${
                                         Formatter.formatCurrency(
                                             asset.valueUSD
@@ -71,7 +71,7 @@ class PerformanceTableComponent {
                                 td { +"${Formatter.formatPercent(asset.targetPercent)}%" }
                                 td { +"${Formatter.formatPercent(asset.currentPercent)}%" }
                                 td(devClass) {
-                                    div(CssClasses.PERFORMANCE_DEV_CONTAINER) {
+                                    div(CssClass.Performance.DevContainer.value) {
                                         span {
                                             +"$sign${
                                                 Formatter.formatPercent(
@@ -79,7 +79,7 @@ class PerformanceTableComponent {
                                                 )
                                             }%"
                                         }
-                                        span(CssClasses.PERFORMANCE_DEV_USD_LABEL) {
+                                        span(CssClass.Performance.DevUsdLabel.value) {
                                             val devUSD = asset.deviationUSD
                                             val usdSign =
                                                 if (devUSD.signum() >= 0) "+" else ""

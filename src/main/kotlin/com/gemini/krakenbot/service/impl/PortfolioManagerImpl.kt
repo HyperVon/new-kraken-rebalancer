@@ -2,6 +2,7 @@ package com.gemini.krakenbot.service.impl
 
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.service.*
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -11,6 +12,7 @@ import org.slf4j.MDC
 import java.io.IOException
 import java.math.BigDecimal
 import java.math.RoundingMode
+import java.time.Duration.between
 import java.time.Instant
 import java.util.*
 import kotlin.time.Duration.Companion.milliseconds
@@ -30,7 +32,7 @@ class PortfolioManagerImpl(
 
     private val _eventFlow = MutableSharedFlow<RebalanceEvent>(
         replay = 64,
-        onBufferOverflow = kotlinx.coroutines.channels.BufferOverflow.DROP_OLDEST
+        onBufferOverflow = BufferOverflow.DROP_OLDEST
     )
 
     override fun getRebalanceCycleFlow(): Flow<RebalanceEvent> = _eventFlow.asSharedFlow()
@@ -72,7 +74,7 @@ class PortfolioManagerImpl(
                     }
                     val snapshot = performRebalanceCycle()
                     
-                    val duration = java.time.Duration.between(startTime, Instant.now())
+                    val duration = between(startTime, Instant.now())
                     _eventFlow.tryEmit(
                         RebalanceCycleCompleted(
                             snapshot = snapshot,

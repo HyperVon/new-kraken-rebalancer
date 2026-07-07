@@ -13,6 +13,8 @@ import org.jetbrains.exposed.sql.update
 import org.slf4j.LoggerFactory
 import java.io.IOException
 import java.math.BigDecimal
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 
 class SqlitePortfolioStatsRepositoryImpl(
     private val database: Database,
@@ -47,7 +49,7 @@ class SqlitePortfolioStatsRepositoryImpl(
                                 try {
                                     val sourcePath = file.toPath()
                                     val targetPath = File("$statsFilePath.bak").toPath()
-                                    java.nio.file.Files.move(sourcePath, targetPath, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+                                    Files.move(sourcePath, targetPath, StandardCopyOption.REPLACE_EXISTING)
                                     log.info("Renamed stats file to backup successfully.")
                                 } catch (ex: Exception) {
                                     log.warn("Failed to rename stats file to backup", ex)

@@ -1,6 +1,6 @@
 package com.gemini.krakenbot.view.component
 
-import com.gemini.krakenbot.view.util.CssClasses
+import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.Icons
 import com.gemini.krakenbot.view.util.Icons.icon
 import com.gemini.krakenbot.view.util.Routes
@@ -25,7 +25,7 @@ class HistoryPageComponent {
             script(src = "https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js") {}
         }
         html.body {
-            div(CssClasses.CONTAINER) {
+            div(CssClass.Layout.Container.value) {
                 renderHeader()
                 renderSyncProgressBanner()
                 renderStatsGrid()
@@ -58,17 +58,17 @@ class HistoryPageComponent {
 
     private fun DIV.renderHeader() {
         header {
-            div(CssClasses.HEADER_TITLE_SECTION) {
+            div(CssClass.Layout.HeaderTitleSection.value) {
                 h1 { +ViewText.APP_TITLE }
             }
-            nav(CssClasses.NAV_BAR) {
-                a(href = Routes.ROOT, classes = CssClasses.NAV_LINK) {
+            nav(CssClass.Navigation.Bar.value) {
+                a(href = Routes.ROOT, classes = CssClass.Navigation.Link.value) {
                     +ViewText.NAV_DASHBOARD
                 }
-                a(href = Routes.HISTORY, classes = CssClasses.NAV_LINK_ACTIVE) {
+                a(href = Routes.HISTORY, classes = CssClass.Navigation.LinkActive.value) {
                     +ViewText.NAV_HISTORY
                 }
-                a(href = Routes.SETTINGS, classes = CssClasses.NAV_LINK) {
+                a(href = Routes.SETTINGS, classes = CssClass.Navigation.Link.value) {
                     icon(Icons.COG)
                     +ViewText.NAV_SETTINGS
                 }
@@ -77,7 +77,7 @@ class HistoryPageComponent {
     }
 
     private fun DIV.renderStatsGrid() {
-        div(CssClasses.HISTORY_STATS_GRID) {
+        div(CssClass.History.StatsGrid.value) {
             id = "history-stats"
             renderStatCard(
                 "stat-ath",
@@ -98,9 +98,9 @@ class HistoryPageComponent {
                 "--"
             )
             renderStatCard(
-                "stat-days-running",
-                ViewText.HISTORY_DAYS_RUNNING,
-                Icons.CLOCK,
+                "stat-total-fees",
+                ViewText.HISTORY_TOTAL_FEES,
+                Icons.DOLLAR_CIRCLE,
                 "--"
             )
         }
@@ -112,12 +112,12 @@ class HistoryPageComponent {
         iconSvg: String,
         defaultValue: String
     ) {
-        div(CssClasses.STATUS_CARD) {
-            div(CssClasses.STATUS_CARD_HEADER) {
-                span(CssClasses.STATUS_CARD_TITLE) { +title }
-                div(CssClasses.STATUS_CARD_ICON) { icon(iconSvg) }
+        div(CssClass.StatusCard.Default.value) {
+            div(CssClass.StatusCard.Header.value) {
+                span(CssClass.StatusCard.Title.value) { +title }
+                div(CssClass.StatusCard.Icon.value) { icon(iconSvg) }
             }
-            div(CssClasses.STATUS_CARD_VALUE) {
+            div(CssClass.StatusCard.Value.value) {
                 id = cardId
                 +defaultValue
             }
@@ -125,24 +125,24 @@ class HistoryPageComponent {
     }
 
     private fun DIV.renderTimeRangeSelector() {
-        div(CssClasses.TIME_RANGE_SELECTOR) {
-            button(classes = CssClasses.TIME_RANGE_BTN) {
+        div(CssClass.History.TimeRangeSelector.value) {
+            button(classes = CssClass.History.TimeRangeBtn.value) {
                 attributes["data-range"] = "24h"
                 +"24h"
             }
-            button(classes = CssClasses.TIME_RANGE_BTN) {
+            button(classes = CssClass.History.TimeRangeBtn.value) {
                 attributes["data-range"] = "7d"
                 +"7d"
             }
-            button(classes = CssClasses.TIME_RANGE_BTN_ACTIVE) {
+            button(classes = CssClass.History.TimeRangeBtnActive.value) {
                 attributes["data-range"] = "30d"
                 +"30d"
             }
-            button(classes = CssClasses.TIME_RANGE_BTN) {
+            button(classes = CssClass.History.TimeRangeBtn.value) {
                 attributes["data-range"] = "90d"
                 +"90d"
             }
-            button(classes = CssClasses.TIME_RANGE_BTN) {
+            button(classes = CssClass.History.TimeRangeBtn.value) {
                 attributes["data-range"] = "all"
                 +"All"
             }
@@ -154,12 +154,12 @@ class HistoryPageComponent {
         title: String,
         iconSvg: String
     ) {
-        div(CssClasses.GLASS_PANEL) {
-            h2(CssClasses.GLASS_PANEL_TITLE) {
+        div(CssClass.Layout.GlassPanel.value) {
+            h2(CssClass.Utility.GlassPanelTitle.value) {
                 icon(iconSvg)
                 +title
             }
-            div(CssClasses.CHART_CONTAINER) {
+            div(CssClass.History.ChartContainer.value) {
                 canvas {
                     id = canvasId
                 }
@@ -168,20 +168,20 @@ class HistoryPageComponent {
     }
 
     private fun DIV.renderTradeTable() {
-        div(CssClasses.GLASS_PANEL) {
+        div(CssClass.Layout.GlassPanel.value) {
             div {
                 style = "display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;"
-                h2(CssClasses.GLASS_PANEL_TITLE) {
+                h2(CssClass.Utility.GlassPanelTitle.value) {
                     style = "margin-bottom: 0;"
                     icon(Icons.CHART)
                     +ViewText.HISTORY_TRADE_LOG
                 }
-                label(classes = CssClasses.CHECKBOX_CONTAINER) {
+                label(classes = CssClass.Form.CheckboxContainer.value) {
                     input(type = checkBox) {
                         id = "show-dry-run-checkbox"
                         checked = true
                     }
-                    div(classes = CssClasses.CHECKBOX_CUSTOM) {}
+                    div(classes = CssClass.Form.CheckboxCustom.value) {}
                     span {
                         style = "font-size: 0.875rem; color: var(--color-text-muted);"
                         +"Show Dry Run Trades"
@@ -189,7 +189,7 @@ class HistoryPageComponent {
                 }
             }
 
-            div(CssClasses.TABLE_WRAPPER) {
+            div(CssClass.Table.Wrapper.value) {
                 table {
                     thead {
                         tr {
@@ -220,7 +220,7 @@ class HistoryPageComponent {
         div {
             id = "sync-progress-banner"
             style = "display: none; margin-bottom: 1.5rem; padding: 1.5rem;"
-            classes = setOf(CssClasses.GLASS_PANEL)
+            classes = setOf(CssClass.Layout.GlassPanel.value)
             div {
                 style = "display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.75rem;"
                 span {

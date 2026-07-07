@@ -15,17 +15,17 @@ several months.**
 
 ## Tech Stack
 
-| Layer           | Technology                                                                                           |
-|-----------------|------------------------------------------------------------------------------------------------------|
-| **Language**    | Kotlin 2.4.0 (JVM)                                                                                   |
-| **Backend**     | Ktor 3.5.0 (Netty engine), Koin 4.2.1 (DI), Jackson 2.22                                             |
-| **Database**    | SQLite (via JetBrains Exposed ORM 0.61.0)                                                            |
-| **HTTP Client** | Ktor CIO Client (async, coroutine-native)                                                            |
-| **Concurrency** | Kotlin Coroutines (`kotlinx.coroutines` 1.11.0)                                                      |
-| **Frontend**    | Server-side HTML (kotlinx.html DSL + HTMX), Ktor SSE                                                 |
-| **API**         | Kraken REST API with HMAC-SHA512 authentication                                                      |
-| **Testing**     | Kotest 6.1 (StringSpec), MockK 1.14, Ktor MockEngine, JaCoCo (95%+ coverage enforced)                    |
-| **Build**       | Gradle (Kotlin DSL)                                                                                  |
+| Layer           | Technology                                                                            |
+| --------------- | ------------------------------------------------------------------------------------- |
+| **Language**    | Kotlin 2.4.0 (JVM)                                                                    |
+| **Backend**     | Ktor 3.5.0 (Netty engine), Koin 4.2.1 (DI), Jackson 2.22                              |
+| **Database**    | SQLite (via JetBrains Exposed ORM 0.61.0)                                             |
+| **HTTP Client** | Ktor CIO Client (async, coroutine-native)                                             |
+| **Concurrency** | Kotlin Coroutines (`kotlinx.coroutines` 1.11.0)                                       |
+| **Frontend**    | Server-side HTML (kotlinx.html DSL + HTMX), Ktor SSE                                  |
+| **API**         | Kraken REST API with HMAC-SHA512 authentication                                       |
+| **Testing**     | Kotest 6.1 (StringSpec), MockK 1.14, Ktor MockEngine, JaCoCo (95%+ coverage enforced) |
+| **Build**       | Gradle (Kotlin DSL)                                                                   |
 
 ---
 
@@ -145,21 +145,21 @@ trade-history pagination.
 Building the same application across multiple stacks gave me hands-on experience
 with a wide range of tools and paradigms:
 
-| Category                | Technologies Used                                                                                                             |
-|-------------------------|------------------------------------------------------------------------------------------------------------------------------ |
-| **Languages**           | Java 25, Kotlin 2.4, Go 1.26, TypeScript, JavaScript (ES6+)                                                                   |
-| **Backend Frameworks**  | Spring Boot 4, Ktor 2.3 → 3.5, NestJS, Express, Go `net/http`                                                                 |
-| **DI / IoC**            | Spring IoC (`@Autowired`), Koin 3.5 → 4.2, NestJS modules                                                                     |
-| **Build Systems**       | Maven, Gradle (Kotlin DSL), npm / yarn, Go modules                                                                            |
-| **Frontend**            | React (JS → TypeScript), Angular (explored), HTMX + kotlinx.html DSL, Tailwind CSS v4, Chart.js                               |
-| **HTTP Clients**        | OkHttp (blocking), Ktor CIO Client (async/coroutine), Node.js native `fetch`, Go `net/http`                                   |
-| **Concurrency**         | Java `ScheduledExecutorService`, Kotlin Coroutines, Go goroutines, Node.js event loop                                         |
-| **Testing**             | JUnit 5 + Mockito, Kotest 6 + MockK, Vitest + React Testing Library, Go `testing` + `go-test-coverage`                        |
-| **Coverage**            | JaCoCo (95%+ enforced on Kotlin stack), Vitest coverage (>99%), Go per-package gates (98.2%)                                  |
-| **Serialization**       | Jackson 2.22, Go `encoding/json`, Zod schema validation                                                                       |
-| **Real-Time**           | Ktor Server-Sent Events (SSE), Kotlin `SharedFlow` (snapshots + rebalance events), HTMX SSE extension                                                        |
-| **CI / Security**       | GitHub Actions, CodeQL, Dependabot, SHA-pinned actions, CVE patching (Tomcat, Netty, Logback, Jackson)                        |
-| **Code Quality**        | Lombok, ESLint, `go fmt`, Kotlin named context parameters, strict `BigDecimal` precision, atomic file I/O                     |
+| Category               | Technologies Used                                                                                         |
+| ---------------------- | --------------------------------------------------------------------------------------------------------- |
+| **Languages**          | Java 25, Kotlin 2.4, Go 1.26, TypeScript, JavaScript (ES6+)                                               |
+| **Backend Frameworks** | Spring Boot 4, Ktor 2.3 → 3.5, NestJS, Express, Go `net/http`                                             |
+| **DI / IoC**           | Spring IoC (`@Autowired`), Koin 3.5 → 4.2, NestJS modules                                                 |
+| **Build Systems**      | Maven, Gradle (Kotlin DSL), npm / yarn, Go modules                                                        |
+| **Frontend**           | React (JS → TypeScript), Angular (explored), HTMX + kotlinx.html DSL, Tailwind CSS v4, Chart.js           |
+| **HTTP Clients**       | OkHttp (blocking), Ktor CIO Client (async/coroutine), Node.js native `fetch`, Go `net/http`               |
+| **Concurrency**        | Java `ScheduledExecutorService`, Kotlin Coroutines, Go goroutines, Node.js event loop                     |
+| **Testing**            | JUnit 5 + Mockito, Kotest 6 + MockK, Vitest + React Testing Library, Go `testing` + `go-test-coverage`    |
+| **Coverage**           | JaCoCo (95%+ enforced on Kotlin stack), Vitest coverage (>99%), Go per-package gates (98.2%)              |
+| **Serialization**      | Jackson 2.22, Go `encoding/json`, Zod schema validation                                                   |
+| **Real-Time**          | Ktor Server-Sent Events (SSE), Kotlin `SharedFlow` (snapshots + rebalance events), HTMX SSE extension     |
+| **CI / Security**      | GitHub Actions, CodeQL, Dependabot, SHA-pinned actions, CVE patching (Tomcat, Netty, Logback, Jackson)    |
+| **Code Quality**       | Lombok, ESLint, `go fmt`, Kotlin named context parameters, strict `BigDecimal` precision, atomic file I/O |
 
 ---
 
@@ -269,6 +269,20 @@ trigger, dust threshold, fiat deployment parameters, and per-asset allocation
 targets.
 
 ![Settings](docs/images/settings.png)
+
+### History
+
+The dedicated History view provides detailed analysis and charts tracking portfolio metrics over time. Users can select different time ranges (24h, 7d, 30d, 90d, All) to update the charts and trade log. It features:
+
+- **Portfolio Value Over Time** (overall portfolio value in USD + individual asset values)
+- **Asset Holdings Over Time** (% change in asset balance)
+- **Allocation Drift Over Time** (stacked chart showing target vs current asset distributions)
+- **Cumulative P&L** (realized profit & loss over time)
+- **Comprehensive Trade Log Table** (showing all executions, with a toggle to filter/show dry-run trades)
+
+![History Charts](docs/images/history.png)
+
+![Trade History Log](docs/images/history-bottom.png)
 
 ---
 

@@ -622,7 +622,7 @@ class DashboardControllerTest : StringSpec() {
                 allTimeHigh = BigDecimal("15000.00"),
                 totalTradesExecuted = 12L,
                 totalVolumeTraded = BigDecimal("50000.00"),
-                firstSnapshotTime = Instant.now(),
+                totalFeesPaid = BigDecimal("25.50"),
                 latestSnapshotTime = Instant.now()
             )
             every { tradeHistoryService.getHistoryStats() } returns stats
@@ -671,7 +671,7 @@ class DashboardControllerTest : StringSpec() {
                 allTimeHigh = BigDecimal("15000.00"),
                 totalTradesExecuted = 12L,
                 totalVolumeTraded = BigDecimal("50000.00"),
-                firstSnapshotTime = Instant.now(),
+                totalFeesPaid = BigDecimal("25.50"),
                 latestSnapshotTime = Instant.now()
             )
             val snapshot = PortfolioSnapshot(
@@ -705,7 +705,7 @@ class DashboardControllerTest : StringSpec() {
                 allTimeHigh = BigDecimal("15000.00"),
                 totalTradesExecuted = 12L,
                 totalVolumeTraded = BigDecimal("50000.00"),
-                firstSnapshotTime = Instant.now(),
+                totalFeesPaid = BigDecimal("25.50"),
                 latestSnapshotTime = Instant.now()
             )
             every { tradeHistoryService.getHistoryStats() } returns stats

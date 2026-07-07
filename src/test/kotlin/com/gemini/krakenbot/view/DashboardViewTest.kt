@@ -8,11 +8,7 @@ import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.view.component.*
-import com.gemini.krakenbot.view.util.CssClasses.ALLOCATION_BAR_LABEL
-import com.gemini.krakenbot.view.util.CssClasses.BADGE_BUY
-import com.gemini.krakenbot.view.util.CssClasses.BADGE_INFO
-import com.gemini.krakenbot.view.util.CssClasses.BADGE_SELL
-import com.gemini.krakenbot.view.util.CssClasses.ERROR_BANNER
+import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.FormFields.DEVIATION_TRIGGER_PERCENT
 import com.gemini.krakenbot.view.util.FormFields.LOOP_DELAY_SECONDS
 import com.gemini.krakenbot.view.util.Routes.API_STATUS_STREAM
@@ -63,6 +59,12 @@ class DashboardViewTest : StringSpec() {
         fragmentComponent = fragment,
         historyPageComponent = HistoryPageComponent()
     )
+
+    private val ALLOCATION_BAR_LABEL = CssClass.AllocationChart.BarLabel.value
+    private val BADGE_BUY = CssClass.Badge.Buy.value
+    private val BADGE_INFO = CssClass.Badge.Info.value
+    private val BADGE_SELL = CssClass.Badge.Sell.value
+    private val ERROR_BANNER = CssClass.Utility.ErrorBanner.value
 
     private val baseConfig = AppConfig(
         KrakenCredentials(

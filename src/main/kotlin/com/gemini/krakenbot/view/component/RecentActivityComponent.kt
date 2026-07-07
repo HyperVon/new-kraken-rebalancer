@@ -1,7 +1,7 @@
 package com.gemini.krakenbot.view.component
 
 import com.gemini.krakenbot.model.PortfolioSnapshot
-import com.gemini.krakenbot.view.util.CssClasses
+import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.Icons
 import com.gemini.krakenbot.view.util.Icons.icon
 import com.gemini.krakenbot.view.util.Layouts.glassPanel
@@ -13,9 +13,9 @@ import java.time.format.DateTimeFormatter
 class RecentActivityComponent {
 
     private enum class TradeAction(val badgeClass: String, val label: String) {
-        BUY(CssClasses.BADGE_BUY, "BUY"),
-        SELL(CssClasses.BADGE_SELL, "SELL"),
-        INFO(CssClasses.BADGE_INFO, "INFO");
+        BUY(CssClass.Badge.Buy.value, "BUY"),
+        SELL(CssClass.Badge.Sell.value, "SELL"),
+        INFO(CssClass.Badge.Info.value, "INFO");
 
         companion object {
             fun from(action: String): TradeAction {
@@ -37,13 +37,13 @@ class RecentActivityComponent {
     fun render(history: List<PortfolioSnapshot>) {
         div.glassPanel(ViewText.RECENT_ACTIVITY, Icons.PULSE) {
             if (history.isEmpty()) {
-                div(CssClasses.EMPTY_HISTORY_BOX) {
+                div(classes = CssClass.Activity.EmptyHistoryBox.value) {
                     icon(Icons.EMPTY_PIE)
                     h3 { +ViewText.RECENT_ACTIVITY }
                     p { +ViewText.NO_TRADING_HISTORY }
                 }
             } else {
-                div("${CssClasses.TABLE_WRAPPER} ${CssClasses.CUSTOM_SCROLLBAR_MAX_H_100}") {
+                div(classes = "${CssClass.Table.Wrapper.value} ${CssClass.Activity.CustomScrollbarMaxH100.value}") {
                     table {
                         thead {
                             tr {
@@ -74,11 +74,11 @@ class RecentActivityComponent {
     }
 
     private fun TBODY.renderEmptyActionsRow(timeStr: String) {
-        tr(CssClasses.HOVERABLE) {
-            td(CssClasses.MONO_COL) { +timeStr }
+        tr(classes = CssClass.Table.Hoverable.value) {
+            td(classes = CssClass.Table.MonoCol.value) { +timeStr }
             td {
-                span(CssClasses.RECENT_ACTIVITY_EMPTY_TEXT) {
-                    span(CssClasses.RECENT_ACTIVITY_DOT_MARKER) {}
+                span(classes = CssClass.Activity.EmptyText.value) {
+                    span(classes = CssClass.Activity.DotMarker.value) {}
                     +ViewText.NO_TRADES_EXECUTED
                 }
             }
@@ -87,11 +87,11 @@ class RecentActivityComponent {
 
     private fun TBODY.renderActionRow(timeStr: String, action: String) {
         val tradeAction = TradeAction.from(action)
-        tr(CssClasses.HOVERABLE) {
-            td(CssClasses.MONO_COL) { +timeStr }
+        tr(classes = CssClass.Table.Hoverable.value) {
+            td(classes = CssClass.Table.MonoCol.value) { +timeStr }
             td {
-                div(CssClasses.RECENT_ACTIVITY_ROW_CONTAINER) {
-                    span(tradeAction.badgeClass) { +tradeAction.label }
+                div(classes = CssClass.Activity.RowContainer.value) {
+                    span(classes = tradeAction.badgeClass) { +tradeAction.label }
                     span { +action }
                 }
             }

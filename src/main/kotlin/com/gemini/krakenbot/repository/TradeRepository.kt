@@ -17,7 +17,7 @@ interface TradeRepository {
     fun getTradesInRange(from: Instant, to: Instant): List<TradeRecord>
     fun getTotalTradeCount(): Long
     fun getTotalVolumeTraded(): BigDecimal
-    fun getFirstSnapshotTime(): Instant?
+    fun getTotalFeesPaid(): BigDecimal
     fun getLatestSnapshotTime(): Instant?
     fun getLatestTradeTime(): Instant?
     fun isHistorySeeded(): Boolean
@@ -25,4 +25,5 @@ interface TradeRepository {
     fun getSyncMetadata(key: String): String?
     fun setSyncMetadata(key: String, value: String)
     fun pruneSnapshotsOlderThan(cutoff: Instant): Int
+    fun cleanupDuplicateTrades()
 }

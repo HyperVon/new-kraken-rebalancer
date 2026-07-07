@@ -6,6 +6,7 @@ import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.repository.TradeRepository
 import com.gemini.krakenbot.repository.table.*
 import org.jetbrains.exposed.sql.*
+import org.jetbrains.exposed.sql.SqlExpressionBuilder.inList
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.less
 import org.jetbrains.exposed.sql.transactions.transaction
 import org.slf4j.LoggerFactory
@@ -167,18 +168,18 @@ class SqliteTradeRepositoryImpl(
         }
     }
 
-    override fun getFirstSnapshotTime(): Instant? {
+    override fun getTotalFeesPaid(): BigDecimal {
         return transaction(database) {
-            PortfolioSnapshotTable
-                .selectAll()
-                .orderBy(PortfolioSnapshotTable.timestamp, SortOrder.ASC)
-                .limit(1)
+            val sumCol = TradeTable.fee.sum()
+            TradeTable
+                .select(sumCol)
+                .where { TradeTable.success eq true }
                 .firstOrNull()
-                ?.let {
-                    Instant.ofEpochMilli(it[PortfolioSnapshotTable.timestamp])
-                }
+                ?.get(sumCol) ?: BigDecimal.ZERO
         }
     }
+
+
 
     override fun getLatestSnapshotTime(): Instant? {
         return transaction(database) {
@@ -293,6 +294,7 @@ class SqliteTradeRepositoryImpl(
         return transaction(database) {
             TradeTable
                 .selectAll()
+                .where { TradeTable.dryRun eq false }
                 .orderBy(TradeTable.timestamp, SortOrder.DESC)
                 .limit(1)
                 .firstOrNull()
@@ -371,6 +373,35 @@ class SqliteTradeRepositoryImpl(
                 timestamp less cutoffMillis
             }
             toDeleteRows.size
+        }
+    }
+
+    override fun cleanupDuplicateTrades() {
+        transaction(database) {
+            val toDelete = mutableListOf<Int>()
+            val allTrades = TradeTable.selectAll().orderBy(TradeTable.timestamp, SortOrder.ASC).toList()
+
+            for (i in allTrades.indices) {
+                val t1 = allTrades[i]
+                for (j in i + 1 until allTrades.size) {
+                    val t2 = allTrades[j]
+                    val diff = t2[TradeTable.timestamp] - t1[TradeTable.timestamp]
+                    if (diff > 300_000) break
+
+                    if (t1[TradeTable.symbol] == t2[TradeTable.symbol] &&
+                        t1[TradeTable.side] == t2[TradeTable.side] &&
+                        t1[TradeTable.volume].compareTo(t2[TradeTable.volume]) == 0 &&
+                        t1[TradeTable.pair] != t2[TradeTable.pair]
+                    ) {
+                        toDelete.add(t1[TradeTable.id])
+                    }
+                }
+            }
+
+            if (toDelete.isNotEmpty()) {
+                log.info("Cleaning up {} duplicate local trades due to pair name mismatch...", toDelete.size)
+                TradeTable.deleteWhere { id inList toDelete }
+            }
         }
     }
 }

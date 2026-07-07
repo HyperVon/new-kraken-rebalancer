@@ -39,7 +39,7 @@ class KrakenServiceImpl(
     private val apiUrl = "https://api.kraken.com"
     private val apiVersion = "0"
     private val nonceGenerator =
-       AtomicLong(System.currentTimeMillis() * 1000)
+        AtomicLong(System.currentTimeMillis() * 1000000L)
     val lastFetchedCount = AtomicInteger(0)
 
     private val rateLimiter = RateLimiter()

@@ -1,5 +1,6 @@
 package com.gemini.krakenbot.service.impl
 
+import com.fasterxml.jackson.core.type.TypeReference
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.HistoryStats
@@ -16,6 +17,8 @@ import org.slf4j.LoggerFactory
 import java.io.File
 import java.math.BigDecimal
 import java.math.RoundingMode
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import java.time.Duration
 import java.time.Instant
 import java.time.temporal.ChronoUnit
@@ -40,6 +43,11 @@ class TradeHistoryServiceImpl(
     private var lastSyncTime: Instant = Instant.EPOCH
 
     override fun init() {
+        try {
+            repository.cleanupDuplicateTrades()
+        } catch (e: Exception) {
+            log.error("Failed to run duplicate trade cleanup on startup", e)
+        }
         val loaded = repository.load()
         if (loaded.isEmpty()) {
             val file = File(tradeHistoryFilePath)
@@ -48,7 +56,7 @@ class TradeHistoryServiceImpl(
                 try {
                     val snapshots = objectMapper.readValue(
                         file,
-                        object : com.fasterxml.jackson.core.type.TypeReference<List<PortfolioSnapshot>>() {}
+                        object : TypeReference<List<PortfolioSnapshot>>() {}
                     )
                     if (!snapshots.isNullOrEmpty()) {
                         log.info("Loaded {} snapshots from trade-history.json. Saving to SQLite...", snapshots.size)
@@ -56,7 +64,7 @@ class TradeHistoryServiceImpl(
                         try {
                             val sourcePath = file.toPath()
                             val targetPath = File("$tradeHistoryFilePath.bak").toPath()
-                            java.nio.file.Files.move(sourcePath, targetPath, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+                            Files.move(sourcePath, targetPath, StandardCopyOption.REPLACE_EXISTING)
                             log.info("Renamed trade history file to backup successfully.")
                         } catch (ex: Exception) {
                             log.warn("Failed to rename trade history file to backup", ex)
@@ -255,7 +263,7 @@ class TradeHistoryServiceImpl(
             allTimeHigh = stats.allTimeHigh ?: BigDecimal.ZERO,
             totalTradesExecuted = repository.getTotalTradeCount(),
             totalVolumeTraded = repository.getTotalVolumeTraded(),
-            firstSnapshotTime = repository.getFirstSnapshotTime(),
+            totalFeesPaid = repository.getTotalFeesPaid(),
             latestSnapshotTime = repository.getLatestSnapshotTime()
         )
     }
@@ -289,6 +297,7 @@ class TradeHistoryServiceImpl(
 
         val originalLocalTrades = repository.getTradesInRange(queryStart, Instant.now()).toMutableList()
 
+        val allocations = configService.getConfig().allocations.map { it.symbol.value }
         var totalAdded = 0
         var totalReconciled = 0
 
@@ -300,7 +309,11 @@ class TradeHistoryServiceImpl(
                     val matchingLocalTrade = originalLocalTrades.find { local ->
                         val diff = local.timestamp.toEpochMilli() - apiTrade.timestamp.toEpochMilli()
                         val absDiff = if (diff < 0) -diff else diff
-                        local.pair == apiTrade.pair &&
+                        
+                        val localSymbol = Asset.fromTradingPair(local.pair, allocations) ?: local.symbol
+                        val apiSymbol = Asset.fromTradingPair(apiTrade.pair, allocations) ?: apiTrade.symbol
+
+                        localSymbol.equals(apiSymbol, ignoreCase = true) &&
                                 local.side.equals(apiTrade.side, ignoreCase = true) &&
                                 local.volume.compareTo(apiTrade.volume) == 0 &&
                                 absDiff < 300_000
@@ -333,7 +346,11 @@ class TradeHistoryServiceImpl(
         val isSimulation = configService.getConfig().settings.simulation
 
         if (!isSimulation && totalTrades > 0 && snapshots.size <= 1) {
-            log.info("Historical snapshots are missing or insufficient (found {} snapshots, {} trades). Starting reconstruction...", snapshots.size, totalTrades)
+            log.info(
+                "Historical snapshots are missing or insufficient (found {} snapshots, {} trades). Starting reconstruction...",
+                snapshots.size,
+                totalTrades
+            )
             try {
                 reconstructHistoricalSnapshots()
                 log.info("Historical snapshot reconstruction completed successfully.")

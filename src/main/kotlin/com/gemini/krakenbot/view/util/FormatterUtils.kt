@@ -4,6 +4,8 @@ import java.math.BigDecimal
 import java.math.RoundingMode
 import java.text.DecimalFormat
 import java.text.NumberFormat
+import java.time.Instant
+import java.time.temporal.ChronoUnit
 import java.util.*
 
 /**
@@ -78,9 +80,9 @@ object FormatterUtils {
     /**
      * Format timestamp as relative time (e.g., "2 hours ago").
      */
-    fun formatRelativeTime(instant: java.time.Instant): String {
-        val now = java.time.Instant.now()
-        val durationMs = java.time.temporal.ChronoUnit.MILLIS.between(instant, now)
+    fun formatRelativeTime(instant: Instant): String {
+        val now = Instant.now()
+        val durationMs = ChronoUnit.MILLIS.between(instant, now)
         return when {
             durationMs < 60000 -> "just now"
             durationMs < 3600000 -> "${durationMs / 60000}m ago"
