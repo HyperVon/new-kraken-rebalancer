@@ -5,6 +5,7 @@ import com.gemini.krakenbot.service.*
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.CancellationException
 import org.slf4j.LoggerFactory
 import org.slf4j.MDC
 import java.io.IOException
@@ -71,7 +72,7 @@ class PortfolioManagerImpl(
                     delay((settings.loopDelaySeconds * 1000L).milliseconds)
                 }
             }
-        } catch (e: kotlinx.coroutines.CancellationException) {
+        } catch (e: CancellationException) {
             log.info("Rebalancing loop coroutine cancelled. Shutting down loop.")
             throw e
         }

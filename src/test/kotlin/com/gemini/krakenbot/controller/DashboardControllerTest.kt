@@ -29,6 +29,7 @@ import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
 import io.mockk.verify
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.take
@@ -542,7 +543,7 @@ class DashboardControllerTest : StringSpec() {
         "sseStatusStream_HandlesCancellationException" {
             every { tradeHistoryService.getLatestSnapshot() } returns null
             every { tradeHistoryService.getHistoryFlow() } returns flow {
-                throw kotlinx.coroutines.CancellationException("Simulated cancel")
+                throw CancellationException("Simulated cancel")
             }
 
             testApplication {

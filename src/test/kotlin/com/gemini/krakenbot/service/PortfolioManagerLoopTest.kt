@@ -14,6 +14,7 @@ import io.kotest.matchers.shouldBe
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import kotlin.time.Duration.Companion.milliseconds
@@ -52,7 +53,7 @@ class PortfolioManagerLoopTest : StringSpec() {
                 orderExecutor = orderExecutor
             )
             every { configService.watchConfigChanges() } answers {
-                kotlinx.coroutines.flow.flowOf(configService.getConfig().settings)
+                flowOf(configService.getConfig().settings)
             }
         }
 

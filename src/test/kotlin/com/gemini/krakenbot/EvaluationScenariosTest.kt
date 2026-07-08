@@ -923,7 +923,7 @@ class EvaluationScenariosTest : StringSpec() {
                 )
                 every { mockConfig.getConfig() } returns appConfig
                 every { mockConfig.watchConfigChanges() } answers {
-                    kotlinx.coroutines.flow.flowOf(mockConfig.getConfig().settings)
+                    flowOf(mockConfig.getConfig().settings)
                 }
                 fakeKraken.balanceSupplier = { emptyMap() }
 

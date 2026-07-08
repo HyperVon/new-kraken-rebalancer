@@ -358,7 +358,7 @@ class TradeHistoryServiceImpl(
             try {
                 reconstructHistoricalSnapshots()
                 log.info("Historical snapshot reconstruction completed successfully.")
-            } catch (e: java.lang.Exception) {
+            } catch (e: Exception) {
                 log.error("Failed to reconstruct historical snapshots", e)
             }
         }
@@ -416,7 +416,7 @@ class TradeHistoryServiceImpl(
         // 2. Fetch current/starting balances
         val currentBalances = try {
             krakenService.getBalances()
-        } catch (e: java.lang.Exception) {
+        } catch (e: Exception) {
             log.error("Failed to fetch balances for snapshot reconstruction", e)
             emptyMap()
         }
@@ -447,7 +447,7 @@ class TradeHistoryServiceImpl(
                 }
             val prices = try {
                 krakenService.getTickerPrices(pairsStr)
-            } catch (e: java.lang.Exception) {
+            } catch (e: Exception) {
                 log.error("Failed to fetch starting prices for snapshot reconstruction", e)
                 emptyMap()
             }
@@ -469,7 +469,7 @@ class TradeHistoryServiceImpl(
                 val prices = krakenService.getOHLC(pair, interval = 1440, since = sinceSec)
                 ohlcData[symbol] = prices
                 log.info("Fetched {} OHLC close prices for {}", prices.size, symbol)
-            } catch (e: java.lang.Exception) {
+            } catch (e: Exception) {
                 log.error("Failed to fetch OHLC prices for $symbol ($pair)", e)
             }
             delay(200.milliseconds)

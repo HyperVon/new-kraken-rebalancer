@@ -20,6 +20,7 @@ import io.mockk.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.yield
+import java.io.File
 import java.math.BigDecimal
 import java.time.Instant
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
@@ -534,8 +535,8 @@ class TradeHistoryServiceTest : StringSpec() {
         }
 
         "init_MigratesTradeHistoryJsonIfEmpty" {
-            val file = java.io.File("test-trade-history.json")
-            val bakFile = java.io.File("test-trade-history.json.bak")
+            val file = File("test-trade-history.json")
+            val bakFile = File("test-trade-history.json.bak")
             try {
                 file.delete()
                 bakFile.delete()

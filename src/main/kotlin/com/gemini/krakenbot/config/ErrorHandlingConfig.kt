@@ -9,6 +9,7 @@ import io.ktor.server.response.*
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
 import org.slf4j.LoggerFactory
+import java.time.Instant
 
 /**
  * Error handling and status pages configuration for HTTP responses.
@@ -124,7 +125,7 @@ object ErrorHandlingConfig : KoinComponent {
         message: String
     ): String {
         val errorBody = mapOf(
-            "timestamp" to java.time.Instant.now().toString(),
+            "timestamp" to Instant.now().toString(),
             "status" to status,
             "error" to error,
             "message" to message
