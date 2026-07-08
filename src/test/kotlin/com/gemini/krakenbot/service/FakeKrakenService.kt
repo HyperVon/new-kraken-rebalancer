@@ -77,10 +77,8 @@ class FakeKrakenService : KrakenService {
             )
     }
 
-    var ohlcSupplier: (String, Int, Long?) -> List<Pair<Long, BigDecimal>> = { _, _, _ -> emptyList() }
-
     override suspend fun getOHLC(pair: String, interval: Int, since: Long?): List<Pair<Long, BigDecimal>> {
-        return ohlcSupplier(pair, interval, since)
+        return emptyList()
     }
 }
 

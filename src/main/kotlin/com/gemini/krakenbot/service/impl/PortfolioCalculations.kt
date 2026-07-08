@@ -1,7 +1,6 @@
 package com.gemini.krakenbot.service.impl
 
 import com.gemini.krakenbot.model.Asset
-import org.slf4j.LoggerFactory
 import java.math.BigDecimal
 import java.math.RoundingMode
 
@@ -10,7 +9,6 @@ import java.math.RoundingMode
  * Eliminates duplicate calculation code across the codebase.
  */
 object PortfolioCalculations {
-    private val log = LoggerFactory.getLogger(PortfolioCalculations::class.java)
 
     private const val SCALE_PERCENT = 4
     private const val SCALE_USD = 2

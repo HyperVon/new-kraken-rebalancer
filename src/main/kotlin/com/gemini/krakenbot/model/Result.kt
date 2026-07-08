@@ -49,13 +49,3 @@ sealed class Result<out T> {
             }
     }
 }
-
-/**
- * Extension for use in coroutines and suspend functions.
- */
-suspend inline fun <T> resultOf(block: suspend () -> T): Result<T> =
-    try {
-        Result.Success(block())
-    } catch (ex: Exception) {
-        Result.Failure(ex)
-    }

@@ -2,8 +2,6 @@ package com.gemini.krakenbot.view.util
 
 import java.math.BigDecimal
 import java.math.RoundingMode
-import java.text.DecimalFormat
-import java.text.NumberFormat
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 import java.util.*
@@ -13,15 +11,6 @@ import java.util.*
  * Provides consistent formatting patterns used throughout the application.
  */
 object FormatterUtils {
-    private val currencyFormat: NumberFormat = DecimalFormat.getInstance(Locale.US).apply {
-        minimumFractionDigits = 2
-        maximumFractionDigits = 8
-    }
-
-    private val percentFormat: NumberFormat = DecimalFormat.getInstance(Locale.US).apply {
-        minimumFractionDigits = 2
-        maximumFractionDigits = 4
-    }
 
     /**
      * Format currency values with up to 8 decimal places.

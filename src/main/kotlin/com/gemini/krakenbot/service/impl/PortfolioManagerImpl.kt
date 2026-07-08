@@ -2,7 +2,6 @@ package com.gemini.krakenbot.service.impl
 
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.service.*
-import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.CancellationException
@@ -11,7 +10,6 @@ import org.slf4j.MDC
 import java.io.IOException
 import java.math.BigDecimal
 import java.math.RoundingMode
-import java.time.Duration.between
 import java.time.Instant
 import java.util.*
 import kotlin.time.Duration.Companion.milliseconds
@@ -54,7 +52,6 @@ class PortfolioManagerImpl(
         try {
             configService.watchConfigChanges().collectLatest { settings ->
                 while (isRunning) {
-                    val startTime = Instant.now()
                     try {
                         log.info(
                             "Starting Rebalance Cycle. DryRun: {}",

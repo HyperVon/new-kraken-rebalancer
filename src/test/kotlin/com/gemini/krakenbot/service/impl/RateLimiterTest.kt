@@ -4,9 +4,7 @@ package com.gemini.krakenbot.service.impl
 
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import io.kotest.core.spec.style.StringSpec
-import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.shouldBe
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 

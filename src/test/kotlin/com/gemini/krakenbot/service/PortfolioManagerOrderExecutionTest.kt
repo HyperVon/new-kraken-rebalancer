@@ -16,11 +16,8 @@ import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.shouldBe
 import io.mockk.every
 import io.mockk.mockk
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import java.math.BigDecimal
-import kotlin.time.Duration.Companion.milliseconds
 
 @Suppress("unused")
 class PortfolioManagerOrderExecutionTest : StringSpec() {

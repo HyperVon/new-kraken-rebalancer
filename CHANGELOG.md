@@ -8,6 +8,17 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [6.2.1] - 2026-07-08
+
+### Removed
+
+- **Unused View Extensions**: Deleted `Extensions.kt` entirely since all `BigDecimal`, `Map`, and CSS class builder extensions inside it were unused.
+- **Unused Utility Functions**: Removed the unused `resultOf` suspend function in `Result.kt`, `retryWithExponentialBackoff` in `ServiceUtils.kt`, and the redundant `Map.getOrDefault` extension.
+- **Legacy Companion Constants**: Removed all unused companion object string constants from the sealed `CssClass` structures in `CssClasses.kt`.
+- **Unused Properties & Variables**: Removed unused private fields `currencyFormat` and `percentFormat` in `FormatterUtils.kt`, the unused local variable `startTime` in `PortfolioManagerImpl.kt`, and the unused `log` logger in `PortfolioCalculations.kt`.
+- **Unused Icons & Resources**: Deleted the unused `Icons.CLOCK` icon from `Icons.kt` and its associated `clock.svg` resource file.
+- **Unused Imports & Test Mocks**: Cleaned up unused imports across both source and test files, and removed the unused `ohlcSupplier` helper field from `FakeKrakenService.kt`.
+
 ## [6.2.0] - 2026-07-07
 
 ### Added
