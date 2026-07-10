@@ -8,6 +8,24 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [6.2.2] - 2026-07-10
+
+### Added
+
+- **In-Memory Testing Database**: Configured the test suite to run exclusively on an in-memory SQLite database (`:memory:`) via a new `kraken.db.path` system property, preventing tests from modifying the physical `kraken-rebalancer.db` file.
+- **Robust Duplicate Cleanup Tests**: Added a comprehensive suite of unit tests verifying all logic branches, break conditions, tolerances, and zero-volume edge cases of `cleanupDuplicateTrades()`.
+
+### Fixed
+
+- **Accurate Trade Reconciliation**: Replaced exact volume checks with a 1% relative tolerance (`isWithinRelativeTolerance`) when matching local estimates with official Kraken API fills.
+- **Narrower Match Window**: Reduced the local-to-API trade match window from 5 minutes to 10 seconds to eliminate false positives.
+- **Duplicate Deletion Target**: Fixed duplicate cleanup logic to delete the duplicate local estimate (`t2`) while correctly preserving the actual exchange fill (`t1`).
+- **Complete Reconciled Fields**: Enabled full field updates (including `pair`, `side`, `symbol`, `volume`, `price`, `fee`, and `slippagePercent`) in `SqliteTradeRepositoryImpl.updateTrade` when reconciling estimates.
+
+### Changed
+
+- **Upgraded Logback**: Upgraded `logback-classic` to version `1.5.38` to resolve a vulnerability (CVE-2026-10532) in `logback-core`.
+
 ## [6.2.1] - 2026-07-08
 
 ### Removed
