@@ -91,6 +91,7 @@ tasks.withType<Test> {
     jvmArgs("-Xshare:off", "--sun-misc-unsafe-memory-access=allow", "--enable-native-access=ALL-UNNAMED", "-Xmx4096m")
     systemProperty("kotlinx.coroutines.debug.enable.creation.stack.trace", "false")
     systemProperty("kotest.coroutines.debug.disable", "true")
+    systemProperty("kraken.db.path", ":memory:")
 }
 
 tasks.jacocoTestReport {

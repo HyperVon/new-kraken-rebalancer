@@ -46,7 +46,7 @@ object DatabaseConfig {
         HistorySyncMetadataTable
     )
 
-    fun init(dbPath: String = "kraken-rebalancer.db"): Database {
+    fun init(dbPath: String = System.getProperty("kraken.db.path", "kraken-rebalancer.db")): Database {
         val url = buildSqliteUrl(dbPath)
         maintainMemoryDatabase(url)
 
