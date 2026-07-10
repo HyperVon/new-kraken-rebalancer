@@ -12,6 +12,7 @@ import org.jetbrains.exposed.sql.transactions.transaction
 import org.slf4j.LoggerFactory
 import java.io.IOException
 import java.math.BigDecimal
+import java.math.RoundingMode
 import java.time.Instant
 
 class SqliteTradeRepositoryImpl(
@@ -94,6 +95,10 @@ class SqliteTradeRepositoryImpl(
                     (TradeTable.volume eq oldTrade.volume)
                 }) {
                     it[timestamp] = newTrade.timestamp.toEpochMilli()
+                    it[pair] = newTrade.pair
+                    it[side] = newTrade.side
+                    it[symbol] = newTrade.symbol
+                    it[volume] = newTrade.volume
                     it[usdAmount] = newTrade.usdAmount
                     it[success] = newTrade.success
                     it[dryRun] = newTrade.dryRun
@@ -388,12 +393,23 @@ class SqliteTradeRepositoryImpl(
                     val diff = t2[TradeTable.timestamp] - t1[TradeTable.timestamp]
                     if (diff > 300_000) break
 
-                    if (t1[TradeTable.symbol] == t2[TradeTable.symbol] &&
-                        t1[TradeTable.side] == t2[TradeTable.side] &&
-                        t1[TradeTable.volume].compareTo(t2[TradeTable.volume]) == 0 &&
-                        t1[TradeTable.pair] != t2[TradeTable.pair]
-                    ) {
-                        toDelete.add(t1[TradeTable.id])
+                    val sameSymbolAndSide =
+                        t1[TradeTable.symbol].equals(t2[TradeTable.symbol], ignoreCase = true) &&
+                                t1[TradeTable.side].equals(t2[TradeTable.side], ignoreCase = true)
+                    val pairAliasDuplicate = sameSymbolAndSide &&
+                            t1[TradeTable.volume].compareTo(t2[TradeTable.volume]) == 0 &&
+                            t1[TradeTable.pair] != t2[TradeTable.pair]
+                    val localEstimateDuplicate = sameSymbolAndSide &&
+                            t1[TradeTable.pair].equals(t2[TradeTable.pair], ignoreCase = true) &&
+                            diff <= 10_000 &&
+                            isWithinOnePercent(t1[TradeTable.volume], t2[TradeTable.volume]) &&
+                            isWithinOnePercent(t1[TradeTable.usdAmount], t2[TradeTable.usdAmount]) &&
+                            feePercentDiffersMaterially(t1, t2)
+
+                    if (pairAliasDuplicate || localEstimateDuplicate) {
+                        // The earlier timestamp is the exchange fill. The later row is the
+                        // locally recorded estimate or an alternate Kraken pair spelling.
+                        toDelete.add(t2[TradeTable.id])
                     }
                 }
             }
@@ -403,5 +419,21 @@ class SqliteTradeRepositoryImpl(
                 TradeTable.deleteWhere { id inList toDelete }
             }
         }
+    }
+
+    private fun isWithinOnePercent(first: BigDecimal, second: BigDecimal): Boolean {
+        val largerAmount = maxOf(first.abs(), second.abs())
+        return largerAmount.signum() > 0 &&
+                first.subtract(second).abs().divide(largerAmount, 8, RoundingMode.HALF_UP) <= BigDecimal("0.01")
+    }
+
+    private fun feePercentDiffersMaterially(first: ResultRow, second: ResultRow): Boolean {
+        val firstAmount = first[TradeTable.usdAmount]
+        val secondAmount = second[TradeTable.usdAmount]
+        if (firstAmount.signum() == 0 || secondAmount.signum() == 0) return false
+
+        val firstFeeRate = first[TradeTable.fee].divide(firstAmount, 8, RoundingMode.HALF_UP)
+        val secondFeeRate = second[TradeTable.fee].divide(secondAmount, 8, RoundingMode.HALF_UP)
+        return firstFeeRate.subtract(secondFeeRate).abs() >= BigDecimal("0.001")
     }
 }

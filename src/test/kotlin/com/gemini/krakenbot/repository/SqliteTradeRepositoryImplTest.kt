@@ -243,14 +243,63 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
 
             val newTrade = oldTrade.copy(
                 timestamp = now.plusSeconds(3),
-                usdAmount = BigDecimal("14980.50")
+                pair = "XXBTZUSD",
+                symbol = "BTC",
+                volume = BigDecimal("0.49980000"),
+                usdAmount = BigDecimal("14980.50"),
+                price = BigDecimal("29972.00"),
+                fee = BigDecimal("38.95")
             )
             repository.updateTrade(oldTrade, newTrade)
 
             val trades = repository.getTradesInRange(now.minusSeconds(10), now.plusSeconds(10))
             trades.size shouldBe 1
             trades.first().timestamp shouldBe now.plusSeconds(3)
+            trades.first().pair shouldBe "XXBTZUSD"
+            trades.first().volume.shouldBeEqualComparingTo(BigDecimal("0.49980000"))
             trades.first().usdAmount.shouldBeEqualComparingTo(BigDecimal("14980.50"))
+            trades.first().price.shouldBeEqualComparingTo(BigDecimal("29972.00"))
+            trades.first().fee.shouldBeEqualComparingTo(BigDecimal("38.95"))
+        }
+
+        "cleanupDuplicateTrades removes a local estimate but preserves a distinct nearby order" {
+            val now = Instant.now().truncatedTo(ChronoUnit.MILLIS)
+            val krakenFill = TradeRecord(
+                timestamp = now.minusMillis(500),
+                pair = "TAOUSD",
+                side = "SELL",
+                symbol = "TAO",
+                volume = BigDecimal("0.07708233"),
+                usdAmount = BigDecimal("16.62393026"),
+                success = true,
+                dryRun = false,
+                price = BigDecimal("215.66460511"),
+                fee = BigDecimal("0.0432")
+            )
+            val localEstimate = krakenFill.copy(
+                timestamp = now,
+                volume = BigDecimal("0.07708000"),
+                usdAmount = BigDecimal("16.63"),
+                price = BigDecimal("215.6867"),
+                fee = BigDecimal("0.0998")
+            )
+            val distinctOrder = krakenFill.copy(
+                timestamp = now.plusSeconds(1),
+                volume = BigDecimal("0.07000000"),
+                usdAmount = BigDecimal("15.10")
+            )
+
+            repository.saveTrade(krakenFill)
+            repository.saveTrade(localEstimate)
+            repository.saveTrade(distinctOrder)
+
+            repository.cleanupDuplicateTrades()
+
+            val trades = repository.getTradesInRange(now.minusSeconds(10), now.plusSeconds(10))
+            trades.size shouldBe 2
+            trades.any { it.timestamp == krakenFill.timestamp } shouldBe true
+            trades.any { it.timestamp == localEstimate.timestamp } shouldBe false
+            trades.any { it.timestamp == distinctOrder.timestamp } shouldBe true
         }
 
         "isHistorySeeded and setHistorySeeded" {
@@ -544,4 +593,3 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
         }
     }
 }
-

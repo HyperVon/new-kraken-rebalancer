@@ -378,6 +378,42 @@ class TradeHistoryServiceTest : StringSpec() {
             }
         }
 
+        "syncTradesFromKraken_ReconcilesSlightlyDifferentMarketFill" {
+            runTest {
+                every { repository.isHistorySeeded() } returns true
+                val latestTime = Instant.ofEpochSecond(1700000000)
+                every { repository.getLatestTradeTime() } returns latestTime
+
+                val localEstimate = TradeRecord(
+                    timestamp = latestTime,
+                    pair = "TAOUSD",
+                    side = "SELL",
+                    symbol = "TAO",
+                    volume = BigDecimal("0.07708000"),
+                    usdAmount = BigDecimal("16.63"),
+                    success = true,
+                    dryRun = false,
+                    price = BigDecimal("215.6867"),
+                    fee = BigDecimal("0.0998")
+                )
+                val krakenFill = localEstimate.copy(
+                    timestamp = latestTime.minusMillis(500),
+                    volume = BigDecimal("0.07708233"),
+                    usdAmount = BigDecimal("16.62393026"),
+                    price = BigDecimal("215.66460511"),
+                    fee = BigDecimal("0.0432")
+                )
+                every { repository.getTradesInRange(any(), any()) } returns listOf(localEstimate)
+                coEvery { krakenService.getTradeHistory(any(), 0) } returns listOf(krakenFill)
+
+                val tradeHistoryService = createService()
+                tradeHistoryService.syncTradesFromKraken()
+
+                verify(exactly = 1) { repository.updateTrade(localEstimate, krakenFill) }
+                verify(exactly = 0) { repository.saveTrade(any()) }
+            }
+        }
+
         "syncTradesFromKraken_FirstBatchEmpty" {
             runTest {
                 every { repository.isHistorySeeded() } returns false
@@ -802,7 +838,7 @@ class TradeHistoryServiceTest : StringSpec() {
                 )
                 every { repository.getTradesInRange(any(), any()) } returns listOf(localTrade)
 
-                val apiTrade = localTrade.copy(timestamp = latestTime.minusSeconds(120))
+                val apiTrade = localTrade.copy(timestamp = latestTime.minusMillis(500))
 
                 coEvery { krakenService.getTradeHistory(any(), 0) } returns listOf(apiTrade)
                 coEvery { krakenService.getTradeHistory(any(), 50) } returns emptyList()
@@ -1181,5 +1217,3 @@ class TradeHistoryServiceTest : StringSpec() {
         }
     }
 }
-
-

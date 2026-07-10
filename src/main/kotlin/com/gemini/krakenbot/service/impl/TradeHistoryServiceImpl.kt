@@ -37,6 +37,16 @@ class TradeHistoryServiceImpl(
     private val tradeHistoryFilePath: String = "trade-history.json"
 ) : TradeHistoryService {
 
+    companion object {
+        /**
+         * A locally recorded market order contains the requested amount, while Kraken reports
+         * the filled amount. The two records are normally created within a second of each other,
+         * but can differ slightly because of price movement and order-volume precision.
+         */
+        private const val LOCAL_TRADE_MATCH_WINDOW_MILLIS = 10_000L
+        private val LOCAL_TRADE_MATCH_TOLERANCE = BigDecimal("0.01")
+    }
+
     private val log = LoggerFactory.getLogger(TradeHistoryServiceImpl::class.java)
     private val snapshotFlow =
         MutableSharedFlow<PortfolioSnapshot>(
@@ -308,26 +318,25 @@ class TradeHistoryServiceImpl(
         getTradeHistoryPaginated(startSec = startSec, pageSize = 50)
             .collect { apiTrades ->
                 for (apiTrade: TradeRecord in apiTrades) {
-                    // Look for an existing matching trade in the pre-existing local trades.
-                    // Match criteria: same pair, side, volume, and timestamp within 5 minutes.
+                    // The local order record has requested values; the API record has actual
+                    // fills. Match their small expected variances so the API record reconciles
+                    // the local one instead of appearing as a second trade in History.
                     val matchingLocalTrade = originalLocalTrades.find { local ->
-                        val diff = local.timestamp.toEpochMilli() - apiTrade.timestamp.toEpochMilli()
-                        val absDiff = if (diff < 0) -diff else diff
-                        
-                        val localSymbol = Asset.fromTradingPair(local.pair, allocations) ?: local.symbol
-                        val apiSymbol = Asset.fromTradingPair(apiTrade.pair, allocations) ?: apiTrade.symbol
-
-                        localSymbol.equals(apiSymbol, ignoreCase = true) &&
-                                local.side.equals(apiTrade.side, ignoreCase = true) &&
-                                local.volume.compareTo(apiTrade.volume) == 0 &&
-                                absDiff < 300_000
+                        isSameTrade(local, apiTrade, allocations)
                     }
 
                     if (matchingLocalTrade != null) {
                         // Check if we need to update/reconcile it (if the timestamp or usdAmount differs slightly from the official API ones).
                         if (matchingLocalTrade.timestamp != apiTrade.timestamp ||
+                            matchingLocalTrade.pair != apiTrade.pair ||
+                            matchingLocalTrade.symbol != apiTrade.symbol ||
+                            matchingLocalTrade.side != apiTrade.side ||
+                            matchingLocalTrade.volume.compareTo(apiTrade.volume) != 0 ||
                             matchingLocalTrade.usdAmount.compareTo(apiTrade.usdAmount) != 0 ||
-                            matchingLocalTrade.dryRun != apiTrade.dryRun) {
+                            matchingLocalTrade.dryRun != apiTrade.dryRun ||
+                            matchingLocalTrade.price.compareTo(apiTrade.price) != 0 ||
+                            matchingLocalTrade.fee.compareTo(apiTrade.fee) != 0 ||
+                            matchingLocalTrade.slippagePercent != apiTrade.slippagePercent) {
 
                             log.info("Reconciling trade record: local (timestamp={}, usdAmount={}) with API (timestamp={}, usdAmount={})",
                                 matchingLocalTrade.timestamp, matchingLocalTrade.usdAmount, apiTrade.timestamp, apiTrade.usdAmount)
@@ -369,6 +378,36 @@ class TradeHistoryServiceImpl(
             repository.setSyncMetadata("sync_total", "completed")
         }
         log.info("Trade history synchronization completed. Added: {} new, Reconciled: {}.", totalAdded, totalReconciled)
+    }
+
+    private fun isSameTrade(
+        local: TradeRecord,
+        api: TradeRecord,
+        allocations: List<String>
+    ): Boolean {
+        val timeDifference = abs(local.timestamp.toEpochMilli() - api.timestamp.toEpochMilli())
+        if (timeDifference > LOCAL_TRADE_MATCH_WINDOW_MILLIS ||
+            !local.side.equals(api.side, ignoreCase = true)
+        ) {
+            return false
+        }
+
+        val localSymbol = Asset.fromTradingPair(local.pair, allocations) ?: local.symbol
+        val apiSymbol = Asset.fromTradingPair(api.pair, allocations) ?: api.symbol
+        return localSymbol.equals(apiSymbol, ignoreCase = true) &&
+                isWithinRelativeTolerance(local.volume, api.volume) &&
+                (local.volume.compareTo(api.volume) == 0 ||
+                        isWithinRelativeTolerance(local.usdAmount, api.usdAmount))
+    }
+
+    private fun isWithinRelativeTolerance(
+        first: BigDecimal,
+        second: BigDecimal
+    ): Boolean {
+        val largerAmount = maxOf(first.abs(), second.abs())
+        return largerAmount.signum() > 0 &&
+                first.subtract(second).abs().divide(largerAmount, 8, RoundingMode.HALF_UP) <=
+                LOCAL_TRADE_MATCH_TOLERANCE
     }
 
     private fun getTradeHistoryPaginated(
@@ -647,4 +686,3 @@ private sealed class TimelineEvent : Comparable<TimelineEvent> {
         return other.timestamp.compareTo(this.timestamp)
     }
 }
-
