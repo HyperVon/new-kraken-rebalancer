@@ -131,7 +131,7 @@ class SqliteTradeRepositoryImpl(
                 .orderBy(PortfolioSnapshotTable.timestamp, SortOrder.ASC)
                 .map { it[PortfolioSnapshotTable.id] }
 
-            if (allIds.isEmpty()) return@transaction emptyList<PortfolioSnapshot>()
+            if (allIds.isEmpty()) return@transaction emptyList()
 
             val downsampledIds = if (allIds.size <= 300) {
                 allIds

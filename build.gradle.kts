@@ -177,6 +177,7 @@ configurations.all {
 }
 
 tasks.register<Jar>("fatJar") {
+    description = "Build fat jar"
     archiveClassifier.set("all")
     manifest {
         attributes["Main-Class"] = "com.gemini.krakenbot.KrakenRebalancerApplicationKt"
