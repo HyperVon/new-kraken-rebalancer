@@ -26,6 +26,7 @@ object TradeTable : Table("trades") {
     init {
         index("idx_trades_timestamp", false, timestamp)
         index("idx_trades_pair_side_timestamp", false, pair, side, timestamp)
+        index("idx_trades_success", false, success)
     }
 
     override val primaryKey = PrimaryKey(id)

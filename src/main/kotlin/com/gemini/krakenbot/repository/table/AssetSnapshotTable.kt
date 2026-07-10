@@ -17,5 +17,9 @@ object AssetSnapshotTable : Table("asset_snapshots") {
     val deviationPercent = decimal("deviation_percent", 10, 4)
     val deviationUSD = decimal("deviation_usd", 18, 2)
 
+    init {
+        index("idx_assetsnapshots_snapshot_id", false, snapshotId)
+    }
+
     override val primaryKey = PrimaryKey(id)
 }

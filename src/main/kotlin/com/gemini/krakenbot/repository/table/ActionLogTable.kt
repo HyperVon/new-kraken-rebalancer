@@ -10,5 +10,9 @@ object ActionLogTable : Table("action_logs") {
         .references(PortfolioSnapshotTable.id, onDelete = ReferenceOption.CASCADE)
     val message = text("message")
 
+    init {
+        index("idx_actionlogs_snapshot_id", false, snapshotId)
+    }
+
     override val primaryKey = PrimaryKey(id)
 }

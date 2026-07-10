@@ -120,14 +120,29 @@ class SqliteTradeRepositoryImpl(
         to: Instant
     ): List<PortfolioSnapshot> {
         return transaction(database) {
-            val snapshotRows = PortfolioSnapshotTable
-                .selectAll()
+            val allIds = PortfolioSnapshotTable
+                .select(PortfolioSnapshotTable.id)
                 .andWhere {
                     PortfolioSnapshotTable.timestamp greaterEq from.toEpochMilli()
                 }
                 .andWhere {
                     PortfolioSnapshotTable.timestamp lessEq to.toEpochMilli()
                 }
+                .orderBy(PortfolioSnapshotTable.timestamp, SortOrder.ASC)
+                .map { it[PortfolioSnapshotTable.id] }
+
+            if (allIds.isEmpty()) return@transaction emptyList<PortfolioSnapshot>()
+
+            val downsampledIds = if (allIds.size <= 300) {
+                allIds
+            } else {
+                val step = allIds.size / 300
+                allIds.filterIndexed { index, _ -> index % step == 0 }
+            }
+
+            val snapshotRows = PortfolioSnapshotTable
+                .selectAll()
+                .where { PortfolioSnapshotTable.id inList downsampledIds }
                 .orderBy(PortfolioSnapshotTable.timestamp, SortOrder.ASC)
                 .toList()
 
