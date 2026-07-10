@@ -14,6 +14,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - **In-Memory Testing Database**: Configured the test suite to run exclusively on an in-memory SQLite database (`:memory:`) via a new `kraken.db.path` system property, preventing tests from modifying the physical `kraken-rebalancer.db` file.
 - **Robust Duplicate Cleanup Tests**: Added a comprehensive suite of unit tests verifying all logic branches, break conditions, tolerances, and zero-volume edge cases of `cleanupDuplicateTrades()`.
+- **Database Performance Indexes**: Added indexes `idx_assetsnapshots_snapshot_id` and `idx_actionlogs_snapshot_id` to eliminate full table scans during nested portfolio snapshot reconstructions, and `idx_trades_success` to speed up aggregate stats queries.
 
 ### Fixed
 
@@ -21,6 +22,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Narrower Match Window**: Reduced the local-to-API trade match window from 5 minutes to 10 seconds to eliminate false positives.
 - **Duplicate Deletion Target**: Fixed duplicate cleanup logic to delete the duplicate local estimate (`t2`) while correctly preserving the actual exchange fill (`t1`).
 - **Complete Reconciled Fields**: Enabled full field updates (including `pair`, `side`, `symbol`, `volume`, `price`, `fee`, and `slippagePercent`) in `SqliteTradeRepositoryImpl.updateTrade` when reconciling estimates.
+- **Optimized History Scaling via Downsampling**: Reimplemented `getSnapshotsInRange` to fetch IDs first via index, downsample to at most 300 evenly spaced points in memory, and fetch complete snapshot relations only for those IDs. This yields near-instant history page load times and prevents browser crashes under large database volumes.
 
 ### Changed
 
