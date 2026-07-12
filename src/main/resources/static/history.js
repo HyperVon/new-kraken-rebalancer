@@ -66,10 +66,27 @@ function formatUSD(val) {
     return '$' + Number(val).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+const visibilityStates = {};
+
 function createOrUpdate(canvasId, config) {
-    if (charts[canvasId]) {
-        charts[canvasId].destroy();
+    const existingChart = charts[canvasId];
+    if (existingChart) {
+        visibilityStates[canvasId] = {};
+        existingChart.data.datasets.forEach((dataset, index) => {
+            visibilityStates[canvasId][dataset.label] = existingChart.isDatasetVisible(index);
+        });
+        existingChart.destroy();
     }
+
+    const savedStates = visibilityStates[canvasId];
+    if (savedStates) {
+        config.data.datasets.forEach((dataset) => {
+            if (savedStates[dataset.label] !== undefined) {
+                dataset.hidden = !savedStates[dataset.label];
+            }
+        });
+    }
+
     const ctx = document.getElementById(canvasId);
     if (!ctx) return;
     charts[canvasId] = new Chart(ctx, config);

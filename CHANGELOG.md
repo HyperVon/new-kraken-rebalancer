@@ -20,6 +20,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - **Jackson Ignored Property Validation**: Configured `@get:JsonIgnore` on the new `isConfigured` helper property in `KrakenCredentials` to prevent Jackson from throwing `UnrecognizedPropertyException` during config loading/deserialization.
 - **Ktor Route Constants Consolidation**: Migrated hardcoded `/api/health` and `/api/history/sync-progress` routes to type-safe references in `Routes.kt`, and refactored route handler logic in `DashboardRoutes.kt` into private helper functions.
+- **Persistent Chart Legend Filters**: Refactored the `createOrUpdate` function in `history.js` to preserve dataset legend toggling states (hidden/visible) when switching date ranges.
 
 ### Changed
 
