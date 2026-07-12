@@ -12,7 +12,7 @@ import java.math.BigDecimal
 import java.math.RoundingMode
 import java.time.Instant
 import java.util.*
-import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Duration.Companion.seconds
 
 class PortfolioManagerImpl(
     private val configService: ConfigService,
@@ -66,7 +66,7 @@ class PortfolioManagerImpl(
                     } catch (e: Exception) {
                         log.error("Error in rebalancing cycle", e)
                     }
-                    delay((settings.loopDelaySeconds * 1000L).milliseconds)
+                    delay(settings.loopDelaySeconds.seconds)
                 }
             }
         } catch (e: CancellationException) {

@@ -366,6 +366,7 @@ two complementary `SharedFlow` channels:
 │   ├── model/                             # Domain: PortfolioSnapshot, OrderResult, Result, TradeRecord
 │   ├── repository/                        # Persistence interfaces: TradeRepository, PortfolioStatsRepository
 │   │   └── impl/                          # SQLite-backed implementations (via Exposed ORM)
+│   │       └── RepositoryUtils.kt         # Database safe transaction helper
 │   ├── service/                           # Core logic interfaces and shared utilities
 │   │   ├── ServiceUtils.kt               # Retry helpers, safe BigDecimal parsing
 │   │   └── impl/                          # Service implementations (coroutine-aware)
@@ -376,6 +377,7 @@ two complementary `SharedFlow` channels:
 │   │       ├── KrakenServiceImpl.kt      # Kraken API client + RateLimiter + retryWithFlow
 │   │       ├── RateLimiter.kt            # Kraken call-counter rate limiter
 │   │       ├── ConfigServiceImpl.kt      # Config persistence + watchConfigChanges flow
+│   │       ├── SimulationDefaults.kt     # Shared simulation default prices
 │   │       └── TradeHistoryServiceImpl.kt # Snapshot storage, trade sync, history flow
 │   ├── view/                              # HTML templates & components (kotlinx.html DSL)
 │   │   ├── DashboardView.kt              # Facade class delegating to components
@@ -512,7 +514,7 @@ avoid floating-point comparison issues.
 ./gradlew test
 ```
 
-**316 tests** across:
+**315 tests** across:
 
 - **Scenario Evaluation Suite** (`EvaluationScenariosTest`) — **30 highly realistic scenarios** testing the full end-to-end execution of rebalances, mathematical edge cases, API credentials invalidation, concurrency locks, and SSE client streams. See **[EVALUATION.md](EVALUATION.md)** for descriptions and test results of all 30 scenarios.
 - `KrakenE2ETest` / `ResilienceChaosTest` / `PrecisionRoundingFuzzTest` /

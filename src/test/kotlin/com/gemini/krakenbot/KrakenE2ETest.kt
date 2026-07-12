@@ -124,14 +124,21 @@ class KrakenE2ETest : StringSpec() {
                     objectMapper = objectMapper,
                     httpClient = httpClient
                 )
-                val tradeHistoryService =
-                    TradeHistoryServiceImpl(tradesRepo, statsRepo, krakenService, mockConfigService, objectMapper)
-
                 val portfolioAnalyzer = PortfolioAnalyzerImpl(
                     krakenService = krakenService,
                     configService = mockConfigService,
                     portfolioStatsRepository = statsRepo
                 )
+                val tradeHistoryService =
+                    TradeHistoryServiceImpl(
+                        repository = tradesRepo,
+                        portfolioStatsRepository = statsRepo,
+                        krakenService = krakenService,
+                        configService = mockConfigService,
+                        objectMapper = objectMapper,
+                        portfolioAnalyzer = portfolioAnalyzer
+                    )
+
                 val orderExecutor =
                     OrderExecutorImpl(krakenService, portfolioAnalyzer, tradeHistoryService)
                 val portfolioManager = PortfolioManagerImpl(
@@ -235,13 +242,21 @@ class KrakenE2ETest : StringSpec() {
                     objectMapper = objectMapper,
                     httpClient = httpClient
                 )
-                val tradeHistoryService = TradeHistoryServiceImpl(tradesRepo, statsRepo, krakenService, mockConfigService, objectMapper)
-
                 val portfolioAnalyzer = PortfolioAnalyzerImpl(
                     krakenService = krakenService,
                     configService = mockConfigService,
                     portfolioStatsRepository = statsRepo
                 )
+                val tradeHistoryService =
+                    TradeHistoryServiceImpl(
+                        repository = tradesRepo,
+                        portfolioStatsRepository = statsRepo,
+                        krakenService = krakenService,
+                        configService = mockConfigService,
+                        objectMapper = objectMapper,
+                        portfolioAnalyzer = portfolioAnalyzer
+                    )
+
                 val orderExecutor =
                     OrderExecutorImpl(krakenService, portfolioAnalyzer, tradeHistoryService)
                 val portfolioManager = PortfolioManagerImpl(

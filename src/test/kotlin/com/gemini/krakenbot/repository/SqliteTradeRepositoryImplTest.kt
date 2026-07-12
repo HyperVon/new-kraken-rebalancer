@@ -680,6 +680,74 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
             inRange.isEmpty() shouldBe true
         }
 
+        "getTradeSummaryStats aggregates metrics correctly" {
+            val startStats = repository.getTradeSummaryStats()
+            startStats.totalTradesExecuted shouldBe 0L
+            startStats.totalVolumeTraded shouldBe BigDecimal.ZERO
+            startStats.totalFeesPaid shouldBe BigDecimal.ZERO
+            startStats.latestSnapshotTime shouldBe null
+
+            val trade1 = TradeRecord(
+                timestamp = Instant.now().minusSeconds(100),
+                pair = "XBTUSD",
+                side = "BUY",
+                symbol = "BTC",
+                volume = BigDecimal("0.1"),
+                usdAmount = BigDecimal("5000.00"),
+                success = true,
+                dryRun = false,
+                price = BigDecimal("50000.0"),
+                fee = BigDecimal("10.0")
+            )
+            repository.saveTrade(trade1)
+
+            val trade2 = TradeRecord(
+                timestamp = Instant.now(),
+                pair = "XBTUSD",
+                side = "SELL",
+                symbol = "BTC",
+                volume = BigDecimal("0.05"),
+                usdAmount = BigDecimal("3000.00"),
+                success = true,
+                dryRun = false,
+                price = BigDecimal("60000.0"),
+                fee = BigDecimal("6.00")
+            )
+            repository.saveTrade(trade2)
+
+            // A failed trade should not be included
+            val tradeFailed = TradeRecord(
+                timestamp = Instant.now(),
+                pair = "XBTUSD",
+                side = "BUY",
+                symbol = "BTC",
+                volume = BigDecimal("0.5"),
+                usdAmount = BigDecimal("30000.00"),
+                success = false,
+                dryRun = false,
+                price = BigDecimal("60000.0"),
+                fee = BigDecimal("60.00")
+            )
+            repository.saveTrade(tradeFailed)
+
+            val snapshot = PortfolioSnapshot(
+                timestamp = Instant.ofEpochMilli(12345678L),
+                totalValueUSD = BigDecimal("10000.0"),
+                assets = emptyMap(),
+                actions = emptyList(),
+                drawdownPercent = BigDecimal.ZERO,
+                fiatDeploymentPercent = BigDecimal.ZERO,
+                effectiveUsdTargetPercent = BigDecimal.ZERO
+            )
+            repository.saveSnapshot(snapshot)
+
+            val stats = repository.getTradeSummaryStats()
+            stats.totalTradesExecuted shouldBe 2L
+            stats.totalVolumeTraded.compareTo(BigDecimal("8000.00")) shouldBe 0
+            stats.totalFeesPaid.compareTo(BigDecimal("16.00")) shouldBe 0
+            stats.latestSnapshotTime shouldBe Instant.ofEpochMilli(12345678L)
+        }
+
         "save and load sync metadata" {
             repository.getSyncMetadata("sync_key") shouldBe null
             repository.setSyncMetadata("sync_key", "sync_val")

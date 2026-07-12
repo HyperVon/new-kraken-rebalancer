@@ -4,11 +4,14 @@ import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.repository.TradeRepository
+import com.gemini.krakenbot.repository.TradeSummaryStats
 import com.gemini.krakenbot.repository.table.*
 import org.jetbrains.exposed.sql.*
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.inList
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.less
 import org.jetbrains.exposed.sql.transactions.transaction
+import org.jetbrains.exposed.sql.statements.UpdateBuilder
+import com.gemini.krakenbot.service.isWithinRelativeTolerance
 import org.slf4j.LoggerFactory
 import java.io.IOException
 import java.math.BigDecimal
@@ -22,17 +25,26 @@ class SqliteTradeRepositoryImpl(
     private val log =
         LoggerFactory.getLogger(SqliteTradeRepositoryImpl::class.java)
 
+    private fun UpdateBuilder<*>.applyTradeFields(trade: TradeRecord) {
+        this[TradeTable.timestamp] = trade.timestamp.toEpochMilli()
+        this[TradeTable.pair] = trade.pair
+        this[TradeTable.side] = trade.side
+        this[TradeTable.symbol] = trade.symbol
+        this[TradeTable.volume] = trade.volume
+        this[TradeTable.usdAmount] = trade.usdAmount
+        this[TradeTable.success] = trade.success
+        this[TradeTable.dryRun] = trade.dryRun
+        this[TradeTable.errorMessage] = trade.errorMessage
+        this[TradeTable.price] = trade.price
+        this[TradeTable.fee] = trade.fee
+        this[TradeTable.slippagePercent] = trade.slippagePercent
+    }
+
     override fun save(history: List<PortfolioSnapshot>) {
-        try {
-            transaction(database) {
-                for (snapshot in history) {
-                    insertSnapshotWithChildren(snapshot)
-                }
+        database.safeTransaction(log, "Failed to save history to database") {
+            for (snapshot in history) {
+                insertSnapshotWithChildren(snapshot)
             }
-        } catch (e: Exception) {
-            log.error("Failed to save history to database", e)
-            if (e is IOException) throw e
-            throw IOException("Database write failed", e)
         }
     }
 
@@ -49,69 +61,29 @@ class SqliteTradeRepositoryImpl(
     }
 
     override fun saveSnapshot(snapshot: PortfolioSnapshot) {
-        try {
-            transaction(database) {
-                insertSnapshotWithChildren(snapshot)
-            }
-        } catch (e: Exception) {
-            log.error("Failed to save snapshot to database", e)
-            if (e is IOException) throw e
-            throw IOException("Database write failed", e)
+        database.safeTransaction(log, "Failed to save snapshot to database") {
+            insertSnapshotWithChildren(snapshot)
         }
     }
 
     override fun saveTrade(trade: TradeRecord) {
-        try {
-            transaction(database) {
-                TradeTable.insert {
-                    it[timestamp] = trade.timestamp.toEpochMilli()
-                    it[pair] = trade.pair
-                    it[side] = trade.side
-                    it[symbol] = trade.symbol
-                    it[volume] = trade.volume
-                    it[usdAmount] = trade.usdAmount
-                    it[success] = trade.success
-                    it[dryRun] = trade.dryRun
-                    it[errorMessage] = trade.errorMessage
-                    it[price] = trade.price
-                    it[fee] = trade.fee
-                    it[slippagePercent] = trade.slippagePercent
-                }
+        database.safeTransaction(log, "Failed to save trade to database") {
+            TradeTable.insert {
+                it.applyTradeFields(trade)
             }
-        } catch (e: Exception) {
-            log.error("Failed to save trade to database", e)
-            if (e is IOException) throw e
-            throw IOException("Database write failed", e)
         }
     }
 
     override fun updateTrade(oldTrade: TradeRecord, newTrade: TradeRecord) {
-        try {
-            transaction(database) {
-                TradeTable.update({
-                    (TradeTable.timestamp eq oldTrade.timestamp.toEpochMilli()) and
-                    (TradeTable.pair eq oldTrade.pair) and
-                    (TradeTable.side eq oldTrade.side) and
-                    (TradeTable.volume eq oldTrade.volume)
-                }) {
-                    it[timestamp] = newTrade.timestamp.toEpochMilli()
-                    it[pair] = newTrade.pair
-                    it[side] = newTrade.side
-                    it[symbol] = newTrade.symbol
-                    it[volume] = newTrade.volume
-                    it[usdAmount] = newTrade.usdAmount
-                    it[success] = newTrade.success
-                    it[dryRun] = newTrade.dryRun
-                    it[errorMessage] = newTrade.errorMessage
-                    it[price] = newTrade.price
-                    it[fee] = newTrade.fee
-                    it[slippagePercent] = newTrade.slippagePercent
-                }
+        database.safeTransaction(log, "Failed to update trade in database", "Database update failed") {
+            TradeTable.update({
+                (TradeTable.timestamp eq oldTrade.timestamp.toEpochMilli()) and
+                (TradeTable.pair eq oldTrade.pair) and
+                (TradeTable.side eq oldTrade.side) and
+                (TradeTable.volume eq oldTrade.volume)
+            }) {
+                it.applyTradeFields(newTrade)
             }
-        } catch (e: Exception) {
-            log.error("Failed to update trade in database", e)
-            if (e is IOException) throw e
-            throw IOException("Database update failed", e)
         }
     }
 
@@ -165,6 +137,37 @@ class SqliteTradeRepositoryImpl(
                 }
                 .orderBy(TradeTable.timestamp, SortOrder.DESC)
                 .map { row -> buildTradeFromRow(row) }
+        }
+    }
+
+    override fun getTradeSummaryStats(): TradeSummaryStats {
+        return transaction(database) {
+            val countCol = TradeTable.id.count()
+            val volumeCol = TradeTable.usdAmount.sum()
+            val feeCol = TradeTable.fee.sum()
+
+            val tradeRow = TradeTable
+                .select(countCol, volumeCol, feeCol)
+                .where { TradeTable.success eq true }
+                .firstOrNull()
+
+            val totalTrades = tradeRow?.get(countCol) ?: 0L
+            val totalVolume = tradeRow?.get(volumeCol) ?: BigDecimal.ZERO
+            val totalFees = tradeRow?.get(feeCol) ?: BigDecimal.ZERO
+
+            val latestSnapshotTime = PortfolioSnapshotTable
+                .select(PortfolioSnapshotTable.timestamp)
+                .orderBy(PortfolioSnapshotTable.timestamp, SortOrder.DESC)
+                .limit(1)
+                .firstOrNull()
+                ?.let { Instant.ofEpochMilli(it[PortfolioSnapshotTable.timestamp]) }
+
+            TradeSummaryStats(
+                totalTradesExecuted = totalTrades,
+                totalVolumeTraded = totalVolume,
+                totalFeesPaid = totalFees,
+                latestSnapshotTime = latestSnapshotTime
+            )
         }
     }
 
@@ -325,32 +328,11 @@ class SqliteTradeRepositoryImpl(
     }
 
     override fun isHistorySeeded(): Boolean {
-        return transaction(database) {
-            HistorySyncMetadataTable
-                .selectAll()
-                .where { HistorySyncMetadataTable.key eq "history_seeded" }
-                .firstOrNull()
-                ?.let { it[HistorySyncMetadataTable.value] == "true" } ?: false
-        }
+        return getSyncMetadata("history_seeded") == "true"
     }
 
     override fun setHistorySeeded(seeded: Boolean) {
-        transaction(database) {
-            val existing = HistorySyncMetadataTable
-                .selectAll()
-                .where { HistorySyncMetadataTable.key eq "history_seeded" }
-                .firstOrNull()
-            if (existing != null) {
-                HistorySyncMetadataTable.update({ HistorySyncMetadataTable.key eq "history_seeded" }) {
-                    it[value] = seeded.toString()
-                }
-            } else {
-                HistorySyncMetadataTable.insert {
-                    it[key] = "history_seeded"
-                    it[value] = seeded.toString()
-                }
-            }
-        }
+        setSyncMetadata("history_seeded", seeded.toString())
     }
 
     override fun getSyncMetadata(key: String): String? {
@@ -417,8 +399,8 @@ class SqliteTradeRepositoryImpl(
                     val localEstimateDuplicate = sameSymbolAndSide &&
                             t1[TradeTable.pair].equals(t2[TradeTable.pair], ignoreCase = true) &&
                             diff <= 10_000 &&
-                            isWithinOnePercent(t1[TradeTable.volume], t2[TradeTable.volume]) &&
-                            isWithinOnePercent(t1[TradeTable.usdAmount], t2[TradeTable.usdAmount]) &&
+                            isWithinRelativeTolerance(t1[TradeTable.volume], t2[TradeTable.volume]) &&
+                            isWithinRelativeTolerance(t1[TradeTable.usdAmount], t2[TradeTable.usdAmount]) &&
                             feePercentDiffersMaterially(t1, t2)
 
                     if (pairAliasDuplicate || localEstimateDuplicate) {
@@ -434,12 +416,6 @@ class SqliteTradeRepositoryImpl(
                 TradeTable.deleteWhere { id inList toDelete }
             }
         }
-    }
-
-    private fun isWithinOnePercent(first: BigDecimal, second: BigDecimal): Boolean {
-        val largerAmount = maxOf(first.abs(), second.abs())
-        return largerAmount.signum() > 0 &&
-                first.subtract(second).abs().divide(largerAmount, 8, RoundingMode.HALF_UP) <= BigDecimal("0.01")
     }
 
     private fun feePercentDiffersMaterially(first: ResultRow, second: ResultRow): Boolean {

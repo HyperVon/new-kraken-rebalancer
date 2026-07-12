@@ -5,9 +5,17 @@ import com.gemini.krakenbot.model.TradeRecord
 import java.math.BigDecimal
 import java.time.Instant
 
+data class TradeSummaryStats(
+    val totalTradesExecuted: Long,
+    val totalVolumeTraded: BigDecimal,
+    val totalFeesPaid: BigDecimal,
+    val latestSnapshotTime: Instant?
+)
+
 interface TradeRepository {
     fun save(history: List<PortfolioSnapshot>)
     fun load(): List<PortfolioSnapshot>
+    fun getTradeSummaryStats(): TradeSummaryStats
 
     // History page query methods
     fun saveSnapshot(snapshot: PortfolioSnapshot)

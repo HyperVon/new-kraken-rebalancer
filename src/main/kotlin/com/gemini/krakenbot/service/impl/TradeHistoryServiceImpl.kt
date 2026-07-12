@@ -8,9 +8,12 @@ import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.repository.TradeRepository
+import com.gemini.krakenbot.repository.TradeSummaryStats
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.KrakenService
 import com.gemini.krakenbot.service.TradeHistoryService
+import com.gemini.krakenbot.service.isWithinRelativeTolerance
+import com.gemini.krakenbot.service.PortfolioAnalyzer
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
@@ -34,6 +37,7 @@ class TradeHistoryServiceImpl(
     private val krakenService: KrakenService,
     private val configService: ConfigService,
     private val objectMapper: ObjectMapper,
+    private val portfolioAnalyzer: PortfolioAnalyzer,
     private val tradeHistoryFilePath: String = "trade-history.json"
 ) : TradeHistoryService {
 
@@ -105,26 +109,11 @@ class TradeHistoryServiceImpl(
         val config = configService.getConfig()
         val allocations = config.allocations
 
-        val initialPrices = mapOf(
-            "BTC" to 60000.0,
-            "ETH" to 3000.0,
-            "USD" to 1.0,
-            "USDT" to 1.0,
-            "USDC" to 1.0,
-            "XRP" to 0.60,
-            "DOGE" to 0.15,
-            "SOL" to 140.0,
-            "ADA" to 0.50,
-            "DOT" to 6.0,
-            "LINK" to 15.0,
-            "LTC" to 80.0
-        )
-
         // Start prices
         val currentPrices = mutableMapOf<String, Double>()
         for (alloc in allocations) {
             val symbol = alloc.symbol.value.uppercase()
-            currentPrices[symbol] = initialPrices[symbol] ?: 10.0
+            currentPrices[symbol] = SimulationDefaults.INITIAL_PRICES[symbol] ?: 10.0
         }
         currentPrices["USD"] = 1.0
 
@@ -273,12 +262,13 @@ class TradeHistoryServiceImpl(
 
     override fun getHistoryStats(): HistoryStats {
         val stats = portfolioStatsRepository.load()
+        val summary = repository.getTradeSummaryStats()
         return HistoryStats(
             allTimeHigh = stats.allTimeHigh ?: BigDecimal.ZERO,
-            totalTradesExecuted = repository.getTotalTradeCount(),
-            totalVolumeTraded = repository.getTotalVolumeTraded(),
-            totalFeesPaid = repository.getTotalFeesPaid(),
-            latestSnapshotTime = repository.getLatestSnapshotTime()
+            totalTradesExecuted = summary.totalTradesExecuted,
+            totalVolumeTraded = summary.totalVolumeTraded,
+            totalFeesPaid = summary.totalFeesPaid,
+            latestSnapshotTime = summary.latestSnapshotTime
         )
     }
 
@@ -291,8 +281,7 @@ class TradeHistoryServiceImpl(
         }
         lastSyncTime = now
 
-        val apiKey = configService.getConfig().kraken.apiKey.value
-        if (apiKey.isBlank() || apiKey == "YOUR_KRAKEN_API_KEY") {
+        if (!configService.getConfig().kraken.isConfigured) {
             log.warn("Kraken API key is blank or placeholder. Skipping trade history synchronization.")
             return
         }
@@ -395,19 +384,9 @@ class TradeHistoryServiceImpl(
         val localSymbol = Asset.fromTradingPair(local.pair, allocations) ?: local.symbol
         val apiSymbol = Asset.fromTradingPair(api.pair, allocations) ?: api.symbol
         return localSymbol.equals(apiSymbol, ignoreCase = true) &&
-                isWithinRelativeTolerance(local.volume, api.volume) &&
+                isWithinRelativeTolerance(local.volume, api.volume, LOCAL_TRADE_MATCH_TOLERANCE) &&
                 (local.volume.compareTo(api.volume) == 0 ||
-                        isWithinRelativeTolerance(local.usdAmount, api.usdAmount))
-    }
-
-    private fun isWithinRelativeTolerance(
-        first: BigDecimal,
-        second: BigDecimal
-    ): Boolean {
-        val largerAmount = maxOf(first.abs(), second.abs())
-        return largerAmount.signum() > 0 &&
-                first.subtract(second).abs().divide(largerAmount, 8, RoundingMode.HALF_UP) <=
-                LOCAL_TRADE_MATCH_TOLERANCE
+                        isWithinRelativeTolerance(local.usdAmount, api.usdAmount, LOCAL_TRADE_MATCH_TOLERANCE))
     }
 
     private fun getTradeHistoryPaginated(
@@ -471,12 +450,7 @@ class TradeHistoryServiceImpl(
         } else {
             for (alloc in allocations) {
                 val symbol = alloc.symbol.value.uppercase()
-                val bal = currentBalances[symbol]
-                    ?: currentBalances["X$symbol"]
-                    ?: currentBalances["Z$symbol"]
-                    ?: currentBalances[Asset.toKrakenTicker(symbol)]
-                    ?: currentBalances["X${Asset.toKrakenTicker(symbol)}"]
-                    ?: BigDecimal.ZERO
+                val bal = portfolioAnalyzer.resolveBalance(symbol, currentBalances)
                 runningBalances[symbol] = bal
             }
             // Fetch active prices to initialize current prices

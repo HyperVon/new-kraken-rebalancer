@@ -54,7 +54,8 @@ val appModule = module {
             portfolioStatsRepository = get(),
             krakenService = get(),
             configService = get(),
-            objectMapper = get()
+            objectMapper = get(),
+            portfolioAnalyzer = get()
         ).apply { init() }
     }
     singleOf(::KrakenServiceImpl)

@@ -74,25 +74,19 @@ class SqlitePortfolioStatsRepositoryImpl(
     }
 
     override fun save(stats: PortfolioStats) {
-        try {
-            transaction(database) {
-                val existing = PortfolioStatsTable.selectAll().firstOrNull()
-                if (existing != null) {
-                    PortfolioStatsTable.update({
-                        PortfolioStatsTable.id eq existing[PortfolioStatsTable.id]
-                    }) {
-                        it[allTimeHigh] = stats.allTimeHigh
-                    }
-                } else {
-                    PortfolioStatsTable.insert {
-                        it[allTimeHigh] = stats.allTimeHigh
-                    }
+        database.safeTransaction(log, "Failed to save portfolio stats") {
+            val existing = PortfolioStatsTable.selectAll().firstOrNull()
+            if (existing != null) {
+                PortfolioStatsTable.update({
+                    PortfolioStatsTable.id eq existing[PortfolioStatsTable.id]
+                }) {
+                    it[allTimeHigh] = stats.allTimeHigh
+                }
+            } else {
+                PortfolioStatsTable.insert {
+                    it[allTimeHigh] = stats.allTimeHigh
                 }
             }
-        } catch (e: Exception) {
-            log.error("Failed to save portfolio stats", e)
-            if (e is IOException) throw e
-            throw IOException("Database write failed", e)
         }
     }
 }

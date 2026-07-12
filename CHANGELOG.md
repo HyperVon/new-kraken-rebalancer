@@ -8,6 +8,23 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [6.3.0] - 2026-07-12
+
+### Added
+
+- **Aggregated Database Queries**: Introduced `getTradeSummaryStats()` in `TradeRepository` and its SQLite implementation to fetch total trade count, volume, fees, and latest snapshot time inside a single database transaction/query block, optimizing performance and reducing transaction overhead.
+- **Simulation Defaults Registry**: Added a shared `SimulationDefaults` configuration registry under `service/impl` to deduplicate mock price maps and keep simulation concerns separated from core domain models.
+- **Repository Safe Transaction Utility**: Added `RepositoryUtils.kt` with a generic `safeTransaction` database extension helper to automatically wrap transactions, log errors, and throw wrapped `IOException` exceptions with custom messages.
+
+### Fixed
+
+- **Jackson Ignored Property Validation**: Configured `@get:JsonIgnore` on the new `isConfigured` helper property in `KrakenCredentials` to prevent Jackson from throwing `UnrecognizedPropertyException` during config loading/deserialization.
+- **Ktor Route Constants Consolidation**: Migrated hardcoded `/api/health` and `/api/history/sync-progress` routes to type-safe references in `Routes.kt`, and refactored route handler logic in `DashboardRoutes.kt` into private helper functions.
+
+### Changed
+
+- **Idiomatic Coroutine Delays**: Replaced manual millisecond multiplication logic in `PortfolioManagerImpl.kt` loop delay with Kotlin's standard `.seconds` duration helper.
+
 ## [6.2.2] - 2026-07-10
 
 ### Added

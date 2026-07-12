@@ -10,6 +10,8 @@ object Routes {
     const val API_HISTORY_SNAPSHOTS = "/api/history/snapshots"
     const val API_HISTORY_TRADES = "/api/history/trades"
     const val API_HISTORY_STATS = "/api/history/stats"
+    const val API_HISTORY_SYNC_PROGRESS = "/api/history/sync-progress"
+    const val API_HEALTH = "/api/health"
     const val STATIC_STYLE_CSS = "/static/style.css"
     const val STATIC_DASHBOARD_JS = "/static/dashboard.js"
     const val STATIC_SETTINGS_JS = "/static/settings.js"

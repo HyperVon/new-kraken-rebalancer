@@ -10,6 +10,8 @@ import com.gemini.krakenbot.model.PortfolioStats
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.repository.TradeRepository
+import com.gemini.krakenbot.repository.TradeSummaryStats
+import com.gemini.krakenbot.service.PortfolioAnalyzer
 import com.gemini.krakenbot.service.impl.TradeHistoryServiceImpl
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
@@ -40,6 +42,7 @@ class TradeHistoryServiceTest : StringSpec() {
     private val statsRepository = mockk<PortfolioStatsRepository>(relaxed = true)
     private val krakenService = mockk<KrakenService>(relaxed = true)
     private val configService = mockk<ConfigService>(relaxed = true)
+    private val portfolioAnalyzer = mockk<PortfolioAnalyzer>(relaxed = true)
 
     private fun createService(): TradeHistoryServiceImpl {
         val appConfig = AppConfig(
@@ -62,7 +65,7 @@ class TradeHistoryServiceTest : StringSpec() {
         }
         every { repository.load() } answers { savedSnapshots.take(50) }
         
-        return TradeHistoryServiceImpl(repository, statsRepository, krakenService, configService, objectMapper, "test-trade-history.json")
+        return TradeHistoryServiceImpl(repository, statsRepository, krakenService, configService, objectMapper, portfolioAnalyzer, "test-trade-history.json")
     }
 
     init {
@@ -211,11 +214,13 @@ class TradeHistoryServiceTest : StringSpec() {
             val tradeHistoryService = createService()
 
             every { statsRepository.load() } returns PortfolioStats(BigDecimal("12345.67"))
-            every { repository.getTotalTradeCount() } returns 42L
-            every { repository.getTotalVolumeTraded() } returns BigDecimal("98765.43")
-            every { repository.getTotalFeesPaid() } returns BigDecimal("12.34")
             val latestTime = Instant.now()
-            every { repository.getLatestSnapshotTime() } returns latestTime
+            every { repository.getTradeSummaryStats() } returns TradeSummaryStats(
+                totalTradesExecuted = 42L,
+                totalVolumeTraded = BigDecimal("98765.43"),
+                totalFeesPaid = BigDecimal("12.34"),
+                latestSnapshotTime = latestTime
+            )
 
             val stats = tradeHistoryService.getHistoryStats()
             stats.allTimeHigh shouldBe BigDecimal("12345.67")
@@ -257,7 +262,7 @@ class TradeHistoryServiceTest : StringSpec() {
                     allocations = emptyList()
                 )
                 every { configService.getConfig() } returns emptyConfig
-                val tradeHistoryService = TradeHistoryServiceImpl(repository, statsRepository, krakenService, configService, objectMapper, "test-trade-history.json")
+                val tradeHistoryService = TradeHistoryServiceImpl(repository, statsRepository, krakenService, configService, objectMapper, portfolioAnalyzer, "test-trade-history.json")
 
                 tradeHistoryService.syncTradesFromKraken()
 
@@ -477,10 +482,12 @@ class TradeHistoryServiceTest : StringSpec() {
             val tradeHistoryService = createService()
 
             every { statsRepository.load() } returns PortfolioStats(null)
-            every { repository.getTotalTradeCount() } returns 0L
-            every { repository.getTotalVolumeTraded() } returns BigDecimal.ZERO
-            every { repository.getTotalFeesPaid() } returns BigDecimal.ZERO
-            every { repository.getLatestSnapshotTime() } returns null
+            every { repository.getTradeSummaryStats() } returns TradeSummaryStats(
+                totalTradesExecuted = 0L,
+                totalVolumeTraded = BigDecimal.ZERO,
+                totalFeesPaid = BigDecimal.ZERO,
+                latestSnapshotTime = null
+            )
 
             val stats = tradeHistoryService.getHistoryStats()
             stats.allTimeHigh.compareTo(BigDecimal.ZERO) shouldBe 0
@@ -506,7 +513,7 @@ class TradeHistoryServiceTest : StringSpec() {
                     allocations = emptyList()
                 )
                 every { configService.getConfig() } returns placeholderConfig
-                val tradeHistoryService = TradeHistoryServiceImpl(repository, statsRepository, krakenService, configService, objectMapper, "test-trade-history.json")
+                val tradeHistoryService = TradeHistoryServiceImpl(repository, statsRepository, krakenService, configService, objectMapper, portfolioAnalyzer, "test-trade-history.json")
 
                 tradeHistoryService.syncTradesFromKraken()
 
@@ -536,7 +543,7 @@ class TradeHistoryServiceTest : StringSpec() {
             every { configService.getConfig() } returns appConfig
             every { repository.load() } returns emptyList() // DB is empty!
 
-            val tradeHistoryService = TradeHistoryServiceImpl(repository, statsRepository, krakenService, configService, objectMapper, "test-trade-history.json")
+            val tradeHistoryService = TradeHistoryServiceImpl(repository, statsRepository, krakenService, configService, objectMapper, portfolioAnalyzer, "test-trade-history.json")
             tradeHistoryService.init()
 
             // It should call saveSnapshot multiple times to seed 15 days of 6-hour interval snapshots (60 snapshots)
@@ -564,7 +571,7 @@ class TradeHistoryServiceTest : StringSpec() {
             every { repository.load() } returns emptyList()
             every { repository.saveSnapshot(any()) } throws RuntimeException("Seeding failed")
 
-            val tradeHistoryService = TradeHistoryServiceImpl(repository, statsRepository, krakenService, configService, objectMapper, "test-trade-history.json")
+            val tradeHistoryService = TradeHistoryServiceImpl(repository, statsRepository, krakenService, configService, objectMapper, portfolioAnalyzer, "test-trade-history.json")
             
             // Should catch exception and not propagate it
             tradeHistoryService.init()

@@ -179,8 +179,7 @@ class KrakenServiceImpl(
     }
 
     override suspend fun getTradeHistory(startSec: Long?, offset: Int?): List<TradeRecord> {
-        val apiKey = configService.getConfig().kraken.apiKey.value
-        if (apiKey.isBlank() || apiKey == "YOUR_KRAKEN_API_KEY") {
+        if (!configService.getConfig().kraken.isConfigured) {
             log.warn("Kraken API key is blank or placeholder. Skipping trade history fetch.")
             return emptyList()
         }

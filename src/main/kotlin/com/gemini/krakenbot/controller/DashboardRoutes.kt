@@ -78,33 +78,12 @@ fun Application.dashboardRouting() {
             handleGetHistoryStats(tradeHistoryService, objectMapper)
         }
 
-        get("/api/history/sync-progress") {
-            val offset = tradeHistoryService.getSyncMetadata("sync_offset")
-            val total = tradeHistoryService.getSyncMetadata("sync_total")
-            val seeded = tradeHistoryService.isHistorySeeded()
-            val responseMap = mapOf(
-                "seeded" to seeded,
-                "offset" to offset,
-                "total" to total
-            )
-            val json = objectMapper.writeValueAsString(responseMap)
-            call.respondText(json, ContentType.Application.Json, HttpStatusCode.OK)
+        get(Routes.API_HISTORY_SYNC_PROGRESS) {
+            handleGetSyncProgress(tradeHistoryService, objectMapper)
         }
 
-        get("/api/health") {
-            val stats = tradeHistoryService.getHistoryStats()
-            val latestSnapshot = tradeHistoryService.getLatestSnapshot()
-            val responseMap = mapOf(
-                "status" to "UP",
-                "timestamp" to Instant.now().toString(),
-                "uptimeSeconds" to ManagementFactory.getRuntimeMXBean().uptime / 1000,
-                "totalTradesExecuted" to stats.totalTradesExecuted,
-                "totalVolumeTraded" to stats.totalVolumeTraded,
-                "lastSnapshotTime" to (latestSnapshot?.timestamp?.toString() ?: "N/A"),
-                "lastSnapshotTotalValueUSD" to (latestSnapshot?.totalValueUSD ?: BigDecimal.ZERO)
-            )
-            val json = objectMapper.writeValueAsString(responseMap)
-            call.respondText(json, ContentType.Application.Json, HttpStatusCode.OK)
+        get(Routes.API_HEALTH) {
+            handleGetHealth(tradeHistoryService, objectMapper)
         }
 
         route(Routes.API_ROUTE_PREFIX) {
@@ -262,4 +241,39 @@ private suspend fun ServerSSESession.handleSseStream(
     } catch (_: Exception) {
         // Handle client disconnect / closed channel gracefully without logging annoying stack traces
     }
+}
+
+private suspend fun RoutingContext.handleGetSyncProgress(
+    tradeHistoryService: TradeHistoryService,
+    objectMapper: ObjectMapper
+) {
+    val offset = tradeHistoryService.getSyncMetadata("sync_offset")
+    val total = tradeHistoryService.getSyncMetadata("sync_total")
+    val seeded = tradeHistoryService.isHistorySeeded()
+    val responseMap = mapOf(
+        "seeded" to seeded,
+        "offset" to offset,
+        "total" to total
+    )
+    val json = objectMapper.writeValueAsString(responseMap)
+    call.respondText(json, ContentType.Application.Json, HttpStatusCode.OK)
+}
+
+private suspend fun RoutingContext.handleGetHealth(
+    tradeHistoryService: TradeHistoryService,
+    objectMapper: ObjectMapper
+) {
+    val stats = tradeHistoryService.getHistoryStats()
+    val latestSnapshot = tradeHistoryService.getLatestSnapshot()
+    val responseMap = mapOf(
+        "status" to "UP",
+        "timestamp" to Instant.now().toString(),
+        "uptimeSeconds" to ManagementFactory.getRuntimeMXBean().uptime / 1000,
+        "totalTradesExecuted" to stats.totalTradesExecuted,
+        "totalVolumeTraded" to stats.totalVolumeTraded,
+        "lastSnapshotTime" to (latestSnapshot?.timestamp?.toString() ?: "N/A"),
+        "lastSnapshotTotalValueUSD" to (latestSnapshot?.totalValueUSD ?: BigDecimal.ZERO)
+    )
+    val json = objectMapper.writeValueAsString(responseMap)
+    call.respondText(json, ContentType.Application.Json, HttpStatusCode.OK)
 }
