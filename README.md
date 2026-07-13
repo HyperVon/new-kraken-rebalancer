@@ -325,7 +325,7 @@ flowchart LR
     D --> A
 ```
 
-See **[ALGORITHM.md](ALGORITHM.md)** for a detailed breakdown of the rebalancing
+See **[ALGORITHM.md](docs/ALGORITHM.md)** for a detailed breakdown of the rebalancing
 logic, fiat correction strategy, and dynamic deployment math.
 
 See **[FLOWS.md](docs/FLOWS.md)** for sequence diagrams and a comprehensive breakdown
@@ -399,7 +399,10 @@ two complementary `SharedFlow` channels:
 │       ├── style.css                      # Dashboard stylesheet
 │       ├── dashboard.js                   # Dashboard client-side scripts
 │       └── settings.js                    # Settings form client-side scripts
-├── ALGORITHM.md                           # Detailed algorithm documentation
+├── docs/                                  # Project documentation and architecture guides
+│   ├── FLOWS.md                           # Kotlin Flow architecture guide
+│   ├── ALGORITHM.md                       # Detailed algorithm documentation
+│   └── EVALUATION.md                      # Scenario evaluation suite documentation
 ├── rebalancer-config-template.json        # Configuration template
 └── build.gradle.kts                       # Gradle build with JaCoCo coverage enforcement
 ```
@@ -520,7 +523,7 @@ avoid floating-point comparison issues.
 
 **315 tests** across:
 
-- **Scenario Evaluation Suite** (`EvaluationScenariosTest`) — **30 highly realistic scenarios** testing the full end-to-end execution of rebalances, mathematical edge cases, API credentials invalidation, concurrency locks, and SSE client streams. See **[EVALUATION.md](EVALUATION.md)** for descriptions and test results of all 30 scenarios.
+- **Scenario Evaluation Suite** (`EvaluationScenariosTest`) — **30 highly realistic scenarios** testing the full end-to-end execution of rebalances, mathematical edge cases, API credentials invalidation, concurrency locks, and SSE client streams. See **[EVALUATION.md](docs/EVALUATION.md)** for descriptions and test results of all 30 scenarios.
 - `KrakenE2ETest` / `ResilienceChaosTest` / `PrecisionRoundingFuzzTest` /
   `SerializationParityTest` — advanced E2E black-box and fuzz testing
 - `PortfolioManagerComprehensiveTest` — full rebalance cycles with order result

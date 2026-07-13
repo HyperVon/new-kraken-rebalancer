@@ -214,7 +214,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 
 - **30 Scenario Evaluation Suite**: Extended the Kotest suite (`EvaluationScenariosTest.kt`) to run 30 realistic end-to-end scenarios covering critical rebalancing logic, mathematical boundaries, file writing safety, concurrency broadcast streaming, and exchange failures.
-- **Scenario Evaluation Documentation**: Created [EVALUATION.md](EVALUATION.md) outlining the test design principles, execution guidelines, and detailed results of all 30 scenario runs.
+- **Scenario Evaluation Documentation**: Created [EVALUATION.md](docs/EVALUATION.md) outlining the test design principles, execution guidelines, and detailed results of all 30 scenario runs.
 
 ### Changed
 
