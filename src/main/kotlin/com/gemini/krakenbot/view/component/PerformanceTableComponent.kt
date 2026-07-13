@@ -71,6 +71,7 @@ class PerformanceTableComponent {
                                 td { +"${Formatter.formatPercent(asset.targetPercent)}%" }
                                 td { +"${Formatter.formatPercent(asset.currentPercent)}%" }
                                 td(devClass) {
+                                    attributes["data-sort-value"] = asset.deviationPercent.toString()
                                     div(CssClass.Performance.DevContainer.value) {
                                         span {
                                             +"$sign${

@@ -78,8 +78,10 @@ fun sortTable(header: HTMLElement, colIdx: Int, forceDir: String? = null) {
     rows.sortWith(Comparator { a, b ->
         val aCell = a.cells.item(colIdx) as? HTMLElement
         val bCell = b.cells.item(colIdx) as? HTMLElement
-        val aText = aCell?.textContent?.trim()?.replace(Regex("[$,%]"), "") ?: ""
-        val bText = bCell?.textContent?.trim()?.replace(Regex("[$,%]"), "") ?: ""
+        val aText = (aCell?.dataset?.get("sortValue") ?: aCell?.textContent)?.trim()
+            ?.replace(Regex("[$,%]"), "") ?: ""
+        val bText = (bCell?.dataset?.get("sortValue") ?: bCell?.textContent)?.trim()
+            ?.replace(Regex("[$,%]"), "") ?: ""
 
         if (key == "float") {
             val aVal = aText.toDoubleOrNull() ?: 0.0
