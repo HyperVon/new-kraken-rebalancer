@@ -328,6 +328,10 @@ flowchart LR
 See **[ALGORITHM.md](ALGORITHM.md)** for a detailed breakdown of the rebalancing
 logic, fiat correction strategy, and dynamic deployment math.
 
+See **[FLOWS.md](docs/FLOWS.md)** for sequence diagrams and a comprehensive breakdown
+of how Kotlin's hot `SharedFlow` and cold `Flow` streams orchestrate configuration updates,
+real-time dashboard streaming, paginated transaction sync, and exponential backoff polling.
+
 ### Real-Time Event Streaming
 
 The dashboard and monitoring hooks use a reactive, push-based architecture with

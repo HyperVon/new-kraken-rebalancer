@@ -50,6 +50,10 @@ class PortfolioManagerImpl(
         }
 
         try {
+            // watchConfigChanges() returns a hot SharedFlow of settings.
+            // Using collectLatest { ... } ensures that if a config change occurs while the loop
+            // is suspended (e.g. delaying on line 69), the current rebalance loop execution is
+            // immediately cancelled, and a new one is launched with the updated settings on-the-fly.
             configService.watchConfigChanges().collectLatest { settings ->
                 while (isRunning) {
                     try {

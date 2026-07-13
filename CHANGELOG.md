@@ -8,6 +8,16 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [6.3.1] - 2026-07-13
+
+### Added
+
+- **Kotlin Flow Architecture Guide**: Created `docs/FLOWS.md` with system-wide flow maps, sequence diagrams, and detailed breakdowns of hot and cold flows in the application.
+
+### Changed
+
+- **Asynchronous Flow Documentation**: Added comprehensive documentation comments throughout the codebase (including `ConfigServiceImpl`, `PortfolioManagerImpl`, `TradeHistoryServiceImpl`, `OrderExecutorImpl`, and `DashboardRoutes`) explaining suspending traits, collectors, and buffer overflow strategies.
+
 ## [6.3.0] - 2026-07-12
 
 ### Added

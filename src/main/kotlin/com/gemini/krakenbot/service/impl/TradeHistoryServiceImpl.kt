@@ -52,6 +52,13 @@ class TradeHistoryServiceImpl(
     }
 
     private val log = LoggerFactory.getLogger(TradeHistoryServiceImpl::class.java)
+    /**
+     * A hot SharedFlow that broadcasts newly created portfolio snapshots to all active dashboard SSE connections.
+     * 
+     * - extraBufferCapacity = 16: Allocates a small memory buffer for slow collectors.
+     * - onBufferOverflow = BufferOverflow.DROP_OLDEST: Dropping the oldest value ensures tryEmit() is guaranteed
+     *   to succeed without suspending. This isolates the core rebalancing loop from slow network dashboard clients.
+     */
     private val snapshotFlow =
         MutableSharedFlow<PortfolioSnapshot>(
             extraBufferCapacity = 16,
@@ -232,6 +239,7 @@ class TradeHistoryServiceImpl(
         } catch (e: Exception) {
             log.error("Failed to prune old snapshots", e)
         }
+        // tryEmit() succeeds instantly and synchronously because of DROP_OLDEST backpressure strategy.
         snapshotFlow.tryEmit(snapshot)
     }
 
@@ -239,6 +247,9 @@ class TradeHistoryServiceImpl(
 
     override fun getLatestSnapshot(): PortfolioSnapshot? = repository.load().firstOrNull()
 
+    /**
+     * Exposes the internal mutable shared flow as a read-only Flow for streaming updates.
+     */
     override fun getHistoryFlow(): Flow<PortfolioSnapshot> =
         snapshotFlow.asSharedFlow()
 
@@ -389,6 +400,16 @@ class TradeHistoryServiceImpl(
                         isWithinRelativeTolerance(local.usdAmount, api.usdAmount, LOCAL_TRADE_MATCH_TOLERANCE))
     }
 
+    /**
+     * A cold Flow that fetches trade history from Kraken paginated by [pageSize].
+     * 
+     * Because it is a cold Flow:
+     * 1. No network calls are made until the caller collects from it.
+     * 2. It fetches page-by-page lazily; emitting each page using emit().
+     * 3. The emitting suspends until the collector finishes processing the current batch, providing 
+     *    automatic backpressure to prevent overloading the system or API rate limits.
+     * 4. Once all batches are fetched, the Flow completes and the collector's loop naturally finishes.
+     */
     private fun getTradeHistoryPaginated(
         startSec: Long?,
         pageSize: Int = 50

@@ -134,9 +134,19 @@ class OrderExecutorImpl(
     }
 
     private suspend fun refreshUsdBalanceAfterSells(projectedCash: BigDecimal): BigDecimal {
+        // Calling .last() is a terminal operator that triggers collection of the cold flow.
+        // It runs the polling flow to completion and returns the final stable balance value.
         return pollUsdBalanceAfterSells(projectedCash).last()
     }
 
+    /**
+     * A cold Flow that polls Kraken's balance API repeatedly with exponential backoff.
+     * 
+     * Because it is a cold Flow:
+     * 1. No HTTP requests are made until it is collected (via .last() above).
+     * 2. It emits the updated USD balance on each successful poll attempt.
+     * 3. It terminates once the balance stabilizes above the threshold or the max attempts are exhausted.
+     */
     private fun pollUsdBalanceAfterSells(
         projectedCash: BigDecimal,
         targetThreshold: BigDecimal = projectedCash.multiply(BigDecimal("0.95"))

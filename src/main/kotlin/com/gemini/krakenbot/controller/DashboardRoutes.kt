@@ -232,6 +232,11 @@ private suspend fun ServerSSESession.handleSseStream(
             send(ServerSentEvent(data = json))
         }
 
+        // collect() is a suspending terminal operator.
+        // It suspends this coroutine block indefinitely, waking up only to execute the block
+        // whenever a new snapshot is emitted by TradeHistoryService, streaming it to the client.
+        // If the client disconnects, the coroutine is cancelled, throwing a CancellationException
+        // which breaks this loop.
         tradeHistoryService.getHistoryFlow().collect { snapshot ->
             val json = objectMapper.writeValueAsString(snapshot)
             send(ServerSentEvent(data = json))
