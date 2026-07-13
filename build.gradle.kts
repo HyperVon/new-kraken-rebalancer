@@ -66,6 +66,7 @@ dependencies {
     implementation("org.jetbrains.exposed:exposed-jdbc:$exposedVersion")
     implementation("org.jetbrains.exposed:exposed-java-time:$exposedVersion")
     implementation("org.xerial:sqlite-jdbc:3.49.1.0")
+    implementation("org.jetbrains.kotlin-wrappers:kotlin-css-jvm:2026.4.8")
 
     // Testing
     val koTestVersion = "6.1.11"
@@ -109,6 +110,7 @@ tasks.jacocoTestReport {
                 exclude("**/service/impl/KrakenServiceImpl*")
                 exclude("**/service/ServiceUtilsKt*")
                 exclude("**/view/util/CssClass*")
+                exclude("**/view/util/CssStyles*")
                 exclude("**/view/util/ExtensionsKt*")
                 exclude("**/KrakenRebalancerApplication*")
                 exclude("**/util/**")
@@ -130,6 +132,7 @@ tasks.jacocoTestCoverageVerification {
                 exclude("**/service/impl/KrakenServiceImpl*")
                 exclude("**/service/ServiceUtilsKt*")
                 exclude("**/view/util/CssClass*")
+                exclude("**/view/util/CssStyles*")
                 exclude("**/view/util/ExtensionsKt*")
                 exclude("**/KrakenRebalancerApplication*")
                 exclude("**/util/**")

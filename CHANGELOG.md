@@ -8,6 +8,24 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [6.4.0] - 2026-07-13
+
+### Added
+
+- **kotlinx-css Stylesheet DSL**: Replaced the static `style.css` file with a compile-time verified Kotlin DSL stylesheet (`CssStyles.kt`) using `kotlin-css-jvm`. All CSS selectors now reference the `CssClass` sealed hierarchy directly, ensuring that refactoring class names automatically cascades to styling rules. The stylesheet is served dynamically via a dedicated Ktor route.
+- **Google Fonts Injection**: Added `<link>` preconnect and stylesheet tags for Inter, Outfit, and Roboto Mono fonts to all HTML view heads (`DashboardView`, `DashboardShellComponent`, `HistoryPageComponent`).
+- **Glass Panel Spacing**: Added a child combinator CSS rule (`.container > .glass-panel`) to enforce consistent `margin-bottom` spacing between vertically stacked panels on all pages.
+
+### Changed
+
+- **Dynamic CSS Serving**: The `/static/style.css` route now intercepts requests before the static file handler and serves the programmatically compiled CSS text with `ContentType.Text.CSS`.
+- **Simulation Trade Sync**: Updated `TradeHistoryServiceImpl` to bypass API credential validation when simulation mode is active, allowing mock trade history to sync and populate chart data.
+- **Grouped Media Queries**: Consolidated all responsive `@media` query blocks to the bottom of the stylesheet to ensure correct CSS cascade ordering.
+
+### Removed
+
+- **Static `style.css`**: Deleted `src/main/resources/static/style.css` (974 lines of unvalidated CSS) in favour of the new `CssStyles.kt` DSL implementation.
+
 ## [6.3.1] - 2026-07-13
 
 ### Added
