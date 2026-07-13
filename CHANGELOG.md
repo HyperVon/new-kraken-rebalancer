@@ -8,6 +8,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [6.5.1] - 2026-07-13
+
+### Fixed
+
+- **Frontend JS Dependency Warnings**: Added the `tslib` npm package (v2) as a dependency for the `:frontend-js` subproject to satisfy the unmet peer dependency warning from `memfs` inside `webpack-dev-middleware`.
+- **Node.js Deprecation Warning Analysis**: Documented that the Node.js deprecation warning `[DEP0169]` (for `url.parse()`) originates from within the Yarn 1.x CLI itself. Retained Yarn as the package manager since switching to NPM results in non-deterministic `package-lock.json` generation and build failures in the Kotlin/JS Gradle plugin.
+
 ## [6.5.0] - 2026-07-13
 
 ### Added
