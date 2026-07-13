@@ -46,7 +46,7 @@ class DashboardShellComponent {
                     }
                 }
             }
-            script(src = Routes.STATIC_DASHBOARD_JS) {}
+            script(src = Routes.STATIC_REBALANCER_JS) {}
         }
     }
 }

@@ -219,6 +219,6 @@ class SettingsFormComponent {
 
     context(body: BODY)
     private fun renderSettingsScript() {
-        body.script(src = Routes.STATIC_SETTINGS_JS) {}
+        body.script(src = Routes.STATIC_REBALANCER_JS) {}
     }
 }

@@ -348,23 +348,12 @@ class DashboardControllerTest : StringSpec() {
             }
         }
 
-        "getStaticResource_ReturnsJsFile" {
+        "getStaticResource_ReturnsRebalancerJsFile" {
             testApplication {
                 application {
                     configureTestEnv()
                 }
-                val response = client.get(Routes.STATIC_DASHBOARD_JS)
-                response.status shouldBe HttpStatusCode.OK
-                response.headers[HttpHeaders.ContentType] shouldContain "javascript"
-            }
-        }
-
-        "getStaticResource_ReturnsSettingsJsFile" {
-            testApplication {
-                application {
-                    configureTestEnv()
-                }
-                val response = client.get(Routes.STATIC_SETTINGS_JS)
+                val response = client.get(Routes.STATIC_REBALANCER_JS)
                 response.status shouldBe HttpStatusCode.OK
                 response.headers[HttpHeaders.ContentType] shouldContain "javascript"
             }

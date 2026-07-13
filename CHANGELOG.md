@@ -8,6 +8,25 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [6.5.0] - 2026-07-13
+
+### Added
+
+- **Kotlin/JS Client-Side Subproject**: Created a type-safe `:frontend-js` subproject compiling Kotlin source files directly to JavaScript via the Kotlin Multiplatform IR backend. All client-side logic is now compiled, bundled via Webpack, and served dynamically as a unified `/static/rebalancer.js` file.
+- **Unified Entry Point (`main.kt`)**: Implemented dynamic page-specific initializers in Kotlin/JS checking for element presence in the DOM, and unconditionally exported critical functions to the `window` scope (`sortTable`, `updateAllocationTotal`, `addAssetRow`) to support inline HTML action event attributes.
+- **Type-Safe DOM Sorting (`Dashboard.kt`)**: Migrated alphabetical and numerical table column sorting from legacy JS to strongly-typed Kotlin comparators.
+- **Allocations Targets Live Validation (`Settings.kt`)**: Rewrote client-side settings target calculations, boundary validations, and dynamic asset row additions/removals in Kotlin.
+- **Chart.js Promise.all Pipeline (`History.kt`)**: Replaced date range switching, sync progress banner polling, and parallel AJAX resource fetching (snapshots, trades, stats) with a type-safe Kotlin/JS implementation.
+
+### Changed
+
+- **Unified Client-Side Scripts**: Replaced separate `dashboard.js`, `settings.js`, and `history.js` script links in all HTML components ([DashboardShellComponent], [HistoryPageComponent], [SettingsFormComponent]) with the single compiled `/static/rebalancer.js` script.
+- **Build Copier Integration**: Added a Gradle `copyJsBundle` task copy-bundling the compiled Webpack JS output file to the JVM resources path before processResources execution.
+
+### Removed
+
+- **Legacy Javascript Files**: Deleted `src/main/resources/static/dashboard.js`, `settings.js`, and `history.js` static resource assets.
+
 ## [6.4.0] - 2026-07-13
 
 ### Added
