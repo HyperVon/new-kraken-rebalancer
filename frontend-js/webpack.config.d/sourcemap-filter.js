@@ -1,5 +1,6 @@
-// Disable source map generation and source-map-loader warnings in production Webpack compilation
-config.devtool = false;
+// Remove the source-map-loader pre-rule completely to prevent warnings.
+// This preserves debugging sourcemaps generated natively by Webpack (via devtool: 'source-map')
+// while eliminating all external source-map-loader resolution warnings.
 if (config.module && config.module.rules) {
     config.module.rules = config.module.rules.filter(rule => {
         if (rule.use && Array.isArray(rule.use)) {
