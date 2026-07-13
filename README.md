@@ -385,7 +385,7 @@ two complementary `SharedFlow` channels:
 │   ├── view/                              # HTML templates & components (kotlinx.html DSL)
 │   │   ├── DashboardView.kt              # Facade class delegating to components
 │   │   ├── component/                    # Modular components (Shell, Grid, Form, etc.)
-│   │   └── util/                         # CssClass, FormatterUtils, Extensions, Icons, Layouts
+│   │   └── util/                         # CssClass, CssStyles (kotlinx-css DSL), FormatterUtils, Extensions, Icons, Layouts
 │   └── table/                             # Exposed table definitions
 ├── src/test/kotlin/                       # Unit tests (95%+ coverage enforced via JaCoCo)
 │   └── com/gemini/krakenbot/
@@ -395,7 +395,7 @@ two complementary `SharedFlow` channels:
 │           └── SimulatedKrakenServiceTest.kt # Unit tests verifying mock exchange emulator
 ├── src/main/resources/                    # Static resources
 │   └── static/
-│       ├── style.css                      # Dashboard stylesheet
+│       ├── (style.css served dynamically) # Stylesheet compiled from CssStyles.kt via kotlinx-css DSL
 │       ├── dashboard.js                   # Dashboard client-side scripts
 │       └── settings.js                    # Settings form client-side scripts
 ├── docs/                                  # Project documentation and architecture guides
@@ -501,7 +501,7 @@ from the backend — no separate frontend build step required.
 | `GET`  | `/api/status/stream`         | Server-Sent Events (SSE) stream for real-time portfolio snapshot updates |
 | `GET`  | `/api/health`                | Public health check endpoint returning app status and metrics (JSON)     |
 | `GET`  | `/api/history/sync-progress` | Polling endpoint for Kraken trade history sync status (JSON)             |
-| `GET`  | `/static/*`                  | Static assets (CSS)                                                      |
+| `GET`  | `/static/*`                  | Static assets (JS, dynamically compiled CSS via kotlinx-css)             |
 
 ---
 
@@ -511,7 +511,7 @@ The project enforces **strict line, branch, method, and instruction coverage** v
 JaCoCo, with thresholds set at **95% instruction coverage, 90% branch coverage,
 95% line coverage, and 95% method coverage**. Certain categories are excluded
 from the gate (model/config data classes, Exposed table definitions, inline
-utility files, CSS constant holders, and the Kraken API client implementation).
+utility files, CSS constant/stylesheet holders, and the Kraken API client implementation).
 All tests are behavioural — they verify actual rebalancing decisions, not just
 method invocations. Order volumes are asserted with `BigDecimal.compareTo()` to
 avoid floating-point comparison issues.

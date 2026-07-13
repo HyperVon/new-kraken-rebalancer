@@ -292,7 +292,8 @@ class TradeHistoryServiceImpl(
         }
         lastSyncTime = now
 
-        if (!configService.getConfig().kraken.isConfigured) {
+        val config = configService.getConfig()
+        if (!config.settings.simulation && !config.kraken.isConfigured) {
             log.warn("Kraken API key is blank or placeholder. Skipping trade history synchronization.")
             return
         }

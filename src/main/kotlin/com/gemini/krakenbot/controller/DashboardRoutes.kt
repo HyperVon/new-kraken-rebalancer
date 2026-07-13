@@ -37,6 +37,9 @@ fun Application.dashboardRouting() {
     val dashboardView: DashboardView by inject()
 
     routing {
+        get(Routes.STATIC_STYLE_CSS) {
+            call.respondText(CssStyles.stylesheet.toString(), ContentType.Text.CSS)
+        }
         staticResources("/static", "static")
 
         get(Routes.ROOT) {
