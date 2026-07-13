@@ -131,12 +131,11 @@ balance of:
 - **Single-process simplicity** — HTMX eliminated the React build pipeline,
   making the entire application a single `./gradlew run` command
 
-The experimental branches remain in the repository as complete, working
+The experimental branches (`go-rewrite` and `feature/typescript-rewrite`) remain in the repository as complete, working
 reference implementations for anyone interested in comparing the same domain
 logic across three languages and ecosystems.
 
-Ongoing work on the `feature/rebalance-updates` branch adds a reactive configuration loop (`watchConfigChanges().collectLatest`), a Kraken call-counter rate limiter, and flow-based API retry and
-trade-history pagination.
+Subsequent updates in Phase 5 integrated a reactive configuration loop (`watchConfigChanges().collectLatest`), a Kraken call-counter rate limiter, flow-based API retry policies, and flow-based trade history pagination directly into the `main` branch.
 
 ### Technologies Explored
 
