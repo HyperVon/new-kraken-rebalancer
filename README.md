@@ -22,7 +22,7 @@ several months.**
 | **Database**    | SQLite (via JetBrains Exposed ORM 0.61.0)                                             |
 | **HTTP Client** | Ktor CIO Client (async, coroutine-native)                                             |
 | **Concurrency** | Kotlin Coroutines (`kotlinx.coroutines` 1.11.0)                                       |
-| **Frontend**    | Server-side HTML (kotlinx.html DSL + HTMX), Ktor SSE                                  |
+| **Frontend**    | Server-side HTML (kotlinx.html DSL + HTMX), kotlinx-css DSL, Ktor SSE                 |
 | **API**         | Kraken REST API with HMAC-SHA512 authentication                                       |
 | **Testing**     | Kotest 6.1 (StringSpec), MockK 1.14, Ktor MockEngine, JaCoCo (95%+ coverage enforced) |
 | **Build**       | Gradle (Kotlin DSL)                                                                   |
