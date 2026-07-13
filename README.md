@@ -361,6 +361,13 @@ two complementary `SharedFlow` channels:
 ## Project Structure
 
 ```text
+├── frontend-js/                            # Kotlin/JS client-side subproject (Option 1)
+│   ├── src/jsMain/kotlin/                 # Kotlin/JS frontend source files
+│   │   ├── main.kt                        # Client-side routing entry point
+│   │   ├── Dashboard.kt                   # Stats card age calculation & table sorting
+│   │   ├── Settings.kt                    # Targets validation & dynamic row actions
+│   │   └── History.kt                     # Chart.js timelines & history synchronization
+│   └── build.gradle.kts                   # Kotlin Multiplatform JS compilation configuration
 ├── src/main/kotlin/com/gemini/krakenbot/
 │   ├── KrakenRebalancerApplication.kt    # Entry point, Ktor server & Koin DI bootstrap
 │   ├── config/                            # AppConfig, Settings, ErrorHandlingConfig, DatabaseConfig
@@ -389,15 +396,14 @@ two complementary `SharedFlow` channels:
 │   └── table/                             # Exposed table definitions
 ├── src/test/kotlin/                       # Unit tests (95%+ coverage enforced via JaCoCo)
 │   └── com/gemini/krakenbot/
-│       └── service/
-│           ├── FakeKrakenService.kt       # In-process test double for KrakenService
-│           ├── DynamicKrakenServiceTest.kt # Unit tests verifying dynamic real/simulation routing
-│           └── SimulatedKrakenServiceTest.kt # Unit tests verifying mock exchange emulator
+│   │   └── service/
+│   │       ├── FakeKrakenService.kt       # In-process test double for KrakenService
+│   │       ├── DynamicKrakenServiceTest.kt # Unit tests verifying dynamic real/simulation routing
+│   │       └── SimulatedKrakenServiceTest.kt # Unit tests verifying mock exchange emulator
 ├── src/main/resources/                    # Static resources
 │   └── static/
 │       ├── (style.css served dynamically) # Stylesheet compiled from CssStyles.kt via kotlinx-css DSL
-│       ├── dashboard.js                   # Dashboard client-side scripts
-│       └── settings.js                    # Settings form client-side scripts
+│       └── (rebalancer.js copy-bundled)   # Dynamic JS bundle compiled from frontend-js subproject
 ├── docs/                                  # Project documentation and architecture guides
 │   ├── FLOWS.md                           # Kotlin Flow architecture guide
 │   ├── ALGORITHM.md                       # Detailed algorithm documentation
@@ -472,7 +478,22 @@ The backend starts on port **8080** and begins the rebalancing loop immediately.
 ### 3. Open Dashboard
 
 Open your browser to **<http://localhost:8080>**. The dashboard is served directly
-from the backend — no separate frontend build step required.
+from the backend.
+
+> [!NOTE]
+> **Zero-Setup Kotlin/JS Build:** The client-side code is written in Kotlin and compiled to JavaScript (`rebalancer.js`) via the Gradle build pipeline. The build process automatically downloads and executes an isolated local copy of Node.js and Yarn inside the `.gradle/` directory. **You do not need to install Node, npm, or Yarn on your host machine.**
+
+#### Frontend Development Tasks (Optional)
+
+If you are modifying the client-side code in `frontend-js/` and want to compile or verify only the JS bundle:
+
+```bash
+# Compile and bundle the Kotlin/JS subproject via production Webpack
+./gradlew :frontend-js:jsBrowserProductionWebpack
+
+# Compile and copy the bundle directly into the Ktor JVM static resources folder
+./gradlew copyJsBundle
+```
 
 ---
 

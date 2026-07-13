@@ -60,7 +60,7 @@ class HistoryPageComponent {
                 )
                 renderTradeTable()
             }
-            script(src = Routes.STATIC_HISTORY_JS) {}
+            script(src = Routes.STATIC_REBALANCER_JS) {}
         }
     }
 

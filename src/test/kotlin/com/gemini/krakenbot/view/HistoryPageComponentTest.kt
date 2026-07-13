@@ -21,7 +21,7 @@ class HistoryPageComponentTest : StringSpec() {
             htmlString shouldContain "id=\"allocation-drift-chart\""
             htmlString shouldContain "id=\"cumulative-pl-chart\""
             htmlString shouldContain "id=\"trade-table-body\""
-            htmlString shouldContain "history.js"
+            htmlString shouldContain "rebalancer.js"
         }
     }
 }

@@ -191,3 +191,15 @@ tasks.register<Jar>("fatJar") {
         configurations.runtimeClasspath.get().filter { it.name.endsWith("jar") }.map { zipTree(it) }
     })
 }
+
+val copyJsBundle = tasks.register<Copy>("copyJsBundle") {
+    dependsOn(":frontend-js:jsBrowserProductionWebpack")
+    from(project(":frontend-js").layout.buildDirectory.dir("kotlin-webpack/js/productionExecutable"))
+    into(layout.projectDirectory.dir("src/main/resources/static"))
+    include("*.js")
+    rename { "rebalancer.js" }
+}
+
+tasks.processResources {
+    dependsOn(copyJsBundle)
+}

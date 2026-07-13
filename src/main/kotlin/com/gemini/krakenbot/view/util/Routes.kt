@@ -13,9 +13,7 @@ object Routes {
     const val API_HISTORY_SYNC_PROGRESS = "/api/history/sync-progress"
     const val API_HEALTH = "/api/health"
     const val STATIC_STYLE_CSS = "/static/style.css"
-    const val STATIC_DASHBOARD_JS = "/static/dashboard.js"
-    const val STATIC_SETTINGS_JS = "/static/settings.js"
-    const val STATIC_HISTORY_JS = "/static/history.js"
+    const val STATIC_REBALANCER_JS = "/static/rebalancer.js"
 }
 
 object HtmxHeaders {
