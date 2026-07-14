@@ -8,6 +8,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [6.5.2] - 2026-07-14
+
+### Fixed
+
+- **Dependabot Security Vulnerabilities**: Added Yarn resolution overrides in the root `build.gradle.kts` to force non-vulnerable versions of transitively resolved npm packages: `webpack-dev-server` to `5.2.5`, `serialize-javascript` to `7.0.5`, `uuid` to `11.1.1`, `webpack` to `5.104.1`, and `diff` to `8.0.3`. Regenerated the `kotlin-js-store/yarn.lock` file to lock these safe dependency versions.
+
 ## [6.5.1] - 2026-07-13
 
 ### Fixed

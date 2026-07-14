@@ -1,4 +1,6 @@
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
+import org.jetbrains.kotlin.gradle.targets.js.yarn.YarnPlugin
+import org.jetbrains.kotlin.gradle.targets.js.yarn.YarnRootExtension
 
 plugins {
     kotlin("jvm") version "2.4.0"
@@ -202,4 +204,14 @@ val copyJsBundle = tasks.register<Copy>("copyJsBundle") {
 
 tasks.processResources {
     dependsOn(copyJsBundle)
+}
+
+rootProject.plugins.withType<YarnPlugin> {
+    rootProject.extensions.configure<YarnRootExtension> {
+        resolution("webpack-dev-server", "5.2.5")
+        resolution("serialize-javascript", "7.0.5")
+        resolution("uuid", "11.1.1")
+        resolution("webpack", "5.104.1")
+        resolution("diff", "8.0.3")
+    }
 }
