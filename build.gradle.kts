@@ -196,6 +196,7 @@ tasks.register<Jar>("fatJar") {
 }
 
 val copyJsBundle = tasks.register<Copy>("copyJsBundle") {
+    description = "Copy JS bundle to resources"
     dependsOn(":frontend-js:jsBrowserProductionWebpack")
     from(project(":frontend-js").layout.buildDirectory.dir("kotlin-webpack/js/productionExecutable"))
     into(layout.projectDirectory.dir("src/main/resources/static"))
