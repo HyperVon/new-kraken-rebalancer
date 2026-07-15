@@ -24,52 +24,51 @@ class SqlitePortfolioStatsRepositoryImpl(
     private val log =
         LoggerFactory.getLogger(SqlitePortfolioStatsRepositoryImpl::class.java)
 
-    override fun load(): PortfolioStats {
-        return try {
-            transaction(database) {
-                val dbStats = PortfolioStatsTable
-                    .selectAll()
-                    .firstOrNull()
-                    ?.let {
-                        PortfolioStats(it[PortfolioStatsTable.allTimeHigh])
-                    }
-                if (dbStats != null) {
-                    dbStats
-                } else {
-                    val file = File(statsFilePath)
-                    if (file.exists()) {
-                        try {
-                            val fileStats = objectMapper.readValue(file, PortfolioStats::class.java)
-                            if (fileStats != null && fileStats.allTimeHigh != null) {
-                                log.info("Migrating allTimeHigh from stats file: {}", fileStats.allTimeHigh)
-                                PortfolioStatsTable.insert {
-                                    it[allTimeHigh] = fileStats.allTimeHigh!!
-                                }
-                                try {
-                                    val sourcePath = file.toPath()
-                                    val targetPath = File("$statsFilePath.bak").toPath()
-                                    Files.move(sourcePath, targetPath, StandardCopyOption.REPLACE_EXISTING)
-                                    log.info("Renamed stats file to backup successfully.")
-                                } catch (ex: Exception) {
-                                    log.warn("Failed to rename stats file to backup", ex)
-                                }
-                                fileStats
-                            } else {
-                                PortfolioStats(BigDecimal.ZERO)
-                            }
-                        } catch (e: Exception) {
-                            log.error("Failed to migrate stats file", e)
-                            PortfolioStats(BigDecimal.ZERO)
-                        }
-                    } else {
-                        PortfolioStats(BigDecimal.ZERO)
-                    }
-                }
+    override fun load(): PortfolioStats = try {
+        transaction(database) {
+            val dbStats = PortfolioStatsTable
+                .selectAll()
+                .firstOrNull()
+                ?.let { PortfolioStats(it[PortfolioStatsTable.allTimeHigh]) }
+
+            if (dbStats != null) {
+                return@transaction dbStats
             }
-        } catch (e: Exception) {
-            log.error("Failed to load portfolio stats", e)
-            PortfolioStats(BigDecimal.ZERO)
+
+            val file = File(statsFilePath)
+            if (!file.exists()) {
+                return@transaction PortfolioStats(BigDecimal.ZERO)
+            }
+
+            try {
+                val fileStats = objectMapper.readValue(file, PortfolioStats::class.java)
+                val ath = fileStats?.allTimeHigh
+                if (ath == null) {
+                    return@transaction PortfolioStats(BigDecimal.ZERO)
+                }
+
+                log.info("Migrating allTimeHigh from stats file: {}", ath)
+                PortfolioStatsTable.insert {
+                    it[allTimeHigh] = ath
+                }
+
+                try {
+                    val targetPath = File("$statsFilePath.bak").toPath()
+                    Files.move(file.toPath(), targetPath, StandardCopyOption.REPLACE_EXISTING)
+                    log.info("Renamed stats file to backup successfully.")
+                } catch (ex: Exception) {
+                    log.warn("Failed to rename stats file to backup", ex)
+                }
+
+                fileStats
+            } catch (e: Exception) {
+                log.error("Failed to migrate stats file", e)
+                PortfolioStats(BigDecimal.ZERO)
+            }
         }
+    } catch (e: Exception) {
+        log.error("Failed to load portfolio stats", e)
+        PortfolioStats(BigDecimal.ZERO)
     }
 
     override fun save(stats: PortfolioStats) {

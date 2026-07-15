@@ -57,13 +57,13 @@ class TradeHistoryServiceTest : StringSpec() {
             allocations = emptyList()
         )
         every { configService.getConfig() } returns appConfig
-        
+
         val savedSnapshots = mutableListOf<PortfolioSnapshot>()
         every { repository.saveSnapshot(any()) } answers {
             savedSnapshots.add(0, firstArg())
         }
         every { repository.load() } answers { savedSnapshots.take(50) }
-        
+
         return TradeHistoryServiceImpl(repository, statsRepository, krakenService, configService, objectMapper, portfolioAnalyzer, "test-trade-history.json")
     }
 
@@ -571,7 +571,7 @@ class TradeHistoryServiceTest : StringSpec() {
             every { repository.saveSnapshot(any()) } throws RuntimeException("Seeding failed")
 
             val tradeHistoryService = TradeHistoryServiceImpl(repository, statsRepository, krakenService, configService, objectMapper, portfolioAnalyzer, "test-trade-history.json")
-            
+
             // Should catch exception and not propagate it
             tradeHistoryService.init()
         }
@@ -582,7 +582,7 @@ class TradeHistoryServiceTest : StringSpec() {
             try {
                 file.delete()
                 bakFile.delete()
-                
+
                 val snapshot = PortfolioSnapshot(
                     timestamp = Instant.now(),
                     totalValueUSD = BigDecimal("15000.00"),
@@ -592,16 +592,16 @@ class TradeHistoryServiceTest : StringSpec() {
                     fiatDeploymentPercent = BigDecimal.ZERO,
                     effectiveUsdTargetPercent = BigDecimal.ZERO
                 )
-                
+
                 file.writeText(objectMapper.writeValueAsString(listOf(snapshot)))
-                
+
                 val tradeHistoryService = createService()
                 every { repository.load() } returns emptyList()
-                
+
                 tradeHistoryService.init()
-                
+
                 verify(exactly = 1) { repository.save(any()) }
-                
+
                 file.exists() shouldBe false
                 bakFile.exists() shouldBe true
             } finally {
@@ -613,7 +613,7 @@ class TradeHistoryServiceTest : StringSpec() {
         "addSnapshot_HandlesPruneException" {
             val tradeHistoryService = createService()
             every { repository.pruneSnapshotsOlderThan(any()) } throws RuntimeException("Prune failed")
-            
+
             val snapshot = PortfolioSnapshot(
                 timestamp = Instant.now(),
                 totalValueUSD = BigDecimal.ZERO,
@@ -623,7 +623,7 @@ class TradeHistoryServiceTest : StringSpec() {
                 fiatDeploymentPercent = BigDecimal.ZERO,
                 effectiveUsdTargetPercent = BigDecimal.ZERO
             )
-            
+
             // Should catch the exception and complete successfully
             tradeHistoryService.addSnapshot(snapshot)
             verify(exactly = 1) { repository.saveSnapshot(snapshot) }
@@ -632,7 +632,7 @@ class TradeHistoryServiceTest : StringSpec() {
         "addSnapshot_SuccessfullyPrunes" {
             val tradeHistoryService = createService()
             every { repository.pruneSnapshotsOlderThan(any()) } returns 5
-            
+
             val snapshot = PortfolioSnapshot(
                 timestamp = Instant.now(),
                 totalValueUSD = BigDecimal.ZERO,
@@ -642,7 +642,7 @@ class TradeHistoryServiceTest : StringSpec() {
                 fiatDeploymentPercent = BigDecimal.ZERO,
                 effectiveUsdTargetPercent = BigDecimal.ZERO
             )
-            
+
             tradeHistoryService.addSnapshot(snapshot)
             verify(exactly = 1) { repository.saveSnapshot(snapshot) }
             verify(exactly = 1) { repository.pruneSnapshotsOlderThan(any()) }
@@ -652,7 +652,7 @@ class TradeHistoryServiceTest : StringSpec() {
             runTest {
                 val service = createService()
                 service.syncTradesFromKraken() // First run sets lastSyncTime
-                
+
                 // Second run should be skipped due to throttle
                 service.syncTradesFromKraken()
                 coVerify(exactly = 1) { krakenService.getTradeHistory(any(), any()) }
@@ -742,7 +742,7 @@ class TradeHistoryServiceTest : StringSpec() {
                 val service = createService()
                 every { repository.isHistorySeeded() } returns true
                 every { repository.getLatestTradeTime() } returns null
-                
+
                 val batch1 = List(50) {
                     TradeRecord(
                         timestamp = Instant.now(),
@@ -755,7 +755,7 @@ class TradeHistoryServiceTest : StringSpec() {
                         dryRun = false
                     )
                 }
-                
+
                 coEvery { krakenService.getTradeHistory(startSec = null, offset = 0) } returns batch1
                 coEvery { krakenService.getTradeHistory(startSec = null, offset = 50) } returns emptyList()
 
@@ -879,7 +879,7 @@ class TradeHistoryServiceTest : StringSpec() {
         "syncTradesFromKraken_Cancelled" {
             runTest {
                 val service = createService()
-                
+
                 coEvery { krakenService.getTradeHistory(any(), any()) } coAnswers {
                     delay(10000.milliseconds)
                     emptyList()
@@ -920,10 +920,15 @@ class TradeHistoryServiceTest : StringSpec() {
                 every { repository.getLatestTradeTime() } returns null
                 every { repository.getSyncMetadata("sync_offset") } returns null
                 every { repository.getSyncMetadata("sync_total") } returns null
-                
+
                 every { repository.load() } returns emptyList()
-                every { repository.getTotalTradeCount() } returns 2L
-                
+                every { repository.getTradeSummaryStats() } returns TradeSummaryStats(
+                    totalTradesExecuted = 2L,
+                    totalVolumeTraded = BigDecimal.ZERO,
+                    totalFeesPaid = BigDecimal.ZERO,
+                    latestSnapshotTime = null
+                )
+
                 val apiTrade1 = TradeRecord(
                     timestamp = Instant.now().minus(2, ChronoUnit.DAYS),
                     pair = "BTCUSD",
@@ -948,16 +953,16 @@ class TradeHistoryServiceTest : StringSpec() {
                     price = BigDecimal("35000.00"),
                     fee = BigDecimal("7.00")
                 )
-                
+
                 coEvery { krakenService.getTradeHistory(any(), 0) } returns listOf(apiTrade1, apiTrade2)
                 coEvery { krakenService.getTradeHistory(any(), 50) } returns emptyList()
-                
+
                 every { repository.getTradesInRange(any(), any()) } returns listOf(apiTrade1, apiTrade2)
                 every { repository.saveTrade(any()) } just Runs
                 every { repository.updateTrade(any(), any()) } just Runs
                 every { repository.setHistorySeeded(true) } just Runs
                 every { repository.setSyncMetadata(any(), any()) } just Runs
-                
+
                 val mockBalances = mapOf(
                     "BTC" to BigDecimal("1.0"),
                     "XETH" to BigDecimal("2.0"),
@@ -971,7 +976,7 @@ class TradeHistoryServiceTest : StringSpec() {
                 coEvery { krakenService.getOHLC("ETHUSD", 1440, any()) } returns emptyList()
                 coEvery { krakenService.getOHLC("EURUSD", 1440, any()) } returns emptyList()
                 coEvery { krakenService.getOHLC("DOGEUSD", 1440, any()) } returns emptyList()
-                
+
                 every { repository.save(any()) } just Runs
 
                 val service = createService()
@@ -1029,7 +1034,12 @@ class TradeHistoryServiceTest : StringSpec() {
                     effectiveUsdTargetPercent = BigDecimal.ZERO
                 )
                 every { repository.load() } returns listOf(existingSnapshot)
-                every { repository.getTotalTradeCount() } returns 1L
+                every { repository.getTradeSummaryStats() } returns TradeSummaryStats(
+                    totalTradesExecuted = 1L,
+                    totalVolumeTraded = BigDecimal.ZERO,
+                    totalFeesPaid = BigDecimal.ZERO,
+                    latestSnapshotTime = null
+                )
 
                 val apiTrade = TradeRecord(
                     timestamp = Instant.now().minus(6, ChronoUnit.DAYS),
@@ -1086,10 +1096,15 @@ class TradeHistoryServiceTest : StringSpec() {
                 every { repository.getSyncMetadata("sync_offset") } returns null
                 every { repository.getSyncMetadata("sync_total") } returns null
                 every { repository.load() } returns emptyList()
-                every { repository.getTotalTradeCount() } returns 1L
+                every { repository.getTradeSummaryStats() } returns TradeSummaryStats(
+                    totalTradesExecuted = 1L,
+                    totalVolumeTraded = BigDecimal.ZERO,
+                    totalFeesPaid = BigDecimal.ZERO,
+                    latestSnapshotTime = null
+                )
 
                 coEvery { krakenService.getBalances() } throws RuntimeException("getBalances error")
-                
+
                 val apiTrade = TradeRecord(
                     timestamp = Instant.now().minus(2, ChronoUnit.DAYS),
                     pair = "BTCUSD",
@@ -1144,7 +1159,12 @@ class TradeHistoryServiceTest : StringSpec() {
                 every { repository.getSyncMetadata("sync_offset") } returns null
                 every { repository.getSyncMetadata("sync_total") } returns null
                 every { repository.load() } returns emptyList()
-                every { repository.getTotalTradeCount() } returns 1L
+                every { repository.getTradeSummaryStats() } returns TradeSummaryStats(
+                    totalTradesExecuted = 1L,
+                    totalVolumeTraded = BigDecimal.ZERO,
+                    totalFeesPaid = BigDecimal.ZERO,
+                    latestSnapshotTime = null
+                )
 
                 val apiTrade = TradeRecord(
                     timestamp = Instant.now().minus(2, ChronoUnit.DAYS),
@@ -1204,7 +1224,12 @@ class TradeHistoryServiceTest : StringSpec() {
                 every { repository.getSyncMetadata("sync_offset") } returns null
                 every { repository.getSyncMetadata("sync_total") } returns null
                 every { repository.load() } returns emptyList()
-                every { repository.getTotalTradeCount() } returns 0L
+                every { repository.getTradeSummaryStats() } returns TradeSummaryStats(
+                    totalTradesExecuted = 0L,
+                    totalVolumeTraded = BigDecimal.ZERO,
+                    totalFeesPaid = BigDecimal.ZERO,
+                    latestSnapshotTime = null
+                )
 
                 coEvery { krakenService.getTradeHistory(any(), any()) } throws RuntimeException("Kraken API down")
 

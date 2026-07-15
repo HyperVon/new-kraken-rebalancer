@@ -14,7 +14,7 @@ class HistoryPageComponentTest : StringSpec() {
             val htmlString = createHTML().html {
                 component.render()
             }
-            
+
             htmlString shouldContain "History - Kraken Rebalancer"
             htmlString shouldContain "id=\"portfolio-value-chart\""
             htmlString shouldContain "id=\"asset-holdings-chart\""

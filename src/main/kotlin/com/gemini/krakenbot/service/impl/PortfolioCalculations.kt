@@ -11,9 +11,10 @@ import java.math.RoundingMode
  */
 object PortfolioCalculations {
 
-    private const val SCALE_PERCENT = 4
-    private const val SCALE_USD = 2
-    private val HUNDRED = BigDecimal.valueOf(100)
+    internal const val SCALE_PERCENT = 4
+    internal const val SCALE_USD = 2
+    internal const val SCALE_PRICE = 8
+    internal val HUNDRED = BigDecimal.valueOf(100)
 
     /**
      * Calculate target percentage for an asset based on allocation type.
@@ -163,4 +164,3 @@ object PortfolioCalculations {
         )
     }
 }
-

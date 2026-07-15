@@ -388,7 +388,7 @@ two complementary `SharedFlow` channels:
 │   ├── view/                              # HTML templates & components (kotlinx.html DSL)
 │   │   ├── DashboardView.kt              # Facade class delegating to components
 │   │   ├── component/                    # Modular components (Shell, Grid, Form, etc.)
-│   │   └── util/                         # CssClass, CssStyles (kotlinx-css DSL), FormatterUtils, Extensions, Icons, Layouts
+│   │   └── util/                         # CssClass, CssStyles (kotlinx-css DSL), Formatter, Extensions, Icons, Layouts
 │   └── table/                             # Exposed table definitions
 ├── src/test/kotlin/                       # Unit tests (95%+ coverage enforced via JaCoCo)
 │   └── com/gemini/krakenbot/
@@ -571,7 +571,7 @@ To run JS browser tests only:
 - `ModelTest` / `ResultTest` — unit tests for domain models and the `Result` type
 - `ConfigServiceTest` — validation, hot-reload, persistence, duplicate/blank
   symbol rejection, and `watchConfigChanges()` flow
-- `ServiceUtilsTest` / `FormatterUtilsTest` — utility function coverage
+- `ServiceUtilsTest` / `FormatterTest` — utility function coverage
 - `RateLimiterTest` — call-counter algorithm and rate limit event flow
 - `DashboardControllerTest` — REST API endpoints, invalid config error responses, and trade history sync status
 - `TradeHistoryServiceTest` — snapshot storage, size limits, and historical synchronization states

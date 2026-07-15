@@ -168,51 +168,7 @@ class SqliteTradeRepositoryImpl(
         }
     }
 
-    override fun getTotalTradeCount(): Long {
-        return transaction(database) {
-            TradeTable
-                .selectAll()
-                .where { TradeTable.success eq true }
-                .count()
-        }
-    }
 
-    override fun getTotalVolumeTraded(): BigDecimal {
-        return transaction(database) {
-            val sumCol = TradeTable.usdAmount.sum()
-            TradeTable
-                .select(sumCol)
-                .where { TradeTable.success eq true }
-                .firstOrNull()
-                ?.get(sumCol) ?: BigDecimal.ZERO
-        }
-    }
-
-    override fun getTotalFeesPaid(): BigDecimal {
-        return transaction(database) {
-            val sumCol = TradeTable.fee.sum()
-            TradeTable
-                .select(sumCol)
-                .where { TradeTable.success eq true }
-                .firstOrNull()
-                ?.get(sumCol) ?: BigDecimal.ZERO
-        }
-    }
-
-
-
-    override fun getLatestSnapshotTime(): Instant? {
-        return transaction(database) {
-            PortfolioSnapshotTable
-                .selectAll()
-                .orderBy(PortfolioSnapshotTable.timestamp, SortOrder.DESC)
-                .limit(1)
-                .firstOrNull()
-                ?.let {
-                    Instant.ofEpochMilli(it[PortfolioSnapshotTable.timestamp])
-                }
-        }
-    }
 
     private fun insertSnapshotWithChildren(snapshot: PortfolioSnapshot) {
         val snapshotId = PortfolioSnapshotTable.insert {
@@ -344,19 +300,9 @@ class SqliteTradeRepositoryImpl(
 
     override fun setSyncMetadata(key: String, value: String) {
         transaction(database) {
-            val existing = HistorySyncMetadataTable
-                .selectAll()
-                .where { HistorySyncMetadataTable.key eq key }
-                .firstOrNull()
-            if (existing != null) {
-                HistorySyncMetadataTable.update({ HistorySyncMetadataTable.key eq key }) {
-                    it[HistorySyncMetadataTable.value] = value
-                }
-            } else {
-                HistorySyncMetadataTable.insert {
-                    it[HistorySyncMetadataTable.key] = key
-                    it[HistorySyncMetadataTable.value] = value
-                }
+            HistorySyncMetadataTable.upsert {
+                it[HistorySyncMetadataTable.key] = key
+                it[HistorySyncMetadataTable.value] = value
             }
         }
     }

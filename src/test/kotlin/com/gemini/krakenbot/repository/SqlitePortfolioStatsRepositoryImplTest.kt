@@ -48,7 +48,7 @@ class SqlitePortfolioStatsRepositoryImplTest : StringSpec() {
         "load returns zero when empty" {
             val stats = repository.load()
             stats.allTimeHigh.shouldNotBeNull()
-            stats.allTimeHigh!!.shouldBeEqualComparingTo(BigDecimal.ZERO)
+            stats.allTimeHigh.shouldBeEqualComparingTo(BigDecimal.ZERO)
         }
 
         "save and load stats" {
@@ -57,15 +57,15 @@ class SqlitePortfolioStatsRepositoryImplTest : StringSpec() {
 
             val loaded = repository.load()
             loaded.allTimeHigh.shouldNotBeNull()
-            loaded.allTimeHigh!!.shouldBeEqualComparingTo(BigDecimal("12345.67"))
+            loaded.allTimeHigh.shouldBeEqualComparingTo(BigDecimal("12345.67"))
 
             // Update stats
-            stats.allTimeHigh = BigDecimal("20000.00")
-            repository.save(stats)
+            val updated = stats.copy(allTimeHigh = BigDecimal("20000.00"))
+            repository.save(updated)
 
             val loadedUpdated = repository.load()
             loadedUpdated.allTimeHigh.shouldNotBeNull()
-            loadedUpdated.allTimeHigh!!.shouldBeEqualComparingTo(BigDecimal("20000.00"))
+            loadedUpdated.allTimeHigh.shouldBeEqualComparingTo(BigDecimal("20000.00"))
         }
 
         "load returns default stats when database throws exception" {
@@ -79,7 +79,7 @@ class SqlitePortfolioStatsRepositoryImplTest : StringSpec() {
 
             val result = brokenRepo.load()
             result.allTimeHigh.shouldNotBeNull()
-            result.allTimeHigh!!.shouldBeEqualComparingTo(BigDecimal.ZERO)
+            result.allTimeHigh.shouldBeEqualComparingTo(BigDecimal.ZERO)
         }
 
         "save wraps non-IOException as IOException" {
@@ -102,14 +102,14 @@ class SqlitePortfolioStatsRepositoryImplTest : StringSpec() {
         "save rethrows IOException directly without wrapping" {
             // Clear current transaction if it exists
             TransactionManager.currentOrNull()?.close()
-            
+
             val realTxManager = db.transactionManager
             val throwingTxManager = StatsThrowingTransactionManager(realTxManager)
-            
+
             val mockDb = io.mockk.mockk<Database>(relaxed = true)
             mockkStatic("org.jetbrains.exposed.sql.transactions.TransactionApiKt")
             every { mockDb.transactionManager } returns throwingTxManager
-            
+
             val ioRepo = SqlitePortfolioStatsRepositoryImpl(mockDb, objectMapper)
             val stats = PortfolioStats(BigDecimal("10000.00"))
 
@@ -132,11 +132,11 @@ class SqlitePortfolioStatsRepositoryImplTest : StringSpec() {
 
                 val stats = testRepo.load()
                 stats.allTimeHigh.shouldNotBeNull()
-                stats.allTimeHigh!!.shouldBeEqualComparingTo(BigDecimal("18000.00"))
+                stats.allTimeHigh.shouldBeEqualComparingTo(BigDecimal("18000.00"))
 
                 val loadedFromDb = testRepo.load()
                 loadedFromDb.allTimeHigh.shouldNotBeNull()
-                loadedFromDb.allTimeHigh!!.shouldBeEqualComparingTo(BigDecimal("18000.00"))
+                loadedFromDb.allTimeHigh.shouldBeEqualComparingTo(BigDecimal("18000.00"))
 
                 testFile.exists() shouldBe false
                 testBakFile.exists() shouldBe true

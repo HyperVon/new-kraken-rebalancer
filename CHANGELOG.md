@@ -8,6 +8,23 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [6.5.7] - 2026-07-15
+
+### Added
+
+- **Generic Closest Timeline Finder**: Created a generic `findClosest` helper in `TradeHistoryServiceImpl` to unify finding closest element in timeline collections.
+
+### Changed
+
+- **Unified Formatting Utilities**: Merged `FormatterUtils` into `Formatter`, deleted `FormatterUtils.kt`, and renamed/adapted tests.
+- **Consolidated Scale Constants**: Moved all common math and scale constants to `PortfolioCalculations` to unify formatting and calculation scales.
+- **State Immutability**: Modified `PortfolioStats` data class to use read-only properties (`val`) and update states using `copy()`.
+- **DRY status configurations**: Refactored Ktor status page mappings to iterate over structured error tuples.
+- **Removed Redundant TradeRepository Methods**: Eliminated redundant aggregate queries in favor of `getTradeSummaryStats()`.
+- **Cached Configuration Lookups**: Saved Ktor/App config locally in functions to avoid redundant lookups.
+- **Extracted Common Order Executor Loops**: Factored out dust checking, volume calculations, and order execute logs in `OrderExecutorImpl`.
+- **Database Upsert**: Implemented Exposed's `upsert` mechanism for `setSyncMetadata`.
+
 ## [6.5.6] - 2026-07-15
 
 ### Added

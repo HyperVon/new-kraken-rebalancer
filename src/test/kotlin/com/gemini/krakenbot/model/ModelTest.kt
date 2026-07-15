@@ -4,6 +4,7 @@ import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.service.PortfolioValues
 import com.gemini.krakenbot.service.impl.OrderExecutorImpl
 import com.gemini.krakenbot.service.impl.PortfolioAnalyzerImpl
+import com.gemini.krakenbot.service.impl.PortfolioCalculations
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
@@ -103,7 +104,7 @@ class ModelTest : StringSpec() {
             )
             pv.totalValueUSD shouldBe BigDecimal.TEN
             pv.currentValuesUSD shouldBe mapOf("BTC" to BigDecimal.TEN)
-            
+
             val pv2 = pv.copy()
             pv2 shouldBe pv
             pv.hashCode() shouldBe pv2.hashCode()
@@ -114,10 +115,10 @@ class ModelTest : StringSpec() {
             OrderExecutorImpl.CASH_RESERVE_FACTOR shouldBe BigDecimal("0.99")
             OrderExecutorImpl.FEE_RATE_ESTIMATE shouldBe BigDecimal("0.0026")
 
-            PortfolioAnalyzerImpl.HUNDRED shouldBe BigDecimal("100")
-            PortfolioAnalyzerImpl.SCALE_PERCENT shouldBe 4
-            PortfolioAnalyzerImpl.SCALE_PRICE shouldBe 8
-            PortfolioAnalyzerImpl.SCALE_USD shouldBe 2
+            PortfolioCalculations.HUNDRED shouldBe BigDecimal("100")
+            PortfolioCalculations.SCALE_PERCENT shouldBe 4
+            PortfolioCalculations.SCALE_PRICE shouldBe 8
+            PortfolioCalculations.SCALE_USD shouldBe 2
         }
     }
 }

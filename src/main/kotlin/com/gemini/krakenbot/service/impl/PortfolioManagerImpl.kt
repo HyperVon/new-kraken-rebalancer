@@ -84,6 +84,7 @@ class PortfolioManagerImpl(
         MDC.put("cycleId", cycleId)
         try {
             log.info("--- Starting Snapshot Phase ---")
+            val config = configService.getConfig()
             val actionLog = mutableListOf<String>()
 
             val balances = portfolioAnalyzer.fetchBalances()
@@ -114,7 +115,7 @@ class PortfolioManagerImpl(
                 portfolioAnalyzer
                     .calculateFiatDeployment(
                         drawdownPct,
-                        configService.getConfig().settings
+                        config.settings
                     )
 
             if (fiatDeploymentPct > BigDecimal.ZERO) {
@@ -144,7 +145,7 @@ class PortfolioManagerImpl(
                 sellOrders = sellOrders,
                 currentValuesUSD = currentValuesUSD,
                 prices = prices,
-                settings = configService.getConfig().settings,
+                settings = config.settings,
                 actionLog = actionLog
             )
 
@@ -188,8 +189,10 @@ class PortfolioManagerImpl(
     ): PortfolioSnapshot {
         val assetSnapshots =
             mutableMapOf<String, PortfolioSnapshot.AssetSnapshot>()
+        val config = configService.getConfig()
+        val settings = config.settings
 
-        for ((symbol, targetPercent) in configService.getConfig().allocations) {
+        for ((symbol, targetPercent) in config.allocations) {
             val balance = portfolioAnalyzer.resolveBalance(
                 symbol = symbol.value,
                 balances = balances
@@ -210,7 +213,7 @@ class PortfolioManagerImpl(
                 totalPortfolioValueUSD = totalPortfolioValueUSD,
                 effectiveUsdTarget = effectiveUsdTarget,
                 cryptoScaleFactor = cryptoScaleFactor,
-                dustThresholdUSD = configService.getConfig().settings.dustThresholdUSD
+                dustThresholdUSD = settings.dustThresholdUSD
             )
 
             assetSnapshots[symbol.value] = PortfolioCalculations.createAssetSnapshot(

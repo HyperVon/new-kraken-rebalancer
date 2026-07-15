@@ -19,4 +19,3 @@ interface KrakenService {
     suspend fun getTradeHistory(startSec: Long? = null, offset: Int? = null): List<TradeRecord>
     suspend fun getOHLC(pair: String, interval: Int = 1440, since: Long? = null): List<Pair<Long, BigDecimal>>
 }
-

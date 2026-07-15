@@ -210,16 +210,21 @@ private suspend fun RoutingContext.handleGetHistoryStats(
     call.respondText(json, ContentType.Application.Json)
 }
 
+private val TIME_RANGE_DAYS = mapOf(
+    "24h" to 1L,
+    "7d" to 7L,
+    "30d" to 30L,
+    "90d" to 90L
+)
+
 internal fun parseTimeRange(call: ApplicationCall): Pair<Instant, Instant> {
     val now = Instant.now()
     val range = call.parameters["range"] ?: "30d"
-    val from = when (range) {
-        "24h" -> now.minus(1, ChronoUnit.DAYS)
-        "7d" -> now.minus(7, ChronoUnit.DAYS)
-        "30d" -> now.minus(30, ChronoUnit.DAYS)
-        "90d" -> now.minus(90, ChronoUnit.DAYS)
-        "all" -> Instant.EPOCH
-        else -> now.minus(30, ChronoUnit.DAYS)
+    val from = if (range == "all") {
+        Instant.EPOCH
+    } else {
+        val days = TIME_RANGE_DAYS[range] ?: 30L
+        now.minus(days, ChronoUnit.DAYS)
     }
     return Pair(from, now)
 }

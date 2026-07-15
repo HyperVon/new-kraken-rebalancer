@@ -24,74 +24,31 @@ object ErrorHandlingConfig : KoinComponent {
      */
     fun Application.configureErrorHandling() {
         install(StatusPages) {
-            // Handle 400 Bad Request
-            status(HttpStatusCode.BadRequest) { call, status ->
-                log.warn("Bad Request")
-                call.respondText(
-                    text = buildErrorJson(
-                        status = status.value,
-                        error = "Bad Request",
-                        message = "The request could not be understood by the server."
-                    ),
-                    status = status,
-                    contentType = ContentType.Application.Json
-                )
-            }
+            val statusErrors = listOf(
+                Triple(HttpStatusCode.BadRequest, "Bad Request", "The request could not be understood by the server."),
+                Triple(HttpStatusCode.NotFound, "Not Found", "The requested resource was not found."),
+                Triple(HttpStatusCode.MethodNotAllowed, "Method Not Allowed", "The HTTP method is not allowed for this resource."),
+                Triple(HttpStatusCode.InternalServerError, "Internal Server Error", "An unexpected error occurred processing the request."),
+                Triple(HttpStatusCode.ServiceUnavailable, "Service Unavailable", "The service is temporarily unavailable. Please try again later.")
+            )
 
-            // Handle 404 Not Found
-            status(HttpStatusCode.NotFound) { call, status ->
-                log.warn("Not Found")
-                call.respondText(
-                    text = buildErrorJson(
-                        status = status.value,
-                        error = "Not Found",
-                        message = "The requested resource was not found."
-                    ),
-                    status = status,
-                    contentType = ContentType.Application.Json
-                )
-            }
-
-            // Handle 405 Method Not Allowed
-            status(HttpStatusCode.MethodNotAllowed) { call, status ->
-                log.warn("Method Not Allowed")
-                call.respondText(
-                    text = buildErrorJson(
-                        status = status.value,
-                        error = "Method Not Allowed",
-                        message = "The HTTP method is not allowed for this resource."
-                    ),
-                    status = status,
-                    contentType = ContentType.Application.Json
-                )
-            }
-
-            // Handle 500 Internal Server Error
-            status(HttpStatusCode.InternalServerError) { call, status ->
-                log.error("Internal Server Error")
-                call.respondText(
-                    text = buildErrorJson(
-                        status = status.value,
-                        error = "Internal Server Error",
-                        message = "An unexpected error occurred processing the request."
-                    ),
-                    status = status,
-                    contentType = ContentType.Application.Json
-                )
-            }
-
-            // Handle 503 Service Unavailable
-            status(HttpStatusCode.ServiceUnavailable) { call, status ->
-                log.error("Service Unavailable")
-                call.respondText(
-                    text = buildErrorJson(
-                        status = status.value,
-                        error = "Service Unavailable",
-                        message = "The service is temporarily unavailable. Please try again later."
-                    ),
-                    status = status,
-                    contentType = ContentType.Application.Json
-                )
+            statusErrors.forEach { (httpStatus, errorName, errorMsg) ->
+                status(httpStatus) { call, status ->
+                    if (httpStatus.value >= 500) {
+                        log.error(errorName)
+                    } else {
+                        log.warn(errorName)
+                    }
+                    call.respondText(
+                        text = buildErrorJson(
+                            status = status.value,
+                            error = errorName,
+                            message = errorMsg
+                        ),
+                        status = status,
+                        contentType = ContentType.Application.Json
+                    )
+                }
             }
 
             // Handle all other exceptions

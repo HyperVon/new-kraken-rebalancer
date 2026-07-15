@@ -11,4 +11,3 @@ data class Allocation(
             Allocation(Asset(symbol), targetPercent)
     }
 }
-

@@ -25,7 +25,7 @@ class ConfigServiceImpl(
 
     /**
      * A hot SharedFlow that broadcasts configuration settings updates to all active collectors.
-     * 
+     *
      * - replay = 1: Acts like a BehaviorSubject; any new collector immediately receives the latest configuration.
      * - onBufferOverflow = BufferOverflow.DROP_OLDEST: Since we drop oldest values on overflow, tryEmit() is
      *   guaranteed to succeed without suspending, preventing configuration emissions from blocking caller threads.

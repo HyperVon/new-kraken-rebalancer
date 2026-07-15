@@ -10,7 +10,7 @@ class DatabaseConfigTest : StringSpec() {
         "should initialize database and create file" {
             val dbFile = File("test-config.db")
             if (dbFile.exists()) dbFile.delete()
-            
+
             try {
                 val db = DatabaseConfig.init(dbFile.name)
                 db shouldNotBe null

@@ -23,10 +23,6 @@ interface TradeRepository {
     fun updateTrade(oldTrade: TradeRecord, newTrade: TradeRecord)
     fun getSnapshotsInRange(from: Instant, to: Instant): List<PortfolioSnapshot>
     fun getTradesInRange(from: Instant, to: Instant): List<TradeRecord>
-    fun getTotalTradeCount(): Long
-    fun getTotalVolumeTraded(): BigDecimal
-    fun getTotalFeesPaid(): BigDecimal
-    fun getLatestSnapshotTime(): Instant?
     fun getLatestTradeTime(): Instant?
     fun isHistorySeeded(): Boolean
     fun setHistorySeeded(seeded: Boolean)
