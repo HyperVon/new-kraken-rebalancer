@@ -52,7 +52,7 @@ class OrderExecutorImpl(
                 continue
             }
 
-            val result = executeSingleOrder(symbol, usdToSell, "sell", prices, settings, actionLog)
+            val result = executeSingleOrder(symbol, usdToSell, "sell", prices, actionLog)
             if (result?.success == true) {
                 projectedCash = projectedCash.add(usdToSell)
                 executedSells = true
@@ -82,7 +82,7 @@ class OrderExecutorImpl(
                 continue
             }
 
-            val result = executeSingleOrder(symbol, cost, "buy", prices, settings, actionLog)
+            val result = executeSingleOrder(symbol, cost, "buy", prices, actionLog)
             if (result?.success == true) {
                 actualCash = actualCash.subtract(cost)
             }
@@ -94,7 +94,6 @@ class OrderExecutorImpl(
         usdAmount: BigDecimal,
         side: String,
         prices: AssetPrices,
-        settings: Settings,
         actionLog: MutableList<String>
     ): OrderResult? {
         val price = prices[symbol] ?: BigDecimal.ZERO

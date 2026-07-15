@@ -42,10 +42,7 @@ class SqlitePortfolioStatsRepositoryImpl(
 
             try {
                 val fileStats = objectMapper.readValue(file, PortfolioStats::class.java)
-                val ath = fileStats?.allTimeHigh
-                if (ath == null) {
-                    return@transaction PortfolioStats(BigDecimal.ZERO)
-                }
+                val ath = fileStats?.allTimeHigh ?: return@transaction PortfolioStats(BigDecimal.ZERO)
 
                 log.info("Migrating allTimeHigh from stats file: {}", ath)
                 PortfolioStatsTable.insert {

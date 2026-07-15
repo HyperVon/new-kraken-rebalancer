@@ -35,17 +35,6 @@ class TradeHistoryServiceImpl(
     private val portfolioAnalyzer: PortfolioAnalyzer,
     private val tradeHistoryFilePath: String = "trade-history.json"
 ) : TradeHistoryService {
-
-    companion object {
-        /**
-         * A locally recorded market order contains the requested amount, while Kraken reports
-         * the filled amount. The two records are normally created within a second of each other,
-         * but can differ slightly because of price movement and order-volume precision.
-         */
-        private const val LOCAL_TRADE_MATCH_WINDOW_MILLIS = 10_000L
-        private val LOCAL_TRADE_MATCH_TOLERANCE = BigDecimal("0.01")
-    }
-
     private val log = LoggerFactory.getLogger(TradeHistoryServiceImpl::class.java)
     /**
      * A hot SharedFlow that broadcasts newly created portfolio snapshots to all active dashboard SSE connections.

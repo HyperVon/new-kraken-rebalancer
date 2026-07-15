@@ -4,7 +4,6 @@ import com.gemini.krakenbot.model.*
 import com.gemini.krakenbot.repository.TradeRepository
 import com.gemini.krakenbot.repository.TradeSummaryStats
 import com.gemini.krakenbot.repository.table.*
-import com.gemini.krakenbot.service.isWithinRelativeTolerance
 import org.jetbrains.exposed.sql.*
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.inList
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.less
@@ -12,7 +11,6 @@ import org.jetbrains.exposed.sql.statements.UpdateBuilder
 import org.jetbrains.exposed.sql.transactions.transaction
 import org.slf4j.LoggerFactory
 import java.math.BigDecimal
-import java.math.RoundingMode
 import java.time.Instant
 
 class SqliteTradeRepositoryImpl(

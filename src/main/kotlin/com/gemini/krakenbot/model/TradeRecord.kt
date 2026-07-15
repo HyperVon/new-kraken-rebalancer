@@ -4,6 +4,7 @@ import java.math.BigDecimal
 import java.math.RoundingMode
 import java.time.Instant
 import com.gemini.krakenbot.service.isWithinRelativeTolerance
+import kotlin.math.abs
 
 /**
  * Represents a single executed trade/order event.
@@ -38,7 +39,7 @@ fun TradeRecord.isLocalEstimateDuplicateOf(
     windowMillis: Long = 10_000L,
     tolerance: BigDecimal = BigDecimal("0.01")
 ): Boolean {
-    val diff = kotlin.math.abs(this.timestamp.toEpochMilli() - other.timestamp.toEpochMilli())
+    val diff = abs(this.timestamp.toEpochMilli() - other.timestamp.toEpochMilli())
     return this.isSameSymbolAndSide(other) &&
             this.pair.equals(other.pair, ignoreCase = true) &&
             diff <= windowMillis &&
@@ -59,7 +60,7 @@ fun TradeRecord.isMatchingApiTrade(
     windowMillis: Long = 10_000L,
     tolerance: BigDecimal = BigDecimal("0.01")
 ): Boolean {
-    val timeDifference = kotlin.math.abs(this.timestamp.toEpochMilli() - apiTrade.timestamp.toEpochMilli())
+    val timeDifference = abs(this.timestamp.toEpochMilli() - apiTrade.timestamp.toEpochMilli())
     if (timeDifference > windowMillis || !this.side.equals(apiTrade.side, ignoreCase = true)) {
         return false
     }
