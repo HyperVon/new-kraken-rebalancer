@@ -131,7 +131,6 @@ class PortfolioAnalyzerImpl(
                 )
             }
         }
-
         stats.allTimeHigh = ath
         runCatching { portfolioStatsRepository.save(stats) }
             .onFailure { e -> log.error("Failed to persist portfolio ATH", e) }

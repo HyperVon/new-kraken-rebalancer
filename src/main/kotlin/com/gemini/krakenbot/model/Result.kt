@@ -26,16 +26,6 @@ sealed class Result<out T> {
             is Failure -> Failure(exception)
         }
 
-    inline fun onSuccess(action: (T) -> Unit): Result<T> {
-        if (this is Success) action(value)
-        return this
-    }
-
-    inline fun onFailure(action: (Exception) -> Unit): Result<T> {
-        if (this is Failure) action(exception)
-        return this
-    }
-
     fun getOrNull(): T? = (this as? Success)?.value
 
     fun exceptionOrNull(): Exception? = (this as? Failure)?.exception
