@@ -6,10 +6,22 @@ import org.w3c.dom.*
 import kotlin.collections.mutableMapOf
 import kotlin.js.Date
 import kotlin.js.Promise
-import kotlin.math.abs
-import kotlin.math.round
+import kotlin.js.json
 
-val CHART_COLORS = arrayOf(
+@JsName("Chart")
+private external class Chart(ctx: dynamic, config: dynamic) {
+    fun destroy()
+    fun isDatasetVisible(index: Int): Boolean
+    val data: dynamic
+}
+
+@JsName("Object")
+private external object JSObject {
+    fun keys(obj: dynamic): Array<String>
+    fun assign(target: dynamic, vararg sources: dynamic): dynamic
+}
+
+private val CHART_COLORS = arrayOf(
     "rgba(96, 165, 250, 1)",   /* blue-400 */
     "rgba(52, 211, 153, 1)",   /* emerald-400 */
     "rgba(251, 191, 36, 1)",   /* amber-400 */
@@ -20,7 +32,7 @@ val CHART_COLORS = arrayOf(
     "rgba(232, 121, 249, 1)"   /* fuchsia-400 */
 )
 
-val CHART_BG = arrayOf(
+private val CHART_BG = arrayOf(
     "rgba(96, 165, 250, 0.1)",
     "rgba(52, 211, 153, 0.1)",
     "rgba(251, 191, 36, 0.1)",
@@ -31,7 +43,7 @@ val CHART_BG = arrayOf(
     "rgba(232, 121, 249, 0.1)"
 )
 
-val chartDefaults: dynamic = js("""
+private val chartDefaults: dynamic = js("""
     ({
         responsive: true,
         maintainAspectRatio: false,
@@ -63,10 +75,10 @@ val chartDefaults: dynamic = js("""
     })
 """)
 
-val charts = mutableMapOf<String, dynamic>()
-var currentRange = "30d"
-var allTrades: Array<dynamic> = emptyArray()
-val visibilityStates = mutableMapOf<String, MutableMap<String, Boolean>>()
+private val charts = mutableMapOf<String, dynamic>()
+private var currentRange = "30d"
+private var allTrades: Array<dynamic> = emptyArray()
+private val visibilityStates = mutableMapOf<String, MutableMap<String, Boolean>>()
 
 fun registerHistoryGlobals() {
     window.asDynamic().chartDefaults = chartDefaults
@@ -76,7 +88,7 @@ fun initHistory() {
     setupSyncProgressAndLoad()
 }
 
-fun setupSyncProgressAndLoad() {
+private fun setupSyncProgressAndLoad() {
     checkSyncProgress().then { isDone ->
         if (isDone) {
             loadAll("30d")
@@ -108,33 +120,72 @@ fun setupSyncProgressAndLoad() {
     }
 
     val checkbox = document.getElementById("show-dry-run-checkbox") as? HTMLInputElement
-    if (checkbox != null) {
-        checkbox.addEventListener("change", {
-            renderTradeTable(allTrades)
-        })
-    }
+    checkbox?.addEventListener("change", {
+        renderTradeTable(allTrades)
+    })
 }
 
-fun fetchJSON(url: String): Promise<Array<dynamic>> {
+private fun fetchJSON(url: String): Promise<Array<dynamic>> {
     return window.fetch(url)
         .then { res -> res.json() }
         .then { data -> data as Array<dynamic> }
 }
 
-fun fetchJSONStats(url: String): Promise<dynamic> {
+private fun fetchJSONStats(url: String): Promise<dynamic> {
     return window.fetch(url)
         .then { res -> res.json() }
 }
 
 fun formatUSD(valDouble: Double): String {
-    val options: dynamic = js("({})")
+    val options: dynamic = json()
     options.minimumFractionDigits = 2
     options.maximumFractionDigits = 2
     return "$" + valDouble.asDynamic().toLocaleString("en-US", options)
 }
 
-fun createOrUpdate(canvasId: String, config: dynamic) {
-    val existingChart = charts[canvasId]
+internal fun getUniqueSymbols(snapshots: Array<dynamic>, excludeUsd: Boolean = true): List<String> {
+    val symbolsSet = mutableSetOf<String>()
+    snapshots.forEach { s: dynamic ->
+        val assets = s.assets
+        if (assets != null) {
+            val keys = JSObject.keys(assets)
+            keys.forEach { symbolsSet.add(it) }
+        }
+    }
+    return if (excludeUsd) {
+        symbolsSet.filter { it != "USD" }.sorted()
+    } else {
+        symbolsSet.sorted()
+    }
+}
+
+internal fun mapSnapshotsToPoints(snapshots: Array<dynamic>, valueSelector: (dynamic) -> Double): Array<dynamic> {
+    return snapshots.map { s: dynamic ->
+        json("x" to s.timestamp, "y" to valueSelector(s))
+    }.toTypedArray()
+}
+
+internal fun getClonedChartOptions(): dynamic {
+    val options: dynamic = JSObject.assign(json(), window.asDynamic().chartDefaults)
+    options.plugins = JSObject.assign(json(), window.asDynamic().chartDefaults.plugins)
+    options.plugins.tooltip = JSObject.assign(json(), window.asDynamic().chartDefaults.plugins.tooltip)
+    options.scales = JSObject.assign(json(), window.asDynamic().chartDefaults.scales)
+    options.scales.y = JSObject.assign(json(), window.asDynamic().chartDefaults.scales.y)
+    options.scales.y.ticks = JSObject.assign(json(), window.asDynamic().chartDefaults.scales.y.ticks)
+    return options
+}
+
+internal fun createLineChartConfig(datasets: Array<dynamic>, options: dynamic): dynamic {
+    val config: dynamic = json()
+    config.type = "line"
+    config.data = json()
+    config.data.datasets = datasets
+    config.options = options
+    return config
+}
+
+internal fun createOrUpdate(canvasId: String, config: dynamic) {
+    val existingChart = charts[canvasId] as? Chart
     if (existingChart != null) {
         val states = mutableMapOf<String, Boolean>()
         val datasets = existingChart.data.datasets
@@ -142,131 +193,94 @@ fun createOrUpdate(canvasId: String, config: dynamic) {
         for (i in 0 until length) {
             val ds = datasets[i]
             val label = ds.label.toString()
-            val visible = existingChart.isDatasetVisible(i) as Boolean
+            val visible = existingChart.isDatasetVisible(i)
             states[label] = visible
         }
         visibilityStates[canvasId] = states
         existingChart.destroy()
     }
 
-    val savedStates = visibilityStates.get(canvasId)
+    val savedStates = visibilityStates[canvasId]
     if (savedStates != null) {
-        val nonNullStates: Map<String, Boolean> = savedStates
         val configDatasets = config.data.datasets
         val length = configDatasets.length as Int
         for (i in 0 until length) {
             val ds = configDatasets[i]
             val label = ds.label.toString()
-            val savedVisible = nonNullStates.get(label)
+            val savedVisible = savedStates[label]
             if (savedVisible != null) {
-                ds.hidden = (savedVisible == false)
+                ds.hidden = (!savedVisible)
             }
         }
     }
 
     val ctx = document.getElementById(canvasId) ?: return
-    charts[canvasId] = js("new Chart(ctx, config)")
+    charts[canvasId] = Chart(ctx, config)
 }
 
-fun buildPortfolioValueChart(snapshots: Array<dynamic>) {
+internal fun buildPortfolioValueChart(snapshots: Array<dynamic>) {
     if (snapshots.asDynamic().length == 0) return
 
-    val symbolsSet = mutableSetOf<String>()
-    snapshots.forEach { s: dynamic ->
-        val assets = s.assets
-        if (assets != null) {
-            val keys = js("Object.keys(assets)") as Array<String>
-            keys.forEach { symbolsSet.add(it) }
-        }
-    }
-    val symbolList = symbolsSet.filter { it != "USD" }.sorted()
+    val symbolList = getUniqueSymbols(snapshots)
 
-    val totalPortfolioData = snapshots.map { s: dynamic ->
-        val xVal = s.timestamp
-        val yVal = s.totalValueUSD.toString().toDoubleOrNull() ?: 0.0
-        js("({ x: xVal, y: yVal })")
-    }.toTypedArray()
+    val totalPortfolioData = mapSnapshotsToPoints(snapshots) { s ->
+        s.totalValueUSD.toString().toDoubleOrNull() ?: 0.0
+    }
 
     val datasets = mutableListOf<dynamic>()
-    datasets.add(js("""
-        ({
-            label: 'Total Portfolio',
-            data: totalPortfolioData,
-            borderColor: 'rgba(96, 165, 250, 1)',
-            backgroundColor: 'rgba(96, 165, 250, 0.08)',
-            fill: true,
-            tension: 0.3,
-            borderWidth: 2,
-            pointRadius: 0,
-            pointHitRadius: 10
-        })
-    """))
+    datasets.add(json(
+        "label" to "Total Portfolio",
+        "data" to totalPortfolioData,
+        "borderColor" to "rgba(96, 165, 250, 1)",
+        "backgroundColor" to "rgba(96, 165, 250, 0.08)",
+        "fill" to true,
+        "tension" to 0.3,
+        "borderWidth" to 2,
+        "pointRadius" to 0,
+        "pointHitRadius" to 10
+    ))
 
     symbolList.forEachIndexed { i, sym ->
-        val ci = (i + 1) % CHART_COLORS.size
-        val color = CHART_COLORS[ci]
-        val symbolData = snapshots.map { s: dynamic ->
-            val xVal = s.timestamp
-            val yVal = if (s.assets != null && s.assets[sym] != null) {
+        val color = CHART_COLORS[(i + 1) % CHART_COLORS.size]
+        val symbolData = mapSnapshotsToPoints(snapshots) { s ->
+            if (s.assets != null && s.assets[sym] != null) {
                 s.assets[sym].valueUSD.toString().toDoubleOrNull() ?: 0.0
             } else {
                 0.0
             }
-            js("({ x: xVal, y: yVal })")
-        }.toTypedArray()
+        }
 
-        datasets.add(js("""
-            ({
-                label: sym,
-                data: symbolData,
-                borderColor: color,
-                backgroundColor: 'transparent',
-                tension: 0.3,
-                borderWidth: 1.5,
-                pointRadius: 0,
-                pointHitRadius: 10
-            })
-        """))
+        datasets.add(json(
+            "label" to sym,
+            "data" to symbolData,
+            "borderColor" to color,
+            "backgroundColor" to "transparent",
+            "tension" to 0.3,
+            "borderWidth" to 1.5,
+            "pointRadius" to 0,
+            "pointHitRadius" to 10
+        ))
     }
 
-    val config: dynamic = js("({})")
-    config.type = "line"
-    config.data = js("({})")
-    config.data.datasets = datasets.toTypedArray()
-
-    val options: dynamic = js("Object.assign({}, window.chartDefaults)")
-    options.plugins = js("Object.assign({}, window.chartDefaults.plugins)")
-    options.plugins.tooltip = js("Object.assign({}, window.chartDefaults.plugins.tooltip)")
-    options.plugins.tooltip.callbacks = js("({})")
+    val options = getClonedChartOptions()
+    options.plugins.tooltip.callbacks = json()
     options.plugins.tooltip.callbacks.label = { ctx: dynamic ->
         val label = ctx.dataset.label.toString()
         val yVal = ctx.parsed.y.toString().toDoubleOrNull() ?: 0.0
         "$label: ${formatUSD(yVal)}"
     }
 
-    options.scales = js("Object.assign({}, window.chartDefaults.scales)")
-    options.scales.y = js("Object.assign({}, window.chartDefaults.scales.y)")
-    options.scales.y.ticks = js("Object.assign({}, window.chartDefaults.scales.y.ticks)")
     options.scales.y.ticks.callback = { v: Double, _: dynamic, _: dynamic ->
         formatUSD(v)
     }
-    config.options = options
 
-    createOrUpdate("portfolio-value-chart", config)
+    createOrUpdate("portfolio-value-chart", createLineChartConfig(datasets.toTypedArray(), options))
 }
 
-fun buildAssetHoldingsChart(snapshots: Array<dynamic>) {
+internal fun buildAssetHoldingsChart(snapshots: Array<dynamic>) {
     if (snapshots.asDynamic().length == 0) return
 
-    val symbolsSet = mutableSetOf<String>()
-    snapshots.forEach { s: dynamic ->
-        val assets = s.assets
-        if (assets != null) {
-            val keys = js("Object.keys(assets)") as Array<String>
-            keys.forEach { symbolsSet.add(it) }
-        }
-    }
-    val symbolList = symbolsSet.filter { it != "USD" }.sorted()
+    val symbolList = getUniqueSymbols(snapshots)
 
     val baseline = snapshots[0]
     val baselines = mutableMapOf<String, Double>()
@@ -281,40 +295,30 @@ fun buildAssetHoldingsChart(snapshots: Array<dynamic>) {
 
     val datasets = symbolList.mapIndexed { i, sym ->
         val color = CHART_COLORS[i % CHART_COLORS.size]
-        val symbolData = snapshots.map { s: dynamic ->
+        val symbolData = mapSnapshotsToPoints(snapshots) { s ->
             val current = if (s.assets != null && s.assets[sym] != null) {
                 s.assets[sym].balance.toString().toDoubleOrNull() ?: 0.0
             } else {
                 0.0
             }
             val base = baselines[sym] ?: 0.0
-            val pct = if (base > 0.0) ((current - base) / base) * 100.0 else 0.0
-            js("({ x: s.timestamp, y: pct })")
-        }.toTypedArray()
+            if (base > 0.0) ((current - base) / base) * 100.0 else 0.0
+        }
 
-        js("""
-            ({
-                label: sym,
-                data: symbolData,
-                borderColor: color,
-                backgroundColor: 'transparent',
-                tension: 0.3,
-                borderWidth: 2,
-                pointRadius: 0,
-                pointHitRadius: 10
-            })
-        """)
+        json(
+            "label" to sym,
+            "data" to symbolData,
+            "borderColor" to color,
+            "backgroundColor" to "transparent",
+            "tension" to 0.3,
+            "borderWidth" to 2,
+            "pointRadius" to 0,
+            "pointHitRadius" to 10
+        )
     }.toTypedArray()
 
-    val config: dynamic = js("({})")
-    config.type = "line"
-    config.data = js("({})")
-    config.data.datasets = datasets
-
-    val options: dynamic = js("Object.assign({}, window.chartDefaults)")
-    options.plugins = js("Object.assign({}, window.chartDefaults.plugins)")
-    options.plugins.tooltip = js("Object.assign({}, window.chartDefaults.plugins.tooltip)")
-    options.plugins.tooltip.callbacks = js("({})")
+    val options = getClonedChartOptions()
+    options.plugins.tooltip.callbacks = json()
     options.plugins.tooltip.callbacks.label = { ctx: dynamic ->
         val sym = ctx.dataset.label.toString()
         val pctChange = ctx.parsed.y.toString().toDoubleOrNull() ?: 0.0
@@ -325,137 +329,105 @@ fun buildAssetHoldingsChart(snapshots: Array<dynamic>) {
             0.0
         }
         val pctSign = if (pctChange >= 0.0) "+" else ""
-        val balOpts: dynamic = js("({})")
+        val balOpts: dynamic = json()
         balOpts.minimumFractionDigits = 4
         balOpts.maximumFractionDigits = 8
         "$sym: $pctSign${pctChange.toFixed(2)}% (${balance.asDynamic().toLocaleString("en-US", balOpts)})"
     }
 
-    options.scales = js("Object.assign({}, window.chartDefaults.scales)")
-    options.scales.y = js("Object.assign({}, window.chartDefaults.scales.y)")
-    options.scales.y.ticks = js("Object.assign({}, window.chartDefaults.scales.y.ticks)")
     options.scales.y.ticks.callback = { v: Double, _: dynamic, _: dynamic ->
         (if (v >= 0.0) "+" else "") + v + "%"
     }
-    config.options = options
 
-    createOrUpdate("asset-holdings-chart", config)
+    createOrUpdate("asset-holdings-chart", createLineChartConfig(datasets, options))
 }
 
-fun buildAllocationDriftChart(snapshots: Array<dynamic>) {
+internal fun buildAllocationDriftChart(snapshots: Array<dynamic>) {
     if (snapshots.asDynamic().length == 0) return
 
-    val symbolsSet = mutableSetOf<String>()
-    snapshots.forEach { s: dynamic ->
-        val assets = s.assets
-        if (assets != null) {
-            val keys = js("Object.keys(assets)") as Array<String>
-            keys.forEach { symbolsSet.add(it) }
-        }
-    }
-    val symbolList = symbolsSet.sorted()
+    val symbolList = getUniqueSymbols(snapshots, excludeUsd = false)
 
     val datasets = symbolList.mapIndexed { i, sym ->
         val color = CHART_COLORS[i % CHART_COLORS.size]
         val bg = CHART_BG[i % CHART_BG.size]
-        val symbolData = snapshots.map { s: dynamic ->
-            val yVal = if (s.assets != null && s.assets[sym] != null) {
+        val symbolData = mapSnapshotsToPoints(snapshots) { s ->
+            if (s.assets != null && s.assets[sym] != null) {
                 s.assets[sym].currentPercent.toString().toDoubleOrNull() ?: 0.0
             } else {
                 0.0
             }
-            js("({ x: s.timestamp, y: yVal })")
-        }.toTypedArray()
+        }
 
-        js("""
-            ({
-                label: sym,
-                data: symbolData,
-                borderColor: color,
-                backgroundColor: bg,
-                fill: true,
-                tension: 0.3,
-                borderWidth: 1.5,
-                pointRadius: 0,
-                pointHitRadius: 10
-            })
-        """)
+        json(
+            "label" to sym,
+            "data" to symbolData,
+            "borderColor" to color,
+            "backgroundColor" to bg,
+            "fill" to true,
+            "tension" to 0.3,
+            "borderWidth" to 1.5,
+            "pointRadius" to 0,
+            "pointHitRadius" to 10
+        )
     }.toTypedArray()
 
-    val config: dynamic = js("({})")
-    config.type = "line"
-    config.data = js("({})")
-    config.data.datasets = datasets
-
-    val options: dynamic = js("Object.assign({}, window.chartDefaults)")
-    options.plugins = js("Object.assign({}, window.chartDefaults.plugins)")
-    options.plugins.tooltip = js("Object.assign({}, window.chartDefaults.plugins.tooltip)")
-    options.plugins.tooltip.callbacks = js("({})")
+    val options = getClonedChartOptions()
+    options.plugins.tooltip.callbacks = json()
     options.plugins.tooltip.callbacks.label = { ctx: dynamic ->
         val label = ctx.dataset.label.toString()
         val yVal = ctx.parsed.y.toString().toDoubleOrNull() ?: 0.0
         "$label: ${yVal.toFixed(2)}%"
     }
 
-    options.scales = js("Object.assign({}, window.chartDefaults.scales)")
-    options.scales.y = js("Object.assign({}, window.chartDefaults.scales.y)")
     options.scales.y.stacked = true
-    options.scales.y.ticks = js("Object.assign({}, window.chartDefaults.scales.y.ticks)")
     options.scales.y.ticks.callback = { v: Double, _: dynamic, _: dynamic ->
         "$v%"
     }
-    config.options = options
 
-    createOrUpdate("allocation-drift-chart", config)
+    createOrUpdate("allocation-drift-chart", createLineChartConfig(datasets, options))
 }
 
-fun buildCumulativePLChart(trades: Array<dynamic>) {
-    if (trades.asDynamic().length == 0) return
+internal fun calculateCumulativePL(trades: Array<dynamic>): Array<dynamic> {
+    if (trades.asDynamic().length == 0) return emptyArray()
 
-    val sorted = trades.sortedWith(Comparator { a: dynamic, b: dynamic ->
+    val sorted = trades.sortedWith { a: dynamic, b: dynamic ->
         val aTime = Date(a.timestamp.toString()).getTime()
         val bTime = Date(b.timestamp.toString()).getTime()
         aTime.compareTo(bTime)
-    })
+    }
 
     var cumulative = 0.0
-    val data = sorted.filter { t: dynamic ->
+    return sorted.filter { t: dynamic ->
         (t.success as? Boolean ?: false) && !(t.dryRun as? Boolean ?: false)
     }.map { t: dynamic ->
         val amt = t.usdAmount.toString().toDoubleOrNull() ?: 0.0
         cumulative += if (t.side.toString() == "SELL") amt else -amt
-        js("({ x: t.timestamp, y: cumulative })")
+        json("x" to t.timestamp, "y" to cumulative)
     }.toTypedArray()
+}
 
+internal fun buildCumulativePLChart(trades: Array<dynamic>) {
+    val data = calculateCumulativePL(trades)
     if (data.asDynamic().length == 0) return
 
-    val config: dynamic = js("({})")
-    config.type = "line"
-    config.data = js("({})")
-    config.data.datasets = arrayOf(js("""
-        ({
-            label: 'Cumulative P&L',
-            data: data,
-            borderColor: 'rgba(52, 211, 153, 1)',
-            backgroundColor: 'rgba(52, 211, 153, 0.08)',
-            fill: true,
-            tension: 0.3,
-            borderWidth: 2,
-            pointRadius: 0,
-            pointHitRadius: 10
-        })
-    """))
+    val datasets = arrayOf(json(
+        "label" to "Cumulative P&L",
+        "data" to data,
+        "borderColor" to "rgba(52, 211, 153, 1)",
+        "backgroundColor" to "rgba(52, 211, 153, 0.08)",
+        "fill" to true,
+        "tension" to 0.3,
+        "borderWidth" to 2,
+        "pointRadius" to 0,
+        "pointHitRadius" to 10
+    ))
 
-    val options: dynamic = js("Object.assign({}, window.chartDefaults)")
-    options.scales = js("Object.assign({}, window.chartDefaults.scales)")
-    options.scales.y = js("Object.assign({}, window.chartDefaults.scales.y)")
-    options.scales.y.ticks = js("Object.assign({}, window.chartDefaults.scales.y.ticks)")
+    val options = getClonedChartOptions()
     options.scales.y.ticks.callback = { v: Double, _: dynamic, _: dynamic ->
         formatUSD(v)
     }
-    config.options = options
 
-    createOrUpdate("cumulative-pl-chart", config)
+    createOrUpdate("cumulative-pl-chart", createLineChartConfig(datasets, options))
 }
 
 fun formatPair(trade: dynamic): String {
@@ -463,7 +435,7 @@ fun formatPair(trade: dynamic): String {
     return trade.symbol.toString() + "/USD"
 }
 
-fun renderTradeTable(trades: Array<dynamic>) {
+internal fun renderTradeTable(trades: Array<dynamic>) {
     val tbody = document.getElementById("trade-table-body") ?: return
 
     val showDryRun = (document.getElementById("show-dry-run-checkbox") as? HTMLInputElement)?.checked ?: true
@@ -474,7 +446,7 @@ fun renderTradeTable(trades: Array<dynamic>) {
         return
     }
 
-    val rowsHtml = filteredTrades.map { t: dynamic ->
+    val rowsHtml = filteredTrades.joinToString("") { t: dynamic ->
         val time = Date(t.timestamp.toString()).asDynamic().toLocaleString()
         val side = t.side.toString()
         val sideClass = if (side == "BUY") "badge badge-buy" else "badge badge-sell"
@@ -495,12 +467,12 @@ fun renderTradeTable(trades: Array<dynamic>) {
             <td><span class="$statusClass">$statusText</span></td>
         </tr>
         """.trimIndent()
-    }.joinToString("")
+    }
 
     tbody.innerHTML = rowsHtml
 }
 
-fun updateStats(stats: dynamic) {
+internal fun updateStats(stats: dynamic) {
     val ath = document.getElementById("stat-ath")
     val totalTrades = document.getElementById("stat-total-trades")
     val totalVolume = document.getElementById("stat-total-volume")
@@ -515,25 +487,29 @@ fun updateStats(stats: dynamic) {
     if (totalFees != null) totalFees.textContent = formatUSD(stats.totalFeesPaid.toString().toDoubleOrNull() ?: 0.0)
 }
 
-fun loadAll(range: String) {
+internal fun loadAll(range: String): Promise<Unit> {
     currentRange = range
 
-    if (currentRange == "24h") {
-        window.asDynamic().chartDefaults.scales.x.time.unit = "hour"
-    } else if (currentRange == "all") {
-        js("delete window.chartDefaults.scales.x.time.unit")
-    } else {
-        window.asDynamic().chartDefaults.scales.x.time.unit = "day"
+    when (currentRange) {
+        "24h" -> {
+            window.asDynamic().chartDefaults.scales.x.time.unit = "hour"
+        }
+        "all" -> {
+            js("delete window.chartDefaults.scales.x.time.unit")
+        }
+        else -> {
+            window.asDynamic().chartDefaults.scales.x.time.unit = "day"
+        }
     }
 
     val p1 = fetchJSON("/api/history/snapshots?range=$currentRange")
     val p2 = fetchJSON("/api/history/trades?range=$currentRange")
     val p3 = fetchJSONStats("/api/history/stats")
 
-    Promise.all(arrayOf(p1, p2, p3)).then { results ->
+    return Promise.all(arrayOf(p1, p2, p3)).then { results ->
         val snapshots = results[0] as Array<dynamic>
         val trades = results[1] as Array<dynamic>
-        val stats = Ext_getStats(results[2])
+        val stats = results[2]
         allTrades = trades
         buildPortfolioValueChart(snapshots)
         buildAssetHoldingsChart(snapshots)
@@ -544,11 +520,8 @@ fun loadAll(range: String) {
     }
 }
 
-fun Ext_getStats(obj: dynamic): dynamic {
-    return obj
-}
 
-fun checkSyncProgress(): Promise<Boolean> {
+internal fun checkSyncProgress(): Promise<Boolean> {
     return fetchJSONStats("/api/history/sync-progress").then { status: dynamic ->
         val banner = document.getElementById("sync-progress-banner") as? HTMLElement
         if (banner == null) {

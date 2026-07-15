@@ -1,5 +1,7 @@
 plugins {
     kotlin("multiplatform")
+    id("com.google.devtools.ksp") version "2.3.9"
+    id("io.kotest") version "6.1.11"
 }
 
 repositories {
@@ -23,9 +25,19 @@ kotlin {
                 implementation(npm("tslib", "2.6.2"))
             }
         }
-        commonTest {
+        val commonTest by getting {
             dependencies {
                 implementation(kotlin("test"))
+                implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0")
+                implementation("io.kotest:kotest-assertions-core:6.1.11")
+                implementation("io.kotest:kotest-framework-engine:6.1.11")
+            }
+        }
+        val jsTest by getting {
+            dependencies {
+                implementation("io.kotest:kotest-framework-engine:6.1.11")
+                implementation(devNpm("karma-coverage", "2.2.1"))
+                implementation(devNpm("istanbul-instrumenter-loader", "3.0.1"))
             }
         }
     }

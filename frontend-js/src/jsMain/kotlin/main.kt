@@ -15,7 +15,7 @@ fun main() {
         reapplySort()
     })
 
-    // 3. Unconditionally register age interval timer
+    // 3. Unconditionally registered age interval timer
     window.setInterval({ updateAge() }, 1000)
 
     // 4. Run initial page load checks

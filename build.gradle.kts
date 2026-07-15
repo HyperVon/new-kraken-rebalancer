@@ -170,6 +170,7 @@ tasks.jacocoTestCoverageVerification {
 
 tasks.check {
     dependsOn(tasks.jacocoTestCoverageVerification)
+    dependsOn(":frontend-js:jsBrowserTest")
 }
 
 configurations.all {

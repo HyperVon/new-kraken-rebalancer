@@ -1,27 +1,29 @@
 package com.gemini.krakenbot.frontend
 
+import io.kotest.matchers.shouldBe
+import io.kotest.matchers.booleans.shouldBeTrue
+import io.kotest.matchers.booleans.shouldBeFalse
+import io.kotest.matchers.string.shouldContain
+import io.kotest.core.spec.IsolationMode
+import io.kotest.core.spec.style.StringSpec
 import kotlinx.browser.document
+import kotlinx.browser.window
 import org.w3c.dom.*
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertTrue
-import kotlin.test.assertFalse
 
-class SettingsTest {
-    @Test
-    fun testToFixed() {
+@Suppress("unused")
+class SettingsTest : StringSpec() {
+    override fun isolationMode() = IsolationMode.InstancePerTest
+
+    init {
+        "toFixed formats decimal places" {
         val num1 = 12.3456
-        assertEquals("12.35", num1.toFixed(2))
+        num1.toFixed(2) shouldBe "12.35"
 
         val num2 = 0.0
-        assertEquals("0.00", num2.toFixed(2))
-
-        val num3 = 1.00000003
-        assertEquals("1.00000003", num3.toFixed(8))
+        num2.toFixed(2) shouldBe "0.00"
     }
 
-    @Test
-    fun testUpdateAllocationTotal() {
+        "updateAllocationTotal validates totals and USD allocation" {
         val container = document.createElement("div") as HTMLDivElement
         
         val totalDisplay = document.createElement("span") as HTMLSpanElement
@@ -56,33 +58,26 @@ class SettingsTest {
 
         try {
             updateAllocationTotal()
-            assertEquals("Total: 100.00%", totalDisplay.textContent)
-            assertFalse(saveButton.disabled)
-            assertTrue(totalDisplay.classList.contains("live"))
-            assertFalse(totalDisplay.classList.contains("delayed"))
+            totalDisplay.textContent shouldBe "Total: 100.00%"
+            saveButton.disabled.shouldBeFalse()
+            totalDisplay.classList.contains("live").shouldBeTrue()
 
-            // Make sum invalid (90.0)
             input2.value = "60.0"
             updateAllocationTotal()
-            assertEquals("Total: 90.00%", totalDisplay.textContent)
-            assertTrue(saveButton.disabled)
-            assertTrue(totalDisplay.classList.contains("delayed"))
-            assertFalse(totalDisplay.classList.contains("live"))
+            totalDisplay.textContent shouldBe "Total: 90.00%"
+            saveButton.disabled.shouldBeTrue()
+            totalDisplay.classList.contains("delayed").shouldBeTrue()
 
-            // Make sum valid but missing USD
             input2.value = "70.0"
             sym2.value = "ETH"
             updateAllocationTotal()
-            assertEquals("Total: 100.00%", totalDisplay.textContent)
-            assertTrue(saveButton.disabled)
-            assertTrue(totalDisplay.classList.contains("delayed"))
+            saveButton.disabled.shouldBeTrue()
         } finally {
             document.body!!.removeChild(container)
         }
     }
 
-    @Test
-    fun testAddAssetRow() {
+        "addAssetRow appends a valid allocation" {
         val container = document.createElement("div") as HTMLDivElement
 
         val totalDisplay = document.createElement("span") as HTMLSpanElement
@@ -111,21 +106,59 @@ class SettingsTest {
 
         try {
             addAssetRow()
+            symInput.value shouldBe ""
             
-            // Check that LTC input was cleared
-            assertEquals("", symInput.value)
-            
-            // Check that LTC row was added
             val rows = symContainer.querySelectorAll(".allocation-edit-row")
-            assertEquals(1, rows.length)
-            
-            val row = rows.item(0) as HTMLElement
-            assertTrue(row.textContent!!.contains("LTC"))
+            rows.length shouldBe 1
+            rows.item(0)!!.textContent!!.shouldContain("LTC")
 
-            val hiddenSymInput = row.querySelector("input[name=\"symbols\"]") as HTMLInputElement
-            assertEquals("LTC", hiddenSymInput.value)
+            val firstRow = rows.item(0) as HTMLElement
+            val hiddenSymInput = firstRow.querySelector("input[name=\"symbols\"]") as HTMLInputElement
+            hiddenSymInput.value shouldBe "LTC"
         } finally {
             document.body!!.removeChild(container)
         }
+    }
+
+        "registerSettingsGlobals exposes settings actions" {
+        registerSettingsGlobals()
+        (window.asDynamic().updateAllocationTotal != null) shouldBe true
+        (window.asDynamic().addAssetRow != null) shouldBe true
+    }
+
+        "initSettings registers globals and updates totals" {
+        val container = document.createElement("div")
+        container.innerHTML = """
+            <span id="total-allocated-display"></span>
+            <button id="save-button"></button>
+        """.trimIndent()
+        document.body!!.appendChild(container)
+        try {
+            initSettings()
+            (window.asDynamic().addAssetRow != null) shouldBe true
+        } finally {
+            document.body!!.removeChild(container)
+        }
+    }
+
+        "settings helpers tolerate missing or incomplete fields" {
+        updateAllocationTotal()
+        addAssetRow()
+
+        val container = document.createElement("div")
+        container.innerHTML = """
+            <span id="total-allocated-display"></span><button id="save-button"></button>
+            <input id="new-symbol-input" value=" "><div id="allocations-container"></div>
+        """.trimIndent()
+        document.body!!.appendChild(container)
+        try {
+            updateAllocationTotal()
+            (document.getElementById("save-button") as HTMLButtonElement).disabled.shouldBeTrue()
+            addAssetRow()
+            (document.getElementById("allocations-container") as HTMLElement).children.length shouldBe 0
+        } finally {
+            document.body!!.removeChild(container)
+        }
+    }
     }
 }

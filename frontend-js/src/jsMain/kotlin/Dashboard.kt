@@ -5,8 +5,8 @@ import kotlinx.browser.window
 import org.w3c.dom.*
 import kotlin.js.Date
 
-private var currentSortCol: Int = 5
-private var currentSortDir: String = "asc"
+internal var currentSortCol: Int = 5
+internal var currentSortDir: String = "asc"
 
 fun registerDashboardGlobals() {
     window.asDynamic().sortTable = { header: HTMLElement, colIdx: Int ->
