@@ -4,7 +4,6 @@ import java.math.BigDecimal
 import java.math.RoundingMode
 import java.time.Instant
 import java.time.temporal.ChronoUnit
-import java.util.*
 
 /**
  * Comprehensive formatting utilities for common view operations.

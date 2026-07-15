@@ -700,7 +700,7 @@ object CssStyles {
         }
 
         // 16. Empty State Blocks
-        ".${CssClass.Activity.EmptyHistoryBox.value}" {
+        ".${CssClass.Activity.EmptyHistoryBox.value}, .history-empty" {
             display = Display.flex
             flexDirection = FlexDirection.column
             alignItems = Align.center
@@ -967,16 +967,6 @@ object CssStyles {
             marginBottom = 1.25.rem
         }
 
-        ".history-empty" {
-            display = Display.flex
-            flexDirection = FlexDirection.column
-            alignItems = Align.center
-            put("justify-content", "center")
-            padding = Padding(4.rem, 1.rem)
-            color = colorTextMuted
-            textAlign = TextAlign.center
-            gap = 0.5.rem
-        }
 
         // ==========================================
         // Grouped Media Queries (To ensure correct cascading order)

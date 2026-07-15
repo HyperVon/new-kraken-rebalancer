@@ -8,15 +8,13 @@ import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.repository.TradeRepository
-import com.gemini.krakenbot.repository.TradeSummaryStats
-import com.gemini.krakenbot.service.ConfigService
-import com.gemini.krakenbot.service.KrakenService
-import com.gemini.krakenbot.service.TradeHistoryService
-import com.gemini.krakenbot.service.isWithinRelativeTolerance
-import com.gemini.krakenbot.service.PortfolioAnalyzer
+import com.gemini.krakenbot.service.*
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.flow
 import org.slf4j.LoggerFactory
 import java.io.File
 import java.math.BigDecimal
@@ -413,7 +411,7 @@ class TradeHistoryServiceImpl(
      */
     private fun getTradeHistoryPaginated(
         startSec: Long?,
-        pageSize: Int = 50
+        @Suppress("SameParameterValue") pageSize: Int = 50
     ): Flow<List<TradeRecord>> = flow {
         var offset = 0
         val isSeeded = repository.isHistorySeeded()
@@ -552,36 +550,31 @@ class TradeHistoryServiceImpl(
             var exactPortfolioValue = BigDecimal.ZERO
             val assetSnapshots = mutableMapOf<String, PortfolioSnapshot.AssetSnapshot>()
 
-            for (alloc in allocations) {
+            val calculatedAssets = allocations.map { alloc ->
                 val symbol = alloc.symbol.value.uppercase()
                 val rawBal = runningBalances[symbol] ?: BigDecimal.ZERO
                 val balance = if (rawBal < BigDecimal.ZERO) BigDecimal.ZERO else rawBal
                 val price = getPriceForTimestamp(symbol, snapshotTimestamp, ohlcData, tradePrices, currentPrices)
                 val valueUSD = balance.multiply(price).setScale(2, RoundingMode.HALF_UP)
                 exactPortfolioValue = exactPortfolioValue.add(valueUSD)
+                CalculatedAsset(symbol, balance, price, valueUSD, alloc.targetPercent)
             }
 
-            for (alloc in allocations) {
-                val symbol = alloc.symbol.value.uppercase()
-                val rawBal = runningBalances[symbol] ?: BigDecimal.ZERO
-                val balance = if (rawBal < BigDecimal.ZERO) BigDecimal.ZERO else rawBal
-                val price = getPriceForTimestamp(symbol, snapshotTimestamp, ohlcData, tradePrices, currentPrices)
-                val valueUSD = balance.multiply(price).setScale(2, RoundingMode.HALF_UP)
-
+            for (asset in calculatedAssets) {
                 val currentPercent = if (exactPortfolioValue > BigDecimal.ZERO) {
-                    valueUSD.multiply(BigDecimal(100)).divide(exactPortfolioValue, 2, RoundingMode.HALF_UP)
+                    asset.valueUSD.multiply(BigDecimal(100)).divide(exactPortfolioValue, 2, RoundingMode.HALF_UP)
                 } else {
                     BigDecimal.ZERO
                 }
-                val deviationPercent = currentPercent.subtract(BigDecimal(alloc.targetPercent)).setScale(2, RoundingMode.HALF_UP)
+                val deviationPercent = currentPercent.subtract(BigDecimal(asset.targetPercent)).setScale(2, RoundingMode.HALF_UP)
                 val deviationUSD = deviationPercent.divide(BigDecimal(100), 4, RoundingMode.HALF_UP).multiply(exactPortfolioValue).setScale(2, RoundingMode.HALF_UP)
 
-                assetSnapshots[symbol] = PortfolioSnapshot.AssetSnapshot(
-                    symbol = symbol,
-                    balance = balance.setScale(8, RoundingMode.HALF_UP),
-                    price = price.setScale(8, RoundingMode.HALF_UP),
-                    valueUSD = valueUSD,
-                    targetPercent = BigDecimal(alloc.targetPercent).setScale(2, RoundingMode.HALF_UP),
+                assetSnapshots[asset.symbol] = PortfolioSnapshot.AssetSnapshot(
+                    symbol = asset.symbol,
+                    balance = asset.balance.setScale(8, RoundingMode.HALF_UP),
+                    price = asset.price.setScale(8, RoundingMode.HALF_UP),
+                    valueUSD = asset.valueUSD,
+                    targetPercent = BigDecimal(asset.targetPercent).setScale(2, RoundingMode.HALF_UP),
                     currentPercent = currentPercent,
                     deviationPercent = deviationPercent,
                     deviationUSD = deviationUSD
@@ -671,6 +664,14 @@ class TradeHistoryServiceImpl(
     override fun setSyncMetadata(key: String, value: String) = repository.setSyncMetadata(key, value)
     override fun isHistorySeeded(): Boolean = repository.isHistorySeeded()
 }
+
+private data class CalculatedAsset(
+    val symbol: String,
+    val balance: BigDecimal,
+    val price: BigDecimal,
+    val valueUSD: BigDecimal,
+    val targetPercent: Double
+)
 
 private sealed class TimelineEvent : Comparable<TimelineEvent> {
     abstract val timestamp: Instant

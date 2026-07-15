@@ -1,5 +1,6 @@
 package com.gemini.krakenbot.repository.impl
 
+import com.fasterxml.jackson.databind.ObjectMapper
 import com.gemini.krakenbot.model.PortfolioStats
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.repository.table.PortfolioStatsTable
@@ -7,11 +8,9 @@ import org.jetbrains.exposed.sql.Database
 import org.jetbrains.exposed.sql.insert
 import org.jetbrains.exposed.sql.selectAll
 import org.jetbrains.exposed.sql.transactions.transaction
-import com.fasterxml.jackson.databind.ObjectMapper
-import java.io.File
 import org.jetbrains.exposed.sql.update
 import org.slf4j.LoggerFactory
-import java.io.IOException
+import java.io.File
 import java.math.BigDecimal
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption

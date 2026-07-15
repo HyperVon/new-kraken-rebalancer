@@ -8,6 +8,15 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [6.5.5] - 2026-07-15
+
+### Changed
+
+- **Deduplicated Asset Calculations**: Mapped allocations once into a new `CalculatedAsset` helper data class in `TradeHistoryServiceImpl`, completely DRYing up identical asset price, balance, and USD valuation logic.
+- **Centralized HTML Head Links**: Extracted common viewport, charset, fonts, and CSS stylesheet links into a single `commonMetadataAndStyles()` extension function on `HEAD` in `HtmlHelpers.kt`, eliminating duplicate layout code in `DashboardView`, `DashboardShellComponent`, and `HistoryPageComponent`.
+- **Consolidated Empty History CSS**: Combined the styling selectors for `EmptyHistoryBox` and `.history-empty` in `CssStyles.kt` into a single block, deleting the duplicate styles.
+- **Import & Warnings Cleanup**: Cleaned up unused imports across several repositories and services, and suppressed minor parameter warnings.
+
 ## [6.5.4] - 2026-07-15
 
 ### Fixed
