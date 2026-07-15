@@ -1,6 +1,7 @@
 package com.gemini.krakenbot.service.impl
 
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.PortfolioSnapshot
 import java.math.BigDecimal
 import java.math.RoundingMode
 
@@ -65,7 +66,7 @@ object PortfolioCalculations {
         currentValueUSD.subtract(targetValueUSD)
 
     /**
-     * Calculate deviation percentage.
+     * Calculate deviation percentage (signed relative deviation).
      */
     fun calculateDeviationPercent(
         deviationUSD: BigDecimal,
@@ -75,7 +76,6 @@ object PortfolioCalculations {
         when {
             targetValueUSD > BigDecimal.ZERO -> {
                 deviationUSD
-                    .abs()
                     .divide(targetValueUSD, SCALE_PERCENT, RoundingMode.HALF_UP)
                     .multiply(HUNDRED)
             }
@@ -134,4 +134,33 @@ object PortfolioCalculations {
             isSignificant = isSignificant
         )
     }
+
+    /**
+     * Create an AssetSnapshot using consolidated calculations.
+     */
+    fun createAssetSnapshot(
+        symbol: String,
+        balance: BigDecimal,
+        price: BigDecimal,
+        valueUSD: BigDecimal,
+        targetPercent: BigDecimal,
+        totalPortfolioValueUSD: BigDecimal
+    ): PortfolioSnapshot.AssetSnapshot {
+        val currentPercent = calculateCurrentPercent(valueUSD, totalPortfolioValueUSD)
+        val targetValueUSD = calculateTargetValue(targetPercent, totalPortfolioValueUSD)
+        val deviationUSD = calculateDeviationUSD(valueUSD, targetValueUSD)
+        val deviationPercent = calculateDeviationPercent(deviationUSD, targetValueUSD, valueUSD)
+
+        return PortfolioSnapshot.AssetSnapshot(
+            symbol = Asset(symbol),
+            balance = balance.setScale(8, RoundingMode.HALF_UP),
+            price = price.setScale(8, RoundingMode.HALF_UP),
+            valueUSD = valueUSD.setScale(2, RoundingMode.HALF_UP),
+            targetPercent = targetPercent.setScale(2, RoundingMode.HALF_UP),
+            currentPercent = currentPercent.setScale(2, RoundingMode.HALF_UP),
+            deviationPercent = deviationPercent.setScale(2, RoundingMode.HALF_UP),
+            deviationUSD = deviationUSD.setScale(2, RoundingMode.HALF_UP)
+        )
+    }
 }
+

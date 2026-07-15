@@ -240,14 +240,14 @@ class PortfolioAnalyzerImpl(
                 s.deviationTriggerPercent
             )
 
-            if (metrics.deviationPercent.toDouble() >= s.deviationTriggerPercent && metrics.isSignificant) {
+            if (metrics.deviationPercent.abs().toDouble() >= s.deviationTriggerPercent && metrics.isSignificant) {
                 actionLog.add(
                     "Deviation Triggered details: $symbolVal Dev: ${metrics.deviationPercent}%"
                 )
             }
 
             if (symbol.isUsd) {
-                if (metrics.deviationPercent.toDouble() >= s.deviationTriggerPercent && metrics.isSignificant) {
+                if (metrics.deviationPercent.abs().toDouble() >= s.deviationTriggerPercent && metrics.isSignificant) {
                     log.info(
                         "Asset USD Deviation: {}% (Trigger: {}%). USD Dev: {}",
                         metrics.deviationPercent,
@@ -258,7 +258,7 @@ class PortfolioAnalyzerImpl(
                     usdDeviationAmount = metrics.deviationUSD
                 }
             } else {
-                if (metrics.deviationPercent.toDouble() >= s.deviationTriggerPercent && metrics.isSignificant) {
+                if (metrics.deviationPercent.abs().toDouble() >= s.deviationTriggerPercent && metrics.isSignificant) {
                     log.info(
                         "Asset {} Deviation: {}% (Trigger: {}%). USD Dev: {}",
                         symbolVal,

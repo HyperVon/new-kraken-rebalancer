@@ -125,13 +125,7 @@ private fun setupSyncProgressAndLoad() {
     })
 }
 
-private fun fetchJSON(url: String): Promise<Array<dynamic>> {
-    return window.fetch(url)
-        .then { res -> res.json() }
-        .then { data -> data as Array<dynamic> }
-}
-
-private fun fetchJSONStats(url: String): Promise<dynamic> {
+private fun fetchJSON(url: String): Promise<dynamic> {
     return window.fetch(url)
         .then { res -> res.json() }
 }
@@ -504,7 +498,7 @@ internal fun loadAll(range: String): Promise<Unit> {
 
     val p1 = fetchJSON("/api/history/snapshots?range=$currentRange")
     val p2 = fetchJSON("/api/history/trades?range=$currentRange")
-    val p3 = fetchJSONStats("/api/history/stats")
+    val p3 = fetchJSON("/api/history/stats")
 
     return Promise.all(arrayOf(p1, p2, p3)).then { results ->
         val snapshots = results[0] as Array<dynamic>
@@ -522,7 +516,7 @@ internal fun loadAll(range: String): Promise<Unit> {
 
 
 internal fun checkSyncProgress(): Promise<Boolean> {
-    return fetchJSONStats("/api/history/sync-progress").then { status: dynamic ->
+    return fetchJSON("/api/history/sync-progress").then { status: dynamic ->
         val banner = document.getElementById("sync-progress-banner") as? HTMLElement
         if (banner == null) {
             true

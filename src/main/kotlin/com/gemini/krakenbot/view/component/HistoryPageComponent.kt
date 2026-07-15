@@ -3,6 +3,8 @@ package com.gemini.krakenbot.view.component
 import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.Icons
 import com.gemini.krakenbot.view.util.Icons.icon
+import com.gemini.krakenbot.view.util.Layouts.glassPanel
+import com.gemini.krakenbot.view.util.Layouts.statusCard
 import com.gemini.krakenbot.view.util.Routes
 import com.gemini.krakenbot.view.util.ViewText
 import com.gemini.krakenbot.view.util.commonMetadataAndStyles
@@ -75,48 +77,30 @@ class HistoryPageComponent {
     private fun DIV.renderStatsGrid() {
         div(CssClass.History.StatsGrid.value) {
             id = "history-stats"
-            renderStatCard(
-                "stat-ath",
-                ViewText.HISTORY_ALL_TIME_HIGH,
-                Icons.WALLET,
-                "--"
+            statusCard(
+                title = ViewText.HISTORY_ALL_TIME_HIGH,
+                iconSvg = Icons.WALLET,
+                value = "--",
+                valueId = "stat-ath"
             )
-            renderStatCard(
-                "stat-total-trades",
-                ViewText.HISTORY_TOTAL_TRADES,
-                Icons.CHART,
-                "--"
+            statusCard(
+                title = ViewText.HISTORY_TOTAL_TRADES,
+                iconSvg = Icons.CHART,
+                value = "--",
+                valueId = "stat-total-trades"
             )
-            renderStatCard(
-                "stat-total-volume",
-                ViewText.HISTORY_TOTAL_VOLUME,
-                Icons.WALLET,
-                "--"
+            statusCard(
+                title = ViewText.HISTORY_TOTAL_VOLUME,
+                iconSvg = Icons.WALLET,
+                value = "--",
+                valueId = "stat-total-volume"
             )
-            renderStatCard(
-                "stat-total-fees",
-                ViewText.HISTORY_TOTAL_FEES,
-                Icons.DOLLAR_CIRCLE,
-                "--"
+            statusCard(
+                title = ViewText.HISTORY_TOTAL_FEES,
+                iconSvg = Icons.DOLLAR_CIRCLE,
+                value = "--",
+                valueId = "stat-total-fees"
             )
-        }
-    }
-
-    private fun DIV.renderStatCard(
-        cardId: String,
-        title: String,
-        iconSvg: String,
-        defaultValue: String
-    ) {
-        div(CssClass.StatusCard.Default.value) {
-            div(CssClass.StatusCard.Header.value) {
-                span(CssClass.StatusCard.Title.value) { +title }
-                div(CssClass.StatusCard.Icon.value) { icon(iconSvg) }
-            }
-            div(CssClass.StatusCard.Value.value) {
-                id = cardId
-                +defaultValue
-            }
         }
     }
 
@@ -150,11 +134,7 @@ class HistoryPageComponent {
         title: String,
         iconSvg: String
     ) {
-        div(CssClass.Layout.GlassPanel.value) {
-            h2(CssClass.Utility.GlassPanelTitle.value) {
-                icon(iconSvg)
-                +title
-            }
+        glassPanel(title, iconSvg) {
             div(CssClass.History.ChartContainer.value) {
                 canvas {
                     id = canvasId
