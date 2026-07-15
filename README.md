@@ -15,17 +15,17 @@ several months.**
 
 ## Tech Stack
 
-| Layer           | Technology                                                                            |
-| --------------- | ------------------------------------------------------------------------------------- |
-| **Language**    | Kotlin 2.4.0 (JVM)                                                                    |
-| **Backend**     | Ktor 3.5.0 (Netty engine), Koin 4.2.1 (DI), Jackson 2.22                              |
-| **Database**    | SQLite (via JetBrains Exposed ORM 0.61.0)                                             |
-| **HTTP Client** | Ktor CIO Client (async, coroutine-native)                                             |
-| **Concurrency** | Kotlin Coroutines (`kotlinx.coroutines` 1.11.0)                                       |
-| **Frontend**    | Server-side HTML (kotlinx.html DSL + HTMX), kotlinx-css DSL, Ktor SSE                 |
-| **API**         | Kraken REST API with HMAC-SHA512 authentication                                       |
-| **Testing**     | Kotest 6.1 (StringSpec), MockK 1.14, Ktor MockEngine, JaCoCo (95%+ coverage enforced) |
-| **Build**       | Gradle (Kotlin DSL)                                                                   |
+| Layer           | Technology                                                                                           |
+| --------------- | ---------------------------------------------------------------------------------------------------- |
+| **Language**    | Kotlin 2.4.0 (Kotlin Multiplatform: JVM + JS)                                                        |
+| **Backend**     | Ktor 3.5.0 (Netty engine), Koin 4.2.1 (DI), Jackson 2.22                                             |
+| **Database**    | SQLite (via JetBrains Exposed ORM 0.61.0)                                                            |
+| **HTTP Client** | Ktor CIO Client (async, coroutine-native)                                                            |
+| **Concurrency** | Kotlin Coroutines (`kotlinx.coroutines` 1.11.0)                                                      |
+| **Frontend**    | Server-side HTML (kotlinx.html DSL + HTMX), kotlinx-css DSL, Ktor SSE + Client-side Kotlin/JS        |
+| **API**         | Kraken REST API with HMAC-SHA512 authentication                                                      |
+| **Testing**     | Kotest 6.1, MockK 1.14, JaCoCo (95%+ JVM coverage), Karma/Istanbul (90%+ JS statement/func coverage) |
+| **Build**       | Gradle (Kotlin DSL)                                                                                  |
 
 ---
 
@@ -116,26 +116,22 @@ Node.js. The complete TypeScript/NestJS codebase is preserved on the
 [`feature/typescript-rewrite`](../../tree/feature/typescript-rewrite) branch
 (8 commits).
 
-### Phase 5 — Back to Kotlin *(Jun 2026 – present)*
+### Phase 5 — 100% Kotlin & Kotlin Multiplatform *(Jun 2026 – present)*
 
 After building the same application three different ways, I returned to
-**Kotlin / Ktor** as the permanent stack. The Kotlin version offered the best
-balance of:
+**Kotlin / Ktor** as the permanent stack. To eliminate client-side JavaScript entirely, I migrated all remaining frontend scripts to **Kotlin/JS** using **Kotlin Multiplatform (KMP)**. The codebase is now **100% Kotlin**, offering the best balance of:
 
-- **Conciseness** — data classes, extension functions, and coroutines
-  dramatically reduce boilerplate compared to Java
-- **Type safety** — kotlinx.html gives compile-time-checked HTML rendering that
-  Go's `html/template` and JSX cannot match
-- **JVM ecosystem** — access to battle-tested libraries (Jackson, Netty, JaCoCo)
-  without the weight of Spring Boot's classpath scanning
-- **Single-process simplicity** — HTMX eliminated the React build pipeline,
-  making the entire application a single `./gradlew run` command
+- **Kotlin Multiplatform** — compiling a `:frontend-js` subproject directly to JavaScript via the Kotlin JS IR backend, replacing legacy browser scripts with type-safe Kotlin code.
+- **Conciseness** — data classes, extension functions, and coroutines dramatically reduce boilerplate compared to Java.
+- **Type safety** — `kotlinx.html` gives compile-time-checked HTML rendering that Go's `html/template` and JSX cannot match, while Kotlin/JS handles all client-side actions and table sorting with strong compile-time types.
+- **JVM ecosystem** — access to battle-tested libraries (Jackson, Netty, JaCoCo) without the weight of Spring Boot's classpath scanning.
+- **Single-process simplicity** — HTMX and Kotlin/JS compile to a single bundled asset served dynamically, keeping the entire application within a single `./gradlew run` command.
 
 The experimental branches (`go-rewrite` and `feature/typescript-rewrite`) remain in the repository as complete, working
 reference implementations for anyone interested in comparing the same domain
 logic across three languages and ecosystems.
 
-Subsequent updates in Phase 5 integrated a reactive configuration loop (`watchConfigChanges().collectLatest`), a Kraken call-counter rate limiter, flow-based API retry policies, and flow-based trade history pagination directly into the `main` branch.
+Subsequent updates in Phase 5 integrated a reactive configuration loop (`watchConfigChanges().collectLatest`), a Kraken call-counter rate limiter, flow-based API retry policies, and flow-based trade history pagination directly into the `main` branch. Additionally, the remaining client-side Javascript logic was rewritten to Kotlin/JS under the `:frontend-js` subproject, achieving a 100% Kotlin codebase.
 
 ### Technologies Explored
 
@@ -361,7 +357,7 @@ two complementary `SharedFlow` channels:
 ## Project Structure
 
 ```text
-├── frontend-js/                            # Kotlin/JS client-side subproject (Option 1)
+├── frontend-js/                            # Kotlin/JS client-side subproject compiling to rebalancer.js
 │   ├── src/jsMain/kotlin/                 # Kotlin/JS frontend source files
 │   │   ├── main.kt                        # Client-side routing entry point
 │   │   ├── Dashboard.kt                   # Stats card age calculation & table sorting
@@ -528,17 +524,30 @@ If you are modifying the client-side code in `frontend-js/` and want to compile 
 
 ## Testing
 
-The project enforces **strict line, branch, method, and instruction coverage** via
-JaCoCo, with thresholds set at **95% instruction coverage, 90% branch coverage,
-95% line coverage, and 95% method coverage**. Certain categories are excluded
-from the gate (model/config data classes, Exposed table definitions, inline
-utility files, CSS constant/stylesheet holders, and the Kraken API client implementation).
-All tests are behavioural — they verify actual rebalancing decisions, not just
-method invocations. Order volumes are asserted with `BigDecimal.compareTo()` to
-avoid floating-point comparison issues.
+The project features a comprehensive test suite for both the backend JVM application and the frontend Kotlin/JS subproject. To run all checks, tests, and coverage verification gates:
+
+```bash
+./gradlew check
+```
+
+### Backend JVM Tests
+
+The backend enforces **strict line, branch, method, and instruction coverage** via JaCoCo, with thresholds set at **95% instruction coverage, 90% branch coverage, 95% line coverage, and 95% method coverage** (excluding model/config data classes, Exposed table definitions, and the Kraken API client).
+
+To run JVM tests only:
 
 ```bash
 ./gradlew test
+```
+
+### Frontend Kotlin/JS Tests
+
+The client-side browser logic is tested via Chrome Headless using Karma and verified with Istanbul code coverage check thresholds (**90% statements, 90% lines, 90% functions, 75% branches**).
+
+To run JS browser tests only:
+
+```bash
+./gradlew :frontend-js:jsBrowserTest
 ```
 
 **315 tests** across:
