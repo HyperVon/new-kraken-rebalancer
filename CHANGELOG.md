@@ -8,6 +8,20 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [6.5.6] - 2026-07-15
+
+### Added
+
+- **Trade Record Matching Extensions**: Created extension functions on `TradeRecord` (`isSameSymbolAndSide`, `isPairAliasDuplicateOf`, `isLocalEstimateDuplicateOf`, `feePercentDiffersMateriallyFrom`, `isMatchingApiTrade`) to centralize matching and reconciliation logic between the database and syncing processes.
+
+### Changed
+
+- **Thread-safe RateLimiter**: Refactored `RateLimiter` to use `kotlinx.coroutines.sync.Mutex` and normal variables instead of raw `AtomicLong` scaling, ensuring thread safety and code clarity.
+- **Signed Relative Deviation**: Removed absolute scaling from `PortfolioCalculations.calculateDeviationPercent` to produce signed relative deviations, enabling correct `-` or `+` representation and coloring on the dashboard.
+- **Consolidated Asset Snapshot Creation**: Added the `createAssetSnapshot` factory helper to `PortfolioCalculations` to unify formatting, scaling, and math when building snapshot records.
+- **Unified view Layouts**: Refactored stats grid and chart panel markup in `HistoryPageComponent` to reuse `Layouts.statusCard` and `Layouts.glassPanel`.
+- **Combined JS Fetches**: Merged identical `fetchJSON` and `fetchJSONStats` methods in frontend JS `History.kt` into a single promise helper.
+
 ## [6.5.5] - 2026-07-15
 
 ### Changed

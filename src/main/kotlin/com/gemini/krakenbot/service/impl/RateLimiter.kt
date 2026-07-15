@@ -1,7 +1,8 @@
 package com.gemini.krakenbot.service.impl
 
 import kotlinx.coroutines.delay
-import java.util.concurrent.atomic.AtomicLong
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlin.math.roundToLong
 import kotlin.time.Duration.Companion.milliseconds
 
@@ -13,47 +14,48 @@ class RateLimiter(
     private val safeLimit: Double = 12.0,
     private val decayRate: Double = 0.33
 ) {
-    private val callCounter = AtomicLong(0)
-    private val lastUpdateTimeMs = AtomicLong(System.currentTimeMillis())
+    private val mutex = Mutex()
+    @Volatile
+    private var callCounter: Double = 0.0
+    @Volatile
+    private var lastUpdateTimeMs: Long = System.currentTimeMillis()
 
-
-
-    suspend fun acquireWithCost(cost: Double): Long {
+    suspend fun acquireWithCost(cost: Double): Double = mutex.withLock {
         val now = System.currentTimeMillis()
-        val lastUpdate = lastUpdateTimeMs.get()
-        val elapsedSeconds = (now - lastUpdate) / 1000.0
+        val elapsedSeconds = (now - lastUpdateTimeMs) / 1000.0
 
         // Apply decay to counter
-        val decayedCounter = (callCounter.get() / 1000.0) - (elapsedSeconds * decayRate)
-        val adjustedCounter = maxOf(0.0, decayedCounter * 1000.0).toLong()
-        callCounter.set(adjustedCounter)
-        lastUpdateTimeMs.set(now)
+        callCounter = maxOf(0.0, callCounter - (elapsedSeconds * decayRate))
+        lastUpdateTimeMs = now
 
         // Calculate wait time if needed
-        val currentCounter = callCounter.get() / 1000.0
-        if (currentCounter + cost > safeLimit) {
-            val neededDecay = (currentCounter + cost) - safeLimit
+        if (callCounter + cost > safeLimit) {
+            val neededDecay = (callCounter + cost) - safeLimit
             val waitSeconds = neededDecay / decayRate
             val waitMs = (waitSeconds * 1000).roundToLong()
             if (waitMs > 0) {
-
                 delay(waitMs.milliseconds)
-                callCounter.set(((safeLimit - cost) * 1000).toLong())
-                lastUpdateTimeMs.set(System.currentTimeMillis())
+                callCounter = safeLimit - cost
+                lastUpdateTimeMs = System.currentTimeMillis()
             }
         }
 
         // Increment counter with cost
-        callCounter.addAndGet((cost * 1000).toLong())
+        callCounter += cost
 
-        return callCounter.get()
+        return callCounter
     }
 
-    fun getCurrentCounter(): Double = callCounter.get() / 1000.0
+    fun getCurrentCounter(): Double {
+        val now = System.currentTimeMillis()
+        val lastUpdate = lastUpdateTimeMs
+        val elapsedSeconds = (now - lastUpdate) / 1000.0
+        return maxOf(0.0, callCounter - (elapsedSeconds * decayRate))
+    }
 
     fun reset() {
-        callCounter.set(0)
-        lastUpdateTimeMs.set(System.currentTimeMillis())
+        callCounter = 0.0
+        lastUpdateTimeMs = System.currentTimeMillis()
     }
 }
 

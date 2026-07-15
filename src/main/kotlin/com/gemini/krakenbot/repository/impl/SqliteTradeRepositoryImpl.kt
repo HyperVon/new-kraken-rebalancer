@@ -1,8 +1,6 @@
 package com.gemini.krakenbot.repository.impl
 
-import com.gemini.krakenbot.model.Asset
-import com.gemini.krakenbot.model.PortfolioSnapshot
-import com.gemini.krakenbot.model.TradeRecord
+import com.gemini.krakenbot.model.*
 import com.gemini.krakenbot.repository.TradeRepository
 import com.gemini.krakenbot.repository.TradeSummaryStats
 import com.gemini.krakenbot.repository.table.*
@@ -384,23 +382,16 @@ class SqliteTradeRepositoryImpl(
 
             for (i in allTrades.indices) {
                 val t1 = allTrades[i]
+                val record1 = buildTradeFromRow(t1)
                 for (j in i + 1 until allTrades.size) {
                     val t2 = allTrades[j]
                     val diff = t2[TradeTable.timestamp] - t1[TradeTable.timestamp]
                     if (diff > 300_000) break
 
-                    val sameSymbolAndSide =
-                        t1[TradeTable.symbol].equals(t2[TradeTable.symbol], ignoreCase = true) &&
-                                t1[TradeTable.side].equals(t2[TradeTable.side], ignoreCase = true)
-                    val pairAliasDuplicate = sameSymbolAndSide &&
-                            t1[TradeTable.volume].compareTo(t2[TradeTable.volume]) == 0 &&
-                            t1[TradeTable.pair] != t2[TradeTable.pair]
-                    val localEstimateDuplicate = sameSymbolAndSide &&
-                            t1[TradeTable.pair].equals(t2[TradeTable.pair], ignoreCase = true) &&
-                            diff <= 10_000 &&
-                            isWithinRelativeTolerance(t1[TradeTable.volume], t2[TradeTable.volume]) &&
-                            isWithinRelativeTolerance(t1[TradeTable.usdAmount], t2[TradeTable.usdAmount]) &&
-                            feePercentDiffersMaterially(t1, t2)
+                    val record2 = buildTradeFromRow(t2)
+                    val pairAliasDuplicate = record1.isPairAliasDuplicateOf(record2)
+                    val localEstimateDuplicate = record1.isLocalEstimateDuplicateOf(record2) &&
+                            record1.feePercentDiffersMateriallyFrom(record2)
 
                     if (pairAliasDuplicate || localEstimateDuplicate) {
                         // The earlier timestamp is the exchange fill. The later row is the
@@ -415,15 +406,5 @@ class SqliteTradeRepositoryImpl(
                 TradeTable.deleteWhere { id inList toDelete }
             }
         }
-    }
-
-    private fun feePercentDiffersMaterially(first: ResultRow, second: ResultRow): Boolean {
-        val firstAmount = first[TradeTable.usdAmount]
-        val secondAmount = second[TradeTable.usdAmount]
-        if (firstAmount.signum() == 0 || secondAmount.signum() == 0) return false
-
-        val firstFeeRate = first[TradeTable.fee].divide(firstAmount, 8, RoundingMode.HALF_UP)
-        val secondFeeRate = second[TradeTable.fee].divide(secondAmount, 8, RoundingMode.HALF_UP)
-        return firstFeeRate.subtract(secondFeeRate).abs() >= BigDecimal("0.001")
     }
 }

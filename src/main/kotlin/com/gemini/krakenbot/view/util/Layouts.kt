@@ -25,7 +25,8 @@ object Layouts {
         iconSvg: String,
         value: String,
         isSuccess: Boolean = false,
-        block: DIV.() -> Unit
+        valueId: String? = null,
+        block: (DIV.() -> Unit)? = null
     ) {
         val cardClass =
             if (isSuccess) {
@@ -38,8 +39,15 @@ object Layouts {
                 span(classes = CssClass.StatusCard.Title.value) { +title }
                 div(classes = CssClass.StatusCard.Icon.value) { icon(iconSvg) }
             }
-            div(classes = CssClass.StatusCard.Value.value) { +value }
-            div(classes = CssClass.StatusCard.Sub.value) { block() }
+            div(classes = CssClass.StatusCard.Value.value) {
+                if (valueId != null) {
+                    id = valueId
+                }
+                +value
+            }
+            if (block != null) {
+                div(classes = CssClass.StatusCard.Sub.value) { block() }
+            }
         }
     }
 

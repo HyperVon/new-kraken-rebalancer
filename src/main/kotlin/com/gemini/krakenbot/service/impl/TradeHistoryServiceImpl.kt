@@ -2,10 +2,7 @@ package com.gemini.krakenbot.service.impl
 
 import com.fasterxml.jackson.core.type.TypeReference
 import com.fasterxml.jackson.databind.ObjectMapper
-import com.gemini.krakenbot.model.Asset
-import com.gemini.krakenbot.model.HistoryStats
-import com.gemini.krakenbot.model.PortfolioSnapshot
-import com.gemini.krakenbot.model.TradeRecord
+import com.gemini.krakenbot.model.*
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.repository.TradeRepository
 import com.gemini.krakenbot.service.*
@@ -188,20 +185,13 @@ class TradeHistoryServiceImpl(
                 val symbol = alloc.symbol.value.uppercase()
                 val balance = currentBalances[symbol]!!
                 val price = currentPrices[symbol]!!
-                val valueUSD = balance * price
-                val currentPercent = (valueUSD / exactPortfolioValue) * 100.0
-                val deviationPercent = currentPercent - alloc.targetPercent
-                val deviationUSD = deviationPercent / 100.0 * exactPortfolioValue
-
-                assetSnapshots[symbol] = PortfolioSnapshot.AssetSnapshot(
+                assetSnapshots[symbol] = PortfolioCalculations.createAssetSnapshot(
                     symbol = symbol,
-                    balance = BigDecimal.valueOf(balance).setScale(8, RoundingMode.HALF_UP),
-                    price = BigDecimal.valueOf(price).setScale(8, RoundingMode.HALF_UP),
-                    valueUSD = BigDecimal.valueOf(valueUSD).setScale(2, RoundingMode.HALF_UP),
-                    targetPercent = BigDecimal.valueOf(alloc.targetPercent).setScale(2, RoundingMode.HALF_UP),
-                    currentPercent = BigDecimal.valueOf(currentPercent).setScale(2, RoundingMode.HALF_UP),
-                    deviationPercent = BigDecimal.valueOf(deviationPercent).setScale(2, RoundingMode.HALF_UP),
-                    deviationUSD = BigDecimal.valueOf(deviationUSD).setScale(2, RoundingMode.HALF_UP)
+                    balance = BigDecimal.valueOf(balance),
+                    price = BigDecimal.valueOf(price),
+                    valueUSD = BigDecimal.valueOf(balance * price),
+                    targetPercent = BigDecimal.valueOf(alloc.targetPercent),
+                    totalPortfolioValueUSD = BigDecimal.valueOf(exactPortfolioValue)
                 )
             }
 
@@ -321,7 +311,7 @@ class TradeHistoryServiceImpl(
                     // fills. Match their small expected variances so the API record reconciles
                     // the local one instead of appearing as a second trade in History.
                     val matchingLocalTrade = originalLocalTrades.find { local ->
-                        isSameTrade(local, apiTrade, allocations)
+                        local.isMatchingApiTrade(apiTrade, allocations)
                     }
 
                     if (matchingLocalTrade != null) {
@@ -379,25 +369,7 @@ class TradeHistoryServiceImpl(
         log.info("Trade history synchronization completed. Added: {} new, Reconciled: {}.", totalAdded, totalReconciled)
     }
 
-    private fun isSameTrade(
-        local: TradeRecord,
-        api: TradeRecord,
-        allocations: List<String>
-    ): Boolean {
-        val timeDifference = abs(local.timestamp.toEpochMilli() - api.timestamp.toEpochMilli())
-        if (timeDifference > LOCAL_TRADE_MATCH_WINDOW_MILLIS ||
-            !local.side.equals(api.side, ignoreCase = true)
-        ) {
-            return false
-        }
 
-        val localSymbol = Asset.fromTradingPair(local.pair, allocations) ?: local.symbol
-        val apiSymbol = Asset.fromTradingPair(api.pair, allocations) ?: api.symbol
-        return localSymbol.equals(apiSymbol, ignoreCase = true) &&
-                isWithinRelativeTolerance(local.volume, api.volume, LOCAL_TRADE_MATCH_TOLERANCE) &&
-                (local.volume.compareTo(api.volume) == 0 ||
-                        isWithinRelativeTolerance(local.usdAmount, api.usdAmount, LOCAL_TRADE_MATCH_TOLERANCE))
-    }
 
     /**
      * A cold Flow that fetches trade history from Kraken paginated by [pageSize].
@@ -561,23 +533,13 @@ class TradeHistoryServiceImpl(
             }
 
             for (asset in calculatedAssets) {
-                val currentPercent = if (exactPortfolioValue > BigDecimal.ZERO) {
-                    asset.valueUSD.multiply(BigDecimal(100)).divide(exactPortfolioValue, 2, RoundingMode.HALF_UP)
-                } else {
-                    BigDecimal.ZERO
-                }
-                val deviationPercent = currentPercent.subtract(BigDecimal(asset.targetPercent)).setScale(2, RoundingMode.HALF_UP)
-                val deviationUSD = deviationPercent.divide(BigDecimal(100), 4, RoundingMode.HALF_UP).multiply(exactPortfolioValue).setScale(2, RoundingMode.HALF_UP)
-
-                assetSnapshots[asset.symbol] = PortfolioSnapshot.AssetSnapshot(
+                assetSnapshots[asset.symbol] = PortfolioCalculations.createAssetSnapshot(
                     symbol = asset.symbol,
-                    balance = asset.balance.setScale(8, RoundingMode.HALF_UP),
-                    price = asset.price.setScale(8, RoundingMode.HALF_UP),
+                    balance = asset.balance,
+                    price = asset.price,
                     valueUSD = asset.valueUSD,
-                    targetPercent = BigDecimal(asset.targetPercent).setScale(2, RoundingMode.HALF_UP),
-                    currentPercent = currentPercent,
-                    deviationPercent = deviationPercent,
-                    deviationUSD = deviationUSD
+                    targetPercent = BigDecimal(asset.targetPercent),
+                    totalPortfolioValueUSD = exactPortfolioValue
                 )
             }
 

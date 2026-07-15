@@ -136,11 +136,11 @@ Using these effective targets, the **Ideal Value** for each asset is calculated.
 
 The difference between current and target value is calculated:
 `Deviation (USD) = Current Value - Target Value`
-`Deviation (%) = |Deviation (USD)| / Target Value * 100`
+`Deviation (%) = Deviation (USD) / Target Value * 100` (representing signed relative deviation)
 
 ### 3. Trigger Logic
 
-A rebalance is only attempted if an asset's `Deviation (%)` exceeds the
+A rebalance is only attempted if an asset's absolute `Deviation (%)` (`|Deviation (%)|`) exceeds the
 configured `deviationTriggerPercent` (e.g., 5%).
 
 - **Scenario A: Standard Rebalance**

@@ -213,15 +213,13 @@ class PortfolioManagerImpl(
                 dustThresholdUSD = configService.getConfig().settings.dustThresholdUSD
             )
 
-            assetSnapshots[symbol.value] = PortfolioSnapshot.AssetSnapshot(
-                symbol = symbol,
+            assetSnapshots[symbol.value] = PortfolioCalculations.createAssetSnapshot(
+                symbol = symbol.value,
                 balance = balance,
                 price = price,
                 valueUSD = valUSD,
                 targetPercent = metrics.calcTargetPercent,
-                currentPercent = metrics.currentPercent,
-                deviationPercent = metrics.deviationPercent,
-                deviationUSD = metrics.deviationUSD
+                totalPortfolioValueUSD = totalPortfolioValueUSD
             )
         }
 
