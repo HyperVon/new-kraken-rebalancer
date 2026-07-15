@@ -14,6 +14,7 @@ import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.booleans.shouldBeTrue
+import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import io.mockk.every
 import io.mockk.mockk
@@ -159,8 +160,10 @@ class PortfolioManagerDrawdownTest : StringSpec() {
 
                 portfolioManager.performRebalanceCycle()
 
-                verify { portfolioStatsRepository.save(stats) }
-                (BigDecimal("1500.0").compareTo(stats.allTimeHigh)) shouldBe 0
+                val captor = slot<PortfolioStats>()
+                verify { portfolioStatsRepository.save(capture(captor)) }
+                captor.captured.allTimeHigh.shouldNotBeNull()
+                BigDecimal("1500.0").compareTo(captor.captured.allTimeHigh) shouldBe 0
             }
         }
     }

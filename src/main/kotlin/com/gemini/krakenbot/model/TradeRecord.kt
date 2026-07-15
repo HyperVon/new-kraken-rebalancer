@@ -1,7 +1,9 @@
 package com.gemini.krakenbot.model
 
 import java.math.BigDecimal
+import java.math.RoundingMode
 import java.time.Instant
+import com.gemini.krakenbot.service.isWithinRelativeTolerance
 
 /**
  * Represents a single executed trade/order event.
@@ -40,14 +42,14 @@ fun TradeRecord.isLocalEstimateDuplicateOf(
     return this.isSameSymbolAndSide(other) &&
             this.pair.equals(other.pair, ignoreCase = true) &&
             diff <= windowMillis &&
-            com.gemini.krakenbot.service.isWithinRelativeTolerance(this.volume, other.volume, tolerance) &&
-            com.gemini.krakenbot.service.isWithinRelativeTolerance(this.usdAmount, other.usdAmount, tolerance)
+            isWithinRelativeTolerance(this.volume, other.volume, tolerance) &&
+            isWithinRelativeTolerance(this.usdAmount, other.usdAmount, tolerance)
 }
 
 fun TradeRecord.feePercentDiffersMateriallyFrom(other: TradeRecord): Boolean {
     if (this.usdAmount.signum() == 0 || other.usdAmount.signum() == 0) return false
-    val thisFeeRate = this.fee.divide(this.usdAmount, 8, java.math.RoundingMode.HALF_UP)
-    val otherFeeRate = other.fee.divide(other.usdAmount, 8, java.math.RoundingMode.HALF_UP)
+    val thisFeeRate = this.fee.divide(this.usdAmount, 8, RoundingMode.HALF_UP)
+    val otherFeeRate = other.fee.divide(other.usdAmount, 8, RoundingMode.HALF_UP)
     return thisFeeRate.subtract(otherFeeRate).abs() >= BigDecimal("0.001")
 }
 
@@ -64,8 +66,7 @@ fun TradeRecord.isMatchingApiTrade(
     val thisSymbol = Asset.fromTradingPair(this.pair, allocations) ?: this.symbol
     val apiSymbol = Asset.fromTradingPair(apiTrade.pair, allocations) ?: apiTrade.symbol
     return thisSymbol.equals(apiSymbol, ignoreCase = true) &&
-            com.gemini.krakenbot.service.isWithinRelativeTolerance(this.volume, apiTrade.volume, tolerance) &&
+            isWithinRelativeTolerance(this.volume, apiTrade.volume, tolerance) &&
             (this.volume.compareTo(apiTrade.volume) == 0 ||
-                    com.gemini.krakenbot.service.isWithinRelativeTolerance(this.usdAmount, apiTrade.usdAmount, tolerance))
+                    isWithinRelativeTolerance(this.usdAmount, apiTrade.usdAmount, tolerance))
 }
-

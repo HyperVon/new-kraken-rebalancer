@@ -52,32 +52,8 @@ class OrderExecutorImpl(
                 continue
             }
 
-            val price = prices[symbol] ?: BigDecimal.ZERO
-            if (price.signum() == 0) continue
-
-            val volume = usdToSell.divide(
-                price,
-                8,
-                RoundingMode.HALF_UP
-            )
-            val pair = Asset.tradingPair(symbol)
-            val result =
-                krakenService.executeOrder(
-                    pair,
-                    "market",
-                    "sell",
-                    volume
-                )
-            logOrderResult(
-                result = result,
-                actionLog = actionLog,
-                symbol = symbol,
-                volume = volume,
-                usdAmount = usdToSell,
-                side = "SELL"
-            )
-            recordTrade(result, symbol, pair, "SELL", volume, usdToSell, prices)
-            if (result.success) {
+            val result = executeSingleOrder(symbol, usdToSell, "sell", prices, settings, actionLog)
+            if (result?.success == true) {
                 projectedCash = projectedCash.add(usdToSell)
                 executedSells = true
             }
@@ -106,31 +82,42 @@ class OrderExecutorImpl(
                 continue
             }
 
-            val price = prices[symbol] ?: BigDecimal.ZERO
-            if (price.signum() == 0) continue
-
-            val volume = cost.divide(price, 8, RoundingMode.HALF_UP)
-            val pair = Asset.tradingPair(symbol)
-            val result =
-                krakenService.executeOrder(
-                    pair = pair,
-                    type = "market",
-                    side = "buy",
-                    volume = volume
-                )
-            logOrderResult(
-                result = result,
-                actionLog = actionLog,
-                symbol = symbol,
-                volume = volume,
-                usdAmount = cost,
-                side = "BUY"
-            )
-            recordTrade(result, symbol, pair, "BUY", volume, cost, prices)
-            if (result.success) {
+            val result = executeSingleOrder(symbol, cost, "buy", prices, settings, actionLog)
+            if (result?.success == true) {
                 actualCash = actualCash.subtract(cost)
             }
         }
+    }
+
+    private suspend fun executeSingleOrder(
+        symbol: String,
+        usdAmount: BigDecimal,
+        side: String,
+        prices: AssetPrices,
+        settings: Settings,
+        actionLog: MutableList<String>
+    ): OrderResult? {
+        val price = prices[symbol] ?: BigDecimal.ZERO
+        if (price.signum() == 0) return null
+
+        val volume = usdAmount.divide(price, 8, RoundingMode.HALF_UP)
+        val pair = Asset.tradingPair(symbol)
+        val result = krakenService.executeOrder(
+            pair = pair,
+            type = "market",
+            side = side,
+            volume = volume
+        )
+        logOrderResult(
+            result = result,
+            actionLog = actionLog,
+            symbol = symbol,
+            volume = volume,
+            usdAmount = usdAmount,
+            side = side.uppercase()
+        )
+        recordTrade(result, symbol, pair, side.uppercase(), volume, usdAmount, prices)
+        return result
     }
 
     private suspend fun refreshUsdBalanceAfterSells(projectedCash: BigDecimal): BigDecimal {
@@ -141,7 +128,7 @@ class OrderExecutorImpl(
 
     /**
      * A cold Flow that polls Kraken's balance API repeatedly with exponential backoff.
-     * 
+     *
      * Because it is a cold Flow:
      * 1. No HTTP requests are made until it is collected (via .last() above).
      * 2. It emits the updated USD balance on each successful poll attempt.

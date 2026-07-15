@@ -49,7 +49,7 @@ class TradeHistoryServiceImpl(
     private val log = LoggerFactory.getLogger(TradeHistoryServiceImpl::class.java)
     /**
      * A hot SharedFlow that broadcasts newly created portfolio snapshots to all active dashboard SSE connections.
-     * 
+     *
      * - extraBufferCapacity = 16: Allocates a small memory buffer for slow collectors.
      * - onBufferOverflow = BufferOverflow.DROP_OLDEST: Dropping the oldest value ensures tryEmit() is guaranteed
      *   to succeed without suspending. This isolates the core rebalancing loop from slow network dashboard clients.
@@ -315,17 +315,7 @@ class TradeHistoryServiceImpl(
                     }
 
                     if (matchingLocalTrade != null) {
-                        // Check if we need to update/reconcile it (if the timestamp or usdAmount differs slightly from the official API ones).
-                        if (matchingLocalTrade.timestamp != apiTrade.timestamp ||
-                            matchingLocalTrade.pair != apiTrade.pair ||
-                            matchingLocalTrade.symbol != apiTrade.symbol ||
-                            matchingLocalTrade.side != apiTrade.side ||
-                            matchingLocalTrade.volume.compareTo(apiTrade.volume) != 0 ||
-                            matchingLocalTrade.usdAmount.compareTo(apiTrade.usdAmount) != 0 ||
-                            matchingLocalTrade.dryRun != apiTrade.dryRun ||
-                            matchingLocalTrade.price.compareTo(apiTrade.price) != 0 ||
-                            matchingLocalTrade.fee.compareTo(apiTrade.fee) != 0 ||
-                            matchingLocalTrade.slippagePercent != apiTrade.slippagePercent) {
+                        if (matchingLocalTrade != apiTrade) {
 
                             log.info("Reconciling trade record: local (timestamp={}, usdAmount={}) with API (timestamp={}, usdAmount={})",
                                 matchingLocalTrade.timestamp, matchingLocalTrade.usdAmount, apiTrade.timestamp, apiTrade.usdAmount)
@@ -344,7 +334,7 @@ class TradeHistoryServiceImpl(
             }
 
         val snapshots = repository.load()
-        val totalTrades = repository.getTotalTradeCount()
+        val totalTrades = repository.getTradeSummaryStats().totalTradesExecuted
         val isSimulation = configService.getConfig().settings.simulation
 
         if (!isSimulation && totalTrades > 0 && snapshots.size <= 1) {
@@ -373,11 +363,11 @@ class TradeHistoryServiceImpl(
 
     /**
      * A cold Flow that fetches trade history from Kraken paginated by [pageSize].
-     * 
+     *
      * Because it is a cold Flow:
      * 1. No network calls are made until the caller collects from it.
      * 2. It fetches page-by-page lazily; emitting each page using emit().
-     * 3. The emitting suspends until the collector finishes processing the current batch, providing 
+     * 3. The emitting suspends until the collector finishes processing the current batch, providing
      *    automatic backpressure to prevent overloading the system or API rate limits.
      * 4. Once all batches are fetched, the Flow completes and the collector's loop naturally finishes.
      */
@@ -391,23 +381,23 @@ class TradeHistoryServiceImpl(
         while (true) {
             log.info("Fetching trade history batch with offset={}", offset)
             val apiTrades = krakenService.getTradeHistory(startSec = startSec, offset = offset)
-            
+
             val realKrakenService = when (krakenService) {
                 is KrakenServiceImpl -> krakenService
                 is DynamicKrakenService -> krakenService.realService
                 else -> null
             }
             val totalCount = realKrakenService?.lastFetchedCount?.get() ?: 0
-            
+
             if (!isSeeded) {
                 repository.setSyncMetadata("sync_offset", offset.toString())
                 repository.setSyncMetadata("sync_total", totalCount.toString())
             }
 
             if (apiTrades.isEmpty()) break
-            
+
             emit(apiTrades)
-            
+
             if (apiTrades.size < pageSize) break
             offset += pageSize
         }
@@ -581,6 +571,24 @@ class TradeHistoryServiceImpl(
         }
     }
 
+    private fun <T> findClosest(
+        list: List<T>,
+        targetTime: Long,
+        timeExtractor: (T) -> Long,
+        valueExtractor: (T) -> BigDecimal
+    ): BigDecimal {
+        var closestValue = valueExtractor(list[0])
+        var minDiff = abs(timeExtractor(list[0]) - targetTime)
+        for (item in list) {
+            val diff = abs(timeExtractor(item) - targetTime)
+            if (diff < minDiff) {
+                minDiff = diff
+                closestValue = valueExtractor(item)
+            }
+        }
+        return closestValue
+    }
+
     private fun getPriceForTimestamp(
         symbol: String,
         timestamp: Instant,
@@ -592,31 +600,12 @@ class TradeHistoryServiceImpl(
 
         val prices = ohlcData[symbol.uppercase()]
         if (!prices.isNullOrEmpty()) {
-            val targetSec = timestamp.epochSecond
-            var closestPrice = prices[0].second
-            var minDiff = abs(prices[0].first - targetSec)
-            for (p in prices) {
-                val diff = abs(p.first - targetSec)
-                if (diff < minDiff) {
-                    minDiff = diff
-                    closestPrice = p.second
-                }
-            }
-            return closestPrice
+            return findClosest(prices, timestamp.epochSecond, { it.first }, { it.second })
         }
 
         val tPrices = tradePrices[symbol.uppercase()]
         if (!tPrices.isNullOrEmpty()) {
-            var closestPrice = tPrices[0].second
-            var minDiff = abs(tPrices[0].first.toEpochMilli() - timestamp.toEpochMilli())
-            for (p in tPrices) {
-                val diff = abs(p.first.toEpochMilli() - timestamp.toEpochMilli())
-                if (diff < minDiff) {
-                    minDiff = diff
-                    closestPrice = p.second
-                }
-            }
-            return closestPrice
+            return findClosest(tPrices, timestamp.toEpochMilli(), { it.first.toEpochMilli() }, { it.second })
         }
 
         return currentPrices[symbol.uppercase()] ?: BigDecimal.ZERO

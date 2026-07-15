@@ -9,6 +9,10 @@ import org.slf4j.LoggerFactory
 import java.math.BigDecimal
 import java.math.RoundingMode
 import kotlin.math.pow
+import com.gemini.krakenbot.service.impl.PortfolioCalculations.HUNDRED
+import com.gemini.krakenbot.service.impl.PortfolioCalculations.SCALE_PERCENT
+import com.gemini.krakenbot.service.impl.PortfolioCalculations.SCALE_PRICE
+import com.gemini.krakenbot.service.impl.PortfolioCalculations.SCALE_USD
 
 class PortfolioAnalyzerImpl(
     private val krakenService: KrakenService,
@@ -16,13 +20,6 @@ class PortfolioAnalyzerImpl(
     private val portfolioStatsRepository: PortfolioStatsRepository
 ) : PortfolioAnalyzer {
     private val log = LoggerFactory.getLogger(PortfolioAnalyzerImpl::class.java)
-
-    companion object {
-        val HUNDRED: BigDecimal = BigDecimal.valueOf(100)
-        const val SCALE_PERCENT = 4
-        const val SCALE_PRICE = 8
-        const val SCALE_USD = 2
-    }
 
     override suspend fun fetchBalances(): RawBalances {
         val balances = krakenService.getBalances()
@@ -131,8 +128,8 @@ class PortfolioAnalyzerImpl(
                 )
             }
         }
-        stats.allTimeHigh = ath
-        runCatching { portfolioStatsRepository.save(stats) }
+        val updatedStats = stats.copy(allTimeHigh = ath)
+        runCatching { portfolioStatsRepository.save(updatedStats) }
             .onFailure { e -> log.error("Failed to persist portfolio ATH", e) }
 
         return if (ath > BigDecimal.ZERO && totalPortfolioValueUSD < ath) {
@@ -210,12 +207,13 @@ class PortfolioAnalyzerImpl(
         val sellOrders = mutableMapOf<String, BigDecimal>()
         val actionLog = mutableListOf<String>()
 
-        val s = configService.getConfig().settings
+        val config = configService.getConfig()
+        val s = config.settings
         var usdTriggered = false
         var usdDeviationAmount = BigDecimal.ZERO
         val allDeviations = mutableMapOf<String, BigDecimal>()
 
-        configService.getConfig().allocations.forEach { (symbol, targetPercent) ->
+        config.allocations.forEach { (symbol, targetPercent) ->
             val symbolVal = symbol.value
             val currentVal = currentValuesUSD[symbolVal] ?: BigDecimal.ZERO
 
@@ -240,14 +238,16 @@ class PortfolioAnalyzerImpl(
                 s.deviationTriggerPercent
             )
 
-            if (metrics.deviationPercent.abs().toDouble() >= s.deviationTriggerPercent && metrics.isSignificant) {
+            val isTriggered = metrics.deviationPercent.abs().toDouble() >= s.deviationTriggerPercent && metrics.isSignificant
+
+            if (isTriggered) {
                 actionLog.add(
                     "Deviation Triggered details: $symbolVal Dev: ${metrics.deviationPercent}%"
                 )
             }
 
             if (symbol.isUsd) {
-                if (metrics.deviationPercent.abs().toDouble() >= s.deviationTriggerPercent && metrics.isSignificant) {
+                if (isTriggered) {
                     log.info(
                         "Asset USD Deviation: {}% (Trigger: {}%). USD Dev: {}",
                         metrics.deviationPercent,
@@ -258,7 +258,7 @@ class PortfolioAnalyzerImpl(
                     usdDeviationAmount = metrics.deviationUSD
                 }
             } else {
-                if (metrics.deviationPercent.abs().toDouble() >= s.deviationTriggerPercent && metrics.isSignificant) {
+                if (isTriggered) {
                     log.info(
                         "Asset {} Deviation: {}% (Trigger: {}%). USD Dev: {}",
                         symbolVal,

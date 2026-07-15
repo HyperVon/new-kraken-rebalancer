@@ -81,4 +81,3 @@ class FakeKrakenService : KrakenService {
         return emptyList()
     }
 }
-

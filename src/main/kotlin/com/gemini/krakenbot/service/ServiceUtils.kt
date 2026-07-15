@@ -44,5 +44,3 @@ fun isWithinRelativeTolerance(
     return largerAmount.signum() > 0 &&
             first.subtract(second).abs().divide(largerAmount, 8, RoundingMode.HALF_UP) <= tolerance
 }
-
-

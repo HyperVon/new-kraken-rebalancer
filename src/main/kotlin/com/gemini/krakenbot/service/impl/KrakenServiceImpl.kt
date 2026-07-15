@@ -53,7 +53,7 @@ class KrakenServiceImpl(
     ): T = flow {
         var currentBackoff = initialBackoffMs
         var currentRateLimitBackoff = rateLimitBackoffMs
-        
+
         repeat(maxAttempts) { attempt ->
             try {
                 emit(block())
@@ -72,7 +72,7 @@ class KrakenServiceImpl(
                     log.warn("Transient failure in {} (attempt {}/{}). Retrying in {}ms... Error: {}",
                         actionName, attempt + 1, maxAttempts, waitTime, e.message)
                     delay(waitTime.milliseconds)
-                    
+
                     if (isRateLimit) {
                         currentRateLimitBackoff *= 2
                     } else if (!isLockout) {

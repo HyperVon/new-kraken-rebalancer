@@ -48,5 +48,3 @@ class DashboardView(
         fragmentComponent.render(latest, history)
     }
 }
-
-

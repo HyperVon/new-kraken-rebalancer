@@ -27,4 +27,3 @@ object HtmlIds {
     const val ALLOCATIONS_CONTAINER = "allocations-container"
     const val NEW_SYMBOL_INPUT = "new-symbol-input"
 }
-

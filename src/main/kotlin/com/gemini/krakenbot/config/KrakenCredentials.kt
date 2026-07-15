@@ -31,4 +31,3 @@ data class KrakenCredentials(
             KrakenCredentials(ApiKey(apiKey), PrivateKey(privateKey))
     }
 }
-

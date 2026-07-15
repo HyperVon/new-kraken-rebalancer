@@ -603,12 +603,12 @@ class KrakenServiceTest : StringSpec() {
 
                 // ETH and DOGE should succeed, LTC should be skipped
                 trades.size shouldBe 2
-                
+
                 val ethTrade = trades.first { it.pair == "XETHZUSD" }
                 ethTrade.symbol shouldBe "ETH"
                 ethTrade.volume.compareTo(BigDecimal("0.1")) shouldBe 0
                 ethTrade.usdAmount.compareTo(BigDecimal("200.00")) shouldBe 0
-                
+
                 val dogeTrade = trades.first { it.pair == "XXDGZUSD" }
                 dogeTrade.symbol shouldBe "DOGE"
                 dogeTrade.volume.compareTo(BigDecimal("100")) shouldBe 0
@@ -1232,4 +1232,3 @@ class KrakenServiceTest : StringSpec() {
         }
     }
 }
-

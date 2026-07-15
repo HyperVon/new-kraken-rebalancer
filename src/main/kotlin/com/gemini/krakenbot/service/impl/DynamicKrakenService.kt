@@ -38,4 +38,3 @@ class DynamicKrakenService(
     override suspend fun getOHLC(pair: String, interval: Int, since: Long?): List<Pair<Long, BigDecimal>> =
         activeService.getOHLC(pair, interval, since)
 }
-

@@ -79,7 +79,7 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
             )
 
             repository.saveSnapshot(snapshot)
-            
+
             val loaded = repository.load()
             loaded.size shouldBe 1
             val first = loaded.first()
@@ -89,7 +89,7 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
             first.fiatDeploymentPercent.shouldBeEqualComparingTo(BigDecimal("10.0"))
             first.effectiveUsdTargetPercent.shouldBeEqualComparingTo(BigDecimal("10.0"))
             first.actions shouldBe listOf("Action 1", "Action 2")
-            
+
             val btc = first.assets["BTC"]!!
             btc.symbol.value shouldBe "BTC"
             btc.balance.shouldBeEqualComparingTo(BigDecimal("0.5"))
@@ -138,9 +138,10 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
             repository.saveTrade(trade2)
             repository.saveTrade(failedTrade)
 
-            repository.getTotalTradeCount() shouldBe 2L // only successful
-            repository.getTotalVolumeTraded().shouldBeEqualComparingTo(BigDecimal("7000.00")) // 5000 + 2000
-            repository.getTotalFeesPaid().shouldBeEqualComparingTo(BigDecimal("20.75")) // 15.50 + 5.25 (ignores failedTrade)
+            val stats = repository.getTradeSummaryStats()
+            stats.totalTradesExecuted shouldBe 2L // only successful
+            stats.totalVolumeTraded.shouldBeEqualComparingTo(BigDecimal("7000.00")) // 5000 + 2000
+            stats.totalFeesPaid.shouldBeEqualComparingTo(BigDecimal("20.75")) // 15.50 + 5.25 (ignores failedTrade)
 
             val trades = repository.getTradesInRange(now.minusSeconds(20), now.plusSeconds(20))
             trades.size shouldBe 3
@@ -176,7 +177,7 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
             repository.saveSnapshot(s1)
             repository.saveSnapshot(s2)
 
-            repository.getLatestSnapshotTime() shouldBe baseTime
+            repository.getTradeSummaryStats().latestSnapshotTime shouldBe baseTime
 
             val inRange = repository.getSnapshotsInRange(baseTime.minusSeconds(5), baseTime.plusSeconds(5))
             inRange.size shouldBe 1
@@ -408,20 +409,12 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
         }
 
 
-        "getLatestSnapshotTime returns null when no snapshots exist" {
-            repository.getLatestSnapshotTime() shouldBe null
-        }
-
-        "getTotalVolumeTraded returns zero when no trades exist" {
-            repository.getTotalVolumeTraded().shouldBeEqualComparingTo(BigDecimal.ZERO)
-        }
-
-        "getTotalFeesPaid returns zero when no trades exist" {
-            repository.getTotalFeesPaid().shouldBeEqualComparingTo(BigDecimal.ZERO)
-        }
-
-        "getTotalTradeCount returns zero when no trades exist" {
-            repository.getTotalTradeCount() shouldBe 0L
+        "getTradeSummaryStats returns zero/null values when no data exists" {
+            val stats = repository.getTradeSummaryStats()
+            stats.latestSnapshotTime shouldBe null
+            stats.totalVolumeTraded.shouldBeEqualComparingTo(BigDecimal.ZERO)
+            stats.totalFeesPaid.shouldBeEqualComparingTo(BigDecimal.ZERO)
+            stats.totalTradesExecuted shouldBe 0L
         }
 
         "save wraps non-IOException as IOException" {
@@ -502,14 +495,14 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
         "save rethrows IOException directly without wrapping" {
             // Clear current transaction if it exists
             TransactionManager.currentOrNull()?.close()
-            
+
             val realTxManager = db.transactionManager
             val throwingTxManager = TradeThrowingTransactionManager(realTxManager)
-            
+
             val mockDb = mockk<Database>(relaxed = true)
             mockkStatic("org.jetbrains.exposed.sql.transactions.TransactionApiKt")
             every { mockDb.transactionManager } returns throwingTxManager
-            
+
             val ioRepo = SqliteTradeRepositoryImpl(mockDb)
             val snapshot = PortfolioSnapshot(
                 timestamp = Instant.now(),
@@ -532,14 +525,14 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
         "saveSnapshot rethrows IOException directly without wrapping" {
             // Clear current transaction if it exists
             TransactionManager.currentOrNull()?.close()
-            
+
             val realTxManager = db.transactionManager
             val throwingTxManager = TradeThrowingTransactionManager(realTxManager)
-            
+
             val mockDb = mockk<Database>(relaxed = true)
             mockkStatic("org.jetbrains.exposed.sql.transactions.TransactionApiKt")
             every { mockDb.transactionManager } returns throwingTxManager
-            
+
             val ioRepo = SqliteTradeRepositoryImpl(mockDb)
             val snapshot = PortfolioSnapshot(
                 timestamp = Instant.now(),
@@ -562,14 +555,14 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
         "saveTrade rethrows IOException directly without wrapping" {
             // Clear current transaction if it exists
             TransactionManager.currentOrNull()?.close()
-            
+
             val realTxManager = db.transactionManager
             val throwingTxManager = TradeThrowingTransactionManager(realTxManager)
-            
+
             val mockDb = mockk<Database>(relaxed = true)
             mockkStatic("org.jetbrains.exposed.sql.transactions.TransactionApiKt")
             every { mockDb.transactionManager } returns throwingTxManager
-            
+
             val ioRepo = SqliteTradeRepositoryImpl(mockDb)
             val trade = TradeRecord(
                 timestamp = Instant.now(),
@@ -647,14 +640,14 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
 
         "updateTrade rethrows IOException directly without wrapping" {
             TransactionManager.currentOrNull()?.close()
-            
+
             val realTxManager = db.transactionManager
             val throwingTxManager = TradeThrowingTransactionManager(realTxManager)
-            
+
             val mockDb = mockk<Database>(relaxed = true)
             mockkStatic("org.jetbrains.exposed.sql.transactions.TransactionApiKt")
             every { mockDb.transactionManager } returns throwingTxManager
-            
+
             val ioRepo = SqliteTradeRepositoryImpl(mockDb)
             val trade = TradeRecord(
                 timestamp = Instant.now(),

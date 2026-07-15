@@ -53,4 +53,3 @@ sealed interface OrderResult {
         override val success: Boolean get() = false
     }
 }
-

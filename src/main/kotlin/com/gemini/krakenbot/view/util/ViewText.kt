@@ -76,5 +76,3 @@ object ViewText {
     const val HEADER_USD_AMOUNT = "USD Amount"
     const val HEADER_STATUS = "Status"
 }
-
-
