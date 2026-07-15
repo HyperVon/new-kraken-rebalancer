@@ -8,6 +8,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [6.5.4] - 2026-07-15
+
+### Fixed
+
+- **Dependabot Security Vulnerabilities**: Replaced the deprecated and vulnerable `istanbul-instrumenter-loader` with the modern, secure `@jsdevtools/coverage-istanbul-loader` (v3.0.5) in the `:frontend-js` subproject. This completely eliminated legacy transitively vulnerable packages (`babel-traverse` and `ajv@5`) from the dependency graph and resolved the remaining `ajv` package instances to a secure version (`6.15.0`), resolving all open Dependabot alerts (GHSA-67hx-6x53-jw92, GHSA-v88g-cgmw-v5xw, and GHSA-2g4f-4pwh-qvx6).
+
 ## [6.5.3] - 2026-07-15
 
 ### Added

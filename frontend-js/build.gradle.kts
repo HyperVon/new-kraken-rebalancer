@@ -37,8 +37,9 @@ kotlin {
             dependencies {
                 implementation("io.kotest:kotest-framework-engine:6.1.11")
                 implementation(devNpm("karma-coverage", "2.2.1"))
-                implementation(devNpm("istanbul-instrumenter-loader", "3.0.1"))
+                implementation(devNpm("@jsdevtools/coverage-istanbul-loader", "3.0.5"))
             }
         }
+
     }
 }
