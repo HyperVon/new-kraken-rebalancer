@@ -34,6 +34,9 @@ dependencies {
 
     // Jackson BOM — pins jackson-core & jackson-databind to a secure, explicit version
     implementation(platform("com.fasterxml.jackson:jackson-bom:2.22.0"))
+    implementation("io.ktor:ktor-server-caching-headers:3.5.0")
+    implementation("io.ktor:ktor-server-compression:3.5.0")
+    implementation("io.ktor:ktor-server-conditional-headers:3.5.0")
 
     // Koin
     var koinVersion = "4.2.1"

@@ -8,6 +8,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [6.5.8] - 2026-07-16
+
+### Added
+
+- **Server Performance Enhancements**: Integrated Ktor response compression (Gzip/Deflate) for dynamic HTML and API JSON payloads, and caching/conditional headers to optimize static assets (setting a 24-hour cache-control policy for CSS stylesheets).
+
 ## [6.5.7] - 2026-07-15
 
 ### Added

@@ -37,10 +37,10 @@ class SimulatedKrakenService(
         val allocations = configService.getConfig().allocations
 
         // 1. Initialize prices
-        for (alloc in allocations) {
-            val symbol = alloc.symbol.value.uppercase()
-            val basePrice = SimulationDefaults.INITIAL_PRICES[symbol] ?: 10.0
-            simulatedPrices[symbol] = basePrice
+        for ((symbol) in allocations) {
+            val symbolU = symbol.value.uppercase()
+            val basePrice = SimulationDefaults.INITIAL_PRICES[symbolU] ?: 10.0
+            simulatedPrices[symbolU] = basePrice
         }
         simulatedPrices["USD"] = 1.0
 
@@ -48,20 +48,19 @@ class SimulatedKrakenService(
         val totalSimulatedValueUSD = 100000.0
         val random = ThreadLocalRandom.current()
 
-        for (alloc in allocations) {
-            val symbol = alloc.symbol.value.uppercase()
-            val targetPercent = alloc.targetPercent
+        for ((symbol, targetPercent) in allocations) {
+            val symbolU = symbol.value.uppercase()
             val targetUSDValue = (targetPercent / 100.0) * totalSimulatedValueUSD
 
             // Apply a drift factor between 0.75 and 1.25
             val driftFactor = 0.75 + random.nextDouble() * 0.50
             val driftedUSDValue = targetUSDValue * driftFactor
 
-            if (symbol == "USD") {
+            if (symbolU == "USD") {
                 balances["USD"] = driftedUSDValue
             } else {
-                val price = simulatedPrices.getValue(symbol)
-                balances[symbol] = driftedUSDValue / price
+                val price = simulatedPrices.getValue(symbolU)
+                balances[symbolU] = driftedUSDValue / price
             }
         }
 

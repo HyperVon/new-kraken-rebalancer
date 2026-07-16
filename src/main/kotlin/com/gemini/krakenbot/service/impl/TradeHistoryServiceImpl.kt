@@ -102,9 +102,9 @@ class TradeHistoryServiceImpl(
 
         // Start prices
         val currentPrices = mutableMapOf<String, Double>()
-        for (alloc in allocations) {
-            val symbol = alloc.symbol.value.uppercase()
-            currentPrices[symbol] = SimulationDefaults.INITIAL_PRICES[symbol] ?: 10.0
+        for ((symbol) in allocations) {
+            val symbolU = symbol.value.uppercase()
+            currentPrices[symbolU] = SimulationDefaults.INITIAL_PRICES[symbolU] ?: 10.0
         }
         currentPrices["USD"] = 1.0
 
@@ -113,14 +113,13 @@ class TradeHistoryServiceImpl(
         val totalPortfolioValue = 100000.0
         val random = Random()
 
-        for (alloc in allocations) {
-            val symbol = alloc.symbol.value.uppercase()
-            val targetPercent = alloc.targetPercent
+        for ((symbol, targetPercent) in allocations) {
+            val symbolU = symbol.value.uppercase()
             val targetUSD = targetPercent / 100.0 * totalPortfolioValue
             // Slightly drifted initial balance (+/- 15%)
             val drift = 0.85 + random.nextDouble() * 0.30
-            val price = currentPrices.getValue(symbol)
-            currentBalances[symbol] = (targetUSD * drift) / price
+            val price = currentPrices.getValue(symbolU)
+            currentBalances[symbolU] = (targetUSD * drift) / price
         }
 
         val now = Instant.now()
@@ -148,46 +147,45 @@ class TradeHistoryServiceImpl(
             }
 
             // Rebalance balances towards target allocations
-            for (alloc in allocations) {
-                val symbol = alloc.symbol.value.uppercase()
-                val targetPercent = alloc.targetPercent
+            for ((symbol, targetPercent) in allocations) {
+                val symbolU = symbol.value.uppercase()
                 val targetUSD = targetPercent / 100.0 * portfolioValue
                 // Keep it close to target, but let it drift slightly (+/- 3%)
                 val drift = 0.97 + random.nextDouble() * 0.06
-                val price = currentPrices.getValue(symbol)
-                currentBalances[symbol] = (targetUSD * drift) / price
+                val price = currentPrices.getValue(symbolU)
+                currentBalances[symbolU] = (targetUSD * drift) / price
             }
 
             // Recompute exact portfolio value
             var exactPortfolioValue = 0.0
             val assetSnapshots = mutableMapOf<String, PortfolioSnapshot.AssetSnapshot>()
 
-            for (alloc in allocations) {
-                val symbol = alloc.symbol.value.uppercase()
-                val balance = currentBalances[symbol]!!
-                val price = currentPrices[symbol]!!
+            for ((symbol) in allocations) {
+                val symbolU = symbol.value.uppercase()
+                val balance = currentBalances[symbolU]!!
+                val price = currentPrices[symbolU]!!
                 val valueUSD = balance * price
                 exactPortfolioValue += valueUSD
             }
 
-            for (alloc in allocations) {
-                val symbol = alloc.symbol.value.uppercase()
-                val balance = currentBalances[symbol]!!
-                val price = currentPrices[symbol]!!
-                assetSnapshots[symbol] = PortfolioCalculations.createAssetSnapshot(
-                    symbol = symbol,
+            for ((symbol, targetPercent) in allocations) {
+                val symbolU = symbol.value.uppercase()
+                val balance = currentBalances[symbolU]!!
+                val price = currentPrices[symbolU]!!
+                assetSnapshots[symbolU] = PortfolioCalculations.createAssetSnapshot(
+                    symbol = symbolU,
                     balance = BigDecimal.valueOf(balance),
                     price = BigDecimal.valueOf(price),
                     valueUSD = BigDecimal.valueOf(balance * price),
-                    targetPercent = BigDecimal.valueOf(alloc.targetPercent),
+                    targetPercent = BigDecimal.valueOf(targetPercent),
                     totalPortfolioValueUSD = BigDecimal.valueOf(exactPortfolioValue)
                 )
             }
 
             var targetUsdPercent = 5.0
-            for (alloc in allocations) {
-                if (alloc.symbol.isUsd) {
-                    targetUsdPercent = alloc.targetPercent
+            for ((symbol, targetPercent) in allocations) {
+                if (symbol.isUsd) {
+                    targetUsdPercent = targetPercent
                 }
             }
 
@@ -419,10 +417,10 @@ class TradeHistoryServiceImpl(
                 currentPrices[symbol] = oldestSnapshot.assets[symbol]?.price ?: BigDecimal.ZERO
             }
         } else {
-            for (alloc in allocations) {
-                val symbol = alloc.symbol.value.uppercase()
-                val bal = portfolioAnalyzer.resolveBalance(symbol, currentBalances)
-                runningBalances[symbol] = bal
+            for ((symbol) in allocations) {
+                val symbolU = symbol.value.uppercase()
+                val bal = portfolioAnalyzer.resolveBalance(symbolU, currentBalances)
+                runningBalances[symbolU] = bal
             }
             // Fetch active prices to initialize current prices
             val pairsStr =
@@ -435,9 +433,9 @@ class TradeHistoryServiceImpl(
                 log.error("Failed to fetch starting prices for snapshot reconstruction", e)
                 emptyMap()
             }
-            for (alloc in allocations) {
-                val symbol = alloc.symbol.value.uppercase()
-                currentPrices[symbol] = prices[Asset.tradingPair(symbol)] ?: BigDecimal.ZERO
+            for ((symbol) in allocations) {
+                val symbolU = symbol.value.uppercase()
+                currentPrices[symbolU] = prices[Asset.tradingPair(symbolU)] ?: BigDecimal.ZERO
             }
             currentPrices["USD"] = BigDecimal.ONE
         }
@@ -445,16 +443,16 @@ class TradeHistoryServiceImpl(
         // 3. Fetch OHLC daily close prices for the last 90 days
         val ohlcData = mutableMapOf<String, List<Pair<Long, BigDecimal>>>()
         val sinceSec = Instant.now().minus(95, ChronoUnit.DAYS).epochSecond
-        for (alloc in allocations) {
-            val symbol = alloc.symbol.value.uppercase()
-            if (symbol == "USD") continue
-            val pair = Asset.tradingPair(symbol)
+        for ((symbol) in allocations) {
+            val symbolU = symbol.value.uppercase()
+            if (symbolU == "USD") continue
+            val pair = Asset.tradingPair(symbolU)
             try {
                 val prices = krakenService.getOHLC(pair, interval = 1440, since = sinceSec)
-                ohlcData[symbol] = prices
-                log.info("Fetched {} OHLC close prices for {}", prices.size, symbol)
+                ohlcData[symbolU] = prices
+                log.info("Fetched {} OHLC close prices for {}", prices.size, symbolU)
             } catch (e: Exception) {
-                log.error("Failed to fetch OHLC prices for $symbol ($pair)", e)
+                log.error("Failed to fetch OHLC prices for $symbolU ($pair)", e)
             }
             delay(200.milliseconds)
         }
@@ -511,13 +509,13 @@ class TradeHistoryServiceImpl(
                 CalculatedAsset(symbol, balance, price, valueUSD, alloc.targetPercent)
             }
 
-            for (asset in calculatedAssets) {
-                assetSnapshots[asset.symbol] = PortfolioCalculations.createAssetSnapshot(
-                    symbol = asset.symbol,
-                    balance = asset.balance,
-                    price = asset.price,
-                    valueUSD = asset.valueUSD,
-                    targetPercent = BigDecimal(asset.targetPercent),
+            for ((symbol, balance, price, valueUSD, targetPercent) in calculatedAssets) {
+                assetSnapshots[symbol] = PortfolioCalculations.createAssetSnapshot(
+                    symbol = symbol,
+                    balance = balance,
+                    price = price,
+                    valueUSD = valueUSD,
+                    targetPercent = BigDecimal(targetPercent),
                     totalPortfolioValueUSD = exactPortfolioValue
                 )
             }

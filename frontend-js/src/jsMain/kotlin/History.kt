@@ -425,7 +425,7 @@ internal fun buildCumulativePLChart(trades: Array<dynamic>) {
 }
 
 fun formatPair(trade: dynamic): String {
-    if (trade == null || trade.symbol == null) return ""
+    if (trade?.symbol == null) return ""
     return trade.symbol.toString() + "/USD"
 }
 

@@ -102,16 +102,16 @@ class EvaluationScenariosTest : StringSpec() {
             sb.append("## Evaluation Rubric & Status\n\n")
             sb.append("| Scenario | Description | Status | Details / Evidence |\n")
             sb.append("| :--- | :--- | :--- | :--- |\n")
-            for (res in results.values.sortedBy { it.name.substringAfter(" ").toIntOrNull() ?: 0 }) {
-                val statusStr = if (res.status == "PASS") "🟢 **PASS**" else "🔴 **FAIL**"
-                sb.append("| ${res.name} | ${res.description} | $statusStr | ${res.evidence.replace("\n", "<br>").replace("|", "\\|")} |\n")
+            for ((name, description, status, evidence) in results.values.sortedBy { it.name.substringAfter(" ").toIntOrNull() ?: 0 }) {
+                val statusStr = if (status == "PASS") "🟢 **PASS**" else "🔴 **FAIL**"
+                sb.append("| $name | $description | $statusStr | ${evidence.replace("\n", "<br>").replace("|", "\\|")} |\n")
             }
             sb.append("\n## Detailed Evidence for Each Scenario\n\n")
-            for (res in results.values.sortedBy { it.name.substringAfter(" ").toIntOrNull() ?: 0 }) {
-                sb.append("### ${res.name}: ${res.description}\n")
-                sb.append("**Status**: ${res.status}\n\n")
+            for ((name, description, status, evidence) in results.values.sortedBy { it.name.substringAfter(" ").toIntOrNull() ?: 0 }) {
+                sb.append("### $name: $description\n")
+                sb.append("**Status**: $status\n\n")
                 sb.append("```\n")
-                sb.append(res.evidence)
+                sb.append(evidence)
                 sb.append("\n```\n\n")
             }
             reportFile.writeText(sb.toString())
