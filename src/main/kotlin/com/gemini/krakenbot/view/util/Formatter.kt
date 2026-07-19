@@ -4,13 +4,13 @@ import java.math.BigDecimal
 
 object Formatter {
     fun formatCurrency(value: BigDecimal?): String =
-        value?.let { String.format("%,.2f", it) } ?: "0.00"
+        value?.let { String.format(java.util.Locale.US, "%,.2f", it) } ?: "0.00"
 
     fun formatPercent(value: BigDecimal?): String =
-        value?.let { String.format("%.2f", it) } ?: "0.00"
+        value?.let { String.format(java.util.Locale.US, "%.2f", it) } ?: "0.00"
 
     fun formatPercent(value: Double): String =
-        String.format("%.2f", value)
+        String.format(java.util.Locale.US, "%.2f", value)
 
     fun getDeviationClass(deviation: BigDecimal?): String =
         if (deviation == null) "" else when (deviation.signum()) {

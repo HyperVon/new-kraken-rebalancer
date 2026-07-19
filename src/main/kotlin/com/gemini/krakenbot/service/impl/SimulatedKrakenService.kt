@@ -102,8 +102,9 @@ class SimulatedKrakenService(
                 )
             )
         }
-        // Sort by timestamp ascending
-        simulatedTrades.sortBy { it.timestamp }
+        val sorted = simulatedTrades.sortedBy { it.timestamp }
+        simulatedTrades.clear()
+        simulatedTrades.addAll(sorted)
     }
 
     private fun fluctuatePrices() {
@@ -163,7 +164,7 @@ class SimulatedKrakenService(
             )
         }
 
-        val usdBalance = balances.getValue("USD")
+        val usdBalance = balances["USD"] ?: 0.0
         val tokenBalance = balances[symbol] ?: 0.0
 
         if (side.equals("buy", ignoreCase = true)) {

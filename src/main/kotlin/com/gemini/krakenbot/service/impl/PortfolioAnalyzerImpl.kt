@@ -112,7 +112,7 @@ class PortfolioAnalyzerImpl(
         var ath = stats.allTimeHigh
 
         when {
-            ath == null || ath <= BigDecimal.ZERO -> {
+            ath <= BigDecimal.ZERO -> {
                 ath = totalPortfolioValueUSD
                 log.info(
                     "Initial ATH set to {}",

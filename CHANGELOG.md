@@ -8,6 +8,17 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [6.6.0] - 2026-07-19
+
+### Fixed
+
+- **Comprehensive Bug Analysis & Fixes**: Resolved 33 critical, major, and minor bug reports across backend Kotlin services, SQLite data layers, frontend Kotlin/JS views, and test suites.
+- **Pre-Trade Snapshot Timing (PortfolioManagerImpl)**: Enforced post-trade balance/price re-fetching prior to recording snapshot records.
+- **Database Integrity & Primary Key Updates (SqliteTradeRepositoryImpl)**: Fixed trade record targeting by primary key ID and added explicit cascading deletes for associated child asset snapshot and action log rows.
+- **Thread Safety & Concurrent Mutex Locking (RateLimiter & ConfigServiceImpl)**: Converted `RateLimiter` counter access and reset functions to coroutine-safe `Mutex` locks, and synchronized configuration loading.
+- **Frontend State & UI Memory Leak Fixes (History.kt & Settings.kt)**: Implemented deep-cloning for Chart.js options, removed global default mutations, added DOM detachment cleanup for interval timers, and enforced strict input regex validation.
+- **ATH Null Safety (PortfolioStats & Repositories)**: Standardized non-null `BigDecimal = BigDecimal.ZERO` default for `allTimeHigh` to prevent null pointer exceptions.
+
 ## [6.5.8] - 2026-07-16
 
 ### Added

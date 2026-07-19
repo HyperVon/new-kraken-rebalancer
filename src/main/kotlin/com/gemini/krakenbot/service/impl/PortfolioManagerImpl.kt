@@ -149,11 +149,32 @@ class PortfolioManagerImpl(
                 actionLog = actionLog
             )
 
+            val finalState =
+                if (buyOrders.isNotEmpty() || sellOrders.isNotEmpty()) {
+                    try {
+                        val postBalances = portfolioAnalyzer.fetchBalances()
+                        val postPrices = portfolioAnalyzer.fetchPrices()
+                        portfolioAnalyzer.calculatePortfolioValues(postBalances, postPrices).fold(
+                            onSuccess = { (total, values) ->
+                                RebalanceState(postBalances, postPrices, values, total)
+                            },
+                            onFailure = {
+                                RebalanceState(balances, prices, currentValuesUSD, totalPortfolioValueUSD)
+                            }
+                        )
+                    } catch (e: Exception) {
+                        log.warn("Failed to fetch post-trade balances/prices for snapshot, falling back to pre-trade values", e)
+                        RebalanceState(balances, prices, currentValuesUSD, totalPortfolioValueUSD)
+                    }
+                } else {
+                    RebalanceState(balances, prices, currentValuesUSD, totalPortfolioValueUSD)
+                }
+
             val snapshot = buildSnapshot(
-                balances = balances,
-                prices = prices,
-                currentValuesUSD = currentValuesUSD,
-                totalPortfolioValueUSD = totalPortfolioValueUSD,
+                balances = finalState.balances,
+                prices = finalState.prices,
+                currentValuesUSD = finalState.currentValuesUSD,
+                totalPortfolioValueUSD = finalState.totalPortfolioValueUSD,
                 effectiveUsdTarget = effectiveUsdTarget,
                 cryptoScaleFactor = cryptoScaleFactor,
                 drawdownPct = drawdownPct,
@@ -238,3 +259,10 @@ class PortfolioManagerImpl(
     }
 
 }
+
+private data class RebalanceState(
+    val balances: RawBalances,
+    val prices: Map<String, BigDecimal>,
+    val currentValuesUSD: Map<String, BigDecimal>,
+    val totalPortfolioValueUSD: BigDecimal
+)

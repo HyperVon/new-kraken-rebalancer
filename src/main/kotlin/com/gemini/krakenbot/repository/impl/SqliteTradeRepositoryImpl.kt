@@ -72,10 +72,14 @@ class SqliteTradeRepositoryImpl(
     override fun updateTrade(oldTrade: TradeRecord, newTrade: TradeRecord) {
         database.safeTransaction(log, "Failed to update trade in database", "Database update failed") {
             TradeTable.update({
-                (TradeTable.timestamp eq oldTrade.timestamp.toEpochMilli()) and
-                (TradeTable.pair eq oldTrade.pair) and
-                (TradeTable.side eq oldTrade.side) and
-                (TradeTable.volume eq oldTrade.volume)
+                if (oldTrade.id != null) {
+                    TradeTable.id eq oldTrade.id
+                } else {
+                    (TradeTable.timestamp eq oldTrade.timestamp.toEpochMilli()) and
+                    (TradeTable.pair eq oldTrade.pair) and
+                    (TradeTable.side eq oldTrade.side) and
+                    (TradeTable.volume eq oldTrade.volume)
+                }
             }) {
                 it.applyTradeFields(newTrade)
             }
@@ -260,7 +264,8 @@ class SqliteTradeRepositoryImpl(
             errorMessage = row[TradeTable.errorMessage],
             price = row[TradeTable.price],
             fee = row[TradeTable.fee],
-            slippagePercent = row[TradeTable.slippagePercent]
+            slippagePercent = row[TradeTable.slippagePercent],
+            id = row[TradeTable.id]
         )
     }
 
@@ -307,40 +312,41 @@ class SqliteTradeRepositoryImpl(
     override fun pruneSnapshotsOlderThan(cutoff: Instant): Int {
         return transaction(database) {
             val cutoffMillis = cutoff.toEpochMilli()
-            val toDeleteRows = PortfolioSnapshotTable
-                .selectAll()
+            val idsToDelete = PortfolioSnapshotTable
+                .select(PortfolioSnapshotTable.id)
                 .where { PortfolioSnapshotTable.timestamp less cutoffMillis }
-                .toList()
+                .map { it[PortfolioSnapshotTable.id] }
 
-            PortfolioSnapshotTable.deleteWhere {
-                timestamp less cutoffMillis
+            if (idsToDelete.isNotEmpty()) {
+                AssetSnapshotTable.deleteWhere { snapshotId inList idsToDelete }
+                ActionLogTable.deleteWhere { snapshotId inList idsToDelete }
+                PortfolioSnapshotTable.deleteWhere { id inList idsToDelete }
             }
-            toDeleteRows.size
+            idsToDelete.size
         }
     }
 
     override fun cleanupDuplicateTrades() {
         transaction(database) {
             val toDelete = mutableListOf<Int>()
-            val allTrades = TradeTable.selectAll().orderBy(TradeTable.timestamp, SortOrder.ASC).toList()
+            val allTradeRows = TradeTable.selectAll().orderBy(TradeTable.timestamp, SortOrder.ASC).toList()
+            val allRecords = allTradeRows.map { buildTradeFromRow(it) }
 
-            for (i in allTrades.indices) {
-                val t1 = allTrades[i]
-                val record1 = buildTradeFromRow(t1)
-                for (j in i + 1 until allTrades.size) {
-                    val t2 = allTrades[j]
-                    val diff = t2[TradeTable.timestamp] - t1[TradeTable.timestamp]
+            for (i in allRecords.indices) {
+                val record1 = allRecords[i]
+                val id1 = record1.id ?: continue
+                for (j in i + 1 until allRecords.size) {
+                    val record2 = allRecords[j]
+                    val id2 = record2.id ?: continue
+                    val diff = record2.timestamp.toEpochMilli() - record1.timestamp.toEpochMilli()
                     if (diff > 300_000) break
 
-                    val record2 = buildTradeFromRow(t2)
                     val pairAliasDuplicate = record1.isPairAliasDuplicateOf(record2)
                     val localEstimateDuplicate = record1.isLocalEstimateDuplicateOf(record2) &&
                             record1.feePercentDiffersMateriallyFrom(record2)
 
                     if (pairAliasDuplicate || localEstimateDuplicate) {
-                        // The earlier timestamp is the exchange fill. The later row is the
-                        // locally recorded estimate or an alternate Kraken pair spelling.
-                        toDelete.add(t2[TradeTable.id])
+                        toDelete.add(id2)
                     }
                 }
             }

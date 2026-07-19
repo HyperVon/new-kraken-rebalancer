@@ -321,9 +321,9 @@ class KrakenServiceImpl(
         check(apiKey.isNotBlank()) { "API Key is null" }
 
         val maxRetries = 5
-        var retryCount = 0
 
         return retryWithFlow("queryPrivate($path)") {
+            var retryCount = 0
             while (true) {
                 val cost = if (path.contains("TradesHistory") || path.contains("Ledgers") || path.contains("ClosedOrders")) 2.0 else 1.0
                 rateLimiter.acquireWithCost(cost)

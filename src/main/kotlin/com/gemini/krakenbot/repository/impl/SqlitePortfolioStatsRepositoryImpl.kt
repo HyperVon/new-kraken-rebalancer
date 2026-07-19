@@ -29,7 +29,7 @@ class SqlitePortfolioStatsRepositoryImpl(
             val dbStats = PortfolioStatsTable
                 .selectAll()
                 .firstOrNull()
-                ?.let { PortfolioStats(it[PortfolioStatsTable.allTimeHigh]) }
+                ?.let { PortfolioStats(it[PortfolioStatsTable.allTimeHigh] ?: BigDecimal.ZERO) }
 
             if (dbStats != null) {
                 return@transaction dbStats

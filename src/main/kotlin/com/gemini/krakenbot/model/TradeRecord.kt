@@ -22,7 +22,8 @@ data class TradeRecord(
     val errorMessage: String? = null,
     val price: BigDecimal = BigDecimal.ZERO,
     val fee: BigDecimal = BigDecimal.ZERO,
-    val slippagePercent: BigDecimal? = null
+    val slippagePercent: BigDecimal? = null,
+    val id: Int? = null
 )
 
 fun TradeRecord.isSameSymbolAndSide(other: TradeRecord): Boolean =

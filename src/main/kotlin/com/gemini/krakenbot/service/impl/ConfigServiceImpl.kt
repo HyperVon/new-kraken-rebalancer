@@ -39,6 +39,7 @@ class ConfigServiceImpl(
         loadConfig()
     }
 
+    @Synchronized
     override fun loadConfig() {
         val parsedConfig = parseConfig(readResolvedConfigContent())
         val validatedConfig = validateOrThrowInvalidConfiguration(parsedConfig)
@@ -157,6 +158,9 @@ class ConfigServiceImpl(
             require(allocation.symbol.value.isNotBlank()) {
                 "Allocation symbols cannot be blank."
             }
+            require(SYMBOL_PATTERN.matches(allocation.symbol.value.uppercase())) {
+                "Invalid allocation symbol '${allocation.symbol.value}'. Symbols must be uppercase alphanumeric and up to 16 characters long."
+            }
             require(allocation.targetPercent >= 0) {
                 "Target percent for ${allocation.symbol} cannot be negative."
             }
@@ -198,5 +202,6 @@ class ConfigServiceImpl(
         private const val ALLOCATION_PERCENT_TOLERANCE = 0.001
 
         private val ENV_VAR_PATTERN = "\\$\\{([^}]+)}".toRegex()
+        private val SYMBOL_PATTERN = "^[A-Z0-9]{1,16}$".toRegex()
     }
 }
