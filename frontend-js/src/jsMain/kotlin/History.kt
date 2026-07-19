@@ -260,7 +260,8 @@ internal fun buildPortfolioValueChart(snapshots: Array<dynamic>) {
         "fill" to true,
         "tension" to 0.3,
         "borderWidth" to 2,
-        "pointRadius" to 0,
+        "pointRadius" to 4,
+        "pointHoverRadius" to 6,
         "pointHitRadius" to 10
     ))
 
@@ -281,7 +282,8 @@ internal fun buildPortfolioValueChart(snapshots: Array<dynamic>) {
             "backgroundColor" to "transparent",
             "tension" to 0.3,
             "borderWidth" to 1.5,
-            "pointRadius" to 0,
+            "pointRadius" to 3,
+            "pointHoverRadius" to 5,
             "pointHitRadius" to 10
         ))
     }
@@ -336,7 +338,8 @@ internal fun buildAssetHoldingsChart(snapshots: Array<dynamic>) {
             "backgroundColor" to "transparent",
             "tension" to 0.3,
             "borderWidth" to 2,
-            "pointRadius" to 0,
+            "pointRadius" to 3,
+            "pointHoverRadius" to 5,
             "pointHitRadius" to 10
         )
     }.toTypedArray()
@@ -390,7 +393,8 @@ internal fun buildAllocationDriftChart(snapshots: Array<dynamic>) {
             "fill" to true,
             "tension" to 0.3,
             "borderWidth" to 1.5,
-            "pointRadius" to 0,
+            "pointRadius" to 3,
+            "pointHoverRadius" to 5,
             "pointHitRadius" to 10
         )
     }.toTypedArray()
