@@ -144,6 +144,15 @@ fun formatUSD(valDouble: Double): String {
     return "$" + valDouble.asDynamic().toLocaleString("en-US", options)
 }
 
+fun formatPctTick(v: Double, includePlus: Boolean = true): String {
+    val d = v.toString().toDoubleOrNull() ?: 0.0
+    val sign = if (includePlus && d >= 0.0) "+" else ""
+    val options: dynamic = json()
+    options.minimumFractionDigits = 0
+    options.maximumFractionDigits = 2
+    return sign + d.asDynamic().toLocaleString("en-US", options) + "%"
+}
+
 internal fun getUniqueSymbols(snapshots: Array<dynamic>, excludeUsd: Boolean = true): List<String> {
     val symbolsSet = mutableSetOf<String>()
     snapshots.forEach { s: dynamic ->
@@ -351,8 +360,7 @@ internal fun buildAssetHoldingsChart(snapshots: Array<dynamic>) {
     }
 
     options.scales.y.ticks.callback = { v: Double, _: dynamic, _: dynamic ->
-        val vFixed = (v.toFixed(2).toDouble()).toString()
-        (if (v >= 0.0) "+" else "") + vFixed + "%"
+        formatPctTick(v, includePlus = true)
     }
 
     createOrUpdate("asset-holdings-chart", createLineChartConfig(datasets, options))
@@ -397,8 +405,7 @@ internal fun buildAllocationDriftChart(snapshots: Array<dynamic>) {
 
     options.scales.y.stacked = true
     options.scales.y.ticks.callback = { v: Double, _: dynamic, _: dynamic ->
-        val vFixed = (v.toFixed(2).toDouble()).toString()
-        "$vFixed%"
+        formatPctTick(v, includePlus = false)
     }
 
     createOrUpdate("allocation-drift-chart", createLineChartConfig(datasets, options))
@@ -413,33 +420,50 @@ internal fun calculateCumulativePL(trades: Array<dynamic>, includeDryRun: Boolea
         aTime.compareTo(bTime)
     }
 
-    var cumulative = 0.0
-    return sorted.filter { t: dynamic ->
-        val isSuccess = t.success as? Boolean ?: false
-        val isDryRun = t.dryRun as? Boolean ?: false
+    val filtered = sorted.filter { t: dynamic ->
+        val isSuccess = (t.success == true || t.success.toString() == "true")
+        val isDryRun = (t.dryRun == true || t.dryRun.toString() == "true")
         isSuccess && (includeDryRun || !isDryRun)
-    }.map { t: dynamic ->
+    }
+
+    if (filtered.isEmpty()) return emptyArray()
+
+    val points = mutableListOf<dynamic>()
+    var cumulative = 0.0
+    for (t in filtered) {
         val amt = t.usdAmount.toString().toDoubleOrNull() ?: 0.0
-        cumulative += if (t.side.toString() == "SELL") amt else -amt
-        json("x" to t.timestamp, "y" to cumulative)
-    }.toTypedArray()
+        val side = t.side.toString().uppercase()
+        cumulative += if (side == "SELL") amt else -amt
+        points.add(json("x" to t.timestamp, "y" to cumulative))
+    }
+
+    return points.toTypedArray()
 }
 
 internal fun buildCumulativePLChart(trades: Array<dynamic>, includeDryRun: Boolean = false) {
-    val data = calculateCumulativePL(trades, includeDryRun)
-    if (data.asDynamic().length == 0) return
+    val rawData = calculateCumulativePL(trades, includeDryRun)
+    if (rawData.asDynamic().length == 0) return
+
+    val chartData = if (rawData.size == 1) {
+        val firstTradeTime = Date(rawData[0].x.toString()).getTime()
+        val startTime = Date(firstTradeTime - 3600000.0).toISOString()
+        arrayOf(json("x" to startTime, "y" to 0.0), rawData[0])
+    } else {
+        rawData
+    }
 
     val labelText = if (includeDryRun) "Net Cash Flow (Realized & Dry Run Trades)" else "Net Cash Flow (Realized Trades)"
 
     val datasets = arrayOf(json(
         "label" to labelText,
-        "data" to data,
+        "data" to chartData,
         "borderColor" to "rgba(52, 211, 153, 1)",
         "backgroundColor" to "rgba(52, 211, 153, 0.08)",
         "fill" to true,
         "tension" to 0.3,
         "borderWidth" to 2,
-        "pointRadius" to 0,
+        "pointRadius" to 4,
+        "pointHoverRadius" to 6,
         "pointHitRadius" to 10
     ))
 

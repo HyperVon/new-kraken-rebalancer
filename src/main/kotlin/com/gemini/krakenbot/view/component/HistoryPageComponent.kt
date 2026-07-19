@@ -50,7 +50,7 @@ class HistoryPageComponent {
                 )
                 renderTradeTable()
             }
-            script(src = Routes.STATIC_REBALANCER_JS) {}
+            script(src = "${Routes.STATIC_REBALANCER_JS}?v=${System.currentTimeMillis()}") {}
         }
     }
 
