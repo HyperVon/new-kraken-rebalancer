@@ -128,6 +128,7 @@ private fun setupSyncProgressAndLoad() {
     val checkbox = document.getElementById("show-dry-run-checkbox") as? HTMLInputElement
     checkbox?.addEventListener("change", {
         renderTradeTable(allTrades)
+        buildCumulativePLChart(allTrades, checkbox.checked)
     })
 }
 
@@ -350,7 +351,8 @@ internal fun buildAssetHoldingsChart(snapshots: Array<dynamic>) {
     }
 
     options.scales.y.ticks.callback = { v: Double, _: dynamic, _: dynamic ->
-        (if (v >= 0.0) "+" else "") + v + "%"
+        val vFixed = (v.toFixed(2).toDouble()).toString()
+        (if (v >= 0.0) "+" else "") + vFixed + "%"
     }
 
     createOrUpdate("asset-holdings-chart", createLineChartConfig(datasets, options))
@@ -395,13 +397,14 @@ internal fun buildAllocationDriftChart(snapshots: Array<dynamic>) {
 
     options.scales.y.stacked = true
     options.scales.y.ticks.callback = { v: Double, _: dynamic, _: dynamic ->
-        "$v%"
+        val vFixed = (v.toFixed(2).toDouble()).toString()
+        "$vFixed%"
     }
 
     createOrUpdate("allocation-drift-chart", createLineChartConfig(datasets, options))
 }
 
-internal fun calculateCumulativePL(trades: Array<dynamic>): Array<dynamic> {
+internal fun calculateCumulativePL(trades: Array<dynamic>, includeDryRun: Boolean = false): Array<dynamic> {
     if (trades.asDynamic().length == 0) return emptyArray()
 
     val sorted = trades.sortedWith { a: dynamic, b: dynamic ->
@@ -412,7 +415,9 @@ internal fun calculateCumulativePL(trades: Array<dynamic>): Array<dynamic> {
 
     var cumulative = 0.0
     return sorted.filter { t: dynamic ->
-        (t.success as? Boolean ?: false) && !(t.dryRun as? Boolean ?: false)
+        val isSuccess = t.success as? Boolean ?: false
+        val isDryRun = t.dryRun as? Boolean ?: false
+        isSuccess && (includeDryRun || !isDryRun)
     }.map { t: dynamic ->
         val amt = t.usdAmount.toString().toDoubleOrNull() ?: 0.0
         cumulative += if (t.side.toString() == "SELL") amt else -amt
@@ -420,12 +425,14 @@ internal fun calculateCumulativePL(trades: Array<dynamic>): Array<dynamic> {
     }.toTypedArray()
 }
 
-internal fun buildCumulativePLChart(trades: Array<dynamic>) {
-    val data = calculateCumulativePL(trades)
+internal fun buildCumulativePLChart(trades: Array<dynamic>, includeDryRun: Boolean = false) {
+    val data = calculateCumulativePL(trades, includeDryRun)
     if (data.asDynamic().length == 0) return
 
+    val labelText = if (includeDryRun) "Net Cash Flow (Realized & Dry Run Trades)" else "Net Cash Flow (Realized Trades)"
+
     val datasets = arrayOf(json(
-        "label" to "Net Cash Flow (Realized Trades)",
+        "label" to labelText,
         "data" to data,
         "borderColor" to "rgba(52, 211, 153, 1)",
         "backgroundColor" to "rgba(52, 211, 153, 0.08)",
@@ -516,7 +523,8 @@ internal fun loadAll(range: String): Promise<Unit> {
         buildPortfolioValueChart(snapshots)
         buildAssetHoldingsChart(snapshots)
         buildAllocationDriftChart(snapshots)
-        buildCumulativePLChart(trades)
+        val showDryRun = (document.getElementById("show-dry-run-checkbox") as? HTMLInputElement)?.checked ?: true
+        buildCumulativePLChart(trades, showDryRun)
         renderTradeTable(trades)
         updateStats(stats)
     }
