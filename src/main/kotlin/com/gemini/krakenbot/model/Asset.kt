@@ -63,8 +63,13 @@ value class Asset(@get:JsonValue val value: String) {
 
         private fun matchesTradingPair(normalizedPair: String, symbol: String): Boolean {
             val normalizedSymbol = normalizedSymbol(symbol)
-            return normalizedPair.contains(toKrakenTicker(normalizedSymbol)) ||
-                    normalizedPair.contains(normalizedSymbol)
+            val krakenTicker = toKrakenTicker(normalizedSymbol)
+            return normalizedPair.startsWith(krakenTicker) ||
+                    normalizedPair.startsWith(normalizedSymbol) ||
+                    normalizedPair == "${krakenTicker}USD" ||
+                    normalizedPair == "${normalizedSymbol}USD" ||
+                    normalizedPair == "X${krakenTicker}ZUSD" ||
+                    normalizedPair == "X${normalizedSymbol}ZUSD"
         }
     }
 }

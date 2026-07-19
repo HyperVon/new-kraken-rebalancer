@@ -91,7 +91,7 @@ class PortfolioManagerDogeTest : StringSpec() {
                 // records the price lookup via pricesSupplier being invoked.
                 // We confirm the cycle completed and prices were fetched by checking
                 // that the fake was invoked (non-empty prices returned means pair was looked up).
-                krakenService.getBalancesCallCount shouldBe 1
+                krakenService.getBalancesCallCount shouldBe 2
             }
         }
 

@@ -23,7 +23,7 @@ class SerializationParityTest : StringSpec() {
         """.trimIndent()
 
             val parsed: PortfolioStats = mapper.readValue(legacyJson)
-            parsed.allTimeHigh?.compareTo(BigDecimal("123456.789101112")) shouldBe 0
+            parsed.allTimeHigh.compareTo(BigDecimal("123456.789101112")) shouldBe 0
         }
 
         "should parse legacy Java PortfolioSnapshot JSON accurately" {

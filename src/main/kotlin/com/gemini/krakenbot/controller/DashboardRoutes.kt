@@ -148,11 +148,13 @@ private suspend fun RoutingContext.handlePostSettings(
                 e.message ?: "Invalid configuration"
             )
         }
-        val formBody =
-            errHtml.substringAfter("<body>").substringBefore("</body>")
+        val bodyMatch = BODY_REGEX.find(errHtml)
+        val formBody = bodyMatch?.groupValues?.get(1) ?: errHtml
         call.respondText(formBody, ContentType.Text.Html)
     }
 }
+
+private val BODY_REGEX = "<body[^>]*>(.*?)</body>".toRegex(RegexOption.DOT_MATCHES_ALL)
 
 private suspend fun RoutingContext.handleGetDashboardFragment(
     dashboardView: DashboardView,

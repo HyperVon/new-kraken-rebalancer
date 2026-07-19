@@ -624,7 +624,7 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
 
         "testUpdateAthAndCalculateDrawdown_NullAth" {
             every { portfolioStatsRepository.load() } returns PortfolioStats(
-                null
+                BigDecimal.ZERO
             )
             val drawdown =
                 portfolioAnalyzer.updateAthAndCalculateDrawdown(

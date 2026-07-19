@@ -46,14 +46,14 @@ class RateLimiter(
         return callCounter
     }
 
-    fun getCurrentCounter(): Double {
+    suspend fun getCurrentCounter(): Double = mutex.withLock {
         val now = System.currentTimeMillis()
         val lastUpdate = lastUpdateTimeMs
         val elapsedSeconds = (now - lastUpdate) / 1000.0
         return maxOf(0.0, callCounter - (elapsedSeconds * decayRate))
     }
 
-    fun reset() {
+    suspend fun reset() = mutex.withLock {
         callCounter = 0.0
         lastUpdateTimeMs = System.currentTimeMillis()
     }

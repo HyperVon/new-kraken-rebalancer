@@ -40,6 +40,7 @@ fun isWithinRelativeTolerance(
     second: BigDecimal,
     tolerance: BigDecimal = BigDecimal("0.01")
 ): Boolean {
+    if (first.compareTo(second) == 0) return true
     val largerAmount = maxOf(first.abs(), second.abs())
     return largerAmount.signum() > 0 &&
             first.subtract(second).abs().divide(largerAmount, 8, RoundingMode.HALF_UP) <= tolerance

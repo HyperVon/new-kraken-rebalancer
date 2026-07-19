@@ -88,16 +88,22 @@ fun initHistory() {
     setupSyncProgressAndLoad()
 }
 
+private var syncIntervalId: Int? = null
+
 private fun setupSyncProgressAndLoad() {
     checkSyncProgress().then { isDone ->
         if (isDone) {
             loadAll("30d")
         } else {
-            var syncInterval = 0
-            syncInterval = window.setInterval({
+            syncIntervalId?.let { window.clearInterval(it) }
+            syncIntervalId = window.setInterval({
+                if (document.getElementById("sync-progress-banner") == null) {
+                    syncIntervalId?.let { window.clearInterval(it) }
+                    return@setInterval
+                }
                 checkSyncProgress().then { done ->
                     if (done) {
-                        window.clearInterval(syncInterval)
+                        syncIntervalId?.let { window.clearInterval(it) }
                         loadAll(currentRange)
                     }
                 }
@@ -160,12 +166,22 @@ internal fun mapSnapshotsToPoints(snapshots: Array<dynamic>, valueSelector: (dyn
 }
 
 internal fun getClonedChartOptions(): dynamic {
+    when (currentRange) {
+        "24h" -> chartDefaults.scales.x.time.unit = "hour"
+        "all" -> js("delete chartDefaults.scales.x.time.unit")
+        else -> chartDefaults.scales.x.time.unit = "day"
+    }
+
     val options: dynamic = JSObject.assign(json(), window.asDynamic().chartDefaults)
     options.plugins = JSObject.assign(json(), window.asDynamic().chartDefaults.plugins)
     options.plugins.tooltip = JSObject.assign(json(), window.asDynamic().chartDefaults.plugins.tooltip)
     options.scales = JSObject.assign(json(), window.asDynamic().chartDefaults.scales)
+    options.scales.x = JSObject.assign(json(), window.asDynamic().chartDefaults.scales.x)
+    options.scales.x.time = JSObject.assign(json(), window.asDynamic().chartDefaults.scales.x.time)
+    options.scales.x.ticks = JSObject.assign(json(), window.asDynamic().chartDefaults.scales.x.ticks)
     options.scales.y = JSObject.assign(json(), window.asDynamic().chartDefaults.scales.y)
     options.scales.y.ticks = JSObject.assign(json(), window.asDynamic().chartDefaults.scales.y.ticks)
+
     return options
 }
 
@@ -179,25 +195,29 @@ internal fun createLineChartConfig(datasets: Array<dynamic>, options: dynamic): 
 }
 
 internal fun createOrUpdate(canvasId: String, config: dynamic) {
-    val existingChart = charts[canvasId] as? Chart
-    if (existingChart != null) {
+    val existingChart: dynamic = charts[canvasId]
+    if (existingChart != null && existingChart != undefined) {
         val states = mutableMapOf<String, Boolean>()
         val datasets = existingChart.data.datasets
-        val length = datasets.length as Int
-        for (i in 0 until length) {
-            val ds = datasets[i]
-            val label = ds.label.toString()
-            val visible = existingChart.isDatasetVisible(i)
-            states[label] = visible
+        if (datasets != null && datasets != undefined) {
+            val length: Int = (datasets.length).unsafeCast<Int>()
+            for (i in 0 until length) {
+                val ds = datasets[i]
+                val label = ds.label.toString()
+                val visible: Boolean = (existingChart.isDatasetVisible(i)).unsafeCast<Boolean>()
+                states[label] = visible
+            }
         }
         visibilityStates[canvasId] = states
-        existingChart.destroy()
+        try {
+            existingChart.destroy()
+        } catch (e: Throwable) {}
     }
 
     val savedStates = visibilityStates[canvasId]
-    if (savedStates != null) {
+    if (savedStates != null && config.data != null && config.data.datasets != null) {
         val configDatasets = config.data.datasets
-        val length = configDatasets.length as Int
+        val length: Int = (configDatasets.length).unsafeCast<Int>()
         for (i in 0 until length) {
             val ds = configDatasets[i]
             val label = ds.label.toString()
@@ -405,7 +425,7 @@ internal fun buildCumulativePLChart(trades: Array<dynamic>) {
     if (data.asDynamic().length == 0) return
 
     val datasets = arrayOf(json(
-        "label" to "Cumulative P&L",
+        "label" to "Net Cash Flow (Realized Trades)",
         "data" to data,
         "borderColor" to "rgba(52, 211, 153, 1)",
         "backgroundColor" to "rgba(52, 211, 153, 0.08)",
@@ -483,18 +503,6 @@ internal fun updateStats(stats: dynamic) {
 
 internal fun loadAll(range: String): Promise<Unit> {
     currentRange = range
-
-    when (currentRange) {
-        "24h" -> {
-            window.asDynamic().chartDefaults.scales.x.time.unit = "hour"
-        }
-        "all" -> {
-            js("delete window.chartDefaults.scales.x.time.unit")
-        }
-        else -> {
-            window.asDynamic().chartDefaults.scales.x.time.unit = "day"
-        }
-    }
 
     val p1 = fetchJSON("/api/history/snapshots?range=$currentRange")
     val p2 = fetchJSON("/api/history/trades?range=$currentRange")

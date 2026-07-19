@@ -333,7 +333,7 @@ class EvaluationScenariosTest : StringSpec() {
 
                 // Stats file should exist and record ATH = $10,000
                 val statsLoaded = statsRepo.load()
-                statsLoaded.allTimeHigh!!.toDouble() shouldBe 10000.0
+                statsLoaded.allTimeHigh.toDouble() shouldBe 10000.0
 
                 // 2. Next run: Deep Drawdown to $8,000 (20% drawdown)
                 // Drawdown is 20%. fiatMaxDrawdown is 20%.
@@ -1399,11 +1399,11 @@ class EvaluationScenariosTest : StringSpec() {
                 val statsRepo = SqlitePortfolioStatsRepositoryImpl(db, objectMapper, "test-scenario20-stats.json")
 
                 val stats = statsRepo.load()
-                val loadSuccess = stats.allTimeHigh != null && stats.allTimeHigh.compareTo(BigDecimal.ZERO) == 0
+                val loadSuccess = stats.allTimeHigh.compareTo(BigDecimal.ZERO) == 0
 
                 statsRepo.save(PortfolioStats(BigDecimal("5000.0")))
                 val reloadedStats = statsRepo.load()
-                val saveSuccess = reloadedStats.allTimeHigh != null && reloadedStats.allTimeHigh.compareTo(BigDecimal("5000.0")) == 0
+                val saveSuccess = reloadedStats.allTimeHigh.compareTo(BigDecimal("5000.0")) == 0
 
                 val success = loadSuccess && saveSuccess
                 val evidence = "Corrupted JSON loaded successfully (recovered with default): $loadSuccess\n" +

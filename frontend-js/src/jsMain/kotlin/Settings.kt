@@ -51,6 +51,10 @@ fun addAssetRow() {
     val symbolInput = document.getElementById("new-symbol-input") as? HTMLInputElement ?: return
     val symbol = symbolInput.value.trim().uppercase()
     if (symbol.isEmpty()) return
+    if (!Regex("^[A-Z0-9]{1,16}$").matches(symbol)) {
+        window.alert("Invalid symbol. Symbols must be alphanumeric and up to 16 characters.")
+        return
+    }
 
     val symbolInputs = document.querySelectorAll("input[name=\"symbols\"]")
     val existingSymbols = mutableListOf<String>()

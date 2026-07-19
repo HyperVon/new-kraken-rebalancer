@@ -5,7 +5,10 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.gemini.krakenbot.model.*
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.repository.TradeRepository
-import com.gemini.krakenbot.service.*
+import com.gemini.krakenbot.service.ConfigService
+import com.gemini.krakenbot.service.KrakenService
+import com.gemini.krakenbot.service.PortfolioAnalyzer
+import com.gemini.krakenbot.service.TradeHistoryService
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -21,7 +24,7 @@ import java.nio.file.StandardCopyOption
 import java.time.Duration
 import java.time.Instant
 import java.time.temporal.ChronoUnit
-import java.util.*
+import java.util.concurrent.ThreadLocalRandom
 import kotlin.math.abs
 import kotlin.time.Duration.Companion.milliseconds
 
@@ -111,7 +114,7 @@ class TradeHistoryServiceImpl(
         // Start balances
         val currentBalances = mutableMapOf<String, Double>()
         val totalPortfolioValue = 100000.0
-        val random = Random()
+        val random = ThreadLocalRandom.current()
 
         for ((symbol, targetPercent) in allocations) {
             val symbolU = symbol.value.uppercase()
@@ -250,7 +253,7 @@ class TradeHistoryServiceImpl(
         val stats = portfolioStatsRepository.load()
         val summary = repository.getTradeSummaryStats()
         return HistoryStats(
-            allTimeHigh = stats.allTimeHigh ?: BigDecimal.ZERO,
+            allTimeHigh = stats.allTimeHigh,
             totalTradesExecuted = summary.totalTradesExecuted,
             totalVolumeTraded = summary.totalVolumeTraded,
             totalFeesPaid = summary.totalFeesPaid,
@@ -285,7 +288,8 @@ class TradeHistoryServiceImpl(
         // Load existing trades in the query window to perform reconciliation and deduplication.
         val queryStart = latestTradeTime?.minusSeconds(300) ?: Instant.EPOCH
 
-        val originalLocalTrades = repository.getTradesInRange(queryStart, Instant.now()).toMutableList()
+        val queryEnd = Instant.now().plusSeconds(300)
+        val originalLocalTrades = repository.getTradesInRange(queryStart, queryEnd).toMutableList()
 
         val allocations = configService.getConfig().allocations.map { it.symbol.value }
         var totalAdded = 0
@@ -400,12 +404,16 @@ class TradeHistoryServiceImpl(
 
         val cutoffTime = oldestSnapshot?.timestamp ?: Instant.now()
 
-        // 2. Fetch current/starting balances
         val currentBalances = try {
             krakenService.getBalances()
         } catch (e: Exception) {
             log.error("Failed to fetch balances for snapshot reconstruction", e)
             emptyMap()
+        }
+
+        if (oldestSnapshot == null && currentBalances.isEmpty()) {
+            log.warn("Aborting historical snapshot reconstruction: starting balances unavailable.")
+            return
         }
 
         val runningBalances = mutableMapOf<String, BigDecimal>()
