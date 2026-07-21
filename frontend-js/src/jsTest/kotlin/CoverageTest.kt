@@ -41,16 +41,13 @@ class CoverageTest : StringSpec() {
                 registerHistoryGlobals()
                 
                 // First call - no existing chart
-                val config1 = js("{ type: 'line', data: { datasets: [] }, options: {} }")
-                createOrUpdate("test-chart", config1)
+                createOrUpdate("test-chart", TestDomBuilders.chartConfig())
                 
                 // Second call - existing chart, visibility states stored
-                val config2 = js("{ type: 'line', data: { datasets: [{ label: 'A' }, { label: 'B' }] }, options: {} }")
-                createOrUpdate("test-chart", config2)
+                createOrUpdate("test-chart", TestDomBuilders.chartConfig(TestDomBuilders.datasetConfig("A"), TestDomBuilders.datasetConfig("B")))
                 
                 // Third call with same config - should preserve visibility
-                val config3 = js("{ type: 'line', data: { datasets: [{ label: 'A', hidden: false }, { label: 'B', hidden: true }] }, options: {} }")
-                createOrUpdate("test-chart", config3)
+                createOrUpdate("test-chart", TestDomBuilders.chartConfig(TestDomBuilders.datasetConfig("A", hidden = false), TestDomBuilders.datasetConfig("B", hidden = true)))
                 
                 ((window.asDynamic().chartCallCount as Int) >= 2).shouldBeTrue()
             } finally {

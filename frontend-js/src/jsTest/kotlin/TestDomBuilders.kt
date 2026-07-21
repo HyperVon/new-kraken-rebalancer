@@ -115,4 +115,14 @@ object TestDomBuilders {
         }
         kotlinx.browser.window.asDynamic().Chart = chartConstructor
     }
+
+    fun chartConfig(vararg datasets: dynamic): dynamic = json(
+        "type" to "line",
+        "data" to json("datasets" to datasets),
+        "options" to json()
+    )
+
+    fun datasetConfig(label: String, hidden: Boolean? = null): dynamic =
+        if (hidden == null) json("label" to label)
+        else json("label" to label, DataProps.HIDDEN to hidden)
 }
