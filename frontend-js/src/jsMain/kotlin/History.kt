@@ -582,14 +582,21 @@ internal fun updateStats(stats: dynamic) {
     if (totalFees != null) totalFees.textContent = formatUSD(stats.totalFeesPaid.toString().toDoubleOrNull() ?: 0.0)
 }
 
+private fun fetchRanged(vararg routes: String, range: String): Array<Promise<dynamic>> {
+    return routes.map { route -> fetchJSON("$route?range=$range") }.toTypedArray()
+}
+
 internal fun loadAll(range: String): Promise<Unit> {
     currentRange = range
 
-    val p1 = fetchJSON("${Routes.API_HISTORY_SNAPSHOTS}?range=$currentRange")
-    val p2 = fetchJSON("${Routes.API_HISTORY_TRADES}?range=$currentRange")
-    val p3 = fetchJSON("${Routes.API_HISTORY_STATS}?range=$currentRange")
+    val promises = fetchRanged(
+        Routes.API_HISTORY_SNAPSHOTS,
+        Routes.API_HISTORY_TRADES,
+        Routes.API_HISTORY_STATS,
+        range = range
+    )
 
-    return Promise.all(arrayOf(p1, p2, p3)).then { results ->
+    return Promise.all(promises).then { results ->
         val snapshots = results[0] as Array<dynamic>
         val trades = results[1] as Array<dynamic>
         val stats = results[2]
