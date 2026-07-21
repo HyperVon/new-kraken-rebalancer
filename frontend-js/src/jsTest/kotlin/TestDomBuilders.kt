@@ -4,10 +4,8 @@ import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.DataProps
-import com.gemini.krakenbot.view.util.FormFields
 import com.gemini.krakenbot.view.util.HtmlAttrs
 import com.gemini.krakenbot.view.util.HtmlIds
-import com.gemini.krakenbot.view.util.ViewText
 import kotlin.js.json
 
 /** Reusable HTML template String builder functions for Kotlin/JS tests. */
@@ -94,13 +92,4 @@ object TestDomBuilders {
         DataProps.DRY_RUN to dryRun
     )
 
-    fun snapshotJson(
-        timestamp: String = "2023-01-01",
-        totalValueUSD: Any? = 100.0,
-        assets: dynamic = json(Asset.USD to json(DataProps.VALUE_USD to 100.0, DataProps.BALANCE to 100.0, DataProps.CURRENT_PERCENT to 100.0))
-    ): dynamic = json(
-        DataProps.TIMESTAMP to timestamp,
-        DataProps.TOTAL_VALUE_USD to totalValueUSD,
-        DataProps.ASSETS to assets
-    )
 }

@@ -26,7 +26,6 @@ object HtmxAttrs {
 object HtmxValues {
     const val BODY = "body"
     const val INNER_HTML = "innerHTML"
-    const val OUTER_HTML = "outerHTML"
 }
 
 /** Centralized HTML element IDs used in view layout templates and client scripts. */

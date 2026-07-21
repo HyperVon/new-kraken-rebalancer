@@ -13,10 +13,6 @@ object ChartProps {
     const val POINT_HOVER_RADIUS = "pointHoverRadius"
     const val POINT_HIT_RADIUS = "pointHitRadius"
     const val TRANSPARENT = "transparent"
-    const val TYPE = "type"
-    const val OPTIONS = "options"
-    const val X = "x"
-    const val Y = "y"
 
     // Colors
     const val COLOR_BLUE_BORDER = "rgba(96, 165, 250, 1)"

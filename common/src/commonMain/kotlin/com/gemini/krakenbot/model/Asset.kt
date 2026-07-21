@@ -53,13 +53,6 @@ value class Asset(val value: String) {
         val ETH_USD_PAIR: String = tradingPair(ETH)
         val DOGE_USD_PAIR: String = tradingPair(DOGE)
         val SOL_USD_PAIR: String = tradingPair(SOL)
-        val USDT_USD_PAIR: String = tradingPair(USDT)
-        val USDC_USD_PAIR: String = tradingPair(USDC)
-        val ADA_USD_PAIR: String = tradingPair(ADA)
-        val XRP_USD_PAIR: String = tradingPair(XRP)
-        val DOT_USD_PAIR: String = tradingPair(DOT)
-        val LINK_USD_PAIR: String = tradingPair(LINK)
-        val LTC_USD_PAIR: String = tradingPair(LTC)
 
         fun fromTradingPair(pair: String, allocations: List<String>): String? {
             val normalizedPair = pair.uppercase()

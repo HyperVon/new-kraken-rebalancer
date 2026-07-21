@@ -19,9 +19,6 @@ import kotlin.js.json
 
 @JsName("Chart")
 private external class Chart(ctx: dynamic, config: dynamic) {
-    fun destroy()
-    fun isDatasetVisible(index: Int): Boolean
-    val data: dynamic
 }
 
 @JsName("Object")

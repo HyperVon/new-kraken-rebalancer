@@ -372,7 +372,7 @@ class TradeHistoryServiceImpl(
 
 
     /**
-     * A cold Flow that fetches trade history from Kraken paginated by [pageSize].
+     * A cold Flow that fetches trade history from Kraken paginated by 50.
      *
      * Because it is a cold Flow:
      * 1. No network calls are made until the caller collects from it.
