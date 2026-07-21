@@ -8,6 +8,15 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [6.8.1] - 2026-07-21
+
+### Refactored
+
+- **Strict Warnings Enforcement**: Enabled `allWarningsAsErrors.set(true)` in build scripts for all modules (`build.gradle.kts`, `common/build.gradle.kts`, and `frontend-js/build.gradle.kts`) to enforce zero compilation warnings.
+- **Unreachable Code Suppression Cleanup**: Refactored the `queryPrivate` method in `KrakenServiceImpl` to assign the result inside the loop instead of using a redundant `throw RuntimeException("Unreachable")` block marked with `@Suppress("KotlinUnreachableCode")`.
+- **Redundant Parameter and Suppression Cleanup**: Simplified the `getTradeHistoryPaginated` signature in `TradeHistoryServiceImpl` by removing the redundant `pageSize` parameter, eliminating the need for the `@Suppress("SameParameterValue")` annotation.
+- **Comprehensive String Literal Elimination**: Replaced hundreds of hard-coded and repeated string literals (`"BTC"`, `"ETH"`, `"DOGE"`, `"SOL"`, `"XBTUSD"`, `"ETHUSD"`, `"DOGEUSD"`, `"buy"`, `"sell"`, `"market"`, `"public-key"`, `"private-key"`, Chart.js property keys, CSS modifier classes, form checkbox values) with centralized constants in `Asset`, `OrderSide`, `OrderType`, `KrakenApiConstants`, `Routes`, `FormFields`, `HtmxValues`, `ChartProps`, `CssClass.Utility`, and `TestConstants`.
+
 ## [6.8.0] - 2026-07-21
 
 ### Refactored

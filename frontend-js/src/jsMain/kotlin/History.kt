@@ -1,6 +1,9 @@
 package com.gemini.krakenbot.frontend
 
+import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.TimeRange
+import com.gemini.krakenbot.view.util.ChartProps
 import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.HtmlAttrs
 import com.gemini.krakenbot.view.util.HtmlIds
@@ -169,7 +172,7 @@ internal fun getUniqueSymbols(snapshots: Array<dynamic>, excludeUsd: Boolean = t
         }
     }
     return if (excludeUsd) {
-        symbolsSet.filter { it != "USD" }.sorted()
+        symbolsSet.filter { it != Asset.USD }.sorted()
     } else {
         symbolsSet.sorted()
     }
@@ -259,16 +262,16 @@ internal fun buildPortfolioValueChart(snapshots: Array<dynamic>) {
 
     val datasets = mutableListOf<dynamic>()
     datasets.add(json(
-        "label" to ViewText.TOTAL_PORTFOLIO,
-        "data" to totalPortfolioData,
-        "borderColor" to "rgba(96, 165, 250, 1)",
-        "backgroundColor" to "rgba(96, 165, 250, 0.08)",
-        "fill" to true,
-        "tension" to 0.3,
-        "borderWidth" to 2,
-        "pointRadius" to 4,
-        "pointHoverRadius" to 6,
-        "pointHitRadius" to 10
+        ChartProps.LABEL to ViewText.TOTAL_PORTFOLIO,
+        ChartProps.DATA to totalPortfolioData,
+        ChartProps.BORDER_COLOR to ChartProps.COLOR_BLUE_BORDER,
+        ChartProps.BACKGROUND_COLOR to ChartProps.COLOR_BLUE_BG,
+        ChartProps.FILL to true,
+        ChartProps.TENSION to 0.3,
+        ChartProps.BORDER_WIDTH to 2,
+        ChartProps.POINT_RADIUS to 4,
+        ChartProps.POINT_HOVER_RADIUS to 6,
+        ChartProps.POINT_HIT_RADIUS to 10
     ))
 
     symbolList.forEachIndexed { i, sym ->
@@ -282,15 +285,15 @@ internal fun buildPortfolioValueChart(snapshots: Array<dynamic>) {
         }
 
         datasets.add(json(
-            "label" to sym,
-            "data" to symbolData,
-            "borderColor" to color,
-            "backgroundColor" to "transparent",
-            "tension" to 0.3,
-            "borderWidth" to 1.5,
-            "pointRadius" to 3,
-            "pointHoverRadius" to 5,
-            "pointHitRadius" to 10
+            ChartProps.LABEL to sym,
+            ChartProps.DATA to symbolData,
+            ChartProps.BORDER_COLOR to color,
+            ChartProps.BACKGROUND_COLOR to ChartProps.TRANSPARENT,
+            ChartProps.TENSION to 0.3,
+            ChartProps.BORDER_WIDTH to 1.5,
+            ChartProps.POINT_RADIUS to 3,
+            ChartProps.POINT_HOVER_RADIUS to 5,
+            ChartProps.POINT_HIT_RADIUS to 10
         ))
     }
 
@@ -338,15 +341,15 @@ internal fun buildAssetHoldingsChart(snapshots: Array<dynamic>) {
         }
 
         json(
-            "label" to sym,
-            "data" to symbolData,
-            "borderColor" to color,
-            "backgroundColor" to "transparent",
-            "tension" to 0.3,
-            "borderWidth" to 2,
-            "pointRadius" to 3,
-            "pointHoverRadius" to 5,
-            "pointHitRadius" to 10
+            ChartProps.LABEL to sym,
+            ChartProps.DATA to symbolData,
+            ChartProps.BORDER_COLOR to color,
+            ChartProps.BACKGROUND_COLOR to ChartProps.TRANSPARENT,
+            ChartProps.TENSION to 0.3,
+            ChartProps.BORDER_WIDTH to 2,
+            ChartProps.POINT_RADIUS to 3,
+            ChartProps.POINT_HOVER_RADIUS to 5,
+            ChartProps.POINT_HIT_RADIUS to 10
         )
     }.toTypedArray()
 
@@ -392,16 +395,16 @@ internal fun buildAllocationDriftChart(snapshots: Array<dynamic>) {
         }
 
         json(
-            "label" to sym,
-            "data" to symbolData,
-            "borderColor" to color,
-            "backgroundColor" to bg,
-            "fill" to true,
-            "tension" to 0.3,
-            "borderWidth" to 1.5,
-            "pointRadius" to 3,
-            "pointHoverRadius" to 5,
-            "pointHitRadius" to 10
+            ChartProps.LABEL to sym,
+            ChartProps.DATA to symbolData,
+            ChartProps.BORDER_COLOR to color,
+            ChartProps.BACKGROUND_COLOR to bg,
+            ChartProps.FILL to true,
+            ChartProps.TENSION to 0.3,
+            ChartProps.BORDER_WIDTH to 1.5,
+            ChartProps.POINT_RADIUS to 3,
+            ChartProps.POINT_HOVER_RADIUS to 5,
+            ChartProps.POINT_HIT_RADIUS to 10
         )
     }.toTypedArray()
 
@@ -443,7 +446,7 @@ internal fun calculateCumulativePL(trades: Array<dynamic>, includeDryRun: Boolea
     for (t in filtered) {
         val amt = t.usdAmount.toString().toDoubleOrNull() ?: 0.0
         val side = t.side.toString().uppercase()
-        cumulative += if (side == "SELL") amt else -amt
+        cumulative += if (side == OrderSide.SELL.name) amt else -amt
         points.add(json("x" to t.timestamp, "y" to cumulative))
     }
 
@@ -465,16 +468,16 @@ internal fun buildCumulativePLChart(trades: Array<dynamic>, includeDryRun: Boole
     val labelText = if (includeDryRun) "Net Cash Flow (Realized & Dry Run Trades)" else "Net Cash Flow (Realized Trades)"
 
     val datasets = arrayOf(json(
-        "label" to labelText,
-        "data" to chartData,
-        "borderColor" to "rgba(52, 211, 153, 1)",
-        "backgroundColor" to "rgba(52, 211, 153, 0.08)",
-        "fill" to true,
-        "tension" to 0.3,
-        "borderWidth" to 2,
-        "pointRadius" to 4,
-        "pointHoverRadius" to 6,
-        "pointHitRadius" to 10
+        ChartProps.LABEL to labelText,
+        ChartProps.DATA to chartData,
+        ChartProps.BORDER_COLOR to ChartProps.COLOR_GREEN_BORDER,
+        ChartProps.BACKGROUND_COLOR to ChartProps.COLOR_GREEN_BG,
+        ChartProps.FILL to true,
+        ChartProps.TENSION to 0.3,
+        ChartProps.BORDER_WIDTH to 2,
+        ChartProps.POINT_RADIUS to 4,
+        ChartProps.POINT_HOVER_RADIUS to 6,
+        ChartProps.POINT_HIT_RADIUS to 10
     ))
 
     val options = getClonedChartOptions()
@@ -504,7 +507,7 @@ internal fun renderTradeTable(trades: Array<dynamic>) {
     val rowsHtml = filteredTrades.joinToString("") { t: dynamic ->
         val time = Date(t.timestamp.toString()).asDynamic().toLocaleString()
         val side = t.side.toString()
-        val sideClass = if (side == "BUY") CssClass.Badge.Buy.value else CssClass.Badge.Sell.value
+        val sideClass = if (side == OrderSide.BUY.name) CssClass.Badge.Buy.value else CssClass.Badge.Sell.value
         val success = t.success as? Boolean ?: false
         val dryRun = t.dryRun as? Boolean ?: false
         val statusText = if (success) (if (dryRun) "DRY RUN" else "SUCCESS") else "FAILED"
@@ -513,12 +516,12 @@ internal fun renderTradeTable(trades: Array<dynamic>) {
         val amt = t.usdAmount.toString().toDoubleOrNull() ?: 0.0
 
         """
-        <tr class="hoverable">
-            <td class="mono-col">$time</td>
-            <td class="symbol-col">${formatPair(t)}</td>
+        <tr class="${CssClass.Table.Hoverable.value}">
+            <td class="${CssClass.Table.MonoCol.value}">$time</td>
+            <td class="${CssClass.Table.SymbolCol.value}">${formatPair(t)}</td>
             <td><span class="$sideClass">$side</span></td>
-            <td class="mono-col">${vol.toFixed(8)}</td>
-            <td class="mono-col">${formatUSD(amt)}</td>
+            <td class="${CssClass.Table.MonoCol.value}">${vol.toFixed(8)}</td>
+            <td class="${CssClass.Table.MonoCol.value}">${formatUSD(amt)}</td>
             <td><span class="$statusClass">$statusText</span></td>
         </tr>
         """.trimIndent()

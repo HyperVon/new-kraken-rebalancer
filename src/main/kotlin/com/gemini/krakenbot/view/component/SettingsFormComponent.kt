@@ -6,6 +6,7 @@ import com.gemini.krakenbot.view.util.FormFields
 import com.gemini.krakenbot.view.util.HtmlAttrs
 import com.gemini.krakenbot.view.util.HtmlIds
 import com.gemini.krakenbot.view.util.HtmxAttrs
+import com.gemini.krakenbot.view.util.HtmxValues
 import com.gemini.krakenbot.view.util.Icons
 import com.gemini.krakenbot.view.util.Icons.icon
 import com.gemini.krakenbot.view.util.Layouts.formGroup
@@ -23,8 +24,8 @@ class SettingsFormComponent {
         body.div(CssClass.Layout.Container.value) {
             form {
                 attributes[HtmxAttrs.HX_POST] = Routes.SETTINGS
-                attributes[HtmxAttrs.HX_TARGET] = "body"
-                attributes[HtmxAttrs.HX_SWAP] = "innerHTML"
+                attributes[HtmxAttrs.HX_TARGET] = HtmxValues.BODY
+                attributes[HtmxAttrs.HX_SWAP] = HtmxValues.INNER_HTML
 
                 header {
                     div(CssClass.Layout.HeaderTitleSection.value) {

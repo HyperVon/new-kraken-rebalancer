@@ -23,6 +23,12 @@ object HtmxAttrs {
     const val SSE_CONNECT = "sse-connect"
 }
 
+object HtmxValues {
+    const val BODY = "body"
+    const val INNER_HTML = "innerHTML"
+    const val OUTER_HTML = "outerHTML"
+}
+
 /** Centralized HTML element IDs used in view layout templates and client scripts. */
 object HtmlIds {
     const val SAVE_BUTTON = "save-button"
@@ -55,6 +61,9 @@ object SyncMetadataKeys {
     const val SYNC_OFFSET = "sync_offset"
     const val SYNC_TOTAL = "sync_total"
     const val COMPLETED = "completed"
+    const val IS_SEEDED = "seeded"
+    const val OFFSET = "offset"
+    const val TOTAL = "total"
 }
 
 /** Centralized health check response keys. */

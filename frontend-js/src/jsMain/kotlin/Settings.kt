@@ -1,8 +1,10 @@
 package com.gemini.krakenbot.frontend
 
+import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.FormFields
 import com.gemini.krakenbot.view.util.HtmlIds
+import com.gemini.krakenbot.view.util.ViewText
 import kotlinx.browser.document
 import kotlinx.browser.window
 import org.w3c.dom.*
@@ -42,11 +44,11 @@ fun updateAllocationTotal() {
             symbols.add(input.value.uppercase())
         }
     }
-    val hasUsd = symbols.contains("USD")
+    val hasUsd = symbols.contains(Asset.USD)
 
     val isSuccess = isValid && hasUsd
-    totalDisplay.classList.toggle("live", isSuccess)
-    totalDisplay.classList.toggle("delayed", !isSuccess)
+    totalDisplay.classList.toggle(CssClass.Utility.Live.value, isSuccess)
+    totalDisplay.classList.toggle(CssClass.Utility.Delayed.value, !isSuccess)
     saveButton.disabled = !isSuccess
 }
 
@@ -78,13 +80,13 @@ fun addAssetRow() {
     row.className = CssClass.Form.AllocationEditRow.value
 
     row.innerHTML = """
-        <div class="allocation-edit-symbol symbol-label">$symbol</div>
-        <input type="hidden" name="symbols" value="$symbol">
-        <div class="allocation-edit-input-wrapper">
-            <input type="number" step="0.1" name="targets" class="input-glass" value="0.0" oninput="updateAllocationTotal()">
-            <span class="percent-suffix">%</span>
+        <div class="${CssClass.Form.AllocationEditSymbol.value} symbol-label">$symbol</div>
+        <input type="hidden" name="${FormFields.SYMBOLS}" value="$symbol">
+        <div class="${CssClass.Form.AllocationEditInputWrapper.value}">
+            <input type="number" step="0.1" name="${FormFields.TARGETS}" class="${CssClass.Form.InputGlass.value}" value="0.0" oninput="updateAllocationTotal()">
+            <span class="${CssClass.Form.PercentSuffix.value}">%</span>
         </div>
-        <button type="button" class="btn btn-danger" onclick="this.closest('.${CssClass.Form.AllocationEditRow.value}').remove(); updateAllocationTotal();">Remove</button>
+        <button type="button" class="${CssClass.Button.Danger.value}" onclick="this.closest('.${CssClass.Form.AllocationEditRow.value}').remove(); updateAllocationTotal();">${ViewText.REMOVE}</button>
     """.trimIndent()
 
     container.appendChild(row)

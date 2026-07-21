@@ -57,8 +57,8 @@ class KrakenServiceImpl(
                 emit(block())
                 return@flow
             } catch (e: Exception) {
-                val isRateLimit = e.message?.contains("Rate limit exceeded") == true
-                val isLockout = e.message?.contains("Temporary lockout") == true
+                val isRateLimit = e.message?.contains(KrakenApiConstants.ERROR_RATE_LIMIT_EXCEEDED) == true
+                val isLockout = e.message?.contains(KrakenApiConstants.ERROR_TEMPORARY_LOCKOUT) == true
                 val isNetworkOrTransient = e is IOException || e is ResponseException
 
                 if ((isNetworkOrTransient || isRateLimit || isLockout) && attempt < maxAttempts - 1) {
@@ -299,13 +299,13 @@ class KrakenServiceImpl(
                         root.path(KrakenApiConstants.FIELD_ERROR)
                     )
                     throw RuntimeException(
-                        "Kraken Public API Error: " +
+                        KrakenApiConstants.ERROR_PUBLIC_API_PREFIX +
                                 root.path(KrakenApiConstants.FIELD_ERROR).toString()
                     )
                 }
                 root
             } catch (e: JsonProcessingException) {
-                throw RuntimeException("Failed to parse public API response", e)
+                throw RuntimeException(KrakenApiConstants.ERROR_PARSE_PUBLIC, e)
             }
         }
     }
@@ -315,14 +315,15 @@ class KrakenServiceImpl(
         data: Map<String, String>
     ): JsonNode {
         val apiKey = configService.getConfig().kraken.apiKey.value
-        check(apiKey.isNotBlank()) { "API Key is null" }
+        check(apiKey.isNotBlank()) { KrakenApiConstants.ERROR_API_KEY_NULL }
 
         val maxRetries = 5
 
         return retryWithFlow("queryPrivate($path)") {
             var retryCount = 0
-            while (true) {
-                val cost = if (path.contains("TradesHistory") || path.contains("Ledgers") || path.contains("ClosedOrders")) 2.0 else 1.0
+            var result: JsonNode? = null
+            while (result == null) {
+                val cost = if (path.contains(KrakenApiConstants.SUBSTRING_TRADES_HISTORY) || path.contains(KrakenApiConstants.SUBSTRING_LEDGERS) || path.contains(KrakenApiConstants.SUBSTRING_CLOSED_ORDERS)) 2.0 else 1.0
                 rateLimiter.acquireWithCost(cost)
 
                 val nonce = nonceGenerator.incrementAndGet().toString()
@@ -345,7 +346,7 @@ class KrakenServiceImpl(
                     val root: JsonNode = objectMapper.readTree(responseBody)
                     if (!root.path(KrakenApiConstants.FIELD_ERROR).isEmpty) {
                         val errorMsg = root.path(KrakenApiConstants.FIELD_ERROR).toString()
-                        if (errorMsg.contains("Invalid nonce") && retryCount < maxRetries) {
+                        if (errorMsg.contains(KrakenApiConstants.ERROR_INVALID_NONCE) && retryCount < maxRetries) {
                             val bumpAmount = 100_000_000L * (1L shl retryCount)
                             log.warn(
                                 "Invalid nonce detected. Adjusting nonce generator by {} and retrying (Attempt {}/{})",
@@ -357,18 +358,17 @@ class KrakenServiceImpl(
                             retryCount++
                             continue
                         }
-                        throw RuntimeException("Kraken API Error: $errorMsg")
+                        throw RuntimeException("${KrakenApiConstants.ERROR_API_PREFIX}$errorMsg")
                     }
-                    return@retryWithFlow root.path(KrakenApiConstants.FIELD_RESULT)
+                    result = root.path(KrakenApiConstants.FIELD_RESULT)
                 } catch (e: JsonProcessingException) {
                     throw RuntimeException(
-                        "Failed to parse private API response",
+                        KrakenApiConstants.ERROR_PARSE_PRIVATE,
                         e
                     )
                 }
             }
-            @Suppress("KotlinUnreachableCode")
-            throw RuntimeException("Unreachable")
+            result
         }
     }
 

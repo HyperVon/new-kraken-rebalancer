@@ -1,5 +1,6 @@
 package com.gemini.krakenbot.frontend
 
+import com.gemini.krakenbot.model.Asset
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldNotContain
@@ -43,10 +44,10 @@ class HistoryTest : StringSpec() {
         )
 
         val symbolsExcludeUsd = getUniqueSymbols(snapshots, excludeUsd = true)
-        symbolsExcludeUsd shouldBe listOf("BTC", "ETH", "SOL")
+        symbolsExcludeUsd shouldBe listOf(Asset.BTC, Asset.ETH, Asset.SOL)
 
         val symbolsIncludeUsd = getUniqueSymbols(snapshots, excludeUsd = false)
-        symbolsIncludeUsd shouldBe listOf("BTC", "ETH", "SOL", "USD")
+        symbolsIncludeUsd shouldBe listOf(Asset.BTC, Asset.ETH, Asset.SOL, Asset.USD)
     }
 
         "mapSnapshotsToPoints retains timestamps and values" {

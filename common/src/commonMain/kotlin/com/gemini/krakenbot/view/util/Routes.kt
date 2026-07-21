@@ -14,6 +14,12 @@ object Routes {
     const val API_HEALTH = "/api/health"
     const val STATIC_STYLE_CSS = "/static/style.css"
     const val STATIC_REBALANCER_JS = "/static/rebalancer.js"
+    const val STATIC_PREFIX = "/static"
+    const val STATIC_RESOURCES_DIR = "static"
+}
+
+object QueryParamKeys {
+    const val RANGE = "range"
 }
 
 object HtmxHeaders {
@@ -30,4 +36,7 @@ object FormFields {
     const val FIAT_DEPLOYMENT_EXPONENT = "fiatDeploymentExponent"
     const val SYMBOLS = "symbols"
     const val TARGETS = "targets"
+    const val ON = "on"
+    const val VALUE_TRUE = "true"
+    const val VALUE_FALSE = "false"
 }

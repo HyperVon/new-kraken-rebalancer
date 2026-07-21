@@ -5,6 +5,10 @@ import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.config.Settings
+import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.OrderSide
+import com.gemini.krakenbot.model.OrderType
+import com.gemini.krakenbot.test.TestConstants
 import com.gemini.krakenbot.service.impl.KrakenServiceImpl
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.IsolationMode
@@ -42,9 +46,9 @@ class KrakenServiceTest : StringSpec() {
         configService = mockk(relaxed = true)
 
         val credentials = KrakenCredentials(
-            apiKey = "public-key",
+            apiKey = TestConstants.API_KEY,
             privateKey = Base64.getEncoder()
-                .encodeToString("secret-key".toByteArray())
+                .encodeToString(TestConstants.API_SECRET.toByteArray())
         )
         val settings = Settings(
             loopDelaySeconds = 60L,
@@ -58,8 +62,8 @@ class KrakenServiceTest : StringSpec() {
             kraken = credentials,
             settings = settings,
             allocations = listOf(
-                Allocation("BTC", 50.0),
-                Allocation("ETH", 50.0)
+                Allocation(Asset.BTC, 50.0),
+                Allocation(Asset.ETH, 50.0)
             )
         )
         every { configService.getConfig() } returns config
@@ -110,9 +114,9 @@ class KrakenServiceTest : StringSpec() {
                 val service = createService(responseJson)
 
                 val result = service.executeOrder(
-                    pair = "XBTUSD",
-                    type = "limit",
-                    side = "buy",
+                    pair = Asset.BTC_USD_PAIR,
+                    type = OrderType.MARKET.apiValue,
+                    side = OrderSide.BUY.apiValue,
                     volume = BigDecimal("0.1")
                 )
                 result.success.shouldBeTrue()
@@ -138,9 +142,9 @@ class KrakenServiceTest : StringSpec() {
                 every { configService.getConfig() } returns config
 
                 val result = service.executeOrder(
-                    pair = "XBTUSD",
-                    type = "limit",
-                    side = "buy",
+                    pair = Asset.BTC_USD_PAIR,
+                    type = OrderType.MARKET.apiValue,
+                    side = OrderSide.BUY.apiValue,
                     volume = BigDecimal("0.1")
                 )
                 result.success.shouldBeTrue()

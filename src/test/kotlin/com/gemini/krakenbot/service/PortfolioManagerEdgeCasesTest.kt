@@ -5,6 +5,7 @@ import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.OrderResult
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.PortfolioStats
@@ -305,11 +306,11 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
                 )
 
                 krakenService.executedOrders.size shouldBe 2
-                krakenService.executedOrders[0].pair shouldBe "XBTUSD"
-                krakenService.executedOrders[0].side shouldBe "sell"
+                krakenService.executedOrders[0].pair shouldBe Asset.BTC_USD_PAIR
+                krakenService.executedOrders[0].side shouldBe OrderSide.SELL.apiValue
                 krakenService.executedOrders[0].volume.compareTo(BigDecimal.TEN) shouldBe 0
-                krakenService.executedOrders[1].pair shouldBe "ETHUSD"
-                krakenService.executedOrders[1].side shouldBe "buy"
+                krakenService.executedOrders[1].pair shouldBe Asset.ETH_USD_PAIR
+                krakenService.executedOrders[1].side shouldBe OrderSide.BUY.apiValue
                 krakenService.executedOrders[1].volume.compareTo(BigDecimal.valueOf(2)) shouldBe 0
             }
         }
@@ -347,11 +348,11 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
                 )
 
                 krakenService.executedOrders.size shouldBe 2
-                krakenService.executedOrders[0].pair shouldBe "XBTUSD"
-                krakenService.executedOrders[0].side shouldBe "sell"
+                krakenService.executedOrders[0].pair shouldBe Asset.BTC_USD_PAIR
+                krakenService.executedOrders[0].side shouldBe OrderSide.SELL.apiValue
                 krakenService.executedOrders[0].volume.compareTo(BigDecimal.TEN) shouldBe 0
-                krakenService.executedOrders[1].pair shouldBe "ETHUSD"
-                krakenService.executedOrders[1].side shouldBe "buy"
+                krakenService.executedOrders[1].pair shouldBe Asset.ETH_USD_PAIR
+                krakenService.executedOrders[1].side shouldBe OrderSide.BUY.apiValue
                 krakenService.executedOrders[1].volume.compareTo(BigDecimal.valueOf(2)) shouldBe 0
             }
         }

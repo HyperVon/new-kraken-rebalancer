@@ -3,6 +3,9 @@ package com.gemini.krakenbot.service
 import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.config.Settings
+import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.OrderSide
+import com.gemini.krakenbot.model.OrderType
 import com.gemini.krakenbot.service.impl.DynamicKrakenService
 import com.gemini.krakenbot.service.impl.KrakenServiceImpl
 import com.gemini.krakenbot.service.impl.SimulatedKrakenService
@@ -57,8 +60,8 @@ class DynamicKrakenServiceTest : StringSpec() {
             coVerify(exactly = 0) { realService.getTickerPrices(any()) }
 
             // executeOrder
-            dynamicService.executeOrder("XBTUSD", "sell", "market", BigDecimal.ONE)
-            coVerify(exactly = 1) { simulatedService.executeOrder("XBTUSD", "sell", "market", BigDecimal.ONE) }
+            dynamicService.executeOrder(Asset.BTC_USD_PAIR, OrderSide.SELL.apiValue, OrderType.MARKET.apiValue, BigDecimal.ONE)
+            coVerify(exactly = 1) { simulatedService.executeOrder(Asset.BTC_USD_PAIR, OrderSide.SELL.apiValue, OrderType.MARKET.apiValue, BigDecimal.ONE) }
             coVerify(exactly = 0) { realService.executeOrder(any(), any(), any(), any()) }
 
             // getTradeHistory
@@ -104,8 +107,8 @@ class DynamicKrakenServiceTest : StringSpec() {
             coVerify(exactly = 0) { simulatedService.getTickerPrices(any()) }
 
             // executeOrder
-            dynamicService.executeOrder("XBTUSD", "sell", "market", BigDecimal.ONE)
-            coVerify(exactly = 1) { realService.executeOrder("XBTUSD", "sell", "market", BigDecimal.ONE) }
+            dynamicService.executeOrder(Asset.BTC_USD_PAIR, OrderSide.SELL.apiValue, OrderType.MARKET.apiValue, BigDecimal.ONE)
+            coVerify(exactly = 1) { realService.executeOrder(Asset.BTC_USD_PAIR, OrderSide.SELL.apiValue, OrderType.MARKET.apiValue, BigDecimal.ONE) }
             coVerify(exactly = 0) { simulatedService.executeOrder(any(), any(), any(), any()) }
 
             // getTradeHistory

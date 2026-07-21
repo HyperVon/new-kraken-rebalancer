@@ -2,6 +2,7 @@ package com.gemini.krakenbot.repository
 
 import com.gemini.krakenbot.config.DatabaseConfig
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.repository.impl.SqliteTradeRepositoryImpl
@@ -101,9 +102,9 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
             val now = Instant.now().truncatedTo(ChronoUnit.MILLIS)
             val trade1 = TradeRecord(
                 timestamp = now.minusSeconds(10),
-                pair = "XBTUSD",
-                side = "BUY",
-                symbol = "BTC",
+                pair = Asset.BTC_USD_PAIR,
+                side = OrderSide.BUY.name,
+                symbol = Asset.BTC,
                 volume = BigDecimal("0.1"),
                 usdAmount = BigDecimal("5000.00"),
                 success = true,
@@ -113,8 +114,8 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
             val trade2 = TradeRecord(
                 timestamp = now,
                 pair = "ETHUSD",
-                side = "SELL",
-                symbol = "ETH",
+                side = OrderSide.SELL.name,
+                symbol = Asset.ETH,
                 volume = BigDecimal("1.0"),
                 usdAmount = BigDecimal("2000.00"),
                 success = true,
@@ -124,8 +125,8 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
             val failedTrade = TradeRecord(
                 timestamp = now.plusSeconds(10),
                 pair = "DOGEUSD",
-                side = "BUY",
-                symbol = "DOGE",
+                side = OrderSide.BUY.name,
+                symbol = Asset.DOGE,
                 volume = BigDecimal("100.0"),
                 usdAmount = BigDecimal("10.00"),
                 success = false,

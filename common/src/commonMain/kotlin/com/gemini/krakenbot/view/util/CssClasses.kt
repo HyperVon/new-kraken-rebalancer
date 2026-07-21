@@ -143,7 +143,13 @@ sealed class CssClass(open val value: String) {
     // Utility
     sealed class Utility(override val value: String) : CssClass(value) {
         object TextDanger : Utility("text-danger")
+        object TextSuccess : Utility("text-success")
         object GlassPanelTitle : Utility("glass-panel-title")
         object ErrorBanner : Utility("error-banner")
+        object Stale : Utility("stale")
+        object Live : Utility("live")
+        object Delayed : Utility("delayed")
+        object Asc : Utility("asc")
+        object Desc : Utility("desc")
     }
 }

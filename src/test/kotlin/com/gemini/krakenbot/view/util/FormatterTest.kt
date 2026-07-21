@@ -17,8 +17,8 @@ class FormatterTest : StringSpec({
     }
 
     "getDeviationClass returns correct class for deviation" {
-        Formatter.getDeviationClass(BigDecimal("1.0")) shouldBe "text-danger"
-        Formatter.getDeviationClass(BigDecimal("-1.0")) shouldBe "text-success"
+        Formatter.getDeviationClass(BigDecimal("1.0")) shouldBe CssClass.Utility.TextDanger.value
+        Formatter.getDeviationClass(BigDecimal("-1.0")) shouldBe CssClass.Utility.TextSuccess.value
         Formatter.getDeviationClass(BigDecimal.ZERO) shouldBe ""
         Formatter.getDeviationClass(null) shouldBe ""
     }

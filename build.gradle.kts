@@ -88,6 +88,7 @@ dependencies {
 tasks.withType<KotlinCompile> {
     compilerOptions {
         freeCompilerArgs.add("-Xjsr305=strict")
+        allWarningsAsErrors.set(true)
     }
 }
 

@@ -1,5 +1,6 @@
 package com.gemini.krakenbot.frontend
 
+import com.gemini.krakenbot.model.Asset
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.booleans.shouldBeFalse
@@ -317,13 +318,13 @@ class CoverageTest : StringSpec() {
                 input1.value = "40.0"
                 val sym1 = document.createElement("input") as HTMLInputElement
                 sym1.name = "symbols"
-                sym1.value = "BTC"
+                sym1.value = Asset.BTC
                 val input2 = document.createElement("input") as HTMLInputElement
                 input2.name = "targets"
                 input2.value = "60.0"
                 val sym2 = document.createElement("input") as HTMLInputElement
                 sym2.name = "symbols"
-                sym2.value = "USD"
+                sym2.value = Asset.USD
                 container.appendChild(input1)
                 container.appendChild(sym1)
                 container.appendChild(input2)
@@ -349,7 +350,7 @@ class CoverageTest : StringSpec() {
                 input3.value = "30.0"
                 val sym3 = document.createElement("input") as HTMLInputElement
                 sym3.name = "symbols"
-                sym3.value = "BTC"
+                sym3.value = Asset.BTC
                 val input4 = document.createElement("input") as HTMLInputElement
                 input4.name = "targets"
                 input4.value = "30.0"
@@ -379,7 +380,7 @@ class CoverageTest : StringSpec() {
                 input5.value = "50.0"
                 val sym5 = document.createElement("input") as HTMLInputElement
                 sym5.name = "symbols"
-                sym5.value = "BTC"
+                sym5.value = Asset.BTC
                 val input6 = document.createElement("input") as HTMLInputElement
                 input6.name = "targets"
                 input6.value = "50.0"
@@ -409,7 +410,7 @@ class CoverageTest : StringSpec() {
         "addAssetRow handles edge cases" {
             val container = document.createElement("div")
             container.innerHTML = """
-                <input type="text" id="new-symbol-input" value="BTC">
+                <input type="text" id="new-symbol-input" value="${Asset.BTC}">
                 <div id="allocations-container"></div>
             """.trimIndent()
             document.body!!.appendChild(container)
@@ -422,12 +423,12 @@ class CoverageTest : StringSpec() {
                 allocContainer.childElementCount.shouldBe(0)
                 
                 // Case 2: symbol already exists -> should show alert and return
-                symbolInput.value = "BTC"
+                symbolInput.value = Asset.BTC
                 // Pre-populate container with existing BTC
                 val existingRow = document.createElement("div")
                 existingRow.className = "allocation-edit-row"
                 existingRow.innerHTML = """
-                    <input type="hidden" name="symbols" value="BTC">
+                    <input type="hidden" name="symbols" value="${Asset.BTC}">
                 """.trimIndent()
                 allocContainer.appendChild(existingRow)
                 

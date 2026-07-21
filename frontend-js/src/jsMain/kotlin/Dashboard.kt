@@ -1,5 +1,6 @@
 package com.gemini.krakenbot.frontend
 
+import com.gemini.krakenbot.util.PrecisionConstants
 import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.HtmlAttrs
 import com.gemini.krakenbot.view.util.ViewText
@@ -8,10 +9,8 @@ import kotlinx.browser.window
 import org.w3c.dom.*
 import kotlin.js.Date
 
-import com.gemini.krakenbot.util.PrecisionConstants
-
-internal const val SORT_ASC = "asc"
-internal const val SORT_DESC = "desc"
+internal val SORT_ASC = CssClass.Utility.Asc.value
+internal val SORT_DESC = CssClass.Utility.Desc.value
 
 internal var currentSortCol: Int = 5
 internal var currentSortDir: String = SORT_ASC
@@ -33,7 +32,7 @@ fun updateAge() {
 
     ageEl.textContent = "${diff}s ago"
     val isStale = diff > PrecisionConstants.STALE_THRESHOLD_SECONDS
-    ageEl.classList.toggle("stale", isStale)
+    ageEl.classList.toggle(CssClass.Utility.Stale.value, isStale)
 
     val date = Date(epoch)
     val hours = date.getHours()
@@ -50,8 +49,8 @@ fun updateAge() {
 
     val badgeEl = document.querySelector(STATUS_BADGE_QUERY) as? HTMLElement
     if (badgeEl != null) {
-        badgeEl.classList.toggle("delayed", isStale)
-        badgeEl.classList.toggle("live", !isStale)
+        badgeEl.classList.toggle(CssClass.Utility.Delayed.value, isStale)
+        badgeEl.classList.toggle(CssClass.Utility.Live.value, !isStale)
         val badgeText = if (isStale) ViewText.DELAYED else ViewText.LIVE
         if (badgeEl.textContent != badgeText) {
             badgeEl.textContent = badgeText

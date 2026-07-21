@@ -147,7 +147,7 @@ class TradeHistoryServiceImpl(
             // 2. Compute portfolio value and rebalance
             var portfolioValue = 0.0
             for (symbol in currentBalances.keys) {
-                portfolioValue += currentBalances[symbol]!! * currentPrices[symbol]!!
+                portfolioValue += currentBalances.getValue(symbol) * currentPrices.getValue(symbol)
             }
 
             // Rebalance balances towards target allocations
@@ -166,16 +166,16 @@ class TradeHistoryServiceImpl(
 
             for ((symbol) in allocations) {
                 val symbolU = symbol.value.uppercase()
-                val balance = currentBalances[symbolU]!!
-                val price = currentPrices[symbolU]!!
+                val balance = currentBalances.getValue(symbolU)
+                val price = currentPrices.getValue(symbolU)
                 val valueUSD = balance * price
                 exactPortfolioValue += valueUSD
             }
 
             for ((symbol, targetPercent) in allocations) {
                 val symbolU = symbol.value.uppercase()
-                val balance = currentBalances[symbolU]!!
-                val price = currentPrices[symbolU]!!
+                val balance = currentBalances.getValue(symbolU)
+                val price = currentPrices.getValue(symbolU)
                 assetSnapshots[symbolU] = PortfolioCalculations.createAssetSnapshot(
                     symbol = symbolU,
                     balance = BigDecimal.valueOf(balance),
@@ -314,7 +314,7 @@ class TradeHistoryServiceImpl(
         var totalAdded = 0
         var totalReconciled = 0
 
-        getTradeHistoryPaginated(startSec = startSec, pageSize = 50)
+        getTradeHistoryPaginated(startSec = startSec)
             .collect { apiTrades ->
                 for (apiTrade: TradeRecord in apiTrades) {
                     // The local order record has requested values; the API record has actual
@@ -382,9 +382,9 @@ class TradeHistoryServiceImpl(
      * 4. Once all batches are fetched, the Flow completes and the collector's loop naturally finishes.
      */
     private fun getTradeHistoryPaginated(
-        startSec: Long?,
-        @Suppress("SameParameterValue") pageSize: Int = 50
+        startSec: Long?
     ): Flow<List<TradeRecord>> = flow {
+        val pageSize = 50
         var offset = 0
         val isSeeded = repository.isHistorySeeded()
 

@@ -4,6 +4,8 @@ import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.config.Settings
+import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.service.impl.SimulatedKrakenService
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.doubles.shouldBeGreaterThan
@@ -29,9 +31,9 @@ class SimulatedKrakenServiceTest : StringSpec() {
                     simulation = true
                 ),
                 allocations = listOf(
-                    Allocation("BTC", 50.0),
-                    Allocation("ETH", 40.0),
-                    Allocation("USD", 10.0)
+                    Allocation(Asset.BTC, 50.0),
+                    Allocation(Asset.ETH, 40.0),
+                    Allocation(Asset.USD, 10.0)
                 )
             )
             every { configService.getConfig() } returns config
@@ -44,13 +46,13 @@ class SimulatedKrakenServiceTest : StringSpec() {
             prices["XXBTZUSD"]!!.toDouble() shouldBeGreaterThan 0.0
 
             val balances = simulatedService.getBalances()
-            balances["BTC"] shouldNotBe null
-            balances["ETH"] shouldNotBe null
-            balances["USD"] shouldNotBe null
+            balances[Asset.BTC] shouldNotBe null
+            balances[Asset.ETH] shouldNotBe null
+            balances[Asset.USD] shouldNotBe null
 
-            val totalValue = balances["USD"]!!.toDouble() +
-                    balances["BTC"]!!.toDouble() * prices["XXBTZUSD"]!!.toDouble() +
-                    balances["ETH"]!!.toDouble() * prices["XETHZUSD"]!!.toDouble()
+            val totalValue = balances[Asset.USD]!!.toDouble() +
+                    balances[Asset.BTC]!!.toDouble() * prices["XXBTZUSD"]!!.toDouble() +
+                    balances[Asset.ETH]!!.toDouble() * prices["XETHZUSD"]!!.toDouble()
 
             // Total value should be around $100,000
             totalValue shouldBeGreaterThan 70000.0

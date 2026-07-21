@@ -41,4 +41,17 @@ object KrakenApiConstants {
 
     const val HMAC_SHA512 = "HmacSHA512"
     const val SHA_256 = "SHA-256"
+
+    const val SUBSTRING_TRADES_HISTORY = "TradesHistory"
+    const val SUBSTRING_LEDGERS = "Ledgers"
+    const val SUBSTRING_CLOSED_ORDERS = "ClosedOrders"
+
+    const val ERROR_INVALID_NONCE = "Invalid nonce"
+    const val ERROR_RATE_LIMIT_EXCEEDED = "Rate limit exceeded"
+    const val ERROR_TEMPORARY_LOCKOUT = "Temporary lockout"
+    const val ERROR_PUBLIC_API_PREFIX = "Kraken Public API Error: "
+    const val ERROR_API_PREFIX = "Kraken API Error: "
+    const val ERROR_PARSE_PUBLIC = "Failed to parse public API response"
+    const val ERROR_PARSE_PRIVATE = "Failed to parse private API response"
+    const val ERROR_API_KEY_NULL = "API Key is null"
 }

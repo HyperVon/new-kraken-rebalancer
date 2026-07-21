@@ -190,14 +190,14 @@ class EvaluationScenariosTest : StringSpec() {
                 // Current ETH = 2.5 (Price = $2,000) -> ETH Value = $5,000
                 fakeKraken.balanceSupplier = {
                     mapOf(
-                        "BTC" to 0.3,
-                        "ETH" to 2.5,
+                        Asset.BTC to 0.3,
+                        Asset.ETH to 2.5,
                         Asset.USD to 10000.0
                     )
                 }
                 fakeKraken.pricesSupplier = { _ ->
                     mapOf(
-                        "XBTUSD" to 50000.0,
+                        Asset.BTC_USD_PAIR to 50000.0,
                         "ETHUSD" to 2000.0
                     )
                 }
@@ -253,8 +253,8 @@ class EvaluationScenariosTest : StringSpec() {
 
                 fakeKraken.balanceSupplier = {
                     mapOf(
-                        "BTC" to 0.38,
-                        "ETH" to 0.0,
+                        Asset.BTC to 0.38,
+                        Asset.ETH to 0.0,
                         Asset.USD to 1000.0
                     )
                 }
@@ -322,8 +322,8 @@ class EvaluationScenariosTest : StringSpec() {
                 val analyzer = PortfolioAnalyzerImpl(fakeKraken, mockConfig, statsRepo)
 
                 // 1. Initial run: Set ATH to $10,000
-                val balances = mapOf("BTC" to 0.1, "ETH" to 2.5, Asset.USD to 0.0).toBigDecimalMap()
-                val prices = mapOf("BTC" to BigDecimal("50000.0"), "ETH" to BigDecimal("2000.0"))
+                val balances = mapOf(Asset.BTC to 0.1, Asset.ETH to 2.5, Asset.USD to 0.0).toBigDecimalMap()
+                val prices = mapOf(Asset.BTC to BigDecimal("50000.0"), Asset.ETH to BigDecimal("2000.0"))
                 // Total portfolio value = 0.1*50000 + 2.5*2000 = $10,000
                 val valInitial = analyzer.calculatePortfolioValues(balances, prices).getOrNull()!!
                 valInitial.totalValueUSD.toDouble() shouldBe 10000.0
@@ -426,8 +426,8 @@ class EvaluationScenariosTest : StringSpec() {
                 // Distributed proportionally to underweight assets (BTC & ETH, each has $450 deficit, so each gets 50% = $450).
                 fakeKraken.balanceSupplier = {
                     mapOf(
-                        "BTC" to 0.09, // 0.09 * 50000 = 4500
-                        "ETH" to 2.25, // 2.25 * 2000 = 4500
+                        Asset.BTC to 0.09, // 0.09 * 50000 = 4500
+                        Asset.ETH to 2.25, // 2.25 * 2000 = 4500
                         Asset.USD to 2000.0
                     )
                 }
@@ -454,8 +454,8 @@ class EvaluationScenariosTest : StringSpec() {
                 // Distributed proportionally to overweight assets (BTC & ETH, each has $225 surplus, so each gets 50% = $225 sell).
                 fakeKraken.balanceSupplier = {
                     mapOf(
-                        "BTC" to 0.09, // 0.09 * 50000 = 4500
-                        "ETH" to 2.25, // 2.25 * 2000 = 4500
+                        Asset.BTC to 0.09, // 0.09 * 50000 = 4500
+                        Asset.ETH to 2.25, // 2.25 * 2000 = 4500
                         Asset.USD to 500.0
                     )
                 }
@@ -609,7 +609,7 @@ class EvaluationScenariosTest : StringSpec() {
                 // Balances triggers standard rebalance (BTC overweight by $1,000)
                 fakeKraken.balanceSupplier = {
                     mapOf(
-                        "BTC" to 0.12, // Value = $6,000
+                        Asset.BTC to 0.12, // Value = $6,000
                         Asset.USD to 4000.0 // Total = $10,000
                     )
                 }
@@ -661,7 +661,7 @@ class EvaluationScenariosTest : StringSpec() {
                 // Deviation: BTC overweight by $5.00 (triggers deviation of 10% on BTC value but below dust limit of $10)
                 fakeKraken.balanceSupplier = {
                     mapOf(
-                        "BTC" to 0.0011, // Value = $55.00
+                        Asset.BTC to 0.0011, // Value = $55.00
                         Asset.USD to 45.00 // Total = $100.00. Target is $50.00. Dev = $5.00.
                     )
                 }

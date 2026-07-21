@@ -7,12 +7,11 @@ import com.gemini.krakenbot.view.util.Icons
 import com.gemini.krakenbot.view.util.Icons.icon
 import com.gemini.krakenbot.view.util.Routes
 import com.gemini.krakenbot.view.util.ViewText
+import com.gemini.krakenbot.util.PrecisionConstants
 import kotlinx.html.*
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
-
-import com.gemini.krakenbot.util.PrecisionConstants
 
 class DashboardFragmentComponent(
     private val overviewGridComponent: OverviewGridComponent,

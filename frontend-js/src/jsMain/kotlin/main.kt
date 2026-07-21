@@ -1,5 +1,6 @@
 package com.gemini.krakenbot.frontend
 
+import com.gemini.krakenbot.view.util.HtmlIds
 import kotlinx.browser.document
 import kotlinx.browser.window
 
@@ -34,12 +35,12 @@ fun initOnLoad() {
     reapplySort()
 
     // Settings page initialization
-    if (document.getElementById("total-allocated-display") != null) {
+    if (document.getElementById(HtmlIds.TOTAL_ALLOCATED_DISPLAY) != null) {
         initSettings()
     }
 
     // History page initialization
-    if (document.getElementById("portfolio-value-chart") != null) {
+    if (document.getElementById(HtmlIds.PORTFOLIO_VALUE_CHART) != null) {
         initHistory()
     }
 }

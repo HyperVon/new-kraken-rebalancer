@@ -41,7 +41,7 @@ fun Application.dashboardRouting() {
         get(Routes.STATIC_STYLE_CSS) {
             call.respondText(CssStyles.stylesheet.toString(), ContentType.Text.CSS)
         }
-        staticResources("/static", "static")
+        staticResources(Routes.STATIC_PREFIX, Routes.STATIC_RESOURCES_DIR)
 
         get(Routes.ROOT) {
             call.respondHtml(HttpStatusCode.OK) {
@@ -208,7 +208,7 @@ private suspend fun RoutingContext.handleGetHistoryStats(
     tradeHistoryService: TradeHistoryService,
     objectMapper: ObjectMapper
 ) {
-    val stats = if (call.parameters["range"] != null) {
+    val stats = if (call.parameters[QueryParamKeys.RANGE] != null) {
         val (from, to) = parseTimeRange(call)
         tradeHistoryService.getHistoryStats(from, to)
     } else {
@@ -223,7 +223,7 @@ fun TimeRange.calculateFromInstant(now: Instant): Instant =
 
 internal fun parseTimeRange(call: ApplicationCall): Pair<Instant, Instant> {
     val now = Instant.now()
-    val timeRange = TimeRange.fromQueryParam(call.parameters["range"])
+    val timeRange = TimeRange.fromQueryParam(call.parameters[QueryParamKeys.RANGE])
     val from = timeRange.calculateFromInstant(now)
     return Pair(from, now)
 }
@@ -258,9 +258,9 @@ private suspend fun RoutingContext.handleGetSyncProgress(
     val total = tradeHistoryService.getSyncMetadata(SyncMetadataKeys.SYNC_TOTAL)
     val seeded = tradeHistoryService.isHistorySeeded()
     val responseMap = mapOf(
-        "seeded" to seeded,
-        "offset" to offset,
-        "total" to total
+        SyncMetadataKeys.IS_SEEDED to seeded,
+        SyncMetadataKeys.OFFSET to offset,
+        SyncMetadataKeys.TOTAL to total
     )
     val json = objectMapper.writeValueAsString(responseMap)
     call.respondText(json, ContentType.Application.Json, HttpStatusCode.OK)

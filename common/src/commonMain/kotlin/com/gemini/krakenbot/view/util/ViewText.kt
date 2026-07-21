@@ -41,6 +41,7 @@ object ViewText {
     const val NEW_SYMBOL_PLACEHOLDER = "New Symbol (e.g. DOT)"
     const val TOTAL_INITIAL = "Total: 0.00%"
     const val PLACEHOLDER_DASHES = "--"
+    const val PRICE_NOT_FOUND_PREFIX = "Price not found for "
 
     // Table Headers
     const val HEADER_ASSET = "Asset"

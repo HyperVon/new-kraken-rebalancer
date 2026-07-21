@@ -1,5 +1,6 @@
 package com.gemini.krakenbot.frontend
 
+import com.gemini.krakenbot.model.Asset
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.booleans.shouldBeFalse
@@ -41,7 +42,7 @@ class SettingsTest : StringSpec() {
 
         val sym1 = document.createElement("input") as HTMLInputElement
         sym1.name = "symbols"
-        sym1.value = "BTC"
+        sym1.value = Asset.BTC
         container.appendChild(sym1)
 
         val input2 = document.createElement("input") as HTMLInputElement
@@ -94,12 +95,12 @@ class SettingsTest : StringSpec() {
 
         val symInput = document.createElement("input") as HTMLInputElement
         symInput.id = "new-symbol-input"
-        symInput.value = "LTC"
+        symInput.value = Asset.LTC
         container.appendChild(symInput)
 
         val existingSym = document.createElement("input") as HTMLInputElement
         existingSym.name = "symbols"
-        existingSym.value = "BTC"
+        existingSym.value = Asset.BTC
         container.appendChild(existingSym)
 
         document.body!!.appendChild(container)

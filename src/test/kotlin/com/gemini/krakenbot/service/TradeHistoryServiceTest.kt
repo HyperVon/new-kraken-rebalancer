@@ -7,6 +7,7 @@ import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.PortfolioStats
 import com.gemini.krakenbot.model.TradeRecord
@@ -189,9 +190,9 @@ class TradeHistoryServiceTest : StringSpec() {
             val tradeHistoryService = createService()
             val trade = TradeRecord(
                 timestamp = Instant.now(),
-                pair = "XBTUSD",
-                side = "BUY",
-                symbol = "BTC",
+                pair = Asset.BTC_USD_PAIR,
+                side = OrderSide.BUY.name,
+                symbol = Asset.BTC,
                 volume = BigDecimal.ONE,
                 usdAmount = BigDecimal.TEN,
                 success = true,
@@ -310,9 +311,9 @@ class TradeHistoryServiceTest : StringSpec() {
                 val apiTrades = listOf(
                     TradeRecord(
                         timestamp = now,
-                        pair = "XBTUSD",
-                        side = "BUY",
-                        symbol = "BTC",
+                        pair = Asset.BTC_USD_PAIR,
+                        side = OrderSide.BUY.name,
+                        symbol = Asset.BTC,
                         volume = BigDecimal.ONE,
                         usdAmount = BigDecimal.TEN,
                         success = true,
@@ -338,9 +339,9 @@ class TradeHistoryServiceTest : StringSpec() {
 
                 val duplicateTrade = TradeRecord(
                     timestamp = latestTime,
-                    pair = "XBTUSD",
-                    side = "BUY",
-                    symbol = "BTC",
+                    pair = Asset.BTC_USD_PAIR,
+                    side = OrderSide.BUY.name,
+                    symbol = Asset.BTC,
                     volume = BigDecimal.ONE,
                     usdAmount = BigDecimal.TEN,
                     success = true,
@@ -350,9 +351,9 @@ class TradeHistoryServiceTest : StringSpec() {
 
                 val newTrade = TradeRecord(
                     timestamp = latestTime.plusSeconds(60),
-                    pair = "XBTUSD",
-                    side = "SELL",
-                    symbol = "BTC",
+                    pair = Asset.BTC_USD_PAIR,
+                    side = OrderSide.SELL.name,
+                    symbol = Asset.BTC,
                     volume = BigDecimal.ONE,
                     usdAmount = BigDecimal.TEN,
                     success = true,
