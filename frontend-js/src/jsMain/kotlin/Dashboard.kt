@@ -32,7 +32,7 @@ fun updateAge() {
 
     ageEl.textContent = "${diff}${ViewText.AGO_SECONDS}"
     val isStale = diff > PrecisionConstants.STALE_THRESHOLD_SECONDS
-    ageEl.classList.toggle(CssClass.Utility.Stale.value, isStale)
+    ageEl.classList.toggle(CssClass.Utility.Stale, isStale)
 
     val date = Date(epoch)
     val hours = date.getHours()
@@ -49,8 +49,8 @@ fun updateAge() {
 
     val badgeEl = document.querySelector(STATUS_BADGE_QUERY) as? HTMLElement
     if (badgeEl != null) {
-        badgeEl.classList.toggle(CssClass.Utility.Delayed.value, isStale)
-        badgeEl.classList.toggle(CssClass.Utility.Live.value, !isStale)
+        badgeEl.classList.toggle(CssClass.Utility.Delayed, isStale)
+        badgeEl.classList.toggle(CssClass.Utility.Live, !isStale)
         val badgeText = if (isStale) ViewText.DELAYED else ViewText.LIVE
         if (badgeEl.textContent != badgeText) {
             badgeEl.textContent = badgeText
