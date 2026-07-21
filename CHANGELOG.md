@@ -12,7 +12,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
-- **Google Antigravity Agent Rules (`AGENTS.md`)**: Created comprehensive project-level agent guidelines (`AGENTS.md` at root and symlinked under `.agents/AGENTS.md`) capturing tech stack architecture, financial `BigDecimal` precision rules, database integrity policies, Kraken symbol normalization, FQN prohibitions, markdown linting, and automated testing gates.
+- **Google Antigravity Agent Rules (`AGENTS.md`)**: Configured standalone project-level agent guidelines under `.agents/AGENTS.md` (removing root directory duplicate) capturing tech stack architecture, financial `BigDecimal` precision rules, database integrity policies, Kraken symbol normalization, FQN prohibitions, markdown linting, and automated testing gates.
 
 ## [6.7.0] - 2026-07-21
 
