@@ -213,7 +213,7 @@ tasks.processResources {
 
 rootProject.plugins.withType<YarnPlugin> {
     rootProject.extensions.configure<YarnRootExtension> {
-        resolution("webpack-dev-server", "5.2.5")
+        resolution("webpack-dev-server", "5.2.6")
         resolution("serialize-javascript", "7.0.5")
         resolution("uuid", "11.1.1")
         resolution("webpack", "5.104.1")
