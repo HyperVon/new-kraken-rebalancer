@@ -7,6 +7,8 @@ import com.gemini.krakenbot.view.util.Icons
 import com.gemini.krakenbot.view.util.Icons.icon
 import com.gemini.krakenbot.view.util.Routes
 import com.gemini.krakenbot.view.util.ViewText
+import com.gemini.krakenbot.view.util.a
+import com.gemini.krakenbot.view.util.div
 import com.gemini.krakenbot.util.PrecisionConstants
 import kotlinx.html.*
 import java.time.Instant
@@ -37,7 +39,7 @@ class DashboardFragmentComponent(
         renderHeaderSection(latest, timeSinceUpdate, isStale)
         overviewGridComponent.render(latest)
 
-        div.div(CssClass.Layout.DetailGrid.value) {
+        div.div(CssClass.Layout.DetailGrid) {
             allocationChartComponent.render(latest)
             performanceTableComponent.render(latest)
         }
@@ -52,31 +54,29 @@ class DashboardFragmentComponent(
         isStale: Boolean
     ) {
         div.header {
-            div(CssClass.Layout.HeaderTitleSection.value) {
+            div(CssClass.Layout.HeaderTitleSection) {
                 h1 { +ViewText.APP_TITLE }
-                val badgeClass =
-                    if (isStale) CssClass.StatusCard.Delayed.value else CssClass.StatusCard.Live.value
+                val badgeClass = if (isStale) CssClass.StatusCard.Delayed else CssClass.StatusCard.Live
                 val badgeText = if (isStale) ViewText.DELAYED else ViewText.LIVE
                 div(badgeClass) { +badgeText }
             }
 
-            div(CssClass.Layout.HeaderActions.value) {
-                div(CssClass.DataAge.Container.value) {
-                    div(CssClass.DataAge.Label.value) { +ViewText.DATA_AGE }
-                    val ageClass =
-                        if (isStale) CssClass.DataAge.ValueStale.value else CssClass.DataAge.Value.value
+            div(CssClass.Layout.HeaderActions) {
+                div(CssClass.DataAge.Container) {
+                    div(CssClass.DataAge.Label) { +ViewText.DATA_AGE }
+                    val ageClass = if (isStale) CssClass.DataAge.ValueStale else CssClass.DataAge.Value
                     div(ageClass) { +"${timeSinceUpdate}s ago" }
-                    div(CssClass.DataAge.Time.value) {
+                    div(CssClass.DataAge.Time) {
                         attributes[HtmlAttrs.DATA_EPOCH] =
                             latest.timestamp.toEpochMilli().toString()
                         +timeFormatter.format(latest.timestamp)
                     }
                 }
-                a(href = Routes.HISTORY, classes = CssClass.Button.Secondary.value) {
+                a(CssClass.Button.Secondary, href = Routes.HISTORY) {
                     icon(Icons.CHART)
                     span { +ViewText.NAV_HISTORY }
                 }
-                a(href = Routes.SETTINGS, classes = CssClass.Button.Secondary.value) {
+                a(CssClass.Button.Secondary, href = Routes.SETTINGS) {
                     icon(Icons.COG)
                     span { +ViewText.SETTINGS_TITLE }
                 }
