@@ -20,6 +20,8 @@ internal val SORT_DESC = CssClass.Utility.Desc.value
 internal var currentSortCol: Int = 5
 internal var currentSortDir: String = SORT_ASC
 
+private val CURRENCY_CLEANUP_REGEX = Regex("[$,%]")
+
 fun registerDashboardGlobals() {
     window.asDynamic().sortTable = { header: HTMLElement, colIdx: Int ->
         sortTable(header, colIdx)
@@ -117,5 +119,3 @@ fun sortTable(header: HTMLElement, colIdx: Int, forceDir: String? = null) {
     currentSortCol = colIdx
     currentSortDir = if (sortAsc) SORT_ASC else SORT_DESC
 }
-
-private val CURRENCY_CLEANUP_REGEX = Regex("[$,%]")

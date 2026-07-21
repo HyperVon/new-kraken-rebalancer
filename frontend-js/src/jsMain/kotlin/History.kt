@@ -29,27 +29,8 @@ private external object JSObject {
     fun assign(target: dynamic, vararg sources: dynamic): dynamic
 }
 
-private val CHART_COLORS = arrayOf(
-    "rgba(96, 165, 250, 1)",   /* blue-400 */
-    "rgba(52, 211, 153, 1)",   /* emerald-400 */
-    "rgba(251, 191, 36, 1)",   /* amber-400 */
-    "rgba(167, 139, 250, 1)",  /* violet-400 */
-    "rgba(248, 113, 113, 1)",  /* red-400 */
-    "rgba(45, 212, 191, 1)",   /* teal-400 */
-    "rgba(251, 146, 60, 1)",   /* orange-400 */
-    "rgba(232, 121, 249, 1)"   /* fuchsia-400 */
-)
-
-private val CHART_BG = arrayOf(
-    "rgba(96, 165, 250, 0.1)",
-    "rgba(52, 211, 153, 0.1)",
-    "rgba(251, 191, 36, 0.1)",
-    "rgba(167, 139, 250, 0.1)",
-    "rgba(248, 113, 113, 0.1)",
-    "rgba(45, 212, 191, 0.1)",
-    "rgba(251, 146, 60, 0.1)",
-    "rgba(232, 121, 249, 0.1)"
-)
+private val CHART_COLORS = ChartProps.PALETTE_BORDER_COLORS
+private val CHART_BG = ChartProps.PALETTE_BG_COLORS
 
 private val chartDefaults: dynamic = js("""
     ({
