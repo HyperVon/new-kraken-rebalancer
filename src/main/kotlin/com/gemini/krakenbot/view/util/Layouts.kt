@@ -9,8 +9,8 @@ object Layouts {
         iconSvg: String? = null,
         block: DIV.() -> Unit
     ) {
-        div(classes = CssClass.Layout.GlassPanel.value) {
-            h2(classes = CssClass.Utility.GlassPanelTitle.value) {
+        div(CssClass.Layout.GlassPanel) {
+            h2(CssClass.Utility.GlassPanelTitle) {
                 if (iconSvg != null) {
                     icon(iconSvg)
                 }
@@ -29,35 +29,30 @@ object Layouts {
         titleId: String? = null,
         block: (DIV.() -> Unit)? = null
     ) {
-        val cardClass =
-            if (isSuccess) {
-                CssClass.StatusCard.Success.value
-            } else {
-                CssClass.StatusCard.Default.value
-            }
-        div(classes = cardClass) {
-            div(classes = CssClass.StatusCard.Header.value) {
-                span(classes = CssClass.StatusCard.Title.value) {
+        val cardClass = if (isSuccess) CssClass.StatusCard.Success else CssClass.StatusCard.Default
+        div(cardClass) {
+            div(CssClass.StatusCard.Header) {
+                span(CssClass.StatusCard.Title) {
                     if (titleId != null) id = titleId
                     +title
                 }
-                div(classes = CssClass.StatusCard.Icon.value) { icon(iconSvg) }
+                div(CssClass.StatusCard.Icon) { icon(iconSvg) }
             }
-            div(classes = CssClass.StatusCard.Value.value) {
+            div(CssClass.StatusCard.Value) {
                 if (valueId != null) {
                     id = valueId
                 }
                 +value
             }
             if (block != null) {
-                div(classes = CssClass.StatusCard.Sub.value) { block() }
+                div(CssClass.StatusCard.Sub) { block() }
             }
         }
     }
 
     fun DIV.formSection(title: String, iconSvg: String, block: DIV.() -> Unit) {
-        div(classes = CssClass.Form.Section.value) {
-            h3(classes = CssClass.Form.SectionTitle.value) {
+        div(CssClass.Form.Section) {
+            h3(CssClass.Form.SectionTitle) {
                 icon(iconSvg)
                 +title
             }
@@ -66,7 +61,7 @@ object Layouts {
     }
 
     fun DIV.formGroup(label: String, block: DIV.() -> Unit) {
-        div(classes = CssClass.Form.Group.value) {
+        div(CssClass.Form.Group) {
             label(classes = CssClass.Form.Label.value) { +label }
             block()
         }
