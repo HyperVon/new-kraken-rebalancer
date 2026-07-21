@@ -8,6 +8,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [6.8.3] - 2026-07-21
+
+### Refactored
+
+- **Type-Safe `kotlinx.html` View DSL (`src/main`)**: Created type-safe extension functions in `HtmlExtensions.kt` (`div(CssClass)`, `span(CssClass)`, `button(CssClass)`, `a(CssClass)`, `h1(CssClass)`, `h2(CssClass)`, `h3(CssClass)`, `p(CssClass)`, `label(CssClass)`, `input(CssClass)`, `nav(CssClass)`, `table(CssClass)`, `TR.th(CssClass)`, `TR.td(CssClass)`) that accept `CssClass` instances directly without `.value` unwrapping.
+- **Codebase-Wide HTML View Component Cleanups (`src/main`)**: Refactored `DashboardShellComponent`, `DashboardFragmentComponent`, `HistoryPageComponent`, `OverviewGridComponent`, `PerformanceTableComponent`, `RecentActivityComponent`, `SettingsFormComponent`, `AllocationChartComponent`, and `Layouts` to use type-safe `HtmlExtensions` DSL across all server-side rendering views.
+- **Unified `CssClass.toString()` Interpolation (`:common`, `:frontend-js`, `src/main`)**: Leveraged `override fun toString(): String = value` across `CssClass` sealed class hierarchies for seamless string template class composition (`"${CssClass.Button.Secondary} ${CssClass.Button.Icon}"`), DOM element class assignment (`row.className = CssClass.Form.AllocationEditRow.toString()`), and badge rendering (`createBadgeCell`) across both frontend and backend modules.
+
 ## [6.8.2] - 2026-07-21
 
 ### Refactored
