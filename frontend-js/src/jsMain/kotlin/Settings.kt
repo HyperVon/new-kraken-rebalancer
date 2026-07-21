@@ -79,10 +79,10 @@ fun addAssetRow() {
 
     val container = document.getElementById(HtmlIds.ALLOCATIONS_CONTAINER) ?: return
     val row = document.createElement("div") as HTMLDivElement
-    row.className = CssClass.Form.AllocationEditRow.value
+    row.className = CssClass.Form.AllocationEditRow.toString()
 
     val symbolDiv = document.createElement("div") as HTMLDivElement
-    symbolDiv.className = "${CssClass.Form.AllocationEditSymbol.value} symbol-label"
+    symbolDiv.className = "${CssClass.Form.AllocationEditSymbol} symbol-label"
     symbolDiv.textContent = symbol
 
     val hiddenInput = document.createElement("input") as HTMLInputElement
@@ -91,18 +91,18 @@ fun addAssetRow() {
     hiddenInput.value = symbol
 
     val inputWrapper = document.createElement("div") as HTMLDivElement
-    inputWrapper.className = CssClass.Form.AllocationEditInputWrapper.value
+    inputWrapper.className = CssClass.Form.AllocationEditInputWrapper.toString()
 
     val numberInput = document.createElement("input") as HTMLInputElement
     numberInput.type = "number"
     numberInput.step = "0.1"
     numberInput.name = FormFields.TARGETS
-    numberInput.className = CssClass.Form.InputGlass.value
+    numberInput.className = CssClass.Form.InputGlass.toString()
     numberInput.value = "0.0"
     numberInput.oninput = { updateAllocationTotal() }
 
     val percentSpan = document.createElement("span") as HTMLSpanElement
-    percentSpan.className = CssClass.Form.PercentSuffix.value
+    percentSpan.className = CssClass.Form.PercentSuffix.toString()
     percentSpan.textContent = "%"
 
     inputWrapper.appendChild(numberInput)
@@ -110,7 +110,7 @@ fun addAssetRow() {
 
     val removeBtn = document.createElement("button") as HTMLButtonElement
     removeBtn.type = "button"
-    removeBtn.className = CssClass.Button.Danger.value
+    removeBtn.className = CssClass.Button.Danger.toString()
     removeBtn.textContent = ViewText.REMOVE
     removeBtn.onclick = {
         row.remove()

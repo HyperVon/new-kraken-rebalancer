@@ -8,6 +8,7 @@ import com.gemini.krakenbot.view.util.Layouts.glassPanel
 import com.gemini.krakenbot.view.util.ViewText
 import com.gemini.krakenbot.view.util.div
 import com.gemini.krakenbot.view.util.span
+import com.gemini.krakenbot.view.util.td
 import com.gemini.krakenbot.view.util.tr
 import kotlinx.html.*
 
@@ -56,15 +57,15 @@ class PerformanceTableComponent {
                             val sign = Formatter.getDeviationSign(dev)
 
                             tr(CssClass.Table.Hoverable) {
-                                td(CssClass.Table.SymbolCol.value) { +asset.symbol.value }
-                                td(CssClass.Table.MonoCol.value) {
+                                td(CssClass.Table.SymbolCol) { +asset.symbol.value }
+                                td(CssClass.Table.MonoCol) {
                                     +"$${
                                         Formatter.formatCurrency(
                                             asset.price
                                         )
                                     }"
                                 }
-                                td(CssClass.Table.MonoCol.value) {
+                                td(CssClass.Table.MonoCol) {
                                     +"$${
                                         Formatter.formatCurrency(
                                             asset.valueUSD

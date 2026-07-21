@@ -10,6 +10,7 @@ import com.gemini.krakenbot.view.util.div
 import com.gemini.krakenbot.view.util.h3
 import com.gemini.krakenbot.view.util.p
 import com.gemini.krakenbot.view.util.span
+import com.gemini.krakenbot.view.util.td
 import com.gemini.krakenbot.view.util.tr
 import kotlinx.html.*
 import java.time.ZoneId
@@ -48,7 +49,7 @@ class RecentActivityComponent {
                     p { +ViewText.NO_TRADING_HISTORY }
                 }
             } else {
-                div(classes = "${CssClass.Table.Wrapper.value} ${CssClass.Activity.CustomScrollbarMaxH100.value}") {
+                div(classes = "${CssClass.Table.Wrapper} ${CssClass.Activity.CustomScrollbarMaxH100}") {
                     table {
                         thead {
                             tr {
@@ -80,7 +81,7 @@ class RecentActivityComponent {
 
     private fun TBODY.renderEmptyActionsRow(timeStr: String) {
         tr(CssClass.Table.Hoverable) {
-            td(classes = CssClass.Table.MonoCol.value) { +timeStr }
+            td(CssClass.Table.MonoCol) { +timeStr }
             td {
                 span(CssClass.Activity.EmptyText) {
                     span(CssClass.Activity.DotMarker) {}
@@ -93,7 +94,7 @@ class RecentActivityComponent {
     private fun TBODY.renderActionRow(timeStr: String, action: String) {
         val tradeAction = TradeAction.from(action)
         tr(CssClass.Table.Hoverable) {
-            td(classes = CssClass.Table.MonoCol.value) { +timeStr }
+            td(CssClass.Table.MonoCol) { +timeStr }
             td {
                 div(CssClass.Activity.RowContainer) {
                     span(tradeAction.badgeClass) { +tradeAction.label }

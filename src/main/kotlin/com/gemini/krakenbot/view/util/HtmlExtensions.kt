@@ -27,8 +27,20 @@ inline fun FlowContent.h3(cssClass: CssClass, crossinline block: H3.() -> Unit =
 inline fun FlowContent.p(cssClass: CssClass, crossinline block: P.() -> Unit = {}): Unit =
     p(classes = cssClass.value, block = block)
 
+inline fun FlowContent.label(cssClass: CssClass, crossinline block: LABEL.() -> Unit = {}): Unit =
+    label(classes = cssClass.value, block = block)
+
+inline fun FlowContent.input(cssClass: CssClass, type: InputType? = null, name: String? = null, crossinline block: INPUT.() -> Unit = {}): Unit =
+    input(classes = cssClass.value, type = type, name = name, block = block)
+
+inline fun FlowContent.nav(cssClass: CssClass, crossinline block: NAV.() -> Unit = {}): Unit =
+    nav(classes = cssClass.value, block = block)
+
 inline fun TR.th(cssClass: CssClass, scope: ThScope? = null, crossinline block: TH.() -> Unit = {}): Unit =
     th(classes = cssClass.value, scope = scope, block = block)
+
+inline fun TR.td(cssClass: CssClass, crossinline block: TD.() -> Unit = {}): Unit =
+    td(classes = cssClass.value, block = block)
 
 inline fun TABLE.tr(cssClass: CssClass, crossinline block: TR.() -> Unit = {}): Unit =
     tr(classes = cssClass.value, block = block)

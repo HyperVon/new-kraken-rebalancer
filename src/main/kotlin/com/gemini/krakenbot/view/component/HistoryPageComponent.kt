@@ -15,6 +15,7 @@ import com.gemini.krakenbot.view.util.button
 import com.gemini.krakenbot.view.util.commonMetadataAndStyles
 import com.gemini.krakenbot.view.util.div
 import com.gemini.krakenbot.view.util.h2
+import com.gemini.krakenbot.view.util.nav
 import kotlinx.html.*
 import kotlinx.html.InputType.checkBox
 
@@ -48,7 +49,7 @@ class HistoryPageComponent {
             div(CssClass.Layout.HeaderTitleSection) {
                 h1 { +ViewText.APP_TITLE }
             }
-            nav(CssClass.Navigation.Bar.value) {
+            nav(CssClass.Navigation.Bar) {
                 a(CssClass.Navigation.Link, href = Routes.ROOT) {
                     +ViewText.NAV_DASHBOARD
                 }
@@ -151,10 +152,9 @@ class HistoryPageComponent {
     }
 
     private fun DIV.renderSyncProgressBanner() {
-        div {
+        div(CssClass.Layout.GlassPanel) {
             id = HtmlIds.SYNC_PROGRESS_BANNER
             style = STYLE_SYNC_BANNER
-            classes = setOf(CssClass.Layout.GlassPanel.value)
             div {
                 style = STYLE_SYNC_HEADER
                 span {

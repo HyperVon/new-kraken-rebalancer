@@ -17,6 +17,8 @@ import com.gemini.krakenbot.view.util.a
 import com.gemini.krakenbot.view.util.button
 import com.gemini.krakenbot.view.util.div
 import com.gemini.krakenbot.view.util.h3
+import com.gemini.krakenbot.view.util.input
+import com.gemini.krakenbot.view.util.label
 import com.gemini.krakenbot.view.util.span
 import kotlinx.html.*
 import kotlinx.html.ButtonType.button
@@ -36,7 +38,7 @@ class SettingsFormComponent {
                     div(CssClass.Layout.HeaderTitleSection) {
                         a(
                             href = Routes.ROOT,
-                            classes = "${CssClass.Button.Secondary.value} ${CssClass.Button.Icon.value}"
+                            classes = "${CssClass.Button.Secondary} ${CssClass.Button.Icon}"
                         ) {
                             icon(Icons.BACK_ARROW)
                         }
@@ -73,9 +75,9 @@ class SettingsFormComponent {
             div(CssClass.Form.Grid2Col) {
                 formGroup(ViewText.LOOP_INTERVAL) {
                     input(
+                        CssClass.Form.InputGlass,
                         type = number,
-                        name = FormFields.LOOP_DELAY_SECONDS,
-                        classes = CssClass.Form.InputGlass.value
+                        name = FormFields.LOOP_DELAY_SECONDS
                     ) {
                         min = "1"
                         value = config.settings.loopDelaySeconds.toString()
@@ -84,9 +86,9 @@ class SettingsFormComponent {
 
                 formGroup(ViewText.DEVIATION_TRIGGER) {
                     input(
+                        CssClass.Form.InputGlass,
                         type = number,
-                        name = FormFields.DEVIATION_TRIGGER_PERCENT,
-                        classes = CssClass.Form.InputGlass.value
+                        name = FormFields.DEVIATION_TRIGGER_PERCENT
                     ) {
                         step = "0.1"
                         min = "0"
@@ -97,9 +99,9 @@ class SettingsFormComponent {
 
                 formGroup(ViewText.DUST_THRESHOLD) {
                     input(
+                        CssClass.Form.InputGlass,
                         type = number,
-                        name = FormFields.DUST_THRESHOLD_USD,
-                        classes = CssClass.Form.InputGlass.value
+                        name = FormFields.DUST_THRESHOLD_USD
                     ) {
                         step = "0.5"
                         value = config.settings.dustThresholdUSD.toString()
@@ -108,9 +110,9 @@ class SettingsFormComponent {
 
                 formGroup(ViewText.FIAT_MAX_DRAWDOWN) {
                     input(
+                        CssClass.Form.InputGlass,
                         type = number,
-                        name = FormFields.FIAT_MAX_DRAWDOWN,
-                        classes = CssClass.Form.InputGlass.value
+                        name = FormFields.FIAT_MAX_DRAWDOWN
                     ) {
                         step = "1.0"
                         value = config.settings.fiatMaxDrawdown.toString()
@@ -119,9 +121,9 @@ class SettingsFormComponent {
 
                 formGroup(ViewText.FIAT_DEPLOYMENT_EXPONENT) {
                     input(
+                        CssClass.Form.InputGlass,
                         type = number,
-                        name = FormFields.FIAT_DEPLOYMENT_EXPONENT,
-                        classes = CssClass.Form.InputGlass.value
+                        name = FormFields.FIAT_DEPLOYMENT_EXPONENT
                     ) {
                         step = "0.1"
                         value =
@@ -129,8 +131,8 @@ class SettingsFormComponent {
                     }
                 }
 
-                div("${CssClass.Form.Group.value} ${CssClass.Form.GroupCentered.value}") {
-                    label(classes = CssClass.Form.CheckboxContainer.value) {
+                div("${CssClass.Form.Group} ${CssClass.Form.GroupCentered}") {
+                    label(CssClass.Form.CheckboxContainer) {
                         input(
                             type = checkBox,
                             name = FormFields.DRY_RUN
@@ -142,8 +144,8 @@ class SettingsFormComponent {
                     }
                 }
 
-                div("${CssClass.Form.Group.value} ${CssClass.Form.GroupCentered.value}") {
-                    label(classes = CssClass.Form.CheckboxContainer.value) {
+                div("${CssClass.Form.Group} ${CssClass.Form.GroupCentered}") {
+                    label(CssClass.Form.CheckboxContainer) {
                         input(
                             type = checkBox,
                             name = FormFields.SIMULATION
@@ -181,9 +183,9 @@ class SettingsFormComponent {
                         ) { value = alloc.symbol.value }
                         div(CssClass.Form.AllocationEditInputWrapper) {
                             input(
+                                CssClass.Form.InputGlass,
                                 type = number,
-                                name = FormFields.TARGETS,
-                                classes = CssClass.Form.InputGlass.value
+                                name = FormFields.TARGETS
                             ) {
                                 step = "0.1"
                                 value = alloc.targetPercent.toString()
@@ -205,7 +207,7 @@ class SettingsFormComponent {
             }
 
             div(CssClass.Form.AddAssetBox) {
-                input(type = text, classes = CssClass.Form.InputGlass.value) {
+                input(CssClass.Form.InputGlass, type = text) {
                     id = HtmlIds.NEW_SYMBOL_INPUT
                     placeholder = ViewText.NEW_SYMBOL_PLACEHOLDER
                     attributes[HtmlAttrs.ONKEYDOWN] =

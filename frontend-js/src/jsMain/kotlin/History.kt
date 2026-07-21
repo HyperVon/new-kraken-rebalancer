@@ -525,15 +525,15 @@ internal fun renderTradeTable(trades: Array<dynamic>) {
 
 private fun renderTradeRow(t: dynamic): HTMLTableRowElement {
     val tr = document.createElement("tr") as HTMLTableRowElement
-    tr.className = CssClass.Table.Hoverable.value
+    tr.className = CssClass.Table.Hoverable.toString()
 
     val time = Date(t.timestamp.toString()).asDynamic().toLocaleString()
     val side = t.side.toString()
-    val sideClass = if (side == OrderSide.BUY.name) CssClass.Badge.Buy.value else CssClass.Badge.Sell.value
+    val sideClass = if (side == OrderSide.BUY.name) CssClass.Badge.Buy else CssClass.Badge.Sell
     val success = t.success as? Boolean ?: false
     val dryRun = t.dryRun as? Boolean ?: false
     val statusText = if (success) (if (dryRun) ViewText.STATUS_DRY_RUN else ViewText.STATUS_SUCCESS) else ViewText.STATUS_FAILED
-    val statusClass = if (success) (if (dryRun) CssClass.Badge.Info.value else CssClass.Badge.Buy.value) else CssClass.Badge.Sell.value
+    val statusClass = if (success) (if (dryRun) CssClass.Badge.Info else CssClass.Badge.Buy) else CssClass.Badge.Sell
     val vol = t.volume.toString().toDoubleOrNull() ?: 0.0
     val amt = t.usdAmount.toString().toDoubleOrNull() ?: 0.0
 
@@ -547,17 +547,23 @@ private fun renderTradeRow(t: dynamic): HTMLTableRowElement {
     return tr
 }
 
-private fun createCell(text: String, cssClass: CssClass? = null): HTMLTableCellElement {
+private fun createCell(text: String): HTMLTableCellElement {
     val td = document.createElement("td") as HTMLTableCellElement
-    if (cssClass != null) td.className = cssClass.value
     td.textContent = text
     return td
 }
 
-private fun createBadgeCell(text: String, badgeClass: String): HTMLTableCellElement {
+private fun createCell(text: String, cssClass: CssClass): HTMLTableCellElement {
+    val td = document.createElement("td") as HTMLTableCellElement
+    td.className = cssClass.toString()
+    td.textContent = text
+    return td
+}
+
+private fun createBadgeCell(text: String, badgeClass: CssClass): HTMLTableCellElement {
     val td = document.createElement("td") as HTMLTableCellElement
     val span = document.createElement("span") as HTMLSpanElement
-    span.className = badgeClass
+    span.className = badgeClass.toString()
     span.textContent = text
     td.appendChild(span)
     return td

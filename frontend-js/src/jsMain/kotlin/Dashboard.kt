@@ -14,8 +14,8 @@ import kotlinx.browser.window
 import org.w3c.dom.*
 import kotlin.js.Date
 
-internal val SORT_ASC = CssClass.Utility.Asc.value
-internal val SORT_DESC = CssClass.Utility.Desc.value
+internal val SORT_ASC = CssClass.Utility.Asc.toString()
+internal val SORT_DESC = CssClass.Utility.Desc.toString()
 
 internal var currentSortCol: Int = 5
 internal var currentSortDir: String = SORT_ASC

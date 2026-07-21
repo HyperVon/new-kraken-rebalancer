@@ -62,7 +62,7 @@ object Layouts {
 
     fun DIV.formGroup(label: String, block: DIV.() -> Unit) {
         div(CssClass.Form.Group) {
-            label(classes = CssClass.Form.Label.value) { +label }
+            label(CssClass.Form.Label) { +label }
             block()
         }
     }
