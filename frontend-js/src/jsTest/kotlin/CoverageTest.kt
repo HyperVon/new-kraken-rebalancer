@@ -36,16 +36,7 @@ class CoverageTest : StringSpec() {
                 <canvas id="test-chart"></canvas>
             """.trimIndent()
             document.body!!.appendChild(container)
-            js("""
-                window.chartCallCount = 0;
-                window.Chart = function(_, config) {
-                    this.data = config.data;
-                    this.destroyCalled = false;
-                    this.isDatasetVisible = function(index) { return index === 0; };
-                    this.destroy = function() { this.destroyCalled = true; };
-                    window.chartCallCount++;
-                };
-            """)
+            TestDomBuilders.setupMockChart(isDatasetVisible = { index -> index == 0 })
             try {
                 registerHistoryGlobals()
                 
@@ -582,15 +573,7 @@ class CoverageTest : StringSpec() {
                 <canvas id="${HtmlIds.CUMULATIVE_PL_CHART}"></canvas>
             """.trimIndent()
             document.body!!.appendChild(container)
-            js("""
-                window.chartConfigs = [];
-                window.Chart = function(_, config) {
-                    this.data = config.data;
-                    this.destroy = function() {};
-                    this.isDatasetVisible = function() { return true; };
-                    window.chartConfigs.push(config);
-                };
-            """)
+            TestDomBuilders.setupMockChart()
             try {
                 registerHistoryGlobals()
                 val snapshots = arrayOf(

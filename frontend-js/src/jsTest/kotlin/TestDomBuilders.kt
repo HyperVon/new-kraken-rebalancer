@@ -92,4 +92,27 @@ object TestDomBuilders {
         DataProps.DRY_RUN to dryRun
     )
 
+    fun setupMockChart(
+        isDatasetVisible: (Int) -> Boolean = { true }
+    ) {
+        var callCount = 0
+        kotlinx.browser.window.asDynamic().chartCallCount = 0
+        kotlinx.browser.window.asDynamic().chartConfigs = arrayOf<dynamic>()
+
+        val chartConstructor = { _: dynamic, config: dynamic ->
+            callCount++
+            kotlinx.browser.window.asDynamic().chartCallCount = callCount
+            val configs = kotlinx.browser.window.asDynamic().chartConfigs as? Array<dynamic> ?: arrayOf()
+            kotlinx.browser.window.asDynamic().chartConfigs = configs + arrayOf(config)
+
+            val mockInstance: dynamic = json(
+                "data" to config.data,
+                "destroyCalled" to false,
+                "isDatasetVisible" to { index: Int -> isDatasetVisible(index) },
+                "destroy" to { }
+            )
+            mockInstance
+        }
+        kotlinx.browser.window.asDynamic().Chart = chartConstructor
+    }
 }
