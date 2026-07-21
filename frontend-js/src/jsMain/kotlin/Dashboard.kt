@@ -30,13 +30,13 @@ fun updateAge() {
     val now = Date.now()
     val diff = ((now - epoch) / 1000).toInt().coerceAtLeast(0)
 
-    ageEl.textContent = "${diff}s ago"
+    ageEl.textContent = "${diff}${ViewText.AGO_SECONDS}"
     val isStale = diff > PrecisionConstants.STALE_THRESHOLD_SECONDS
     ageEl.classList.toggle(CssClass.Utility.Stale.value, isStale)
 
     val date = Date(epoch)
     val hours = date.getHours()
-    val ampm = if (hours >= 12) "PM" else "AM"
+    val ampm = if (hours >= 12) ViewText.PM else ViewText.AM
     val displayHours = if (hours % 12 == 0) 12 else hours % 12
     val hh = displayHours.toString().padStart(2, '0')
     val mm = date.getMinutes().toString().padStart(2, '0')
@@ -113,9 +113,9 @@ fun sortTable(header: HTMLElement, colIdx: Int, forceDir: String? = null) {
     currentSortDir = if (sortAsc) SORT_ASC else SORT_DESC
 }
 
-private const val DATA_AGE_VALUE_QUERY = ".data-age-value"
-private const val DATA_AGE_TIME_QUERY = ".data-age-time"
-private const val STATUS_BADGE_QUERY = ".status-badge"
-private const val SORTABLE_TH_QUERY = "th.sortable"
-private const val HOVERABLE_TR_QUERY = "tr.hoverable"
+private const val DATA_AGE_VALUE_QUERY = CssClass.Query.DATA_AGE_VALUE
+private const val DATA_AGE_TIME_QUERY = CssClass.Query.DATA_AGE_TIME
+private const val STATUS_BADGE_QUERY = CssClass.Query.STATUS_BADGE
+private const val SORTABLE_TH_QUERY = CssClass.Query.SORTABLE_TH
+private const val HOVERABLE_TR_QUERY = CssClass.Query.HOVERABLE_TR
 private val CURRENCY_CLEANUP_REGEX = Regex("[$,%]")

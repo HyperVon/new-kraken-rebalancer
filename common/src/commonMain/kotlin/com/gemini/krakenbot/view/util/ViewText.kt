@@ -81,4 +81,18 @@ object ViewText {
     const val HEADER_VOLUME = "Volume"
     const val HEADER_USD_AMOUNT = "USD Amount"
     const val HEADER_STATUS = "Status"
+
+    // Time & Status formatting
+    const val AGO_SECONDS = "s ago"
+    const val AM = "AM"
+    const val PM = "PM"
+    const val STATUS_DRY_RUN = "DRY RUN"
+    const val STATUS_SUCCESS = "SUCCESS"
+    const val STATUS_FAILED = "FAILED"
+    const val PERIOD_HIGH = "Period High"
+    const val NET_CASH_FLOW_ALL = "Net Cash Flow (Realized & Dry Run Trades)"
+    const val NET_CASH_FLOW_REALIZED = "Net Cash Flow (Realized Trades)"
+    const val NO_TRADES_FOUND_PERIOD = "No trades found for this period."
+    const val INVALID_SYMBOL_ALERT = "Invalid symbol. Symbols must be alphanumeric and up to 16 characters."
+    const val SYMBOL_EXISTS_ALERT = "Symbol already exists"
 }

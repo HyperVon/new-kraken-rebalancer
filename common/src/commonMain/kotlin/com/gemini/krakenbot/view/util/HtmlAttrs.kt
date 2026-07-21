@@ -12,6 +12,15 @@ object HtmlAttrs {
     const val DATASET_SORT_VALUE = "sortValue"
 }
 
+/** Standard DOM event name constants. */
+object HtmlEvents {
+    const val CLICK = "click"
+    const val CHANGE = "change"
+    const val INPUT = "input"
+    const val DOM_CONTENT_LOADED = "DOMContentLoaded"
+    const val HTMX_AFTER_SWAP = "htmx:afterSwap"
+}
+
 /** HTMX and SSE attribute name constants. */
 object HtmxAttrs {
     const val HX_EXT = "hx-ext"

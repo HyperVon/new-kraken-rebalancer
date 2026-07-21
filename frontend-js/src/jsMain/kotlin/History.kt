@@ -6,6 +6,7 @@ import com.gemini.krakenbot.model.TimeRange
 import com.gemini.krakenbot.view.util.ChartProps
 import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.HtmlAttrs
+import com.gemini.krakenbot.view.util.HtmlEvents
 import com.gemini.krakenbot.view.util.HtmlIds
 import com.gemini.krakenbot.view.util.Routes
 import com.gemini.krakenbot.view.util.ViewText
@@ -120,7 +121,7 @@ private fun setupSyncProgressAndLoad() {
     val buttons = document.querySelectorAll(TIME_RANGE_BTNS_QUERY)
     for (i in 0 until buttons.length) {
         val btn = buttons.item(i) as? HTMLElement
-        btn?.addEventListener("click", {
+        btn?.addEventListener(HtmlEvents.CLICK, {
             val list = document.querySelectorAll(TIME_RANGE_BTNS_QUERY)
             for (j in 0 until list.length) {
                 (list.item(j) as? HTMLElement)?.classList?.remove("active")
@@ -132,7 +133,7 @@ private fun setupSyncProgressAndLoad() {
     }
 
     val checkbox = document.getElementById(HtmlIds.SHOW_DRY_RUN_CHECKBOX) as? HTMLInputElement
-    checkbox?.addEventListener("change", {
+    checkbox?.addEventListener(HtmlEvents.CHANGE, {
         renderTradeTable(allTrades)
         buildCumulativePLChart(allTrades, checkbox.checked)
     })
@@ -462,7 +463,7 @@ internal fun buildCumulativePLChart(trades: Array<dynamic>, includeDryRun: Boole
         rawData
     }
 
-    val labelText = if (includeDryRun) "Net Cash Flow (Realized & Dry Run Trades)" else "Net Cash Flow (Realized Trades)"
+    val labelText = if (includeDryRun) ViewText.NET_CASH_FLOW_ALL else ViewText.NET_CASH_FLOW_REALIZED
 
     val datasets = arrayOf(json(
         ChartProps.LABEL to labelText,
@@ -497,7 +498,7 @@ internal fun renderTradeTable(trades: Array<dynamic>) {
     val filteredTrades = if (showDryRun) trades else trades.filter { t: dynamic -> !(t.dryRun as? Boolean ?: false) }.toTypedArray()
 
     if (filteredTrades.asDynamic().length == 0) {
-        tbody.innerHTML = "<tr><td colspan=\"6\" style=\"text-align:center;color:var(--color-text-muted);padding:2rem;\">No trades found for this period.</td></tr>"
+        tbody.innerHTML = "<tr><td colspan=\"6\" style=\"text-align:center;color:var(--color-text-muted);padding:2rem;\">${ViewText.NO_TRADES_FOUND_PERIOD}</td></tr>"
         return
     }
 
@@ -507,7 +508,7 @@ internal fun renderTradeTable(trades: Array<dynamic>) {
         val sideClass = if (side == OrderSide.BUY.name) CssClass.Badge.Buy.value else CssClass.Badge.Sell.value
         val success = t.success as? Boolean ?: false
         val dryRun = t.dryRun as? Boolean ?: false
-        val statusText = if (success) (if (dryRun) "DRY RUN" else "SUCCESS") else "FAILED"
+        val statusText = if (success) (if (dryRun) ViewText.STATUS_DRY_RUN else ViewText.STATUS_SUCCESS) else ViewText.STATUS_FAILED
         val statusClass = if (success) (if (dryRun) CssClass.Badge.Info.value else CssClass.Badge.Buy.value) else CssClass.Badge.Sell.value
         val vol = t.volume.toString().toDoubleOrNull() ?: 0.0
         val amt = t.usdAmount.toString().toDoubleOrNull() ?: 0.0
@@ -535,7 +536,7 @@ internal fun updateStats(stats: dynamic) {
     val totalFees = document.getElementById(HtmlIds.STAT_TOTAL_FEES)
 
     if (athTitle != null) {
-        athTitle.textContent = if (currentRange == TimeRange.ALL.key) "All-Time High" else "Period High"
+        athTitle.textContent = if (currentRange == TimeRange.ALL.key) ViewText.HISTORY_ALL_TIME_HIGH else ViewText.PERIOD_HIGH
     }
     if (ath != null) ath.textContent = formatUSD(stats.allTimeHigh.toString().toDoubleOrNull() ?: 0.0)
     if (totalTrades != null) {
@@ -602,4 +603,4 @@ internal fun checkSyncProgress(): Promise<Boolean> {
     }
 }
 
-private const val TIME_RANGE_BTNS_QUERY = ".time-range-btn"
+private const val TIME_RANGE_BTNS_QUERY = CssClass.Query.TIME_RANGE_BTNS

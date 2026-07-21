@@ -8,6 +8,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [6.8.2] - 2026-07-21
+
+### Refactored
+
+- **Multiplatform Core Constants Expansion (`:common`)**: Added pre-constructed value class constants (`ASSET_BTC`, `ASSET_ETH`, `ASSET_DOGE`, `ASSET_SOL`, `ASSET_USD`), type-safe CSS query selector strings (`CssClass.Query`), DOM event name constants (`HtmlEvents`), JSON property keys (`DataProps`), and UI display text constants (`ViewText`).
+- **Client-Side Kotlin/JS Cleanups (`:frontend-js`)**: Refactored string query selectors, event listeners (`HtmlEvents`), regex patterns, date/time formatting, and window alert text across `Dashboard.kt`, `History.kt`, `Settings.kt`, and `main.kt`.
+- **Test Fixtures & JVM Test Suite Refactoring (`src/test`)**: Expanded `TestFixtures` with default test configuration objects (`DEFAULT_TEST_SETTINGS`, `DEFAULT_TEST_ALLOCATIONS`, `DEFAULT_TEST_CONFIG`) and refactored `SimulatedKrakenServiceTest` to eliminate duplicate configuration construction blocks and raw string symbols.
+
 ## [6.8.1] - 2026-07-21
 
 ### Refactored

@@ -57,7 +57,7 @@ fun addAssetRow() {
     val symbol = symbolInput.value.trim().uppercase()
     if (symbol.isEmpty()) return
     if (!SYMBOL_REGEX.matches(symbol)) {
-        window.alert("Invalid symbol. Symbols must be alphanumeric and up to 16 characters.")
+        window.alert(ViewText.INVALID_SYMBOL_ALERT)
         return
     }
 
@@ -71,7 +71,7 @@ fun addAssetRow() {
     }
 
     if (existingSymbols.contains(symbol)) {
-        window.alert("Symbol already exists")
+        window.alert(ViewText.SYMBOL_EXISTS_ALERT)
         return
     }
 

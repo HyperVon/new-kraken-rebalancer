@@ -32,6 +32,12 @@ value class Asset(val value: String) {
         const val XBT = "XBT"
         const val XDG = "XDG"
 
+        val ASSET_USD = Asset(USD)
+        val ASSET_BTC = Asset(BTC)
+        val ASSET_ETH = Asset(ETH)
+        val ASSET_DOGE = Asset(DOGE)
+        val ASSET_SOL = Asset(SOL)
+
         private val KRAKEN_TICKER_BY_SYMBOL = mapOf(
             BTC to XBT,
             DOGE to XDG

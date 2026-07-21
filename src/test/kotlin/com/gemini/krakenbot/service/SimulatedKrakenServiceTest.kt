@@ -1,5 +1,6 @@
 package com.gemini.krakenbot.service
 
+import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.KrakenCredentials
@@ -21,22 +22,7 @@ class SimulatedKrakenServiceTest : StringSpec() {
     init {
         "should initialize prices and drifted balances based on config allocations" {
             val configService = mockk<ConfigService>()
-            val config = AppConfig(
-                kraken = KrakenCredentials("api", "sec"),
-                settings = Settings(
-                    loopDelaySeconds = 60,
-                    deviationTriggerPercent = 2.0,
-                    dustThresholdUSD = 1.0,
-                    dryRun = false,
-                    simulation = true
-                ),
-                allocations = listOf(
-                    Allocation(Asset.BTC, 50.0),
-                    Allocation(Asset.ETH, 40.0),
-                    Allocation(Asset.USD, 10.0)
-                )
-            )
-            every { configService.getConfig() } returns config
+            every { configService.getConfig() } returns TestFixtures.DEFAULT_TEST_CONFIG
 
             val simulatedService = SimulatedKrakenService(configService)
 
@@ -62,17 +48,11 @@ class SimulatedKrakenServiceTest : StringSpec() {
         "should execute buy orders and update balances" {
             val configService = mockk<ConfigService>()
             val config = AppConfig(
-                kraken = KrakenCredentials("api", "sec"),
-                settings = Settings(
-                    loopDelaySeconds = 60,
-                    deviationTriggerPercent = 2.0,
-                    dustThresholdUSD = 1.0,
-                    dryRun = false,
-                    simulation = true
-                ),
+                kraken = KrakenCredentials(com.gemini.krakenbot.test.TestConstants.API_KEY, com.gemini.krakenbot.test.TestConstants.API_SECRET),
+                settings = TestFixtures.DEFAULT_TEST_SETTINGS,
                 allocations = listOf(
-                    Allocation("BTC", 50.0),
-                    Allocation("USD", 50.0)
+                    Allocation(Asset.BTC, 50.0),
+                    Allocation(Asset.USD, 50.0)
                 )
             )
             every { configService.getConfig() } returns config
@@ -80,8 +60,8 @@ class SimulatedKrakenServiceTest : StringSpec() {
             val simulatedService = SimulatedKrakenService(configService)
 
             val initialBalances = simulatedService.getBalances()
-            val initialBtc = (initialBalances["BTC"] ?: BigDecimal.ZERO).toDouble()
-            val initialUsd = (initialBalances["USD"] ?: BigDecimal.ZERO).toDouble()
+            val initialBtc = (initialBalances[Asset.BTC] ?: BigDecimal.ZERO).toDouble()
+            val initialUsd = (initialBalances[Asset.USD] ?: BigDecimal.ZERO).toDouble()
 
             val prices = simulatedService.getTickerPrices("BTCUSD")
             val btcPrice = prices["BTCUSD"]!!.toDouble()
@@ -92,24 +72,18 @@ class SimulatedKrakenServiceTest : StringSpec() {
             result.success shouldBe true
 
             val newBalances = simulatedService.getBalances()
-            newBalances["BTC"]!!.toDouble() shouldBe (initialBtc + 0.5)
-            newBalances["USD"]!!.toDouble() shouldBe (initialUsd - 0.5 * btcPrice)
+            newBalances[Asset.BTC]!!.toDouble() shouldBe (initialBtc + 0.5)
+            newBalances[Asset.USD]!!.toDouble() shouldBe (initialUsd - 0.5 * btcPrice)
         }
 
         "should execute sell orders and update balances" {
             val configService = mockk<ConfigService>()
             val config = AppConfig(
-                kraken = KrakenCredentials("api", "sec"),
-                settings = Settings(
-                    loopDelaySeconds = 60,
-                    deviationTriggerPercent = 2.0,
-                    dustThresholdUSD = 1.0,
-                    dryRun = false,
-                    simulation = true
-                ),
+                kraken = KrakenCredentials(com.gemini.krakenbot.test.TestConstants.API_KEY, com.gemini.krakenbot.test.TestConstants.API_SECRET),
+                settings = TestFixtures.DEFAULT_TEST_SETTINGS,
                 allocations = listOf(
-                    Allocation("BTC", 50.0),
-                    Allocation("USD", 50.0)
+                    Allocation(Asset.BTC, 50.0),
+                    Allocation(Asset.USD, 50.0)
                 )
             )
             every { configService.getConfig() } returns config
@@ -117,8 +91,8 @@ class SimulatedKrakenServiceTest : StringSpec() {
             val simulatedService = SimulatedKrakenService(configService)
 
             val initialBalances = simulatedService.getBalances()
-            val initialBtc = (initialBalances["BTC"] ?: BigDecimal.ZERO).toDouble()
-            val initialUsd = (initialBalances["USD"] ?: BigDecimal.ZERO).toDouble()
+            val initialBtc = (initialBalances[Asset.BTC] ?: BigDecimal.ZERO).toDouble()
+            val initialUsd = (initialBalances[Asset.USD] ?: BigDecimal.ZERO).toDouble()
 
             val prices = simulatedService.getTickerPrices("BTCUSD")
             val btcPrice = prices["BTCUSD"]!!.toDouble()
@@ -129,24 +103,18 @@ class SimulatedKrakenServiceTest : StringSpec() {
             result.success shouldBe true
 
             val newBalances = simulatedService.getBalances()
-            newBalances["BTC"]!!.toDouble() shouldBe (initialBtc - 0.2)
-            newBalances["USD"]!!.toDouble() shouldBe (initialUsd + 0.2 * btcPrice)
+            newBalances[Asset.BTC]!!.toDouble() shouldBe (initialBtc - 0.2)
+            newBalances[Asset.USD]!!.toDouble() shouldBe (initialUsd + 0.2 * btcPrice)
         }
 
         "should fail orders if balance is insufficient" {
             val configService = mockk<ConfigService>()
             val config = AppConfig(
-                kraken = KrakenCredentials("api", "sec"),
-                settings = Settings(
-                    loopDelaySeconds = 60,
-                    deviationTriggerPercent = 2.0,
-                    dustThresholdUSD = 1.0,
-                    dryRun = false,
-                    simulation = true
-                ),
+                kraken = KrakenCredentials(com.gemini.krakenbot.test.TestConstants.API_KEY, com.gemini.krakenbot.test.TestConstants.API_SECRET),
+                settings = TestFixtures.DEFAULT_TEST_SETTINGS,
                 allocations = listOf(
-                    Allocation("BTC", 50.0),
-                    Allocation("USD", 50.0)
+                    Allocation(Asset.BTC, 50.0),
+                    Allocation(Asset.USD, 50.0)
                 )
             )
             every { configService.getConfig() } returns config
@@ -154,7 +122,7 @@ class SimulatedKrakenServiceTest : StringSpec() {
             val simulatedService = SimulatedKrakenService(configService)
 
             val initialBalances = simulatedService.getBalances()
-            val initialBtc = (initialBalances["BTC"] ?: BigDecimal.ZERO).toDouble()
+            val initialBtc = (initialBalances[Asset.BTC] ?: BigDecimal.ZERO).toDouble()
 
             // Try to sell way too much BTC
             val sellVolume = BigDecimal.valueOf(initialBtc + 10.0)
@@ -167,17 +135,17 @@ class SimulatedKrakenServiceTest : StringSpec() {
         "should support dryRun mode when executing orders" {
             val configService = mockk<ConfigService>()
             val config = AppConfig(
-                kraken = KrakenCredentials("api", "sec"),
+                kraken = KrakenCredentials(com.gemini.krakenbot.test.TestConstants.API_KEY, com.gemini.krakenbot.test.TestConstants.API_SECRET),
                 settings = Settings(
                     loopDelaySeconds = 60,
                     deviationTriggerPercent = 2.0,
                     dustThresholdUSD = 1.0,
-                    dryRun = true, // dryRun enabled
+                    dryRun = true,
                     simulation = true
                 ),
                 allocations = listOf(
-                    Allocation("BTC", 50.0),
-                    Allocation("USD", 50.0)
+                    Allocation(Asset.BTC, 50.0),
+                    Allocation(Asset.USD, 50.0)
                 )
             )
             every { configService.getConfig() } returns config
@@ -192,17 +160,11 @@ class SimulatedKrakenServiceTest : StringSpec() {
         "should return trade history and support filtering" {
             val configService = mockk<ConfigService>()
             val config = AppConfig(
-                kraken = KrakenCredentials("api", "sec"),
-                settings = Settings(
-                    loopDelaySeconds = 60,
-                    deviationTriggerPercent = 2.0,
-                    dustThresholdUSD = 1.0,
-                    dryRun = false,
-                    simulation = true
-                ),
+                kraken = KrakenCredentials(com.gemini.krakenbot.test.TestConstants.API_KEY, com.gemini.krakenbot.test.TestConstants.API_SECRET),
+                settings = TestFixtures.DEFAULT_TEST_SETTINGS,
                 allocations = listOf(
-                    Allocation("BTC", 50.0),
-                    Allocation("USD", 50.0)
+                    Allocation(Asset.BTC, 50.0),
+                    Allocation(Asset.USD, 50.0)
                 )
             )
             every { configService.getConfig() } returns config

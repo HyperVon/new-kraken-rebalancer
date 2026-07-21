@@ -152,4 +152,14 @@ sealed class CssClass(open val value: String) {
         object Asc : Utility("asc")
         object Desc : Utility("desc")
     }
+
+    // Type-safe CSS Selectors for DOM queries
+    object Query {
+        const val DATA_AGE_VALUE = ".data-age-value"
+        const val DATA_AGE_TIME = ".data-age-time"
+        const val STATUS_BADGE = ".status-badge"
+        const val SORTABLE_TH = "th.sortable"
+        const val HOVERABLE_TR = "tr.hoverable"
+        const val TIME_RANGE_BTNS = ".time-range-btn"
+    }
 }
