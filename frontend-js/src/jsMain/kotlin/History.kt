@@ -33,44 +33,60 @@ private val CHART_COLORS = ChartProps.PALETTE_BORDER_COLORS
 private val CHART_BG = ChartProps.PALETTE_BG_COLORS
 
 private fun buildLegendConfig(): dynamic = json(
-    "labels" to json(
-        "color" to "#94a3b8",
-        "font" to json("family" to "'Inter', sans-serif", "size" to 12)
+    ChartProps.LABELS to json(
+        ChartProps.COLOR to ChartProps.COLOR_LEGEND_LABEL,
+        ChartProps.FONT to json(
+            ChartProps.FAMILY to ChartProps.FONT_INTER,
+            ChartProps.SIZE to 12
+        )
     )
 )
 
 private fun buildTooltipConfig(): dynamic = json(
-    "backgroundColor" to "rgba(15, 23, 42, 0.9)",
-    "borderColor" to "rgba(255,255,255,0.1)",
-    "borderWidth" to 1,
-    "titleColor" to "#f8fafc",
-    "bodyColor" to "#cbd5e1",
-    "bodyFont" to json("family" to "'Roboto Mono', monospace"),
-    "padding" to 12,
-    "cornerRadius" to 8
+    ChartProps.BACKGROUND_COLOR to ChartProps.COLOR_TOOLTIP_BG,
+    ChartProps.BORDER_COLOR to ChartProps.COLOR_TOOLTIP_BORDER,
+    ChartProps.BORDER_WIDTH to 1,
+    ChartProps.TITLE_COLOR to ChartProps.COLOR_TOOLTIP_TITLE,
+    ChartProps.BODY_COLOR to ChartProps.COLOR_TOOLTIP_BODY,
+    ChartProps.BODY_FONT to json(
+        ChartProps.FAMILY to ChartProps.FONT_MONO
+    ),
+    ChartProps.PADDING to 12,
+    ChartProps.CORNER_RADIUS to 8
 )
 
 private fun buildScalesConfig(): dynamic = json(
-    "x" to json(
-        "type" to "time",
-        "time" to json("tooltipFormat" to "MMM d, yyyy HH:mm"),
-        "grid" to json("color" to "rgba(51, 65, 85, 0.3)"),
-        "ticks" to json("color" to "#64748b", "maxTicksLimit" to 8)
+    ChartProps.X to json(
+        ChartProps.TYPE to ChartProps.TIME_TYPE,
+        ChartProps.TIME to json(
+            ChartProps.TOOLTIP_FORMAT to ChartProps.TIME_FORMAT_DEFAULT
+        ),
+        ChartProps.GRID to json(
+            ChartProps.COLOR to ChartProps.COLOR_GRID_LINE
+        ),
+        ChartProps.TICKS to json(
+            ChartProps.COLOR to ChartProps.COLOR_TICK,
+            ChartProps.MAX_TICKS_LIMIT to 8
+        )
     ),
-    "y" to json(
-        "grid" to json("color" to "rgba(51, 65, 85, 0.3)"),
-        "ticks" to json("color" to "#64748b")
+    ChartProps.Y to json(
+        ChartProps.GRID to json(
+            ChartProps.COLOR to ChartProps.COLOR_GRID_LINE
+        ),
+        ChartProps.TICKS to json(
+            ChartProps.COLOR to ChartProps.COLOR_TICK
+        )
     )
 )
 
 private fun buildDefaultChartOptions(): dynamic = json(
-    "responsive" to true,
-    "maintainAspectRatio" to false,
-    "plugins" to json(
-        "legend" to buildLegendConfig(),
-        "tooltip" to buildTooltipConfig()
+    ChartProps.RESPONSIVE to true,
+    ChartProps.MAINTAIN_ASPECT_RATIO to false,
+    ChartProps.PLUGINS to json(
+        ChartProps.LEGEND to buildLegendConfig(),
+        ChartProps.TOOLTIP to buildTooltipConfig()
     ),
-    "scales" to buildScalesConfig()
+    ChartProps.SCALES to buildScalesConfig()
 )
 
 private val chartDefaults: dynamic = buildDefaultChartOptions()
