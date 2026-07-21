@@ -32,37 +32,56 @@ private external object JSObject {
 private val CHART_COLORS = ChartProps.PALETTE_BORDER_COLORS
 private val CHART_BG = ChartProps.PALETTE_BG_COLORS
 
-private val chartDefaults: dynamic = js("""
-    ({
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-            legend: { labels: { color: '#94a3b8', font: { family: "'Inter', sans-serif", size: 12 } } },
-            tooltip: {
-                backgroundColor: 'rgba(15, 23, 42, 0.9)',
-                borderColor: 'rgba(255,255,255,0.1)',
-                borderWidth: 1,
-                titleColor: '#f8fafc',
-                bodyColor: '#cbd5e1',
-                bodyFont: { family: "'Roboto Mono', monospace" },
-                padding: 12,
-                cornerRadius: 8
-            }
-        },
-        scales: {
-            x: {
-                type: 'time',
-                time: { tooltipFormat: 'MMM d, yyyy HH:mm' },
-                grid: { color: 'rgba(51, 65, 85, 0.3)' },
-                ticks: { color: '#64748b', maxTicksLimit: 8 }
-            },
-            y: {
-                grid: { color: 'rgba(51, 65, 85, 0.3)' },
-                ticks: { color: '#64748b' }
-            }
-        }
-    })
-""")
+private val chartDefaults: dynamic = json(
+    "responsive" to true,
+    "maintainAspectRatio" to false,
+    "plugins" to json(
+        "legend" to json(
+            "labels" to json(
+                "color" to "#94a3b8",
+                "font" to json(
+                    "family" to "'Inter', sans-serif",
+                    "size" to 12
+                )
+            )
+        ),
+        "tooltip" to json(
+            "backgroundColor" to "rgba(15, 23, 42, 0.9)",
+            "borderColor" to "rgba(255,255,255,0.1)",
+            "borderWidth" to 1,
+            "titleColor" to "#f8fafc",
+            "bodyColor" to "#cbd5e1",
+            "bodyFont" to json(
+                "family" to "'Roboto Mono', monospace"
+            ),
+            "padding" to 12,
+            "cornerRadius" to 8
+        )
+    ),
+    "scales" to json(
+        "x" to json(
+            "type" to "time",
+            "time" to json(
+                "tooltipFormat" to "MMM d, yyyy HH:mm"
+            ),
+            "grid" to json(
+                "color" to "rgba(51, 65, 85, 0.3)"
+            ),
+            "ticks" to json(
+                "color" to "#64748b",
+                "maxTicksLimit" to 8
+            )
+        ),
+        "y" to json(
+            "grid" to json(
+                "color" to "rgba(51, 65, 85, 0.3)"
+            ),
+            "ticks" to json(
+                "color" to "#64748b"
+            )
+        )
+    )
+)
 
 private val charts = mutableMapOf<String, dynamic>()
 private var currentRange = TimeRange.THIRTY_DAYS.key
