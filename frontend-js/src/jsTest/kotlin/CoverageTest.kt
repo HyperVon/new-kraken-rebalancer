@@ -7,6 +7,8 @@ import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.FormFields
 import com.gemini.krakenbot.view.util.HtmlAttrs
 import com.gemini.krakenbot.view.util.HtmlIds
+import com.gemini.krakenbot.view.util.DataProps
+import com.gemini.krakenbot.view.util.HtmlEvents
 import com.gemini.krakenbot.view.util.ViewText
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
@@ -312,7 +314,7 @@ class CoverageTest : StringSpec() {
                 val saveButton = document.getElementById(HtmlIds.SAVE_BUTTON) as HTMLButtonElement
                 totalDisplay.textContent shouldBe "Total: 100.00%"
                 saveButton.disabled.shouldBeFalse()
-                totalDisplay.classList.contains(CssClass.Utility.Live.value).shouldBeTrue()
+                totalDisplay.classList.contains(CssClass.Utility.Live).shouldBeTrue()
                 
                 // Cleanup for next test
                 container.innerHTML = TestDomBuilders.settingsDom()
@@ -341,7 +343,7 @@ class CoverageTest : StringSpec() {
                 val saveButton2 = document.getElementById(HtmlIds.SAVE_BUTTON) as HTMLButtonElement
                 totalDisplay2.textContent shouldBe "Total: 60.00%"
                 saveButton2.disabled.shouldBeTrue()
-                totalDisplay2.classList.contains(CssClass.Utility.Delayed.value).shouldBeTrue()
+                totalDisplay2.classList.contains(CssClass.Utility.Delayed).shouldBeTrue()
                 
                 // Case 3: missing USD symbol -> disabled even if sum 100
                 container.innerHTML = TestDomBuilders.settingsDom()
@@ -368,7 +370,7 @@ class CoverageTest : StringSpec() {
                 val saveButton3 = document.getElementById(HtmlIds.SAVE_BUTTON) as HTMLButtonElement
                 totalDisplay3.textContent shouldBe "Total: 100.00%"
                 saveButton3.disabled.shouldBeTrue()  // missing USD
-                totalDisplay3.classList.contains(CssClass.Utility.Delayed.value).shouldBeTrue()
+                totalDisplay3.classList.contains(CssClass.Utility.Delayed).shouldBeTrue()
                 
                 // Case 4: missing elements -> should not throw
                 container.innerHTML = ""
@@ -439,16 +441,16 @@ class CoverageTest : StringSpec() {
                 updateAge()
                 ageVal.textContent shouldBe "5s ago"
                 val badge = document.getElementsByClassName("status-badge")[0] as HTMLElement
-                badge.classList.contains(CssClass.Utility.Live.value).shouldBeTrue()
-                badge.classList.contains(CssClass.Utility.Delayed.value).shouldBeFalse()
+                badge.classList.contains(CssClass.Utility.Live).shouldBeTrue()
+                badge.classList.contains(CssClass.Utility.Delayed).shouldBeFalse()
                 
                 // Stale epoch (>90s)
                 val staleTime = Date.now() - 95000  // 95 seconds ago
                 timeEl.setAttribute(HtmlAttrs.DATA_EPOCH, staleTime.toString())
                 updateAge()
                 ageVal.textContent shouldBe "95s ago"
-                badge.classList.contains(CssClass.Utility.Delayed.value).shouldBeTrue()
-                badge.classList.contains(CssClass.Utility.Live.value).shouldBeFalse()
+                badge.classList.contains(CssClass.Utility.Delayed).shouldBeTrue()
+                badge.classList.contains(CssClass.Utility.Live).shouldBeFalse()
 
                 // Test AM/PM branches and hour % 12 == 0 branches
                 // 9:30 AM (9:30)
@@ -719,7 +721,7 @@ class CoverageTest : StringSpec() {
                 val checkbox = document.getElementById(HtmlIds.SHOW_DRY_RUN_CHECKBOX) as HTMLInputElement
                 checkbox.checked = false
                 val event = document.createEvent("Event")
-                event.initEvent(type = "change", bubbles = true, cancelable = true)
+                event.initEvent(type = HtmlEvents.CHANGE, bubbles = true, cancelable = true)
                 checkbox.dispatchEvent(event)
 
                 delay(10.milliseconds)
