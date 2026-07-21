@@ -31,20 +31,3 @@ object FormFields {
     const val SYMBOLS = "symbols"
     const val TARGETS = "targets"
 }
-
-object SyncMetadataKeys {
-    const val SYNC_OFFSET = "sync_offset"
-    const val SYNC_TOTAL = "sync_total"
-    const val COMPLETED = "completed"
-}
-
-object HealthStatusKeys {
-    const val STATUS = "status"
-    const val STATUS_UP = "UP"
-    const val TIMESTAMP = "timestamp"
-    const val UPTIME_SECONDS = "uptimeSeconds"
-    const val TOTAL_TRADES_EXECUTED = "totalTradesExecuted"
-    const val TOTAL_VOLUME_TRADED = "totalVolumeTraded"
-    const val LAST_SNAPSHOT_TIME = "lastSnapshotTime"
-    const val LAST_SNAPSHOT_TOTAL_VALUE_USD = "lastSnapshotTotalValueUSD"
-}

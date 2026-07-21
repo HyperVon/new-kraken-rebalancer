@@ -12,6 +12,8 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
+import com.gemini.krakenbot.util.PrecisionConstants
+
 class DashboardFragmentComponent(
     private val overviewGridComponent: OverviewGridComponent,
     private val allocationChartComponent: AllocationChartComponent,
@@ -31,7 +33,7 @@ class DashboardFragmentComponent(
             0L.coerceAtLeast(
                 Instant.now().epochSecond - latest.timestamp.epochSecond
             )
-        val isStale = timeSinceUpdate > 90
+        val isStale = timeSinceUpdate > PrecisionConstants.STALE_THRESHOLD_SECONDS
 
         renderHeaderSection(latest, timeSinceUpdate, isStale)
         overviewGridComponent.render(latest)

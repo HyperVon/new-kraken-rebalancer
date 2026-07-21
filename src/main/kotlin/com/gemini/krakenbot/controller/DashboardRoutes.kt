@@ -6,6 +6,7 @@ import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.InvalidConfigurationException
 import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.TimeRange
+import java.time.temporal.ChronoUnit
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.TradeHistoryService
 import com.gemini.krakenbot.view.DashboardView
@@ -216,6 +217,9 @@ private suspend fun RoutingContext.handleGetHistoryStats(
     val json = objectMapper.writeValueAsString(stats)
     call.respondText(json, ContentType.Application.Json)
 }
+
+fun TimeRange.calculateFromInstant(now: Instant): Instant =
+    days?.let { now.minus(it, ChronoUnit.DAYS) } ?: Instant.EPOCH
 
 internal fun parseTimeRange(call: ApplicationCall): Pair<Instant, Instant> {
     val now = Instant.now()

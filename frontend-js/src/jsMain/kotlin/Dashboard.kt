@@ -1,11 +1,15 @@
 package com.gemini.krakenbot.frontend
 
+import com.gemini.krakenbot.view.util.CssClass
+import com.gemini.krakenbot.view.util.HtmlAttrs
+import com.gemini.krakenbot.view.util.ViewText
 import kotlinx.browser.document
 import kotlinx.browser.window
 import org.w3c.dom.*
 import kotlin.js.Date
 
-internal const val STALE_THRESHOLD_SECONDS = 90
+import com.gemini.krakenbot.util.PrecisionConstants
+
 internal const val SORT_ASC = "asc"
 internal const val SORT_DESC = "desc"
 
@@ -19,17 +23,17 @@ fun registerDashboardGlobals() {
 }
 
 fun updateAge() {
-    val ageEl = document.querySelector(JsQuerySelector.DATA_AGE_VALUE) as? HTMLElement ?: return
-    val timeEl = document.querySelector(JsQuerySelector.DATA_AGE_TIME) as? HTMLElement ?: return
+    val ageEl = document.querySelector(DATA_AGE_VALUE_QUERY) as? HTMLElement ?: return
+    val timeEl = document.querySelector(DATA_AGE_TIME_QUERY) as? HTMLElement ?: return
 
-    val epochStr = timeEl.getAttribute(JsDatasetKey.EPOCH) ?: return
+    val epochStr = timeEl.getAttribute(HtmlAttrs.DATA_EPOCH) ?: return
     val epoch = epochStr.toDoubleOrNull() ?: return
     val now = Date.now()
     val diff = ((now - epoch) / 1000).toInt().coerceAtLeast(0)
 
     ageEl.textContent = "${diff}s ago"
-    val isStale = diff > STALE_THRESHOLD_SECONDS
-    ageEl.classList.toggle(JsCssClass.STALE, isStale)
+    val isStale = diff > PrecisionConstants.STALE_THRESHOLD_SECONDS
+    ageEl.classList.toggle("stale", isStale)
 
     val date = Date(epoch)
     val hours = date.getHours()
@@ -44,11 +48,11 @@ fun updateAge() {
         timeEl.textContent = localTimeStr
     }
 
-    val badgeEl = document.querySelector(JsQuerySelector.STATUS_BADGE) as? HTMLElement
+    val badgeEl = document.querySelector(STATUS_BADGE_QUERY) as? HTMLElement
     if (badgeEl != null) {
-        badgeEl.classList.toggle(JsCssClass.DELAYED, isStale)
-        badgeEl.classList.toggle(JsCssClass.LIVE, !isStale)
-        val badgeText = if (isStale) "DELAYED" else "LIVE"
+        badgeEl.classList.toggle("delayed", isStale)
+        badgeEl.classList.toggle("live", !isStale)
+        val badgeText = if (isStale) ViewText.DELAYED else ViewText.LIVE
         if (badgeEl.textContent != badgeText) {
             badgeEl.textContent = badgeText
         }
@@ -56,7 +60,7 @@ fun updateAge() {
 }
 
 fun reapplySort() {
-    val headers = document.querySelectorAll(JsQuerySelector.SORTABLE_TH)
+    val headers = document.querySelectorAll(SORTABLE_TH_QUERY)
     if (headers.length > currentSortCol) {
         val header = headers.item(currentSortCol) as? HTMLElement
         if (header != null) {
@@ -69,7 +73,7 @@ fun sortTable(header: HTMLElement, colIdx: Int, forceDir: String? = null) {
     val table = header.closest("table") as? HTMLTableElement ?: return
     val tbody = table.querySelector("tbody") as? HTMLTableSectionElement ?: return
     val rows = mutableListOf<HTMLTableRowElement>()
-    val list = tbody.querySelectorAll(JsQuerySelector.HOVERABLE_TR)
+    val list = tbody.querySelectorAll(HOVERABLE_TR_QUERY)
     for (i in 0 until list.length) {
         val row = list.item(i) as? HTMLTableRowElement
         if (row != null) rows.add(row)
@@ -82,9 +86,9 @@ fun sortTable(header: HTMLElement, colIdx: Int, forceDir: String? = null) {
     rows.sortWith(Comparator { a, b ->
         val aCell = a.cells.item(colIdx) as? HTMLElement
         val bCell = b.cells.item(colIdx) as? HTMLElement
-        val aText = (aCell?.dataset?.get(JsDatasetKey.SORT_VALUE) ?: aCell?.textContent)?.trim()
+        val aText = (aCell?.dataset?.get(HtmlAttrs.DATASET_SORT_VALUE) ?: aCell?.textContent)?.trim()
             ?.replace(CURRENCY_CLEANUP_REGEX, "") ?: ""
-        val bText = (bCell?.dataset?.get(JsDatasetKey.SORT_VALUE) ?: bCell?.textContent)?.trim()
+        val bText = (bCell?.dataset?.get(HtmlAttrs.DATASET_SORT_VALUE) ?: bCell?.textContent)?.trim()
             ?.replace(CURRENCY_CLEANUP_REGEX, "") ?: ""
 
         if (key == "float") {
@@ -98,7 +102,7 @@ fun sortTable(header: HTMLElement, colIdx: Int, forceDir: String? = null) {
         }
     })
 
-    val headersList = table.querySelectorAll(JsQuerySelector.SORTABLE_TH)
+    val headersList = table.querySelectorAll(SORTABLE_TH_QUERY)
     for (i in 0 until headersList.length) {
         (headersList.item(i) as? HTMLElement)?.classList?.remove(SORT_ASC, SORT_DESC)
     }
@@ -110,4 +114,9 @@ fun sortTable(header: HTMLElement, colIdx: Int, forceDir: String? = null) {
     currentSortDir = if (sortAsc) SORT_ASC else SORT_DESC
 }
 
+private const val DATA_AGE_VALUE_QUERY = ".data-age-value"
+private const val DATA_AGE_TIME_QUERY = ".data-age-time"
+private const val STATUS_BADGE_QUERY = ".status-badge"
+private const val SORTABLE_TH_QUERY = "th.sortable"
+private const val HOVERABLE_TR_QUERY = "tr.hoverable"
 private val CURRENCY_CLEANUP_REGEX = Regex("[$,%]")

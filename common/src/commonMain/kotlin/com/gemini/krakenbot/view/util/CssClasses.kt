@@ -2,12 +2,8 @@ package com.gemini.krakenbot.view.util
 
 /**
  * Type-safe CSS class management using sealed classes.
- * Provides better structure, IDE support, and prevents typos in CSS class names.
- *
- * Each category is represented as a sealed class with constants defined as companion object properties.
- * Use CssClass.Category.propertyName for type-safe access, or CssClasses.CONSTANT_NAME for legacy support.
+ * Shared between JVM backend template rendering and Kotlin/JS DOM manipulation.
  */
-
 sealed class CssClass(open val value: String) {
     override fun toString(): String = value
 

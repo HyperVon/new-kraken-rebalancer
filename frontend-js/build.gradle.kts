@@ -22,6 +22,7 @@ kotlin {
     sourceSets {
         val jsMain by getting {
             dependencies {
+                implementation(project(":common"))
                 implementation(npm("tslib", "2.6.2"))
             }
         }

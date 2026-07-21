@@ -8,6 +8,8 @@ object HtmlAttrs {
     const val ONKEYDOWN = "onkeydown"
     const val DATA_EPOCH = "data-epoch"
     const val DATA_RANGE = "data-range"
+    const val DATA_SORT_VALUE = "data-sort-value"
+    const val DATASET_SORT_VALUE = "sortValue"
 }
 
 /** HTMX and SSE attribute name constants. */
@@ -46,4 +48,23 @@ object HtmlIds {
     const val ASSET_HOLDINGS_CHART = "asset-holdings-chart"
     const val ALLOCATION_DRIFT_CHART = "allocation-drift-chart"
     const val CUMULATIVE_PL_CHART = "cumulative-pl-chart"
+}
+
+/** Centralized sync metadata keys. */
+object SyncMetadataKeys {
+    const val SYNC_OFFSET = "sync_offset"
+    const val SYNC_TOTAL = "sync_total"
+    const val COMPLETED = "completed"
+}
+
+/** Centralized health check response keys. */
+object HealthStatusKeys {
+    const val STATUS = "status"
+    const val STATUS_UP = "UP"
+    const val TIMESTAMP = "timestamp"
+    const val UPTIME_SECONDS = "uptimeSeconds"
+    const val TOTAL_TRADES_EXECUTED = "totalTradesExecuted"
+    const val TOTAL_VOLUME_TRADED = "totalVolumeTraded"
+    const val LAST_SNAPSHOT_TIME = "lastSnapshotTime"
+    const val LAST_SNAPSHOT_TOTAL_VALUE_USD = "lastSnapshotTotalValueUSD"
 }

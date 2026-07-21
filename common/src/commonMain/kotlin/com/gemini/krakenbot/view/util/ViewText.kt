@@ -27,7 +27,7 @@ object ViewText {
     const val ADD_ASSET = "Add Asset"
     const val SAVE_CONFIGURATION = "Save Configuration"
 
-    // Newly added constants
+    // Status / Labels
     const val LIVE = "LIVE"
     const val DELAYED = "DELAYED"
     const val DATA_AGE = "Data Age"
