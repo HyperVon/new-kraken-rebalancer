@@ -2,6 +2,7 @@ package com.gemini.krakenbot.frontend
 
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.view.util.CssClass
+import com.gemini.krakenbot.view.util.HtmlAttrs
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.booleans.shouldBeTrue
@@ -40,7 +41,7 @@ class DashboardTest : StringSpec() {
         val row1 = document.createElement("tr") as HTMLTableRowElement
         row1.className = CssClass.Table.Hoverable.value
         val td1a = document.createElement("td")
-        td1a.textContent = "ETH"
+        td1a.textContent = Asset.ETH
         val td1b = document.createElement("td")
         td1b.textContent = "$3,000.00"
         row1.appendChild(td1a)
@@ -62,17 +63,17 @@ class DashboardTest : StringSpec() {
         var sortedRows = tbody.querySelectorAll("tr.hoverable")
         (sortedRows.item(0) as HTMLTableRowElement).cells.item(0)?.textContent shouldBe Asset.BTC
         (sortedRows.item(1) as HTMLTableRowElement).cells.item(0)?.textContent shouldBe Asset.ETH
-        th0.classList.contains("asc").shouldBeTrue()
+        th0.classList.contains(CssClass.Utility.Asc.value).shouldBeTrue()
         
         sortTable(th0, 0)
         sortedRows = tbody.querySelectorAll("tr.hoverable")
-        (sortedRows.item(0) as HTMLTableRowElement).cells.item(0)?.textContent shouldBe "ETH"
-        th0.classList.contains("desc").shouldBeTrue()
+        (sortedRows.item(0) as HTMLTableRowElement).cells.item(0)?.textContent shouldBe Asset.ETH
+        th0.classList.contains(CssClass.Utility.Desc.value).shouldBeTrue()
         
         sortTable(th1, 1)
         sortedRows = tbody.querySelectorAll("tr.hoverable")
-        (sortedRows.item(0) as HTMLTableRowElement).cells.item(0)?.textContent shouldBe "ETH"
-        th1.classList.contains("asc").shouldBeTrue()
+        (sortedRows.item(0) as HTMLTableRowElement).cells.item(0)?.textContent shouldBe Asset.ETH
+        th1.classList.contains(CssClass.Utility.Asc.value).shouldBeTrue()
     }
 
         "updateAge displays fresh and stale data" {
@@ -85,7 +86,7 @@ class DashboardTest : StringSpec() {
         val ageTime = document.createElement("span") as HTMLSpanElement
         ageTime.className = CssClass.DataAge.Time.value
         val offsetTime = Date.now() - 10000.0
-        ageTime.setAttribute("data-epoch", offsetTime.toString())
+        ageTime.setAttribute(HtmlAttrs.DATA_EPOCH, offsetTime.toString())
         container.appendChild(ageTime)
 
         val badge = document.createElement("span") as HTMLSpanElement
@@ -97,13 +98,13 @@ class DashboardTest : StringSpec() {
         try {
             updateAge()
             ageVal.textContent shouldBe "10s ago"
-            badge.classList.contains("live").shouldBeTrue()
+            badge.classList.contains(CssClass.Utility.Live.value).shouldBeTrue()
 
             val staleTime = Date.now() - 100000.0
-            ageTime.setAttribute("data-epoch", staleTime.toString())
+            ageTime.setAttribute(HtmlAttrs.DATA_EPOCH, staleTime.toString())
             updateAge()
             ageVal.textContent shouldBe "100s ago"
-            badge.classList.contains("delayed").shouldBeTrue()
+            badge.classList.contains(CssClass.Utility.Delayed.value).shouldBeTrue()
         } finally {
             document.body!!.removeChild(container)
         }
@@ -140,14 +141,14 @@ class DashboardTest : StringSpec() {
             val targetHeader = headers.item(0) as HTMLElement
             
             // Set initial state to sort by col 5
-            sortTable(targetHeader, 5, "asc")
+            sortTable(targetHeader, 5, CssClass.Utility.Asc.value)
             
             // Verify B is first (30%)
             var rows = container.querySelectorAll("tbody tr")
             rows.item(0)!!.textContent!!.shouldContain("B")
             
             // Reverse sort
-            sortTable(targetHeader, 5, "desc")
+            sortTable(targetHeader, 5, CssClass.Utility.Desc.value)
             rows = container.querySelectorAll("tbody tr")
             rows.item(0)!!.textContent!!.shouldContain("A")
             
@@ -166,7 +167,7 @@ class DashboardTest : StringSpec() {
 
         val container = document.createElement("div")
         container.innerHTML = """
-            <span class="${CssClass.DataAge.Value.value}"></span><span class="${CssClass.DataAge.Time.value}" data-epoch="invalid"></span>
+            <span class="${CssClass.DataAge.Value.value}"></span><span class="${CssClass.DataAge.Time.value}" ${HtmlAttrs.DATA_EPOCH}="invalid"></span>
             <div id="orphan-header"></div>
         """.trimIndent()
         document.body!!.appendChild(container)

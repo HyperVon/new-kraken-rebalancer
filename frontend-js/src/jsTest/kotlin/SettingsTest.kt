@@ -1,6 +1,9 @@
 package com.gemini.krakenbot.frontend
 
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.view.util.CssClass
+import com.gemini.krakenbot.view.util.FormFields
+import com.gemini.krakenbot.view.util.HtmlIds
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.booleans.shouldBeFalse
@@ -28,31 +31,31 @@ class SettingsTest : StringSpec() {
         val container = document.createElement("div") as HTMLDivElement
         
         val totalDisplay = document.createElement("span") as HTMLSpanElement
-        totalDisplay.id = "total-allocated-display"
+        totalDisplay.id = HtmlIds.TOTAL_ALLOCATED_DISPLAY
         container.appendChild(totalDisplay)
 
         val saveButton = document.createElement("button") as HTMLButtonElement
-        saveButton.id = "save-button"
+        saveButton.id = HtmlIds.SAVE_BUTTON
         container.appendChild(saveButton)
 
         val input1 = document.createElement("input") as HTMLInputElement
-        input1.name = "targets"
+        input1.name = FormFields.TARGETS
         input1.value = "30.0"
         container.appendChild(input1)
 
         val sym1 = document.createElement("input") as HTMLInputElement
-        sym1.name = "symbols"
+        sym1.name = FormFields.SYMBOLS
         sym1.value = Asset.BTC
         container.appendChild(sym1)
 
         val input2 = document.createElement("input") as HTMLInputElement
-        input2.name = "targets"
+        input2.name = FormFields.TARGETS
         input2.value = "70.0"
         container.appendChild(input2)
 
         val sym2 = document.createElement("input") as HTMLInputElement
-        sym2.name = "symbols"
-        sym2.value = "USD"
+        sym2.name = FormFields.SYMBOLS
+        sym2.value = Asset.USD
         container.appendChild(sym2)
 
         document.body!!.appendChild(container)
@@ -61,16 +64,16 @@ class SettingsTest : StringSpec() {
             updateAllocationTotal()
             totalDisplay.textContent shouldBe "Total: 100.00%"
             saveButton.disabled.shouldBeFalse()
-            totalDisplay.classList.contains("live").shouldBeTrue()
+            totalDisplay.classList.contains(CssClass.Utility.Live.value).shouldBeTrue()
 
             input2.value = "60.0"
             updateAllocationTotal()
             totalDisplay.textContent shouldBe "Total: 90.00%"
             saveButton.disabled.shouldBeTrue()
-            totalDisplay.classList.contains("delayed").shouldBeTrue()
+            totalDisplay.classList.contains(CssClass.Utility.Delayed.value).shouldBeTrue()
 
             input2.value = "70.0"
-            sym2.value = "ETH"
+            sym2.value = Asset.ETH
             updateAllocationTotal()
             saveButton.disabled.shouldBeTrue()
         } finally {
@@ -82,24 +85,24 @@ class SettingsTest : StringSpec() {
         val container = document.createElement("div") as HTMLDivElement
 
         val totalDisplay = document.createElement("span") as HTMLSpanElement
-        totalDisplay.id = "total-allocated-display"
+        totalDisplay.id = HtmlIds.TOTAL_ALLOCATED_DISPLAY
         container.appendChild(totalDisplay)
 
         val saveButton = document.createElement("button") as HTMLButtonElement
-        saveButton.id = "save-button"
+        saveButton.id = HtmlIds.SAVE_BUTTON
         container.appendChild(saveButton)
 
         val symContainer = document.createElement("div") as HTMLDivElement
-        symContainer.id = "allocations-container"
+        symContainer.id = HtmlIds.ALLOCATIONS_CONTAINER
         container.appendChild(symContainer)
 
         val symInput = document.createElement("input") as HTMLInputElement
-        symInput.id = "new-symbol-input"
+        symInput.id = HtmlIds.NEW_SYMBOL_INPUT
         symInput.value = Asset.LTC
         container.appendChild(symInput)
 
         val existingSym = document.createElement("input") as HTMLInputElement
-        existingSym.name = "symbols"
+        existingSym.name = FormFields.SYMBOLS
         existingSym.value = Asset.BTC
         container.appendChild(existingSym)
 
@@ -109,13 +112,13 @@ class SettingsTest : StringSpec() {
             addAssetRow()
             symInput.value shouldBe ""
             
-            val rows = symContainer.querySelectorAll(".allocation-edit-row")
+            val rows = symContainer.querySelectorAll(".${CssClass.Form.AllocationEditRow.value}")
             rows.length shouldBe 1
-            rows.item(0)!!.textContent!!.shouldContain("LTC")
+            rows.item(0)!!.textContent!!.shouldContain(Asset.LTC)
 
             val firstRow = rows.item(0) as HTMLElement
-            val hiddenSymInput = firstRow.querySelector("input[name=\"symbols\"]") as HTMLInputElement
-            hiddenSymInput.value shouldBe "LTC"
+            val hiddenSymInput = firstRow.querySelector("input[name=\"${FormFields.SYMBOLS}\"]") as HTMLInputElement
+            hiddenSymInput.value shouldBe Asset.LTC
         } finally {
             document.body!!.removeChild(container)
         }
@@ -130,8 +133,8 @@ class SettingsTest : StringSpec() {
         "initSettings registers globals and updates totals" {
         val container = document.createElement("div")
         container.innerHTML = """
-            <span id="total-allocated-display"></span>
-            <button id="save-button"></button>
+            <span id="${HtmlIds.TOTAL_ALLOCATED_DISPLAY}"></span>
+            <button id="${HtmlIds.SAVE_BUTTON}"></button>
         """.trimIndent()
         document.body!!.appendChild(container)
         try {
@@ -148,15 +151,15 @@ class SettingsTest : StringSpec() {
 
         val container = document.createElement("div")
         container.innerHTML = """
-            <span id="total-allocated-display"></span><button id="save-button"></button>
-            <input id="new-symbol-input" value=" "><div id="allocations-container"></div>
+            <span id="${HtmlIds.TOTAL_ALLOCATED_DISPLAY}"></span><button id="${HtmlIds.SAVE_BUTTON}"></button>
+            <input id="${HtmlIds.NEW_SYMBOL_INPUT}" value=" "><div id="${HtmlIds.ALLOCATIONS_CONTAINER}"></div>
         """.trimIndent()
         document.body!!.appendChild(container)
         try {
             updateAllocationTotal()
-            (document.getElementById("save-button") as HTMLButtonElement).disabled.shouldBeTrue()
+            (document.getElementById(HtmlIds.SAVE_BUTTON) as HTMLButtonElement).disabled.shouldBeTrue()
             addAssetRow()
-            (document.getElementById("allocations-container") as HTMLElement).children.length shouldBe 0
+            (document.getElementById(HtmlIds.ALLOCATIONS_CONTAINER) as HTMLElement).children.length shouldBe 0
         } finally {
             document.body!!.removeChild(container)
         }

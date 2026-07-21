@@ -1,6 +1,13 @@
 package com.gemini.krakenbot.frontend
 
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.OrderSide
+import com.gemini.krakenbot.model.TimeRange
+import com.gemini.krakenbot.view.util.CssClass
+import com.gemini.krakenbot.view.util.FormFields
+import com.gemini.krakenbot.view.util.HtmlAttrs
+import com.gemini.krakenbot.view.util.HtmlIds
+import com.gemini.krakenbot.view.util.ViewText
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.booleans.shouldBeFalse
@@ -13,6 +20,7 @@ import kotlinx.coroutines.await
 import kotlinx.coroutines.delay
 import org.w3c.dom.*
 import kotlin.js.Date
+import kotlin.js.json
 import kotlin.time.Duration.Companion.milliseconds
 
 class CoverageTest : StringSpec() {
@@ -66,10 +74,10 @@ class CoverageTest : StringSpec() {
         "chart builders return early for empty snapshots" {
             val container = document.createElement("div")
             container.innerHTML = """
-                <canvas id="portfolio-chart"></canvas>
-                <canvas id="holdings-chart"></canvas>
-                <canvas id="drift-chart"></canvas>
-                <canvas id="pl-chart"></canvas>
+                <canvas id="${HtmlIds.PORTFOLIO_VALUE_CHART}"></canvas>
+                <canvas id="${HtmlIds.ASSET_HOLDINGS_CHART}"></canvas>
+                <canvas id="${HtmlIds.ALLOCATION_DRIFT_CHART}"></canvas>
+                <canvas id="${HtmlIds.CUMULATIVE_PL_CHART}"></canvas>
             """.trimIndent()
             document.body!!.appendChild(container)
             js("""
@@ -99,14 +107,14 @@ class CoverageTest : StringSpec() {
             empty.size shouldBe 0
 
             // Single successful buy
-            val buy = js("({ timestamp: '2023-01-01', success: true, dryRun: false, side: 'BUY', usdAmount: 100.0 })")
+            val buy = json("timestamp" to "2023-01-01", "success" to true, "dryRun" to false, "side" to OrderSide.BUY.name, "usdAmount" to 100.0)
             val resultBuy = calculateCumulativePL(arrayOf(buy))
             resultBuy.size shouldBe 1
             val r0 = resultBuy[0]
             r0.y.toString().toDouble() shouldBe -100.0  // BUY subtracts
 
             // Single successful sell
-            val sell = js("({ timestamp: '2023-01-01', success: true, dryRun: false, side: 'SELL', usdAmount: 50.0 })")
+            val sell = json("timestamp" to "2023-01-01", "success" to true, "dryRun" to false, "side" to OrderSide.SELL.name, "usdAmount" to 50.0)
             val resultSell = calculateCumulativePL(arrayOf(sell))
             resultSell.size shouldBe 1
             val s0 = resultSell[0]
@@ -114,10 +122,10 @@ class CoverageTest : StringSpec() {
 
             // Mixed with failed and dryRun (should be filtered out)
             val mixed = arrayOf(
-                js("({ timestamp: '2023-01-01', success: true, dryRun: false, side: 'BUY', usdAmount: 100.0 })"),
-                js("({ timestamp: '2023-01-02', success: false, dryRun: false, side: 'SELL', usdAmount: 50.0 })"), // failed
-                js("({ timestamp: '2023-01-03', success: true, dryRun: true, side: 'BUY', usdAmount: 200.0 })"),   // dryRun
-                js("({ timestamp: '2023-01-04', success: true, dryRun: false, side: 'SELL', usdAmount: 30.0 })")
+                json("timestamp" to "2023-01-01", "success" to true, "dryRun" to false, "side" to OrderSide.BUY.name, "usdAmount" to 100.0),
+                json("timestamp" to "2023-01-02", "success" to false, "dryRun" to false, "side" to OrderSide.SELL.name, "usdAmount" to 50.0),
+                json("timestamp" to "2023-01-03", "success" to true, "dryRun" to true, "side" to OrderSide.BUY.name, "usdAmount" to 200.0),
+                json("timestamp" to "2023-01-04", "success" to true, "dryRun" to false, "side" to OrderSide.SELL.name, "usdAmount" to 30.0)
             )
             val resultMixed = calculateCumulativePL(mixed)
             resultMixed.size shouldBe 2  // Only the buy and sell (first and last)
@@ -135,13 +143,13 @@ class CoverageTest : StringSpec() {
             // Empty tbody with checkbox
             val container = document.createElement("div")
             container.innerHTML = """
-                <input type="checkbox" id="show-dry-run-checkbox" checked>
-                <table><tbody id="trade-table-body"></tbody></table>
+                <input type="checkbox" id="${HtmlIds.SHOW_DRY_RUN_CHECKBOX}" checked>
+                <table><tbody id="${HtmlIds.TRADE_TABLE_BODY}"></tbody></table>
             """.trimIndent()
             document.body!!.appendChild(container)
             try {
                 renderTradeTable(arrayOf())
-                val tbody = document.getElementById("trade-table-body") as HTMLTableSectionElement
+                val tbody = document.getElementById(HtmlIds.TRADE_TABLE_BODY) as HTMLTableSectionElement
                 tbody.rows.length shouldBe 1
                 tbody.innerHTML shouldContain "No trades found"
             } finally {
@@ -153,14 +161,14 @@ class CoverageTest : StringSpec() {
         "updateStats handles missing elements gracefully" {
             val container = document.createElement("div")
             container.innerHTML = """
-                <div id="stat-ath"></div>
+                <div id="${HtmlIds.STAT_ATH}"></div>
                 <!-- missing other stats -->
             """.trimIndent()
             document.body!!.appendChild(container)
             try {
                 val stats = js("({ allTimeHigh: 15000.5, totalTradesExecuted: 42, totalVolumeTraded: 1000000.0, totalFeesPaid: 250.75 })")
                 updateStats(stats)  // Should not throw
-                document.getElementById("stat-ath")?.textContent shouldBe "$15,000.50"
+                document.getElementById(HtmlIds.STAT_ATH)?.textContent shouldBe "$15,000.50"
                 // Other elements missing, so no exception
             } finally {
                 document.body!!.removeChild(container)
@@ -171,14 +179,14 @@ class CoverageTest : StringSpec() {
         "loadAll sets chartDefaults time unit based on range" {
             val container = document.createElement("div")
             container.innerHTML = """
-                <canvas id="portfolio-value-chart"></canvas>
-                <canvas id="asset-holdings-chart"></canvas>
-                <canvas id="allocation-drift-chart"></canvas>
-                <canvas id="cumulative-pl-chart"></canvas>
-                <table><tbody id="trade-table-body"></tbody></table>
-                <input id="show-dry-run-checkbox" type="checkbox" checked>
-                <div id="stat-ath"></div><div id="stat-total-trades"></div><div id="stat-total-volume"></div><div id="stat-total-fees"></div>
-                <div id="sync-progress-banner"></div><div id="sync-progress-bar"></div><div id="sync-progress-text"></div>
+                <canvas id="${HtmlIds.PORTFOLIO_VALUE_CHART}"></canvas>
+                <canvas id="${HtmlIds.ASSET_HOLDINGS_CHART}"></canvas>
+                <canvas id="${HtmlIds.ALLOCATION_DRIFT_CHART}"></canvas>
+                <canvas id="${HtmlIds.CUMULATIVE_PL_CHART}"></canvas>
+                <table><tbody id="${HtmlIds.TRADE_TABLE_BODY}"></tbody></table>
+                <input id="${HtmlIds.SHOW_DRY_RUN_CHECKBOX}" type="checkbox" checked>
+                <div id="${HtmlIds.STAT_ATH}"></div><div id="${HtmlIds.STAT_TOTAL_TRADES}"></div><div id="${HtmlIds.STAT_TOTAL_VOLUME}"></div><div id="${HtmlIds.STAT_TOTAL_FEES}"></div>
+                <div id="${HtmlIds.SYNC_PROGRESS_BANNER}"></div><div id="${HtmlIds.SYNC_PROGRESS_BAR}"></div><div id="${HtmlIds.SYNC_PROGRESS_TEXT}"></div>
             """.trimIndent()
             document.body!!.appendChild(container)
             js("""
@@ -203,15 +211,15 @@ class CoverageTest : StringSpec() {
                 registerHistoryGlobals()
                 
                 // Test 24h range
-                loadAll("24h").await()
+                loadAll(TimeRange.TWENTY_FOUR_HOURS.key).await()
                 (window.asDynamic().chartDefaults.scales.x.time.unit as String) shouldBe "hour"
                 
                 // Test 'all' range (should delete unit)
-                loadAll("all").await()
+                loadAll(TimeRange.ALL.key).await()
                 (window.asDynamic().chartDefaults.scales.x.time.unit == null) shouldBe true
                 
                 // Test default (day) range
-                loadAll("30d").await()
+                loadAll(TimeRange.THIRTY_DAYS.key).await()
                 (window.asDynamic().chartDefaults.scales.x.time.unit as String) shouldBe "day"
             } finally {
                 document.body!!.removeChild(container)
@@ -222,9 +230,9 @@ class CoverageTest : StringSpec() {
         "checkSyncProgress handles banner missing, seeded true/false, and offset/total" {
             val container = document.createElement("div")
             container.innerHTML = """
-                <div id="sync-progress-banner"></div>
-                <div id="sync-progress-bar"></div>
-                <div id="sync-progress-text"></div>
+                <div id="${HtmlIds.SYNC_PROGRESS_BANNER}"></div>
+                <div id="${HtmlIds.SYNC_PROGRESS_BAR}"></div>
+                <div id="${HtmlIds.SYNC_PROGRESS_TEXT}"></div>
             """.trimIndent()
             document.body!!.appendChild(container)
             
@@ -236,14 +244,14 @@ class CoverageTest : StringSpec() {
             """)
             try {
                 // Remove banner to test missing case
-                document.getElementById("sync-progress-banner")?.remove()
+                document.getElementById(HtmlIds.SYNC_PROGRESS_BANNER)?.remove()
                 checkSyncProgress().await() shouldBe true
             } finally {
                 // Restore banner for next test
                 container.innerHTML = """
-                    <div id="sync-progress-banner"></div>
-                    <div id="sync-progress-bar"></div>
-                    <div id="sync-progress-text"></div>
+                    <div id="${HtmlIds.SYNC_PROGRESS_BANNER}"></div>
+                    <div id="${HtmlIds.SYNC_PROGRESS_BAR}"></div>
+                    <div id="${HtmlIds.SYNC_PROGRESS_TEXT}"></div>
                 """.trimIndent()
                 document.body!!.appendChild(container)
             }
@@ -256,7 +264,7 @@ class CoverageTest : StringSpec() {
             """)
             try {
                 checkSyncProgress().await() shouldBe true
-                val banner = document.getElementById("sync-progress-banner") as HTMLElement
+                val banner = document.getElementById(HtmlIds.SYNC_PROGRESS_BANNER) as HTMLElement
                 banner.style.display shouldBe "none"
             } finally {}
             
@@ -268,11 +276,11 @@ class CoverageTest : StringSpec() {
             """)
             try {
                 checkSyncProgress().await() shouldBe false
-                val banner = document.getElementById("sync-progress-banner") as HTMLElement
+                val banner = document.getElementById(HtmlIds.SYNC_PROGRESS_BANNER) as HTMLElement
                 banner.style.display shouldBe "block"
-                val bar = document.getElementById("sync-progress-bar") as HTMLElement
+                val bar = document.getElementById(HtmlIds.SYNC_PROGRESS_BAR) as HTMLElement
                 bar.style.width shouldBe "0%"  // 0/100*100
-                val text = document.getElementById("sync-progress-text") as HTMLElement
+                val text = document.getElementById(HtmlIds.SYNC_PROGRESS_TEXT) as HTMLElement
                 text.textContent shouldBe "0 / 100 (0%)"
             } finally {}
             
@@ -284,9 +292,9 @@ class CoverageTest : StringSpec() {
             """)
             try {
                 checkSyncProgress().await() shouldBe false
-                val bar = document.getElementById("sync-progress-bar") as HTMLElement
+                val bar = document.getElementById(HtmlIds.SYNC_PROGRESS_BAR) as HTMLElement
                 bar.style.width shouldBe "50%"  // 50/100*100
-                val text = document.getElementById("sync-progress-text") as HTMLElement
+                val text = document.getElementById(HtmlIds.SYNC_PROGRESS_TEXT) as HTMLElement
                 text.textContent shouldBe "50 / 100 (50%)"
             } finally {}
             
@@ -307,23 +315,23 @@ class CoverageTest : StringSpec() {
         "updateAllocationTotal handles various input scenarios" {
             val container = document.createElement("div")
             container.innerHTML = """
-                <span id="total-allocated-display"></span>
-                <button id="save-button"></button>
+                <span id="${HtmlIds.TOTAL_ALLOCATED_DISPLAY}"></span>
+                <button id="${HtmlIds.SAVE_BUTTON}"></button>
             """.trimIndent()
             document.body!!.appendChild(container)
             try {
                 // Case 1: valid inputs summing to 100 with USD
                 val input1 = document.createElement("input") as HTMLInputElement
-                input1.name = "targets"
+                input1.name = FormFields.TARGETS
                 input1.value = "40.0"
                 val sym1 = document.createElement("input") as HTMLInputElement
-                sym1.name = "symbols"
+                sym1.name = FormFields.SYMBOLS
                 sym1.value = Asset.BTC
                 val input2 = document.createElement("input") as HTMLInputElement
-                input2.name = "targets"
+                input2.name = FormFields.TARGETS
                 input2.value = "60.0"
                 val sym2 = document.createElement("input") as HTMLInputElement
-                sym2.name = "symbols"
+                sym2.name = FormFields.SYMBOLS
                 sym2.value = Asset.USD
                 container.appendChild(input1)
                 container.appendChild(sym1)
@@ -331,61 +339,61 @@ class CoverageTest : StringSpec() {
                 container.appendChild(sym2)
                 
                 updateAllocationTotal()
-                val totalDisplay = document.getElementById("total-allocated-display") as HTMLSpanElement
-                val saveButton = document.getElementById("save-button") as HTMLButtonElement
+                val totalDisplay = document.getElementById(HtmlIds.TOTAL_ALLOCATED_DISPLAY) as HTMLSpanElement
+                val saveButton = document.getElementById(HtmlIds.SAVE_BUTTON) as HTMLButtonElement
                 totalDisplay.textContent shouldBe "Total: 100.00%"
                 saveButton.disabled.shouldBeFalse()
-                totalDisplay.classList.contains("live").shouldBeTrue()
+                totalDisplay.classList.contains(CssClass.Utility.Live.value).shouldBeTrue()
                 
                 // Cleanup for next test
                 container.innerHTML = """
-                    <span id="total-allocated-display"></span>
-                    <button id="save-button"></button>
+                    <span id="${HtmlIds.TOTAL_ALLOCATED_DISPLAY}"></span>
+                    <button id="${HtmlIds.SAVE_BUTTON}"></button>
                 """.trimIndent()
                 document.body!!.appendChild(container)
                 
                 // Case 2: sum not 100 -> disabled, delayed
                 val input3 = document.createElement("input") as HTMLInputElement
-                input3.name = "targets"
+                input3.name = FormFields.TARGETS
                 input3.value = "30.0"
                 val sym3 = document.createElement("input") as HTMLInputElement
-                sym3.name = "symbols"
+                sym3.name = FormFields.SYMBOLS
                 sym3.value = Asset.BTC
                 val input4 = document.createElement("input") as HTMLInputElement
-                input4.name = "targets"
+                input4.name = FormFields.TARGETS
                 input4.value = "30.0"
                 val sym4 = document.createElement("input") as HTMLInputElement
-                sym4.name = "symbols"
-                sym4.value = "USD"
+                sym4.name = FormFields.SYMBOLS
+                sym4.value = Asset.USD
                 container.appendChild(input3)
                 container.appendChild(sym3)
                 container.appendChild(input4)
                 container.appendChild(sym4)
                 
                 updateAllocationTotal()
-                val totalDisplay2 = document.getElementById("total-allocated-display") as HTMLSpanElement
-                val saveButton2 = document.getElementById("save-button") as HTMLButtonElement
+                val totalDisplay2 = document.getElementById(HtmlIds.TOTAL_ALLOCATED_DISPLAY) as HTMLSpanElement
+                val saveButton2 = document.getElementById(HtmlIds.SAVE_BUTTON) as HTMLButtonElement
                 totalDisplay2.textContent shouldBe "Total: 60.00%"
                 saveButton2.disabled.shouldBeTrue()
-                totalDisplay2.classList.contains("delayed").shouldBeTrue()
+                totalDisplay2.classList.contains(CssClass.Utility.Delayed.value).shouldBeTrue()
                 
                 // Case 3: missing USD symbol -> disabled even if sum 100
                 container.innerHTML = """
-                    <span id="total-allocated-display"></span>
-                    <button id="save-button"></button>
+                    <span id="${HtmlIds.TOTAL_ALLOCATED_DISPLAY}"></span>
+                    <button id="${HtmlIds.SAVE_BUTTON}"></button>
                 """.trimIndent()
                 document.body!!.appendChild(container)
                 val input5 = document.createElement("input") as HTMLInputElement
-                input5.name = "targets"
+                input5.name = FormFields.TARGETS
                 input5.value = "50.0"
                 val sym5 = document.createElement("input") as HTMLInputElement
-                sym5.name = "symbols"
+                sym5.name = FormFields.SYMBOLS
                 sym5.value = Asset.BTC
                 val input6 = document.createElement("input") as HTMLInputElement
-                input6.name = "targets"
+                input6.name = FormFields.TARGETS
                 input6.value = "50.0"
                 val sym6 = document.createElement("input") as HTMLInputElement
-                sym6.name = "symbols"
+                sym6.name = FormFields.SYMBOLS
                 sym6.value = "EETH"  // not USD
                 container.appendChild(input5)
                 container.appendChild(sym5)
@@ -393,11 +401,11 @@ class CoverageTest : StringSpec() {
                 container.appendChild(sym6)
                 
                 updateAllocationTotal()
-                val totalDisplay3 = document.getElementById("total-allocated-display") as HTMLSpanElement
-                val saveButton3 = document.getElementById("save-button") as HTMLButtonElement
+                val totalDisplay3 = document.getElementById(HtmlIds.TOTAL_ALLOCATED_DISPLAY) as HTMLSpanElement
+                val saveButton3 = document.getElementById(HtmlIds.SAVE_BUTTON) as HTMLButtonElement
                 totalDisplay3.textContent shouldBe "Total: 100.00%"
                 saveButton3.disabled.shouldBeTrue()  // missing USD
-                totalDisplay3.classList.contains("delayed").shouldBeTrue()
+                totalDisplay3.classList.contains(CssClass.Utility.Delayed.value).shouldBeTrue()
                 
                 // Case 4: missing elements -> should not throw
                 container.innerHTML = ""
@@ -410,25 +418,25 @@ class CoverageTest : StringSpec() {
         "addAssetRow handles edge cases" {
             val container = document.createElement("div")
             container.innerHTML = """
-                <input type="text" id="new-symbol-input" value="${Asset.BTC}">
-                <div id="allocations-container"></div>
+                <input type="text" id="${HtmlIds.NEW_SYMBOL_INPUT}" value="${Asset.BTC}">
+                <div id="${HtmlIds.ALLOCATIONS_CONTAINER}"></div>
             """.trimIndent()
             document.body!!.appendChild(container)
             try {
                 // Case 1: empty symbol -> should return early
-                val symbolInput = document.getElementById("new-symbol-input") as HTMLInputElement
+                val symbolInput = document.getElementById(HtmlIds.NEW_SYMBOL_INPUT) as HTMLInputElement
                 symbolInput.value = ""
                 addAssetRow()
-                val allocContainer = document.getElementById("allocations-container") as HTMLElement
+                val allocContainer = document.getElementById(HtmlIds.ALLOCATIONS_CONTAINER) as HTMLElement
                 allocContainer.childElementCount.shouldBe(0)
                 
                 // Case 2: symbol already exists -> should show alert and return
                 symbolInput.value = Asset.BTC
                 // Pre-populate container with existing BTC
                 val existingRow = document.createElement("div")
-                existingRow.className = "allocation-edit-row"
+                existingRow.className = CssClass.Form.AllocationEditRow.value
                 existingRow.innerHTML = """
-                    <input type="hidden" name="symbols" value="${Asset.BTC}">
+                    <input type="hidden" name="${FormFields.SYMBOLS}" value="${Asset.BTC}">
                 """.trimIndent()
                 allocContainer.appendChild(existingRow)
                 
@@ -457,34 +465,34 @@ class CoverageTest : StringSpec() {
         "updateAge handles missing elements and stale/fresh states" {
             val container = document.createElement("div")
             container.innerHTML = """
-                <span class="data-age-value"></span>
-                <span class="data-age-time" data-epoch=""></span>
-                <span class="status-badge"></span>
+                <span class="${CssClass.DataAge.Value.value}"></span>
+                <span class="${CssClass.DataAge.Time.value}" ${HtmlAttrs.DATA_EPOCH}=""></span>
+                <span class="${CssClass.StatusCard.Live.value}"></span>
             """.trimIndent()
             document.body!!.appendChild(container)
             try {
                 // Missing epoch attribute -> should return early
                 updateAge()
-                val ageVal = document.getElementsByClassName("data-age-value")[0] as HTMLSpanElement
+                val ageVal = document.getElementsByClassName(CssClass.DataAge.Value.value)[0] as HTMLSpanElement
                 ageVal.textContent shouldBe ""  // unchanged
                 
                 // Valid recent epoch -> fresh
                 val recentTime = Date.now() - 5000  // 5 seconds ago
-                val timeEl = document.getElementsByClassName("data-age-time")[0] as HTMLSpanElement
-                timeEl.setAttribute("data-epoch", recentTime.toString())
+                val timeEl = document.getElementsByClassName(CssClass.DataAge.Time.value)[0] as HTMLSpanElement
+                timeEl.setAttribute(HtmlAttrs.DATA_EPOCH, recentTime.toString())
                 updateAge()
                 ageVal.textContent shouldBe "5s ago"
                 val badge = document.getElementsByClassName("status-badge")[0] as HTMLElement
-                badge.classList.contains("live").shouldBeTrue()
-                badge.classList.contains("delayed").shouldBeFalse()
+                badge.classList.contains(CssClass.Utility.Live.value).shouldBeTrue()
+                badge.classList.contains(CssClass.Utility.Delayed.value).shouldBeFalse()
                 
                 // Stale epoch (>90s)
                 val staleTime = Date.now() - 95000  // 95 seconds ago
-                timeEl.setAttribute("data-epoch", staleTime.toString())
+                timeEl.setAttribute(HtmlAttrs.DATA_EPOCH, staleTime.toString())
                 updateAge()
                 ageVal.textContent shouldBe "95s ago"
-                badge.classList.contains("delayed").shouldBeTrue()
-                badge.classList.contains("live").shouldBeFalse()
+                badge.classList.contains(CssClass.Utility.Delayed.value).shouldBeTrue()
+                badge.classList.contains(CssClass.Utility.Live.value).shouldBeFalse()
 
                 // Test AM/PM branches and hour % 12 == 0 branches
                 // 9:30 AM (9:30)
@@ -566,7 +574,7 @@ class CoverageTest : StringSpec() {
                 (rows.item(0) as HTMLTableRowElement).cells.item(0)?.textContent shouldBe "A"  // "10" < "5" lexicographically
                 
                 // Sort by col0 descending
-                sortTable(header0, 0, "desc")
+                sortTable(header0, 0, CssClass.Utility.Desc.value)
                 rows = container.querySelectorAll("tbody tr")
                 (rows.item(0) as HTMLTableRowElement).cells.item(0)?.textContent shouldBe "C"  // "5" > "10" lexicographically
                 
@@ -576,7 +584,7 @@ class CoverageTest : StringSpec() {
                 (rows.item(0) as HTMLTableRowElement).cells.item(1)?.textContent shouldBe "D"  // 15 < 20
                 
                 // Sort by col1 descending
-                sortTable(header1, 1, "desc")
+                sortTable(header1, 1, CssClass.Utility.Desc.value)
                 rows = container.querySelectorAll("tbody tr")
                 (rows.item(0) as HTMLTableRowElement).cells.item(1)?.textContent shouldBe "B"  // 20 > 15
                 
@@ -626,10 +634,10 @@ class CoverageTest : StringSpec() {
         "chart builders config callbacks cover tooltip and ticks formatting" {
             val container = document.createElement("div")
             container.innerHTML = """
-                <canvas id="portfolio-value-chart"></canvas>
-                <canvas id="asset-holdings-chart"></canvas>
-                <canvas id="allocation-drift-chart"></canvas>
-                <canvas id="cumulative-pl-chart"></canvas>
+                <canvas id="${HtmlIds.PORTFOLIO_VALUE_CHART}"></canvas>
+                <canvas id="${HtmlIds.ASSET_HOLDINGS_CHART}"></canvas>
+                <canvas id="${HtmlIds.ALLOCATION_DRIFT_CHART}"></canvas>
+                <canvas id="${HtmlIds.CUMULATIVE_PL_CHART}"></canvas>
             """.trimIndent()
             document.body!!.appendChild(container)
             js("""
@@ -644,11 +652,11 @@ class CoverageTest : StringSpec() {
             try {
                 registerHistoryGlobals()
                 val snapshots = arrayOf(
-                    js("({ timestamp: '2023-01-01', totalValueUSD: 100, assets: { USD: { valueUSD: 100, balance: 100, currentPercent: 100 } } })"),
-                    js("({ timestamp: '2023-01-02', totalValueUSD: 160, assets: { BTC: { valueUSD: 60, balance: 2, currentPercent: 37.5 }, USD: { valueUSD: 100, balance: 50, currentPercent: 62.5 } } })")
+                    json("timestamp" to "2023-01-01", "totalValueUSD" to 100, "assets" to json(Asset.USD to json("valueUSD" to 100, "balance" to 100, "currentPercent" to 100))),
+                    json("timestamp" to "2023-01-02", "totalValueUSD" to 160, "assets" to json(Asset.BTC to json("valueUSD" to 60, "balance" to 2, "currentPercent" to 37.5), Asset.USD to json("valueUSD" to 100, "balance" to 50, "currentPercent" to 62.5)))
                 )
                 val trades = arrayOf(
-                    js("({ timestamp: '2023-01-01', success: true, dryRun: false, side: 'BUY', usdAmount: 10 })")
+                    json("timestamp" to "2023-01-01", "success" to true, "dryRun" to false, "side" to OrderSide.BUY.name, "usdAmount" to 10)
                 )
 
                 buildPortfolioValueChart(snapshots)
@@ -695,18 +703,18 @@ class CoverageTest : StringSpec() {
         "initHistory sets up click listeners and checkbox listeners" {
             val container = document.createElement("div")
             container.innerHTML = """
-                <button class="time-range-btn" data-range="24h"></button>
-                <button class="time-range-btn active" data-range="30d"></button>
-                <input type="checkbox" id="show-dry-run-checkbox" checked>
-                <div id="sync-progress-banner"></div>
-                <div id="sync-progress-bar"></div>
-                <div id="sync-progress-text"></div>
-                <canvas id="portfolio-value-chart"></canvas>
-                <canvas id="asset-holdings-chart"></canvas>
-                <canvas id="allocation-drift-chart"></canvas>
-                <canvas id="cumulative-pl-chart"></canvas>
-                <table><tbody id="trade-table-body"></tbody></table>
-                <div id="stat-ath"></div><div id="stat-total-trades"></div><div id="stat-total-volume"></div><div id="stat-total-fees"></div>
+                <button class="${CssClass.History.TimeRangeBtn.value}" ${HtmlAttrs.DATA_RANGE}="24h"></button>
+                <button class="${CssClass.History.TimeRangeBtnActive.value}" ${HtmlAttrs.DATA_RANGE}="30d"></button>
+                <input type="checkbox" id="${HtmlIds.SHOW_DRY_RUN_CHECKBOX}" checked>
+                <div id="${HtmlIds.SYNC_PROGRESS_BANNER}"></div>
+                <div id="${HtmlIds.SYNC_PROGRESS_BAR}"></div>
+                <div id="${HtmlIds.SYNC_PROGRESS_TEXT}"></div>
+                <canvas id="${HtmlIds.PORTFOLIO_VALUE_CHART}"></canvas>
+                <canvas id="${HtmlIds.ASSET_HOLDINGS_CHART}"></canvas>
+                <canvas id="${HtmlIds.ALLOCATION_DRIFT_CHART}"></canvas>
+                <canvas id="${HtmlIds.CUMULATIVE_PL_CHART}"></canvas>
+                <table><tbody id="${HtmlIds.TRADE_TABLE_BODY}"></tbody></table>
+                <div id="${HtmlIds.STAT_ATH}"></div><div id="${HtmlIds.STAT_TOTAL_TRADES}"></div><div id="${HtmlIds.STAT_TOTAL_VOLUME}"></div><div id="${HtmlIds.STAT_TOTAL_FEES}"></div>
             """.trimIndent()
             document.body!!.appendChild(container)
             
@@ -768,7 +776,7 @@ class CoverageTest : StringSpec() {
                 button24h.click()
                 
                 // Trigger checkbox change
-                val checkbox = document.getElementById("show-dry-run-checkbox") as HTMLInputElement
+                val checkbox = document.getElementById(HtmlIds.SHOW_DRY_RUN_CHECKBOX) as HTMLInputElement
                 checkbox.checked = false
                 val event = document.createEvent("Event")
                 event.initEvent(type = "change", bubbles = true, cancelable = true)
@@ -788,17 +796,17 @@ class CoverageTest : StringSpec() {
             // Exercise internal variables getters and setters
             currentSortCol = 4
             currentSortCol shouldBe 4
-            currentSortDir = "desc"
-            currentSortDir shouldBe "desc"
+            currentSortDir = CssClass.Utility.Desc.value
+            currentSortDir shouldBe CssClass.Utility.Desc.value
             
             // We can invoke the wrappers
             val container = document.createElement("div")
             container.innerHTML = """
-                <input id="new-symbol-input" value="">
-                <span id="total-allocated-display"></span>
-                <button id="save-button"></button>
-                <div id="allocations-container"></div>
-                <table><thead><tr><th class="sortable">Asset</th></tr></thead><tbody></tbody></table>
+                <input id="${HtmlIds.NEW_SYMBOL_INPUT}" value="">
+                <span id="${HtmlIds.TOTAL_ALLOCATED_DISPLAY}"></span>
+                <button id="${HtmlIds.SAVE_BUTTON}"></button>
+                <div id="${HtmlIds.ALLOCATIONS_CONTAINER}"></div>
+                <table><thead><tr><th class="${CssClass.Table.Sortable.value}">${ViewText.HEADER_ASSET}</th></tr></thead><tbody></tbody></table>
             """.trimIndent()
             document.body!!.appendChild(container)
             try {
@@ -814,12 +822,12 @@ class CoverageTest : StringSpec() {
             // 1. checkSyncProgress with total == 0
             val container = document.createElement("div")
             container.innerHTML = """
-                <div id="sync-progress-banner"></div>
-                <div id="sync-progress-bar"></div>
-                <div id="sync-progress-text"></div>
-                <div id="allocations-container"></div>
-                <span id="total-allocated-display"></span>
-                <button id="save-button"></button>
+                <div id="${HtmlIds.SYNC_PROGRESS_BANNER}"></div>
+                <div id="${HtmlIds.SYNC_PROGRESS_BAR}"></div>
+                <div id="${HtmlIds.SYNC_PROGRESS_TEXT}"></div>
+                <div id="${HtmlIds.ALLOCATIONS_CONTAINER}"></div>
+                <span id="${HtmlIds.TOTAL_ALLOCATED_DISPLAY}"></span>
+                <button id="${HtmlIds.SAVE_BUTTON}"></button>
             """.trimIndent()
             document.body!!.appendChild(container)
 
@@ -833,39 +841,39 @@ class CoverageTest : StringSpec() {
                 
                 // 2. updateAllocationTotal with non-input targets, invalid double targets
                 val nonInputTarget = document.createElement("div")
-                nonInputTarget.setAttribute("name", "targets")
+                nonInputTarget.setAttribute("name", FormFields.TARGETS)
                 container.appendChild(nonInputTarget)
                 
                 val invalidInputTarget = document.createElement("input") as HTMLInputElement
-                invalidInputTarget.name = "targets"
+                invalidInputTarget.name = FormFields.TARGETS
                 invalidInputTarget.value = "invalid-double"
                 container.appendChild(invalidInputTarget)
                 
                 val nonInputSymbol = document.createElement("div")
-                nonInputSymbol.setAttribute("name", "symbols")
+                nonInputSymbol.setAttribute("name", FormFields.SYMBOLS)
                 container.appendChild(nonInputSymbol)
                 
                 updateAllocationTotal()
                 
                 // 3. renderTradeTable with null/missing values and success = false
                 val tableContainer = document.createElement("div")
-                tableContainer.innerHTML = "<table><tbody id='trade-table-body'></tbody></table>"
+                tableContainer.innerHTML = "<table><tbody id='${HtmlIds.TRADE_TABLE_BODY}'></tbody></table>"
                 container.appendChild(tableContainer)
                 
                 val badTrades = arrayOf(
-                    js("({ timestamp: '2023-01-01', symbol: null, side: 'SELL', volume: 'bad', usdAmount: 'bad', success: null, dryRun: null })")
+                    json("timestamp" to "2023-01-01", "symbol" to null, "side" to OrderSide.SELL.name, "volume" to "bad", "usdAmount" to "bad", "success" to null, "dryRun" to null)
                 )
                 renderTradeTable(badTrades)
-                val tbody = document.getElementById("trade-table-body") as HTMLTableSectionElement
+                val tbody = document.getElementById(HtmlIds.TRADE_TABLE_BODY) as HTMLTableSectionElement
                 tbody.rows.length shouldBe 1
                 
                 // 4. updateStats with missing values
                 val statsContainer = document.createElement("div")
                 statsContainer.innerHTML = """
-                    <div id="stat-ath"></div>
-                    <div id="stat-total-trades"></div>
-                    <div id="stat-total-volume"></div>
-                    <div id="stat-total-fees"></div>
+                    <div id="${HtmlIds.STAT_ATH}"></div>
+                    <div id="${HtmlIds.STAT_TOTAL_TRADES}"></div>
+                    <div id="${HtmlIds.STAT_TOTAL_VOLUME}"></div>
+                    <div id="${HtmlIds.STAT_TOTAL_FEES}"></div>
                 """.trimIndent()
                 container.appendChild(statsContainer)
                 updateStats(js("({})"))

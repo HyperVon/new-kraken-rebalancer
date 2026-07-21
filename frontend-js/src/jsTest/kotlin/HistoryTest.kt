@@ -1,6 +1,9 @@
 package com.gemini.krakenbot.frontend
 
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.OrderSide
+import com.gemini.krakenbot.model.TimeRange
+import com.gemini.krakenbot.view.util.HtmlIds
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldNotContain
@@ -10,6 +13,7 @@ import kotlinx.browser.document
 import kotlinx.browser.window
 import kotlinx.coroutines.await
 import org.w3c.dom.*
+import kotlin.js.json
 import kotlin.test.assertEquals
 
 @Suppress("unused")
@@ -24,8 +28,8 @@ class HistoryTest : StringSpec() {
     }
 
         "formatPair handles valid and missing symbols" {
-        val trade1: dynamic = js("({ symbol: 'BTC' })")
-        formatPair(trade1) shouldBe "BTC/USD"
+        val trade1: dynamic = js("({ symbol: '${Asset.BTC}' })")
+        formatPair(trade1) shouldBe "${Asset.BTC}/USD"
 
         val trade2: dynamic = js("({ symbol: null })")
         formatPair(trade2) shouldBe ""
@@ -65,11 +69,11 @@ class HistoryTest : StringSpec() {
 
         "calculateCumulativePL filters and orders completed trades" {
         val trades = arrayOf(
-            js("({ timestamp: '2023-01-01T10:00:00Z', success: true, dryRun: false, side: 'BUY', usdAmount: 100.0 })"),
-            js("({ timestamp: '2023-01-01T08:00:00Z', success: true, dryRun: false, side: 'SELL', usdAmount: 50.0 })"),
-            js("({ timestamp: '2023-01-01T09:00:00Z', success: false, dryRun: false, side: 'BUY', usdAmount: 200.0 })"),
-            js("({ timestamp: '2023-01-01T11:00:00Z', success: true, dryRun: true, side: 'BUY', usdAmount: 300.0 })"),
-            js("({ timestamp: '2023-01-01T12:00:00Z', success: true, dryRun: false, side: 'SELL', usdAmount: 80.0 })")
+            json("timestamp" to "2023-01-01T10:00:00Z", "success" to true, "dryRun" to false, "side" to OrderSide.BUY.name, "usdAmount" to 100.0),
+            json("timestamp" to "2023-01-01T08:00:00Z", "success" to true, "dryRun" to false, "side" to OrderSide.SELL.name, "usdAmount" to 50.0),
+            json("timestamp" to "2023-01-01T09:00:00Z", "success" to false, "dryRun" to false, "side" to OrderSide.BUY.name, "usdAmount" to 200.0),
+            json("timestamp" to "2023-01-01T11:00:00Z", "success" to true, "dryRun" to true, "side" to OrderSide.BUY.name, "usdAmount" to 300.0),
+            json("timestamp" to "2023-01-01T12:00:00Z", "success" to true, "dryRun" to false, "side" to OrderSide.SELL.name, "usdAmount" to 80.0)
         )
 
         val result = calculateCumulativePL(trades)
@@ -83,33 +87,33 @@ class HistoryTest : StringSpec() {
         "renderTradeTable filters dry runs and displays empty states" {
         val container = document.createElement("div")
         container.innerHTML = """
-            <input type="checkbox" id="show-dry-run-checkbox" checked>
-            <table><tbody id="trade-table-body"></tbody></table>
+            <input type="checkbox" id="${HtmlIds.SHOW_DRY_RUN_CHECKBOX}" checked>
+            <table><tbody id="${HtmlIds.TRADE_TABLE_BODY}"></tbody></table>
         """.trimIndent()
         document.body!!.appendChild(container)
 
         try {
             val trades = arrayOf(
-                js("({ timestamp: '2023-01-01', symbol: 'BTC', side: 'BUY', volume: 0.1, usdAmount: 2000.0, success: true, dryRun: false })"),
-                js("({ timestamp: '2023-01-02', symbol: 'ETH', side: 'SELL', volume: 1.0, usdAmount: 1800.0, success: true, dryRun: true })"),
-                js("({ timestamp: '2023-01-03', symbol: 'LTC', side: 'BUY', volume: 5.0, usdAmount: 350.0, success: false, dryRun: false })")
+                json("timestamp" to "2023-01-01", "symbol" to Asset.BTC, "side" to OrderSide.BUY.name, "volume" to 0.1, "usdAmount" to 2000.0, "success" to true, "dryRun" to false),
+                json("timestamp" to "2023-01-02", "symbol" to Asset.ETH, "side" to OrderSide.SELL.name, "volume" to 1.0, "usdAmount" to 1800.0, "success" to true, "dryRun" to true),
+                json("timestamp" to "2023-01-03", "symbol" to Asset.LTC, "side" to OrderSide.BUY.name, "volume" to 5.0, "usdAmount" to 350.0, "success" to false, "dryRun" to false)
             )
 
             renderTradeTable(trades)
-            val tbody = document.getElementById("trade-table-body") as HTMLTableSectionElement
+            val tbody = document.getElementById(HtmlIds.TRADE_TABLE_BODY) as HTMLTableSectionElement
             tbody.rows.length shouldBe 3
-            tbody.innerHTML shouldContain "BTC/USD"
-            tbody.innerHTML shouldContain "ETH/USD"
-            tbody.innerHTML shouldContain "LTC/USD"
+            tbody.innerHTML shouldContain "${Asset.BTC}/USD"
+            tbody.innerHTML shouldContain "${Asset.ETH}/USD"
+            tbody.innerHTML shouldContain "${Asset.LTC}/USD"
             tbody.innerHTML shouldContain "DRY RUN"
             tbody.innerHTML shouldContain "FAILED"
 
-            (document.getElementById("show-dry-run-checkbox") as HTMLInputElement).checked = false
+            (document.getElementById(HtmlIds.SHOW_DRY_RUN_CHECKBOX) as HTMLInputElement).checked = false
             renderTradeTable(trades)
             tbody.rows.length shouldBe 2
-            tbody.innerHTML shouldContain "BTC/USD"
-            tbody.innerHTML shouldContain "LTC/USD"
-            tbody.innerHTML shouldNotContain "ETH/USD"
+            tbody.innerHTML shouldContain "${Asset.BTC}/USD"
+            tbody.innerHTML shouldContain "${Asset.LTC}/USD"
+            tbody.innerHTML shouldNotContain "${Asset.ETH}/USD"
 
             renderTradeTable(emptyArray())
             tbody.rows.length shouldBe 1
@@ -122,10 +126,10 @@ class HistoryTest : StringSpec() {
         "updateStats formats each displayed value" {
         val container = document.createElement("div")
         container.innerHTML = """
-            <div id="stat-ath"></div>
-            <div id="stat-total-trades"></div>
-            <div id="stat-total-volume"></div>
-            <div id="stat-total-fees"></div>
+            <div id="${HtmlIds.STAT_ATH}"></div>
+            <div id="${HtmlIds.STAT_TOTAL_TRADES}"></div>
+            <div id="${HtmlIds.STAT_TOTAL_VOLUME}"></div>
+            <div id="${HtmlIds.STAT_TOTAL_FEES}"></div>
         """.trimIndent()
         document.body!!.appendChild(container)
 
@@ -133,10 +137,10 @@ class HistoryTest : StringSpec() {
             val stats = js("({ allTimeHigh: 15000.5, totalTradesExecuted: 42, totalVolumeTraded: 1000000.0, totalFeesPaid: 250.75 })")
             updateStats(stats)
 
-            document.getElementById("stat-ath")?.textContent shouldBe "$15,000.50"
-            document.getElementById("stat-total-trades")?.textContent shouldBe "42"
-            document.getElementById("stat-total-volume")?.textContent shouldBe "$1,000,000.00"
-            document.getElementById("stat-total-fees")?.textContent shouldBe "$250.75"
+            document.getElementById(HtmlIds.STAT_ATH)?.textContent shouldBe "$15,000.50"
+            document.getElementById(HtmlIds.STAT_TOTAL_TRADES)?.textContent shouldBe "42"
+            document.getElementById(HtmlIds.STAT_TOTAL_VOLUME)?.textContent shouldBe "$1,000,000.00"
+            document.getElementById(HtmlIds.STAT_TOTAL_FEES)?.textContent shouldBe "$250.75"
         } finally {
             document.body!!.removeChild(container)
         }
@@ -150,10 +154,10 @@ class HistoryTest : StringSpec() {
         "chart builders create charts and preserve visibility" {
         val container = document.createElement("div")
         container.innerHTML = """
-            <canvas id="portfolio-value-chart"></canvas>
-            <canvas id="asset-holdings-chart"></canvas>
-            <canvas id="allocation-drift-chart"></canvas>
-            <canvas id="cumulative-pl-chart"></canvas>
+            <canvas id="${HtmlIds.PORTFOLIO_VALUE_CHART}"></canvas>
+            <canvas id="${HtmlIds.ASSET_HOLDINGS_CHART}"></canvas>
+            <canvas id="${HtmlIds.ALLOCATION_DRIFT_CHART}"></canvas>
+            <canvas id="${HtmlIds.CUMULATIVE_PL_CHART}"></canvas>
         """.trimIndent()
         document.body!!.appendChild(container)
         js("""
@@ -169,11 +173,11 @@ class HistoryTest : StringSpec() {
         try {
             registerHistoryGlobals()
             val snapshots = arrayOf(
-                js("({ timestamp: '2023-01-01', totalValueUSD: 100, assets: { BTC: { valueUSD: 60, balance: 2, currentPercent: 60 }, USD: { valueUSD: 40, balance: 40, currentPercent: 40 } } })"),
-                js("({ timestamp: '2023-01-02', totalValueUSD: 'invalid', assets: { BTC: { valueUSD: 80, balance: 3, currentPercent: 80 } } })")
+                json("timestamp" to "2023-01-01", "totalValueUSD" to 100, "assets" to json(Asset.BTC to json("valueUSD" to 60, "balance" to 2, "currentPercent" to 60), Asset.USD to json("valueUSD" to 40, "balance" to 40, "currentPercent" to 40))),
+                json("timestamp" to "2023-01-02", "totalValueUSD" to "invalid", "assets" to json(Asset.BTC to json("valueUSD" to 80, "balance" to 3, "currentPercent" to 80)))
             )
             val trades = arrayOf(
-                js("({ timestamp: '2023-01-01', success: true, dryRun: false, side: 'BUY', usdAmount: 10 })")
+                json("timestamp" to "2023-01-01", "success" to true, "dryRun" to false, "side" to OrderSide.BUY.name, "usdAmount" to 10)
             )
 
             buildPortfolioValueChart(emptyArray())
@@ -200,11 +204,11 @@ class HistoryTest : StringSpec() {
         "loadAll and checkSyncProgress update history content" {
         val container = document.createElement("div")
         container.innerHTML = """
-            <canvas id="portfolio-value-chart"></canvas><canvas id="asset-holdings-chart"></canvas>
-            <canvas id="allocation-drift-chart"></canvas><canvas id="cumulative-pl-chart"></canvas>
-            <table><tbody id="trade-table-body"></tbody></table><input id="show-dry-run-checkbox" type="checkbox" checked>
-            <div id="stat-ath"></div><div id="stat-total-trades"></div><div id="stat-total-volume"></div><div id="stat-total-fees"></div>
-            <div id="sync-progress-banner"></div><div id="sync-progress-bar"></div><div id="sync-progress-text"></div>
+            <canvas id="${HtmlIds.PORTFOLIO_VALUE_CHART}"></canvas><canvas id="${HtmlIds.ASSET_HOLDINGS_CHART}"></canvas>
+            <canvas id="${HtmlIds.ALLOCATION_DRIFT_CHART}"></canvas><canvas id="${HtmlIds.CUMULATIVE_PL_CHART}"></canvas>
+            <table><tbody id="${HtmlIds.TRADE_TABLE_BODY}"></tbody></table><input id="${HtmlIds.SHOW_DRY_RUN_CHECKBOX}" type="checkbox" checked>
+            <div id="${HtmlIds.STAT_ATH}"></div><div id="${HtmlIds.STAT_TOTAL_TRADES}"></div><div id="${HtmlIds.STAT_TOTAL_VOLUME}"></div><div id="${HtmlIds.STAT_TOTAL_FEES}"></div>
+            <div id="${HtmlIds.SYNC_PROGRESS_BANNER}"></div><div id="${HtmlIds.SYNC_PROGRESS_BAR}"></div><div id="${HtmlIds.SYNC_PROGRESS_TEXT}"></div>
         """.trimIndent()
         document.body!!.appendChild(container)
         js("""
@@ -224,10 +228,10 @@ class HistoryTest : StringSpec() {
 
         try {
             checkSyncProgress().await() shouldBe false
-            (document.getElementById("sync-progress-bar") as HTMLElement).style.width shouldBe "50%"
-            loadAll("24h").await()
+            (document.getElementById(HtmlIds.SYNC_PROGRESS_BAR) as HTMLElement).style.width shouldBe "50%"
+            loadAll(TimeRange.TWENTY_FOUR_HOURS.key).await()
             (window.asDynamic().chartDefaults.scales.x.time.unit as String) shouldBe "hour"
-            loadAll("all").await()
+            loadAll(TimeRange.ALL.key).await()
             (window.asDynamic().chartDefaults.scales.x.time.unit == null) shouldBe true
         } finally {
             document.body!!.removeChild(container)
@@ -236,7 +240,7 @@ class HistoryTest : StringSpec() {
 
         "checkSyncProgress hides the banner when history is seeded" {
         val container = document.createElement("div")
-        container.innerHTML = "<div id=\"sync-progress-banner\"></div>"
+        container.innerHTML = "<div id=\"${HtmlIds.SYNC_PROGRESS_BANNER}\"></div>"
         document.body!!.appendChild(container)
         js("""
             window.fetch = function() {
@@ -245,7 +249,7 @@ class HistoryTest : StringSpec() {
         """)
         try {
             checkSyncProgress().await() shouldBe true
-            (document.getElementById("sync-progress-banner") as HTMLElement).style.display shouldBe "none"
+            (document.getElementById(HtmlIds.SYNC_PROGRESS_BANNER) as HTMLElement).style.display shouldBe "none"
         } finally {
             document.body!!.removeChild(container)
         }
