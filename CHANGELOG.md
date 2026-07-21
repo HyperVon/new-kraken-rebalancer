@@ -13,6 +13,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 
 - **Google Antigravity Agent Rules (`AGENTS.md`)**: Configured standalone project-level agent guidelines under `.agents/AGENTS.md` (removing root directory duplicate) capturing tech stack architecture, financial `BigDecimal` precision rules, database integrity policies, Kraken symbol normalization, FQN prohibitions, markdown linting, and automated testing gates.
+- **Custom Agent Skills (`.agents/skills/`)**: Added 4 workspace skills (`commit-and-push`, `write-kotest`, `exposed-repository`, and `kotlin-refactoring-and-cleanup`) automating git push workflows, Kotest patterns, ORM conventions, and clean code refactoring.
 
 ## [6.7.0] - 2026-07-21
 
