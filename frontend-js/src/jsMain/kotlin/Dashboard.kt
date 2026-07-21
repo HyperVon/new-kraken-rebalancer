@@ -5,8 +5,12 @@ import kotlinx.browser.window
 import org.w3c.dom.*
 import kotlin.js.Date
 
+internal const val STALE_THRESHOLD_SECONDS = 90
+internal const val SORT_ASC = "asc"
+internal const val SORT_DESC = "desc"
+
 internal var currentSortCol: Int = 5
-internal var currentSortDir: String = "asc"
+internal var currentSortDir: String = SORT_ASC
 
 fun registerDashboardGlobals() {
     window.asDynamic().sortTable = { header: HTMLElement, colIdx: Int ->
@@ -15,17 +19,17 @@ fun registerDashboardGlobals() {
 }
 
 fun updateAge() {
-    val ageEl = document.querySelector(".data-age-value") as? HTMLElement ?: return
-    val timeEl = document.querySelector(".data-age-time") as? HTMLElement ?: return
+    val ageEl = document.querySelector(JsQuerySelector.DATA_AGE_VALUE) as? HTMLElement ?: return
+    val timeEl = document.querySelector(JsQuerySelector.DATA_AGE_TIME) as? HTMLElement ?: return
 
-    val epochStr = timeEl.getAttribute("data-epoch") ?: return
+    val epochStr = timeEl.getAttribute(JsDatasetKey.EPOCH) ?: return
     val epoch = epochStr.toDoubleOrNull() ?: return
     val now = Date.now()
     val diff = ((now - epoch) / 1000).toInt().coerceAtLeast(0)
 
     ageEl.textContent = "${diff}s ago"
-    val isStale = diff > 90
-    ageEl.classList.toggle("stale", isStale)
+    val isStale = diff > STALE_THRESHOLD_SECONDS
+    ageEl.classList.toggle(JsCssClass.STALE, isStale)
 
     val date = Date(epoch)
     val hours = date.getHours()
@@ -40,10 +44,10 @@ fun updateAge() {
         timeEl.textContent = localTimeStr
     }
 
-    val badgeEl = document.querySelector(".status-badge") as? HTMLElement
+    val badgeEl = document.querySelector(JsQuerySelector.STATUS_BADGE) as? HTMLElement
     if (badgeEl != null) {
-        badgeEl.classList.toggle("delayed", isStale)
-        badgeEl.classList.toggle("live", !isStale)
+        badgeEl.classList.toggle(JsCssClass.DELAYED, isStale)
+        badgeEl.classList.toggle(JsCssClass.LIVE, !isStale)
         val badgeText = if (isStale) "DELAYED" else "LIVE"
         if (badgeEl.textContent != badgeText) {
             badgeEl.textContent = badgeText
@@ -52,7 +56,7 @@ fun updateAge() {
 }
 
 fun reapplySort() {
-    val headers = document.querySelectorAll("th.sortable")
+    val headers = document.querySelectorAll(JsQuerySelector.SORTABLE_TH)
     if (headers.length > currentSortCol) {
         val header = headers.item(currentSortCol) as? HTMLElement
         if (header != null) {
@@ -65,23 +69,23 @@ fun sortTable(header: HTMLElement, colIdx: Int, forceDir: String? = null) {
     val table = header.closest("table") as? HTMLTableElement ?: return
     val tbody = table.querySelector("tbody") as? HTMLTableSectionElement ?: return
     val rows = mutableListOf<HTMLTableRowElement>()
-    val list = tbody.querySelectorAll("tr.hoverable")
+    val list = tbody.querySelectorAll(JsQuerySelector.HOVERABLE_TR)
     for (i in 0 until list.length) {
         val row = list.item(i) as? HTMLTableRowElement
         if (row != null) rows.add(row)
     }
 
-    val isAsc = header.classList.contains("asc")
-    val sortAsc = if (forceDir != null) forceDir == "asc" else !isAsc
+    val isAsc = header.classList.contains(SORT_ASC)
+    val sortAsc = if (forceDir != null) forceDir == SORT_ASC else !isAsc
     val key = if (colIdx == 0) "string" else "float"
 
     rows.sortWith(Comparator { a, b ->
         val aCell = a.cells.item(colIdx) as? HTMLElement
         val bCell = b.cells.item(colIdx) as? HTMLElement
-        val aText = (aCell?.dataset?.get("sortValue") ?: aCell?.textContent)?.trim()
-            ?.replace(Regex("[$,%]"), "") ?: ""
-        val bText = (bCell?.dataset?.get("sortValue") ?: bCell?.textContent)?.trim()
-            ?.replace(Regex("[$,%]"), "") ?: ""
+        val aText = (aCell?.dataset?.get(JsDatasetKey.SORT_VALUE) ?: aCell?.textContent)?.trim()
+            ?.replace(CURRENCY_CLEANUP_REGEX, "") ?: ""
+        val bText = (bCell?.dataset?.get(JsDatasetKey.SORT_VALUE) ?: bCell?.textContent)?.trim()
+            ?.replace(CURRENCY_CLEANUP_REGEX, "") ?: ""
 
         if (key == "float") {
             val aVal = aText.toDoubleOrNull() ?: 0.0
@@ -94,14 +98,16 @@ fun sortTable(header: HTMLElement, colIdx: Int, forceDir: String? = null) {
         }
     })
 
-    val headersList = table.querySelectorAll("th.sortable")
+    val headersList = table.querySelectorAll(JsQuerySelector.SORTABLE_TH)
     for (i in 0 until headersList.length) {
-        (headersList.item(i) as? HTMLElement)?.classList?.remove("asc", "desc")
+        (headersList.item(i) as? HTMLElement)?.classList?.remove(SORT_ASC, SORT_DESC)
     }
-    header.classList.add(if (sortAsc) "asc" else "desc")
+    header.classList.add(if (sortAsc) SORT_ASC else SORT_DESC)
 
     rows.forEach { row -> tbody.appendChild(row) }
 
     currentSortCol = colIdx
-    currentSortDir = if (sortAsc) "asc" else "desc"
+    currentSortDir = if (sortAsc) SORT_ASC else SORT_DESC
 }
+
+private val CURRENCY_CLEANUP_REGEX = Regex("[$,%]")

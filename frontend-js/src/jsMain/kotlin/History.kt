@@ -93,11 +93,11 @@ private var syncIntervalId: Int? = null
 private fun setupSyncProgressAndLoad() {
     checkSyncProgress().then { isDone ->
         if (isDone) {
-            loadAll("30d")
+            loadAll(JsTimeRange.THIRTY_DAYS)
         } else {
             syncIntervalId?.let { window.clearInterval(it) }
             syncIntervalId = window.setInterval({
-                if (document.getElementById("sync-progress-banner") == null) {
+                if (document.getElementById(JsElementId.SYNC_PROGRESS_BANNER) == null) {
                     syncIntervalId?.let { window.clearInterval(it) }
                     return@setInterval
                 }
@@ -111,21 +111,21 @@ private fun setupSyncProgressAndLoad() {
         }
     }
 
-    val buttons = document.querySelectorAll(".time-range-btn")
+    val buttons = document.querySelectorAll(JsQuerySelector.TIME_RANGE_BTNS)
     for (i in 0 until buttons.length) {
         val btn = buttons.item(i) as? HTMLElement
         btn?.addEventListener("click", {
-            val list = document.querySelectorAll(".time-range-btn")
+            val list = document.querySelectorAll(JsQuerySelector.TIME_RANGE_BTNS)
             for (j in 0 until list.length) {
-                (list.item(j) as? HTMLElement)?.classList?.remove("active")
+                (list.item(j) as? HTMLElement)?.classList?.remove(JsCssClass.ACTIVE)
             }
-            btn.classList.add("active")
-            val range = btn.getAttribute("data-range") ?: "30d"
+            btn.classList.add(JsCssClass.ACTIVE)
+            val range = btn.getAttribute(JsDatasetKey.RANGE) ?: JsTimeRange.THIRTY_DAYS
             loadAll(range)
         })
     }
 
-    val checkbox = document.getElementById("show-dry-run-checkbox") as? HTMLInputElement
+    val checkbox = document.getElementById(JsElementId.SHOW_DRY_RUN_CHECKBOX) as? HTMLInputElement
     checkbox?.addEventListener("change", {
         renderTradeTable(allTrades)
         buildCumulativePLChart(allTrades, checkbox.checked)
@@ -300,7 +300,7 @@ internal fun buildPortfolioValueChart(snapshots: Array<dynamic>) {
         formatUSD(v)
     }
 
-    createOrUpdate("portfolio-value-chart", createLineChartConfig(datasets.toTypedArray(), options))
+    createOrUpdate(JsElementId.PORTFOLIO_VALUE_CHART, createLineChartConfig(datasets.toTypedArray(), options))
 }
 
 internal fun buildAssetHoldingsChart(snapshots: Array<dynamic>) {
@@ -366,7 +366,7 @@ internal fun buildAssetHoldingsChart(snapshots: Array<dynamic>) {
         formatPctTick(v, includePlus = true)
     }
 
-    createOrUpdate("asset-holdings-chart", createLineChartConfig(datasets, options))
+    createOrUpdate(JsElementId.ASSET_HOLDINGS_CHART, createLineChartConfig(datasets, options))
 }
 
 internal fun buildAllocationDriftChart(snapshots: Array<dynamic>) {
@@ -412,7 +412,7 @@ internal fun buildAllocationDriftChart(snapshots: Array<dynamic>) {
         formatPctTick(v, includePlus = false)
     }
 
-    createOrUpdate("allocation-drift-chart", createLineChartConfig(datasets, options))
+    createOrUpdate(JsElementId.ALLOCATION_DRIFT_CHART, createLineChartConfig(datasets, options))
 }
 
 internal fun calculateCumulativePL(trades: Array<dynamic>, includeDryRun: Boolean = false): Array<dynamic> {
@@ -476,7 +476,7 @@ internal fun buildCumulativePLChart(trades: Array<dynamic>, includeDryRun: Boole
         formatUSD(v)
     }
 
-    createOrUpdate("cumulative-pl-chart", createLineChartConfig(datasets, options))
+    createOrUpdate(JsElementId.CUMULATIVE_PL_CHART, createLineChartConfig(datasets, options))
 }
 
 fun formatPair(trade: dynamic): String {
@@ -485,9 +485,9 @@ fun formatPair(trade: dynamic): String {
 }
 
 internal fun renderTradeTable(trades: Array<dynamic>) {
-    val tbody = document.getElementById("trade-table-body") ?: return
+    val tbody = document.getElementById(JsElementId.TRADE_TABLE_BODY) ?: return
 
-    val showDryRun = (document.getElementById("show-dry-run-checkbox") as? HTMLInputElement)?.checked ?: true
+    val showDryRun = (document.getElementById(JsElementId.SHOW_DRY_RUN_CHECKBOX) as? HTMLInputElement)?.checked ?: true
     val filteredTrades = if (showDryRun) trades else trades.filter { t: dynamic -> !(t.dryRun as? Boolean ?: false) }.toTypedArray()
 
     if (filteredTrades.asDynamic().length == 0) {
@@ -498,11 +498,11 @@ internal fun renderTradeTable(trades: Array<dynamic>) {
     val rowsHtml = filteredTrades.joinToString("") { t: dynamic ->
         val time = Date(t.timestamp.toString()).asDynamic().toLocaleString()
         val side = t.side.toString()
-        val sideClass = if (side == "BUY") "badge badge-buy" else "badge badge-sell"
+        val sideClass = if (side == "BUY") JsCssClass.BADGE_BUY else JsCssClass.BADGE_SELL
         val success = t.success as? Boolean ?: false
         val dryRun = t.dryRun as? Boolean ?: false
         val statusText = if (success) (if (dryRun) "DRY RUN" else "SUCCESS") else "FAILED"
-        val statusClass = if (success) (if (dryRun) "badge badge-info" else "badge badge-buy") else "badge badge-sell"
+        val statusClass = if (success) (if (dryRun) JsCssClass.BADGE_INFO else JsCssClass.BADGE_BUY) else JsCssClass.BADGE_SELL
         val vol = t.volume.toString().toDoubleOrNull() ?: 0.0
         val amt = t.usdAmount.toString().toDoubleOrNull() ?: 0.0
 
@@ -522,14 +522,14 @@ internal fun renderTradeTable(trades: Array<dynamic>) {
 }
 
 internal fun updateStats(stats: dynamic) {
-    val athTitle = document.getElementById("stat-ath-title")
-    val ath = document.getElementById("stat-ath")
-    val totalTrades = document.getElementById("stat-total-trades")
-    val totalVolume = document.getElementById("stat-total-volume")
-    val totalFees = document.getElementById("stat-total-fees")
+    val athTitle = document.getElementById(JsElementId.STAT_ATH_TITLE)
+    val ath = document.getElementById(JsElementId.STAT_ATH)
+    val totalTrades = document.getElementById(JsElementId.STAT_TOTAL_TRADES)
+    val totalVolume = document.getElementById(JsElementId.STAT_TOTAL_VOLUME)
+    val totalFees = document.getElementById(JsElementId.STAT_TOTAL_FEES)
 
     if (athTitle != null) {
-        athTitle.textContent = if (currentRange == "all") "All-Time High" else "Period High"
+        athTitle.textContent = if (currentRange == JsTimeRange.ALL) "All-Time High" else "Period High"
     }
     if (ath != null) ath.textContent = formatUSD(stats.allTimeHigh.toString().toDoubleOrNull() ?: 0.0)
     if (totalTrades != null) {
@@ -555,7 +555,7 @@ internal fun loadAll(range: String): Promise<Unit> {
         buildPortfolioValueChart(snapshots)
         buildAssetHoldingsChart(snapshots)
         buildAllocationDriftChart(snapshots)
-        val showDryRun = (document.getElementById("show-dry-run-checkbox") as? HTMLInputElement)?.checked ?: true
+        val showDryRun = (document.getElementById(JsElementId.SHOW_DRY_RUN_CHECKBOX) as? HTMLInputElement)?.checked ?: true
         buildCumulativePLChart(trades, showDryRun)
         renderTradeTable(trades)
         updateStats(stats)
@@ -565,7 +565,7 @@ internal fun loadAll(range: String): Promise<Unit> {
 
 internal fun checkSyncProgress(): Promise<Boolean> {
     return fetchJSON("/api/history/sync-progress").then { status: dynamic ->
-        val banner = document.getElementById("sync-progress-banner") as? HTMLElement
+        val banner = document.getElementById(JsElementId.SYNC_PROGRESS_BANNER) as? HTMLElement
         if (banner == null) {
             true
         } else {
@@ -582,8 +582,8 @@ internal fun checkSyncProgress(): Promise<Boolean> {
                     pct = (offset / total * 100.0).toInt().coerceAtMost(100)
                 }
 
-                val bar = document.getElementById("sync-progress-bar") as? HTMLElement
-                val text = document.getElementById("sync-progress-text") as? HTMLElement
+                val bar = document.getElementById(JsElementId.SYNC_PROGRESS_BAR) as? HTMLElement
+                val text = document.getElementById(JsElementId.SYNC_PROGRESS_TEXT) as? HTMLElement
 
                 if (bar != null) bar.style.width = "$pct%"
                 if (text != null) text.textContent = "${offset.asDynamic().toLocaleString()} / ${total.asDynamic().toLocaleString()} ($pct%)"

@@ -8,6 +8,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [6.8.0] - 2026-07-21
+
+### Refactored
+
+- **Type-Safe Domain Constants & Enums**: Centralized raw string literals and magic numbers across JVM backend services and Kotlin/JS components into type-safe objects and enums (`KrakenApiConstants`, `PrecisionConstants`, `TimeRange`, `OrderSide`, `OrderType`, `SyncMetadataKeys`, `HealthStatusKeys`, and `JsConstants`).
+- **Backend Service & Route Refactoring**: Updated `KrakenServiceImpl`, `OrderExecutorImpl`, `TradeHistoryServiceImpl`, and `DashboardRoutes` to eliminate magic values, string paths, query parameters, header names, and financial scale numbers.
+- **Frontend Kotlin/JS Cleanups (`:frontend-js`)**: Refactored `Settings.kt`, `Dashboard.kt`, and `History.kt` to use `JsConstants` for DOM IDs, CSS classes, query selectors, dataset keys, and time range keys.
+
 ## [6.7.1] - 2026-07-21
 
 ### Added

@@ -9,6 +9,7 @@ import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.KrakenService
 import com.gemini.krakenbot.service.PortfolioAnalyzer
 import com.gemini.krakenbot.service.TradeHistoryService
+import com.gemini.krakenbot.view.util.SyncMetadataKeys
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -362,8 +363,8 @@ class TradeHistoryServiceImpl(
 
         if (!isSeeded) {
             repository.setHistorySeeded(true)
-            repository.setSyncMetadata("sync_offset", "completed")
-            repository.setSyncMetadata("sync_total", "completed")
+            repository.setSyncMetadata(SyncMetadataKeys.SYNC_OFFSET, SyncMetadataKeys.COMPLETED)
+            repository.setSyncMetadata(SyncMetadataKeys.SYNC_TOTAL, SyncMetadataKeys.COMPLETED)
         }
         log.info("Trade history synchronization completed. Added: {} new, Reconciled: {}.", totalAdded, totalReconciled)
     }
@@ -399,8 +400,8 @@ class TradeHistoryServiceImpl(
             val totalCount = realKrakenService?.lastFetchedCount?.get() ?: 0
 
             if (!isSeeded) {
-                repository.setSyncMetadata("sync_offset", offset.toString())
-                repository.setSyncMetadata("sync_total", totalCount.toString())
+                repository.setSyncMetadata(SyncMetadataKeys.SYNC_OFFSET, offset.toString())
+                repository.setSyncMetadata(SyncMetadataKeys.SYNC_TOTAL, totalCount.toString())
             }
 
             if (apiTrades.isEmpty()) break

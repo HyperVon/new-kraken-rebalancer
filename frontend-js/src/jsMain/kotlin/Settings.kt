@@ -16,7 +16,7 @@ fun registerSettingsGlobals() {
 }
 
 fun updateAllocationTotal() {
-    val inputs = document.querySelectorAll("input[name=\"targets\"]")
+    val inputs = document.querySelectorAll(JsQuerySelector.TARGET_INPUTS)
     var total = 0.0
     for (i in 0 until inputs.length) {
         val input = inputs.item(i) as? HTMLInputElement
@@ -25,13 +25,13 @@ fun updateAllocationTotal() {
         }
     }
 
-    val totalDisplay = document.getElementById("total-allocated-display") ?: return
+    val totalDisplay = document.getElementById(JsElementId.TOTAL_ALLOCATED_DISPLAY) ?: return
     totalDisplay.textContent = "Total: ${total.toFixed(2)}%"
 
-    val saveButton = document.getElementById("save-button") as? HTMLButtonElement ?: return
+    val saveButton = document.getElementById(JsElementId.SAVE_BUTTON) as? HTMLButtonElement ?: return
     val isValid = abs(total - 100.0) <= 0.01
 
-    val symbolInputs = document.querySelectorAll("input[name=\"symbols\"]")
+    val symbolInputs = document.querySelectorAll(JsQuerySelector.SYMBOL_INPUTS)
     val symbols = mutableListOf<String>()
     for (i in 0 until symbolInputs.length) {
         val input = symbolInputs.item(i) as? HTMLInputElement
@@ -42,21 +42,21 @@ fun updateAllocationTotal() {
     val hasUsd = symbols.contains("USD")
 
     val isSuccess = isValid && hasUsd
-    totalDisplay.classList.toggle("live", isSuccess)
-    totalDisplay.classList.toggle("delayed", !isSuccess)
+    totalDisplay.classList.toggle(JsCssClass.LIVE, isSuccess)
+    totalDisplay.classList.toggle(JsCssClass.DELAYED, !isSuccess)
     saveButton.disabled = !isSuccess
 }
 
 fun addAssetRow() {
-    val symbolInput = document.getElementById("new-symbol-input") as? HTMLInputElement ?: return
+    val symbolInput = document.getElementById(JsElementId.NEW_SYMBOL_INPUT) as? HTMLInputElement ?: return
     val symbol = symbolInput.value.trim().uppercase()
     if (symbol.isEmpty()) return
-    if (!Regex("^[A-Z0-9]{1,16}$").matches(symbol)) {
+    if (!SYMBOL_REGEX.matches(symbol)) {
         window.alert("Invalid symbol. Symbols must be alphanumeric and up to 16 characters.")
         return
     }
 
-    val symbolInputs = document.querySelectorAll("input[name=\"symbols\"]")
+    val symbolInputs = document.querySelectorAll(JsQuerySelector.SYMBOL_INPUTS)
     val existingSymbols = mutableListOf<String>()
     for (i in 0 until symbolInputs.length) {
         val input = symbolInputs.item(i) as? HTMLInputElement
@@ -70,9 +70,9 @@ fun addAssetRow() {
         return
     }
 
-    val container = document.getElementById("allocations-container") ?: return
+    val container = document.getElementById(JsElementId.ALLOCATIONS_CONTAINER) ?: return
     val row = document.createElement("div") as HTMLDivElement
-    row.className = "allocation-edit-row"
+    row.className = JsCssClass.ALLOCATION_EDIT_ROW
 
     row.innerHTML = """
         <div class="allocation-edit-symbol symbol-label">$symbol</div>
@@ -81,13 +81,15 @@ fun addAssetRow() {
             <input type="number" step="0.1" name="targets" class="input-glass" value="0.0" oninput="updateAllocationTotal()">
             <span class="percent-suffix">%</span>
         </div>
-        <button type="button" class="btn btn-danger" onclick="this.closest('.allocation-edit-row').remove(); updateAllocationTotal();">Remove</button>
+        <button type="button" class="btn btn-danger" onclick="this.closest('.${JsCssClass.ALLOCATION_EDIT_ROW}').remove(); updateAllocationTotal();">Remove</button>
     """.trimIndent()
 
     container.appendChild(row)
     symbolInput.value = ""
     updateAllocationTotal()
 }
+
+private val SYMBOL_REGEX = Regex("^[A-Z0-9]{1,16}$")
 
 fun Double.toFixed(digits: Int): String {
     return this.asDynamic().toFixed(digits).toString()

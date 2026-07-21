@@ -5,6 +5,7 @@ import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.InvalidConfigurationException
 import com.gemini.krakenbot.config.Settings
+import com.gemini.krakenbot.model.TimeRange
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.TradeHistoryService
 import com.gemini.krakenbot.view.DashboardView
@@ -28,7 +29,6 @@ import org.koin.ktor.ext.inject
 import java.lang.management.ManagementFactory
 import java.math.BigDecimal
 import java.time.Instant
-import java.time.temporal.ChronoUnit
 
 fun Application.dashboardRouting() {
     val tradeHistoryService: TradeHistoryService by inject()
@@ -217,22 +217,10 @@ private suspend fun RoutingContext.handleGetHistoryStats(
     call.respondText(json, ContentType.Application.Json)
 }
 
-private val TIME_RANGE_DAYS = mapOf(
-    "24h" to 1L,
-    "7d" to 7L,
-    "30d" to 30L,
-    "90d" to 90L
-)
-
 internal fun parseTimeRange(call: ApplicationCall): Pair<Instant, Instant> {
     val now = Instant.now()
-    val range = call.parameters["range"] ?: "30d"
-    val from = if (range == "all") {
-        Instant.EPOCH
-    } else {
-        val days = TIME_RANGE_DAYS[range] ?: 30L
-        now.minus(days, ChronoUnit.DAYS)
-    }
+    val timeRange = TimeRange.fromQueryParam(call.parameters["range"])
+    val from = timeRange.calculateFromInstant(now)
     return Pair(from, now)
 }
 
@@ -247,11 +235,6 @@ private suspend fun ServerSSESession.handleSseStream(
             send(ServerSentEvent(data = json))
         }
 
-        // collect() is a suspending terminal operator.
-        // It suspends this coroutine block indefinitely, waking up only to execute the block
-        // whenever a new snapshot is emitted by TradeHistoryService, streaming it to the client.
-        // If the client disconnects, the coroutine is cancelled, throwing a CancellationException
-        // which breaks this loop.
         tradeHistoryService.getHistoryFlow().collect { snapshot ->
             val json = objectMapper.writeValueAsString(snapshot)
             send(ServerSentEvent(data = json))
@@ -267,8 +250,8 @@ private suspend fun RoutingContext.handleGetSyncProgress(
     tradeHistoryService: TradeHistoryService,
     objectMapper: ObjectMapper
 ) {
-    val offset = tradeHistoryService.getSyncMetadata("sync_offset")
-    val total = tradeHistoryService.getSyncMetadata("sync_total")
+    val offset = tradeHistoryService.getSyncMetadata(SyncMetadataKeys.SYNC_OFFSET)
+    val total = tradeHistoryService.getSyncMetadata(SyncMetadataKeys.SYNC_TOTAL)
     val seeded = tradeHistoryService.isHistorySeeded()
     val responseMap = mapOf(
         "seeded" to seeded,
@@ -286,13 +269,13 @@ private suspend fun RoutingContext.handleGetHealth(
     val stats = tradeHistoryService.getHistoryStats()
     val latestSnapshot = tradeHistoryService.getLatestSnapshot()
     val responseMap = mapOf(
-        "status" to "UP",
-        "timestamp" to Instant.now().toString(),
-        "uptimeSeconds" to ManagementFactory.getRuntimeMXBean().uptime / 1000,
-        "totalTradesExecuted" to stats.totalTradesExecuted,
-        "totalVolumeTraded" to stats.totalVolumeTraded,
-        "lastSnapshotTime" to (latestSnapshot?.timestamp?.toString() ?: "N/A"),
-        "lastSnapshotTotalValueUSD" to (latestSnapshot?.totalValueUSD ?: BigDecimal.ZERO)
+        HealthStatusKeys.STATUS to HealthStatusKeys.STATUS_UP,
+        HealthStatusKeys.TIMESTAMP to Instant.now().toString(),
+        HealthStatusKeys.UPTIME_SECONDS to ManagementFactory.getRuntimeMXBean().uptime / 1000,
+        HealthStatusKeys.TOTAL_TRADES_EXECUTED to stats.totalTradesExecuted,
+        HealthStatusKeys.TOTAL_VOLUME_TRADED to stats.totalVolumeTraded,
+        HealthStatusKeys.LAST_SNAPSHOT_TIME to (latestSnapshot?.timestamp?.toString() ?: "N/A"),
+        HealthStatusKeys.LAST_SNAPSHOT_TOTAL_VALUE_USD to (latestSnapshot?.totalValueUSD ?: BigDecimal.ZERO)
     )
     val json = objectMapper.writeValueAsString(responseMap)
     call.respondText(json, ContentType.Application.Json, HttpStatusCode.OK)
