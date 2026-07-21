@@ -486,39 +486,65 @@ fun formatPair(trade: dynamic): String {
 
 internal fun renderTradeTable(trades: Array<dynamic>) {
     val tbody = document.getElementById(HtmlIds.TRADE_TABLE_BODY) ?: return
+    tbody.innerHTML = ""
 
     val showDryRun = (document.getElementById(HtmlIds.SHOW_DRY_RUN_CHECKBOX) as? HTMLInputElement)?.checked ?: true
     val filteredTrades = if (showDryRun) trades else trades.filter { t: dynamic -> !(t.dryRun as? Boolean ?: false) }.toTypedArray()
 
     if (filteredTrades.asDynamic().length == 0) {
-        tbody.innerHTML = "<tr><td colspan=\"6\" style=\"text-align:center;color:var(--color-text-muted);padding:2rem;\">${ViewText.NO_TRADES_FOUND_PERIOD}</td></tr>"
+        val tr = document.createElement("tr")
+        val td = document.createElement("td") as HTMLTableCellElement
+        td.colSpan = 6
+        td.setAttribute("style", "text-align:center;color:var(--color-text-muted);padding:2rem;")
+        td.textContent = ViewText.NO_TRADES_FOUND_PERIOD
+        tr.appendChild(td)
+        tbody.appendChild(tr)
         return
     }
 
-    val rowsHtml = filteredTrades.joinToString("") { t: dynamic ->
-        val time = Date(t.timestamp.toString()).asDynamic().toLocaleString()
-        val side = t.side.toString()
-        val sideClass = if (side == OrderSide.BUY.name) CssClass.Badge.Buy.value else CssClass.Badge.Sell.value
-        val success = t.success as? Boolean ?: false
-        val dryRun = t.dryRun as? Boolean ?: false
-        val statusText = if (success) (if (dryRun) ViewText.STATUS_DRY_RUN else ViewText.STATUS_SUCCESS) else ViewText.STATUS_FAILED
-        val statusClass = if (success) (if (dryRun) CssClass.Badge.Info.value else CssClass.Badge.Buy.value) else CssClass.Badge.Sell.value
-        val vol = t.volume.toString().toDoubleOrNull() ?: 0.0
-        val amt = t.usdAmount.toString().toDoubleOrNull() ?: 0.0
-
-        """
-        <tr class="${CssClass.Table.Hoverable.value}">
-            <td class="${CssClass.Table.MonoCol.value}">$time</td>
-            <td class="${CssClass.Table.SymbolCol.value}">${formatPair(t)}</td>
-            <td><span class="$sideClass">$side</span></td>
-            <td class="${CssClass.Table.MonoCol.value}">${vol.toFixed(8)}</td>
-            <td class="${CssClass.Table.MonoCol.value}">${formatUSD(amt)}</td>
-            <td><span class="$statusClass">$statusText</span></td>
-        </tr>
-        """.trimIndent()
+    filteredTrades.forEach { t ->
+        tbody.appendChild(renderTradeRow(t))
     }
+}
 
-    tbody.innerHTML = rowsHtml
+private fun renderTradeRow(t: dynamic): HTMLTableRowElement {
+    val tr = document.createElement("tr") as HTMLTableRowElement
+    tr.className = CssClass.Table.Hoverable.value
+
+    val time = Date(t.timestamp.toString()).asDynamic().toLocaleString()
+    val side = t.side.toString()
+    val sideClass = if (side == OrderSide.BUY.name) CssClass.Badge.Buy.value else CssClass.Badge.Sell.value
+    val success = t.success as? Boolean ?: false
+    val dryRun = t.dryRun as? Boolean ?: false
+    val statusText = if (success) (if (dryRun) ViewText.STATUS_DRY_RUN else ViewText.STATUS_SUCCESS) else ViewText.STATUS_FAILED
+    val statusClass = if (success) (if (dryRun) CssClass.Badge.Info.value else CssClass.Badge.Buy.value) else CssClass.Badge.Sell.value
+    val vol = t.volume.toString().toDoubleOrNull() ?: 0.0
+    val amt = t.usdAmount.toString().toDoubleOrNull() ?: 0.0
+
+    tr.appendChild(createCell(time, CssClass.Table.MonoCol))
+    tr.appendChild(createCell(formatPair(t), CssClass.Table.SymbolCol))
+    tr.appendChild(createBadgeCell(side, sideClass))
+    tr.appendChild(createCell(vol.toFixed(8), CssClass.Table.MonoCol))
+    tr.appendChild(createCell(formatUSD(amt), CssClass.Table.MonoCol))
+    tr.appendChild(createBadgeCell(statusText, statusClass))
+
+    return tr
+}
+
+private fun createCell(text: String, cssClass: CssClass? = null): HTMLTableCellElement {
+    val td = document.createElement("td") as HTMLTableCellElement
+    if (cssClass != null) td.className = cssClass.value
+    td.textContent = text
+    return td
+}
+
+private fun createBadgeCell(text: String, badgeClass: String): HTMLTableCellElement {
+    val td = document.createElement("td") as HTMLTableCellElement
+    val span = document.createElement("span") as HTMLSpanElement
+    span.className = badgeClass
+    span.textContent = text
+    td.appendChild(span)
+    return td
 }
 
 internal fun updateStats(stats: dynamic) {
