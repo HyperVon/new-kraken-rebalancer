@@ -67,6 +67,15 @@ object ChartProps {
     const val COLOR_GREEN_BORDER = COLOR_EMERALD
     const val COLOR_GREEN_BG = "rgba(52, 211, 153, 0.08)"
 
+    const val COLOR_BLUE_BG_PALETTE = "rgba(96, 165, 250, 0.1)"
+    const val COLOR_EMERALD_BG_PALETTE = "rgba(52, 211, 153, 0.1)"
+    const val COLOR_AMBER_BG_PALETTE = "rgba(251, 191, 36, 0.1)"
+    const val COLOR_VIOLET_BG_PALETTE = "rgba(167, 139, 250, 0.1)"
+    const val COLOR_RED_BG_PALETTE = "rgba(248, 113, 113, 0.1)"
+    const val COLOR_TEAL_BG_PALETTE = "rgba(45, 212, 191, 0.1)"
+    const val COLOR_ORANGE_BG_PALETTE = "rgba(251, 146, 60, 0.1)"
+    const val COLOR_FUCHSIA_BG_PALETTE = "rgba(232, 121, 249, 0.1)"
+
     val PALETTE_BORDER_COLORS = arrayOf(
         COLOR_BLUE,
         COLOR_EMERALD,
@@ -79,13 +88,13 @@ object ChartProps {
     )
 
     val PALETTE_BG_COLORS = arrayOf(
-        "rgba(96, 165, 250, 0.1)",
-        "rgba(52, 211, 153, 0.1)",
-        "rgba(251, 191, 36, 0.1)",
-        "rgba(167, 139, 250, 0.1)",
-        "rgba(248, 113, 113, 0.1)",
-        "rgba(45, 212, 191, 0.1)",
-        "rgba(251, 146, 60, 0.1)",
-        "rgba(232, 121, 249, 0.1)"
+        COLOR_BLUE_BG_PALETTE,
+        COLOR_EMERALD_BG_PALETTE,
+        COLOR_AMBER_BG_PALETTE,
+        COLOR_VIOLET_BG_PALETTE,
+        COLOR_RED_BG_PALETTE,
+        COLOR_TEAL_BG_PALETTE,
+        COLOR_ORANGE_BG_PALETTE,
+        COLOR_FUCHSIA_BG_PALETTE
     )
 }

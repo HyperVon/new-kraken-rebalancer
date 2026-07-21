@@ -8,6 +8,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [6.8.4] - 2026-07-21
+
+### Refactored
+
+- **Centralized Palette Background Color Constants (`:common`)**: Extracted individual background color constants (`COLOR_BLUE_BG_PALETTE` through `COLOR_FUCHSIA_BG_PALETTE`) with 10% opacity in `ChartProps.kt` and updated `PALETTE_BG_COLORS` to use them instead of inline string literals.
+
 ## [6.8.3] - 2026-07-21
 
 ### Refactored
