@@ -13,6 +13,11 @@ import com.gemini.krakenbot.view.util.Layouts.formGroup
 import com.gemini.krakenbot.view.util.Layouts.formSection
 import com.gemini.krakenbot.view.util.Routes
 import com.gemini.krakenbot.view.util.ViewText
+import com.gemini.krakenbot.view.util.a
+import com.gemini.krakenbot.view.util.button
+import com.gemini.krakenbot.view.util.div
+import com.gemini.krakenbot.view.util.h3
+import com.gemini.krakenbot.view.util.span
 import kotlinx.html.*
 import kotlinx.html.ButtonType.button
 import kotlinx.html.ButtonType.submit
@@ -21,14 +26,14 @@ import kotlinx.html.InputType.*
 class SettingsFormComponent {
     context(body: BODY)
     fun render(config: AppConfig, errorMessage: String?) {
-        body.div(CssClass.Layout.Container.value) {
+        body.div(CssClass.Layout.Container) {
             form {
                 attributes[HtmxAttrs.HX_POST] = Routes.SETTINGS
                 attributes[HtmxAttrs.HX_TARGET] = HtmxValues.BODY
                 attributes[HtmxAttrs.HX_SWAP] = HtmxValues.INNER_HTML
 
                 header {
-                    div(CssClass.Layout.HeaderTitleSection.value) {
+                    div(CssClass.Layout.HeaderTitleSection) {
                         a(
                             href = Routes.ROOT,
                             classes = "${CssClass.Button.Secondary.value} ${CssClass.Button.Icon.value}"
@@ -38,8 +43,8 @@ class SettingsFormComponent {
                         h1 { +ViewText.SETTINGS_TITLE }
                     }
                     button(
-                        type = submit,
-                        classes = CssClass.Button.Primary.value
+                        CssClass.Button.Primary,
+                        type = submit
                     ) {
                         id = HtmlIds.SAVE_BUTTON
                         icon(Icons.FLOPPY_DISK)
@@ -48,12 +53,12 @@ class SettingsFormComponent {
                 }
 
                 if (errorMessage != null) {
-                    div(CssClass.Utility.ErrorBanner.value) {
+                    div(CssClass.Utility.ErrorBanner) {
                         +errorMessage
                     }
                 }
 
-                div(CssClass.Layout.GlassPanel.value) {
+                div(CssClass.Layout.GlassPanel) {
                     renderGlobalParametersSection(config)
                     renderTargetAllocationsSection(config)
                 }
@@ -65,7 +70,7 @@ class SettingsFormComponent {
 
     private fun DIV.renderGlobalParametersSection(config: AppConfig) {
         formSection(ViewText.GLOBAL_PARAMETERS, Icons.SHIELD_EXCLAMATION) {
-            div(CssClass.Form.Grid2Col.value) {
+            div(CssClass.Form.Grid2Col) {
                 formGroup(ViewText.LOOP_INTERVAL) {
                     input(
                         type = number,
@@ -132,7 +137,7 @@ class SettingsFormComponent {
                         ) {
                             checked = config.settings.dryRun
                         }
-                        div(CssClass.Form.CheckboxCustom.value) {}
+                        div(CssClass.Form.CheckboxCustom) {}
                         span { +ViewText.DRY_RUN_MODE }
                     }
                 }
@@ -145,7 +150,7 @@ class SettingsFormComponent {
                         ) {
                             checked = config.settings.simulation
                         }
-                        div(CssClass.Form.CheckboxCustom.value) {}
+                        div(CssClass.Form.CheckboxCustom) {}
                         span { +ViewText.SIMULATION_MODE }
                     }
                 }
@@ -154,27 +159,27 @@ class SettingsFormComponent {
     }
 
     private fun DIV.renderTargetAllocationsSection(config: AppConfig) {
-        div(CssClass.Form.Section.value) {
-            div(CssClass.Form.SectionHeader.value) {
+        div(CssClass.Form.Section) {
+            div(CssClass.Form.SectionHeader) {
                 h3 {
                     +ViewText.TARGET_ALLOCATIONS
                 }
-                div(CssClass.StatusCard.Live.value) {
+                div(CssClass.StatusCard.Live) {
                     id = HtmlIds.TOTAL_ALLOCATED_DISPLAY
                     +ViewText.TOTAL_INITIAL
                 }
             }
 
-            div(CssClass.Form.AllocationListContainer.value) {
+            div(CssClass.Form.AllocationListContainer) {
                 id = HtmlIds.ALLOCATIONS_CONTAINER
                 config.allocations.forEach { alloc ->
-                    div(CssClass.Form.AllocationEditRow.value) {
-                        div(CssClass.Form.AllocationEditSymbol.value) { +alloc.symbol.value }
+                    div(CssClass.Form.AllocationEditRow) {
+                        div(CssClass.Form.AllocationEditSymbol) { +alloc.symbol.value }
                         input(
                             type = InputType.hidden,
                             name = FormFields.SYMBOLS
                         ) { value = alloc.symbol.value }
-                        div(CssClass.Form.AllocationEditInputWrapper.value) {
+                        div(CssClass.Form.AllocationEditInputWrapper) {
                             input(
                                 type = number,
                                 name = FormFields.TARGETS,
@@ -185,11 +190,11 @@ class SettingsFormComponent {
                                 attributes[HtmlAttrs.ONINPUT] =
                                     "updateAllocationTotal()"
                             }
-                            span(CssClass.Form.PercentSuffix.value) { +"%" }
+                            span(CssClass.Form.PercentSuffix) { +"%" }
                         }
                         button(
-                            type = button,
-                            classes = CssClass.Button.Danger.value
+                            CssClass.Button.Danger,
+                            type = button
                         ) {
                             attributes[HtmlAttrs.ONCLICK] =
                                 "this.closest('.allocation-edit-row').remove(); updateAllocationTotal();"
@@ -199,7 +204,7 @@ class SettingsFormComponent {
                 }
             }
 
-            div(CssClass.Form.AddAssetBox.value) {
+            div(CssClass.Form.AddAssetBox) {
                 input(type = text, classes = CssClass.Form.InputGlass.value) {
                     id = HtmlIds.NEW_SYMBOL_INPUT
                     placeholder = ViewText.NEW_SYMBOL_PLACEHOLDER
@@ -207,8 +212,8 @@ class SettingsFormComponent {
                         "if(event.key === 'Enter') { event.preventDefault(); addAssetRow(); }"
                 }
                 button(
-                    type = button,
-                    classes = CssClass.Button.Secondary.value
+                    CssClass.Button.Secondary,
+                    type = button
                 ) {
                     attributes[HtmlAttrs.ONCLICK] = "addAssetRow()"
                     icon(Icons.PLUS)

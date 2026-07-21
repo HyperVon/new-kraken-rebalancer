@@ -7,8 +7,8 @@ import com.gemini.krakenbot.view.util.Formatter
 import com.gemini.krakenbot.view.util.Icons
 import com.gemini.krakenbot.view.util.Layouts.statusCard
 import com.gemini.krakenbot.view.util.ViewText
+import com.gemini.krakenbot.view.util.div
 import kotlinx.html.DIV
-import kotlinx.html.div
 import kotlinx.html.span
 import java.math.BigDecimal
 import kotlin.math.abs
@@ -28,7 +28,7 @@ class OverviewGridComponent {
             assetsList.sumOf { it.targetPercent.toDouble() }
         val cryptoCount = assetsList.size
 
-        div.div(classes = CssClass.Layout.OverviewGrid.value) {
+        div.div(CssClass.Layout.OverviewGrid) {
             statusCard(
                 title = ViewText.TOTAL_PORTFOLIO,
                 iconSvg = Icons.TREND_UP,

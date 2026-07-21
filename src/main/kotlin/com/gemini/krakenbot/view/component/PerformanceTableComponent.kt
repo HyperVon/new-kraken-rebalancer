@@ -6,6 +6,9 @@ import com.gemini.krakenbot.view.util.Formatter
 import com.gemini.krakenbot.view.util.HtmlAttrs
 import com.gemini.krakenbot.view.util.Layouts.glassPanel
 import com.gemini.krakenbot.view.util.ViewText
+import com.gemini.krakenbot.view.util.div
+import com.gemini.krakenbot.view.util.span
+import com.gemini.krakenbot.view.util.tr
 import kotlinx.html.*
 
 class PerformanceTableComponent {
@@ -29,7 +32,7 @@ class PerformanceTableComponent {
     context(div: DIV)
     fun render(latest: PortfolioSnapshot) {
         div.glassPanel(ViewText.ASSET_PERFORMANCE) {
-            div(CssClass.Table.Wrapper.value) {
+            div(CssClass.Table.Wrapper) {
                 table {
                     thead {
                         tr {
@@ -52,7 +55,7 @@ class PerformanceTableComponent {
                             val devClass = Formatter.getDeviationClass(dev)
                             val sign = Formatter.getDeviationSign(dev)
 
-                            tr(CssClass.Table.Hoverable.value) {
+                            tr(CssClass.Table.Hoverable) {
                                 td(CssClass.Table.SymbolCol.value) { +asset.symbol.value }
                                 td(CssClass.Table.MonoCol.value) {
                                     +"$${
@@ -72,7 +75,7 @@ class PerformanceTableComponent {
                                 td { +"${Formatter.formatPercent(asset.currentPercent)}%" }
                                 td(devClass) {
                                     attributes[HtmlAttrs.DATA_SORT_VALUE] = asset.deviationPercent.toString()
-                                    div(CssClass.Performance.DevContainer.value) {
+                                    div(CssClass.Performance.DevContainer) {
                                         span {
                                             +"$sign${
                                                 Formatter.formatPercent(
@@ -80,7 +83,7 @@ class PerformanceTableComponent {
                                                 )
                                             }%"
                                         }
-                                        span(CssClass.Performance.DevUsdLabel.value) {
+                                        span(CssClass.Performance.DevUsdLabel) {
                                             val devUSD = asset.deviationUSD
                                             val usdSign =
                                                 if (devUSD.signum() >= 0) "+" else ""

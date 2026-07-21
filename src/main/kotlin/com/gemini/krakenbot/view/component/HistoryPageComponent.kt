@@ -10,7 +10,11 @@ import com.gemini.krakenbot.view.util.Layouts.glassPanel
 import com.gemini.krakenbot.view.util.Layouts.statusCard
 import com.gemini.krakenbot.view.util.Routes
 import com.gemini.krakenbot.view.util.ViewText
+import com.gemini.krakenbot.view.util.a
+import com.gemini.krakenbot.view.util.button
 import com.gemini.krakenbot.view.util.commonMetadataAndStyles
+import com.gemini.krakenbot.view.util.div
+import com.gemini.krakenbot.view.util.h2
 import kotlinx.html.*
 import kotlinx.html.InputType.checkBox
 
@@ -25,7 +29,7 @@ class HistoryPageComponent {
             script(src = CDN_CHART_JS_DATE_FNS) {}
         }
         html.body {
-            div(CssClass.Layout.Container.value) {
+            div(CssClass.Layout.Container) {
                 renderHeader()
                 renderSyncProgressBanner()
                 renderTimeRangeSelector()
@@ -41,17 +45,17 @@ class HistoryPageComponent {
 
     private fun DIV.renderHeader() {
         header {
-            div(CssClass.Layout.HeaderTitleSection.value) {
+            div(CssClass.Layout.HeaderTitleSection) {
                 h1 { +ViewText.APP_TITLE }
             }
             nav(CssClass.Navigation.Bar.value) {
-                a(href = Routes.ROOT, classes = CssClass.Navigation.Link.value) {
+                a(CssClass.Navigation.Link, href = Routes.ROOT) {
                     +ViewText.NAV_DASHBOARD
                 }
-                a(href = Routes.HISTORY, classes = CssClass.Navigation.LinkActive.value) {
+                a(CssClass.Navigation.LinkActive, href = Routes.HISTORY) {
                     +ViewText.NAV_HISTORY
                 }
-                a(href = Routes.SETTINGS, classes = CssClass.Navigation.Link.value) {
+                a(CssClass.Navigation.Link, href = Routes.SETTINGS) {
                     icon(Icons.COG)
                     +ViewText.NAV_SETTINGS
                 }
@@ -60,7 +64,7 @@ class HistoryPageComponent {
     }
 
     private fun DIV.renderStatsGrid() {
-        div(CssClass.History.StatsGrid.value) {
+        div(CssClass.History.StatsGrid) {
             id = HtmlIds.HISTORY_STATS
             HistoryStatCardDefinition.ALL.forEach { card ->
                 statusCard(
@@ -75,11 +79,11 @@ class HistoryPageComponent {
     }
 
     private fun DIV.renderTimeRangeSelector() {
-        div(CssClass.History.TimeRangeSelector.value) {
+        div(CssClass.History.TimeRangeSelector) {
             TimeRange.entries.forEach { range ->
                 val isActive = range == TimeRange.THIRTY_DAYS
-                val btnClass = if (isActive) CssClass.History.TimeRangeBtnActive.value else CssClass.History.TimeRangeBtn.value
-                button(classes = btnClass) {
+                val btnClass = if (isActive) CssClass.History.TimeRangeBtnActive else CssClass.History.TimeRangeBtn
+                button(btnClass) {
                     attributes[HtmlAttrs.DATA_RANGE] = range.key
                     +if (range == TimeRange.ALL) ViewText.LABEL_ALL else range.key
                 }
@@ -89,7 +93,7 @@ class HistoryPageComponent {
 
     private fun DIV.renderChartSection(chart: HistoryChartSection) {
         glassPanel(chart.title, chart.iconSvg) {
-            div(CssClass.History.ChartContainer.value) {
+            div(CssClass.History.ChartContainer) {
                 canvas {
                     id = chart.canvasId
                 }
@@ -98,10 +102,10 @@ class HistoryPageComponent {
     }
 
     private fun DIV.renderTradeTable() {
-        div(CssClass.Layout.GlassPanel.value) {
+        div(CssClass.Layout.GlassPanel) {
             div {
                 style = STYLE_FLEX_BETWEEN_MB1
-                h2(CssClass.Utility.GlassPanelTitle.value) {
+                h2(CssClass.Utility.GlassPanelTitle) {
                     style = STYLE_MB0
                     icon(Icons.CHART)
                     +ViewText.HISTORY_TRADE_LOG
@@ -111,7 +115,7 @@ class HistoryPageComponent {
                         id = HtmlIds.SHOW_DRY_RUN_CHECKBOX
                         checked = true
                     }
-                    div(classes = CssClass.Form.CheckboxCustom.value) {}
+                    div(CssClass.Form.CheckboxCustom) {}
                     span {
                         style = STYLE_MUTED_SMALL_TEXT
                         +ViewText.SHOW_DRY_RUN_TRADES
@@ -119,7 +123,7 @@ class HistoryPageComponent {
                 }
             }
 
-            div(CssClass.Table.Wrapper.value) {
+            div(CssClass.Table.Wrapper) {
                 table {
                     thead {
                         tr {
