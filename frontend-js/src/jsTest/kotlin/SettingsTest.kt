@@ -132,10 +132,7 @@ class SettingsTest : StringSpec() {
 
         "initSettings registers globals and updates totals" {
         val container = document.createElement("div")
-        container.innerHTML = """
-            <span id="${HtmlIds.TOTAL_ALLOCATED_DISPLAY}"></span>
-            <button id="${HtmlIds.SAVE_BUTTON}"></button>
-        """.trimIndent()
+        container.innerHTML = TestDomBuilders.settingsDom()
         document.body!!.appendChild(container)
         try {
             initSettings()
@@ -150,10 +147,7 @@ class SettingsTest : StringSpec() {
         addAssetRow()
 
         val container = document.createElement("div")
-        container.innerHTML = """
-            <span id="${HtmlIds.TOTAL_ALLOCATED_DISPLAY}"></span><button id="${HtmlIds.SAVE_BUTTON}"></button>
-            <input id="${HtmlIds.NEW_SYMBOL_INPUT}" value=" "><div id="${HtmlIds.ALLOCATIONS_CONTAINER}"></div>
-        """.trimIndent()
+        container.innerHTML = "${TestDomBuilders.settingsDom()}\n${TestDomBuilders.assetEditDom(" ")}"
         document.body!!.appendChild(container)
         try {
             updateAllocationTotal()

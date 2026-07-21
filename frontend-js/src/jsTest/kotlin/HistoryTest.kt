@@ -86,10 +86,7 @@ class HistoryTest : StringSpec() {
 
         "renderTradeTable filters dry runs and displays empty states" {
         val container = document.createElement("div")
-        container.innerHTML = """
-            <input type="checkbox" id="${HtmlIds.SHOW_DRY_RUN_CHECKBOX}" checked>
-            <table><tbody id="${HtmlIds.TRADE_TABLE_BODY}"></tbody></table>
-        """.trimIndent()
+        container.innerHTML = TestDomBuilders.tradeTableDom()
         document.body!!.appendChild(container)
 
         try {
@@ -125,12 +122,7 @@ class HistoryTest : StringSpec() {
 
         "updateStats formats each displayed value" {
         val container = document.createElement("div")
-        container.innerHTML = """
-            <div id="${HtmlIds.STAT_ATH}"></div>
-            <div id="${HtmlIds.STAT_TOTAL_TRADES}"></div>
-            <div id="${HtmlIds.STAT_TOTAL_VOLUME}"></div>
-            <div id="${HtmlIds.STAT_TOTAL_FEES}"></div>
-        """.trimIndent()
+        container.innerHTML = TestDomBuilders.statsDom()
         document.body!!.appendChild(container)
 
         try {
@@ -153,12 +145,7 @@ class HistoryTest : StringSpec() {
 
         "chart builders create charts and preserve visibility" {
         val container = document.createElement("div")
-        container.innerHTML = """
-            <canvas id="${HtmlIds.PORTFOLIO_VALUE_CHART}"></canvas>
-            <canvas id="${HtmlIds.ASSET_HOLDINGS_CHART}"></canvas>
-            <canvas id="${HtmlIds.ALLOCATION_DRIFT_CHART}"></canvas>
-            <canvas id="${HtmlIds.CUMULATIVE_PL_CHART}"></canvas>
-        """.trimIndent()
+        container.innerHTML = TestDomBuilders.chartsDom()
         document.body!!.appendChild(container)
         js("""
             window.chartConfigs = [];
@@ -203,13 +190,7 @@ class HistoryTest : StringSpec() {
 
         "loadAll and checkSyncProgress update history content" {
         val container = document.createElement("div")
-        container.innerHTML = """
-            <canvas id="${HtmlIds.PORTFOLIO_VALUE_CHART}"></canvas><canvas id="${HtmlIds.ASSET_HOLDINGS_CHART}"></canvas>
-            <canvas id="${HtmlIds.ALLOCATION_DRIFT_CHART}"></canvas><canvas id="${HtmlIds.CUMULATIVE_PL_CHART}"></canvas>
-            <table><tbody id="${HtmlIds.TRADE_TABLE_BODY}"></tbody></table><input id="${HtmlIds.SHOW_DRY_RUN_CHECKBOX}" type="checkbox" checked>
-            <div id="${HtmlIds.STAT_ATH}"></div><div id="${HtmlIds.STAT_TOTAL_TRADES}"></div><div id="${HtmlIds.STAT_TOTAL_VOLUME}"></div><div id="${HtmlIds.STAT_TOTAL_FEES}"></div>
-            <div id="${HtmlIds.SYNC_PROGRESS_BANNER}"></div><div id="${HtmlIds.SYNC_PROGRESS_BAR}"></div><div id="${HtmlIds.SYNC_PROGRESS_TEXT}"></div>
-        """.trimIndent()
+        container.innerHTML = TestDomBuilders.historyDom()
         document.body!!.appendChild(container)
         js("""
             window.Chart = function(_, config) { this.data = config.data; this.destroy = function() {}; this.isDatasetVisible = function() { return true; }; };
@@ -240,7 +221,7 @@ class HistoryTest : StringSpec() {
 
         "checkSyncProgress hides the banner when history is seeded" {
         val container = document.createElement("div")
-        container.innerHTML = "<div id=\"${HtmlIds.SYNC_PROGRESS_BANNER}\"></div>"
+        container.innerHTML = TestDomBuilders.syncProgressDom()
         document.body!!.appendChild(container)
         js("""
             window.fetch = function() {

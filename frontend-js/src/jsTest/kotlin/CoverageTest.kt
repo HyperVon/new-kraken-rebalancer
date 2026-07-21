@@ -73,12 +73,7 @@ class CoverageTest : StringSpec() {
         // Test chart builder early return
         "chart builders return early for empty snapshots" {
             val container = document.createElement("div")
-            container.innerHTML = """
-                <canvas id="${HtmlIds.PORTFOLIO_VALUE_CHART}"></canvas>
-                <canvas id="${HtmlIds.ASSET_HOLDINGS_CHART}"></canvas>
-                <canvas id="${HtmlIds.ALLOCATION_DRIFT_CHART}"></canvas>
-                <canvas id="${HtmlIds.CUMULATIVE_PL_CHART}"></canvas>
-            """.trimIndent()
+            container.innerHTML = TestDomBuilders.chartsDom()
             document.body!!.appendChild(container)
             js("""
                 window.Chart = function(_, config) { this.data = config.data; this.destroy = function() {}; };
@@ -142,10 +137,7 @@ class CoverageTest : StringSpec() {
 
             // Empty tbody with checkbox
             val container = document.createElement("div")
-            container.innerHTML = """
-                <input type="checkbox" id="${HtmlIds.SHOW_DRY_RUN_CHECKBOX}" checked>
-                <table><tbody id="${HtmlIds.TRADE_TABLE_BODY}"></tbody></table>
-            """.trimIndent()
+            container.innerHTML = TestDomBuilders.tradeTableDom()
             document.body!!.appendChild(container)
             try {
                 renderTradeTable(arrayOf())
@@ -160,10 +152,7 @@ class CoverageTest : StringSpec() {
         // Test updateStats with missing elements
         "updateStats handles missing elements gracefully" {
             val container = document.createElement("div")
-            container.innerHTML = """
-                <div id="${HtmlIds.STAT_ATH}"></div>
-                <!-- missing other stats -->
-            """.trimIndent()
+            container.innerHTML = TestDomBuilders.statsDom()
             document.body!!.appendChild(container)
             try {
                 val stats = js("({ allTimeHigh: 15000.5, totalTradesExecuted: 42, totalVolumeTraded: 1000000.0, totalFeesPaid: 250.75 })")
@@ -178,16 +167,7 @@ class CoverageTest : StringSpec() {
         // Test loadAll when branches
         "loadAll sets chartDefaults time unit based on range" {
             val container = document.createElement("div")
-            container.innerHTML = """
-                <canvas id="${HtmlIds.PORTFOLIO_VALUE_CHART}"></canvas>
-                <canvas id="${HtmlIds.ASSET_HOLDINGS_CHART}"></canvas>
-                <canvas id="${HtmlIds.ALLOCATION_DRIFT_CHART}"></canvas>
-                <canvas id="${HtmlIds.CUMULATIVE_PL_CHART}"></canvas>
-                <table><tbody id="${HtmlIds.TRADE_TABLE_BODY}"></tbody></table>
-                <input id="${HtmlIds.SHOW_DRY_RUN_CHECKBOX}" type="checkbox" checked>
-                <div id="${HtmlIds.STAT_ATH}"></div><div id="${HtmlIds.STAT_TOTAL_TRADES}"></div><div id="${HtmlIds.STAT_TOTAL_VOLUME}"></div><div id="${HtmlIds.STAT_TOTAL_FEES}"></div>
-                <div id="${HtmlIds.SYNC_PROGRESS_BANNER}"></div><div id="${HtmlIds.SYNC_PROGRESS_BAR}"></div><div id="${HtmlIds.SYNC_PROGRESS_TEXT}"></div>
-            """.trimIndent()
+            container.innerHTML = TestDomBuilders.historyDom()
             document.body!!.appendChild(container)
             js("""
                 window.capturedUrls = [];
@@ -229,11 +209,7 @@ class CoverageTest : StringSpec() {
         // Test checkSyncProgress branches
         "checkSyncProgress handles banner missing, seeded true/false, and offset/total" {
             val container = document.createElement("div")
-            container.innerHTML = """
-                <div id="${HtmlIds.SYNC_PROGRESS_BANNER}"></div>
-                <div id="${HtmlIds.SYNC_PROGRESS_BAR}"></div>
-                <div id="${HtmlIds.SYNC_PROGRESS_TEXT}"></div>
-            """.trimIndent()
+            container.innerHTML = TestDomBuilders.syncProgressDom()
             document.body!!.appendChild(container)
             
             // Case 1: banner missing -> should resolve to true
@@ -248,11 +224,7 @@ class CoverageTest : StringSpec() {
                 checkSyncProgress().await() shouldBe true
             } finally {
                 // Restore banner for next test
-                container.innerHTML = """
-                    <div id="${HtmlIds.SYNC_PROGRESS_BANNER}"></div>
-                    <div id="${HtmlIds.SYNC_PROGRESS_BAR}"></div>
-                    <div id="${HtmlIds.SYNC_PROGRESS_TEXT}"></div>
-                """.trimIndent()
+                container.innerHTML = TestDomBuilders.syncProgressDom()
                 document.body!!.appendChild(container)
             }
             
@@ -314,10 +286,7 @@ class CoverageTest : StringSpec() {
         // Settings coverage
         "updateAllocationTotal handles various input scenarios" {
             val container = document.createElement("div")
-            container.innerHTML = """
-                <span id="${HtmlIds.TOTAL_ALLOCATED_DISPLAY}"></span>
-                <button id="${HtmlIds.SAVE_BUTTON}"></button>
-            """.trimIndent()
+            container.innerHTML = TestDomBuilders.settingsDom()
             document.body!!.appendChild(container)
             try {
                 // Case 1: valid inputs summing to 100 with USD
@@ -346,10 +315,7 @@ class CoverageTest : StringSpec() {
                 totalDisplay.classList.contains(CssClass.Utility.Live.value).shouldBeTrue()
                 
                 // Cleanup for next test
-                container.innerHTML = """
-                    <span id="${HtmlIds.TOTAL_ALLOCATED_DISPLAY}"></span>
-                    <button id="${HtmlIds.SAVE_BUTTON}"></button>
-                """.trimIndent()
+                container.innerHTML = TestDomBuilders.settingsDom()
                 document.body!!.appendChild(container)
                 
                 // Case 2: sum not 100 -> disabled, delayed
@@ -378,10 +344,7 @@ class CoverageTest : StringSpec() {
                 totalDisplay2.classList.contains(CssClass.Utility.Delayed.value).shouldBeTrue()
                 
                 // Case 3: missing USD symbol -> disabled even if sum 100
-                container.innerHTML = """
-                    <span id="${HtmlIds.TOTAL_ALLOCATED_DISPLAY}"></span>
-                    <button id="${HtmlIds.SAVE_BUTTON}"></button>
-                """.trimIndent()
+                container.innerHTML = TestDomBuilders.settingsDom()
                 document.body!!.appendChild(container)
                 val input5 = document.createElement("input") as HTMLInputElement
                 input5.name = FormFields.TARGETS
@@ -417,10 +380,7 @@ class CoverageTest : StringSpec() {
 
         "addAssetRow handles edge cases" {
             val container = document.createElement("div")
-            container.innerHTML = """
-                <input type="text" id="${HtmlIds.NEW_SYMBOL_INPUT}" value="${Asset.BTC}">
-                <div id="${HtmlIds.ALLOCATIONS_CONTAINER}"></div>
-            """.trimIndent()
+            container.innerHTML = TestDomBuilders.assetEditDom(Asset.BTC)
             document.body!!.appendChild(container)
             try {
                 // Case 1: empty symbol -> should return early
@@ -464,11 +424,7 @@ class CoverageTest : StringSpec() {
         // Dashboard coverage
         "updateAge handles missing elements and stale/fresh states" {
             val container = document.createElement("div")
-            container.innerHTML = """
-                <span class="${CssClass.DataAge.Value.value}"></span>
-                <span class="${CssClass.DataAge.Time.value}" ${HtmlAttrs.DATA_EPOCH}=""></span>
-                <span class="${CssClass.StatusCard.Live.value}"></span>
-            """.trimIndent()
+            container.innerHTML = TestDomBuilders.dataAgeDom()
             document.body!!.appendChild(container)
             try {
                 // Missing epoch attribute -> should return early
@@ -515,10 +471,7 @@ class CoverageTest : StringSpec() {
                 
                 // Missing badge element -> should not crash when toggling classes
                 val badgeContainer = document.createElement("div")
-                badgeContainer.innerHTML = """
-                    <span class="data-age-value"></span>
-                    <span class="data-age-time" data-epoch="0"></span>
-                """.trimIndent()
+                badgeContainer.innerHTML = TestDomBuilders.dataAgeDom("0")
                 document.body!!.appendChild(badgeContainer)
                 try {
                     updateAge()  // Should not throw
@@ -532,20 +485,7 @@ class CoverageTest : StringSpec() {
 
         "reapplySort and sortTable handle edge cases" {
             val container = document.createElement("div")
-            container.innerHTML = """
-                <table>
-                    <thead>
-                        <tr>
-                            <th class="sortable">Col0</th>
-                            <th class="sortable">Col1</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr class="hoverable"><td data-sort-value="10">A</td><td data-sort-value="20">B</td></tr>
-                        <tr class="hoverable"><td data-sort-value="5">C</td><td data-sort-value="15">D</td></tr>
-                    </tbody>
-                </table>
-            """.trimIndent()
+            container.innerHTML = TestDomBuilders.sortableTableDom()
             document.body!!.appendChild(container)
             try {
                 // Case: no sortable headers -> reapplySort should not throw
