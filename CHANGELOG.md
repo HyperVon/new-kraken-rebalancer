@@ -17,6 +17,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Declarative View Component Refactoring (`HistoryPageComponent`)**: Refactored `HistoryPageComponent` using sealed class hierarchies (`HistoryChartSection` and `HistoryStatCardDefinition`), declarative range selector loops over `TimeRange.entries`, and centralized style constants.
 - **Frontend Kotlin/JS Cleanups (`:frontend-js`)**: Refactored `Settings.kt`, `Dashboard.kt`, and `History.kt` to consume shared `Routes`, `FormFields`, `HtmlIds`, `CssClass`, and `ViewText` constants from `:common`.
 
+## [6.7.2] - 2026-07-21
+
+### Security
+
+- **Dependabot Security Fixes (`webpack-dev-server`)**: Updated Yarn resolution override for `webpack-dev-server` from `5.2.5` to `5.2.6` in `build.gradle.kts` to resolve Dependabot security vulnerabilities #87 (Denial of Service via malformed Host/Origin headers) and #88 (Cross-Site Request Forgery via internal developer endpoints). Actualized and committed `kotlin-js-store/yarn.lock` via `kotlinUpgradeYarnLock`.
+
 ## [6.7.1] - 2026-07-21
 
 ### Added
