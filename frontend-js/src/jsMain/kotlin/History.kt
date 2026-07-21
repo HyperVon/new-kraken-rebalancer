@@ -32,56 +32,48 @@ private external object JSObject {
 private val CHART_COLORS = ChartProps.PALETTE_BORDER_COLORS
 private val CHART_BG = ChartProps.PALETTE_BG_COLORS
 
-private val chartDefaults: dynamic = json(
+private fun buildLegendConfig(): dynamic = json(
+    "labels" to json(
+        "color" to "#94a3b8",
+        "font" to json("family" to "'Inter', sans-serif", "size" to 12)
+    )
+)
+
+private fun buildTooltipConfig(): dynamic = json(
+    "backgroundColor" to "rgba(15, 23, 42, 0.9)",
+    "borderColor" to "rgba(255,255,255,0.1)",
+    "borderWidth" to 1,
+    "titleColor" to "#f8fafc",
+    "bodyColor" to "#cbd5e1",
+    "bodyFont" to json("family" to "'Roboto Mono', monospace"),
+    "padding" to 12,
+    "cornerRadius" to 8
+)
+
+private fun buildScalesConfig(): dynamic = json(
+    "x" to json(
+        "type" to "time",
+        "time" to json("tooltipFormat" to "MMM d, yyyy HH:mm"),
+        "grid" to json("color" to "rgba(51, 65, 85, 0.3)"),
+        "ticks" to json("color" to "#64748b", "maxTicksLimit" to 8)
+    ),
+    "y" to json(
+        "grid" to json("color" to "rgba(51, 65, 85, 0.3)"),
+        "ticks" to json("color" to "#64748b")
+    )
+)
+
+private fun buildDefaultChartOptions(): dynamic = json(
     "responsive" to true,
     "maintainAspectRatio" to false,
     "plugins" to json(
-        "legend" to json(
-            "labels" to json(
-                "color" to "#94a3b8",
-                "font" to json(
-                    "family" to "'Inter', sans-serif",
-                    "size" to 12
-                )
-            )
-        ),
-        "tooltip" to json(
-            "backgroundColor" to "rgba(15, 23, 42, 0.9)",
-            "borderColor" to "rgba(255,255,255,0.1)",
-            "borderWidth" to 1,
-            "titleColor" to "#f8fafc",
-            "bodyColor" to "#cbd5e1",
-            "bodyFont" to json(
-                "family" to "'Roboto Mono', monospace"
-            ),
-            "padding" to 12,
-            "cornerRadius" to 8
-        )
+        "legend" to buildLegendConfig(),
+        "tooltip" to buildTooltipConfig()
     ),
-    "scales" to json(
-        "x" to json(
-            "type" to "time",
-            "time" to json(
-                "tooltipFormat" to "MMM d, yyyy HH:mm"
-            ),
-            "grid" to json(
-                "color" to "rgba(51, 65, 85, 0.3)"
-            ),
-            "ticks" to json(
-                "color" to "#64748b",
-                "maxTicksLimit" to 8
-            )
-        ),
-        "y" to json(
-            "grid" to json(
-                "color" to "rgba(51, 65, 85, 0.3)"
-            ),
-            "ticks" to json(
-                "color" to "#64748b"
-            )
-        )
-    )
+    "scales" to buildScalesConfig()
 )
+
+private val chartDefaults: dynamic = buildDefaultChartOptions()
 
 private val charts = mutableMapOf<String, dynamic>()
 private var currentRange = TimeRange.THIRTY_DAYS.key
