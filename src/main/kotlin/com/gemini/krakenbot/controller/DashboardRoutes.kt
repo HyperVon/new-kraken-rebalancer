@@ -184,14 +184,18 @@ private suspend fun RoutingContext.handleGetDashboardFragment(
     call.respondText(html, ContentType.Text.Html)
 }
 
+private suspend fun RoutingContext.respondJson(data: Any, objectMapper: ObjectMapper) {
+    val json = objectMapper.writeValueAsString(data)
+    call.respondText(json, ContentType.Application.Json, HttpStatusCode.OK)
+}
+
 private suspend fun RoutingContext.handleGetHistorySnapshots(
     tradeHistoryService: TradeHistoryService,
     objectMapper: ObjectMapper
 ) {
     val (from, to) = parseTimeRange(call)
     val snapshots = tradeHistoryService.getSnapshotsInRange(from, to)
-    val json = objectMapper.writeValueAsString(snapshots)
-    call.respondText(json, ContentType.Application.Json)
+    respondJson(snapshots, objectMapper)
 }
 
 private suspend fun RoutingContext.handleGetHistoryTrades(
@@ -200,8 +204,7 @@ private suspend fun RoutingContext.handleGetHistoryTrades(
 ) {
     val (from, to) = parseTimeRange(call)
     val trades = tradeHistoryService.getTradesInRange(from, to)
-    val json = objectMapper.writeValueAsString(trades)
-    call.respondText(json, ContentType.Application.Json)
+    respondJson(trades, objectMapper)
 }
 
 private suspend fun RoutingContext.handleGetHistoryStats(
@@ -214,8 +217,7 @@ private suspend fun RoutingContext.handleGetHistoryStats(
     } else {
         tradeHistoryService.getHistoryStats()
     }
-    val json = objectMapper.writeValueAsString(stats)
-    call.respondText(json, ContentType.Application.Json)
+    respondJson(stats, objectMapper)
 }
 
 fun TimeRange.calculateFromInstant(now: Instant): Instant =
@@ -262,8 +264,7 @@ private suspend fun RoutingContext.handleGetSyncProgress(
         SyncMetadataKeys.OFFSET to offset,
         SyncMetadataKeys.TOTAL to total
     )
-    val json = objectMapper.writeValueAsString(responseMap)
-    call.respondText(json, ContentType.Application.Json, HttpStatusCode.OK)
+    respondJson(responseMap, objectMapper)
 }
 
 private suspend fun RoutingContext.handleGetHealth(
@@ -281,6 +282,5 @@ private suspend fun RoutingContext.handleGetHealth(
         HealthStatusKeys.LAST_SNAPSHOT_TIME to (latestSnapshot?.timestamp?.toString() ?: "N/A"),
         HealthStatusKeys.LAST_SNAPSHOT_TOTAL_VALUE_USD to (latestSnapshot?.totalValueUSD ?: BigDecimal.ZERO)
     )
-    val json = objectMapper.writeValueAsString(responseMap)
-    call.respondText(json, ContentType.Application.Json, HttpStatusCode.OK)
+    respondJson(responseMap, objectMapper)
 }

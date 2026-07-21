@@ -161,5 +161,7 @@ sealed class CssClass(open val value: String) {
         const val SORTABLE_TH = "th.sortable"
         const val HOVERABLE_TR = "tr.hoverable"
         const val TIME_RANGE_BTNS = ".time-range-btn"
+        const val TARGET_INPUTS = "input[name=\"${FormFields.TARGETS}\"]"
+        const val SYMBOL_INPUTS = "input[name=\"${FormFields.SYMBOLS}\"]"
     }
 }

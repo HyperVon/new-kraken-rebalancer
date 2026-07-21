@@ -85,7 +85,7 @@ fun sortTable(header: HTMLElement, colIdx: Int, forceDir: String? = null) {
         if (row != null) rows.add(row)
     }
 
-    val isAsc = header.classList.contains(SORT_ASC)
+    val isAsc = header.classList.contains(CssClass.Utility.Asc)
     val sortAsc = if (forceDir != null) forceDir == SORT_ASC else !isAsc
     val key = if (colIdx == 0) "string" else "float"
 
@@ -110,9 +110,9 @@ fun sortTable(header: HTMLElement, colIdx: Int, forceDir: String? = null) {
 
     val headersList = table.querySelectorAll(SORTABLE_TH_QUERY)
     for (i in 0 until headersList.length) {
-        (headersList.item(i) as? HTMLElement)?.classList?.remove(SORT_ASC, SORT_DESC)
+        (headersList.item(i) as? HTMLElement)?.classList?.remove(CssClass.Utility.Asc, CssClass.Utility.Desc)
     }
-    header.classList.add(if (sortAsc) SORT_ASC else SORT_DESC)
+    header.classList.add(if (sortAsc) CssClass.Utility.Asc else CssClass.Utility.Desc)
 
     rows.forEach { row -> tbody.appendChild(row) }
 

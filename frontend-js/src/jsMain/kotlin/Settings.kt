@@ -2,6 +2,8 @@ package com.gemini.krakenbot.frontend
 
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.view.util.CssClass
+import com.gemini.krakenbot.view.util.CssClass.Query.SYMBOL_INPUTS as SYMBOL_INPUTS_QUERY
+import com.gemini.krakenbot.view.util.CssClass.Query.TARGET_INPUTS as TARGET_INPUTS_QUERY
 import com.gemini.krakenbot.view.util.FormFields
 import com.gemini.krakenbot.view.util.HtmlIds
 import com.gemini.krakenbot.view.util.ViewText
@@ -79,23 +81,52 @@ fun addAssetRow() {
     val row = document.createElement("div") as HTMLDivElement
     row.className = CssClass.Form.AllocationEditRow.value
 
-    row.innerHTML = """
-        <div class="${CssClass.Form.AllocationEditSymbol.value} symbol-label">$symbol</div>
-        <input type="hidden" name="${FormFields.SYMBOLS}" value="$symbol">
-        <div class="${CssClass.Form.AllocationEditInputWrapper.value}">
-            <input type="number" step="0.1" name="${FormFields.TARGETS}" class="${CssClass.Form.InputGlass.value}" value="0.0" oninput="updateAllocationTotal()">
-            <span class="${CssClass.Form.PercentSuffix.value}">%</span>
-        </div>
-        <button type="button" class="${CssClass.Button.Danger.value}" onclick="this.closest('.${CssClass.Form.AllocationEditRow.value}').remove(); updateAllocationTotal();">${ViewText.REMOVE}</button>
-    """.trimIndent()
+    val symbolDiv = document.createElement("div") as HTMLDivElement
+    symbolDiv.className = "${CssClass.Form.AllocationEditSymbol.value} symbol-label"
+    symbolDiv.textContent = symbol
+
+    val hiddenInput = document.createElement("input") as HTMLInputElement
+    hiddenInput.type = "hidden"
+    hiddenInput.name = FormFields.SYMBOLS
+    hiddenInput.value = symbol
+
+    val inputWrapper = document.createElement("div") as HTMLDivElement
+    inputWrapper.className = CssClass.Form.AllocationEditInputWrapper.value
+
+    val numberInput = document.createElement("input") as HTMLInputElement
+    numberInput.type = "number"
+    numberInput.step = "0.1"
+    numberInput.name = FormFields.TARGETS
+    numberInput.className = CssClass.Form.InputGlass.value
+    numberInput.value = "0.0"
+    numberInput.oninput = { updateAllocationTotal() }
+
+    val percentSpan = document.createElement("span") as HTMLSpanElement
+    percentSpan.className = CssClass.Form.PercentSuffix.value
+    percentSpan.textContent = "%"
+
+    inputWrapper.appendChild(numberInput)
+    inputWrapper.appendChild(percentSpan)
+
+    val removeBtn = document.createElement("button") as HTMLButtonElement
+    removeBtn.type = "button"
+    removeBtn.className = CssClass.Button.Danger.value
+    removeBtn.textContent = ViewText.REMOVE
+    removeBtn.onclick = {
+        row.remove()
+        updateAllocationTotal()
+    }
+
+    row.appendChild(symbolDiv)
+    row.appendChild(hiddenInput)
+    row.appendChild(inputWrapper)
+    row.appendChild(removeBtn)
 
     container.appendChild(row)
     symbolInput.value = ""
     updateAllocationTotal()
 }
 
-private const val TARGET_INPUTS_QUERY = "input[name=\"${FormFields.TARGETS}\"]"
-private const val SYMBOL_INPUTS_QUERY = "input[name=\"${FormFields.SYMBOLS}\"]"
 private val SYMBOL_REGEX = Regex("^[A-Z0-9]{1,16}$")
 
 fun Double.toFixed(digits: Int): String {
