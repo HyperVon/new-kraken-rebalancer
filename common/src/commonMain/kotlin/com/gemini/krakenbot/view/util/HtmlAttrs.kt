@@ -14,6 +14,7 @@ object HtmlAttrs {
 
 /** Standard DOM event name constants. */
 object HtmlEvents {
+    const val EVENT = "Event"
     const val CLICK = "click"
     const val CHANGE = "change"
     const val INPUT = "input"
