@@ -139,20 +139,40 @@ class SqliteTradeRepositoryImpl(
         }
     }
 
-    override fun getTradeSummaryStats(): TradeSummaryStats {
+    override fun getTradeSummaryStats(): TradeSummaryStats =
+        getTradeSummaryStats(Instant.EPOCH, Instant.now())
+
+    override fun getTradeSummaryStats(from: Instant, to: Instant): TradeSummaryStats {
         return transaction(database) {
             val countCol = TradeTable.id.count()
             val volumeCol = TradeTable.usdAmount.sum()
             val feeCol = TradeTable.fee.sum()
 
+            val fromMillis = from.toEpochMilli()
+            val toMillis = to.toEpochMilli()
+
             val tradeRow = TradeTable
                 .select(countCol, volumeCol, feeCol)
-                .where { TradeTable.success eq true }
+                .where {
+                    (TradeTable.success eq true) and
+                    (TradeTable.timestamp greaterEq fromMillis) and
+                    (TradeTable.timestamp lessEq toMillis)
+                }
                 .firstOrNull()
 
             val totalTrades = tradeRow?.get(countCol) ?: 0L
             val totalVolume = tradeRow?.get(volumeCol) ?: BigDecimal.ZERO
             val totalFees = tradeRow?.get(feeCol) ?: BigDecimal.ZERO
+
+            val periodHighCol = PortfolioSnapshotTable.totalValueUSD.max()
+            val periodHigh = PortfolioSnapshotTable
+                .select(periodHighCol)
+                .where {
+                    (PortfolioSnapshotTable.timestamp greaterEq fromMillis) and
+                    (PortfolioSnapshotTable.timestamp lessEq toMillis)
+                }
+                .firstOrNull()
+                ?.get(periodHighCol)
 
             val latestSnapshotTime = PortfolioSnapshotTable
                 .select(PortfolioSnapshotTable.timestamp)
@@ -165,7 +185,8 @@ class SqliteTradeRepositoryImpl(
                 totalTradesExecuted = totalTrades,
                 totalVolumeTraded = totalVolume,
                 totalFeesPaid = totalFees,
-                latestSnapshotTime = latestSnapshotTime
+                latestSnapshotTime = latestSnapshotTime,
+                periodHigh = periodHigh
             )
         }
     }

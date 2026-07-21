@@ -187,8 +187,7 @@ with a wide range of tools and paradigms:
 - Sortable asset performance table with deviation indicators
 - Trade history log with BUY/SELL badges
 - Live/Delayed status indicator with data age tracking
-- **Normalized Holdings Chart** — Displays asset balance timelines relative to a starting baseline (Percentage Change %) to align assets of vastly different magnitudes (e.g. BTC vs XRP) on a shared vertical axis.
-- **Combined Hover Tooltips** — Tooltips combine percentage change metrics with absolute token balances (e.g. `XRP: +0.00% (78,435.0000 XRP)`).
+- **Range-Filtered History Metrics** — Time frame selector controls all 4 top metric summary cards (High Value, Total Trades, Total Volume Traded, Total Fees Paid) dynamically alongside interactive Chart.js timelines and trade history logs.
 - **Hypermedia-powered** — uses HTMX for dynamic content swapping and form
   submissions without writing JavaScript
 

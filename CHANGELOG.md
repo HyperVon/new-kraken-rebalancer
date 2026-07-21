@@ -8,6 +8,15 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [6.7.0] - 2026-07-21
+
+### Added
+
+- **Time Frame Selector Integration for History Metrics**: Updated the History page so selecting a time range (24h, 7d, 30d, 90d, All) dynamically filters and recalculates the top 4 metric cards (**High Value**, **Total Trades**, **Total Volume Traded**, **Total Fees Paid**) alongside charts and the trade history log.
+- **Range-Filtered History Stats API**: Added range parameters support (`from` / `to` and `?range=`) to `/api/history/stats`, `TradeHistoryService`, and `TradeRepository` SQLite queries to compute peak portfolio value (`periodHigh`) and trade statistics per period.
+- **Dynamic Metric Card Titles**: Updated Card 1 on the History page to render as `"All-Time High"` when all-time stats are selected and `"Period High"` when a specific time window is selected.
+- **Improved Page Layout**: Positioned the time range selector directly above the metric summary cards for enhanced visual hierarchy.
+
 ## [6.6.0] - 2026-07-19
 
 ### Fixed

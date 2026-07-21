@@ -261,6 +261,24 @@ class TradeHistoryServiceImpl(
         )
     }
 
+    override fun getHistoryStats(from: Instant, to: Instant): HistoryStats {
+        val stats = portfolioStatsRepository.load()
+        val summary = if (from == Instant.EPOCH) repository.getTradeSummaryStats() else repository.getTradeSummaryStats(from, to)
+        val ath = if (from == Instant.EPOCH) {
+            val snapshotMax = summary.periodHigh ?: BigDecimal.ZERO
+            if (stats.allTimeHigh > snapshotMax) stats.allTimeHigh else snapshotMax
+        } else {
+            summary.periodHigh ?: BigDecimal.ZERO
+        }
+        return HistoryStats(
+            allTimeHigh = ath,
+            totalTradesExecuted = summary.totalTradesExecuted,
+            totalVolumeTraded = summary.totalVolumeTraded,
+            totalFeesPaid = summary.totalFeesPaid,
+            latestSnapshotTime = summary.latestSnapshotTime
+        )
+    }
+
     override suspend fun syncTradesFromKraken() {
         val now = Instant.now()
         val elapsedSeconds = Duration.between(lastSyncTime, now).seconds

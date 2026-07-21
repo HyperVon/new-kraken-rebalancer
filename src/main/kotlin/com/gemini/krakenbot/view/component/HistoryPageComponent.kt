@@ -26,8 +26,8 @@ class HistoryPageComponent {
             div(CssClass.Layout.Container.value) {
                 renderHeader()
                 renderSyncProgressBanner()
-                renderStatsGrid()
                 renderTimeRangeSelector()
+                renderStatsGrid()
                 renderChartSection(
                     "portfolio-value-chart",
                     ViewText.HISTORY_PORTFOLIO_VALUE,
@@ -81,7 +81,8 @@ class HistoryPageComponent {
                 title = ViewText.HISTORY_ALL_TIME_HIGH,
                 iconSvg = Icons.WALLET,
                 value = "--",
-                valueId = "stat-ath"
+                valueId = "stat-ath",
+                titleId = "stat-ath-title"
             )
             statusCard(
                 title = ViewText.HISTORY_TOTAL_TRADES,

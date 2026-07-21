@@ -9,13 +9,15 @@ data class TradeSummaryStats(
     val totalTradesExecuted: Long,
     val totalVolumeTraded: BigDecimal,
     val totalFeesPaid: BigDecimal,
-    val latestSnapshotTime: Instant?
+    val latestSnapshotTime: Instant?,
+    val periodHigh: BigDecimal? = null
 )
 
 interface TradeRepository {
     fun save(history: List<PortfolioSnapshot>)
     fun load(): List<PortfolioSnapshot>
     fun getTradeSummaryStats(): TradeSummaryStats
+    fun getTradeSummaryStats(from: Instant, to: Instant): TradeSummaryStats
 
     // History page query methods
     fun saveSnapshot(snapshot: PortfolioSnapshot)

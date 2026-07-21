@@ -615,12 +615,12 @@ class DashboardControllerTest : StringSpec() {
                 totalFeesPaid = BigDecimal("25.50"),
                 latestSnapshotTime = Instant.now()
             )
-            every { tradeHistoryService.getHistoryStats() } returns stats
+            every { tradeHistoryService.getHistoryStats(any(), any()) } returns stats
             testApplication {
                 application {
                     configureTestEnv()
                 }
-                val response = client.get(Routes.API_HISTORY_STATS)
+                val response = client.get("${Routes.API_HISTORY_STATS}?range=7d")
                 response.status shouldBe HttpStatusCode.OK
                 response.bodyAsText() shouldContain "\"allTimeHigh\":15000.00"
             }

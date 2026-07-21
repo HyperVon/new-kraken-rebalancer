@@ -26,6 +26,7 @@ object Layouts {
         value: String,
         isSuccess: Boolean = false,
         valueId: String? = null,
+        titleId: String? = null,
         block: (DIV.() -> Unit)? = null
     ) {
         val cardClass =
@@ -36,7 +37,10 @@ object Layouts {
             }
         div(classes = cardClass) {
             div(classes = CssClass.StatusCard.Header.value) {
-                span(classes = CssClass.StatusCard.Title.value) { +title }
+                span(classes = CssClass.StatusCard.Title.value) {
+                    if (titleId != null) id = titleId
+                    +title
+                }
                 div(classes = CssClass.StatusCard.Icon.value) { icon(iconSvg) }
             }
             div(classes = CssClass.StatusCard.Value.value) {

@@ -207,7 +207,12 @@ private suspend fun RoutingContext.handleGetHistoryStats(
     tradeHistoryService: TradeHistoryService,
     objectMapper: ObjectMapper
 ) {
-    val stats = tradeHistoryService.getHistoryStats()
+    val stats = if (call.parameters["range"] != null) {
+        val (from, to) = parseTimeRange(call)
+        tradeHistoryService.getHistoryStats(from, to)
+    } else {
+        tradeHistoryService.getHistoryStats()
+    }
     val json = objectMapper.writeValueAsString(stats)
     call.respondText(json, ContentType.Application.Json)
 }

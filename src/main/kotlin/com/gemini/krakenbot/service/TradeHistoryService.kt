@@ -18,6 +18,7 @@ interface TradeHistoryService {
     fun getSnapshotsInRange(from: Instant, to: Instant): List<PortfolioSnapshot>
     fun getTradesInRange(from: Instant, to: Instant): List<TradeRecord>
     fun getHistoryStats(): HistoryStats
+    fun getHistoryStats(from: Instant, to: Instant): HistoryStats
     suspend fun syncTradesFromKraken()
     fun getSyncMetadata(key: String): String?
     fun setSyncMetadata(key: String, value: String)

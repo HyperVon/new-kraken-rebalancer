@@ -237,6 +237,28 @@ class TradeHistoryServiceTest : StringSpec() {
             stats.latestSnapshotTime shouldBe latestTime
         }
 
+        "getHistoryStats_WithRange_AggregatesCorrectly" {
+            val tradeHistoryService = createService()
+
+            val from = Instant.now().minus(7, ChronoUnit.DAYS)
+            val to = Instant.now()
+            val latestTime = Instant.now()
+            every { repository.getTradeSummaryStats(from, to) } returns TradeSummaryStats(
+                totalTradesExecuted = 10L,
+                totalVolumeTraded = BigDecimal("5000.00"),
+                totalFeesPaid = BigDecimal("5.00"),
+                latestSnapshotTime = latestTime,
+                periodHigh = BigDecimal("14000.00")
+            )
+
+            val stats = tradeHistoryService.getHistoryStats(from, to)
+            stats.allTimeHigh shouldBe BigDecimal("14000.00")
+            stats.totalTradesExecuted shouldBe 10L
+            stats.totalVolumeTraded shouldBe BigDecimal("5000.00")
+            stats.totalFeesPaid shouldBe BigDecimal("5.00")
+            stats.latestSnapshotTime shouldBe latestTime
+        }
+
         "syncTradesFromKraken_AlreadySeeded_IncrementalSync" {
             runTest {
                 every { repository.isHistorySeeded() } returns true

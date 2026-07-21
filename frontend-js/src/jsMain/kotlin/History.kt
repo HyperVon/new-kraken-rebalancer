@@ -522,11 +522,15 @@ internal fun renderTradeTable(trades: Array<dynamic>) {
 }
 
 internal fun updateStats(stats: dynamic) {
+    val athTitle = document.getElementById("stat-ath-title")
     val ath = document.getElementById("stat-ath")
     val totalTrades = document.getElementById("stat-total-trades")
     val totalVolume = document.getElementById("stat-total-volume")
     val totalFees = document.getElementById("stat-total-fees")
 
+    if (athTitle != null) {
+        athTitle.textContent = if (currentRange == "all") "All-Time High" else "Period High"
+    }
     if (ath != null) ath.textContent = formatUSD(stats.allTimeHigh.toString().toDoubleOrNull() ?: 0.0)
     if (totalTrades != null) {
         val count = stats.totalTradesExecuted.toString().toDoubleOrNull() ?: 0.0
@@ -541,7 +545,7 @@ internal fun loadAll(range: String): Promise<Unit> {
 
     val p1 = fetchJSON("/api/history/snapshots?range=$currentRange")
     val p2 = fetchJSON("/api/history/trades?range=$currentRange")
-    val p3 = fetchJSON("/api/history/stats")
+    val p3 = fetchJSON("/api/history/stats?range=$currentRange")
 
     return Promise.all(arrayOf(p1, p2, p3)).then { results ->
         val snapshots = results[0] as Array<dynamic>

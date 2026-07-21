@@ -153,6 +153,52 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
             trades[2].pair shouldBe "XBTUSD"
         }
 
+        "getTradeSummaryStats with time range" {
+            val now = Instant.now().truncatedTo(ChronoUnit.MILLIS)
+            val trade1 = TradeRecord(
+                timestamp = now.minus(10, ChronoUnit.DAYS),
+                pair = "XBTUSD",
+                side = "BUY",
+                symbol = "BTC",
+                volume = BigDecimal("0.1"),
+                usdAmount = BigDecimal("5000.00"),
+                success = true,
+                dryRun = false,
+                fee = BigDecimal("15.50")
+            )
+            val trade2 = TradeRecord(
+                timestamp = now.minus(2, ChronoUnit.DAYS),
+                pair = "ETHUSD",
+                side = "SELL",
+                symbol = "ETH",
+                volume = BigDecimal("1.0"),
+                usdAmount = BigDecimal("2000.00"),
+                success = true,
+                dryRun = true,
+                fee = BigDecimal("5.25")
+            )
+
+            repository.saveTrade(trade1)
+            repository.saveTrade(trade2)
+
+            val s1 = PortfolioSnapshot(
+                timestamp = now.minus(2, ChronoUnit.DAYS),
+                totalValueUSD = BigDecimal("15000.00"),
+                assets = emptyMap(),
+                actions = emptyList(),
+                drawdownPercent = BigDecimal.ZERO,
+                fiatDeploymentPercent = BigDecimal.ZERO,
+                effectiveUsdTargetPercent = BigDecimal.ZERO
+            )
+            repository.saveSnapshot(s1)
+
+            val rangeStats = repository.getTradeSummaryStats(from = now.minus(3, ChronoUnit.DAYS), to = now)
+            rangeStats.totalTradesExecuted shouldBe 1L
+            rangeStats.totalVolumeTraded.shouldBeEqualComparingTo(BigDecimal("2000.00"))
+            rangeStats.totalFeesPaid.shouldBeEqualComparingTo(BigDecimal("5.25"))
+            rangeStats.periodHigh?.shouldBeEqualComparingTo(BigDecimal("15000.00"))
+        }
+
         "getSnapshotsInRange and boundary times" {
             val baseTime = Instant.now().truncatedTo(ChronoUnit.MILLIS)
             val s1 = PortfolioSnapshot(
