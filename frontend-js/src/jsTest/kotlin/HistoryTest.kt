@@ -69,11 +69,11 @@ class HistoryTest : StringSpec() {
 
         "calculateCumulativePL filters and orders completed trades" {
         val trades = arrayOf(
-            json("timestamp" to "2023-01-01T10:00:00Z", "success" to true, "dryRun" to false, "side" to OrderSide.BUY.name, "usdAmount" to 100.0),
-            json("timestamp" to "2023-01-01T08:00:00Z", "success" to true, "dryRun" to false, "side" to OrderSide.SELL.name, "usdAmount" to 50.0),
-            json("timestamp" to "2023-01-01T09:00:00Z", "success" to false, "dryRun" to false, "side" to OrderSide.BUY.name, "usdAmount" to 200.0),
-            json("timestamp" to "2023-01-01T11:00:00Z", "success" to true, "dryRun" to true, "side" to OrderSide.BUY.name, "usdAmount" to 300.0),
-            json("timestamp" to "2023-01-01T12:00:00Z", "success" to true, "dryRun" to false, "side" to OrderSide.SELL.name, "usdAmount" to 80.0)
+            TestDomBuilders.tradeJson(timestamp = "2023-01-01T10:00:00Z", side = OrderSide.BUY.name, usdAmount = 100.0),
+            TestDomBuilders.tradeJson(timestamp = "2023-01-01T08:00:00Z", side = OrderSide.SELL.name, usdAmount = 50.0),
+            TestDomBuilders.tradeJson(timestamp = "2023-01-01T09:00:00Z", success = false, side = OrderSide.BUY.name, usdAmount = 200.0),
+            TestDomBuilders.tradeJson(timestamp = "2023-01-01T11:00:00Z", dryRun = true, side = OrderSide.BUY.name, usdAmount = 300.0),
+            TestDomBuilders.tradeJson(timestamp = "2023-01-01T12:00:00Z", side = OrderSide.SELL.name, usdAmount = 80.0)
         )
 
         val result = calculateCumulativePL(trades)
@@ -91,9 +91,9 @@ class HistoryTest : StringSpec() {
 
         try {
             val trades = arrayOf(
-                json("timestamp" to "2023-01-01", "symbol" to Asset.BTC, "side" to OrderSide.BUY.name, "volume" to 0.1, "usdAmount" to 2000.0, "success" to true, "dryRun" to false),
-                json("timestamp" to "2023-01-02", "symbol" to Asset.ETH, "side" to OrderSide.SELL.name, "volume" to 1.0, "usdAmount" to 1800.0, "success" to true, "dryRun" to true),
-                json("timestamp" to "2023-01-03", "symbol" to Asset.LTC, "side" to OrderSide.BUY.name, "volume" to 5.0, "usdAmount" to 350.0, "success" to false, "dryRun" to false)
+                TestDomBuilders.tradeJson(timestamp = "2023-01-01", symbol = Asset.BTC, side = OrderSide.BUY.name, volume = 0.1, usdAmount = 2000.0, success = true, dryRun = false),
+                TestDomBuilders.tradeJson(timestamp = "2023-01-02", symbol = Asset.ETH, side = OrderSide.SELL.name, volume = 1.0, usdAmount = 1800.0, success = true, dryRun = true),
+                TestDomBuilders.tradeJson(timestamp = "2023-01-03", symbol = Asset.LTC, side = OrderSide.BUY.name, volume = 5.0, usdAmount = 350.0, success = false, dryRun = false)
             )
 
             renderTradeTable(trades)

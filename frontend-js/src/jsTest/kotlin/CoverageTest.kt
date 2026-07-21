@@ -102,14 +102,14 @@ class CoverageTest : StringSpec() {
             empty.size shouldBe 0
 
             // Single successful buy
-            val buy = json("timestamp" to "2023-01-01", "success" to true, "dryRun" to false, "side" to OrderSide.BUY.name, "usdAmount" to 100.0)
+            val buy = TestDomBuilders.tradeJson(timestamp = "2023-01-01", side = OrderSide.BUY.name, usdAmount = 100.0)
             val resultBuy = calculateCumulativePL(arrayOf(buy))
             resultBuy.size shouldBe 1
             val r0 = resultBuy[0]
             r0.y.toString().toDouble() shouldBe -100.0  // BUY subtracts
 
             // Single successful sell
-            val sell = json("timestamp" to "2023-01-01", "success" to true, "dryRun" to false, "side" to OrderSide.SELL.name, "usdAmount" to 50.0)
+            val sell = TestDomBuilders.tradeJson(timestamp = "2023-01-01", side = OrderSide.SELL.name, usdAmount = 50.0)
             val resultSell = calculateCumulativePL(arrayOf(sell))
             resultSell.size shouldBe 1
             val s0 = resultSell[0]
@@ -117,10 +117,10 @@ class CoverageTest : StringSpec() {
 
             // Mixed with failed and dryRun (should be filtered out)
             val mixed = arrayOf(
-                json("timestamp" to "2023-01-01", "success" to true, "dryRun" to false, "side" to OrderSide.BUY.name, "usdAmount" to 100.0),
-                json("timestamp" to "2023-01-02", "success" to false, "dryRun" to false, "side" to OrderSide.SELL.name, "usdAmount" to 50.0),
-                json("timestamp" to "2023-01-03", "success" to true, "dryRun" to true, "side" to OrderSide.BUY.name, "usdAmount" to 200.0),
-                json("timestamp" to "2023-01-04", "success" to true, "dryRun" to false, "side" to OrderSide.SELL.name, "usdAmount" to 30.0)
+                TestDomBuilders.tradeJson(timestamp = "2023-01-01", side = OrderSide.BUY.name, usdAmount = 100.0),
+                TestDomBuilders.tradeJson(timestamp = "2023-01-02", success = false, side = OrderSide.SELL.name, usdAmount = 50.0),
+                TestDomBuilders.tradeJson(timestamp = "2023-01-03", dryRun = true, side = OrderSide.BUY.name, usdAmount = 200.0),
+                TestDomBuilders.tradeJson(timestamp = "2023-01-04", side = OrderSide.SELL.name, usdAmount = 30.0)
             )
             val resultMixed = calculateCumulativePL(mixed)
             resultMixed.size shouldBe 2  // Only the buy and sell (first and last)

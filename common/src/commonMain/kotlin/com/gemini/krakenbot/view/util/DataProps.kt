@@ -1,0 +1,32 @@
+package com.gemini.krakenbot.view.util
+
+/** Centralized data property key constants for JSON objects and API payloads. */
+object DataProps {
+    const val TIMESTAMP = "timestamp"
+    const val SUCCESS = "success"
+    const val DRY_RUN = "dryRun"
+    const val SIDE = "side"
+    const val USD_AMOUNT = "usdAmount"
+    const val SYMBOL = "symbol"
+    const val VOLUME = "volume"
+    const val BALANCE = "balance"
+    const val VALUE_USD = "valueUSD"
+    const val PRICE = "price"
+    const val CURRENT_PERCENT = "currentPercent"
+    const val TARGET_PERCENT = "targetPercent"
+    const val DEVIATION_PERCENT = "deviationPercent"
+    const val DEVIATION_USD = "deviationUSD"
+    const val TOTAL_VALUE_USD = "totalValueUSD"
+    const val ASSETS = "assets"
+    const val ALL_TIME_HIGH = "allTimeHigh"
+    const val TOTAL_TRADES_EXECUTED = "totalTradesExecuted"
+    const val TOTAL_VOLUME_TRADED = "totalVolumeTraded"
+    const val TOTAL_FEES_PAID = "totalFeesPaid"
+    const val SEEDED = "seeded"
+    const val OFFSET = "offset"
+    const val TOTAL = "total"
+    const val ACTIONS = "actions"
+    const val DRAWDOWN_PERCENT = "drawdownPercent"
+    const val FIAT_DEPLOYMENT_PERCENT = "fiatDeploymentPercent"
+    const val EFFECTIVE_USD_TARGET_PERCENT = "effectiveUsdTargetPercent"
+}

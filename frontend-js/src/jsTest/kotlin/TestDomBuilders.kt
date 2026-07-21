@@ -3,6 +3,7 @@ package com.gemini.krakenbot.frontend
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.view.util.CssClass
+import com.gemini.krakenbot.view.util.DataProps
 import com.gemini.krakenbot.view.util.FormFields
 import com.gemini.krakenbot.view.util.HtmlAttrs
 import com.gemini.krakenbot.view.util.HtmlIds
@@ -84,22 +85,22 @@ object TestDomBuilders {
         success: Boolean? = true,
         dryRun: Boolean? = false
     ): dynamic = json(
-        "timestamp" to timestamp,
-        "symbol" to symbol,
-        "side" to side,
-        "volume" to volume,
-        "usdAmount" to usdAmount,
-        "success" to success,
-        "dryRun" to dryRun
+        DataProps.TIMESTAMP to timestamp,
+        DataProps.SYMBOL to symbol,
+        DataProps.SIDE to side,
+        DataProps.VOLUME to volume,
+        DataProps.USD_AMOUNT to usdAmount,
+        DataProps.SUCCESS to success,
+        DataProps.DRY_RUN to dryRun
     )
 
     fun snapshotJson(
         timestamp: String = "2023-01-01",
         totalValueUSD: Any? = 100.0,
-        assets: dynamic = json(Asset.USD to json("valueUSD" to 100.0, "balance" to 100.0, "currentPercent" to 100.0))
+        assets: dynamic = json(Asset.USD to json(DataProps.VALUE_USD to 100.0, DataProps.BALANCE to 100.0, DataProps.CURRENT_PERCENT to 100.0))
     ): dynamic = json(
-        "timestamp" to timestamp,
-        "totalValueUSD" to totalValueUSD,
-        "assets" to assets
+        DataProps.TIMESTAMP to timestamp,
+        DataProps.TOTAL_VALUE_USD to totalValueUSD,
+        DataProps.ASSETS to assets
     )
 }
