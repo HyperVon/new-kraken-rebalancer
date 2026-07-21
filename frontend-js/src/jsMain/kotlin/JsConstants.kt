@@ -29,10 +29,6 @@ object JsCssClass {
     const val DELAYED = "delayed"
     const val STALE = "stale"
     const val ACTIVE = "active"
-    const val SORTABLE = "sortable"
-    const val HOVERABLE = "hoverable"
-    const val MONO_COL = "mono-col"
-    const val SYMBOL_COL = "symbol-col"
     const val BADGE_BUY = "badge badge-buy"
     const val BADGE_SELL = "badge badge-sell"
     const val BADGE_INFO = "badge badge-info"
@@ -60,9 +56,6 @@ object JsDatasetKey {
 
 /** Standard time range option strings. */
 object JsTimeRange {
-    const val TWENTY_FOUR_HOURS = "24h"
-    const val SEVEN_DAYS = "7d"
     const val THIRTY_DAYS = "30d"
-    const val NINETY_DAYS = "90d"
     const val ALL = "all"
 }

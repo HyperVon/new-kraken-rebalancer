@@ -221,7 +221,7 @@ internal fun createOrUpdate(canvasId: String, config: dynamic) {
         visibilityStates[canvasId] = states
         try {
             existingChart.destroy()
-        } catch (e: Throwable) {}
+        } catch (_: Throwable) {}
     }
 
     val savedStates = visibilityStates[canvasId]

@@ -1,6 +1,9 @@
 package com.gemini.krakenbot.view.component
 
+import com.gemini.krakenbot.model.TimeRange
 import com.gemini.krakenbot.view.util.CssClass
+import com.gemini.krakenbot.view.util.HtmlAttrs
+import com.gemini.krakenbot.view.util.HtmlIds
 import com.gemini.krakenbot.view.util.Icons
 import com.gemini.krakenbot.view.util.Icons.icon
 import com.gemini.krakenbot.view.util.Layouts.glassPanel
@@ -9,8 +12,7 @@ import com.gemini.krakenbot.view.util.Routes
 import com.gemini.krakenbot.view.util.ViewText
 import com.gemini.krakenbot.view.util.commonMetadataAndStyles
 import kotlinx.html.*
-import kotlinx.html.InputType.*
-
+import kotlinx.html.InputType.checkBox
 
 class HistoryPageComponent {
 
@@ -19,8 +21,8 @@ class HistoryPageComponent {
         html.head {
             commonMetadataAndStyles()
             title("${ViewText.HISTORY_TITLE} - ${ViewText.APP_TITLE}")
-            script(src = "https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js") {}
-            script(src = "https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js") {}
+            script(src = CDN_CHART_JS) {}
+            script(src = CDN_CHART_JS_DATE_FNS) {}
         }
         html.body {
             div(CssClass.Layout.Container.value) {
@@ -28,26 +30,9 @@ class HistoryPageComponent {
                 renderSyncProgressBanner()
                 renderTimeRangeSelector()
                 renderStatsGrid()
-                renderChartSection(
-                    "portfolio-value-chart",
-                    ViewText.HISTORY_PORTFOLIO_VALUE,
-                    Icons.CHART
-                )
-                renderChartSection(
-                    "asset-holdings-chart",
-                    ViewText.HISTORY_ASSET_HOLDINGS,
-                    Icons.CHART
-                )
-                renderChartSection(
-                    "allocation-drift-chart",
-                    ViewText.HISTORY_ALLOCATION_DRIFT,
-                    Icons.CHART
-                )
-                renderChartSection(
-                    "cumulative-pl-chart",
-                    ViewText.HISTORY_CUMULATIVE_PL,
-                    Icons.WALLET
-                )
+                HistoryChartSection.ALL.forEach { chart ->
+                    renderChartSection(chart)
+                }
                 renderTradeTable()
             }
             script(src = "${Routes.STATIC_REBALANCER_JS}?v=${System.currentTimeMillis()}") {}
@@ -76,69 +61,37 @@ class HistoryPageComponent {
 
     private fun DIV.renderStatsGrid() {
         div(CssClass.History.StatsGrid.value) {
-            id = "history-stats"
-            statusCard(
-                title = ViewText.HISTORY_ALL_TIME_HIGH,
-                iconSvg = Icons.WALLET,
-                value = "--",
-                valueId = "stat-ath",
-                titleId = "stat-ath-title"
-            )
-            statusCard(
-                title = ViewText.HISTORY_TOTAL_TRADES,
-                iconSvg = Icons.CHART,
-                value = "--",
-                valueId = "stat-total-trades"
-            )
-            statusCard(
-                title = ViewText.HISTORY_TOTAL_VOLUME,
-                iconSvg = Icons.WALLET,
-                value = "--",
-                valueId = "stat-total-volume"
-            )
-            statusCard(
-                title = ViewText.HISTORY_TOTAL_FEES,
-                iconSvg = Icons.DOLLAR_CIRCLE,
-                value = "--",
-                valueId = "stat-total-fees"
-            )
+            id = HtmlIds.HISTORY_STATS
+            HistoryStatCardDefinition.ALL.forEach { card ->
+                statusCard(
+                    title = card.title,
+                    iconSvg = card.iconSvg,
+                    value = ViewText.PLACEHOLDER_DASHES,
+                    valueId = card.valueId,
+                    titleId = card.titleId
+                )
+            }
         }
     }
 
     private fun DIV.renderTimeRangeSelector() {
         div(CssClass.History.TimeRangeSelector.value) {
-            button(classes = CssClass.History.TimeRangeBtn.value) {
-                attributes["data-range"] = "24h"
-                +"24h"
-            }
-            button(classes = CssClass.History.TimeRangeBtn.value) {
-                attributes["data-range"] = "7d"
-                +"7d"
-            }
-            button(classes = CssClass.History.TimeRangeBtnActive.value) {
-                attributes["data-range"] = "30d"
-                +"30d"
-            }
-            button(classes = CssClass.History.TimeRangeBtn.value) {
-                attributes["data-range"] = "90d"
-                +"90d"
-            }
-            button(classes = CssClass.History.TimeRangeBtn.value) {
-                attributes["data-range"] = "all"
-                +"All"
+            TimeRange.entries.forEach { range ->
+                val isActive = range == TimeRange.THIRTY_DAYS
+                val btnClass = if (isActive) CssClass.History.TimeRangeBtnActive.value else CssClass.History.TimeRangeBtn.value
+                button(classes = btnClass) {
+                    attributes[HtmlAttrs.DATA_RANGE] = range.key
+                    +if (range == TimeRange.ALL) ViewText.LABEL_ALL else range.key
+                }
             }
         }
     }
 
-    private fun DIV.renderChartSection(
-        canvasId: String,
-        title: String,
-        iconSvg: String
-    ) {
-        glassPanel(title, iconSvg) {
+    private fun DIV.renderChartSection(chart: HistoryChartSection) {
+        glassPanel(chart.title, chart.iconSvg) {
             div(CssClass.History.ChartContainer.value) {
                 canvas {
-                    id = canvasId
+                    id = chart.canvasId
                 }
             }
         }
@@ -147,21 +100,21 @@ class HistoryPageComponent {
     private fun DIV.renderTradeTable() {
         div(CssClass.Layout.GlassPanel.value) {
             div {
-                style = "display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;"
+                style = STYLE_FLEX_BETWEEN_MB1
                 h2(CssClass.Utility.GlassPanelTitle.value) {
-                    style = "margin-bottom: 0;"
+                    style = STYLE_MB0
                     icon(Icons.CHART)
                     +ViewText.HISTORY_TRADE_LOG
                 }
                 label(classes = CssClass.Form.CheckboxContainer.value) {
                     input(type = checkBox) {
-                        id = "show-dry-run-checkbox"
+                        id = HtmlIds.SHOW_DRY_RUN_CHECKBOX
                         checked = true
                     }
                     div(classes = CssClass.Form.CheckboxCustom.value) {}
                     span {
-                        style = "font-size: 0.875rem; color: var(--color-text-muted);"
-                        +"Show Dry Run Trades"
+                        style = STYLE_MUTED_SMALL_TEXT
+                        +ViewText.SHOW_DRY_RUN_TRADES
                     }
                 }
             }
@@ -179,11 +132,11 @@ class HistoryPageComponent {
                         }
                     }
                     tbody {
-                        id = "trade-table-body"
+                        id = HtmlIds.TRADE_TABLE_BODY
                         tr {
                             td {
-                                colSpan = "6"
-                                style = "text-align:center; color: var(--color-text-muted); padding: 2rem;"
+                                colSpan = TABLE_COLSPAN
+                                style = STYLE_EMPTY_TABLE_CELL
                                 +ViewText.HISTORY_NO_DATA
                             }
                         }
@@ -195,31 +148,80 @@ class HistoryPageComponent {
 
     private fun DIV.renderSyncProgressBanner() {
         div {
-            id = "sync-progress-banner"
-            style = "display: none; margin-bottom: 1.5rem; padding: 1.5rem;"
+            id = HtmlIds.SYNC_PROGRESS_BANNER
+            style = STYLE_SYNC_BANNER
             classes = setOf(CssClass.Layout.GlassPanel.value)
             div {
-                style = "display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.75rem;"
+                style = STYLE_SYNC_HEADER
                 span {
-                    style = "font-weight: 600; color: var(--color-text); display: flex; align-items: center; gap: 0.5rem;"
+                    style = STYLE_SYNC_TITLE
                     div {
-                        style = "width: 1rem; height: 1rem; border: 2px solid var(--color-primary); border-top-color: transparent; border-radius: 50%; animation: spin 1s linear infinite;"
+                        style = STYLE_SYNC_SPINNER
                     }
-                    +"Synchronizing Kraken Trade History..."
+                    +ViewText.SYNCHRONIZING_TRADE_HISTORY
                 }
                 span {
-                    id = "sync-progress-text"
-                    style = "font-family: var(--font-mono); font-size: 0.875rem; color: var(--color-text-muted);"
-                    +"0 / 0 (0%)"
+                    id = HtmlIds.SYNC_PROGRESS_TEXT
+                    style = STYLE_SYNC_TEXT
+                    +ViewText.INITIAL_SYNC_PROGRESS
                 }
             }
             div {
-                style = "width: 100%; height: 0.5rem; background: rgba(255, 255, 255, 0.05); border-radius: 9999px; overflow: hidden;"
+                style = STYLE_PROGRESS_TRACK
                 div {
-                    id = "sync-progress-bar"
-                    style = "width: 0%; height: 100%; background: var(--color-primary); transition: width 0.3s ease; border-radius: 9999px;"
+                    id = HtmlIds.SYNC_PROGRESS_BAR
+                    style = STYLE_PROGRESS_BAR
                 }
             }
         }
+    }
+
+    private companion object {
+        const val CDN_CHART_JS = "https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"
+        const val CDN_CHART_JS_DATE_FNS = "https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"
+        const val TABLE_COLSPAN = "6"
+
+        const val STYLE_FLEX_BETWEEN_MB1 = "display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;"
+        const val STYLE_MB0 = "margin-bottom: 0;"
+        const val STYLE_MUTED_SMALL_TEXT = "font-size: 0.875rem; color: var(--color-text-muted);"
+        const val STYLE_EMPTY_TABLE_CELL = "text-align:center; color: var(--color-text-muted); padding: 2rem;"
+        const val STYLE_SYNC_BANNER = "display: none; margin-bottom: 1.5rem; padding: 1.5rem;"
+        const val STYLE_SYNC_HEADER = "display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.75rem;"
+        const val STYLE_SYNC_TITLE = "font-weight: 600; color: var(--color-text); display: flex; align-items: center; gap: 0.5rem;"
+        const val STYLE_SYNC_SPINNER = "width: 1rem; height: 1rem; border: 2px solid var(--color-primary); border-top-color: transparent; border-radius: 50%; animation: spin 1s linear infinite;"
+        const val STYLE_SYNC_TEXT = "font-family: var(--font-mono); font-size: 0.875rem; color: var(--color-text-muted);"
+        const val STYLE_PROGRESS_TRACK = "width: 100%; height: 0.5rem; background: rgba(255, 255, 255, 0.05); border-radius: 9999px; overflow: hidden;"
+        const val STYLE_PROGRESS_BAR = "width: 0%; height: 100%; background: var(--color-primary); transition: width 0.3s ease; border-radius: 9999px;"
+    }
+}
+
+private sealed class HistoryChartSection(
+    val canvasId: String,
+    val title: String,
+    val iconSvg: String
+) {
+    object PortfolioValue : HistoryChartSection(HtmlIds.PORTFOLIO_VALUE_CHART, ViewText.HISTORY_PORTFOLIO_VALUE, Icons.CHART)
+    object AssetHoldings : HistoryChartSection(HtmlIds.ASSET_HOLDINGS_CHART, ViewText.HISTORY_ASSET_HOLDINGS, Icons.CHART)
+    object AllocationDrift : HistoryChartSection(HtmlIds.ALLOCATION_DRIFT_CHART, ViewText.HISTORY_ALLOCATION_DRIFT, Icons.CHART)
+    object CumulativePL : HistoryChartSection(HtmlIds.CUMULATIVE_PL_CHART, ViewText.HISTORY_CUMULATIVE_PL, Icons.WALLET)
+
+    companion object {
+        val ALL = listOf(PortfolioValue, AssetHoldings, AllocationDrift, CumulativePL)
+    }
+}
+
+private sealed class HistoryStatCardDefinition(
+    val title: String,
+    val iconSvg: String,
+    val valueId: String,
+    val titleId: String? = null
+) {
+    object AllTimeHigh : HistoryStatCardDefinition(ViewText.HISTORY_ALL_TIME_HIGH, Icons.WALLET, HtmlIds.STAT_ATH, HtmlIds.STAT_ATH_TITLE)
+    object TotalTrades : HistoryStatCardDefinition(ViewText.HISTORY_TOTAL_TRADES, Icons.CHART, HtmlIds.STAT_TOTAL_TRADES)
+    object TotalVolume : HistoryStatCardDefinition(ViewText.HISTORY_TOTAL_VOLUME, Icons.WALLET, HtmlIds.STAT_TOTAL_VOLUME)
+    object TotalFees : HistoryStatCardDefinition(ViewText.HISTORY_TOTAL_FEES, Icons.DOLLAR_CIRCLE, HtmlIds.STAT_TOTAL_FEES)
+
+    companion object {
+        val ALL = listOf(AllTimeHigh, TotalTrades, TotalVolume, TotalFees)
     }
 }

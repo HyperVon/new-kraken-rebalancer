@@ -40,6 +40,7 @@ object ViewText {
     const val REMOVE = "Remove"
     const val NEW_SYMBOL_PLACEHOLDER = "New Symbol (e.g. DOT)"
     const val TOTAL_INITIAL = "Total: 0.00%"
+    const val PLACEHOLDER_DASHES = "--"
 
     // Table Headers
     const val HEADER_ASSET = "Asset"
@@ -63,6 +64,10 @@ object ViewText {
     const val HISTORY_TOTAL_VOLUME = "Total Volume Traded"
     const val HISTORY_TOTAL_FEES = "Total Fees Paid"
     const val HISTORY_NO_DATA = "No historical data available yet. Data will appear after the first rebalance cycle."
+    const val SHOW_DRY_RUN_TRADES = "Show Dry Run Trades"
+    const val SYNCHRONIZING_TRADE_HISTORY = "Synchronizing Kraken Trade History..."
+    const val INITIAL_SYNC_PROGRESS = "0 / 0 (0%)"
+    const val LABEL_ALL = "All"
 
     // Navigation
     const val NAV_DASHBOARD = "Dashboard"

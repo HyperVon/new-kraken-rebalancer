@@ -6,7 +6,6 @@ import com.gemini.krakenbot.repository.TradeSummaryStats
 import com.gemini.krakenbot.repository.table.*
 import org.jetbrains.exposed.sql.*
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.inList
-import org.jetbrains.exposed.sql.SqlExpressionBuilder.less
 import org.jetbrains.exposed.sql.statements.UpdateBuilder
 import org.jetbrains.exposed.sql.transactions.transaction
 import org.slf4j.LoggerFactory
@@ -355,7 +354,6 @@ class SqliteTradeRepositoryImpl(
 
             for (i in allRecords.indices) {
                 val record1 = allRecords[i]
-                val id1 = record1.id ?: continue
                 for (j in i + 1 until allRecords.size) {
                     val record2 = allRecords[j]
                     val id2 = record2.id ?: continue

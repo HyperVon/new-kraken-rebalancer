@@ -7,6 +7,7 @@ object HtmlAttrs {
     const val ONINPUT = "oninput"
     const val ONKEYDOWN = "onkeydown"
     const val DATA_EPOCH = "data-epoch"
+    const val DATA_RANGE = "data-range"
 }
 
 /** HTMX and SSE attribute name constants. */
@@ -26,4 +27,23 @@ object HtmlIds {
     const val TOTAL_ALLOCATED_DISPLAY = "total-allocated-display"
     const val ALLOCATIONS_CONTAINER = "allocations-container"
     const val NEW_SYMBOL_INPUT = "new-symbol-input"
+
+    // History Page IDs
+    const val HISTORY_STATS = "history-stats"
+    const val STAT_ATH_TITLE = "stat-ath-title"
+    const val STAT_ATH = "stat-ath"
+    const val STAT_TOTAL_TRADES = "stat-total-trades"
+    const val STAT_TOTAL_VOLUME = "stat-total-volume"
+    const val STAT_TOTAL_FEES = "stat-total-fees"
+    const val SHOW_DRY_RUN_CHECKBOX = "show-dry-run-checkbox"
+    const val TRADE_TABLE_BODY = "trade-table-body"
+    const val SYNC_PROGRESS_BANNER = "sync-progress-banner"
+    const val SYNC_PROGRESS_TEXT = "sync-progress-text"
+    const val SYNC_PROGRESS_BAR = "sync-progress-bar"
+
+    // Chart Canvas IDs
+    const val PORTFOLIO_VALUE_CHART = "portfolio-value-chart"
+    const val ASSET_HOLDINGS_CHART = "asset-holdings-chart"
+    const val ALLOCATION_DRIFT_CHART = "allocation-drift-chart"
+    const val CUMULATIVE_PL_CHART = "cumulative-pl-chart"
 }
