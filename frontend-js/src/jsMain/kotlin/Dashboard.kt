@@ -2,6 +2,11 @@ package com.gemini.krakenbot.frontend
 
 import com.gemini.krakenbot.util.PrecisionConstants
 import com.gemini.krakenbot.view.util.CssClass
+import com.gemini.krakenbot.view.util.CssClass.Query.DATA_AGE_TIME as DATA_AGE_TIME_QUERY
+import com.gemini.krakenbot.view.util.CssClass.Query.DATA_AGE_VALUE as DATA_AGE_VALUE_QUERY
+import com.gemini.krakenbot.view.util.CssClass.Query.HOVERABLE_TR as HOVERABLE_TR_QUERY
+import com.gemini.krakenbot.view.util.CssClass.Query.SORTABLE_TH as SORTABLE_TH_QUERY
+import com.gemini.krakenbot.view.util.CssClass.Query.STATUS_BADGE as STATUS_BADGE_QUERY
 import com.gemini.krakenbot.view.util.HtmlAttrs
 import com.gemini.krakenbot.view.util.ViewText
 import kotlinx.browser.document
@@ -113,9 +118,4 @@ fun sortTable(header: HTMLElement, colIdx: Int, forceDir: String? = null) {
     currentSortDir = if (sortAsc) SORT_ASC else SORT_DESC
 }
 
-private const val DATA_AGE_VALUE_QUERY = CssClass.Query.DATA_AGE_VALUE
-private const val DATA_AGE_TIME_QUERY = CssClass.Query.DATA_AGE_TIME
-private const val STATUS_BADGE_QUERY = CssClass.Query.STATUS_BADGE
-private const val SORTABLE_TH_QUERY = CssClass.Query.SORTABLE_TH
-private const val HOVERABLE_TR_QUERY = CssClass.Query.HOVERABLE_TR
 private val CURRENCY_CLEANUP_REGEX = Regex("[$,%]")

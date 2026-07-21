@@ -5,6 +5,7 @@ import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.TimeRange
 import com.gemini.krakenbot.view.util.ChartProps
 import com.gemini.krakenbot.view.util.CssClass
+import com.gemini.krakenbot.view.util.CssClass.Query.TIME_RANGE_BTNS as TIME_RANGE_BTNS_QUERY
 import com.gemini.krakenbot.view.util.HtmlAttrs
 import com.gemini.krakenbot.view.util.HtmlEvents
 import com.gemini.krakenbot.view.util.HtmlIds
@@ -602,5 +603,3 @@ internal fun checkSyncProgress(): Promise<Boolean> {
         false
     }
 }
-
-private const val TIME_RANGE_BTNS_QUERY = CssClass.Query.TIME_RANGE_BTNS
