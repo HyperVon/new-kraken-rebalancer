@@ -16,7 +16,7 @@ fun HEAD.commonMetadataAndStyles() {
     )
     link(rel = "preconnect", href = "https://fonts.googleapis.com")
     link(rel = "preconnect", href = "https://fonts.gstatic.com") {
-        attributes["crossorigin"] = ""
+        attributes[HtmlAttrs.CROSSORIGIN] = ""
     }
     link(
         rel = "stylesheet",

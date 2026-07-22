@@ -10,6 +10,7 @@ object HtmlAttrs {
     const val DATA_RANGE = "data-range"
     const val DATA_SORT_VALUE = "data-sort-value"
     const val DATASET_SORT_VALUE = "sortValue"
+    const val CROSSORIGIN = "crossorigin"
 }
 
 /** Standard DOM event name constants. */

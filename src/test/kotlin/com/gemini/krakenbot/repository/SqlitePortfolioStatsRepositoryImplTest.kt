@@ -12,6 +12,7 @@ import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
 import io.mockk.every
+import io.mockk.mockk
 import io.mockk.mockkStatic
 import io.mockk.unmockkStatic
 import org.jetbrains.exposed.sql.Database
@@ -107,7 +108,7 @@ class SqlitePortfolioStatsRepositoryImplTest : StringSpec() {
             val realTxManager = db.transactionManager
             val throwingTxManager = StatsThrowingTransactionManager(realTxManager)
 
-            val mockDb = io.mockk.mockk<Database>(relaxed = true)
+            val mockDb = mockk<Database>(relaxed = true)
             mockkStatic(TestFixtures.ORG_JETBRAINS_EXPOSED_SQL_TRANSACTIONS_TRANSACTION_API_KT)
             every { mockDb.transactionManager } returns throwingTxManager
 

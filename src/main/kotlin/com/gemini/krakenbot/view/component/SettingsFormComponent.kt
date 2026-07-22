@@ -131,7 +131,7 @@ class SettingsFormComponent {
                     }
                 }
 
-                div("${CssClass.Form.Group} ${CssClass.Form.GroupCentered}") {
+                div(classes = CssClass.Form.Group + CssClass.Form.GroupCentered) {
                     label(CssClass.Form.CheckboxContainer) {
                         input(
                             type = checkBox,
@@ -144,7 +144,7 @@ class SettingsFormComponent {
                     }
                 }
 
-                div("${CssClass.Form.Group} ${CssClass.Form.GroupCentered}") {
+                div(classes = CssClass.Form.Group + CssClass.Form.GroupCentered) {
                     label(CssClass.Form.CheckboxContainer) {
                         input(
                             type = checkBox,

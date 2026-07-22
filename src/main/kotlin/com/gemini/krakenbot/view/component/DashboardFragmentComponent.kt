@@ -65,7 +65,7 @@ class DashboardFragmentComponent(
                 div(CssClass.DataAge.Container) {
                     div(CssClass.DataAge.Label) { +ViewText.DATA_AGE }
                     val ageClass = if (isStale) CssClass.DataAge.ValueStale else CssClass.DataAge.Value
-                    div(ageClass) { +"${timeSinceUpdate}s ago" }
+                    div(ageClass) { +"$timeSinceUpdate${ViewText.AGO_SECONDS}" }
                     div(CssClass.DataAge.Time) {
                         attributes[HtmlAttrs.DATA_EPOCH] =
                             latest.timestamp.toEpochMilli().toString()
