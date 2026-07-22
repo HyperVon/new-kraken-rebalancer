@@ -12,9 +12,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Refactored
 
-- **FQN Elimination & Import Cleanup (`src/test`)**: Replaced inline fully-qualified mockk calls (`io.mockk.mockk`, `io.mockk.coEvery`) with explicit imports in `SqlitePortfolioStatsRepositoryImplTest` and `PortfolioManagerLoopTest`.
+- **FQN Elimination & Import Cleanup (`src/test`, `src/main`)**: Replaced inline fully-qualified mockk calls (`io.mockk.mockk`, `io.mockk.coEvery`) with explicit imports in `SqlitePortfolioStatsRepositoryImplTest` and `PortfolioManagerLoopTest`, and cleaned up redundant imports in `OrderExecutorImpl`.
 - **CSS Class Raw String Cleanup (`src/main`)**: Converted string-interpolated CSS class concatenations to use the type-safe `CssClass.plus` operator in `SettingsFormComponent` and `RecentActivityComponent`.
 - **Raw String Extraction to Shared Constants (`:common`, `src/main`)**: Replaced inline `"s ago"` with `ViewText.AGO_SECONDS` in `DashboardFragmentComponent` and added `HtmlAttrs.CROSSORIGIN` constant for the `"crossorigin"` attribute, consuming it in `HtmlHelpers`.
+- **Markdown Lint Rule Compliance in Test Report Generator (`src/test`)**: Updated `EvaluationScenariosTest.writeReport()` to enforce blank lines around scenario section headers (`MD022`) and explicit `text` language tags on fenced code blocks (`MD040`).
 
 ## [6.8.4] - 2026-07-21
 

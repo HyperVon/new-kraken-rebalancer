@@ -108,9 +108,9 @@ class EvaluationScenariosTest : StringSpec() {
             }
             sb.append("\n## Detailed Evidence for Each Scenario\n\n")
             for ((name, description, status, evidence) in results.values.sortedBy { it.name.substringAfter(" ").toIntOrNull() ?: 0 }) {
-                sb.append("### $name: $description\n")
+                sb.append("### $name: $description\n\n")
                 sb.append("**Status**: $status\n\n")
-                sb.append("```\n")
+                sb.append("```text\n")
                 sb.append(evidence)
                 sb.append("\n```\n\n")
             }
