@@ -20,8 +20,7 @@ import kotlin.js.Promise
 import kotlin.js.json
 
 @JsName("Chart")
-private external class Chart(ctx: dynamic, config: dynamic) {
-}
+private external class Chart(ctx: dynamic, config: dynamic)
 
 @JsName("Object")
 private external object JSObject {
@@ -545,12 +544,6 @@ private fun renderTradeRow(t: dynamic): HTMLTableRowElement {
     tr.appendChild(createBadgeCell(statusText, statusClass))
 
     return tr
-}
-
-private fun createCell(text: String): HTMLTableCellElement {
-    val td = document.createElement("td") as HTMLTableCellElement
-    td.textContent = text
-    return td
 }
 
 private fun createCell(text: String, cssClass: CssClass): HTMLTableCellElement {

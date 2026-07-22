@@ -6,8 +6,8 @@ import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.Asset
-import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.service.impl.SimulatedKrakenService
+import com.gemini.krakenbot.test.TestConstants
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.doubles.shouldBeGreaterThan
 import io.kotest.matchers.doubles.shouldBeLessThan
@@ -48,7 +48,7 @@ class SimulatedKrakenServiceTest : StringSpec() {
         "should execute buy orders and update balances" {
             val configService = mockk<ConfigService>()
             val config = AppConfig(
-                kraken = KrakenCredentials(com.gemini.krakenbot.test.TestConstants.API_KEY, com.gemini.krakenbot.test.TestConstants.API_SECRET),
+                kraken = KrakenCredentials(TestConstants.API_KEY, TestConstants.API_SECRET),
                 settings = TestFixtures.DEFAULT_TEST_SETTINGS,
                 allocations = listOf(
                     Allocation(Asset.BTC, 50.0),
@@ -79,7 +79,7 @@ class SimulatedKrakenServiceTest : StringSpec() {
         "should execute sell orders and update balances" {
             val configService = mockk<ConfigService>()
             val config = AppConfig(
-                kraken = KrakenCredentials(com.gemini.krakenbot.test.TestConstants.API_KEY, com.gemini.krakenbot.test.TestConstants.API_SECRET),
+                kraken = KrakenCredentials(TestConstants.API_KEY, TestConstants.API_SECRET),
                 settings = TestFixtures.DEFAULT_TEST_SETTINGS,
                 allocations = listOf(
                     Allocation(Asset.BTC, 50.0),
@@ -110,7 +110,7 @@ class SimulatedKrakenServiceTest : StringSpec() {
         "should fail orders if balance is insufficient" {
             val configService = mockk<ConfigService>()
             val config = AppConfig(
-                kraken = KrakenCredentials(com.gemini.krakenbot.test.TestConstants.API_KEY, com.gemini.krakenbot.test.TestConstants.API_SECRET),
+                kraken = KrakenCredentials(TestConstants.API_KEY, TestConstants.API_SECRET),
                 settings = TestFixtures.DEFAULT_TEST_SETTINGS,
                 allocations = listOf(
                     Allocation(Asset.BTC, 50.0),
@@ -135,7 +135,7 @@ class SimulatedKrakenServiceTest : StringSpec() {
         "should support dryRun mode when executing orders" {
             val configService = mockk<ConfigService>()
             val config = AppConfig(
-                kraken = KrakenCredentials(com.gemini.krakenbot.test.TestConstants.API_KEY, com.gemini.krakenbot.test.TestConstants.API_SECRET),
+                kraken = KrakenCredentials(TestConstants.API_KEY, TestConstants.API_SECRET),
                 settings = Settings(
                     loopDelaySeconds = 60,
                     deviationTriggerPercent = 2.0,
@@ -151,7 +151,12 @@ class SimulatedKrakenServiceTest : StringSpec() {
             every { configService.getConfig() } returns config
 
             val simulatedService = SimulatedKrakenService(configService)
-            val result = simulatedService.executeOrder("BTCUSD", "market", "buy", BigDecimal.valueOf(0.1))
+            val result = simulatedService.executeOrder(
+                "BTCUSD",
+                "market",
+                "buy",
+                BigDecimal.valueOf(0.1)
+            )
 
             result.success shouldBe true
             result.dryRun shouldBe true
@@ -160,7 +165,7 @@ class SimulatedKrakenServiceTest : StringSpec() {
         "should return trade history and support filtering" {
             val configService = mockk<ConfigService>()
             val config = AppConfig(
-                kraken = KrakenCredentials(com.gemini.krakenbot.test.TestConstants.API_KEY, com.gemini.krakenbot.test.TestConstants.API_SECRET),
+                kraken = KrakenCredentials(TestConstants.API_KEY, TestConstants.API_SECRET),
                 settings = TestFixtures.DEFAULT_TEST_SETTINGS,
                 allocations = listOf(
                     Allocation(Asset.BTC, 50.0),
@@ -237,21 +242,41 @@ class SimulatedKrakenServiceTest : StringSpec() {
             prices["ADAEUR"]!!.toDouble() shouldBe 10.0
 
             // Try to execute a BUY order on ADAEUR (ADAEUR has 0 balance, USD has positive balance)
-            val buyResult = simulatedService.executeOrder("ADAEUR", "market", "buy", BigDecimal.valueOf(0.1))
+            val buyResult = simulatedService.executeOrder(
+                "ADAEUR",
+                "market",
+                "buy",
+                BigDecimal.valueOf(0.1)
+            )
             buyResult.success shouldBe true
 
             // Try to execute a SELL order on ADAEUR with more volume than possessed
-            val sellResult = simulatedService.executeOrder("ADAEUR", "market", "sell", BigDecimal.valueOf(10.0))
+            val sellResult = simulatedService.executeOrder(
+                "ADAEUR",
+                "market",
+                "sell",
+                BigDecimal.valueOf(10.0)
+            )
             sellResult.success shouldBe false
             sellResult.errorMessage?.contains("Insufficient ADAEUR funds") shouldBe true
 
             // Try to execute a BUY order on ADAEUR with way too much volume to trigger insufficient USD funds
-            val buyTooMuchResult = simulatedService.executeOrder("ADAEUR", "market", "buy", BigDecimal.valueOf(100000.0))
+            val buyTooMuchResult = simulatedService.executeOrder(
+                "ADAEUR",
+                "market",
+                "buy",
+                BigDecimal.valueOf(100000.0)
+            )
             buyTooMuchResult.success shouldBe false
             buyTooMuchResult.errorMessage?.contains("Insufficient USD funds") shouldBe true
 
             // Try to execute an order with an invalid side (covers the fallback branches in executeOrder)
-            val invalidResult = simulatedService.executeOrder("ADAEUR", "market", "hold", BigDecimal.valueOf(1.0))
+            val invalidResult = simulatedService.executeOrder(
+                "ADAEUR",
+                "market",
+                "hold",
+                BigDecimal.valueOf(1.0)
+            )
             invalidResult.success shouldBe true
 
             // Query trade history with offset >= size to cover the bounds checking branch

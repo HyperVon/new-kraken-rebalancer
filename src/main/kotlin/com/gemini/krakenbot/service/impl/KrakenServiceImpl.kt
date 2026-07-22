@@ -323,7 +323,12 @@ class KrakenServiceImpl(
             var retryCount = 0
             var result: JsonNode? = null
             while (result == null) {
-                val cost = if (path.contains(KrakenApiConstants.SUBSTRING_TRADES_HISTORY) || path.contains(KrakenApiConstants.SUBSTRING_LEDGERS) || path.contains(KrakenApiConstants.SUBSTRING_CLOSED_ORDERS)) 2.0 else 1.0
+                val cost = when {
+                    path.contains(KrakenApiConstants.SUBSTRING_TRADES_HISTORY) ||
+                            path.contains(KrakenApiConstants.SUBSTRING_LEDGERS) ||
+                            path.contains(KrakenApiConstants.SUBSTRING_CLOSED_ORDERS) -> 2.0
+                    else -> 1.0
+                }
                 rateLimiter.acquireWithCost(cost)
 
                 val nonce = nonceGenerator.incrementAndGet().toString()

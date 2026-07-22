@@ -649,7 +649,10 @@ class KrakenServiceTest : StringSpec() {
                 }
 
                 val mockConfigService = mockk<ConfigService>(relaxed = true)
-                val credentials = KrakenCredentials("api-key", Base64.getEncoder().encodeToString("secret".toByteArray()))
+                val credentials = KrakenCredentials(
+                    "api-key",
+                    Base64.getEncoder().encodeToString("secret".toByteArray())
+                )
                 val config = AppConfig(
                     kraken = credentials,
                     settings = Settings(
@@ -689,7 +692,10 @@ class KrakenServiceTest : StringSpec() {
                 }
 
                 val mockConfigService = mockk<ConfigService>(relaxed = true)
-                val credentials = KrakenCredentials("api-key", Base64.getEncoder().encodeToString("secret".toByteArray()))
+                val credentials = KrakenCredentials(
+                    "api-key",
+                    Base64.getEncoder().encodeToString("secret".toByteArray())
+                )
                 val config = AppConfig(
                     kraken = credentials,
                     settings = Settings(
@@ -978,8 +984,20 @@ class KrakenServiceTest : StringSpec() {
                     }
                 }
                 val mockConfigService = mockk<ConfigService>(relaxed = true)
-                val credentials = KrakenCredentials("k", Base64.getEncoder().encodeToString("secret".toByteArray()))
-                every { mockConfigService.getConfig() } returns AppConfig(credentials, Settings(loopDelaySeconds = 60, deviationTriggerPercent = 2.0, dustThresholdUSD = 1.0, dryRun = false), emptyList())
+                val credentials = KrakenCredentials(
+                    "k",
+                    Base64.getEncoder().encodeToString("secret".toByteArray())
+                )
+                every { mockConfigService.getConfig() } returns AppConfig(
+                    credentials,
+                    Settings(
+                        loopDelaySeconds = 60,
+                        deviationTriggerPercent = 2.0,
+                        dustThresholdUSD = 1.0,
+                        dryRun = false
+                    ),
+                    emptyList()
+                )
 
                 val service = KrakenServiceImpl(
                     configService = mockConfigService,
@@ -1012,7 +1030,10 @@ class KrakenServiceTest : StringSpec() {
                     }
                 }
                 val mockConfigService = mockk<ConfigService>(relaxed = true)
-                val credentials = KrakenCredentials("k", Base64.getEncoder().encodeToString("secret".toByteArray()))
+                val credentials = KrakenCredentials(
+                    "k",
+                    Base64.getEncoder().encodeToString("secret".toByteArray())
+                )
                 every { mockConfigService.getConfig() } returns AppConfig(
                     credentials,
                     Settings(
@@ -1046,7 +1067,10 @@ class KrakenServiceTest : StringSpec() {
                     )
                 }
                 val mockConfigService = mockk<ConfigService>(relaxed = true)
-                val credentials = KrakenCredentials("k", Base64.getEncoder().encodeToString("secret".toByteArray()))
+                val credentials = KrakenCredentials(
+                    "k",
+                    Base64.getEncoder().encodeToString("secret".toByteArray())
+                )
                 every { mockConfigService.getConfig() } returns AppConfig(credentials, Settings(
                     loopDelaySeconds = 60,
                     deviationTriggerPercent = 2.0,
@@ -1081,7 +1105,10 @@ class KrakenServiceTest : StringSpec() {
                     }
                 }
                 val mockConfigService = mockk<ConfigService>(relaxed = true)
-                val credentials = KrakenCredentials("k", Base64.getEncoder().encodeToString("secret".toByteArray()))
+                val credentials = KrakenCredentials(
+                    "k",
+                    Base64.getEncoder().encodeToString("secret".toByteArray())
+                )
                 every { mockConfigService.getConfig() } returns AppConfig(
                     credentials,
                     Settings(
@@ -1121,7 +1148,10 @@ class KrakenServiceTest : StringSpec() {
                     }
                 }
                 val mockConfigService = mockk<ConfigService>(relaxed = true)
-                val credentials = KrakenCredentials("k", Base64.getEncoder().encodeToString("secret".toByteArray()))
+                val credentials = KrakenCredentials(
+                    "k",
+                    Base64.getEncoder().encodeToString("secret".toByteArray())
+                )
                 every { mockConfigService.getConfig() } returns AppConfig(credentials, Settings(
                     loopDelaySeconds = 60,
                     deviationTriggerPercent = 2.0,
@@ -1210,7 +1240,10 @@ class KrakenServiceTest : StringSpec() {
                     )
                 }
                 val mockConfigService = mockk<ConfigService>(relaxed = true)
-                val credentials = KrakenCredentials("k", Base64.getEncoder().encodeToString("secret".toByteArray()))
+                val credentials = KrakenCredentials(
+                    "k",
+                    Base64.getEncoder().encodeToString("secret".toByteArray())
+                )
                 every { mockConfigService.getConfig() } returns AppConfig(
                     credentials,
                     Settings(

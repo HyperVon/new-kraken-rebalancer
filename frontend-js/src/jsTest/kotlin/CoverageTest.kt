@@ -3,13 +3,7 @@ package com.gemini.krakenbot.frontend
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.TimeRange
-import com.gemini.krakenbot.view.util.CssClass
-import com.gemini.krakenbot.view.util.FormFields
-import com.gemini.krakenbot.view.util.HtmlAttrs
-import com.gemini.krakenbot.view.util.HtmlIds
-import com.gemini.krakenbot.view.util.DataProps
-import com.gemini.krakenbot.view.util.HtmlEvents
-import com.gemini.krakenbot.view.util.ViewText
+import com.gemini.krakenbot.view.util.*
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.booleans.shouldBeFalse
@@ -41,13 +35,31 @@ class CoverageTest : StringSpec() {
                 registerHistoryGlobals()
                 
                 // First call - no existing chart
-                createOrUpdate("test-chart", TestDomBuilders.chartConfig())
+                createOrUpdate(
+                    "test-chart",
+                    TestDomBuilders.chartConfig()
+                )
                 
                 // Second call - existing chart, visibility states stored
-                createOrUpdate("test-chart", TestDomBuilders.chartConfig(TestDomBuilders.datasetConfig("A"), TestDomBuilders.datasetConfig("B")))
+                createOrUpdate(
+                    "test-chart",
+                    TestDomBuilders.chartConfig(
+                        TestDomBuilders.datasetConfig("A"),
+                        TestDomBuilders.datasetConfig("B")
+                    )
+                )
                 
                 // Third call with same config - should preserve visibility
-                createOrUpdate("test-chart", TestDomBuilders.chartConfig(TestDomBuilders.datasetConfig("A", hidden = false), TestDomBuilders.datasetConfig("B", hidden = true)))
+                createOrUpdate(
+                    "test-chart",
+                    TestDomBuilders.chartConfig(
+                        TestDomBuilders.datasetConfig(
+                            "A",
+                            hidden = false
+                        ),
+                        TestDomBuilders.datasetConfig("B", hidden = true)
+                    )
+                )
                 
                 ((window.asDynamic().chartCallCount as Int) >= 2).shouldBeTrue()
             } finally {
@@ -92,14 +104,22 @@ class CoverageTest : StringSpec() {
             empty.size shouldBe 0
 
             // Single successful buy
-            val buy = TestDomBuilders.tradeJson(timestamp = "2023-01-01", side = OrderSide.BUY.name, usdAmount = 100.0)
+            val buy = TestDomBuilders.tradeJson(
+                timestamp = "2023-01-01",
+                side = OrderSide.BUY.name,
+                usdAmount = 100.0
+            )
             val resultBuy = calculateCumulativePL(arrayOf(buy))
             resultBuy.size shouldBe 1
             val r0 = resultBuy[0]
             r0.y.toString().toDouble() shouldBe -100.0  // BUY subtracts
 
             // Single successful sell
-            val sell = TestDomBuilders.tradeJson(timestamp = "2023-01-01", side = OrderSide.SELL.name, usdAmount = 50.0)
+            val sell = TestDomBuilders.tradeJson(
+                timestamp = "2023-01-01",
+                side = OrderSide.SELL.name,
+                usdAmount = 50.0
+            )
             val resultSell = calculateCumulativePL(arrayOf(sell))
             resultSell.size shouldBe 1
             val s0 = resultSell[0]
@@ -107,10 +127,28 @@ class CoverageTest : StringSpec() {
 
             // Mixed with failed and dryRun (should be filtered out)
             val mixed = arrayOf(
-                TestDomBuilders.tradeJson(timestamp = "2023-01-01", side = OrderSide.BUY.name, usdAmount = 100.0),
-                TestDomBuilders.tradeJson(timestamp = "2023-01-02", success = false, side = OrderSide.SELL.name, usdAmount = 50.0),
-                TestDomBuilders.tradeJson(timestamp = "2023-01-03", dryRun = true, side = OrderSide.BUY.name, usdAmount = 200.0),
-                TestDomBuilders.tradeJson(timestamp = "2023-01-04", side = OrderSide.SELL.name, usdAmount = 30.0)
+                TestDomBuilders.tradeJson(
+                    timestamp = "2023-01-01",
+                    side = OrderSide.BUY.name,
+                    usdAmount = 100.0
+                ),
+                TestDomBuilders.tradeJson(
+                    timestamp = "2023-01-02",
+                    success = false,
+                    side = OrderSide.SELL.name,
+                    usdAmount = 50.0
+                ),
+                TestDomBuilders.tradeJson(
+                    timestamp = "2023-01-03",
+                    dryRun = true,
+                    side = OrderSide.BUY.name,
+                    usdAmount = 200.0
+                ),
+                TestDomBuilders.tradeJson(
+                    timestamp = "2023-01-04",
+                    side = OrderSide.SELL.name,
+                    usdAmount = 30.0
+                )
             )
             val resultMixed = calculateCumulativePL(mixed)
             resultMixed.size shouldBe 2  // Only the buy and sell (first and last)
@@ -574,11 +612,42 @@ class CoverageTest : StringSpec() {
             try {
                 registerHistoryGlobals()
                 val snapshots = arrayOf(
-                    json("timestamp" to "2023-01-01", "totalValueUSD" to 100, "assets" to json(Asset.USD to json("valueUSD" to 100, "balance" to 100, "currentPercent" to 100))),
-                    json("timestamp" to "2023-01-02", "totalValueUSD" to 160, "assets" to json(Asset.BTC to json("valueUSD" to 60, "balance" to 2, "currentPercent" to 37.5), Asset.USD to json("valueUSD" to 100, "balance" to 50, "currentPercent" to 62.5)))
+                    json(
+                        "timestamp" to "2023-01-01",
+                        "totalValueUSD" to 100,
+                        "assets" to json(
+                            Asset.USD to json(
+                                "valueUSD" to 100,
+                                "balance" to 100,
+                                "currentPercent" to 100
+                            )
+                        )
+                    ),
+                    json(
+                        "timestamp" to "2023-01-02",
+                        "totalValueUSD" to 160,
+                        "assets" to json(
+                            Asset.BTC to json(
+                                "valueUSD" to 60,
+                                "balance" to 2,
+                                "currentPercent" to 37.5
+                            ),
+                            Asset.USD to json(
+                                "valueUSD" to 100,
+                                "balance" to 50,
+                                "currentPercent" to 62.5
+                            )
+                        )
+                    )
                 )
                 val trades = arrayOf(
-                    json("timestamp" to "2023-01-01", "success" to true, "dryRun" to false, "side" to OrderSide.BUY.name, "usdAmount" to 10)
+                    json(
+                        "timestamp" to "2023-01-01",
+                        "success" to true,
+                        "dryRun" to false,
+                        "side" to OrderSide.BUY.name,
+                        "usdAmount" to 10
+                    )
                 )
 
                 buildPortfolioValueChart(snapshots)
@@ -783,7 +852,15 @@ class CoverageTest : StringSpec() {
                 container.appendChild(tableContainer)
                 
                 val badTrades = arrayOf(
-                    json("timestamp" to "2023-01-01", "symbol" to null, "side" to OrderSide.SELL.name, "volume" to "bad", "usdAmount" to "bad", "success" to null, "dryRun" to null)
+                    json(
+                        "timestamp" to "2023-01-01",
+                        "symbol" to null,
+                        "side" to OrderSide.SELL.name,
+                        "volume" to "bad",
+                        "usdAmount" to "bad",
+                        "success" to null,
+                        "dryRun" to null
+                    )
                 )
                 renderTradeTable(badTrades)
                 val tbody = document.getElementById(HtmlIds.TRADE_TABLE_BODY) as HTMLTableSectionElement

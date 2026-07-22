@@ -614,12 +614,22 @@ class TradeHistoryServiceImpl(
 
         val prices = ohlcData[symbol.uppercase()]
         if (!prices.isNullOrEmpty()) {
-            return findClosest(prices, timestamp.epochSecond, { it.first }, { it.second })
+            return findClosest(
+                prices,
+                timestamp.epochSecond,
+                { it.first },
+                { it.second }
+            )
         }
 
         val tPrices = tradePrices[symbol.uppercase()]
         if (!tPrices.isNullOrEmpty()) {
-            return findClosest(tPrices, timestamp.toEpochMilli(), { it.first.toEpochMilli() }, { it.second })
+            return findClosest(
+                tPrices,
+                timestamp.toEpochMilli(),
+                { it.first.toEpochMilli() },
+                { it.second }
+            )
         }
 
         return currentPrices[symbol.uppercase()] ?: BigDecimal.ZERO

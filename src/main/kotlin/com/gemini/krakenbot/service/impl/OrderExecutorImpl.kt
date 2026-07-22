@@ -190,14 +190,30 @@ class OrderExecutorImpl(
         prices: AssetPrices
     ) {
         val expectedPrice = prices[symbol] ?: BigDecimal.ZERO
-        val executedPrice = if (volume.signum() > 0) usdAmount.divide(volume, PrecisionConstants.SCALE_CRYPTO, RoundingMode.HALF_UP) else BigDecimal.ZERO
-        val slippage = if (expectedPrice.signum() > 0) {
-            val diff = if (side == OrderSide.BUY.uppercaseName) executedPrice.subtract(expectedPrice) else expectedPrice.subtract(executedPrice)
-            diff.divide(expectedPrice, PrecisionConstants.SCALE_PERCENT, RoundingMode.HALF_UP).multiply(PrecisionConstants.HUNDRED)
-        } else {
-            BigDecimal.ZERO
+        val executedPrice = when {
+            volume.signum() > 0 -> usdAmount.divide(volume, PrecisionConstants.SCALE_CRYPTO, RoundingMode.HALF_UP)
+            else -> BigDecimal.ZERO
         }
-        val estimatedFee = usdAmount.multiply(FEE_RATE_ESTIMATE).setScale(PrecisionConstants.SCALE_FEE, RoundingMode.HALF_UP)
+        val slippage = when {
+            expectedPrice.signum() > 0 -> {
+                val diff =
+                    when (side) {
+                        OrderSide.BUY.uppercaseName -> executedPrice.subtract(expectedPrice)
+                        else -> expectedPrice.subtract(
+                            executedPrice
+                        )
+                    }
+                diff.divide(expectedPrice, PrecisionConstants.SCALE_PERCENT, RoundingMode.HALF_UP)
+                    .multiply(PrecisionConstants.HUNDRED)
+            }
+            else -> {
+                BigDecimal.ZERO
+            }
+        }
+        val estimatedFee =
+            usdAmount
+                .multiply(FEE_RATE_ESTIMATE)
+                .setScale(PrecisionConstants.SCALE_FEE, RoundingMode.HALF_UP)
 
         val trade = TradeRecord(
             timestamp = Instant.now(),

@@ -17,7 +17,6 @@ object HtmlEvents {
     const val EVENT = "Event"
     const val CLICK = "click"
     const val CHANGE = "change"
-    const val INPUT = "input"
     const val DOM_CONTENT_LOADED = "DOMContentLoaded"
     const val HTMX_AFTER_SWAP = "htmx:afterSwap"
 }

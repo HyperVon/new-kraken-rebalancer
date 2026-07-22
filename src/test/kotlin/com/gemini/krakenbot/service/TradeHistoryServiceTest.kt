@@ -292,7 +292,15 @@ class TradeHistoryServiceTest : StringSpec() {
                     allocations = emptyList()
                 )
                 every { configService.getConfig() } returns emptyConfig
-                val tradeHistoryService = TradeHistoryServiceImpl(repository, statsRepository, krakenService, configService, objectMapper, portfolioAnalyzer, "test-trade-history.json")
+                val tradeHistoryService = TradeHistoryServiceImpl(
+                    repository,
+                    statsRepository,
+                    krakenService,
+                    configService,
+                    objectMapper,
+                    portfolioAnalyzer,
+                    "test-trade-history.json"
+                )
 
                 tradeHistoryService.syncTradesFromKraken()
 
@@ -543,7 +551,15 @@ class TradeHistoryServiceTest : StringSpec() {
                     allocations = emptyList()
                 )
                 every { configService.getConfig() } returns placeholderConfig
-                val tradeHistoryService = TradeHistoryServiceImpl(repository, statsRepository, krakenService, configService, objectMapper, portfolioAnalyzer, "test-trade-history.json")
+                val tradeHistoryService = TradeHistoryServiceImpl(
+                    repository,
+                    statsRepository,
+                    krakenService,
+                    configService,
+                    objectMapper,
+                    portfolioAnalyzer,
+                    "test-trade-history.json"
+                )
 
                 tradeHistoryService.syncTradesFromKraken()
 
@@ -573,7 +589,15 @@ class TradeHistoryServiceTest : StringSpec() {
             every { configService.getConfig() } returns appConfig
             every { repository.load() } returns emptyList() // DB is empty!
 
-            val tradeHistoryService = TradeHistoryServiceImpl(repository, statsRepository, krakenService, configService, objectMapper, portfolioAnalyzer, "test-trade-history.json")
+            val tradeHistoryService = TradeHistoryServiceImpl(
+                repository,
+                statsRepository,
+                krakenService,
+                configService,
+                objectMapper,
+                portfolioAnalyzer,
+                "test-trade-history.json"
+            )
             tradeHistoryService.init()
 
             // It should call saveSnapshot multiple times to seed 15 days of 6-hour interval snapshots (60 snapshots)
@@ -601,7 +625,15 @@ class TradeHistoryServiceTest : StringSpec() {
             every { repository.load() } returns emptyList()
             every { repository.saveSnapshot(any()) } throws RuntimeException("Seeding failed")
 
-            val tradeHistoryService = TradeHistoryServiceImpl(repository, statsRepository, krakenService, configService, objectMapper, portfolioAnalyzer, "test-trade-history.json")
+            val tradeHistoryService = TradeHistoryServiceImpl(
+                repository,
+                statsRepository,
+                krakenService,
+                configService,
+                objectMapper,
+                portfolioAnalyzer,
+                "test-trade-history.json"
+            )
 
             // Should catch exception and not propagate it
             tradeHistoryService.init()
@@ -1058,8 +1090,26 @@ class TradeHistoryServiceTest : StringSpec() {
                     timestamp = Instant.now().minus(5, ChronoUnit.DAYS),
                     totalValueUSD = BigDecimal("10000.00"),
                     assets = mapOf(
-                        "BTC" to PortfolioSnapshot.AssetSnapshot("BTC", BigDecimal("0.2"), BigDecimal("25000.00"), BigDecimal("5000.00"), BigDecimal("50.00"), BigDecimal("50.00"), BigDecimal.ZERO, BigDecimal.ZERO),
-                        "USD" to PortfolioSnapshot.AssetSnapshot("USD", BigDecimal("5000.00"), BigDecimal.ONE, BigDecimal("5000.00"), BigDecimal("50.00"), BigDecimal("50.00"), BigDecimal.ZERO, BigDecimal.ZERO)
+                        "BTC" to PortfolioSnapshot.AssetSnapshot(
+                            "BTC",
+                            BigDecimal("0.2"),
+                            BigDecimal("25000.00"),
+                            BigDecimal("5000.00"),
+                            BigDecimal("50.00"),
+                            BigDecimal("50.00"),
+                            BigDecimal.ZERO,
+                            BigDecimal.ZERO
+                        ),
+                        "USD" to PortfolioSnapshot.AssetSnapshot(
+                            "USD",
+                            BigDecimal("5000.00"),
+                            BigDecimal.ONE,
+                            BigDecimal("5000.00"),
+                            BigDecimal("50.00"),
+                            BigDecimal("50.00"),
+                            BigDecimal.ZERO,
+                            BigDecimal.ZERO
+                        )
                     ),
                     actions = emptyList(),
                     drawdownPercent = BigDecimal.ZERO,

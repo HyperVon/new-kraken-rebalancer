@@ -69,11 +69,33 @@ class HistoryTest : StringSpec() {
 
         "calculateCumulativePL filters and orders completed trades" {
         val trades = arrayOf(
-            TestDomBuilders.tradeJson(timestamp = "2023-01-01T10:00:00Z", side = OrderSide.BUY.name, usdAmount = 100.0),
-            TestDomBuilders.tradeJson(timestamp = "2023-01-01T08:00:00Z", side = OrderSide.SELL.name, usdAmount = 50.0),
-            TestDomBuilders.tradeJson(timestamp = "2023-01-01T09:00:00Z", success = false, side = OrderSide.BUY.name, usdAmount = 200.0),
-            TestDomBuilders.tradeJson(timestamp = "2023-01-01T11:00:00Z", dryRun = true, side = OrderSide.BUY.name, usdAmount = 300.0),
-            TestDomBuilders.tradeJson(timestamp = "2023-01-01T12:00:00Z", side = OrderSide.SELL.name, usdAmount = 80.0)
+            TestDomBuilders.tradeJson(
+                timestamp = "2023-01-01T10:00:00Z",
+                side = OrderSide.BUY.name,
+                usdAmount = 100.0
+            ),
+            TestDomBuilders.tradeJson(
+                timestamp = "2023-01-01T08:00:00Z",
+                side = OrderSide.SELL.name,
+                usdAmount = 50.0
+            ),
+            TestDomBuilders.tradeJson(
+                timestamp = "2023-01-01T09:00:00Z",
+                success = false,
+                side = OrderSide.BUY.name,
+                usdAmount = 200.0
+            ),
+            TestDomBuilders.tradeJson(
+                timestamp = "2023-01-01T11:00:00Z",
+                dryRun = true,
+                side = OrderSide.BUY.name,
+                usdAmount = 300.0
+            ),
+            TestDomBuilders.tradeJson(
+                timestamp = "2023-01-01T12:00:00Z",
+                side = OrderSide.SELL.name,
+                usdAmount = 80.0
+            )
         )
 
         val result = calculateCumulativePL(trades)
@@ -91,9 +113,33 @@ class HistoryTest : StringSpec() {
 
         try {
             val trades = arrayOf(
-                TestDomBuilders.tradeJson(timestamp = "2023-01-01", symbol = Asset.BTC, side = OrderSide.BUY.name, volume = 0.1, usdAmount = 2000.0, success = true, dryRun = false),
-                TestDomBuilders.tradeJson(timestamp = "2023-01-02", symbol = Asset.ETH, side = OrderSide.SELL.name, volume = 1.0, usdAmount = 1800.0, success = true, dryRun = true),
-                TestDomBuilders.tradeJson(timestamp = "2023-01-03", symbol = Asset.LTC, side = OrderSide.BUY.name, volume = 5.0, usdAmount = 350.0, success = false, dryRun = false)
+                TestDomBuilders.tradeJson(
+                    timestamp = "2023-01-01",
+                    symbol = Asset.BTC,
+                    side = OrderSide.BUY.name,
+                    volume = 0.1,
+                    usdAmount = 2000.0,
+                    success = true,
+                    dryRun = false
+                ),
+                TestDomBuilders.tradeJson(
+                    timestamp = "2023-01-02",
+                    symbol = Asset.ETH,
+                    side = OrderSide.SELL.name,
+                    volume = 1.0,
+                    usdAmount = 1800.0,
+                    success = true,
+                    dryRun = true
+                ),
+                TestDomBuilders.tradeJson(
+                    timestamp = "2023-01-03",
+                    symbol = Asset.LTC,
+                    side = OrderSide.BUY.name,
+                    volume = 5.0,
+                    usdAmount = 350.0,
+                    success = false,
+                    dryRun = false
+                )
             )
 
             renderTradeTable(trades)
@@ -160,11 +206,40 @@ class HistoryTest : StringSpec() {
         try {
             registerHistoryGlobals()
             val snapshots = arrayOf(
-                json("timestamp" to "2023-01-01", "totalValueUSD" to 100, "assets" to json(Asset.BTC to json("valueUSD" to 60, "balance" to 2, "currentPercent" to 60), Asset.USD to json("valueUSD" to 40, "balance" to 40, "currentPercent" to 40))),
-                json("timestamp" to "2023-01-02", "totalValueUSD" to "invalid", "assets" to json(Asset.BTC to json("valueUSD" to 80, "balance" to 3, "currentPercent" to 80)))
+                json(
+                    "timestamp" to "2023-01-01",
+                    "totalValueUSD" to 100,
+                    "assets" to json(
+                        Asset.BTC to json(
+                            "valueUSD" to 60,
+                            "balance" to 2,
+                            "currentPercent" to 60
+                        ),
+                        Asset.USD to json(
+                            "valueUSD" to 40,
+                            "balance" to 40,
+                            "currentPercent" to 40
+                        )
+                    )
+                ),
+                json(
+                    "timestamp" to "2023-01-02",
+                    "totalValueUSD" to "invalid",
+                    "assets" to json(Asset.BTC to json(
+                        "valueUSD" to 80,
+                        "balance" to 3,
+                        "currentPercent" to 80
+                    ))
+                )
             )
             val trades = arrayOf(
-                json("timestamp" to "2023-01-01", "success" to true, "dryRun" to false, "side" to OrderSide.BUY.name, "usdAmount" to 10)
+                json(
+                    "timestamp" to "2023-01-01",
+                    "success" to true,
+                    "dryRun" to false,
+                    "side" to OrderSide.BUY.name,
+                    "usdAmount" to 10
+                )
             )
 
             buildPortfolioValueChart(emptyArray())
@@ -182,7 +257,10 @@ class HistoryTest : StringSpec() {
             portfolioConfig.data.datasets.length as Int shouldBe 2
             val updatedPortfolioConfig = window.asDynamic().chartConfigs[4]
             (updatedPortfolioConfig.data.datasets[1].hidden as Boolean) shouldBe true
-            createOrUpdate("missing-chart", createLineChartConfig(emptyArray(), getClonedChartOptions()))
+            createOrUpdate(
+                "missing-chart",
+                createLineChartConfig(emptyArray(), getClonedChartOptions())
+            )
         } finally {
             document.body!!.removeChild(container)
         }

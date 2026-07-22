@@ -60,9 +60,24 @@ class DynamicKrakenServiceTest : StringSpec() {
             coVerify(exactly = 0) { realService.getTickerPrices(any()) }
 
             // executeOrder
-            dynamicService.executeOrder(Asset.BTC_USD_PAIR, OrderSide.SELL.apiValue, OrderType.MARKET.apiValue, BigDecimal.ONE)
-            coVerify(exactly = 1) { simulatedService.executeOrder(Asset.BTC_USD_PAIR, OrderSide.SELL.apiValue, OrderType.MARKET.apiValue, BigDecimal.ONE) }
-            coVerify(exactly = 0) { realService.executeOrder(any(), any(), any(), any()) }
+            dynamicService.executeOrder(
+                Asset.BTC_USD_PAIR,
+                OrderSide.SELL.apiValue,
+                OrderType.MARKET.apiValue,
+                BigDecimal.ONE
+            )
+            coVerify(exactly = 1) { simulatedService.executeOrder(
+                Asset.BTC_USD_PAIR,
+                OrderSide.SELL.apiValue,
+                OrderType.MARKET.apiValue,
+                BigDecimal.ONE
+            ) }
+            coVerify(exactly = 0) { realService.executeOrder(
+                any(),
+                any(),
+                any(),
+                any()
+            ) }
 
             // getTradeHistory
             dynamicService.getTradeHistory(12345L, 10)
@@ -107,9 +122,24 @@ class DynamicKrakenServiceTest : StringSpec() {
             coVerify(exactly = 0) { simulatedService.getTickerPrices(any()) }
 
             // executeOrder
-            dynamicService.executeOrder(Asset.BTC_USD_PAIR, OrderSide.SELL.apiValue, OrderType.MARKET.apiValue, BigDecimal.ONE)
-            coVerify(exactly = 1) { realService.executeOrder(Asset.BTC_USD_PAIR, OrderSide.SELL.apiValue, OrderType.MARKET.apiValue, BigDecimal.ONE) }
-            coVerify(exactly = 0) { simulatedService.executeOrder(any(), any(), any(), any()) }
+            dynamicService.executeOrder(
+                Asset.BTC_USD_PAIR,
+                OrderSide.SELL.apiValue,
+                OrderType.MARKET.apiValue,
+                BigDecimal.ONE
+            )
+            coVerify(exactly = 1) { realService.executeOrder(
+                Asset.BTC_USD_PAIR,
+                OrderSide.SELL.apiValue,
+                OrderType.MARKET.apiValue,
+                BigDecimal.ONE
+            ) }
+            coVerify(exactly = 0) { simulatedService.executeOrder(
+                any(),
+                any(),
+                any(),
+                any()
+            ) }
 
             // getTradeHistory
             dynamicService.getTradeHistory(12345L, 10)

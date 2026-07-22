@@ -208,9 +208,22 @@ class EvaluationScenariosTest : StringSpec() {
                 }
 
                 val statsRepo = mockk<PortfolioStatsRepository>(relaxed = true)
-                val analyzer = PortfolioAnalyzerImpl(fakeKraken, mockConfig, statsRepo)
-                val executor = OrderExecutorImpl(fakeKraken, analyzer, tradeHistoryService)
-                val pm = PortfolioManagerImpl(mockConfig, mockk(relaxed = true), analyzer, executor)
+                val analyzer = PortfolioAnalyzerImpl(
+                    fakeKraken,
+                    mockConfig,
+                    statsRepo
+                )
+                val executor = OrderExecutorImpl(
+                    fakeKraken,
+                    analyzer,
+                    tradeHistoryService
+                )
+                val pm = PortfolioManagerImpl(
+                    mockConfig,
+                    mockk(relaxed = true),
+                    analyzer,
+                    executor
+                )
 
                 // Sub-case 1: Success path (Verify Sequencing)
                 pm.performRebalanceCycle()
@@ -319,7 +332,11 @@ class EvaluationScenariosTest : StringSpec() {
                 )
                 every { mockConfig.getConfig() } returns appConfig
 
-                val analyzer = PortfolioAnalyzerImpl(fakeKraken, mockConfig, statsRepo)
+                val analyzer = PortfolioAnalyzerImpl(
+                    fakeKraken,
+                    mockConfig,
+                    statsRepo
+                )
 
                 // 1. Initial run: Set ATH to $10,000
                 val balances = mapOf(Asset.BTC to 0.1, Asset.ETH to 2.5, Asset.USD to 0.0).toBigDecimalMap()
@@ -413,9 +430,22 @@ class EvaluationScenariosTest : StringSpec() {
                 every { mockConfig.getConfig() } returns appConfig
 
                 val statsRepo = mockk<PortfolioStatsRepository>(relaxed = true)
-                val analyzer = PortfolioAnalyzerImpl(fakeKraken, mockConfig, statsRepo)
-                val executor = OrderExecutorImpl(fakeKraken, analyzer, tradeHistoryService)
-                val pm = PortfolioManagerImpl(mockConfig, mockk(relaxed = true), analyzer, executor)
+                val analyzer = PortfolioAnalyzerImpl(
+                    fakeKraken,
+                    mockConfig,
+                    statsRepo
+                )
+                val executor = OrderExecutorImpl(
+                    fakeKraken,
+                    analyzer,
+                    tradeHistoryService
+                )
+                val pm = PortfolioManagerImpl(
+                    mockConfig,
+                    mockk(relaxed = true),
+                    analyzer,
+                    executor
+                )
 
                 // Sub-case A: Deposit
                 // Total portfolio = $10,000 (BTC=$4,500, ETH=$4,500, USD=$1,000)
@@ -626,8 +656,16 @@ class EvaluationScenariosTest : StringSpec() {
                 }
 
                 val statsRepo = mockk<PortfolioStatsRepository>(relaxed = true)
-                val analyzer = PortfolioAnalyzerImpl(fakeKraken, mockConfig, statsRepo)
-                val executor = OrderExecutorImpl(fakeKraken, analyzer, tradeHistoryService)
+                val analyzer = PortfolioAnalyzerImpl(
+                    fakeKraken,
+                    mockConfig,
+                    statsRepo
+                )
+                val executor = OrderExecutorImpl(
+                    fakeKraken,
+                    analyzer,
+                    tradeHistoryService
+                )
 
                 val capturedActions = mutableListOf<String>()
                 val mockHistory = mockk<TradeHistoryService>(relaxed = true)
@@ -635,7 +673,12 @@ class EvaluationScenariosTest : StringSpec() {
                     capturedActions.addAll(firstArg<PortfolioSnapshot>().actions)
                 }
 
-                val pm = PortfolioManagerImpl(mockConfig, mockHistory, analyzer, executor)
+                val pm = PortfolioManagerImpl(
+                    mockConfig,
+                    mockHistory,
+                    analyzer,
+                    executor
+                )
                 pm.performRebalanceCycle()
 
                 val dryRunPass = capturedActions.any { it.startsWith("[DRY RUN]") }
@@ -668,7 +711,12 @@ class EvaluationScenariosTest : StringSpec() {
                 fakeKraken.orderResultFactory = null
                 fakeKraken.executedOrders.clear()
 
-                val pmDust = PortfolioManagerImpl(mockConfig, mockk(relaxed = true), analyzer, executor)
+                val pmDust = PortfolioManagerImpl(
+                    mockConfig,
+                    mockk(relaxed = true),
+                    analyzer,
+                    executor
+                )
                 pmDust.performRebalanceCycle()
 
                 val dustPass = fakeKraken.executedOrders.isEmpty()
@@ -736,9 +784,22 @@ class EvaluationScenariosTest : StringSpec() {
                 fakeKraken.pricesSupplier = { _ -> mapOf("XBTUSD" to 50000.0) }
 
                 val statsRepo = mockk<PortfolioStatsRepository>(relaxed = true)
-                val analyzer = PortfolioAnalyzerImpl(fakeKraken, mockConfig, statsRepo)
-                val executor = OrderExecutorImpl(fakeKraken, analyzer, tradeHistoryService)
-                val pm = PortfolioManagerImpl(mockConfig, mockk(relaxed = true), analyzer, executor)
+                val analyzer = PortfolioAnalyzerImpl(
+                    fakeKraken,
+                    mockConfig,
+                    statsRepo
+                )
+                val executor = OrderExecutorImpl(
+                    fakeKraken,
+                    analyzer,
+                    tradeHistoryService
+                )
+                val pm = PortfolioManagerImpl(
+                    mockConfig,
+                    mockk(relaxed = true),
+                    analyzer,
+                    executor
+                )
 
                 fakeKraken.executedOrders.clear()
                 pm.performRebalanceCycle()
@@ -796,9 +857,22 @@ class EvaluationScenariosTest : StringSpec() {
                 }
 
                 val statsRepo = mockk<PortfolioStatsRepository>(relaxed = true)
-                val analyzer = PortfolioAnalyzerImpl(fakeKraken, mockConfig, statsRepo)
-                val executor = OrderExecutorImpl(fakeKraken, analyzer, tradeHistoryService)
-                val pm = PortfolioManagerImpl(mockConfig, mockk(relaxed = true), analyzer, executor)
+                val analyzer = PortfolioAnalyzerImpl(
+                    fakeKraken,
+                    mockConfig,
+                    statsRepo
+                )
+                val executor = OrderExecutorImpl(
+                    fakeKraken,
+                    analyzer,
+                    tradeHistoryService
+                )
+                val pm = PortfolioManagerImpl(
+                    mockConfig,
+                    mockk(relaxed = true),
+                    analyzer,
+                    executor
+                )
 
                 fakeKraken.executedOrders.clear()
                 pm.performRebalanceCycle()
@@ -877,9 +951,22 @@ class EvaluationScenariosTest : StringSpec() {
                 }
 
                 val statsRepo = mockk<PortfolioStatsRepository>(relaxed = true)
-                val analyzer = PortfolioAnalyzerImpl(fakeKraken, mockConfig, statsRepo)
-                val executor = OrderExecutorImpl(fakeKraken, analyzer, tradeHistoryService)
-                val pm = PortfolioManagerImpl(mockConfig, mockk(relaxed = true), analyzer, executor)
+                val analyzer = PortfolioAnalyzerImpl(
+                    fakeKraken,
+                    mockConfig,
+                    statsRepo
+                )
+                val executor = OrderExecutorImpl(
+                    fakeKraken,
+                    analyzer,
+                    tradeHistoryService
+                )
+                val pm = PortfolioManagerImpl(
+                    mockConfig,
+                    mockk(relaxed = true),
+                    analyzer,
+                    executor
+                )
 
                 fakeKraken.executedOrders.clear()
                 pm.performRebalanceCycle()
@@ -928,9 +1015,22 @@ class EvaluationScenariosTest : StringSpec() {
                 fakeKraken.balanceSupplier = { emptyMap() }
 
                 val statsRepo = mockk<PortfolioStatsRepository>(relaxed = true)
-                val analyzer = PortfolioAnalyzerImpl(fakeKraken, mockConfig, statsRepo)
-                val executor = OrderExecutorImpl(fakeKraken, analyzer, tradeHistoryService)
-                val pm = PortfolioManagerImpl(mockConfig, mockk(relaxed = true), analyzer, executor)
+                val analyzer = PortfolioAnalyzerImpl(
+                    fakeKraken,
+                    mockConfig,
+                    statsRepo
+                )
+                val executor = OrderExecutorImpl(
+                    fakeKraken,
+                    analyzer,
+                    tradeHistoryService
+                )
+                val pm = PortfolioManagerImpl(
+                    mockConfig,
+                    mockk(relaxed = true),
+                    analyzer,
+                    executor
+                )
 
                 pm.startRebalancingLoop()
                 val job = launch {
@@ -968,7 +1068,11 @@ class EvaluationScenariosTest : StringSpec() {
 
                 val targetStatsFile = File(baseFile, "stats.json")
                 val db = DatabaseConfig.init(":memory:")
-                val statsRepo = SqlitePortfolioStatsRepositoryImpl(db, objectMapper, targetStatsFile.absolutePath)
+                val statsRepo = SqlitePortfolioStatsRepositoryImpl(
+                    db,
+                    objectMapper,
+                    targetStatsFile.absolutePath
+                )
                 val stats = PortfolioStats(BigDecimal("1234.56"))
 
                 // Close transaction manager to force write failure
@@ -1000,8 +1104,18 @@ class EvaluationScenariosTest : StringSpec() {
                 val mapper = jacksonObjectMapper()
                 val tempFile = File.createTempFile("scenario11-", ".json").apply { deleteOnExit() }
 
-                val validSettings = Settings(10, 2.0, 1.0, true, 0.0, 1.0)
-                val validConfig = AppConfig(KrakenCredentials("k", "s"), validSettings, listOf(Allocation(Asset.USD, 100.0)))
+                val validSettings = Settings(
+                    10,
+                    2.0,
+                    1.0,
+                    true,
+                    0.0,
+                    1.0
+                )
+                val validConfig = AppConfig(KrakenCredentials(
+                    "k",
+                    "s"
+                ), validSettings, listOf(Allocation(Asset.USD, 100.0)))
                 mapper.writeValue(tempFile, validConfig)
 
                 val configService = ConfigServiceImpl(mapper, tempFile.absolutePath)
@@ -1042,8 +1156,18 @@ class EvaluationScenariosTest : StringSpec() {
                 val mockConfig = mockk<ConfigService>(relaxed = true)
                 val appConfig = AppConfig(
                     kraken = KrakenCredentials("k", "s"),
-                    settings = Settings(10, 2.0, 0.0001, true, 0.0, 1.0),
-                    allocations = listOf(Allocation(Asset.USD, 50.0), Allocation(Asset.BTC, 50.0))
+                    settings = Settings(
+                        10,
+                        2.0,
+                        0.0001,
+                        true,
+                        0.0,
+                        1.0
+                    ),
+                    allocations = listOf(Allocation(
+                        Asset.USD,
+                        50.0
+                    ), Allocation(Asset.BTC, 50.0))
                 )
                 every { mockConfig.getConfig() } returns appConfig
 
@@ -1058,10 +1182,23 @@ class EvaluationScenariosTest : StringSpec() {
                 }
 
                 val statsRepo = mockk<PortfolioStatsRepository>(relaxed = true)
-                val analyzer = PortfolioAnalyzerImpl(fakeKraken, mockConfig, statsRepo)
-                val executor = OrderExecutorImpl(fakeKraken, analyzer, tradeHistoryService)
+                val analyzer = PortfolioAnalyzerImpl(
+                    fakeKraken,
+                    mockConfig,
+                    statsRepo
+                )
+                val executor = OrderExecutorImpl(
+                    fakeKraken,
+                    analyzer,
+                    tradeHistoryService
+                )
 
-                val pm = PortfolioManagerImpl(mockConfig, mockk(relaxed = true), analyzer, executor)
+                val pm = PortfolioManagerImpl(
+                    mockConfig,
+                    mockk(relaxed = true),
+                    analyzer,
+                    executor
+                )
                 pm.performRebalanceCycle()
 
                 val evidence = "Total assets: ${fakeKraken.executedOrders.size}\n" +
@@ -1082,7 +1219,14 @@ class EvaluationScenariosTest : StringSpec() {
                 val mockConfig = mockk<ConfigService>(relaxed = true)
                 val appConfig = AppConfig(
                     kraken = KrakenCredentials("k", "s"),
-                    settings = Settings(60L, 2.0, 10.0, false, 0.0, 1.0),
+                    settings = Settings(
+                        60L,
+                        2.0,
+                        10.0,
+                        false,
+                        0.0,
+                        1.0
+                    ),
                     allocations = listOf(
                         Allocation(Asset.BTC, 40.0),
                         Allocation(Asset.ETH, 40.0),
@@ -1120,9 +1264,22 @@ class EvaluationScenariosTest : StringSpec() {
                 }
 
                 val statsRepo = mockk<PortfolioStatsRepository>(relaxed = true)
-                val analyzer = PortfolioAnalyzerImpl(fakeKraken, mockConfig, statsRepo)
-                val executor = OrderExecutorImpl(fakeKraken, analyzer, tradeHistoryService)
-                val pm = PortfolioManagerImpl(mockConfig, mockk(relaxed = true), analyzer, executor)
+                val analyzer = PortfolioAnalyzerImpl(
+                    fakeKraken,
+                    mockConfig,
+                    statsRepo
+                )
+                val executor = OrderExecutorImpl(
+                    fakeKraken,
+                    analyzer,
+                    tradeHistoryService
+                )
+                val pm = PortfolioManagerImpl(
+                    mockConfig,
+                    mockk(relaxed = true),
+                    analyzer,
+                    executor
+                )
 
                 pm.performRebalanceCycle()
 
@@ -1150,15 +1307,40 @@ class EvaluationScenariosTest : StringSpec() {
                 val mapper = jacksonObjectMapper()
                 val tempFile = File.createTempFile("scenario14-", ".json").apply { deleteOnExit() }
 
-                val settings1 = Settings(60L, 2.0, 1.0, true, 0.0, 1.0)
-                val config1 = AppConfig(KrakenCredentials("key1", "sec1"), settings1, listOf(Allocation(Asset.USD, 100.0)))
+                val settings1 = Settings(
+                    60L,
+                    2.0,
+                    1.0,
+                    true,
+                    0.0,
+                    1.0
+                )
+                val config1 = AppConfig(
+                    KrakenCredentials(
+                        "key1",
+                        "sec1"
+                    ),
+                    settings1,
+                    listOf(Allocation(Asset.USD, 100.0))
+                )
                 mapper.writeValue(tempFile, config1)
 
                 val configService = ConfigServiceImpl(mapper, tempFile.absolutePath)
                 configService.getConfig().settings.loopDelaySeconds shouldBe 60L
 
-                val settings2 = Settings(120L, 5.0, 2.0, false, 10.0, 1.5)
-                val config2 = AppConfig(KrakenCredentials("key2", "sec2"), settings2, listOf(Allocation(Asset.USD, 100.0)))
+                val settings2 = Settings(
+                    120L,
+                    5.0,
+                    2.0,
+                    false,
+                    10.0,
+                    1.5
+                )
+                val config2 = AppConfig(
+                    KrakenCredentials("key2", "sec2"),
+                    settings2,
+                    listOf(Allocation(Asset.USD, 100.0))
+                )
                 mapper.writeValue(tempFile, config2)
 
                 configService.loadConfig()
@@ -1186,7 +1368,14 @@ class EvaluationScenariosTest : StringSpec() {
                 val mockConfig = mockk<ConfigService>(relaxed = true)
                 val appConfig = AppConfig(
                     kraken = KrakenCredentials("k", "s"),
-                    settings = Settings(60L, 2.0, 1.0, true, 0.0, 1.0),
+                    settings = Settings(
+                        60L,
+                        2.0,
+                        1.0,
+                        true,
+                        0.0,
+                        1.0
+                    ),
                     allocations = listOf(
                         Allocation(Asset.BTC, 99.0),
                         Allocation(Asset.USD, 1.0)
@@ -1207,10 +1396,23 @@ class EvaluationScenariosTest : StringSpec() {
                 }
 
                 val statsRepo = mockk<PortfolioStatsRepository>(relaxed = true)
-                val analyzer = PortfolioAnalyzerImpl(fakeKraken, mockConfig, statsRepo)
-                val executor = OrderExecutorImpl(fakeKraken, analyzer, tradeHistoryService)
+                val analyzer = PortfolioAnalyzerImpl(
+                    fakeKraken,
+                    mockConfig,
+                    statsRepo
+                )
+                val executor = OrderExecutorImpl(
+                    fakeKraken,
+                    analyzer,
+                    tradeHistoryService
+                )
 
-                val pm = PortfolioManagerImpl(mockConfig, mockk(relaxed = true), analyzer, executor)
+                val pm = PortfolioManagerImpl(
+                    mockConfig,
+                    mockk(relaxed = true),
+                    analyzer,
+                    executor
+                )
                 pm.performRebalanceCycle()
 
                 val order = fakeKraken.executedOrders.firstOrNull { it.pair == "XBTUSD" && it.side == "buy" }
@@ -1281,7 +1483,14 @@ class EvaluationScenariosTest : StringSpec() {
                 val mockConfig = mockk<ConfigService>(relaxed = true)
                 val appConfig = AppConfig(
                     kraken = KrakenCredentials("k", "s"),
-                    settings = Settings(60L, 2.0, 1.0, false, 0.0, 1.0),
+                    settings = Settings(
+                        60L,
+                        2.0,
+                        1.0,
+                        false,
+                        0.0,
+                        1.0
+                    ),
                     allocations = listOf(
                         Allocation(Asset.BTC, 50.0),
                         Allocation(Asset.USD, 50.0)
@@ -1300,9 +1509,22 @@ class EvaluationScenariosTest : StringSpec() {
                 }
 
                 val statsRepo = mockk<PortfolioStatsRepository>(relaxed = true)
-                val analyzer = PortfolioAnalyzerImpl(fakeKraken, mockConfig, statsRepo)
-                val executor = OrderExecutorImpl(fakeKraken, analyzer, tradeHistoryService)
-                val pm = PortfolioManagerImpl(mockConfig, mockk(relaxed = true), analyzer, executor)
+                val analyzer = PortfolioAnalyzerImpl(
+                    fakeKraken,
+                    mockConfig,
+                    statsRepo
+                )
+                val executor = OrderExecutorImpl(
+                    fakeKraken,
+                    analyzer,
+                    tradeHistoryService
+                )
+                val pm = PortfolioManagerImpl(
+                    mockConfig,
+                    mockk(relaxed = true),
+                    analyzer,
+                    executor
+                )
 
                 shouldThrow<IOException> {
                     pm.performRebalanceCycle()
@@ -1329,9 +1551,33 @@ class EvaluationScenariosTest : StringSpec() {
                     configureTestEnv()
                 }
 
-                val snap1 = PortfolioSnapshot(Instant.now(), BigDecimal("1000.0"), emptyMap(), listOf("SNAP1"), BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO)
-                val snap2 = PortfolioSnapshot(Instant.now(), BigDecimal("2000.0"), emptyMap(), listOf("SNAP2"), BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO)
-                val snap3 = PortfolioSnapshot(Instant.now(), BigDecimal("3000.0"), emptyMap(), listOf("SNAP3"), BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO)
+                val snap1 = PortfolioSnapshot(
+                    Instant.now(),
+                    BigDecimal("1000.0"),
+                    emptyMap(),
+                    listOf("SNAP1"),
+                    BigDecimal.ZERO,
+                    BigDecimal.ZERO,
+                    BigDecimal.ZERO
+                )
+                val snap2 = PortfolioSnapshot(
+                    Instant.now(),
+                    BigDecimal("2000.0"),
+                    emptyMap(),
+                    listOf("SNAP2"),
+                    BigDecimal.ZERO,
+                    BigDecimal.ZERO,
+                    BigDecimal.ZERO
+                )
+                val snap3 = PortfolioSnapshot(
+                    Instant.now(),
+                    BigDecimal("3000.0"),
+                    emptyMap(),
+                    listOf("SNAP3"),
+                    BigDecimal.ZERO,
+                    BigDecimal.ZERO,
+                    BigDecimal.ZERO
+                )
 
                 every { tradeHistoryService.getLatestSnapshot() } returns snap1
                 every { tradeHistoryService.getHistoryFlow() } returns flowOf(snap2, snap3)
@@ -1363,7 +1609,14 @@ class EvaluationScenariosTest : StringSpec() {
                 val mapper = jacksonObjectMapper()
                 val tempFile = File.createTempFile("scenario19-", ".json").apply { deleteOnExit() }
 
-                val validSettings = Settings(10, 2.0, 1.0, true, 0.0, 1.0)
+                val validSettings = Settings(
+                    10,
+                    2.0,
+                    1.0,
+                    true,
+                    0.0,
+                    1.0
+                )
 
                 val assets = (1..14).map { "ALT$it" }
                 val allocations = assets.map { Allocation(it, 7.0) } + Allocation(Asset.USD, 2.0)
@@ -1425,7 +1678,14 @@ class EvaluationScenariosTest : StringSpec() {
                 val mockConfig = mockk<ConfigService>(relaxed = true)
                 val appConfig = AppConfig(
                     kraken = KrakenCredentials("k", "s"),
-                    settings = Settings(60L, 2.0, 1.0, false, 0.0, 1.0),
+                    settings = Settings(
+                        60L,
+                        2.0,
+                        1.0,
+                        false,
+                        0.0,
+                        1.0
+                    ),
                     allocations = listOf(
                         Allocation(Asset.BTC, 50.0),
                         Allocation(Asset.USD, 50.0)
@@ -1444,8 +1704,16 @@ class EvaluationScenariosTest : StringSpec() {
                 }
 
                 val statsRepo = mockk<PortfolioStatsRepository>(relaxed = true)
-                val analyzer = PortfolioAnalyzerImpl(fakeKraken, mockConfig, statsRepo)
-                val executor = OrderExecutorImpl(fakeKraken, analyzer, tradeHistoryService)
+                val analyzer = PortfolioAnalyzerImpl(
+                    fakeKraken,
+                    mockConfig,
+                    statsRepo
+                )
+                val executor = OrderExecutorImpl(
+                    fakeKraken,
+                    analyzer,
+                    tradeHistoryService
+                )
 
                 val mockHistory = mockk<TradeHistoryService>(relaxed = true)
                 val capturedActions = mutableListOf<String>()
@@ -1453,7 +1721,12 @@ class EvaluationScenariosTest : StringSpec() {
                     capturedActions.addAll(firstArg<PortfolioSnapshot>().actions)
                 }
 
-                val pm = PortfolioManagerImpl(mockConfig, mockHistory, analyzer, executor)
+                val pm = PortfolioManagerImpl(
+                    mockConfig,
+                    mockHistory,
+                    analyzer,
+                    executor
+                )
                 pm.performRebalanceCycle()
 
                 val noTrades = fakeKraken.executedOrders.isEmpty()
@@ -1479,7 +1752,14 @@ class EvaluationScenariosTest : StringSpec() {
                 val mockConfig = mockk<ConfigService>(relaxed = true)
                 val appConfig = AppConfig(
                     kraken = KrakenCredentials("k", "s"),
-                    settings = Settings(60L, 2.0, 1.0, false, 0.0, 1.0),
+                    settings = Settings(
+                        60L,
+                        2.0,
+                        1.0,
+                        false,
+                        0.0,
+                        1.0
+                    ),
                     allocations = listOf(
                         Allocation(Asset.BTC, 50.0),
                         Allocation(Asset.USD, 50.0)
@@ -1507,8 +1787,16 @@ class EvaluationScenariosTest : StringSpec() {
                 }
 
                 val statsRepo = mockk<PortfolioStatsRepository>(relaxed = true)
-                val analyzer = PortfolioAnalyzerImpl(fakeKraken, mockConfig, statsRepo)
-                val executor = OrderExecutorImpl(fakeKraken, analyzer, tradeHistoryService)
+                val analyzer = PortfolioAnalyzerImpl(
+                    fakeKraken,
+                    mockConfig,
+                    statsRepo
+                )
+                val executor = OrderExecutorImpl(
+                    fakeKraken,
+                    analyzer,
+                    tradeHistoryService
+                )
 
                 val mockHistory = mockk<TradeHistoryService>(relaxed = true)
                 val capturedActions = mutableListOf<String>()
@@ -1516,7 +1804,12 @@ class EvaluationScenariosTest : StringSpec() {
                     capturedActions.addAll(firstArg<PortfolioSnapshot>().actions)
                 }
 
-                val pm = PortfolioManagerImpl(mockConfig, mockHistory, analyzer, executor)
+                val pm = PortfolioManagerImpl(
+                    mockConfig,
+                    mockHistory,
+                    analyzer,
+                    executor
+                )
                 pm.performRebalanceCycle()
 
                 val failureLogged = capturedActions.any { it.contains("FAILED BUY BTC: Insufficient funds") }
@@ -1542,7 +1835,14 @@ class EvaluationScenariosTest : StringSpec() {
                 val mockConfig = mockk<ConfigService>(relaxed = true)
                 val appConfig = AppConfig(
                     kraken = KrakenCredentials("k", "s"),
-                    settings = Settings(60L, 2.0, 1.0, false, 0.0, 1.0),
+                    settings = Settings(
+                        60L,
+                        2.0,
+                        1.0,
+                        false,
+                        0.0,
+                        1.0
+                    ),
                     allocations = listOf(
                         Allocation(Asset.BTC, 50.0),
                         Allocation(Asset.USD, 50.0)
@@ -1555,11 +1855,24 @@ class EvaluationScenariosTest : StringSpec() {
                 }
 
                 val statsRepo = mockk<PortfolioStatsRepository>(relaxed = true)
-                val analyzer = PortfolioAnalyzerImpl(fakeKraken, mockConfig, statsRepo)
-                val executor = OrderExecutorImpl(fakeKraken, analyzer, tradeHistoryService)
+                val analyzer = PortfolioAnalyzerImpl(
+                    fakeKraken,
+                    mockConfig,
+                    statsRepo
+                )
+                val executor = OrderExecutorImpl(
+                    fakeKraken,
+                    analyzer,
+                    tradeHistoryService
+                )
 
                 val mockHistory = mockk<TradeHistoryService>(relaxed = true)
-                val pm = PortfolioManagerImpl(mockConfig, mockHistory, analyzer, executor)
+                val pm = PortfolioManagerImpl(
+                    mockConfig,
+                    mockHistory,
+                    analyzer,
+                    executor
+                )
 
                 val exception = shouldThrow<IOException> {
                     pm.performRebalanceCycle()
@@ -1587,8 +1900,19 @@ class EvaluationScenariosTest : StringSpec() {
                 val mapper = jacksonObjectMapper()
                 val tempFile = File.createTempFile("scenario24-", ".json").apply { deleteOnExit() }
 
-                val validSettings = Settings(10, 2.0, 1.0, true, 0.0, 1.0)
-                val validConfig = AppConfig(KrakenCredentials("k", "s"), validSettings, listOf(Allocation(Asset.USD, 100.0)))
+                val validSettings = Settings(
+                    10,
+                    2.0,
+                    1.0,
+                    true,
+                    0.0,
+                    1.0
+                )
+                val validConfig = AppConfig(
+                    KrakenCredentials("k", "s"),
+                    validSettings,
+                    listOf(Allocation(Asset.USD, 100.0))
+                )
 
                 mapper.writeValue(tempFile, validConfig)
 
@@ -1623,7 +1947,14 @@ class EvaluationScenariosTest : StringSpec() {
                 val mockConfig = mockk<ConfigService>(relaxed = true)
                 val appConfig = AppConfig(
                     kraken = KrakenCredentials("k", "s"),
-                    settings = Settings(60L, 2.0, 1.0, false, 0.0, 1.0),
+                    settings = Settings(
+                        60L,
+                        2.0,
+                        1.0,
+                        false,
+                        0.0,
+                        1.0
+                    ),
                     allocations = listOf(
                         Allocation(Asset.BTC, 30.0),
                         Allocation(Asset.ETH, 30.0),
@@ -1655,8 +1986,16 @@ class EvaluationScenariosTest : StringSpec() {
                 }
 
                 val statsRepo = mockk<PortfolioStatsRepository>(relaxed = true)
-                val analyzer = PortfolioAnalyzerImpl(fakeKraken, mockConfig, statsRepo)
-                val executor = OrderExecutorImpl(fakeKraken, analyzer, tradeHistoryService)
+                val analyzer = PortfolioAnalyzerImpl(
+                    fakeKraken,
+                    mockConfig,
+                    statsRepo
+                )
+                val executor = OrderExecutorImpl(
+                    fakeKraken,
+                    analyzer,
+                    tradeHistoryService
+                )
 
                 val mockHistory = mockk<TradeHistoryService>(relaxed = true)
                 val capturedActions = mutableListOf<String>()
@@ -1664,7 +2003,12 @@ class EvaluationScenariosTest : StringSpec() {
                     capturedActions.addAll(firstArg<PortfolioSnapshot>().actions)
                 }
 
-                val pm = PortfolioManagerImpl(mockConfig, mockHistory, analyzer, executor)
+                val pm = PortfolioManagerImpl(
+                    mockConfig,
+                    mockHistory,
+                    analyzer,
+                    executor
+                )
                 pm.performRebalanceCycle()
 
                 val btcFailedLogged = capturedActions.any { it.contains("FAILED BUY BTC: Order minimum size not met") }
@@ -1692,7 +2036,14 @@ class EvaluationScenariosTest : StringSpec() {
                 val mockConfig = mockk<ConfigService>(relaxed = true)
                 val appConfig = AppConfig(
                     kraken = KrakenCredentials("k", "s"),
-                    settings = Settings(60L, 2.0, 1.0, false, 0.0, 1.0),
+                    settings = Settings(
+                        60L,
+                        2.0,
+                        1.0,
+                        false,
+                        0.0,
+                        1.0
+                    ),
                     allocations = listOf(
                         Allocation(Asset.BTC, 50.0),
                         Allocation(Asset.USD, 50.0)
@@ -1711,10 +2062,23 @@ class EvaluationScenariosTest : StringSpec() {
                 }
 
                 val statsRepo = mockk<PortfolioStatsRepository>(relaxed = true)
-                val analyzer = PortfolioAnalyzerImpl(fakeKraken, mockConfig, statsRepo)
-                val executor = OrderExecutorImpl(fakeKraken, analyzer, tradeHistoryService)
+                val analyzer = PortfolioAnalyzerImpl(
+                    fakeKraken,
+                    mockConfig,
+                    statsRepo
+                )
+                val executor = OrderExecutorImpl(
+                    fakeKraken,
+                    analyzer,
+                    tradeHistoryService
+                )
 
-                val pm = PortfolioManagerImpl(mockConfig, mockk(relaxed = true), analyzer, executor)
+                val pm = PortfolioManagerImpl(
+                    mockConfig,
+                    mockk(relaxed = true),
+                    analyzer,
+                    executor
+                )
                 pm.performRebalanceCycle()
 
                 val sells = fakeKraken.executedOrders.filter { it.side == "sell" }
@@ -1795,7 +2159,14 @@ class EvaluationScenariosTest : StringSpec() {
                 val mockConfig = mockk<ConfigService>(relaxed = true)
                 val appConfig = AppConfig(
                     kraken = KrakenCredentials("k", "s"),
-                    settings = Settings(60L, 2.0, 1.0, false, 0.0, 1.0),
+                    settings = Settings(
+                        60L,
+                        2.0,
+                        1.0,
+                        false,
+                        0.0,
+                        1.0
+                    ),
                     allocations = listOf(
                         Allocation(Asset.BTC, 50.0),
                         Allocation(Asset.USD, 50.0)
@@ -1814,10 +2185,23 @@ class EvaluationScenariosTest : StringSpec() {
                 }
 
                 val statsRepo = mockk<PortfolioStatsRepository>(relaxed = true)
-                val analyzer = PortfolioAnalyzerImpl(fakeKraken, mockConfig, statsRepo)
-                val executor = OrderExecutorImpl(fakeKraken, analyzer, tradeHistoryService)
+                val analyzer = PortfolioAnalyzerImpl(
+                    fakeKraken,
+                    mockConfig,
+                    statsRepo
+                )
+                val executor = OrderExecutorImpl(
+                    fakeKraken,
+                    analyzer,
+                    tradeHistoryService
+                )
 
-                val pm = PortfolioManagerImpl(mockConfig, mockk(relaxed = true), analyzer, executor)
+                val pm = PortfolioManagerImpl(
+                    mockConfig,
+                    mockk(relaxed = true),
+                    analyzer,
+                    executor
+                )
 
                 pm.performRebalanceCycle()
 
@@ -1873,8 +2257,16 @@ class EvaluationScenariosTest : StringSpec() {
                 }
 
                 val statsRepo = mockk<PortfolioStatsRepository>(relaxed = true)
-                val analyzer = PortfolioAnalyzerImpl(fakeKraken, mockConfig, statsRepo)
-                val executor = OrderExecutorImpl(fakeKraken, analyzer, tradeHistoryService)
+                val analyzer = PortfolioAnalyzerImpl(
+                    fakeKraken,
+                    mockConfig,
+                    statsRepo
+                )
+                val executor = OrderExecutorImpl(
+                    fakeKraken,
+                    analyzer,
+                    tradeHistoryService
+                )
 
                 val mockHistory = mockk<TradeHistoryService>(relaxed = true)
                 val capturedActions = mutableListOf<String>()
@@ -1882,7 +2274,12 @@ class EvaluationScenariosTest : StringSpec() {
                     capturedActions.addAll(firstArg<PortfolioSnapshot>().actions)
                 }
 
-                val pm = PortfolioManagerImpl(mockConfig, mockHistory, analyzer, executor)
+                val pm = PortfolioManagerImpl(
+                    mockConfig,
+                    mockHistory,
+                    analyzer,
+                    executor
+                )
                 pm.performRebalanceCycle()
 
                 val btcSkipped = capturedActions.any { it.contains("Skipping dust buy for BTC") }
@@ -1930,8 +2327,16 @@ class EvaluationScenariosTest : StringSpec() {
                 )
                 every { mockConfig.getConfig() } returns appConfig
 
-                val analyzer = PortfolioAnalyzerImpl(fakeKraken, mockConfig, statsRepo)
-                val executor = OrderExecutorImpl(fakeKraken, analyzer, tradeHistoryService)
+                val analyzer = PortfolioAnalyzerImpl(
+                    fakeKraken,
+                    mockConfig,
+                    statsRepo
+                )
+                val executor = OrderExecutorImpl(
+                    fakeKraken,
+                    analyzer,
+                    tradeHistoryService
+                )
 
                 val mockHistory = mockk<TradeHistoryService>(relaxed = true)
                 val capturedSnapshots = mutableListOf<PortfolioSnapshot>()
@@ -1939,7 +2344,12 @@ class EvaluationScenariosTest : StringSpec() {
                     capturedSnapshots.add(firstArg())
                 }
 
-                val pm = PortfolioManagerImpl(mockConfig, mockHistory, analyzer, executor)
+                val pm = PortfolioManagerImpl(
+                    mockConfig,
+                    mockHistory,
+                    analyzer,
+                    executor
+                )
 
                 fakeKraken.balanceSupplier = {
                     mapOf(
