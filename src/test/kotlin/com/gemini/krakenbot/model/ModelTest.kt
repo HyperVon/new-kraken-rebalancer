@@ -4,16 +4,12 @@ import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.service.PortfolioValues
 import com.gemini.krakenbot.service.impl.OrderExecutorImpl
 import com.gemini.krakenbot.service.impl.PortfolioCalculations
+import com.gemini.krakenbot.TestFixtures
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import java.math.BigDecimal
 import java.time.Instant
-
-private const val XBTUSD = "XBTUSD"
-private const val ETHUSD = "ETHUSD"
-private const val BTC = "btc"
-private const val ETH = "eth"
 
 @Suppress("unused")
 class ModelTest : StringSpec() {
@@ -21,7 +17,7 @@ class ModelTest : StringSpec() {
         "testAssetMappings" {
             val btc = Asset(Asset.BTC)
             btc.krakenTicker shouldBe Asset.XBT
-            btc.tradingPair shouldBe XBTUSD
+            btc.tradingPair shouldBe TestFixtures.XBTUSD
             btc.isUsd shouldBe false
 
             val doge = Asset(Asset.DOGE)
@@ -34,16 +30,16 @@ class ModelTest : StringSpec() {
 
             val eth = Asset(Asset.ETH)
             eth.krakenTicker shouldBe Asset.ETH
-            eth.tradingPair shouldBe ETHUSD
+            eth.tradingPair shouldBe TestFixtures.ETHUSD
 
-            Asset.toKrakenTicker(BTC) shouldBe Asset.XBT
+            Asset.toKrakenTicker(TestFixtures.BTC_LOWER) shouldBe Asset.XBT
             Asset.toKrakenTicker("doge") shouldBe Asset.XDG
-            Asset.toKrakenTicker(ETH) shouldBe "ETH"
+            Asset.toKrakenTicker(TestFixtures.ETH_LOWER) shouldBe "ETH"
 
-            Asset.tradingPair(BTC) shouldBe XBTUSD
-            Asset.tradingPair(ETH) shouldBe ETHUSD
+            Asset.tradingPair(TestFixtures.BTC_LOWER) shouldBe TestFixtures.XBTUSD
+            Asset.tradingPair(TestFixtures.ETH_LOWER) shouldBe TestFixtures.ETHUSD
 
-            Asset.BTC_USD_PAIR shouldBe XBTUSD
+            Asset.BTC_USD_PAIR shouldBe TestFixtures.XBTUSD
         }
 
         "testPortfolioSnapshot" {
@@ -126,3 +122,4 @@ class ModelTest : StringSpec() {
         }
     }
 }
+

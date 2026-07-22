@@ -3,6 +3,7 @@ package com.gemini.krakenbot.repository
 import com.gemini.krakenbot.config.DatabaseConfig
 import com.gemini.krakenbot.model.PortfolioStats
 import com.gemini.krakenbot.repository.impl.SqlitePortfolioStatsRepositoryImpl
+import com.gemini.krakenbot.TestFixtures
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
@@ -35,18 +36,13 @@ class StatsThrowingTransactionManager(
     }
 }
 
-private const val _MEMORY_ = ":memory:"
-private const val DROP_TABLE_IF_EXISTS_PORTFOLIO_STATS = "DROP TABLE IF EXISTS portfolio_stats"
-
-private const val ORG_JETBRAINS_EXPOSED_SQL_TRANSACTIONS_TRANSACTION_API_KT = "org.jetbrains.exposed.sql.transactions.TransactionApiKt"
-
 @Suppress("unused")
 class SqlitePortfolioStatsRepositoryImplTest : StringSpec() {
 
     override fun isolationMode() = IsolationMode.InstancePerTest
 
     private val objectMapper = jacksonObjectMapper()
-    private val db = DatabaseConfig.init(_MEMORY_)
+    private val db = DatabaseConfig.init(TestFixtures.MEMORY_)
     private val repository = SqlitePortfolioStatsRepositoryImpl(db, objectMapper)
 
     init {
@@ -75,11 +71,11 @@ class SqlitePortfolioStatsRepositoryImplTest : StringSpec() {
 
         "load returns default stats when database throws exception" {
             // Create a db and drop the stats table to trigger an exception on load
-            val brokenDb = DatabaseConfig.init(_MEMORY_)
+            val brokenDb = DatabaseConfig.init(TestFixtures.MEMORY_)
             val brokenRepo = SqlitePortfolioStatsRepositoryImpl(brokenDb, objectMapper)
 
             transaction(brokenDb) {
-                exec(DROP_TABLE_IF_EXISTS_PORTFOLIO_STATS)
+                exec(TestFixtures.DROP_TABLE_IF_EXISTS_PORTFOLIO_STATS)
             }
 
             val result = brokenRepo.load()
@@ -88,11 +84,11 @@ class SqlitePortfolioStatsRepositoryImplTest : StringSpec() {
         }
 
         "save wraps non-IOException as IOException" {
-            val brokenDb = DatabaseConfig.init(_MEMORY_)
+            val brokenDb = DatabaseConfig.init(TestFixtures.MEMORY_)
             val brokenRepo = SqlitePortfolioStatsRepositoryImpl(brokenDb, objectMapper)
 
             transaction(brokenDb) {
-                exec(DROP_TABLE_IF_EXISTS_PORTFOLIO_STATS)
+                exec(TestFixtures.DROP_TABLE_IF_EXISTS_PORTFOLIO_STATS)
             }
 
             val stats = PortfolioStats(BigDecimal("10000.00"))
@@ -112,7 +108,7 @@ class SqlitePortfolioStatsRepositoryImplTest : StringSpec() {
             val throwingTxManager = StatsThrowingTransactionManager(realTxManager)
 
             val mockDb = io.mockk.mockk<Database>(relaxed = true)
-            mockkStatic(ORG_JETBRAINS_EXPOSED_SQL_TRANSACTIONS_TRANSACTION_API_KT)
+            mockkStatic(TestFixtures.ORG_JETBRAINS_EXPOSED_SQL_TRANSACTIONS_TRANSACTION_API_KT)
             every { mockDb.transactionManager } returns throwingTxManager
 
             val ioRepo = SqlitePortfolioStatsRepositoryImpl(mockDb, objectMapper)
@@ -123,7 +119,7 @@ class SqlitePortfolioStatsRepositoryImplTest : StringSpec() {
             }
             thrown.message shouldBe "Direct IO failure"
 
-            unmockkStatic(ORG_JETBRAINS_EXPOSED_SQL_TRANSACTIONS_TRANSACTION_API_KT)
+            unmockkStatic(TestFixtures.ORG_JETBRAINS_EXPOSED_SQL_TRANSACTIONS_TRANSACTION_API_KT)
         }
 
         "load migrates portfolio-stats.json if database is empty" {
@@ -152,3 +148,4 @@ class SqlitePortfolioStatsRepositoryImplTest : StringSpec() {
         }
     }
 }
+

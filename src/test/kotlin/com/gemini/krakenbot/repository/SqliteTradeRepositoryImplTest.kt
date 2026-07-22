@@ -6,6 +6,7 @@ import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.repository.impl.SqliteTradeRepositoryImpl
+import com.gemini.krakenbot.TestFixtures
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
@@ -37,40 +38,12 @@ class TradeThrowingTransactionManager(
     }
 }
 
-private const val MEMORY_ = ":memory:"
-
-private const val DROP_TABLE_IF_EXISTS_PORTFOLIO_SNAPSHOTS = "DROP TABLE IF EXISTS portfolio_snapshots"
-
-private const val SYNC_KEY = "sync_key"
-
-private const val SYNC_VAL = "sync_val"
-
-private const val SYNC_VAL_UPDATED = "sync_val_updated"
-
-private const val BUY = "BUY"
-
-private const val SELL = "SELL"
-
-private const val XBTUSD = "XBTUSD"
-
-private const val ETHUSD = "ETHUSD"
-
-private const val XXBTZUSD = "XXBTZUSD"
-
-private const val DOGEUSD = "DOGEUSD"
-
-private const val USD = "USD"
-
-private const val ETH = "ETH"
-
-private const val ORG_JETBRAINS_EXPOSED_SQL_TRANSACTIONS_TRANSACTION_API_KT = "org.jetbrains.exposed.sql.transactions.TransactionApiKt"
-
 @Suppress("unused")
 class SqliteTradeRepositoryImplTest : StringSpec() {
 
     override fun isolationMode() = IsolationMode.InstancePerTest
 
-    private val db = DatabaseConfig.init(MEMORY_)
+    private val db = DatabaseConfig.init(TestFixtures.MEMORY_)
     private val repository = SqliteTradeRepositoryImpl(db)
 
     init {
@@ -90,8 +63,8 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
                         deviationPercent = BigDecimal("0.0"),
                         deviationUSD = BigDecimal("0.0")
                     ),
-                    USD to PortfolioSnapshot.AssetSnapshot(
-                        symbol = Asset(USD),
+                    TestFixtures.USD to PortfolioSnapshot.AssetSnapshot(
+                        symbol = Asset(TestFixtures.USD),
                         balance = BigDecimal("100.50"),
                         price = BigDecimal.ONE,
                         valueUSD = BigDecimal("100.50"),
@@ -141,7 +114,7 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
             )
             val trade2 = TradeRecord(
                 timestamp = now,
-                pair = ETHUSD,
+                pair = TestFixtures.ETHUSD,
                 side = OrderSide.SELL.name,
                 symbol = Asset.ETH,
                 volume = BigDecimal("1.0"),
@@ -152,7 +125,7 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
             )
             val failedTrade = TradeRecord(
                 timestamp = now.plusSeconds(10),
-                pair = DOGEUSD,
+                pair = TestFixtures.DOGEUSD,
                 side = OrderSide.BUY.name,
                 symbol = Asset.DOGE,
                 volume = BigDecimal("100.0"),
@@ -174,20 +147,20 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
 
             val trades = repository.getTradesInRange(now.minusSeconds(20), now.plusSeconds(20))
             trades.size shouldBe 3
-            trades[0].pair shouldBe DOGEUSD // sorted desc by timestamp
+            trades[0].pair shouldBe TestFixtures.DOGEUSD // sorted desc by timestamp
             trades[0].success shouldBe false
             trades[0].errorMessage shouldBe "API Error"
-            trades[1].pair shouldBe ETHUSD
+            trades[1].pair shouldBe TestFixtures.ETHUSD
             trades[1].dryRun shouldBe true
-            trades[2].pair shouldBe XBTUSD
+            trades[2].pair shouldBe TestFixtures.XBTUSD
         }
 
         "getTradeSummaryStats with time range" {
             val now = Instant.now().truncatedTo(ChronoUnit.MILLIS)
             val trade1 = TradeRecord(
                 timestamp = now.minus(10, ChronoUnit.DAYS),
-                pair = XBTUSD,
-                side = BUY,
+                pair = TestFixtures.XBTUSD,
+                side = TestFixtures.BUY,
                 symbol = Asset.BTC,
                 volume = BigDecimal("0.1"),
                 usdAmount = BigDecimal("5000.00"),
@@ -197,9 +170,9 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
             )
             val trade2 = TradeRecord(
                 timestamp = now.minus(2, ChronoUnit.DAYS),
-                pair = ETHUSD,
-                side = SELL,
-                symbol = ETH,
+                pair = TestFixtures.ETHUSD,
+                side = TestFixtures.SELL,
+                symbol = TestFixtures.ETH,
                 volume = BigDecimal("1.0"),
                 usdAmount = BigDecimal("2000.00"),
                 success = true,
@@ -279,8 +252,8 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
             val now = Instant.now().truncatedTo(ChronoUnit.MILLIS)
             val trade1 = TradeRecord(
                 timestamp = now.minusSeconds(10),
-                pair = XBTUSD,
-                side = BUY,
+                pair = TestFixtures.XBTUSD,
+                side = TestFixtures.BUY,
                 symbol = Asset.BTC,
                 volume = BigDecimal("0.1"),
                 usdAmount = BigDecimal("5000.00"),
@@ -289,9 +262,9 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
             )
             val trade2 = TradeRecord(
                 timestamp = now,
-                pair = ETHUSD,
-                side = SELL,
-                symbol = ETH,
+                pair = TestFixtures.ETHUSD,
+                side = TestFixtures.SELL,
+                symbol = TestFixtures.ETH,
                 volume = BigDecimal("1.0"),
                 usdAmount = BigDecimal("2000.00"),
                 success = true,
@@ -307,8 +280,8 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
             val now = Instant.now().truncatedTo(ChronoUnit.MILLIS)
             val oldTrade = TradeRecord(
                 timestamp = now,
-                pair = XBTUSD,
-                side = BUY,
+                pair = TestFixtures.XBTUSD,
+                side = TestFixtures.BUY,
                 symbol = Asset.BTC,
                 volume = BigDecimal("0.5"),
                 usdAmount = BigDecimal("15000.00"),
@@ -319,7 +292,7 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
 
             val newTrade = oldTrade.copy(
                 timestamp = now.plusSeconds(3),
-                pair = XXBTZUSD,
+                pair = TestFixtures.XXBTZUSD,
                 symbol = Asset.BTC,
                 volume = BigDecimal("0.49980000"),
                 usdAmount = BigDecimal("14980.50"),
@@ -331,7 +304,7 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
             val trades = repository.getTradesInRange(now.minusSeconds(10), now.plusSeconds(10))
             trades.size shouldBe 1
             trades.first().timestamp shouldBe now.plusSeconds(3)
-            trades.first().pair shouldBe XXBTZUSD
+            trades.first().pair shouldBe TestFixtures.XXBTZUSD
             trades.first().volume.shouldBeEqualComparingTo(BigDecimal("0.49980000"))
             trades.first().usdAmount.shouldBeEqualComparingTo(BigDecimal("14980.50"))
             trades.first().price.shouldBeEqualComparingTo(BigDecimal("29972.00"))
@@ -343,7 +316,7 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
             val krakenFill = TradeRecord(
                 timestamp = now.minusMillis(500),
                 pair = "TAOUSD",
-                side = SELL,
+                side = TestFixtures.SELL,
                 symbol = "TAO",
                 volume = BigDecimal("0.07708233"),
                 usdAmount = BigDecimal("16.62393026"),
@@ -385,7 +358,7 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
             val t1 = TradeRecord(
                 timestamp = now,
                 pair = "BTCUSD",
-                side = BUY,
+                side = TestFixtures.BUY,
                 symbol = Asset.BTC,
                 volume = BigDecimal("1.0"),
                 usdAmount = BigDecimal("60000.0"),
@@ -404,26 +377,26 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
             // Scenario 2: sameSymbolAndSide is false (different symbol)
             val tDifferentSymbol = t1.copy(
                 timestamp = now.plusMillis(100),
-                symbol = ETH,
-                pair = ETHUSD
+                symbol = TestFixtures.ETH,
+                pair = TestFixtures.ETHUSD
             )
             repository.saveTrade(tDifferentSymbol)
 
             // Scenario 3: sameSymbolAndSide is false (different side)
             val tDifferentSide = t1.copy(
                 timestamp = now.plusMillis(200),
-                side = SELL
+                side = TestFixtures.SELL
             )
             repository.saveTrade(tDifferentSide)
 
             // Scenario 4: pairAliasDuplicate (same symbol/side, same volume, different pair name)
             val tPairAlias1 = t1.copy(
                 timestamp = now.plusMillis(300),
-                pair = XBTUSD
+                pair = TestFixtures.XBTUSD
             )
             val tPairAlias2 = t1.copy(
                 timestamp = now.plusMillis(400),
-                pair = XXBTZUSD
+                pair = TestFixtures.XXBTZUSD
             )
             repository.saveTrade(tPairAlias1)
             repository.saveTrade(tPairAlias2)
@@ -494,12 +467,12 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
 
         "save wraps non-IOException as IOException" {
             // Use a closed database to trigger an exception
-            val closedDb = DatabaseConfig.init(MEMORY_)
+            val closedDb = DatabaseConfig.init(TestFixtures.MEMORY_)
             val brokenRepo = SqliteTradeRepositoryImpl(closedDb)
 
             // Drop a required table to trigger a write failure
             transaction(closedDb) {
-                exec(DROP_TABLE_IF_EXISTS_PORTFOLIO_SNAPSHOTS)
+                exec(TestFixtures.DROP_TABLE_IF_EXISTS_PORTFOLIO_SNAPSHOTS)
             }
 
             val snapshot = PortfolioSnapshot(
@@ -519,11 +492,11 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
         }
 
         "saveSnapshot wraps non-IOException as IOException" {
-            val closedDb = DatabaseConfig.init(MEMORY_)
+            val closedDb = DatabaseConfig.init(TestFixtures.MEMORY_)
             val brokenRepo = SqliteTradeRepositoryImpl(closedDb)
 
             transaction(closedDb) {
-                exec(DROP_TABLE_IF_EXISTS_PORTFOLIO_SNAPSHOTS)
+                exec(TestFixtures.DROP_TABLE_IF_EXISTS_PORTFOLIO_SNAPSHOTS)
             }
 
             val snapshot = PortfolioSnapshot(
@@ -543,7 +516,7 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
         }
 
         "saveTrade wraps non-IOException as IOException" {
-            val closedDb = DatabaseConfig.init(MEMORY_)
+            val closedDb = DatabaseConfig.init(TestFixtures.MEMORY_)
             val brokenRepo = SqliteTradeRepositoryImpl(closedDb)
 
             transaction(closedDb) {
@@ -552,8 +525,8 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
 
             val trade = TradeRecord(
                 timestamp = Instant.now(),
-                pair = XBTUSD,
-                side = BUY,
+                pair = TestFixtures.XBTUSD,
+                side = TestFixtures.BUY,
                 symbol = Asset.BTC,
                 volume = BigDecimal("0.1"),
                 usdAmount = BigDecimal("5000.00"),
@@ -575,7 +548,7 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
             val throwingTxManager = TradeThrowingTransactionManager(realTxManager)
 
             val mockDb = mockk<Database>(relaxed = true)
-            mockkStatic(ORG_JETBRAINS_EXPOSED_SQL_TRANSACTIONS_TRANSACTION_API_KT)
+            mockkStatic(TestFixtures.ORG_JETBRAINS_EXPOSED_SQL_TRANSACTIONS_TRANSACTION_API_KT)
             every { mockDb.transactionManager } returns throwingTxManager
 
             val ioRepo = SqliteTradeRepositoryImpl(mockDb)
@@ -594,7 +567,7 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
             }
             thrown.message shouldBe "Direct IO failure"
 
-            unmockkStatic(ORG_JETBRAINS_EXPOSED_SQL_TRANSACTIONS_TRANSACTION_API_KT)
+            unmockkStatic(TestFixtures.ORG_JETBRAINS_EXPOSED_SQL_TRANSACTIONS_TRANSACTION_API_KT)
         }
 
         "saveSnapshot rethrows IOException directly without wrapping" {
@@ -605,7 +578,7 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
             val throwingTxManager = TradeThrowingTransactionManager(realTxManager)
 
             val mockDb = mockk<Database>(relaxed = true)
-            mockkStatic(ORG_JETBRAINS_EXPOSED_SQL_TRANSACTIONS_TRANSACTION_API_KT)
+            mockkStatic(TestFixtures.ORG_JETBRAINS_EXPOSED_SQL_TRANSACTIONS_TRANSACTION_API_KT)
             every { mockDb.transactionManager } returns throwingTxManager
 
             val ioRepo = SqliteTradeRepositoryImpl(mockDb)
@@ -624,7 +597,7 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
             }
             thrown.message shouldBe "Direct IO failure"
 
-            unmockkStatic(ORG_JETBRAINS_EXPOSED_SQL_TRANSACTIONS_TRANSACTION_API_KT)
+            unmockkStatic(TestFixtures.ORG_JETBRAINS_EXPOSED_SQL_TRANSACTIONS_TRANSACTION_API_KT)
         }
 
         "saveTrade rethrows IOException directly without wrapping" {
@@ -635,14 +608,14 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
             val throwingTxManager = TradeThrowingTransactionManager(realTxManager)
 
             val mockDb = mockk<Database>(relaxed = true)
-            mockkStatic(ORG_JETBRAINS_EXPOSED_SQL_TRANSACTIONS_TRANSACTION_API_KT)
+            mockkStatic(TestFixtures.ORG_JETBRAINS_EXPOSED_SQL_TRANSACTIONS_TRANSACTION_API_KT)
             every { mockDb.transactionManager } returns throwingTxManager
 
             val ioRepo = SqliteTradeRepositoryImpl(mockDb)
             val trade = TradeRecord(
                 timestamp = Instant.now(),
-                pair = XBTUSD,
-                side = BUY,
+                pair = TestFixtures.XBTUSD,
+                side = TestFixtures.BUY,
                 symbol = Asset.BTC,
                 volume = BigDecimal("0.1"),
                 usdAmount = BigDecimal("5000.00"),
@@ -655,7 +628,7 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
             }
             thrown.message shouldBe "Direct IO failure"
 
-            unmockkStatic(ORG_JETBRAINS_EXPOSED_SQL_TRANSACTIONS_TRANSACTION_API_KT)
+            unmockkStatic(TestFixtures.ORG_JETBRAINS_EXPOSED_SQL_TRANSACTIONS_TRANSACTION_API_KT)
         }
 
         "pruneSnapshotsOlderThan prunes records" {
@@ -689,7 +662,7 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
         }
 
         "updateTrade wraps non-IOException as IOException" {
-            val closedDb = DatabaseConfig.init(MEMORY_)
+            val closedDb = DatabaseConfig.init(TestFixtures.MEMORY_)
             val brokenRepo = SqliteTradeRepositoryImpl(closedDb)
 
             transaction(closedDb) {
@@ -698,8 +671,8 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
 
             val trade = TradeRecord(
                 timestamp = Instant.now(),
-                pair = XBTUSD,
-                side = BUY,
+                pair = TestFixtures.XBTUSD,
+                side = TestFixtures.BUY,
                 symbol = Asset.BTC,
                 volume = BigDecimal("0.1"),
                 usdAmount = BigDecimal("5000.00"),
@@ -720,14 +693,14 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
             val throwingTxManager = TradeThrowingTransactionManager(realTxManager)
 
             val mockDb = mockk<Database>(relaxed = true)
-            mockkStatic(ORG_JETBRAINS_EXPOSED_SQL_TRANSACTIONS_TRANSACTION_API_KT)
+            mockkStatic(TestFixtures.ORG_JETBRAINS_EXPOSED_SQL_TRANSACTIONS_TRANSACTION_API_KT)
             every { mockDb.transactionManager } returns throwingTxManager
 
             val ioRepo = SqliteTradeRepositoryImpl(mockDb)
             val trade = TradeRecord(
                 timestamp = Instant.now(),
-                pair = XBTUSD,
-                side = BUY,
+                pair = TestFixtures.XBTUSD,
+                side = TestFixtures.BUY,
                 symbol = Asset.BTC,
                 volume = BigDecimal("0.1"),
                 usdAmount = BigDecimal("5000.00"),
@@ -740,7 +713,7 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
             }
             thrown.message shouldBe "Direct IO failure"
 
-            unmockkStatic(ORG_JETBRAINS_EXPOSED_SQL_TRANSACTIONS_TRANSACTION_API_KT)
+            unmockkStatic(TestFixtures.ORG_JETBRAINS_EXPOSED_SQL_TRANSACTIONS_TRANSACTION_API_KT)
         }
 
         "getSnapshotsInRange returns empty list when no snapshots in range" {
@@ -757,8 +730,8 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
 
             val trade1 = TradeRecord(
                 timestamp = Instant.now().minusSeconds(100),
-                pair = XBTUSD,
-                side = BUY,
+                pair = TestFixtures.XBTUSD,
+                side = TestFixtures.BUY,
                 symbol = Asset.BTC,
                 volume = BigDecimal("0.1"),
                 usdAmount = BigDecimal("5000.00"),
@@ -771,8 +744,8 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
 
             val trade2 = TradeRecord(
                 timestamp = Instant.now(),
-                pair = XBTUSD,
-                side = SELL,
+                pair = TestFixtures.XBTUSD,
+                side = TestFixtures.SELL,
                 symbol = Asset.BTC,
                 volume = BigDecimal("0.05"),
                 usdAmount = BigDecimal("3000.00"),
@@ -786,8 +759,8 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
             // A failed trade should not be included
             val tradeFailed = TradeRecord(
                 timestamp = Instant.now(),
-                pair = XBTUSD,
-                side = BUY,
+                pair = TestFixtures.XBTUSD,
+                side = TestFixtures.BUY,
                 symbol = Asset.BTC,
                 volume = BigDecimal("0.5"),
                 usdAmount = BigDecimal("30000.00"),
@@ -817,12 +790,13 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
         }
 
         "save and load sync metadata" {
-            repository.getSyncMetadata(SYNC_KEY) shouldBe null
-            repository.setSyncMetadata(SYNC_KEY, SYNC_VAL)
-            repository.getSyncMetadata(SYNC_KEY) shouldBe SYNC_VAL
+            repository.getSyncMetadata(TestFixtures.SYNC_KEY) shouldBe null
+            repository.setSyncMetadata(TestFixtures.SYNC_KEY, TestFixtures.SYNC_VAL)
+            repository.getSyncMetadata(TestFixtures.SYNC_KEY) shouldBe TestFixtures.SYNC_VAL
 
-            repository.setSyncMetadata(SYNC_KEY, SYNC_VAL_UPDATED)
-            repository.getSyncMetadata(SYNC_KEY) shouldBe SYNC_VAL_UPDATED
+            repository.setSyncMetadata(TestFixtures.SYNC_KEY, TestFixtures.SYNC_VAL_UPDATED)
+            repository.getSyncMetadata(TestFixtures.SYNC_KEY) shouldBe TestFixtures.SYNC_VAL_UPDATED
         }
     }
 }
+

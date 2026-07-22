@@ -9,6 +9,7 @@ import com.gemini.krakenbot.model.OrderType
 import com.gemini.krakenbot.service.impl.DynamicKrakenService
 import com.gemini.krakenbot.service.impl.KrakenServiceImpl
 import com.gemini.krakenbot.service.impl.SimulatedKrakenService
+import com.gemini.krakenbot.TestFixtures
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
@@ -16,8 +17,6 @@ import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import java.math.BigDecimal
-
-private const val BTCUSD = "BTCUSD"
 
 @Suppress("unused")
 class DynamicKrakenServiceTest : StringSpec() {
@@ -57,8 +56,8 @@ class DynamicKrakenServiceTest : StringSpec() {
             coVerify(exactly = 0) { realService.getBalances() }
 
             // getTickerPrices
-            dynamicService.getTickerPrices(BTCUSD)
-            coVerify(exactly = 1) { simulatedService.getTickerPrices(BTCUSD) }
+            dynamicService.getTickerPrices(TestFixtures.BTCUSD)
+            coVerify(exactly = 1) { simulatedService.getTickerPrices(TestFixtures.BTCUSD) }
             coVerify(exactly = 0) { realService.getTickerPrices(any()) }
 
             // executeOrder
@@ -87,8 +86,8 @@ class DynamicKrakenServiceTest : StringSpec() {
             coVerify(exactly = 0) { realService.getTradeHistory(any(), any()) }
 
             // getOHLC
-            dynamicService.getOHLC(BTCUSD, 1440, null)
-            coVerify(exactly = 1) { simulatedService.getOHLC(BTCUSD, 1440, null) }
+            dynamicService.getOHLC(TestFixtures.BTCUSD, 1440, null)
+            coVerify(exactly = 1) { simulatedService.getOHLC(TestFixtures.BTCUSD, 1440, null) }
             coVerify(exactly = 0) { realService.getOHLC(any(), any(), any()) }
 
             // getRealService
@@ -119,8 +118,8 @@ class DynamicKrakenServiceTest : StringSpec() {
             coVerify(exactly = 0) { simulatedService.getBalances() }
 
             // getTickerPrices
-            dynamicService.getTickerPrices(BTCUSD)
-            coVerify(exactly = 1) { realService.getTickerPrices(BTCUSD) }
+            dynamicService.getTickerPrices(TestFixtures.BTCUSD)
+            coVerify(exactly = 1) { realService.getTickerPrices(TestFixtures.BTCUSD) }
             coVerify(exactly = 0) { simulatedService.getTickerPrices(any()) }
 
             // executeOrder
@@ -149,8 +148,8 @@ class DynamicKrakenServiceTest : StringSpec() {
             coVerify(exactly = 0) { simulatedService.getTradeHistory(any(), any()) }
 
             // getOHLC
-            dynamicService.getOHLC(BTCUSD, 1440, null)
-            coVerify(exactly = 1) { realService.getOHLC(BTCUSD, 1440, null) }
+            dynamicService.getOHLC(TestFixtures.BTCUSD, 1440, null)
+            coVerify(exactly = 1) { realService.getOHLC(TestFixtures.BTCUSD, 1440, null) }
             coVerify(exactly = 0) { simulatedService.getOHLC(any(), any(), any()) }
 
             // getRealService
@@ -158,3 +157,4 @@ class DynamicKrakenServiceTest : StringSpec() {
         }
     }
 }
+

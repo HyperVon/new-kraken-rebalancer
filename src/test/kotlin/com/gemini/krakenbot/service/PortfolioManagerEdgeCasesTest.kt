@@ -14,6 +14,7 @@ import com.gemini.krakenbot.service.impl.OrderExecutorImpl
 import com.gemini.krakenbot.service.impl.PortfolioAnalyzerImpl
 import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
 import com.gemini.krakenbot.toBigDecimalMap
+import com.gemini.krakenbot.TestFixtures
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.booleans.shouldBeTrue
@@ -27,8 +28,6 @@ import kotlinx.coroutines.yield
 import java.io.IOException
 import java.math.BigDecimal
 import kotlin.time.Duration.Companion.milliseconds
-
-private const val USD = "USD"
 
 @Suppress("unused")
 class PortfolioManagerEdgeCasesTest : StringSpec() {
@@ -1010,10 +1009,10 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
                 ).apply { isAccessible = true }
 
             val balances =
-                mapOf(USD to 500.0, "BTC" to 0.01).toBigDecimalMap()
+                mapOf(TestFixtures.USD to 500.0, "BTC" to 0.01).toBigDecimalMap()
             val prices = mapOf("BTC" to BigDecimal("50000.0"))
             val currentValuesUSD = mapOf(
-                USD to BigDecimal("500.0"),
+                TestFixtures.USD to BigDecimal("500.0"),
                 "BTC" to BigDecimal("500.0")
             )
             val totalVal = BigDecimal("1000.0")
@@ -1056,7 +1055,7 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
             snapshot.totalValueUSD.compareTo(BigDecimal("1000.0")) shouldBe 0
 
             val currentValuesUSDMissing =
-                mapOf(USD to BigDecimal("500.0"))
+                mapOf(TestFixtures.USD to BigDecimal("500.0"))
             val pricesMissing = emptyMap<String, BigDecimal>()
 
             val snapshotFallback = buildSnapshotMethod.invoke(
@@ -1173,7 +1172,7 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
                 val config = AppConfig(
                     kraken = KrakenCredentials(apiKey = "k", privateKey = "s"),
                     settings = settings,
-                    allocations = listOf(Allocation(USD, 100.0))
+                    allocations = listOf(Allocation(TestFixtures.USD, 100.0))
                 )
                 every { configService.getConfig() } returns config
 
@@ -1203,7 +1202,7 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
                 val config = AppConfig(
                     kraken = KrakenCredentials(apiKey = "k", privateKey = "s"),
                     settings = settings,
-                    allocations = listOf(Allocation(USD, 100.0))
+                    allocations = listOf(Allocation(TestFixtures.USD, 100.0))
                 )
                 every { configService.getConfig() } returns config
 
@@ -1218,3 +1217,4 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
         }
     }
 }
+

@@ -60,13 +60,6 @@ import kotlin.time.Duration.Companion.milliseconds
 import io.ktor.client.plugins.sse.SSE as ClientSSE
 import io.ktor.server.sse.SSE as ServerSSE
 
-private const val MEMORY_ = ":memory:"
-private const val PASS = "PASS"
-private const val ETHUSD = "ETHUSD"
-private const val XBTUSD = "XBTUSD"
-private const val BUY = "buy"
-private const val SELL = "sell"
-
 @Suppress("unused")
 class EvaluationScenariosTest : StringSpec() {
 
@@ -110,7 +103,7 @@ class EvaluationScenariosTest : StringSpec() {
             sb.append("| Scenario | Description | Status | Details / Evidence |\n")
             sb.append("| :--- | :--- | :--- | :--- |\n")
             for ((name, description, status, evidence) in results.values.sortedBy { it.name.substringAfter(" ").toIntOrNull() ?: 0 }) {
-                val statusStr = if (status == PASS) "🟢 **PASS**" else "🔴 **FAIL**"
+                val statusStr = if (status == TestFixtures.PASS) "🟢 **PASS**" else "🔴 **FAIL**"
                 sb.append("| $name | $description | $statusStr | ${evidence.replace("\n", "<br>").replace("|", "\\|")} |\n")
             }
             sb.append("\n## Detailed Evidence for Each Scenario\n\n")
@@ -205,7 +198,7 @@ class EvaluationScenariosTest : StringSpec() {
                 fakeKraken.pricesSupplier = { _ ->
                     mapOf(
                         Asset.BTC_USD_PAIR to 50000.0,
-                        ETHUSD to 2000.0
+                        TestFixtures.ETHUSD to 2000.0
                     )
                 }
 
@@ -281,7 +274,7 @@ class EvaluationScenariosTest : StringSpec() {
 
                 // If sell BTC fails
                 fakeKraken.orderResultFactory = { pair, _, side, volume ->
-                    if (side == SELL) {
+                    if (side == TestFixtures.SELL) {
                         OrderResult(false, pair, side, volume, errorMessage = "Simulated Sell Failure")
                     } else {
                         OrderResult(true, pair, side, volume)
@@ -306,7 +299,7 @@ class EvaluationScenariosTest : StringSpec() {
                 recordResult(
                     "Scenario 1",
                     "Standard Rebalancing Sequence (Phase 3 Sequencing & Projected Cash)",
-                    PASS,
+                    TestFixtures.PASS,
                     evidence
                 )
             }
@@ -318,7 +311,7 @@ class EvaluationScenariosTest : StringSpec() {
                 val mockConfig = mockk<ConfigService>(relaxed = true)
                 val testStatsFile = "scenario2-stats.json"
                 val f = File(testStatsFile)
-                val db = DatabaseConfig.init(MEMORY_)
+                val db = DatabaseConfig.init(TestFixtures.MEMORY_)
                 val statsRepo = SqlitePortfolioStatsRepositoryImpl(db, objectMapper, testStatsFile)
 
                 val appConfig = AppConfig(
@@ -408,7 +401,7 @@ class EvaluationScenariosTest : StringSpec() {
                 recordResult(
                     "Scenario 2",
                     "Dynamic Drawdown-Based Fiat Deployment",
-                    PASS,
+                    TestFixtures.PASS,
                     evidence
                 )
             }
@@ -470,8 +463,8 @@ class EvaluationScenariosTest : StringSpec() {
                 }
                 fakeKraken.pricesSupplier = { _ ->
                     mapOf(
-                        XBTUSD to 50000.0,
-                        ETHUSD to 2000.0
+                        TestFixtures.XBTUSD to 50000.0,
+                        TestFixtures.ETHUSD to 2000.0
                     )
                 }
 
@@ -479,8 +472,8 @@ class EvaluationScenariosTest : StringSpec() {
                 pm.performRebalanceCycle()
 
                 val depositPass = fakeKraken.executedOrders.size == 2 &&
-                                  fakeKraken.executedOrders.any { it.pair == XBTUSD && it.side == BUY && it.volume.compareTo(BigDecimal("0.009")) == 0 } &&
-                                  fakeKraken.executedOrders.any { it.pair == ETHUSD && it.side == BUY && it.volume.compareTo(BigDecimal("0.225")) == 0 }
+                                  fakeKraken.executedOrders.any { it.pair == TestFixtures.XBTUSD && it.side == TestFixtures.BUY && it.volume.compareTo(BigDecimal("0.009")) == 0 } &&
+                                  fakeKraken.executedOrders.any { it.pair == TestFixtures.ETHUSD && it.side == TestFixtures.BUY && it.volume.compareTo(BigDecimal("0.225")) == 0 }
 
                 // Sub-case B: Withdrawal
                 // Total portfolio = $10,000 (BTC=$4,500, ETH=$4,500, USD=$1,000)
@@ -501,8 +494,8 @@ class EvaluationScenariosTest : StringSpec() {
                 pm.performRebalanceCycle()
 
                 val withdrawalPass = fakeKraken.executedOrders.size == 2 &&
-                                     fakeKraken.executedOrders.any { it.pair == XBTUSD && it.side == SELL && it.volume.compareTo(BigDecimal("0.0045")) == 0 } &&
-                                     fakeKraken.executedOrders.any { it.pair == ETHUSD && it.side == SELL && it.volume.compareTo(BigDecimal("0.1125")) == 0 }
+                                     fakeKraken.executedOrders.any { it.pair == TestFixtures.XBTUSD && it.side == TestFixtures.SELL && it.volume.compareTo(BigDecimal("0.0045")) == 0 } &&
+                                     fakeKraken.executedOrders.any { it.pair == TestFixtures.ETHUSD && it.side == TestFixtures.SELL && it.volume.compareTo(BigDecimal("0.1125")) == 0 }
 
                 val finalPass = depositPass && withdrawalPass
                 val evidence = "Sub-case A (Deposit Fiat Correction): $depositPass (Orders: ${fakeKraken.executedOrders.size} orders generated)\n" +
@@ -512,7 +505,7 @@ class EvaluationScenariosTest : StringSpec() {
                 recordResult(
                     "Scenario 3",
                     "Intelligent Fiat Correction (Deposit/Withdrawal)",
-                    PASS,
+                    TestFixtures.PASS,
                     evidence
                 )
             }
@@ -614,7 +607,7 @@ class EvaluationScenariosTest : StringSpec() {
                 recordResult(
                     "Scenario 4",
                     "Live Dashboard & Config Hot-Reload",
-                    PASS,
+                    TestFixtures.PASS,
                     evidence
                 )
             }
@@ -650,7 +643,7 @@ class EvaluationScenariosTest : StringSpec() {
                         Asset.USD to 4000.0 // Total = $10,000
                     )
                 }
-                fakeKraken.pricesSupplier = { _ -> mapOf(XBTUSD to 50000.0) }
+                fakeKraken.pricesSupplier = { _ -> mapOf(TestFixtures.XBTUSD to 50000.0) }
 
                 fakeKraken.orderResultFactory = { pair, _, side, volume ->
                     OrderResult(
@@ -755,7 +748,7 @@ class EvaluationScenariosTest : StringSpec() {
                 recordResult(
                     "Scenario 5",
                     "Safety and Resilience (Dry Run & Error Recovery)",
-                    PASS,
+                    TestFixtures.PASS,
                     evidence
                 )
             }
@@ -788,7 +781,7 @@ class EvaluationScenariosTest : StringSpec() {
                         Asset.USD to 0.0
                     )
                 }
-                fakeKraken.pricesSupplier = { _ -> mapOf(XBTUSD to 50000.0) }
+                fakeKraken.pricesSupplier = { _ -> mapOf(TestFixtures.XBTUSD to 50000.0) }
 
                 val statsRepo = mockk<PortfolioStatsRepository>(relaxed = true)
                 val analyzer = PortfolioAnalyzerImpl(
@@ -812,14 +805,14 @@ class EvaluationScenariosTest : StringSpec() {
                 pm.performRebalanceCycle()
 
                 val success = fakeKraken.executedOrders.size == 1 &&
-                              fakeKraken.executedOrders.any { it.pair == XBTUSD && it.side == SELL && it.volume.compareTo(BigDecimal("0.5")) == 0 }
+                              fakeKraken.executedOrders.any { it.pair == TestFixtures.XBTUSD && it.side == TestFixtures.SELL && it.volume.compareTo(BigDecimal("0.5")) == 0 }
                 val evidence = "Trades: ${fakeKraken.executedOrders.size} generated. Details: ${fakeKraken.executedOrders}"
 
                 success.shouldBeTrue()
                 recordResult(
                     "Scenario 6",
                     "Zero Target Allocation (Total Liquidation)",
-                    PASS,
+                    TestFixtures.PASS,
                     evidence
                 )
             }
@@ -859,7 +852,7 @@ class EvaluationScenariosTest : StringSpec() {
                     queriedPairs = pairs
                     mapOf(
                         "XDGUSD" to 0.10,
-                        XBTUSD to 50000.0
+                        TestFixtures.XBTUSD to 50000.0
                     )
                 }
 
@@ -885,11 +878,11 @@ class EvaluationScenariosTest : StringSpec() {
                 pm.performRebalanceCycle()
 
                 val dogeBuy = fakeKraken.executedOrders.firstOrNull { it.pair == "XDGUSD" }
-                val btcBuy = fakeKraken.executedOrders.firstOrNull { it.pair == XBTUSD }
+                val btcBuy = fakeKraken.executedOrders.firstOrNull { it.pair == TestFixtures.XBTUSD }
 
-                val dogePass = dogeBuy != null && dogeBuy.side == BUY && dogeBuy.volume.compareTo(BigDecimal("30000")) == 0
-                val btcPass = btcBuy != null && btcBuy.side == BUY && btcBuy.volume.compareTo(BigDecimal("0.06")) == 0
-                val queryPass = queriedPairs != null && queriedPairs.contains("XDGUSD") && queriedPairs.contains(XBTUSD)
+                val dogePass = dogeBuy != null && dogeBuy.side == TestFixtures.BUY && dogeBuy.volume.compareTo(BigDecimal("30000")) == 0
+                val btcPass = btcBuy != null && btcBuy.side == TestFixtures.BUY && btcBuy.volume.compareTo(BigDecimal("0.06")) == 0
+                val queryPass = queriedPairs != null && queriedPairs.contains("XDGUSD") && queriedPairs.contains(TestFixtures.XBTUSD)
 
                 val success = dogePass && btcPass && queryPass
                 val evidence = "Queried pairs: $queriedPairs\n" +
@@ -900,7 +893,7 @@ class EvaluationScenariosTest : StringSpec() {
                 recordResult(
                     "Scenario 7",
                     "Kraken Symbol Mapping Quirks (DOGE & BTC Mapping)",
-                    PASS,
+                    TestFixtures.PASS,
                     evidence
                 )
             }
@@ -930,8 +923,8 @@ class EvaluationScenariosTest : StringSpec() {
 
                 fakeKraken.pricesSupplier = { _ ->
                     mapOf(
-                        XBTUSD to 50000.0,
-                        ETHUSD to 2000.0
+                        TestFixtures.XBTUSD to 50000.0,
+                        TestFixtures.ETHUSD to 2000.0
                     )
                 }
 
@@ -946,7 +939,7 @@ class EvaluationScenariosTest : StringSpec() {
                 val orderExecutionLog = mutableListOf<String>()
                 fakeKraken.executeOrderAction = { pair, _, side, volume ->
                     orderExecutionLog.add("$side $pair volume=$volume")
-                    if (side == SELL) {
+                    if (side == TestFixtures.SELL) {
                         fakeKraken.balanceSupplier = {
                             mapOf(
                                 Asset.BTC to 0.156,
@@ -978,8 +971,8 @@ class EvaluationScenariosTest : StringSpec() {
                 fakeKraken.executedOrders.clear()
                 pm.performRebalanceCycle()
 
-                val btcSell = fakeKraken.executedOrders.firstOrNull { it.pair == XBTUSD && it.side == SELL }
-                val ethBuy = fakeKraken.executedOrders.firstOrNull { it.pair == ETHUSD && it.side == BUY }
+                val btcSell = fakeKraken.executedOrders.firstOrNull { it.pair == TestFixtures.XBTUSD && it.side == TestFixtures.SELL }
+                val ethBuy = fakeKraken.executedOrders.firstOrNull { it.pair == TestFixtures.ETHUSD && it.side == TestFixtures.BUY }
 
                 val sellPass = btcSell != null && btcSell.volume.compareTo(BigDecimal("0.344")) == 0
                 val buyPass = ethBuy != null && ethBuy.volume.compareTo(BigDecimal("3.96")) == 0
@@ -993,7 +986,7 @@ class EvaluationScenariosTest : StringSpec() {
                 recordResult(
                     "Scenario 8",
                     "Concurrent Multi-Asset Rebalance with Slippage",
-                    PASS,
+                    TestFixtures.PASS,
                     evidence
                 )
             }
@@ -1060,7 +1053,7 @@ class EvaluationScenariosTest : StringSpec() {
                 recordResult(
                     "Scenario 9",
                     "Run Loop Lifecycle & Timing",
-                    PASS,
+                    TestFixtures.PASS,
                     evidence
                 )
             }
@@ -1074,7 +1067,7 @@ class EvaluationScenariosTest : StringSpec() {
                 baseFile.createNewFile()
 
                 val targetStatsFile = File(baseFile, "stats.json")
-                val db = DatabaseConfig.init(MEMORY_)
+                val db = DatabaseConfig.init(TestFixtures.MEMORY_)
                 val statsRepo = SqlitePortfolioStatsRepositoryImpl(
                     db,
                     objectMapper,
@@ -1100,7 +1093,7 @@ class EvaluationScenariosTest : StringSpec() {
                 recordResult(
                     "Scenario 10",
                     "Atomic File Writer Resilience",
-                    PASS,
+                    TestFixtures.PASS,
                     evidence
                 )
             }
@@ -1151,7 +1144,7 @@ class EvaluationScenariosTest : StringSpec() {
                 recordResult(
                     "Scenario 11",
                     "Configuration Validation Edge Cases",
-                    PASS,
+                    TestFixtures.PASS,
                     evidence
                 )
             }
@@ -1185,7 +1178,7 @@ class EvaluationScenariosTest : StringSpec() {
                     )
                 }
                 fakeKraken.pricesSupplier = {
-                    mapOf(XBTUSD to 48523.97)
+                    mapOf(TestFixtures.XBTUSD to 48523.97)
                 }
 
                 val statsRepo = mockk<PortfolioStatsRepository>(relaxed = true)
@@ -1214,7 +1207,7 @@ class EvaluationScenariosTest : StringSpec() {
                 recordResult(
                     "Scenario 12",
                     "Precision and Rounding Tolerances",
-                    PASS,
+                    TestFixtures.PASS,
                     evidence
                 )
             }
@@ -1255,16 +1248,16 @@ class EvaluationScenariosTest : StringSpec() {
                 }
                 fakeKraken.pricesSupplier = {
                     mapOf(
-                        XBTUSD to 50000.0,
-                        ETHUSD to 2000.0
+                        TestFixtures.XBTUSD to 50000.0,
+                        TestFixtures.ETHUSD to 2000.0
                     )
                 }
 
                 fakeKraken.executeOrderAction = { pair, type, side, volume ->
-                    if (pair == XBTUSD && side == SELL) {
+                    if (pair == TestFixtures.XBTUSD && side == TestFixtures.SELL) {
                         balanceBTC = balanceBTC.subtract(volume)
                         balanceUSD = balanceUSD.add(BigDecimal("250.0"))
-                    } else if (pair == ETHUSD && side == BUY) {
+                    } else if (pair == TestFixtures.ETHUSD && side == TestFixtures.BUY) {
                         balanceETH = balanceETH.add(volume)
                         balanceUSD = balanceUSD.subtract(volume.multiply(BigDecimal("2000.0")))
                     }
@@ -1290,20 +1283,20 @@ class EvaluationScenariosTest : StringSpec() {
 
                 pm.performRebalanceCycle()
 
-                val ethBuy = fakeKraken.executedOrders.firstOrNull { it.pair == ETHUSD && it.side == BUY }
+                val ethBuy = fakeKraken.executedOrders.firstOrNull { it.pair == TestFixtures.ETHUSD && it.side == TestFixtures.BUY }
                 val expectedCost = BigDecimal("350.0").multiply(BigDecimal("0.99"))
                 val expectedVolume = expectedCost.divide(BigDecimal("2000.0"), 8, RoundingMode.HALF_UP)
 
                 val success = ethBuy != null && ethBuy.volume.compareTo(expectedVolume) == 0
-                val evidence = "Sells executed: ${fakeKraken.executedOrders.filter { it.side == SELL }}\n" +
-                               "Buys executed: ${fakeKraken.executedOrders.filter { it.side == BUY }}\n" +
+                val evidence = "Sells executed: ${fakeKraken.executedOrders.filter { it.side == TestFixtures.SELL }}\n" +
+                               "Buys executed: ${fakeKraken.executedOrders.filter { it.side == TestFixtures.BUY }}\n" +
                                "ETH buy volume expected: $expectedVolume, actual: ${ethBuy?.volume} (Success: $success)"
 
                 success.shouldBeTrue()
                 recordResult(
                     "Scenario 13",
                     "High Volatility Slippage Capping",
-                    PASS,
+                    TestFixtures.PASS,
                     evidence
                 )
             }
@@ -1363,7 +1356,7 @@ class EvaluationScenariosTest : StringSpec() {
                 recordResult(
                     "Scenario 14",
                     "Config File Hot-Reload and Watcher Integration",
-                    PASS,
+                    TestFixtures.PASS,
                     evidence
                 )
             }
@@ -1398,7 +1391,7 @@ class EvaluationScenariosTest : StringSpec() {
                 }
                 fakeKraken.pricesSupplier = {
                     mapOf(
-                        XBTUSD to 50000.0
+                        TestFixtures.XBTUSD to 50000.0
                     )
                 }
 
@@ -1422,7 +1415,7 @@ class EvaluationScenariosTest : StringSpec() {
                 )
                 pm.performRebalanceCycle()
 
-                val order = fakeKraken.executedOrders.firstOrNull { it.pair == XBTUSD && it.side == BUY }
+                val order = fakeKraken.executedOrders.firstOrNull { it.pair == TestFixtures.XBTUSD && it.side == TestFixtures.BUY }
                 val success = order != null && order.volume.compareTo(BigDecimal("0.01980000")) == 0
 
                 val evidence = "Total balance: $1000 USD\n" +
@@ -1433,7 +1426,7 @@ class EvaluationScenariosTest : StringSpec() {
                 recordResult(
                     "Scenario 15",
                     "Single Asset Dominance (Extreme Rebalance)",
-                    PASS,
+                    TestFixtures.PASS,
                     evidence
                 )
             }
@@ -1442,7 +1435,7 @@ class EvaluationScenariosTest : StringSpec() {
         "Scenario 16: Trade History Storage and JSON Serialization" {
             runTest {
                 val tempFile = File.createTempFile("scenario16-", ".json").apply { deleteOnExit() }
-                val db = DatabaseConfig.init(MEMORY_)
+                val db = DatabaseConfig.init(TestFixtures.MEMORY_)
                 val repository = SqliteTradeRepositoryImpl(db)
 
                 val snapshot = PortfolioSnapshot(
@@ -1478,7 +1471,7 @@ class EvaluationScenariosTest : StringSpec() {
                 recordResult(
                     "Scenario 16",
                     "Trade History Storage and JSON Serialization",
-                    PASS,
+                    TestFixtures.PASS,
                     evidence
                 )
             }
@@ -1546,7 +1539,7 @@ class EvaluationScenariosTest : StringSpec() {
                 recordResult(
                     "Scenario 17",
                     "Partial Kraken API Failure (Individual Endpoint Failures)",
-                    PASS,
+                    TestFixtures.PASS,
                     evidence
                 )
             }
@@ -1605,7 +1598,7 @@ class EvaluationScenariosTest : StringSpec() {
                 recordResult(
                     "Scenario 18",
                     "Ktor SSE Keep-Alive and Broadcast Resilience",
-                    PASS,
+                    TestFixtures.PASS,
                     evidence
                 )
             }
@@ -1647,7 +1640,7 @@ class EvaluationScenariosTest : StringSpec() {
                 recordResult(
                     "Scenario 19",
                     "Extremely Large Portfolio Allocation Scaling",
-                    PASS,
+                    TestFixtures.PASS,
                     evidence
                 )
             }
@@ -1655,7 +1648,7 @@ class EvaluationScenariosTest : StringSpec() {
 
         "Scenario 20: Missing or Corrupt Stats File Recovery" {
             runTest {
-                val db = DatabaseConfig.init(MEMORY_)
+                val db = DatabaseConfig.init(TestFixtures.MEMORY_)
                 val statsRepo = SqlitePortfolioStatsRepositoryImpl(db, objectMapper, "test-scenario20-stats.json")
 
                 val stats = statsRepo.load()
@@ -1673,7 +1666,7 @@ class EvaluationScenariosTest : StringSpec() {
                 recordResult(
                     "Scenario 20",
                     "Missing or Corrupt Stats File Recovery",
-                    PASS,
+                    TestFixtures.PASS,
                     evidence
                 )
             }
@@ -1707,7 +1700,7 @@ class EvaluationScenariosTest : StringSpec() {
                     )
                 }
                 fakeKraken.pricesSupplier = {
-                    mapOf(XBTUSD to 1000.0)
+                    mapOf(TestFixtures.XBTUSD to 1000.0)
                 }
 
                 val statsRepo = mockk<PortfolioStatsRepository>(relaxed = true)
@@ -1747,7 +1740,7 @@ class EvaluationScenariosTest : StringSpec() {
                 recordResult(
                     "Scenario 21",
                     "Perfect Allocation Alignment (No Trades)",
-                    PASS,
+                    TestFixtures.PASS,
                     evidence
                 )
             }
@@ -1781,7 +1774,7 @@ class EvaluationScenariosTest : StringSpec() {
                     )
                 }
                 fakeKraken.pricesSupplier = {
-                    mapOf(XBTUSD to 50000.0)
+                    mapOf(TestFixtures.XBTUSD to 50000.0)
                 }
                 fakeKraken.orderResultFactory = { pair, type, side, volume ->
                     OrderResult(
@@ -1830,7 +1823,7 @@ class EvaluationScenariosTest : StringSpec() {
                 recordResult(
                     "Scenario 22",
                     "Order Failure Logging & Snapshot Mapping",
-                    PASS,
+                    TestFixtures.PASS,
                     evidence
                 )
             }
@@ -1896,7 +1889,7 @@ class EvaluationScenariosTest : StringSpec() {
                 recordResult(
                     "Scenario 23",
                     "Complete Authentication API Failure",
-                    PASS,
+                    TestFixtures.PASS,
                     evidence
                 )
             }
@@ -1942,7 +1935,7 @@ class EvaluationScenariosTest : StringSpec() {
                 recordResult(
                     "Scenario 24",
                     "Config File Writer Failure Protection",
-                    PASS,
+                    TestFixtures.PASS,
                     evidence
                 )
             }
@@ -1979,13 +1972,13 @@ class EvaluationScenariosTest : StringSpec() {
                 }
                 fakeKraken.pricesSupplier = {
                     mapOf(
-                        XBTUSD to 50000.0,
-                        ETHUSD to 2000.0
+                        TestFixtures.XBTUSD to 50000.0,
+                        TestFixtures.ETHUSD to 2000.0
                     )
                 }
 
                 fakeKraken.orderResultFactory = { pair, _, side, volume ->
-                    if (pair == XBTUSD) {
+                    if (pair == TestFixtures.XBTUSD) {
                         OrderResult(false, pair, side, volume, errorMessage = "Order minimum size not met")
                     } else {
                         OrderResult(true, pair, side, volume)
@@ -2031,7 +2024,7 @@ class EvaluationScenariosTest : StringSpec() {
                 recordResult(
                     "Scenario 25",
                     "Minimum Order Size Rejection Recovery",
-                    PASS,
+                    TestFixtures.PASS,
                     evidence
                 )
             }
@@ -2065,7 +2058,7 @@ class EvaluationScenariosTest : StringSpec() {
                     )
                 }
                 fakeKraken.pricesSupplier = {
-                    mapOf(XBTUSD to 50000.0)
+                    mapOf(TestFixtures.XBTUSD to 50000.0)
                 }
 
                 val statsRepo = mockk<PortfolioStatsRepository>(relaxed = true)
@@ -2088,10 +2081,10 @@ class EvaluationScenariosTest : StringSpec() {
                 )
                 pm.performRebalanceCycle()
 
-                val sells = fakeKraken.executedOrders.filter { it.side == SELL }
-                val buys = fakeKraken.executedOrders.filter { it.side == BUY }
+                val sells = fakeKraken.executedOrders.filter { it.side == TestFixtures.SELL }
+                val buys = fakeKraken.executedOrders.filter { it.side == TestFixtures.BUY }
 
-                val onlyBtcBuy = buys.size == 1 && buys[0].pair == XBTUSD && buys[0].volume.compareTo(BigDecimal("0.5")) == 0
+                val onlyBtcBuy = buys.size == 1 && buys[0].pair == TestFixtures.XBTUSD && buys[0].volume.compareTo(BigDecimal("0.5")) == 0
                 val zeroSells = sells.isEmpty()
 
                 val success = onlyBtcBuy && zeroSells
@@ -2103,7 +2096,7 @@ class EvaluationScenariosTest : StringSpec() {
                 recordResult(
                     "Scenario 26",
                     "Pure Cash Injection (No Sells, Only Buys)",
-                    PASS,
+                    TestFixtures.PASS,
                     evidence
                 )
             }
@@ -2154,7 +2147,7 @@ class EvaluationScenariosTest : StringSpec() {
                 recordResult(
                     "Scenario 27",
                     "Concurrency of Multiple SSE Listeners",
-                    PASS,
+                    TestFixtures.PASS,
                     evidence
                 )
             }
@@ -2188,7 +2181,7 @@ class EvaluationScenariosTest : StringSpec() {
                     )
                 }
                 fakeKraken.pricesSupplier = {
-                    mapOf(XBTUSD to 50000.0)
+                    mapOf(TestFixtures.XBTUSD to 50000.0)
                 }
 
                 val statsRepo = mockk<PortfolioStatsRepository>(relaxed = true)
@@ -2221,7 +2214,7 @@ class EvaluationScenariosTest : StringSpec() {
                 recordResult(
                     "Scenario 28",
                     "Zero Balance Division by Zero Prevention",
-                    PASS,
+                    TestFixtures.PASS,
                     evidence
                 )
             }
@@ -2258,8 +2251,8 @@ class EvaluationScenariosTest : StringSpec() {
                 }
                 fakeKraken.pricesSupplier = { _ ->
                     mapOf(
-                        XBTUSD to 50000.0,
-                        ETHUSD to 2000.0
+                        TestFixtures.XBTUSD to 50000.0,
+                        TestFixtures.ETHUSD to 2000.0
                     )
                 }
 
@@ -2302,7 +2295,7 @@ class EvaluationScenariosTest : StringSpec() {
                 recordResult(
                     "Scenario 29",
                     "Extremely Large Dust Threshold",
-                    PASS,
+                    TestFixtures.PASS,
                     evidence
                 )
             }
@@ -2314,7 +2307,7 @@ class EvaluationScenariosTest : StringSpec() {
                 val mockConfig = mockk<ConfigService>(relaxed = true)
                 val testStatsFile = "scenario30-stats.json"
                 val f = File(testStatsFile)
-                val db = DatabaseConfig.init(MEMORY_)
+                val db = DatabaseConfig.init(TestFixtures.MEMORY_)
                 val statsRepo = SqlitePortfolioStatsRepositoryImpl(db, objectMapper, testStatsFile)
 
                 val appConfig = AppConfig(
@@ -2364,7 +2357,7 @@ class EvaluationScenariosTest : StringSpec() {
                         Asset.USD to 0.0
                     )
                 }
-                fakeKraken.pricesSupplier = { _ -> mapOf(XBTUSD to 50000.0) }
+                fakeKraken.pricesSupplier = { _ -> mapOf(TestFixtures.XBTUSD to 50000.0) }
                 pm.performRebalanceCycle()
 
                 fakeKraken.balanceSupplier = {
@@ -2399,10 +2392,11 @@ class EvaluationScenariosTest : StringSpec() {
                 recordResult(
                     "Scenario 30",
                     "Exponent Curve Calibration for Fiat Deployment",
-                    PASS,
+                    TestFixtures.PASS,
                     evidence
                 )
             }
         }
     }
 }
+
