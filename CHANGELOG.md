@@ -16,6 +16,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **CSS Class Raw String Cleanup (`src/main`)**: Converted string-interpolated CSS class concatenations to use the type-safe `CssClass.plus` operator in `SettingsFormComponent` and `RecentActivityComponent`.
 - **Raw String Extraction to Shared Constants (`:common`, `src/main`)**: Replaced inline `"s ago"` with `ViewText.AGO_SECONDS` in `DashboardFragmentComponent` and added `HtmlAttrs.CROSSORIGIN` constant for the `"crossorigin"` attribute, consuming it in `HtmlHelpers`.
 - **Markdown Lint Rule Compliance in Test Report Generator (`src/test`)**: Updated `EvaluationScenariosTest.writeReport()` to enforce blank lines around scenario section headers (`MD022`) and explicit `text` language tags on fenced code blocks (`MD040`).
+- **Elimination of Redundant Constant Aliases (`:common`, `:frontend-js`)**: Removed `COLOR_BLUE_BORDER` and `COLOR_GREEN_BORDER` aliases from `ChartProps.kt`, updating `History.kt` to directly consume primary color palette constants (`COLOR_BLUE` and `COLOR_EMERALD`).
 
 ## [6.8.4] - 2026-07-21
 

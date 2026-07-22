@@ -62,9 +62,7 @@ object ChartProps {
     const val COLOR_ORANGE = "rgba(251, 146, 60, 1)"
     const val COLOR_FUCHSIA = "rgba(232, 121, 249, 1)"
 
-    const val COLOR_BLUE_BORDER = COLOR_BLUE
     const val COLOR_BLUE_BG = "rgba(96, 165, 250, 0.08)"
-    const val COLOR_GREEN_BORDER = COLOR_EMERALD
     const val COLOR_GREEN_BG = "rgba(52, 211, 153, 0.08)"
 
     const val COLOR_BLUE_BG_PALETTE = "rgba(96, 165, 250, 0.1)"

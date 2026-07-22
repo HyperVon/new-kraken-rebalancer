@@ -274,7 +274,7 @@ internal fun buildPortfolioValueChart(snapshots: Array<dynamic>) {
     datasets.add(json(
         ChartProps.LABEL to ViewText.TOTAL_PORTFOLIO,
         ChartProps.DATA to totalPortfolioData,
-        ChartProps.BORDER_COLOR to ChartProps.COLOR_BLUE_BORDER,
+        ChartProps.BORDER_COLOR to ChartProps.COLOR_BLUE,
         ChartProps.BACKGROUND_COLOR to ChartProps.COLOR_BLUE_BG,
         ChartProps.FILL to true,
         ChartProps.TENSION to 0.3,
@@ -485,7 +485,7 @@ internal fun buildCumulativePLChart(trades: Array<dynamic>, includeDryRun: Boole
     val datasets = arrayOf(json(
         ChartProps.LABEL to labelText,
         ChartProps.DATA to chartData,
-        ChartProps.BORDER_COLOR to ChartProps.COLOR_GREEN_BORDER,
+        ChartProps.BORDER_COLOR to ChartProps.COLOR_EMERALD,
         ChartProps.BACKGROUND_COLOR to ChartProps.COLOR_GREEN_BG,
         ChartProps.FILL to true,
         ChartProps.TENSION to 0.3,
