@@ -201,17 +201,7 @@ internal fun getClonedChartOptions(): dynamic {
         else -> chartDefaults.scales.x.time.unit = "day"
     }
 
-    val options: dynamic = JSObject.assign(json(), window.asDynamic().chartDefaults)
-    options.plugins = JSObject.assign(json(), window.asDynamic().chartDefaults.plugins)
-    options.plugins.tooltip = JSObject.assign(json(), window.asDynamic().chartDefaults.plugins.tooltip)
-    options.scales = JSObject.assign(json(), window.asDynamic().chartDefaults.scales)
-    options.scales.x = JSObject.assign(json(), window.asDynamic().chartDefaults.scales.x)
-    options.scales.x.time = JSObject.assign(json(), window.asDynamic().chartDefaults.scales.x.time)
-    options.scales.x.ticks = JSObject.assign(json(), window.asDynamic().chartDefaults.scales.x.ticks)
-    options.scales.y = JSObject.assign(json(), window.asDynamic().chartDefaults.scales.y)
-    options.scales.y.ticks = JSObject.assign(json(), window.asDynamic().chartDefaults.scales.y.ticks)
-
-    return options
+    return JSON.parse(JSON.stringify(window.asDynamic().chartDefaults))
 }
 
 internal fun createLineChartConfig(datasets: Array<dynamic>, options: dynamic): dynamic {

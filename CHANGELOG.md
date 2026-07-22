@@ -17,6 +17,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Raw String Extraction to Shared Constants (`:common`, `src/main`)**: Replaced inline `"s ago"` with `ViewText.AGO_SECONDS` in `DashboardFragmentComponent` and added `HtmlAttrs.CROSSORIGIN` constant for the `"crossorigin"` attribute, consuming it in `HtmlHelpers`.
 - **Markdown Lint Rule Compliance in Test Report Generator (`src/test`)**: Updated `EvaluationScenariosTest.writeReport()` to enforce blank lines around scenario section headers (`MD022`) and explicit `text` language tags on fenced code blocks (`MD040`).
 - **Elimination of Redundant Constant Aliases (`:common`, `:frontend-js`)**: Removed `COLOR_BLUE_BORDER` and `COLOR_GREEN_BORDER` aliases from `ChartProps.kt`, updating `History.kt` to directly consume primary color palette constants (`COLOR_BLUE` and `COLOR_EMERALD`).
+- **DRY JS Dynamic Object Deep Cloning (`:frontend-js`)**: Simplified `getClonedChartOptions` in `History.kt` by replacing 9 repetitive nested `JSObject.assign` calls with native `JSON.parse(JSON.stringify(...))` deep cloning.
 
 ## [6.8.4] - 2026-07-21
 
