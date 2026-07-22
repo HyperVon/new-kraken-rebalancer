@@ -20,3 +20,10 @@ fun DOMTokenList.toggle(cssClass: CssClass, force: Boolean? = null): Boolean {
 fun DOMTokenList.contains(cssClass: CssClass): Boolean {
     return contains(cssClass.value)
 }
+
+/** Safely checks if a dynamic JS value is boolean true or string "true". */
+fun isTrue(value: dynamic): Boolean {
+    if (value == null || value == undefined) return false
+    if (value == true) return true
+    return value.toString().lowercase() == "true"
+}

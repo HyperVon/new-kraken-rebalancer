@@ -427,8 +427,6 @@ internal fun buildAllocationDriftChart(snapshots: Array<dynamic>) {
     createOrUpdate(HtmlIds.ALLOCATION_DRIFT_CHART, createLineChartConfig(datasets, options))
 }
 
-private const val TRUE = "true"
-
 internal fun calculateCumulativePL(trades: Array<dynamic>, includeDryRun: Boolean = false): Array<dynamic> {
     if (trades.asDynamic().length == 0) return emptyArray()
 
@@ -439,8 +437,8 @@ internal fun calculateCumulativePL(trades: Array<dynamic>, includeDryRun: Boolea
     }
 
     val filtered = sorted.filter { t: dynamic ->
-        val isSuccess = (t.success == true || t.success.toString() == TRUE)
-        val isDryRun = (t.dryRun == true || t.dryRun.toString() == TRUE)
+        val isSuccess = isTrue(t.success)
+        val isDryRun = isTrue(t.dryRun)
         isSuccess && (includeDryRun || !isDryRun)
     }
 
@@ -507,7 +505,7 @@ internal fun renderTradeTable(trades: Array<dynamic>) {
     tbody.innerHTML = ""
 
     val showDryRun = (document.getElementById(HtmlIds.SHOW_DRY_RUN_CHECKBOX) as? HTMLInputElement)?.checked ?: true
-    val filteredTrades = if (showDryRun) trades else trades.filter { t: dynamic -> !(t.dryRun as? Boolean ?: false) }.toTypedArray()
+    val filteredTrades = if (showDryRun) trades else trades.filter { t: dynamic -> !isTrue(t.dryRun) }.toTypedArray()
 
     if (filteredTrades.asDynamic().length == 0) {
         val tr = document.createElement(TR)
@@ -532,8 +530,8 @@ private fun renderTradeRow(t: dynamic): HTMLTableRowElement {
     val time = Date(t.timestamp.toString()).asDynamic().toLocaleString()
     val side = t.side.toString()
     val sideClass = if (side == OrderSide.BUY.name) CssClass.Badge.Buy else CssClass.Badge.Sell
-    val success = t.success as? Boolean ?: false
-    val dryRun = t.dryRun as? Boolean ?: false
+    val success = isTrue(t.success)
+    val dryRun = isTrue(t.dryRun)
     val statusText = if (success) (if (dryRun) ViewText.STATUS_DRY_RUN else ViewText.STATUS_SUCCESS) else ViewText.STATUS_FAILED
     val statusClass = if (success) (if (dryRun) CssClass.Badge.Info else CssClass.Badge.Buy) else CssClass.Badge.Sell
     val vol = t.volume.toString().toDoubleOrNull() ?: 0.0
