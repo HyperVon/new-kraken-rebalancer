@@ -17,6 +17,8 @@ import io.mockk.every
 import io.mockk.mockk
 import java.math.BigDecimal
 
+private const val BTCUSD = "BTCUSD"
+
 @Suppress("unused")
 class DynamicKrakenServiceTest : StringSpec() {
 
@@ -55,8 +57,8 @@ class DynamicKrakenServiceTest : StringSpec() {
             coVerify(exactly = 0) { realService.getBalances() }
 
             // getTickerPrices
-            dynamicService.getTickerPrices("BTCUSD")
-            coVerify(exactly = 1) { simulatedService.getTickerPrices("BTCUSD") }
+            dynamicService.getTickerPrices(BTCUSD)
+            coVerify(exactly = 1) { simulatedService.getTickerPrices(BTCUSD) }
             coVerify(exactly = 0) { realService.getTickerPrices(any()) }
 
             // executeOrder
@@ -85,8 +87,8 @@ class DynamicKrakenServiceTest : StringSpec() {
             coVerify(exactly = 0) { realService.getTradeHistory(any(), any()) }
 
             // getOHLC
-            dynamicService.getOHLC("BTCUSD", 1440, null)
-            coVerify(exactly = 1) { simulatedService.getOHLC("BTCUSD", 1440, null) }
+            dynamicService.getOHLC(BTCUSD, 1440, null)
+            coVerify(exactly = 1) { simulatedService.getOHLC(BTCUSD, 1440, null) }
             coVerify(exactly = 0) { realService.getOHLC(any(), any(), any()) }
 
             // getRealService
@@ -117,8 +119,8 @@ class DynamicKrakenServiceTest : StringSpec() {
             coVerify(exactly = 0) { simulatedService.getBalances() }
 
             // getTickerPrices
-            dynamicService.getTickerPrices("BTCUSD")
-            coVerify(exactly = 1) { realService.getTickerPrices("BTCUSD") }
+            dynamicService.getTickerPrices(BTCUSD)
+            coVerify(exactly = 1) { realService.getTickerPrices(BTCUSD) }
             coVerify(exactly = 0) { simulatedService.getTickerPrices(any()) }
 
             // executeOrder
@@ -147,8 +149,8 @@ class DynamicKrakenServiceTest : StringSpec() {
             coVerify(exactly = 0) { simulatedService.getTradeHistory(any(), any()) }
 
             // getOHLC
-            dynamicService.getOHLC("BTCUSD", 1440, null)
-            coVerify(exactly = 1) { realService.getOHLC("BTCUSD", 1440, null) }
+            dynamicService.getOHLC(BTCUSD, 1440, null)
+            coVerify(exactly = 1) { realService.getOHLC(BTCUSD, 1440, null) }
             coVerify(exactly = 0) { simulatedService.getOHLC(any(), any(), any()) }
 
             // getRealService

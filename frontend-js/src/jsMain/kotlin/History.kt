@@ -105,6 +105,8 @@ fun initHistory() {
 
 private var syncIntervalId: Int? = null
 
+private const val ACTIVE = "active"
+
 private fun setupSyncProgressAndLoad() {
     checkSyncProgress().then { isDone ->
         if (isDone) {
@@ -132,9 +134,9 @@ private fun setupSyncProgressAndLoad() {
         btn?.addEventListener(HtmlEvents.CLICK, {
             val list = document.querySelectorAll(TIME_RANGE_BTNS_QUERY)
             for (j in 0 until list.length) {
-                (list.item(j) as? HTMLElement)?.classList?.remove("active")
+                (list.item(j) as? HTMLElement)?.classList?.remove(ACTIVE)
             }
-            btn.classList.add("active")
+            btn.classList.add(ACTIVE)
             val range = btn.getAttribute(HtmlAttrs.DATA_RANGE) ?: TimeRange.THIRTY_DAYS.key
             loadAll(range)
         })
@@ -152,11 +154,13 @@ private fun fetchJSON(url: String): Promise<dynamic> {
         .then { res -> res.json() }
 }
 
+private const val EN_US = "en-US"
+
 fun formatUSD(valDouble: Double): String {
     val options: dynamic = json()
     options.minimumFractionDigits = 2
     options.maximumFractionDigits = 2
-    return "$" + valDouble.asDynamic().toLocaleString("en-US", options)
+    return "$" + valDouble.asDynamic().toLocaleString(EN_US, options)
 }
 
 fun formatPctTick(v: Double, includePlus: Boolean = true): String {
@@ -165,7 +169,7 @@ fun formatPctTick(v: Double, includePlus: Boolean = true): String {
     val options: dynamic = json()
     options.minimumFractionDigits = 0
     options.maximumFractionDigits = 2
-    return sign + d.asDynamic().toLocaleString("en-US", options) + "%"
+    return sign + d.asDynamic().toLocaleString(EN_US, options) + "%"
 }
 
 internal fun getUniqueSymbols(snapshots: Array<dynamic>, excludeUsd: Boolean = true): List<String> {
@@ -315,7 +319,10 @@ internal fun buildPortfolioValueChart(snapshots: Array<dynamic>) {
         formatUSD(v)
     }
 
-    createOrUpdate(HtmlIds.PORTFOLIO_VALUE_CHART, createLineChartConfig(datasets.toTypedArray(), options))
+    createOrUpdate(
+        HtmlIds.PORTFOLIO_VALUE_CHART,
+        createLineChartConfig(datasets.toTypedArray(), options)
+    )
 }
 
 internal fun buildAssetHoldingsChart(snapshots: Array<dynamic>) {
@@ -374,7 +381,7 @@ internal fun buildAssetHoldingsChart(snapshots: Array<dynamic>) {
         val balOpts: dynamic = json()
         balOpts.minimumFractionDigits = 4
         balOpts.maximumFractionDigits = 8
-        "$sym: $pctSign${pctChange.toFixed(2)}% (${balance.asDynamic().toLocaleString("en-US", balOpts)})"
+        "$sym: $pctSign${pctChange.toFixed(2)}% (${balance.asDynamic().toLocaleString(EN_US, balOpts)})"
     }
 
     options.scales.y.ticks.callback = { v: Double, _: dynamic, _: dynamic ->
@@ -430,6 +437,8 @@ internal fun buildAllocationDriftChart(snapshots: Array<dynamic>) {
     createOrUpdate(HtmlIds.ALLOCATION_DRIFT_CHART, createLineChartConfig(datasets, options))
 }
 
+private const val TRUE = "true"
+
 internal fun calculateCumulativePL(trades: Array<dynamic>, includeDryRun: Boolean = false): Array<dynamic> {
     if (trades.asDynamic().length == 0) return emptyArray()
 
@@ -440,8 +449,8 @@ internal fun calculateCumulativePL(trades: Array<dynamic>, includeDryRun: Boolea
     }
 
     val filtered = sorted.filter { t: dynamic ->
-        val isSuccess = (t.success == true || t.success.toString() == "true")
-        val isDryRun = (t.dryRun == true || t.dryRun.toString() == "true")
+        val isSuccess = (t.success == true || t.success.toString() == TRUE)
+        val isDryRun = (t.dryRun == true || t.dryRun.toString() == TRUE)
         isSuccess && (includeDryRun || !isDryRun)
     }
 
@@ -499,6 +508,10 @@ fun formatPair(trade: dynamic): String {
     return trade.symbol.toString() + "/USD"
 }
 
+private const val TR = "tr"
+
+private const val TD = "td"
+
 internal fun renderTradeTable(trades: Array<dynamic>) {
     val tbody = document.getElementById(HtmlIds.TRADE_TABLE_BODY) ?: return
     tbody.innerHTML = ""
@@ -507,8 +520,8 @@ internal fun renderTradeTable(trades: Array<dynamic>) {
     val filteredTrades = if (showDryRun) trades else trades.filter { t: dynamic -> !(t.dryRun as? Boolean ?: false) }.toTypedArray()
 
     if (filteredTrades.asDynamic().length == 0) {
-        val tr = document.createElement("tr")
-        val td = document.createElement("td") as HTMLTableCellElement
+        val tr = document.createElement(TR)
+        val td = document.createElement(TD) as HTMLTableCellElement
         td.colSpan = 6
         td.setAttribute("style", "text-align:center;color:var(--color-text-muted);padding:2rem;")
         td.textContent = ViewText.NO_TRADES_FOUND_PERIOD
@@ -523,7 +536,7 @@ internal fun renderTradeTable(trades: Array<dynamic>) {
 }
 
 private fun renderTradeRow(t: dynamic): HTMLTableRowElement {
-    val tr = document.createElement("tr") as HTMLTableRowElement
+    val tr = document.createElement(TR) as HTMLTableRowElement
     tr.className = CssClass.Table.Hoverable.toString()
 
     val time = Date(t.timestamp.toString()).asDynamic().toLocaleString()
@@ -547,15 +560,17 @@ private fun renderTradeRow(t: dynamic): HTMLTableRowElement {
 }
 
 private fun createCell(text: String, cssClass: CssClass): HTMLTableCellElement {
-    val td = document.createElement("td") as HTMLTableCellElement
+    val td = document.createElement(TD) as HTMLTableCellElement
     td.className = cssClass.toString()
     td.textContent = text
     return td
 }
 
+private const val SPAN = "span"
+
 private fun createBadgeCell(text: String, badgeClass: CssClass): HTMLTableCellElement {
-    val td = document.createElement("td") as HTMLTableCellElement
-    val span = document.createElement("span") as HTMLSpanElement
+    val td = document.createElement(TD) as HTMLTableCellElement
+    val span = document.createElement(SPAN) as HTMLSpanElement
     span.className = badgeClass.toString()
     span.textContent = text
     td.appendChild(span)

@@ -3,14 +3,16 @@ package com.gemini.krakenbot.config
 import com.fasterxml.jackson.annotation.JsonIgnore
 import com.fasterxml.jackson.annotation.JsonValue
 
+private const val _REDACTED_ = "***REDACTED***"
+
 @JvmInline
 value class ApiKey(@get:JsonValue val value: String) {
-    override fun toString(): String = "***REDACTED***"
+    override fun toString(): String = _REDACTED_
 }
 
 @JvmInline
 value class PrivateKey(@get:JsonValue val value: String) {
-    override fun toString(): String = "***REDACTED***"
+    override fun toString(): String = _REDACTED_
 }
 
 data class KrakenCredentials(

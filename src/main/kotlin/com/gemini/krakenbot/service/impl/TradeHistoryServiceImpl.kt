@@ -29,6 +29,9 @@ import java.util.concurrent.ThreadLocalRandom
 import kotlin.math.abs
 import kotlin.time.Duration.Companion.milliseconds
 
+private const val USD = "USD"
+private const val BUY = "BUY"
+private const val SELL = "SELL"
 
 class TradeHistoryServiceImpl(
     private val repository: TradeRepository,
@@ -110,7 +113,7 @@ class TradeHistoryServiceImpl(
             val symbolU = symbol.value.uppercase()
             currentPrices[symbolU] = SimulationDefaults.INITIAL_PRICES[symbolU] ?: 10.0
         }
-        currentPrices["USD"] = 1.0
+        currentPrices[USD] = 1.0
 
         // Start balances
         val currentBalances = mutableMapOf<String, Double>()
@@ -137,7 +140,7 @@ class TradeHistoryServiceImpl(
 
             // 1. Fluctuate prices
             for (symbol in currentPrices.keys) {
-                if (symbol == "USD") continue
+                if (symbol == USD) continue
                 val price = currentPrices.getValue(symbol)
                 // random fluctuation +/- 1.5%
                 val change = (random.nextDouble() - 0.5) * 0.03
@@ -464,7 +467,7 @@ class TradeHistoryServiceImpl(
                 val symbolU = symbol.value.uppercase()
                 currentPrices[symbolU] = prices[Asset.tradingPair(symbolU)] ?: BigDecimal.ZERO
             }
-            currentPrices["USD"] = BigDecimal.ONE
+            currentPrices[USD] = BigDecimal.ONE
         }
 
         // 3. Fetch OHLC daily close prices for the last 90 days
@@ -472,7 +475,7 @@ class TradeHistoryServiceImpl(
         val sinceSec = Instant.now().minus(95, ChronoUnit.DAYS).epochSecond
         for ((symbol) in allocations) {
             val symbolU = symbol.value.uppercase()
-            if (symbolU == "USD") continue
+            if (symbolU == USD) continue
             val pair = Asset.tradingPair(symbolU)
             try {
                 val prices = krakenService.getOHLC(pair, interval = 1440, since = sinceSec)
@@ -547,7 +550,8 @@ class TradeHistoryServiceImpl(
                 )
             }
 
-            val targetUsdPercent = BigDecimal(allocations.firstOrNull { it.symbol.isUsd }?.targetPercent ?: 5.0).setScale(2, RoundingMode.HALF_UP)
+            val targetUsdPercent =
+                BigDecimal(allocations.firstOrNull { it.symbol.isUsd }?.targetPercent ?: 5.0).setScale(2, RoundingMode.HALF_UP)
 
             val snapshot = PortfolioSnapshot(
                 timestamp = snapshotTimestamp,
@@ -569,12 +573,12 @@ class TradeHistoryServiceImpl(
                 val fee = trade.fee
                 val symbol = trade.symbol.uppercase()
 
-                if (trade.side == "BUY") {
+                if (trade.side == BUY) {
                     runningBalances[symbol] = (runningBalances[symbol] ?: BigDecimal.ZERO).subtract(volume)
-                    runningBalances["USD"] = (runningBalances["USD"] ?: BigDecimal.ZERO).add(usdAmount).add(fee)
-                } else if (trade.side == "SELL") {
+                    runningBalances[USD] = (runningBalances[USD] ?: BigDecimal.ZERO).add(usdAmount).add(fee)
+                } else if (trade.side == SELL) {
                     runningBalances[symbol] = (runningBalances[symbol] ?: BigDecimal.ZERO).add(volume)
-                    runningBalances["USD"] = (runningBalances["USD"] ?: BigDecimal.ZERO).subtract(usdAmount).add(fee)
+                    runningBalances[USD] = (runningBalances[USD] ?: BigDecimal.ZERO).subtract(usdAmount).add(fee)
                 }
             }
         }
@@ -610,7 +614,7 @@ class TradeHistoryServiceImpl(
         tradePrices: Map<String, List<Pair<Instant, BigDecimal>>>,
         currentPrices: Map<String, BigDecimal>
     ): BigDecimal {
-        if (symbol.equals("USD", ignoreCase = true)) return BigDecimal.ONE
+        if (symbol.equals(USD, ignoreCase = true)) return BigDecimal.ONE
 
         val prices = ohlcData[symbol.uppercase()]
         if (!prices.isNullOrEmpty()) {

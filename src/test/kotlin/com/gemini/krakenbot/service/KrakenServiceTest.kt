@@ -34,6 +34,14 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 
+private const val APPLICATION_JSON = "application/json"
+
+private const val SECRET = "secret"
+
+private const val XXBTZUSD = "XXBTZUSD"
+
+private const val XBTUSD = "XBTUSD"
+
 @Suppress("unused")
 class KrakenServiceTest : StringSpec() {
 
@@ -72,7 +80,7 @@ class KrakenServiceTest : StringSpec() {
             respond(
                 content = responseContent,
                 status = HttpStatusCode.OK,
-                headers = headersOf(HttpHeaders.ContentType, "application/json")
+                headers = headersOf(HttpHeaders.ContentType, APPLICATION_JSON)
             )
         }
         val httpClient = HttpClient(mockEngine)
@@ -88,7 +96,7 @@ class KrakenServiceTest : StringSpec() {
 
                 val balances = service.getBalances()
 
-                balances["XXBTZUSD"]?.toDouble() shouldBe 63000.0
+                balances[XXBTZUSD]?.toDouble() shouldBe 63000.0
                 balances["XETHZUSD"]?.toDouble() shouldBe 3000.0
                 balances["USD"]?.toDouble() shouldBe 5000.0
             }
@@ -102,7 +110,7 @@ class KrakenServiceTest : StringSpec() {
 
                 val prices = service.getTickerPrices("XXBTZUSD,XETHZUSD")
 
-                prices["XXBTZUSD"]?.toDouble() shouldBe 65000.0
+                prices[XXBTZUSD]?.toDouble() shouldBe 65000.0
                 prices["XETHZUSD"]?.toDouble() shouldBe 3200.0
             }
         }
@@ -178,7 +186,7 @@ class KrakenServiceTest : StringSpec() {
             runTest {
                 val service = createService("{invalid-json")
                 shouldThrow<RuntimeException> {
-                    service.getTickerPrices("XBTUSD")
+                    service.getTickerPrices(XBTUSD)
                 }
             }
         }
@@ -189,7 +197,7 @@ class KrakenServiceTest : StringSpec() {
                 val service = createService(responseJson)
 
                 val result = service.executeOrder(
-                    pair = "XBTUSD",
+                    pair = XBTUSD,
                     type = "limit",
                     side = "buy",
                     volume = BigDecimal.ONE
@@ -231,7 +239,7 @@ class KrakenServiceTest : StringSpec() {
                     KrakenServiceImpl(configService, objectMapper, httpClient)
 
                 val result = service.executeOrder(
-                    pair = "XBTUSD",
+                    pair = XBTUSD,
                     type = "limit",
                     side = "buy",
                     volume = BigDecimal.ONE
@@ -288,7 +296,7 @@ class KrakenServiceTest : StringSpec() {
                 val config = AppConfig(
                     kraken = KrakenCredentials(
                         apiKey = "",
-                        privateKey = "secret"
+                        privateKey = SECRET
                     ),
                     settings = Settings(
                         loopDelaySeconds = 60L,
@@ -375,14 +383,14 @@ class KrakenServiceTest : StringSpec() {
                         status = HttpStatusCode.OK,
                         headers = headersOf(
                             HttpHeaders.ContentType,
-                            "application/json"
+                            APPLICATION_JSON
                         )
                     )
                 }
 
                 val mockConfigService = mockk<ConfigService>(relaxed = true)
                 val validSecret =
-                    Base64.getEncoder().encodeToString("secret".toByteArray())
+                    Base64.getEncoder().encodeToString(SECRET.toByteArray())
                 val config = AppConfig(
                     kraken = KrakenCredentials(
                         apiKey = "k",
@@ -407,7 +415,7 @@ class KrakenServiceTest : StringSpec() {
                 )
 
                 val balances = service.getBalances()
-                balances["XXBTZUSD"]?.toDouble() shouldBe 63000.0
+                balances[XXBTZUSD]?.toDouble() shouldBe 63000.0
             }
         }
 
@@ -420,14 +428,14 @@ class KrakenServiceTest : StringSpec() {
                         status = HttpStatusCode.OK,
                         headers = headersOf(
                             HttpHeaders.ContentType,
-                            "application/json"
+                            APPLICATION_JSON
                         )
                     )
                 }
 
                 val mockConfigService = mockk<ConfigService>(relaxed = true)
                 val validSecret =
-                    Base64.getEncoder().encodeToString("secret".toByteArray())
+                    Base64.getEncoder().encodeToString(SECRET.toByteArray())
                 val config = AppConfig(
                     kraken = KrakenCredentials(
                         apiKey = "k",
@@ -486,7 +494,7 @@ class KrakenServiceTest : StringSpec() {
 
                 trades.size shouldBe 1
                 val first = trades.first()
-                first.pair shouldBe "XXBTZUSD"
+                first.pair shouldBe XXBTZUSD
                 first.side shouldBe "BUY"
                 first.symbol shouldBe "BTC"
                 first.volume.compareTo(BigDecimal("0.1")) shouldBe 0
@@ -644,14 +652,14 @@ class KrakenServiceTest : StringSpec() {
                     respond(
                         content = errorJson,
                         status = HttpStatusCode.OK,
-                        headers = headersOf(HttpHeaders.ContentType, "application/json")
+                        headers = headersOf(HttpHeaders.ContentType, APPLICATION_JSON)
                     )
                 }
 
                 val mockConfigService = mockk<ConfigService>(relaxed = true)
                 val credentials = KrakenCredentials(
                     "api-key",
-                    Base64.getEncoder().encodeToString("secret".toByteArray())
+                    Base64.getEncoder().encodeToString(SECRET.toByteArray())
                 )
                 val config = AppConfig(
                     kraken = credentials,
@@ -687,14 +695,14 @@ class KrakenServiceTest : StringSpec() {
                     respond(
                         content = """{"error":[],"result":{"trades":{}}}""",
                         status = HttpStatusCode.OK,
-                        headers = headersOf(HttpHeaders.ContentType, "application/json")
+                        headers = headersOf(HttpHeaders.ContentType, APPLICATION_JSON)
                     )
                 }
 
                 val mockConfigService = mockk<ConfigService>(relaxed = true)
                 val credentials = KrakenCredentials(
                     "api-key",
-                    Base64.getEncoder().encodeToString("secret".toByteArray())
+                    Base64.getEncoder().encodeToString(SECRET.toByteArray())
                 )
                 val config = AppConfig(
                     kraken = credentials,
@@ -809,7 +817,7 @@ class KrakenServiceTest : StringSpec() {
                 val mockConfigService = mockk<ConfigService>(relaxed = true)
                 val credentials = KrakenCredentials(
                     apiKey = "api-key",
-                    privateKey = Base64.getEncoder().encodeToString("secret".toByteArray())
+                    privateKey = Base64.getEncoder().encodeToString(SECRET.toByteArray())
                 )
                 // Allocations with SOL only — no BTC, ETH, or DOGE in the list
                 val config = AppConfig(
@@ -831,7 +839,7 @@ class KrakenServiceTest : StringSpec() {
                 val mockEngine = MockEngine { respond(
                     content = responseJson,
                     status = HttpStatusCode.OK,
-                    headers = headersOf(HttpHeaders.ContentType, "application/json")
+                    headers = headersOf(HttpHeaders.ContentType, APPLICATION_JSON)
                 )}
                 val service = KrakenServiceImpl(
                     configService = mockConfigService,
@@ -893,7 +901,7 @@ class KrakenServiceTest : StringSpec() {
                 val mockConfigService = mockk<ConfigService>(relaxed = true)
                 val credentials = KrakenCredentials(
                     apiKey = "api-key",
-                    privateKey = Base64.getEncoder().encodeToString("secret".toByteArray())
+                    privateKey = Base64.getEncoder().encodeToString(SECRET.toByteArray())
                 )
                 // No relevant allocations — forces fallback paths
                 val config = AppConfig(
@@ -915,7 +923,7 @@ class KrakenServiceTest : StringSpec() {
                 val mockEngine = MockEngine { respond(
                     content = responseJson,
                     status = HttpStatusCode.OK,
-                    headers = headersOf(HttpHeaders.ContentType, "application/json")
+                    headers = headersOf(HttpHeaders.ContentType, APPLICATION_JSON)
                 )}
                 val service = KrakenServiceImpl(
                     configService = mockConfigService,
@@ -972,21 +980,21 @@ class KrakenServiceTest : StringSpec() {
                         respond(
                             content = "{\"error\":[\"EAPI:Rate limit exceeded\"]}",
                             status = HttpStatusCode.OK,
-                            headers = headersOf(HttpHeaders.ContentType, "application/json")
+                            headers = headersOf(HttpHeaders.ContentType, APPLICATION_JSON)
                         )
                     } else {
                         // Success response
                         respond(
                             content = "{\"error\":[],\"result\":{\"XXBTZUSD\":63000.0}}",
                             status = HttpStatusCode.OK,
-                            headers = headersOf(HttpHeaders.ContentType, "application/json")
+                            headers = headersOf(HttpHeaders.ContentType, APPLICATION_JSON)
                         )
                     }
                 }
                 val mockConfigService = mockk<ConfigService>(relaxed = true)
                 val credentials = KrakenCredentials(
                     "k",
-                    Base64.getEncoder().encodeToString("secret".toByteArray())
+                    Base64.getEncoder().encodeToString(SECRET.toByteArray())
                 )
                 every { mockConfigService.getConfig() } returns AppConfig(
                     credentials,
@@ -1006,7 +1014,7 @@ class KrakenServiceTest : StringSpec() {
                 )
 
                 val balances = service.getBalances()
-                balances["XXBTZUSD"]?.toDouble() shouldBe 63000.0
+                balances[XXBTZUSD]?.toDouble() shouldBe 63000.0
                 attempt shouldBe 2
             }
         }
@@ -1019,20 +1027,20 @@ class KrakenServiceTest : StringSpec() {
                         respond(
                             content = "{\"error\":[\"EGeneral:Temporary lockout\"]}",
                             status = HttpStatusCode.OK,
-                            headers = headersOf(HttpHeaders.ContentType, "application/json")
+                            headers = headersOf(HttpHeaders.ContentType, APPLICATION_JSON)
                         )
                     } else {
                         respond(
                             content = "{\"error\":[],\"result\":{\"XXBTZUSD\":63000.0}}",
                             status = HttpStatusCode.OK,
-                            headers = headersOf(HttpHeaders.ContentType, "application/json")
+                            headers = headersOf(HttpHeaders.ContentType, APPLICATION_JSON)
                         )
                     }
                 }
                 val mockConfigService = mockk<ConfigService>(relaxed = true)
                 val credentials = KrakenCredentials(
                     "k",
-                    Base64.getEncoder().encodeToString("secret".toByteArray())
+                    Base64.getEncoder().encodeToString(SECRET.toByteArray())
                 )
                 every { mockConfigService.getConfig() } returns AppConfig(
                     credentials,
@@ -1052,7 +1060,7 @@ class KrakenServiceTest : StringSpec() {
                 )
 
                 val balances = service.getBalances()
-                balances["XXBTZUSD"]?.toDouble() shouldBe 63000.0
+                balances[XXBTZUSD]?.toDouble() shouldBe 63000.0
                 attempt shouldBe 2
             }
         }
@@ -1063,13 +1071,13 @@ class KrakenServiceTest : StringSpec() {
                     respond(
                         content = "{\"error\":[\"EAPI:Rate limit exceeded\"]}",
                         status = HttpStatusCode.OK,
-                        headers = headersOf(HttpHeaders.ContentType, "application/json")
+                        headers = headersOf(HttpHeaders.ContentType, APPLICATION_JSON)
                     )
                 }
                 val mockConfigService = mockk<ConfigService>(relaxed = true)
                 val credentials = KrakenCredentials(
                     "k",
-                    Base64.getEncoder().encodeToString("secret".toByteArray())
+                    Base64.getEncoder().encodeToString(SECRET.toByteArray())
                 )
                 every { mockConfigService.getConfig() } returns AppConfig(credentials, Settings(
                     loopDelaySeconds = 60,
@@ -1100,14 +1108,14 @@ class KrakenServiceTest : StringSpec() {
                         respond(
                             content = "{\"error\":[],\"result\":{\"XXBTZUSD\":63000.0}}",
                             status = HttpStatusCode.OK,
-                            headers = headersOf(HttpHeaders.ContentType, "application/json")
+                            headers = headersOf(HttpHeaders.ContentType, APPLICATION_JSON)
                         )
                     }
                 }
                 val mockConfigService = mockk<ConfigService>(relaxed = true)
                 val credentials = KrakenCredentials(
                     "k",
-                    Base64.getEncoder().encodeToString("secret".toByteArray())
+                    Base64.getEncoder().encodeToString(SECRET.toByteArray())
                 )
                 every { mockConfigService.getConfig() } returns AppConfig(
                     credentials,
@@ -1127,7 +1135,7 @@ class KrakenServiceTest : StringSpec() {
                 )
 
                 val balances = service.getBalances()
-                balances["XXBTZUSD"]?.toDouble() shouldBe 63000.0
+                balances[XXBTZUSD]?.toDouble() shouldBe 63000.0
                 attempt shouldBe 2
             }
         }
@@ -1143,14 +1151,14 @@ class KrakenServiceTest : StringSpec() {
                         respond(
                             content = "{\"error\":[],\"result\":{\"XXBTZUSD\":63000.0}}",
                             status = HttpStatusCode.OK,
-                            headers = headersOf(HttpHeaders.ContentType, "application/json")
+                            headers = headersOf(HttpHeaders.ContentType, APPLICATION_JSON)
                         )
                     }
                 }
                 val mockConfigService = mockk<ConfigService>(relaxed = true)
                 val credentials = KrakenCredentials(
                     "k",
-                    Base64.getEncoder().encodeToString("secret".toByteArray())
+                    Base64.getEncoder().encodeToString(SECRET.toByteArray())
                 )
                 every { mockConfigService.getConfig() } returns AppConfig(credentials, Settings(
                     loopDelaySeconds = 60,
@@ -1166,7 +1174,7 @@ class KrakenServiceTest : StringSpec() {
                 )
 
                 val balances = service.getBalances()
-                balances["XXBTZUSD"]?.toDouble() shouldBe 63000.0
+                balances[XXBTZUSD]?.toDouble() shouldBe 63000.0
                 attempt shouldBe 2
             }
         }
@@ -1175,7 +1183,7 @@ class KrakenServiceTest : StringSpec() {
             runTest {
                 val responseJson = "{\"error\":[],\"result\":{\"XXBTZUSD\":[[1616662800,\"52000.0\",\"53000.0\",\"51000.0\",\"52500.0\",\"52200.0\",\"100.5\",1234]],\"last\":1616835600}}"
                 val service = createService(responseJson) as KrakenServiceImpl
-                val ohlc = service.getOHLC("XXBTZUSD", 1440, null)
+                val ohlc = service.getOHLC(XXBTZUSD, 1440, null)
                 ohlc.size shouldBe 1
                 ohlc[0].first shouldBe 1616662800L
                 ohlc[0].second.toDouble() shouldBe 52500.0
@@ -1186,7 +1194,7 @@ class KrakenServiceTest : StringSpec() {
         "getOHLC_Error" {
             runTest {
                 val service = createService("invalid-json")
-                val ohlc = service.getOHLC("XXBTZUSD", 1440, null)
+                val ohlc = service.getOHLC(XXBTZUSD, 1440, null)
                 ohlc.isEmpty().shouldBeTrue()
             }
         }
@@ -1195,7 +1203,7 @@ class KrakenServiceTest : StringSpec() {
             runTest {
                 val responseJson = "{\"error\":[],\"result\":\"not-an-object\"}"
                 val service = createService(responseJson) as KrakenServiceImpl
-                val ohlc = service.getOHLC("XXBTZUSD", 1440, null)
+                val ohlc = service.getOHLC(XXBTZUSD, 1440, null)
                 ohlc.isEmpty().shouldBeTrue()
             }
         }
@@ -1204,7 +1212,7 @@ class KrakenServiceTest : StringSpec() {
             runTest {
                 val responseJson = "{\"error\":[],\"result\":{\"last\":1616835600,\"XXBTZUSD\":[[1616662800,\"52000.0\",\"53000.0\",\"51000.0\",\"52500.0\",\"52200.0\",\"100.5\",1234]]}}"
                 val service = createService(responseJson) as KrakenServiceImpl
-                val ohlc = service.getOHLC("XXBTZUSD", 1440, null)
+                val ohlc = service.getOHLC(XXBTZUSD, 1440, null)
                 ohlc.size shouldBe 1
             }
         }
@@ -1213,7 +1221,7 @@ class KrakenServiceTest : StringSpec() {
             runTest {
                 val responseJson = "{\"error\":[],\"result\":{\"XXBTZUSD\":\"not-an-array\",\"last\":1616835600}}"
                 val service = createService(responseJson) as KrakenServiceImpl
-                val ohlc = service.getOHLC("XXBTZUSD", 1440, null)
+                val ohlc = service.getOHLC(XXBTZUSD, 1440, null)
                 ohlc.isEmpty().shouldBeTrue()
             }
         }
@@ -1222,7 +1230,7 @@ class KrakenServiceTest : StringSpec() {
             runTest {
                 val responseJson = "{\"error\":[],\"result\":{\"XXBTZUSD\":[\"not-an-array\", [1616662800,\"52000.0\",\"53000.0\",\"51000.0\",\"invalid-price\",\"52200.0\",\"100.5\",1234]]}}"
                 val service = createService(responseJson) as KrakenServiceImpl
-                val ohlc = service.getOHLC("XXBTZUSD", 1440, null)
+                val ohlc = service.getOHLC(XXBTZUSD, 1440, null)
                 ohlc.size shouldBe 1
                 ohlc[0].second shouldBe BigDecimal.ZERO
             }
@@ -1236,13 +1244,13 @@ class KrakenServiceTest : StringSpec() {
                     respond(
                         content = "{\"error\":[],\"result\":{}}",
                         status = HttpStatusCode.OK,
-                        headers = headersOf(HttpHeaders.ContentType, "application/json")
+                        headers = headersOf(HttpHeaders.ContentType, APPLICATION_JSON)
                     )
                 }
                 val mockConfigService = mockk<ConfigService>(relaxed = true)
                 val credentials = KrakenCredentials(
                     "k",
-                    Base64.getEncoder().encodeToString("secret".toByteArray())
+                    Base64.getEncoder().encodeToString(SECRET.toByteArray())
                 )
                 every { mockConfigService.getConfig() } returns AppConfig(
                     credentials,

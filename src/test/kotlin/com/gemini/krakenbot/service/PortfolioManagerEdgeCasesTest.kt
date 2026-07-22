@@ -28,6 +28,8 @@ import java.io.IOException
 import java.math.BigDecimal
 import kotlin.time.Duration.Companion.milliseconds
 
+private const val USD = "USD"
+
 @Suppress("unused")
 class PortfolioManagerEdgeCasesTest : StringSpec() {
 
@@ -1008,10 +1010,10 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
                 ).apply { isAccessible = true }
 
             val balances =
-                mapOf("USD" to 500.0, "BTC" to 0.01).toBigDecimalMap()
+                mapOf(USD to 500.0, "BTC" to 0.01).toBigDecimalMap()
             val prices = mapOf("BTC" to BigDecimal("50000.0"))
             val currentValuesUSD = mapOf(
-                "USD" to BigDecimal("500.0"),
+                USD to BigDecimal("500.0"),
                 "BTC" to BigDecimal("500.0")
             )
             val totalVal = BigDecimal("1000.0")
@@ -1054,7 +1056,7 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
             snapshot.totalValueUSD.compareTo(BigDecimal("1000.0")) shouldBe 0
 
             val currentValuesUSDMissing =
-                mapOf("USD" to BigDecimal("500.0"))
+                mapOf(USD to BigDecimal("500.0"))
             val pricesMissing = emptyMap<String, BigDecimal>()
 
             val snapshotFallback = buildSnapshotMethod.invoke(
@@ -1171,7 +1173,7 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
                 val config = AppConfig(
                     kraken = KrakenCredentials(apiKey = "k", privateKey = "s"),
                     settings = settings,
-                    allocations = listOf(Allocation("USD", 100.0))
+                    allocations = listOf(Allocation(USD, 100.0))
                 )
                 every { configService.getConfig() } returns config
 
@@ -1201,7 +1203,7 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
                 val config = AppConfig(
                     kraken = KrakenCredentials(apiKey = "k", privateKey = "s"),
                     settings = settings,
-                    allocations = listOf(Allocation("USD", 100.0))
+                    allocations = listOf(Allocation(USD, 100.0))
                 )
                 every { configService.getConfig() } returns config
 

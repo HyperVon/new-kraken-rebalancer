@@ -16,12 +16,15 @@ import org.w3c.dom.*
 import kotlin.js.json
 import kotlin.test.assertEquals
 
+private const val USD = "USD"
+private const val DIV = "div"
+
 @Suppress("unused")
 class HistoryTest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
 
     init {
-        "formatUSD renders currency amounts" {
+        "format$USD renders currency amounts" {
         formatUSD(1234.56) shouldBe "$1,234.56"
         formatUSD(0.0) shouldBe "$0.00"
         formatUSD(-12.3456) shouldBe "$-12.35"
@@ -29,7 +32,7 @@ class HistoryTest : StringSpec() {
 
         "formatPair handles valid and missing symbols" {
         val trade1: dynamic = js("({ symbol: '${Asset.BTC}' })")
-        formatPair(trade1) shouldBe "${Asset.BTC}/USD"
+        formatPair(trade1) shouldBe "${Asset.BTC}/$USD"
 
         val trade2: dynamic = js("({ symbol: null })")
         formatPair(trade2) shouldBe ""
@@ -42,8 +45,8 @@ class HistoryTest : StringSpec() {
 
         "getUniqueSymbols filters and sorts symbols" {
         val snapshots = arrayOf(
-            js("({ assets: { BTC: {}, ETH: {}, USD: {} } })"),
-            js("({ assets: { BTC: {}, SOL: {}, USD: {} } })"),
+            js("({ assets: { BTC: {}, ETH: {}, $USD: {} } })"),
+            js("({ assets: { BTC: {}, SOL: {}, $USD: {} } })"),
             js("({ assets: null })")
         )
 
@@ -107,7 +110,7 @@ class HistoryTest : StringSpec() {
     }
 
         "renderTradeTable filters dry runs and displays empty states" {
-        val container = document.createElement("div")
+        val container = document.createElement(DIV)
         container.innerHTML = TestDomBuilders.tradeTableDom()
         document.body!!.appendChild(container)
 
@@ -145,18 +148,18 @@ class HistoryTest : StringSpec() {
             renderTradeTable(trades)
             val tbody = document.getElementById(HtmlIds.TRADE_TABLE_BODY) as HTMLTableSectionElement
             tbody.rows.length shouldBe 3
-            tbody.innerHTML shouldContain "${Asset.BTC}/USD"
-            tbody.innerHTML shouldContain "${Asset.ETH}/USD"
-            tbody.innerHTML shouldContain "${Asset.LTC}/USD"
+            tbody.innerHTML shouldContain "${Asset.BTC}/$USD"
+            tbody.innerHTML shouldContain "${Asset.ETH}/$USD"
+            tbody.innerHTML shouldContain "${Asset.LTC}/$USD"
             tbody.innerHTML shouldContain "DRY RUN"
             tbody.innerHTML shouldContain "FAILED"
 
             (document.getElementById(HtmlIds.SHOW_DRY_RUN_CHECKBOX) as HTMLInputElement).checked = false
             renderTradeTable(trades)
             tbody.rows.length shouldBe 2
-            tbody.innerHTML shouldContain "${Asset.BTC}/USD"
-            tbody.innerHTML shouldContain "${Asset.LTC}/USD"
-            tbody.innerHTML shouldNotContain "${Asset.ETH}/USD"
+            tbody.innerHTML shouldContain "${Asset.BTC}/$USD"
+            tbody.innerHTML shouldContain "${Asset.LTC}/$USD"
+            tbody.innerHTML shouldNotContain "${Asset.ETH}/$USD"
 
             renderTradeTable(emptyArray())
             tbody.rows.length shouldBe 1
@@ -167,7 +170,7 @@ class HistoryTest : StringSpec() {
     }
 
         "updateStats formats each displayed value" {
-        val container = document.createElement("div")
+        val container = document.createElement(DIV)
         container.innerHTML = TestDomBuilders.statsDom()
         document.body!!.appendChild(container)
 
@@ -190,7 +193,7 @@ class HistoryTest : StringSpec() {
     }
 
         "chart builders create charts and preserve visibility" {
-        val container = document.createElement("div")
+        val container = document.createElement(DIV)
         container.innerHTML = TestDomBuilders.chartsDom()
         document.body!!.appendChild(container)
         js("""
@@ -208,15 +211,15 @@ class HistoryTest : StringSpec() {
             val snapshots = arrayOf(
                 json(
                     "timestamp" to "2023-01-01",
-                    "totalValueUSD" to 100,
+                    "totalValue$USD" to 100,
                     "assets" to json(
                         Asset.BTC to json(
-                            "valueUSD" to 60,
+                            "value$USD" to 60,
                             "balance" to 2,
                             "currentPercent" to 60
                         ),
                         Asset.USD to json(
-                            "valueUSD" to 40,
+                            "value$USD" to 40,
                             "balance" to 40,
                             "currentPercent" to 40
                         )
@@ -224,9 +227,9 @@ class HistoryTest : StringSpec() {
                 ),
                 json(
                     "timestamp" to "2023-01-02",
-                    "totalValueUSD" to "invalid",
+                    "totalValue$USD" to "invalid",
                     "assets" to json(Asset.BTC to json(
-                        "valueUSD" to 80,
+                        "value$USD" to 80,
                         "balance" to 3,
                         "currentPercent" to 80
                     ))
@@ -267,14 +270,14 @@ class HistoryTest : StringSpec() {
     }
 
         "loadAll and checkSyncProgress update history content" {
-        val container = document.createElement("div")
+        val container = document.createElement(DIV)
         container.innerHTML = TestDomBuilders.historyDom()
         document.body!!.appendChild(container)
         js("""
             window.Chart = function(_, config) { this.data = config.data; this.destroy = function() {}; this.isDatasetVisible = function() { return true; }; };
             window.fetch = function(url) {
                 var data = url.indexOf('snapshots') >= 0
-                    ? [{ timestamp: '2023-01-01', totalValueUSD: 100, assets: { BTC: { valueUSD: 100, balance: 1, currentPercent: 100 } } }]
+                    ? [{ timestamp: '2023-01-01', totalValue$USD: 100, assets: { BTC: { valueUSD: 100, balance: 1, currentPercent: 100 } } }]
                     : url.indexOf('trades') >= 0
                         ? [{ timestamp: '2023-01-01', symbol: 'BTC', success: true, dryRun: false, side: 'BUY', volume: 1, usdAmount: 100 }]
                         : url.indexOf('sync-progress') >= 0
@@ -298,7 +301,7 @@ class HistoryTest : StringSpec() {
     }
 
         "checkSyncProgress hides the banner when history is seeded" {
-        val container = document.createElement("div")
+        val container = document.createElement(DIV)
         container.innerHTML = TestDomBuilders.syncProgressDom()
         document.body!!.appendChild(container)
         js("""

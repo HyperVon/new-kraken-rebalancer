@@ -9,6 +9,8 @@ import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.shouldBe
 import java.math.BigDecimal
 
+private const val XXBTZUSD = "XXBTZUSD"
+
 @Suppress("unused")
 class SerializationParityTest : StringSpec() {
 
@@ -65,8 +67,8 @@ class SerializationParityTest : StringSpec() {
             snapshot.actions shouldHaveSize 1
             snapshot.actions[0] shouldBe "SELL 0.125 XXBTZUSD"
 
-            val btcAsset = snapshot.assets["XXBTZUSD"]
-            btcAsset?.symbol?.value shouldBe "XXBTZUSD"
+            val btcAsset = snapshot.assets[XXBTZUSD]
+            btcAsset?.symbol?.value shouldBe XXBTZUSD
             btcAsset?.balance?.compareTo(BigDecimal("0.5")) shouldBe 0
             btcAsset?.price?.compareTo(BigDecimal("20000.0")) shouldBe 0
             btcAsset?.valueUSD?.compareTo(BigDecimal("10000.0")) shouldBe 0

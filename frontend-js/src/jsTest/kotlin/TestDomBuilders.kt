@@ -6,6 +6,7 @@ import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.DataProps
 import com.gemini.krakenbot.view.util.HtmlAttrs
 import com.gemini.krakenbot.view.util.HtmlIds
+import kotlinx.browser.window
 import kotlin.js.json
 
 /** Reusable HTML template String builder functions for Kotlin/JS tests. */
@@ -96,14 +97,14 @@ object TestDomBuilders {
         isDatasetVisible: (Int) -> Boolean = { true }
     ) {
         var callCount = 0
-        kotlinx.browser.window.asDynamic().chartCallCount = 0
-        kotlinx.browser.window.asDynamic().chartConfigs = arrayOf<dynamic>()
+        window.asDynamic().chartCallCount = 0
+        window.asDynamic().chartConfigs = arrayOf<dynamic>()
 
         val chartConstructor = { _: dynamic, config: dynamic ->
             callCount++
-            kotlinx.browser.window.asDynamic().chartCallCount = callCount
-            val configs = kotlinx.browser.window.asDynamic().chartConfigs as? Array<dynamic> ?: arrayOf()
-            kotlinx.browser.window.asDynamic().chartConfigs = configs + arrayOf(config)
+            window.asDynamic().chartCallCount = callCount
+            val configs = window.asDynamic().chartConfigs as? Array<dynamic> ?: arrayOf()
+            window.asDynamic().chartConfigs = configs + arrayOf(config)
 
             val mockInstance: dynamic = json(
                 "data" to config.data,
@@ -113,7 +114,7 @@ object TestDomBuilders {
             )
             mockInstance
         }
-        kotlinx.browser.window.asDynamic().Chart = chartConstructor
+        window.asDynamic().Chart = chartConstructor
     }
 
     fun chartConfig(vararg datasets: dynamic): dynamic = json(

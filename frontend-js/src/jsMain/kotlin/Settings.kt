@@ -54,6 +54,10 @@ fun updateAllocationTotal() {
     saveButton.disabled = !isSuccess
 }
 
+private const val DIV = "div"
+private const val INPUT = "input"
+private const val BUTTON = "button"
+
 fun addAssetRow() {
     val symbolInput = document.getElementById(HtmlIds.NEW_SYMBOL_INPUT) as? HTMLInputElement ?: return
     val symbol = symbolInput.value.trim().uppercase()
@@ -78,22 +82,22 @@ fun addAssetRow() {
     }
 
     val container = document.getElementById(HtmlIds.ALLOCATIONS_CONTAINER) ?: return
-    val row = document.createElement("div") as HTMLDivElement
+    val row = document.createElement(DIV) as HTMLDivElement
     row.className = CssClass.Form.AllocationEditRow.toString()
 
-    val symbolDiv = document.createElement("div") as HTMLDivElement
+    val symbolDiv = document.createElement(DIV) as HTMLDivElement
     symbolDiv.className = "${CssClass.Form.AllocationEditSymbol} symbol-label"
     symbolDiv.textContent = symbol
 
-    val hiddenInput = document.createElement("input") as HTMLInputElement
+    val hiddenInput = document.createElement(INPUT) as HTMLInputElement
     hiddenInput.type = "hidden"
     hiddenInput.name = FormFields.SYMBOLS
     hiddenInput.value = symbol
 
-    val inputWrapper = document.createElement("div") as HTMLDivElement
+    val inputWrapper = document.createElement(DIV) as HTMLDivElement
     inputWrapper.className = CssClass.Form.AllocationEditInputWrapper.toString()
 
-    val numberInput = document.createElement("input") as HTMLInputElement
+    val numberInput = document.createElement(INPUT) as HTMLInputElement
     numberInput.type = "number"
     numberInput.step = "0.1"
     numberInput.name = FormFields.TARGETS
@@ -108,8 +112,8 @@ fun addAssetRow() {
     inputWrapper.appendChild(numberInput)
     inputWrapper.appendChild(percentSpan)
 
-    val removeBtn = document.createElement("button") as HTMLButtonElement
-    removeBtn.type = "button"
+    val removeBtn = document.createElement(BUTTON) as HTMLButtonElement
+    removeBtn.type = BUTTON
     removeBtn.className = CssClass.Button.Danger.toString()
     removeBtn.textContent = ViewText.REMOVE
     removeBtn.onclick = {

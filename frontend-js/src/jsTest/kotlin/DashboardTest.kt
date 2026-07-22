@@ -13,6 +13,14 @@ import kotlinx.browser.window
 import org.w3c.dom.*
 import kotlin.js.Date
 
+private const val TR = "tr"
+private const val TH = "th"
+private const val TD = "td"
+private const val TR_HOVERABLE = "tr.hoverable"
+private const val SPAN = "span"
+private const val DIV = "div"
+private const val TBODY_TR = "tbody tr"
+
 @Suppress("unused")
 class DashboardTest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
@@ -23,13 +31,13 @@ class DashboardTest : StringSpec() {
         val tbody = document.createElement("tbody") as HTMLTableSectionElement
         table.appendChild(tbody)
 
-        val headerRow = document.createElement("tr") as HTMLTableRowElement
-        val th0 = document.createElement("th") as HTMLTableCellElement
+        val headerRow = document.createElement(TR) as HTMLTableRowElement
+        val th0 = document.createElement(TH) as HTMLTableCellElement
         th0.className = CssClass.Table.Sortable.value
         th0.textContent = "Asset"
         headerRow.appendChild(th0)
         
-        val th1 = document.createElement("th") as HTMLTableCellElement
+        val th1 = document.createElement(TH) as HTMLTableCellElement
         th1.className = CssClass.Table.Sortable.value
         th1.textContent = "Price"
         headerRow.appendChild(th1)
@@ -38,21 +46,21 @@ class DashboardTest : StringSpec() {
         thead.appendChild(headerRow)
         table.appendChild(thead)
 
-        val row1 = document.createElement("tr") as HTMLTableRowElement
+        val row1 = document.createElement(TR) as HTMLTableRowElement
         row1.className = CssClass.Table.Hoverable.value
-        val td1a = document.createElement("td")
+        val td1a = document.createElement(TD)
         td1a.textContent = Asset.ETH
-        val td1b = document.createElement("td")
+        val td1b = document.createElement(TD)
         td1b.textContent = "$3,000.00"
         row1.appendChild(td1a)
         row1.appendChild(td1b)
         tbody.appendChild(row1)
 
-        val row2 = document.createElement("tr") as HTMLTableRowElement
+        val row2 = document.createElement(TR) as HTMLTableRowElement
         row2.className = CssClass.Table.Hoverable.value
-        val td2a = document.createElement("td")
+        val td2a = document.createElement(TD)
         td2a.textContent = Asset.BTC
-        val td2b = document.createElement("td")
+        val td2b = document.createElement(TD)
         td2b.textContent = "$60,000.00"
         row2.appendChild(td2a)
         row2.appendChild(td2b)
@@ -60,36 +68,36 @@ class DashboardTest : StringSpec() {
 
         sortTable(th0, 0)
         
-        var sortedRows = tbody.querySelectorAll("tr.hoverable")
+        var sortedRows = tbody.querySelectorAll(TR_HOVERABLE)
         (sortedRows.item(0) as HTMLTableRowElement).cells.item(0)?.textContent shouldBe Asset.BTC
         (sortedRows.item(1) as HTMLTableRowElement).cells.item(0)?.textContent shouldBe Asset.ETH
         th0.classList.contains(CssClass.Utility.Asc.value).shouldBeTrue()
         
         sortTable(th0, 0)
-        sortedRows = tbody.querySelectorAll("tr.hoverable")
+        sortedRows = tbody.querySelectorAll(TR_HOVERABLE)
         (sortedRows.item(0) as HTMLTableRowElement).cells.item(0)?.textContent shouldBe Asset.ETH
         th0.classList.contains(CssClass.Utility.Desc.value).shouldBeTrue()
         
         sortTable(th1, 1)
-        sortedRows = tbody.querySelectorAll("tr.hoverable")
+        sortedRows = tbody.querySelectorAll(TR_HOVERABLE)
         (sortedRows.item(0) as HTMLTableRowElement).cells.item(0)?.textContent shouldBe Asset.ETH
         th1.classList.contains(CssClass.Utility.Asc.value).shouldBeTrue()
     }
 
         "updateAge displays fresh and stale data" {
-        val container = document.createElement("div") as HTMLDivElement
+        val container = document.createElement(DIV) as HTMLDivElement
         
-        val ageVal = document.createElement("span") as HTMLSpanElement
+        val ageVal = document.createElement(SPAN) as HTMLSpanElement
         ageVal.className = CssClass.DataAge.Value.value
         container.appendChild(ageVal)
 
-        val ageTime = document.createElement("span") as HTMLSpanElement
+        val ageTime = document.createElement(SPAN) as HTMLSpanElement
         ageTime.className = CssClass.DataAge.Time.value
         val offsetTime = Date.now() - 10000.0
         ageTime.setAttribute(HtmlAttrs.DATA_EPOCH, offsetTime.toString())
         container.appendChild(ageTime)
 
-        val badge = document.createElement("span") as HTMLSpanElement
+        val badge = document.createElement(SPAN) as HTMLSpanElement
         badge.className = "status-badge"
         container.appendChild(badge)
 
@@ -116,7 +124,7 @@ class DashboardTest : StringSpec() {
     }
 
         "reapplySort preserves the active sort direction" {
-        val container = document.createElement("div")
+        val container = document.createElement(DIV)
         container.innerHTML = """
             <table>
                 <thead>
@@ -144,17 +152,17 @@ class DashboardTest : StringSpec() {
             sortTable(targetHeader, 5, CssClass.Utility.Asc.value)
             
             // Verify B is first (30%)
-            var rows = container.querySelectorAll("tbody tr")
+            var rows = container.querySelectorAll(TBODY_TR)
             rows.item(0)!!.textContent!!.shouldContain("B")
             
             // Reverse sort
             sortTable(targetHeader, 5, CssClass.Utility.Desc.value)
-            rows = container.querySelectorAll("tbody tr")
+            rows = container.querySelectorAll(TBODY_TR)
             rows.item(0)!!.textContent!!.shouldContain("A")
             
             // Reapply sort (should still be A first)
             reapplySort()
-            rows = container.querySelectorAll("tbody tr")
+            rows = container.querySelectorAll(TBODY_TR)
             rows.item(0)!!.textContent!!.shouldContain("A")
         } finally {
             document.body!!.removeChild(container)
@@ -165,7 +173,7 @@ class DashboardTest : StringSpec() {
         updateAge()
         reapplySort()
 
-        val container = document.createElement("div")
+        val container = document.createElement(DIV)
         container.innerHTML = """
             <span class="${CssClass.DataAge.Value.value}"></span><span class="${CssClass.DataAge.Time.value}" ${HtmlAttrs.DATA_EPOCH}="invalid"></span>
             <div id="orphan-header"></div>

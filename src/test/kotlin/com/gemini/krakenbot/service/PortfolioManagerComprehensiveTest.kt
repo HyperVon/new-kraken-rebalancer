@@ -21,6 +21,18 @@ import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
 import java.math.BigDecimal
 
+private const val AUSD = "AUSD"
+
+private const val BUSD = "BUSD"
+
+private const val BUY = "buy"
+
+private const val SELL = "sell"
+
+private const val A = "A"
+
+private const val B = "B"
+
 @Suppress("unused")
 class PortfolioManagerComprehensiveTest : StringSpec() {
 
@@ -71,13 +83,13 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
         "Scenario: Balanced Portfolio - No Trades Expected" {
             runTest {
                 every { configService.getConfig() } returns makeConfig(
-                    Allocation("A", 50.0),
-                    Allocation("B", 50.0)
+                    Allocation(A, 50.0),
+                    Allocation(B, 50.0)
                 )
                 krakenService.pricesSupplier =
-                    { mapOf("AUSD" to 100.0, "BUSD" to 100.0) }
+                    { mapOf(AUSD to 100.0, BUSD to 100.0) }
                 krakenService.balanceSupplier =
-                    { mapOf("A" to 10.0, "B" to 10.0) }
+                    { mapOf(A to 10.0, B to 10.0) }
 
                 portfolioManager.performRebalanceCycle()
 
@@ -88,25 +100,25 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
         "Scenario: Simple Rebalance - Asset A Overweight, B Underweight" {
             runTest {
                 every { configService.getConfig() } returns makeConfig(
-                    Allocation("A", 50.0),
-                    Allocation("B", 50.0)
+                    Allocation(A, 50.0),
+                    Allocation(B, 50.0)
                 )
                 krakenService.pricesSupplier =
-                    { mapOf("AUSD" to 100.0, "BUSD" to 100.0) }
+                    { mapOf(AUSD to 100.0, BUSD to 100.0) }
                 krakenService.balanceSupplier =
-                    { mapOf("A" to 11.0, "B" to 9.0) }
+                    { mapOf(A to 11.0, B to 9.0) }
 
                 portfolioManager.performRebalanceCycle()
 
                 val sell =
-                    krakenService.executedOrders.first { it.side == "sell" }
-                sell.pair shouldBe "AUSD"
+                    krakenService.executedOrders.first { it.side == SELL }
+                sell.pair shouldBe AUSD
                 sell.volume.subtract(BigDecimal.ONE)
                     .abs() shouldBeLessThan BigDecimal("0.0001")
 
                 val buy =
-                    krakenService.executedOrders.first { it.side == "buy" }
-                buy.pair shouldBe "BUSD"
+                    krakenService.executedOrders.first { it.side == BUY }
+                buy.pair shouldBe BUSD
                 buy.volume.subtract(BigDecimal.ONE)
                     .abs() shouldBeLessThan BigDecimal("0.0001")
             }
@@ -115,16 +127,16 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
         "Scenario: Fiat Deposit - Distribute Excess Cash" {
             runTest {
                 every { configService.getConfig() } returns makeConfig(
-                    Allocation("A", 40.0),
-                    Allocation("B", 40.0),
+                    Allocation(A, 40.0),
+                    Allocation(B, 40.0),
                     Allocation(Asset.USD, 20.0)
                 )
                 krakenService.pricesSupplier =
-                    { mapOf("AUSD" to 100.0, "BUSD" to 100.0) }
+                    { mapOf(AUSD to 100.0, BUSD to 100.0) }
                 krakenService.balanceSupplier = {
                     mapOf(
-                        "A" to 4.0,
-                        "B" to 4.0,
+                        A to 4.0,
+                        B to 4.0,
                         Asset.USD to 1200.0
                     )
                 }
@@ -133,14 +145,14 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
 
                 val buyA =
                     krakenService.executedOrders.first {
-                        it.pair == "AUSD" && it.side == "buy"
+                        it.pair == AUSD && it.side == BUY
                     }
                 buyA.volume.subtract(BigDecimal.valueOf(4.0))
                     .abs() shouldBeLessThan BigDecimal("0.0001")
 
                 val buyB =
                     krakenService.executedOrders.first {
-                        it.pair == "BUSD" && it.side == "buy"
+                        it.pair == BUSD && it.side == BUY
                     }
                 buyB.volume.subtract(BigDecimal.valueOf(4.0))
                     .abs() shouldBeLessThan BigDecimal("0.0001")
@@ -150,25 +162,25 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
         "Scenario: Fiat Withdrawal - Prevent Buys if No Cash" {
             runTest {
                 every { configService.getConfig() } returns makeConfig(
-                    Allocation("A", 10.0),
-                    Allocation("B", 90.0)
+                    Allocation(A, 10.0),
+                    Allocation(B, 90.0)
                 )
                 krakenService.pricesSupplier =
-                    { mapOf("AUSD" to 100.0, "BUSD" to 100.0) }
+                    { mapOf(AUSD to 100.0, BUSD to 100.0) }
                 krakenService.balanceSupplier =
-                    { mapOf("A" to 5.0, "B" to 0.0, Asset.USD to 0.0) }
+                    { mapOf(A to 5.0, B to 0.0, Asset.USD to 0.0) }
 
                 portfolioManager.performRebalanceCycle()
 
                 val sell =
-                    krakenService.executedOrders.first { it.side == "sell" }
-                sell.pair shouldBe "AUSD"
+                    krakenService.executedOrders.first { it.side == SELL }
+                sell.pair shouldBe AUSD
                 sell.volume.subtract(BigDecimal.valueOf(4.5))
                     .abs() shouldBeLessThan BigDecimal("0.0001")
 
                 val buy =
-                    krakenService.executedOrders.first { it.side == "buy" }
-                buy.pair shouldBe "BUSD"
+                    krakenService.executedOrders.first { it.side == BUY }
+                buy.pair shouldBe BUSD
                 buy.volume.subtract(BigDecimal.valueOf(4.5))
                     .abs() shouldBeLessThan BigDecimal("0.05")
             }
@@ -178,18 +190,18 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
             runTest {
                 every { configService.getConfig() } returns makeConfig(
                     Allocation(
-                        "A",
+                        A,
                         50.0
                     ),
                     Allocation(
-                        "B",
+                        B,
                         50.0
                     )
                 )
                 krakenService.pricesSupplier =
-                    { mapOf("AUSD" to 100.0, "BUSD" to 100.0) }
+                    { mapOf(AUSD to 100.0, BUSD to 100.0) }
                 krakenService.balanceSupplier =
-                    { mapOf("A" to 10.005, "B" to 9.995) }
+                    { mapOf(A to 10.005, B to 9.995) }
 
                 portfolioManager.performRebalanceCycle()
 
@@ -201,7 +213,7 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
             runTest {
                 every { configService.getConfig() } returns makeConfig(
                     Allocation(
-                        "A",
+                        A,
                         0.0
                     ),
                     Allocation(
@@ -209,15 +221,15 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
                         100.0
                     )
                 )
-                krakenService.pricesSupplier = { mapOf("AUSD" to 100.0) }
+                krakenService.pricesSupplier = { mapOf(AUSD to 100.0) }
                 krakenService.balanceSupplier =
-                    { mapOf("A" to 10.0, Asset.USD to 0.0) }
+                    { mapOf(A to 10.0, Asset.USD to 0.0) }
 
                 portfolioManager.performRebalanceCycle()
 
                 val sell =
-                    krakenService.executedOrders.first { it.side == "sell" }
-                sell.pair shouldBe "AUSD"
+                    krakenService.executedOrders.first { it.side == SELL }
+                sell.pair shouldBe AUSD
                 sell.volume.subtract(BigDecimal.TEN)
                     .abs() shouldBeLessThan BigDecimal("0.0001")
             }
@@ -227,7 +239,7 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
             runTest {
                 every { configService.getConfig() } returns makeConfig(
                     Allocation(
-                        "A",
+                        A,
                         100.0
                     ),
                     Allocation(
@@ -235,15 +247,15 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
                         0.0
                     )
                 )
-                krakenService.pricesSupplier = { mapOf("AUSD" to 100.0) }
+                krakenService.pricesSupplier = { mapOf(AUSD to 100.0) }
                 krakenService.balanceSupplier =
-                    { mapOf("A" to 0.0, Asset.USD to 1000.0) }
+                    { mapOf(A to 0.0, Asset.USD to 1000.0) }
 
                 portfolioManager.performRebalanceCycle()
 
                 val buy =
-                    krakenService.executedOrders.first { it.side == "buy" }
-                buy.pair shouldBe "AUSD"
+                    krakenService.executedOrders.first { it.side == BUY }
+                buy.pair shouldBe AUSD
                 buy.volume.subtract(BigDecimal.TEN)
                     .abs() shouldBeLessThan BigDecimal("0.0001")
             }
@@ -253,7 +265,7 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
             runTest {
                 every { configService.getConfig() } returns makeConfig(
                     Allocation(
-                        "A",
+                        A,
                         50.0
                     ),
                     Allocation(
@@ -261,15 +273,15 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
                         50.0
                     )
                 )
-                krakenService.pricesSupplier = { mapOf("AUSD" to 200.0) }
+                krakenService.pricesSupplier = { mapOf(AUSD to 200.0) }
                 krakenService.balanceSupplier =
-                    { mapOf("A" to 10.0, Asset.USD to 1000.0) }
+                    { mapOf(A to 10.0, Asset.USD to 1000.0) }
 
                 portfolioManager.performRebalanceCycle()
 
                 val sell =
-                    krakenService.executedOrders.first { it.side == "sell" }
-                sell.pair shouldBe "AUSD"
+                    krakenService.executedOrders.first { it.side == SELL }
+                sell.pair shouldBe AUSD
                 sell.volume.subtract(BigDecimal.valueOf(2.5))
                     .abs() shouldBeLessThan BigDecimal("0.0001")
             }
@@ -279,7 +291,7 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
             runTest {
                 every { configService.getConfig() } returns makeConfig(
                     Allocation(
-                        "A",
+                        A,
                         100.0
                     ),
                     Allocation(
@@ -288,7 +300,7 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
                     )
                 )
                 krakenService.pricesSupplier = { emptyMap() }
-                krakenService.balanceSupplier = { mapOf("A" to 10.0) }
+                krakenService.balanceSupplier = { mapOf(A to 10.0) }
 
                 portfolioManager.performRebalanceCycle()
 
@@ -300,22 +312,22 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
             runTest {
                 every { configService.getConfig() } returns makeConfig(
                     Allocation(
-                        "A",
+                        A,
                         50.0
                     ),
                     Allocation(
-                        "B",
+                        B,
                         50.0
                     )
                 )
-                krakenService.pricesSupplier = { mapOf("BUSD" to 100.0) }
+                krakenService.pricesSupplier = { mapOf(BUSD to 100.0) }
                 krakenService.balanceSupplier =
-                    { mapOf("A" to 10.0, "B" to 20.0) }
+                    { mapOf(A to 10.0, B to 20.0) }
 
                 portfolioManager.performRebalanceCycle()
 
                 krakenService.executedOrders.none {
-                    it.pair == "AUSD"
+                    it.pair == AUSD
                 } shouldBe true
             }
         }
@@ -324,7 +336,7 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
             runTest {
                 every { configService.getConfig() } returns makeConfig(
                     Allocation(
-                        "A",
+                        A,
                         100.0
                     ),
                     Allocation(
@@ -332,9 +344,9 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
                         0.0
                     )
                 )
-                krakenService.pricesSupplier = { mapOf("AUSD" to 100.0) }
+                krakenService.pricesSupplier = { mapOf(AUSD to 100.0) }
                 krakenService.balanceSupplier =
-                    { mapOf("A" to 0.0, Asset.USD to 1000.0) }
+                    { mapOf(A to 0.0, Asset.USD to 1000.0) }
                 krakenService.orderResultFactory = { pair, _, side, volume ->
                     OrderResult(
                         success = false,
@@ -357,8 +369,8 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
                 portfolioManager.performRebalanceCycle()
 
                 val order = krakenService.executedOrders.first()
-                order.pair shouldBe "AUSD"
-                order.side shouldBe "buy"
+                order.pair shouldBe AUSD
+                order.side shouldBe BUY
 
                 snapshots.single().actions.any {
                     it.startsWith("FAILED BUY A")

@@ -10,13 +10,15 @@ import kotlinx.browser.window
 import org.w3c.dom.*
 import kotlin.js.Date
 
+private const val DIV = "div"
+
 @Suppress("unused")
 class MainTest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
 
     init {
         "initOnLoad initializes dashboard content" {
-            val container = document.createElement("div")
+            val container = document.createElement(DIV)
             container.innerHTML = TestDomBuilders.dataAgeDom(Date.now().toString())
             document.body!!.appendChild(container)
             
@@ -32,7 +34,7 @@ class MainTest : StringSpec() {
         }
 
         "initOnLoad initializes settings content" {
-            val container = document.createElement("div")
+            val container = document.createElement(DIV)
             container.innerHTML = TestDomBuilders.settingsDom()
             document.body!!.appendChild(container)
             
@@ -46,7 +48,7 @@ class MainTest : StringSpec() {
         }
 
         "initOnLoad initializes history content" {
-            val container = document.createElement("div")
+            val container = document.createElement(DIV)
             container.innerHTML = TestDomBuilders.chartsDom()
             document.body!!.appendChild(container)
             
@@ -67,7 +69,7 @@ class MainTest : StringSpec() {
                 0
             }
             
-            val container = document.createElement("div")
+            val container = document.createElement(DIV)
             container.innerHTML = TestDomBuilders.dataAgeDom(Date.now().toString())
             document.body!!.appendChild(container)
 
@@ -93,7 +95,7 @@ class MainTest : StringSpec() {
             val oldSetInterval = window.asDynamic().setInterval
             window.asDynamic().setInterval = { _: () -> Unit, _: Int -> 0 }
             
-            val container = document.createElement("div")
+            val container = document.createElement(DIV)
             container.innerHTML = TestDomBuilders.dataAgeDom(Date.now().toString())
             document.body!!.appendChild(container)
             

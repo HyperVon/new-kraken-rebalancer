@@ -22,6 +22,8 @@ import org.koin.core.context.startKoin
 import org.koin.core.context.stopKoin
 import org.koin.dsl.module
 
+private const val GZIP = "gzip"
+
 @Suppress("unused")
 class ServerFeaturesIntegrationTest : StringSpec() {
 
@@ -74,10 +76,10 @@ class ServerFeaturesIntegrationTest : StringSpec() {
                     dashboardRouting()
                 }
                 val response = client.get(Routes.ROOT) {
-                    header(HttpHeaders.AcceptEncoding, "gzip")
+                    header(HttpHeaders.AcceptEncoding, GZIP)
                 }
                 response.status shouldBe HttpStatusCode.OK
-                response.headers[HttpHeaders.ContentEncoding] shouldBe "gzip"
+                response.headers[HttpHeaders.ContentEncoding] shouldBe GZIP
             }
         }
 

@@ -12,6 +12,8 @@ import org.slf4j.LoggerFactory
 import java.math.BigDecimal
 import java.time.Instant
 
+private const val HISTORY_SEEDED = "history_seeded"
+
 class SqliteTradeRepositoryImpl(
     private val database: Database
 ) : TradeRepository {
@@ -304,11 +306,11 @@ class SqliteTradeRepositoryImpl(
     }
 
     override fun isHistorySeeded(): Boolean {
-        return getSyncMetadata("history_seeded") == "true"
+        return getSyncMetadata(HISTORY_SEEDED) == "true"
     }
 
     override fun setHistorySeeded(seeded: Boolean) {
-        setSyncMetadata("history_seeded", seeded.toString())
+        setSyncMetadata(HISTORY_SEEDED, seeded.toString())
     }
 
     override fun getSyncMetadata(key: String): String? {

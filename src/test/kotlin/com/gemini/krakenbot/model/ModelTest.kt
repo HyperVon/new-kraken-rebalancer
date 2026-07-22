@@ -10,13 +10,18 @@ import io.kotest.matchers.shouldBe
 import java.math.BigDecimal
 import java.time.Instant
 
+private const val XBTUSD = "XBTUSD"
+private const val ETHUSD = "ETHUSD"
+private const val BTC = "btc"
+private const val ETH = "eth"
+
 @Suppress("unused")
 class ModelTest : StringSpec() {
     init {
         "testAssetMappings" {
             val btc = Asset(Asset.BTC)
             btc.krakenTicker shouldBe Asset.XBT
-            btc.tradingPair shouldBe "XBTUSD"
+            btc.tradingPair shouldBe XBTUSD
             btc.isUsd shouldBe false
 
             val doge = Asset(Asset.DOGE)
@@ -29,16 +34,16 @@ class ModelTest : StringSpec() {
 
             val eth = Asset(Asset.ETH)
             eth.krakenTicker shouldBe Asset.ETH
-            eth.tradingPair shouldBe "ETHUSD"
+            eth.tradingPair shouldBe ETHUSD
 
-            Asset.toKrakenTicker("btc") shouldBe Asset.XBT
+            Asset.toKrakenTicker(BTC) shouldBe Asset.XBT
             Asset.toKrakenTicker("doge") shouldBe Asset.XDG
-            Asset.toKrakenTicker("eth") shouldBe "ETH"
+            Asset.toKrakenTicker(ETH) shouldBe "ETH"
 
-            Asset.tradingPair("btc") shouldBe "XBTUSD"
-            Asset.tradingPair("eth") shouldBe "ETHUSD"
+            Asset.tradingPair(BTC) shouldBe XBTUSD
+            Asset.tradingPair(ETH) shouldBe ETHUSD
 
-            Asset.BTC_USD_PAIR shouldBe "XBTUSD"
+            Asset.BTC_USD_PAIR shouldBe XBTUSD
         }
 
         "testPortfolioSnapshot" {
@@ -99,10 +104,10 @@ class ModelTest : StringSpec() {
         "testPortfolioValues" {
             val pv = PortfolioValues(
                 totalValueUSD = BigDecimal.TEN,
-                currentValuesUSD = mapOf("BTC" to BigDecimal.TEN)
+                currentValuesUSD = mapOf(Asset.BTC to BigDecimal.TEN)
             )
             pv.totalValueUSD shouldBe BigDecimal.TEN
-            pv.currentValuesUSD shouldBe mapOf("BTC" to BigDecimal.TEN)
+            pv.currentValuesUSD shouldBe mapOf(Asset.BTC  to BigDecimal.TEN)
 
             val pv2 = pv.copy()
             pv2 shouldBe pv
