@@ -20,11 +20,6 @@ import kotlin.js.json
 import kotlin.time.Duration.Companion.milliseconds
 
 private const val TEST_CHART = "test-chart"
-private const val DIV = HtmlTags.DIV
-private const val INPUT = HtmlTags.INPUT
-private const val TD = HtmlTags.TD
-private val TH_SORTABLE = CssClass.Query.SORTABLE_TH
-private const val NAME = "name"
 
 class CoverageTest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
@@ -81,7 +76,7 @@ class CoverageTest : StringSpec() {
 
         // Test chart builder early return
         "chart builders return early for empty snapshots" {
-            val container = document.createElement(DIV)
+            val container = document.createElement(HtmlTags.DIV)
             container.innerHTML = TestDomBuilders.chartsDom()
             document.body!!.appendChild(container)
             js("""
@@ -171,7 +166,7 @@ class CoverageTest : StringSpec() {
             renderTradeTable(arrayOf())  // Should not throw
 
             // Empty tbody with checkbox
-            val container = document.createElement(DIV)
+            val container = document.createElement(HtmlTags.DIV)
             container.innerHTML = TestDomBuilders.tradeTableDom()
             document.body!!.appendChild(container)
             try {
@@ -186,7 +181,7 @@ class CoverageTest : StringSpec() {
 
         // Test updateStats with missing elements
         "updateStats handles missing elements gracefully" {
-            val container = document.createElement(DIV)
+            val container = document.createElement(HtmlTags.DIV)
             container.innerHTML = TestDomBuilders.statsDom()
             document.body!!.appendChild(container)
             try {
@@ -201,7 +196,7 @@ class CoverageTest : StringSpec() {
 
         // Test loadAll when branches
         "loadAll sets chartDefaults time unit based on range" {
-            val container = document.createElement(DIV)
+            val container = document.createElement(HtmlTags.DIV)
             container.innerHTML = TestDomBuilders.historyDom()
             document.body!!.appendChild(container)
             js("""
@@ -243,7 +238,7 @@ class CoverageTest : StringSpec() {
 
         // Test checkSyncProgress branches
         "checkSyncProgress handles banner missing, seeded true/false, and offset/total" {
-            val container = document.createElement(DIV)
+            val container = document.createElement(HtmlTags.DIV)
             container.innerHTML = TestDomBuilders.syncProgressDom()
             document.body!!.appendChild(container)
             
@@ -320,21 +315,21 @@ class CoverageTest : StringSpec() {
 
         // Settings coverage
         "updateAllocationTotal handles various input scenarios" {
-            val container = document.createElement(DIV)
+            val container = document.createElement(HtmlTags.DIV)
             container.innerHTML = TestDomBuilders.settingsDom()
             document.body!!.appendChild(container)
             try {
                 // Case 1: valid inputs summing to 100 with USD
-                val input1 = document.createElement(INPUT) as HTMLInputElement
+                val input1 = document.createElement(HtmlTags.INPUT) as HTMLInputElement
                 input1.name = FormFields.TARGETS
                 input1.value = "40.0"
-                val sym1 = document.createElement(INPUT) as HTMLInputElement
+                val sym1 = document.createElement(HtmlTags.INPUT) as HTMLInputElement
                 sym1.name = FormFields.SYMBOLS
                 sym1.value = Asset.BTC
-                val input2 = document.createElement(INPUT) as HTMLInputElement
+                val input2 = document.createElement(HtmlTags.INPUT) as HTMLInputElement
                 input2.name = FormFields.TARGETS
                 input2.value = "60.0"
-                val sym2 = document.createElement(INPUT) as HTMLInputElement
+                val sym2 = document.createElement(HtmlTags.INPUT) as HTMLInputElement
                 sym2.name = FormFields.SYMBOLS
                 sym2.value = Asset.USD
                 container.appendChild(input1)
@@ -354,16 +349,16 @@ class CoverageTest : StringSpec() {
                 document.body!!.appendChild(container)
                 
                 // Case 2: sum not 100 -> disabled, delayed
-                val input3 = document.createElement(INPUT) as HTMLInputElement
+                val input3 = document.createElement(HtmlTags.INPUT) as HTMLInputElement
                 input3.name = FormFields.TARGETS
                 input3.value = "30.0"
-                val sym3 = document.createElement(INPUT) as HTMLInputElement
+                val sym3 = document.createElement(HtmlTags.INPUT) as HTMLInputElement
                 sym3.name = FormFields.SYMBOLS
                 sym3.value = Asset.BTC
-                val input4 = document.createElement(INPUT) as HTMLInputElement
+                val input4 = document.createElement(HtmlTags.INPUT) as HTMLInputElement
                 input4.name = FormFields.TARGETS
                 input4.value = "30.0"
-                val sym4 = document.createElement(INPUT) as HTMLInputElement
+                val sym4 = document.createElement(HtmlTags.INPUT) as HTMLInputElement
                 sym4.name = FormFields.SYMBOLS
                 sym4.value = Asset.USD
                 container.appendChild(input3)
@@ -381,16 +376,16 @@ class CoverageTest : StringSpec() {
                 // Case 3: missing USD symbol -> disabled even if sum 100
                 container.innerHTML = TestDomBuilders.settingsDom()
                 document.body!!.appendChild(container)
-                val input5 = document.createElement(INPUT) as HTMLInputElement
+                val input5 = document.createElement(HtmlTags.INPUT) as HTMLInputElement
                 input5.name = FormFields.TARGETS
                 input5.value = "50.0"
-                val sym5 = document.createElement(INPUT) as HTMLInputElement
+                val sym5 = document.createElement(HtmlTags.INPUT) as HTMLInputElement
                 sym5.name = FormFields.SYMBOLS
                 sym5.value = Asset.BTC
-                val input6 = document.createElement(INPUT) as HTMLInputElement
+                val input6 = document.createElement(HtmlTags.INPUT) as HTMLInputElement
                 input6.name = FormFields.TARGETS
                 input6.value = "50.0"
-                val sym6 = document.createElement(INPUT) as HTMLInputElement
+                val sym6 = document.createElement(HtmlTags.INPUT) as HTMLInputElement
                 sym6.name = FormFields.SYMBOLS
                 sym6.value = "EETH"  // not USD
                 container.appendChild(input5)
@@ -414,7 +409,7 @@ class CoverageTest : StringSpec() {
         }
 
         "addAssetRow handles edge cases" {
-            val container = document.createElement(DIV)
+            val container = document.createElement(HtmlTags.DIV)
             container.innerHTML = TestDomBuilders.assetEditDom(Asset.BTC)
             document.body!!.appendChild(container)
             try {
@@ -428,7 +423,7 @@ class CoverageTest : StringSpec() {
                 // Case 2: symbol already exists -> should show alert and return
                 symbolInput.value = Asset.BTC
                 // Pre-populate container with existing BTC
-                val existingRow = document.createElement(DIV)
+                val existingRow = document.createElement(HtmlTags.DIV)
                 existingRow.className = CssClass.Form.AllocationEditRow.toString()
                 existingRow.innerHTML = """
                     <input type="hidden" name="${FormFields.SYMBOLS}" value="${Asset.BTC}">
@@ -458,7 +453,7 @@ class CoverageTest : StringSpec() {
 
         // Dashboard coverage
         "updateAge handles missing elements and stale/fresh states" {
-            val container = document.createElement(DIV)
+            val container = document.createElement(HtmlTags.DIV)
             container.innerHTML = TestDomBuilders.dataAgeDom()
             document.body!!.appendChild(container)
             try {
@@ -505,7 +500,7 @@ class CoverageTest : StringSpec() {
                 timeEl.textContent shouldBe "12:30:00 PM"
                 
                 // Missing badge element -> should not crash when toggling classes
-                val badgeContainer = document.createElement(DIV)
+                val badgeContainer = document.createElement(HtmlTags.DIV)
                 badgeContainer.innerHTML = TestDomBuilders.dataAgeDom("0")
                 document.body!!.appendChild(badgeContainer)
                 try {
@@ -519,12 +514,12 @@ class CoverageTest : StringSpec() {
         }
 
         "reapplySort and sortTable handle edge cases" {
-            val container = document.createElement(DIV)
+            val container = document.createElement(HtmlTags.DIV)
             container.innerHTML = TestDomBuilders.sortableTableDom()
             document.body!!.appendChild(container)
             try {
                 // Case: no sortable headers -> reapplySort should not throw
-                val noHeadersContainer = document.createElement(DIV)
+                val noHeadersContainer = document.createElement(HtmlTags.DIV)
                 noHeadersContainer.innerHTML = "<table><tbody></tbody></table>"
                 document.body!!.appendChild(noHeadersContainer)
                 try {
@@ -607,7 +602,7 @@ class CoverageTest : StringSpec() {
         }
 
         "chart builders config callbacks cover tooltip and ticks formatting" {
-            val container = document.createElement(DIV)
+            val container = document.createElement(HtmlTags.DIV)
             container.innerHTML = """
                 <canvas id="${HtmlIds.PORTFOLIO_VALUE_CHART}"></canvas>
                 <canvas id="${HtmlIds.ASSET_HOLDINGS_CHART}"></canvas>
@@ -699,7 +694,7 @@ class CoverageTest : StringSpec() {
         }
 
         "initHistory sets up click listeners and checkbox listeners" {
-            val container = document.createElement(DIV)
+            val container = document.createElement(HtmlTags.DIV)
             container.innerHTML = """
                 <button class="${CssClass.History.TimeRangeBtn}" ${HtmlAttrs.DATA_RANGE}="24h"></button>
                 <button class="${CssClass.History.TimeRangeBtnActive}" ${HtmlAttrs.DATA_RANGE}="30d"></button>
@@ -798,7 +793,7 @@ class CoverageTest : StringSpec() {
             currentSortDir shouldBe CssClass.Utility.Desc.toString()
             
             // We can invoke the wrappers
-            val container = document.createElement(DIV)
+            val container = document.createElement(HtmlTags.DIV)
             container.innerHTML = """
                 <input id="${HtmlIds.NEW_SYMBOL_INPUT}" value="">
                 <span id="${HtmlIds.TOTAL_ALLOCATED_DISPLAY}"></span>
@@ -810,7 +805,7 @@ class CoverageTest : StringSpec() {
             try {
                 window.asDynamic().updateAllocationTotal()
                 window.asDynamic().addAssetRow()
-                window.asDynamic().sortTable(document.querySelector(TH_SORTABLE), 0)
+                window.asDynamic().sortTable(document.querySelector(CssClass.Query.SORTABLE_TH), 0)
             } finally {
                 document.body!!.removeChild(container)
             }
@@ -818,7 +813,7 @@ class CoverageTest : StringSpec() {
 
         "helpers tolerate null, invalid, and edge cases to maximize branch coverage" {
             // 1. checkSyncProgress with total == 0
-            val container = document.createElement(DIV)
+            val container = document.createElement(HtmlTags.DIV)
             container.innerHTML = """
                 <div id="${HtmlIds.SYNC_PROGRESS_BANNER}"></div>
                 <div id="${HtmlIds.SYNC_PROGRESS_BAR}"></div>
@@ -838,23 +833,23 @@ class CoverageTest : StringSpec() {
                 checkSyncProgress().await() shouldBe false
                 
                 // 2. updateAllocationTotal with non-input targets, invalid double targets
-                val nonInputTarget = document.createElement(DIV)
-                nonInputTarget.setAttribute(NAME, FormFields.TARGETS)
+                val nonInputTarget = document.createElement(HtmlTags.DIV)
+                nonInputTarget.setAttribute("name", FormFields.TARGETS)
                 container.appendChild(nonInputTarget)
                 
-                val invalidInputTarget = document.createElement(INPUT) as HTMLInputElement
+                val invalidInputTarget = document.createElement(HtmlTags.INPUT) as HTMLInputElement
                 invalidInputTarget.name = FormFields.TARGETS
                 invalidInputTarget.value = "invalid-double"
                 container.appendChild(invalidInputTarget)
                 
-                val nonInputSymbol = document.createElement(DIV)
-                nonInputSymbol.setAttribute(NAME, FormFields.SYMBOLS)
+                val nonInputSymbol = document.createElement(HtmlTags.DIV)
+                nonInputSymbol.setAttribute("name", FormFields.SYMBOLS)
                 container.appendChild(nonInputSymbol)
                 
                 updateAllocationTotal()
                 
                 // 3. renderTradeTable with null/missing values and success = false
-                val tableContainer = document.createElement(DIV)
+                val tableContainer = document.createElement(HtmlTags.DIV)
                 tableContainer.innerHTML = "<table><tbody id='${HtmlIds.TRADE_TABLE_BODY}'></tbody></table>"
                 container.appendChild(tableContainer)
                 
@@ -885,7 +880,7 @@ class CoverageTest : StringSpec() {
                 updateStats(js("({})"))
                 
                 // 5. sortTable with out-of-bounds index, empty cells, missing sort-value
-                val sortContainer = document.createElement(DIV)
+                val sortContainer = document.createElement(HtmlTags.DIV)
                 sortContainer.innerHTML = """
                     <table>
                         <thead>
@@ -898,7 +893,7 @@ class CoverageTest : StringSpec() {
                     </table>
                 """.trimIndent()
                 container.appendChild(sortContainer)
-                val header = sortContainer.querySelector(TH_SORTABLE) as HTMLElement
+                val header = sortContainer.querySelector(CssClass.Query.SORTABLE_TH) as HTMLElement
                 sortTable(header, 0) // Should fall back to textContent
                 sortTable(header, 5) // Should handle out of bounds (aCell = null)
             } finally {
