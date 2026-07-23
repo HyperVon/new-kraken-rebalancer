@@ -9,6 +9,7 @@ import com.gemini.krakenbot.view.util.CssClass.Query.TIME_RANGE_BTNS as TIME_RAN
 import com.gemini.krakenbot.view.util.HtmlAttrs
 import com.gemini.krakenbot.view.util.HtmlEvents
 import com.gemini.krakenbot.view.util.HtmlIds
+import com.gemini.krakenbot.view.util.HtmlTags
 import com.gemini.krakenbot.view.util.Routes
 import com.gemini.krakenbot.view.util.ViewText
 import com.gemini.krakenbot.view.util.withRange
@@ -497,10 +498,6 @@ fun formatPair(trade: JsTradeRecord?): String {
     return "${trade.symbol}/USD"
 }
 
-private const val TR = "tr"
-
-private const val TD = "td"
-
 internal fun renderTradeTable(trades: Array<JsTradeRecord>) {
     val tbody = document.getElementById(HtmlIds.TRADE_TABLE_BODY) ?: return
     tbody.innerHTML = ""
@@ -509,8 +506,8 @@ internal fun renderTradeTable(trades: Array<JsTradeRecord>) {
     val filteredTrades = if (showDryRun) trades else trades.filter { t -> !isTrue(t.dryRun) }.toTypedArray()
 
     if (filteredTrades.isEmpty()) {
-        val tr = document.createElement(TR)
-        val td = document.createElement(TD) as HTMLTableCellElement
+        val tr = document.createElement(HtmlTags.TR)
+        val td = document.createElement(HtmlTags.TD) as HTMLTableCellElement
         td.colSpan = 6
         td.setAttribute("style", "text-align:center;color:var(--color-text-muted);padding:2rem;")
         td.textContent = ViewText.NO_TRADES_FOUND_PERIOD
@@ -525,7 +522,7 @@ internal fun renderTradeTable(trades: Array<JsTradeRecord>) {
 }
 
 private fun renderTradeRow(t: JsTradeRecord): HTMLTableRowElement {
-    val tr = document.createElement(TR) as HTMLTableRowElement
+    val tr = document.createElement(HtmlTags.TR) as HTMLTableRowElement
     tr.className = CssClass.Table.Hoverable.toString()
 
     val time = Date(t.timestamp.toString()).asDynamic().toLocaleString()
@@ -549,17 +546,15 @@ private fun renderTradeRow(t: JsTradeRecord): HTMLTableRowElement {
 }
 
 private fun createCell(text: String, cssClass: CssClass): HTMLTableCellElement {
-    val td = document.createElement(TD) as HTMLTableCellElement
+    val td = document.createElement(HtmlTags.TD) as HTMLTableCellElement
     td.className = cssClass.toString()
     td.textContent = text
     return td
 }
 
-private const val SPAN = "span"
-
 private fun createBadgeCell(text: String, badgeClass: CssClass): HTMLTableCellElement {
-    val td = document.createElement(TD) as HTMLTableCellElement
-    val span = document.createElement(SPAN) as HTMLSpanElement
+    val td = document.createElement(HtmlTags.TD) as HTMLTableCellElement
+    val span = document.createElement(HtmlTags.SPAN) as HTMLSpanElement
     span.className = badgeClass.toString()
     span.textContent = text
     td.appendChild(span)

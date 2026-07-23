@@ -19,6 +19,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Koin DI Registration Standardization (`src/main`)**: Standardized Koin DI syntax in `AppModule.kt` using `singleOf` constructor bindings and explicit factories for services with string constructor defaults.
 - **Wildcard Import Elimination & Codebase Cleanups (`src/main`)**: Replaced all wildcard star imports (`com.gemini.krakenbot.service.*`, `com.gemini.krakenbot.model.*`, etc.) with explicit top-level imports across `AppModule.kt`, `PortfolioAnalyzerImpl.kt`, `TradeHistoryServiceImpl.kt`, `SqliteTradeRepositoryImpl.kt`, and `DashboardController.kt`.
 - **SSE Stream Snapshot Broadcast Extraction (`src/main`)**: Extracted `ServerSSESession.sendSnapshot()` helper function in `DashboardController.kt` to serialize and transmit live portfolio SSE events cleanly.
+- **Codebase-Wide Constant Consolidation (`:frontend-js`, `src/main`)**: Replaced all stray file-level private constants (`private const val USD`, `DIV`, `SPAN`, `TR`, `TD`, `TH`, `INPUT`, `BUTTON`, `BUY`, `SELL`) across production services (`SnapshotHistoryCalculator`, `History.kt`) and frontend test suites (`HistoryTest`, `SettingsTest`, `DashboardTest`, `MainTest`, `CoverageTest`) with centralized domain constants (`Asset.USD`, `OrderSide.BUY.name`, `OrderSide.SELL.name`, `HtmlTags.*`).
 
 ## [6.8.6] - 2026-07-22
 

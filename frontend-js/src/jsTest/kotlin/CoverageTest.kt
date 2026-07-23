@@ -20,11 +20,11 @@ import kotlin.js.json
 import kotlin.time.Duration.Companion.milliseconds
 
 private const val TEST_CHART = "test-chart"
-private const val DIV = "div"
-private const val INPUT = "input"
+private const val DIV = HtmlTags.DIV
+private const val INPUT = HtmlTags.INPUT
+private const val TD = HtmlTags.TD
 private const val TBODY_TR = "tbody tr"
 private const val SORTABLE = "sortable"
-private const val TD = "td"
 private const val NAME = "name"
 private const val TH_SORTABLE = "th.sortable"
 
@@ -34,7 +34,7 @@ class CoverageTest : StringSpec() {
     init {
         // Test, createOrUpdate branches
         "createOrUpdate handles existing chart and visibility states" {
-            val container = document.createElement(DIV)
+            val container = document.createElement(HtmlTags.DIV)
             container.innerHTML = """
                 <canvas id="$TEST_CHART"></canvas>
             """.trimIndent()
@@ -876,7 +876,7 @@ class CoverageTest : StringSpec() {
                 tbody.rows.length shouldBe 1
                 
                 // 4. updateStats with missing values
-                val statsContainer = document.createElement(DIV)
+                val statsContainer = document.createElement(HtmlTags.DIV)
                 statsContainer.innerHTML = """
                     <div id="${HtmlIds.STAT_ATH}"></div>
                     <div id="${HtmlIds.STAT_TOTAL_TRADES}"></div>

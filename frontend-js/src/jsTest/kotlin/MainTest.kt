@@ -1,5 +1,6 @@
 package com.gemini.krakenbot.frontend
 
+import com.gemini.krakenbot.view.util.HtmlTags
 import com.gemini.krakenbot.view.util.CssClass.Query.DATA_AGE_VALUE as DATA_AGE_VALUE_QUERY
 import com.gemini.krakenbot.view.util.HtmlEvents
 import io.kotest.core.spec.IsolationMode
@@ -10,15 +11,13 @@ import kotlinx.browser.window
 import org.w3c.dom.*
 import kotlin.js.Date
 
-private const val DIV = "div"
-
 @Suppress("unused")
 class MainTest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
 
     init {
         "initOnLoad initializes dashboard content" {
-            val container = document.createElement(DIV)
+            val container = document.createElement(HtmlTags.DIV)
             container.innerHTML = TestDomBuilders.dataAgeDom(Date.now().toString())
             document.body!!.appendChild(container)
             
@@ -34,7 +33,7 @@ class MainTest : StringSpec() {
         }
 
         "initOnLoad initializes settings content" {
-            val container = document.createElement(DIV)
+            val container = document.createElement(HtmlTags.DIV)
             container.innerHTML = TestDomBuilders.settingsDom()
             document.body!!.appendChild(container)
             
@@ -48,7 +47,7 @@ class MainTest : StringSpec() {
         }
 
         "initOnLoad initializes history content" {
-            val container = document.createElement(DIV)
+            val container = document.createElement(HtmlTags.DIV)
             container.innerHTML = TestDomBuilders.chartsDom()
             document.body!!.appendChild(container)
             
@@ -69,7 +68,7 @@ class MainTest : StringSpec() {
                 0
             }
             
-            val container = document.createElement(DIV)
+            val container = document.createElement(HtmlTags.DIV)
             container.innerHTML = TestDomBuilders.dataAgeDom(Date.now().toString())
             document.body!!.appendChild(container)
 
@@ -95,7 +94,7 @@ class MainTest : StringSpec() {
             val oldSetInterval = window.asDynamic().setInterval
             window.asDynamic().setInterval = { _: () -> Unit, _: Int -> 0 }
             
-            val container = document.createElement(DIV)
+            val container = document.createElement(HtmlTags.DIV)
             container.innerHTML = TestDomBuilders.dataAgeDom(Date.now().toString())
             document.body!!.appendChild(container)
             

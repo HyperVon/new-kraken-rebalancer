@@ -13,12 +13,9 @@ import kotlinx.browser.window
 import org.w3c.dom.*
 import kotlin.js.Date
 
-private const val TR = "tr"
-private const val TH = "th"
-private const val TD = "td"
+import com.gemini.krakenbot.view.util.HtmlTags
+
 private const val TR_HOVERABLE = "tr.hoverable"
-private const val SPAN = "span"
-private const val DIV = "div"
 private const val TBODY_TR = "tbody tr"
 
 @Suppress("unused")
@@ -31,13 +28,13 @@ class DashboardTest : StringSpec() {
         val tbody = document.createElement("tbody") as HTMLTableSectionElement
         table.appendChild(tbody)
 
-        val headerRow = document.createElement(TR) as HTMLTableRowElement
-        val th0 = document.createElement(TH) as HTMLTableCellElement
+        val headerRow = document.createElement(HtmlTags.TR) as HTMLTableRowElement
+        val th0 = document.createElement(HtmlTags.TH) as HTMLTableCellElement
         th0.className = CssClass.Table.Sortable.toString()
         th0.textContent = "Asset"
         headerRow.appendChild(th0)
         
-        val th1 = document.createElement(TH) as HTMLTableCellElement
+        val th1 = document.createElement(HtmlTags.TH) as HTMLTableCellElement
         th1.className = CssClass.Table.Sortable.toString()
         th1.textContent = "Price"
         headerRow.appendChild(th1)
@@ -46,21 +43,21 @@ class DashboardTest : StringSpec() {
         thead.appendChild(headerRow)
         table.appendChild(thead)
 
-        val row1 = document.createElement(TR) as HTMLTableRowElement
+        val row1 = document.createElement(HtmlTags.TR) as HTMLTableRowElement
         row1.className = CssClass.Table.Hoverable.toString()
-        val td1a = document.createElement(TD)
+        val td1a = document.createElement(HtmlTags.TD)
         td1a.textContent = Asset.ETH
-        val td1b = document.createElement(TD)
+        val td1b = document.createElement(HtmlTags.TD)
         td1b.textContent = "$3,000.00"
         row1.appendChild(td1a)
         row1.appendChild(td1b)
         tbody.appendChild(row1)
 
-        val row2 = document.createElement(TR) as HTMLTableRowElement
+        val row2 = document.createElement(HtmlTags.TR) as HTMLTableRowElement
         row2.className = CssClass.Table.Hoverable.toString()
-        val td2a = document.createElement(TD)
+        val td2a = document.createElement(HtmlTags.TD)
         td2a.textContent = Asset.BTC
-        val td2b = document.createElement(TD)
+        val td2b = document.createElement(HtmlTags.TD)
         td2b.textContent = "$60,000.00"
         row2.appendChild(td2a)
         row2.appendChild(td2b)
@@ -85,19 +82,19 @@ class DashboardTest : StringSpec() {
     }
 
         "updateAge displays fresh and stale data" {
-        val container = document.createElement(DIV) as HTMLDivElement
+        val container = document.createElement(HtmlTags.DIV) as HTMLDivElement
         
-        val ageVal = document.createElement(SPAN) as HTMLSpanElement
+        val ageVal = document.createElement(HtmlTags.SPAN) as HTMLSpanElement
         ageVal.className = CssClass.DataAge.Value.toString()
         container.appendChild(ageVal)
 
-        val ageTime = document.createElement(SPAN) as HTMLSpanElement
+        val ageTime = document.createElement(HtmlTags.SPAN) as HTMLSpanElement
         ageTime.className = CssClass.DataAge.Time.toString()
         val offsetTime = Date.now() - 10000.0
         ageTime.setAttribute(HtmlAttrs.DATA_EPOCH, offsetTime.toString())
         container.appendChild(ageTime)
 
-        val badge = document.createElement(SPAN) as HTMLSpanElement
+        val badge = document.createElement(HtmlTags.SPAN) as HTMLSpanElement
         badge.className = "status-badge"
         container.appendChild(badge)
 
@@ -124,7 +121,7 @@ class DashboardTest : StringSpec() {
     }
 
         "reapplySort preserves the active sort direction" {
-        val container = document.createElement(DIV)
+        val container = document.createElement(HtmlTags.DIV)
         container.innerHTML = """
             <table>
                 <thead>
@@ -173,7 +170,7 @@ class DashboardTest : StringSpec() {
         updateAge()
         reapplySort()
 
-        val container = document.createElement(DIV)
+        val container = document.createElement(HtmlTags.DIV)
         container.innerHTML = """
             <span class="${CssClass.DataAge.Value}"></span><span class="${CssClass.DataAge.Time}" ${HtmlAttrs.DATA_EPOCH}="invalid"></span>
             <div id="orphan-header"></div>
