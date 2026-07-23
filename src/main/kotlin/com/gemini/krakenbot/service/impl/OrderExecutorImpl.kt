@@ -5,7 +5,6 @@ import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderResult
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.OrderType
-import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.service.AssetPrices
 import com.gemini.krakenbot.service.AssetValues
 import com.gemini.krakenbot.service.KrakenService
@@ -18,7 +17,6 @@ import com.gemini.krakenbot.util.TradeCalculator
 import com.gemini.krakenbot.util.PrecisionConstants
 import com.gemini.krakenbot.util.CASH_RESERVE_FACTOR
 import com.gemini.krakenbot.util.FEE_RATE_ESTIMATE
-import com.gemini.krakenbot.util.HUNDRED
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -26,7 +24,6 @@ import kotlinx.coroutines.flow.last
 import org.slf4j.LoggerFactory
 import java.math.BigDecimal
 import java.math.RoundingMode
-import java.time.Instant
 import kotlin.time.Duration.Companion.milliseconds
 
 class OrderExecutorImpl(

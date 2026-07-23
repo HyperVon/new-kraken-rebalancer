@@ -2,11 +2,11 @@ package com.gemini.krakenbot.service.impl
 
 import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.util.PrecisionConstants
 import com.gemini.krakenbot.util.isNegative
-import com.gemini.krakenbot.util.isPositive
 import java.math.BigDecimal
 import java.math.RoundingMode
 import java.time.Instant
@@ -18,10 +18,6 @@ import kotlin.math.abs
  * timeline event aggregation, and historical balance reverse-tracking.
  */
 object SnapshotHistoryCalculator {
-
-    private const val USD = Asset.USD
-    private const val BUY = "BUY"
-    private const val SELL = "SELL"
 
     private data class CalculatedAsset(
         val symbol: String,
@@ -50,12 +46,12 @@ object SnapshotHistoryCalculator {
             events.add(TimelineEvent.TradeEvent(trade.timestamp, trade))
         }
 
-        for (day in 0..90) {
+        for (day in 0..PrecisionConstants.HISTORICAL_DAYS_BACK) {
             val dailyTime = now.minus(day.toLong(), ChronoUnit.DAYS)
                 .truncatedTo(ChronoUnit.DAYS)
-                .plus(23, ChronoUnit.HOURS)
-                .plus(59, ChronoUnit.MINUTES)
-                .plus(59, ChronoUnit.SECONDS)
+                .plus(PrecisionConstants.LAST_HOUR_OF_DAY.toLong(), ChronoUnit.HOURS)
+                .plus(PrecisionConstants.LAST_MINUTE_OF_HOUR.toLong(), ChronoUnit.MINUTES)
+                .plus(PrecisionConstants.LAST_SECOND_OF_MINUTE.toLong(), ChronoUnit.SECONDS)
             if (dailyTime.isBefore(cutoffTime)) {
                 events.add(TimelineEvent.DailyCloseEvent(dailyTime))
             }
@@ -101,7 +97,7 @@ object SnapshotHistoryCalculator {
                 )
             }
 
-            val targetUsdPercent = BigDecimal(allocations.firstOrNull { it.symbol.isUsd }?.targetPercent ?: 5.0)
+            val targetUsdPercent = BigDecimal(allocations.firstOrNull { it.symbol.isUsd }?.targetPercent ?: PrecisionConstants.DEFAULT_USD_TARGET_PERCENT)
                 .setScale(PrecisionConstants.SCALE_USD, RoundingMode.HALF_UP)
 
             val snapshot = PortfolioSnapshot(
@@ -130,12 +126,12 @@ object SnapshotHistoryCalculator {
         val fee = trade.fee
         val symbol = trade.symbol.uppercase()
 
-        if (trade.side == BUY) {
+        if (trade.side == OrderSide.BUY.name) {
             runningBalances[symbol] = (runningBalances[symbol] ?: BigDecimal.ZERO).subtract(volume)
-            runningBalances[USD] = (runningBalances[USD] ?: BigDecimal.ZERO).add(usdAmount).add(fee)
-        } else if (trade.side == SELL) {
+            runningBalances[Asset.USD] = (runningBalances[Asset.USD] ?: BigDecimal.ZERO).add(usdAmount).add(fee)
+        } else if (trade.side == OrderSide.SELL.name) {
             runningBalances[symbol] = (runningBalances[symbol] ?: BigDecimal.ZERO).add(volume)
-            runningBalances[USD] = (runningBalances[USD] ?: BigDecimal.ZERO).subtract(usdAmount).add(fee)
+            runningBalances[Asset.USD] = (runningBalances[Asset.USD] ?: BigDecimal.ZERO).subtract(usdAmount).add(fee)
         }
     }
 
@@ -146,7 +142,7 @@ object SnapshotHistoryCalculator {
         tradePrices: Map<String, List<Pair<Instant, BigDecimal>>>,
         currentPrices: Map<String, BigDecimal>
     ): BigDecimal {
-        if (symbol.equals(USD, ignoreCase = true)) return BigDecimal.ONE
+        if (symbol.equals(Asset.USD, ignoreCase = true)) return BigDecimal.ONE
 
         val prices = ohlcData[symbol.uppercase()]
         if (!prices.isNullOrEmpty()) {

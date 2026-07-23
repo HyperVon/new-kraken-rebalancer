@@ -2,16 +2,16 @@ package com.gemini.krakenbot.config
 
 import kotlin.jvm.JvmInline
 
-private const val _REDACTED_ = "***REDACTED***"
+private const val REDACTED_ = "***REDACTED***"
 
 @JvmInline
 value class ApiKey(val value: String) {
-    override fun toString(): String = _REDACTED_
+    override fun toString(): String = REDACTED_
 }
 
 @JvmInline
 value class PrivateKey(val value: String) {
-    override fun toString(): String = _REDACTED_
+    override fun toString(): String = REDACTED_
 }
 
 data class KrakenCredentials(

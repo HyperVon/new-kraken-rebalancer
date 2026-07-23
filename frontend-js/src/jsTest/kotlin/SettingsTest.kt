@@ -14,10 +14,7 @@ import kotlinx.browser.document
 import kotlinx.browser.window
 import org.w3c.dom.*
 
-private const val INPUT = "input"
-private const val DIV = "div"
-private const val SPAN = "span"
-private const val BUTTON = "button"
+import com.gemini.krakenbot.view.util.HtmlTags
 
 @Suppress("unused")
 class SettingsTest : StringSpec() {
@@ -33,32 +30,32 @@ class SettingsTest : StringSpec() {
     }
 
         "updateAllocationTotal validates totals and USD allocation" {
-        val container = document.createElement(DIV) as HTMLDivElement
+        val container = document.createElement(HtmlTags.DIV) as HTMLDivElement
         
-        val totalDisplay = document.createElement(SPAN) as HTMLSpanElement
+        val totalDisplay = document.createElement(HtmlTags.SPAN) as HTMLSpanElement
         totalDisplay.id = HtmlIds.TOTAL_ALLOCATED_DISPLAY
         container.appendChild(totalDisplay)
 
-        val saveButton = document.createElement(BUTTON) as HTMLButtonElement
+        val saveButton = document.createElement(HtmlTags.BUTTON) as HTMLButtonElement
         saveButton.id = HtmlIds.SAVE_BUTTON
         container.appendChild(saveButton)
 
-        val input1 = document.createElement(INPUT) as HTMLInputElement
+        val input1 = document.createElement(HtmlTags.INPUT) as HTMLInputElement
         input1.name = FormFields.TARGETS
         input1.value = "30.0"
         container.appendChild(input1)
 
-        val sym1 = document.createElement(INPUT) as HTMLInputElement
+        val sym1 = document.createElement(HtmlTags.INPUT) as HTMLInputElement
         sym1.name = FormFields.SYMBOLS
         sym1.value = Asset.BTC
         container.appendChild(sym1)
 
-        val input2 = document.createElement(INPUT) as HTMLInputElement
+        val input2 = document.createElement(HtmlTags.INPUT) as HTMLInputElement
         input2.name = FormFields.TARGETS
         input2.value = "70.0"
         container.appendChild(input2)
 
-        val sym2 = document.createElement(INPUT) as HTMLInputElement
+        val sym2 = document.createElement(HtmlTags.INPUT) as HTMLInputElement
         sym2.name = FormFields.SYMBOLS
         sym2.value = Asset.USD
         container.appendChild(sym2)
@@ -87,26 +84,26 @@ class SettingsTest : StringSpec() {
     }
 
         "addAssetRow appends a valid allocation" {
-        val container = document.createElement(DIV) as HTMLDivElement
+        val container = document.createElement(HtmlTags.DIV) as HTMLDivElement
 
-        val totalDisplay = document.createElement(SPAN) as HTMLSpanElement
+        val totalDisplay = document.createElement(HtmlTags.SPAN) as HTMLSpanElement
         totalDisplay.id = HtmlIds.TOTAL_ALLOCATED_DISPLAY
         container.appendChild(totalDisplay)
 
-        val saveButton = document.createElement(BUTTON) as HTMLButtonElement
+        val saveButton = document.createElement(HtmlTags.BUTTON) as HTMLButtonElement
         saveButton.id = HtmlIds.SAVE_BUTTON
         container.appendChild(saveButton)
 
-        val symContainer = document.createElement(DIV) as HTMLDivElement
+        val symContainer = document.createElement(HtmlTags.DIV) as HTMLDivElement
         symContainer.id = HtmlIds.ALLOCATIONS_CONTAINER
         container.appendChild(symContainer)
 
-        val symInput = document.createElement(INPUT) as HTMLInputElement
+        val symInput = document.createElement(HtmlTags.INPUT) as HTMLInputElement
         symInput.id = HtmlIds.NEW_SYMBOL_INPUT
         symInput.value = Asset.LTC
         container.appendChild(symInput)
 
-        val existingSym = document.createElement(INPUT) as HTMLInputElement
+        val existingSym = document.createElement(HtmlTags.INPUT) as HTMLInputElement
         existingSym.name = FormFields.SYMBOLS
         existingSym.value = Asset.BTC
         container.appendChild(existingSym)
@@ -136,7 +133,7 @@ class SettingsTest : StringSpec() {
     }
 
         "initSettings registers globals and updates totals" {
-        val container = document.createElement(DIV)
+        val container = document.createElement(HtmlTags.DIV)
         container.innerHTML = TestDomBuilders.settingsDom()
         document.body!!.appendChild(container)
         try {
@@ -151,7 +148,7 @@ class SettingsTest : StringSpec() {
         updateAllocationTotal()
         addAssetRow()
 
-        val container = document.createElement(DIV)
+        val container = document.createElement(HtmlTags.DIV)
         container.innerHTML = "${TestDomBuilders.settingsDom()}\n${TestDomBuilders.assetEditDom(" ")}"
         document.body!!.appendChild(container)
         try {

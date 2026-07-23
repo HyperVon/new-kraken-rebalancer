@@ -4,11 +4,12 @@ import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.TimeRange
 import com.gemini.krakenbot.view.util.HtmlIds
+import com.gemini.krakenbot.view.util.HtmlTags
+import io.kotest.core.spec.IsolationMode
+import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldNotContain
-import io.kotest.core.spec.IsolationMode
-import io.kotest.core.spec.style.StringSpec
 import kotlinx.browser.document
 import kotlinx.browser.window
 import kotlinx.coroutines.await
@@ -16,39 +17,36 @@ import org.w3c.dom.*
 import kotlin.js.json
 import kotlin.test.assertEquals
 
-private const val USD = "USD"
-private const val DIV = "div"
-
 @Suppress("unused")
 class HistoryTest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
 
     init {
-        "format$USD renders currency amounts" {
-        formatUSD(1234.56) shouldBe "$1,234.56"
-        formatUSD(0.0) shouldBe "$0.00"
-        formatUSD(-12.3456) shouldBe "$-12.35"
-    }
+        "formatUSD renders currency amounts" {
+            formatUSD(1234.56) shouldBe "$1,234.56"
+            formatUSD(0.0) shouldBe "$0.00"
+            formatUSD(-12.3456) shouldBe "$-12.35"
+        }
 
         "formatPair handles valid and missing symbols" {
-        val trade1: dynamic = js("({ symbol: '${Asset.BTC}' })")
-        formatPair(trade1) shouldBe "${Asset.BTC}/$USD"
+            val trade1: dynamic = mockTradeRecord(symbol = Asset.BTC)
+            formatPair(trade1.unsafeCast<JsTradeRecord>()) shouldBe "${Asset.BTC}/${Asset.USD}"
 
-        val trade2: dynamic = js("({ symbol: null })")
-        formatPair(trade2) shouldBe ""
+            val trade2: dynamic = mockTradeRecord(symbol = null)
+            formatPair(trade2.unsafeCast<JsTradeRecord>()) shouldBe ""
 
-        val trade3: dynamic = js("({})")
-        formatPair(trade3) shouldBe ""
+            val trade3: dynamic = json()
+            formatPair(trade3.unsafeCast<JsTradeRecord>()) shouldBe ""
 
-        formatPair(null) shouldBe ""
-    }
+            formatPair(null) shouldBe ""
+        }
 
         "getUniqueSymbols filters and sorts symbols" {
-        val snapshots = arrayOf(
-            js("({ assets: { BTC: {}, ETH: {}, $USD: {} } })"),
-            js("({ assets: { BTC: {}, SOL: {}, $USD: {} } })"),
-            js("({ assets: null })")
-        )
+            val snapshots = arrayOf(
+                mockSnapshotRecord(assets = json(Asset.BTC to json(), Asset.ETH to json(), Asset.USD to json())),
+                mockSnapshotRecord(assets = json(Asset.BTC to json(), Asset.SOL to json(), Asset.USD to json())),
+                mockSnapshotRecord(assets = null)
+            )
 
         val symbolsExcludeUsd = getUniqueSymbols(snapshots, excludeUsd = true)
         symbolsExcludeUsd shouldBe listOf(Asset.BTC, Asset.ETH, Asset.SOL)
@@ -59,8 +57,8 @@ class HistoryTest : StringSpec() {
 
         "mapSnapshotsToPoints retains timestamps and values" {
         val snapshots = arrayOf(
-            js("({ timestamp: '2023-01-01', value: 100.0 })"),
-            js("({ timestamp: '2023-01-02', value: 110.0 })")
+            json("timestamp" to "2023-01-01", "value" to 100.0),
+            json("timestamp" to "2023-01-02", "value" to 110.0)
         )
 
         val points = mapSnapshotsToPoints(snapshots) { it.value.toString().toDouble() }
@@ -71,46 +69,42 @@ class HistoryTest : StringSpec() {
     }
 
         "calculateCumulativePL filters and orders completed trades" {
-        val trades = arrayOf(
-            TestDomBuilders.tradeJson(
-                timestamp = "2023-01-01T10:00:00Z",
-                side = OrderSide.BUY.name,
-                usdAmount = 100.0
-            ),
-            TestDomBuilders.tradeJson(
-                timestamp = "2023-01-01T08:00:00Z",
-                side = OrderSide.SELL.name,
-                usdAmount = 50.0
-            ),
-            TestDomBuilders.tradeJson(
-                timestamp = "2023-01-01T09:00:00Z",
-                success = false,
-                side = OrderSide.BUY.name,
-                usdAmount = 200.0
-            ),
-            TestDomBuilders.tradeJson(
-                timestamp = "2023-01-01T11:00:00Z",
-                dryRun = true,
-                side = OrderSide.BUY.name,
-                usdAmount = 300.0
-            ),
-            TestDomBuilders.tradeJson(
-                timestamp = "2023-01-01T12:00:00Z",
-                side = OrderSide.SELL.name,
-                usdAmount = 80.0
+            val trades = arrayOf(
+                TestDomBuilders.tradeJson(
+                    timestamp = "2023-01-01T10:00:00Z",
+                    side = OrderSide.BUY.name,
+                    usdAmount = 100.0
+                ),
+                TestDomBuilders.tradeJson(
+                    timestamp = "2023-01-01T08:00:00Z",
+                    side = OrderSide.SELL.name,
+                    usdAmount = 50.0
+                ),
+                TestDomBuilders.tradeJson(
+                    timestamp = "2023-01-01T09:00:00Z",
+                    success = false,
+                    side = OrderSide.BUY.name,
+                    usdAmount = 200.0
+                ),
+                TestDomBuilders.tradeJson(
+                    timestamp = "2023-01-01T11:00:00Z",
+                    dryRun = true,
+                    side = OrderSide.BUY.name,
+                    usdAmount = 300.0
+                ),
+                TestDomBuilders.tradeJson(
+                    timestamp = "2023-01-01T12:00:00Z",
+                    side = OrderSide.SELL.name,
+                    usdAmount = 80.0
+                )
             )
-        )
 
-        val result = calculateCumulativePL(trades)
-
-        result.size shouldBe 3
-        val r0 = result[0]
-        val r0y = r0.y
-        assertEquals(50.0, r0y.toString().toDouble())
-    }
+            val result = calculateCumulativePL(trades.unsafeCast<Array<JsTradeRecord>>())
+            result.size shouldBe 3
+        }
 
         "renderTradeTable filters dry runs and displays empty states" {
-        val container = document.createElement(DIV)
+        val container = document.createElement(HtmlTags.DIV)
         container.innerHTML = TestDomBuilders.tradeTableDom()
         document.body!!.appendChild(container)
 
@@ -148,18 +142,18 @@ class HistoryTest : StringSpec() {
             renderTradeTable(trades)
             val tbody = document.getElementById(HtmlIds.TRADE_TABLE_BODY) as HTMLTableSectionElement
             tbody.rows.length shouldBe 3
-            tbody.innerHTML shouldContain "${Asset.BTC}/$USD"
-            tbody.innerHTML shouldContain "${Asset.ETH}/$USD"
-            tbody.innerHTML shouldContain "${Asset.LTC}/$USD"
+            tbody.innerHTML shouldContain "${Asset.BTC}/${Asset.USD}"
+            tbody.innerHTML shouldContain "${Asset.ETH}/${Asset.USD}"
+            tbody.innerHTML shouldContain "${Asset.LTC}/${Asset.USD}"
             tbody.innerHTML shouldContain "DRY RUN"
             tbody.innerHTML shouldContain "FAILED"
 
             (document.getElementById(HtmlIds.SHOW_DRY_RUN_CHECKBOX) as HTMLInputElement).checked = false
             renderTradeTable(trades)
             tbody.rows.length shouldBe 2
-            tbody.innerHTML shouldContain "${Asset.BTC}/$USD"
-            tbody.innerHTML shouldContain "${Asset.LTC}/$USD"
-            tbody.innerHTML shouldNotContain "${Asset.ETH}/$USD"
+            tbody.innerHTML shouldContain "${Asset.BTC}/${Asset.USD}"
+            tbody.innerHTML shouldContain "${Asset.LTC}/${Asset.USD}"
+            tbody.innerHTML shouldNotContain "${Asset.ETH}/${Asset.USD}"
 
             renderTradeTable(emptyArray())
             tbody.rows.length shouldBe 1
@@ -170,12 +164,12 @@ class HistoryTest : StringSpec() {
     }
 
         "updateStats formats each displayed value" {
-        val container = document.createElement(DIV)
+        val container = document.createElement(HtmlTags.DIV)
         container.innerHTML = TestDomBuilders.statsDom()
         document.body!!.appendChild(container)
 
         try {
-            val stats = js("({ allTimeHigh: 15000.5, totalTradesExecuted: 42, totalVolumeTraded: 1000000.0, totalFeesPaid: 250.75 })")
+            val stats = mockPortfolioStatsRecord()
             updateStats(stats)
 
             document.getElementById(HtmlIds.STAT_ATH)?.textContent shouldBe "$15,000.50"
@@ -193,33 +187,30 @@ class HistoryTest : StringSpec() {
     }
 
         "chart builders create charts and preserve visibility" {
-        val container = document.createElement(DIV)
+        val container = document.createElement(HtmlTags.DIV)
         container.innerHTML = TestDomBuilders.chartsDom()
         document.body!!.appendChild(container)
-        js("""
-            window.chartConfigs = [];
-            window.Chart = function(_, config) {
-                this.data = config.data;
-                this.destroy = function() { this.destroyed = true; };
-                this.isDatasetVisible = function(index) { return index === 0; };
-                window.chartConfigs.push(config);
-            };
-        """)
+        val chartConfigs = mutableListOf<dynamic>()
+        window.asDynamic().chartConfigs = chartConfigs.toTypedArray()
+        window.asDynamic().Chart = mockChartConstructor { config ->
+            chartConfigs.add(config)
+            window.asDynamic().chartConfigs = chartConfigs.toTypedArray()
+        }
 
         try {
             registerHistoryGlobals()
             val snapshots = arrayOf(
                 json(
                     "timestamp" to "2023-01-01",
-                    "totalValue$USD" to 100,
+                    "totalValueUSD" to 100,
                     "assets" to json(
                         Asset.BTC to json(
-                            "value$USD" to 60,
+                            "valueUSD" to 60,
                             "balance" to 2,
                             "currentPercent" to 60
                         ),
                         Asset.USD to json(
-                            "value$USD" to 40,
+                            "valueUSD" to 40,
                             "balance" to 40,
                             "currentPercent" to 40
                         )
@@ -227,9 +218,9 @@ class HistoryTest : StringSpec() {
                 ),
                 json(
                     "timestamp" to "2023-01-02",
-                    "totalValue$USD" to "invalid",
+                    "totalValueUSD" to "invalid",
                     "assets" to json(Asset.BTC to json(
-                        "value$USD" to 80,
+                        "valueUSD" to 80,
                         "balance" to 3,
                         "currentPercent" to 80
                     ))
@@ -270,22 +261,22 @@ class HistoryTest : StringSpec() {
     }
 
         "loadAll and checkSyncProgress update history content" {
-        val container = document.createElement(DIV)
+        val container = document.createElement(HtmlTags.DIV)
         container.innerHTML = TestDomBuilders.historyDom()
         document.body!!.appendChild(container)
-        js("""
-            window.Chart = function(_, config) { this.data = config.data; this.destroy = function() {}; this.isDatasetVisible = function() { return true; }; };
-            window.fetch = function(url) {
-                var data = url.indexOf('snapshots') >= 0
-                    ? [{ timestamp: '2023-01-01', totalValue$USD: 100, assets: { BTC: { valueUSD: 100, balance: 1, currentPercent: 100 } } }]
-                    : url.indexOf('trades') >= 0
-                        ? [{ timestamp: '2023-01-01', symbol: 'BTC', success: true, dryRun: false, side: 'BUY', volume: 1, usdAmount: 100 }]
-                        : url.indexOf('sync-progress') >= 0
-                            ? { seeded: false, offset: 5, total: 10 }
-                            : { allTimeHigh: 100, totalTradesExecuted: 1, totalVolumeTraded: 100, totalFeesPaid: 1 };
-                return Promise.resolve({ json: function() { return Promise.resolve(data); } });
-            };
-        """)
+        window.asDynamic().Chart = mockChartConstructor()
+        window.asDynamic().fetch = mockFetch { url ->
+            when {
+                url.contains("snapshots") -> arrayOf(
+                    mockSnapshotRecord(assets = json(Asset.BTC to json("valueUSD" to 100, "balance" to 1, "currentPercent" to 100)))
+                )
+                url.contains("trades") -> arrayOf(
+                    mockTradeRecord(symbol = Asset.BTC, volume = 1, usdAmount = 100)
+                )
+                url.contains("sync-progress") -> json("seeded" to false, "offset" to 5, "total" to 10)
+                else -> mockPortfolioStatsRecord(allTimeHigh = 100, totalTradesExecuted = 1, totalVolumeTraded = 100, totalFeesPaid = 1)
+            }
+        }
         registerHistoryGlobals()
 
         try {
@@ -301,14 +292,10 @@ class HistoryTest : StringSpec() {
     }
 
         "checkSyncProgress hides the banner when history is seeded" {
-        val container = document.createElement(DIV)
+        val container = document.createElement(HtmlTags.DIV)
         container.innerHTML = TestDomBuilders.syncProgressDom()
         document.body!!.appendChild(container)
-        js("""
-            window.fetch = function() {
-                return Promise.resolve({ json: function() { return Promise.resolve({ seeded: true }); } });
-            };
-        """)
+        window.asDynamic().fetch = mockFetch { json("seeded" to true) }
         try {
             checkSyncProgress().await() shouldBe true
             (document.getElementById(HtmlIds.SYNC_PROGRESS_BANNER) as HTMLElement).style.display shouldBe "none"

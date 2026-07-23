@@ -1,6 +1,7 @@
 package com.gemini.krakenbot.frontend
 
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.util.PrecisionConstants
 import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.CssClass.Query.SYMBOL_INPUTS as SYMBOL_INPUTS_QUERY
 import com.gemini.krakenbot.view.util.CssClass.Query.TARGET_INPUTS as TARGET_INPUTS_QUERY
@@ -33,10 +34,10 @@ fun updateAllocationTotal() {
     }
 
     val totalDisplay = document.getElementById(HtmlIds.TOTAL_ALLOCATED_DISPLAY) ?: return
-    totalDisplay.textContent = "Total: ${total.toFixed(2)}%"
+    totalDisplay.textContent = "Total: ${total.toFixed(PrecisionConstants.SCALE_USD)}%"
 
     val saveButton = document.getElementById(HtmlIds.SAVE_BUTTON) as? HTMLButtonElement ?: return
-    val isValid = abs(total - 100.0) <= 0.01
+    val isValid = abs(total - PrecisionConstants.TOTAL_ALLOCATION_PERCENTAGE) <= PrecisionConstants.ALLOCATION_TOLERANCE_DELTA
 
     val symbolInputs = document.querySelectorAll(SYMBOL_INPUTS_QUERY)
     val symbols = mutableListOf<String>()

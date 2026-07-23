@@ -8,6 +8,28 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [6.8.8] - 2026-07-23
+
+### Removed
+
+- **Unused Class & Constant Cleanups (`:common`, `src/main`, `src/test`)**: Removed unused `UsdValue` value class (`UsdValue.kt`), unused constants in `HtmlAttrs` (`CLASS`, `THEAD`, `P`, `LABEL`), and unneeded private constant `_REDACTED_` in `KrakenCredentials.kt`.
+- **Unused Import Cleanups (`src/main`, `src/test`)**: Cleaned up unused imports across `SqliteTradeRepositoryImpl.kt`, `OrderExecutorImpl.kt`, `SnapshotHistoryCalculator.kt`, `TradeHistoryServiceImpl.kt`, `DashboardControllerTest.kt`, and `TestConstants.kt`.
+
+## [6.8.7] - 2026-07-23
+
+### Refactored
+
+- **Magic Number Elimination & Constant Consolidation (`:common`, `:frontend-js`, `src/main`)**: Refactored hardcoded numeric values across `History.kt`, `Dashboard.kt`, `Settings.kt`, and `SnapshotHistoryCalculator.kt`. Added centralized layout, timing, styling, and tolerance constants in `ChartProps` (`FONT_SIZE_LEGEND`, `BORDER_WIDTH_TOOLTIP`, `PADDING_TOOLTIP`, `CORNER_RADIUS_TOOLTIP`, `TENSION_CURVED`, `BORDER_WIDTH_PRIMARY`, `POINT_RADIUS_PRIMARY`, etc.) and `PrecisionConstants` (`ONE_HOUR_MS`, `SYNC_POLL_INTERVAL_MS`, `TRADE_TABLE_COLSPAN`, `DEFAULT_SORT_COL_INDEX`, `TOTAL_ALLOCATION_PERCENTAGE`, `ALLOCATION_TOLERANCE_DELTA`, `HISTORICAL_DAYS_BACK`, `LAST_HOUR_OF_DAY`, `DEFAULT_USD_TARGET_PERCENT`).
+- **Idiomatic Kotlin/JS Unit Test Refactoring (`:frontend-js`)**: Refactored `HistoryTest.kt`, `CoverageTest.kt`, `MainTest.kt`, and `HelperTest.kt` to eliminate raw string `js("...")` evaluations. Introduced `JsTestHelpers.kt` providing type-safe `jsObject` DSL, reusable mock record generators (`mockTradeRecord`, `mockSnapshotRecord`, `mockPortfolioStatsRecord`), `mockFetch` promise helpers, `mockChartConstructor`, and `defineGetter`.
+- **Type-Safe `JsModels` Integration in Kotlin/JS (`:frontend-js`)**: Refactored `History.kt` and `DomExtensions.kt` to consume strongly-typed `JsModels` external interfaces (`JsPortfolioSnapshot`, `JsTradeRecord`, `JsHistoryStats`, `JsSyncProgress`) for JSON API payloads, eliminating unsafe `dynamic` casting and raw property indexers.
+- **HTML Form Fragment DSL Rendering (`src/main`)**: Refactored `SettingsFormComponent` and `DashboardView` to expose direct `renderSettingsForm` fragment rendering, removing regex HTML string scraping (`BODY_REGEX`) in `DashboardController.kt`.
+- **Pure Trade Deduplication Engine (`src/main`)**: Extracted duplicate trade matching algorithms into `TradeDeduplicator.findDuplicateTradeIds()` pure domain utility, decoupling deduplication from Exposed ORM database transaction blocks.
+- **Kraken Symbol Balance Key Encapsulation (`:common`, `src/main`)**: Added `Asset.possibleKrakenBalanceKeys()` helper in `Asset.kt`, simplifying balance resolution loops in `PortfolioAnalyzerImpl.kt`.
+- **Koin DI Registration Standardization (`src/main`)**: Standardized Koin DI syntax in `AppModule.kt` using `singleOf` constructor bindings and explicit factories for services with string constructor defaults.
+- **Wildcard Import Elimination & Codebase Cleanups (`src/main`)**: Replaced all wildcard star imports (`com.gemini.krakenbot.service.*`, `com.gemini.krakenbot.model.*`, etc.) with explicit top-level imports across `AppModule.kt`, `PortfolioAnalyzerImpl.kt`, `TradeHistoryServiceImpl.kt`, `SqliteTradeRepositoryImpl.kt`, and `DashboardController.kt`.
+- **SSE Stream Snapshot Broadcast Extraction (`src/main`)**: Extracted `ServerSSESession.sendSnapshot()` helper function in `DashboardController.kt` to serialize and transmit live portfolio SSE events cleanly.
+- **Codebase-Wide Constant Consolidation (`:frontend-js`, `src/main`)**: Replaced all stray file-level private constants (`private const val USD`, `DIV`, `SPAN`, `TR`, `TD`, `TH`, `INPUT`, `BUTTON`, `BUY`, `SELL`) across production services (`SnapshotHistoryCalculator`, `History.kt`) and frontend test suites (`HistoryTest`, `SettingsTest`, `DashboardTest`, `MainTest`, `CoverageTest`) with centralized domain constants (`Asset.USD`, `OrderSide.BUY.name`, `OrderSide.SELL.name`, `HtmlTags.*`).
+
 ## [6.8.6] - 2026-07-22
 
 ### Refactored

@@ -41,6 +41,22 @@ object ChartProps {
     const val TIME_TYPE = "time"
     const val TIME_FORMAT_DEFAULT = "MMM d, yyyy HH:mm"
 
+    // Default Layout & Dimension Constants
+    const val FONT_SIZE_LEGEND = 12
+    const val BORDER_WIDTH_TOOLTIP = 1
+    const val PADDING_TOOLTIP = 12
+    const val CORNER_RADIUS_TOOLTIP = 8
+    const val MAX_TICKS_LIMIT_DEFAULT = 8
+
+    const val TENSION_CURVED = 0.3
+    const val BORDER_WIDTH_PRIMARY = 2.0
+    const val BORDER_WIDTH_SECONDARY = 1.5
+    const val POINT_RADIUS_PRIMARY = 4
+    const val POINT_RADIUS_SECONDARY = 3
+    const val POINT_HOVER_RADIUS_PRIMARY = 6
+    const val POINT_HOVER_RADIUS_SECONDARY = 5
+    const val POINT_HIT_RADIUS_DEFAULT = 10
+
     // Fonts & Theme colors
     const val FONT_INTER = "'Inter', sans-serif"
     const val FONT_MONO = "'Roboto Mono', monospace"
