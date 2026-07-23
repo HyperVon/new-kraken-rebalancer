@@ -35,6 +35,10 @@ class DashboardView(
         }
     }
 
+    fun renderSettingsFormFragment(parent: FlowContent, config: AppConfig, errorMessage: String?) {
+        settingsFormComponent.renderForm(parent, config, errorMessage)
+    }
+
     context(html: HTML)
     fun renderHistoryPage() {
         historyPageComponent.render()

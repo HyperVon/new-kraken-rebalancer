@@ -5,24 +5,40 @@ import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.InvalidConfigurationException
 import com.gemini.krakenbot.config.Settings
+import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.TimeRange
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.TradeHistoryService
 import com.gemini.krakenbot.view.DashboardView
-import com.gemini.krakenbot.view.util.*
-import io.ktor.http.*
-import io.ktor.server.application.*
-import io.ktor.server.html.*
-import io.ktor.server.http.content.*
-import io.ktor.server.request.*
-import io.ktor.server.response.*
-import io.ktor.server.routing.*
-import io.ktor.server.sse.*
-import io.ktor.sse.*
+import com.gemini.krakenbot.view.util.CssClass
+import com.gemini.krakenbot.view.util.CssStyles
+import com.gemini.krakenbot.view.util.FormFields
+import com.gemini.krakenbot.view.util.HealthStatusKeys
+import com.gemini.krakenbot.view.util.HtmxHeaders
+import com.gemini.krakenbot.view.util.QueryParamKeys
+import com.gemini.krakenbot.view.util.Routes
+import com.gemini.krakenbot.view.util.SyncMetadataKeys
+import com.gemini.krakenbot.view.util.ViewText
+import io.ktor.http.ContentType
+import io.ktor.http.HttpStatusCode
+import io.ktor.server.application.ApplicationCall
+import io.ktor.server.html.respondHtml
+import io.ktor.server.http.content.staticResources
+import io.ktor.server.request.receiveParameters
+import io.ktor.server.response.header
+import io.ktor.server.response.respond
+import io.ktor.server.response.respondText
+import io.ktor.server.routing.Routing
+import io.ktor.server.routing.RoutingContext
+import io.ktor.server.routing.get
+import io.ktor.server.routing.post
+import io.ktor.server.routing.route
+import io.ktor.server.sse.ServerSSESession
+import io.ktor.server.sse.sse
+import io.ktor.sse.ServerSentEvent
 import kotlinx.coroutines.CancellationException
 import kotlinx.html.div
 import kotlinx.html.h2
-import kotlinx.html.html
 import kotlinx.html.p
 import kotlinx.html.stream.createHTML
 import java.lang.management.ManagementFactory
@@ -140,15 +156,14 @@ class DashboardController(
             call.response.header(HtmxHeaders.HX_REDIRECT, Routes.ROOT)
             call.respond(HttpStatusCode.OK)
         } catch (e: InvalidConfigurationException) {
-            val errHtml = createHTML(prettyPrint = false).html {
-                dashboardView.renderSettingsPage(
+            val errHtml = createHTML(prettyPrint = false).div {
+                dashboardView.renderSettingsFormFragment(
+                    this,
                     updatedConfig,
                     e.message ?: "Invalid configuration"
                 )
             }
-            val bodyMatch = BODY_REGEX.find(errHtml)
-            val formBody = bodyMatch?.groupValues?.get(1) ?: errHtml
-            call.respondText(formBody, ContentType.Text.Html)
+            call.respondText(errHtml, ContentType.Text.Html)
         }
     }
 
@@ -207,19 +222,22 @@ class DashboardController(
         try {
             val latest = tradeHistoryService.getLatestSnapshot()
             if (latest != null) {
-                val json = objectMapper.writeValueAsString(latest)
-                send(ServerSentEvent(data = json))
+                sendSnapshot(latest)
             }
 
             tradeHistoryService.getHistoryFlow().collect { snapshot ->
-                val json = objectMapper.writeValueAsString(snapshot)
-                send(ServerSentEvent(data = json))
+                sendSnapshot(snapshot)
             }
         } catch (e: CancellationException) {
             throw e
         } catch (_: Exception) {
             // Handle client disconnect / closed channel gracefully without logging annoying stack traces
         }
+    }
+
+    private suspend fun ServerSSESession.sendSnapshot(snapshot: PortfolioSnapshot) {
+        val json = objectMapper.writeValueAsString(snapshot)
+        send(ServerSentEvent(data = json))
     }
 
     private suspend fun RoutingContext.handleGetSyncProgress() {
@@ -247,10 +265,6 @@ class DashboardController(
             HealthStatusKeys.LAST_SNAPSHOT_TOTAL_VALUE_USD to (latestSnapshot?.totalValueUSD ?: BigDecimal.ZERO)
         )
         respondJson(responseMap)
-    }
-
-    private companion object {
-        val BODY_REGEX = "<body[^>]*>(.*?)</body>".toRegex(RegexOption.DOT_MATCHES_ALL)
     }
 }
 

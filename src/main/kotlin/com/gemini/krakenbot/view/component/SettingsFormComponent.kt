@@ -28,7 +28,12 @@ import kotlinx.html.InputType.*
 class SettingsFormComponent {
     context(body: BODY)
     fun render(config: AppConfig, errorMessage: String?) {
-        body.div(CssClass.Layout.Container) {
+        renderForm(body, config, errorMessage)
+        renderSettingsScript()
+    }
+
+    fun renderForm(parent: FlowContent, config: AppConfig, errorMessage: String?) {
+        parent.div(CssClass.Layout.Container) {
             form {
                 attributes[HtmxAttrs.HX_POST] = Routes.SETTINGS
                 attributes[HtmxAttrs.HX_TARGET] = HtmxValues.BODY
@@ -66,8 +71,6 @@ class SettingsFormComponent {
                 }
             }
         }
-
-        renderSettingsScript()
     }
 
     private fun DIV.renderGlobalParametersSection(config: AppConfig) {

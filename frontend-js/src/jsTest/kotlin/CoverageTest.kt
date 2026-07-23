@@ -871,7 +871,7 @@ class CoverageTest : StringSpec() {
                         "dryRun" to null
                     )
                 )
-                renderTradeTable(badTrades)
+                renderTradeTable(badTrades.unsafeCast<Array<JsTradeRecord>>())
                 val tbody = document.getElementById(HtmlIds.TRADE_TABLE_BODY) as HTMLTableSectionElement
                 tbody.rows.length shouldBe 1
                 

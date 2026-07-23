@@ -1,13 +1,36 @@
 package com.gemini.krakenbot.repository.impl
 
-import com.gemini.krakenbot.model.*
+import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.PortfolioSnapshot
+import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.repository.TradeRepository
 import com.gemini.krakenbot.repository.TradeSummaryStats
-import com.gemini.krakenbot.repository.table.*
-import org.jetbrains.exposed.sql.*
+import com.gemini.krakenbot.repository.table.ActionLogTable
+import com.gemini.krakenbot.repository.table.AssetSnapshotTable
+import com.gemini.krakenbot.repository.table.HistorySyncMetadataTable
+import com.gemini.krakenbot.repository.table.PortfolioSnapshotTable
+import com.gemini.krakenbot.repository.table.TradeTable
+import com.gemini.krakenbot.util.TradeDeduplicator
+import com.gemini.krakenbot.repository.impl.safeTransaction
+import org.jetbrains.exposed.sql.Database
+import org.jetbrains.exposed.sql.ResultRow
+import org.jetbrains.exposed.sql.SortOrder
+import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.inList
+import org.jetbrains.exposed.sql.SqlExpressionBuilder.less
+import org.jetbrains.exposed.sql.and
+import org.jetbrains.exposed.sql.andWhere
+import org.jetbrains.exposed.sql.count
+import org.jetbrains.exposed.sql.deleteWhere
+import org.jetbrains.exposed.sql.insert
+import org.jetbrains.exposed.sql.max
+import org.jetbrains.exposed.sql.select
+import org.jetbrains.exposed.sql.selectAll
 import org.jetbrains.exposed.sql.statements.UpdateBuilder
+import org.jetbrains.exposed.sql.sum
 import org.jetbrains.exposed.sql.transactions.transaction
+import org.jetbrains.exposed.sql.update
+import org.jetbrains.exposed.sql.upsert
 import org.slf4j.LoggerFactory
 import java.math.BigDecimal
 import java.time.Instant
@@ -350,27 +373,9 @@ class SqliteTradeRepositoryImpl(
 
     override fun cleanupDuplicateTrades() {
         transaction(database) {
-            val toDelete = mutableListOf<Int>()
             val allTradeRows = TradeTable.selectAll().orderBy(TradeTable.timestamp, SortOrder.ASC).toList()
             val allRecords = allTradeRows.map { buildTradeFromRow(it) }
-
-            for (i in allRecords.indices) {
-                val record1 = allRecords[i]
-                for (j in i + 1 until allRecords.size) {
-                    val record2 = allRecords[j]
-                    val id2 = record2.id ?: continue
-                    val diff = record2.timestamp.toEpochMilli() - record1.timestamp.toEpochMilli()
-                    if (diff > 300_000) break
-
-                    val pairAliasDuplicate = record1.isPairAliasDuplicateOf(record2)
-                    val localEstimateDuplicate = record1.isLocalEstimateDuplicateOf(record2) &&
-                            record1.feePercentDiffersMateriallyFrom(record2)
-
-                    if (pairAliasDuplicate || localEstimateDuplicate) {
-                        toDelete.add(id2)
-                    }
-                }
-            }
+            val toDelete = TradeDeduplicator.findDuplicateTradeIds(allRecords)
 
             if (toDelete.isNotEmpty()) {
                 log.info("Cleaning up {} duplicate local trades due to pair name mismatch...", toDelete.size)

@@ -5,7 +5,17 @@ import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.Result
 import com.gemini.krakenbot.view.util.ViewText
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
-import com.gemini.krakenbot.service.*
+import com.gemini.krakenbot.service.AnalysisResult
+import com.gemini.krakenbot.service.AssetDeviations
+import com.gemini.krakenbot.service.AssetPrices
+import com.gemini.krakenbot.service.AssetValues
+import com.gemini.krakenbot.service.ConfigService
+import com.gemini.krakenbot.service.KrakenService
+import com.gemini.krakenbot.service.MutableRebalanceOrders
+import com.gemini.krakenbot.service.PortfolioAnalyzer
+import com.gemini.krakenbot.service.PortfolioValues
+import com.gemini.krakenbot.service.RawBalances
+import com.gemini.krakenbot.service.RawPrices
 import org.slf4j.LoggerFactory
 import java.math.BigDecimal
 import java.math.RoundingMode
@@ -100,11 +110,8 @@ class PortfolioAnalyzerImpl(
     }
 
     override fun resolveBalance(symbol: String, balances: RawBalances): BigDecimal {
-        return balances[symbol]
-            ?: balances["X$symbol"]
-            ?: balances["Z$symbol"]
-            ?: balances[Asset.toKrakenTicker(symbol)]
-            ?: balances["X${Asset.toKrakenTicker(symbol)}"]
+        return Asset.possibleBalanceKeys(symbol)
+            .firstNotNullOfOrNull { balances[it] }
             ?: BigDecimal.ZERO
     }
 

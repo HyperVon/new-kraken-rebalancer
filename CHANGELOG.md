@@ -8,6 +8,18 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [6.8.7] - 2026-07-23
+
+### Refactored
+
+- **Type-Safe `JsModels` Integration in Kotlin/JS (`:frontend-js`)**: Refactored `History.kt` and `DomExtensions.kt` to consume strongly-typed `JsModels` external interfaces (`JsPortfolioSnapshot`, `JsTradeRecord`, `JsHistoryStats`, `JsSyncProgress`) for JSON API payloads, eliminating unsafe `dynamic` casting and raw property indexers.
+- **HTML Form Fragment DSL Rendering (`src/main`)**: Refactored `SettingsFormComponent` and `DashboardView` to expose direct `renderSettingsForm` fragment rendering, removing regex HTML string scraping (`BODY_REGEX`) in `DashboardController.kt`.
+- **Pure Trade Deduplication Engine (`src/main`)**: Extracted duplicate trade matching algorithms into `TradeDeduplicator.findDuplicateTradeIds()` pure domain utility, decoupling deduplication from Exposed ORM database transaction blocks.
+- **Kraken Symbol Balance Key Encapsulation (`:common`, `src/main`)**: Added `Asset.possibleKrakenBalanceKeys()` helper in `Asset.kt`, simplifying balance resolution loops in `PortfolioAnalyzerImpl.kt`.
+- **Koin DI Registration Standardization (`src/main`)**: Standardized Koin DI syntax in `AppModule.kt` using `singleOf` constructor bindings and explicit factories for services with string constructor defaults.
+- **Wildcard Import Elimination & Codebase Cleanups (`src/main`)**: Replaced all wildcard star imports (`com.gemini.krakenbot.service.*`, `com.gemini.krakenbot.model.*`, etc.) with explicit top-level imports across `AppModule.kt`, `PortfolioAnalyzerImpl.kt`, `TradeHistoryServiceImpl.kt`, `SqliteTradeRepositoryImpl.kt`, and `DashboardController.kt`.
+- **SSE Stream Snapshot Broadcast Extraction (`src/main`)**: Extracted `ServerSSESession.sendSnapshot()` helper function in `DashboardController.kt` to serialize and transmit live portfolio SSE events cleanly.
+
 ## [6.8.6] - 2026-07-22
 
 ### Refactored

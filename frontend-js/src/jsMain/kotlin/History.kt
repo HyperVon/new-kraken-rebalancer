@@ -492,23 +492,23 @@ internal fun buildCumulativePLChart(trades: Array<dynamic>, includeDryRun: Boole
     createOrUpdate(HtmlIds.CUMULATIVE_PL_CHART, createLineChartConfig(datasets, options))
 }
 
-fun formatPair(trade: dynamic): String {
+fun formatPair(trade: JsTradeRecord?): String {
     if (trade?.symbol == null) return ""
-    return trade.symbol.toString() + "/USD"
+    return "${trade.symbol}/USD"
 }
 
 private const val TR = "tr"
 
 private const val TD = "td"
 
-internal fun renderTradeTable(trades: Array<dynamic>) {
+internal fun renderTradeTable(trades: Array<JsTradeRecord>) {
     val tbody = document.getElementById(HtmlIds.TRADE_TABLE_BODY) ?: return
     tbody.innerHTML = ""
 
     val showDryRun = (document.getElementById(HtmlIds.SHOW_DRY_RUN_CHECKBOX) as? HTMLInputElement)?.checked ?: true
-    val filteredTrades = if (showDryRun) trades else trades.filter { t: dynamic -> !isTrue(t.dryRun) }.toTypedArray()
+    val filteredTrades = if (showDryRun) trades else trades.filter { t -> !isTrue(t.dryRun) }.toTypedArray()
 
-    if (filteredTrades.asDynamic().length == 0) {
+    if (filteredTrades.isEmpty()) {
         val tr = document.createElement(TR)
         val td = document.createElement(TD) as HTMLTableCellElement
         td.colSpan = 6
@@ -524,12 +524,12 @@ internal fun renderTradeTable(trades: Array<dynamic>) {
     }
 }
 
-private fun renderTradeRow(t: dynamic): HTMLTableRowElement {
+private fun renderTradeRow(t: JsTradeRecord): HTMLTableRowElement {
     val tr = document.createElement(TR) as HTMLTableRowElement
     tr.className = CssClass.Table.Hoverable.toString()
 
     val time = Date(t.timestamp.toString()).asDynamic().toLocaleString()
-    val side = t.side.toString()
+    val side = t.side ?: ""
     val sideClass = if (side == OrderSide.BUY.name) CssClass.Badge.Buy else CssClass.Badge.Sell
     val success = isTrue(t.success)
     val dryRun = isTrue(t.dryRun)
@@ -566,7 +566,7 @@ private fun createBadgeCell(text: String, badgeClass: CssClass): HTMLTableCellEl
     return td
 }
 
-internal fun updateStats(stats: dynamic) {
+internal fun updateStats(stats: JsHistoryStats) {
     val athTitle = document.getElementById(HtmlIds.STAT_ATH_TITLE)
     val ath = document.getElementById(HtmlIds.STAT_ATH)
     val totalTrades = document.getElementById(HtmlIds.STAT_TOTAL_TRADES)
@@ -600,27 +600,28 @@ internal fun loadAll(range: String): Promise<Unit> {
     )
 
     return Promise.all(promises).then { results ->
-        val snapshots = results[0] as Array<dynamic>
-        val trades = results[1] as Array<dynamic>
-        val stats = results[2]
-        allTrades = trades
-        buildPortfolioValueChart(snapshots)
-        buildAssetHoldingsChart(snapshots)
-        buildAllocationDriftChart(snapshots)
+        val snapshots = results[0].unsafeCast<Array<JsPortfolioSnapshot>>()
+        val trades = results[1].unsafeCast<Array<JsTradeRecord>>()
+        val stats = results[2].unsafeCast<JsHistoryStats>()
+        allTrades = trades.asDynamic()
+        buildPortfolioValueChart(snapshots.asDynamic())
+        buildAssetHoldingsChart(snapshots.asDynamic())
+        buildAllocationDriftChart(snapshots.asDynamic())
         val showDryRun = (document.getElementById(HtmlIds.SHOW_DRY_RUN_CHECKBOX) as? HTMLInputElement)?.checked ?: true
-        buildCumulativePLChart(trades, showDryRun)
+        buildCumulativePLChart(trades.asDynamic(), showDryRun)
         renderTradeTable(trades)
         updateStats(stats)
     }
 }
 
 internal fun checkSyncProgress(): Promise<Boolean> {
-    return fetchJSON(Routes.API_HISTORY_SYNC_PROGRESS).then { status: dynamic ->
+    return fetchJSON(Routes.API_HISTORY_SYNC_PROGRESS).then { rawStatus: dynamic ->
+        val status = rawStatus.unsafeCast<JsSyncProgress>()
         val banner = document.getElementById(HtmlIds.SYNC_PROGRESS_BANNER) as? HTMLElement
         if (banner == null) {
             true
         } else {
-            val seeded = status.seeded as? Boolean ?: false
+            val seeded = status.seeded ?: false
             if (seeded) {
                 banner.style.display = "none"
                 true

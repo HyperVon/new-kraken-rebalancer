@@ -86,5 +86,18 @@ value class Asset(val value: String) {
                     normalizedPair == "X${krakenTicker}ZUSD" ||
                     normalizedPair == "X${normalizedSymbol}ZUSD"
         }
+
+        fun possibleBalanceKeys(symbol: String): List<String> {
+            val normalized = normalizedSymbol(symbol)
+            val krakenTicker = toKrakenTicker(normalized)
+            return listOf(
+                symbol,
+                normalized,
+                "X$normalized",
+                "Z$normalized",
+                krakenTicker,
+                "X$krakenTicker"
+            ).distinct()
+        }
     }
 }

@@ -5,35 +5,39 @@ package com.gemini.krakenbot.frontend
  * and SSE streams in the client Kotlin/JS environment.
  */
 external interface JsPortfolioSnapshot {
-    val timestamp: Double
-    val totalValueUSD: Double
-    val effectiveUsdTargetPercent: Double
-    val drawdownPercent: Double
+    val timestamp: dynamic
+    val totalValueUSD: dynamic
+    val effectiveUsdTargetPercent: dynamic
+    val drawdownPercent: dynamic
     val actions: Array<String>?
     val assets: dynamic
 }
 
 external interface JsTradeRecord {
-    val id: Long?
-    val timestamp: Double
-    val symbol: String
-    val side: String
-    val price: Double
-    val amount: Double
-    val usdAmount: Double
-    val feeUSD: Double
+    val id: Double?
+    val timestamp: dynamic
+    val pair: String?
+    val symbol: String?
+    val side: String?
+    val price: dynamic
+    val volume: dynamic
+    val usdAmount: dynamic
+    val fee: dynamic
+    val success: Boolean?
+    val dryRun: Boolean?
+    val errorMessage: String?
 }
 
 external interface JsHistoryStats {
-    val allTimeHigh: Double
-    val totalTradesExecuted: Double
-    val totalVolumeTraded: Double
-    val totalFeesPaid: Double
-    val highValue: Double?
+    val allTimeHigh: dynamic
+    val totalTradesExecuted: dynamic
+    val totalVolumeTraded: dynamic
+    val totalFeesPaid: dynamic
+    val periodHigh: dynamic
 }
 
 external interface JsSyncProgress {
-    val isSeeded: Boolean
-    val offset: String?
-    val total: String?
+    val seeded: Boolean?
+    val offset: dynamic
+    val total: dynamic
 }

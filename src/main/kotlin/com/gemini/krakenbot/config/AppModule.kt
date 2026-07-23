@@ -9,13 +9,32 @@ import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.repository.TradeRepository
 import com.gemini.krakenbot.repository.impl.SqlitePortfolioStatsRepositoryImpl
 import com.gemini.krakenbot.repository.impl.SqliteTradeRepositoryImpl
-import com.gemini.krakenbot.service.*
-import com.gemini.krakenbot.service.impl.*
+import com.gemini.krakenbot.service.ConfigService
+import com.gemini.krakenbot.service.KrakenService
+import com.gemini.krakenbot.service.OrderExecutor
+import com.gemini.krakenbot.service.PortfolioAnalyzer
+import com.gemini.krakenbot.service.PortfolioManager
+import com.gemini.krakenbot.service.TradeHistoryService
+import com.gemini.krakenbot.service.impl.ConfigServiceImpl
+import com.gemini.krakenbot.service.impl.DynamicKrakenService
+import com.gemini.krakenbot.service.impl.KrakenServiceImpl
+import com.gemini.krakenbot.service.impl.OrderExecutorImpl
+import com.gemini.krakenbot.service.impl.PortfolioAnalyzerImpl
+import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
+import com.gemini.krakenbot.service.impl.SimulatedKrakenService
+import com.gemini.krakenbot.service.impl.TradeHistoryServiceImpl
 import com.gemini.krakenbot.view.DashboardView
-import com.gemini.krakenbot.view.component.*
-import io.ktor.client.*
-import io.ktor.client.engine.cio.*
-import io.ktor.client.plugins.*
+import com.gemini.krakenbot.view.component.AllocationChartComponent
+import com.gemini.krakenbot.view.component.DashboardFragmentComponent
+import com.gemini.krakenbot.view.component.DashboardShellComponent
+import com.gemini.krakenbot.view.component.HistoryPageComponent
+import com.gemini.krakenbot.view.component.OverviewGridComponent
+import com.gemini.krakenbot.view.component.PerformanceTableComponent
+import com.gemini.krakenbot.view.component.RecentActivityComponent
+import com.gemini.krakenbot.view.component.SettingsFormComponent
+import io.ktor.client.HttpClient
+import io.ktor.client.engine.cio.CIO
+import io.ktor.client.plugins.HttpTimeout
 import org.jetbrains.exposed.sql.Database
 import org.koin.core.module.dsl.bind
 import org.koin.core.module.dsl.singleOf
@@ -42,13 +61,8 @@ val appModule = module {
     single<Database> { DatabaseConfig.init() }
 
     single<ConfigService> { ConfigServiceImpl(objectMapper = get()) }
-    single<TradeRepository> { SqliteTradeRepositoryImpl(database = get()) }
-    single<PortfolioStatsRepository> {
-        SqlitePortfolioStatsRepositoryImpl(
-            database = get(),
-            objectMapper = get()
-        )
-    }
+    singleOf(::SqliteTradeRepositoryImpl) { bind<TradeRepository>() }
+    single<PortfolioStatsRepository> { SqlitePortfolioStatsRepositoryImpl(database = get(), objectMapper = get()) }
     single<TradeHistoryService> {
         TradeHistoryServiceImpl(
             repository = get(),
@@ -68,20 +82,8 @@ val appModule = module {
             configService = get()
         )
     }
-    single<PortfolioAnalyzer> {
-        PortfolioAnalyzerImpl(
-            krakenService = get(),
-            configService = get(),
-            portfolioStatsRepository = get()
-        )
-    }
-    single<OrderExecutor> {
-        OrderExecutorImpl(
-            krakenService = get(),
-            portfolioAnalyzer = get(),
-            tradeHistoryService = get()
-        )
-    }
+    singleOf(::PortfolioAnalyzerImpl) { bind<PortfolioAnalyzer>() }
+    singleOf(::OrderExecutorImpl) { bind<OrderExecutor>() }
     singleOf(::PortfolioManagerImpl) { bind<PortfolioManager>() }
     singleOf(::DashboardShellComponent)
     singleOf(::SettingsFormComponent)

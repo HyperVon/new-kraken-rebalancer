@@ -2,7 +2,12 @@ package com.gemini.krakenbot.service.impl
 
 import com.fasterxml.jackson.core.type.TypeReference
 import com.fasterxml.jackson.databind.ObjectMapper
-import com.gemini.krakenbot.model.*
+import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.HistoryStats
+import com.gemini.krakenbot.model.PortfolioSnapshot
+import com.gemini.krakenbot.model.TradeRecord
+import com.gemini.krakenbot.model.isMatchingApiTrade
+import com.gemini.krakenbot.service.impl.SimulationDefaults
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.repository.TradeRepository
 import com.gemini.krakenbot.service.ConfigService
@@ -28,10 +33,6 @@ import java.time.temporal.ChronoUnit
 import java.util.concurrent.ThreadLocalRandom
 import kotlin.math.abs
 import kotlin.time.Duration.Companion.milliseconds
-
-private const val USD = "USD"
-private const val BUY = "BUY"
-private const val SELL = "SELL"
 
 class TradeHistoryServiceImpl(
     private val repository: TradeRepository,
@@ -113,7 +114,7 @@ class TradeHistoryServiceImpl(
             val symbolU = symbol.value.uppercase()
             currentPrices[symbolU] = SimulationDefaults.INITIAL_PRICES[symbolU] ?: 10.0
         }
-        currentPrices[USD] = 1.0
+        currentPrices[Asset.USD] = 1.0
 
         // Start balances
         val currentBalances = mutableMapOf<String, Double>()
@@ -140,7 +141,7 @@ class TradeHistoryServiceImpl(
 
             // 1. Fluctuate prices
             for (symbol in currentPrices.keys) {
-                if (symbol == USD) continue
+                if (symbol == Asset.USD) continue
                 val price = currentPrices.getValue(symbol)
                 // random fluctuation +/- 1.5%
                 val change = (random.nextDouble() - 0.5) * 0.03
@@ -467,7 +468,7 @@ class TradeHistoryServiceImpl(
                 val symbolU = symbol.value.uppercase()
                 currentPrices[symbolU] = prices[Asset.tradingPair(symbolU)] ?: BigDecimal.ZERO
             }
-            currentPrices[USD] = BigDecimal.ONE
+            currentPrices[Asset.USD] = BigDecimal.ONE
         }
 
         // 3. Fetch OHLC daily close prices for the last 90 days
@@ -475,7 +476,7 @@ class TradeHistoryServiceImpl(
         val sinceSec = Instant.now().minus(95, ChronoUnit.DAYS).epochSecond
         for ((symbol) in allocations) {
             val symbolU = symbol.value.uppercase()
-            if (symbolU == USD) continue
+            if (symbolU == Asset.USD) continue
             val pair = Asset.tradingPair(symbolU)
             try {
                 val prices = krakenService.getOHLC(pair, interval = 1440, since = sinceSec)
