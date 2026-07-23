@@ -29,13 +29,13 @@ class HistoryTest : StringSpec() {
         }
 
         "formatPair handles valid and missing symbols" {
-            val trade1: dynamic = js("({ symbol: 'BTC' })")
+            val trade1: dynamic = mockTradeRecord(symbol = Asset.BTC)
             formatPair(trade1.unsafeCast<JsTradeRecord>()) shouldBe "${Asset.BTC}/${Asset.USD}"
 
-            val trade2: dynamic = js("({ symbol: null })")
+            val trade2: dynamic = mockTradeRecord(symbol = null)
             formatPair(trade2.unsafeCast<JsTradeRecord>()) shouldBe ""
 
-            val trade3: dynamic = js("({})")
+            val trade3: dynamic = json()
             formatPair(trade3.unsafeCast<JsTradeRecord>()) shouldBe ""
 
             formatPair(null) shouldBe ""
@@ -43,9 +43,9 @@ class HistoryTest : StringSpec() {
 
         "getUniqueSymbols filters and sorts symbols" {
             val snapshots = arrayOf(
-                js("({ assets: { BTC: {}, ETH: {}, USD: {} } })"),
-                js("({ assets: { BTC: {}, SOL: {}, USD: {} } })"),
-                js("({ assets: null })")
+                mockSnapshotRecord(assets = json(Asset.BTC to json(), Asset.ETH to json(), Asset.USD to json())),
+                mockSnapshotRecord(assets = json(Asset.BTC to json(), Asset.SOL to json(), Asset.USD to json())),
+                mockSnapshotRecord(assets = null)
             )
 
         val symbolsExcludeUsd = getUniqueSymbols(snapshots, excludeUsd = true)
@@ -57,8 +57,8 @@ class HistoryTest : StringSpec() {
 
         "mapSnapshotsToPoints retains timestamps and values" {
         val snapshots = arrayOf(
-            js("({ timestamp: '2023-01-01', value: 100.0 })"),
-            js("({ timestamp: '2023-01-02', value: 110.0 })")
+            json("timestamp" to "2023-01-01", "value" to 100.0),
+            json("timestamp" to "2023-01-02", "value" to 110.0)
         )
 
         val points = mapSnapshotsToPoints(snapshots) { it.value.toString().toDouble() }
@@ -169,7 +169,7 @@ class HistoryTest : StringSpec() {
         document.body!!.appendChild(container)
 
         try {
-            val stats = js("({ allTimeHigh: 15000.5, totalTradesExecuted: 42, totalVolumeTraded: 1000000.0, totalFeesPaid: 250.75 })")
+            val stats = mockPortfolioStatsRecord()
             updateStats(stats)
 
             document.getElementById(HtmlIds.STAT_ATH)?.textContent shouldBe "$15,000.50"
@@ -190,15 +190,12 @@ class HistoryTest : StringSpec() {
         val container = document.createElement(HtmlTags.DIV)
         container.innerHTML = TestDomBuilders.chartsDom()
         document.body!!.appendChild(container)
-        js("""
-            window.chartConfigs = [];
-            window.Chart = function(_, config) {
-                this.data = config.data;
-                this.destroy = function() { this.destroyed = true; };
-                this.isDatasetVisible = function(index) { return index === 0; };
-                window.chartConfigs.push(config);
-            };
-        """)
+        val chartConfigs = mutableListOf<dynamic>()
+        window.asDynamic().chartConfigs = chartConfigs.toTypedArray()
+        window.asDynamic().Chart = mockChartConstructor { config ->
+            chartConfigs.add(config)
+            window.asDynamic().chartConfigs = chartConfigs.toTypedArray()
+        }
 
         try {
             registerHistoryGlobals()
@@ -267,19 +264,19 @@ class HistoryTest : StringSpec() {
         val container = document.createElement(HtmlTags.DIV)
         container.innerHTML = TestDomBuilders.historyDom()
         document.body!!.appendChild(container)
-        js("""
-            window.Chart = function(_, config) { this.data = config.data; this.destroy = function() {}; this.isDatasetVisible = function() { return true; }; };
-            window.fetch = function(url) {
-                var data = url.indexOf('snapshots') >= 0
-                    ? [{ timestamp: '2023-01-01', totalValueUSD: 100, assets: { BTC: { valueUSD: 100, balance: 1, currentPercent: 100 } } }]
-                    : url.indexOf('trades') >= 0
-                        ? [{ timestamp: '2023-01-01', symbol: 'BTC', success: true, dryRun: false, side: 'BUY', volume: 1, usdAmount: 100 }]
-                        : url.indexOf('sync-progress') >= 0
-                            ? { seeded: false, offset: 5, total: 10 }
-                            : { allTimeHigh: 100, totalTradesExecuted: 1, totalVolumeTraded: 100, totalFeesPaid: 1 };
-                return Promise.resolve({ json: function() { return Promise.resolve(data); } });
-            };
-        """)
+        window.asDynamic().Chart = mockChartConstructor()
+        window.asDynamic().fetch = mockFetch { url ->
+            when {
+                url.contains("snapshots") -> arrayOf(
+                    mockSnapshotRecord(assets = json(Asset.BTC to json("valueUSD" to 100, "balance" to 1, "currentPercent" to 100)))
+                )
+                url.contains("trades") -> arrayOf(
+                    mockTradeRecord(symbol = Asset.BTC, volume = 1, usdAmount = 100)
+                )
+                url.contains("sync-progress") -> json("seeded" to false, "offset" to 5, "total" to 10)
+                else -> mockPortfolioStatsRecord(allTimeHigh = 100, totalTradesExecuted = 1, totalVolumeTraded = 100, totalFeesPaid = 1)
+            }
+        }
         registerHistoryGlobals()
 
         try {
@@ -298,11 +295,7 @@ class HistoryTest : StringSpec() {
         val container = document.createElement(HtmlTags.DIV)
         container.innerHTML = TestDomBuilders.syncProgressDom()
         document.body!!.appendChild(container)
-        js("""
-            window.fetch = function() {
-                return Promise.resolve({ json: function() { return Promise.resolve({ seeded: true }); } });
-            };
-        """)
+        window.asDynamic().fetch = mockFetch { json("seeded" to true) }
         try {
             checkSyncProgress().await() shouldBe true
             (document.getElementById(HtmlIds.SYNC_PROGRESS_BANNER) as HTMLElement).style.display shouldBe "none"

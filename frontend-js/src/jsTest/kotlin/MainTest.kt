@@ -98,7 +98,8 @@ class MainTest : StringSpec() {
             container.innerHTML = TestDomBuilders.dataAgeDom(Date.now().toString())
             document.body!!.appendChild(container)
             
-            js("var oldBody = document.body; Object.defineProperty(document, 'body', { get: function() { return null; }, configurable: true });")
+            val oldBody = document.body
+            defineGetter(document, "body", { null })
 
             try {
                 main()
@@ -108,7 +109,7 @@ class MainTest : StringSpec() {
                 event.initEvent(type = HtmlEvents.DOM_CONTENT_LOADED, bubbles = true, cancelable = true)
                 document.dispatchEvent(event)
             } finally {
-                js("Object.defineProperty(document, 'body', { get: function() { return oldBody; } });")
+                defineGetter(document, "body", { oldBody })
                 window.asDynamic().setInterval = oldSetInterval
                 document.body!!.removeChild(container)
             }

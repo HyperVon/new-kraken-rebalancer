@@ -16,6 +16,7 @@ import kotlinx.coroutines.await
 import kotlinx.coroutines.delay
 import org.w3c.dom.*
 import kotlin.js.Date
+import kotlin.js.Promise
 import kotlin.js.json
 import kotlin.time.Duration.Companion.milliseconds
 
@@ -71,7 +72,7 @@ class CoverageTest : StringSpec() {
 
         "createOrUpdate does nothing when canvas missing" {
             // Should not throw
-            createOrUpdate("non-existent-canvas", js("{}"))
+            createOrUpdate("non-existent-canvas", json())
         }
 
         // Test chart builder early return
@@ -79,10 +80,8 @@ class CoverageTest : StringSpec() {
             val container = document.createElement(HtmlTags.DIV)
             container.innerHTML = TestDomBuilders.chartsDom()
             document.body!!.appendChild(container)
-            js("""
-                window.Chart = function(_, config) { this.data = config.data; this.destroy = function() {}; };
-                window.fetch = function() { return Promise.resolve({ json: function() { return Promise.resolve({}); } }); };
-            """)
+            window.asDynamic().Chart = mockChartConstructor()
+            window.asDynamic().fetch = mockFetch { json() }
             try {
                 registerHistoryGlobals()
                 
@@ -185,7 +184,7 @@ class CoverageTest : StringSpec() {
             container.innerHTML = TestDomBuilders.statsDom()
             document.body!!.appendChild(container)
             try {
-                val stats = js("({ allTimeHigh: 15000.5, totalTradesExecuted: 42, totalVolumeTraded: 1000000.0, totalFeesPaid: 250.75 })")
+                val stats = mockPortfolioStatsRecord()
                 updateStats(stats)  // Should not throw
                 document.getElementById(HtmlIds.STAT_ATH)?.textContent shouldBe "$15,000.50"
                 // Other elements missing, so no exception
@@ -199,24 +198,23 @@ class CoverageTest : StringSpec() {
             val container = document.createElement(HtmlTags.DIV)
             container.innerHTML = TestDomBuilders.historyDom()
             document.body!!.appendChild(container)
-            js("""
-                window.capturedUrls = [];
-                window.fetch = function(url) {
-                    window.capturedUrls.push(url);
-                    var data;
-                    if (url.indexOf('snapshots') >= 0) {
-                        data = [{ timestamp: '2023-01-01', totalValueUSD: 100, assets: { BTC: { valueUSD: 100, balance: 1, currentPercent: 100 } } }];
-                    } else if (url.indexOf('trades') >= 0) {
-                        data = [{ timestamp: '2023-01-01', symbol: 'BTC', success: true, dryRun: false, side: 'BUY', volume: 1, usdAmount: 100 }];
-                    } else if (url.indexOf('sync-progress') >= 0) {
-                        data = { seeded: false, offset: 5, total: 10 };
-                    } else {
-                        data = { allTimeHigh: 100, totalTradesExecuted: 1, totalVolumeTraded: 100, totalFeesPaid: 1 };
-                    }
-                    return Promise.resolve({ json: function() { return Promise.resolve(data); } });
-                };
-                window.Chart = function(_, config) { this.data = config.data; this.destroy = function() {}; this.isDatasetVisible = function() { return true; }; };
-            """)
+            val capturedUrls = mutableListOf<String>()
+            window.asDynamic().capturedUrls = capturedUrls.toTypedArray()
+            window.asDynamic().Chart = mockChartConstructor()
+            window.asDynamic().fetch = mockFetch { url ->
+                capturedUrls.add(url)
+                window.asDynamic().capturedUrls = capturedUrls.toTypedArray()
+                when {
+                    url.contains("snapshots") -> arrayOf(
+                        mockSnapshotRecord(assets = json(Asset.BTC to json("valueUSD" to 100, "balance" to 1, "currentPercent" to 100)))
+                    )
+                    url.contains("trades") -> arrayOf(
+                        mockTradeRecord(symbol = Asset.BTC, volume = 1, usdAmount = 100)
+                    )
+                    url.contains("sync-progress") -> json("seeded" to false, "offset" to 5, "total" to 10)
+                    else -> mockPortfolioStatsRecord(allTimeHigh = 100, totalTradesExecuted = 1, totalVolumeTraded = 100, totalFeesPaid = 1)
+                }
+            }
             try {
                 registerHistoryGlobals()
                 
@@ -243,11 +241,7 @@ class CoverageTest : StringSpec() {
             document.body!!.appendChild(container)
             
             // Case 1: banner missing -> should resolve to true
-            js("""
-                window.fetch = function() {
-                    return Promise.resolve({ json: function() { return Promise.resolve({ seeded: true }); } });
-                };
-            """)
+            window.asDynamic().fetch = mockFetch { json("seeded" to true) }
             try {
                 // Remove banner to test missing case
                 document.getElementById(HtmlIds.SYNC_PROGRESS_BANNER)?.remove()
@@ -259,11 +253,7 @@ class CoverageTest : StringSpec() {
             }
             
             // Case 2: seeded true -> hide banner, resolve true
-            js("""
-                window.fetch = function() {
-                    return Promise.resolve({ json: function() { return Promise.resolve({ seeded: true }); } });
-                };
-            """)
+            window.asDynamic().fetch = mockFetch { json("seeded" to true) }
             try {
                 checkSyncProgress().await() shouldBe true
                 val banner = document.getElementById(HtmlIds.SYNC_PROGRESS_BANNER) as HTMLElement
@@ -271,11 +261,7 @@ class CoverageTest : StringSpec() {
             } finally {}
             
             // Case 3: seeded false -> show banner, calculate progress
-            js("""
-                window.fetch = function() {
-                    return Promise.resolve({ json: function() { return Promise.resolve({ seeded: false, offset: 0, total: 100 }); } });
-                };
-            """)
+            window.asDynamic().fetch = mockFetch { json("seeded" to false, "offset" to 0, "total" to 100) }
             try {
                 checkSyncProgress().await() shouldBe false
                 val banner = document.getElementById(HtmlIds.SYNC_PROGRESS_BANNER) as HTMLElement
@@ -287,11 +273,7 @@ class CoverageTest : StringSpec() {
             } finally {}
             
             // Case 4: offset > 0
-            js("""
-                window.fetch = function() {
-                    return Promise.resolve({ json: function() { return Promise.resolve({ seeded: false, offset: 50, total: 100 }); } });
-                };
-            """)
+            window.asDynamic().fetch = mockFetch { json("seeded" to false, "offset" to 50, "total" to 100) }
             try {
                 checkSyncProgress().await() shouldBe false
                 val bar = document.getElementById(HtmlIds.SYNC_PROGRESS_BAR) as HTMLElement
@@ -301,11 +283,7 @@ class CoverageTest : StringSpec() {
             } finally {}
             
             // Case 5: error in fetch -> catch returns false
-            js("""
-                window.fetch = function() {
-                    return Promise.reject(new Error('Network error'));
-                };
-            """)
+            window.asDynamic().fetch = { _: String -> Promise.reject(Throwable("Network error")) }
             try {
                 checkSyncProgress().await() shouldBe false
             } finally {
@@ -431,13 +409,14 @@ class CoverageTest : StringSpec() {
                 allocContainer.appendChild(existingRow)
                 
                 // Mock window.alert to verify it's called
-                js("window.alertCalled = false; window.alert = function(msg) { window.alertCalled = true; };")
+                window.asDynamic().alertCalled = false
+                window.asDynamic().alert = { _: String -> window.asDynamic().alertCalled = true }
                 try {
                     addAssetRow()
                     (window.asDynamic().alertCalled as Boolean) shouldBe true
                     allocContainer.childElementCount.shouldBe(1)  // No new row added
                 } finally {
-                    js("window.alert = null;")
+                    window.asDynamic().alert = null
                 }
                 
                 // Case 3: missing container -> should return early
@@ -660,7 +639,7 @@ class CoverageTest : StringSpec() {
                 // 1. Portfolio chart callbacks
                 val portConfig = window.asDynamic().chartConfigs[0]
                 val label1 = portConfig.options.plugins.tooltip.callbacks.label
-                val mockCtx1 = js("({ dataset: { label: 'BTC' }, parsed: { y: 12.3456 } })")
+                val mockCtx1 = jsObject { dataset = json("label" to Asset.BTC); parsed = json("y" to 12.3456) }
                 label1(mockCtx1).toString() shouldContain Asset.BTC
                 val tick1 = portConfig.options.scales.y.ticks.callback
                 tick1(12.34, 0, null).toString() shouldContain "$12.34"
@@ -668,9 +647,9 @@ class CoverageTest : StringSpec() {
                 // 2. Asset holdings chart callbacks
                 val holdingsConfig = window.asDynamic().chartConfigs[1]
                 val label2 = holdingsConfig.options.plugins.tooltip.callbacks.label
-                val mockCtx2 = js("({ dataset: { label: 'BTC' }, parsed: { y: 12.34 }, dataIndex: 1 })")
+                val mockCtx2 = jsObject { dataset = json("label" to Asset.BTC); parsed = json("y" to 12.34); dataIndex = 1 }
                 label2(mockCtx2).toString() shouldContain "BTC: +12.34%"
-                val mockCtx2USD = js("({ dataset: { label: 'USD' }, parsed: { y: -50.0 }, dataIndex: 1 })")
+                val mockCtx2USD = jsObject { dataset = json("label" to Asset.USD); parsed = json("y" to -50.0); dataIndex = 1 }
                 label2(mockCtx2USD).toString() shouldContain "USD: -50.00%"
                 val tick2 = holdingsConfig.options.scales.y.ticks.callback
                 tick2(12.34, 0, null).toString() shouldBe "+12.34%"
@@ -679,7 +658,7 @@ class CoverageTest : StringSpec() {
                 // 3. Allocation drift chart callbacks
                 val driftConfig = window.asDynamic().chartConfigs[2]
                 val label3 = driftConfig.options.plugins.tooltip.callbacks.label
-                val mockCtx3 = js("({ dataset: { label: 'BTC' }, parsed: { y: 12.34 } })")
+                val mockCtx3 = jsObject { dataset = json("label" to Asset.BTC); parsed = json("y" to 12.34) }
                 label3(mockCtx3).toString() shouldBe "BTC: 12.34%"
                 val tick3 = driftConfig.options.scales.y.ticks.callback
                 tick3(12.34, 0, null).toString() shouldBe "12.34%"
@@ -724,28 +703,19 @@ class CoverageTest : StringSpec() {
                 clearIntervalCalled = true
             }
 
-            js("""
-                window.fetchCount = 0;
-                window.fetch = function(url) {
-                    var data;
-                    if (url.indexOf('sync-progress') >= 0) {
-                        if (window.fetchCount === 0) {
-                            window.fetchCount++;
-                            data = { seeded: false, offset: 5, total: 10 };
-                        } else {
-                            data = { seeded: true };
-                        }
-                    } else if (url.indexOf('snapshots') >= 0) {
-                        data = [];
-                    } else if (url.indexOf('trades') >= 0) {
-                        data = [];
-                    } else {
-                        data = {};
+            var fetchCount = 0
+            window.asDynamic().Chart = mockChartConstructor()
+            window.asDynamic().fetch = mockFetch { url ->
+                when {
+                    url.contains("sync-progress") -> {
+                        if (fetchCount++ == 0) json("seeded" to false, "offset" to 5, "total" to 10)
+                        else json("seeded" to true)
                     }
-                    return Promise.resolve({ json: function() { return Promise.resolve(data); } });
-                };
-                window.Chart = function(_, config) { this.data = config.data; this.destroy = function() {}; this.isDatasetVisible = function() { return true; }; };
-            """)
+                    url.contains("snapshots") -> emptyArray<dynamic>()
+                    url.contains("trades") -> emptyArray<dynamic>()
+                    else -> json()
+                }
+            }
 
             try {
                 initHistory()
@@ -824,11 +794,7 @@ class CoverageTest : StringSpec() {
             """.trimIndent()
             document.body!!.appendChild(container)
 
-            js("""
-                window.fetch = function() {
-                    return Promise.resolve({ json: function() { return Promise.resolve({ seeded: false, offset: 0, total: 0 }); } });
-                };
-            """)
+            window.asDynamic().fetch = mockFetch { json("seeded" to false, "offset" to 0, "total" to 0) }
             try {
                 checkSyncProgress().await() shouldBe false
                 
@@ -877,7 +843,7 @@ class CoverageTest : StringSpec() {
                     <div id="${HtmlIds.STAT_TOTAL_FEES}"></div>
                 """.trimIndent()
                 container.appendChild(statsContainer)
-                updateStats(js("({})"))
+                updateStats(json().unsafeCast<JsHistoryStats>())
                 
                 // 5. sortTable with out-of-bounds index, empty cells, missing sort-value
                 val sortContainer = document.createElement(HtmlTags.DIV)

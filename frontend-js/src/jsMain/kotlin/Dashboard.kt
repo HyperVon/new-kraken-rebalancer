@@ -15,7 +15,7 @@ import kotlinx.browser.window
 import org.w3c.dom.*
 import kotlin.js.Date
 
-internal var currentSortCol: Int = 5
+internal var currentSortCol: Int = PrecisionConstants.DEFAULT_SORT_COL_INDEX
 internal var currentSortDir: String = CssClass.Utility.Asc.toString()
 
 private val CURRENCY_CLEANUP_REGEX = Regex("[$,%]")
@@ -33,7 +33,7 @@ fun updateAge() {
     val epochStr = timeEl.getAttribute(HtmlAttrs.DATA_EPOCH) ?: return
     val epoch = epochStr.toDoubleOrNull() ?: return
     val now = Date.now()
-    val diff = ((now - epoch) / 1000).toInt().coerceAtLeast(0)
+    val diff = ((now - epoch) / PrecisionConstants.MILLIS_PER_SECOND).toInt().coerceAtLeast(0)
 
     ageEl.textContent = "${diff}${ViewText.AGO_SECONDS}"
     val isStale = diff > PrecisionConstants.STALE_THRESHOLD_SECONDS
@@ -41,8 +41,8 @@ fun updateAge() {
 
     val date = Date(epoch)
     val hours = date.getHours()
-    val ampm = if (hours >= 12) ViewText.PM else ViewText.AM
-    val displayHours = if (hours % 12 == 0) 12 else hours % 12
+    val ampm = if (hours >= PrecisionConstants.HOURS_PER_HALF_DAY) ViewText.PM else ViewText.AM
+    val displayHours = if (hours % PrecisionConstants.HOURS_PER_HALF_DAY == 0) PrecisionConstants.HOURS_PER_HALF_DAY else hours % PrecisionConstants.HOURS_PER_HALF_DAY
     val hh = displayHours.toString().padStart(2, '0')
     val mm = date.getMinutes().toString().padStart(2, '0')
     val ss = date.getSeconds().toString().padStart(2, '0')
