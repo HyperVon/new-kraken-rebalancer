@@ -6,12 +6,13 @@ import com.gemini.krakenbot.repository.TradeSummaryStats
 import com.gemini.krakenbot.repository.table.*
 import org.jetbrains.exposed.sql.*
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.inList
-import org.jetbrains.exposed.sql.SqlExpressionBuilder.less
 import org.jetbrains.exposed.sql.statements.UpdateBuilder
 import org.jetbrains.exposed.sql.transactions.transaction
 import org.slf4j.LoggerFactory
 import java.math.BigDecimal
 import java.time.Instant
+
+private const val HISTORY_SEEDED = "history_seeded"
 
 class SqliteTradeRepositoryImpl(
     private val database: Database
@@ -305,11 +306,11 @@ class SqliteTradeRepositoryImpl(
     }
 
     override fun isHistorySeeded(): Boolean {
-        return getSyncMetadata("history_seeded") == "true"
+        return getSyncMetadata(HISTORY_SEEDED) == "true"
     }
 
     override fun setHistorySeeded(seeded: Boolean) {
-        setSyncMetadata("history_seeded", seeded.toString())
+        setSyncMetadata(HISTORY_SEEDED, seeded.toString())
     }
 
     override fun getSyncMetadata(key: String): String? {
@@ -355,7 +356,6 @@ class SqliteTradeRepositoryImpl(
 
             for (i in allRecords.indices) {
                 val record1 = allRecords[i]
-                val id1 = record1.id ?: continue
                 for (j in i + 1 until allRecords.size) {
                     val record2 = allRecords[j]
                     val id2 = record2.id ?: continue

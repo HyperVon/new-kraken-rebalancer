@@ -24,6 +24,10 @@ class PortfolioManagerImpl(
     private val log =
         LoggerFactory.getLogger(PortfolioManagerImpl::class.java)
 
+    companion object {
+        const val CYCLE_ID_MDC_KEY = "cycleId"
+    }
+
     @Volatile
     private var isRunning = false
 
@@ -81,7 +85,7 @@ class PortfolioManagerImpl(
 
     internal suspend fun performRebalanceCycle(): PortfolioSnapshot? {
         val cycleId = UUID.randomUUID().toString()
-        MDC.put("cycleId", cycleId)
+        MDC.put(CYCLE_ID_MDC_KEY, cycleId)
         try {
             log.info("--- Starting Snapshot Phase ---")
             val config = configService.getConfig()

@@ -2,17 +2,18 @@ package com.gemini.krakenbot.view.util
 
 /**
  * Type-safe CSS class management using sealed classes.
- * Provides better structure, IDE support, and prevents typos in CSS class names.
- *
- * Each category is represented as a sealed class with constants defined as companion object properties.
- * Use CssClass.Category.propertyName for type-safe access, or CssClasses.CONSTANT_NAME for legacy support.
+ * Shared between JVM backend template rendering and Kotlin/JS DOM manipulation.
  */
-
 sealed class CssClass(open val value: String) {
     override fun toString(): String = value
 
-    operator fun plus(other: CssClass): String = "$value ${other.value}".trim()
-    operator fun plus(other: String): String = "$value $other".trim()
+    val querySelector: String
+        get() = value.split(" ").filter { it.isNotBlank() }.joinToString("") { ".$it" }
+
+    operator fun plus(other: CssClass): CssClass = Composite("$value ${other.value}".trim())
+    operator fun plus(other: String): CssClass = Composite("$value $other".trim())
+
+    class Composite(override val value: String) : CssClass(value)
 
     // Layout & Panels
     sealed class Layout(override val value: String) : CssClass(value) {
@@ -33,6 +34,7 @@ sealed class CssClass(open val value: String) {
         object Icon : StatusCard("status-card-icon")
         object Value : StatusCard("status-card-value")
         object Sub : StatusCard("status-card-sub")
+        object Badge : StatusCard("status-badge")
         object Live : StatusCard("status-badge live")
         object Delayed : StatusCard("status-badge delayed")
     }
@@ -147,7 +149,25 @@ sealed class CssClass(open val value: String) {
     // Utility
     sealed class Utility(override val value: String) : CssClass(value) {
         object TextDanger : Utility("text-danger")
+        object TextSuccess : Utility("text-success")
         object GlassPanelTitle : Utility("glass-panel-title")
         object ErrorBanner : Utility("error-banner")
+        object Stale : Utility("stale")
+        object Live : Utility("live")
+        object Delayed : Utility("delayed")
+        object Asc : Utility("asc")
+        object Desc : Utility("desc")
+    }
+
+    // Type-safe CSS Selectors for DOM queries
+    object Query {
+        val DATA_AGE_VALUE = DataAge.Value.querySelector
+        val DATA_AGE_TIME = DataAge.Time.querySelector
+        val STATUS_BADGE = StatusCard.Badge.querySelector
+        val SORTABLE_TH = "th" + Table.Sortable.querySelector
+        val HOVERABLE_TR = "tr" + Table.Hoverable.querySelector
+        val TIME_RANGE_BTNS = History.TimeRangeBtn.querySelector
+        const val TARGET_INPUTS = "input[name=\"${FormFields.TARGETS}\"]"
+        const val SYMBOL_INPUTS = "input[name=\"${FormFields.SYMBOLS}\"]"
     }
 }

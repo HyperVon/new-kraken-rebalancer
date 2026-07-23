@@ -1,5 +1,12 @@
 package com.gemini.krakenbot.frontend
 
+import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.view.util.CssClass
+import com.gemini.krakenbot.view.util.CssClass.Query.SYMBOL_INPUTS as SYMBOL_INPUTS_QUERY
+import com.gemini.krakenbot.view.util.CssClass.Query.TARGET_INPUTS as TARGET_INPUTS_QUERY
+import com.gemini.krakenbot.view.util.FormFields
+import com.gemini.krakenbot.view.util.HtmlIds
+import com.gemini.krakenbot.view.util.ViewText
 import kotlinx.browser.document
 import kotlinx.browser.window
 import org.w3c.dom.*
@@ -16,7 +23,7 @@ fun registerSettingsGlobals() {
 }
 
 fun updateAllocationTotal() {
-    val inputs = document.querySelectorAll("input[name=\"targets\"]")
+    val inputs = document.querySelectorAll(TARGET_INPUTS_QUERY)
     var total = 0.0
     for (i in 0 until inputs.length) {
         val input = inputs.item(i) as? HTMLInputElement
@@ -25,13 +32,13 @@ fun updateAllocationTotal() {
         }
     }
 
-    val totalDisplay = document.getElementById("total-allocated-display") ?: return
+    val totalDisplay = document.getElementById(HtmlIds.TOTAL_ALLOCATED_DISPLAY) ?: return
     totalDisplay.textContent = "Total: ${total.toFixed(2)}%"
 
-    val saveButton = document.getElementById("save-button") as? HTMLButtonElement ?: return
+    val saveButton = document.getElementById(HtmlIds.SAVE_BUTTON) as? HTMLButtonElement ?: return
     val isValid = abs(total - 100.0) <= 0.01
 
-    val symbolInputs = document.querySelectorAll("input[name=\"symbols\"]")
+    val symbolInputs = document.querySelectorAll(SYMBOL_INPUTS_QUERY)
     val symbols = mutableListOf<String>()
     for (i in 0 until symbolInputs.length) {
         val input = symbolInputs.item(i) as? HTMLInputElement
@@ -39,24 +46,24 @@ fun updateAllocationTotal() {
             symbols.add(input.value.uppercase())
         }
     }
-    val hasUsd = symbols.contains("USD")
+    val hasUsd = symbols.contains(Asset.USD)
 
     val isSuccess = isValid && hasUsd
-    totalDisplay.classList.toggle("live", isSuccess)
-    totalDisplay.classList.toggle("delayed", !isSuccess)
+    totalDisplay.classList.toggle(CssClass.Utility.Live, isSuccess)
+    totalDisplay.classList.toggle(CssClass.Utility.Delayed, !isSuccess)
     saveButton.disabled = !isSuccess
 }
 
 fun addAssetRow() {
-    val symbolInput = document.getElementById("new-symbol-input") as? HTMLInputElement ?: return
+    val symbolInput = document.getElementById(HtmlIds.NEW_SYMBOL_INPUT) as? HTMLInputElement ?: return
     val symbol = symbolInput.value.trim().uppercase()
     if (symbol.isEmpty()) return
-    if (!Regex("^[A-Z0-9]{1,16}$").matches(symbol)) {
-        window.alert("Invalid symbol. Symbols must be alphanumeric and up to 16 characters.")
+    if (!SYMBOL_REGEX.matches(symbol)) {
+        window.alert(ViewText.INVALID_SYMBOL_ALERT)
         return
     }
 
-    val symbolInputs = document.querySelectorAll("input[name=\"symbols\"]")
+    val symbolInputs = document.querySelectorAll(SYMBOL_INPUTS_QUERY)
     val existingSymbols = mutableListOf<String>()
     for (i in 0 until symbolInputs.length) {
         val input = symbolInputs.item(i) as? HTMLInputElement
@@ -66,28 +73,61 @@ fun addAssetRow() {
     }
 
     if (existingSymbols.contains(symbol)) {
-        window.alert("Symbol already exists")
+        window.alert(ViewText.SYMBOL_EXISTS_ALERT)
         return
     }
 
-    val container = document.getElementById("allocations-container") ?: return
-    val row = document.createElement("div") as HTMLDivElement
-    row.className = "allocation-edit-row"
+    val container = document.getElementById(HtmlIds.ALLOCATIONS_CONTAINER) ?: return
+    val row = document.createDiv()
+    row.className = CssClass.Form.AllocationEditRow.toString()
 
-    row.innerHTML = """
-        <div class="allocation-edit-symbol symbol-label">$symbol</div>
-        <input type="hidden" name="symbols" value="$symbol">
-        <div class="allocation-edit-input-wrapper">
-            <input type="number" step="0.1" name="targets" class="input-glass" value="0.0" oninput="updateAllocationTotal()">
-            <span class="percent-suffix">%</span>
-        </div>
-        <button type="button" class="btn btn-danger" onclick="this.closest('.allocation-edit-row').remove(); updateAllocationTotal();">Remove</button>
-    """.trimIndent()
+    val symbolDiv = document.createDiv()
+    symbolDiv.className = "${CssClass.Form.AllocationEditSymbol} symbol-label"
+    symbolDiv.textContent = symbol
+
+    val hiddenInput = document.createInput()
+    hiddenInput.type = "hidden"
+    hiddenInput.name = FormFields.SYMBOLS
+    hiddenInput.value = symbol
+
+    val inputWrapper = document.createDiv()
+    inputWrapper.className = CssClass.Form.AllocationEditInputWrapper.toString()
+
+    val numberInput = document.createInput()
+    numberInput.type = "number"
+    numberInput.step = "0.1"
+    numberInput.name = FormFields.TARGETS
+    numberInput.className = CssClass.Form.InputGlass.toString()
+    numberInput.value = "0.0"
+    numberInput.oninput = { updateAllocationTotal() }
+
+    val percentSpan = document.createSpan()
+    percentSpan.className = CssClass.Form.PercentSuffix.toString()
+    percentSpan.textContent = "%"
+
+    inputWrapper.appendChild(numberInput)
+    inputWrapper.appendChild(percentSpan)
+
+    val removeBtn = document.createButton()
+    removeBtn.type = "button"
+    removeBtn.className = CssClass.Button.Danger.toString()
+    removeBtn.textContent = ViewText.REMOVE
+    removeBtn.onclick = {
+        row.remove()
+        updateAllocationTotal()
+    }
+
+    row.appendChild(symbolDiv)
+    row.appendChild(hiddenInput)
+    row.appendChild(inputWrapper)
+    row.appendChild(removeBtn)
 
     container.appendChild(row)
     symbolInput.value = ""
     updateAllocationTotal()
 }
+
+private val SYMBOL_REGEX = Regex("^[A-Z0-9]{1,16}$")
 
 fun Double.toFixed(digits: Int): String {
     return this.asDynamic().toFixed(digits).toString()

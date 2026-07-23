@@ -1,5 +1,6 @@
 package com.gemini.krakenbot.model
 
+import com.gemini.krakenbot.TestFixtures
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
@@ -16,7 +17,7 @@ class ResultTest : StringSpec({
     }
 
     "Failure.fold calls onFailure" {
-        val result: Result<Int> = Result.Failure(Exception("test"))
+        val result: Result<Int> = Result.Failure(Exception(TestFixtures.TEST))
         val value = result.fold(
             onSuccess = { it + 1 },
             onFailure = { -1 }
@@ -32,7 +33,7 @@ class ResultTest : StringSpec({
     }
 
     "map preserves Failure" {
-        val result: Result<Int> = Result.Failure(Exception("test"))
+        val result: Result<Int> = Result.Failure(Exception(TestFixtures.TEST))
         val mapped = result.map { it * 2 }
         mapped.shouldBeInstanceOf<Result.Failure<Int>>()
     }
@@ -47,25 +48,25 @@ class ResultTest : StringSpec({
     }
 
     "getOrNull returns value on Success" {
-        val result: Result<String> = Result.Success("hello")
-        result.getOrNull() shouldBe "hello"
+        val result: Result<String> = Result.Success(TestFixtures.HELLO)
+        result.getOrNull() shouldBe TestFixtures.HELLO
     }
 
     "getOrNull returns null on Failure" {
-        val result: Result<String> = Result.Failure(Exception("test"))
+        val result: Result<String> = Result.Failure(Exception(TestFixtures.TEST))
         result.getOrNull() shouldBe null
     }
 
     "exceptionOrNull returns exception on Failure" {
-        val ex = Exception("test")
+        val ex = Exception(TestFixtures.TEST)
         val result: Result<String> = Result.Failure(ex)
         result.exceptionOrNull() shouldBe ex
     }
 
     "runCatching returns Success on no error" {
-        val result = Result.runCatching { "hello" }
+        val result = Result.runCatching { TestFixtures.HELLO }
         result.shouldBeInstanceOf<Result.Success<String>>()
-        result.value shouldBe "hello"
+        result.value shouldBe TestFixtures.HELLO
     }
 
     "runCatching returns Failure on error" {
@@ -73,3 +74,4 @@ class ResultTest : StringSpec({
         result.shouldBeInstanceOf<Result.Failure<String>>()
     }
 })
+

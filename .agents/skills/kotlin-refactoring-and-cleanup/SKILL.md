@@ -28,7 +28,8 @@ val logger = LoggerFactory.getLogger(MyClass::class.java)
 ## 2. Eliminate Raw Strings & Magic Values
 
 - **Minimize Raw String Blobs**: Avoid scattering raw string literals throughout business logic, HTML templates, or CSS builders.
-- **Type-Safe CSS & HTML**: Represent repeated CSS classes using sealed class hierarchies or string constant objects (e.g., `CssClass` sealed hierarchy in `CssStyles.kt`).
+- **Kotlin Multiplatform `:common` Module**: Maintain shared domain models (`TimeRange`, `OrderSide`, `OrderType`), HTML IDs/attributes (`HtmlIds`, `HtmlAttrs`, `HtmxAttrs`, `SyncMetadataKeys`, `HealthStatusKeys`), UI display text (`ViewText`), precision scales (`PrecisionConstants`), and `CssClass` sealed class hierarchies inside the shared KMP subproject (`common/src/commonMain/kotlin/com/gemini/krakenbot/`).
+- **Type-Safe CSS & HTML**: Represent repeated CSS classes using `CssClass` sealed class hierarchies. Ensure both backend `kotlinx.html` DSL templates and client Kotlin/JS (`:frontend-js`) DOM scripts consume shared constants from `:common` rather than duplicating frontend constants (`JsConstants`).
 - **Domain Constants & Enums**: Replace magic strings and numbers with well-named `const val` declarations, `enum class` instances, or value classes (e.g., `Asset("BTC")`).
 
 ```kotlin

@@ -3,6 +3,7 @@ package com.gemini.krakenbot.service.impl
 import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.Result
+import com.gemini.krakenbot.view.util.ViewText
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.service.*
 import org.slf4j.LoggerFactory
@@ -84,7 +85,7 @@ class PortfolioAnalyzerImpl(
                         symbol
                     )
                     return Result.Failure(
-                        IllegalStateException("Price not found for $symbol")
+                        IllegalStateException("${ViewText.PRICE_NOT_FOUND_PREFIX}$symbol")
                     )
                 }
                 price = p
@@ -349,7 +350,7 @@ class PortfolioAnalyzerImpl(
         )
 
         for (symbol in candidates) {
-            val assetDev = allDevs[symbol]!!.abs()
+            val assetDev = allDevs.getValue(symbol).abs()
             val ratio =
                 assetDev.divide(
                     totalCounterDev,

@@ -5,6 +5,7 @@ import com.gemini.krakenbot.view.util.HtmxAttrs
 import com.gemini.krakenbot.view.util.Routes
 import com.gemini.krakenbot.view.util.ViewText
 import com.gemini.krakenbot.view.util.commonMetadataAndStyles
+import com.gemini.krakenbot.view.util.div
 import kotlinx.html.*
 
 class DashboardShellComponent {
@@ -18,7 +19,7 @@ class DashboardShellComponent {
             script(src = "https://unpkg.com/htmx-ext-sse@2.2.2/sse.js") {}
         }
         html.body {
-            div(classes = CssClass.Layout.Container.value) {
+            div(CssClass.Layout.Container) {
                 div {
                     attributes[HtmxAttrs.HX_EXT] = "sse"
                     attributes[HtmxAttrs.SSE_CONNECT] = Routes.API_STATUS_STREAM
@@ -27,8 +28,8 @@ class DashboardShellComponent {
                         attributes[HtmxAttrs.HX_GET] = Routes.FRAGMENT_DASHBOARD
                         attributes[HtmxAttrs.HX_TRIGGER] = "load, sse:message"
 
-                        div(classes = CssClass.Loading.SpinnerContainer.value) {
-                            div(classes = CssClass.Loading.Spinner.value) {}
+                        div(CssClass.Loading.SpinnerContainer) {
+                            div(CssClass.Loading.Spinner) {}
                             p { +ViewText.CONNECTING }
                         }
                     }

@@ -22,6 +22,7 @@ kotlin {
     sourceSets {
         val jsMain by getting {
             dependencies {
+                implementation(project(":common"))
                 implementation(npm("tslib", "2.6.2"))
             }
         }
@@ -41,5 +42,11 @@ kotlin {
             }
         }
 
+    }
+}
+
+tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompilationTask<*>>().configureEach {
+    compilerOptions {
+        allWarningsAsErrors.set(true)
     }
 }

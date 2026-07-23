@@ -5,6 +5,7 @@ import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.OrderResult
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.PortfolioStats
@@ -13,6 +14,7 @@ import com.gemini.krakenbot.service.impl.OrderExecutorImpl
 import com.gemini.krakenbot.service.impl.PortfolioAnalyzerImpl
 import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
 import com.gemini.krakenbot.toBigDecimalMap
+import com.gemini.krakenbot.TestFixtures
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.booleans.shouldBeTrue
@@ -305,11 +307,11 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
                 )
 
                 krakenService.executedOrders.size shouldBe 2
-                krakenService.executedOrders[0].pair shouldBe "XBTUSD"
-                krakenService.executedOrders[0].side shouldBe "sell"
+                krakenService.executedOrders[0].pair shouldBe Asset.BTC_USD_PAIR
+                krakenService.executedOrders[0].side shouldBe OrderSide.SELL.apiValue
                 krakenService.executedOrders[0].volume.compareTo(BigDecimal.TEN) shouldBe 0
-                krakenService.executedOrders[1].pair shouldBe "ETHUSD"
-                krakenService.executedOrders[1].side shouldBe "buy"
+                krakenService.executedOrders[1].pair shouldBe Asset.ETH_USD_PAIR
+                krakenService.executedOrders[1].side shouldBe OrderSide.BUY.apiValue
                 krakenService.executedOrders[1].volume.compareTo(BigDecimal.valueOf(2)) shouldBe 0
             }
         }
@@ -347,11 +349,11 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
                 )
 
                 krakenService.executedOrders.size shouldBe 2
-                krakenService.executedOrders[0].pair shouldBe "XBTUSD"
-                krakenService.executedOrders[0].side shouldBe "sell"
+                krakenService.executedOrders[0].pair shouldBe Asset.BTC_USD_PAIR
+                krakenService.executedOrders[0].side shouldBe OrderSide.SELL.apiValue
                 krakenService.executedOrders[0].volume.compareTo(BigDecimal.TEN) shouldBe 0
-                krakenService.executedOrders[1].pair shouldBe "ETHUSD"
-                krakenService.executedOrders[1].side shouldBe "buy"
+                krakenService.executedOrders[1].pair shouldBe Asset.ETH_USD_PAIR
+                krakenService.executedOrders[1].side shouldBe OrderSide.BUY.apiValue
                 krakenService.executedOrders[1].volume.compareTo(BigDecimal.valueOf(2)) shouldBe 0
             }
         }
@@ -1007,10 +1009,10 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
                 ).apply { isAccessible = true }
 
             val balances =
-                mapOf("USD" to 500.0, "BTC" to 0.01).toBigDecimalMap()
+                mapOf(TestFixtures.USD to 500.0, "BTC" to 0.01).toBigDecimalMap()
             val prices = mapOf("BTC" to BigDecimal("50000.0"))
             val currentValuesUSD = mapOf(
-                "USD" to BigDecimal("500.0"),
+                TestFixtures.USD to BigDecimal("500.0"),
                 "BTC" to BigDecimal("500.0")
             )
             val totalVal = BigDecimal("1000.0")
@@ -1053,7 +1055,7 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
             snapshot.totalValueUSD.compareTo(BigDecimal("1000.0")) shouldBe 0
 
             val currentValuesUSDMissing =
-                mapOf("USD" to BigDecimal("500.0"))
+                mapOf(TestFixtures.USD to BigDecimal("500.0"))
             val pricesMissing = emptyMap<String, BigDecimal>()
 
             val snapshotFallback = buildSnapshotMethod.invoke(
@@ -1170,7 +1172,7 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
                 val config = AppConfig(
                     kraken = KrakenCredentials(apiKey = "k", privateKey = "s"),
                     settings = settings,
-                    allocations = listOf(Allocation("USD", 100.0))
+                    allocations = listOf(Allocation(TestFixtures.USD, 100.0))
                 )
                 every { configService.getConfig() } returns config
 
@@ -1200,7 +1202,7 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
                 val config = AppConfig(
                     kraken = KrakenCredentials(apiKey = "k", privateKey = "s"),
                     settings = settings,
-                    allocations = listOf(Allocation("USD", 100.0))
+                    allocations = listOf(Allocation(TestFixtures.USD, 100.0))
                 )
                 every { configService.getConfig() } returns config
 
@@ -1215,3 +1217,4 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
         }
     }
 }
+

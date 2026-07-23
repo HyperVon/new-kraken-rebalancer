@@ -3,6 +3,7 @@ package com.gemini.krakenbot.service.impl
 import com.gemini.krakenbot.model.OrderResult
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.KrakenService
 import com.gemini.krakenbot.service.RawBalances
@@ -42,7 +43,7 @@ class SimulatedKrakenService(
             val basePrice = SimulationDefaults.INITIAL_PRICES[symbolU] ?: 10.0
             simulatedPrices[symbolU] = basePrice
         }
-        simulatedPrices["USD"] = 1.0
+        simulatedPrices[Asset.USD] = 1.0
 
         // 2. Initialize balances with some random drift (+/- 25%) so they need rebalancing
         val totalSimulatedValueUSD = 100000.0
@@ -56,8 +57,8 @@ class SimulatedKrakenService(
             val driftFactor = 0.75 + random.nextDouble() * 0.50
             val driftedUSDValue = targetUSDValue * driftFactor
 
-            if (symbolU == "USD") {
-                balances["USD"] = driftedUSDValue
+            if (symbolU == Asset.USD) {
+                balances[Asset.USD] = driftedUSDValue
             } else {
                 val price = simulatedPrices.getValue(symbolU)
                 balances[symbolU] = driftedUSDValue / price
@@ -82,7 +83,7 @@ class SimulatedKrakenService(
             val alloc = nonUsd[random.nextInt(nonUsd.size)]
             val symbol = alloc.symbol.value.uppercase()
             val pair = Asset.tradingPair(symbol)
-            val side = if (random.nextBoolean()) "BUY" else "SELL"
+            val side = if (random.nextBoolean()) OrderSide.BUY.name else OrderSide.SELL.name
             val price = simulatedPrices.getValue(symbol)
             // Slight noise on the trade price compared to current price
             val tradePrice = price * (0.95 + random.nextDouble() * 0.10)
@@ -110,7 +111,7 @@ class SimulatedKrakenService(
     private fun fluctuatePrices() {
         val random = ThreadLocalRandom.current()
         for ((symbol, currentPrice) in simulatedPrices) {
-            if (symbol == "USD") continue
+            if (symbol == Asset.USD) continue
             // Random walk between -0.6% and +0.6%
             val changePercent = (random.nextDouble() - 0.5) * 0.012
             simulatedPrices[symbol] = currentPrice * (1.0 + changePercent)
@@ -164,10 +165,10 @@ class SimulatedKrakenService(
             )
         }
 
-        val usdBalance = balances["USD"] ?: 0.0
+        val usdBalance = balances[Asset.USD] ?: 0.0
         val tokenBalance = balances[symbol] ?: 0.0
 
-        if (side.equals("buy", ignoreCase = true)) {
+        if (side.equals(OrderSide.BUY.apiValue, ignoreCase = true)) {
             if (usdBalance < usdAmountDouble) {
                 val error = "Insufficient USD funds in emulator balance: needed $usdAmountDouble, had $usdBalance"
                 log.warn("[EMULATOR] $error")
@@ -179,9 +180,9 @@ class SimulatedKrakenService(
                     errorMessage = error
                 )
             }
-            balances["USD"] = usdBalance - usdAmountDouble
+            balances[Asset.USD] = usdBalance - usdAmountDouble
             balances[symbol] = tokenBalance + volDouble
-        } else if (side.equals("sell", ignoreCase = true)) {
+        } else if (side.equals(OrderSide.SELL.apiValue, ignoreCase = true)) {
             if (tokenBalance < volDouble) {
                 val error = "Insufficient $symbol funds in emulator balance: needed $volDouble, had $tokenBalance"
                 log.warn("[EMULATOR] $error")
@@ -194,7 +195,7 @@ class SimulatedKrakenService(
                 )
             }
             balances[symbol] = tokenBalance - volDouble
-            balances["USD"] = usdBalance + usdAmountDouble
+            balances[Asset.USD] = usdBalance + usdAmountDouble
         }
 
         val trade = TradeRecord(

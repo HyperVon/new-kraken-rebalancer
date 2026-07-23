@@ -3,9 +3,13 @@ package com.gemini.krakenbot.service
 import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.config.Settings
+import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.OrderSide
+import com.gemini.krakenbot.model.OrderType
 import com.gemini.krakenbot.service.impl.DynamicKrakenService
 import com.gemini.krakenbot.service.impl.KrakenServiceImpl
 import com.gemini.krakenbot.service.impl.SimulatedKrakenService
+import com.gemini.krakenbot.TestFixtures
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
@@ -52,14 +56,29 @@ class DynamicKrakenServiceTest : StringSpec() {
             coVerify(exactly = 0) { realService.getBalances() }
 
             // getTickerPrices
-            dynamicService.getTickerPrices("BTCUSD")
-            coVerify(exactly = 1) { simulatedService.getTickerPrices("BTCUSD") }
+            dynamicService.getTickerPrices(TestFixtures.BTCUSD)
+            coVerify(exactly = 1) { simulatedService.getTickerPrices(TestFixtures.BTCUSD) }
             coVerify(exactly = 0) { realService.getTickerPrices(any()) }
 
             // executeOrder
-            dynamicService.executeOrder("XBTUSD", "sell", "market", BigDecimal.ONE)
-            coVerify(exactly = 1) { simulatedService.executeOrder("XBTUSD", "sell", "market", BigDecimal.ONE) }
-            coVerify(exactly = 0) { realService.executeOrder(any(), any(), any(), any()) }
+            dynamicService.executeOrder(
+                Asset.BTC_USD_PAIR,
+                OrderSide.SELL.apiValue,
+                OrderType.MARKET.apiValue,
+                BigDecimal.ONE
+            )
+            coVerify(exactly = 1) { simulatedService.executeOrder(
+                Asset.BTC_USD_PAIR,
+                OrderSide.SELL.apiValue,
+                OrderType.MARKET.apiValue,
+                BigDecimal.ONE
+            ) }
+            coVerify(exactly = 0) { realService.executeOrder(
+                any(),
+                any(),
+                any(),
+                any()
+            ) }
 
             // getTradeHistory
             dynamicService.getTradeHistory(12345L, 10)
@@ -67,8 +86,8 @@ class DynamicKrakenServiceTest : StringSpec() {
             coVerify(exactly = 0) { realService.getTradeHistory(any(), any()) }
 
             // getOHLC
-            dynamicService.getOHLC("BTCUSD", 1440, null)
-            coVerify(exactly = 1) { simulatedService.getOHLC("BTCUSD", 1440, null) }
+            dynamicService.getOHLC(TestFixtures.BTCUSD, 1440, null)
+            coVerify(exactly = 1) { simulatedService.getOHLC(TestFixtures.BTCUSD, 1440, null) }
             coVerify(exactly = 0) { realService.getOHLC(any(), any(), any()) }
 
             // getRealService
@@ -99,14 +118,29 @@ class DynamicKrakenServiceTest : StringSpec() {
             coVerify(exactly = 0) { simulatedService.getBalances() }
 
             // getTickerPrices
-            dynamicService.getTickerPrices("BTCUSD")
-            coVerify(exactly = 1) { realService.getTickerPrices("BTCUSD") }
+            dynamicService.getTickerPrices(TestFixtures.BTCUSD)
+            coVerify(exactly = 1) { realService.getTickerPrices(TestFixtures.BTCUSD) }
             coVerify(exactly = 0) { simulatedService.getTickerPrices(any()) }
 
             // executeOrder
-            dynamicService.executeOrder("XBTUSD", "sell", "market", BigDecimal.ONE)
-            coVerify(exactly = 1) { realService.executeOrder("XBTUSD", "sell", "market", BigDecimal.ONE) }
-            coVerify(exactly = 0) { simulatedService.executeOrder(any(), any(), any(), any()) }
+            dynamicService.executeOrder(
+                Asset.BTC_USD_PAIR,
+                OrderSide.SELL.apiValue,
+                OrderType.MARKET.apiValue,
+                BigDecimal.ONE
+            )
+            coVerify(exactly = 1) { realService.executeOrder(
+                Asset.BTC_USD_PAIR,
+                OrderSide.SELL.apiValue,
+                OrderType.MARKET.apiValue,
+                BigDecimal.ONE
+            ) }
+            coVerify(exactly = 0) { simulatedService.executeOrder(
+                any(),
+                any(),
+                any(),
+                any()
+            ) }
 
             // getTradeHistory
             dynamicService.getTradeHistory(12345L, 10)
@@ -114,8 +148,8 @@ class DynamicKrakenServiceTest : StringSpec() {
             coVerify(exactly = 0) { simulatedService.getTradeHistory(any(), any()) }
 
             // getOHLC
-            dynamicService.getOHLC("BTCUSD", 1440, null)
-            coVerify(exactly = 1) { realService.getOHLC("BTCUSD", 1440, null) }
+            dynamicService.getOHLC(TestFixtures.BTCUSD, 1440, null)
+            coVerify(exactly = 1) { realService.getOHLC(TestFixtures.BTCUSD, 1440, null) }
             coVerify(exactly = 0) { simulatedService.getOHLC(any(), any(), any()) }
 
             // getRealService
@@ -123,3 +157,4 @@ class DynamicKrakenServiceTest : StringSpec() {
         }
     }
 }
+

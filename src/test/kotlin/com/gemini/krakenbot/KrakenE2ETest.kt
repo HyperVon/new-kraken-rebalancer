@@ -1,12 +1,8 @@
 package com.gemini.krakenbot
 
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
-import com.gemini.krakenbot.config.Allocation
-import com.gemini.krakenbot.config.AppConfig
-import com.gemini.krakenbot.config.KrakenCredentials
-import com.gemini.krakenbot.config.Settings
+import com.gemini.krakenbot.config.*
 import com.gemini.krakenbot.model.Asset
-import com.gemini.krakenbot.config.DatabaseConfig
 import com.gemini.krakenbot.repository.impl.SqlitePortfolioStatsRepositoryImpl
 import com.gemini.krakenbot.repository.impl.SqliteTradeRepositoryImpl
 import com.gemini.krakenbot.service.ConfigService
@@ -24,8 +20,6 @@ import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
 import java.util.*
-
-private const val APPLICATION_JSON = "application/json"
 
 @Suppress("unused")
 class KrakenE2ETest : StringSpec() {
@@ -71,7 +65,7 @@ class KrakenE2ETest : StringSpec() {
                                 status = HttpStatusCode.OK,
                                 headers = headersOf(
                                     HttpHeaders.ContentType,
-                                    APPLICATION_JSON
+                                    TestFixtures.APPLICATION_JSON
                                 )
                             )
                         }
@@ -82,7 +76,7 @@ class KrakenE2ETest : StringSpec() {
                                 status = HttpStatusCode.OK,
                                 headers = headersOf(
                                     HttpHeaders.ContentType,
-                                    APPLICATION_JSON
+                                    TestFixtures.APPLICATION_JSON
                                 )
                             )
                         }
@@ -96,7 +90,7 @@ class KrakenE2ETest : StringSpec() {
                                 status = HttpStatusCode.OK,
                                 headers = headersOf(
                                     HttpHeaders.ContentType,
-                                    APPLICATION_JSON
+                                    TestFixtures.APPLICATION_JSON
                                 )
                             )
                         }
@@ -192,7 +186,7 @@ class KrakenE2ETest : StringSpec() {
                                 status = HttpStatusCode.OK,
                                 headers = headersOf(
                                     HttpHeaders.ContentType,
-                                    APPLICATION_JSON
+                                    TestFixtures.APPLICATION_JSON
                                 )
                             )
                         }
@@ -203,7 +197,7 @@ class KrakenE2ETest : StringSpec() {
                                 status = HttpStatusCode.OK,
                                 headers = headersOf(
                                     HttpHeaders.ContentType,
-                                    APPLICATION_JSON
+                                    TestFixtures.APPLICATION_JSON
                                 )
                             )
                         }
@@ -217,7 +211,7 @@ class KrakenE2ETest : StringSpec() {
                                 status = HttpStatusCode.OK,
                                 headers = headersOf(
                                     HttpHeaders.ContentType,
-                                    APPLICATION_JSON
+                                    TestFixtures.APPLICATION_JSON
                                 )
                             )
                         }
@@ -278,3 +272,4 @@ class KrakenE2ETest : StringSpec() {
         }
     }
 }
+

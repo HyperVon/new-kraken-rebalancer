@@ -1,5 +1,6 @@
 package com.gemini.krakenbot.frontend
 
+import com.gemini.krakenbot.model.Asset
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
@@ -15,10 +16,10 @@ class HelperTest : StringSpec() {
                 js("({ })")
             )
             val symbolsExcludeUsd = getUniqueSymbols(snapshots, excludeUsd = true)
-            symbolsExcludeUsd shouldBe listOf("BTC", "ETH")
+            symbolsExcludeUsd shouldBe listOf(Asset.BTC, Asset.ETH)
 
             val symbolsIncludeUsd = getUniqueSymbols(snapshots, excludeUsd = false)
-            symbolsIncludeUsd shouldBe listOf("BTC", "ETH", "USD")
+            symbolsIncludeUsd shouldBe listOf(Asset.BTC, Asset.ETH, Asset.USD)
         }
 
         "getUniqueSymbols returns empty list when no assets" {

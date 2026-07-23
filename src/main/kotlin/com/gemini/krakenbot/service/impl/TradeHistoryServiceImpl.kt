@@ -9,6 +9,7 @@ import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.KrakenService
 import com.gemini.krakenbot.service.PortfolioAnalyzer
 import com.gemini.krakenbot.service.TradeHistoryService
+import com.gemini.krakenbot.view.util.SyncMetadataKeys
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -28,6 +29,9 @@ import java.util.concurrent.ThreadLocalRandom
 import kotlin.math.abs
 import kotlin.time.Duration.Companion.milliseconds
 
+private const val USD = "USD"
+private const val BUY = "BUY"
+private const val SELL = "SELL"
 
 class TradeHistoryServiceImpl(
     private val repository: TradeRepository,
@@ -109,7 +113,7 @@ class TradeHistoryServiceImpl(
             val symbolU = symbol.value.uppercase()
             currentPrices[symbolU] = SimulationDefaults.INITIAL_PRICES[symbolU] ?: 10.0
         }
-        currentPrices["USD"] = 1.0
+        currentPrices[USD] = 1.0
 
         // Start balances
         val currentBalances = mutableMapOf<String, Double>()
@@ -136,7 +140,7 @@ class TradeHistoryServiceImpl(
 
             // 1. Fluctuate prices
             for (symbol in currentPrices.keys) {
-                if (symbol == "USD") continue
+                if (symbol == USD) continue
                 val price = currentPrices.getValue(symbol)
                 // random fluctuation +/- 1.5%
                 val change = (random.nextDouble() - 0.5) * 0.03
@@ -146,7 +150,7 @@ class TradeHistoryServiceImpl(
             // 2. Compute portfolio value and rebalance
             var portfolioValue = 0.0
             for (symbol in currentBalances.keys) {
-                portfolioValue += currentBalances[symbol]!! * currentPrices[symbol]!!
+                portfolioValue += currentBalances.getValue(symbol) * currentPrices.getValue(symbol)
             }
 
             // Rebalance balances towards target allocations
@@ -165,16 +169,16 @@ class TradeHistoryServiceImpl(
 
             for ((symbol) in allocations) {
                 val symbolU = symbol.value.uppercase()
-                val balance = currentBalances[symbolU]!!
-                val price = currentPrices[symbolU]!!
+                val balance = currentBalances.getValue(symbolU)
+                val price = currentPrices.getValue(symbolU)
                 val valueUSD = balance * price
                 exactPortfolioValue += valueUSD
             }
 
             for ((symbol, targetPercent) in allocations) {
                 val symbolU = symbol.value.uppercase()
-                val balance = currentBalances[symbolU]!!
-                val price = currentPrices[symbolU]!!
+                val balance = currentBalances.getValue(symbolU)
+                val price = currentPrices.getValue(symbolU)
                 assetSnapshots[symbolU] = PortfolioCalculations.createAssetSnapshot(
                     symbol = symbolU,
                     balance = BigDecimal.valueOf(balance),
@@ -289,7 +293,7 @@ class TradeHistoryServiceImpl(
         lastSyncTime = now
 
         val config = configService.getConfig()
-        if (!config.settings.simulation && !config.kraken.isConfigured) {
+        if (!config.settings.simulation && !config.kraken.hasValidCredentials()) {
             log.warn("Kraken API key is blank or placeholder. Skipping trade history synchronization.")
             return
         }
@@ -313,7 +317,7 @@ class TradeHistoryServiceImpl(
         var totalAdded = 0
         var totalReconciled = 0
 
-        getTradeHistoryPaginated(startSec = startSec, pageSize = 50)
+        getTradeHistoryPaginated(startSec = startSec)
             .collect { apiTrades ->
                 for (apiTrade: TradeRecord in apiTrades) {
                     // The local order record has requested values; the API record has actual
@@ -362,8 +366,8 @@ class TradeHistoryServiceImpl(
 
         if (!isSeeded) {
             repository.setHistorySeeded(true)
-            repository.setSyncMetadata("sync_offset", "completed")
-            repository.setSyncMetadata("sync_total", "completed")
+            repository.setSyncMetadata(SyncMetadataKeys.SYNC_OFFSET, SyncMetadataKeys.COMPLETED)
+            repository.setSyncMetadata(SyncMetadataKeys.SYNC_TOTAL, SyncMetadataKeys.COMPLETED)
         }
         log.info("Trade history synchronization completed. Added: {} new, Reconciled: {}.", totalAdded, totalReconciled)
     }
@@ -371,7 +375,7 @@ class TradeHistoryServiceImpl(
 
 
     /**
-     * A cold Flow that fetches trade history from Kraken paginated by [pageSize].
+     * A cold Flow that fetches trade history from Kraken paginated by 50.
      *
      * Because it is a cold Flow:
      * 1. No network calls are made until the caller collects from it.
@@ -381,9 +385,9 @@ class TradeHistoryServiceImpl(
      * 4. Once all batches are fetched, the Flow completes and the collector's loop naturally finishes.
      */
     private fun getTradeHistoryPaginated(
-        startSec: Long?,
-        @Suppress("SameParameterValue") pageSize: Int = 50
+        startSec: Long?
     ): Flow<List<TradeRecord>> = flow {
+        val pageSize = 50
         var offset = 0
         val isSeeded = repository.isHistorySeeded()
 
@@ -399,8 +403,8 @@ class TradeHistoryServiceImpl(
             val totalCount = realKrakenService?.lastFetchedCount?.get() ?: 0
 
             if (!isSeeded) {
-                repository.setSyncMetadata("sync_offset", offset.toString())
-                repository.setSyncMetadata("sync_total", totalCount.toString())
+                repository.setSyncMetadata(SyncMetadataKeys.SYNC_OFFSET, offset.toString())
+                repository.setSyncMetadata(SyncMetadataKeys.SYNC_TOTAL, totalCount.toString())
             }
 
             if (apiTrades.isEmpty()) break
@@ -463,7 +467,7 @@ class TradeHistoryServiceImpl(
                 val symbolU = symbol.value.uppercase()
                 currentPrices[symbolU] = prices[Asset.tradingPair(symbolU)] ?: BigDecimal.ZERO
             }
-            currentPrices["USD"] = BigDecimal.ONE
+            currentPrices[USD] = BigDecimal.ONE
         }
 
         // 3. Fetch OHLC daily close prices for the last 90 days
@@ -471,7 +475,7 @@ class TradeHistoryServiceImpl(
         val sinceSec = Instant.now().minus(95, ChronoUnit.DAYS).epochSecond
         for ((symbol) in allocations) {
             val symbolU = symbol.value.uppercase()
-            if (symbolU == "USD") continue
+            if (symbolU == USD) continue
             val pair = Asset.tradingPair(symbolU)
             try {
                 val prices = krakenService.getOHLC(pair, interval = 1440, since = sinceSec)
@@ -495,88 +499,19 @@ class TradeHistoryServiceImpl(
 
         val historicalTrades = trades.filter { it.timestamp.isBefore(cutoffTime) }
 
-        // 5. Build timeline events
-        val events = mutableListOf<TimelineEvent>()
-        for (trade in historicalTrades) {
-            events.add(TimelineEvent.TradeEvent(trade.timestamp, trade))
-        }
+        val events = SnapshotHistoryCalculator.buildTimelineEvents(
+            historicalTrades = historicalTrades,
+            cutoffTime = cutoffTime
+        )
 
-        // Add daily close events for the last 90 days
-        val now = Instant.now()
-        for (day in 0..90) {
-            val dailyTime = now.minus(day.toLong(), ChronoUnit.DAYS)
-                .truncatedTo(ChronoUnit.DAYS)
-                .plus(23, ChronoUnit.HOURS)
-                .plus(59, ChronoUnit.MINUTES)
-                .plus(59, ChronoUnit.SECONDS)
-            if (dailyTime.isBefore(cutoffTime)) {
-                events.add(TimelineEvent.DailyCloseEvent(dailyTime))
-            }
-        }
-
-        events.sort() // Sort DESC (newest first)
-
-        val snapshotsToSave = mutableListOf<PortfolioSnapshot>()
-
-        for (ev in events) {
-            val snapshotTimestamp = ev.timestamp
-
-            // Compute portfolio snapshot details
-            var exactPortfolioValue = BigDecimal.ZERO
-            val assetSnapshots = mutableMapOf<String, PortfolioSnapshot.AssetSnapshot>()
-
-            val calculatedAssets = allocations.map { alloc ->
-                val symbol = alloc.symbol.value.uppercase()
-                val rawBal = runningBalances[symbol] ?: BigDecimal.ZERO
-                val balance = if (rawBal < BigDecimal.ZERO) BigDecimal.ZERO else rawBal
-                val price = getPriceForTimestamp(symbol, snapshotTimestamp, ohlcData, tradePrices, currentPrices)
-                val valueUSD = balance.multiply(price).setScale(2, RoundingMode.HALF_UP)
-                exactPortfolioValue = exactPortfolioValue.add(valueUSD)
-                CalculatedAsset(symbol, balance, price, valueUSD, alloc.targetPercent)
-            }
-
-            for ((symbol, balance, price, valueUSD, targetPercent) in calculatedAssets) {
-                assetSnapshots[symbol] = PortfolioCalculations.createAssetSnapshot(
-                    symbol = symbol,
-                    balance = balance,
-                    price = price,
-                    valueUSD = valueUSD,
-                    targetPercent = BigDecimal(targetPercent),
-                    totalPortfolioValueUSD = exactPortfolioValue
-                )
-            }
-
-            val targetUsdPercent = BigDecimal(allocations.firstOrNull { it.symbol.isUsd }?.targetPercent ?: 5.0).setScale(2, RoundingMode.HALF_UP)
-
-            val snapshot = PortfolioSnapshot(
-                timestamp = snapshotTimestamp,
-                totalValueUSD = exactPortfolioValue.setScale(2, RoundingMode.HALF_UP),
-                assets = assetSnapshots,
-                actions = emptyList(),
-                drawdownPercent = BigDecimal.ZERO,
-                fiatDeploymentPercent = BigDecimal.ZERO,
-                effectiveUsdTargetPercent = targetUsdPercent
-            )
-
-            snapshotsToSave.add(snapshot)
-
-            // If it is a trade event, reverse apply it to runningBalances
-            if (ev is TimelineEvent.TradeEvent) {
-                val trade = ev.trade
-                val volume = trade.volume
-                val usdAmount = trade.usdAmount
-                val fee = trade.fee
-                val symbol = trade.symbol.uppercase()
-
-                if (trade.side == "BUY") {
-                    runningBalances[symbol] = (runningBalances[symbol] ?: BigDecimal.ZERO).subtract(volume)
-                    runningBalances["USD"] = (runningBalances["USD"] ?: BigDecimal.ZERO).add(usdAmount).add(fee)
-                } else if (trade.side == "SELL") {
-                    runningBalances[symbol] = (runningBalances[symbol] ?: BigDecimal.ZERO).add(volume)
-                    runningBalances["USD"] = (runningBalances["USD"] ?: BigDecimal.ZERO).subtract(usdAmount).add(fee)
-                }
-            }
-        }
+        val snapshotsToSave = SnapshotHistoryCalculator.calculateHistoricalSnapshots(
+            events = events,
+            allocations = allocations,
+            runningBalances = runningBalances,
+            currentPrices = currentPrices,
+            ohlcData = ohlcData,
+            tradePrices = tradePrices
+        )
 
         if (snapshotsToSave.isNotEmpty()) {
             log.info("Saving {} reconstructed historical snapshots...", snapshotsToSave.size)
@@ -584,66 +519,7 @@ class TradeHistoryServiceImpl(
         }
     }
 
-    private fun <T> findClosest(
-        list: List<T>,
-        targetTime: Long,
-        timeExtractor: (T) -> Long,
-        valueExtractor: (T) -> BigDecimal
-    ): BigDecimal {
-        var closestValue = valueExtractor(list[0])
-        var minDiff = abs(timeExtractor(list[0]) - targetTime)
-        for (item in list) {
-            val diff = abs(timeExtractor(item) - targetTime)
-            if (diff < minDiff) {
-                minDiff = diff
-                closestValue = valueExtractor(item)
-            }
-        }
-        return closestValue
-    }
-
-    private fun getPriceForTimestamp(
-        symbol: String,
-        timestamp: Instant,
-        ohlcData: Map<String, List<Pair<Long, BigDecimal>>>,
-        tradePrices: Map<String, List<Pair<Instant, BigDecimal>>>,
-        currentPrices: Map<String, BigDecimal>
-    ): BigDecimal {
-        if (symbol.equals("USD", ignoreCase = true)) return BigDecimal.ONE
-
-        val prices = ohlcData[symbol.uppercase()]
-        if (!prices.isNullOrEmpty()) {
-            return findClosest(prices, timestamp.epochSecond, { it.first }, { it.second })
-        }
-
-        val tPrices = tradePrices[symbol.uppercase()]
-        if (!tPrices.isNullOrEmpty()) {
-            return findClosest(tPrices, timestamp.toEpochMilli(), { it.first.toEpochMilli() }, { it.second })
-        }
-
-        return currentPrices[symbol.uppercase()] ?: BigDecimal.ZERO
-    }
-
     override fun getSyncMetadata(key: String): String? = repository.getSyncMetadata(key)
     override fun setSyncMetadata(key: String, value: String) = repository.setSyncMetadata(key, value)
     override fun isHistorySeeded(): Boolean = repository.isHistorySeeded()
-}
-
-private data class CalculatedAsset(
-    val symbol: String,
-    val balance: BigDecimal,
-    val price: BigDecimal,
-    val valueUSD: BigDecimal,
-    val targetPercent: Double
-)
-
-private sealed class TimelineEvent : Comparable<TimelineEvent> {
-    abstract val timestamp: Instant
-
-    data class TradeEvent(override val timestamp: Instant, val trade: TradeRecord) : TimelineEvent()
-    data class DailyCloseEvent(override val timestamp: Instant) : TimelineEvent()
-
-    override fun compareTo(other: TimelineEvent): Int {
-        return other.timestamp.compareTo(this.timestamp)
-    }
 }

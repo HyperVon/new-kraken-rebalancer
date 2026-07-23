@@ -4,6 +4,7 @@ import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.service.PortfolioValues
 import com.gemini.krakenbot.service.impl.OrderExecutorImpl
 import com.gemini.krakenbot.service.impl.PortfolioCalculations
+import com.gemini.krakenbot.TestFixtures
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
@@ -16,7 +17,7 @@ class ModelTest : StringSpec() {
         "testAssetMappings" {
             val btc = Asset(Asset.BTC)
             btc.krakenTicker shouldBe Asset.XBT
-            btc.tradingPair shouldBe "XBTUSD"
+            btc.tradingPair shouldBe TestFixtures.XBTUSD
             btc.isUsd shouldBe false
 
             val doge = Asset(Asset.DOGE)
@@ -29,16 +30,16 @@ class ModelTest : StringSpec() {
 
             val eth = Asset(Asset.ETH)
             eth.krakenTicker shouldBe Asset.ETH
-            eth.tradingPair shouldBe "ETHUSD"
+            eth.tradingPair shouldBe TestFixtures.ETHUSD
 
-            Asset.toKrakenTicker("btc") shouldBe Asset.XBT
+            Asset.toKrakenTicker(TestFixtures.BTC_LOWER) shouldBe Asset.XBT
             Asset.toKrakenTicker("doge") shouldBe Asset.XDG
-            Asset.toKrakenTicker("eth") shouldBe "ETH"
+            Asset.toKrakenTicker(TestFixtures.ETH_LOWER) shouldBe "ETH"
 
-            Asset.tradingPair("btc") shouldBe "XBTUSD"
-            Asset.tradingPair("eth") shouldBe "ETHUSD"
+            Asset.tradingPair(TestFixtures.BTC_LOWER) shouldBe TestFixtures.XBTUSD
+            Asset.tradingPair(TestFixtures.ETH_LOWER) shouldBe TestFixtures.ETHUSD
 
-            Asset.BTC_USD_PAIR shouldBe "XBTUSD"
+            Asset.BTC_USD_PAIR shouldBe TestFixtures.XBTUSD
         }
 
         "testPortfolioSnapshot" {
@@ -99,10 +100,10 @@ class ModelTest : StringSpec() {
         "testPortfolioValues" {
             val pv = PortfolioValues(
                 totalValueUSD = BigDecimal.TEN,
-                currentValuesUSD = mapOf("BTC" to BigDecimal.TEN)
+                currentValuesUSD = mapOf(Asset.BTC to BigDecimal.TEN)
             )
             pv.totalValueUSD shouldBe BigDecimal.TEN
-            pv.currentValuesUSD shouldBe mapOf("BTC" to BigDecimal.TEN)
+            pv.currentValuesUSD shouldBe mapOf(Asset.BTC  to BigDecimal.TEN)
 
             val pv2 = pv.copy()
             pv2 shouldBe pv
@@ -121,3 +122,4 @@ class ModelTest : StringSpec() {
         }
     }
 }
+

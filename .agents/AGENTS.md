@@ -14,7 +14,8 @@ Below are the architectural rules, coding constraints, financial math guidelines
 - **Backend**: Ktor 3.5.0 (Netty engine, Jackson `ContentNegotiation`), Koin 4.2.1 (DI)
 - **Database**: SQLite (`kraken-rebalancer.db`) via JetBrains Exposed ORM 0.61.0
 - **Concurrency**: Kotlin Coroutines (`kotlinx.coroutines` 1.11.0) & Kotlin `Flow` / `SharedFlow`
-- **Frontend**: Server-side HTML (`kotlinx.html` DSL) + `kotlinx-css` DSL (`CssStyles.kt` with `CssClass` sealed hierarchy) + HTMX + Ktor SSE + Client-side Kotlin/JS (`:frontend-js` subproject compiling to JS via Kotlin JS IR backend served as `/static/rebalancer.js`)
+- **Shared Core (`:common`)**: Kotlin Multiplatform shared module (`common/src/commonMain/`) housing `CssClass` sealed class hierarchies, `HtmlIds`, `HtmlAttrs`, `ViewText`, `TimeRange`, `OrderSide`, `OrderType`, and `PrecisionConstants` shared identically by backend and frontend.
+- **Frontend**: Server-side HTML (`kotlinx.html` DSL) + `kotlinx-css` DSL (`CssStyles.kt` with shared `CssClass` sealed hierarchy) + HTMX + Ktor SSE + Client-side Kotlin/JS (`:frontend-js` subproject compiling to JS via Kotlin JS IR backend served as `/static/rebalancer.js`)
 - **Testing**: Kotest 6.1 (`StringSpec`), MockK 1.14, Ktor MockEngine, Karma/Istanbul
 - **Build**: Gradle (Kotlin DSL)
 

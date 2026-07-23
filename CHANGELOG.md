@@ -8,6 +8,73 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [6.8.5] - 2026-07-22
+
+### Refactored
+
+- **FQN Elimination & Import Cleanup (`src/test`, `src/main`)**: Replaced inline fully-qualified mockk calls (`io.mockk.mockk`, `io.mockk.coEvery`) with explicit imports in `SqlitePortfolioStatsRepositoryImplTest` and `PortfolioManagerLoopTest`, and cleaned up redundant imports in `OrderExecutorImpl`.
+- **CSS Class Raw String Cleanup (`src/main`)**: Converted string-interpolated CSS class concatenations to use the type-safe `CssClass.plus` operator in `SettingsFormComponent` and `RecentActivityComponent`.
+- **Raw String Extraction to Shared Constants (`:common`, `src/main`)**: Replaced inline `"s ago"` with `ViewText.AGO_SECONDS` in `DashboardFragmentComponent` and added `HtmlAttrs.CROSSORIGIN` constant for the `"crossorigin"` attribute, consuming it in `HtmlHelpers`.
+- **Markdown Lint Rule Compliance in Test Report Generator (`src/test`)**: Updated `EvaluationScenariosTest.writeReport()` to enforce blank lines around scenario section headers (`MD022`) and explicit `text` language tags on fenced code blocks (`MD040`).
+- **Elimination of Redundant Constant Aliases (`:common`, `:frontend-js`)**: Removed `COLOR_BLUE_BORDER` and `COLOR_GREEN_BORDER` aliases from `ChartProps.kt`, updating `History.kt` to directly consume primary color palette constants (`COLOR_BLUE` and `COLOR_EMERALD`).
+- **DRY JS Dynamic Object Deep Cloning (`:frontend-js`)**: Simplified `getClonedChartOptions` in `History.kt` by replacing 9 repetitive nested `JSObject.assign` calls with native `JSON.parse(JSON.stringify(...))` deep cloning.
+- **Type-Safe Dynamic Boolean Checking (`:frontend-js`)**: Added a clean `isTrue(value: dynamic)` helper function in `DomExtensions.kt` and eliminated the boilerplate `private const val TRUE = "true"` and inline `t.success == true || t.success.toString() == TRUE` checks across `History.kt`.
+- **Centralized HTML Tags & Element Creation Extensions (`:common`, `:frontend-js`)**: Added `HtmlTags` constants in `:common` (`HtmlAttrs.kt`) and type-safe `Document` element creation extension functions (`createDiv()`, `createSpan()`, `createTableCell()`, `createTableRow()`, `createInput()`, `createButton()`) in `DomExtensions.kt`, eliminating all `private const val TR = "tr"`, `TD`, `DIV`, `INPUT`, `BUTTON`, `SPAN` declarations and explicit casting boilerplate across `History.kt` and `Settings.kt`.
+- **Elimination of Redundant Sort Direction Constants (`:frontend-js`)**: Removed redundant top-level `SORT_ASC` and `SORT_DESC` string variables in `Dashboard.kt`, consuming `CssClass.Utility.Asc` and `CssClass.Utility.Desc` directly, and adopted `HtmlTags.TABLE` / `HtmlTags.TBODY`.
+- **Type-Safe Composite CSS Classes & HtmlExtensions (`:common`, `src/main`)**: Refactored `CssClass.plus` operator to return a `CssClass.Composite` instance, updated `HtmlExtensions.kt` with default `cssClass: CssClass? = null` parameters, and converted `Formatter.getDeviationClass()` to return `CssClass?` directly for full type safety across `OverviewGridComponent`, `PerformanceTableComponent`, `RecentActivityComponent`, and `SettingsFormComponent`.
+- **Domain & Configuration Models Migration to `:common` (`:common`, `src/main`)**: Moved `Allocation`, `Settings`, `KrakenCredentials`, `AppConfig`, `InvalidConfigurationException`, and the `Result<T>` monad into `commonMain` (`com.gemini.krakenbot.config` & `com.gemini.krakenbot.model`), establishing a unified multiplatform domain model across backend, frontend-js, and test suites.
+- **Type-Safe Dynamic JS Models (`:frontend-js`)**: Created `JsModels.kt` containing `JsPortfolioSnapshot`, `JsTradeRecord`, `JsHistoryStats`, and `JsSyncProgress` external interfaces to replace unchecked dynamic property lookups in Kotlin/JS.
+- **Top-Level HTML Layout Extension Functions (`src/main`)**: Converted `glassPanel`, `statusCard`, `formSection`, and `formGroup` in `Layouts.kt` to top-level extension functions on `FlowContent` / `DIV` for idiomatic HTML DSL component rendering.
+- **Constructor-Injected Koin DashboardController (`src/main`)**: Refactored `DashboardRoutes.kt` to delegate routing handlers to a constructor-injected `DashboardController` registered in `AppModule.kt`.
+- **Type-Safe Domain Measurement Value Classes (`:common`)**: Added `@JvmInline value class Percentage(val value: Double)` and `@JvmInline value class UsdValue(val value: Double)` in `:common`.
+- **Type-Safe CSS Query Selector Property (`:common`, `:frontend-js`)**: Added `val CssClass.querySelector: String` to compute CSS query strings (`.class-name`) for DOM element lookups in Kotlin/JS.
+- **Idiomatic `BigDecimal` Comparison & Scaling Extensions (`src/main`)**: Created `BigDecimalExtensions.kt` with readable `.isZero`, `.isNonZero`, `.isPositive`, `.isNegative`, `.toUsdScale()`, `.toCryptoScale()`, and `.toPercentScale()` properties.
+- **Type-Safe Route Query Extension Builders (`:common`, `:frontend-js`, `src/test`)**: Added `withRange(range)` and `withQuery(key, value)` extension functions on route strings in `Routes.kt` and refactored `History.kt` and `DashboardControllerTest.kt` to consume them for type-safe endpoint URL construction.
+- **Trade Execution Metrics & Slippage Calculator (`src/main`)**: Extracted financial trade calculation math (slippage, fee estimation, executed price) into a standalone `TradeCalculator` utility.
+- **Standardized Action Log Formatter (`src/main`)**: Created `ActionLogFormatter` to centralize human-readable audit log message generation for rebalance triggers, dust skips, and order executions.
+- **Timeline History & Snapshot Calculator (`src/main`)**: Extracted ~200 lines of historical balance reverse-tracking and price interpolation math into `SnapshotHistoryCalculator`.
+
+## [6.8.4] - 2026-07-21
+
+### Refactored
+
+- **Centralized Palette Background Color Constants (`:common`)**: Extracted individual background color constants (`COLOR_BLUE_BG_PALETTE` through `COLOR_FUCHSIA_BG_PALETTE`) with 10% opacity in `ChartProps.kt` and updated `PALETTE_BG_COLORS` to use them instead of inline string literals.
+
+## [6.8.3] - 2026-07-21
+
+### Refactored
+
+- **Type-Safe `kotlinx.html` View DSL (`src/main`)**: Created type-safe extension functions in `HtmlExtensions.kt` (`div(CssClass)`, `span(CssClass)`, `button(CssClass)`, `a(CssClass)`, `h1(CssClass)`, `h2(CssClass)`, `h3(CssClass)`, `p(CssClass)`, `label(CssClass)`, `input(CssClass)`, `nav(CssClass)`, `table(CssClass)`, `TR.th(CssClass)`, `TR.td(CssClass)`) that accept `CssClass` instances directly without `.value` unwrapping.
+- **Codebase-Wide HTML View Component Cleanups (`src/main`)**: Refactored `DashboardShellComponent`, `DashboardFragmentComponent`, `HistoryPageComponent`, `OverviewGridComponent`, `PerformanceTableComponent`, `RecentActivityComponent`, `SettingsFormComponent`, `AllocationChartComponent`, and `Layouts` to use type-safe `HtmlExtensions` DSL across all server-side rendering views.
+- **Unified `CssClass.toString()` Interpolation (`:common`, `:frontend-js`, `src/main`)**: Leveraged `override fun toString(): String = value` across `CssClass` sealed class hierarchies for seamless string template class composition (`"${CssClass.Button.Secondary} ${CssClass.Button.Icon}"`), DOM element class assignment (`row.className = CssClass.Form.AllocationEditRow.toString()`), and badge rendering (`createBadgeCell`) across both frontend and backend modules.
+
+## [6.8.2] - 2026-07-21
+
+### Refactored
+
+- **Multiplatform Core Constants Expansion (`:common`)**: Added pre-constructed value class constants (`ASSET_BTC`, `ASSET_ETH`, `ASSET_DOGE`, `ASSET_SOL`, `ASSET_USD`), type-safe CSS query selector strings (`CssClass.Query` including `TARGET_INPUTS` and `SYMBOL_INPUTS`), DOM event name constants (`HtmlEvents`), JSON property keys (`DataProps`), UI display text constants (`ViewText`), Chart.js option keys and theme colors (`RESPONSIVE`, `MAINTAIN_ASPECT_RATIO`, `PLUGINS`, `LEGEND`, `LABELS`, `COLOR_LEGEND_LABEL`, `COLOR_TOOLTIP_BG`, `FONT_INTER`, `FONT_MONO`), and centralized Chart.js color palette arrays (`PALETTE_BORDER_COLORS`, `PALETTE_BG_COLORS`) in `ChartProps.kt`.
+- **Client-Side Kotlin/JS Cleanups (`:frontend-js`)**: Refactored `addAssetRow` in `Settings.kt` to replace raw HTML string templates with type-safe DOM element builders. Added `fetchRanged` helper function in `History.kt` for DRY vararg API query fetching across history routes (`API_HISTORY_SNAPSHOTS`, `API_HISTORY_TRADES`, `API_HISTORY_STATS`). Refactored `buildLegendConfig`, `buildTooltipConfig`, `buildScalesConfig`, and `buildDefaultChartOptions` in `History.kt` to use type-safe `ChartProps` constants instead of hardcoded string literals. Refactored `renderTradeTable` in `History.kt` to replace raw HTML string concatenation with type-safe DOM element builders (`renderTradeRow`, `createCell`, `createBadgeCell`). Refactored DOM selector constants using Kotlin import aliases (`import ... as ..._QUERY`) in `Dashboard.kt`, `History.kt`, and `Settings.kt`, eliminating bottom-of-file boilerplate declarations. Added type-safe `DOMTokenList` extension functions (`add`, `remove`, `toggle`, `contains`) in `DomExtensions.kt` accepting `CssClass` instances directly, eliminating `.value` boilerplate across DOM manipulation code in `Dashboard.kt`, `History.kt`, `Settings.kt`, and `main.kt`.
+- **Backend Controller Serialization (`src/main`)**: Extracted a DRY extension function `RoutingContext.respondJson(data: Any, objectMapper: ObjectMapper)` in `DashboardRoutes.kt` to unify JSON serialization and HTTP response sending across 5 API route handlers.
+- **Test Fixtures & JVM Test Suite Refactoring (`src/test`)**: Expanded `TestFixtures` with default test configuration objects (`DEFAULT_TEST_SETTINGS`, `DEFAULT_TEST_ALLOCATIONS`, `DEFAULT_TEST_CONFIG`) and refactored `SimulatedKrakenServiceTest` to eliminate duplicate configuration construction blocks and raw string symbols.
+
+## [6.8.1] - 2026-07-21
+
+### Refactored
+
+- **Strict Warnings Enforcement**: Enabled `allWarningsAsErrors.set(true)` in build scripts for all modules (`build.gradle.kts`, `common/build.gradle.kts`, and `frontend-js/build.gradle.kts`) to enforce zero compilation warnings.
+- **Unreachable Code Suppression Cleanup**: Refactored the `queryPrivate` method in `KrakenServiceImpl` to assign the result inside the loop instead of using a redundant `throw RuntimeException("Unreachable")` block marked with `@Suppress("KotlinUnreachableCode")`.
+- **Redundant Parameter and Suppression Cleanup**: Simplified the `getTradeHistoryPaginated` signature in `TradeHistoryServiceImpl` by removing the redundant `pageSize` parameter, eliminating the need for the `@Suppress("SameParameterValue")` annotation.
+- **Comprehensive String Literal Elimination**: Replaced hundreds of hard-coded and repeated string literals (`"BTC"`, `"ETH"`, `"DOGE"`, `"SOL"`, `"XBTUSD"`, `"ETHUSD"`, `"DOGEUSD"`, `"buy"`, `"sell"`, `"market"`, `"public-key"`, `"private-key"`, Chart.js property keys, CSS modifier classes, form checkbox values) with centralized constants in `Asset`, `OrderSide`, `OrderType`, `KrakenApiConstants`, `Routes`, `FormFields`, `HtmxValues`, `ChartProps`, `CssClass.Utility`, and `TestConstants`.
+
+## [6.8.0] - 2026-07-21
+
+### Refactored
+
+- **Kotlin Multiplatform Shared Module (`:common`)**: Established a multiplatform `:common` subproject targeting both `jvm()` and `js(browser())`. Shared `CssClass` sealed class hierarchies, `Routes`, `HtmxHeaders`, `FormFields`, `HtmlIds`, `HtmlAttrs`, `ViewText`, `TimeRange`, `OrderSide`, `OrderType`, and `PrecisionConstants` across backend Ktor controllers/HTML templates and frontend Kotlin/JS DOM scripts, eliminating hardcoded endpoint paths and duplicate constant definitions (`JsConstants`).
+- **Backend Service & Route Refactoring**: Updated `KrakenServiceImpl`, `OrderExecutorImpl`, `TradeHistoryServiceImpl`, and `DashboardRoutes` to eliminate magic values, string paths, query parameters, header names, and financial scale numbers.
+- **Declarative View Component Refactoring (`HistoryPageComponent`)**: Refactored `HistoryPageComponent` using sealed class hierarchies (`HistoryChartSection` and `HistoryStatCardDefinition`), declarative range selector loops over `TimeRange.entries`, and centralized style constants.
+- **Frontend Kotlin/JS Cleanups (`:frontend-js`)**: Refactored `Settings.kt`, `Dashboard.kt`, and `History.kt` to consume shared `Routes`, `FormFields`, `HtmlIds`, `CssClass`, and `ViewText` constants from `:common`.
+
 ## [6.7.2] - 2026-07-21
 
 ### Security

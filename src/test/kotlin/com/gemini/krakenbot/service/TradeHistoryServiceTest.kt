@@ -7,6 +7,7 @@ import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.PortfolioStats
 import com.gemini.krakenbot.model.TradeRecord
@@ -14,6 +15,7 @@ import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.repository.TradeRepository
 import com.gemini.krakenbot.repository.TradeSummaryStats
 import com.gemini.krakenbot.service.impl.TradeHistoryServiceImpl
+import com.gemini.krakenbot.TestFixtures
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.booleans.shouldBeTrue
@@ -45,7 +47,7 @@ class TradeHistoryServiceTest : StringSpec() {
 
     private fun createService(): TradeHistoryServiceImpl {
         val appConfig = AppConfig(
-            kraken = KrakenCredentials("test-api-key", "test-private-key"),
+            kraken = KrakenCredentials(TestFixtures.TRADE_HISTORY_API_KEY, TestFixtures.TRADE_HISTORY_API_SECRET),
             settings = Settings(
                 loopDelaySeconds = 60,
                 deviationTriggerPercent = 5.0,
@@ -71,7 +73,7 @@ class TradeHistoryServiceTest : StringSpec() {
             configService,
             objectMapper,
             portfolioAnalyzer,
-            "test-trade-history.json"
+            TestFixtures.TEST_TRADE_HISTORY_JSON
         )
     }
 
@@ -189,9 +191,9 @@ class TradeHistoryServiceTest : StringSpec() {
             val tradeHistoryService = createService()
             val trade = TradeRecord(
                 timestamp = Instant.now(),
-                pair = "XBTUSD",
-                side = "BUY",
-                symbol = "BTC",
+                pair = Asset.BTC_USD_PAIR,
+                side = OrderSide.BUY.name,
+                symbol = Asset.BTC,
                 volume = BigDecimal.ONE,
                 usdAmount = BigDecimal.TEN,
                 success = true,
@@ -291,7 +293,15 @@ class TradeHistoryServiceTest : StringSpec() {
                     allocations = emptyList()
                 )
                 every { configService.getConfig() } returns emptyConfig
-                val tradeHistoryService = TradeHistoryServiceImpl(repository, statsRepository, krakenService, configService, objectMapper, portfolioAnalyzer, "test-trade-history.json")
+                val tradeHistoryService = TradeHistoryServiceImpl(
+                    repository,
+                    statsRepository,
+                    krakenService,
+                    configService,
+                    objectMapper,
+                    portfolioAnalyzer,
+                    TestFixtures.TEST_TRADE_HISTORY_JSON
+                )
 
                 tradeHistoryService.syncTradesFromKraken()
 
@@ -310,9 +320,9 @@ class TradeHistoryServiceTest : StringSpec() {
                 val apiTrades = listOf(
                     TradeRecord(
                         timestamp = now,
-                        pair = "XBTUSD",
-                        side = "BUY",
-                        symbol = "BTC",
+                        pair = Asset.BTC_USD_PAIR,
+                        side = OrderSide.BUY.name,
+                        symbol = Asset.BTC,
                         volume = BigDecimal.ONE,
                         usdAmount = BigDecimal.TEN,
                         success = true,
@@ -338,9 +348,9 @@ class TradeHistoryServiceTest : StringSpec() {
 
                 val duplicateTrade = TradeRecord(
                     timestamp = latestTime,
-                    pair = "XBTUSD",
-                    side = "BUY",
-                    symbol = "BTC",
+                    pair = Asset.BTC_USD_PAIR,
+                    side = OrderSide.BUY.name,
+                    symbol = Asset.BTC,
                     volume = BigDecimal.ONE,
                     usdAmount = BigDecimal.TEN,
                     success = true,
@@ -350,9 +360,9 @@ class TradeHistoryServiceTest : StringSpec() {
 
                 val newTrade = TradeRecord(
                     timestamp = latestTime.plusSeconds(60),
-                    pair = "XBTUSD",
-                    side = "SELL",
-                    symbol = "BTC",
+                    pair = Asset.BTC_USD_PAIR,
+                    side = OrderSide.SELL.name,
+                    symbol = Asset.BTC,
                     volume = BigDecimal.ONE,
                     usdAmount = BigDecimal.TEN,
                     success = true,
@@ -380,9 +390,9 @@ class TradeHistoryServiceTest : StringSpec() {
 
                 val localTrade = TradeRecord(
                     timestamp = latestTime,
-                    pair = "XBTUSD",
-                    side = "BUY",
-                    symbol = "BTC",
+                    pair = TestFixtures.XBTUSD,
+                    side = TestFixtures.BUY,
+                    symbol = Asset.BTC,
                     volume = BigDecimal.ONE,
                     usdAmount = BigDecimal.TEN,
                     success = true,
@@ -392,9 +402,9 @@ class TradeHistoryServiceTest : StringSpec() {
 
                 val apiTrade = TradeRecord(
                     timestamp = latestTime.plusSeconds(5),
-                    pair = "XBTUSD",
-                    side = "BUY",
-                    symbol = "BTC",
+                    pair = TestFixtures.XBTUSD,
+                    side = TestFixtures.BUY,
+                    symbol = Asset.BTC,
                     volume = BigDecimal.ONE,
                     usdAmount = BigDecimal.valueOf(9.95),
                     success = true,
@@ -421,7 +431,7 @@ class TradeHistoryServiceTest : StringSpec() {
                 val localEstimate = TradeRecord(
                     timestamp = latestTime,
                     pair = "TAOUSD",
-                    side = "SELL",
+                    side = TestFixtures.SELL,
                     symbol = "TAO",
                     volume = BigDecimal("0.07708000"),
                     usdAmount = BigDecimal("16.63"),
@@ -472,9 +482,9 @@ class TradeHistoryServiceTest : StringSpec() {
                 val batch1 = List(50) { i ->
                     TradeRecord(
                         timestamp = Instant.ofEpochSecond(1700000000 + i.toLong()),
-                        pair = "XBTUSD",
-                        side = "BUY",
-                        symbol = "BTC",
+                        pair = TestFixtures.XBTUSD,
+                        side = TestFixtures.BUY,
+                        symbol = Asset.BTC,
                         volume = BigDecimal.ONE,
                         usdAmount = BigDecimal.TEN,
                         success = true,
@@ -484,9 +494,9 @@ class TradeHistoryServiceTest : StringSpec() {
                 val batch2 = listOf(
                     TradeRecord(
                         timestamp = Instant.ofEpochSecond(1700000600),
-                        pair = "XBTUSD",
-                        side = "SELL",
-                        symbol = "BTC",
+                        pair = TestFixtures.XBTUSD,
+                        side = TestFixtures.SELL,
+                        symbol = Asset.BTC,
                         volume = BigDecimal.ONE,
                         usdAmount = BigDecimal.TEN,
                         success = true,
@@ -542,7 +552,15 @@ class TradeHistoryServiceTest : StringSpec() {
                     allocations = emptyList()
                 )
                 every { configService.getConfig() } returns placeholderConfig
-                val tradeHistoryService = TradeHistoryServiceImpl(repository, statsRepository, krakenService, configService, objectMapper, portfolioAnalyzer, "test-trade-history.json")
+                val tradeHistoryService = TradeHistoryServiceImpl(
+                    repository,
+                    statsRepository,
+                    krakenService,
+                    configService,
+                    objectMapper,
+                    portfolioAnalyzer,
+                    TestFixtures.TEST_TRADE_HISTORY_JSON
+                )
 
                 tradeHistoryService.syncTradesFromKraken()
 
@@ -554,7 +572,7 @@ class TradeHistoryServiceTest : StringSpec() {
 
         "init_InSimulationMode_SeedsHistoricalSnapshots" {
             val appConfig = AppConfig(
-                kraken = KrakenCredentials("test-api-key", "test-private-key"),
+                kraken = KrakenCredentials(TestFixtures.TRADE_HISTORY_API_KEY, TestFixtures.TRADE_HISTORY_API_SECRET),
                 settings = Settings(
                     loopDelaySeconds = 60,
                     deviationTriggerPercent = 5.0,
@@ -566,13 +584,21 @@ class TradeHistoryServiceTest : StringSpec() {
                 ),
                 allocations = listOf(
                     Allocation(Asset("UNKNOWN"), 50.0),
-                    Allocation(Asset("USD"), 50.0)
+                    Allocation(Asset(TestFixtures.USD), 50.0)
                 )
             )
             every { configService.getConfig() } returns appConfig
             every { repository.load() } returns emptyList() // DB is empty!
 
-            val tradeHistoryService = TradeHistoryServiceImpl(repository, statsRepository, krakenService, configService, objectMapper, portfolioAnalyzer, "test-trade-history.json")
+            val tradeHistoryService = TradeHistoryServiceImpl(
+                repository,
+                statsRepository,
+                krakenService,
+                configService,
+                objectMapper,
+                portfolioAnalyzer,
+                TestFixtures.TEST_TRADE_HISTORY_JSON
+            )
             tradeHistoryService.init()
 
             // It should call saveSnapshot multiple times to seed 15 days of 6-hour interval snapshots (60 snapshots)
@@ -581,7 +607,7 @@ class TradeHistoryServiceTest : StringSpec() {
 
         "init_ThrowsExceptionDuringSeeding_HandledGracefully" {
             val appConfig = AppConfig(
-                kraken = KrakenCredentials("test-api-key", "test-private-key"),
+                kraken = KrakenCredentials(TestFixtures.TRADE_HISTORY_API_KEY, TestFixtures.TRADE_HISTORY_API_SECRET),
                 settings = Settings(
                     loopDelaySeconds = 60,
                     deviationTriggerPercent = 5.0,
@@ -592,22 +618,30 @@ class TradeHistoryServiceTest : StringSpec() {
                     fiatDeploymentExponent = 1.0
                 ),
                 allocations = listOf(
-                    Allocation(Asset("BTC"), 50.0),
-                    Allocation(Asset("USD"), 50.0)
+                    Allocation(Asset(Asset.BTC), 50.0),
+                    Allocation(Asset(TestFixtures.USD), 50.0)
                 )
             )
             every { configService.getConfig() } returns appConfig
             every { repository.load() } returns emptyList()
             every { repository.saveSnapshot(any()) } throws RuntimeException("Seeding failed")
 
-            val tradeHistoryService = TradeHistoryServiceImpl(repository, statsRepository, krakenService, configService, objectMapper, portfolioAnalyzer, "test-trade-history.json")
+            val tradeHistoryService = TradeHistoryServiceImpl(
+                repository,
+                statsRepository,
+                krakenService,
+                configService,
+                objectMapper,
+                portfolioAnalyzer,
+                TestFixtures.TEST_TRADE_HISTORY_JSON
+            )
 
             // Should catch exception and not propagate it
             tradeHistoryService.init()
         }
 
         "init_MigratesTradeHistoryJsonIfEmpty" {
-            val file = File("test-trade-history.json")
+            val file = File(TestFixtures.TEST_TRADE_HISTORY_JSON)
             val bakFile = File("test-trade-history.json.bak")
             try {
                 file.delete()
@@ -697,9 +731,9 @@ class TradeHistoryServiceTest : StringSpec() {
 
                 val baseLocal = TradeRecord(
                     timestamp = latestTime,
-                    pair = "XBTUSD",
-                    side = "BUY",
-                    symbol = "BTC",
+                    pair = TestFixtures.XBTUSD,
+                    side = TestFixtures.BUY,
+                    symbol = Asset.BTC,
                     volume = BigDecimal.ONE,
                     usdAmount = BigDecimal.TEN,
                     success = true,
@@ -708,7 +742,7 @@ class TradeHistoryServiceTest : StringSpec() {
 
                 // Define local trades that fail matching on exactly one attribute
                 val diffPair = baseLocal.copy(pair = "ETHUSD")
-                val diffSide = baseLocal.copy(side = "SELL")
+                val diffSide = baseLocal.copy(side = TestFixtures.SELL)
                 val diffVol = baseLocal.copy(volume = BigDecimal.TEN)
                 val diffTime = baseLocal.copy(timestamp = latestTime.minusSeconds(600)) // 10 mins diff
 
@@ -733,9 +767,9 @@ class TradeHistoryServiceTest : StringSpec() {
 
                 val localTrade = TradeRecord(
                     timestamp = latestTime,
-                    pair = "XBTUSD",
-                    side = "BUY",
-                    symbol = "BTC",
+                    pair = TestFixtures.XBTUSD,
+                    side = TestFixtures.BUY,
+                    symbol = Asset.BTC,
                     volume = BigDecimal.ONE,
                     usdAmount = BigDecimal.TEN,
                     success = true,
@@ -776,9 +810,9 @@ class TradeHistoryServiceTest : StringSpec() {
                 val batch1 = List(50) {
                     TradeRecord(
                         timestamp = Instant.now(),
-                        pair = "XBTUSD",
-                        side = "BUY",
-                        symbol = "BTC",
+                        pair = TestFixtures.XBTUSD,
+                        side = TestFixtures.BUY,
+                        symbol = Asset.BTC,
                         volume = BigDecimal.ONE,
                         usdAmount = BigDecimal.TEN,
                         success = true,
@@ -803,9 +837,9 @@ class TradeHistoryServiceTest : StringSpec() {
 
                 val localTrade = TradeRecord(
                     timestamp = latestTime,
-                    pair = "XBTUSD",
-                    side = "BUY",
-                    symbol = "BTC",
+                    pair = TestFixtures.XBTUSD,
+                    side = TestFixtures.BUY,
+                    symbol = Asset.BTC,
                     volume = BigDecimal.ONE,
                     usdAmount = BigDecimal.TEN,
                     success = true,
@@ -834,9 +868,9 @@ class TradeHistoryServiceTest : StringSpec() {
 
                 val localTrade = TradeRecord(
                     timestamp = latestTime,
-                    pair = "XBTUSD",
-                    side = "BUY",
-                    symbol = "BTC",
+                    pair = TestFixtures.XBTUSD,
+                    side = TestFixtures.BUY,
+                    symbol = Asset.BTC,
                     volume = BigDecimal.ONE,
                     usdAmount = BigDecimal.TEN,
                     success = true,
@@ -864,9 +898,9 @@ class TradeHistoryServiceTest : StringSpec() {
 
                 val localTrade = TradeRecord(
                     timestamp = latestTime,
-                    pair = "XBTUSD",
-                    side = "BUY",
-                    symbol = "BTC",
+                    pair = TestFixtures.XBTUSD,
+                    side = TestFixtures.BUY,
+                    symbol = Asset.BTC,
                     volume = BigDecimal.ONE,
                     usdAmount = BigDecimal.TEN,
                     success = true,
@@ -889,7 +923,7 @@ class TradeHistoryServiceTest : StringSpec() {
         "syncTradesFromKraken_BlankApiKey" {
             runTest {
                 val appConfig = AppConfig(
-                    kraken = KrakenCredentials("", "test-private-key"),
+                    kraken = KrakenCredentials("", TestFixtures.TRADE_HISTORY_API_SECRET),
                     settings = Settings(
                         loopDelaySeconds = 60,
                         deviationTriggerPercent = 5.0,
@@ -927,7 +961,7 @@ class TradeHistoryServiceTest : StringSpec() {
         "syncTradesFromKraken_TriggersReconstructionWhenSnapshotsEmpty" {
             runTest {
                 val appConfig = AppConfig(
-                    kraken = KrakenCredentials("key", "secret"),
+                    kraken = KrakenCredentials(TestFixtures.KEY, TestFixtures.SECRET),
 
                     settings = Settings(
                         loopDelaySeconds = 60,
@@ -937,19 +971,19 @@ class TradeHistoryServiceTest : StringSpec() {
                         simulation = false
                     ),
                     allocations = listOf(
-                        Allocation("BTC", 30.0),
+                        Allocation(Asset.BTC, 30.0),
                         Allocation("ETH", 30.0),
                         Allocation("EUR", 20.0),
                         Allocation("DOGE", 10.0),
-                        Allocation("USD", 10.0)
+                        Allocation(TestFixtures.USD, 10.0)
                     )
                 )
                 every { configService.getConfig() } returns appConfig
 
                 every { repository.isHistorySeeded() } returns false
                 every { repository.getLatestTradeTime() } returns null
-                every { repository.getSyncMetadata("sync_offset") } returns null
-                every { repository.getSyncMetadata("sync_total") } returns null
+                every { repository.getSyncMetadata(TestFixtures.SYNC_OFFSET) } returns null
+                every { repository.getSyncMetadata(TestFixtures.SYNC_TOTAL) } returns null
 
                 every { repository.load() } returns emptyList()
                 every { repository.getTradeSummaryStats() } returns TradeSummaryStats(
@@ -961,9 +995,9 @@ class TradeHistoryServiceTest : StringSpec() {
 
                 val apiTrade1 = TradeRecord(
                     timestamp = Instant.now().minus(2, ChronoUnit.DAYS),
-                    pair = "BTCUSD",
-                    side = "BUY",
-                    symbol = "BTC",
+                    pair = TestFixtures.BTCUSD,
+                    side = TestFixtures.BUY,
+                    symbol = Asset.BTC,
                     volume = BigDecimal("0.5"),
                     usdAmount = BigDecimal("15000.00"),
                     success = true,
@@ -973,9 +1007,9 @@ class TradeHistoryServiceTest : StringSpec() {
                 )
                 val apiTrade2 = TradeRecord(
                     timestamp = Instant.now().minus(1, ChronoUnit.DAYS),
-                    pair = "BTCUSD",
-                    side = "SELL",
-                    symbol = "BTC",
+                    pair = TestFixtures.BTCUSD,
+                    side = TestFixtures.SELL,
+                    symbol = Asset.BTC,
                     volume = BigDecimal("0.2"),
                     usdAmount = BigDecimal("7000.00"),
                     success = true,
@@ -994,15 +1028,15 @@ class TradeHistoryServiceTest : StringSpec() {
                 every { repository.setSyncMetadata(any(), any()) } just Runs
 
                 val mockBalances = mapOf(
-                    "BTC" to BigDecimal("1.0"),
+                    Asset.BTC to BigDecimal("1.0"),
                     "XETH" to BigDecimal("2.0"),
                     "ZEUR" to BigDecimal("100.0"),
-                    "USD" to BigDecimal("5000.0")
+                    TestFixtures.USD to BigDecimal("5000.0")
                 )
                 coEvery { krakenService.getBalances() } returns mockBalances
-                coEvery { krakenService.getTickerPrices(any()) } returns mapOf("BTCUSD" to BigDecimal("30000.0"))
+                coEvery { krakenService.getTickerPrices(any()) } returns mapOf(TestFixtures.BTCUSD to BigDecimal("30000.0"))
                 val dayStart = Instant.now().minus(2, ChronoUnit.DAYS).truncatedTo(ChronoUnit.DAYS).epochSecond
-                coEvery { krakenService.getOHLC("BTCUSD", 1440, any()) } returns listOf(Pair(dayStart, BigDecimal("30000.0")))
+                coEvery { krakenService.getOHLC(TestFixtures.BTCUSD, 1440, any()) } returns listOf(Pair(dayStart, BigDecimal("30000.0")))
                 coEvery { krakenService.getOHLC("ETHUSD", 1440, any()) } returns emptyList()
                 coEvery { krakenService.getOHLC("EURUSD", 1440, any()) } returns emptyList()
                 coEvery { krakenService.getOHLC("DOGEUSD", 1440, any()) } returns emptyList()
@@ -1019,11 +1053,11 @@ class TradeHistoryServiceTest : StringSpec() {
 
         "syncMetadata_delegatesToRepository" {
             val service = createService()
-            every { repository.getSyncMetadata("test_key") } returns "test_value"
-            service.getSyncMetadata("test_key") shouldBe "test_value"
+            every { repository.getSyncMetadata(TestFixtures.TEST_KEY) } returns TestFixtures.TEST_VALUE
+            service.getSyncMetadata(TestFixtures.TEST_KEY) shouldBe TestFixtures.TEST_VALUE
 
-            service.setSyncMetadata("test_key", "test_value2")
-            verify { repository.setSyncMetadata("test_key", "test_value2") }
+            service.setSyncMetadata(TestFixtures.TEST_KEY, TestFixtures.TEST_VALUE_2)
+            verify { repository.setSyncMetadata(TestFixtures.TEST_KEY, TestFixtures.TEST_VALUE_2) }
 
             every { repository.isHistorySeeded() } returns true
             service.isHistorySeeded() shouldBe true
@@ -1034,7 +1068,7 @@ class TradeHistoryServiceTest : StringSpec() {
                 val service = createService()
 
                 val appConfig = AppConfig(
-                    kraken = KrakenCredentials("key", "secret"),
+                    kraken = KrakenCredentials(TestFixtures.KEY, TestFixtures.SECRET),
                     settings = Settings(
                         loopDelaySeconds = 60,
                         deviationTriggerPercent = 5.0,
@@ -1043,8 +1077,8 @@ class TradeHistoryServiceTest : StringSpec() {
                         simulation = false
                     ),
                     allocations = listOf(
-                        Allocation("BTC", 50.0),
-                        Allocation("USD", 50.0)
+                        Allocation(Asset.BTC, 50.0),
+                        Allocation(TestFixtures.USD, 50.0)
                     )
                 )
                 every { configService.getConfig() } returns appConfig
@@ -1057,8 +1091,26 @@ class TradeHistoryServiceTest : StringSpec() {
                     timestamp = Instant.now().minus(5, ChronoUnit.DAYS),
                     totalValueUSD = BigDecimal("10000.00"),
                     assets = mapOf(
-                        "BTC" to PortfolioSnapshot.AssetSnapshot("BTC", BigDecimal("0.2"), BigDecimal("25000.00"), BigDecimal("5000.00"), BigDecimal("50.00"), BigDecimal("50.00"), BigDecimal.ZERO, BigDecimal.ZERO),
-                        "USD" to PortfolioSnapshot.AssetSnapshot("USD", BigDecimal("5000.00"), BigDecimal.ONE, BigDecimal("5000.00"), BigDecimal("50.00"), BigDecimal("50.00"), BigDecimal.ZERO, BigDecimal.ZERO)
+                        Asset.BTC to PortfolioSnapshot.AssetSnapshot(
+                            Asset.BTC,
+                            BigDecimal("0.2"),
+                            BigDecimal("25000.00"),
+                            BigDecimal("5000.00"),
+                            BigDecimal("50.00"),
+                            BigDecimal("50.00"),
+                            BigDecimal.ZERO,
+                            BigDecimal.ZERO
+                        ),
+                        TestFixtures.USD to PortfolioSnapshot.AssetSnapshot(
+                            TestFixtures.USD,
+                            BigDecimal("5000.00"),
+                            BigDecimal.ONE,
+                            BigDecimal("5000.00"),
+                            BigDecimal("50.00"),
+                            BigDecimal("50.00"),
+                            BigDecimal.ZERO,
+                            BigDecimal.ZERO
+                        )
                     ),
                     actions = emptyList(),
                     drawdownPercent = BigDecimal.ZERO,
@@ -1075,9 +1127,9 @@ class TradeHistoryServiceTest : StringSpec() {
 
                 val apiTrade = TradeRecord(
                     timestamp = Instant.now().minus(6, ChronoUnit.DAYS),
-                    pair = "BTCUSD",
-                    side = "BUY",
-                    symbol = "BTC",
+                    pair = TestFixtures.BTCUSD,
+                    side = TestFixtures.BUY,
+                    symbol = Asset.BTC,
                     volume = BigDecimal("0.1"),
                     usdAmount = BigDecimal("2500.00"),
                     success = true,
@@ -1094,7 +1146,7 @@ class TradeHistoryServiceTest : StringSpec() {
                 every { repository.setHistorySeeded(true) } just Runs
                 every { repository.setSyncMetadata(any(), any()) } just Runs
 
-                coEvery { krakenService.getOHLC("BTCUSD", 1440, any()) } returns emptyList()
+                coEvery { krakenService.getOHLC(TestFixtures.BTCUSD, 1440, any()) } returns emptyList()
                 every { repository.save(any()) } just Runs
 
                 service.syncTradesFromKraken()
@@ -1106,7 +1158,7 @@ class TradeHistoryServiceTest : StringSpec() {
         "reconstructHistoricalSnapshots_FallbackMappingsAndExceptions" {
             runTest {
                 val appConfig = AppConfig(
-                    kraken = KrakenCredentials("key", "secret"),
+                    kraken = KrakenCredentials(TestFixtures.KEY, TestFixtures.SECRET),
                     settings = Settings(
                         loopDelaySeconds = 60,
                         deviationTriggerPercent = 5.0,
@@ -1115,16 +1167,16 @@ class TradeHistoryServiceTest : StringSpec() {
                         simulation = false
                     ),
                     allocations = listOf(
-                        Allocation("BTC", 50.0),
-                        Allocation("USD", 50.0)
+                        Allocation(Asset.BTC, 50.0),
+                        Allocation(TestFixtures.USD, 50.0)
                     )
                 )
                 every { configService.getConfig() } returns appConfig
 
                 every { repository.isHistorySeeded() } returns false
                 every { repository.getLatestTradeTime() } returns null
-                every { repository.getSyncMetadata("sync_offset") } returns null
-                every { repository.getSyncMetadata("sync_total") } returns null
+                every { repository.getSyncMetadata(TestFixtures.SYNC_OFFSET) } returns null
+                every { repository.getSyncMetadata(TestFixtures.SYNC_TOTAL) } returns null
                 every { repository.load() } returns emptyList()
                 every { repository.getTradeSummaryStats() } returns TradeSummaryStats(
                     totalTradesExecuted = 1L,
@@ -1137,9 +1189,9 @@ class TradeHistoryServiceTest : StringSpec() {
 
                 val apiTrade = TradeRecord(
                     timestamp = Instant.now().minus(2, ChronoUnit.DAYS),
-                    pair = "BTCUSD",
-                    side = "BUY",
-                    symbol = "BTC",
+                    pair = TestFixtures.BTCUSD,
+                    side = TestFixtures.BUY,
+                    symbol = Asset.BTC,
                     volume = BigDecimal("0.5"),
                     usdAmount = BigDecimal("15000.00"),
                     success = true,
@@ -1169,7 +1221,7 @@ class TradeHistoryServiceTest : StringSpec() {
         "reconstructHistoricalSnapshots_FallbackMappingsAndSimulation" {
             runTest {
                 val appConfig = AppConfig(
-                    kraken = KrakenCredentials("key", "secret"),
+                    kraken = KrakenCredentials(TestFixtures.KEY, TestFixtures.SECRET),
                     settings = Settings(
                         loopDelaySeconds = 60,
                         deviationTriggerPercent = 5.0,
@@ -1178,16 +1230,16 @@ class TradeHistoryServiceTest : StringSpec() {
                         simulation = true
                     ),
                     allocations = listOf(
-                        Allocation("BTC", 50.0),
-                        Allocation("USD", 50.0)
+                        Allocation(Asset.BTC, 50.0),
+                        Allocation(TestFixtures.USD, 50.0)
                     )
                 )
                 every { configService.getConfig() } returns appConfig
 
                 every { repository.isHistorySeeded() } returns false
                 every { repository.getLatestTradeTime() } returns null
-                every { repository.getSyncMetadata("sync_offset") } returns null
-                every { repository.getSyncMetadata("sync_total") } returns null
+                every { repository.getSyncMetadata(TestFixtures.SYNC_OFFSET) } returns null
+                every { repository.getSyncMetadata(TestFixtures.SYNC_TOTAL) } returns null
                 every { repository.load() } returns emptyList()
                 every { repository.getTradeSummaryStats() } returns TradeSummaryStats(
                     totalTradesExecuted = 1L,
@@ -1198,9 +1250,9 @@ class TradeHistoryServiceTest : StringSpec() {
 
                 val apiTrade = TradeRecord(
                     timestamp = Instant.now().minus(2, ChronoUnit.DAYS),
-                    pair = "BTCUSD",
-                    side = "BUY",
-                    symbol = "BTC",
+                    pair = TestFixtures.BTCUSD,
+                    side = TestFixtures.BUY,
+                    symbol = Asset.BTC,
                     volume = BigDecimal("0.5"),
                     usdAmount = BigDecimal("15000.00"),
                     success = true,
@@ -1218,10 +1270,10 @@ class TradeHistoryServiceTest : StringSpec() {
 
                 val mockBalances = mapOf(
                     "XXBT" to BigDecimal("1.0"),
-                    "USD" to BigDecimal("5000.0")
+                    TestFixtures.USD to BigDecimal("5000.0")
                 )
                 coEvery { krakenService.getBalances() } returns mockBalances
-                coEvery { krakenService.getTickerPrices(any()) } returns mapOf("BTCUSD" to BigDecimal("30000.0"))
+                coEvery { krakenService.getTickerPrices(any()) } returns mapOf(TestFixtures.BTCUSD to BigDecimal("30000.0"))
                 coEvery { krakenService.getOHLC(any(), any(), any()) } returns emptyList()
                 every { repository.save(any()) } just Runs
 
@@ -1234,7 +1286,7 @@ class TradeHistoryServiceTest : StringSpec() {
         "syncTradesFromKraken_ApiFailure" {
             runTest {
                 val appConfig = AppConfig(
-                    kraken = KrakenCredentials("key", "secret"),
+                    kraken = KrakenCredentials(TestFixtures.KEY, TestFixtures.SECRET),
                     settings = Settings(
                         loopDelaySeconds = 60,
                         deviationTriggerPercent = 5.0,
@@ -1243,16 +1295,16 @@ class TradeHistoryServiceTest : StringSpec() {
                         simulation = false
                     ),
                     allocations = listOf(
-                        Allocation("BTC", 50.0),
-                        Allocation("USD", 50.0)
+                        Allocation(Asset.BTC, 50.0),
+                        Allocation(TestFixtures.USD, 50.0)
                     )
                 )
                 every { configService.getConfig() } returns appConfig
 
                 every { repository.isHistorySeeded() } returns false
                 every { repository.getLatestTradeTime() } returns null
-                every { repository.getSyncMetadata("sync_offset") } returns null
-                every { repository.getSyncMetadata("sync_total") } returns null
+                every { repository.getSyncMetadata(TestFixtures.SYNC_OFFSET) } returns null
+                every { repository.getSyncMetadata(TestFixtures.SYNC_TOTAL) } returns null
                 every { repository.load() } returns emptyList()
                 every { repository.getTradeSummaryStats() } returns TradeSummaryStats(
                     totalTradesExecuted = 0L,
@@ -1278,3 +1330,4 @@ class TradeHistoryServiceTest : StringSpec() {
         }
     }
 }
+

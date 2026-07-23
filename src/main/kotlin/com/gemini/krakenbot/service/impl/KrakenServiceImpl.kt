@@ -7,6 +7,7 @@ import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderResult
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.service.*
+import com.gemini.krakenbot.util.PrecisionConstants
 import io.ktor.client.*
 import io.ktor.client.plugins.*
 import io.ktor.client.request.*
@@ -34,12 +35,9 @@ class KrakenServiceImpl(
     private val httpClient: HttpClient
 ) : KrakenService {
 
-    private val log =
-        LoggerFactory.getLogger(KrakenServiceImpl::class.java)
-    private val apiUrl = "https://api.kraken.com"
-    private val apiVersion = "0"
-    private val nonceGenerator =
-        AtomicLong(System.currentTimeMillis() * 1000000L)
+    private val log = LoggerFactory.getLogger(KrakenServiceImpl::class.java)
+    private val apiUrl = KrakenApiConstants.API_URL
+    private val nonceGenerator = AtomicLong(System.currentTimeMillis() * 1_000_000L)
     val lastFetchedCount = AtomicInteger(0)
 
     private val rateLimiter = RateLimiter()
@@ -59,8 +57,8 @@ class KrakenServiceImpl(
                 emit(block())
                 return@flow
             } catch (e: Exception) {
-                val isRateLimit = e.message?.contains("Rate limit exceeded") == true
-                val isLockout = e.message?.contains("Temporary lockout") == true
+                val isRateLimit = e.message?.contains(KrakenApiConstants.ERROR_RATE_LIMIT_EXCEEDED) == true
+                val isLockout = e.message?.contains(KrakenApiConstants.ERROR_TEMPORARY_LOCKOUT) == true
                 val isNetworkOrTransient = e is IOException || e is ResponseException
 
                 if ((isNetworkOrTransient || isRateLimit || isLockout) && attempt < maxAttempts - 1) {
@@ -69,8 +67,10 @@ class KrakenServiceImpl(
                         isRateLimit -> currentRateLimitBackoff
                         else -> currentBackoff
                     }
-                    log.warn("Transient failure in {} (attempt {}/{}). Retrying in {}ms... Error: {}",
-                        actionName, attempt + 1, maxAttempts, waitTime, e.message)
+                    log.warn(
+                        "Transient failure in {} (attempt {}/{}). Retrying in {}ms... Error: {}",
+                        actionName, attempt + 1, maxAttempts, waitTime, e.message
+                    )
                     delay(waitTime.milliseconds)
 
                     if (isRateLimit) {
@@ -86,7 +86,7 @@ class KrakenServiceImpl(
     }.first()
 
     override suspend fun getBalances(): RawBalances {
-        val path = "/$apiVersion/private/Balance"
+        val path = KrakenApiConstants.PATH_BALANCE
         val response = queryPrivate(path, emptyMap())
         return response.properties()
             .mapNotNull { (key, value) ->
@@ -97,8 +97,8 @@ class KrakenServiceImpl(
     }
 
     override suspend fun getTickerPrices(pairs: String): RawPrices {
-        val path = "/$apiVersion/public/Ticker?pair=$pairs"
-        val result = queryPublic(path).path("result")
+        val path = "${KrakenApiConstants.PATH_TICKER}?${KrakenApiConstants.PARAM_PAIR}=$pairs"
+        val result = queryPublic(path).path(KrakenApiConstants.FIELD_RESULT)
         return result.properties()
             .mapNotNull { (key, value) ->
                 val c = value.path("c")
@@ -118,11 +118,10 @@ class KrakenServiceImpl(
         side: String,
         volume: BigDecimal
     ): OrderResult {
-        val normalizedVolume =
-            volume.setScale(
-                8,
-                RoundingMode.HALF_UP
-            ).stripTrailingZeros()
+        val normalizedVolume = volume.setScale(
+            PrecisionConstants.SCALE_CRYPTO,
+            RoundingMode.HALF_UP
+        ).stripTrailingZeros()
 
         if (configService.getConfig().settings.dryRun) {
             log.info(
@@ -141,12 +140,12 @@ class KrakenServiceImpl(
             )
         }
 
-        val path = "/$apiVersion/private/AddOrder"
+        val path = KrakenApiConstants.PATH_ADD_ORDER
         val params = mapOf(
-            "pair" to pair,
-            "type" to side,
-            "ordertype" to type,
-            "volume" to normalizedVolume.toPlainString()
+            KrakenApiConstants.PARAM_PAIR to pair,
+            KrakenApiConstants.PARAM_TYPE to side,
+            KrakenApiConstants.PARAM_ORDERTYPE to type,
+            KrakenApiConstants.PARAM_VOLUME to normalizedVolume.toPlainString()
         )
 
         return try {
@@ -179,30 +178,30 @@ class KrakenServiceImpl(
     }
 
     override suspend fun getTradeHistory(startSec: Long?, offset: Int?): List<TradeRecord> {
-        if (!configService.getConfig().kraken.isConfigured) {
+        if (!configService.getConfig().kraken.hasValidCredentials()) {
             log.warn("Kraken API key is blank or placeholder. Skipping trade history fetch.")
             return emptyList()
         }
 
         val params = mutableMapOf<String, String>()
         if (startSec != null) {
-            params["start"] = startSec.toString()
+            params[KrakenApiConstants.PARAM_START] = startSec.toString()
         }
         if (offset != null) {
-            params["ofs"] = offset.toString()
+            params[KrakenApiConstants.PARAM_OFS] = offset.toString()
         }
 
         val result = try {
-            queryPrivate("/0/private/TradesHistory", params)
+            queryPrivate(KrakenApiConstants.PATH_TRADES_HISTORY, params)
         } catch (e: Exception) {
             log.error("Failed to query private TradesHistory endpoint", e)
             throw e
         }
 
-        val count = result.path("count").asInt(0)
+        val count = result.path(KrakenApiConstants.FIELD_COUNT).asInt(0)
         lastFetchedCount.set(count)
 
-        val tradesNode = result.path("trades")
+        val tradesNode = result.path(KrakenApiConstants.FIELD_TRADES)
         if (!tradesNode.isObject) {
             return emptyList()
         }
@@ -211,25 +210,24 @@ class KrakenServiceImpl(
         val tradesList = mutableListOf<TradeRecord>()
 
         tradesNode.properties().forEach { (_, tradeNode) ->
-            val pair = tradeNode.path("pair").asText()
-            val type = tradeNode.path("type").asText() // "buy" or "sell"
-            val time = tradeNode.path("time").asDouble() // e.g. 1618000000.1234
-            val priceStr = tradeNode.path("price").asText()
-            val costStr = tradeNode.path("cost").asText()
-            val volStr = tradeNode.path("vol").asText()
-            val feeStr = tradeNode.path("fee").asText()
+            val pair = tradeNode.path(KrakenApiConstants.FIELD_PAIR).asText()
+            val type = tradeNode.path(KrakenApiConstants.FIELD_TYPE).asText()
+            val time = tradeNode.path(KrakenApiConstants.FIELD_TIME).asDouble()
+            val priceStr = tradeNode.path(KrakenApiConstants.FIELD_PRICE).asText()
+            val costStr = tradeNode.path(KrakenApiConstants.FIELD_COST).asText()
+            val volStr = tradeNode.path(KrakenApiConstants.FIELD_VOL).asText()
+            val feeStr = tradeNode.path(KrakenApiConstants.FIELD_FEE).asText()
 
-            // Map pair back to standard symbol using consolidated logic
             val symbol = Asset.fromTradingPair(pair, allocations) ?: return@forEach
 
             val timestamp = Instant.ofEpochMilli((time * 1000).toLong())
-            val side = type.uppercase() // "BUY" or "SELL"
+            val side = type.uppercase()
             val rawVolume = safeParseBigDecimal(volStr)
             val rawUsdAmount = safeParseBigDecimal(costStr)
             val rawPrice = safeParseBigDecimal(priceStr)
             val rawFee = safeParseBigDecimal(feeStr)
-            val volume = rawVolume.setScale(8, RoundingMode.HALF_UP)
-            val usdAmount = rawUsdAmount.setScale(2, RoundingMode.HALF_UP)
+            val volume = rawVolume.setScale(PrecisionConstants.SCALE_CRYPTO, RoundingMode.HALF_UP)
+            val usdAmount = rawUsdAmount.setScale(PrecisionConstants.SCALE_USD, RoundingMode.HALF_UP)
 
             tradesList.add(
                 TradeRecord(
@@ -241,8 +239,8 @@ class KrakenServiceImpl(
                     usdAmount = usdAmount,
                     success = true,
                     dryRun = false,
-                    price = rawPrice.setScale(8, RoundingMode.HALF_UP),
-                    fee = rawFee.setScale(4, RoundingMode.HALF_UP)
+                    price = rawPrice.setScale(PrecisionConstants.SCALE_CRYPTO, RoundingMode.HALF_UP),
+                    fee = rawFee.setScale(PrecisionConstants.SCALE_FEE, RoundingMode.HALF_UP)
                 )
             )
         }
@@ -251,13 +249,13 @@ class KrakenServiceImpl(
 
     override suspend fun getOHLC(pair: String, interval: Int, since: Long?): List<Pair<Long, BigDecimal>> {
         val params = mutableMapOf<String, String>()
-        params["pair"] = pair
-        params["interval"] = interval.toString()
+        params[KrakenApiConstants.PARAM_PAIR] = pair
+        params[KrakenApiConstants.PARAM_INTERVAL] = interval.toString()
         if (since != null) {
-            params["since"] = since.toString()
+            params[KrakenApiConstants.PARAM_SINCE] = since.toString()
         }
         val queryStr = params.map { "${it.key}=${it.value}" }.joinToString("&")
-        val path = "/0/public/OHLC?$queryStr"
+        val path = "${KrakenApiConstants.PATH_OHLC}?$queryStr"
         val result = try {
             queryPublic(path)
         } catch (e: Exception) {
@@ -265,12 +263,12 @@ class KrakenServiceImpl(
             return emptyList()
         }
 
-        val resultNode = result.path("result")
+        val resultNode = result.path(KrakenApiConstants.FIELD_RESULT)
         if (!resultNode.isObject) {
             return emptyList()
         }
 
-        val ohlcNode = resultNode.properties().firstOrNull { it.key != "last" }?.value
+        val ohlcNode = resultNode.properties().firstOrNull { it.key != KrakenApiConstants.FIELD_LAST }?.value
 
         if (ohlcNode == null || !ohlcNode.isArray) {
             return emptyList()
@@ -287,28 +285,27 @@ class KrakenServiceImpl(
         return priceList
     }
 
-
     private suspend fun queryPublic(path: String): JsonNode {
         return retryWithFlow("queryPublic($path)") {
             val responseBody = httpClient.get(apiUrl + path).bodyAsText()
             try {
                 val root: JsonNode = objectMapper.readTree(responseBody)
-                if (root.has("error") &&
-                    !root.path("error").isEmpty
+                if (root.has(KrakenApiConstants.FIELD_ERROR) &&
+                    !root.path(KrakenApiConstants.FIELD_ERROR).isEmpty
                 ) {
                     log.error(
                         "Kraken Public API Error for path {}: {}",
                         path,
-                        root.path("error")
+                        root.path(KrakenApiConstants.FIELD_ERROR)
                     )
                     throw RuntimeException(
-                        "Kraken Public API Error: " +
-                                root.path("error").toString()
+                        KrakenApiConstants.ERROR_PUBLIC_API_PREFIX +
+                                root.path(KrakenApiConstants.FIELD_ERROR).toString()
                     )
                 }
                 root
             } catch (e: JsonProcessingException) {
-                throw RuntimeException("Failed to parse public API response", e)
+                throw RuntimeException(KrakenApiConstants.ERROR_PARSE_PUBLIC, e)
             }
         }
     }
@@ -318,38 +315,43 @@ class KrakenServiceImpl(
         data: Map<String, String>
     ): JsonNode {
         val apiKey = configService.getConfig().kraken.apiKey.value
-        check(apiKey.isNotBlank()) { "API Key is null" }
+        check(apiKey.isNotBlank()) { KrakenApiConstants.ERROR_API_KEY_NULL }
 
         val maxRetries = 5
 
         return retryWithFlow("queryPrivate($path)") {
             var retryCount = 0
-            while (true) {
-                val cost = if (path.contains("TradesHistory") || path.contains("Ledgers") || path.contains("ClosedOrders")) 2.0 else 1.0
+            var result: JsonNode? = null
+            while (result == null) {
+                val cost = when {
+                    path.contains(KrakenApiConstants.SUBSTRING_TRADES_HISTORY) ||
+                            path.contains(KrakenApiConstants.SUBSTRING_LEDGERS) ||
+                            path.contains(KrakenApiConstants.SUBSTRING_CLOSED_ORDERS) -> 2.0
+                    else -> 1.0
+                }
                 rateLimiter.acquireWithCost(cost)
 
                 val nonce = nonceGenerator.incrementAndGet().toString()
                 val payload = data.toMutableMap()
-                payload["nonce"] = nonce
+                payload[KrakenApiConstants.PARAM_NONCE] = nonce
 
-                val postData =
-                    payload.entries.joinToString("&") {
-                        "${it.key}=${it.value}"
-                    }
+                val postData = payload.entries.joinToString("&") {
+                    "${it.key}=${it.value}"
+                }
                 val signature = signRequest(path, nonce, postData)
 
                 val responseBody = httpClient.post(apiUrl + path) {
-                    header("API-Key", apiKey)
-                    header("API-Sign", signature)
-                    header("Content-Type", "application/x-www-form-urlencoded")
+                    header(KrakenApiConstants.HEADER_API_KEY, apiKey)
+                    header(KrakenApiConstants.HEADER_API_SIGN, signature)
+                    header(KrakenApiConstants.HEADER_CONTENT_TYPE, KrakenApiConstants.CONTENT_TYPE_FORM_URLENCODED)
                     setBody(postData)
                 }.bodyAsText()
 
                 try {
                     val root: JsonNode = objectMapper.readTree(responseBody)
-                    if (!root.path("error").isEmpty) {
-                        val errorMsg = root.path("error").toString()
-                        if (errorMsg.contains("Invalid nonce") && retryCount < maxRetries) {
+                    if (!root.path(KrakenApiConstants.FIELD_ERROR).isEmpty) {
+                        val errorMsg = root.path(KrakenApiConstants.FIELD_ERROR).toString()
+                        if (errorMsg.contains(KrakenApiConstants.ERROR_INVALID_NONCE) && retryCount < maxRetries) {
                             val bumpAmount = 100_000_000L * (1L shl retryCount)
                             log.warn(
                                 "Invalid nonce detected. Adjusting nonce generator by {} and retrying (Attempt {}/{})",
@@ -361,18 +363,17 @@ class KrakenServiceImpl(
                             retryCount++
                             continue
                         }
-                        throw RuntimeException("Kraken API Error: $errorMsg")
+                        throw RuntimeException("${KrakenApiConstants.ERROR_API_PREFIX}$errorMsg")
                     }
-                    return@retryWithFlow root.path("result")
+                    result = root.path(KrakenApiConstants.FIELD_RESULT)
                 } catch (e: JsonProcessingException) {
                     throw RuntimeException(
-                        "Failed to parse private API response",
+                        KrakenApiConstants.ERROR_PARSE_PRIVATE,
                         e
                     )
                 }
             }
-            @Suppress("KotlinUnreachableCode")
-            throw RuntimeException("Unreachable")
+            result
         }
     }
 
@@ -382,17 +383,15 @@ class KrakenServiceImpl(
         postData: String
     ): String {
         try {
-            val sha2 = MessageDigest.getInstance(SHA_256)
+            val sha2 = MessageDigest.getInstance(KrakenApiConstants.SHA_256)
                 .digest((nonce + postData).toByteArray(Charsets.UTF_8))
 
             val pathBytes = path.toByteArray(Charsets.UTF_8)
             val hmacMessage = pathBytes + sha2
 
-            val mac = Mac.getInstance(HMAC_SHA512)
-            val secretDecoded =
-                Base64.decode(configService.getConfig().kraken.privateKey.value)
-            val secretSpec =
-                SecretKeySpec(secretDecoded, HMAC_SHA512)
+            val mac = Mac.getInstance(KrakenApiConstants.HMAC_SHA512)
+            val secretDecoded = Base64.decode(configService.getConfig().kraken.privateKey.value)
+            val secretSpec = SecretKeySpec(secretDecoded, KrakenApiConstants.HMAC_SHA512)
             mac.init(secretSpec)
 
             val sigBytes = mac.doFinal(hmacMessage)
@@ -400,10 +399,5 @@ class KrakenServiceImpl(
         } catch (e: Exception) {
             throw RuntimeException("Failed to sign request", e)
         }
-    }
-
-    private companion object {
-        const val HMAC_SHA512 = "HmacSHA512"
-        const val SHA_256 = "SHA-256"
     }
 }

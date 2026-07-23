@@ -1,5 +1,8 @@
 package com.gemini.krakenbot.frontend
 
+import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.view.util.CssClass
+import com.gemini.krakenbot.view.util.HtmlAttrs
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.booleans.shouldBeTrue
@@ -9,6 +12,14 @@ import kotlinx.browser.document
 import kotlinx.browser.window
 import org.w3c.dom.*
 import kotlin.js.Date
+
+private const val TR = "tr"
+private const val TH = "th"
+private const val TD = "td"
+private const val TR_HOVERABLE = "tr.hoverable"
+private const val SPAN = "span"
+private const val DIV = "div"
+private const val TBODY_TR = "tbody tr"
 
 @Suppress("unused")
 class DashboardTest : StringSpec() {
@@ -20,14 +31,14 @@ class DashboardTest : StringSpec() {
         val tbody = document.createElement("tbody") as HTMLTableSectionElement
         table.appendChild(tbody)
 
-        val headerRow = document.createElement("tr") as HTMLTableRowElement
-        val th0 = document.createElement("th") as HTMLTableCellElement
-        th0.className = "sortable"
+        val headerRow = document.createElement(TR) as HTMLTableRowElement
+        val th0 = document.createElement(TH) as HTMLTableCellElement
+        th0.className = CssClass.Table.Sortable.value
         th0.textContent = "Asset"
         headerRow.appendChild(th0)
         
-        val th1 = document.createElement("th") as HTMLTableCellElement
-        th1.className = "sortable"
+        val th1 = document.createElement(TH) as HTMLTableCellElement
+        th1.className = CssClass.Table.Sortable.value
         th1.textContent = "Price"
         headerRow.appendChild(th1)
         
@@ -35,21 +46,21 @@ class DashboardTest : StringSpec() {
         thead.appendChild(headerRow)
         table.appendChild(thead)
 
-        val row1 = document.createElement("tr") as HTMLTableRowElement
-        row1.className = "hoverable"
-        val td1a = document.createElement("td")
-        td1a.textContent = "ETH"
-        val td1b = document.createElement("td")
+        val row1 = document.createElement(TR) as HTMLTableRowElement
+        row1.className = CssClass.Table.Hoverable.value
+        val td1a = document.createElement(TD)
+        td1a.textContent = Asset.ETH
+        val td1b = document.createElement(TD)
         td1b.textContent = "$3,000.00"
         row1.appendChild(td1a)
         row1.appendChild(td1b)
         tbody.appendChild(row1)
 
-        val row2 = document.createElement("tr") as HTMLTableRowElement
-        row2.className = "hoverable"
-        val td2a = document.createElement("td")
-        td2a.textContent = "BTC"
-        val td2b = document.createElement("td")
+        val row2 = document.createElement(TR) as HTMLTableRowElement
+        row2.className = CssClass.Table.Hoverable.value
+        val td2a = document.createElement(TD)
+        td2a.textContent = Asset.BTC
+        val td2b = document.createElement(TD)
         td2b.textContent = "$60,000.00"
         row2.appendChild(td2a)
         row2.appendChild(td2b)
@@ -57,36 +68,36 @@ class DashboardTest : StringSpec() {
 
         sortTable(th0, 0)
         
-        var sortedRows = tbody.querySelectorAll("tr.hoverable")
-        (sortedRows.item(0) as HTMLTableRowElement).cells.item(0)?.textContent shouldBe "BTC"
-        (sortedRows.item(1) as HTMLTableRowElement).cells.item(0)?.textContent shouldBe "ETH"
-        th0.classList.contains("asc").shouldBeTrue()
+        var sortedRows = tbody.querySelectorAll(TR_HOVERABLE)
+        (sortedRows.item(0) as HTMLTableRowElement).cells.item(0)?.textContent shouldBe Asset.BTC
+        (sortedRows.item(1) as HTMLTableRowElement).cells.item(0)?.textContent shouldBe Asset.ETH
+        th0.classList.contains(CssClass.Utility.Asc.value).shouldBeTrue()
         
         sortTable(th0, 0)
-        sortedRows = tbody.querySelectorAll("tr.hoverable")
-        (sortedRows.item(0) as HTMLTableRowElement).cells.item(0)?.textContent shouldBe "ETH"
-        th0.classList.contains("desc").shouldBeTrue()
+        sortedRows = tbody.querySelectorAll(TR_HOVERABLE)
+        (sortedRows.item(0) as HTMLTableRowElement).cells.item(0)?.textContent shouldBe Asset.ETH
+        th0.classList.contains(CssClass.Utility.Desc.value).shouldBeTrue()
         
         sortTable(th1, 1)
-        sortedRows = tbody.querySelectorAll("tr.hoverable")
-        (sortedRows.item(0) as HTMLTableRowElement).cells.item(0)?.textContent shouldBe "ETH"
-        th1.classList.contains("asc").shouldBeTrue()
+        sortedRows = tbody.querySelectorAll(TR_HOVERABLE)
+        (sortedRows.item(0) as HTMLTableRowElement).cells.item(0)?.textContent shouldBe Asset.ETH
+        th1.classList.contains(CssClass.Utility.Asc.value).shouldBeTrue()
     }
 
         "updateAge displays fresh and stale data" {
-        val container = document.createElement("div") as HTMLDivElement
+        val container = document.createElement(DIV) as HTMLDivElement
         
-        val ageVal = document.createElement("span") as HTMLSpanElement
-        ageVal.className = "data-age-value"
+        val ageVal = document.createElement(SPAN) as HTMLSpanElement
+        ageVal.className = CssClass.DataAge.Value.value
         container.appendChild(ageVal)
 
-        val ageTime = document.createElement("span") as HTMLSpanElement
-        ageTime.className = "data-age-time"
+        val ageTime = document.createElement(SPAN) as HTMLSpanElement
+        ageTime.className = CssClass.DataAge.Time.value
         val offsetTime = Date.now() - 10000.0
-        ageTime.setAttribute("data-epoch", offsetTime.toString())
+        ageTime.setAttribute(HtmlAttrs.DATA_EPOCH, offsetTime.toString())
         container.appendChild(ageTime)
 
-        val badge = document.createElement("span") as HTMLSpanElement
+        val badge = document.createElement(SPAN) as HTMLSpanElement
         badge.className = "status-badge"
         container.appendChild(badge)
 
@@ -95,13 +106,13 @@ class DashboardTest : StringSpec() {
         try {
             updateAge()
             ageVal.textContent shouldBe "10s ago"
-            badge.classList.contains("live").shouldBeTrue()
+            badge.classList.contains(CssClass.Utility.Live.value).shouldBeTrue()
 
             val staleTime = Date.now() - 100000.0
-            ageTime.setAttribute("data-epoch", staleTime.toString())
+            ageTime.setAttribute(HtmlAttrs.DATA_EPOCH, staleTime.toString())
             updateAge()
             ageVal.textContent shouldBe "100s ago"
-            badge.classList.contains("delayed").shouldBeTrue()
+            badge.classList.contains(CssClass.Utility.Delayed.value).shouldBeTrue()
         } finally {
             document.body!!.removeChild(container)
         }
@@ -113,20 +124,20 @@ class DashboardTest : StringSpec() {
     }
 
         "reapplySort preserves the active sort direction" {
-        val container = document.createElement("div")
+        val container = document.createElement(DIV)
         container.innerHTML = """
             <table>
                 <thead>
                     <tr>
                         <th>C0</th><th>C1</th><th>C2</th><th>C3</th><th>C4</th>
-                        <th class="sortable">Target</th>
+                        <th class="${CssClass.Table.Sortable.value}">Target</th>
                     </tr>
                 </thead>
                 <tbody>
-                    <tr class="hoverable">
+                    <tr class="${CssClass.Table.Hoverable.value}">
                         <td>A</td><td>1</td><td>2</td><td>3</td><td>4</td><td data-sort-value="70">70%</td>
                     </tr>
-                    <tr class="hoverable">
+                    <tr class="${CssClass.Table.Hoverable.value}">
                         <td>B</td><td>1</td><td>2</td><td>3</td><td>4</td><td data-sort-value="30">30%</td>
                     </tr>
                 </tbody>
@@ -138,20 +149,20 @@ class DashboardTest : StringSpec() {
             val targetHeader = headers.item(0) as HTMLElement
             
             // Set initial state to sort by col 5
-            sortTable(targetHeader, 5, "asc")
+            sortTable(targetHeader, 5, CssClass.Utility.Asc.value)
             
             // Verify B is first (30%)
-            var rows = container.querySelectorAll("tbody tr")
+            var rows = container.querySelectorAll(TBODY_TR)
             rows.item(0)!!.textContent!!.shouldContain("B")
             
             // Reverse sort
-            sortTable(targetHeader, 5, "desc")
-            rows = container.querySelectorAll("tbody tr")
+            sortTable(targetHeader, 5, CssClass.Utility.Desc.value)
+            rows = container.querySelectorAll(TBODY_TR)
             rows.item(0)!!.textContent!!.shouldContain("A")
             
             // Reapply sort (should still be A first)
             reapplySort()
-            rows = container.querySelectorAll("tbody tr")
+            rows = container.querySelectorAll(TBODY_TR)
             rows.item(0)!!.textContent!!.shouldContain("A")
         } finally {
             document.body!!.removeChild(container)
@@ -162,9 +173,9 @@ class DashboardTest : StringSpec() {
         updateAge()
         reapplySort()
 
-        val container = document.createElement("div")
+        val container = document.createElement(DIV)
         container.innerHTML = """
-            <span class="data-age-value"></span><span class="data-age-time" data-epoch="invalid"></span>
+            <span class="${CssClass.DataAge.Value.value}"></span><span class="${CssClass.DataAge.Time.value}" ${HtmlAttrs.DATA_EPOCH}="invalid"></span>
             <div id="orphan-header"></div>
         """.trimIndent()
         document.body!!.appendChild(container)

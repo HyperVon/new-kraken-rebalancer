@@ -3,72 +3,65 @@ package com.gemini.krakenbot.view.util
 import com.gemini.krakenbot.view.util.Icons.icon
 import kotlinx.html.*
 
-object Layouts {
-    fun FlowContent.glassPanel(
-        title: String,
-        iconSvg: String? = null,
-        block: DIV.() -> Unit
-    ) {
-        div(classes = CssClass.Layout.GlassPanel.value) {
-            h2(classes = CssClass.Utility.GlassPanelTitle.value) {
-                if (iconSvg != null) {
-                    icon(iconSvg)
-                }
-                +title
-            }
-            block()
-        }
-    }
-
-    fun FlowContent.statusCard(
-        title: String,
-        iconSvg: String,
-        value: String,
-        isSuccess: Boolean = false,
-        valueId: String? = null,
-        titleId: String? = null,
-        block: (DIV.() -> Unit)? = null
-    ) {
-        val cardClass =
-            if (isSuccess) {
-                CssClass.StatusCard.Success.value
-            } else {
-                CssClass.StatusCard.Default.value
-            }
-        div(classes = cardClass) {
-            div(classes = CssClass.StatusCard.Header.value) {
-                span(classes = CssClass.StatusCard.Title.value) {
-                    if (titleId != null) id = titleId
-                    +title
-                }
-                div(classes = CssClass.StatusCard.Icon.value) { icon(iconSvg) }
-            }
-            div(classes = CssClass.StatusCard.Value.value) {
-                if (valueId != null) {
-                    id = valueId
-                }
-                +value
-            }
-            if (block != null) {
-                div(classes = CssClass.StatusCard.Sub.value) { block() }
-            }
-        }
-    }
-
-    fun DIV.formSection(title: String, iconSvg: String, block: DIV.() -> Unit) {
-        div(classes = CssClass.Form.Section.value) {
-            h3(classes = CssClass.Form.SectionTitle.value) {
+fun FlowContent.glassPanel(
+    title: String,
+    iconSvg: String? = null,
+    block: DIV.() -> Unit
+) {
+    div(CssClass.Layout.GlassPanel) {
+        h2(CssClass.Utility.GlassPanelTitle) {
+            if (iconSvg != null) {
                 icon(iconSvg)
+            }
+            +title
+        }
+        block()
+    }
+}
+
+fun FlowContent.statusCard(
+    title: String,
+    iconSvg: String,
+    value: String,
+    isSuccess: Boolean = false,
+    valueId: String? = null,
+    titleId: String? = null,
+    block: (DIV.() -> Unit)? = null
+) {
+    val cardClass = if (isSuccess) CssClass.StatusCard.Success else CssClass.StatusCard.Default
+    div(cardClass) {
+        div(CssClass.StatusCard.Header) {
+            span(CssClass.StatusCard.Title) {
+                if (titleId != null) id = titleId
                 +title
             }
-            block()
+            div(CssClass.StatusCard.Icon) { icon(iconSvg) }
+        }
+        div(CssClass.StatusCard.Value) {
+            if (valueId != null) {
+                id = valueId
+            }
+            +value
+        }
+        if (block != null) {
+            div(CssClass.StatusCard.Sub) { block() }
         }
     }
+}
 
-    fun DIV.formGroup(label: String, block: DIV.() -> Unit) {
-        div(classes = CssClass.Form.Group.value) {
-            label(classes = CssClass.Form.Label.value) { +label }
-            block()
+fun DIV.formSection(title: String, iconSvg: String, block: DIV.() -> Unit) {
+    div(CssClass.Form.Section) {
+        h3(CssClass.Form.SectionTitle) {
+            icon(iconSvg)
+            +title
         }
+        block()
+    }
+}
+
+fun DIV.formGroup(label: String, block: DIV.() -> Unit) {
+    div(CssClass.Form.Group) {
+        label(CssClass.Form.Label) { +label }
+        block()
     }
 }

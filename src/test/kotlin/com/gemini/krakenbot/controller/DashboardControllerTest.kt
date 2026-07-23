@@ -4,6 +4,7 @@ import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.config.*
+import com.gemini.krakenbot.controller.DashboardController
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.HistoryStats
 import com.gemini.krakenbot.model.PortfolioSnapshot
@@ -11,10 +12,12 @@ import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.TradeHistoryService
 import com.gemini.krakenbot.view.DashboardView
 import com.gemini.krakenbot.view.component.*
+import com.gemini.krakenbot.model.TimeRange
 import com.gemini.krakenbot.view.util.FormFields
 import com.gemini.krakenbot.view.util.HtmxHeaders
 import com.gemini.krakenbot.view.util.Routes
 import com.gemini.krakenbot.view.util.ViewText
+import com.gemini.krakenbot.view.util.withRange
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
@@ -85,6 +88,7 @@ class DashboardControllerTest : StringSpec() {
                     historyPageComponent = get()
                 )
             }
+            single { DashboardController(get(), get(), get(), get()) }
         }
 
         beforeTest {
@@ -105,7 +109,7 @@ class DashboardControllerTest : StringSpec() {
                 }
                 val response = client.get(Routes.ROOT)
                 response.status shouldBe HttpStatusCode.OK
-                response.headers[HttpHeaders.ContentType] shouldContain "text/html"
+                response.headers[HttpHeaders.ContentType] shouldContain TestFixtures.TEXT_HTML
                 response.bodyAsText() shouldContain ViewText.APP_TITLE
                 response.bodyAsText() shouldContain "sse-connect=\"${Routes.API_STATUS_STREAM}\""
             }
@@ -120,7 +124,7 @@ class DashboardControllerTest : StringSpec() {
                 }
                 val response = client.get(Routes.FRAGMENT_DASHBOARD)
                 response.status shouldBe HttpStatusCode.OK
-                response.headers[HttpHeaders.ContentType] shouldContain "text/html"
+                response.headers[HttpHeaders.ContentType] shouldContain TestFixtures.TEXT_HTML
                 response.bodyAsText() shouldContain ViewText.WAITING_FIRST_CYCLE
             }
         }
@@ -176,7 +180,7 @@ class DashboardControllerTest : StringSpec() {
                 }
                 val response = client.get(Routes.FRAGMENT_DASHBOARD)
                 response.status shouldBe HttpStatusCode.OK
-                response.headers[HttpHeaders.ContentType] shouldContain "text/html"
+                response.headers[HttpHeaders.ContentType] shouldContain TestFixtures.TEXT_HTML
 
                 val body = response.bodyAsText()
                 body shouldContain ViewText.TOTAL_PORTFOLIO
@@ -225,7 +229,7 @@ class DashboardControllerTest : StringSpec() {
                 }
                 val response = client.get(Routes.SETTINGS)
                 response.status shouldBe HttpStatusCode.OK
-                response.headers[HttpHeaders.ContentType] shouldContain "text/html"
+                response.headers[HttpHeaders.ContentType] shouldContain TestFixtures.TEXT_HTML
                 response.bodyAsText() shouldContain ViewText.GLOBAL_PARAMETERS
                 response.bodyAsText() shouldContain FormFields.LOOP_DELAY_SECONDS
             }
@@ -395,17 +399,17 @@ class DashboardControllerTest : StringSpec() {
                 val response = client.post(Routes.SETTINGS) {
                     setBody(
                         parametersOf(
-                            FormFields.LOOP_DELAY_SECONDS to listOf("invalid"),
-                            FormFields.DEVIATION_TRIGGER_PERCENT to listOf("invalid"),
-                            FormFields.DUST_THRESHOLD_USD to listOf("invalid"),
-                            FormFields.FIAT_MAX_DRAWDOWN to listOf("invalid"),
-                            FormFields.FIAT_DEPLOYMENT_EXPONENT to listOf("invalid"),
+                            FormFields.LOOP_DELAY_SECONDS to listOf(TestFixtures.INVALID),
+                            FormFields.DEVIATION_TRIGGER_PERCENT to listOf(TestFixtures.INVALID),
+                            FormFields.DUST_THRESHOLD_USD to listOf(TestFixtures.INVALID),
+                            FormFields.FIAT_MAX_DRAWDOWN to listOf(TestFixtures.INVALID),
+                            FormFields.FIAT_DEPLOYMENT_EXPONENT to listOf(TestFixtures.INVALID),
                             // "dryRun" is absent, meaning false
                             FormFields.SYMBOLS to listOf(
                                 Asset.BTC,
                                 Asset.ETH
                             ),
-                            FormFields.TARGETS to listOf("invalid", "30.0")
+                            FormFields.TARGETS to listOf(TestFixtures.INVALID, "30.0")
                         ).formUrlEncode()
                     )
                     header(
@@ -589,7 +593,7 @@ class DashboardControllerTest : StringSpec() {
                 application {
                     configureTestEnv()
                 }
-                val response = client.get("${Routes.API_HISTORY_SNAPSHOTS}?range=24h")
+                val response = client.get(Routes.API_HISTORY_SNAPSHOTS.withRange("24h"))
                 response.status shouldBe HttpStatusCode.OK
                 response.bodyAsText() shouldBe "[]"
             }
@@ -601,7 +605,7 @@ class DashboardControllerTest : StringSpec() {
                 application {
                     configureTestEnv()
                 }
-                val response = client.get("${Routes.API_HISTORY_TRADES}?range=all")
+                val response = client.get(Routes.API_HISTORY_TRADES.withRange(TimeRange.ALL))
                 response.status shouldBe HttpStatusCode.OK
                 response.bodyAsText() shouldBe "[]"
             }
@@ -620,7 +624,7 @@ class DashboardControllerTest : StringSpec() {
                 application {
                     configureTestEnv()
                 }
-                val response = client.get("${Routes.API_HISTORY_STATS}?range=7d")
+                val response = client.get(Routes.API_HISTORY_STATS.withRange(TimeRange.SEVEN_DAYS))
                 response.status shouldBe HttpStatusCode.OK
                 response.bodyAsText() shouldContain "\"allTimeHigh\":15000.00"
             }
@@ -633,13 +637,13 @@ class DashboardControllerTest : StringSpec() {
                     configureTestEnv()
                 }
                 // Test "7d" range
-                client.get("${Routes.API_HISTORY_SNAPSHOTS}?range=7d").status shouldBe HttpStatusCode.OK
+                client.get(Routes.API_HISTORY_SNAPSHOTS.withRange(TimeRange.SEVEN_DAYS)).status shouldBe HttpStatusCode.OK
                 // Test "30d" range
-                client.get("${Routes.API_HISTORY_SNAPSHOTS}?range=30d").status shouldBe HttpStatusCode.OK
+                client.get(Routes.API_HISTORY_SNAPSHOTS.withRange(TimeRange.THIRTY_DAYS)).status shouldBe HttpStatusCode.OK
                 // Test "90d" range
-                client.get("${Routes.API_HISTORY_SNAPSHOTS}?range=90d").status shouldBe HttpStatusCode.OK
+                client.get(Routes.API_HISTORY_SNAPSHOTS.withRange(TimeRange.NINETY_DAYS)).status shouldBe HttpStatusCode.OK
                 // Test fallback else range
-                client.get("${Routes.API_HISTORY_SNAPSHOTS}?range=invalid").status shouldBe HttpStatusCode.OK
+                client.get(Routes.API_HISTORY_SNAPSHOTS.withRange("invalid")).status shouldBe HttpStatusCode.OK
             }
         }
 
@@ -682,7 +686,7 @@ class DashboardControllerTest : StringSpec() {
                 }
                 val response = client.get("/api/health")
                 response.status shouldBe HttpStatusCode.OK
-                response.headers[HttpHeaders.ContentType] shouldContain "application/json"
+                response.headers[HttpHeaders.ContentType] shouldContain TestFixtures.APPLICATION_JSON
                 val body = response.bodyAsText()
                 body shouldContain "\"status\":\"UP\""
                 body shouldContain "\"totalTradesExecuted\":12"
@@ -724,7 +728,7 @@ class DashboardControllerTest : StringSpec() {
                 }
                 val response = client.get("/api/history/sync-progress")
                 response.status shouldBe HttpStatusCode.OK
-                response.headers[HttpHeaders.ContentType] shouldContain "application/json"
+                response.headers[HttpHeaders.ContentType] shouldContain TestFixtures.APPLICATION_JSON
                 val body = response.bodyAsText()
                 body shouldContain "\"seeded\":false"
                 body shouldContain "\"offset\":\"123\""

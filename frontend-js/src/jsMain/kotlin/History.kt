@@ -1,5 +1,17 @@
 package com.gemini.krakenbot.frontend
 
+import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.OrderSide
+import com.gemini.krakenbot.model.TimeRange
+import com.gemini.krakenbot.view.util.ChartProps
+import com.gemini.krakenbot.view.util.CssClass
+import com.gemini.krakenbot.view.util.CssClass.Query.TIME_RANGE_BTNS as TIME_RANGE_BTNS_QUERY
+import com.gemini.krakenbot.view.util.HtmlAttrs
+import com.gemini.krakenbot.view.util.HtmlEvents
+import com.gemini.krakenbot.view.util.HtmlIds
+import com.gemini.krakenbot.view.util.Routes
+import com.gemini.krakenbot.view.util.ViewText
+import com.gemini.krakenbot.view.util.withRange
 import kotlinx.browser.document
 import kotlinx.browser.window
 import org.w3c.dom.*
@@ -9,11 +21,7 @@ import kotlin.js.Promise
 import kotlin.js.json
 
 @JsName("Chart")
-private external class Chart(ctx: dynamic, config: dynamic) {
-    fun destroy()
-    fun isDatasetVisible(index: Int): Boolean
-    val data: dynamic
-}
+private external class Chart(ctx: dynamic, config: dynamic)
 
 @JsName("Object")
 private external object JSObject {
@@ -21,62 +29,70 @@ private external object JSObject {
     fun assign(target: dynamic, vararg sources: dynamic): dynamic
 }
 
-private val CHART_COLORS = arrayOf(
-    "rgba(96, 165, 250, 1)",   /* blue-400 */
-    "rgba(52, 211, 153, 1)",   /* emerald-400 */
-    "rgba(251, 191, 36, 1)",   /* amber-400 */
-    "rgba(167, 139, 250, 1)",  /* violet-400 */
-    "rgba(248, 113, 113, 1)",  /* red-400 */
-    "rgba(45, 212, 191, 1)",   /* teal-400 */
-    "rgba(251, 146, 60, 1)",   /* orange-400 */
-    "rgba(232, 121, 249, 1)"   /* fuchsia-400 */
+private val CHART_COLORS = ChartProps.PALETTE_BORDER_COLORS
+private val CHART_BG = ChartProps.PALETTE_BG_COLORS
+
+private fun buildLegendConfig(): dynamic = json(
+    ChartProps.LABELS to json(
+        ChartProps.COLOR to ChartProps.COLOR_LEGEND_LABEL,
+        ChartProps.FONT to json(
+            ChartProps.FAMILY to ChartProps.FONT_INTER,
+            ChartProps.SIZE to 12
+        )
+    )
 )
 
-private val CHART_BG = arrayOf(
-    "rgba(96, 165, 250, 0.1)",
-    "rgba(52, 211, 153, 0.1)",
-    "rgba(251, 191, 36, 0.1)",
-    "rgba(167, 139, 250, 0.1)",
-    "rgba(248, 113, 113, 0.1)",
-    "rgba(45, 212, 191, 0.1)",
-    "rgba(251, 146, 60, 0.1)",
-    "rgba(232, 121, 249, 0.1)"
+private fun buildTooltipConfig(): dynamic = json(
+    ChartProps.BACKGROUND_COLOR to ChartProps.COLOR_TOOLTIP_BG,
+    ChartProps.BORDER_COLOR to ChartProps.COLOR_TOOLTIP_BORDER,
+    ChartProps.BORDER_WIDTH to 1,
+    ChartProps.TITLE_COLOR to ChartProps.COLOR_TOOLTIP_TITLE,
+    ChartProps.BODY_COLOR to ChartProps.COLOR_TOOLTIP_BODY,
+    ChartProps.BODY_FONT to json(
+        ChartProps.FAMILY to ChartProps.FONT_MONO
+    ),
+    ChartProps.PADDING to 12,
+    ChartProps.CORNER_RADIUS to 8
 )
 
-private val chartDefaults: dynamic = js("""
-    ({
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-            legend: { labels: { color: '#94a3b8', font: { family: "'Inter', sans-serif", size: 12 } } },
-            tooltip: {
-                backgroundColor: 'rgba(15, 23, 42, 0.9)',
-                borderColor: 'rgba(255,255,255,0.1)',
-                borderWidth: 1,
-                titleColor: '#f8fafc',
-                bodyColor: '#cbd5e1',
-                bodyFont: { family: "'Roboto Mono', monospace" },
-                padding: 12,
-                cornerRadius: 8
-            }
-        },
-        scales: {
-            x: {
-                type: 'time',
-                time: { tooltipFormat: 'MMM d, yyyy HH:mm' },
-                grid: { color: 'rgba(51, 65, 85, 0.3)' },
-                ticks: { color: '#64748b', maxTicksLimit: 8 }
-            },
-            y: {
-                grid: { color: 'rgba(51, 65, 85, 0.3)' },
-                ticks: { color: '#64748b' }
-            }
-        }
-    })
-""")
+private fun buildScalesConfig(): dynamic = json(
+    ChartProps.X to json(
+        ChartProps.TYPE to ChartProps.TIME_TYPE,
+        ChartProps.TIME to json(
+            ChartProps.TOOLTIP_FORMAT to ChartProps.TIME_FORMAT_DEFAULT
+        ),
+        ChartProps.GRID to json(
+            ChartProps.COLOR to ChartProps.COLOR_GRID_LINE
+        ),
+        ChartProps.TICKS to json(
+            ChartProps.COLOR to ChartProps.COLOR_TICK,
+            ChartProps.MAX_TICKS_LIMIT to 8
+        )
+    ),
+    ChartProps.Y to json(
+        ChartProps.GRID to json(
+            ChartProps.COLOR to ChartProps.COLOR_GRID_LINE
+        ),
+        ChartProps.TICKS to json(
+            ChartProps.COLOR to ChartProps.COLOR_TICK
+        )
+    )
+)
+
+private fun buildDefaultChartOptions(): dynamic = json(
+    ChartProps.RESPONSIVE to true,
+    ChartProps.MAINTAIN_ASPECT_RATIO to false,
+    ChartProps.PLUGINS to json(
+        ChartProps.LEGEND to buildLegendConfig(),
+        ChartProps.TOOLTIP to buildTooltipConfig()
+    ),
+    ChartProps.SCALES to buildScalesConfig()
+)
+
+private val chartDefaults: dynamic = buildDefaultChartOptions()
 
 private val charts = mutableMapOf<String, dynamic>()
-private var currentRange = "30d"
+private var currentRange = TimeRange.THIRTY_DAYS.key
 private var allTrades: Array<dynamic> = emptyArray()
 private val visibilityStates = mutableMapOf<String, MutableMap<String, Boolean>>()
 
@@ -90,14 +106,16 @@ fun initHistory() {
 
 private var syncIntervalId: Int? = null
 
+private const val ACTIVE = "active"
+
 private fun setupSyncProgressAndLoad() {
     checkSyncProgress().then { isDone ->
         if (isDone) {
-            loadAll("30d")
+            loadAll(TimeRange.THIRTY_DAYS.key)
         } else {
             syncIntervalId?.let { window.clearInterval(it) }
             syncIntervalId = window.setInterval({
-                if (document.getElementById("sync-progress-banner") == null) {
+                if (document.getElementById(HtmlIds.SYNC_PROGRESS_BANNER) == null) {
                     syncIntervalId?.let { window.clearInterval(it) }
                     return@setInterval
                 }
@@ -111,22 +129,22 @@ private fun setupSyncProgressAndLoad() {
         }
     }
 
-    val buttons = document.querySelectorAll(".time-range-btn")
+    val buttons = document.querySelectorAll(TIME_RANGE_BTNS_QUERY)
     for (i in 0 until buttons.length) {
         val btn = buttons.item(i) as? HTMLElement
-        btn?.addEventListener("click", {
-            val list = document.querySelectorAll(".time-range-btn")
+        btn?.addEventListener(HtmlEvents.CLICK, {
+            val list = document.querySelectorAll(TIME_RANGE_BTNS_QUERY)
             for (j in 0 until list.length) {
-                (list.item(j) as? HTMLElement)?.classList?.remove("active")
+                (list.item(j) as? HTMLElement)?.classList?.remove(ACTIVE)
             }
-            btn.classList.add("active")
-            val range = btn.getAttribute("data-range") ?: "30d"
+            btn.classList.add(ACTIVE)
+            val range = btn.getAttribute(HtmlAttrs.DATA_RANGE) ?: TimeRange.THIRTY_DAYS.key
             loadAll(range)
         })
     }
 
-    val checkbox = document.getElementById("show-dry-run-checkbox") as? HTMLInputElement
-    checkbox?.addEventListener("change", {
+    val checkbox = document.getElementById(HtmlIds.SHOW_DRY_RUN_CHECKBOX) as? HTMLInputElement
+    checkbox?.addEventListener(HtmlEvents.CHANGE, {
         renderTradeTable(allTrades)
         buildCumulativePLChart(allTrades, checkbox.checked)
     })
@@ -137,11 +155,13 @@ private fun fetchJSON(url: String): Promise<dynamic> {
         .then { res -> res.json() }
 }
 
+private const val EN_US = "en-US"
+
 fun formatUSD(valDouble: Double): String {
     val options: dynamic = json()
     options.minimumFractionDigits = 2
     options.maximumFractionDigits = 2
-    return "$" + valDouble.asDynamic().toLocaleString("en-US", options)
+    return "$" + valDouble.asDynamic().toLocaleString(EN_US, options)
 }
 
 fun formatPctTick(v: Double, includePlus: Boolean = true): String {
@@ -150,7 +170,7 @@ fun formatPctTick(v: Double, includePlus: Boolean = true): String {
     val options: dynamic = json()
     options.minimumFractionDigits = 0
     options.maximumFractionDigits = 2
-    return sign + d.asDynamic().toLocaleString("en-US", options) + "%"
+    return sign + d.asDynamic().toLocaleString(EN_US, options) + "%"
 }
 
 internal fun getUniqueSymbols(snapshots: Array<dynamic>, excludeUsd: Boolean = true): List<String> {
@@ -163,7 +183,7 @@ internal fun getUniqueSymbols(snapshots: Array<dynamic>, excludeUsd: Boolean = t
         }
     }
     return if (excludeUsd) {
-        symbolsSet.filter { it != "USD" }.sorted()
+        symbolsSet.filter { it != Asset.USD }.sorted()
     } else {
         symbolsSet.sorted()
     }
@@ -177,22 +197,12 @@ internal fun mapSnapshotsToPoints(snapshots: Array<dynamic>, valueSelector: (dyn
 
 internal fun getClonedChartOptions(): dynamic {
     when (currentRange) {
-        "24h" -> chartDefaults.scales.x.time.unit = "hour"
-        "all" -> js("delete chartDefaults.scales.x.time.unit")
+        TimeRange.TWENTY_FOUR_HOURS.key -> chartDefaults.scales.x.time.unit = "hour"
+        TimeRange.ALL.key -> js("delete chartDefaults.scales.x.time.unit")
         else -> chartDefaults.scales.x.time.unit = "day"
     }
 
-    val options: dynamic = JSObject.assign(json(), window.asDynamic().chartDefaults)
-    options.plugins = JSObject.assign(json(), window.asDynamic().chartDefaults.plugins)
-    options.plugins.tooltip = JSObject.assign(json(), window.asDynamic().chartDefaults.plugins.tooltip)
-    options.scales = JSObject.assign(json(), window.asDynamic().chartDefaults.scales)
-    options.scales.x = JSObject.assign(json(), window.asDynamic().chartDefaults.scales.x)
-    options.scales.x.time = JSObject.assign(json(), window.asDynamic().chartDefaults.scales.x.time)
-    options.scales.x.ticks = JSObject.assign(json(), window.asDynamic().chartDefaults.scales.x.ticks)
-    options.scales.y = JSObject.assign(json(), window.asDynamic().chartDefaults.scales.y)
-    options.scales.y.ticks = JSObject.assign(json(), window.asDynamic().chartDefaults.scales.y.ticks)
-
-    return options
+    return JSON.parse(JSON.stringify(window.asDynamic().chartDefaults))
 }
 
 internal fun createLineChartConfig(datasets: Array<dynamic>, options: dynamic): dynamic {
@@ -221,7 +231,7 @@ internal fun createOrUpdate(canvasId: String, config: dynamic) {
         visibilityStates[canvasId] = states
         try {
             existingChart.destroy()
-        } catch (e: Throwable) {}
+        } catch (_: Throwable) {}
     }
 
     val savedStates = visibilityStates[canvasId]
@@ -253,16 +263,16 @@ internal fun buildPortfolioValueChart(snapshots: Array<dynamic>) {
 
     val datasets = mutableListOf<dynamic>()
     datasets.add(json(
-        "label" to "Total Portfolio",
-        "data" to totalPortfolioData,
-        "borderColor" to "rgba(96, 165, 250, 1)",
-        "backgroundColor" to "rgba(96, 165, 250, 0.08)",
-        "fill" to true,
-        "tension" to 0.3,
-        "borderWidth" to 2,
-        "pointRadius" to 4,
-        "pointHoverRadius" to 6,
-        "pointHitRadius" to 10
+        ChartProps.LABEL to ViewText.TOTAL_PORTFOLIO,
+        ChartProps.DATA to totalPortfolioData,
+        ChartProps.BORDER_COLOR to ChartProps.COLOR_BLUE,
+        ChartProps.BACKGROUND_COLOR to ChartProps.COLOR_BLUE_BG,
+        ChartProps.FILL to true,
+        ChartProps.TENSION to 0.3,
+        ChartProps.BORDER_WIDTH to 2,
+        ChartProps.POINT_RADIUS to 4,
+        ChartProps.POINT_HOVER_RADIUS to 6,
+        ChartProps.POINT_HIT_RADIUS to 10
     ))
 
     symbolList.forEachIndexed { i, sym ->
@@ -276,15 +286,15 @@ internal fun buildPortfolioValueChart(snapshots: Array<dynamic>) {
         }
 
         datasets.add(json(
-            "label" to sym,
-            "data" to symbolData,
-            "borderColor" to color,
-            "backgroundColor" to "transparent",
-            "tension" to 0.3,
-            "borderWidth" to 1.5,
-            "pointRadius" to 3,
-            "pointHoverRadius" to 5,
-            "pointHitRadius" to 10
+            ChartProps.LABEL to sym,
+            ChartProps.DATA to symbolData,
+            ChartProps.BORDER_COLOR to color,
+            ChartProps.BACKGROUND_COLOR to ChartProps.TRANSPARENT,
+            ChartProps.TENSION to 0.3,
+            ChartProps.BORDER_WIDTH to 1.5,
+            ChartProps.POINT_RADIUS to 3,
+            ChartProps.POINT_HOVER_RADIUS to 5,
+            ChartProps.POINT_HIT_RADIUS to 10
         ))
     }
 
@@ -300,7 +310,10 @@ internal fun buildPortfolioValueChart(snapshots: Array<dynamic>) {
         formatUSD(v)
     }
 
-    createOrUpdate("portfolio-value-chart", createLineChartConfig(datasets.toTypedArray(), options))
+    createOrUpdate(
+        HtmlIds.PORTFOLIO_VALUE_CHART,
+        createLineChartConfig(datasets.toTypedArray(), options)
+    )
 }
 
 internal fun buildAssetHoldingsChart(snapshots: Array<dynamic>) {
@@ -332,15 +345,15 @@ internal fun buildAssetHoldingsChart(snapshots: Array<dynamic>) {
         }
 
         json(
-            "label" to sym,
-            "data" to symbolData,
-            "borderColor" to color,
-            "backgroundColor" to "transparent",
-            "tension" to 0.3,
-            "borderWidth" to 2,
-            "pointRadius" to 3,
-            "pointHoverRadius" to 5,
-            "pointHitRadius" to 10
+            ChartProps.LABEL to sym,
+            ChartProps.DATA to symbolData,
+            ChartProps.BORDER_COLOR to color,
+            ChartProps.BACKGROUND_COLOR to ChartProps.TRANSPARENT,
+            ChartProps.TENSION to 0.3,
+            ChartProps.BORDER_WIDTH to 2,
+            ChartProps.POINT_RADIUS to 3,
+            ChartProps.POINT_HOVER_RADIUS to 5,
+            ChartProps.POINT_HIT_RADIUS to 10
         )
     }.toTypedArray()
 
@@ -359,14 +372,14 @@ internal fun buildAssetHoldingsChart(snapshots: Array<dynamic>) {
         val balOpts: dynamic = json()
         balOpts.minimumFractionDigits = 4
         balOpts.maximumFractionDigits = 8
-        "$sym: $pctSign${pctChange.toFixed(2)}% (${balance.asDynamic().toLocaleString("en-US", balOpts)})"
+        "$sym: $pctSign${pctChange.toFixed(2)}% (${balance.asDynamic().toLocaleString(EN_US, balOpts)})"
     }
 
     options.scales.y.ticks.callback = { v: Double, _: dynamic, _: dynamic ->
         formatPctTick(v, includePlus = true)
     }
 
-    createOrUpdate("asset-holdings-chart", createLineChartConfig(datasets, options))
+    createOrUpdate(HtmlIds.ASSET_HOLDINGS_CHART, createLineChartConfig(datasets, options))
 }
 
 internal fun buildAllocationDriftChart(snapshots: Array<dynamic>) {
@@ -386,16 +399,16 @@ internal fun buildAllocationDriftChart(snapshots: Array<dynamic>) {
         }
 
         json(
-            "label" to sym,
-            "data" to symbolData,
-            "borderColor" to color,
-            "backgroundColor" to bg,
-            "fill" to true,
-            "tension" to 0.3,
-            "borderWidth" to 1.5,
-            "pointRadius" to 3,
-            "pointHoverRadius" to 5,
-            "pointHitRadius" to 10
+            ChartProps.LABEL to sym,
+            ChartProps.DATA to symbolData,
+            ChartProps.BORDER_COLOR to color,
+            ChartProps.BACKGROUND_COLOR to bg,
+            ChartProps.FILL to true,
+            ChartProps.TENSION to 0.3,
+            ChartProps.BORDER_WIDTH to 1.5,
+            ChartProps.POINT_RADIUS to 3,
+            ChartProps.POINT_HOVER_RADIUS to 5,
+            ChartProps.POINT_HIT_RADIUS to 10
         )
     }.toTypedArray()
 
@@ -412,7 +425,7 @@ internal fun buildAllocationDriftChart(snapshots: Array<dynamic>) {
         formatPctTick(v, includePlus = false)
     }
 
-    createOrUpdate("allocation-drift-chart", createLineChartConfig(datasets, options))
+    createOrUpdate(HtmlIds.ALLOCATION_DRIFT_CHART, createLineChartConfig(datasets, options))
 }
 
 internal fun calculateCumulativePL(trades: Array<dynamic>, includeDryRun: Boolean = false): Array<dynamic> {
@@ -425,8 +438,8 @@ internal fun calculateCumulativePL(trades: Array<dynamic>, includeDryRun: Boolea
     }
 
     val filtered = sorted.filter { t: dynamic ->
-        val isSuccess = (t.success == true || t.success.toString() == "true")
-        val isDryRun = (t.dryRun == true || t.dryRun.toString() == "true")
+        val isSuccess = isTrue(t.success)
+        val isDryRun = isTrue(t.dryRun)
         isSuccess && (includeDryRun || !isDryRun)
     }
 
@@ -437,7 +450,7 @@ internal fun calculateCumulativePL(trades: Array<dynamic>, includeDryRun: Boolea
     for (t in filtered) {
         val amt = t.usdAmount.toString().toDoubleOrNull() ?: 0.0
         val side = t.side.toString().uppercase()
-        cumulative += if (side == "SELL") amt else -amt
+        cumulative += if (side == OrderSide.SELL.name) amt else -amt
         points.add(json("x" to t.timestamp, "y" to cumulative))
     }
 
@@ -451,24 +464,24 @@ internal fun buildCumulativePLChart(trades: Array<dynamic>, includeDryRun: Boole
     val chartData = if (rawData.size == 1) {
         val firstTradeTime = Date(rawData[0].x.toString()).getTime()
         val startTime = Date(firstTradeTime - 3600000.0).toISOString()
-        arrayOf(json("x" to startTime, "y" to 0.0), rawData[0])
+        arrayOf(json(ChartProps.X to startTime, ChartProps.Y to 0.0), rawData[0])
     } else {
         rawData
     }
 
-    val labelText = if (includeDryRun) "Net Cash Flow (Realized & Dry Run Trades)" else "Net Cash Flow (Realized Trades)"
+    val labelText = if (includeDryRun) ViewText.NET_CASH_FLOW_ALL else ViewText.NET_CASH_FLOW_REALIZED
 
     val datasets = arrayOf(json(
-        "label" to labelText,
-        "data" to chartData,
-        "borderColor" to "rgba(52, 211, 153, 1)",
-        "backgroundColor" to "rgba(52, 211, 153, 0.08)",
-        "fill" to true,
-        "tension" to 0.3,
-        "borderWidth" to 2,
-        "pointRadius" to 4,
-        "pointHoverRadius" to 6,
-        "pointHitRadius" to 10
+        ChartProps.LABEL to labelText,
+        ChartProps.DATA to chartData,
+        ChartProps.BORDER_COLOR to ChartProps.COLOR_EMERALD,
+        ChartProps.BACKGROUND_COLOR to ChartProps.COLOR_GREEN_BG,
+        ChartProps.FILL to true,
+        ChartProps.TENSION to 0.3,
+        ChartProps.BORDER_WIDTH to 2,
+        ChartProps.POINT_RADIUS to 4,
+        ChartProps.POINT_HOVER_RADIUS to 6,
+        ChartProps.POINT_HIT_RADIUS to 10
     ))
 
     val options = getClonedChartOptions()
@@ -476,7 +489,7 @@ internal fun buildCumulativePLChart(trades: Array<dynamic>, includeDryRun: Boole
         formatUSD(v)
     }
 
-    createOrUpdate("cumulative-pl-chart", createLineChartConfig(datasets, options))
+    createOrUpdate(HtmlIds.CUMULATIVE_PL_CHART, createLineChartConfig(datasets, options))
 }
 
 fun formatPair(trade: dynamic): String {
@@ -484,52 +497,84 @@ fun formatPair(trade: dynamic): String {
     return trade.symbol.toString() + "/USD"
 }
 
-internal fun renderTradeTable(trades: Array<dynamic>) {
-    val tbody = document.getElementById("trade-table-body") ?: return
+private const val TR = "tr"
 
-    val showDryRun = (document.getElementById("show-dry-run-checkbox") as? HTMLInputElement)?.checked ?: true
-    val filteredTrades = if (showDryRun) trades else trades.filter { t: dynamic -> !(t.dryRun as? Boolean ?: false) }.toTypedArray()
+private const val TD = "td"
+
+internal fun renderTradeTable(trades: Array<dynamic>) {
+    val tbody = document.getElementById(HtmlIds.TRADE_TABLE_BODY) ?: return
+    tbody.innerHTML = ""
+
+    val showDryRun = (document.getElementById(HtmlIds.SHOW_DRY_RUN_CHECKBOX) as? HTMLInputElement)?.checked ?: true
+    val filteredTrades = if (showDryRun) trades else trades.filter { t: dynamic -> !isTrue(t.dryRun) }.toTypedArray()
 
     if (filteredTrades.asDynamic().length == 0) {
-        tbody.innerHTML = "<tr><td colspan=\"6\" style=\"text-align:center;color:var(--color-text-muted);padding:2rem;\">No trades found for this period.</td></tr>"
+        val tr = document.createElement(TR)
+        val td = document.createElement(TD) as HTMLTableCellElement
+        td.colSpan = 6
+        td.setAttribute("style", "text-align:center;color:var(--color-text-muted);padding:2rem;")
+        td.textContent = ViewText.NO_TRADES_FOUND_PERIOD
+        tr.appendChild(td)
+        tbody.appendChild(tr)
         return
     }
 
-    val rowsHtml = filteredTrades.joinToString("") { t: dynamic ->
-        val time = Date(t.timestamp.toString()).asDynamic().toLocaleString()
-        val side = t.side.toString()
-        val sideClass = if (side == "BUY") "badge badge-buy" else "badge badge-sell"
-        val success = t.success as? Boolean ?: false
-        val dryRun = t.dryRun as? Boolean ?: false
-        val statusText = if (success) (if (dryRun) "DRY RUN" else "SUCCESS") else "FAILED"
-        val statusClass = if (success) (if (dryRun) "badge badge-info" else "badge badge-buy") else "badge badge-sell"
-        val vol = t.volume.toString().toDoubleOrNull() ?: 0.0
-        val amt = t.usdAmount.toString().toDoubleOrNull() ?: 0.0
-
-        """
-        <tr class="hoverable">
-            <td class="mono-col">$time</td>
-            <td class="symbol-col">${formatPair(t)}</td>
-            <td><span class="$sideClass">$side</span></td>
-            <td class="mono-col">${vol.toFixed(8)}</td>
-            <td class="mono-col">${formatUSD(amt)}</td>
-            <td><span class="$statusClass">$statusText</span></td>
-        </tr>
-        """.trimIndent()
+    filteredTrades.forEach { t ->
+        tbody.appendChild(renderTradeRow(t))
     }
+}
 
-    tbody.innerHTML = rowsHtml
+private fun renderTradeRow(t: dynamic): HTMLTableRowElement {
+    val tr = document.createElement(TR) as HTMLTableRowElement
+    tr.className = CssClass.Table.Hoverable.toString()
+
+    val time = Date(t.timestamp.toString()).asDynamic().toLocaleString()
+    val side = t.side.toString()
+    val sideClass = if (side == OrderSide.BUY.name) CssClass.Badge.Buy else CssClass.Badge.Sell
+    val success = isTrue(t.success)
+    val dryRun = isTrue(t.dryRun)
+    val statusText = if (success) (if (dryRun) ViewText.STATUS_DRY_RUN else ViewText.STATUS_SUCCESS) else ViewText.STATUS_FAILED
+    val statusClass = if (success) (if (dryRun) CssClass.Badge.Info else CssClass.Badge.Buy) else CssClass.Badge.Sell
+    val vol = t.volume.toString().toDoubleOrNull() ?: 0.0
+    val amt = t.usdAmount.toString().toDoubleOrNull() ?: 0.0
+
+    tr.appendChild(createCell(time, CssClass.Table.MonoCol))
+    tr.appendChild(createCell(formatPair(t), CssClass.Table.SymbolCol))
+    tr.appendChild(createBadgeCell(side, sideClass))
+    tr.appendChild(createCell(vol.toFixed(8), CssClass.Table.MonoCol))
+    tr.appendChild(createCell(formatUSD(amt), CssClass.Table.MonoCol))
+    tr.appendChild(createBadgeCell(statusText, statusClass))
+
+    return tr
+}
+
+private fun createCell(text: String, cssClass: CssClass): HTMLTableCellElement {
+    val td = document.createElement(TD) as HTMLTableCellElement
+    td.className = cssClass.toString()
+    td.textContent = text
+    return td
+}
+
+private const val SPAN = "span"
+
+private fun createBadgeCell(text: String, badgeClass: CssClass): HTMLTableCellElement {
+    val td = document.createElement(TD) as HTMLTableCellElement
+    val span = document.createElement(SPAN) as HTMLSpanElement
+    span.className = badgeClass.toString()
+    span.textContent = text
+    td.appendChild(span)
+    return td
 }
 
 internal fun updateStats(stats: dynamic) {
-    val athTitle = document.getElementById("stat-ath-title")
-    val ath = document.getElementById("stat-ath")
-    val totalTrades = document.getElementById("stat-total-trades")
-    val totalVolume = document.getElementById("stat-total-volume")
-    val totalFees = document.getElementById("stat-total-fees")
+    val athTitle = document.getElementById(HtmlIds.STAT_ATH_TITLE)
+    val ath = document.getElementById(HtmlIds.STAT_ATH)
+    val totalTrades = document.getElementById(HtmlIds.STAT_TOTAL_TRADES)
+    val totalVolume = document.getElementById(HtmlIds.STAT_TOTAL_VOLUME)
+    val totalFees = document.getElementById(HtmlIds.STAT_TOTAL_FEES)
 
     if (athTitle != null) {
-        athTitle.textContent = if (currentRange == "all") "All-Time High" else "Period High"
+        athTitle.textContent = if (currentRange == TimeRange.ALL.key) ViewText.HISTORY_ALL_TIME_HIGH else ViewText.PERIOD_HIGH
     }
     if (ath != null) ath.textContent = formatUSD(stats.allTimeHigh.toString().toDoubleOrNull() ?: 0.0)
     if (totalTrades != null) {
@@ -540,14 +585,21 @@ internal fun updateStats(stats: dynamic) {
     if (totalFees != null) totalFees.textContent = formatUSD(stats.totalFeesPaid.toString().toDoubleOrNull() ?: 0.0)
 }
 
+private fun fetchRanged(vararg routes: String, range: String): Array<Promise<dynamic>> {
+    return routes.map { route -> fetchJSON(route.withRange(range)) }.toTypedArray()
+}
+
 internal fun loadAll(range: String): Promise<Unit> {
     currentRange = range
 
-    val p1 = fetchJSON("/api/history/snapshots?range=$currentRange")
-    val p2 = fetchJSON("/api/history/trades?range=$currentRange")
-    val p3 = fetchJSON("/api/history/stats?range=$currentRange")
+    val promises = fetchRanged(
+        Routes.API_HISTORY_SNAPSHOTS,
+        Routes.API_HISTORY_TRADES,
+        Routes.API_HISTORY_STATS,
+        range = range
+    )
 
-    return Promise.all(arrayOf(p1, p2, p3)).then { results ->
+    return Promise.all(promises).then { results ->
         val snapshots = results[0] as Array<dynamic>
         val trades = results[1] as Array<dynamic>
         val stats = results[2]
@@ -555,17 +607,16 @@ internal fun loadAll(range: String): Promise<Unit> {
         buildPortfolioValueChart(snapshots)
         buildAssetHoldingsChart(snapshots)
         buildAllocationDriftChart(snapshots)
-        val showDryRun = (document.getElementById("show-dry-run-checkbox") as? HTMLInputElement)?.checked ?: true
+        val showDryRun = (document.getElementById(HtmlIds.SHOW_DRY_RUN_CHECKBOX) as? HTMLInputElement)?.checked ?: true
         buildCumulativePLChart(trades, showDryRun)
         renderTradeTable(trades)
         updateStats(stats)
     }
 }
 
-
 internal fun checkSyncProgress(): Promise<Boolean> {
-    return fetchJSON("/api/history/sync-progress").then { status: dynamic ->
-        val banner = document.getElementById("sync-progress-banner") as? HTMLElement
+    return fetchJSON(Routes.API_HISTORY_SYNC_PROGRESS).then { status: dynamic ->
+        val banner = document.getElementById(HtmlIds.SYNC_PROGRESS_BANNER) as? HTMLElement
         if (banner == null) {
             true
         } else {
@@ -582,8 +633,8 @@ internal fun checkSyncProgress(): Promise<Boolean> {
                     pct = (offset / total * 100.0).toInt().coerceAtMost(100)
                 }
 
-                val bar = document.getElementById("sync-progress-bar") as? HTMLElement
-                val text = document.getElementById("sync-progress-text") as? HTMLElement
+                val bar = document.getElementById(HtmlIds.SYNC_PROGRESS_BAR) as? HTMLElement
+                val text = document.getElementById(HtmlIds.SYNC_PROGRESS_TEXT) as? HTMLElement
 
                 if (bar != null) bar.style.width = "$pct%"
                 if (text != null) text.textContent = "${offset.asDynamic().toLocaleString()} / ${total.asDynamic().toLocaleString()} ($pct%)"

@@ -27,7 +27,7 @@ object ViewText {
     const val ADD_ASSET = "Add Asset"
     const val SAVE_CONFIGURATION = "Save Configuration"
 
-    // Newly added constants
+    // Status / Labels
     const val LIVE = "LIVE"
     const val DELAYED = "DELAYED"
     const val DATA_AGE = "Data Age"
@@ -40,6 +40,8 @@ object ViewText {
     const val REMOVE = "Remove"
     const val NEW_SYMBOL_PLACEHOLDER = "New Symbol (e.g. DOT)"
     const val TOTAL_INITIAL = "Total: 0.00%"
+    const val PLACEHOLDER_DASHES = "--"
+    const val PRICE_NOT_FOUND_PREFIX = "Price not found for "
 
     // Table Headers
     const val HEADER_ASSET = "Asset"
@@ -63,6 +65,10 @@ object ViewText {
     const val HISTORY_TOTAL_VOLUME = "Total Volume Traded"
     const val HISTORY_TOTAL_FEES = "Total Fees Paid"
     const val HISTORY_NO_DATA = "No historical data available yet. Data will appear after the first rebalance cycle."
+    const val SHOW_DRY_RUN_TRADES = "Show Dry Run Trades"
+    const val SYNCHRONIZING_TRADE_HISTORY = "Synchronizing Kraken Trade History..."
+    const val INITIAL_SYNC_PROGRESS = "0 / 0 (0%)"
+    const val LABEL_ALL = "All"
 
     // Navigation
     const val NAV_DASHBOARD = "Dashboard"
@@ -75,4 +81,18 @@ object ViewText {
     const val HEADER_VOLUME = "Volume"
     const val HEADER_USD_AMOUNT = "USD Amount"
     const val HEADER_STATUS = "Status"
+
+    // Time & Status formatting
+    const val AGO_SECONDS = "s ago"
+    const val AM = "AM"
+    const val PM = "PM"
+    const val STATUS_DRY_RUN = "DRY RUN"
+    const val STATUS_SUCCESS = "SUCCESS"
+    const val STATUS_FAILED = "FAILED"
+    const val PERIOD_HIGH = "Period High"
+    const val NET_CASH_FLOW_ALL = "Net Cash Flow (Realized & Dry Run Trades)"
+    const val NET_CASH_FLOW_REALIZED = "Net Cash Flow (Realized Trades)"
+    const val NO_TRADES_FOUND_PERIOD = "No trades found for this period."
+    const val INVALID_SYMBOL_ALERT = "Invalid symbol. Symbols must be alphanumeric and up to 16 characters."
+    const val SYMBOL_EXISTS_ALERT = "Symbol already exists"
 }

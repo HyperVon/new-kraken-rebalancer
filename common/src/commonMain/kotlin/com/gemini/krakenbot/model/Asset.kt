@@ -1,9 +1,9 @@
 package com.gemini.krakenbot.model
 
-import com.fasterxml.jackson.annotation.JsonValue
+import kotlin.jvm.JvmInline
 
 @JvmInline
-value class Asset(@get:JsonValue val value: String) {
+value class Asset(val value: String) {
     override fun toString(): String = value
 
     val krakenTicker: String
@@ -20,9 +20,23 @@ value class Asset(@get:JsonValue val value: String) {
         const val BTC = "BTC"
         const val ETH = "ETH"
         const val DOGE = "DOGE"
+        const val SOL = "SOL"
+        const val USDT = "USDT"
+        const val USDC = "USDC"
+        const val ADA = "ADA"
+        const val XRP = "XRP"
+        const val DOT = "DOT"
+        const val LINK = "LINK"
+        const val LTC = "LTC"
 
         const val XBT = "XBT"
         const val XDG = "XDG"
+
+        val ASSET_USD = Asset(USD)
+        val ASSET_BTC = Asset(BTC)
+        val ASSET_ETH = Asset(ETH)
+        val ASSET_DOGE = Asset(DOGE)
+        val ASSET_SOL = Asset(SOL)
 
         private val KRAKEN_TICKER_BY_SYMBOL = mapOf(
             BTC to XBT,
@@ -42,6 +56,7 @@ value class Asset(@get:JsonValue val value: String) {
             "${toKrakenTicker(symbol)}$USD"
 
         val BTC_USD_PAIR: String = tradingPair(BTC)
+        val ETH_USD_PAIR: String = tradingPair(ETH)
 
         fun fromTradingPair(pair: String, allocations: List<String>): String? {
             val normalizedPair = pair.uppercase()

@@ -2,6 +2,8 @@ package com.gemini.krakenbot.service.impl
 
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.PortfolioSnapshot
+import com.gemini.krakenbot.util.PrecisionConstants
+import com.gemini.krakenbot.util.HUNDRED
 import java.math.BigDecimal
 import java.math.RoundingMode
 
@@ -11,10 +13,10 @@ import java.math.RoundingMode
  */
 object PortfolioCalculations {
 
-    internal const val SCALE_PERCENT = 4
-    internal const val SCALE_USD = 2
-    internal const val SCALE_PRICE = 8
-    internal val HUNDRED = BigDecimal.valueOf(100)
+    internal const val SCALE_PERCENT = PrecisionConstants.SCALE_PERCENT
+    internal const val SCALE_USD = PrecisionConstants.SCALE_USD
+    internal const val SCALE_PRICE = PrecisionConstants.SCALE_CRYPTO
+    internal val HUNDRED = PrecisionConstants.HUNDRED
 
     /**
      * Calculate target percentage for an asset based on allocation type.

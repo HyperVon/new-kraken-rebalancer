@@ -1,5 +1,7 @@
 package com.gemini.krakenbot.view.util
 
+import com.gemini.krakenbot.model.TimeRange
+
 object Routes {
     const val ROOT = "/"
     const val SETTINGS = "/settings"
@@ -14,6 +16,16 @@ object Routes {
     const val API_HEALTH = "/api/health"
     const val STATIC_STYLE_CSS = "/static/style.css"
     const val STATIC_REBALANCER_JS = "/static/rebalancer.js"
+    const val STATIC_PREFIX = "/static"
+    const val STATIC_RESOURCES_DIR = "static"
+}
+
+fun String.withRange(range: TimeRange): String = withRange(range.key)
+fun String.withRange(rangeKey: String): String = withQuery(QueryParamKeys.RANGE, rangeKey)
+fun String.withQuery(key: String, value: Any): String = "$this?$key=$value"
+
+object QueryParamKeys {
+    const val RANGE = "range"
 }
 
 object HtmxHeaders {

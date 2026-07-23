@@ -3,16 +3,26 @@ package com.gemini.krakenbot.service.impl
 import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderResult
+import com.gemini.krakenbot.model.OrderSide
+import com.gemini.krakenbot.model.OrderType
 import com.gemini.krakenbot.model.TradeRecord
+import com.gemini.krakenbot.service.AssetPrices
+import com.gemini.krakenbot.service.AssetValues
 import com.gemini.krakenbot.service.KrakenService
-import com.gemini.krakenbot.service.TradeHistoryService
 import com.gemini.krakenbot.service.OrderExecutor
 import com.gemini.krakenbot.service.PortfolioAnalyzer
-import com.gemini.krakenbot.service.AssetValues
-import com.gemini.krakenbot.service.AssetPrices
 import com.gemini.krakenbot.service.RebalanceOrders
+import com.gemini.krakenbot.service.TradeHistoryService
+import com.gemini.krakenbot.util.ActionLogFormatter
+import com.gemini.krakenbot.util.TradeCalculator
+import com.gemini.krakenbot.util.PrecisionConstants
+import com.gemini.krakenbot.util.CASH_RESERVE_FACTOR
+import com.gemini.krakenbot.util.FEE_RATE_ESTIMATE
+import com.gemini.krakenbot.util.HUNDRED
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.last
 import org.slf4j.LoggerFactory
 import java.math.BigDecimal
 import java.math.RoundingMode
@@ -27,10 +37,10 @@ class OrderExecutorImpl(
     private val log = LoggerFactory.getLogger(OrderExecutorImpl::class.java)
 
     companion object {
-        val CASH_RESERVE_FACTOR = BigDecimal("0.99")
+        val CASH_RESERVE_FACTOR: BigDecimal = PrecisionConstants.CASH_RESERVE_FACTOR
         const val MAX_REFRESH_ATTEMPTS = 3
         const val REFRESH_DELAY_MS = 250L
-        val FEE_RATE_ESTIMATE = BigDecimal("0.0026") // 0.26% taker fee estimate
+        val FEE_RATE_ESTIMATE: BigDecimal = PrecisionConstants.FEE_RATE_ESTIMATE
     }
 
     override suspend fun executeOrders(
@@ -41,8 +51,7 @@ class OrderExecutorImpl(
         settings: Settings,
         actionLog: MutableList<String>
     ) {
-        var projectedCash =
-            currentValuesUSD[Asset.USD] ?: BigDecimal.ZERO
+        var projectedCash = currentValuesUSD[Asset.USD] ?: BigDecimal.ZERO
         var executedSells = false
 
         for ((symbol, usdToSell) in sellOrders) {
@@ -52,7 +61,7 @@ class OrderExecutorImpl(
                 continue
             }
 
-            val result = executeSingleOrder(symbol, usdToSell, "sell", prices, actionLog)
+            val result = executeSingleOrder(symbol, usdToSell, OrderSide.SELL, prices, actionLog)
             if (result?.success == true) {
                 projectedCash = projectedCash.add(usdToSell)
                 executedSells = true
@@ -82,7 +91,7 @@ class OrderExecutorImpl(
                 continue
             }
 
-            val result = executeSingleOrder(symbol, cost, "buy", prices, actionLog)
+            val result = executeSingleOrder(symbol, cost, OrderSide.BUY, prices, actionLog)
             if (result?.success == true) {
                 actualCash = actualCash.subtract(cost)
             }
@@ -92,19 +101,19 @@ class OrderExecutorImpl(
     private suspend fun executeSingleOrder(
         symbol: String,
         usdAmount: BigDecimal,
-        side: String,
+        side: OrderSide,
         prices: AssetPrices,
         actionLog: MutableList<String>
     ): OrderResult? {
         val price = prices[symbol] ?: BigDecimal.ZERO
         if (price.signum() == 0) return null
 
-        val volume = usdAmount.divide(price, 8, RoundingMode.HALF_UP)
+        val volume = usdAmount.divide(price, PrecisionConstants.SCALE_CRYPTO, RoundingMode.HALF_UP)
         val pair = Asset.tradingPair(symbol)
         val result = krakenService.executeOrder(
             pair = pair,
-            type = "market",
-            side = side,
+            type = OrderType.MARKET.apiValue,
+            side = side.apiValue,
             volume = volume
         )
         logOrderResult(
@@ -113,34 +122,21 @@ class OrderExecutorImpl(
             symbol = symbol,
             volume = volume,
             usdAmount = usdAmount,
-            side = side.uppercase()
+            side = side.uppercaseName
         )
-        recordTrade(result, symbol, pair, side.uppercase(), volume, usdAmount, prices)
+        recordTrade(result, symbol, pair, side.uppercaseName, volume, usdAmount, prices)
         return result
     }
 
     private suspend fun refreshUsdBalanceAfterSells(projectedCash: BigDecimal): BigDecimal {
-        // Calling .last() is a terminal operator that triggers collection of the cold flow.
-        // It runs the polling flow to completion and returns the final stable balance value.
         return pollUsdBalanceAfterSells(projectedCash).last()
     }
 
-    /**
-     * A cold Flow that polls Kraken's balance API repeatedly with exponential backoff.
-     *
-     * Because it is a cold Flow:
-     * 1. No HTTP requests are made until it is collected (via .last() above).
-     * 2. It emits the updated USD balance on each successful poll attempt.
-     * 3. It terminates once the balance stabilizes above the threshold or the max attempts are exhausted.
-     */
     private fun pollUsdBalanceAfterSells(
         projectedCash: BigDecimal,
         targetThreshold: BigDecimal = projectedCash.multiply(BigDecimal("0.95"))
     ): Flow<BigDecimal> = flow {
         var lastBalance = projectedCash
-        // In the original implementation, the first delay happens BEFORE the first balance fetch.
-        // And it doesn't emit the initial projectedCash.
-
         var backoffMs = REFRESH_DELAY_MS
         val maxAttempts = MAX_REFRESH_ATTEMPTS
 
@@ -175,14 +171,23 @@ class OrderExecutorImpl(
         side: String
     ) {
         if (result.success) {
-            val prefix = if (result.dryRun) "[DRY RUN] " else ""
-            if (side == "SELL") {
-                actionLog.add("${prefix}SELL $symbol Volume: $volume Value: $$usdAmount")
-            } else {
-                actionLog.add("${prefix}BUY $symbol Volume: $volume Cost: $$usdAmount")
-            }
+            actionLog.add(
+                ActionLogFormatter.formatOrderExecution(
+                    side = side,
+                    symbol = symbol,
+                    volume = volume,
+                    usdAmount = usdAmount,
+                    isDryRun = result.dryRun
+                )
+            )
         } else {
-            actionLog.add("FAILED $side $symbol: ${result.errorMessage}")
+            actionLog.add(
+                ActionLogFormatter.formatOrderFailure(
+                    side = side,
+                    symbol = symbol,
+                    errorMessage = result.errorMessage
+                )
+            )
         }
     }
 
@@ -195,31 +200,15 @@ class OrderExecutorImpl(
         usdAmount: BigDecimal,
         prices: AssetPrices
     ) {
-        val expectedPrice = prices[symbol] ?: BigDecimal.ZERO
-        val executedPrice = if (volume.signum() > 0) usdAmount.divide(volume, 8, RoundingMode.HALF_UP) else BigDecimal.ZERO
-        val slippage = if (expectedPrice.signum() > 0) {
-            val diff = if (side == "BUY") executedPrice.subtract(expectedPrice) else expectedPrice.subtract(executedPrice)
-            diff.divide(expectedPrice, 4, RoundingMode.HALF_UP).multiply(BigDecimal.valueOf(100))
-        } else {
-            BigDecimal.ZERO
-        }
-        val estimatedFee = usdAmount.multiply(FEE_RATE_ESTIMATE).setScale(4, RoundingMode.HALF_UP)
-
-        val trade = TradeRecord(
-            timestamp = Instant.now(),
+        val trade = TradeCalculator.createTradeRecord(
+            result = result,
+            symbol = symbol,
             pair = pair,
             side = side,
-            symbol = symbol,
             volume = volume,
             usdAmount = usdAmount,
-            success = result.success,
-            dryRun = result.dryRun,
-            errorMessage = result.errorMessage,
-            price = executedPrice,
-            fee = estimatedFee,
-            slippagePercent = slippage
+            prices = prices
         )
         tradeHistoryService.saveTrade(trade)
     }
-
 }
