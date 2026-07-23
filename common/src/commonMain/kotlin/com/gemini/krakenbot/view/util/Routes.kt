@@ -1,5 +1,7 @@
 package com.gemini.krakenbot.view.util
 
+import com.gemini.krakenbot.model.TimeRange
+
 object Routes {
     const val ROOT = "/"
     const val SETTINGS = "/settings"
@@ -17,6 +19,9 @@ object Routes {
     const val STATIC_PREFIX = "/static"
     const val STATIC_RESOURCES_DIR = "static"
 }
+
+fun String.withRange(range: TimeRange): String = "$this?${QueryParamKeys.RANGE}=${range.key}"
+fun String.withQuery(key: String, value: Any): String = "$this?$key=$value"
 
 object QueryParamKeys {
     const val RANGE = "range"

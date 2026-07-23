@@ -499,89 +499,19 @@ class TradeHistoryServiceImpl(
 
         val historicalTrades = trades.filter { it.timestamp.isBefore(cutoffTime) }
 
-        // 5. Build timeline events
-        val events = mutableListOf<TimelineEvent>()
-        for (trade in historicalTrades) {
-            events.add(TimelineEvent.TradeEvent(trade.timestamp, trade))
-        }
+        val events = SnapshotHistoryCalculator.buildTimelineEvents(
+            historicalTrades = historicalTrades,
+            cutoffTime = cutoffTime
+        )
 
-        // Add daily close events for the last 90 days
-        val now = Instant.now()
-        for (day in 0..90) {
-            val dailyTime = now.minus(day.toLong(), ChronoUnit.DAYS)
-                .truncatedTo(ChronoUnit.DAYS)
-                .plus(23, ChronoUnit.HOURS)
-                .plus(59, ChronoUnit.MINUTES)
-                .plus(59, ChronoUnit.SECONDS)
-            if (dailyTime.isBefore(cutoffTime)) {
-                events.add(TimelineEvent.DailyCloseEvent(dailyTime))
-            }
-        }
-
-        events.sort() // Sort DESC (newest first)
-
-        val snapshotsToSave = mutableListOf<PortfolioSnapshot>()
-
-        for (ev in events) {
-            val snapshotTimestamp = ev.timestamp
-
-            // Compute portfolio snapshot details
-            var exactPortfolioValue = BigDecimal.ZERO
-            val assetSnapshots = mutableMapOf<String, PortfolioSnapshot.AssetSnapshot>()
-
-            val calculatedAssets = allocations.map { alloc ->
-                val symbol = alloc.symbol.value.uppercase()
-                val rawBal = runningBalances[symbol] ?: BigDecimal.ZERO
-                val balance = if (rawBal < BigDecimal.ZERO) BigDecimal.ZERO else rawBal
-                val price = getPriceForTimestamp(symbol, snapshotTimestamp, ohlcData, tradePrices, currentPrices)
-                val valueUSD = balance.multiply(price).setScale(2, RoundingMode.HALF_UP)
-                exactPortfolioValue = exactPortfolioValue.add(valueUSD)
-                CalculatedAsset(symbol, balance, price, valueUSD, alloc.targetPercent)
-            }
-
-            for ((symbol, balance, price, valueUSD, targetPercent) in calculatedAssets) {
-                assetSnapshots[symbol] = PortfolioCalculations.createAssetSnapshot(
-                    symbol = symbol,
-                    balance = balance,
-                    price = price,
-                    valueUSD = valueUSD,
-                    targetPercent = BigDecimal(targetPercent),
-                    totalPortfolioValueUSD = exactPortfolioValue
-                )
-            }
-
-            val targetUsdPercent =
-                BigDecimal(allocations.firstOrNull { it.symbol.isUsd }?.targetPercent ?: 5.0).setScale(2, RoundingMode.HALF_UP)
-
-            val snapshot = PortfolioSnapshot(
-                timestamp = snapshotTimestamp,
-                totalValueUSD = exactPortfolioValue.setScale(2, RoundingMode.HALF_UP),
-                assets = assetSnapshots,
-                actions = emptyList(),
-                drawdownPercent = BigDecimal.ZERO,
-                fiatDeploymentPercent = BigDecimal.ZERO,
-                effectiveUsdTargetPercent = targetUsdPercent
-            )
-
-            snapshotsToSave.add(snapshot)
-
-            // If it is a trade event, reverse apply it to runningBalances
-            if (ev is TimelineEvent.TradeEvent) {
-                val trade = ev.trade
-                val volume = trade.volume
-                val usdAmount = trade.usdAmount
-                val fee = trade.fee
-                val symbol = trade.symbol.uppercase()
-
-                if (trade.side == BUY) {
-                    runningBalances[symbol] = (runningBalances[symbol] ?: BigDecimal.ZERO).subtract(volume)
-                    runningBalances[USD] = (runningBalances[USD] ?: BigDecimal.ZERO).add(usdAmount).add(fee)
-                } else if (trade.side == SELL) {
-                    runningBalances[symbol] = (runningBalances[symbol] ?: BigDecimal.ZERO).add(volume)
-                    runningBalances[USD] = (runningBalances[USD] ?: BigDecimal.ZERO).subtract(usdAmount).add(fee)
-                }
-            }
-        }
+        val snapshotsToSave = SnapshotHistoryCalculator.calculateHistoricalSnapshots(
+            events = events,
+            allocations = allocations,
+            runningBalances = runningBalances,
+            currentPrices = currentPrices,
+            ohlcData = ohlcData,
+            tradePrices = tradePrices
+        )
 
         if (snapshotsToSave.isNotEmpty()) {
             log.info("Saving {} reconstructed historical snapshots...", snapshotsToSave.size)
@@ -589,76 +519,7 @@ class TradeHistoryServiceImpl(
         }
     }
 
-    private fun <T> findClosest(
-        list: List<T>,
-        targetTime: Long,
-        timeExtractor: (T) -> Long,
-        valueExtractor: (T) -> BigDecimal
-    ): BigDecimal {
-        var closestValue = valueExtractor(list[0])
-        var minDiff = abs(timeExtractor(list[0]) - targetTime)
-        for (item in list) {
-            val diff = abs(timeExtractor(item) - targetTime)
-            if (diff < minDiff) {
-                minDiff = diff
-                closestValue = valueExtractor(item)
-            }
-        }
-        return closestValue
-    }
-
-    private fun getPriceForTimestamp(
-        symbol: String,
-        timestamp: Instant,
-        ohlcData: Map<String, List<Pair<Long, BigDecimal>>>,
-        tradePrices: Map<String, List<Pair<Instant, BigDecimal>>>,
-        currentPrices: Map<String, BigDecimal>
-    ): BigDecimal {
-        if (symbol.equals(USD, ignoreCase = true)) return BigDecimal.ONE
-
-        val prices = ohlcData[symbol.uppercase()]
-        if (!prices.isNullOrEmpty()) {
-            return findClosest(
-                prices,
-                timestamp.epochSecond,
-                { it.first },
-                { it.second }
-            )
-        }
-
-        val tPrices = tradePrices[symbol.uppercase()]
-        if (!tPrices.isNullOrEmpty()) {
-            return findClosest(
-                tPrices,
-                timestamp.toEpochMilli(),
-                { it.first.toEpochMilli() },
-                { it.second }
-            )
-        }
-
-        return currentPrices[symbol.uppercase()] ?: BigDecimal.ZERO
-    }
-
     override fun getSyncMetadata(key: String): String? = repository.getSyncMetadata(key)
     override fun setSyncMetadata(key: String, value: String) = repository.setSyncMetadata(key, value)
     override fun isHistorySeeded(): Boolean = repository.isHistorySeeded()
-}
-
-private data class CalculatedAsset(
-    val symbol: String,
-    val balance: BigDecimal,
-    val price: BigDecimal,
-    val valueUSD: BigDecimal,
-    val targetPercent: Double
-)
-
-private sealed class TimelineEvent : Comparable<TimelineEvent> {
-    abstract val timestamp: Instant
-
-    data class TradeEvent(override val timestamp: Instant, val trade: TradeRecord) : TimelineEvent()
-    data class DailyCloseEvent(override val timestamp: Instant) : TimelineEvent()
-
-    override fun compareTo(other: TimelineEvent): Int {
-        return other.timestamp.compareTo(this.timestamp)
-    }
 }

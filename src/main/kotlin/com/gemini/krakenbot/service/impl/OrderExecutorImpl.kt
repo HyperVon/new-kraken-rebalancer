@@ -13,6 +13,8 @@ import com.gemini.krakenbot.service.OrderExecutor
 import com.gemini.krakenbot.service.PortfolioAnalyzer
 import com.gemini.krakenbot.service.RebalanceOrders
 import com.gemini.krakenbot.service.TradeHistoryService
+import com.gemini.krakenbot.util.ActionLogFormatter
+import com.gemini.krakenbot.util.TradeCalculator
 import com.gemini.krakenbot.util.PrecisionConstants
 import com.gemini.krakenbot.util.CASH_RESERVE_FACTOR
 import com.gemini.krakenbot.util.FEE_RATE_ESTIMATE
@@ -169,14 +171,23 @@ class OrderExecutorImpl(
         side: String
     ) {
         if (result.success) {
-            val prefix = if (result.dryRun) "[DRY RUN] " else ""
-            if (side == OrderSide.SELL.uppercaseName) {
-                actionLog.add("${prefix}SELL $symbol Volume: $volume Value: $$usdAmount")
-            } else {
-                actionLog.add("${prefix}BUY $symbol Volume: $volume Cost: $$usdAmount")
-            }
+            actionLog.add(
+                ActionLogFormatter.formatOrderExecution(
+                    side = side,
+                    symbol = symbol,
+                    volume = volume,
+                    usdAmount = usdAmount,
+                    isDryRun = result.dryRun
+                )
+            )
         } else {
-            actionLog.add("FAILED $side $symbol: ${result.errorMessage}")
+            actionLog.add(
+                ActionLogFormatter.formatOrderFailure(
+                    side = side,
+                    symbol = symbol,
+                    errorMessage = result.errorMessage
+                )
+            )
         }
     }
 
@@ -189,45 +200,14 @@ class OrderExecutorImpl(
         usdAmount: BigDecimal,
         prices: AssetPrices
     ) {
-        val expectedPrice = prices[symbol] ?: BigDecimal.ZERO
-        val executedPrice = when {
-            volume.signum() > 0 -> usdAmount.divide(volume, PrecisionConstants.SCALE_CRYPTO, RoundingMode.HALF_UP)
-            else -> BigDecimal.ZERO
-        }
-        val slippage = when {
-            expectedPrice.signum() > 0 -> {
-                val diff =
-                    when (side) {
-                        OrderSide.BUY.uppercaseName -> executedPrice.subtract(expectedPrice)
-                        else -> expectedPrice.subtract(
-                            executedPrice
-                        )
-                    }
-                diff.divide(expectedPrice, PrecisionConstants.SCALE_PERCENT, RoundingMode.HALF_UP)
-                    .multiply(PrecisionConstants.HUNDRED)
-            }
-            else -> {
-                BigDecimal.ZERO
-            }
-        }
-        val estimatedFee =
-            usdAmount
-                .multiply(FEE_RATE_ESTIMATE)
-                .setScale(PrecisionConstants.SCALE_FEE, RoundingMode.HALF_UP)
-
-        val trade = TradeRecord(
-            timestamp = Instant.now(),
+        val trade = TradeCalculator.createTradeRecord(
+            result = result,
+            symbol = symbol,
             pair = pair,
             side = side,
-            symbol = symbol,
             volume = volume,
             usdAmount = usdAmount,
-            success = result.success,
-            dryRun = result.dryRun,
-            errorMessage = result.errorMessage,
-            price = executedPrice,
-            fee = estimatedFee,
-            slippagePercent = slippage
+            prices = prices
         )
         tradeHistoryService.saveTrade(trade)
     }
