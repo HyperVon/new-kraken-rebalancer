@@ -14,11 +14,8 @@ import kotlinx.browser.window
 import org.w3c.dom.*
 import kotlin.js.Date
 
-internal val SORT_ASC = CssClass.Utility.Asc.toString()
-internal val SORT_DESC = CssClass.Utility.Desc.toString()
-
 internal var currentSortCol: Int = 5
-internal var currentSortDir: String = SORT_ASC
+internal var currentSortDir: String = CssClass.Utility.Asc.value
 
 private val CURRENCY_CLEANUP_REGEX = Regex("[$,%]")
 
@@ -86,7 +83,7 @@ fun sortTable(header: HTMLElement, colIdx: Int, forceDir: String? = null) {
     }
 
     val isAsc = header.classList.contains(CssClass.Utility.Asc)
-    val sortAsc = if (forceDir != null) forceDir == SORT_ASC else !isAsc
+    val sortAsc = if (forceDir != null) forceDir == CssClass.Utility.Asc.value else !isAsc
     val key = if (colIdx == 0) "string" else "float"
 
     rows.sortWith(Comparator { a, b ->
@@ -117,5 +114,5 @@ fun sortTable(header: HTMLElement, colIdx: Int, forceDir: String? = null) {
     rows.forEach { row -> tbody.appendChild(row) }
 
     currentSortCol = colIdx
-    currentSortDir = if (sortAsc) SORT_ASC else SORT_DESC
+    currentSortDir = (if (sortAsc) CssClass.Utility.Asc else CssClass.Utility.Desc).value
 }
