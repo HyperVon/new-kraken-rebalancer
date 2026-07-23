@@ -178,7 +178,7 @@ class KrakenServiceImpl(
     }
 
     override suspend fun getTradeHistory(startSec: Long?, offset: Int?): List<TradeRecord> {
-        if (!configService.getConfig().kraken.isConfigured) {
+        if (!configService.getConfig().kraken.hasValidCredentials()) {
             log.warn("Kraken API key is blank or placeholder. Skipping trade history fetch.")
             return emptyList()
         }
