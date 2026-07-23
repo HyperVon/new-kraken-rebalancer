@@ -8,8 +8,8 @@ import com.gemini.krakenbot.view.util.Icons
 import com.gemini.krakenbot.view.util.Layouts.statusCard
 import com.gemini.krakenbot.view.util.ViewText
 import com.gemini.krakenbot.view.util.div
+import com.gemini.krakenbot.view.util.span
 import kotlinx.html.DIV
-import kotlinx.html.span
 import java.math.BigDecimal
 import kotlin.math.abs
 
@@ -36,13 +36,14 @@ class OverviewGridComponent {
             ) {
                 val drawdown = latest.drawdownPercent
                 val isDrawdown = drawdown.signum() > 0
-                val colorClass = if (isDrawdown) CssClass.Utility.TextDanger.value else ""
-                span(classes = colorClass) {
-                    +"${ViewText.DRAWDOWN_PREFIX}${
-                        Formatter.formatPercent(
-                            drawdown
-                        )
-                    }%"
+                if (isDrawdown) {
+                    span(CssClass.Utility.TextDanger) {
+                        +"${ViewText.DRAWDOWN_PREFIX}${Formatter.formatPercent(drawdown)}%"
+                    }
+                } else {
+                    span {
+                        +"${ViewText.DRAWDOWN_PREFIX}${Formatter.formatPercent(drawdown)}%"
+                    }
                 }
             }
 

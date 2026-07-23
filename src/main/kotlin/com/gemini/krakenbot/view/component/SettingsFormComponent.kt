@@ -37,8 +37,8 @@ class SettingsFormComponent {
                 header {
                     div(CssClass.Layout.HeaderTitleSection) {
                         a(
-                            href = Routes.ROOT,
-                            classes = "${CssClass.Button.Secondary} ${CssClass.Button.Icon}"
+                            cssClass = CssClass.Button.Secondary + CssClass.Button.Icon,
+                            href = Routes.ROOT
                         ) {
                             icon(Icons.BACK_ARROW)
                         }
@@ -131,7 +131,7 @@ class SettingsFormComponent {
                     }
                 }
 
-                div(classes = CssClass.Form.Group + CssClass.Form.GroupCentered) {
+                div(CssClass.Form.Group + CssClass.Form.GroupCentered) {
                     label(CssClass.Form.CheckboxContainer) {
                         input(
                             type = checkBox,
@@ -144,7 +144,7 @@ class SettingsFormComponent {
                     }
                 }
 
-                div(classes = CssClass.Form.Group + CssClass.Form.GroupCentered) {
+                div(CssClass.Form.Group + CssClass.Form.GroupCentered) {
                     label(CssClass.Form.CheckboxContainer) {
                         input(
                             type = checkBox,

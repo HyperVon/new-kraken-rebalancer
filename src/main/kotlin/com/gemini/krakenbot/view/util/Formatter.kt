@@ -13,11 +13,11 @@ object Formatter {
     fun formatPercent(value: Double): String =
         String.format(Locale.US, "%.2f", value)
 
-    fun getDeviationClass(deviation: BigDecimal?): String =
-        if (deviation == null) "" else when (deviation.signum()) {
-            1 -> CssClass.Utility.TextDanger.value
-            -1 -> CssClass.Utility.TextSuccess.value
-            else -> ""
+    fun getDeviationClass(deviation: BigDecimal?): CssClass? =
+        if (deviation == null) null else when (deviation.signum()) {
+            1 -> CssClass.Utility.TextDanger
+            -1 -> CssClass.Utility.TextSuccess
+            else -> null
         }
 
     fun getDeviationSign(deviation: BigDecimal?): String = when {

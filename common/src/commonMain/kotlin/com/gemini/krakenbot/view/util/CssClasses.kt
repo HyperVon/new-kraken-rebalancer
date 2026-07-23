@@ -7,8 +7,10 @@ package com.gemini.krakenbot.view.util
 sealed class CssClass(open val value: String) {
     override fun toString(): String = value
 
-    operator fun plus(other: CssClass): String = "$value ${other.value}".trim()
-    operator fun plus(other: String): String = "$value $other".trim()
+    operator fun plus(other: CssClass): CssClass = Composite("$value ${other.value}".trim())
+    operator fun plus(other: String): CssClass = Composite("$value $other".trim())
+
+    class Composite(override val value: String) : CssClass(value)
 
     // Layout & Panels
     sealed class Layout(override val value: String) : CssClass(value) {

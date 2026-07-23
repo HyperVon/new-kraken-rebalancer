@@ -49,7 +49,7 @@ class RecentActivityComponent {
                     p { +ViewText.NO_TRADING_HISTORY }
                 }
             } else {
-                div(classes = CssClass.Table.Wrapper + CssClass.Activity.CustomScrollbarMaxH100) {
+                div(CssClass.Table.Wrapper + CssClass.Activity.CustomScrollbarMaxH100) {
                     table {
                         thead {
                             tr {

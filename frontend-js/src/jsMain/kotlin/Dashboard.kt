@@ -8,6 +8,7 @@ import com.gemini.krakenbot.view.util.CssClass.Query.HOVERABLE_TR as HOVERABLE_T
 import com.gemini.krakenbot.view.util.CssClass.Query.SORTABLE_TH as SORTABLE_TH_QUERY
 import com.gemini.krakenbot.view.util.CssClass.Query.STATUS_BADGE as STATUS_BADGE_QUERY
 import com.gemini.krakenbot.view.util.HtmlAttrs
+import com.gemini.krakenbot.view.util.HtmlTags
 import com.gemini.krakenbot.view.util.ViewText
 import kotlinx.browser.document
 import kotlinx.browser.window
@@ -73,8 +74,8 @@ fun reapplySort() {
 }
 
 fun sortTable(header: HTMLElement, colIdx: Int, forceDir: String? = null) {
-    val table = header.closest("table") as? HTMLTableElement ?: return
-    val tbody = table.querySelector("tbody") as? HTMLTableSectionElement ?: return
+    val table = header.closest(HtmlTags.TABLE) as? HTMLTableElement ?: return
+    val tbody = table.querySelector(HtmlTags.TBODY) as? HTMLTableSectionElement ?: return
     val rows = mutableListOf<HTMLTableRowElement>()
     val list = tbody.querySelectorAll(HOVERABLE_TR_QUERY)
     for (i in 0 until list.length) {
