@@ -34,7 +34,7 @@ dependencies {
     implementation("org.jetbrains.kotlin:kotlin-reflect")
 
     // Jackson BOM — pins jackson-core & jackson-databind to a secure, explicit version
-    implementation(platform("com.fasterxml.jackson:jackson-bom:2.22.0"))
+    implementation(platform("com.fasterxml.jackson:jackson-bom:2.22.1"))
     implementation("io.ktor:ktor-server-caching-headers:3.5.0")
     implementation("io.ktor:ktor-server-compression:3.5.0")
     implementation("io.ktor:ktor-server-conditional-headers:3.5.0")
@@ -181,7 +181,7 @@ tasks.check {
 configurations.all {
     resolutionStrategy.eachDependency {
         if (requested.group == "io.netty") {
-            useVersion("4.1.135.Final")
+            useVersion("4.1.136.Final")
             because("Fixes Netty security vulnerabilities including HTTP/2 continuation frame flood (CVE-2026-33871) and newer vulnerabilities (CVE-2026-45536, CVE-2026-45416, CVE-2026-44249)")
         }
     }
@@ -220,5 +220,6 @@ rootProject.plugins.withType<YarnPlugin> {
         resolution("uuid", "11.1.1")
         resolution("webpack", "5.104.1")
         resolution("diff", "8.0.3")
+        resolution("fast-uri", "3.1.4")
     }
 }

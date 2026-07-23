@@ -6,7 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
----
+## [6.8.9] - 2026-07-23
+
+### Fixed
+
+- **Security Vulnerability Resolution (Dependabot)**: Updated `io.netty` dependencies to `4.1.136.Final` resolving Netty CVE alerts (CRLF injection in `HttpPostRequestEncoder`, infinite loop in `Bzip2Decoder`, host header deduplication in HTTP/2 to HTTP/1.x translation, unbounded queue growth in `HttpContentEncoder`, WebSocket handshaker validation, CORS short-circuit bypass, SPDY memory leaks and header expansion bounds).
+- **Jackson Library Update**: Updated `com.fasterxml.jackson:jackson-bom` to `2.22.1` resolving `@JsonView` container property bypasses in `jackson-databind` and async parser `maxNumberLength` bypasses in `jackson-core`.
+- **NPM Package Dependency Resolution**: Added Yarn resolution override for `fast-uri` (`3.1.4`) to resolve literal backslash host confusion vulnerability in Kotlin/JS frontend build dependencies.
 
 ## [6.8.8] - 2026-07-23
 
