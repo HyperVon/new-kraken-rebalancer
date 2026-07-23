@@ -8,6 +8,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [6.8.6] - 2026-07-22
+
+### Refactored
+
+- **Codebase-wide `.value` Elimination (`:common`, `:frontend-js`, `src/main`, `src/test`)**: Removed unnecessary `.value` calls on `CssClass` sealed class instances across string template interpolations, DOM `classList` type-safe operations, and HTML DSL view components. Leveraged `CssClass.toString()` (which returns `.value`) for automatic string coercion, adopted `DomExtensions` extension functions (`classList.add(CssClass)`, `classList.contains(CssClass)`, `classList.toggle(CssClass)`, `classList.remove(CssClass)`) in Kotlin/JS production and test code, and consumed `HtmlExtensions` type-safe overloads (`label(CssClass)`) in server-side views.
+
 ## [6.8.5] - 2026-07-22
 
 ### Refactored

@@ -60,7 +60,7 @@ object CssStyles {
         }
 
         // 4. Containers & Layout
-        ".${CssClass.Layout.Container.value}" {
+        ".${CssClass.Layout.Container}" {
             maxWidth = 80.rem
             marginTop = 0.px
             marginBottom = 0.px
@@ -80,13 +80,13 @@ object CssStyles {
             marginBottom = 1.25.rem
         }
 
-        ".${CssClass.Layout.HeaderTitleSection.value}" {
+        ".${CssClass.Layout.HeaderTitleSection}" {
             display = Display.flex
             alignItems = Align.center
             gap = 0.75.rem
         }
 
-        ".${CssClass.Layout.HeaderTitleSection.value} h1" {
+        ".${CssClass.Layout.HeaderTitleSection} h1" {
             fontFamily = fontHeading
             fontSize = 1.5.rem
             fontWeight = FontWeight.w800
@@ -142,17 +142,17 @@ object CssStyles {
         }
 
         // 6. Header Actions & Age Tracking
-        ".${CssClass.Layout.HeaderActions.value}" {
+        ".${CssClass.Layout.HeaderActions}" {
             display = Display.flex
             alignItems = Align.center
             gap = 1.25.rem
         }
 
-        ".${CssClass.DataAge.Container.value}" {
+        ".${CssClass.DataAge.Container}" {
             textAlign = TextAlign.right
         }
 
-        ".${CssClass.DataAge.Label.value}" {
+        ".${CssClass.DataAge.Label}" {
             fontSize = 0.75.rem
             color = colorTextMuted
             put("text-transform", "uppercase")
@@ -160,24 +160,24 @@ object CssStyles {
             fontWeight = FontWeight.w600
         }
 
-        ".${CssClass.DataAge.Value.value}" {
+        ".${CssClass.DataAge.Value}" {
             fontFamily = fontMono
             fontSize = 0.875.rem
             fontWeight = FontWeight.w700
             color = Color("#e2e8f0")
         }
 
-        ".${CssClass.DataAge.Value.value}.stale" {
+        ".${CssClass.DataAge.Value}.stale" {
             color = colorWarning
         }
 
-        ".${CssClass.DataAge.Time.value}" {
+        ".${CssClass.DataAge.Time}" {
             fontSize = 0.75.rem
             color = colorTextMuted
         }
 
         // 7. Glass Panel Styling
-        ".${CssClass.Layout.GlassPanel.value}" {
+        ".${CssClass.Layout.GlassPanel}" {
             background = colorGlass.value
             put("backdrop-filter", "blur(20px)")
             put("-webkit-backdrop-filter", "blur(20px)")
@@ -190,16 +190,16 @@ object CssStyles {
             put("transition", "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)")
         }
 
-        ".${CssClass.Layout.GlassPanel.value}:hover" {
+        ".${CssClass.Layout.GlassPanel}:hover" {
             borderColor = colorGlassBorderHover
             put("box-shadow", "0 0 30px rgba(56, 189, 248, 0.08), 0 25px 50px -12px rgba(0, 0, 0, 0.5)")
         }
 
-        ".${CssClass.Layout.Container.value} > .${CssClass.Layout.GlassPanel.value}" {
+        ".${CssClass.Layout.Container} > .${CssClass.Layout.GlassPanel}" {
             marginBottom = 1.25.rem
         }
 
-        ".${CssClass.Utility.GlassPanelTitle.value}" {
+        ".${CssClass.Utility.GlassPanelTitle}" {
             fontSize = 0.875.rem
             fontWeight = FontWeight.w600
             color = colorTextSecondary
@@ -211,12 +211,12 @@ object CssStyles {
             gap = 0.5.rem
         }
 
-        ".${CssClass.Utility.GlassPanelTitle.value} svg" {
+        ".${CssClass.Utility.GlassPanelTitle} svg" {
             color = Color("#60a5fa")
         }
 
         // 8. Grid Layouts
-        ".${CssClass.Layout.OverviewGrid.value}" {
+        ".${CssClass.Layout.OverviewGrid}" {
             display = Display.grid
             put("grid-template-columns", "1fr")
             gap = 1.rem
@@ -229,19 +229,19 @@ object CssStyles {
             gap = 0.5.rem
         }
 
-        ".${CssClass.StatusCard.Header.value}" {
+        ".${CssClass.StatusCard.Header}" {
             display = Display.flex
             put("justify-content", "space-between")
             alignItems = Align.center
         }
 
-        ".${CssClass.StatusCard.Title.value}" {
+        ".${CssClass.StatusCard.Title}" {
             fontSize = 0.875.rem
             fontWeight = FontWeight.w600
             color = colorTextSecondary
         }
 
-        ".${CssClass.StatusCard.Icon.value}" {
+        ".${CssClass.StatusCard.Icon}" {
             display = Display.flex
             alignItems = Align.center
             put("justify-content", "center")
@@ -252,24 +252,24 @@ object CssStyles {
             color = colorTextSecondary
         }
 
-        ".${CssClass.StatusCard.Value.value}" {
+        ".${CssClass.StatusCard.Value}" {
             fontSize = 1.75.rem
             fontWeight = FontWeight.w700
             fontFamily = fontHeading
             put("letter-spacing", "-0.02em")
         }
 
-        ".status-card.success .${CssClass.StatusCard.Value.value}" {
+        ".status-card.success .${CssClass.StatusCard.Value}" {
             color = colorSuccess
         }
 
-        ".${CssClass.StatusCard.Sub.value}" {
+        ".${CssClass.StatusCard.Sub}" {
             put("margin-top", "auto")
             fontSize = 0.75.rem
             color = colorTextSecondary
         }
 
-        ".${CssClass.Layout.DetailGrid.value}" {
+        ".${CssClass.Layout.DetailGrid}" {
             display = Display.grid
             put("grid-template-columns", "1fr")
             gap = 1.25.rem
@@ -277,32 +277,32 @@ object CssStyles {
         }
 
         // 9. Allocation Charts
-        ".${CssClass.AllocationChart.Container.value}" {
+        ".${CssClass.AllocationChart.Container}" {
             display = Display.flex
             flexDirection = FlexDirection.column
             gap = 0.875.rem
             marginTop = 0.5.rem
         }
 
-        ".${CssClass.AllocationChart.BarRow.value}" {
+        ".${CssClass.AllocationChart.BarRow}" {
             display = Display.flex
             alignItems = Align.center
             gap = 1.rem
             put("transition", "transform 0.2s ease")
         }
 
-        ".${CssClass.AllocationChart.BarRow.value}:hover" {
+        ".${CssClass.AllocationChart.BarRow}:hover" {
             transform { translateX(4.px) }
         }
 
-        ".${CssClass.AllocationChart.BarLabel.value}" {
+        ".${CssClass.AllocationChart.BarLabel}" {
             width = 3.5.rem
             fontWeight = FontWeight.w700
             color = colorTextPrimary
             fontSize = 0.875.rem
         }
 
-        ".${CssClass.AllocationChart.BarTrack.value}" {
+        ".${CssClass.AllocationChart.BarTrack}" {
             flexGrow = 1.0
             height = 0.75.rem
             background = "rgba(255, 255, 255, 0.05)"
@@ -313,14 +313,14 @@ object CssStyles {
             borderColor = Color("rgba(255, 255, 255, 0.02)")
         }
 
-        ".${CssClass.AllocationChart.BarFill.value}" {
+        ".${CssClass.AllocationChart.BarFill}" {
             height = 100.pct
             borderRadius = 9999.px
             background = "linear-gradient(90deg, #3b82f6, #10b981)"
             put("transition", "width 0.8s cubic-bezier(0.4, 0, 0.2, 1)")
         }
 
-        ".${CssClass.AllocationChart.BarValue.value}" {
+        ".${CssClass.AllocationChart.BarValue}" {
             width = 9.5.rem
             textAlign = TextAlign.right
             fontFamily = fontMono
@@ -329,7 +329,7 @@ object CssStyles {
         }
 
         // 10. Tables
-        ".${CssClass.Table.Wrapper.value}" {
+        ".${CssClass.Table.Wrapper}" {
             overflowX = Overflow.auto
             marginTop = 0.px
             marginBottom = 0.px
@@ -377,12 +377,12 @@ object CssStyles {
             backgroundColor = Color("rgba(255, 255, 255, 0.02)")
         }
 
-        ".${CssClass.Table.SymbolCol.value}" {
+        ".${CssClass.Table.SymbolCol}" {
             fontWeight = FontWeight.w700
             color = colorTextPrimary
         }
 
-        ".${CssClass.Table.MonoCol.value}" {
+        ".${CssClass.Table.MonoCol}" {
             fontFamily = fontMono
         }
 
@@ -485,7 +485,7 @@ object CssStyles {
         }
 
         // 13. Settings Form Elements
-        ".${CssClass.Form.Section.value}" {
+        ".${CssClass.Form.Section}" {
             borderBottomWidth = 1.px
             borderBottomStyle = BorderStyle.solid
             borderBottomColor = Color("rgba(51, 65, 85, 0.3)")
@@ -493,13 +493,13 @@ object CssStyles {
             marginBottom = 1.25.rem
         }
 
-        ".${CssClass.Form.Section.value}:last-of-type" {
+        ".${CssClass.Form.Section}:last-of-type" {
             borderBottomStyle = BorderStyle.none
             paddingBottom = 0.px
             marginBottom = 0.px
         }
 
-        ".${CssClass.Form.SectionTitle.value}" {
+        ".${CssClass.Form.SectionTitle}" {
             fontSize = 1.125.rem
             fontWeight = FontWeight.w600
             color = Color.white
@@ -509,25 +509,25 @@ object CssStyles {
             gap = 0.5.rem
         }
 
-        ".${CssClass.Form.Grid2Col.value}" {
+        ".${CssClass.Form.Grid2Col}" {
             display = Display.grid
             put("grid-template-columns", "1fr")
             gap = 1.25.rem
         }
 
-        ".${CssClass.Form.Group.value}" {
+        ".${CssClass.Form.Group}" {
             display = Display.flex
             flexDirection = FlexDirection.column
             gap = 0.5.rem
         }
 
-        ".${CssClass.Form.Label.value}" {
+        ".${CssClass.Form.Label}" {
             fontSize = 0.875.rem
             fontWeight = FontWeight.w500
             color = colorTextSecondary
         }
 
-        ".${CssClass.Form.InputGlass.value}" {
+        ".${CssClass.Form.InputGlass}" {
             background = "rgba(15, 23, 42, 0.4)"
             borderWidth = 1.px
             borderStyle = BorderStyle.solid
@@ -540,13 +540,13 @@ object CssStyles {
             put("transition", "all 0.2s ease")
         }
 
-        ".${CssClass.Form.InputGlass.value}:focus" {
+        ".${CssClass.Form.InputGlass}:focus" {
             put("outline", "none")
             borderColor = Color("#3b82f6")
             put("box-shadow", "0 0 0 3px rgba(59, 130, 246, 0.2)")
         }
 
-        ".${CssClass.Form.CheckboxContainer.value}" {
+        ".${CssClass.Form.CheckboxContainer}" {
             display = Display.flex
             alignItems = Align.center
             gap = 0.75.rem
@@ -554,7 +554,7 @@ object CssStyles {
             put("user-select", "none")
         }
 
-        ".${CssClass.Form.CheckboxCustom.value}" {
+        ".${CssClass.Form.CheckboxCustom}" {
             position = Position.relative
             width = 1.25.rem
             height = 1.25.rem
@@ -569,12 +569,12 @@ object CssStyles {
             display = Display.none
         }
 
-        "input[type=\"checkbox\"]:checked + .${CssClass.Form.CheckboxCustom.value}" {
+        "input[type=\"checkbox\"]:checked + .${CssClass.Form.CheckboxCustom}" {
             backgroundColor = colorKrakenBlue
             borderColor = colorKrakenBlue
         }
 
-        "input[type=\"checkbox\"]:checked + .${CssClass.Form.CheckboxCustom.value}::after" {
+        "input[type=\"checkbox\"]:checked + .${CssClass.Form.CheckboxCustom}::after" {
             content = QuotedString("")
             position = Position.absolute
             left = 0.35.rem
@@ -587,14 +587,14 @@ object CssStyles {
             transform { rotate(45.deg) }
         }
 
-        ".${CssClass.Form.AllocationListContainer.value}" {
+        ".${CssClass.Form.AllocationListContainer}" {
             display = Display.grid
             put("grid-template-columns", "1fr")
             gap = 0.75.rem
             marginBottom = 1.25.rem
         }
 
-        ".${CssClass.Form.AllocationEditRow.value}" {
+        ".${CssClass.Form.AllocationEditRow}" {
             display = Display.flex
             alignItems = Align.center
             gap = 0.75.rem
@@ -606,24 +606,24 @@ object CssStyles {
             borderColor = Color("rgba(51, 65, 85, 0.3)")
         }
 
-        ".${CssClass.Form.AllocationEditSymbol.value}" {
+        ".${CssClass.Form.AllocationEditSymbol}" {
             width = 3.5.rem
             fontWeight = FontWeight.w700
             fontSize = 0.9375.rem
             color = colorTextPrimary
         }
 
-        ".${CssClass.Form.AllocationEditInputWrapper.value}" {
+        ".${CssClass.Form.AllocationEditInputWrapper}" {
             position = Position.relative
             flexGrow = 1.0
         }
 
-        ".${CssClass.Form.AllocationEditInputWrapper.value} input" {
+        ".${CssClass.Form.AllocationEditInputWrapper} input" {
             width = 100.pct
             paddingRight = 1.75.rem
         }
 
-        ".${CssClass.Form.PercentSuffix.value}" {
+        ".${CssClass.Form.PercentSuffix}" {
             position = Position.absolute
             right = 0.75.rem
             top = 50.pct
@@ -633,7 +633,7 @@ object CssStyles {
             fontSize = 0.8125.rem
         }
 
-        ".${CssClass.Form.AddAssetBox.value}" {
+        ".${CssClass.Form.AddAssetBox}" {
             display = Display.flex
             gap = 1.rem
             padding = Padding(0.75.rem)
@@ -673,7 +673,7 @@ object CssStyles {
         }
 
         // 15. Spinners & Loading States
-        ".${CssClass.Loading.SpinnerContainer.value}" {
+        ".${CssClass.Loading.SpinnerContainer}" {
             display = Display.flex
             flexDirection = FlexDirection.column
             alignItems = Align.center
@@ -682,7 +682,7 @@ object CssStyles {
             gap = 1.rem
         }
 
-        ".${CssClass.Loading.Spinner.value}" {
+        ".${CssClass.Loading.Spinner}" {
             width = 3.rem
             height = 3.rem
             borderWidth = 4.px
@@ -700,7 +700,7 @@ object CssStyles {
         }
 
         // 16. Empty State Blocks
-        ".${CssClass.Activity.EmptyHistoryBox.value}, .history-empty" {
+        ".${CssClass.Activity.EmptyHistoryBox}, .history-empty" {
             display = Display.flex
             flexDirection = FlexDirection.column
             alignItems = Align.center
@@ -711,12 +711,12 @@ object CssStyles {
             gap = 0.5.rem
         }
 
-        ".${CssClass.Activity.EmptyHistoryBox.value} svg" {
+        ".${CssClass.Activity.EmptyHistoryBox} svg" {
             color = Color("rgba(255, 255, 255, 0.1)")
             marginBottom = 0.5.rem
         }
 
-        ".${CssClass.Activity.EmptyHistoryBox.value} h3" {
+        ".${CssClass.Activity.EmptyHistoryBox} h3" {
             color = colorTextSecondary
         }
 
@@ -725,7 +725,7 @@ object CssStyles {
             color = colorSuccess
         }
 
-        ".${CssClass.Utility.TextDanger.value}" {
+        ".${CssClass.Utility.TextDanger}" {
             color = colorDanger
         }
 
@@ -793,7 +793,7 @@ object CssStyles {
         }
 
         // 20. Recent Activity Helpers
-        ".${CssClass.Activity.EmptyText.value}" {
+        ".${CssClass.Activity.EmptyText}" {
             color = colorTextMuted
             fontStyle = FontStyle.italic
             display = Display.flex
@@ -801,36 +801,36 @@ object CssStyles {
             gap = 0.5.rem
         }
 
-        ".${CssClass.Activity.DotMarker.value}" {
+        ".${CssClass.Activity.DotMarker}" {
             width = 0.375.rem
             height = 0.375.rem
             borderRadius = 50.pct
             backgroundColor = colorTextMuted
         }
 
-        ".${CssClass.Activity.RowContainer.value}" {
+        ".${CssClass.Activity.RowContainer}" {
             display = Display.flex
             alignItems = Align.center
             gap = 0.75.rem
         }
 
-        ".${CssClass.Performance.DevContainer.value}" {
+        ".${CssClass.Performance.DevContainer}" {
             display = Display.flex
             flexDirection = FlexDirection.column
             put("line-height", "1.1")
         }
 
-        ".${CssClass.Performance.DevUsdLabel.value}" {
+        ".${CssClass.Performance.DevUsdLabel}" {
             fontSize = 0.675.rem
             put("opacity", "0.7")
             fontFamily = fontMono
         }
 
-        ".${CssClass.Button.Icon.value}" {
+        ".${CssClass.Button.Icon}" {
             padding = Padding(0.5.rem)
         }
 
-        ".${CssClass.Utility.ErrorBanner.value}" {
+        ".${CssClass.Utility.ErrorBanner}" {
             backgroundColor = Color("rgba(239, 68, 68, 0.15)")
             borderWidth = 1.px
             borderStyle = BorderStyle.solid
@@ -842,19 +842,19 @@ object CssStyles {
             fontWeight = FontWeight.w500
         }
 
-        ".${CssClass.Form.GroupCentered.value}" {
+        ".${CssClass.Form.GroupCentered}" {
             put("justify-content", "center")
             paddingTop = 1.rem
         }
 
-        ".${CssClass.Form.SectionHeader.value}" {
+        ".${CssClass.Form.SectionHeader}" {
             display = Display.flex
             put("justify-content", "space-between")
             alignItems = Align.center
             marginBottom = 1.25.rem
         }
 
-        ".${CssClass.Form.SectionHeader.value} h3" {
+        ".${CssClass.Form.SectionHeader} h3" {
             fontSize = 1.125.rem
             fontWeight = FontWeight.w600
             color = Color.white
@@ -866,26 +866,26 @@ object CssStyles {
             flexGrow = 1.0
         }
 
-        ".${CssClass.Dashboard.WaitingTitle.value}" {
+        ".${CssClass.Dashboard.WaitingTitle}" {
             fontSize = 1.25.rem
             fontWeight = FontWeight.w600
             color = Color("#e2e8f0")
         }
 
-        ".${CssClass.Dashboard.WaitingText.value}" {
+        ".${CssClass.Dashboard.WaitingText}" {
             color = Color("#94a3b8")
             fontSize = 0.875.rem
             textAlign = TextAlign.center
             maxWidth = 24.rem
         }
 
-        ".${CssClass.Navigation.Bar.value}" {
+        ".${CssClass.Navigation.Bar}" {
             display = Display.flex
             alignItems = Align.center
             gap = 0.25.rem
         }
 
-        ".${CssClass.Navigation.Link.value}" {
+        ".${CssClass.Navigation.Link}" {
             display = Display.inlineFlex
             alignItems = Align.center
             gap = 0.375.rem
@@ -901,7 +901,7 @@ object CssStyles {
             borderColor = Color.transparent
         }
 
-        ".${CssClass.Navigation.Link.value}:hover" {
+        ".${CssClass.Navigation.Link}:hover" {
             color = colorTextPrimary
             background = "rgba(255, 255, 255, 0.04)"
             borderColor = Color("rgba(255, 255, 255, 0.06)")
@@ -914,7 +914,7 @@ object CssStyles {
             fontWeight = FontWeight.w600
         }
 
-        ".${CssClass.History.TimeRangeSelector.value}" {
+        ".${CssClass.History.TimeRangeSelector}" {
             display = Display.flex
             alignItems = Align.center
             gap = 0.375.rem
@@ -928,7 +928,7 @@ object CssStyles {
             put("width", "fit-content")
         }
 
-        ".${CssClass.History.TimeRangeBtn.value}" {
+        ".${CssClass.History.TimeRangeBtn}" {
             padding = Padding(0.375.rem, 1.rem)
             borderRadius = 0.5.rem
             fontSize = 0.8125.rem
@@ -943,7 +943,7 @@ object CssStyles {
             fontFamily = fontSans
         }
 
-        ".${CssClass.History.TimeRangeBtn.value}:hover" {
+        ".${CssClass.History.TimeRangeBtn}:hover" {
             color = colorTextPrimary
             background = "rgba(255, 255, 255, 0.04)"
         }
@@ -954,13 +954,13 @@ object CssStyles {
             borderColor = Color("rgba(59, 130, 246, 0.25)")
         }
 
-        ".${CssClass.History.ChartContainer.value}" {
+        ".${CssClass.History.ChartContainer}" {
             position = Position.relative
             height = 20.rem
             marginTop = 0.5.rem
         }
 
-        ".${CssClass.History.StatsGrid.value}" {
+        ".${CssClass.History.StatsGrid}" {
             display = Display.grid
             put("grid-template-columns", "1fr")
             gap = 1.rem
@@ -973,16 +973,16 @@ object CssStyles {
         // ==========================================
 
         "@media (min-width: 640px)" {
-            ".${CssClass.Form.AllocationListContainer.value}" {
+            ".${CssClass.Form.AllocationListContainer}" {
                 put("grid-template-columns", "repeat(2, 1fr)")
             }
-            ".${CssClass.History.StatsGrid.value}" {
+            ".${CssClass.History.StatsGrid}" {
                 put("grid-template-columns", "repeat(2, 1fr)")
             }
         }
 
         "@media (min-width: 768px)" {
-            ".${CssClass.Layout.Container.value}" {
+        ".${CssClass.Layout.Container}" {
                 padding = Padding(1.5.rem, 1.5.rem, 4.rem, 1.5.rem)
             }
             header {
@@ -990,22 +990,22 @@ object CssStyles {
                 put("justify-content", "space-between")
                 alignItems = Align.center
             }
-            ".${CssClass.Layout.OverviewGrid.value}" {
+        ".${CssClass.Layout.OverviewGrid}" {
                 put("grid-template-columns", "repeat(3, 1fr)")
             }
-            ".${CssClass.Form.Grid2Col.value}" {
+        ".${CssClass.Form.Grid2Col}" {
                 put("grid-template-columns", "1fr 1fr")
             }
         }
 
         "@media (min-width: 1024px)" {
-            ".${CssClass.Layout.DetailGrid.value}" {
+        ".${CssClass.Layout.DetailGrid}" {
                 put("grid-template-columns", "1fr 1fr")
             }
-            ".${CssClass.Form.AllocationListContainer.value}" {
+            ".${CssClass.Form.AllocationListContainer}" {
                 put("grid-template-columns", "repeat(3, 1fr)")
             }
-            ".${CssClass.History.StatsGrid.value}" {
+            ".${CssClass.History.StatsGrid}" {
                 put("grid-template-columns", "repeat(4, 1fr)")
             }
         }

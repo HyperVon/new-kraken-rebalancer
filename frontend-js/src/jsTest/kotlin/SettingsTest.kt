@@ -69,13 +69,13 @@ class SettingsTest : StringSpec() {
             updateAllocationTotal()
             totalDisplay.textContent shouldBe "Total: 100.00%"
             saveButton.disabled.shouldBeFalse()
-            totalDisplay.classList.contains(CssClass.Utility.Live.value).shouldBeTrue()
+            totalDisplay.classList.contains(CssClass.Utility.Live).shouldBeTrue()
 
             input2.value = "60.0"
             updateAllocationTotal()
             totalDisplay.textContent shouldBe "Total: 90.00%"
             saveButton.disabled.shouldBeTrue()
-            totalDisplay.classList.contains(CssClass.Utility.Delayed.value).shouldBeTrue()
+            totalDisplay.classList.contains(CssClass.Utility.Delayed).shouldBeTrue()
 
             input2.value = "70.0"
             sym2.value = Asset.ETH
@@ -117,7 +117,7 @@ class SettingsTest : StringSpec() {
             addAssetRow()
             symInput.value shouldBe ""
             
-            val rows = symContainer.querySelectorAll(".${CssClass.Form.AllocationEditRow.value}")
+            val rows = symContainer.querySelectorAll(".${CssClass.Form.AllocationEditRow}")
             rows.length shouldBe 1
             rows.item(0)!!.textContent!!.shouldContain(Asset.LTC)
 

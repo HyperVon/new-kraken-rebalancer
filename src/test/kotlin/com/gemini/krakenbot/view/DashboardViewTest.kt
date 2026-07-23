@@ -60,11 +60,11 @@ class DashboardViewTest : StringSpec() {
         historyPageComponent = HistoryPageComponent()
     )
 
-    private val ALLOCATION_BAR_LABEL = CssClass.AllocationChart.BarLabel.value
-    private val BADGE_BUY = CssClass.Badge.Buy.value
-    private val BADGE_INFO = CssClass.Badge.Info.value
-    private val BADGE_SELL = CssClass.Badge.Sell.value
-    private val ERROR_BANNER = CssClass.Utility.ErrorBanner.value
+    private val ALLOCATION_BAR_LABEL = CssClass.AllocationChart.BarLabel.toString()
+    private val BADGE_BUY = CssClass.Badge.Buy.toString()
+    private val BADGE_INFO = CssClass.Badge.Info.toString()
+    private val BADGE_SELL = CssClass.Badge.Sell.toString()
+    private val ERROR_BANNER = CssClass.Utility.ErrorBanner.toString()
 
     private val baseConfig = AppConfig(
         KrakenCredentials(

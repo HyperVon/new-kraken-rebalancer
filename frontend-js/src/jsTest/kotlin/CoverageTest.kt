@@ -431,7 +431,7 @@ class CoverageTest : StringSpec() {
                 symbolInput.value = Asset.BTC
                 // Pre-populate container with existing BTC
                 val existingRow = document.createElement(DIV)
-                existingRow.className = CssClass.Form.AllocationEditRow.value
+                existingRow.className = CssClass.Form.AllocationEditRow.toString()
                 existingRow.innerHTML = """
                     <input type="hidden" name="${FormFields.SYMBOLS}" value="${Asset.BTC}">
                 """.trimIndent()
@@ -466,12 +466,12 @@ class CoverageTest : StringSpec() {
             try {
                 // Missing epoch attribute -> should return early
                 updateAge()
-                val ageVal = document.getElementsByClassName(CssClass.DataAge.Value.value)[0] as HTMLSpanElement
+                val ageVal = document.getElementsByClassName(CssClass.DataAge.Value.toString())[0] as HTMLSpanElement
                 ageVal.textContent shouldBe ""  // unchanged
                 
                 // Valid recent epoch -> fresh
                 val recentTime = Date.now() - 5000  // 5 seconds ago
-                val timeEl = document.getElementsByClassName(CssClass.DataAge.Time.value)[0] as HTMLSpanElement
+                val timeEl = document.getElementsByClassName(CssClass.DataAge.Time.toString())[0] as HTMLSpanElement
                 timeEl.setAttribute(HtmlAttrs.DATA_EPOCH, recentTime.toString())
                 updateAge()
                 ageVal.textContent shouldBe "5s ago"
@@ -551,7 +551,7 @@ class CoverageTest : StringSpec() {
                 (rows.item(0) as HTMLTableRowElement).cells.item(0)?.textContent shouldBe "A"  // "10" < "5" lexicographically
                 
                 // Sort by col0 descending
-                sortTable(header0, 0, CssClass.Utility.Desc.value)
+                sortTable(header0, 0, CssClass.Utility.Desc.toString())
                 rows = container.querySelectorAll(TBODY_TR)
                 (rows.item(0) as HTMLTableRowElement).cells.item(0)?.textContent shouldBe "C"  // "5" > "10" lexicographically
                 
@@ -561,7 +561,7 @@ class CoverageTest : StringSpec() {
                 (rows.item(0) as HTMLTableRowElement).cells.item(1)?.textContent shouldBe "D"  // 15 < 20
                 
                 // Sort by col1 descending
-                sortTable(header1, 1, CssClass.Utility.Desc.value)
+                sortTable(header1, 1, CssClass.Utility.Desc.toString())
                 rows = container.querySelectorAll(TBODY_TR)
                 (rows.item(0) as HTMLTableRowElement).cells.item(1)?.textContent shouldBe "B"  // 20 > 15
                 
@@ -703,8 +703,8 @@ class CoverageTest : StringSpec() {
         "initHistory sets up click listeners and checkbox listeners" {
             val container = document.createElement(DIV)
             container.innerHTML = """
-                <button class="${CssClass.History.TimeRangeBtn.value}" ${HtmlAttrs.DATA_RANGE}="24h"></button>
-                <button class="${CssClass.History.TimeRangeBtnActive.value}" ${HtmlAttrs.DATA_RANGE}="30d"></button>
+                <button class="${CssClass.History.TimeRangeBtn}" ${HtmlAttrs.DATA_RANGE}="24h"></button>
+                <button class="${CssClass.History.TimeRangeBtnActive}" ${HtmlAttrs.DATA_RANGE}="30d"></button>
                 <input type="checkbox" id="${HtmlIds.SHOW_DRY_RUN_CHECKBOX}" checked>
                 <div id="${HtmlIds.SYNC_PROGRESS_BANNER}"></div>
                 <div id="${HtmlIds.SYNC_PROGRESS_BAR}"></div>
@@ -796,8 +796,8 @@ class CoverageTest : StringSpec() {
             // Exercise internal variables getters and setters
             currentSortCol = 4
             currentSortCol shouldBe 4
-            currentSortDir = CssClass.Utility.Desc.value
-            currentSortDir shouldBe CssClass.Utility.Desc.value
+            currentSortDir = CssClass.Utility.Desc.toString()
+            currentSortDir shouldBe CssClass.Utility.Desc.toString()
             
             // We can invoke the wrappers
             val container = document.createElement(DIV)
@@ -806,7 +806,7 @@ class CoverageTest : StringSpec() {
                 <span id="${HtmlIds.TOTAL_ALLOCATED_DISPLAY}"></span>
                 <button id="${HtmlIds.SAVE_BUTTON}"></button>
                 <div id="${HtmlIds.ALLOCATIONS_CONTAINER}"></div>
-                <table><thead><tr><th class="${CssClass.Table.Sortable.value}">${ViewText.HEADER_ASSET}</th></tr></thead><tbody></tbody></table>
+                <table><thead><tr><th class="${CssClass.Table.Sortable}">${ViewText.HEADER_ASSET}</th></tr></thead><tbody></tbody></table>
             """.trimIndent()
             document.body!!.appendChild(container)
             try {

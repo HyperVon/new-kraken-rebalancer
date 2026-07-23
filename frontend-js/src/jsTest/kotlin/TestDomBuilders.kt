@@ -55,22 +55,22 @@ object TestDomBuilders {
     """.trimIndent()
 
     fun dataAgeDom(epoch: String = ""): String = """
-        <span class="${CssClass.DataAge.Value.value}"></span>
-        <span class="${CssClass.DataAge.Time.value}" ${HtmlAttrs.DATA_EPOCH}="$epoch"></span>
-        <span class="${CssClass.StatusCard.Live.value}"></span>
+        <span class="${CssClass.DataAge.Value}"></span>
+        <span class="${CssClass.DataAge.Time}" ${HtmlAttrs.DATA_EPOCH}="$epoch"></span>
+        <span class="${CssClass.StatusCard.Live}"></span>
     """.trimIndent()
 
     fun sortableTableDom(): String = """
         <table>
             <thead>
                 <tr>
-                    <th class="${CssClass.Table.Sortable.value}">Col0</th>
-                    <th class="${CssClass.Table.Sortable.value}">Col1</th>
+                    <th class="${CssClass.Table.Sortable}">Col0</th>
+                    <th class="${CssClass.Table.Sortable}">Col1</th>
                 </tr>
             </thead>
             <tbody>
-                <tr class="${CssClass.Table.Hoverable.value}"><td ${HtmlAttrs.DATA_SORT_VALUE}="10">A</td><td ${HtmlAttrs.DATA_SORT_VALUE}="20">B</td></tr>
-                <tr class="${CssClass.Table.Hoverable.value}"><td ${HtmlAttrs.DATA_SORT_VALUE}="5">C</td><td ${HtmlAttrs.DATA_SORT_VALUE}="15">D</td></tr>
+                <tr class="${CssClass.Table.Hoverable}"><td ${HtmlAttrs.DATA_SORT_VALUE}="10">A</td><td ${HtmlAttrs.DATA_SORT_VALUE}="20">B</td></tr>
+                <tr class="${CssClass.Table.Hoverable}"><td ${HtmlAttrs.DATA_SORT_VALUE}="5">C</td><td ${HtmlAttrs.DATA_SORT_VALUE}="15">D</td></tr>
             </tbody>
         </table>
     """.trimIndent()

@@ -15,6 +15,7 @@ import com.gemini.krakenbot.view.util.button
 import com.gemini.krakenbot.view.util.commonMetadataAndStyles
 import com.gemini.krakenbot.view.util.div
 import com.gemini.krakenbot.view.util.h2
+import com.gemini.krakenbot.view.util.label
 import com.gemini.krakenbot.view.util.nav
 import kotlinx.html.*
 import kotlinx.html.InputType.checkBox
@@ -111,7 +112,7 @@ class HistoryPageComponent {
                     icon(Icons.CHART)
                     +ViewText.HISTORY_TRADE_LOG
                 }
-                label(classes = CssClass.Form.CheckboxContainer.value) {
+                label(CssClass.Form.CheckboxContainer) {
                     input(type = checkBox) {
                         id = HtmlIds.SHOW_DRY_RUN_CHECKBOX
                         checked = true
