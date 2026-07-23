@@ -463,7 +463,7 @@ internal fun buildCumulativePLChart(trades: Array<dynamic>, includeDryRun: Boole
     val chartData = if (rawData.size == 1) {
         val firstTradeTime = Date(rawData[0].x.toString()).getTime()
         val startTime = Date(firstTradeTime - 3600000.0).toISOString()
-        arrayOf(json("x" to startTime, "y" to 0.0), rawData[0])
+        arrayOf(json(ChartProps.X to startTime, ChartProps.Y to 0.0), rawData[0])
     } else {
         rawData
     }

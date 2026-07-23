@@ -19,6 +19,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Elimination of Redundant Constant Aliases (`:common`, `:frontend-js`)**: Removed `COLOR_BLUE_BORDER` and `COLOR_GREEN_BORDER` aliases from `ChartProps.kt`, updating `History.kt` to directly consume primary color palette constants (`COLOR_BLUE` and `COLOR_EMERALD`).
 - **DRY JS Dynamic Object Deep Cloning (`:frontend-js`)**: Simplified `getClonedChartOptions` in `History.kt` by replacing 9 repetitive nested `JSObject.assign` calls with native `JSON.parse(JSON.stringify(...))` deep cloning.
 - **Type-Safe Dynamic Boolean Checking (`:frontend-js`)**: Added a clean `isTrue(value: dynamic)` helper function in `DomExtensions.kt` and eliminated the boilerplate `private const val TRUE = "true"` and inline `t.success == true || t.success.toString() == TRUE` checks across `History.kt`.
+- **Centralized HTML Tags & Element Creation Extensions (`:common`, `:frontend-js`)**: Added `HtmlTags` constants in `:common` (`HtmlAttrs.kt`) and type-safe `Document` element creation extension functions (`createDiv()`, `createSpan()`, `createTableCell()`, `createTableRow()`, `createInput()`, `createButton()`) in `DomExtensions.kt`, eliminating all `private const val TR = "tr"`, `TD`, `DIV`, `INPUT`, `BUTTON`, `SPAN` declarations and explicit casting boilerplate across `History.kt` and `Settings.kt`.
 
 ## [6.8.4] - 2026-07-21
 

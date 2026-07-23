@@ -1,7 +1,8 @@
 package com.gemini.krakenbot.frontend
 
 import com.gemini.krakenbot.view.util.CssClass
-import org.w3c.dom.DOMTokenList
+import com.gemini.krakenbot.view.util.HtmlTags
+import org.w3c.dom.*
 
 /** Type-safe DOMTokenList extension functions for CssClass sealed class hierarchies. */
 fun DOMTokenList.add(cssClass: CssClass) {
@@ -27,3 +28,11 @@ fun isTrue(value: dynamic): Boolean {
     if (value == true) return true
     return value.toString().lowercase() == "true"
 }
+
+/** Type-safe Document element creation extension functions using HtmlTags. */
+fun Document.createDiv(): HTMLDivElement = createElement(HtmlTags.DIV) as HTMLDivElement
+fun Document.createSpan(): HTMLSpanElement = createElement(HtmlTags.SPAN) as HTMLSpanElement
+fun Document.createTableCell(): HTMLTableCellElement = createElement(HtmlTags.TD) as HTMLTableCellElement
+fun Document.createTableRow(): HTMLTableRowElement = createElement(HtmlTags.TR) as HTMLTableRowElement
+fun Document.createInput(): HTMLInputElement = createElement(HtmlTags.INPUT) as HTMLInputElement
+fun Document.createButton(): HTMLButtonElement = createElement(HtmlTags.BUTTON) as HTMLButtonElement

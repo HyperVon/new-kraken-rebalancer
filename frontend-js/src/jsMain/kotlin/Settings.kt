@@ -54,10 +54,6 @@ fun updateAllocationTotal() {
     saveButton.disabled = !isSuccess
 }
 
-private const val DIV = "div"
-private const val INPUT = "input"
-private const val BUTTON = "button"
-
 fun addAssetRow() {
     val symbolInput = document.getElementById(HtmlIds.NEW_SYMBOL_INPUT) as? HTMLInputElement ?: return
     val symbol = symbolInput.value.trim().uppercase()
@@ -82,22 +78,22 @@ fun addAssetRow() {
     }
 
     val container = document.getElementById(HtmlIds.ALLOCATIONS_CONTAINER) ?: return
-    val row = document.createElement(DIV) as HTMLDivElement
+    val row = document.createDiv()
     row.className = CssClass.Form.AllocationEditRow.toString()
 
-    val symbolDiv = document.createElement(DIV) as HTMLDivElement
+    val symbolDiv = document.createDiv()
     symbolDiv.className = "${CssClass.Form.AllocationEditSymbol} symbol-label"
     symbolDiv.textContent = symbol
 
-    val hiddenInput = document.createElement(INPUT) as HTMLInputElement
+    val hiddenInput = document.createInput()
     hiddenInput.type = "hidden"
     hiddenInput.name = FormFields.SYMBOLS
     hiddenInput.value = symbol
 
-    val inputWrapper = document.createElement(DIV) as HTMLDivElement
+    val inputWrapper = document.createDiv()
     inputWrapper.className = CssClass.Form.AllocationEditInputWrapper.toString()
 
-    val numberInput = document.createElement(INPUT) as HTMLInputElement
+    val numberInput = document.createInput()
     numberInput.type = "number"
     numberInput.step = "0.1"
     numberInput.name = FormFields.TARGETS
@@ -105,15 +101,15 @@ fun addAssetRow() {
     numberInput.value = "0.0"
     numberInput.oninput = { updateAllocationTotal() }
 
-    val percentSpan = document.createElement("span") as HTMLSpanElement
+    val percentSpan = document.createSpan()
     percentSpan.className = CssClass.Form.PercentSuffix.toString()
     percentSpan.textContent = "%"
 
     inputWrapper.appendChild(numberInput)
     inputWrapper.appendChild(percentSpan)
 
-    val removeBtn = document.createElement(BUTTON) as HTMLButtonElement
-    removeBtn.type = BUTTON
+    val removeBtn = document.createButton()
+    removeBtn.type = "button"
     removeBtn.className = CssClass.Button.Danger.toString()
     removeBtn.textContent = ViewText.REMOVE
     removeBtn.onclick = {
