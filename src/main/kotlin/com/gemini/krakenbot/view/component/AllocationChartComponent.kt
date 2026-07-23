@@ -4,7 +4,7 @@ import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.Formatter
 import com.gemini.krakenbot.view.util.Icons
-import com.gemini.krakenbot.view.util.Layouts.glassPanel
+import com.gemini.krakenbot.view.util.glassPanel
 import com.gemini.krakenbot.view.util.ViewText
 import com.gemini.krakenbot.view.util.div
 import kotlinx.html.DIV

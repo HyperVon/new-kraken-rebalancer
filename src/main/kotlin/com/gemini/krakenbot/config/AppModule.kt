@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.databind.SerializationFeature
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import com.gemini.krakenbot.controller.DashboardController
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.repository.TradeRepository
 import com.gemini.krakenbot.repository.impl.SqlitePortfolioStatsRepositoryImpl
@@ -91,4 +92,5 @@ val appModule = module {
     singleOf(::DashboardFragmentComponent)
     singleOf(::HistoryPageComponent)
     singleOf(::DashboardView)
+    singleOf(::DashboardController)
 }

@@ -7,6 +7,9 @@ package com.gemini.krakenbot.view.util
 sealed class CssClass(open val value: String) {
     override fun toString(): String = value
 
+    val querySelector: String
+        get() = value.split(" ").filter { it.isNotBlank() }.joinToString("") { ".$it" }
+
     operator fun plus(other: CssClass): CssClass = Composite("$value ${other.value}".trim())
     operator fun plus(other: String): CssClass = Composite("$value $other".trim())
 
@@ -31,6 +34,7 @@ sealed class CssClass(open val value: String) {
         object Icon : StatusCard("status-card-icon")
         object Value : StatusCard("status-card-value")
         object Sub : StatusCard("status-card-sub")
+        object Badge : StatusCard("status-badge")
         object Live : StatusCard("status-badge live")
         object Delayed : StatusCard("status-badge delayed")
     }
@@ -157,12 +161,12 @@ sealed class CssClass(open val value: String) {
 
     // Type-safe CSS Selectors for DOM queries
     object Query {
-        const val DATA_AGE_VALUE = ".data-age-value"
-        const val DATA_AGE_TIME = ".data-age-time"
-        const val STATUS_BADGE = ".status-badge"
-        const val SORTABLE_TH = "th.sortable"
-        const val HOVERABLE_TR = "tr.hoverable"
-        const val TIME_RANGE_BTNS = ".time-range-btn"
+        val DATA_AGE_VALUE = DataAge.Value.querySelector
+        val DATA_AGE_TIME = DataAge.Time.querySelector
+        val STATUS_BADGE = StatusCard.Badge.querySelector
+        val SORTABLE_TH = "th" + Table.Sortable.querySelector
+        val HOVERABLE_TR = "tr" + Table.Hoverable.querySelector
+        val TIME_RANGE_BTNS = History.TimeRangeBtn.querySelector
         const val TARGET_INPUTS = "input[name=\"${FormFields.TARGETS}\"]"
         const val SYMBOL_INPUTS = "input[name=\"${FormFields.SYMBOLS}\"]"
     }

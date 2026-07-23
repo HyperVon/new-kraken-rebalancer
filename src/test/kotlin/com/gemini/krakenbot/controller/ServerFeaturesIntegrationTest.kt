@@ -54,6 +54,7 @@ class ServerFeaturesIntegrationTest : StringSpec() {
                     historyPageComponent = get()
                 )
             }
+            single { DashboardController(get(), get(), get(), get()) }
         }
 
         beforeTest {

@@ -9,8 +9,8 @@ import com.gemini.krakenbot.view.util.HtmxAttrs
 import com.gemini.krakenbot.view.util.HtmxValues
 import com.gemini.krakenbot.view.util.Icons
 import com.gemini.krakenbot.view.util.Icons.icon
-import com.gemini.krakenbot.view.util.Layouts.formGroup
-import com.gemini.krakenbot.view.util.Layouts.formSection
+import com.gemini.krakenbot.view.util.formGroup
+import com.gemini.krakenbot.view.util.formSection
 import com.gemini.krakenbot.view.util.Routes
 import com.gemini.krakenbot.view.util.ViewText
 import com.gemini.krakenbot.view.util.a

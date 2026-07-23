@@ -23,6 +23,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Elimination of Redundant Sort Direction Constants (`:frontend-js`)**: Removed redundant top-level `SORT_ASC` and `SORT_DESC` string variables in `Dashboard.kt`, consuming `CssClass.Utility.Asc` and `CssClass.Utility.Desc` directly, and adopted `HtmlTags.TABLE` / `HtmlTags.TBODY`.
 - **Type-Safe Composite CSS Classes & HtmlExtensions (`:common`, `src/main`)**: Refactored `CssClass.plus` operator to return a `CssClass.Composite` instance, updated `HtmlExtensions.kt` with default `cssClass: CssClass? = null` parameters, and converted `Formatter.getDeviationClass()` to return `CssClass?` directly for full type safety across `OverviewGridComponent`, `PerformanceTableComponent`, `RecentActivityComponent`, and `SettingsFormComponent`.
 - **Domain & Configuration Models Migration to `:common` (`:common`, `src/main`)**: Moved `Allocation`, `Settings`, `KrakenCredentials`, `AppConfig`, `InvalidConfigurationException`, and the `Result<T>` monad into `commonMain` (`com.gemini.krakenbot.config` & `com.gemini.krakenbot.model`), establishing a unified multiplatform domain model across backend, frontend-js, and test suites.
+- **Type-Safe Dynamic JS Models (`:frontend-js`)**: Created `JsModels.kt` containing `JsPortfolioSnapshot`, `JsTradeRecord`, `JsHistoryStats`, and `JsSyncProgress` external interfaces to replace unchecked dynamic property lookups in Kotlin/JS.
+- **Top-Level HTML Layout Extension Functions (`src/main`)**: Converted `glassPanel`, `statusCard`, `formSection`, and `formGroup` in `Layouts.kt` to top-level extension functions on `FlowContent` / `DIV` for idiomatic HTML DSL component rendering.
+- **Constructor-Injected Koin DashboardController (`src/main`)**: Refactored `DashboardRoutes.kt` to delegate routing handlers to a constructor-injected `DashboardController` registered in `AppModule.kt`.
+- **Type-Safe Domain Measurement Value Classes (`:common`)**: Added `@JvmInline value class Percentage(val value: Double)` and `@JvmInline value class UsdValue(val value: Double)` in `:common`.
+- **Type-Safe CSS Query Selector Property (`:common`, `:frontend-js`)**: Added `val CssClass.querySelector: String` to compute CSS query strings (`.class-name`) for DOM element lookups in Kotlin/JS.
 
 ## [6.8.4] - 2026-07-21
 

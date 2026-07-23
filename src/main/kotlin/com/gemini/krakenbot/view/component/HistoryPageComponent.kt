@@ -6,8 +6,8 @@ import com.gemini.krakenbot.view.util.HtmlAttrs
 import com.gemini.krakenbot.view.util.HtmlIds
 import com.gemini.krakenbot.view.util.Icons
 import com.gemini.krakenbot.view.util.Icons.icon
-import com.gemini.krakenbot.view.util.Layouts.glassPanel
-import com.gemini.krakenbot.view.util.Layouts.statusCard
+import com.gemini.krakenbot.view.util.glassPanel
+import com.gemini.krakenbot.view.util.statusCard
 import com.gemini.krakenbot.view.util.Routes
 import com.gemini.krakenbot.view.util.ViewText
 import com.gemini.krakenbot.view.util.a
