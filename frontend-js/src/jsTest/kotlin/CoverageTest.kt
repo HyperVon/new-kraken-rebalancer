@@ -23,10 +23,8 @@ private const val TEST_CHART = "test-chart"
 private const val DIV = HtmlTags.DIV
 private const val INPUT = HtmlTags.INPUT
 private const val TD = HtmlTags.TD
-private const val TBODY_TR = "tbody tr"
-private const val SORTABLE = "sortable"
+private val TH_SORTABLE = CssClass.Query.SORTABLE_TH
 private const val NAME = "name"
-private const val TH_SORTABLE = "th.sortable"
 
 class CoverageTest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
@@ -537,47 +535,47 @@ class CoverageTest : StringSpec() {
                 
                 // Case: header missing -> sortTable should return early
                 val fakeHeader = document.createElement("th") as HTMLElement
-                fakeHeader.className = SORTABLE
+                fakeHeader.className = CssClass.Table.Sortable.toString()
                 // Not attached to document
                 sortTable(fakeHeader, 0)  // Should not throw
                 
                 // Normal sorting
-                val header0 = document.getElementsByClassName(SORTABLE)[0] as HTMLTableCellElement
-                val header1 = document.getElementsByClassName(SORTABLE)[1] as HTMLTableCellElement
+                val header0 = document.getElementsByClassName(CssClass.Table.Sortable.toString())[0] as HTMLTableCellElement
+                val header1 = document.getElementsByClassName(CssClass.Table.Sortable.toString())[1] as HTMLTableCellElement
                 
                 // Sort by col0 ascending (default)
                 sortTable(header0, 0)
-                var rows = container.querySelectorAll(TBODY_TR)
+                var rows = container.querySelectorAll("${HtmlTags.TBODY} ${HtmlTags.TR}")
                 (rows.item(0) as HTMLTableRowElement).cells.item(0)?.textContent shouldBe "A"  // "10" < "5" lexicographically
                 
                 // Sort by col0 descending
                 sortTable(header0, 0, CssClass.Utility.Desc.toString())
-                rows = container.querySelectorAll(TBODY_TR)
+                rows = container.querySelectorAll("${HtmlTags.TBODY} ${HtmlTags.TR}")
                 (rows.item(0) as HTMLTableRowElement).cells.item(0)?.textContent shouldBe "C"  // "5" > "10" lexicographically
                 
                 // Sort by col1 ascending
                 sortTable(header1, 1)
-                rows = container.querySelectorAll(TBODY_TR)
+                rows = container.querySelectorAll("${HtmlTags.TBODY} ${HtmlTags.TR}")
                 (rows.item(0) as HTMLTableRowElement).cells.item(1)?.textContent shouldBe "D"  // 15 < 20
                 
                 // Sort by col1 descending
                 sortTable(header1, 1, CssClass.Utility.Desc.toString())
-                rows = container.querySelectorAll(TBODY_TR)
+                rows = container.querySelectorAll("${HtmlTags.TBODY} ${HtmlTags.TR}")
                 (rows.item(0) as HTMLTableRowElement).cells.item(1)?.textContent shouldBe "B"  // 20 > 15
                 
                 // Test with missing data-sort-value (falls back to textContent)
                 val row2 = document.createElement("tr")
                 row2.className = "hoverable"
-                val td2a = document.createElement(TD)
+                val td2a = document.createElement(HtmlTags.TD)
                 td2a.textContent = "Apple"
-                val td2b = document.createElement(TD)
+                val td2b = document.createElement(HtmlTags.TD)
                 td2b.textContent = "Banana"
                 row2.appendChild(td2a)
                 row2.appendChild(td2b)
                 container.querySelector("tbody")!!.appendChild(row2)
                 
                 sortTable(header0, 0)  // Sort by first column text
-                rows = container.querySelectorAll(TBODY_TR)
+                rows = container.querySelectorAll("${HtmlTags.TBODY} ${HtmlTags.TR}")
                 // Should order: A (10), C (5), Apple (lexicographically after numbers? Actually strings: "A", "C", "Apple"),
                 // But we have data-sort-value on the first two rows, the third row uses textContent
                 // This is just to ensure no exception

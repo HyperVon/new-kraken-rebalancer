@@ -3,6 +3,7 @@ package com.gemini.krakenbot.frontend
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.HtmlAttrs
+import com.gemini.krakenbot.view.util.HtmlTags
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.booleans.shouldBeTrue
@@ -12,11 +13,6 @@ import kotlinx.browser.document
 import kotlinx.browser.window
 import org.w3c.dom.*
 import kotlin.js.Date
-
-import com.gemini.krakenbot.view.util.HtmlTags
-
-private const val TR_HOVERABLE = "tr.hoverable"
-private const val TBODY_TR = "tbody tr"
 
 @Suppress("unused")
 class DashboardTest : StringSpec() {
@@ -65,18 +61,18 @@ class DashboardTest : StringSpec() {
 
         sortTable(th0, 0)
         
-        var sortedRows = tbody.querySelectorAll(TR_HOVERABLE)
+        var sortedRows = tbody.querySelectorAll(CssClass.Query.HOVERABLE_TR)
         (sortedRows.item(0) as HTMLTableRowElement).cells.item(0)?.textContent shouldBe Asset.BTC
         (sortedRows.item(1) as HTMLTableRowElement).cells.item(0)?.textContent shouldBe Asset.ETH
         th0.classList.contains(CssClass.Utility.Asc).shouldBeTrue()
         
         sortTable(th0, 0)
-        sortedRows = tbody.querySelectorAll(TR_HOVERABLE)
+        sortedRows = tbody.querySelectorAll(CssClass.Query.HOVERABLE_TR)
         (sortedRows.item(0) as HTMLTableRowElement).cells.item(0)?.textContent shouldBe Asset.ETH
         th0.classList.contains(CssClass.Utility.Desc).shouldBeTrue()
         
         sortTable(th1, 1)
-        sortedRows = tbody.querySelectorAll(TR_HOVERABLE)
+        sortedRows = tbody.querySelectorAll(CssClass.Query.HOVERABLE_TR)
         (sortedRows.item(0) as HTMLTableRowElement).cells.item(0)?.textContent shouldBe Asset.ETH
         th1.classList.contains(CssClass.Utility.Asc).shouldBeTrue()
     }
@@ -149,17 +145,17 @@ class DashboardTest : StringSpec() {
             sortTable(targetHeader, 5, CssClass.Utility.Asc.toString())
             
             // Verify B is first (30%)
-            var rows = container.querySelectorAll(TBODY_TR)
+            var rows = container.querySelectorAll("${HtmlTags.TBODY} ${HtmlTags.TR}")
             rows.item(0)!!.textContent!!.shouldContain("B")
             
             // Reverse sort
             sortTable(targetHeader, 5, CssClass.Utility.Desc.toString())
-            rows = container.querySelectorAll(TBODY_TR)
+            rows = container.querySelectorAll("${HtmlTags.TBODY} ${HtmlTags.TR}")
             rows.item(0)!!.textContent!!.shouldContain("A")
             
             // Reapply sort (should still be A first)
             reapplySort()
-            rows = container.querySelectorAll(TBODY_TR)
+            rows = container.querySelectorAll("${HtmlTags.TBODY} ${HtmlTags.TR}")
             rows.item(0)!!.textContent!!.shouldContain("A")
         } finally {
             document.body!!.removeChild(container)
