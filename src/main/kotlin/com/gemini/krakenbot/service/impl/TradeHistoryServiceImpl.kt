@@ -7,7 +7,6 @@ import com.gemini.krakenbot.model.HistoryStats
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.model.isMatchingApiTrade
-import com.gemini.krakenbot.service.impl.SimulationDefaults
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.repository.TradeRepository
 import com.gemini.krakenbot.service.ConfigService
@@ -31,7 +30,6 @@ import java.time.Duration
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 import java.util.concurrent.ThreadLocalRandom
-import kotlin.math.abs
 import kotlin.time.Duration.Companion.milliseconds
 
 class TradeHistoryServiceImpl(

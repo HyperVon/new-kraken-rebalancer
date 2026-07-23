@@ -2,7 +2,6 @@ package com.gemini.krakenbot.view.util
 
 /** Standard HTML event-handler and custom attribute name constants. */
 object HtmlAttrs {
-    const val CLASS = "class"
     const val ONCLICK = "onclick"
     const val ONINPUT = "oninput"
     const val ONKEYDOWN = "onkeydown"
@@ -49,10 +48,7 @@ object HtmlTags {
     const val TH = "th"
     const val TABLE = "table"
     const val TBODY = "tbody"
-    const val THEAD = "thead"
     const val A = "a"
-    const val P = "p"
-    const val LABEL = "label"
 }
 
 /** Centralized HTML element IDs used in view layout templates and client scripts. */

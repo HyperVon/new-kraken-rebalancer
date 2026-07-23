@@ -7,7 +7,6 @@ import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.util.PrecisionConstants
 import com.gemini.krakenbot.util.isNegative
-import com.gemini.krakenbot.util.isPositive
 import java.math.BigDecimal
 import java.math.RoundingMode
 import java.time.Instant

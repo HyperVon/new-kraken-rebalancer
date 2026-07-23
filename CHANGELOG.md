@@ -8,6 +8,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [6.8.8] - 2026-07-23
+
+### Removed
+
+- **Unused Class & Constant Cleanups (`:common`, `src/main`, `src/test`)**: Removed unused `UsdValue` value class (`UsdValue.kt`), unused constants in `HtmlAttrs` (`CLASS`, `THEAD`, `P`, `LABEL`), and unneeded private constant `_REDACTED_` in `KrakenCredentials.kt`.
+- **Unused Import Cleanups (`src/main`, `src/test`)**: Cleaned up unused imports across `SqliteTradeRepositoryImpl.kt`, `OrderExecutorImpl.kt`, `SnapshotHistoryCalculator.kt`, `TradeHistoryServiceImpl.kt`, `DashboardControllerTest.kt`, and `TestConstants.kt`.
+
 ## [6.8.7] - 2026-07-23
 
 ### Refactored
