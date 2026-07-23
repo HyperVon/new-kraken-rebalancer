@@ -20,7 +20,8 @@ object Routes {
     const val STATIC_RESOURCES_DIR = "static"
 }
 
-fun String.withRange(range: TimeRange): String = "$this?${QueryParamKeys.RANGE}=${range.key}"
+fun String.withRange(range: TimeRange): String = withRange(range.key)
+fun String.withRange(rangeKey: String): String = withQuery(QueryParamKeys.RANGE, rangeKey)
 fun String.withQuery(key: String, value: Any): String = "$this?$key=$value"
 
 object QueryParamKeys {

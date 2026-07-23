@@ -11,6 +11,7 @@ import com.gemini.krakenbot.view.util.HtmlEvents
 import com.gemini.krakenbot.view.util.HtmlIds
 import com.gemini.krakenbot.view.util.Routes
 import com.gemini.krakenbot.view.util.ViewText
+import com.gemini.krakenbot.view.util.withRange
 import kotlinx.browser.document
 import kotlinx.browser.window
 import org.w3c.dom.*
@@ -585,7 +586,7 @@ internal fun updateStats(stats: dynamic) {
 }
 
 private fun fetchRanged(vararg routes: String, range: String): Array<Promise<dynamic>> {
-    return routes.map { route -> fetchJSON("$route?range=$range") }.toTypedArray()
+    return routes.map { route -> fetchJSON(route.withRange(range)) }.toTypedArray()
 }
 
 internal fun loadAll(range: String): Promise<Unit> {

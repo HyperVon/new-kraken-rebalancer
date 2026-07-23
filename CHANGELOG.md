@@ -29,7 +29,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Type-Safe Domain Measurement Value Classes (`:common`)**: Added `@JvmInline value class Percentage(val value: Double)` and `@JvmInline value class UsdValue(val value: Double)` in `:common`.
 - **Type-Safe CSS Query Selector Property (`:common`, `:frontend-js`)**: Added `val CssClass.querySelector: String` to compute CSS query strings (`.class-name`) for DOM element lookups in Kotlin/JS.
 - **Idiomatic `BigDecimal` Comparison & Scaling Extensions (`src/main`)**: Created `BigDecimalExtensions.kt` with readable `.isZero`, `.isNonZero`, `.isPositive`, `.isNegative`, `.toUsdScale()`, `.toCryptoScale()`, and `.toPercentScale()` properties.
-- **Type-Safe Route Query Extension Builders (`:common`)**: Added `withRange(range)` and `withQuery(key, value)` extension functions on route strings in `Routes.kt`.
+- **Type-Safe Route Query Extension Builders (`:common`, `:frontend-js`, `src/test`)**: Added `withRange(range)` and `withQuery(key, value)` extension functions on route strings in `Routes.kt` and refactored `History.kt` and `DashboardControllerTest.kt` to consume them for type-safe endpoint URL construction.
 - **Trade Execution Metrics & Slippage Calculator (`src/main`)**: Extracted financial trade calculation math (slippage, fee estimation, executed price) into a standalone `TradeCalculator` utility.
 - **Standardized Action Log Formatter (`src/main`)**: Created `ActionLogFormatter` to centralize human-readable audit log message generation for rebalance triggers, dust skips, and order executions.
 - **Timeline History & Snapshot Calculator (`src/main`)**: Extracted ~200 lines of historical balance reverse-tracking and price interpolation math into `SnapshotHistoryCalculator`.

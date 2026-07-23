@@ -12,10 +12,12 @@ import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.TradeHistoryService
 import com.gemini.krakenbot.view.DashboardView
 import com.gemini.krakenbot.view.component.*
+import com.gemini.krakenbot.model.TimeRange
 import com.gemini.krakenbot.view.util.FormFields
 import com.gemini.krakenbot.view.util.HtmxHeaders
 import com.gemini.krakenbot.view.util.Routes
 import com.gemini.krakenbot.view.util.ViewText
+import com.gemini.krakenbot.view.util.withRange
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
@@ -591,7 +593,7 @@ class DashboardControllerTest : StringSpec() {
                 application {
                     configureTestEnv()
                 }
-                val response = client.get("${Routes.API_HISTORY_SNAPSHOTS}?range=24h")
+                val response = client.get(Routes.API_HISTORY_SNAPSHOTS.withRange("24h"))
                 response.status shouldBe HttpStatusCode.OK
                 response.bodyAsText() shouldBe "[]"
             }
@@ -603,7 +605,7 @@ class DashboardControllerTest : StringSpec() {
                 application {
                     configureTestEnv()
                 }
-                val response = client.get("${Routes.API_HISTORY_TRADES}?range=all")
+                val response = client.get(Routes.API_HISTORY_TRADES.withRange(TimeRange.ALL))
                 response.status shouldBe HttpStatusCode.OK
                 response.bodyAsText() shouldBe "[]"
             }
@@ -622,7 +624,7 @@ class DashboardControllerTest : StringSpec() {
                 application {
                     configureTestEnv()
                 }
-                val response = client.get("${Routes.API_HISTORY_STATS}?range=7d")
+                val response = client.get(Routes.API_HISTORY_STATS.withRange(TimeRange.SEVEN_DAYS))
                 response.status shouldBe HttpStatusCode.OK
                 response.bodyAsText() shouldContain "\"allTimeHigh\":15000.00"
             }
@@ -635,13 +637,13 @@ class DashboardControllerTest : StringSpec() {
                     configureTestEnv()
                 }
                 // Test "7d" range
-                client.get("${Routes.API_HISTORY_SNAPSHOTS}?range=7d").status shouldBe HttpStatusCode.OK
+                client.get(Routes.API_HISTORY_SNAPSHOTS.withRange(TimeRange.SEVEN_DAYS)).status shouldBe HttpStatusCode.OK
                 // Test "30d" range
-                client.get("${Routes.API_HISTORY_SNAPSHOTS}?range=30d").status shouldBe HttpStatusCode.OK
+                client.get(Routes.API_HISTORY_SNAPSHOTS.withRange(TimeRange.THIRTY_DAYS)).status shouldBe HttpStatusCode.OK
                 // Test "90d" range
-                client.get("${Routes.API_HISTORY_SNAPSHOTS}?range=90d").status shouldBe HttpStatusCode.OK
+                client.get(Routes.API_HISTORY_SNAPSHOTS.withRange(TimeRange.NINETY_DAYS)).status shouldBe HttpStatusCode.OK
                 // Test fallback else range
-                client.get("${Routes.API_HISTORY_SNAPSHOTS}?range=invalid").status shouldBe HttpStatusCode.OK
+                client.get(Routes.API_HISTORY_SNAPSHOTS.withRange("invalid")).status shouldBe HttpStatusCode.OK
             }
         }
 
