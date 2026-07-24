@@ -10,6 +10,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`continuous-improvement` skill**: Orchestrates discover → size-gate (ask
+  before Large/high-impact) → apply S/M improvements → full quality gates →
+  commit/PR for “whole shebang” / continuous-enhancement loops while keeping
+  individual skills runnable alone.
 - **Parallel multi-agent guidance**: Always-on Cursor rule
   (`.cursor/rules/parallel-multi-agent.mdc`) plus
   [`parallel-multi-agent`](.agents/skills/parallel-multi-agent/SKILL.md) skill so

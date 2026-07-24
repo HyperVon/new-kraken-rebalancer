@@ -48,6 +48,7 @@ Canonical deep docs:
 | Open PR | [open-pr](skills/open-pr/SKILL.md) |
 | Autonomous multi-pass audit | [autonomous-code-optimizer](skills/autonomous-code-optimizer/SKILL.md) |
 | Parallel multi-agent splits | [parallel-multi-agent](skills/parallel-multi-agent/SKILL.md) |
+| Continuous improvement (whole shebang) | [continuous-improvement](skills/continuous-improvement/SKILL.md) |
 
 **Always-on norms** — full text in [OPERATING.md](OPERATING.md). Cursor loads the
 same content via committed `.cursor/rules/`:

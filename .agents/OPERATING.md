@@ -27,6 +27,7 @@ For tasks that match a skill in `.agents/skills/*/SKILL.md` or the index in
 | Docs audit | `documentation-review` |
 | Fan-out parallel work | `parallel-multi-agent` |
 | Post-deploy UI smoke | `post-deploy-ui-smoke` |
+| Continuous improvement / “whole shebang” | `continuous-improvement` |
 
 If no skill fits, proceed normally. Don’t skip quality gates the skill names.
 

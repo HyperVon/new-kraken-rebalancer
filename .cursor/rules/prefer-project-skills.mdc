@@ -21,5 +21,6 @@ process.
 | Docs audit | `documentation-review` |
 | Fan-out parallel work | `parallel-multi-agent` (+ always-on rule) |
 | Post-deploy UI smoke | `post-deploy-ui-smoke` |
+| Continuous improvement / “whole shebang” | `continuous-improvement` |
 
 If no skill fits, proceed normally. Don’t skip quality gates the skill names.
