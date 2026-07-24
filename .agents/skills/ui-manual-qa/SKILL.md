@@ -4,8 +4,10 @@ description: >-
   Agent-driven manual QA of live Dashboard / Settings / History interactions in
   simulation mode — click every control, verify charts/forms/nav/SSE behavior,
   and report pass/fail. Use when the user asks for UI QA, manual testing,
-  interaction smoke test, click-through testing, or to verify the UI still works
-  after frontend/SSR changes. Report only; do not redesign (ui-visual-review) or
+  interaction smoke test, click-through testing, post-deploy UI verification,
+  or to verify the UI still works after frontend/SSR/CSS/deploy changes. Run the
+  **full** checklist (including STYLE-* and REGRESSION-*) after UI work — not
+  only mobile viewport. Report only; do not redesign (ui-visual-review) or
   implement visual polish (ui-visual-implement) unless asked to fix a found bug.
 ---
 
@@ -16,11 +18,14 @@ tester would: open pages, click / type / toggle, and confirm the UI responds
 correctly. Prefer evidence from the browser (snapshot + screenshot) over code
 inspection alone.
 
-This skill is **functional** — not a visual design critique.
+This skill is **functional** — not a visual design critique. For a short
+post-deploy hard-refresh smoke (stale CSS, header density, Day · Total only),
+use [post-deploy-ui-smoke](../post-deploy-ui-smoke/SKILL.md).
 
 | Skill | Concern |
 | :--- | :--- |
 | **ui-manual-qa** (this) | Does each control work? |
+| [post-deploy-ui-smoke](../post-deploy-ui-smoke/SKILL.md) | Did deploy + cache leave the UI broken? |
 | [ui-visual-review](../ui-visual-review/SKILL.md) | Does it look right? (recommend only) |
 | [ui-visual-implement](../ui-visual-implement/SKILL.md) | Apply approved visual findings |
 | [docs-screenshot-refresh](../docs-screenshot-refresh/SKILL.md) | Refresh README PNGs |
@@ -39,8 +44,13 @@ Full case list → [checklist.md](checklist.md) (read it before Step 3).
 
 | Mode | When |
 | :--- | :--- |
-| **Full suite** (default) | User says “QA the UI”, “manual test”, “smoke the app”, or after broad UI work |
-| **Scoped** | User names a page or feature (e.g. “QA History views + zoom only”) — run that subset + Global nav |
+| **Full suite** (default) | User says “QA the UI”, “manual test”, “smoke the app”, **after UI/CSS/frontend deploy**, or after broad UI work |
+| **Scoped** | User names a page or feature (e.g. “QA History views + zoom only”) — run that subset + Global nav + **STYLE-1/2** |
+
+After any UI/CSS/JS change or production deploy, default to the **full**
+checklist — especially `STYLE-*`, `REGRESSION-*`, strengthened `HIST-VIEW-2`,
+and `HIST-ZOOM-*` (zoom vs pan/scrubber). Do not treat mobile-only checks as
+sufficient for desktop/laptop layout regressions.
 
 **Always in simulation** on an isolated run directory. Never point QA at the
 user’s real `rebalancer-config.json` / DB. Never flip live trading flags.
@@ -84,11 +94,16 @@ Use the **cursor-ide-browser** MCP (navigate → lock → snapshot/screenshot):
 
 1. `browser_navigate` → `http://localhost:8080/`
 2. `browser_lock` `{ action: "lock" }`
-3. Wait until Dashboard shows portfolio cards (not empty seed flash) — poll
+3. **Post-deploy / cache:** hard-refresh once (or confirm `/static/style.css?v=`
+   in the stylesheet link) before style assertions — stale 24h CSS makes controls
+   look like default browser buttons (`STYLE-1`).
+4. Wait until Dashboard shows portfolio cards (not empty seed flash) — poll
    health / snapshot / screenshot until data age is recent.
-4. Prefer `browser_snapshot` for structure + refs; `browser_take_screenshot`
+5. For header/status and `REGRESSION-*` cases, set viewport to **~1280–1440px**
+   width (desktop/laptop), not only ~375px mobile.
+6. Prefer `browser_snapshot` for structure + refs; `browser_take_screenshot`
    when asserting chart/visual state after an interaction.
-5. Unlock only when **all** cases for this run are finished.
+7. Unlock only when **all** cases for this run are finished.
 
 If a control has no stable accessibility name, use DOM ids from
 `:common` `HtmlIds` / visible `ViewText` labels (see checklist).
@@ -196,6 +211,8 @@ done reviewing. Unlock the browser tab.
 - Auto-implementing fixes mid-suite without user ask (finish the report first)
 - Confusing this skill with ui-visual-review (looks) or Kotest (unit coverage)
 - Skipping zoom / view-preset / allocation add-remove because they feel “extra”
+- QA only at mobile width and missing desktop header density / glass-button regressions
+- Skipping `STYLE-*` after a deploy and mis-reporting styled controls as “broken”
 
 ---
 

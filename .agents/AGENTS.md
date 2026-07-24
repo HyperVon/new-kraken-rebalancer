@@ -3,6 +3,11 @@
 Primary agent rules live here: **`.agents/AGENTS.md`** (there is no root `AGENTS.md`).
 Domain skills live under **`.agents/skills/*/SKILL.md`**. Prefer skills for deep how-to; keep this file as non-negotiable invariants and pointers.
 
+**Always-on operating norms** (all agent frameworks): **[OPERATING.md](OPERATING.md)**.
+Cursor projections of those norms live in **`.cursor/rules/*.mdc`** (committed;
+keep in sync with OPERATING.md). Thin harness entrypoints: root **`CLAUDE.md`**,
+**`.github/copilot-instructions.md`**.
+
 Canonical deep docs:
 
 - [`docs/USER_GUIDE.md`](../docs/USER_GUIDE.md) — end-user visual walkthrough
@@ -35,12 +40,27 @@ Canonical deep docs:
 | UI visual critique (recommend) | [ui-visual-review](skills/ui-visual-review/SKILL.md) |
 | UI visual apply + verify | [ui-visual-implement](skills/ui-visual-implement/SKILL.md) |
 | UI manual QA (click-through) | [ui-manual-qa](skills/ui-manual-qa/SKILL.md) |
+| Post-deploy UI smoke | [post-deploy-ui-smoke](skills/post-deploy-ui-smoke/SKILL.md) |
 | Refactor / cleanup | [kotlin-refactoring-and-cleanup](skills/kotlin-refactoring-and-cleanup/SKILL.md) |
 | Code review | [code-review](skills/code-review/SKILL.md) |
 | Dependency upgrades | [dependency-upgrade](skills/dependency-upgrade/SKILL.md) |
 | Commit & push | [commit-and-push](skills/commit-and-push/SKILL.md) |
 | Open PR | [open-pr](skills/open-pr/SKILL.md) |
 | Autonomous multi-pass audit | [autonomous-code-optimizer](skills/autonomous-code-optimizer/SKILL.md) |
+| Parallel multi-agent splits | [parallel-multi-agent](skills/parallel-multi-agent/SKILL.md) |
+
+**Always-on norms** — full text in [OPERATING.md](OPERATING.md). Cursor loads the
+same content via committed `.cursor/rules/`:
+
+| Rule | Purpose |
+| :--- | :--- |
+| `prefer-project-skills.mdc` | Follow `.agents/skills` instead of inventing flows |
+| `parallel-multi-agent.mdc` | Fan out independent workstreams; keep coupled files single-threaded |
+| `no-blocking-long-processes.mdc` | Background servers; don’t hang on `java -jar` / `gradlew run` |
+| `ui-change-verification.mdc` | Path-triggered: laptop viewport, CSS `?v=`, QA smells (`view/**`, `frontend-js/**`) |
+
+Do **not** gitignore `.cursor/`. Other frameworks should read OPERATING.md (or
+the CLAUDE.md / Copilot stubs) so they get the same norms without Cursor.
 
 ---
 

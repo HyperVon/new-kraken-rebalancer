@@ -367,7 +367,11 @@ two complementary `SharedFlow` channels:
 ```text
 ├── .agents/                                # AI Agent rules, guidelines & domain skills
 │   ├── AGENTS.md                          # Repository rules & technical guidelines
+│   ├── OPERATING.md                       # Always-on norms (all agent frameworks)
 │   └── skills/                            # Domain skills (see .agents/AGENTS.md skill index)
+├── .cursor/rules/                          # Cursor projections of OPERATING.md (committed)
+├── CLAUDE.md                               # Claude Code entrypoint → .agents/
+├── .github/copilot-instructions.md         # GitHub Copilot entrypoint → .agents/
 ├── common/                                 # Kotlin Multiplatform shared module (JVM + JS)
 │   └── src/commonMain/kotlin/.../         # AppConfig, Settings, Routes, HtmlIds, CssClass, ViewText, …
 ├── frontend-js/                            # Kotlin/JS client-side subproject compiling to rebalancer.js

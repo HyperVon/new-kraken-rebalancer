@@ -40,11 +40,11 @@ object LayoutStyles {
             display = Display.flex
             flexDirection = FlexDirection.column
             gap = 0.75.rem
-            paddingBottom = 1.rem
+            paddingBottom = 1.25.rem
             borderBottomWidth = 1.px
             borderBottomStyle = BorderStyle.solid
             borderBottomColor = CssTheme.colorBorderMuted
-            marginBottom = 1.25.rem
+            marginBottom = 1.5.rem
         }
 
         ".${CssClass.Layout.HeaderTitleSection}" {
@@ -80,8 +80,8 @@ object LayoutStyles {
         ".${CssClass.Layout.StatusCluster}" {
             display = Display.flex
             alignItems = Align.center
-            gap = 0.75.rem
-            padding = Padding(0.375.rem, 0.75.rem)
+            gap = 1.25.rem
+            padding = Padding(0.625.rem, 1.rem)
             borderRadius = 0.75.rem
             background = CssTheme.colorWhiteSubtle.value
             borderWidth = 1.px
@@ -89,7 +89,14 @@ object LayoutStyles {
             borderColor = CssTheme.colorWhiteFaint
         }
 
+        ".${CssClass.Layout.StatusCluster} .status-badge" {
+            flexShrink = 0.0
+        }
+
         ".${CssClass.DataAge.Container}" {
+            display = Display.flex
+            flexDirection = FlexDirection.column
+            gap = 0.25.rem
             textAlign = TextAlign.left
         }
 
@@ -99,6 +106,7 @@ object LayoutStyles {
             put("text-transform", "uppercase")
             put("letter-spacing", "0.05em")
             fontWeight = FontWeight.w600
+            put("line-height", "1.2")
         }
 
         ".${CssClass.DataAge.Value}" {
@@ -106,6 +114,7 @@ object LayoutStyles {
             fontSize = 0.875.rem
             fontWeight = FontWeight.w700
             color = CssTheme.colorTextBright
+            put("line-height", "1.35")
         }
 
         ".${CssClass.DataAge.Value}.stale" {
@@ -115,6 +124,7 @@ object LayoutStyles {
         ".${CssClass.DataAge.Time}" {
             fontSize = 0.75.rem
             color = CssTheme.colorTextMuted
+            put("line-height", "1.35")
         }
 
         ".${CssClass.Layout.GlassPanel}" {

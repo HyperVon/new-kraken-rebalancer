@@ -12,6 +12,7 @@ object HtmlAttrs {
     const val DATA_ZOOM_ACTION = "data-zoom-action"
     const val DATASET_SORT_VALUE = "sortValue"
     const val CROSSORIGIN = "crossorigin"
+    const val ARIA_LABEL = "aria-label"
 }
 
 /** Zoom control action values for History chart toolbar buttons. */

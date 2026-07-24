@@ -1,5 +1,6 @@
 package com.gemini.krakenbot.view.util
 
+import com.gemini.krakenbot.view.css.CssStyles
 import kotlinx.html.HEAD
 import kotlinx.html.link
 import kotlinx.html.meta
@@ -22,5 +23,8 @@ fun HEAD.commonMetadataAndStyles() {
         rel = "stylesheet",
         href = "https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&family=Roboto+Mono:wght@400;500;700&display=swap",
     )
-    link(rel = "stylesheet", href = Routes.STATIC_STYLE_CSS)
+    // CSS responses are cached for 24 hours. A content-derived version keeps
+    // that cache useful while forcing clients to fetch changed rules on deploy.
+    val stylesheetVersion = CssStyles.stylesheet.toString().hashCode()
+    link(rel = "stylesheet", href = "${Routes.STATIC_STYLE_CSS}?v=$stylesheetVersion")
 }

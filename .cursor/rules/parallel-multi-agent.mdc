@@ -1,0 +1,45 @@
+---
+description: Prefer parallel multi-agent workstreams when tasks have independent file/ownership boundaries
+alwaysApply: true
+---
+
+<!-- Canonical portable copy: .agents/OPERATING.md § Parallel multi-agent work -->
+
+# Parallel multi-agent work
+
+When a request involves **multiple independent workstreams**, do **not** serialize them by default. Split and run concurrently with the Task tool (or equivalent subagents).
+
+## When to parallelize
+
+Launch parallel agents when **all** of these hold:
+
+1. Workstreams touch **disjoint files** (or clearly owned modules) with little merge conflict risk.
+2. Each stream has a **self-contained goal** (e.g. CSS spacing vs skill docs vs unrelated module).
+3. The parent can **integrate** results afterward (tests, wire-up, PR).
+
+Examples that should fan out:
+
+- CSS/layout polish **+** docs/skills **+** unrelated test fixes
+- Screenshot/docs refresh **+** backend bug fix in a different package
+- Several explore/search tasks across different directories
+
+## When to keep one stream
+
+Stay single-threaded (or one dedicated agent) when streams **share** the same hot files or one depends on the other’s output:
+
+- Same `History.kt` / same CSS module needing coordinated edits
+- API contract change that frontend must consume in the same change
+- Refactors that move symbols across the streams you’d otherwise split
+
+## How to split
+
+1. **Name the tracks** briefly for the user (what is parallel vs coupled).
+2. Give each Task agent: repo path, branch, **already-done context**, exact files to touch/avoid, and acceptance criteria.
+3. Reserve **one coupled track** for interdependent code; run independent tracks in **one message with multiple Task calls**.
+4. After agents return: merge, resolve conflicts, run quality gates, then continue.
+
+## Anti-patterns
+
+- Parallel edits to the **same file** without a single owner
+- Spawning agents for tiny one-liners (overhead > benefit)
+- Parallelizing when the next step is blocked on a single design decision — decide first, then fan out

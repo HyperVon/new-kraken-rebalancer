@@ -25,6 +25,19 @@ object MediaQueries {
                 flexDirection = FlexDirection.row
                 put("justify-content", "space-between")
                 alignItems = Align.center
+                paddingBottom = 1.5.rem
+                marginBottom = 1.75.rem
+            }
+            ".${CssClass.Layout.StatusCluster}" {
+                gap = 1.5.rem
+                padding = Padding(0.75.rem, 1.25.rem)
+            }
+            ".${CssClass.DataAge.Container}" {
+                gap = 0.375.rem
+            }
+            ".glass-panel.status-card" {
+                gap = 1.125.rem
+                padding = Padding(1.625.rem, 1.75.rem)
             }
             ".${CssClass.Layout.OverviewGrid}" {
                 gridTemplateColumns = GridTemplateColumns("repeat(3, 1fr)")

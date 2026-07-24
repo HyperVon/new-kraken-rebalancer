@@ -17,6 +17,20 @@ Stable ids (see `HtmlAttrs.HtmlIds`):
 | `portfolio-value-chart` / `asset-holdings-chart` / `allocation-drift-chart` / `cumulative-pl-chart` | Chart canvases |
 | `trade-table-body` | Trade log rows |
 | `history-stats` / `stat-*` | Summary cards |
+| `history-zoom-btn` / `history-views-select` | Zoom + view toolbar (glass styling) |
+| `history-chart-scrubber-input` | Pan scrubber under each History chart |
+
+---
+
+## Post-deploy / stylesheet (`STYLE-*`)
+
+Run **before** style-sensitive History/Dashboard cases. Stylesheet responses are
+cached **24h**; stale CSS makes new controls look like default browser buttons.
+
+| ID | Steps | Expected |
+| :--- | :--- | :--- |
+| STYLE-1 | Hard-refresh `/` (bypass cache) **or** inspect page `<link rel="stylesheet">` | Href is `/static/style.css?v=` with a non-empty version query (cache-bust after deploy) |
+| STYLE-2 | Open `/history`; inspect Views select, Save / Set default / Delete, Zoom − / + / Reset | Dark-theme glass controls (`history-zoom-btn`, view toolbar); **not** white native OS `<button>` / `<select>` chrome |
 
 ---
 
@@ -29,6 +43,20 @@ Stable ids (see `HtmlAttrs.HtmlIds`):
 | GLOBAL-3 | Click **Dashboard** nav | URL `/`; summary cards visible |
 | GLOBAL-4 | Confirm brand wordmark | Header shows **Kraken** + **Rebalancer** on each page |
 | GLOBAL-5 | Dashboard only: status cluster | **LIVE** or **DELAYED** + **Data Age** visible near nav |
+| GLOBAL-6 | Resize viewport to **~1280–1440px** width; reload `/` | Header + status cluster remain readable (see REGRESSION-1) |
+
+---
+
+## Production regression guardrails (`REGRESSION-*`)
+
+Explicit checks for recent production UI regressions. Run on **desktop/laptop**
+width (~1280–1440px), not only narrow mobile.
+
+| ID | Steps | Expected |
+| :--- | :--- | :--- |
+| REGRESSION-1 | Dashboard at ~1280–1440px (`GLOBAL-6`) | Status cluster **LIVE**/**DELAYED** + **Data Age** not vertically squished, clipped, or stacked illegibly |
+| REGRESSION-2 | Dashboard → Asset Performance deviation legend | **Over target** and **Under target** each with amber/blue dot; labels spaced — not concatenated run-on text |
+| REGRESSION-3 | History chart legends (Portfolio Value, Asset Holdings, Allocation Drift, Cumulative P&L) | Legend swatches use line/point markers; not heavy bordered box chips around every label |
 
 ---
 
@@ -81,7 +109,7 @@ Wait until sync banner completes (or is absent) before chart assertions.
 | ID | Steps | Expected |
 | :--- | :--- | :--- |
 | HIST-VIEW-1 | Select **Overview** | 30d (or preset range); series visible |
-| HIST-VIEW-2 | Select **Day · Total only** | 24h; Portfolio Value shows Total-focused legend state |
+| HIST-VIEW-2 | Select **Day · Total only** | **24h** applied; Portfolio Value legend lists **Total** only (Cash/Crypto/per-asset labels absent); canvas draws **Total** line only — other series hidden, not merely dimmed |
 | HIST-VIEW-3 | Select **Week · Allocation** | 7d applied |
 | HIST-VIEW-4 | Select **Month · P&L** | 30d; dry-run filter matches preset intent |
 | HIST-VIEW-5 | Manually change time range while a named view is selected | Select shows **Custom (unsaved)** (or equivalent); Set default / Delete disabled as designed |
@@ -100,10 +128,12 @@ Wait until sync banner completes (or is absent) before chart assertions.
 | HIST-CHART-3 | Scroll to Allocation Drift | Unstacked %-style series (0–100 domain intent) |
 | HIST-CHART-4 | Cumulative P&L chart drawn | Axis ticks readable; negatives use `-$` if present |
 | HIST-CHART-5 | Click chart legend item to hide a series (if interactive) | Series hides; click again restores |
-| HIST-ZOOM-1 | On Portfolio Value: **Zoom +** twice | X window narrows (visual or plugin state) |
-| HIST-ZOOM-2 | **Zoom −** | Window widens toward prior |
-| HIST-ZOOM-3 | **Reset** | Full selected range restored |
-| HIST-ZOOM-4 | Change time range after zoom | Charts rebuild; zoom cleared |
+| HIST-ZOOM-1 | On Portfolio Value: **Zoom +** twice | X-axis time window narrows (fewer ticks / shorter span visible) |
+| HIST-ZOOM-2 | **Zoom −** | Window widens toward prior span |
+| HIST-ZOOM-3 | **Reset** | Full selected time range restored; scrubber disabled again if it was enabled |
+| HIST-ZOOM-4 | Change time range after zoom | Charts rebuild; zoom + scrubber state cleared |
+| HIST-ZOOM-5 | After HIST-ZOOM-1: drag-select a region on Portfolio Value canvas | Selection **zooms** the x-axis; drag does **not** pan the chart sideways |
+| HIST-ZOOM-6 | After zoom: use bottom range scrubber (`history-chart-scrubber-input`, aria **Pan zoomed chart**) | Scrubber **enabled**; sliding it pans the visible x window without changing zoom level |
 | HIST-DRY-1 | Toggle **Show Dry Run Trades** | Trade table row set changes (or stays empty consistently); charts that include dry-run P&L update if applicable |
 
 ---

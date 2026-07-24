@@ -1,0 +1,25 @@
+---
+description: Prefer project .agents skills over inventing ad-hoc workflows for known tasks
+alwaysApply: true
+---
+
+<!-- Canonical portable copy: .agents/OPERATING.md § Prefer project skills -->
+
+# Prefer project skills
+
+For tasks that match a skill in `.agents/skills/*/SKILL.md` or the index in
+`.agents/AGENTS.md`, **read and follow that skill** before inventing a parallel
+process.
+
+| User intent | Skill |
+| :--- | :--- |
+| Commit / push | `commit-and-push` |
+| Open PR | `open-pr` |
+| UI click-through QA | `ui-manual-qa` |
+| UI visual critique / implement | `ui-visual-review` / `ui-visual-implement` |
+| Docs screenshots | `docs-screenshot-refresh` |
+| Docs audit | `documentation-review` |
+| Fan-out parallel work | `parallel-multi-agent` (+ always-on rule) |
+| Post-deploy UI smoke | `post-deploy-ui-smoke` |
+
+If no skill fits, proceed normally. Don’t skip quality gates the skill names.

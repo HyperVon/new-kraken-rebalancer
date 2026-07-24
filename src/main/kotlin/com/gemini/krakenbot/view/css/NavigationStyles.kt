@@ -131,6 +131,8 @@ object NavigationStyles {
         }
 
         ".${CssClass.History.ViewsBtn}" {
+            put("appearance", "none")
+            put("-webkit-appearance", "none")
             padding = Padding(0.375.rem, 0.625.rem)
             borderRadius = 0.5.rem
             fontSize = 0.75.rem
@@ -164,6 +166,8 @@ object NavigationStyles {
         }
 
         ".${CssClass.History.ZoomBtn}" {
+            put("appearance", "none")
+            put("-webkit-appearance", "none")
             padding = Padding(0.25.rem, 0.5.rem)
             borderRadius = 0.375.rem
             fontSize = 0.75.rem
@@ -188,6 +192,50 @@ object NavigationStyles {
             position = Position.relative
             height = 20.rem
             marginTop = 0.5.rem
+        }
+
+        ".${CssClass.History.ChartScrubber}" {
+            padding = Padding(0.75.rem, 0.5.rem, 0.125.rem)
+        }
+
+        ".${CssClass.History.ChartScrubberInput}" {
+            put("appearance", "none")
+            put("-webkit-appearance", "none")
+            width = 100.pct
+            height = 0.35.rem
+            borderRadius = CssTheme.radiusPill
+            background = CssTheme.colorBorderMuted.value
+            cursor = Cursor.ewResize
+            put("accent-color", CssTheme.colorBlueAccent.value)
+        }
+
+        ".${CssClass.History.ChartScrubberInput}:disabled" {
+            opacity = 0.3
+            cursor = Cursor.default
+        }
+
+        ".${CssClass.History.ChartScrubberInput}::-webkit-slider-thumb" {
+            put("appearance", "none")
+            put("-webkit-appearance", "none")
+            width = 1.rem
+            height = 1.rem
+            borderRadius = 50.pct
+            background = CssTheme.colorBlueAccent.value
+            borderWidth = 2.px
+            borderStyle = BorderStyle.solid
+            borderColor = CssTheme.colorBg
+            cursor = Cursor.grab
+        }
+
+        ".${CssClass.History.ChartScrubberInput}::-moz-range-thumb" {
+            width = 1.rem
+            height = 1.rem
+            borderRadius = 50.pct
+            background = CssTheme.colorBlueAccent.value
+            borderWidth = 2.px
+            borderStyle = BorderStyle.solid
+            borderColor = CssTheme.colorBg
+            cursor = Cursor.grab
         }
 
         ".${CssClass.History.StatsGrid}" {
@@ -345,6 +393,10 @@ object NavigationStyles {
             alignItems = Align.center
             gap = 0.35.rem
             fontWeight = FontWeight.w600
+        }
+
+        ".${CssClass.Performance.DevLegendItem}:first-child" {
+            marginRight = 1.rem
         }
 
         ".${CssClass.Performance.DevLegendItem}::before" {

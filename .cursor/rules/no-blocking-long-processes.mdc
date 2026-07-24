@@ -1,0 +1,25 @@
+---
+description: Never block the chat waiting on long-lived processes; background servers and report progress
+alwaysApply: true
+---
+
+<!-- Canonical portable copy: .agents/OPERATING.md § No blocking long processes -->
+
+# No blocking long processes
+
+Do **not** leave the user waiting on a foreground command that never exits
+(app servers, `gradlew run`, watchers, long sleeps).
+
+## Required behavior
+
+1. Start long-lived processes with `block_until_ms: 0` (background).
+2. Wait for readiness with short polls / log patterns (`/api/health`, “Application started”), not by awaiting the process itself.
+3. If blocked > ~15–20s with no useful progress, say what you’re waiting on and either continue other work or ask—don’t silently hang.
+4. When done, kill the process and free the port; don’t leave orphan Java/Gradle runs.
+5. Prefer `AwaitShell` with an output **pattern** over open-ended long `block_until_ms` for servers.
+
+## Anti-patterns
+
+- `./gradlew run` / `java -jar …` in the foreground with a multi-minute block
+- Polling forever without telling the user
+- Declaring “stuck” only after the user asks “what are you waiting for?”

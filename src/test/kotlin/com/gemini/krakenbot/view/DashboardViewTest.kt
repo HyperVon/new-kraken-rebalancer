@@ -90,7 +90,7 @@ class DashboardViewTest : StringSpec() {
         "renderDashboardShell_containsExpectedContent" {
             val html = createHTML().html { view.renderDashboardShell() }
             html shouldContain "title>${APP_TITLE}"
-            html shouldContain "link href=\"${STATIC_STYLE_CSS}\" rel=\"stylesheet\""
+            html shouldContain "link href=\"${STATIC_STYLE_CSS}?v="
             html shouldContain "script src=\"https://unpkg.com/htmx.org@2.0.4\""
             html shouldContain "hx-ext=\"sse\""
             html shouldContain "sse-connect=\"${API_STATUS_STREAM}\""

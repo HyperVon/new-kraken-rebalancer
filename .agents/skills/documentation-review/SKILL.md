@@ -38,6 +38,9 @@ For regenerating README screenshots from a running simulation UI, use
 | `docs/FLOWS.md` | Flow / SharedFlow / SSE architecture |
 | `docs/EVALUATION.md` | Scenario evaluation suite |
 | `.agents/AGENTS.md` | Invariants, skill index, stack pins |
+| `.agents/OPERATING.md` | Always-on norms; must stay aligned with `.cursor/rules/*.mdc` |
+| `CLAUDE.md` / `.github/copilot-instructions.md` | Thin harness entrypoints → `.agents/` |
+| `.cursor/rules/*.mdc` | Cursor projections of OPERATING.md (must be committed) |
 | `.agents/skills/*/SKILL.md` | Domain guidance must match code |
 | `rebalancer-config-template.json` | Settings keys vs `Settings` / `AppConfig` |
 | `.github/workflows/*` | CI commands/JDK must match CONTRIBUTING/README |
