@@ -109,6 +109,9 @@ After a deploy or LAN UI check, run
 - History Views/Zoom unstyled native buttons
 - View presets that don’t hide series (Day · Total only)
 - Chart drag that both zooms and pans without a separate pan control
+- Scrubber stays **disabled** after drag/wheel zoom (only Zoom buttons synced it)
+- Scrubber thumb moves but **chart does not pan** (wrote `options.scales`
+  instead of `chart.zoomScale`)
 
 ---
 

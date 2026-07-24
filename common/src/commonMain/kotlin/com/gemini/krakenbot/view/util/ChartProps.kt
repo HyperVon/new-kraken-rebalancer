@@ -81,6 +81,9 @@ object ChartProps {
     const val MIN = "min"
     const val MAX = "max"
     const val ORIGINAL = "original"
+    const val ON_ZOOM_COMPLETE = "onZoomComplete"
+    /** Chart.js animation mode for instant programmatic zoom/pan (no tween). */
+    const val TRANSITION_NONE = "none"
 
     /** Minimum visible x-span after zoom (ms) — prevents collapsing the time axis. */
     const val ZOOM_MIN_RANGE_MS = 3_600_000

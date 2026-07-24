@@ -126,6 +126,10 @@ For each acceptance criterion:
 
 Optional: browser snapshot for hover/focus if the finding required it.
 
+If acceptance touched History zoom/pan: also run
+[ui-manual-qa](../ui-manual-qa/SKILL.md) `HIST-ZOOM-5/6/7` — scrubber must enable
+after drag/wheel zoom and **pan the chart** (thumb-only motion is a fail).
+
 ### Step 7: Iteration cap
 
 If acceptance fails, fix and re-capture. After **3** unsuccessful verify loops

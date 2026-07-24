@@ -49,8 +49,10 @@ Full case list → [checklist.md](checklist.md) (read it before Step 3).
 
 After any UI/CSS/JS change or production deploy, default to the **full**
 checklist — especially `STYLE-*`, `REGRESSION-*`, strengthened `HIST-VIEW-2`,
-and `HIST-ZOOM-*` (zoom vs pan/scrubber). Do not treat mobile-only checks as
-sufficient for desktop/laptop layout regressions.
+and `HIST-ZOOM-*` (zoom vs pan/scrubber). For History zoom work, **always**
+run HIST-ZOOM-5/6/7 and watch the **chart**, not only the scrubber thumb.
+Do not treat mobile-only checks as sufficient for desktop/laptop layout
+regressions.
 
 **Always in simulation** on an isolated run directory. Never point QA at the
 user’s real `rebalancer-config.json` / DB. Never flip live trading flags.
@@ -213,6 +215,10 @@ done reviewing. Unlock the browser tab.
 - Skipping zoom / view-preset / allocation add-remove because they feel “extra”
 - QA only at mobile width and missing desktop header density / glass-button regressions
 - Skipping `STYLE-*` after a deploy and mis-reporting styled controls as “broken”
+- Calling HIST-ZOOM-6 pass because the scrubber thumb moved while **time ticks /
+  series stayed put** (chart must pan — usually needs `chart.zoomScale`)
+- Enabling scrubber only via Zoom + buttons and skipping drag/wheel zoom
+  (HIST-ZOOM-5 / HIST-ZOOM-7)
 
 ---
 

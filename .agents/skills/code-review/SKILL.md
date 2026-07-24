@@ -40,7 +40,11 @@ description: >-
 
 ### 5. Frontend / Flows
 
-- Chart.js deep-clone; DOM listener cleanup.
+- Chart.js deep-clone; **re-attach function callbacks after clone** (e.g.
+  `onZoomComplete`).
+- History zoom: pan via `chart.zoomScale`, not `options.scales.x` + `update()`
+  after the zoom plugin owns the axis; scrubber must enable after drag/wheel
+  zoom as well as toolbar Zoom buttons.
 - History timeframe updates **all 4** summary cards.
 - Hot SharedFlow vs cold Flow usage matches `docs/FLOWS.md`.
 

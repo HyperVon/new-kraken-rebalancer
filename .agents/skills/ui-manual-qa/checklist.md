@@ -128,12 +128,13 @@ Wait until sync banner completes (or is absent) before chart assertions.
 | HIST-CHART-3 | Scroll to Allocation Drift | Unstacked %-style series (0–100 domain intent) |
 | HIST-CHART-4 | Cumulative P&L chart drawn | Axis ticks readable; negatives use `-$` if present |
 | HIST-CHART-5 | Click chart legend item to hide a series (if interactive) | Series hides; click again restores |
-| HIST-ZOOM-1 | On Portfolio Value: **Zoom +** twice | X-axis time window narrows (fewer ticks / shorter span visible) |
+| HIST-ZOOM-1 | On Portfolio Value: **Zoom +** twice | X-axis time window narrows (fewer ticks / shorter span visible); bottom scrubber becomes **enabled** (not stuck disabled) |
 | HIST-ZOOM-2 | **Zoom −** | Window widens toward prior span |
-| HIST-ZOOM-3 | **Reset** | Full selected time range restored; scrubber disabled again if it was enabled |
+| HIST-ZOOM-3 | **Reset** | Full selected time range restored; scrubber **disabled** again |
 | HIST-ZOOM-4 | Change time range after zoom | Charts rebuild; zoom + scrubber state cleared |
-| HIST-ZOOM-5 | After HIST-ZOOM-1: drag-select a region on Portfolio Value canvas | Selection **zooms** the x-axis; drag does **not** pan the chart sideways |
-| HIST-ZOOM-6 | After zoom: use bottom range scrubber (`history-chart-scrubber-input`, aria **Pan zoomed chart**) | Scrubber **enabled**; sliding it pans the visible x window without changing zoom level |
+| HIST-ZOOM-5 | After HIST-ZOOM-1: drag-select a region on Portfolio Value canvas | Selection **zooms** the x-axis; drag does **not** pan the chart sideways; scrubber becomes **enabled** after drag-zoom (same as Zoom +) |
+| HIST-ZOOM-6 | After zoom (buttons **or** drag/wheel): drag bottom scrubber (`history-chart-scrubber-input`) left↔right | Scrubber is **draggable**; **chart x-window actually pans** (time ticks / series shift). Fail if thumb moves but the chart view is unchanged |
+| HIST-ZOOM-7 | Wheel-zoom on Portfolio Value (if supported) then scrubber | Scrubber enables after wheel zoom; sliding pans the window (same contract as HIST-ZOOM-6) |
 | HIST-DRY-1 | Toggle **Show Dry Run Trades** | Trade table row set changes (or stays empty consistently); charts that include dry-run P&L update if applicable |
 
 ---

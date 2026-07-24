@@ -96,6 +96,14 @@ Opt in `ExperimentalCoroutinesApi` when using `advanceUntilIdle`.
 Under `frontend-js/src/jsTest/` — `kotlin.test`, mock DOM, clean up nodes.
 Coverage gates: 90% statements/functions/lines, 75% branches.
 
+History chart zoom/scrubber specs should cover:
+
+- Scrubber **disabled** when not zoomed; **enabled** after zoom
+- Pan via `chart.zoomScale('x', {min, max})` (assert call args)
+- Fallback when `zoomScale` is absent (options.scales + `update`)
+- `onZoomComplete` re-attached after `JSON.parse(JSON.stringify(…))` clone
+- No-op pan when full span == current span
+
 ```bash
 ./gradlew :frontend-js:jsTest
 ./gradlew test jacocoTestReport jacocoTestCoverageVerification
@@ -107,4 +115,5 @@ Coverage gates: 90% statements/functions/lines, 75% branches.
 - [ ] `shouldBeEqualComparingTo`; `:memory:` DB; `TestFixtures` where useful
 - [ ] FakeKraken for tests; Flow tests use `advanceUntilIdle`
 - [ ] Evaluation scenarios updated when algorithm behavior changes
+- [ ] JS History zoom/scrubber branches covered when touching `History.kt`
 - [ ] No machine paths/hostnames; no FQNs
