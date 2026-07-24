@@ -236,29 +236,28 @@ internal fun syncTimeRangeButtons(range: String) {
     }
 }
 
+/** Density-based radius: full radius up to FULL_MAX points, half until HALF_MAX, then hidden. */
+private fun radiusForCount(
+    pointCount: Int,
+    fullRadius: Int,
+): Int =
+    when {
+        pointCount <= ChartProps.POINT_DENSITY_FULL_MAX -> fullRadius
+        pointCount <= ChartProps.POINT_DENSITY_HALF_MAX -> fullRadius / 2
+        else -> ChartProps.POINT_RADIUS_HIDDEN
+    }
+
 internal fun pointRadiusForCount(
     pointCount: Int,
     primary: Boolean,
-): Int {
-    val full = if (primary) ChartProps.POINT_RADIUS_PRIMARY else ChartProps.POINT_RADIUS_SECONDARY
-    return when {
-        pointCount <= ChartProps.POINT_DENSITY_FULL_MAX -> full
-        pointCount <= ChartProps.POINT_DENSITY_HALF_MAX -> full / 2
-        else -> ChartProps.POINT_RADIUS_HIDDEN
-    }
-}
+): Int =
+    radiusForCount(pointCount, if (primary) ChartProps.POINT_RADIUS_PRIMARY else ChartProps.POINT_RADIUS_SECONDARY)
 
 internal fun pointHoverRadiusForCount(
     pointCount: Int,
     primary: Boolean,
-): Int {
-    val full = if (primary) ChartProps.POINT_HOVER_RADIUS_PRIMARY else ChartProps.POINT_HOVER_RADIUS_SECONDARY
-    return when {
-        pointCount <= ChartProps.POINT_DENSITY_FULL_MAX -> full
-        pointCount <= ChartProps.POINT_DENSITY_HALF_MAX -> full / 2
-        else -> ChartProps.POINT_RADIUS_HIDDEN
-    }
-}
+): Int =
+    radiusForCount(pointCount, if (primary) ChartProps.POINT_HOVER_RADIUS_PRIMARY else ChartProps.POINT_HOVER_RADIUS_SECONDARY)
 
 internal fun setupZoomButtons() {
     val buttons = document.querySelectorAll(ZOOM_BTNS_QUERY)

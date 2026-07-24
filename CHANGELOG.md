@@ -58,6 +58,19 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the chart**, not only the thumb); `ui-visual-review`, `post-deploy-ui-smoke`,
   `frontend-js-development`, `write-kotest`, and `code-review` call out the same
   `zoomScale` / `onZoomComplete` failure modes.
+- **Internal cleanup (no behavior change)**: De-duplicated the JaCoCo
+  coverage-exclude list into a single `coverageExcludes` source shared by the
+  report and verification tasks, and centralized the Ktor/Koin version literals
+  in `build.gradle.kts`. Extracted a shared point-radius helper in the History
+  charts and a `currentAllocationSymbols` DOM helper in Settings, and switched
+  per-asset chart color dispatch to `Asset` symbol constants instead of string
+  literals. Added a Settings-form render assertion for the Safety Modes section.
+- **Documentation accuracy**: Documented the History view presets, chart zoom,
+  and pan scrubber in the README and User Guide; corrected the trade-dedup
+  description to match `TradeDeduplicator` (pair-alias normalization,
+  local-estimate vs API reconciliation, fee tolerance, ~5 min window); synced
+  the README project tree and Jackson version (2.22.1); and fixed the broken
+  `docs/EVALUATION.md` test-file links.
 
 ## [6.12.13] - 2026-07-24
 

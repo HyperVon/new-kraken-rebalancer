@@ -171,6 +171,11 @@ Each chart has **Zoom − / Zoom + / Reset**. You can also wheel, pinch, or
 drag-to-zoom on the **x-axis** only. Changing the time range rebuilds charts and
 clears zoom. Reset restores the full selected window.
 
+After you zoom in (via **Zoom +**, wheel, pinch, or drag), a horizontal **pan
+scrubber** below the chart becomes enabled. Use it to slide the visible window
+across the full selected time range. Dragging on the chart zooms; it does not
+pan. **Reset** returns to the full window and disables the scrubber again.
+
 ### Allocation deviation & P&L
 
 ![History — allocation deviation and cumulative P&L](images/history-charts.png)

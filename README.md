@@ -22,7 +22,7 @@ walkthrough of Dashboard, Settings, History, and safety modes
 | Layer           | Technology                                                                                             |
 | --------------- | ------------------------------------------------------------------------------------------------------ |
 | **Language**    | Kotlin 2.4.10 (Kotlin Multiplatform: JVM + JS)                                                         |
-| **Backend**     | Ktor 3.5.1 (Netty engine), Koin 4.2.2 (DI), Jackson 2.22                                               |
+| **Backend**     | Ktor 3.5.1 (Netty engine), Koin 4.2.2 (DI), Jackson 2.22.1                                             |
 | **Database**    | SQLite (via JetBrains Exposed ORM 1.3.1)                                                               |
 | **HTTP Client** | Ktor CIO Client (async, coroutine-native)                                                              |
 | **Concurrency** | Kotlin Coroutines (`kotlinx.coroutines` 1.11.0)                                                        |
@@ -153,7 +153,7 @@ with a wide range of tools and paradigms:
 | **Concurrency**        | Java `ScheduledExecutorService`, Kotlin Coroutines, Go goroutines, Node.js event loop                                                                       |
 | **Testing**            | JUnit 5 + Mockito, Kotest 6 + MockK, Vitest + React Testing Library, Go `testing` + `go-test-coverage`                                                      |
 | **Coverage**           | JaCoCo (95%+ enforced on Kotlin stack), Vitest coverage (>99%), Go per-package gates (98.2%)                                                                |
-| **Serialization**      | Jackson 2.22, Go `encoding/json`, Zod schema validation                                                                                                     |
+| **Serialization**      | Jackson 2.22.1, Go `encoding/json`, Zod schema validation                                                                                                   |
 | **Real-Time**          | Ktor Server-Sent Events (SSE), Kotlin `SharedFlow` (snapshots + rebalance events), HTMX SSE extension                                                       |
 | **CI / Security**      | GitHub Actions, Dependabot, SHA-pinned actions, CVE patching (Netty, Logback, Jackson); CodeQL workflow present but **disabled** (Kotlin 2.4.x unsupported) |
 | **Code Quality**       | Lombok, ESLint, `go fmt`, Kotlin named context parameters, strict `BigDecimal` precision, atomic file I/O                                                   |
@@ -211,7 +211,7 @@ with a wide range of tools and paradigms:
 
 - Automatically synchronizes executed trade history from Kraken API (`/0/private/TradesHistory`) on startup
 - Persists historical trades to the SQLite database
-- Deduplicates boundary trades using cryptographic state signatures (timestamp, pair, side, volume, amount)
+- Deduplicates overlapping records within a ~5 minute window via pair-alias normalization (e.g. `XBTUSD` vs `XXBTZUSD`), local-estimate vs API fill reconciliation, and fee-difference tolerance
 - Tracks synchronization state in `history_sync_metadata` to prevent redundant API queries
 
 ### Safety & Reliability
@@ -261,6 +261,9 @@ targets.
 
 The dedicated History view provides detailed analysis and charts tracking portfolio metrics over time. Users can select different time ranges (24h, 7d, 30d, 90d, All) to update the charts and trade log. It features:
 
+- **View presets** — **Overview**, **Day · Total only**, **Week · Allocation**, and **Month · P&L**, plus **Save view…** / **Set as default** / **Delete** for browser-local custom views
+- **Chart zoom** — **Zoom −** / **Zoom +** / **Reset**, plus wheel, pinch, and drag-to-zoom on the x-axis
+- **Pan scrubber** — after zooming in, a horizontal scrubber below each chart pans the visible window across the full time range (chart drag zooms; it does not pan)
 - **Portfolio Value Over Time** (overall portfolio value in USD + individual asset values)
 - **Asset Holdings Over Time** (% change in asset balance)
 - **Allocation Deviation from Target** (signed relative drift around a 0% on-target baseline)
@@ -379,7 +382,10 @@ two complementary `SharedFlow` channels:
 │   │   ├── main.kt                        # Client-side routing entry point
 │   │   ├── Dashboard.kt                   # Stats card age calculation & table sorting
 │   │   ├── Settings.kt                    # Targets validation & dynamic row actions
-│   │   └── History.kt                     # Chart.js timelines & history synchronization
+│   │   ├── History.kt                     # Chart.js timelines, zoom, and pan scrubbers
+│   │   ├── HistoryViewPrefs.kt            # Browser-local History view presets
+│   │   ├── DomExtensions.kt               # Shared DOM helpers for Kotlin/JS
+│   │   └── JsModels.kt                    # JS-facing model/helpers shared by pages
 │   └── build.gradle.kts                   # Kotlin Multiplatform JS compilation configuration
 ├── src/main/kotlin/com/gemini/krakenbot/
 │   ├── KrakenRebalancerApplication.kt    # Entry point, Ktor server & Koin DI bootstrap
@@ -400,6 +406,7 @@ two complementary `SharedFlow` channels:
 │   │       ├── OrderExecutorImpl.kt      # Sell-first/buy-second execution
 │   │       ├── DynamicKrakenService.kt   # Routes live vs SimulatedKrakenService by settings.simulation
 │   │       ├── KrakenServiceImpl.kt      # Kraken API client + RateLimiter + retryWithFlow
+│   │       ├── KrakenApiConstants.kt     # Kraken REST path/cost constants
 │   │       ├── SimulatedKrakenService.kt # Offline exchange emulator
 │   │       ├── RateLimiter.kt            # Kraken call-counter rate limiter
 │   │       ├── ConfigServiceImpl.kt      # Config persistence + watchConfigChanges flow
@@ -422,6 +429,8 @@ two complementary `SharedFlow` channels:
 │       ├── (style.css served dynamically) # Stylesheet compiled from view/css/ via kotlinx-css DSL
 │       └── (rebalancer.js copy-bundled)   # Dynamic JS bundle compiled from frontend-js subproject
 ├── docs/                                  # Project documentation and architecture guides
+│   ├── USER_GUIDE.md                      # End-user walkthrough (Dashboard, Settings, History)
+│   ├── images/                            # README / User Guide screenshot PNGs
 │   ├── FLOWS.md                           # Kotlin Flow architecture guide
 │   ├── ALGORITHM.md                       # Detailed algorithm documentation
 │   └── EVALUATION.md                      # Scenario evaluation suite documentation
