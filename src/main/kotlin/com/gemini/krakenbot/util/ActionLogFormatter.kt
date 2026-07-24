@@ -28,7 +28,7 @@ object ActionLogFormatter {
     ): String {
         val prefix = if (isDryRun) "[DRY RUN] " else ""
         val isSell = side == OrderSide.SELL.uppercaseName
-        val actionVerb = if (isSell) "SELL" else "BUY"
+        val actionVerb = if (isSell) OrderSide.SELL.uppercaseName else OrderSide.BUY.uppercaseName
         val valueLabel = if (isSell) "Value" else "Cost"
         val formattedVolume = volume.toCryptoScale().stripTrailingZeros().toPlainString()
         val formattedUsd = usdAmount.toUsdScale().toPlainString()

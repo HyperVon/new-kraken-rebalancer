@@ -7,7 +7,7 @@ import kotlinx.css.properties.*
 object ComponentStyles {
     fun CssBuilder.applyComponentStyles() {
         // Status Badges & Cards
-        ".status-badge" {
+        ".${CssClass.StatusCard.Badge}" {
             padding = Padding(0.125.rem, 0.625.rem)
             borderRadius = CssTheme.radiusPill
             fontSize = 0.75.rem
@@ -16,7 +16,7 @@ object ComponentStyles {
             put("box-shadow", "0 4px 6px -1px rgba(0, 0, 0, 0.1)")
         }
 
-        ".status-badge.live" {
+        ".${CssClass.StatusCard.Badge}.live" {
             backgroundColor = CssTheme.colorSuccessMuted
             color = CssTheme.colorSuccess
             borderWidth = 1.px
@@ -25,7 +25,7 @@ object ComponentStyles {
             put("animation", "pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite")
         }
 
-        ".status-badge.delayed" {
+        ".${CssClass.StatusCard.Badge}.delayed" {
             backgroundColor = CssTheme.colorWarningMuted
             color = CssTheme.colorWarning
             borderWidth = 1.px
@@ -33,7 +33,7 @@ object ComponentStyles {
             borderColor = CssTheme.colorWarningBorder
         }
 
-        ".status-badge.offline" {
+        ".${CssClass.StatusCard.Badge}.offline" {
             backgroundColor = CssTheme.colorSlateMuted
             color = CssTheme.colorTextSecondary
             borderWidth = 1.px
@@ -50,7 +50,7 @@ object ComponentStyles {
             }
         }
 
-        ".glass-panel.status-card" {
+        "${CssClass.StatusCard.Default.querySelector}" {
             display = Display.flex
             flexDirection = FlexDirection.column
             gap = 1.rem
@@ -209,7 +209,7 @@ object ComponentStyles {
             }
         }
 
-        ".${CssClass.Activity.EmptyHistoryBox}, .history-empty" {
+        ".${CssClass.Activity.EmptyHistoryBox}" {
             display = Display.flex
             flexDirection = FlexDirection.column
             alignItems = Align.center

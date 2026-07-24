@@ -10,6 +10,22 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **CSS class constants**: Added `CssClass.StatusCard.Offline` and wired status-badge /
+  status-card / stale data-age selectors in `ComponentStyles`, `LayoutStyles`, and
+  `MediaQueries` through `CssClass` (dropped unused `.history-empty` selector).
+- **JS test DOM builders**: More CoverageTest / DashboardTest sites use
+  `TestDomBuilders` (`chartsDom`, `statsDom`, `emptyTradeTableDom`,
+  `settingsAndSyncDom`, `dataAgeDom`); remaining raw `thead`/`th`/`tr`/`tbody`
+  createElement calls use `HtmlTags`.
+- **write-kotest skill**: Frontend example is now a Kotest `StringSpec` using
+  `CssClass` / `HtmlIds` / `HtmlTags` (was `kotlin.test` + raw `"status-badge"`).
+- **Action-log / ServiceUtils**: Order side labels use `OrderSide.*.uppercaseName`;
+  ServiceUtils KDoc no longer claims retry logic lives there.
+
+## [6.12.16] - 2026-07-24
+
+### Changed
+
 - **Spotless covers `:frontend-js`**: ktlint 120 now formats `frontend-js/src/**/*.kt`
   (in addition to `src/**` and `common/**`); remaining excludes are `**/view/**`,
   `DashboardViewTest`, and `EvaluationScenariosTest`.

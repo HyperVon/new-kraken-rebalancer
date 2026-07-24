@@ -93,7 +93,9 @@ Opt in `ExperimentalCoroutinesApi` when using `advanceUntilIdle`.
 
 ## Kotlin/JS tests
 
-Under `frontend-js/src/jsTest/` — `kotlin.test`, mock DOM, clean up nodes.
+Under `frontend-js/src/jsTest/` — Kotest `StringSpec` + `IsolationMode.InstancePerTest`,
+mock DOM, clean up nodes. Prefer `CssClass` / `HtmlIds` / `HtmlTags` / `TestDomBuilders`
+over raw class names and HTML blobs.
 Coverage gates: 90% statements/functions/lines, 75% branches.
 
 History chart zoom/scrubber specs should cover:
