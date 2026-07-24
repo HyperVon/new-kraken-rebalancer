@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.11.0] - 2026-07-23
+
+### Changed
+
+- **JaCoCo Coverage Exclusion Refinement (`build.gradle.kts`)**: Un-excluded `**/model/**`, `**/util/**`, and `**/service/ServiceUtilsKt*` from JaCoCo test coverage filters to enforce 95%+ coverage on domain logic, trade deduplication, and financial math utilities.
+- **Environment Agnosticism & Public Repository Safety (`.agents/AGENTS.md`)**: Updated core agent rules, code review skills, Kotest spec guidelines, and `audit_and_verify.sh` scanner script to prohibit machine-specific hostnames (`my-macbook`, `charles-pc`) or local user paths in code, configs, or test assertions.
+- **`NetworkUtils.kt` Refactoring**: Extracted private Class B IP range (`172.16.x.x`–`172.31.x.x`) check into a clean `isPrivateClassB172` helper method.
+
+### Added
+
+- **New Unit Test Specs (`src/test/`)**:
+  - `ServiceUtilsTest.kt`: Unit tests for `safeParseBigDecimal` and `isWithinRelativeTolerance`.
+  - `TradeDeduplicatorTest.kt`: Unit tests for trade record deduplication algorithms.
+  - `NetworkUtilsTest.kt`: Environment-agnostic unit tests for local/private IP origin checks.
+  - `ModelTest.kt`: Added `OrderResult` companion factory and `TradeRecord` extension method branch tests.
+
 ## [6.10.0] - 2026-07-23
 
 ### Added

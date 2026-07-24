@@ -109,7 +109,10 @@ The engine adheres strictly to the **Single Responsibility Principle**:
 - **Token & Push Resolution via GitHub CLI (`gh`)**:
   - If you encounter git credential prompts, personal access token (PAT) expiration, or push authentication errors, use the GitHub CLI (`gh auth status`, `gh auth login`, `gh git-credential`) or `gh pr create` / `gh release` commands to resolve authentication seamlessly.
   - **Do NOT ask the user to authenticate manually.** The `gh` CLI is installed and available; use it proactively.
-- **No Hardcoded Absolute Paths**: Never hardcode absolute filesystem paths (`/tmp/...`, `/Users/...`). Use relative paths, workspace-relative temp paths, or environment variables. This is a **public GitHub repository** — committed code must never contain user-specific paths like `/Users/charlesv/`.
+- **Environment Agnosticism & Public Repository Safety**:
+  - **NEVER** hardcode user-specific filesystem paths (`/Users/...`, `/home/...`, `C:\Users\...`), local machine hostnames (`my-macbook`, `charles-pc`), or developer-specific local network hosts in source code, configuration files, test data, or mock assertions.
+  - **ALWAYS** use relative paths, classpath resources (`getResourceAsStream`), workspace-relative temp paths, or generic environment-agnostic hostnames (`app-server.local`, `localhost`, `example.com`).
+  - This is an open-source, public GitHub repository — all code, configurations, and unit tests must compile and pass seamlessly on any developer machine, CI/CD runner, or OS container.
 
 ---
 

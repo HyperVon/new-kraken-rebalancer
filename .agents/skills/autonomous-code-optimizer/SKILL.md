@@ -18,7 +18,7 @@ Execute the following 4 sequential passes in an iterative loop. After completing
 Scan all files across `:common`, JVM backend (`src/`), and client JS (`frontend-js/`) for quality and security violations:
 
 1. **Fully Qualified Names (FQNs)**: Replace all inline package names (e.g. `com.gemini.krakenbot...`) with explicit `import` declarations.
-2. **Absolute User Paths**: Remove any hardcoded `/Users/...` or user-specific filesystem paths in source code, configs, or tests.
+2. **Environment Agnosticism & Public Repository Safety**: Remove any hardcoded `/Users/...` user paths, machine-specific hostnames (`my-macbook`, `charles-pc`), or developer-specific local network hosts in source code, configs, or test assertions. Ensure all test cases use generic hostnames (`app-server.local`, `localhost`).
 3. **Magic Strings & Constants**: Move inline UI labels, HTML IDs, CSS class names, and domain constants into the shared KMP core (`common/src/commonMain/`).
 4. **Secrets & Credentials**: Ensure no secret API keys, private tokens, or passwords exist in source files or tracked properties.
 

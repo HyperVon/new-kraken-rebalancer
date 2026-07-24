@@ -18,7 +18,7 @@ Analyze the target code across the following 6 core dimensions:
 - **No Fully Qualified Names (FQNs)**: Ensure explicit `import` statements are used at the top of the file rather than inline FQNs (e.g. `import com.gemini.krakenbot.util.Formatter` instead of `com.gemini.krakenbot.util.Formatter.formatUSD(...)`).
 - **Eliminate Magic Strings & Constants**: Verify that UI labels, HTML IDs/attributes, CSS classes, and domain types leverage the shared Kotlin Multiplatform `:common` module (`CssClass`, `HtmlIds`, `HtmlAttrs`, `TimeRange`, `OrderSide`, `OrderType`, `ViewText`).
 - **Shared Core (`:common`) Integrity**: Verify that shared code in `common/src/commonMain/` remains 100% pure Kotlin Multiplatform without JVM-only (e.g. `java.math.BigDecimal`, SLF4J) or JS-only DOM imports.
-- **No Hardcoded Absolute Paths**: Ensure no user-specific absolute filesystem paths (such as `/Users/...` or `C:\Users\...`) exist in source, configs, or tests.
+- **Environment Agnosticism & Public Repository Safety**: Ensure no developer-specific absolute filesystem paths (`/Users/...`, `C:\Users\...`), local machine hostnames (`my-macbook`, `charles-pc`), or developer-specific local network hosts exist in source code, configs, or test assertions. All test mocks must use generic, environment-agnostic hostnames (`app-server.local`, `localhost`).
 
 ### 2. Bug Detection & Financial Math Safety
 

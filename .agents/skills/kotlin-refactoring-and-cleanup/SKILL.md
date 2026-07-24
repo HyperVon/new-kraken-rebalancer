@@ -46,17 +46,19 @@ div(CssClass.GlassCard.name) { ... }
 - **Address Deprecations**: Proactively update deprecated API usages (e.g., Jackson `fields()`, Exposed `createMissingTablesAndColumns`).
 - **Null Safety**: Prefer idiomatic Kotlin safe calls (`?.`), `let`, `elvis` (`?:`), and default values over explicit null checks or `!!` force-unwraps.
 
-## 4. No Hardcoded Absolute Paths
+## 4. Environment Agnosticism & Public Repository Safety
 
-- **Public Repository Safety**: Never hardcode absolute filesystem paths (such as `/Users/charlesv/...` or `C:\Users\...`) in source code, configuration files, or test assets.
-- Always use relative paths, classpath resources (`getResourceAsStream`), workspace-relative temp paths, or environment variables.
+- **Public Repository Safety**: Never hardcode absolute filesystem paths (such as `/Users/charlesv/...` or `C:\Users\...`), local machine hostnames (`my-macbook`, `charles-pc`), or developer-specific local network hosts in source code, configuration files, test data, or mock assertions.
+- Always use relative paths, classpath resources (`getResourceAsStream`), workspace-relative temp paths, environment variables, or generic hostnames (`app-server.local`, `localhost`).
 
 ```kotlin
 // WRONG:
 val file = File("/Users/charlesv/Projects/new-kraken-rebalancer/data/test.json")
+val host = "my-macbook.local"
 
 // CORRECT:
 val file = File("data/test.json")
+val host = "app-server.local"
 ```
 
 ## 5. DRY & Modular Layout Helpers

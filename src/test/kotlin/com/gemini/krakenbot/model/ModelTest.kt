@@ -120,6 +120,57 @@ class ModelTest : StringSpec() {
             PortfolioCalculations.SCALE_PRICE shouldBe 8
             PortfolioCalculations.SCALE_USD shouldBe 2
         }
+
+        "testOrderResultCompanionFactory" {
+            val successResult = OrderResult(
+                success = true,
+                pair = "XBTUSD",
+                side = "BUY",
+                volume = BigDecimal.ONE,
+                dryRun = false
+            )
+            successResult.success shouldBe true
+            (successResult as OrderResult.Success).errorMessage shouldBe null
+
+            val failureResult = OrderResult(
+                success = false,
+                pair = "XBTUSD",
+                side = "BUY",
+                volume = BigDecimal.ONE,
+                dryRun = false,
+                errorMessage = "Insufficient funds"
+            )
+            failureResult.success shouldBe false
+            (failureResult as OrderResult.Failure).errorMessage shouldBe "Insufficient funds"
+
+            val defaultFailure = OrderResult(
+                success = false,
+                pair = "XBTUSD",
+                side = "BUY",
+                volume = BigDecimal.ONE
+            )
+            (defaultFailure as OrderResult.Failure).errorMessage shouldBe "Unknown error"
+        }
+
+        "testTradeRecordExtensions" {
+            val now = Instant.now()
+            val t1 = TradeRecord(now, "XBTUSD", "BUY", "BTC", BigDecimal.ONE, BigDecimal("50000.00"), true, false, id = 1, fee = BigDecimal("10.00"))
+            val t2 = TradeRecord(now, "XXBTZUSD", "BUY", "BTC", BigDecimal.ONE, BigDecimal("50000.00"), true, false, id = 2, fee = BigDecimal("100.00"))
+            val t3 = TradeRecord(now.plusSeconds(300), "XDGUSD", "SELL", "DOGE", BigDecimal.TEN, BigDecimal("10.00"), true, false, id = 3, fee = BigDecimal("0.10"))
+
+            t1.isSameSymbolAndSide(t2) shouldBe true
+            t1.isSameSymbolAndSide(t3) shouldBe false
+
+            t1.isPairAliasDuplicateOf(t2) shouldBe true
+            t1.isPairAliasDuplicateOf(t3) shouldBe false
+
+            t1.feePercentDiffersMateriallyFrom(t2) shouldBe true
+
+            val zeroAmount = t1.copy(usdAmount = BigDecimal.ZERO)
+            zeroAmount.feePercentDiffersMateriallyFrom(t2) shouldBe false
+
+            t1.isMatchingApiTrade(t2, listOf("BTC", "DOGE")) shouldBe true
+        }
     }
 }
 

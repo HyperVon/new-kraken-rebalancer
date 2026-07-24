@@ -20,15 +20,15 @@ else
 fi
 
 echo ""
-echo "--- 2. Scanning for hardcoded user paths (/Users/) in source files ---"
-PATH_MATCHES=$(grep -rn "/Users/" src/ common/ frontend-js/ --include="*.kt" --include="*.kts" 2>/dev/null | grep -v "/build/" || true)
+echo "--- 2. Scanning for hardcoded user paths (/Users/) and machine-specific hostnames in source files ---"
+PATH_MATCHES=$(grep -rnE "/Users/|macbook|charles-pc" src/ common/ frontend-js/ --include="*.kt" --include="*.kts" 2>/dev/null | grep -v "/build/" || true)
 if [ -n "$PATH_MATCHES" ]; then
     PATH_COUNT=$(echo "$PATH_MATCHES" | wc -l | tr -d ' ')
-    echo "[!] Found $PATH_COUNT hardcoded absolute user path(s) in source code:"
+    echo "[!] Found $PATH_COUNT hardcoded user path(s) or machine-specific hostname(s) in source code:"
     echo "$PATH_MATCHES"
     ERRORS_FOUND=$((ERRORS_FOUND + PATH_COUNT))
 else
-    echo "[✓] Zero hardcoded absolute user paths found in Kotlin source code."
+    echo "[✓] Zero hardcoded absolute user paths or machine-specific hostnames found in Kotlin source code."
 fi
 
 echo ""

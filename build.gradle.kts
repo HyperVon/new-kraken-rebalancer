@@ -110,17 +110,13 @@ tasks.jacocoTestReport {
     classDirectories.setFrom(
         files(classDirectories.files.map {
             fileTree(it) {
-                exclude("**/model/**")
                 exclude("**/config/**")
                 exclude("**/repository/table/**")
                 exclude("**/service/KrakenService*")
                 exclude("**/service/impl/KrakenServiceImpl*")
-                exclude("**/service/ServiceUtilsKt*")
-                exclude("**/view/util/CssClass*")
+                exclude("**/view/util/**")
                 exclude("**/view/css/**")
-                exclude("**/view/util/ExtensionsKt*")
                 exclude("**/KrakenRebalancerApplication*")
-                exclude("**/util/**")
             }
         })
     )
@@ -132,17 +128,13 @@ tasks.jacocoTestCoverageVerification {
     classDirectories.setFrom(
         files(classDirectories.files.map {
             fileTree(it) {
-                exclude("**/model/**")
                 exclude("**/config/**")
                 exclude("**/repository/table/**")
                 exclude("**/service/KrakenService*")
                 exclude("**/service/impl/KrakenServiceImpl*")
-                exclude("**/service/ServiceUtilsKt*")
-                exclude("**/view/util/CssClass*")
+                exclude("**/view/util/**")
                 exclude("**/view/css/**")
-                exclude("**/view/util/ExtensionsKt*")
                 exclude("**/KrakenRebalancerApplication*")
-                exclude("**/util/**")
             }
         })
     )

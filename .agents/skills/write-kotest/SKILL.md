@@ -175,4 +175,5 @@ Before submitting test code, verify:
 - [ ] Suspend calls wrapped in `runTest`
 - [ ] Client Kotlin/JS tests pass cleanly (`./gradlew :frontend-js:jsTest`)
 - [ ] Code coverage checked via `./gradlew test jacocoTestReport`
+- [ ] Environment agnosticism checked (no machine hostnames like `my-macbook` or user paths in test cases)
 - [ ] No FQNs — all types imported at the top
