@@ -34,6 +34,14 @@ class PerformanceTableComponent {
     context(div: DIV)
     fun render(latest: PortfolioSnapshot) {
         div.glassPanel(ViewText.ASSET_PERFORMANCE) {
+            div(CssClass.Performance.DevLegend) {
+                span(CssClass.Performance.DevLegendItem + CssClass.Performance.DevLegendOver) {
+                    +ViewText.LEGEND_OVER_TARGET
+                }
+                span(CssClass.Performance.DevLegendItem + CssClass.Performance.DevLegendUnder) {
+                    +ViewText.LEGEND_UNDER_TARGET
+                }
+            }
             div(CssClass.Table.Wrapper) {
                 table {
                     thead {

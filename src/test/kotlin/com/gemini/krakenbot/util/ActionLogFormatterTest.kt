@@ -15,7 +15,7 @@ class ActionLogFormatterTest : StringSpec() {
 
         "formatDeviationTrigger should format deviation message" {
             val msg = ActionLogFormatter.formatDeviationTrigger("BTC", BigDecimal("5.2"))
-            msg shouldBe "Deviation Triggered details: BTC Dev: 5.2%"
+            msg shouldBe "Deviation: BTC 5.2%"
         }
 
         "formatFiatCorrectionEnforced should return constant message" {
@@ -46,6 +46,17 @@ class ActionLogFormatterTest : StringSpec() {
                 isDryRun = false,
             )
             buyMsg shouldBe "BUY BTC Volume: 0.1 Cost: $5000.00"
+        }
+
+        "formatOrderExecution should trim USD to 2 decimals" {
+            val msg = ActionLogFormatter.formatOrderExecution(
+                side = OrderSide.BUY.uppercaseName,
+                symbol = "BTC",
+                volume = BigDecimal("0.012345678"),
+                usdAmount = BigDecimal("1063.3999959596"),
+                isDryRun = false,
+            )
+            msg shouldBe "BUY BTC Volume: 0.01234568 Cost: $1063.40"
         }
 
         "formatOrderFailure should format error message" {

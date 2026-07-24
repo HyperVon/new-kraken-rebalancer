@@ -37,6 +37,7 @@ lists.
 | Stack version bumps | `.agents/AGENTS.md` § stack + README |
 | Agent workflows / quality paths | `.agents/AGENTS.md` and relevant skills |
 | Dashboard / Settings / History visuals | [docs-screenshot-refresh](../docs-screenshot-refresh/SKILL.md) (overwrite `docs/images/*.png`) |
+| UI redesign / visual polish | [ui-visual-review](../ui-visual-review/SKILL.md) → [ui-visual-implement](../ui-visual-implement/SKILL.md) |
 | User-facing UI / settings meaning | [docs/USER_GUIDE.md](../../../docs/USER_GUIDE.md) + [user-guide](../user-guide/SKILL.md) |
 
 Agent rules path is **`.agents/AGENTS.md`** — never assume a root `AGENTS.md`.

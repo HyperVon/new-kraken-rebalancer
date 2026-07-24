@@ -30,13 +30,16 @@ the screens below.
 
 ## Navigation
 
-The app has three primary pages:
+Dashboard, History, and Settings share the same top nav tabs (active page is
+highlighted). The header brand reads **Kraken** + **Rebalancer**; on the
+Dashboard, **LIVE** / **DELAYED** and **Data Age** sit together in a compact
+status chip next to the tabs.
 
 | Page | Route | Purpose |
 | :--- | :--- | :--- |
 | **Dashboard** | `/` | Live portfolio snapshot, allocation bars, performance table, recent activity |
 | **History** | `/history` | Time-range charts, summary cards, full trade log |
-| **Settings** | `/settings` | Loop timing, triggers, fiat deployment, dry run / simulation, allocations |
+| **Settings** | `/settings` | Loop timing, triggers, fiat deployment, safety modes, allocations |
 
 The dashboard pushes live updates over Server-Sent Events (`/api/status/stream`).
 You should see a green **LIVE** badge and a recent **Data Age** when the loop is
@@ -61,13 +64,15 @@ healthy.
 ![Dashboard allocation, table, and activity](images/dashboard-bottom.png)
 
 - **Portfolio Allocation** — Horizontal bars for the largest holdings by USD
-  value (and cash).
+  value (and cash). Each symbol uses a fixed color (BTC amber, ETH violet, USD
+  slate) shared with History charts.
 - **Asset Performance** — Sortable table of price, value, target %, current %,
   and **Dev %** (how far each asset is from target, with dollar impact).
-  Color cues highlight overweight vs underweight positions.
+  Amber = over target, blue = under target (not profit/loss green/red); a small
+  legend sits above the table.
 - **Recent Activity** — Chronological log for the latest cycle:
-  - Blue **INFO** — deviation checks and decisions
-  - Red **SELL** / green **BUY** — orders (or dry-run intents)
+  - Blue **INFO** — compact deviation notes (e.g. `Deviation: BTC 5.2%`)
+  - Red **SELL** / green **BUY** — orders with USD to 2 decimals
   - Grey status lines when a cycle finishes with no trade
 
 Use this page as your “is the bot healthy right now?” view.
@@ -76,7 +81,7 @@ Use this page as your “is the bot healthy right now?” view.
 
 ## Settings
 
-Open **Settings** (gear) from the dashboard, or go to `/settings`.
+Open **Settings** from the shared top nav, or go to `/settings`.
 
 ![Settings page](images/settings.png)
 
@@ -89,6 +94,14 @@ Open **Settings** (gear) from the dashboard, or go to `/settings`.
 | **Dust Threshold ($)** | Skip orders smaller than this USD amount (avoids exchange min-size noise). |
 | **Fiat Max Drawdown (%)** | Drawdown at which cash is fully eligible for deployment into crypto. |
 | **Fiat Deployment Exponent** | Shape of the cash→crypto deployment curve as drawdown grows (1.0 ≈ linear). |
+
+### Safety modes
+
+Dry Run and Simulation live in their own **Safety Modes** block (not mixed into
+the numeric parameter grid):
+
+| Field | Purpose |
+| :--- | :--- |
 | **Dry Run Mode (Safe)** | Log intents without placing orders. |
 | **Simulation Mode (Kraken Emulator)** | Use the offline emulator instead of the live Kraken API. |
 
@@ -113,6 +126,23 @@ The History page is for longer-term review: performance charts and the full
 trade log. Use the **24h / 7d / 30d / 90d / All** pills to change the window —
 all four summary cards and the charts update together.
 
+### Views
+
+The **Views** control (next to the time-range pills) applies a preset across
+range, series visibility, and **Show Dry Run Trades**:
+
+| Preset | Window | Intent |
+| :--- | :--- | :--- |
+| **Overview** (default) | 30d | All series visible |
+| **Day · Total only** | 24h | Portfolio Value shows **Total Portfolio** only |
+| **Week · Allocation** | 7d | Full series for allocation review |
+| **Month · P&L** | 30d | Cumulative P&L focus; dry-run trades off |
+
+**Save view…** stores the current range, legend visibility, and dry-run toggle
+under a name in browser `localStorage` (`kraken.history.views`). **Set as
+default** marks the selected view for the next visit. **Delete** removes
+user-saved views only (built-ins stay locked).
+
 ### Summary cards & primary charts
 
 ![History — summary cards and value charts](images/history.png)
@@ -126,17 +156,31 @@ all four summary cards and the charts update together.
 
 Charts on this view:
 
-- **Portfolio Value Over Time** — Total portfolio plus per-asset USD values.
-- **Asset Holdings Over Time** — Relative change in holdings (percent).
+- **Portfolio Value Over Time** — Total portfolio (blue) plus per-asset USD
+  values with fixed colors (BTC amber, ETH violet).
+- **Asset Holdings Over Time** — Relative change in holdings (percent), same
+  per-asset colors.
+
+Point markers scale with density: full size at ≤24 points, half size through 48,
+then line-only (markers hidden) while hover hit areas stay large enough for
+tooltips.
+
+### Zoom
+
+Each chart has **Zoom − / Zoom + / Reset**. You can also wheel, pinch, or
+drag-to-zoom on the **x-axis** only. Changing the time range rebuilds charts and
+clears zoom. Reset restores the full selected window.
 
 ### Allocation drift & P&L
 
 ![History — allocation drift and cumulative P&L](images/history-charts.png)
 
-- **Allocation Drift Over Time** — How each asset’s share of the book moved
-  versus time (useful for seeing whether rebalances held the targets).
+- **Allocation Drift Over Time** — Each series is that asset’s **current
+  allocation %** of the portfolio (0–100% Y scale). At any point BTC + ETH + USD
+  (and other symbols) should roughly sum to 100%.
 - **Cumulative Realized P&L** — Net cash-flow style P&L over the window
-  (includes dry-run trades when that filter is enabled).
+  (includes dry-run trades when that filter is enabled). Negative axis ticks use
+  `-$…` formatting.
 
 ### Trade log
 

@@ -124,6 +124,12 @@ def main() -> None:
     parser.add_argument("--base-url", default="http://localhost:8080")
     parser.add_argument("--manifest", type=Path, default=MANIFEST)
     parser.add_argument("--chrome", type=Path, default=None, help="Chrome/Chromium executable")
+    parser.add_argument(
+        "--out-dir",
+        type=Path,
+        default=None,
+        help="Write PNGs here instead of docs/images/ (for UI review / verify runs)",
+    )
     parser.add_argument("--only", help="Comma-separated subset of target filenames")
     parser.add_argument(
         "--discover",
@@ -143,7 +149,8 @@ def main() -> None:
             sys.exit(f"No targets matched --only {args.only}")
 
     chrome = find_chrome(args.chrome)
-    IMAGE_DIR.mkdir(parents=True, exist_ok=True)
+    out_dir = (args.out_dir or IMAGE_DIR).resolve()
+    out_dir.mkdir(parents=True, exist_ok=True)
 
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(
@@ -163,9 +170,13 @@ def main() -> None:
         else:
             for target in targets:
                 prepare(page, args.base_url, target)
-                output = IMAGE_DIR / target["file"]
+                output = out_dir / target["file"]
                 page.screenshot(path=output)
-                print(f"Captured {output.relative_to(PROJECT_ROOT)}")
+                try:
+                    shown = output.relative_to(PROJECT_ROOT)
+                except ValueError:
+                    shown = output
+                print(f"Captured {shown}")
 
         browser.close()
 

@@ -25,10 +25,13 @@ class RecentActivityComponent {
 
         companion object {
             fun from(action: String): TradeAction {
-                val upper = action.uppercase()
+                val stripped =
+                    action.uppercase()
+                        .removePrefix("[DRY RUN] ")
+                        .trim()
                 return when {
-                    upper.startsWith("BUY") -> BUY
-                    upper.startsWith("SELL") -> SELL
+                    stripped.startsWith("BUY") -> BUY
+                    stripped.startsWith("SELL") -> SELL
                     else -> INFO
                 }
             }
@@ -80,7 +83,7 @@ class RecentActivityComponent {
     }
 
     private fun TBODY.renderEmptyActionsRow(timeStr: String) {
-        tr(CssClass.Table.Hoverable) {
+        tr(CssClass.Table.Hoverable + CssClass.Activity.RowInfo) {
             td(CssClass.Table.MonoCol) { +timeStr }
             td {
                 span(CssClass.Activity.EmptyText) {
@@ -93,12 +96,21 @@ class RecentActivityComponent {
 
     private fun TBODY.renderActionRow(timeStr: String, action: String) {
         val tradeAction = TradeAction.from(action)
-        tr(CssClass.Table.Hoverable) {
+        val isTrade = tradeAction == TradeAction.BUY || tradeAction == TradeAction.SELL
+        val rowClass =
+            if (isTrade) {
+                CssClass.Table.Hoverable + CssClass.Activity.RowTrade
+            } else {
+                CssClass.Table.Hoverable + CssClass.Activity.RowInfo
+            }
+        val messageClass =
+            if (isTrade) CssClass.Activity.Message else CssClass.Activity.MessageMuted
+        tr(rowClass) {
             td(CssClass.Table.MonoCol) { +timeStr }
             td {
                 div(CssClass.Activity.RowContainer) {
                     span(tradeAction.badgeClass) { +tradeAction.label }
-                    span { +action }
+                    span(messageClass) { +action }
                 }
             }
         }

@@ -72,6 +72,11 @@ Visible changes to Dashboard / Settings / History should refresh README PNGs via
 [docs/USER_GUIDE.md](../../../docs/USER_GUIDE.md) when user-facing meaning
 changes ([user-guide](../user-guide/SKILL.md)).
 
+For a full visual critique or redesign pass, use
+[ui-visual-review](../ui-visual-review/SKILL.md) then
+[ui-visual-implement](../ui-visual-implement/SKILL.md) (capture with
+`--out-dir`, read PNGs, iterate).
+
 ## Checklist
 
 - [ ] New UI goes in `view/component/` + CSS module; routes via controller

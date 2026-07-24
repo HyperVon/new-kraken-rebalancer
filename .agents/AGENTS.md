@@ -32,6 +32,8 @@ Canonical deep docs:
 | Full docs audit vs source code | [documentation-review](skills/documentation-review/SKILL.md) |
 | README screenshot PNGs (sim UI) | [docs-screenshot-refresh](skills/docs-screenshot-refresh/SKILL.md) |
 | End-user User Guide (visual) | [user-guide](skills/user-guide/SKILL.md) |
+| UI visual critique (recommend) | [ui-visual-review](skills/ui-visual-review/SKILL.md) |
+| UI visual apply + verify | [ui-visual-implement](skills/ui-visual-implement/SKILL.md) |
 | Refactor / cleanup | [kotlin-refactoring-and-cleanup](skills/kotlin-refactoring-and-cleanup/SKILL.md) |
 | Code review | [code-review](skills/code-review/SKILL.md) |
 | Dependency upgrades | [dependency-upgrade](skills/dependency-upgrade/SKILL.md) |

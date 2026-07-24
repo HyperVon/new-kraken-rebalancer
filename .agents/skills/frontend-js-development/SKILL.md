@@ -67,6 +67,10 @@ Chart / History / SSE-driven UI changes that alter README visuals should refresh
 [docs/USER_GUIDE.md](../../../docs/USER_GUIDE.md) aligned
 ([user-guide](../user-guide/SKILL.md)).
 
+Visual redesign / polish passes:
+[ui-visual-review](../ui-visual-review/SKILL.md) →
+[ui-visual-implement](../ui-visual-implement/SKILL.md).
+
 ## Checklist
 
 - [ ] SSE consumes `/api/status/stream` payloads correctly

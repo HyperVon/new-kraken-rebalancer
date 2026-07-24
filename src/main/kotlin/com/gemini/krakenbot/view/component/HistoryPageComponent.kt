@@ -1,22 +1,24 @@
 package com.gemini.krakenbot.view.component
 
 import com.gemini.krakenbot.model.TimeRange
+import com.gemini.krakenbot.view.util.ActiveNav
 import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.HtmlAttrs
 import com.gemini.krakenbot.view.util.HtmlIds
 import com.gemini.krakenbot.view.util.Icons
 import com.gemini.krakenbot.view.util.Icons.icon
+import com.gemini.krakenbot.view.util.ZoomActions
+import com.gemini.krakenbot.view.util.brandMark
 import com.gemini.krakenbot.view.util.glassPanel
+import com.gemini.krakenbot.view.util.primaryNav
 import com.gemini.krakenbot.view.util.statusCard
 import com.gemini.krakenbot.view.util.Routes
 import com.gemini.krakenbot.view.util.ViewText
-import com.gemini.krakenbot.view.util.a
 import com.gemini.krakenbot.view.util.button
 import com.gemini.krakenbot.view.util.commonMetadataAndStyles
 import com.gemini.krakenbot.view.util.div
 import com.gemini.krakenbot.view.util.h2
 import com.gemini.krakenbot.view.util.label
-import com.gemini.krakenbot.view.util.nav
 import com.gemini.krakenbot.view.util.span
 import com.gemini.krakenbot.view.util.td
 import kotlinx.html.*
@@ -31,12 +33,14 @@ class HistoryPageComponent {
             title("${ViewText.HISTORY_TITLE} - ${ViewText.APP_TITLE}")
             script(src = CDN_CHART_JS) {}
             script(src = CDN_CHART_JS_DATE_FNS) {}
+            script(src = CDN_HAMMER_JS) {}
+            script(src = CDN_CHART_JS_ZOOM) {}
         }
         html.body {
             div(CssClass.Layout.Container) {
                 renderHeader()
                 renderSyncProgressBanner()
-                renderTimeRangeSelector()
+                renderToolbar()
                 renderStatsGrid()
                 HistoryChartSection.ALL.forEach { chart ->
                     renderChartSection(chart)
@@ -50,20 +54,9 @@ class HistoryPageComponent {
     private fun DIV.renderHeader() {
         header {
             div(CssClass.Layout.HeaderTitleSection) {
-                h1 { +ViewText.APP_TITLE }
+                brandMark()
             }
-            nav(CssClass.Navigation.Bar) {
-                a(CssClass.Navigation.Link, href = Routes.ROOT) {
-                    +ViewText.NAV_DASHBOARD
-                }
-                a(CssClass.Navigation.LinkActive, href = Routes.HISTORY) {
-                    +ViewText.NAV_HISTORY
-                }
-                a(CssClass.Navigation.Link, href = Routes.SETTINGS) {
-                    icon(Icons.COG)
-                    +ViewText.NAV_SETTINGS
-                }
-            }
+            primaryNav(ActiveNav.HISTORY)
         }
     }
 
@@ -82,6 +75,13 @@ class HistoryPageComponent {
         }
     }
 
+    private fun DIV.renderToolbar() {
+        div(CssClass.History.ToolbarRow) {
+            renderTimeRangeSelector()
+            renderViewsToolbar()
+        }
+    }
+
     private fun DIV.renderTimeRangeSelector() {
         div(CssClass.History.TimeRangeSelector) {
             TimeRange.entries.forEach { range ->
@@ -95,13 +95,57 @@ class HistoryPageComponent {
         }
     }
 
+    private fun DIV.renderViewsToolbar() {
+        div(CssClass.History.ViewsToolbar) {
+            label(CssClass.History.ViewsLabel) {
+                htmlFor = HtmlIds.HISTORY_VIEWS_SELECT
+                +ViewText.HISTORY_VIEWS
+            }
+            select {
+                id = HtmlIds.HISTORY_VIEWS_SELECT
+                classes = setOf(CssClass.History.ViewsSelect.value)
+            }
+            div(CssClass.History.ViewsActions) {
+                button(CssClass.History.ViewsBtn) {
+                    id = HtmlIds.HISTORY_SAVE_VIEW_BTN
+                    type = ButtonType.button
+                    +ViewText.HISTORY_SAVE_VIEW
+                }
+                button(CssClass.History.ViewsBtn) {
+                    id = HtmlIds.HISTORY_SET_DEFAULT_BTN
+                    type = ButtonType.button
+                    +ViewText.HISTORY_SET_DEFAULT
+                }
+                button(CssClass.History.ViewsBtn) {
+                    id = HtmlIds.HISTORY_DELETE_VIEW_BTN
+                    type = ButtonType.button
+                    +ViewText.HISTORY_DELETE_VIEW
+                }
+            }
+        }
+    }
+
     private fun DIV.renderChartSection(chart: HistoryChartSection) {
         glassPanel(chart.title, chart.iconSvg) {
+            div(CssClass.History.ChartTools) {
+                zoomButton(chart.canvasId, ZoomActions.OUT, ViewText.HISTORY_ZOOM_OUT)
+                zoomButton(chart.canvasId, ZoomActions.IN, ViewText.HISTORY_ZOOM_IN)
+                zoomButton(chart.canvasId, ZoomActions.RESET, ViewText.HISTORY_ZOOM_RESET)
+            }
             div(CssClass.History.ChartContainer) {
                 canvas {
                     id = chart.canvasId
                 }
             }
+        }
+    }
+
+    private fun DIV.zoomButton(canvasId: String, action: String, label: String) {
+        button(CssClass.History.ZoomBtn) {
+            type = ButtonType.button
+            attributes[HtmlAttrs.DATA_CHART_ID] = canvasId
+            attributes[HtmlAttrs.DATA_ZOOM_ACTION] = action
+            +label
         }
     }
 
@@ -173,7 +217,11 @@ class HistoryPageComponent {
 
     private companion object {
         const val CDN_CHART_JS = "https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"
-        const val CDN_CHART_JS_DATE_FNS = "https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"
+        const val CDN_CHART_JS_DATE_FNS =
+            "https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"
+        const val CDN_HAMMER_JS = "https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js"
+        const val CDN_CHART_JS_ZOOM =
+            "https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.2.0/dist/chartjs-plugin-zoom.min.js"
         const val TABLE_COLSPAN = "6"
     }
 }

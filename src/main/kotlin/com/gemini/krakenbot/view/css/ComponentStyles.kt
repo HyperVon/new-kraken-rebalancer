@@ -50,33 +50,38 @@ object ComponentStyles {
             }
         }
 
-        ".status-card" {
+        ".glass-panel.status-card" {
             display = Display.flex
             flexDirection = FlexDirection.column
-            gap = 0.5.rem
+            gap = 0.75.rem
+            padding = Padding(1.35.rem, 1.5.rem)
         }
 
         ".${CssClass.StatusCard.Header}" {
             display = Display.flex
             put("justify-content", "space-between")
-            alignItems = Align.center
+            alignItems = Align.flexStart
+            gap = 0.75.rem
         }
 
         ".${CssClass.StatusCard.Title}" {
             fontSize = 0.875.rem
             fontWeight = FontWeight.w600
             color = CssTheme.colorTextSecondary
+            paddingTop = 0.125.rem
         }
 
         ".${CssClass.StatusCard.Icon}" {
             display = Display.flex
             alignItems = Align.center
             put("justify-content", "center")
-            width = 2.rem
-            height = 2.rem
+            width = 2.25.rem
+            height = 2.25.rem
+            flexShrink = 0.0
             borderRadius = 0.5.rem
             background = CssTheme.colorGlassHover.value
             color = CssTheme.colorTextSecondary
+            marginLeft = 0.25.rem
         }
 
         ".${CssClass.StatusCard.Value}" {
@@ -136,7 +141,6 @@ object ComponentStyles {
         ".${CssClass.AllocationChart.BarFill}" {
             height = 100.pct
             borderRadius = CssTheme.radiusPill
-            background = "linear-gradient(90deg, ${CssTheme.colorBluePrimary.value}, ${CssTheme.colorSuccess.value})"
             put("transition", "width 0.8s cubic-bezier(0.4, 0, 0.2, 1)")
         }
 

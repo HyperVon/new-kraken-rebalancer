@@ -6,6 +6,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.12.12] - 2026-07-24
+
+### Added
+
+- **History view presets**: Built-in Overview / Day · Total only / Week ·
+  Allocation / Month · P&L, plus named user saves with a default, persisted in
+  browser `localStorage` (`kraken.history.views`).
+- **Density-aware chart markers**: Full point radius at ≤24 samples, half
+  through 48, then line-only; hit radius stays usable for tooltips.
+- **Chart.js x-axis zoom**: `chartjs-plugin-zoom` (wheel / pinch / drag) with
+  per-chart Zoom − / Zoom + / Reset controls.
+
+## [6.12.11] - 2026-07-24
+
+### Changed
+
+- **UI visual polish (approved review findings)**: Unified Dashboard / History /
+  Settings text-tab nav and brand wordmark; compact LIVE + Data Age status
+  cluster; Safety Modes card on Settings; fixed per-asset chart/bar colors;
+  Allocation Drift chart as unstacked 0–100% shares; amber/blue over/under
+  deviation legend (not P&L red/green); activity log USD precision and scan
+  hierarchy; signed `-$` P&L ticks; aligned trade SIDE/STATUS outline badges;
+  roomier History summary card icons. Docs screenshots and User Guide updated.
+
 ## [6.12.10] - 2026-07-24
 
 ### Added
@@ -19,6 +43,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   skill to keep it current.
 - **`docs/images/history-charts.png`**: Mid-History capture (allocation drift +
   cumulative P&L) for README and the User Guide.
+- **`ui-visual-review` / `ui-visual-implement` agent skills**: Recommend-only
+  visual UI critique (simulation captures + image read), then implement approved
+  findings and verify by re-running the app and inspecting after-PNGs; capture
+  script gains `--out-dir` so review/verify does not overwrite `docs/images/`.
 
 ### Changed
 

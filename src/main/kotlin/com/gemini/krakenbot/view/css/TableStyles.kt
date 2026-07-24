@@ -88,7 +88,7 @@ object TableStyles {
             opacity = 1
         }
 
-        // Badges
+        // Badges — shared outline system for activity + trade SIDE/STATUS
         ".badge" {
             display = Display.inlineFlex
             alignItems = Align.center
@@ -97,20 +97,20 @@ object TableStyles {
             fontSize = 0.675.rem
             fontWeight = FontWeight.w700
             put("letter-spacing", "0.05em")
-            backgroundColor = CssTheme.colorWhiteMuted
+            backgroundColor = Color.transparent
             borderWidth = 1.px
             borderStyle = BorderStyle.solid
             borderColor = CssTheme.colorWhiteBorder
             color = CssTheme.colorTextSecondary
         }
 
-        ".badge.badge-buy" {
+        ".badge.badge-buy, .badge.badge-success" {
             backgroundColor = CssTheme.colorSuccessBgSubtle
             borderColor = CssTheme.colorSuccessBorderSubtle
             color = CssTheme.colorSuccess
         }
 
-        ".badge.badge-sell" {
+        ".badge.badge-sell, .badge.badge-failed" {
             backgroundColor = CssTheme.colorDangerBgSubtle
             borderColor = CssTheme.colorDangerBorderSubtle
             color = CssTheme.colorDanger
@@ -128,6 +128,14 @@ object TableStyles {
 
         ".${CssClass.Utility.TextDanger}" {
             color = CssTheme.colorDanger
+        }
+
+        ".${CssClass.Utility.TextOverweight}" {
+            color = CssTheme.colorWarning
+        }
+
+        ".${CssClass.Utility.TextUnderweight}" {
+            color = CssTheme.colorBlueAccent
         }
     }
 }

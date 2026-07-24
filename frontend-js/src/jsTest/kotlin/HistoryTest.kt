@@ -3,14 +3,20 @@ package com.gemini.krakenbot.frontend
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.TimeRange
+import com.gemini.krakenbot.view.util.ChartProps
+import com.gemini.krakenbot.view.util.CssClass
+import com.gemini.krakenbot.view.util.HistoryViewIds
+import com.gemini.krakenbot.view.util.HtmlAttrs
 import com.gemini.krakenbot.view.util.HtmlIds
 import com.gemini.krakenbot.view.util.HtmlTags
+import com.gemini.krakenbot.view.util.ViewText
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldNotContain
 import kotlinx.browser.document
+import kotlinx.browser.localStorage
 import kotlinx.browser.window
 import kotlinx.coroutines.await
 import org.w3c.dom.*
@@ -24,7 +30,7 @@ class HistoryTest : StringSpec() {
         "formatUSD renders currency amounts" {
             formatUSD(1234.56) shouldBe "$1,234.56"
             formatUSD(0.0) shouldBe "$0.00"
-            formatUSD(-12.3456) shouldBe "$-12.35"
+            formatUSD(-12.3456) shouldBe "-$12.35"
         }
 
         "formatPair handles valid and missing symbols" {
@@ -330,6 +336,239 @@ class HistoryTest : StringSpec() {
                 (document.getElementById(HtmlIds.SYNC_PROGRESS_BANNER) as HTMLElement).style.display shouldBe "none"
             } finally {
                 document.body!!.removeChild(container)
+            }
+        }
+
+        "pointRadiusForCount shrinks and hides dense markers" {
+            pointRadiusForCount(1, primary = true) shouldBe 4
+            pointRadiusForCount(24, primary = true) shouldBe 4
+            pointRadiusForCount(25, primary = true) shouldBe 2
+            pointRadiusForCount(48, primary = false) shouldBe 1
+            pointRadiusForCount(49, primary = true) shouldBe 0
+            pointHoverRadiusForCount(10, primary = true) shouldBe 6
+            pointHoverRadiusForCount(30, primary = false) shouldBe 2
+            pointHoverRadiusForCount(100, primary = true) shouldBe 0
+        }
+
+        "HistoryViewPrefs serializes and round-trips store JSON" {
+            localStorage.removeItem(ViewText.HISTORY_VIEWS_STORAGE_KEY)
+            val store =
+                HistoryViewsStore(
+                    defaultId = HistoryViewIds.DAY_TOTAL,
+                    views =
+                        HistoryViewPrefs.builtInViews() +
+                            HistoryViewDef(
+                                id = "user-1",
+                                name = "Custom",
+                                builtIn = false,
+                                range = TimeRange.SEVEN_DAYS.key,
+                                showDryRun = false,
+                                visibility =
+                                    mapOf(
+                                        HtmlIds.PORTFOLIO_VALUE_CHART to
+                                            mapOf(ViewText.TOTAL_PORTFOLIO to true),
+                                    ),
+                            ),
+                )
+            HistoryViewPrefs.saveStore(store)
+            val loaded = HistoryViewPrefs.loadStore()
+            loaded.defaultId shouldBe HistoryViewIds.DAY_TOTAL
+            loaded.views.any { it.id == "user-1" && it.name == "Custom" && !it.showDryRun } shouldBe true
+            loaded.views.count { it.builtIn } shouldBe 4
+            localStorage.removeItem(ViewText.HISTORY_VIEWS_STORAGE_KEY)
+        }
+
+        "applyView seeds visibilityStates before loadAll" {
+            localStorage.removeItem(ViewText.HISTORY_VIEWS_STORAGE_KEY)
+            resetHistoryUiState()
+            val container = document.createElement(HtmlTags.DIV)
+            container.innerHTML = TestDomBuilders.historyViewsDom()
+            document.body!!.appendChild(container)
+            window.asDynamic().Chart = mockChartConstructor()
+            window.asDynamic().fetch =
+                mockFetch { url ->
+                    when {
+                        url.contains("snapshots") ->
+                            arrayOf(
+                                mockSnapshotRecord(
+                                    assets =
+                                        json(
+                                            Asset.BTC to json("valueUSD" to 100, "balance" to 1, "currentPercent" to 100),
+                                        ),
+                                ),
+                            )
+                        url.contains("trades") -> emptyArray<dynamic>()
+                        url.contains("sync-progress") -> json("seeded" to true)
+                        else ->
+                            mockPortfolioStatsRecord(
+                                allTimeHigh = 100,
+                                totalTradesExecuted = 0,
+                                totalVolumeTraded = 0,
+                                totalFeesPaid = 0,
+                            )
+                    }
+                }
+            registerHistoryGlobals()
+            try {
+                val dayTotal = HistoryViewPrefs.builtInViews().first { it.id == HistoryViewIds.DAY_TOTAL }
+                historyApplyVisibility(dayTotal.visibility)
+                visibilityStates[HtmlIds.PORTFOLIO_VALUE_CHART]?.get(ChartProps.DATASET_VISIBILITY_DEFAULT) shouldBe false
+                visibilityStates[HtmlIds.PORTFOLIO_VALUE_CHART]?.get(ViewText.TOTAL_PORTFOLIO) shouldBe true
+
+                HistoryViewPrefs.applyView(HistoryViewIds.DAY_TOTAL).await()
+                currentRange shouldBe TimeRange.TWENTY_FOUR_HOURS.key
+                (document.getElementById(HtmlIds.SHOW_DRY_RUN_CHECKBOX) as HTMLInputElement).checked shouldBe true
+
+                HistoryViewPrefs.applyView(HistoryViewIds.MONTH_PNL).await()
+                currentRange shouldBe TimeRange.THIRTY_DAYS.key
+                (document.getElementById(HtmlIds.SHOW_DRY_RUN_CHECKBOX) as HTMLInputElement).checked shouldBe false
+
+                HistoryViewPrefs.markCurrentViewModified()
+                syncTimeRangeButtons(TimeRange.SEVEN_DAYS.key)
+                loadHistoryAfterSync().await()
+                currentRange shouldBe TimeRange.SEVEN_DAYS.key
+                val select = document.getElementById(HtmlIds.HISTORY_VIEWS_SELECT) as HTMLSelectElement
+                select.value shouldBe ""
+                select.selectedOptions.item(0)?.textContent shouldBe ViewText.HISTORY_VIEW_UNSAVED
+                (document.getElementById(HtmlIds.HISTORY_SET_DEFAULT_BTN) as HTMLButtonElement).disabled shouldBe true
+                (document.getElementById(HtmlIds.HISTORY_DELETE_VIEW_BTN) as HTMLButtonElement).disabled shouldBe true
+
+                HistoryViewPrefs.resetInteractionState()
+                loadHistoryAfterSync().await()
+                currentRange shouldBe TimeRange.THIRTY_DAYS.key
+            } finally {
+                document.body!!.removeChild(container)
+                localStorage.removeItem(ViewText.HISTORY_VIEWS_STORAGE_KEY)
+                resetHistoryUiState()
+            }
+        }
+
+        "HistoryViewPrefs toolbar save set-default and delete user views" {
+            localStorage.removeItem(ViewText.HISTORY_VIEWS_STORAGE_KEY)
+            resetHistoryUiState()
+            val container = document.createElement(HtmlTags.DIV)
+            container.innerHTML = TestDomBuilders.historyViewsDom()
+            document.body!!.appendChild(container)
+            window.asDynamic().Chart = mockChartConstructor()
+            window.asDynamic().fetch =
+                mockFetch { url ->
+                    when {
+                        url.contains("snapshots") ->
+                            arrayOf(
+                                mockSnapshotRecord(
+                                    assets =
+                                        json(
+                                            Asset.BTC to json("valueUSD" to 60, "balance" to 1, "currentPercent" to 60),
+                                            Asset.USD to json("valueUSD" to 40, "balance" to 40, "currentPercent" to 40),
+                                        ),
+                                ),
+                                mockSnapshotRecord(
+                                    assets =
+                                        json(
+                                            Asset.BTC to json("valueUSD" to 70, "balance" to 1.1, "currentPercent" to 70),
+                                            Asset.USD to json("valueUSD" to 30, "balance" to 30, "currentPercent" to 30),
+                                        ),
+                                ),
+                            )
+                        url.contains("trades") ->
+                            arrayOf(mockTradeRecord(symbol = Asset.BTC, volume = 1, usdAmount = 100))
+                        else ->
+                            mockPortfolioStatsRecord(
+                                allTimeHigh = 100,
+                                totalTradesExecuted = 1,
+                                totalVolumeTraded = 100,
+                                totalFeesPaid = 1,
+                            )
+                    }
+                }
+            registerHistoryGlobals()
+            try {
+                HistoryViewPrefs.initToolbar()
+                val select = document.getElementById(HtmlIds.HISTORY_VIEWS_SELECT) as HTMLSelectElement
+                select.options.length shouldBe 4
+
+                loadAll(TimeRange.THIRTY_DAYS.key).await()
+
+                window.asDynamic().prompt = { _: String -> "My View" }
+                (document.getElementById(HtmlIds.HISTORY_SAVE_VIEW_BTN) as HTMLButtonElement).click()
+                select.options.length shouldBe 5
+                val userId = select.value
+                userId.startsWith("user-") shouldBe true
+
+                (document.getElementById(HtmlIds.HISTORY_SET_DEFAULT_BTN) as HTMLButtonElement).click()
+                HistoryViewPrefs.loadStore().defaultId shouldBe userId
+
+                (document.getElementById(HtmlIds.HISTORY_DELETE_VIEW_BTN) as HTMLButtonElement).disabled shouldBe false
+                (document.getElementById(HtmlIds.HISTORY_DELETE_VIEW_BTN) as HTMLButtonElement).click()
+                HistoryViewPrefs.applyDefaultView().await()
+                val afterDelete = document.getElementById(HtmlIds.HISTORY_VIEWS_SELECT) as HTMLSelectElement
+                afterDelete.options.length shouldBe 4
+                HistoryViewPrefs.loadStore().defaultId shouldBe HistoryViewIds.OVERVIEW
+
+                HistoryViewPrefs.applyView(HistoryViewIds.OVERVIEW).await()
+                (document.getElementById(HtmlIds.HISTORY_DELETE_VIEW_BTN) as HTMLButtonElement).disabled shouldBe true
+
+                HistoryViewPrefs.mergeBuiltIns(
+                    HistoryViewsStore(defaultId = "missing", views = emptyList()),
+                ).defaultId shouldBe HistoryViewIds.OVERVIEW
+
+                HistoryViewPrefs.parseStore(
+                    json("defaultId" to HistoryViewIds.WEEK_ALLOCATION, "views" to emptyArray<dynamic>()),
+                ).defaultId shouldBe HistoryViewIds.WEEK_ALLOCATION
+
+                localStorage.setItem(ViewText.HISTORY_VIEWS_STORAGE_KEY, "{not-json")
+                HistoryViewPrefs.loadStore().defaultId shouldBe HistoryViewIds.OVERVIEW
+
+                // Empty prompt cancels save
+                window.asDynamic().prompt = { _: String -> "  " }
+                val beforeCancel = (document.getElementById(HtmlIds.HISTORY_VIEWS_SELECT) as HTMLSelectElement).options.length
+                (document.getElementById(HtmlIds.HISTORY_SAVE_VIEW_BTN) as HTMLButtonElement).click()
+                (document.getElementById(HtmlIds.HISTORY_VIEWS_SELECT) as HTMLSelectElement).options.length shouldBe beforeCancel
+            } finally {
+                document.body!!.removeChild(container)
+                localStorage.removeItem(ViewText.HISTORY_VIEWS_STORAGE_KEY)
+                resetHistoryUiState()
+            }
+        }
+
+        "setupZoomButtons invoke chart zoom APIs" {
+            resetHistoryUiState()
+            val container = document.createElement(HtmlTags.DIV)
+            container.innerHTML =
+                """
+                <canvas id="${HtmlIds.PORTFOLIO_VALUE_CHART}"></canvas>
+                <button class="${CssClass.History.ZoomBtn}" ${HtmlAttrs.DATA_CHART_ID}="${HtmlIds.PORTFOLIO_VALUE_CHART}" ${HtmlAttrs.DATA_ZOOM_ACTION}="in"></button>
+                <button class="${CssClass.History.ZoomBtn}" ${HtmlAttrs.DATA_CHART_ID}="${HtmlIds.PORTFOLIO_VALUE_CHART}" ${HtmlAttrs.DATA_ZOOM_ACTION}="out"></button>
+                <button class="${CssClass.History.ZoomBtn}" ${HtmlAttrs.DATA_CHART_ID}="${HtmlIds.PORTFOLIO_VALUE_CHART}" ${HtmlAttrs.DATA_ZOOM_ACTION}="reset"></button>
+                """.trimIndent()
+            document.body!!.appendChild(container)
+            var zoomCalls = 0
+            var resetCalls = 0
+            window.asDynamic().Chart = { _: dynamic, _: dynamic ->
+                jsObject {
+                    data = json("datasets" to emptyArray<dynamic>())
+                    destroy = {}
+                    isDatasetVisible = { _: Int -> true }
+                    zoom = { _: Double -> zoomCalls++ }
+                    resetZoom = { resetCalls++ }
+                }
+            }
+            registerHistoryGlobals()
+            try {
+                createOrUpdate(
+                    HtmlIds.PORTFOLIO_VALUE_CHART,
+                    createLineChartConfig(emptyArray(), getClonedChartOptions()),
+                )
+                setupZoomButtons()
+                val buttons = document.querySelectorAll(CssClass.Query.ZOOM_BTNS)
+                for (i in 0 until buttons.length) {
+                    (buttons.item(i) as HTMLElement).click()
+                }
+                zoomCalls shouldBe 2
+                resetCalls shouldBe 1
+            } finally {
+                document.body!!.removeChild(container)
+                resetHistoryUiState()
             }
         }
     }

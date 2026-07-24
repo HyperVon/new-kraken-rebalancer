@@ -18,6 +18,8 @@ Related:
 - Full text audit → [documentation-review](../documentation-review/SKILL.md)
 - End-user walkthrough → [user-guide](../user-guide/SKILL.md)
 - Flag semantics → [dry-run-and-simulation](../dry-run-and-simulation/SKILL.md)
+- Visual critique (recommend) → [ui-visual-review](../ui-visual-review/SKILL.md)
+- Apply + verify UI changes → [ui-visual-implement](../ui-visual-implement/SKILL.md)
 
 ---
 
@@ -137,6 +139,8 @@ python3 -m venv /tmp/kraken-screenshots
 Useful flags:
 
 - `--only history.png,history-bottom.png` — recapture a subset
+- `--out-dir /tmp/ui-review` — write elsewhere (UI review / verify; leave
+  `docs/images/` alone)
 - `--discover` — report pages/sections with no target (Step 5)
 - `--base-url`, `--chrome`, `--manifest` — override defaults
 

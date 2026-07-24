@@ -156,8 +156,8 @@ class DashboardViewTest : StringSpec() {
                     )
                 ),
                 actions = listOf(
-                    "BUY BTC Volume: 0.05 Value: $2500.0",
-                    "SELL ETH Volume: 1.0 Value: $2000.0"
+                    "BUY BTC Volume: 0.05 Value: $2500.00",
+                    "SELL ETH Volume: 1.0 Value: $2000.00"
                 ),
                 drawdownPercent = BigDecimal("5.0"),
                 fiatDeploymentPercent = BigDecimal("25.0"),

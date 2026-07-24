@@ -8,8 +8,17 @@ object HtmlAttrs {
     const val DATA_EPOCH = "data-epoch"
     const val DATA_RANGE = "data-range"
     const val DATA_SORT_VALUE = "data-sort-value"
+    const val DATA_CHART_ID = "data-chart-id"
+    const val DATA_ZOOM_ACTION = "data-zoom-action"
     const val DATASET_SORT_VALUE = "sortValue"
     const val CROSSORIGIN = "crossorigin"
+}
+
+/** Zoom control action values for History chart toolbar buttons. */
+object ZoomActions {
+    const val IN = "in"
+    const val OUT = "out"
+    const val RESET = "reset"
 }
 
 /** Standard DOM event name constants. */
@@ -50,6 +59,8 @@ object HtmlTags {
     const val TABLE = "table"
     const val TBODY = "tbody"
     const val A = "a"
+    const val SELECT = "select"
+    const val OPTION = "option"
 }
 
 /** Centralized HTML element IDs used in view layout templates and client scripts. */
@@ -71,6 +82,10 @@ object HtmlIds {
     const val SYNC_PROGRESS_BANNER = "sync-progress-banner"
     const val SYNC_PROGRESS_TEXT = "sync-progress-text"
     const val SYNC_PROGRESS_BAR = "sync-progress-bar"
+    const val HISTORY_VIEWS_SELECT = "history-views-select"
+    const val HISTORY_SAVE_VIEW_BTN = "history-save-view-btn"
+    const val HISTORY_SET_DEFAULT_BTN = "history-set-default-btn"
+    const val HISTORY_DELETE_VIEW_BTN = "history-delete-view-btn"
 
     // Chart Canvas IDs
     const val PORTFOLIO_VALUE_CHART = "portfolio-value-chart"
