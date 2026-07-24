@@ -9,6 +9,7 @@ import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.booleans.shouldBeFalse
 import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.shouldNotBe
 import io.kotest.matchers.string.shouldContain
 import kotlinx.browser.document
 import kotlinx.browser.window
@@ -236,29 +237,17 @@ class CoverageTest : StringSpec() {
             try {
                 registerHistoryGlobals()
 
-                // Test 24h range
-                loadAll(TimeRange.TWENTY_FOUR_HOURS.key).await()
-                (
-                    window
-                        .asDynamic()
-                        .chartDefaults.scales.x.time.unit as String
-                ) shouldBe "hour"
+// Test 24h range
+                 loadAll(TimeRange.TWENTY_FOUR_HOURS.key).await()
+                 (getClonedChartOptions().scales.x.time.unit as String?) shouldBe "hour"
 
-                // Test 'all' range (should delete unit)
-                loadAll(TimeRange.ALL.key).await()
-                (
-                    window
-                        .asDynamic()
-                        .chartDefaults.scales.x.time.unit == null
-                ) shouldBe true
+                 // Test 'all' range (should delete unit)
+                 loadAll(TimeRange.ALL.key).await()
+                 (getClonedChartOptions().scales.x.time.unit as String?) shouldBe null
 
-                // Test default (day) range
-                loadAll(TimeRange.THIRTY_DAYS.key).await()
-                (
-                    window
-                        .asDynamic()
-                        .chartDefaults.scales.x.time.unit as String
-                ) shouldBe "day"
+                 // Test default (day) range
+                 loadAll(TimeRange.THIRTY_DAYS.key).await()
+                 (getClonedChartOptions().scales.x.time.unit as String?) shouldBe "day"
             } finally {
                 document.body!!.removeChild(container)
             }

@@ -11,7 +11,7 @@ import kotlinx.css.CssBuilder
 
 /**
  * Aggregator facade for application-wide CSS stylesheet generation.
- * Modularized into domain styles under `com.gemini.krakenbot.view.css`.
+ * Modularized into domain style files under the `view.css` package.
  */
 object CssStyles {
     val stylesheet = CssBuilder().apply {

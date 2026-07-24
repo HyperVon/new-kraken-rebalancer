@@ -202,7 +202,7 @@ class SettingsFormComponent {
                             type = button
                         ) {
                             attributes[HtmlAttrs.ONCLICK] =
-                                "this.closest('.allocation-edit-row').remove(); updateAllocationTotal();"
+                                "this.closest('.${CssClass.Form.AllocationEditRow}').remove(); updateAllocationTotal();"
                             +ViewText.REMOVE
                         }
                     }

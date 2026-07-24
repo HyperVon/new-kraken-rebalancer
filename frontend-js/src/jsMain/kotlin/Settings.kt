@@ -83,7 +83,7 @@ fun addAssetRow() {
     row.className = CssClass.Form.AllocationEditRow.toString()
 
     val symbolDiv = document.createDiv()
-    symbolDiv.className = "${CssClass.Form.AllocationEditSymbol} symbol-label"
+    symbolDiv.className = "${CssClass.Form.AllocationEditSymbol} ${CssClass.Form.SymbolLabel}"
     symbolDiv.textContent = symbol
 
     val hiddenInput = document.createInput()

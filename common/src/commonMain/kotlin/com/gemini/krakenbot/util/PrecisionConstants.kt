@@ -30,4 +30,8 @@ object PrecisionConstants {
     const val LAST_SECOND_OF_MINUTE = 59
     const val DEFAULT_USD_TARGET_PERCENT = 5.0
     const val MIN_CRYPTO_DECIMAL_PLACES = 4
+
+    // Date/Time Format Patterns
+    const val TIME_FORMAT_PATTERN = "hh:mm:ss a"
+    const val DATE_TIME_FORMAT_PATTERN = "yyyy-MM-dd hh:mm:ss a"
 }

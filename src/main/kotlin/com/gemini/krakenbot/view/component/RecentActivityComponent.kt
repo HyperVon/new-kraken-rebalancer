@@ -12,6 +12,7 @@ import com.gemini.krakenbot.view.util.p
 import com.gemini.krakenbot.view.util.span
 import com.gemini.krakenbot.view.util.td
 import com.gemini.krakenbot.view.util.tr
+import com.gemini.krakenbot.util.PrecisionConstants
 import kotlinx.html.*
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -36,7 +37,7 @@ class RecentActivityComponent {
     }
 
     private val activityTimeFormatter =
-        DateTimeFormatter.ofPattern("yyyy-MM-dd hh:mm:ss a")
+        DateTimeFormatter.ofPattern(PrecisionConstants.DATE_TIME_FORMAT_PATTERN)
             .withZone(ZoneId.systemDefault())
 
     context(div: DIV)

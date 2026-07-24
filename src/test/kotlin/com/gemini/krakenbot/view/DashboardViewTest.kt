@@ -322,7 +322,8 @@ class DashboardViewTest : StringSpec() {
         }
 
         "PerformanceTableComponent_Companion_getCOLUMNS" {
-            val companionClass = Class.forName($$"com.gemini.krakenbot.view.component.PerformanceTableComponent$Companion")
+            val companionClassName = "${PerformanceTableComponent::class.java.name}\$Companion"
+            val companionClass = Class.forName(companionClassName)
             val getCOLUMNS = companionClass.getDeclaredMethod("getCOLUMNS")
             getCOLUMNS.isAccessible = true
             val companionField = PerformanceTableComponent::class.java.getDeclaredField("Companion")

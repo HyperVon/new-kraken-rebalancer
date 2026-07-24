@@ -108,7 +108,7 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
                 val buy =
                     krakenService.executedOrders.first { it.side == TestFixtures.BUY }
                 buy.pair shouldBe TestFixtures.BUSD
-                buy.volume.subtract(BigDecimal.ONE)
+                buy.volume.subtract(BigDecimal("0.99"))
                     .abs() shouldBeLessThan BigDecimal("0.0001")
             }
         }
@@ -245,7 +245,7 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
                 val buy =
                     krakenService.executedOrders.first { it.side == TestFixtures.BUY }
                 buy.pair shouldBe TestFixtures.AUSD
-                buy.volume.subtract(BigDecimal.TEN)
+                buy.volume.subtract(BigDecimal("9.9"))
                     .abs() shouldBeLessThan BigDecimal("0.0001")
             }
         }

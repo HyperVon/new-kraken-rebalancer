@@ -22,7 +22,7 @@ class DashboardFragmentComponent(
     private val recentActivityComponent: RecentActivityComponent
 ) {
     private val timeFormatter =
-        DateTimeFormatter.ofPattern("hh:mm:ss a")
+        DateTimeFormatter.ofPattern(PrecisionConstants.TIME_FORMAT_PATTERN)
             .withZone(ZoneId.systemDefault())
 
     context(div: DIV)

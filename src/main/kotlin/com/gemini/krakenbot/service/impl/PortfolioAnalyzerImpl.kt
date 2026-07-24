@@ -161,7 +161,7 @@ class PortfolioAnalyzerImpl(
 
         val deployDouble =
             ratio.toDouble().pow(settings.fiatDeploymentExponent) * 100.0
-        return BigDecimal.valueOf(deployDouble)
+        return BigDecimal.valueOf(deployDouble).setScale(SCALE_USD, RoundingMode.HALF_UP)
     }
 
     override fun calculateEffectiveUsdTarget(fiatDeploymentPct: BigDecimal): BigDecimal {
@@ -246,7 +246,8 @@ class PortfolioAnalyzerImpl(
             )
 
             val isTriggered =
-                metrics.deviationPercent.abs().toDouble() >= s.deviationTriggerPercent && metrics.isSignificant
+                metrics.deviationPercent.abs() >= BigDecimal.valueOf(s.deviationTriggerPercent) &&
+                    metrics.isSignificant
 
             if (isTriggered) {
                 actionLog.add(

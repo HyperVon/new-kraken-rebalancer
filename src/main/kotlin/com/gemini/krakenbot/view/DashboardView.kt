@@ -6,6 +6,7 @@ import com.gemini.krakenbot.view.component.DashboardFragmentComponent
 import com.gemini.krakenbot.view.component.DashboardShellComponent
 import com.gemini.krakenbot.view.component.HistoryPageComponent
 import com.gemini.krakenbot.view.component.SettingsFormComponent
+import com.gemini.krakenbot.view.util.Routes.CDN_HTMX
 import com.gemini.krakenbot.view.util.ViewText.APP_TITLE
 import com.gemini.krakenbot.view.util.ViewText.SETTINGS_TITLE
 import com.gemini.krakenbot.view.util.commonMetadataAndStyles
@@ -28,7 +29,7 @@ class DashboardView(
         html.head {
             commonMetadataAndStyles()
             title("$SETTINGS_TITLE - $APP_TITLE")
-            script(src = "https://unpkg.com/htmx.org@2.0.4") {}
+            script(src = CDN_HTMX) {}
         }
         html.body {
             settingsFormComponent.render(config, errorMessage)

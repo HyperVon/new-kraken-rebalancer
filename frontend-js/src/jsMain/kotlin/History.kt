@@ -230,13 +230,13 @@ internal fun mapSnapshotsToPoints(
         }.toTypedArray()
 
 internal fun getClonedChartOptions(): dynamic {
+    val clone: dynamic = JSON.parse(JSON.stringify(chartDefaults))
     when (currentRange) {
-        TimeRange.TWENTY_FOUR_HOURS.key -> chartDefaults.scales.x.time.unit = "hour"
-        TimeRange.ALL.key -> js("delete chartDefaults.scales.x.time.unit")
-        else -> chartDefaults.scales.x.time.unit = "day"
+        TimeRange.TWENTY_FOUR_HOURS.key -> clone.scales.x.time.unit = "hour"
+        TimeRange.ALL.key -> clone.scales.x.time.unit = undefined
+        else -> clone.scales.x.time.unit = "day"
     }
-
-    return JSON.parse(JSON.stringify(window.asDynamic().chartDefaults))
+    return clone
 }
 
 internal fun createLineChartConfig(

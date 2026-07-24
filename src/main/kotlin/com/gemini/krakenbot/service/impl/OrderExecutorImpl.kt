@@ -70,16 +70,15 @@ class OrderExecutorImpl(
             actualCash = refreshUsdBalanceAfterSells(projectedCash)
         }
 
+        val maxBuySpend = actualCash.multiply(CASH_RESERVE_FACTOR)
+        var buySpent = BigDecimal.ZERO
+
         for ((symbol, originalCost) in buyOrders) {
-            var cost = originalCost
-            if (cost > actualCash) {
-                log.warn(
-                    "Not enough cash to buy {}. Cost: {}, Cash: {}. Reducing.",
-                    symbol,
-                    cost,
-                    actualCash,
-                )
-                cost = actualCash.multiply(CASH_RESERVE_FACTOR)
+            val remaining = maxBuySpend.subtract(buySpent)
+            var cost = originalCost.min(remaining)
+
+            if (cost < BigDecimal.ZERO) {
+                cost = BigDecimal.ZERO
             }
 
             if (cost < BigDecimal.valueOf(settings.dustThresholdUSD)) {
@@ -90,6 +89,7 @@ class OrderExecutorImpl(
 
             val result = executeSingleOrder(symbol, cost, OrderSide.BUY, prices, actionLog)
             if (result?.success == true) {
+                buySpent = buySpent.add(cost)
                 actualCash = actualCash.subtract(cost)
             }
         }

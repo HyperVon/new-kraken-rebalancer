@@ -310,18 +310,10 @@ class HistoryTest : StringSpec() {
             try {
                 checkSyncProgress().await() shouldBe false
                 (document.getElementById(HtmlIds.SYNC_PROGRESS_BAR) as HTMLElement).style.width shouldBe "50%"
-                loadAll(TimeRange.TWENTY_FOUR_HOURS.key).await()
-                (
-                    window
-                        .asDynamic()
-                        .chartDefaults.scales.x.time.unit as String
-                ) shouldBe "hour"
-                loadAll(TimeRange.ALL.key).await()
-                (
-                    window
-                        .asDynamic()
-                        .chartDefaults.scales.x.time.unit == null
-                ) shouldBe true
+loadAll(TimeRange.TWENTY_FOUR_HOURS.key).await()
+                 (getClonedChartOptions().scales.x.time.unit as String?) shouldBe "hour"
+                 loadAll(TimeRange.ALL.key).await()
+                 (getClonedChartOptions().scales.x.time.unit as String?) shouldBe null
             } finally {
                 document.body!!.removeChild(container)
             }

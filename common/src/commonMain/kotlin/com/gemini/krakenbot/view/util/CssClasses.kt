@@ -62,6 +62,7 @@ sealed class CssClass(open val value: String) {
         object AllocationListContainer : Form("allocation-list-container")
         object AllocationEditRow : Form("allocation-edit-row")
         object AllocationEditSymbol : Form("allocation-edit-symbol")
+        object SymbolLabel : Form("symbol-label")
         object AllocationEditInputWrapper : Form("allocation-edit-input-wrapper")
         object PercentSuffix : Form("percent-suffix")
         object AddAssetBox : Form("add-asset-box")

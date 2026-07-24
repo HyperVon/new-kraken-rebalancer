@@ -27,7 +27,6 @@ import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 import kotlin.io.encoding.Base64
 import kotlin.time.Duration.Companion.milliseconds
-import kotlin.time.Duration.Companion.minutes
 
 class KrakenServiceImpl(
     private val configService: ConfigService,
@@ -50,6 +49,7 @@ class KrakenServiceImpl(
     ): T = flow {
         var currentBackoff = initialBackoffMs
         var currentRateLimitBackoff = rateLimitBackoffMs
+        var currentLockoutBackoff = initialBackoffMs
 
         repeat(maxAttempts) { attempt ->
             try {
@@ -63,7 +63,8 @@ class KrakenServiceImpl(
                 if ((isNetworkOrTransient || isRateLimit || isLockout) && attempt < maxAttempts - 1) {
                     val waitTime =
                         when {
-                            isLockout -> 15.minutes.inWholeMilliseconds
+                            isLockout ->
+                                currentLockoutBackoff.also { currentLockoutBackoff *= 2 }
                             isRateLimit -> currentRateLimitBackoff
                             else -> currentBackoff
                         }

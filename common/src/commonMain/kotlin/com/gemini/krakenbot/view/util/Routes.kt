@@ -18,6 +18,9 @@ object Routes {
     const val STATIC_REBALANCER_JS = "/static/rebalancer.js"
     const val STATIC_PREFIX = "/static"
     const val STATIC_RESOURCES_DIR = "static"
+
+    const val CDN_HTMX = "https://unpkg.com/htmx.org@2.0.4"
+    const val CDN_HTMX_SSE = "https://unpkg.com/htmx-ext-sse@2.2.2/sse.js"
 }
 
 fun String.withRange(range: TimeRange): String = withRange(range.key)

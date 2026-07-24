@@ -15,8 +15,8 @@ class DashboardShellComponent {
         html.head {
             commonMetadataAndStyles()
             title(ViewText.APP_TITLE)
-            script(src = "https://unpkg.com/htmx.org@2.0.4") {}
-            script(src = "https://unpkg.com/htmx-ext-sse@2.2.2/sse.js") {}
+            script(src = Routes.CDN_HTMX) {}
+            script(src = Routes.CDN_HTMX_SSE) {}
         }
         html.body {
             div(CssClass.Layout.Container) {
