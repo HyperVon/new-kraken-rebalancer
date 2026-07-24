@@ -8,6 +8,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [6.12.14] - 2026-07-24
+
 ### Added
 
 - **`continuous-improvement` skill**: Orchestrates discover → size-gate (ask
