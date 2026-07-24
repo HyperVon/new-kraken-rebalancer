@@ -73,15 +73,23 @@ value class Asset(val value: String) {
 
         private fun isUsdSymbol(symbol: String): Boolean = symbol.equals(USD, ignoreCase = true)
 
-        private fun matchesTradingPair(normalizedPair: String, symbol: String): Boolean {
+        private fun matchesTradingPair(normalizedPair: String, symbol: String): Boolean =
+            normalizedPair in acceptedKrakenPairs(symbol)
+
+        /**
+         * Exact USD-quoted Kraken pair aliases accepted for [symbol] (e.g. BTC →
+         * `XBTUSD`, `BTCUSD`, `XXBTZUSD`). Exact equality prevents prefix collisions
+         * where e.g. a `XBTUSDT`/`XBTUSDC` quote could be mis-resolved to BTC.
+         */
+        private fun acceptedKrakenPairs(symbol: String): Set<String> {
             val normalizedSymbol = normalizedSymbol(symbol)
             val krakenTicker = toKrakenTicker(normalizedSymbol)
-            return normalizedPair.startsWith(krakenTicker) ||
-                normalizedPair.startsWith(normalizedSymbol) ||
-                normalizedPair == "${krakenTicker}USD" ||
-                normalizedPair == "${normalizedSymbol}USD" ||
-                normalizedPair == "X${krakenTicker}ZUSD" ||
-                normalizedPair == "X${normalizedSymbol}ZUSD"
+            return setOf(
+                "$krakenTicker$USD",
+                "$normalizedSymbol$USD",
+                "X${krakenTicker}Z$USD",
+                "X${normalizedSymbol}Z$USD",
+            )
         }
 
         fun possibleBalanceKeys(symbol: String): List<String> {

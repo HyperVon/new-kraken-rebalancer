@@ -3,6 +3,7 @@ package com.gemini.krakenbot.service.impl
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderResult
 import com.gemini.krakenbot.model.OrderSide
+import com.gemini.krakenbot.model.OrderType
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.KrakenService
@@ -149,6 +150,31 @@ class SimulatedKrakenService(private val configService: ConfigService) : KrakenS
     override suspend fun executeOrder(pair: String, type: String, side: String, volume: BigDecimal): OrderResult {
         initializeBalancesAndPricesIfEmpty()
 
+        val normalizedVolumeForError = volume.toCryptoScale()
+        if (!type.equals(OrderType.MARKET.apiValue, ignoreCase = true)) {
+            val error = "Unsupported order type in emulator: $type (only ${OrderType.MARKET.apiValue} is supported)"
+            log.warn("[EMULATOR] $error")
+            return OrderResult(
+                success = false,
+                pair = pair,
+                side = side,
+                volume = normalizedVolumeForError,
+                errorMessage = error,
+            )
+        }
+        val orderSide = OrderSide.entries.firstOrNull { it.apiValue.equals(side, ignoreCase = true) }
+        if (orderSide == null) {
+            val error = "Unsupported order side in emulator: $side"
+            log.warn("[EMULATOR] $error")
+            return OrderResult(
+                success = false,
+                pair = pair,
+                side = side,
+                volume = normalizedVolumeForError,
+                errorMessage = error,
+            )
+        }
+
         val allocations = configService.getConfig().allocations.map { it.symbol.value }
         val symbol = Asset.fromTradingPair(pair, allocations) ?: pair
         val price = simulatedPrices[symbol] ?: BigDecimal.TEN
@@ -174,7 +200,7 @@ class SimulatedKrakenService(private val configService: ConfigService) : KrakenS
         val usdBalance = balances[Asset.USD] ?: BigDecimal.ZERO
         val tokenBalance = balances[symbol] ?: BigDecimal.ZERO
 
-        if (side.equals(OrderSide.BUY.apiValue, ignoreCase = true)) {
+        if (orderSide == OrderSide.BUY) {
             if (usdBalance < usdAmount) {
                 val error =
                     "Insufficient USD funds in emulator balance: needed $usdAmount, had $usdBalance"
@@ -189,7 +215,7 @@ class SimulatedKrakenService(private val configService: ConfigService) : KrakenS
             }
             balances[Asset.USD] = usdBalance.subtract(usdAmount).toUsdScale()
             balances[symbol] = tokenBalance.add(normalizedVolume).toCryptoScale()
-        } else if (side.equals(OrderSide.SELL.apiValue, ignoreCase = true)) {
+        } else {
             if (tokenBalance < normalizedVolume) {
                 val error =
                     "Insufficient $symbol funds in emulator balance: needed $normalizedVolume, had $tokenBalance"
@@ -242,8 +268,10 @@ class SimulatedKrakenService(private val configService: ConfigService) : KrakenS
 
         filtered = filtered.sortedBy { it.timestamp }
 
-        if (offset != null && offset < filtered.size) {
-            return filtered.drop(offset)
+        // An offset at/beyond the result size yields an empty page (Kraken-style
+        // pagination), not the whole history.
+        if (offset != null) {
+            return filtered.drop(offset.coerceAtLeast(0))
         }
         return filtered
     }
