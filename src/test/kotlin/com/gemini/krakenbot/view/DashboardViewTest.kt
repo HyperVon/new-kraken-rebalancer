@@ -26,6 +26,7 @@ import com.gemini.krakenbot.view.util.ViewText.LIVE
 import com.gemini.krakenbot.view.util.ViewText.NO_TRADES_EXECUTED
 import com.gemini.krakenbot.view.util.ViewText.NO_TRADING_HISTORY
 import com.gemini.krakenbot.view.util.ViewText.NO_USD_DATA
+import com.gemini.krakenbot.view.util.ViewText.SAFETY_MODES
 import com.gemini.krakenbot.view.util.ViewText.SETTINGS_TITLE
 import com.gemini.krakenbot.view.util.ViewText.TARGET_PREFIX
 import com.gemini.krakenbot.view.util.ViewText.TOTAL_PORTFOLIO
@@ -106,6 +107,7 @@ class DashboardViewTest : StringSpec() {
             html shouldContain "value=\"60\""
             html shouldContain "name=\"${DEVIATION_TRIGGER_PERCENT}\""
             html shouldContain "value=\"2.0\""
+            html shouldContain SAFETY_MODES
             html shouldNotContain ERROR_BANNER
         }
 

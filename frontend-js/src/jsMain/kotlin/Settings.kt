@@ -39,15 +39,7 @@ fun updateAllocationTotal() {
     val saveButton = document.getElementById(HtmlIds.SAVE_BUTTON) as? HTMLButtonElement ?: return
     val isValid = abs(total - PrecisionConstants.TOTAL_ALLOCATION_PERCENTAGE) <= PrecisionConstants.ALLOCATION_TOLERANCE_DELTA
 
-    val symbolInputs = document.querySelectorAll(SYMBOL_INPUTS_QUERY)
-    val symbols = mutableListOf<String>()
-    for (i in 0 until symbolInputs.length) {
-        val input = symbolInputs.item(i) as? HTMLInputElement
-        if (input != null) {
-            symbols.add(input.value.uppercase())
-        }
-    }
-    val hasUsd = symbols.contains(Asset.USD)
+    val hasUsd = currentAllocationSymbols().contains(Asset.USD)
 
     val isSuccess = isValid && hasUsd
     totalDisplay.classList.toggle(CssClass.Utility.Live, isSuccess)
@@ -64,16 +56,7 @@ fun addAssetRow() {
         return
     }
 
-    val symbolInputs = document.querySelectorAll(SYMBOL_INPUTS_QUERY)
-    val existingSymbols = mutableListOf<String>()
-    for (i in 0 until symbolInputs.length) {
-        val input = symbolInputs.item(i) as? HTMLInputElement
-        if (input != null) {
-            existingSymbols.add(input.value.uppercase())
-        }
-    }
-
-    if (existingSymbols.contains(symbol)) {
+    if (currentAllocationSymbols().contains(symbol)) {
         window.alert(ViewText.SYMBOL_EXISTS_ALERT)
         return
     }
@@ -126,6 +109,19 @@ fun addAssetRow() {
     container.appendChild(row)
     symbolInput.value = ""
     updateAllocationTotal()
+}
+
+/** Uppercased symbols from all allocation symbol inputs currently in the DOM. */
+private fun currentAllocationSymbols(): List<String> {
+    val symbolInputs = document.querySelectorAll(SYMBOL_INPUTS_QUERY)
+    val symbols = mutableListOf<String>()
+    for (i in 0 until symbolInputs.length) {
+        val input = symbolInputs.item(i) as? HTMLInputElement
+        if (input != null) {
+            symbols.add(input.value.uppercase())
+        }
+    }
+    return symbols
 }
 
 private val SYMBOL_REGEX = Regex("^[A-Z0-9]{1,16}$")

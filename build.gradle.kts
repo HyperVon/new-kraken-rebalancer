@@ -59,6 +59,9 @@ repositories {
 }
 
 dependencies {
+    val ktorVersion = "3.5.1"
+    val koinVersion = "4.2.2"
+
     implementation(project(":common"))
     implementation("com.fasterxml.jackson.module:jackson-module-kotlin")
     implementation("com.fasterxml.jackson.datatype:jackson-datatype-jsr310")
@@ -66,18 +69,16 @@ dependencies {
 
     // Jackson BOM — pins jackson-core & jackson-databind to a secure, explicit version
     implementation(platform("com.fasterxml.jackson:jackson-bom:2.22.1"))
-    implementation("io.ktor:ktor-server-caching-headers:3.5.1")
-    implementation("io.ktor:ktor-server-compression:3.5.1")
-    implementation("io.ktor:ktor-server-conditional-headers:3.5.1")
+    implementation("io.ktor:ktor-server-caching-headers:$ktorVersion")
+    implementation("io.ktor:ktor-server-compression:$ktorVersion")
+    implementation("io.ktor:ktor-server-conditional-headers:$ktorVersion")
 
     // Koin
-    var koinVersion = "4.2.2"
     implementation("io.insert-koin:koin-core:$koinVersion")
     implementation("io.insert-koin:koin-logger-slf4j:$koinVersion")
     implementation("io.insert-koin:koin-ktor:$koinVersion")
 
     // Ktor Server & Client
-    val ktorVersion = "3.5.1"
     implementation("io.ktor:ktor-server-core:$ktorVersion")
     implementation("io.ktor:ktor-server-netty:$ktorVersion")
     implementation("io.ktor:ktor-server-content-negotiation:$ktorVersion")
@@ -133,6 +134,19 @@ tasks.withType<Test> {
     systemProperty("kraken.db.path", ":memory:")
 }
 
+// Single source of truth for JaCoCo coverage exclusions — kept in sync across the
+// report and verification tasks (see .agents/skills/gradle-quality-gates).
+val coverageExcludes =
+    listOf(
+        "**/config/**",
+        "**/repository/table/**",
+        "**/service/KrakenService*",
+        "**/service/impl/KrakenServiceImpl*",
+        "**/view/util/**",
+        "**/view/css/**",
+        "**/KrakenRebalancerApplication*",
+    )
+
 tasks.jacocoTestReport {
     dependsOn(tasks.test)
     reports {
@@ -141,15 +155,7 @@ tasks.jacocoTestReport {
     classDirectories.setFrom(
         files(
             classDirectories.files.map {
-                fileTree(it) {
-                    exclude("**/config/**")
-                    exclude("**/repository/table/**")
-                    exclude("**/service/KrakenService*")
-                    exclude("**/service/impl/KrakenServiceImpl*")
-                    exclude("**/view/util/**")
-                    exclude("**/view/css/**")
-                    exclude("**/KrakenRebalancerApplication*")
-                }
+                fileTree(it) { exclude(coverageExcludes) }
             },
         ),
     )
@@ -161,15 +167,7 @@ tasks.jacocoTestCoverageVerification {
     classDirectories.setFrom(
         files(
             classDirectories.files.map {
-                fileTree(it) {
-                    exclude("**/config/**")
-                    exclude("**/repository/table/**")
-                    exclude("**/service/KrakenService*")
-                    exclude("**/service/impl/KrakenServiceImpl*")
-                    exclude("**/view/util/**")
-                    exclude("**/view/css/**")
-                    exclude("**/KrakenRebalancerApplication*")
-                }
+                fileTree(it) { exclude(coverageExcludes) }
             },
         ),
     )

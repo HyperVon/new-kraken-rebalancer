@@ -1,5 +1,7 @@
 package com.gemini.krakenbot.view.util
 
+import com.gemini.krakenbot.model.Asset
+
 /** Centralized Chart.js option keys and chart styling color constants. */
 object ChartProps {
     const val LABEL = "label"
@@ -164,25 +166,25 @@ object ChartProps {
     /** Fixed per-asset colors shared by History charts and Dashboard allocation bars. */
     fun borderColorForSymbol(symbol: String, fallbackIndex: Int = 0): String =
         when (symbol.uppercase()) {
-            "BTC" -> COLOR_AMBER
-            "ETH" -> COLOR_VIOLET
-            "USD" -> COLOR_SLATE
+            Asset.BTC -> COLOR_AMBER
+            Asset.ETH -> COLOR_VIOLET
+            Asset.USD -> COLOR_SLATE
             else -> PALETTE_BORDER_COLORS[fallbackIndex % PALETTE_BORDER_COLORS.size]
         }
 
     fun backgroundColorForSymbol(symbol: String, fallbackIndex: Int = 0): String =
         when (symbol.uppercase()) {
-            "BTC" -> COLOR_AMBER_BG_PALETTE
-            "ETH" -> COLOR_VIOLET_BG_PALETTE
-            "USD" -> COLOR_SLATE_BG_PALETTE
+            Asset.BTC -> COLOR_AMBER_BG_PALETTE
+            Asset.ETH -> COLOR_VIOLET_BG_PALETTE
+            Asset.USD -> COLOR_SLATE_BG_PALETTE
             else -> PALETTE_BG_COLORS[fallbackIndex % PALETTE_BG_COLORS.size]
         }
 
     fun solidColorForSymbol(symbol: String, fallbackIndex: Int = 0): String =
         when (symbol.uppercase()) {
-            "BTC" -> SOLID_BTC
-            "ETH" -> SOLID_ETH
-            "USD" -> SOLID_USD
+            Asset.BTC -> SOLID_BTC
+            Asset.ETH -> SOLID_ETH
+            Asset.USD -> SOLID_USD
             else -> SOLID_FALLBACK_PALETTE[fallbackIndex % SOLID_FALLBACK_PALETTE.size]
         }
 
