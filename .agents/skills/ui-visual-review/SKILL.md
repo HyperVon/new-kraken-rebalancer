@@ -176,7 +176,10 @@ Flag these explicitly when seen — they map to `ui-manual-qa` `STYLE-*` /
 5. **Day · Total only preset** — Portfolio Value chart should hide non-**Total**
    series in legend and on canvas (not just de-emphasized).
 6. **Chart zoom vs pan** — Drag on chart should zoom the x-axis, not pan; after
-   zoom, bottom range scrubber pans the visible window (not drag-pan).
+   **any** zoom (Zoom + buttons, drag-select, or wheel), the bottom range scrubber
+   must become **enabled** and **actually pan** the visible window when dragged
+   (fail if the thumb moves but the chart does not). Do not re-enable chart
+   drag-pan as a substitute.
 7. **Chart.js legend markers** — Line/point swatches (`usePointStyle`); not
    heavy bordered box chips around every legend label.
 

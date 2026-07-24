@@ -342,7 +342,8 @@ internal fun panChartToScrubberPosition(
             (fullRange.span - currentRange.span) *
                 (position / PrecisionConstants.HUNDRED_INT).coerceIn(0.0, 1.0)
     setChartXRange(chart, ChartRange(start, start + currentRange.span))
-    syncChartScrubber(canvasId)
+    // Keep the user's slider position; do not re-read the chart mid-drag (that can
+    // snap the thumb if scale reads lag one frame behind zoomScale).
 }
 
 private fun chartInitialRange(chart: dynamic): ChartRange? {
@@ -387,13 +388,24 @@ private fun setChartXRange(
     chart: dynamic,
     range: ChartRange,
 ) {
+    // chartjs-plugin-zoom owns scale limits after any zoom; writing options.scales.x
+    // and calling update() is ignored. Prefer zoomScale so the plugin's state matches.
+    val zoomScale = chart.zoomScale
+    if (zoomScale != null && zoomScale != undefined) {
+        zoomScale(
+            ChartProps.MODE_X,
+            json(ChartProps.MIN to range.min, ChartProps.MAX to range.max),
+            ChartProps.TRANSITION_NONE,
+        )
+        return
+    }
     if (chart.options == null || chart.options == undefined) chart.options = json()
     if (chart.options.scales == null || chart.options.scales == undefined) chart.options.scales = json()
     if (chart.options.scales.x == null || chart.options.scales.x == undefined) chart.options.scales.x = json()
     chart.options.scales.x.min = range.min
     chart.options.scales.x.max = range.max
     val update = chart.update
-    if (update != null && update != undefined) update()
+    if (update != null && update != undefined) update.call(chart)
 }
 
 internal fun loadHistoryAfterSync(): Promise<Unit> =
@@ -507,7 +519,18 @@ internal fun getClonedChartOptions(): dynamic {
         TimeRange.ALL.key -> js("delete options.scales.x.time.unit")
         else -> options.scales.x.time.unit = "day"
     }
+    // JSON clone above strips functions, so re-attach the zoom callback here.
+    // Any zoom gesture (drag/wheel/pinch/buttons) must re-sync the pan scrubber,
+    // not just the toolbar Zoom buttons.
+    options.plugins.zoom.zoom[ChartProps.ON_ZOOM_COMPLETE] = { ctx: dynamic ->
+        syncScrubberFromZoomContext(ctx)
+    }
     return options
+}
+
+internal fun syncScrubberFromZoomContext(ctx: dynamic) {
+    val id = ctx?.chart?.canvas?.id
+    if (id != null && id != undefined) syncChartScrubber(id.toString())
 }
 
 internal fun createLineChartConfig(

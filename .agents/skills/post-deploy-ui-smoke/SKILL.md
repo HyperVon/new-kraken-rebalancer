@@ -57,8 +57,12 @@ At **~1280–1440px** width (laptop, not mobile-first):
 From [checklist.md](../ui-manual-qa/checklist.md):
 
 - **HIST-VIEW-2** — Day · Total only hides non-Total series
-- **HIST-ZOOM-5** — drag zooms, does not pan
-- **HIST-ZOOM-6** — scrubber pans when zoomed
+- **HIST-ZOOM-5** — drag zooms, does not pan; scrubber enables after drag-zoom
+- **HIST-ZOOM-6** — scrubber drag **moves the chart** (not only the thumb)
+- **HIST-ZOOM-7** — wheel zoom also enables scrubber + pan works
+
+Fail HIST-ZOOM-6 if the range thumb moves but time ticks / series stay put
+(usually means pan wrote `options.scales` instead of `chart.zoomScale`).
 
 ### Step 4 — Report
 

@@ -26,8 +26,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **`post-deploy-ui-smoke` skill**: Fast post-deploy hard-refresh + STYLE /
   REGRESSION smoke (complements full `ui-manual-qa`).
 - **History chart pan scrubber**: After x-axis zoom, a bottom range slider pans
-  the visible window; drag-pan is disabled so drag-to-zoom no longer competes
-  with scroll/pan on the same gesture.
+  the visible window via `chart.zoomScale` (options.scales writes are ignored once
+  chartjs-plugin-zoom owns the axis); `onZoomComplete` re-enables the scrubber
+  after drag/wheel/pinch zoom. Drag-pan is disabled so drag-to-zoom no longer
+  competes with scroll/pan on the same gesture.
 - **Stylesheet cache-bust**: `/static/style.css?v=<content-hash>` so 24h CSS
   caching cannot leave clients on stale rules after deploy.
 
@@ -43,9 +45,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Agent skill guardrails (post-deploy UI QA)**: Expanded `ui-manual-qa`
   checklist with `STYLE-*` (CSS cache-bust / glass controls), `REGRESSION-*`
   (desktop header density, deviation legend, chart legend markers),
-  strengthened **Day · Total only** and chart zoom/scrubber cases;
-  `ui-visual-review` now calls out the same production regression smells at
-  laptop viewport (~1280–1440px).
+  strengthened **Day · Total only** and chart zoom/scrubber cases
+  (`HIST-ZOOM-5/6/7` — scrubber must enable after drag/wheel zoom and **move
+  the chart**, not only the thumb); `ui-visual-review`, `post-deploy-ui-smoke`,
+  `frontend-js-development`, `write-kotest`, and `code-review` call out the same
+  `zoomScale` / `onZoomComplete` failure modes.
 
 ## [6.12.13] - 2026-07-24
 
