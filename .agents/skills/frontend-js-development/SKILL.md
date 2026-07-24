@@ -18,8 +18,9 @@ Compiles via Kotlin JS IR to `/static/rebalancer.js`.
    fragment swaps.
 3. **Chart.js** — deep-clone options before each render.
 4. **History timeframe** — when user selects 24h / 7d / 30d / 90d / All, update
-   **all four** summary cards (**High Value**, **Total Trades**, **Total Volume
-   Traded**, **Total Fees Paid**) plus charts and trade table.
+   **all four** summary cards (**All-Time High** / **Period High**, **Total
+   Trades**, **Total Volume Traded**, **Total Fees Paid**) plus charts and trade
+   table.
 
 ## Chart.js integrity
 

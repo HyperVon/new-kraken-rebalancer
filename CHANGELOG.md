@@ -6,6 +6,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.12.9] - 2026-07-24
+
+### Fixed
+
+- **Documentation review**: Align README package tree (`repository/table/`, `:common`,
+  `DynamicKrakenService`), History summary-card labels (All-Time High / Period High),
+  API endpoint table (`/history`, history JSON routes), and JaCoCo exclusion wording
+  with source/build; correct FLOWS route names (`POST /settings`,
+  `GET /api/status/stream`); document USD poll exponential backoff in ALGORITHM /
+  AGENTS / skills; add `simulation` to `rebalancer-config-template.json`; expand
+  SECURITY dashboard trust / CORS guidance; refresh CONTRIBUTING coverage gates and
+  remove stale test-count claims.
+
+## [6.12.8] - 2026-07-24
+
+### Added
+
+- **`documentation-review` agent skill**: Full documentation audit against source
+  code (missing / wrong / stale / orphan) covering README, SECURITY,
+  CONTRIBUTING, `docs/*`, `.agents/AGENTS.md`, skills, and config templates.
+
 ## [6.12.7] - 2026-07-24
 
 ### Changed

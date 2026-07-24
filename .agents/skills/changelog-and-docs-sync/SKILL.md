@@ -4,10 +4,14 @@ description: >-
   Keep documentation synchronized — Keep a Changelog entries, README package
   tree, ALGORITHM.md / FLOWS.md / EVALUATION.md, JaCoCo exclusions, and
   .agents/AGENTS.md stack versions. Use when shipping features, refactors, or
-  dependency bumps that affect public behavior or layout.
+  dependency bumps that affect public behavior or layout. For a full audit of
+  all docs against source code, use documentation-review instead.
 ---
 
 # Changelog & Docs Sync
+
+Incremental sync after a change set. For a whole-repo docs audit (missing,
+wrong, stale), use [documentation-review](../documentation-review/SKILL.md).
 
 ## Keep a Changelog
 

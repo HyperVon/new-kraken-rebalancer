@@ -22,7 +22,7 @@ description: >-
 
 - BigDecimal scales 8/2; tests use **`shouldBeEqualComparingTo`**.
 - ATH → drawdown deployment, fiat correction, dust threshold.
-- Sell-first; 3×250ms USD poll; 95% settle; 99% buy cap.
+- Sell-first; USD poll up to 3× with 250ms exponential backoff; 95% settle; 99% buy cap.
 - See portfolio-rebalancing-math + `docs/ALGORITHM.md`.
 
 ### 3. Kraken & modes

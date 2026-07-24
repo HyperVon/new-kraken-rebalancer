@@ -28,6 +28,7 @@ Canonical deep docs:
 | Kotest / FakeKraken / evaluation | [write-kotest](skills/write-kotest/SKILL.md) |
 | Spotless, JaCoCo, Karma, CI | [gradle-quality-gates](skills/gradle-quality-gates/SKILL.md) |
 | CHANGELOG / README / docs sync | [changelog-and-docs-sync](skills/changelog-and-docs-sync/SKILL.md) |
+| Full docs audit vs source code | [documentation-review](skills/documentation-review/SKILL.md) |
 | Refactor / cleanup | [kotlin-refactoring-and-cleanup](skills/kotlin-refactoring-and-cleanup/SKILL.md) |
 | Code review | [code-review](skills/code-review/SKILL.md) |
 | Dependency upgrades | [dependency-upgrade](skills/dependency-upgrade/SKILL.md) |
@@ -75,7 +76,9 @@ Full detail: [`docs/ALGORITHM.md`](../docs/ALGORITHM.md) and skill [portfolio-re
 - **Trigger**: absolute signed relative deviation ≥ `deviationTriggerPercent`.
 - **Fiat correction**: if *only* USD triggers (deposit/withdrawal), redistribute among counter-balanced assets.
 - **Dust**: skip orders below `dustThresholdUSD`.
-- **Sell then buy**: sell overweight first; poll USD up to **3×250ms**; accept balance at **≥95%** of projected; buy capped at **99%** of available USD.
+- **Sell then buy**: sell overweight first; poll USD up to **3** attempts with
+  exponential backoff starting at **250ms** (doubling, cap 32s); accept balance
+  at **≥95%** of projected; buy capped at **99%** of available USD.
 - **Precision**: `BigDecimal` only — crypto scale **8**, USD scale **2**. Tests: `shouldBeEqualComparingTo` (never `shouldBeEqualByComparingTo` / `.equals()`).
 
 ---

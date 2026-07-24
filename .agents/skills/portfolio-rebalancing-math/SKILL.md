@@ -77,7 +77,8 @@ effectively than spreading across all pairs.
 ## Execution safety (`OrderExecutorImpl`)
 
 1. **Sell first** — only successful sells update projected cash.
-2. **USD poll** (non–dry-run): up to **3** attempts, **250ms** apart; accept when
+2. **USD poll** (non–dry-run): up to **3** attempts with exponential backoff
+   starting at **250ms** (doubling each attempt, capped at 32s); accept when
    balance ≥ **95%** of projected, else best observed.
 3. **Buy second** — verify cash; if short, scale buys to **99%** of available USD
    (`PrecisionConstants.CASH_RESERVE_FACTOR_DOUBLE`).
@@ -105,5 +106,5 @@ effectively than spreading across all pairs.
 - [ ] ATH/drawdown deployment and crypto redistribution correct
 - [ ] Signed deviations retained; trigger uses absolute value
 - [ ] Fiat correction only when USD alone triggers
-- [ ] Sell → 3×250ms poll → 95% settle → 99% buy cap → dust skip
+- [ ] Sell → 3× poll (250ms exponential backoff) → 95% settle → 99% buy cap → dust skip
 - [ ] Changes reflected in `docs/ALGORITHM.md` when behavior changes

@@ -52,7 +52,7 @@ flowchart TB
     end
 
     %% Config flow path
-    Settings -->|"HTTP POST /config"| ConfigRoute
+    Settings -->|"HTTP POST /settings"| ConfigRoute
     ConfigRoute -->|"updateConfig()"| CS
     CS -->|"HOT: tryEmit(settings)\nalways succeeds synchronously"| CS
     CS -->|"watchConfigChanges()\ncollectLatest { settings → }"| PM
@@ -77,7 +77,7 @@ flowchart TB
     THS -->|"reconcile & save"| Repo
 
     %% Dashboard initial load
-    SSE -->|"SSE connect"| DashRoute
+    SSE -->|"SSE connect /api/status/stream"| DashRoute
     DashRoute -->|"getLatestSnapshot()"| Repo
 
     classDef hot fill:#1a3a5c,stroke:#4fa3e0,color:#e8f4fd
@@ -103,7 +103,7 @@ sequenceDiagram
     participant CS as ConfigServiceImpl
     participant PM as PortfolioManagerImpl
 
-    User->>API: POST /config (new settings)
+    User->>API: POST /settings (new settings)
     API->>CS: updateConfig(newConfig)
     CS->>CS: validate & save to disk atomically
     note over CS: tryEmit(settings)<br/>guaranteed to succeed<br/>(DROP_OLDEST strategy)
@@ -132,7 +132,7 @@ sequenceDiagram
     participant SSE as DashboardRoutes (SSE)
     participant Browser as Browser Tab
 
-    Browser->>SSE: GET /events (SSE connect)
+    Browser->>SSE: GET /api/status/stream (SSE connect)
     SSE->>DB: getLatestSnapshot()
     DB-->>SSE: last snapshot
     SSE->>Browser: send initial snapshot

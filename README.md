@@ -15,17 +15,17 @@ several months.**
 
 ## Tech Stack
 
-| Layer           | Technology                                                                                           |
-| --------------- | ---------------------------------------------------------------------------------------------------- |
-| **Language**    | Kotlin 2.4.10 (Kotlin Multiplatform: JVM + JS)                                                       |
-| **Backend**     | Ktor 3.5.1 (Netty engine), Koin 4.2.2 (DI), Jackson 2.22                                             |
-| **Database**    | SQLite (via JetBrains Exposed ORM 1.3.1)                                                             |
-| **HTTP Client** | Ktor CIO Client (async, coroutine-native)                                                            |
-| **Concurrency** | Kotlin Coroutines (`kotlinx.coroutines` 1.11.0)                                                      |
-| **Frontend**    | Server-side HTML (kotlinx.html DSL + HTMX), kotlinx-css DSL, Ktor SSE + Client-side Kotlin/JS        |
-| **API**         | Kraken REST API with HMAC-SHA512 authentication                                                      |
-| **Testing**     | Kotest 6.2, MockK 1.14, JaCoCo (95%+ JVM coverage), Karma/Istanbul (90%+ JS statement/func coverage) |
-| **Build**       | Gradle (Kotlin DSL)                                                                                  |
+| Layer           | Technology                                                                                             |
+| --------------- | ------------------------------------------------------------------------------------------------------ |
+| **Language**    | Kotlin 2.4.10 (Kotlin Multiplatform: JVM + JS)                                                         |
+| **Backend**     | Ktor 3.5.1 (Netty engine), Koin 4.2.2 (DI), Jackson 2.22                                               |
+| **Database**    | SQLite (via JetBrains Exposed ORM 1.3.1)                                                               |
+| **HTTP Client** | Ktor CIO Client (async, coroutine-native)                                                              |
+| **Concurrency** | Kotlin Coroutines (`kotlinx.coroutines` 1.11.0)                                                        |
+| **Frontend**    | Server-side HTML (kotlinx.html DSL + HTMX), kotlinx-css DSL, Ktor SSE + Client-side Kotlin/JS          |
+| **API**         | Kraken REST API with HMAC-SHA512 authentication                                                        |
+| **Testing**     | Kotest 6.2.3, MockK 1.14, JaCoCo (95%+ JVM coverage), Karma/Istanbul (90%+ JS statement/func coverage) |
+| **Build**       | Gradle 9.6.1 (Kotlin DSL), Spotless + ktlint 1.3.1                                                     |
 
 ---
 
@@ -138,21 +138,21 @@ Subsequent updates in Phase 5 integrated a reactive configuration loop (`watchCo
 Building the same application across multiple stacks gave me hands-on experience
 with a wide range of tools and paradigms:
 
-| Category               | Technologies Used                                                                                         |
-| ---------------------- | --------------------------------------------------------------------------------------------------------- |
-| **Languages**          | Java 25, Kotlin 2.4, Go 1.26, TypeScript, JavaScript (ES6+)                                               |
-| **Backend Frameworks** | Spring Boot 4, Ktor 2.3 → 3.5, NestJS, Express, Go `net/http`                                             |
-| **DI / IoC**           | Spring IoC (`@Autowired`), Koin 3.5 → 4.2, NestJS modules                                                 |
-| **Build Systems**      | Maven, Gradle (Kotlin DSL), npm / yarn, Go modules                                                        |
-| **Frontend**           | React (JS → TypeScript), Angular (explored), HTMX + kotlinx.html DSL, Tailwind CSS v4, Chart.js           |
-| **HTTP Clients**       | OkHttp (blocking), Ktor CIO Client (async/coroutine), Node.js native `fetch`, Go `net/http`               |
-| **Concurrency**        | Java `ScheduledExecutorService`, Kotlin Coroutines, Go goroutines, Node.js event loop                     |
-| **Testing**            | JUnit 5 + Mockito, Kotest 6 + MockK, Vitest + React Testing Library, Go `testing` + `go-test-coverage`    |
-| **Coverage**           | JaCoCo (95%+ enforced on Kotlin stack), Vitest coverage (>99%), Go per-package gates (98.2%)              |
-| **Serialization**      | Jackson 2.22, Go `encoding/json`, Zod schema validation                                                   |
-| **Real-Time**          | Ktor Server-Sent Events (SSE), Kotlin `SharedFlow` (snapshots + rebalance events), HTMX SSE extension     |
-| **CI / Security**      | GitHub Actions, CodeQL, Dependabot, SHA-pinned actions, CVE patching (Tomcat, Netty, Logback, Jackson)    |
-| **Code Quality**       | Lombok, ESLint, `go fmt`, Kotlin named context parameters, strict `BigDecimal` precision, atomic file I/O |
+| Category               | Technologies Used                                                                                                                                           |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Languages**          | Java 25, Kotlin 2.4, Go 1.26, TypeScript, JavaScript (ES6+)                                                                                                 |
+| **Backend Frameworks** | Spring Boot 4, Ktor 2.3 → 3.5, NestJS, Express, Go `net/http`                                                                                               |
+| **DI / IoC**           | Spring IoC (`@Autowired`), Koin 3.5 → 4.2, NestJS modules                                                                                                   |
+| **Build Systems**      | Maven, Gradle (Kotlin DSL), npm / yarn, Go modules                                                                                                          |
+| **Frontend**           | React (JS → TypeScript), Angular (explored), HTMX + kotlinx.html DSL, Tailwind CSS v4, Chart.js                                                             |
+| **HTTP Clients**       | OkHttp (blocking), Ktor CIO Client (async/coroutine), Node.js native `fetch`, Go `net/http`                                                                 |
+| **Concurrency**        | Java `ScheduledExecutorService`, Kotlin Coroutines, Go goroutines, Node.js event loop                                                                       |
+| **Testing**            | JUnit 5 + Mockito, Kotest 6 + MockK, Vitest + React Testing Library, Go `testing` + `go-test-coverage`                                                      |
+| **Coverage**           | JaCoCo (95%+ enforced on Kotlin stack), Vitest coverage (>99%), Go per-package gates (98.2%)                                                                |
+| **Serialization**      | Jackson 2.22, Go `encoding/json`, Zod schema validation                                                                                                     |
+| **Real-Time**          | Ktor Server-Sent Events (SSE), Kotlin `SharedFlow` (snapshots + rebalance events), HTMX SSE extension                                                       |
+| **CI / Security**      | GitHub Actions, Dependabot, SHA-pinned actions, CVE patching (Netty, Logback, Jackson); CodeQL workflow present but **disabled** (Kotlin 2.4.x unsupported) |
+| **Code Quality**       | Lombok, ESLint, `go fmt`, Kotlin named context parameters, strict `BigDecimal` precision, atomic file I/O                                                   |
 
 ---
 
@@ -187,7 +187,7 @@ with a wide range of tools and paradigms:
 - Sortable asset performance table with deviation indicators
 - Trade history log with BUY/SELL badges
 - Live/Delayed status indicator with data age tracking
-- **Range-Filtered History Metrics** — Time frame selector controls all 4 top metric summary cards (High Value, Total Trades, Total Volume Traded, Total Fees Paid) dynamically alongside interactive Chart.js timelines and trade history logs.
+- **Range-Filtered History Metrics** — Time frame selector controls all 4 top metric summary cards (All-Time High / Period High, Total Trades, Total Volume Traded, Total Fees Paid) dynamically alongside interactive Chart.js timelines and trade history logs.
 - **Hypermedia-powered** — uses HTMX for dynamic content swapping and form
   submissions without writing JavaScript
 
@@ -359,6 +359,8 @@ two complementary `SharedFlow` channels:
 ├── .agents/                                # AI Agent rules, guidelines & domain skills
 │   ├── AGENTS.md                          # Repository rules & technical guidelines
 │   └── skills/                            # Domain skills (see .agents/AGENTS.md skill index)
+├── common/                                 # Kotlin Multiplatform shared module (JVM + JS)
+│   └── src/commonMain/kotlin/.../         # AppConfig, Settings, Routes, HtmlIds, CssClass, ViewText, …
 ├── frontend-js/                            # Kotlin/JS client-side subproject compiling to rebalancer.js
 │   ├── src/jsMain/kotlin/                 # Kotlin/JS frontend source files
 │   │   ├── main.kt                        # Client-side routing entry point
@@ -368,13 +370,14 @@ two complementary `SharedFlow` channels:
 │   └── build.gradle.kts                   # Kotlin Multiplatform JS compilation configuration
 ├── src/main/kotlin/com/gemini/krakenbot/
 │   ├── KrakenRebalancerApplication.kt    # Entry point, Ktor server & Koin DI bootstrap
-│   ├── config/                            # AppConfig, Settings, ErrorHandlingConfig, DatabaseConfig
+│   ├── config/                            # JVM: AppModule, DatabaseConfig, KtorConfig, ErrorHandlingConfig
 │   │   └── AppModule.kt                  # Koin dependency injection module
-│   ├── controller/                        # Ktor routes: DashboardRoutes
+│   ├── controller/                        # Ktor routes: DashboardRoutes / DashboardController
 │   ├── model/                             # Domain: PortfolioSnapshot, OrderResult, Result, TradeRecord
 │   ├── repository/                        # Persistence interfaces: TradeRepository, PortfolioStatsRepository
-│   │   └── impl/                          # SQLite-backed implementations (via Exposed ORM)
-│   │       └── RepositoryUtils.kt         # safeTransaction + Dispatchers.IO helpers
+│   │   ├── impl/                          # SQLite-backed implementations (via Exposed ORM)
+│   │   │   └── RepositoryUtils.kt         # safeTransaction + Dispatchers.IO helpers
+│   │   └── table/                         # Exposed table definitions (Trade, Snapshot, Stats, Sync metadata)
 │   ├── service/                           # Core logic interfaces and shared utilities
 │   │   ├── ServiceUtils.kt               # Retry helpers, safe BigDecimal parsing
 │   │   └── impl/                          # Service implementations (coroutine-aware)
@@ -382,23 +385,25 @@ two complementary `SharedFlow` channels:
 │   │       ├── PortfolioAnalyzerImpl.kt  # Snapshot/analysis logic
 │   │       ├── PortfolioCalculations.kt  # Shared target/deviation math
 │   │       ├── OrderExecutorImpl.kt      # Sell-first/buy-second execution
+│   │       ├── DynamicKrakenService.kt   # Routes live vs SimulatedKrakenService by settings.simulation
 │   │       ├── KrakenServiceImpl.kt      # Kraken API client + RateLimiter + retryWithFlow
+│   │       ├── SimulatedKrakenService.kt # Offline exchange emulator
 │   │       ├── RateLimiter.kt            # Kraken call-counter rate limiter
 │   │       ├── ConfigServiceImpl.kt      # Config persistence + watchConfigChanges flow
 │   │       ├── SimulationDefaults.kt     # Shared simulation default prices
+│   │       ├── SnapshotHistoryCalculator.kt # History reconstruction helpers
 │   │       └── TradeHistoryServiceImpl.kt # Snapshot storage, trade sync, history flow
 │   ├── view/                              # HTML templates & components (kotlinx.html DSL)
 │   │   ├── DashboardView.kt              # Facade class delegating to components
-│   │   ├── component/                    # Modular components (Shell, Grid, Form, etc.)
+│   │   ├── component/                    # Modular components (Shell, Grid, Form, History, etc.)
 │   │   ├── css/                          # Modular domain CSS modules (CssTheme, LayoutStyles, TableStyles, FormStyles, NavigationStyles)
-│   │   └── util/                         # CssClass, Formatter, Extensions, Icons, Layouts
-│   └── table/                             # Exposed table definitions
+│   │   └── util/                         # Formatter, Extensions, Icons, Layouts (shared IDs/Routes live in :common)
 ├── src/test/kotlin/                       # Unit tests (95%+ coverage enforced via JaCoCo)
 │   └── com/gemini/krakenbot/
-│   │   └── service/
-│   │       ├── FakeKrakenService.kt       # In-process test double for KrakenService
-│   │       ├── DynamicKrakenServiceTest.kt # Unit tests verifying dynamic real/simulation routing
-│   │       └── SimulatedKrakenServiceTest.kt # Unit tests verifying mock exchange emulator
+│       └── service/
+│           ├── FakeKrakenService.kt       # In-process test double for KrakenService
+│           ├── DynamicKrakenServiceTest.kt # Unit tests verifying dynamic real/simulation routing
+│           └── SimulatedKrakenServiceTest.kt # Unit tests verifying mock exchange emulator
 ├── src/main/resources/                    # Static resources
 │   └── static/
 │       ├── (style.css served dynamically) # Stylesheet compiled from view/css/ via kotlinx-css DSL
@@ -517,9 +522,13 @@ If you are modifying the client-side code in `frontend-js/` and want to compile 
 | `GET`  | `/`                          | Main dashboard shell (HTML)                                              |
 | `GET`  | `/settings`                  | Settings page (HTML)                                                     |
 | `POST` | `/settings`                  | Submit settings form (HTMX)                                              |
+| `GET`  | `/history`                   | History page (HTML charts + trade log)                                   |
 | `GET`  | `/fragments/dashboard`       | Dashboard fragment (HTMX)                                                |
 | `GET`  | `/api/status/stream`         | Server-Sent Events (SSE) stream for real-time portfolio snapshot updates |
 | `GET`  | `/api/health`                | Public health check endpoint returning app status and metrics (JSON)     |
+| `GET`  | `/api/history/snapshots`     | Portfolio snapshots for History charts (JSON, `?range=`)                 |
+| `GET`  | `/api/history/trades`        | Trade log for History page (JSON, `?range=`)                             |
+| `GET`  | `/api/history/stats`         | History summary-card aggregates (JSON, `?range=`)                        |
 | `GET`  | `/api/history/sync-progress` | Polling endpoint for Kraken trade history sync status (JSON)             |
 | `GET`  | `/static/*`                  | Static assets (JS, dynamically compiled CSS via kotlinx-css)             |
 
@@ -535,7 +544,7 @@ The project features a comprehensive test suite for both the backend JVM applica
 
 ### Backend JVM Tests
 
-The backend enforces **strict line, branch, method, and instruction coverage** via JaCoCo, with thresholds set at **95% instruction coverage, 90% branch coverage, 95% line coverage, and 95% method coverage** (excluding model/config data classes, Exposed table definitions, and the Kraken API client).
+The backend enforces **strict line, branch, method, and instruction coverage** via JaCoCo, with thresholds set at **95% instruction coverage, 90% branch coverage, 95% line coverage, and 95% method coverage** (excluding `config/**`, Exposed `repository/table/**`, the Kraken API client interfaces/impl, `view/util/**`, `view/css/**`, and `KrakenRebalancerApplication`).
 
 To run JVM tests only:
 
@@ -553,7 +562,7 @@ To run JS browser tests only:
 ./gradlew :frontend-js:jsBrowserTest
 ```
 
-**315 tests** across:
+Tests cover:
 
 - **Scenario Evaluation Suite** (`EvaluationScenariosTest`) — **30 highly realistic scenarios** testing the full end-to-end execution of rebalances, mathematical edge cases, API credentials invalidation, concurrency locks, and SSE client streams. See **[EVALUATION.md](docs/EVALUATION.md)** for descriptions and test results of all 30 scenarios.
 - `KrakenE2ETest` / `ResilienceChaosTest` / `PrecisionRoundingFuzzTest` /
