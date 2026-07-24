@@ -26,7 +26,8 @@ object TradeDeduplicator {
                 if (diff > 300_000) break
 
                 val pairAliasDuplicate = record1.isPairAliasDuplicateOf(record2)
-                val localEstimateDuplicate = record1.isLocalEstimateDuplicateOf(record2) &&
+                val localEstimateDuplicate =
+                    record1.isLocalEstimateDuplicateOf(record2) &&
                         record1.feePercentDiffersMateriallyFrom(record2)
 
                 if (pairAliasDuplicate || localEstimateDuplicate) {

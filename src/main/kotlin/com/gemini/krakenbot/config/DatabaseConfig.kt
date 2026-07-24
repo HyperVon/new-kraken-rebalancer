@@ -17,34 +17,36 @@ import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
 object DatabaseConfig {
-
     private val log = LoggerFactory.getLogger(DatabaseConfig::class.java)
 
     private val keepAliveConnections = ConcurrentHashMap<String, Connection>()
 
     init {
-        Runtime.getRuntime().addShutdownHook(object : Thread() {
-            override fun run() {
-                keepAliveConnections.values.forEach { connection ->
-                    try {
-                        connection.close()
-                    } catch (e: Exception) {
-                        log.warn("Failed to close keepalive connection", e)
+        Runtime.getRuntime().addShutdownHook(
+            object : Thread() {
+                override fun run() {
+                    keepAliveConnections.values.forEach { connection ->
+                        try {
+                            connection.close()
+                        } catch (e: Exception) {
+                            log.warn("Failed to close keepalive connection", e)
+                        }
                     }
+                    keepAliveConnections.clear()
                 }
-                keepAliveConnections.clear()
-            }
-        })
+            },
+        )
     }
 
-    private val tables = arrayOf(
-        PortfolioSnapshotTable,
-        AssetSnapshotTable,
-        TradeTable,
-        PortfolioStatsTable,
-        ActionLogTable,
-        HistorySyncMetadataTable
-    )
+    private val tables =
+        arrayOf(
+            PortfolioSnapshotTable,
+            AssetSnapshotTable,
+            TradeTable,
+            PortfolioStatsTable,
+            ActionLogTable,
+            HistorySyncMetadataTable,
+        )
 
     fun init(dbPath: String = System.getProperty("kraken.db.path", "kraken-rebalancer.db")): Database {
         val url = buildSqliteUrl(dbPath)
@@ -63,8 +65,10 @@ object DatabaseConfig {
                 alterStatements.forEach { exec(it) }
 
                 val executedStatements = createStatements + alterStatements
-                val mappingStatements = SchemaUtils.checkMappingConsistence(tables = tables, withLogs = false)
-                    .filter { it !in executedStatements }
+                val mappingStatements =
+                    SchemaUtils
+                        .checkMappingConsistence(tables = tables, withLogs = false)
+                        .filter { it !in executedStatements }
                 mappingStatements.forEach { exec(it) }
 
                 currentDialect.resetCaches()

@@ -18,9 +18,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
-import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.yield
 import java.math.BigDecimal
+import kotlin.time.Duration.Companion.milliseconds
 
 @Suppress("unused")
 class PortfolioManagerLoopTest : StringSpec() {
@@ -44,14 +44,14 @@ class PortfolioManagerLoopTest : StringSpec() {
                 PortfolioAnalyzerImpl(
                     krakenService = krakenService,
                     configService = configService,
-                    portfolioStatsRepository = repo
+                    portfolioStatsRepository = repo,
                 )
             orderExecutor = OrderExecutorImpl(krakenService, portfolioAnalyzer, tradeHistoryService)
             portfolioManager = PortfolioManagerImpl(
                 configService = configService,
                 tradeHistoryService = tradeHistoryService,
                 portfolioAnalyzer = portfolioAnalyzer,
-                orderExecutor = orderExecutor
+                orderExecutor = orderExecutor,
             )
             every { configService.watchConfigChanges() } answers {
                 flowOf(configService.getConfig().settings)
@@ -66,12 +66,12 @@ class PortfolioManagerLoopTest : StringSpec() {
                     dustThresholdUSD = 1.0,
                     dryRun = true,
                     fiatMaxDrawdown = 0.0,
-                    fiatDeploymentExponent = 1.0
+                    fiatDeploymentExponent = 1.0,
                 )
                 val config = AppConfig(
                     kraken = KrakenCredentials(apiKey = "k", privateKey = "s"),
                     settings = settings,
-                    allocations = emptyList()
+                    allocations = emptyList(),
                 )
                 every { configService.getConfig() } returns config
                 krakenService.balanceSupplier = { emptyMap() }
@@ -96,12 +96,12 @@ class PortfolioManagerLoopTest : StringSpec() {
                     dustThresholdUSD = 1.0,
                     dryRun = true,
                     fiatMaxDrawdown = 0.0,
-                    fiatDeploymentExponent = 1.0
+                    fiatDeploymentExponent = 1.0,
                 )
                 val config = AppConfig(
                     kraken = KrakenCredentials(apiKey = "k", privateKey = "s"),
                     settings = settings,
-                    allocations = emptyList()
+                    allocations = emptyList(),
                 )
                 every { configService.getConfig() } returns config
 
@@ -122,12 +122,12 @@ class PortfolioManagerLoopTest : StringSpec() {
                     dustThresholdUSD = 1.0,
                     dryRun = true,
                     fiatMaxDrawdown = 0.0,
-                    fiatDeploymentExponent = 1.0
+                    fiatDeploymentExponent = 1.0,
                 )
                 val config = AppConfig(
                     kraken = KrakenCredentials(apiKey = "k", privateKey = "s"),
                     settings = settings,
-                    allocations = emptyList()
+                    allocations = emptyList(),
                 )
                 every { configService.getConfig() } returns config
 
@@ -154,12 +154,12 @@ class PortfolioManagerLoopTest : StringSpec() {
                     dustThresholdUSD = 1.0,
                     dryRun = true,
                     fiatMaxDrawdown = 0.0,
-                    fiatDeploymentExponent = 1.0
+                    fiatDeploymentExponent = 1.0,
                 )
                 val config = AppConfig(
                     kraken = KrakenCredentials(apiKey = "k", privateKey = "s"),
                     settings = settings,
-                    allocations = emptyList()
+                    allocations = emptyList(),
                 )
                 every { configService.getConfig() } returns config
 

@@ -1,9 +1,10 @@
 package com.gemini.krakenbot.repository
 
+import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.config.DatabaseConfig
 import com.gemini.krakenbot.model.PortfolioStats
 import com.gemini.krakenbot.repository.impl.SqlitePortfolioStatsRepositoryImpl
-import com.gemini.krakenbot.TestFixtures
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
@@ -19,27 +20,18 @@ import org.jetbrains.exposed.sql.Database
 import org.jetbrains.exposed.sql.Transaction
 import org.jetbrains.exposed.sql.transactions.TransactionManager
 import org.jetbrains.exposed.sql.transactions.transaction
-import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
-import java.math.BigDecimal
 import org.jetbrains.exposed.sql.transactions.transactionManager
 import java.io.File
 import java.io.IOException
+import java.math.BigDecimal
 
-class StatsThrowingTransactionManager(
-    private val delegate: TransactionManager
-) : TransactionManager by delegate {
-    override fun newTransaction(
-        isolation: Int,
-        readOnly: Boolean,
-        outerTransaction: Transaction?
-    ): Transaction {
+class StatsThrowingTransactionManager(private val delegate: TransactionManager) : TransactionManager by delegate {
+    override fun newTransaction(isolation: Int, readOnly: Boolean, outerTransaction: Transaction?): Transaction =
         throw IOException("Direct IO failure")
-    }
 }
 
 @Suppress("unused")
 class SqlitePortfolioStatsRepositoryImplTest : StringSpec() {
-
     override fun isolationMode() = IsolationMode.InstancePerTest
 
     private val objectMapper = jacksonObjectMapper()
@@ -94,9 +86,10 @@ class SqlitePortfolioStatsRepositoryImplTest : StringSpec() {
 
             val stats = PortfolioStats(BigDecimal("10000.00"))
 
-            val thrown = shouldThrow<IOException> {
-                brokenRepo.save(stats)
-            }
+            val thrown =
+                shouldThrow<IOException> {
+                    brokenRepo.save(stats)
+                }
             thrown.message shouldBe "Database write failed"
             thrown.cause shouldNotBe null
         }
@@ -115,9 +108,10 @@ class SqlitePortfolioStatsRepositoryImplTest : StringSpec() {
             val ioRepo = SqlitePortfolioStatsRepositoryImpl(mockDb, objectMapper)
             val stats = PortfolioStats(BigDecimal("10000.00"))
 
-            val thrown = shouldThrow<IOException> {
-                ioRepo.save(stats)
-            }
+            val thrown =
+                shouldThrow<IOException> {
+                    ioRepo.save(stats)
+                }
             thrown.message shouldBe "Direct IO failure"
 
             unmockkStatic(TestFixtures.ORG_JETBRAINS_EXPOSED_SQL_TRANSACTIONS_TRANSACTION_API_KT)
@@ -149,4 +143,3 @@ class SqlitePortfolioStatsRepositoryImplTest : StringSpec() {
         }
     }
 }
-

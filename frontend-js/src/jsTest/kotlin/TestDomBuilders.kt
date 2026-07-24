@@ -11,56 +11,64 @@ import kotlin.js.json
 
 /** Reusable HTML template String builder functions for Kotlin/JS tests. */
 object TestDomBuilders {
-
-    fun chartsDom(): String = """
+    fun chartsDom(): String =
+        """
         <canvas id="${HtmlIds.PORTFOLIO_VALUE_CHART}"></canvas>
         <canvas id="${HtmlIds.ASSET_HOLDINGS_CHART}"></canvas>
         <canvas id="${HtmlIds.ALLOCATION_DRIFT_CHART}"></canvas>
         <canvas id="${HtmlIds.CUMULATIVE_PL_CHART}"></canvas>
-    """.trimIndent()
+        """.trimIndent()
 
-    fun statsDom(): String = """
+    fun statsDom(): String =
+        """
         <div id="${HtmlIds.STAT_ATH}"></div>
         <div id="${HtmlIds.STAT_TOTAL_TRADES}"></div>
         <div id="${HtmlIds.STAT_TOTAL_VOLUME}"></div>
         <div id="${HtmlIds.STAT_TOTAL_FEES}"></div>
-    """.trimIndent()
+        """.trimIndent()
 
-    fun syncProgressDom(): String = """
+    fun syncProgressDom(): String =
+        """
         <div id="${HtmlIds.SYNC_PROGRESS_BANNER}"></div>
         <div id="${HtmlIds.SYNC_PROGRESS_BAR}"></div>
         <div id="${HtmlIds.SYNC_PROGRESS_TEXT}"></div>
-    """.trimIndent()
+        """.trimIndent()
 
-    fun tradeTableDom(): String = """
+    fun tradeTableDom(): String =
+        """
         <input type="checkbox" id="${HtmlIds.SHOW_DRY_RUN_CHECKBOX}" checked>
         <table><tbody id="${HtmlIds.TRADE_TABLE_BODY}"></tbody></table>
-    """.trimIndent()
+        """.trimIndent()
 
-    fun historyDom(): String = """
+    fun historyDom(): String =
+        """
         ${chartsDom()}
         ${tradeTableDom()}
         ${statsDom()}
         ${syncProgressDom()}
-    """.trimIndent()
+        """.trimIndent()
 
-    fun settingsDom(): String = """
+    fun settingsDom(): String =
+        """
         <span id="${HtmlIds.TOTAL_ALLOCATED_DISPLAY}"></span>
         <button id="${HtmlIds.SAVE_BUTTON}"></button>
-    """.trimIndent()
+        """.trimIndent()
 
-    fun assetEditDom(newSymbol: String = Asset.BTC): String = """
+    fun assetEditDom(newSymbol: String = Asset.BTC): String =
+        """
         <input type="text" id="${HtmlIds.NEW_SYMBOL_INPUT}" value="$newSymbol">
         <div id="${HtmlIds.ALLOCATIONS_CONTAINER}"></div>
-    """.trimIndent()
+        """.trimIndent()
 
-    fun dataAgeDom(epoch: String = ""): String = """
+    fun dataAgeDom(epoch: String = ""): String =
+        """
         <span class="${CssClass.DataAge.Value}"></span>
         <span class="${CssClass.DataAge.Time}" ${HtmlAttrs.DATA_EPOCH}="$epoch"></span>
         <span class="${CssClass.StatusCard.Live}"></span>
-    """.trimIndent()
+        """.trimIndent()
 
-    fun sortableTableDom(): String = """
+    fun sortableTableDom(): String =
+        """
         <table>
             <thead>
                 <tr>
@@ -73,7 +81,7 @@ object TestDomBuilders {
                 <tr class="${CssClass.Table.Hoverable}"><td ${HtmlAttrs.DATA_SORT_VALUE}="5">C</td><td ${HtmlAttrs.DATA_SORT_VALUE}="15">D</td></tr>
             </tbody>
         </table>
-    """.trimIndent()
+        """.trimIndent()
 
     fun tradeJson(
         timestamp: String = "2023-01-01",
@@ -82,20 +90,19 @@ object TestDomBuilders {
         volume: Any? = 0.1,
         usdAmount: Any? = 100.0,
         success: Boolean? = true,
-        dryRun: Boolean? = false
-    ): dynamic = json(
-        DataProps.TIMESTAMP to timestamp,
-        DataProps.SYMBOL to symbol,
-        DataProps.SIDE to side,
-        DataProps.VOLUME to volume,
-        DataProps.USD_AMOUNT to usdAmount,
-        DataProps.SUCCESS to success,
-        DataProps.DRY_RUN to dryRun
-    )
+        dryRun: Boolean? = false,
+    ): dynamic =
+        json(
+            DataProps.TIMESTAMP to timestamp,
+            DataProps.SYMBOL to symbol,
+            DataProps.SIDE to side,
+            DataProps.VOLUME to volume,
+            DataProps.USD_AMOUNT to usdAmount,
+            DataProps.SUCCESS to success,
+            DataProps.DRY_RUN to dryRun,
+        )
 
-    fun setupMockChart(
-        isDatasetVisible: (Int) -> Boolean = { true }
-    ) {
+    fun setupMockChart(isDatasetVisible: (Int) -> Boolean = { true }) {
         var callCount = 0
         window.asDynamic().chartCallCount = 0
         window.asDynamic().chartConfigs = arrayOf<dynamic>()
@@ -106,24 +113,32 @@ object TestDomBuilders {
             val configs = window.asDynamic().chartConfigs as? Array<dynamic> ?: arrayOf()
             window.asDynamic().chartConfigs = configs + arrayOf(config)
 
-            val mockInstance: dynamic = json(
-                "data" to config.data,
-                "destroyCalled" to false,
-                "isDatasetVisible" to { index: Int -> isDatasetVisible(index) },
-                "destroy" to { }
-            )
+            val mockInstance: dynamic =
+                json(
+                    "data" to config.data,
+                    "destroyCalled" to false,
+                    "isDatasetVisible" to { index: Int -> isDatasetVisible(index) },
+                    "destroy" to { },
+                )
             mockInstance
         }
         window.asDynamic().Chart = chartConstructor
     }
 
-    fun chartConfig(vararg datasets: dynamic): dynamic = json(
-        "type" to "line",
-        "data" to json("datasets" to datasets),
-        "options" to json()
-    )
+    fun chartConfig(vararg datasets: dynamic): dynamic =
+        json(
+            "type" to "line",
+            "data" to json("datasets" to datasets),
+            "options" to json(),
+        )
 
-    fun datasetConfig(label: String, hidden: Boolean? = null): dynamic =
-        if (hidden == null) json("label" to label)
-        else json("label" to label, DataProps.HIDDEN to hidden)
+    fun datasetConfig(
+        label: String,
+        hidden: Boolean? = null,
+    ): dynamic =
+        if (hidden == null) {
+            json("label" to label)
+        } else {
+            json("label" to label, DataProps.HIDDEN to hidden)
+        }
 }

@@ -8,11 +8,12 @@ import org.koin.core.context.startKoin
 import org.koin.core.context.stopKoin
 import org.koin.test.KoinTest
 import org.koin.test.inject
-
 import java.io.File
 
 @Suppress("unused")
-class KrakenRebalancerApplicationTest : StringSpec(), KoinTest {
+class KrakenRebalancerApplicationTest :
+    StringSpec(),
+    KoinTest {
     init {
         "verify koin modules" {
             val configFile = File("rebalancer-config.json")
@@ -25,7 +26,7 @@ class KrakenRebalancerApplicationTest : StringSpec(), KoinTest {
                       "settings": { "loopDelaySeconds": 60, "deviationTriggerPercent": 2.0, "dustThresholdUSD": 1.0, "dryRun": true, "fiatMaxDrawdown": 0.0, "fiatDeploymentExponent": 1.0 },
                       "allocations": [ { "symbol": "USD", "targetPercent": 100.0 } ]
                     }
-                """.trimIndent()
+                    """.trimIndent(),
                 )
             }
 

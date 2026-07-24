@@ -11,48 +11,49 @@ import java.math.BigDecimal
 
 @Suppress("unused")
 class SerializationParityTest : StringSpec() {
-
     private val mapper = jacksonObjectMapper().findAndRegisterModules()
 
     init {
         "should parse legacy Java PortfolioStats JSON accurately" {
-            val legacyJson = """
-            {
-              "allTimeHigh": 123456.789101112
-            }
-        """.trimIndent()
+            val legacyJson =
+                """
+                {
+                  "allTimeHigh": 123456.789101112
+                }
+                """.trimIndent()
 
             val parsed: PortfolioStats = mapper.readValue(legacyJson)
             parsed.allTimeHigh.compareTo(BigDecimal("123456.789101112")) shouldBe 0
         }
 
         "should parse legacy Java PortfolioSnapshot JSON accurately" {
-            val legacyJson = """
-            [
-              {
-                "timestamp": 1672567200.000000000,
-                "totalValueUSD": 15000.50,
-                "assets": {
-                  "XXBTZUSD": {
-                    "symbol": "XXBTZUSD",
-                    "balance": 0.5,
-                    "price": 20000.0,
-                    "valueUSD": 10000.0,
-                    "targetPercent": 50.0,
-                    "currentPercent": 66.6666,
-                    "deviationPercent": 16.6666,
-                    "deviationUSD": 2500.25
+            val legacyJson =
+                """
+                [
+                  {
+                    "timestamp": 1672567200.000000000,
+                    "totalValueUSD": 15000.50,
+                    "assets": {
+                      "XXBTZUSD": {
+                        "symbol": "XXBTZUSD",
+                        "balance": 0.5,
+                        "price": 20000.0,
+                        "valueUSD": 10000.0,
+                        "targetPercent": 50.0,
+                        "currentPercent": 66.6666,
+                        "deviationPercent": 16.6666,
+                        "deviationUSD": 2500.25
+                      }
+                    },
+                    "actions": [
+                      "SELL 0.125 XXBTZUSD"
+                    ],
+                    "drawdownPercent": 5.0,
+                    "fiatDeploymentPercent": 10.0,
+                    "effectiveUsdTargetPercent": 40.0
                   }
-                },
-                "actions": [
-                  "SELL 0.125 XXBTZUSD"
-                ],
-                "drawdownPercent": 5.0,
-                "fiatDeploymentPercent": 10.0,
-                "effectiveUsdTargetPercent": 40.0
-              }
-            ]
-        """.trimIndent()
+                ]
+                """.trimIndent()
 
             val parsed: List<PortfolioSnapshot> = mapper.readValue(legacyJson)
             parsed shouldHaveSize 1
@@ -77,4 +78,3 @@ class SerializationParityTest : StringSpec() {
         }
     }
 }
-

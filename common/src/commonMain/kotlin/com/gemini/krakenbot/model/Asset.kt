@@ -40,7 +40,7 @@ value class Asset(val value: String) {
 
         private val KRAKEN_TICKER_BY_SYMBOL = mapOf(
             BTC to XBT,
-            DOGE to XDG
+            DOGE to XDG,
         )
 
         private val FALLBACK_SYMBOLS = listOf(BTC, ETH, DOGE)
@@ -52,8 +52,7 @@ value class Asset(val value: String) {
             return KRAKEN_TICKER_BY_SYMBOL[normalizedSymbol] ?: normalizedSymbol
         }
 
-        fun tradingPair(symbol: String): String =
-            "${toKrakenTicker(symbol)}$USD"
+        fun tradingPair(symbol: String): String = "${toKrakenTicker(symbol)}$USD"
 
         val BTC_USD_PAIR: String = tradingPair(BTC)
         val ETH_USD_PAIR: String = tradingPair(ETH)
@@ -70,21 +69,19 @@ value class Asset(val value: String) {
                     .firstOrNull { symbol -> matchesTradingPair(normalizedPair, symbol) }
         }
 
-        private fun normalizedSymbol(symbol: String): String =
-            symbol.uppercase()
+        private fun normalizedSymbol(symbol: String): String = symbol.uppercase()
 
-        private fun isUsdSymbol(symbol: String): Boolean =
-            symbol.equals(USD, ignoreCase = true)
+        private fun isUsdSymbol(symbol: String): Boolean = symbol.equals(USD, ignoreCase = true)
 
         private fun matchesTradingPair(normalizedPair: String, symbol: String): Boolean {
             val normalizedSymbol = normalizedSymbol(symbol)
             val krakenTicker = toKrakenTicker(normalizedSymbol)
             return normalizedPair.startsWith(krakenTicker) ||
-                    normalizedPair.startsWith(normalizedSymbol) ||
-                    normalizedPair == "${krakenTicker}USD" ||
-                    normalizedPair == "${normalizedSymbol}USD" ||
-                    normalizedPair == "X${krakenTicker}ZUSD" ||
-                    normalizedPair == "X${normalizedSymbol}ZUSD"
+                normalizedPair.startsWith(normalizedSymbol) ||
+                normalizedPair == "${krakenTicker}USD" ||
+                normalizedPair == "${normalizedSymbol}USD" ||
+                normalizedPair == "X${krakenTicker}ZUSD" ||
+                normalizedPair == "X${normalizedSymbol}ZUSD"
         }
 
         fun possibleBalanceKeys(symbol: String): List<String> {
@@ -96,7 +93,7 @@ value class Asset(val value: String) {
                 "X$normalized",
                 "Z$normalized",
                 krakenTicker,
-                "X$krakenTicker"
+                "X$krakenTicker",
             ).distinct()
         }
     }

@@ -6,7 +6,6 @@ import com.gemini.krakenbot.model.TimeRange
 import com.gemini.krakenbot.util.PrecisionConstants
 import com.gemini.krakenbot.view.util.ChartProps
 import com.gemini.krakenbot.view.util.CssClass
-import com.gemini.krakenbot.view.util.CssClass.Query.TIME_RANGE_BTNS as TIME_RANGE_BTNS_QUERY
 import com.gemini.krakenbot.view.util.HtmlAttrs
 import com.gemini.krakenbot.view.util.HtmlEvents
 import com.gemini.krakenbot.view.util.HtmlIds
@@ -21,75 +20,98 @@ import kotlin.collections.mutableMapOf
 import kotlin.js.Date
 import kotlin.js.Promise
 import kotlin.js.json
+import com.gemini.krakenbot.view.util.CssClass.Query.TIME_RANGE_BTNS as TIME_RANGE_BTNS_QUERY
 
 @JsName("Chart")
-private external class Chart(ctx: dynamic, config: dynamic)
+private external class Chart(
+    ctx: dynamic,
+    config: dynamic,
+)
 
 @JsName("Object")
 private external object JSObject {
     fun keys(obj: dynamic): Array<String>
-    fun assign(target: dynamic, vararg sources: dynamic): dynamic
+
+    fun assign(
+        target: dynamic,
+        vararg sources: dynamic,
+    ): dynamic
 }
 
 private val CHART_COLORS = ChartProps.PALETTE_BORDER_COLORS
 private val CHART_BG = ChartProps.PALETTE_BG_COLORS
 
-private fun buildLegendConfig(): dynamic = json(
-    ChartProps.LABELS to json(
-        ChartProps.COLOR to ChartProps.COLOR_LEGEND_LABEL,
-        ChartProps.FONT to json(
-            ChartProps.FAMILY to ChartProps.FONT_INTER,
-            ChartProps.SIZE to ChartProps.FONT_SIZE_LEGEND
-        )
+private fun buildLegendConfig(): dynamic =
+    json(
+        ChartProps.LABELS to
+            json(
+                ChartProps.COLOR to ChartProps.COLOR_LEGEND_LABEL,
+                ChartProps.FONT to
+                    json(
+                        ChartProps.FAMILY to ChartProps.FONT_INTER,
+                        ChartProps.SIZE to ChartProps.FONT_SIZE_LEGEND,
+                    ),
+            ),
     )
-)
 
-private fun buildTooltipConfig(): dynamic = json(
-    ChartProps.BACKGROUND_COLOR to ChartProps.COLOR_TOOLTIP_BG,
-    ChartProps.BORDER_COLOR to ChartProps.COLOR_TOOLTIP_BORDER,
-    ChartProps.BORDER_WIDTH to ChartProps.BORDER_WIDTH_TOOLTIP,
-    ChartProps.TITLE_COLOR to ChartProps.COLOR_TOOLTIP_TITLE,
-    ChartProps.BODY_COLOR to ChartProps.COLOR_TOOLTIP_BODY,
-    ChartProps.BODY_FONT to json(
-        ChartProps.FAMILY to ChartProps.FONT_MONO
-    ),
-    ChartProps.PADDING to ChartProps.PADDING_TOOLTIP,
-    ChartProps.CORNER_RADIUS to ChartProps.CORNER_RADIUS_TOOLTIP
-)
-
-private fun buildScalesConfig(): dynamic = json(
-    ChartProps.X to json(
-        ChartProps.TYPE to ChartProps.TIME_TYPE,
-        ChartProps.TIME to json(
-            ChartProps.TOOLTIP_FORMAT to ChartProps.TIME_FORMAT_DEFAULT
-        ),
-        ChartProps.GRID to json(
-            ChartProps.COLOR to ChartProps.COLOR_GRID_LINE
-        ),
-        ChartProps.TICKS to json(
-            ChartProps.COLOR to ChartProps.COLOR_TICK,
-            ChartProps.MAX_TICKS_LIMIT to ChartProps.MAX_TICKS_LIMIT_DEFAULT
-        )
-    ),
-    ChartProps.Y to json(
-        ChartProps.GRID to json(
-            ChartProps.COLOR to ChartProps.COLOR_GRID_LINE
-        ),
-        ChartProps.TICKS to json(
-            ChartProps.COLOR to ChartProps.COLOR_TICK
-        )
+private fun buildTooltipConfig(): dynamic =
+    json(
+        ChartProps.BACKGROUND_COLOR to ChartProps.COLOR_TOOLTIP_BG,
+        ChartProps.BORDER_COLOR to ChartProps.COLOR_TOOLTIP_BORDER,
+        ChartProps.BORDER_WIDTH to ChartProps.BORDER_WIDTH_TOOLTIP,
+        ChartProps.TITLE_COLOR to ChartProps.COLOR_TOOLTIP_TITLE,
+        ChartProps.BODY_COLOR to ChartProps.COLOR_TOOLTIP_BODY,
+        ChartProps.BODY_FONT to
+            json(
+                ChartProps.FAMILY to ChartProps.FONT_MONO,
+            ),
+        ChartProps.PADDING to ChartProps.PADDING_TOOLTIP,
+        ChartProps.CORNER_RADIUS to ChartProps.CORNER_RADIUS_TOOLTIP,
     )
-)
 
-private fun buildDefaultChartOptions(): dynamic = json(
-    ChartProps.RESPONSIVE to true,
-    ChartProps.MAINTAIN_ASPECT_RATIO to false,
-    ChartProps.PLUGINS to json(
-        ChartProps.LEGEND to buildLegendConfig(),
-        ChartProps.TOOLTIP to buildTooltipConfig()
-    ),
-    ChartProps.SCALES to buildScalesConfig()
-)
+private fun buildScalesConfig(): dynamic =
+    json(
+        ChartProps.X to
+            json(
+                ChartProps.TYPE to ChartProps.TIME_TYPE,
+                ChartProps.TIME to
+                    json(
+                        ChartProps.TOOLTIP_FORMAT to ChartProps.TIME_FORMAT_DEFAULT,
+                    ),
+                ChartProps.GRID to
+                    json(
+                        ChartProps.COLOR to ChartProps.COLOR_GRID_LINE,
+                    ),
+                ChartProps.TICKS to
+                    json(
+                        ChartProps.COLOR to ChartProps.COLOR_TICK,
+                        ChartProps.MAX_TICKS_LIMIT to ChartProps.MAX_TICKS_LIMIT_DEFAULT,
+                    ),
+            ),
+        ChartProps.Y to
+            json(
+                ChartProps.GRID to
+                    json(
+                        ChartProps.COLOR to ChartProps.COLOR_GRID_LINE,
+                    ),
+                ChartProps.TICKS to
+                    json(
+                        ChartProps.COLOR to ChartProps.COLOR_TICK,
+                    ),
+            ),
+    )
+
+private fun buildDefaultChartOptions(): dynamic =
+    json(
+        ChartProps.RESPONSIVE to true,
+        ChartProps.MAINTAIN_ASPECT_RATIO to false,
+        ChartProps.PLUGINS to
+            json(
+                ChartProps.LEGEND to buildLegendConfig(),
+                ChartProps.TOOLTIP to buildTooltipConfig(),
+            ),
+        ChartProps.SCALES to buildScalesConfig(),
+    )
 
 private val chartDefaults: dynamic = buildDefaultChartOptions()
 
@@ -116,18 +138,19 @@ private fun setupSyncProgressAndLoad() {
             loadAll(TimeRange.THIRTY_DAYS.key)
         } else {
             syncIntervalId?.let { window.clearInterval(it) }
-            syncIntervalId = window.setInterval({
-                if (document.getElementById(HtmlIds.SYNC_PROGRESS_BANNER) == null) {
-                    syncIntervalId?.let { window.clearInterval(it) }
-                    return@setInterval
-                }
-                checkSyncProgress().then { done ->
-                    if (done) {
+            syncIntervalId =
+                window.setInterval({
+                    if (document.getElementById(HtmlIds.SYNC_PROGRESS_BANNER) == null) {
                         syncIntervalId?.let { window.clearInterval(it) }
-                        loadAll(currentRange)
+                        return@setInterval
                     }
-                }
-            }, PrecisionConstants.SYNC_POLL_INTERVAL_MS)
+                    checkSyncProgress().then { done ->
+                        if (done) {
+                            syncIntervalId?.let { window.clearInterval(it) }
+                            loadAll(currentRange)
+                        }
+                    }
+                }, PrecisionConstants.SYNC_POLL_INTERVAL_MS)
         }
     }
 
@@ -152,10 +175,10 @@ private fun setupSyncProgressAndLoad() {
     })
 }
 
-private fun fetchJSON(url: String): Promise<dynamic> {
-    return window.fetch(url)
+private fun fetchJSON(url: String): Promise<dynamic> =
+    window
+        .fetch(url)
         .then { res -> res.json() }
-}
 
 private const val EN_US = "en-US"
 
@@ -166,7 +189,10 @@ fun formatUSD(valDouble: Double): String {
     return "$" + valDouble.asDynamic().toLocaleString(EN_US, options)
 }
 
-fun formatPctTick(v: Double, includePlus: Boolean = true): String {
+fun formatPctTick(
+    v: Double,
+    includePlus: Boolean = true,
+): String {
     val d = v.toString().toDoubleOrNull() ?: 0.0
     val sign = if (includePlus && d >= 0.0) "+" else ""
     val options: dynamic = json()
@@ -175,7 +201,10 @@ fun formatPctTick(v: Double, includePlus: Boolean = true): String {
     return sign + d.asDynamic().toLocaleString(EN_US, options) + "%"
 }
 
-internal fun getUniqueSymbols(snapshots: Array<dynamic>, excludeUsd: Boolean = true): List<String> {
+internal fun getUniqueSymbols(
+    snapshots: Array<dynamic>,
+    excludeUsd: Boolean = true,
+): List<String> {
     val symbolsSet = mutableSetOf<String>()
     snapshots.forEach { s: dynamic ->
         val assets = s.assets
@@ -191,11 +220,14 @@ internal fun getUniqueSymbols(snapshots: Array<dynamic>, excludeUsd: Boolean = t
     }
 }
 
-internal fun mapSnapshotsToPoints(snapshots: Array<dynamic>, valueSelector: (dynamic) -> Double): Array<dynamic> {
-    return snapshots.map { s: dynamic ->
-        json("x" to s.timestamp, "y" to valueSelector(s))
-    }.toTypedArray()
-}
+internal fun mapSnapshotsToPoints(
+    snapshots: Array<dynamic>,
+    valueSelector: (dynamic) -> Double,
+): Array<dynamic> =
+    snapshots
+        .map { s: dynamic ->
+            json("x" to s.timestamp, "y" to valueSelector(s))
+        }.toTypedArray()
 
 internal fun getClonedChartOptions(): dynamic {
     when (currentRange) {
@@ -207,7 +239,10 @@ internal fun getClonedChartOptions(): dynamic {
     return JSON.parse(JSON.stringify(window.asDynamic().chartDefaults))
 }
 
-internal fun createLineChartConfig(datasets: Array<dynamic>, options: dynamic): dynamic {
+internal fun createLineChartConfig(
+    datasets: Array<dynamic>,
+    options: dynamic,
+): dynamic {
     val config: dynamic = json()
     config.type = "line"
     config.data = json()
@@ -216,7 +251,10 @@ internal fun createLineChartConfig(datasets: Array<dynamic>, options: dynamic): 
     return config
 }
 
-internal fun createOrUpdate(canvasId: String, config: dynamic) {
+internal fun createOrUpdate(
+    canvasId: String,
+    config: dynamic,
+) {
     val existingChart: dynamic = charts[canvasId]
     if (existingChart != null && existingChart != undefined) {
         val states = mutableMapOf<String, Boolean>()
@@ -233,7 +271,8 @@ internal fun createOrUpdate(canvasId: String, config: dynamic) {
         visibilityStates[canvasId] = states
         try {
             existingChart.destroy()
-        } catch (_: Throwable) {}
+        } catch (_: Throwable) {
+        }
     }
 
     val savedStates = visibilityStates[canvasId]
@@ -259,52 +298,64 @@ internal fun buildPortfolioValueChart(snapshots: Array<dynamic>) {
 
     val symbolList = getUniqueSymbols(snapshots)
 
-    val totalPortfolioData = mapSnapshotsToPoints(snapshots) { s ->
-        s.totalValueUSD.toString().toDoubleOrNull() ?: 0.0
-    }
+    val totalPortfolioData =
+        mapSnapshotsToPoints(snapshots) { s ->
+            s.totalValueUSD.toString().toDoubleOrNull() ?: 0.0
+        }
 
     val datasets = mutableListOf<dynamic>()
-    datasets.add(json(
-        ChartProps.LABEL to ViewText.TOTAL_PORTFOLIO,
-        ChartProps.DATA to totalPortfolioData,
-        ChartProps.BORDER_COLOR to ChartProps.COLOR_BLUE,
-        ChartProps.BACKGROUND_COLOR to ChartProps.COLOR_BLUE_BG,
-        ChartProps.FILL to true,
-        ChartProps.TENSION to ChartProps.TENSION_CURVED,
-        ChartProps.BORDER_WIDTH to ChartProps.BORDER_WIDTH_PRIMARY,
-        ChartProps.POINT_RADIUS to ChartProps.POINT_RADIUS_PRIMARY,
-        ChartProps.POINT_HOVER_RADIUS to ChartProps.POINT_HOVER_RADIUS_PRIMARY,
-        ChartProps.POINT_HIT_RADIUS to ChartProps.POINT_HIT_RADIUS_DEFAULT
-    ))
+    datasets.add(
+        json(
+            ChartProps.LABEL to ViewText.TOTAL_PORTFOLIO,
+            ChartProps.DATA to totalPortfolioData,
+            ChartProps.BORDER_COLOR to ChartProps.COLOR_BLUE,
+            ChartProps.BACKGROUND_COLOR to ChartProps.COLOR_BLUE_BG,
+            ChartProps.FILL to true,
+            ChartProps.TENSION to ChartProps.TENSION_CURVED,
+            ChartProps.BORDER_WIDTH to ChartProps.BORDER_WIDTH_PRIMARY,
+            ChartProps.POINT_RADIUS to ChartProps.POINT_RADIUS_PRIMARY,
+            ChartProps.POINT_HOVER_RADIUS to ChartProps.POINT_HOVER_RADIUS_PRIMARY,
+            ChartProps.POINT_HIT_RADIUS to ChartProps.POINT_HIT_RADIUS_DEFAULT,
+        ),
+    )
 
     symbolList.forEachIndexed { i, sym ->
         val color = CHART_COLORS[(i + 1) % CHART_COLORS.size]
-        val symbolData = mapSnapshotsToPoints(snapshots) { s ->
-            if (s.assets != null && s.assets[sym] != null) {
-                s.assets[sym].valueUSD.toString().toDoubleOrNull() ?: 0.0
-            } else {
-                0.0
+        val symbolData =
+            mapSnapshotsToPoints(snapshots) { s ->
+                if (s.assets != null && s.assets[sym] != null) {
+                    s.assets[sym]
+                        .valueUSD
+                        .toString()
+                        .toDoubleOrNull() ?: 0.0
+                } else {
+                    0.0
+                }
             }
-        }
 
-        datasets.add(json(
-            ChartProps.LABEL to sym,
-            ChartProps.DATA to symbolData,
-            ChartProps.BORDER_COLOR to color,
-            ChartProps.BACKGROUND_COLOR to ChartProps.TRANSPARENT,
-            ChartProps.TENSION to ChartProps.TENSION_CURVED,
-            ChartProps.BORDER_WIDTH to ChartProps.BORDER_WIDTH_SECONDARY,
-            ChartProps.POINT_RADIUS to ChartProps.POINT_RADIUS_SECONDARY,
-            ChartProps.POINT_HOVER_RADIUS to ChartProps.POINT_HOVER_RADIUS_SECONDARY,
-            ChartProps.POINT_HIT_RADIUS to ChartProps.POINT_HIT_RADIUS_DEFAULT
-        ))
+        datasets.add(
+            json(
+                ChartProps.LABEL to sym,
+                ChartProps.DATA to symbolData,
+                ChartProps.BORDER_COLOR to color,
+                ChartProps.BACKGROUND_COLOR to ChartProps.TRANSPARENT,
+                ChartProps.TENSION to ChartProps.TENSION_CURVED,
+                ChartProps.BORDER_WIDTH to ChartProps.BORDER_WIDTH_SECONDARY,
+                ChartProps.POINT_RADIUS to ChartProps.POINT_RADIUS_SECONDARY,
+                ChartProps.POINT_HOVER_RADIUS to ChartProps.POINT_HOVER_RADIUS_SECONDARY,
+                ChartProps.POINT_HIT_RADIUS to ChartProps.POINT_HIT_RADIUS_DEFAULT,
+            ),
+        )
     }
 
     val options = getClonedChartOptions()
     options.plugins.tooltip.callbacks = json()
     options.plugins.tooltip.callbacks.label = { ctx: dynamic ->
         val label = ctx.dataset.label.toString()
-        val yVal = ctx.parsed.y.toString().toDoubleOrNull() ?: 0.0
+        val yVal =
+            ctx.parsed.y
+                .toString()
+                .toDoubleOrNull() ?: 0.0
         "$label: ${formatUSD(yVal)}"
     }
 
@@ -314,7 +365,7 @@ internal fun buildPortfolioValueChart(snapshots: Array<dynamic>) {
 
     createOrUpdate(
         HtmlIds.PORTFOLIO_VALUE_CHART,
-        createLineChartConfig(datasets.toTypedArray(), options)
+        createLineChartConfig(datasets.toTypedArray(), options),
     )
 }
 
@@ -326,50 +377,68 @@ internal fun buildAssetHoldingsChart(snapshots: Array<dynamic>) {
     val baseline = snapshots[0]
     val baselines = mutableMapOf<String, Double>()
     symbolList.forEach { sym ->
-        val baseVal = if (baseline.assets != null && baseline.assets[sym] != null) {
-            baseline.assets[sym].balance.toString().toDoubleOrNull() ?: 0.0
-        } else {
-            0.0
-        }
-        baselines[sym] = baseVal
-    }
-
-    val datasets = symbolList.mapIndexed { i, sym ->
-        val color = CHART_COLORS[i % CHART_COLORS.size]
-        val symbolData = mapSnapshotsToPoints(snapshots) { s ->
-            val current = if (s.assets != null && s.assets[sym] != null) {
-                s.assets[sym].balance.toString().toDoubleOrNull() ?: 0.0
+        val baseVal =
+            if (baseline.assets != null && baseline.assets[sym] != null) {
+                baseline.assets[sym]
+                    .balance
+                    .toString()
+                    .toDoubleOrNull() ?: 0.0
             } else {
                 0.0
             }
-            val base = baselines[sym] ?: 0.0
-            if (base > 0.0) ((current - base) / base) * PrecisionConstants.TOTAL_ALLOCATION_PERCENTAGE else 0.0
-        }
+        baselines[sym] = baseVal
+    }
 
-        json(
-            ChartProps.LABEL to sym,
-            ChartProps.DATA to symbolData,
-            ChartProps.BORDER_COLOR to color,
-            ChartProps.BACKGROUND_COLOR to ChartProps.TRANSPARENT,
-            ChartProps.TENSION to ChartProps.TENSION_CURVED,
-            ChartProps.BORDER_WIDTH to ChartProps.BORDER_WIDTH_PRIMARY,
-            ChartProps.POINT_RADIUS to ChartProps.POINT_RADIUS_SECONDARY,
-            ChartProps.POINT_HOVER_RADIUS to ChartProps.POINT_HOVER_RADIUS_SECONDARY,
-            ChartProps.POINT_HIT_RADIUS to ChartProps.POINT_HIT_RADIUS_DEFAULT
-        )
-    }.toTypedArray()
+    val datasets =
+        symbolList
+            .mapIndexed { i, sym ->
+                val color = CHART_COLORS[i % CHART_COLORS.size]
+                val symbolData =
+                    mapSnapshotsToPoints(snapshots) { s ->
+                        val current =
+                            if (s.assets != null && s.assets[sym] != null) {
+                                s.assets[sym]
+                                    .balance
+                                    .toString()
+                                    .toDoubleOrNull() ?: 0.0
+                            } else {
+                                0.0
+                            }
+                        val base = baselines[sym] ?: 0.0
+                        if (base > 0.0) ((current - base) / base) * PrecisionConstants.TOTAL_ALLOCATION_PERCENTAGE else 0.0
+                    }
+
+                json(
+                    ChartProps.LABEL to sym,
+                    ChartProps.DATA to symbolData,
+                    ChartProps.BORDER_COLOR to color,
+                    ChartProps.BACKGROUND_COLOR to ChartProps.TRANSPARENT,
+                    ChartProps.TENSION to ChartProps.TENSION_CURVED,
+                    ChartProps.BORDER_WIDTH to ChartProps.BORDER_WIDTH_PRIMARY,
+                    ChartProps.POINT_RADIUS to ChartProps.POINT_RADIUS_SECONDARY,
+                    ChartProps.POINT_HOVER_RADIUS to ChartProps.POINT_HOVER_RADIUS_SECONDARY,
+                    ChartProps.POINT_HIT_RADIUS to ChartProps.POINT_HIT_RADIUS_DEFAULT,
+                )
+            }.toTypedArray()
 
     val options = getClonedChartOptions()
     options.plugins.tooltip.callbacks = json()
     options.plugins.tooltip.callbacks.label = { ctx: dynamic ->
         val sym = ctx.dataset.label.toString()
-        val pctChange = ctx.parsed.y.toString().toDoubleOrNull() ?: 0.0
+        val pctChange =
+            ctx.parsed.y
+                .toString()
+                .toDoubleOrNull() ?: 0.0
         val snapshot = snapshots[ctx.dataIndex as Int]
-        val balance = if (snapshot.assets != null && snapshot.assets[sym] != null) {
-            snapshot.assets[sym].balance.toString().toDoubleOrNull() ?: 0.0
-        } else {
-            0.0
-        }
+        val balance =
+            if (snapshot.assets != null && snapshot.assets[sym] != null) {
+                snapshot.assets[sym]
+                    .balance
+                    .toString()
+                    .toDoubleOrNull() ?: 0.0
+            } else {
+                0.0
+            }
         val pctSign = if (pctChange >= 0.0) "+" else ""
         val balOpts: dynamic = json()
         balOpts.minimumFractionDigits = PrecisionConstants.MIN_CRYPTO_DECIMAL_PLACES
@@ -389,36 +458,45 @@ internal fun buildAllocationDriftChart(snapshots: Array<dynamic>) {
 
     val symbolList = getUniqueSymbols(snapshots, excludeUsd = false)
 
-    val datasets = symbolList.mapIndexed { i, sym ->
-        val color = CHART_COLORS[i % CHART_COLORS.size]
-        val bg = CHART_BG[i % CHART_BG.size]
-        val symbolData = mapSnapshotsToPoints(snapshots) { s ->
-            if (s.assets != null && s.assets[sym] != null) {
-                s.assets[sym].currentPercent.toString().toDoubleOrNull() ?: 0.0
-            } else {
-                0.0
-            }
-        }
+    val datasets =
+        symbolList
+            .mapIndexed { i, sym ->
+                val color = CHART_COLORS[i % CHART_COLORS.size]
+                val bg = CHART_BG[i % CHART_BG.size]
+                val symbolData =
+                    mapSnapshotsToPoints(snapshots) { s ->
+                        if (s.assets != null && s.assets[sym] != null) {
+                            s.assets[sym]
+                                .currentPercent
+                                .toString()
+                                .toDoubleOrNull() ?: 0.0
+                        } else {
+                            0.0
+                        }
+                    }
 
-        json(
-            ChartProps.LABEL to sym,
-            ChartProps.DATA to symbolData,
-            ChartProps.BORDER_COLOR to color,
-            ChartProps.BACKGROUND_COLOR to bg,
-            ChartProps.FILL to true,
-            ChartProps.TENSION to ChartProps.TENSION_CURVED,
-            ChartProps.BORDER_WIDTH to ChartProps.BORDER_WIDTH_SECONDARY,
-            ChartProps.POINT_RADIUS to ChartProps.POINT_RADIUS_SECONDARY,
-            ChartProps.POINT_HOVER_RADIUS to ChartProps.POINT_HOVER_RADIUS_SECONDARY,
-            ChartProps.POINT_HIT_RADIUS to ChartProps.POINT_HIT_RADIUS_DEFAULT
-        )
-    }.toTypedArray()
+                json(
+                    ChartProps.LABEL to sym,
+                    ChartProps.DATA to symbolData,
+                    ChartProps.BORDER_COLOR to color,
+                    ChartProps.BACKGROUND_COLOR to bg,
+                    ChartProps.FILL to true,
+                    ChartProps.TENSION to ChartProps.TENSION_CURVED,
+                    ChartProps.BORDER_WIDTH to ChartProps.BORDER_WIDTH_SECONDARY,
+                    ChartProps.POINT_RADIUS to ChartProps.POINT_RADIUS_SECONDARY,
+                    ChartProps.POINT_HOVER_RADIUS to ChartProps.POINT_HOVER_RADIUS_SECONDARY,
+                    ChartProps.POINT_HIT_RADIUS to ChartProps.POINT_HIT_RADIUS_DEFAULT,
+                )
+            }.toTypedArray()
 
     val options = getClonedChartOptions()
     options.plugins.tooltip.callbacks = json()
     options.plugins.tooltip.callbacks.label = { ctx: dynamic ->
         val label = ctx.dataset.label.toString()
-        val yVal = ctx.parsed.y.toString().toDoubleOrNull() ?: 0.0
+        val yVal =
+            ctx.parsed.y
+                .toString()
+                .toDoubleOrNull() ?: 0.0
         "$label: ${yVal.toFixed(PrecisionConstants.SCALE_USD)}%"
     }
 
@@ -430,20 +508,25 @@ internal fun buildAllocationDriftChart(snapshots: Array<dynamic>) {
     createOrUpdate(HtmlIds.ALLOCATION_DRIFT_CHART, createLineChartConfig(datasets, options))
 }
 
-internal fun calculateCumulativePL(trades: Array<dynamic>, includeDryRun: Boolean = false): Array<dynamic> {
+internal fun calculateCumulativePL(
+    trades: Array<dynamic>,
+    includeDryRun: Boolean = false,
+): Array<dynamic> {
     if (trades.asDynamic().length == 0) return emptyArray()
 
-    val sorted = trades.sortedWith { a: dynamic, b: dynamic ->
-        val aTime = Date(a.timestamp.toString()).getTime()
-        val bTime = Date(b.timestamp.toString()).getTime()
-        aTime.compareTo(bTime)
-    }
+    val sorted =
+        trades.sortedWith { a: dynamic, b: dynamic ->
+            val aTime = Date(a.timestamp.toString()).getTime()
+            val bTime = Date(b.timestamp.toString()).getTime()
+            aTime.compareTo(bTime)
+        }
 
-    val filtered = sorted.filter { t: dynamic ->
-        val isSuccess = isTrue(t.success)
-        val isDryRun = isTrue(t.dryRun)
-        isSuccess && (includeDryRun || !isDryRun)
-    }
+    val filtered =
+        sorted.filter { t: dynamic ->
+            val isSuccess = isTrue(t.success)
+            val isDryRun = isTrue(t.dryRun)
+            isSuccess && (includeDryRun || !isDryRun)
+        }
 
     if (filtered.isEmpty()) return emptyArray()
 
@@ -459,32 +542,39 @@ internal fun calculateCumulativePL(trades: Array<dynamic>, includeDryRun: Boolea
     return points.toTypedArray()
 }
 
-internal fun buildCumulativePLChart(trades: Array<dynamic>, includeDryRun: Boolean = false) {
+internal fun buildCumulativePLChart(
+    trades: Array<dynamic>,
+    includeDryRun: Boolean = false,
+) {
     val rawData = calculateCumulativePL(trades, includeDryRun)
     if (rawData.asDynamic().length == 0) return
 
-    val chartData = if (rawData.size == 1) {
-        val firstTradeTime = Date(rawData[0].x.toString()).getTime()
-        val startTime = Date(firstTradeTime - PrecisionConstants.ONE_HOUR_MS).toISOString()
-        arrayOf(json(ChartProps.X to startTime, ChartProps.Y to 0.0), rawData[0])
-    } else {
-        rawData
-    }
+    val chartData =
+        if (rawData.size == 1) {
+            val firstTradeTime = Date(rawData[0].x.toString()).getTime()
+            val startTime = Date(firstTradeTime - PrecisionConstants.ONE_HOUR_MS).toISOString()
+            arrayOf(json(ChartProps.X to startTime, ChartProps.Y to 0.0), rawData[0])
+        } else {
+            rawData
+        }
 
     val labelText = if (includeDryRun) ViewText.NET_CASH_FLOW_ALL else ViewText.NET_CASH_FLOW_REALIZED
 
-    val datasets = arrayOf(json(
-        ChartProps.LABEL to labelText,
-        ChartProps.DATA to chartData,
-        ChartProps.BORDER_COLOR to ChartProps.COLOR_EMERALD,
-        ChartProps.BACKGROUND_COLOR to ChartProps.COLOR_GREEN_BG,
-        ChartProps.FILL to true,
-        ChartProps.TENSION to ChartProps.TENSION_CURVED,
-        ChartProps.BORDER_WIDTH to ChartProps.BORDER_WIDTH_PRIMARY,
-        ChartProps.POINT_RADIUS to ChartProps.POINT_RADIUS_PRIMARY,
-        ChartProps.POINT_HOVER_RADIUS to ChartProps.POINT_HOVER_RADIUS_PRIMARY,
-        ChartProps.POINT_HIT_RADIUS to ChartProps.POINT_HIT_RADIUS_DEFAULT
-    ))
+    val datasets =
+        arrayOf(
+            json(
+                ChartProps.LABEL to labelText,
+                ChartProps.DATA to chartData,
+                ChartProps.BORDER_COLOR to ChartProps.COLOR_EMERALD,
+                ChartProps.BACKGROUND_COLOR to ChartProps.COLOR_GREEN_BG,
+                ChartProps.FILL to true,
+                ChartProps.TENSION to ChartProps.TENSION_CURVED,
+                ChartProps.BORDER_WIDTH to ChartProps.BORDER_WIDTH_PRIMARY,
+                ChartProps.POINT_RADIUS to ChartProps.POINT_RADIUS_PRIMARY,
+                ChartProps.POINT_HOVER_RADIUS to ChartProps.POINT_HOVER_RADIUS_PRIMARY,
+                ChartProps.POINT_HIT_RADIUS to ChartProps.POINT_HIT_RADIUS_DEFAULT,
+            ),
+        )
 
     val options = getClonedChartOptions()
     options.scales.y.ticks.callback = { v: Double, _: dynamic, _: dynamic ->
@@ -546,14 +636,20 @@ private fun renderTradeRow(t: JsTradeRecord): HTMLTableRowElement {
     return tr
 }
 
-private fun createCell(text: String, cssClass: CssClass): HTMLTableCellElement {
+private fun createCell(
+    text: String,
+    cssClass: CssClass,
+): HTMLTableCellElement {
     val td = document.createElement(HtmlTags.TD) as HTMLTableCellElement
     td.className = cssClass.toString()
     td.textContent = text
     return td
 }
 
-private fun createBadgeCell(text: String, badgeClass: CssClass): HTMLTableCellElement {
+private fun createBadgeCell(
+    text: String,
+    badgeClass: CssClass,
+): HTMLTableCellElement {
     val td = document.createElement(HtmlTags.TD) as HTMLTableCellElement
     val span = document.createElement(HtmlTags.SPAN) as HTMLSpanElement
     span.className = badgeClass.toString()
@@ -581,19 +677,21 @@ internal fun updateStats(stats: JsHistoryStats) {
     if (totalFees != null) totalFees.textContent = formatUSD(stats.totalFeesPaid.toString().toDoubleOrNull() ?: 0.0)
 }
 
-private fun fetchRanged(vararg routes: String, range: String): Array<Promise<dynamic>> {
-    return routes.map { route -> fetchJSON(route.withRange(range)) }.toTypedArray()
-}
+private fun fetchRanged(
+    vararg routes: String,
+    range: String,
+): Array<Promise<dynamic>> = routes.map { route -> fetchJSON(route.withRange(range)) }.toTypedArray()
 
 internal fun loadAll(range: String): Promise<Unit> {
     currentRange = range
 
-    val promises = fetchRanged(
-        Routes.API_HISTORY_SNAPSHOTS,
-        Routes.API_HISTORY_TRADES,
-        Routes.API_HISTORY_STATS,
-        range = range
-    )
+    val promises =
+        fetchRanged(
+            Routes.API_HISTORY_SNAPSHOTS,
+            Routes.API_HISTORY_TRADES,
+            Routes.API_HISTORY_STATS,
+            range = range,
+        )
 
     return Promise.all(promises).then { results ->
         val snapshots = results[0].unsafeCast<Array<JsPortfolioSnapshot>>()
@@ -610,37 +708,44 @@ internal fun loadAll(range: String): Promise<Unit> {
     }
 }
 
-internal fun checkSyncProgress(): Promise<Boolean> {
-    return fetchJSON(Routes.API_HISTORY_SYNC_PROGRESS).then { rawStatus: dynamic ->
-        val status = rawStatus.unsafeCast<JsSyncProgress>()
-        val banner = document.getElementById(HtmlIds.SYNC_PROGRESS_BANNER) as? HTMLElement
-        if (banner == null) {
-            true
-        } else {
-            val seeded = status.seeded ?: false
-            if (seeded) {
-                banner.style.display = "none"
+internal fun checkSyncProgress(): Promise<Boolean> =
+    fetchJSON(Routes.API_HISTORY_SYNC_PROGRESS)
+        .then { rawStatus: dynamic ->
+            val status = rawStatus.unsafeCast<JsSyncProgress>()
+            val banner = document.getElementById(HtmlIds.SYNC_PROGRESS_BANNER) as? HTMLElement
+            if (banner == null) {
                 true
             } else {
-                banner.style.display = "block"
-                val offset = status.offset.toString().toDoubleOrNull() ?: 0.0
-                val total = status.total.toString().toDoubleOrNull() ?: 0.0
-                var pct = 0
-                if (total > 0.0) {
-                    pct = (offset / total * PrecisionConstants.TOTAL_ALLOCATION_PERCENTAGE).toInt().coerceAtMost(PrecisionConstants.HUNDRED_INT)
+                val seeded = status.seeded ?: false
+                if (seeded) {
+                    banner.style.display = "none"
+                    true
+                } else {
+                    banner.style.display = "block"
+                    val offset = status.offset.toString().toDoubleOrNull() ?: 0.0
+                    val total = status.total.toString().toDoubleOrNull() ?: 0.0
+                    var pct = 0
+                    if (total > 0.0) {
+                        pct =
+                            (offset / total * PrecisionConstants.TOTAL_ALLOCATION_PERCENTAGE).toInt().coerceAtMost(
+                                PrecisionConstants.HUNDRED_INT,
+                            )
+                    }
+
+                    val bar = document.getElementById(HtmlIds.SYNC_PROGRESS_BAR) as? HTMLElement
+                    val text = document.getElementById(HtmlIds.SYNC_PROGRESS_TEXT) as? HTMLElement
+
+                    if (bar != null) bar.style.width = "$pct%"
+                    if (text !=
+                        null
+                    ) {
+                        text.textContent = "${offset.asDynamic().toLocaleString()} / ${total.asDynamic().toLocaleString()} ($pct%)"
+                    }
+
+                    false
                 }
-
-                val bar = document.getElementById(HtmlIds.SYNC_PROGRESS_BAR) as? HTMLElement
-                val text = document.getElementById(HtmlIds.SYNC_PROGRESS_TEXT) as? HTMLElement
-
-                if (bar != null) bar.style.width = "$pct%"
-                if (text != null) text.textContent = "${offset.asDynamic().toLocaleString()} / ${total.asDynamic().toLocaleString()} ($pct%)"
-
-                false
             }
+        }.`catch` { e ->
+            console.error("Error checking sync progress", e)
+            false
         }
-    }.`catch` { e ->
-        console.error("Error checking sync progress", e)
-        false
-    }
-}

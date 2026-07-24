@@ -356,6 +356,9 @@ two complementary `SharedFlow` channels:
 ## Project Structure
 
 ```text
+├── .agents/                                # AI Agent rules, guidelines & domain skills
+│   ├── AGENTS.md                          # Repository rules & technical guidelines
+│   └── skills/                            # Domain skills (code-review, commit-and-push, exposed-repository, frontend-js-development, koin-di-and-config, kotlin-refactoring-and-cleanup, kraken-api-integration, ktor-html-views, open-pr, portfolio-rebalancing-math, write-kotest, autonomous-code-optimizer)
 ├── frontend-js/                            # Kotlin/JS client-side subproject compiling to rebalancer.js
 │   ├── src/jsMain/kotlin/                 # Kotlin/JS frontend source files
 │   │   ├── main.kt                        # Client-side routing entry point
@@ -387,7 +390,8 @@ two complementary `SharedFlow` channels:
 │   ├── view/                              # HTML templates & components (kotlinx.html DSL)
 │   │   ├── DashboardView.kt              # Facade class delegating to components
 │   │   ├── component/                    # Modular components (Shell, Grid, Form, etc.)
-│   │   └── util/                         # CssClass, CssStyles (kotlinx-css DSL), Formatter, Extensions, Icons, Layouts
+│   │   ├── css/                          # Modular domain CSS modules (CssTheme, LayoutStyles, TableStyles, FormStyles, NavigationStyles)
+│   │   └── util/                         # CssClass, Formatter, Extensions, Icons, Layouts
 │   └── table/                             # Exposed table definitions
 ├── src/test/kotlin/                       # Unit tests (95%+ coverage enforced via JaCoCo)
 │   └── com/gemini/krakenbot/
@@ -397,7 +401,7 @@ two complementary `SharedFlow` channels:
 │   │       └── SimulatedKrakenServiceTest.kt # Unit tests verifying mock exchange emulator
 ├── src/main/resources/                    # Static resources
 │   └── static/
-│       ├── (style.css served dynamically) # Stylesheet compiled from CssStyles.kt via kotlinx-css DSL
+│       ├── (style.css served dynamically) # Stylesheet compiled from view/css/ via kotlinx-css DSL
 │       └── (rebalancer.js copy-bundled)   # Dynamic JS bundle compiled from frontend-js subproject
 ├── docs/                                  # Project documentation and architecture guides
 │   ├── FLOWS.md                           # Kotlin Flow architecture guide

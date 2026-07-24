@@ -41,7 +41,6 @@ kotlin {
                 implementation(devNpm("@jsdevtools/coverage-istanbul-loader", "3.0.5"))
             }
         }
-
     }
 }
 

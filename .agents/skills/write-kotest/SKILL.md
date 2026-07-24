@@ -119,14 +119,61 @@ class ThrowingTransactionManager(
 }
 ```
 
+## Client-Side Kotlin/JS (`:frontend-js`) Testing
+
+For client-side tests under `frontend-js/src/jsTest/kotlin/`, use standard `kotlin.test.Test` annotations and manipulate mock DOM containers cleanly:
+
+```kotlin
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlinx.browser.document
+
+class RebalancerJsTest {
+
+    @Test
+    fun shouldUpdateMetricsSummaryCardsOnTimeFrameSelect() {
+        val container = document.createElement("div")
+        container.id = "summary-metrics-container"
+        document.body?.appendChild(container)
+
+        // Run JS handler
+        updateSummaryMetrics("24h")
+
+        val updatedCard = document.getElementById("metric-high-value")
+        assertEquals("$105,250.00", updatedCard?.textContent)
+
+        document.body?.removeChild(container)
+    }
+}
+```
+
+Run client JS tests via Gradle:
+
+```bash
+./gradlew :frontend-js:jsTest
+```
+
+## Code Coverage & Reporting
+
+Generate JaCoCo HTML code coverage reports to verify JVM backend tests achieve 95%+ coverage:
+
+```bash
+./gradlew test jacocoTestReport
+```
+
+Inspect HTML coverage reports at `build/reports/jacoco/test/html/index.html`.
+
 ## Checklist
 
 Before submitting test code, verify:
 
-- [ ] Uses `init { ... }` block (not constructor lambda)
-- [ ] Has `@Suppress("unused")` annotation
+- [ ] JVM tests use `init { ... }` block (not constructor lambda)
+- [ ] Has `@Suppress("unused")` annotation on Kotest spec classes
 - [ ] Uses `shouldBeEqualComparingTo` for `BigDecimal` assertions
 - [ ] Uses in-memory database (`:memory:`)
 - [ ] Uses `FakeKrakenService` instead of complex mocks
 - [ ] Suspend calls wrapped in `runTest`
+- [ ] Client Kotlin/JS tests pass cleanly (`./gradlew :frontend-js:jsTest`)
+- [ ] Code coverage checked via `./gradlew test jacocoTestReport`
+- [ ] Environment agnosticism checked (no machine hostnames like `my-macbook` or user paths in test cases)
 - [ ] No FQNs — all types imported at the top

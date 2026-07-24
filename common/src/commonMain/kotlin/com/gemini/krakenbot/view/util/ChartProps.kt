@@ -98,7 +98,7 @@ object ChartProps {
         COLOR_RED,
         COLOR_TEAL,
         COLOR_ORANGE,
-        COLOR_FUCHSIA
+        COLOR_FUCHSIA,
     )
 
     val PALETTE_BG_COLORS = arrayOf(
@@ -109,6 +109,6 @@ object ChartProps {
         COLOR_RED_BG_PALETTE,
         COLOR_TEAL_BG_PALETTE,
         COLOR_ORANGE_BG_PALETTE,
-        COLOR_FUCHSIA_BG_PALETTE
+        COLOR_FUCHSIA_BG_PALETTE,
     )
 }

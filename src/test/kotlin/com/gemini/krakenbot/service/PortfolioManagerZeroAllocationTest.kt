@@ -37,19 +37,19 @@ class PortfolioManagerZeroAllocationTest : StringSpec() {
             every {
                 portfolioStatsRepository.load()
             } returns PortfolioStats(
-                BigDecimal.ZERO
+                BigDecimal.ZERO,
             )
             portfolioAnalyzer = PortfolioAnalyzerImpl(
                 krakenService = krakenService,
                 configService = configService,
-                portfolioStatsRepository = portfolioStatsRepository
+                portfolioStatsRepository = portfolioStatsRepository,
             )
             orderExecutor = OrderExecutorImpl(krakenService, portfolioAnalyzer, tradeHistoryService)
             portfolioManager = PortfolioManagerImpl(
                 configService = configService,
                 tradeHistoryService = tradeHistoryService,
                 portfolioAnalyzer = portfolioAnalyzer,
-                orderExecutor = orderExecutor
+                orderExecutor = orderExecutor,
             )
         }
 
@@ -63,25 +63,25 @@ class PortfolioManagerZeroAllocationTest : StringSpec() {
                     loopDelaySeconds = 0L,
                     deviationTriggerPercent = 2.0,
                     dustThresholdUSD = 1.0,
-                    dryRun = false
+                    dryRun = false,
                 )
                 val mockConfig = AppConfig(
                     kraken = KrakenCredentials("k", "s"),
                     settings = mockSettings,
-                    allocations = allAllocations
+                    allocations = allAllocations,
                 )
                 every { configService.getConfig() } returns mockConfig
 
                 val balances = mapOf(
                     "A" to 10.0,
                     "B" to 0.0,
-                    Asset.USD to 100.0
+                    Asset.USD to 100.0,
                 )
                 krakenService.balanceSupplier = { balances }
 
                 val prices = mapOf(
                     "AUSD" to 100.0,
-                    "BUSD" to 50.0
+                    "BUSD" to 50.0,
                 )
                 krakenService.pricesSupplier = { prices }
 

@@ -26,12 +26,7 @@ class FakeKrakenService : KrakenService {
     var executedOrders = mutableListOf<OrderCall>()
     var getBalancesCallCount = 0
 
-    data class OrderCall(
-        val pair: String,
-        val type: String,
-        val side: String,
-        val volume: BigDecimal
-    )
+    data class OrderCall(val pair: String, val type: String, val side: String, val volume: BigDecimal)
 
     override suspend fun getBalances(): RawBalances {
         getBalancesCallCount++
@@ -45,27 +40,19 @@ class FakeKrakenService : KrakenService {
         }
     }
 
-    override suspend fun getTickerPrices(pairs: String): RawPrices {
-        return pricesSupplier(pairs).mapValues { (_, value) ->
-            when (value) {
-                is BigDecimal -> value
-                is Double -> BigDecimal.valueOf(value)
-                is Number -> BigDecimal(value.toString())
-                else -> BigDecimal.ZERO
-            }
+    override suspend fun getTickerPrices(pairs: String): RawPrices = pricesSupplier(pairs).mapValues { (_, value) ->
+        when (value) {
+            is BigDecimal -> value
+            is Double -> BigDecimal.valueOf(value)
+            is Number -> BigDecimal(value.toString())
+            else -> BigDecimal.ZERO
         }
     }
 
-    override suspend fun getTradeHistory(startSec: Long?, offset: Int?): List<TradeRecord> {
-        return tradeHistorySupplier(startSec, offset)
-    }
+    override suspend fun getTradeHistory(startSec: Long?, offset: Int?): List<TradeRecord> =
+        tradeHistorySupplier(startSec, offset)
 
-    override suspend fun executeOrder(
-        pair: String,
-        type: String,
-        side: String,
-        volume: BigDecimal
-    ): OrderResult {
+    override suspend fun executeOrder(pair: String, type: String, side: String, volume: BigDecimal): OrderResult {
         executedOrders.add(OrderCall(pair, type, side, volume))
         executeOrderAction?.invoke(pair, type, side, volume)
         return orderResultFactory?.invoke(pair, type, side, volume)
@@ -73,11 +60,9 @@ class FakeKrakenService : KrakenService {
                 success = true,
                 pair = pair,
                 side = side,
-                volume = volume
+                volume = volume,
             )
     }
 
-    override suspend fun getOHLC(pair: String, interval: Int, since: Long?): List<Pair<Long, BigDecimal>> {
-        return emptyList()
-    }
+    override suspend fun getOHLC(pair: String, interval: Int, since: Long?): List<Pair<Long, BigDecimal>> = emptyList()
 }

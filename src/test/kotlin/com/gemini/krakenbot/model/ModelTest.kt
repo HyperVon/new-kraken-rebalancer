@@ -1,10 +1,10 @@
 package com.gemini.krakenbot.model
 
+import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.service.PortfolioValues
 import com.gemini.krakenbot.service.impl.OrderExecutorImpl
 import com.gemini.krakenbot.service.impl.PortfolioCalculations
-import com.gemini.krakenbot.TestFixtures
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
@@ -43,31 +43,33 @@ class ModelTest : StringSpec() {
         }
 
         "testPortfolioSnapshot" {
-            val asset = PortfolioSnapshot.AssetSnapshot(
-                symbol = Asset.BTC,
-                balance = BigDecimal.ONE,
-                price = BigDecimal.TEN,
-                valueUSD = BigDecimal.TEN,
-                targetPercent = BigDecimal.ONE,
-                currentPercent = BigDecimal.ONE,
-                deviationPercent = BigDecimal.ZERO,
-                deviationUSD = BigDecimal.ZERO
-            )
+            val asset =
+                PortfolioSnapshot.AssetSnapshot(
+                    symbol = Asset.BTC,
+                    balance = BigDecimal.ONE,
+                    price = BigDecimal.TEN,
+                    valueUSD = BigDecimal.TEN,
+                    targetPercent = BigDecimal.ONE,
+                    currentPercent = BigDecimal.ONE,
+                    deviationPercent = BigDecimal.ZERO,
+                    deviationUSD = BigDecimal.ZERO,
+                )
             val asset2 = asset.copy()
             asset2 shouldBe asset
             asset.hashCode() shouldBe asset2.hashCode()
             asset.toString().shouldNotBeNull()
             asset.symbol.value shouldBe Asset.BTC
 
-            val snapshot = PortfolioSnapshot(
-                timestamp = Instant.EPOCH,
-                totalValueUSD = BigDecimal.TEN,
-                assets = mapOf(Asset.BTC to asset),
-                actions = listOf("BUY"),
-                drawdownPercent = BigDecimal.ZERO,
-                fiatDeploymentPercent = BigDecimal.ZERO,
-                effectiveUsdTargetPercent = BigDecimal.ZERO
-            )
+            val snapshot =
+                PortfolioSnapshot(
+                    timestamp = Instant.EPOCH,
+                    totalValueUSD = BigDecimal.TEN,
+                    assets = mapOf(Asset.BTC to asset),
+                    actions = listOf("BUY"),
+                    drawdownPercent = BigDecimal.ZERO,
+                    fiatDeploymentPercent = BigDecimal.ZERO,
+                    effectiveUsdTargetPercent = BigDecimal.ZERO,
+                )
             val snapshot2 = snapshot.copy()
             snapshot2 shouldBe snapshot
             snapshot.hashCode() shouldBe snapshot2.hashCode()
@@ -75,14 +77,15 @@ class ModelTest : StringSpec() {
         }
 
         "testSettings" {
-            val settings = Settings(
-                loopDelaySeconds = 60,
-                deviationTriggerPercent = 2.0,
-                dustThresholdUSD = 1.0,
-                dryRun = true,
-                fiatMaxDrawdown = 50.0,
-                fiatDeploymentExponent = 1.0
-            )
+            val settings =
+                Settings(
+                    loopDelaySeconds = 60,
+                    deviationTriggerPercent = 2.0,
+                    dustThresholdUSD = 1.0,
+                    dryRun = true,
+                    fiatMaxDrawdown = 50.0,
+                    fiatDeploymentExponent = 1.0,
+                )
             val settings5 = settings.copy()
             settings5 shouldBe settings
             settings.hashCode() shouldBe settings5.hashCode()
@@ -98,12 +101,13 @@ class ModelTest : StringSpec() {
         }
 
         "testPortfolioValues" {
-            val pv = PortfolioValues(
-                totalValueUSD = BigDecimal.TEN,
-                currentValuesUSD = mapOf(Asset.BTC to BigDecimal.TEN)
-            )
+            val pv =
+                PortfolioValues(
+                    totalValueUSD = BigDecimal.TEN,
+                    currentValuesUSD = mapOf(Asset.BTC to BigDecimal.TEN),
+                )
             pv.totalValueUSD shouldBe BigDecimal.TEN
-            pv.currentValuesUSD shouldBe mapOf(Asset.BTC  to BigDecimal.TEN)
+            pv.currentValuesUSD shouldBe mapOf(Asset.BTC to BigDecimal.TEN)
 
             val pv2 = pv.copy()
             pv2 shouldBe pv
@@ -120,6 +124,101 @@ class ModelTest : StringSpec() {
             PortfolioCalculations.SCALE_PRICE shouldBe 8
             PortfolioCalculations.SCALE_USD shouldBe 2
         }
+
+        "testOrderResultCompanionFactory" {
+            val successResult =
+                OrderResult(
+                    success = true,
+                    pair = "XBTUSD",
+                    side = "BUY",
+                    volume = BigDecimal.ONE,
+                    dryRun = false,
+                )
+            successResult.success shouldBe true
+            (successResult as OrderResult.Success).errorMessage shouldBe null
+
+            val failureResult =
+                OrderResult(
+                    success = false,
+                    pair = "XBTUSD",
+                    side = "BUY",
+                    volume = BigDecimal.ONE,
+                    dryRun = false,
+                    errorMessage = "Insufficient funds",
+                )
+            failureResult.success shouldBe false
+            (failureResult as OrderResult.Failure).errorMessage shouldBe "Insufficient funds"
+
+            val defaultFailure =
+                OrderResult(
+                    success = false,
+                    pair = "XBTUSD",
+                    side = "BUY",
+                    volume = BigDecimal.ONE,
+                )
+            (defaultFailure as OrderResult.Failure).errorMessage shouldBe "Unknown error"
+        }
+
+        "testTradeRecordExtensions" {
+            val now = Instant.now()
+            val t1 =
+                TradeRecord(
+                    now,
+                    "XBTUSD",
+                    "BUY",
+                    "BTC",
+                    BigDecimal.ONE,
+                    BigDecimal(
+                        "50000.00",
+                    ),
+                    true,
+                    false,
+                    id = 1,
+                    fee = BigDecimal("10.00"),
+                )
+            val t2 =
+                TradeRecord(
+                    now,
+                    "XXBTZUSD",
+                    "BUY",
+                    "BTC",
+                    BigDecimal.ONE,
+                    BigDecimal(
+                        "50000.00",
+                    ),
+                    true,
+                    false,
+                    id = 2,
+                    fee = BigDecimal("100.00"),
+                )
+            val t3 =
+                TradeRecord(
+                    now.plusSeconds(
+                        300,
+                    ),
+                    "XDGUSD",
+                    "SELL",
+                    "DOGE",
+                    BigDecimal.TEN,
+                    BigDecimal("10.00"),
+                    true,
+                    false,
+                    id = 3,
+                    fee = BigDecimal("0.10"),
+                )
+
+            t1.isSameSymbolAndSide(t2) shouldBe true
+            t1.isSameSymbolAndSide(t3) shouldBe false
+
+            t1.isPairAliasDuplicateOf(t2) shouldBe true
+            t1.isPairAliasDuplicateOf(t3) shouldBe false
+
+            t1.feePercentDiffersMateriallyFrom(t2) shouldBe true
+
+            val zeroAmount = t1.copy(usdAmount = BigDecimal.ZERO)
+            zeroAmount.feePercentDiffersMateriallyFrom(t2) shouldBe false
+
+            t1.isMatchingApiTrade(t2, listOf("BTC", "DOGE")) shouldBe true
+        }
     }
 }
-

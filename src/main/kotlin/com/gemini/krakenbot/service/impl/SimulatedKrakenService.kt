@@ -1,9 +1,9 @@
 package com.gemini.krakenbot.service.impl
 
-import com.gemini.krakenbot.model.OrderResult
-import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.OrderResult
 import com.gemini.krakenbot.model.OrderSide
+import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.KrakenService
 import com.gemini.krakenbot.service.RawBalances
@@ -17,10 +17,7 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.ThreadLocalRandom
 
-class SimulatedKrakenService(
-    private val configService: ConfigService
-) : KrakenService {
-
+class SimulatedKrakenService(private val configService: ConfigService) : KrakenService {
     private val log = LoggerFactory.getLogger(SimulatedKrakenService::class.java)
 
     private val balances = ConcurrentHashMap<String, Double>()
@@ -99,8 +96,8 @@ class SimulatedKrakenService(
                     volume = BigDecimal.valueOf(volume).setScale(8, RoundingMode.HALF_UP),
                     usdAmount = BigDecimal.valueOf(usdValue).setScale(2, RoundingMode.HALF_UP),
                     success = true,
-                    dryRun = false
-                )
+                    dryRun = false,
+                ),
             )
         }
         val sorted = simulatedTrades.sortedBy { it.timestamp }
@@ -138,12 +135,7 @@ class SimulatedKrakenService(
         return results
     }
 
-    override suspend fun executeOrder(
-        pair: String,
-        type: String,
-        side: String,
-        volume: BigDecimal
-    ): OrderResult {
+    override suspend fun executeOrder(pair: String, type: String, side: String, volume: BigDecimal): OrderResult {
         initializeBalancesAndPricesIfEmpty()
 
         val allocations = configService.getConfig().allocations.map { it.symbol.value }
@@ -152,7 +144,9 @@ class SimulatedKrakenService(
         val volDouble = volume.toDouble()
         val usdAmountDouble = volDouble * price
 
-        log.info("[EMULATOR] Executing $side order on $pair, volume: $volume, calculated price: $price ($$usdAmountDouble)")
+        log.info(
+            "[EMULATOR] Executing $side order on $pair, volume: $volume, calculated price: $price ($$usdAmountDouble)",
+        )
 
         if (configService.getConfig().settings.dryRun) {
             log.info("[EMULATOR DRY RUN] Order would execute successfully")
@@ -161,7 +155,7 @@ class SimulatedKrakenService(
                 pair = pair,
                 side = side,
                 volume = volume,
-                dryRun = true
+                dryRun = true,
             )
         }
 
@@ -177,7 +171,7 @@ class SimulatedKrakenService(
                     pair = pair,
                     side = side,
                     volume = volume,
-                    errorMessage = error
+                    errorMessage = error,
                 )
             }
             balances[Asset.USD] = usdBalance - usdAmountDouble
@@ -191,44 +185,46 @@ class SimulatedKrakenService(
                     pair = pair,
                     side = side,
                     volume = volume,
-                    errorMessage = error
+                    errorMessage = error,
                 )
             }
             balances[symbol] = tokenBalance - volDouble
             balances[Asset.USD] = usdBalance + usdAmountDouble
         }
 
-        val trade = TradeRecord(
-            timestamp = Instant.now(),
-            pair = pair,
-            side = side.uppercase(),
-            symbol = symbol,
-            volume = volume,
-            usdAmount = BigDecimal.valueOf(usdAmountDouble).setScale(2, RoundingMode.HALF_UP),
-            success = true,
-            dryRun = false,
-            price = BigDecimal.valueOf(price).setScale(8, RoundingMode.HALF_UP),
-            fee = BigDecimal.ZERO
-        )
+        val trade =
+            TradeRecord(
+                timestamp = Instant.now(),
+                pair = pair,
+                side = side.uppercase(),
+                symbol = symbol,
+                volume = volume,
+                usdAmount = BigDecimal.valueOf(usdAmountDouble).setScale(2, RoundingMode.HALF_UP),
+                success = true,
+                dryRun = false,
+                price = BigDecimal.valueOf(price).setScale(8, RoundingMode.HALF_UP),
+                fee = BigDecimal.ZERO,
+            )
         simulatedTrades.add(trade)
 
         return OrderResult(
             success = true,
             pair = pair,
             side = side,
-            volume = volume
+            volume = volume,
         )
     }
 
     override suspend fun getTradeHistory(startSec: Long?, offset: Int?): List<TradeRecord> {
         initializeBalancesAndPricesIfEmpty()
 
-        var filtered = if (startSec != null) {
-            val startInstant = Instant.ofEpochSecond(startSec)
-            simulatedTrades.filter { it.timestamp.isAfter(startInstant) }
-        } else {
-            simulatedTrades
-        }
+        var filtered =
+            if (startSec != null) {
+                val startInstant = Instant.ofEpochSecond(startSec)
+                simulatedTrades.filter { it.timestamp.isAfter(startInstant) }
+            } else {
+                simulatedTrades
+            }
 
         filtered = filtered.sortedBy { it.timestamp }
 
@@ -238,7 +234,5 @@ class SimulatedKrakenService(
         return filtered
     }
 
-    override suspend fun getOHLC(pair: String, interval: Int, since: Long?): List<Pair<Long, BigDecimal>> {
-        return emptyList()
-    }
+    override suspend fun getOHLC(pair: String, interval: Int, since: Long?): List<Pair<Long, BigDecimal>> = emptyList()
 }

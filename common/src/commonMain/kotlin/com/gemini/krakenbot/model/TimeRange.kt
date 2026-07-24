@@ -6,7 +6,8 @@ enum class TimeRange(val key: String, val days: Long?) {
     SEVEN_DAYS("7d", 7L),
     THIRTY_DAYS("30d", 30L),
     NINETY_DAYS("90d", 90L),
-    ALL("all", null);
+    ALL("all", null),
+    ;
 
     companion object {
         fun fromQueryParam(param: String?): TimeRange =

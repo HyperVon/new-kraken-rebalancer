@@ -18,19 +18,19 @@ import kotlin.math.abs
  * timeline event aggregation, and historical balance reverse-tracking.
  */
 object SnapshotHistoryCalculator {
-
     private data class CalculatedAsset(
         val symbol: String,
         val balance: BigDecimal,
         val price: BigDecimal,
         val valueUSD: BigDecimal,
-        val targetPercent: Double
+        val targetPercent: Double,
     )
 
     sealed class TimelineEvent : Comparable<TimelineEvent> {
         abstract val timestamp: Instant
 
         data class TradeEvent(override val timestamp: Instant, val trade: TradeRecord) : TimelineEvent()
+
         data class DailyCloseEvent(override val timestamp: Instant) : TimelineEvent()
 
         override fun compareTo(other: TimelineEvent): Int = other.timestamp.compareTo(this.timestamp)
@@ -39,7 +39,7 @@ object SnapshotHistoryCalculator {
     fun buildTimelineEvents(
         historicalTrades: List<TradeRecord>,
         cutoffTime: Instant,
-        now: Instant = Instant.now()
+        now: Instant = Instant.now(),
     ): List<TimelineEvent> {
         val events = mutableListOf<TimelineEvent>()
         for (trade in historicalTrades) {
@@ -47,11 +47,13 @@ object SnapshotHistoryCalculator {
         }
 
         for (day in 0..PrecisionConstants.HISTORICAL_DAYS_BACK) {
-            val dailyTime = now.minus(day.toLong(), ChronoUnit.DAYS)
-                .truncatedTo(ChronoUnit.DAYS)
-                .plus(PrecisionConstants.LAST_HOUR_OF_DAY.toLong(), ChronoUnit.HOURS)
-                .plus(PrecisionConstants.LAST_MINUTE_OF_HOUR.toLong(), ChronoUnit.MINUTES)
-                .plus(PrecisionConstants.LAST_SECOND_OF_MINUTE.toLong(), ChronoUnit.SECONDS)
+            val dailyTime =
+                now
+                    .minus(day.toLong(), ChronoUnit.DAYS)
+                    .truncatedTo(ChronoUnit.DAYS)
+                    .plus(PrecisionConstants.LAST_HOUR_OF_DAY.toLong(), ChronoUnit.HOURS)
+                    .plus(PrecisionConstants.LAST_MINUTE_OF_HOUR.toLong(), ChronoUnit.MINUTES)
+                    .plus(PrecisionConstants.LAST_SECOND_OF_MINUTE.toLong(), ChronoUnit.SECONDS)
             if (dailyTime.isBefore(cutoffTime)) {
                 events.add(TimelineEvent.DailyCloseEvent(dailyTime))
             }
@@ -67,7 +69,7 @@ object SnapshotHistoryCalculator {
         runningBalances: MutableMap<String, BigDecimal>,
         currentPrices: Map<String, BigDecimal>,
         ohlcData: Map<String, List<Pair<Long, BigDecimal>>>,
-        tradePrices: Map<String, List<Pair<Instant, BigDecimal>>>
+        tradePrices: Map<String, List<Pair<Instant, BigDecimal>>>,
     ): List<PortfolioSnapshot> {
         val snapshotsToSave = mutableListOf<PortfolioSnapshot>()
 
@@ -76,39 +78,46 @@ object SnapshotHistoryCalculator {
             var exactPortfolioValue = BigDecimal.ZERO
             val assetSnapshots = mutableMapOf<String, PortfolioSnapshot.AssetSnapshot>()
 
-            val calculatedAssets = allocations.map { alloc ->
-                val symbol = alloc.symbol.value.uppercase()
-                val rawBal = runningBalances[symbol] ?: BigDecimal.ZERO
-                val balance = if (rawBal.isNegative) BigDecimal.ZERO else rawBal
-                val price = getPriceForTimestamp(symbol, snapshotTimestamp, ohlcData, tradePrices, currentPrices)
-                val valueUSD = balance.multiply(price).setScale(PrecisionConstants.SCALE_USD, RoundingMode.HALF_UP)
-                exactPortfolioValue = exactPortfolioValue.add(valueUSD)
-                CalculatedAsset(symbol, balance, price, valueUSD, alloc.targetPercent)
-            }
+            val calculatedAssets =
+                allocations.map { alloc ->
+                    val symbol = alloc.symbol.value.uppercase()
+                    val rawBal = runningBalances[symbol] ?: BigDecimal.ZERO
+                    val balance = if (rawBal.isNegative) BigDecimal.ZERO else rawBal
+                    val price = getPriceForTimestamp(symbol, snapshotTimestamp, ohlcData, tradePrices, currentPrices)
+                    val valueUSD = balance.multiply(price).setScale(PrecisionConstants.SCALE_USD, RoundingMode.HALF_UP)
+                    exactPortfolioValue = exactPortfolioValue.add(valueUSD)
+                    CalculatedAsset(symbol, balance, price, valueUSD, alloc.targetPercent)
+                }
 
             for ((symbol, balance, price, valueUSD, targetPercent) in calculatedAssets) {
-                assetSnapshots[symbol] = PortfolioCalculations.createAssetSnapshot(
-                    symbol = symbol,
-                    balance = balance,
-                    price = price,
-                    valueUSD = valueUSD,
-                    targetPercent = BigDecimal(targetPercent),
-                    totalPortfolioValueUSD = exactPortfolioValue
-                )
+                assetSnapshots[symbol] =
+                    PortfolioCalculations.createAssetSnapshot(
+                        symbol = symbol,
+                        balance = balance,
+                        price = price,
+                        valueUSD = valueUSD,
+                        targetPercent = BigDecimal(targetPercent),
+                        totalPortfolioValueUSD = exactPortfolioValue,
+                    )
             }
 
-            val targetUsdPercent = BigDecimal(allocations.firstOrNull { it.symbol.isUsd }?.targetPercent ?: PrecisionConstants.DEFAULT_USD_TARGET_PERCENT)
-                .setScale(PrecisionConstants.SCALE_USD, RoundingMode.HALF_UP)
+            val targetUsdPercent =
+                BigDecimal(
+                    allocations.firstOrNull { it.symbol.isUsd }?.targetPercent
+                        ?: PrecisionConstants.DEFAULT_USD_TARGET_PERCENT,
+                )
+                    .setScale(PrecisionConstants.SCALE_USD, RoundingMode.HALF_UP)
 
-            val snapshot = PortfolioSnapshot(
-                timestamp = snapshotTimestamp,
-                totalValueUSD = exactPortfolioValue.setScale(PrecisionConstants.SCALE_USD, RoundingMode.HALF_UP),
-                assets = assetSnapshots,
-                actions = emptyList(),
-                drawdownPercent = BigDecimal.ZERO,
-                fiatDeploymentPercent = BigDecimal.ZERO,
-                effectiveUsdTargetPercent = targetUsdPercent
-            )
+            val snapshot =
+                PortfolioSnapshot(
+                    timestamp = snapshotTimestamp,
+                    totalValueUSD = exactPortfolioValue.setScale(PrecisionConstants.SCALE_USD, RoundingMode.HALF_UP),
+                    assets = assetSnapshots,
+                    actions = emptyList(),
+                    drawdownPercent = BigDecimal.ZERO,
+                    fiatDeploymentPercent = BigDecimal.ZERO,
+                    effectiveUsdTargetPercent = targetUsdPercent,
+                )
 
             snapshotsToSave.add(snapshot)
 
@@ -140,7 +149,7 @@ object SnapshotHistoryCalculator {
         timestamp: Instant,
         ohlcData: Map<String, List<Pair<Long, BigDecimal>>>,
         tradePrices: Map<String, List<Pair<Instant, BigDecimal>>>,
-        currentPrices: Map<String, BigDecimal>
+        currentPrices: Map<String, BigDecimal>,
     ): BigDecimal {
         if (symbol.equals(Asset.USD, ignoreCase = true)) return BigDecimal.ONE
 
@@ -150,7 +159,7 @@ object SnapshotHistoryCalculator {
                 prices,
                 timestamp.epochSecond,
                 { it.first },
-                { it.second }
+                { it.second },
             )
         }
 
@@ -160,7 +169,7 @@ object SnapshotHistoryCalculator {
                 tPrices,
                 timestamp.toEpochMilli(),
                 { it.first.toEpochMilli() },
-                { it.second }
+                { it.second },
             )
         }
 
@@ -171,7 +180,7 @@ object SnapshotHistoryCalculator {
         list: List<T>,
         targetTime: Long,
         timeExtractor: (T) -> Long,
-        valueExtractor: (T) -> BigDecimal
+        valueExtractor: (T) -> BigDecimal,
     ): BigDecimal {
         var closestValue = valueExtractor(list[0])
         var minDiff = abs(timeExtractor(list[0]) - targetTime)

@@ -2,9 +2,9 @@ package com.gemini.krakenbot.service.impl
 
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.service.*
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.CancellationException
 import org.slf4j.LoggerFactory
 import org.slf4j.MDC
 import java.io.IOException
@@ -18,9 +18,8 @@ class PortfolioManagerImpl(
     private val configService: ConfigService,
     private val tradeHistoryService: TradeHistoryService,
     private val portfolioAnalyzer: PortfolioAnalyzer,
-    private val orderExecutor: OrderExecutor
+    private val orderExecutor: OrderExecutor,
 ) : PortfolioManager {
-
     private val log =
         LoggerFactory.getLogger(PortfolioManagerImpl::class.java)
 
@@ -30,8 +29,6 @@ class PortfolioManagerImpl(
 
     @Volatile
     private var isRunning = false
-
-
 
     @Synchronized
     override fun stopRebalancingLoop() {
@@ -63,7 +60,7 @@ class PortfolioManagerImpl(
                     try {
                         log.info(
                             "Starting Rebalance Cycle. DryRun: {}",
-                            settings.dryRun
+                            settings.dryRun,
                         )
                         try {
                             tradeHistoryService.syncTradesFromKraken()
@@ -95,21 +92,22 @@ class PortfolioManagerImpl(
             val prices = portfolioAnalyzer.fetchPrices()
             val calculationResult = portfolioAnalyzer.calculatePortfolioValues(balances, prices)
 
-            val (totalPortfolioValueUSD, currentValuesUSD) = calculationResult.fold(
-                onSuccess = { it },
-                onFailure = {
-                    log.error("Failed to calculate portfolio values: {}", it.message)
-                    return null
-                }
-            )
+            val (totalPortfolioValueUSD, currentValuesUSD) =
+                calculationResult.fold(
+                    onSuccess = { it },
+                    onFailure = {
+                        log.error("Failed to calculate portfolio values: {}", it.message)
+                        return null
+                    },
+                )
 
             log.info(
                 "Total Portfolio Value: $${
                     totalPortfolioValueUSD.setScale(
                         2,
-                        RoundingMode.HALF_UP
+                        RoundingMode.HALF_UP,
                     )
-                }"
+                }",
             )
 
             val drawdownPct =
@@ -119,14 +117,14 @@ class PortfolioManagerImpl(
                 portfolioAnalyzer
                     .calculateFiatDeployment(
                         drawdownPct,
-                        config.settings
+                        config.settings,
                     )
 
             if (fiatDeploymentPct > BigDecimal.ZERO) {
                 log.info(
                     "Drawdown Detected: {}%. Fiat Deployment: {}%",
                     drawdownPct.setScale(2, RoundingMode.HALF_UP),
-                    fiatDeploymentPct.setScale(2, RoundingMode.HALF_UP)
+                    fiatDeploymentPct.setScale(2, RoundingMode.HALF_UP),
                 )
             }
 
@@ -140,7 +138,7 @@ class PortfolioManagerImpl(
                     totalPortfolioValueUSD = totalPortfolioValueUSD,
                     currentValuesUSD = currentValuesUSD,
                     effectiveUsdTarget = effectiveUsdTarget,
-                    cryptoScaleFactor = cryptoScaleFactor
+                    cryptoScaleFactor = cryptoScaleFactor,
                 )
             actionLog.addAll(cycleActions)
 
@@ -150,7 +148,7 @@ class PortfolioManagerImpl(
                 currentValuesUSD = currentValuesUSD,
                 prices = prices,
                 settings = config.settings,
-                actionLog = actionLog
+                actionLog = actionLog,
             )
 
             val finalState =
@@ -164,27 +162,31 @@ class PortfolioManagerImpl(
                             },
                             onFailure = {
                                 RebalanceState(balances, prices, currentValuesUSD, totalPortfolioValueUSD)
-                            }
+                            },
                         )
                     } catch (e: Exception) {
-                        log.warn("Failed to fetch post-trade balances/prices for snapshot, falling back to pre-trade values", e)
+                        log.warn(
+                            "Failed to fetch post-trade balances/prices for snapshot, falling back to pre-trade values",
+                            e,
+                        )
                         RebalanceState(balances, prices, currentValuesUSD, totalPortfolioValueUSD)
                     }
                 } else {
                     RebalanceState(balances, prices, currentValuesUSD, totalPortfolioValueUSD)
                 }
 
-            val snapshot = buildSnapshot(
-                balances = finalState.balances,
-                prices = finalState.prices,
-                currentValuesUSD = finalState.currentValuesUSD,
-                totalPortfolioValueUSD = finalState.totalPortfolioValueUSD,
-                effectiveUsdTarget = effectiveUsdTarget,
-                cryptoScaleFactor = cryptoScaleFactor,
-                drawdownPct = drawdownPct,
-                fiatDeploymentPct = fiatDeploymentPct,
-                actionLog = actionLog
-            )
+            val snapshot =
+                buildSnapshot(
+                    balances = finalState.balances,
+                    prices = finalState.prices,
+                    currentValuesUSD = finalState.currentValuesUSD,
+                    totalPortfolioValueUSD = finalState.totalPortfolioValueUSD,
+                    effectiveUsdTarget = effectiveUsdTarget,
+                    cryptoScaleFactor = cryptoScaleFactor,
+                    drawdownPct = drawdownPct,
+                    fiatDeploymentPct = fiatDeploymentPct,
+                    actionLog = actionLog,
+                )
 
             try {
                 tradeHistoryService.addSnapshot(snapshot)
@@ -200,7 +202,6 @@ class PortfolioManagerImpl(
         }
     }
 
-
     private fun buildSnapshot(
         balances: RawBalances,
         prices: AssetPrices,
@@ -210,7 +211,7 @@ class PortfolioManagerImpl(
         cryptoScaleFactor: BigDecimal,
         drawdownPct: BigDecimal,
         fiatDeploymentPct: BigDecimal,
-        actionLog: List<String>
+        actionLog: List<String>,
     ): PortfolioSnapshot {
         val assetSnapshots =
             mutableMapOf<String, PortfolioSnapshot.AssetSnapshot>()
@@ -218,10 +219,11 @@ class PortfolioManagerImpl(
         val settings = config.settings
 
         for ((symbol, targetPercent) in config.allocations) {
-            val balance = portfolioAnalyzer.resolveBalance(
-                symbol = symbol.value,
-                balances = balances
-            )
+            val balance =
+                portfolioAnalyzer.resolveBalance(
+                    symbol = symbol.value,
+                    balances = balances,
+                )
             val valUSD = currentValuesUSD[symbol.value] ?: BigDecimal.ZERO
             val price =
                 if (!symbol.isUsd) {
@@ -231,24 +233,26 @@ class PortfolioManagerImpl(
                 }
 
             // Use consolidated calculation logic
-            val metrics = PortfolioCalculations.calculateAssetMetrics(
-                symbol = symbol,
-                baseTargetPercent = BigDecimal.valueOf(targetPercent),
-                currentValueUSD = valUSD,
-                totalPortfolioValueUSD = totalPortfolioValueUSD,
-                effectiveUsdTarget = effectiveUsdTarget,
-                cryptoScaleFactor = cryptoScaleFactor,
-                dustThresholdUSD = settings.dustThresholdUSD
-            )
+            val metrics =
+                PortfolioCalculations.calculateAssetMetrics(
+                    symbol = symbol,
+                    baseTargetPercent = BigDecimal.valueOf(targetPercent),
+                    currentValueUSD = valUSD,
+                    totalPortfolioValueUSD = totalPortfolioValueUSD,
+                    effectiveUsdTarget = effectiveUsdTarget,
+                    cryptoScaleFactor = cryptoScaleFactor,
+                    dustThresholdUSD = settings.dustThresholdUSD,
+                )
 
-            assetSnapshots[symbol.value] = PortfolioCalculations.createAssetSnapshot(
-                symbol = symbol.value,
-                balance = balance,
-                price = price,
-                valueUSD = valUSD,
-                targetPercent = metrics.calcTargetPercent,
-                totalPortfolioValueUSD = totalPortfolioValueUSD
-            )
+            assetSnapshots[symbol.value] =
+                PortfolioCalculations.createAssetSnapshot(
+                    symbol = symbol.value,
+                    balance = balance,
+                    price = price,
+                    valueUSD = valUSD,
+                    targetPercent = metrics.calcTargetPercent,
+                    totalPortfolioValueUSD = totalPortfolioValueUSD,
+                )
         }
 
         return PortfolioSnapshot(
@@ -258,15 +262,14 @@ class PortfolioManagerImpl(
             actions = actionLog,
             drawdownPercent = drawdownPct,
             fiatDeploymentPercent = fiatDeploymentPct,
-            effectiveUsdTargetPercent = effectiveUsdTarget
+            effectiveUsdTargetPercent = effectiveUsdTarget,
         )
     }
-
 }
 
 private data class RebalanceState(
     val balances: RawBalances,
     val prices: Map<String, BigDecimal>,
     val currentValuesUSD: Map<String, BigDecimal>,
-    val totalPortfolioValueUSD: BigDecimal
+    val totalPortfolioValueUSD: BigDecimal,
 )

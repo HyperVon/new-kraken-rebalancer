@@ -3,9 +3,9 @@ package com.gemini.krakenbot
 import com.gemini.krakenbot.config.ErrorHandlingConfig.configureErrorHandling
 import com.gemini.krakenbot.config.appModule
 import com.gemini.krakenbot.config.configureCORS
-import com.gemini.krakenbot.config.configureSerialization
-import com.gemini.krakenbot.config.configureCompression
 import com.gemini.krakenbot.config.configureCachingAndConditionalHeaders
+import com.gemini.krakenbot.config.configureCompression
+import com.gemini.krakenbot.config.configureSerialization
 import com.gemini.krakenbot.controller.dashboardRouting
 import com.gemini.krakenbot.service.PortfolioManager
 import io.ktor.client.*
@@ -35,12 +35,14 @@ fun main() {
         portfolioManager.runLoop()
     }
 
-    Runtime.getRuntime().addShutdownHook(Thread {
-        portfolioManager.stopRebalancingLoop()
-        applicationScope.cancel()
-        httpClient.close()
-        stopKoin()
-    })
+    Runtime.getRuntime().addShutdownHook(
+        Thread {
+            portfolioManager.stopRebalancingLoop()
+            applicationScope.cancel()
+            httpClient.close()
+            stopKoin()
+        },
+    )
 
     startServer()
 }
@@ -56,5 +58,3 @@ private fun startServer() {
         dashboardRouting()
     }.start(wait = true)
 }
-
-

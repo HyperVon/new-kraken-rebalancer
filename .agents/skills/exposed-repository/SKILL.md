@@ -5,35 +5,59 @@ description: Create or modify JetBrains Exposed ORM repository implementations f
 
 # Exposed Repository Patterns
 
-When creating or modifying Exposed ORM repository implementations, follow these
-patterns exactly.
+When creating or modifying Exposed ORM repository implementations and table schemas, follow these patterns exactly.
 
-## Repository Class Structure
+## Table & Schema Definitions
 
-All repositories take a `Database` instance via constructor injection and use
-a logger:
+Define database tables extending `LongIdTable` or `Table` with explicit precision and foreign key cascading rules:
 
 ```kotlin
-class SqliteMyRepositoryImpl(
-    private val database: Database
-) : MyRepository {
+object TradeTable : LongIdTable("trades") {
+    val timestamp = long("timestamp").index()
+    val pair = varchar("pair", 32)
+    val side = varchar("side", 8)
+    val volume = decimal("volume", 18, 8)
+    val usdAmount = decimal("usd_amount", 12, 2)
+    val success = boolean("success").default(true)
+}
 
-    private val log = LoggerFactory.getLogger(SqliteMyRepositoryImpl::class.java)
+object AssetSnapshotTable : LongIdTable("asset_snapshots") {
+    val snapshotId = reference("snapshot_id", PortfolioSnapshotTable, onDelete = ReferenceOption.CASCADE)
+    val symbol = varchar("symbol", 16)
+    val balance = decimal("balance", 18, 8)
 }
 ```
 
-## Safe Transactions
+- **Cryptocurrency Amounts**: Use `decimal("column_name", 18, 8)` for crypto balances and trade volumes.
+- **USD Valuations**: Use `decimal("column_name", 12, 2)` for fiat totals and valuations.
+- **Foreign Keys**: Always specify `onDelete = ReferenceOption.CASCADE` on foreign key references.
 
-Use the `Database.safeTransaction` extension from `RepositoryUtils.kt` for all
-write operations. It wraps the transaction in error handling and re-throws as
-`IOException`:
+## Repository Class Structure
+
+All repositories take a `Database` instance via constructor injection and use a logger:
 
 ```kotlin
-override fun save(item: MyItem) {
-    database.safeTransaction(log, "Failed to save item to database") {
-        MyTable.insert {
-            it[column1] = item.field1
-            it[column2] = item.field2
+class SqliteTradeRepositoryImpl(
+    private val database: Database
+) : TradeRepository {
+
+    private val log = LoggerFactory.getLogger(SqliteTradeRepositoryImpl::class.java)
+}
+```
+
+## Safe Transactions & Coroutine Concurrency
+
+Use `Database.safeTransaction` for all write operations, wrapped in `withContext(Dispatchers.IO)` when executing inside coroutines:
+
+```kotlin
+override suspend fun save(trade: TradeRecord) = withContext(Dispatchers.IO) {
+    database.safeTransaction(log, "Failed to save trade to database") {
+        TradeTable.insert {
+            it[timestamp] = trade.timestamp.toEpochMilli()
+            it[pair] = trade.pair
+            it[side] = trade.side.name
+            it[volume] = trade.volume
+            it[usdAmount] = trade.usdAmount
         }
     }
 }
@@ -42,11 +66,11 @@ override fun save(item: MyItem) {
 For read-only operations, use `transaction(database)` directly:
 
 ```kotlin
-override fun load(): List<MyItem> {
-    return transaction(database) {
-        MyTable.selectAll()
-            .orderBy(MyTable.timestamp, SortOrder.DESC)
-            .map { row -> buildItemFromRow(row) }
+override suspend fun loadAll(): List<TradeRecord> = withContext(Dispatchers.IO) {
+    transaction(database) {
+        TradeTable.selectAll()
+            .orderBy(TradeTable.timestamp, SortOrder.DESC)
+            .map { row -> buildTradeFromRow(row) }
     }
 }
 ```
@@ -65,13 +89,11 @@ TradeTable.update({ TradeTable.id eq oldTrade.id }) {
 TradeTable.update({ (TradeTable.timestamp eq ts) and (TradeTable.pair eq pair) }) { ... }
 ```
 
-Only fall back to multi-column matching when the primary key ID is unavailable
-(e.g. records loaded from external APIs without IDs).
+Only fall back to multi-column matching when the primary key ID is unavailable (e.g. records loaded from external APIs without IDs).
 
 ## Cascade Deletes
 
-When deleting parent records that have child rows, **always** delete children
-first to maintain referential integrity:
+When deleting parent records that have child rows, **always** delete children first to maintain referential integrity:
 
 ```kotlin
 override fun pruneSnapshotsOlderThan(cutoff: Instant): Int {
@@ -95,8 +117,7 @@ override fun pruneSnapshotsOlderThan(cutoff: Instant): Int {
 
 ## Parent–Child Inserts
 
-When inserting parent records with children, capture the generated parent ID
-and use it for child inserts:
+When inserting parent records with children, capture the generated parent ID and use it for child inserts:
 
 ```kotlin
 private fun insertSnapshotWithChildren(snapshot: PortfolioSnapshot) {
@@ -162,8 +183,7 @@ val totalVolume = row?.get(volumeCol) ?: BigDecimal.ZERO
 
 ## Downsampling for Large Result Sets
 
-When loading snapshots for charts, downsample IDs in-memory to prevent browser
-crashes:
+When loading snapshots for charts, downsample IDs in-memory to prevent browser crashes:
 
 ```kotlin
 val allIds = PortfolioSnapshotTable
@@ -179,9 +199,9 @@ val downsampledIds = if (allIds.size <= 300) allIds
 
 Before submitting repository code, verify:
 
-- [ ] Write operations use `database.safeTransaction`
+- [ ] Write operations use `database.safeTransaction` and `withContext(Dispatchers.IO)`
 - [ ] Deletes cascade children before parents
 - [ ] Updates target by primary key ID
-- [ ] `BigDecimal` columns use proper scale (8 for crypto, 2 for USD)
+- [ ] `BigDecimal` columns use proper scale (18, 8 for crypto, 12, 2 for USD)
 - [ ] Null-safe defaults (`BigDecimal.ZERO`, `0L`) for aggregate results
 - [ ] No FQNs — all Exposed types imported at the top

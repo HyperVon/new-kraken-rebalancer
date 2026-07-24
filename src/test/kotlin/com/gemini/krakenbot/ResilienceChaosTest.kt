@@ -26,63 +26,69 @@ import java.io.IOException
 
 @Suppress("unused")
 class ResilienceChaosTest : StringSpec() {
-
     override fun isolationMode() = IsolationMode.InstancePerTest
 
     init {
         "should not crash the application when Kraken API returns 502 Bad Gateway" {
             runTest {
-                val appConfig = AppConfig(
-                    kraken = KrakenCredentials(
-                        apiKey = "apiKey",
-                        privateKey = "secret"
-                    ),
-                    settings = Settings(
-                        loopDelaySeconds = 60L,
-                        deviationTriggerPercent = 2.0,
-                        dustThresholdUSD = 1.0,
-                        dryRun = false,
-                        fiatMaxDrawdown = 50.0,
-                        fiatDeploymentExponent = 1.0
-                    ),
-                    allocations = listOf(
-                        Allocation(
-                            symbol = Asset.BTC,
-                            targetPercent = 50.0
-                        )
+                val appConfig =
+                    AppConfig(
+                        kraken =
+                        KrakenCredentials(
+                            apiKey = "apiKey",
+                            privateKey = "secret",
+                        ),
+                        settings =
+                        Settings(
+                            loopDelaySeconds = 60L,
+                            deviationTriggerPercent = 2.0,
+                            dustThresholdUSD = 1.0,
+                            dryRun = false,
+                            fiatMaxDrawdown = 50.0,
+                            fiatDeploymentExponent = 1.0,
+                        ),
+                        allocations =
+                        listOf(
+                            Allocation(
+                                symbol = Asset.BTC,
+                                targetPercent = 50.0,
+                            ),
+                        ),
                     )
-                )
                 val mockConfigService = mockk<ConfigService>(relaxed = true)
                 every { mockConfigService.getConfig() } returns appConfig
 
-                val mockEngine = MockEngine {
-                    respond(
-                        "Bad Gateway",
-                        HttpStatusCode.BadGateway
-                    )
-                }
+                val mockEngine =
+                    MockEngine {
+                        respond(
+                            "Bad Gateway",
+                            HttpStatusCode.BadGateway,
+                        )
+                    }
                 val httpClient = HttpClient(mockEngine)
 
-                val krakenService = KrakenServiceImpl(
-                    configService = mockConfigService,
-                    objectMapper = jacksonObjectMapper(),
-                    httpClient = httpClient
-                )
+                val krakenService =
+                    KrakenServiceImpl(
+                        configService = mockConfigService,
+                        objectMapper = jacksonObjectMapper(),
+                        httpClient = httpClient,
+                    )
                 val portfolioAnalyzer =
                     PortfolioAnalyzerImpl(
                         krakenService = krakenService,
                         configService = mockConfigService,
-                        portfolioStatsRepository = mockk<PortfolioStatsRepository>(relaxed = true)
+                        portfolioStatsRepository = mockk<PortfolioStatsRepository>(relaxed = true),
                     )
                 val mockTradeHistoryService = mockk<TradeHistoryService>(relaxed = true)
                 val orderExecutor =
                     OrderExecutorImpl(krakenService, portfolioAnalyzer, mockTradeHistoryService)
-                val portfolioManager = PortfolioManagerImpl(
-                    configService = mockConfigService,
-                    tradeHistoryService = mockTradeHistoryService,
-                    portfolioAnalyzer = portfolioAnalyzer,
-                    orderExecutor = orderExecutor
-                )
+                val portfolioManager =
+                    PortfolioManagerImpl(
+                        configService = mockConfigService,
+                        tradeHistoryService = mockTradeHistoryService,
+                        portfolioAnalyzer = portfolioAnalyzer,
+                        orderExecutor = orderExecutor,
+                    )
 
                 // Prove that the network failure correctly propagates an exception
                 // This ensures our mock is working, while runLoop() is responsible
@@ -95,26 +101,30 @@ class ResilienceChaosTest : StringSpec() {
 
         "should not crash the application when an IOException occurs (Network failure)" {
             runTest {
-                val appConfig = AppConfig(
-                    kraken = KrakenCredentials(
-                        apiKey = "apiKey",
-                        privateKey = "secret"
-                    ),
-                    settings = Settings(
-                        loopDelaySeconds = 60L,
-                        deviationTriggerPercent = 2.0,
-                        dustThresholdUSD = 1.0,
-                        dryRun = false,
-                        fiatMaxDrawdown = 50.0,
-                        fiatDeploymentExponent = 1.0
-                    ),
-                    allocations = listOf(
-                        Allocation(
-                            symbol = Asset.BTC,
-                            targetPercent = 50.0
-                        )
+                val appConfig =
+                    AppConfig(
+                        kraken =
+                        KrakenCredentials(
+                            apiKey = "apiKey",
+                            privateKey = "secret",
+                        ),
+                        settings =
+                        Settings(
+                            loopDelaySeconds = 60L,
+                            deviationTriggerPercent = 2.0,
+                            dustThresholdUSD = 1.0,
+                            dryRun = false,
+                            fiatMaxDrawdown = 50.0,
+                            fiatDeploymentExponent = 1.0,
+                        ),
+                        allocations =
+                        listOf(
+                            Allocation(
+                                symbol = Asset.BTC,
+                                targetPercent = 50.0,
+                            ),
+                        ),
                     )
-                )
                 val mockConfigService = mockk<ConfigService>(relaxed = true)
                 every { mockConfigService.getConfig() } returns appConfig
 
@@ -122,26 +132,28 @@ class ResilienceChaosTest : StringSpec() {
                     MockEngine { throw IOException("Connection reset by peer") }
                 val httpClient = HttpClient(mockEngine)
 
-                val krakenService = KrakenServiceImpl(
-                    configService = mockConfigService,
-                    objectMapper = jacksonObjectMapper(),
-                    httpClient = httpClient
-                )
+                val krakenService =
+                    KrakenServiceImpl(
+                        configService = mockConfigService,
+                        objectMapper = jacksonObjectMapper(),
+                        httpClient = httpClient,
+                    )
                 val portfolioAnalyzer =
                     PortfolioAnalyzerImpl(
                         krakenService = krakenService,
                         configService = mockConfigService,
-                        portfolioStatsRepository = mockk<PortfolioStatsRepository>(relaxed = true)
+                        portfolioStatsRepository = mockk<PortfolioStatsRepository>(relaxed = true),
                     )
                 val mockTradeHistoryService = mockk<TradeHistoryService>(relaxed = true)
                 val orderExecutor =
                     OrderExecutorImpl(krakenService, portfolioAnalyzer, mockTradeHistoryService)
-                val portfolioManager = PortfolioManagerImpl(
-                    configService = mockConfigService,
-                    tradeHistoryService = mockTradeHistoryService,
-                    portfolioAnalyzer = portfolioAnalyzer,
-                    orderExecutor = orderExecutor
-                )
+                val portfolioManager =
+                    PortfolioManagerImpl(
+                        configService = mockConfigService,
+                        tradeHistoryService = mockTradeHistoryService,
+                        portfolioAnalyzer = portfolioAnalyzer,
+                        orderExecutor = orderExecutor,
+                    )
 
                 // Prove that the network failure correctly propagates an exception
                 // This ensures our mock is working, while runLoop() is responsible

@@ -12,15 +12,14 @@ fun isLocalOrPrivateOrigin(origin: String): Boolean {
         clean.startsWith("192.168.") || clean.startsWith("10.") || clean.startsWith("169.254.") -> {
             return true
         }
-        clean.startsWith("172.") -> {
-            val parts = clean.split(".")
-            if (parts.size >= 2) {
-                val secondOctet = parts[1].toIntOrNull()
-                if (secondOctet != null && secondOctet in 16..31) {
-                    return true
-                }
-            }
-        }
+        clean.startsWith("172.") -> return isPrivateClassB172(clean)
     }
     return false
+}
+
+private fun isPrivateClassB172(host: String): Boolean {
+    val parts = host.split(".")
+    if (parts.size < 2) return false
+    val secondOctet = parts[1].toIntOrNull() ?: return false
+    return secondOctet in 16..31
 }

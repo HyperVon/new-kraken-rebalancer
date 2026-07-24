@@ -6,10 +6,12 @@ import org.jetbrains.exposed.sql.Table
 /** Exposed table definition for trades — one row per executed order. */
 object TradeTable : Table("trades") {
     val id = integer("id").autoIncrement()
+
     @Suppress("unused")
-    val snapshotId = integer("snapshot_id")
-        .references(PortfolioSnapshotTable.id, onDelete = ReferenceOption.CASCADE)
-        .nullable()
+    val snapshotId =
+        integer("snapshot_id")
+            .references(PortfolioSnapshotTable.id, onDelete = ReferenceOption.CASCADE)
+            .nullable()
     val timestamp = long("timestamp")
     val pair = varchar("pair", 16)
     val side = varchar("side", 4)

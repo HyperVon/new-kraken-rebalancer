@@ -1,5 +1,6 @@
 package com.gemini.krakenbot.service
 
+import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.KrakenCredentials
@@ -11,7 +12,6 @@ import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.service.impl.OrderExecutorImpl
 import com.gemini.krakenbot.service.impl.PortfolioAnalyzerImpl
 import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
-import com.gemini.krakenbot.TestFixtures
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.booleans.shouldBeTrue
@@ -47,9 +47,9 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
             dustThresholdUSD = 1.0,
             dryRun = false,
             fiatMaxDrawdown = 0.0,
-            fiatDeploymentExponent = 1.0
+            fiatDeploymentExponent = 1.0,
         ),
-        allocations = allocs.toList()
+        allocations = allocs.toList(),
     )
 
     init {
@@ -58,14 +58,14 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
             portfolioAnalyzer = PortfolioAnalyzerImpl(
                 krakenService = krakenService,
                 configService = configService,
-                portfolioStatsRepository = portfolioStatsRepository
+                portfolioStatsRepository = portfolioStatsRepository,
             )
             orderExecutor = OrderExecutorImpl(krakenService, portfolioAnalyzer, tradeHistoryService)
             portfolioManager = PortfolioManagerImpl(
                 configService = configService,
                 tradeHistoryService = tradeHistoryService,
                 portfolioAnalyzer = portfolioAnalyzer,
-                orderExecutor = orderExecutor
+                orderExecutor = orderExecutor,
             )
         }
 
@@ -73,7 +73,7 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
             runTest {
                 every { configService.getConfig() } returns makeConfig(
                     Allocation(TestFixtures.A, 50.0),
-                    Allocation(TestFixtures.B, 50.0)
+                    Allocation(TestFixtures.B, 50.0),
                 )
                 krakenService.pricesSupplier =
                     { mapOf(TestFixtures.AUSD to 100.0, TestFixtures.BUSD to 100.0) }
@@ -90,7 +90,7 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
             runTest {
                 every { configService.getConfig() } returns makeConfig(
                     Allocation(TestFixtures.A, 50.0),
-                    Allocation(TestFixtures.B, 50.0)
+                    Allocation(TestFixtures.B, 50.0),
                 )
                 krakenService.pricesSupplier =
                     { mapOf(TestFixtures.AUSD to 100.0, TestFixtures.BUSD to 100.0) }
@@ -118,7 +118,7 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
                 every { configService.getConfig() } returns makeConfig(
                     Allocation(TestFixtures.A, 40.0),
                     Allocation(TestFixtures.B, 40.0),
-                    Allocation(Asset.USD, 20.0)
+                    Allocation(Asset.USD, 20.0),
                 )
                 krakenService.pricesSupplier =
                     { mapOf(TestFixtures.AUSD to 100.0, TestFixtures.BUSD to 100.0) }
@@ -126,7 +126,7 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
                     mapOf(
                         TestFixtures.A to 4.0,
                         TestFixtures.B to 4.0,
-                        Asset.USD to 1200.0
+                        Asset.USD to 1200.0,
                     )
                 }
 
@@ -152,7 +152,7 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
             runTest {
                 every { configService.getConfig() } returns makeConfig(
                     Allocation(TestFixtures.A, 10.0),
-                    Allocation(TestFixtures.B, 90.0)
+                    Allocation(TestFixtures.B, 90.0),
                 )
                 krakenService.pricesSupplier =
                     { mapOf(TestFixtures.AUSD to 100.0, TestFixtures.BUSD to 100.0) }
@@ -180,12 +180,12 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
                 every { configService.getConfig() } returns makeConfig(
                     Allocation(
                         TestFixtures.A,
-                        50.0
+                        50.0,
                     ),
                     Allocation(
                         TestFixtures.B,
-                        50.0
-                    )
+                        50.0,
+                    ),
                 )
                 krakenService.pricesSupplier =
                     { mapOf(TestFixtures.AUSD to 100.0, TestFixtures.BUSD to 100.0) }
@@ -203,12 +203,12 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
                 every { configService.getConfig() } returns makeConfig(
                     Allocation(
                         TestFixtures.A,
-                        0.0
+                        0.0,
                     ),
                     Allocation(
                         Asset.USD,
-                        100.0
-                    )
+                        100.0,
+                    ),
                 )
                 krakenService.pricesSupplier = { mapOf(TestFixtures.AUSD to 100.0) }
                 krakenService.balanceSupplier =
@@ -229,12 +229,12 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
                 every { configService.getConfig() } returns makeConfig(
                     Allocation(
                         TestFixtures.A,
-                        100.0
+                        100.0,
                     ),
                     Allocation(
                         Asset.USD,
-                        0.0
-                    )
+                        0.0,
+                    ),
                 )
                 krakenService.pricesSupplier = { mapOf(TestFixtures.AUSD to 100.0) }
                 krakenService.balanceSupplier =
@@ -255,12 +255,12 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
                 every { configService.getConfig() } returns makeConfig(
                     Allocation(
                         TestFixtures.A,
-                        50.0
+                        50.0,
                     ),
                     Allocation(
                         Asset.USD,
-                        50.0
-                    )
+                        50.0,
+                    ),
                 )
                 krakenService.pricesSupplier = { mapOf(TestFixtures.AUSD to 200.0) }
                 krakenService.balanceSupplier =
@@ -281,12 +281,12 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
                 every { configService.getConfig() } returns makeConfig(
                     Allocation(
                         TestFixtures.A,
-                        100.0
+                        100.0,
                     ),
                     Allocation(
                         Asset.USD,
-                        0.0
-                    )
+                        0.0,
+                    ),
                 )
                 krakenService.pricesSupplier = { emptyMap() }
                 krakenService.balanceSupplier = { mapOf(TestFixtures.A to 10.0) }
@@ -302,12 +302,12 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
                 every { configService.getConfig() } returns makeConfig(
                     Allocation(
                         TestFixtures.A,
-                        50.0
+                        50.0,
                     ),
                     Allocation(
                         TestFixtures.B,
-                        50.0
-                    )
+                        50.0,
+                    ),
                 )
                 krakenService.pricesSupplier = { mapOf(TestFixtures.BUSD to 100.0) }
                 krakenService.balanceSupplier =
@@ -326,12 +326,12 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
                 every { configService.getConfig() } returns makeConfig(
                     Allocation(
                         TestFixtures.A,
-                        100.0
+                        100.0,
                     ),
                     Allocation(
                         Asset.USD,
-                        0.0
-                    )
+                        0.0,
+                    ),
                 )
                 krakenService.pricesSupplier = { mapOf(TestFixtures.AUSD to 100.0) }
                 krakenService.balanceSupplier =
@@ -342,7 +342,7 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
                         pair = pair,
                         side = side,
                         volume = volume,
-                        errorMessage = "Kraken Down"
+                        errorMessage = "Kraken Down",
                     )
                 }
 
@@ -351,7 +351,7 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
                     tradeHistoryService.addSnapshot(any<PortfolioSnapshot>())
                 } answers {
                     snapshots.add(
-                        firstArg()
+                        firstArg(),
                     )
                 }
 
@@ -368,4 +368,3 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
         }
     }
 }
-

@@ -11,26 +11,22 @@ import java.math.BigDecimal
 class DynamicKrakenService(
     val realService: KrakenServiceImpl,
     private val simulatedService: SimulatedKrakenService,
-    private val configService: ConfigService
+    private val configService: ConfigService,
 ) : KrakenService {
-
     private val activeService: KrakenService
-        get() = if (configService.getConfig().settings.simulation) {
-            simulatedService
-        } else {
-            realService
-        }
+        get() =
+            if (configService.getConfig().settings.simulation) {
+                simulatedService
+            } else {
+                realService
+            }
 
     override suspend fun getBalances(): RawBalances = activeService.getBalances()
 
     override suspend fun getTickerPrices(pairs: String): RawPrices = activeService.getTickerPrices(pairs)
 
-    override suspend fun executeOrder(
-        pair: String,
-        type: String,
-        side: String,
-        volume: BigDecimal
-    ): OrderResult = activeService.executeOrder(pair, type, side, volume)
+    override suspend fun executeOrder(pair: String, type: String, side: String, volume: BigDecimal): OrderResult =
+        activeService.executeOrder(pair, type, side, volume)
 
     override suspend fun getTradeHistory(startSec: Long?, offset: Int?): List<TradeRecord> =
         activeService.getTradeHistory(startSec, offset)

@@ -14,13 +14,12 @@ fun DOMTokenList.remove(vararg cssClasses: CssClass) {
     remove(*names)
 }
 
-fun DOMTokenList.toggle(cssClass: CssClass, force: Boolean? = null): Boolean {
-    return if (force != null) toggle(cssClass.value, force) else toggle(cssClass.value)
-}
+fun DOMTokenList.toggle(
+    cssClass: CssClass,
+    force: Boolean? = null,
+): Boolean = if (force != null) toggle(cssClass.value, force) else toggle(cssClass.value)
 
-fun DOMTokenList.contains(cssClass: CssClass): Boolean {
-    return contains(cssClass.value)
-}
+fun DOMTokenList.contains(cssClass: CssClass): Boolean = contains(cssClass.value)
 
 /** Safely checks if a dynamic JS value is boolean true or string "true". */
 fun isTrue(value: dynamic): Boolean {
@@ -31,8 +30,13 @@ fun isTrue(value: dynamic): Boolean {
 
 /** Type-safe Document element creation extension functions using HtmlTags. */
 fun Document.createDiv(): HTMLDivElement = createElement(HtmlTags.DIV) as HTMLDivElement
+
 fun Document.createSpan(): HTMLSpanElement = createElement(HtmlTags.SPAN) as HTMLSpanElement
+
 fun Document.createTableCell(): HTMLTableCellElement = createElement(HtmlTags.TD) as HTMLTableCellElement
+
 fun Document.createTableRow(): HTMLTableRowElement = createElement(HtmlTags.TR) as HTMLTableRowElement
+
 fun Document.createInput(): HTMLInputElement = createElement(HtmlTags.INPUT) as HTMLInputElement
+
 fun Document.createButton(): HTMLButtonElement = createElement(HtmlTags.BUTTON) as HTMLButtonElement

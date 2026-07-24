@@ -1,5 +1,6 @@
 package com.gemini.krakenbot.service
 
+import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.config.Settings
@@ -9,7 +10,6 @@ import com.gemini.krakenbot.model.OrderType
 import com.gemini.krakenbot.service.impl.DynamicKrakenService
 import com.gemini.krakenbot.service.impl.KrakenServiceImpl
 import com.gemini.krakenbot.service.impl.SimulatedKrakenService
-import com.gemini.krakenbot.TestFixtures
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
@@ -27,9 +27,8 @@ class DynamicKrakenServiceTest : StringSpec() {
     private val simulatedService = mockk<SimulatedKrakenService>(relaxed = true)
     private val configService = mockk<ConfigService>(relaxed = true)
 
-    private fun createService(): DynamicKrakenService {
-        return DynamicKrakenService(realService, simulatedService, configService)
-    }
+    private fun createService(): DynamicKrakenService =
+        DynamicKrakenService(realService, simulatedService, configService)
 
     init {
         "delegates to simulated service when simulation is true" {
@@ -42,9 +41,9 @@ class DynamicKrakenServiceTest : StringSpec() {
                     dryRun = false,
                     simulation = true, // Simulation mode active
                     fiatMaxDrawdown = 30.0,
-                    fiatDeploymentExponent = 1.0
+                    fiatDeploymentExponent = 1.0,
                 ),
-                allocations = emptyList()
+                allocations = emptyList(),
             )
             every { configService.getConfig() } returns appConfig
 
@@ -65,20 +64,24 @@ class DynamicKrakenServiceTest : StringSpec() {
                 Asset.BTC_USD_PAIR,
                 OrderSide.SELL.apiValue,
                 OrderType.MARKET.apiValue,
-                BigDecimal.ONE
+                BigDecimal.ONE,
             )
-            coVerify(exactly = 1) { simulatedService.executeOrder(
-                Asset.BTC_USD_PAIR,
-                OrderSide.SELL.apiValue,
-                OrderType.MARKET.apiValue,
-                BigDecimal.ONE
-            ) }
-            coVerify(exactly = 0) { realService.executeOrder(
-                any(),
-                any(),
-                any(),
-                any()
-            ) }
+            coVerify(exactly = 1) {
+                simulatedService.executeOrder(
+                    Asset.BTC_USD_PAIR,
+                    OrderSide.SELL.apiValue,
+                    OrderType.MARKET.apiValue,
+                    BigDecimal.ONE,
+                )
+            }
+            coVerify(exactly = 0) {
+                realService.executeOrder(
+                    any(),
+                    any(),
+                    any(),
+                    any(),
+                )
+            }
 
             // getTradeHistory
             dynamicService.getTradeHistory(12345L, 10)
@@ -104,9 +107,9 @@ class DynamicKrakenServiceTest : StringSpec() {
                     dryRun = false,
                     simulation = false, // Simulation mode inactive
                     fiatMaxDrawdown = 30.0,
-                    fiatDeploymentExponent = 1.0
+                    fiatDeploymentExponent = 1.0,
                 ),
-                allocations = emptyList()
+                allocations = emptyList(),
             )
             every { configService.getConfig() } returns appConfig
 
@@ -127,20 +130,24 @@ class DynamicKrakenServiceTest : StringSpec() {
                 Asset.BTC_USD_PAIR,
                 OrderSide.SELL.apiValue,
                 OrderType.MARKET.apiValue,
-                BigDecimal.ONE
+                BigDecimal.ONE,
             )
-            coVerify(exactly = 1) { realService.executeOrder(
-                Asset.BTC_USD_PAIR,
-                OrderSide.SELL.apiValue,
-                OrderType.MARKET.apiValue,
-                BigDecimal.ONE
-            ) }
-            coVerify(exactly = 0) { simulatedService.executeOrder(
-                any(),
-                any(),
-                any(),
-                any()
-            ) }
+            coVerify(exactly = 1) {
+                realService.executeOrder(
+                    Asset.BTC_USD_PAIR,
+                    OrderSide.SELL.apiValue,
+                    OrderType.MARKET.apiValue,
+                    BigDecimal.ONE,
+                )
+            }
+            coVerify(exactly = 0) {
+                simulatedService.executeOrder(
+                    any(),
+                    any(),
+                    any(),
+                    any(),
+                )
+            }
 
             // getTradeHistory
             dynamicService.getTradeHistory(12345L, 10)
@@ -157,4 +164,3 @@ class DynamicKrakenServiceTest : StringSpec() {
         }
     }
 }
-

@@ -36,14 +36,14 @@ class PortfolioManagerDogeTest : StringSpec() {
                 PortfolioAnalyzerImpl(
                     krakenService = krakenService,
                     configService = configService,
-                    portfolioStatsRepository = repo
+                    portfolioStatsRepository = repo,
                 )
             orderExecutor = OrderExecutorImpl(krakenService, portfolioAnalyzer, tradeHistoryService)
             portfolioManager = PortfolioManagerImpl(
                 configService = configService,
                 tradeHistoryService = tradeHistoryService,
                 portfolioAnalyzer = portfolioAnalyzer,
-                orderExecutor = orderExecutor
+                orderExecutor = orderExecutor,
             )
         }
 
@@ -55,23 +55,24 @@ class PortfolioManagerDogeTest : StringSpec() {
                     dustThresholdUSD = 1.0,
                     dryRun = true,
                     fiatMaxDrawdown = 0.0,
-                    fiatDeploymentExponent = 1.0
+                    fiatDeploymentExponent = 1.0,
                 )
                 val config = AppConfig(
                     kraken = KrakenCredentials(
                         apiKey = "k",
-                        privateKey = "s"
-                    ), settings = settings,
+                        privateKey = "s",
+                    ),
+                    settings = settings,
                     allocations = listOf(
                         Allocation(
                             symbol = Asset.DOGE,
-                            targetPercent = 50.0
+                            targetPercent = 50.0,
                         ),
                         Allocation(
                             symbol = Asset.USD,
-                            targetPercent = 50.0
-                        )
-                    )
+                            targetPercent = 50.0,
+                        ),
+                    ),
                 )
                 every { configService.getConfig() } returns config
 
@@ -103,23 +104,24 @@ class PortfolioManagerDogeTest : StringSpec() {
                     dustThresholdUSD = 1.0,
                     dryRun = true,
                     fiatMaxDrawdown = 0.0,
-                    fiatDeploymentExponent = 1.0
+                    fiatDeploymentExponent = 1.0,
                 )
                 val config = AppConfig(
                     kraken = KrakenCredentials(
                         apiKey = "k",
-                        privateKey = "s"
-                    ), settings = settings,
+                        privateKey = "s",
+                    ),
+                    settings = settings,
                     allocations = listOf(
                         Allocation(
                             symbol = Asset.BTC,
-                            targetPercent = 50.0
+                            targetPercent = 50.0,
                         ),
                         Allocation(
                             symbol = Asset.USD,
-                            targetPercent = 50.0
-                        )
-                    )
+                            targetPercent = 50.0,
+                        ),
+                    ),
                 )
                 every { configService.getConfig() } returns config
 
@@ -128,9 +130,11 @@ class PortfolioManagerDogeTest : StringSpec() {
                 krakenService.pricesSupplier = { pairs ->
                     if (pairs.contains("XXBTZUSD") ||
                         pairs.contains("XBTUSD")
-                    )
+                    ) {
                         mapOf("XXBTZUSD" to 50000.0)
-                    else emptyMap()
+                    } else {
+                        emptyMap()
+                    }
                 }
 
                 portfolioManager.performRebalanceCycle()

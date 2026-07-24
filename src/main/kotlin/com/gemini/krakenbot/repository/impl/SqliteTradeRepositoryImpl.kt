@@ -33,10 +33,7 @@ import java.time.Instant
 
 private const val HISTORY_SEEDED = "history_seeded"
 
-class SqliteTradeRepositoryImpl(
-    private val database: Database
-) : TradeRepository {
-
+class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepository {
     private val log =
         LoggerFactory.getLogger(SqliteTradeRepositoryImpl::class.java)
 
@@ -63,16 +60,15 @@ class SqliteTradeRepositoryImpl(
         }
     }
 
-    override fun load(): List<PortfolioSnapshot> {
-        return transaction(database) {
-            val snapshotRows = PortfolioSnapshotTable
+    override fun load(): List<PortfolioSnapshot> = transaction(database) {
+        val snapshotRows =
+            PortfolioSnapshotTable
                 .selectAll()
                 .orderBy(PortfolioSnapshotTable.timestamp, SortOrder.DESC)
                 .limit(50)
                 .toList()
 
-            buildSnapshotsFromRows(snapshotRows)
-        }
+        buildSnapshotsFromRows(snapshotRows)
     }
 
     override fun saveSnapshot(snapshot: PortfolioSnapshot) {
@@ -96,9 +92,9 @@ class SqliteTradeRepositoryImpl(
                     TradeTable.id eq oldTrade.id
                 } else {
                     (TradeTable.timestamp eq oldTrade.timestamp.toEpochMilli()) and
-                    (TradeTable.pair eq oldTrade.pair) and
-                    (TradeTable.side eq oldTrade.side) and
-                    (TradeTable.volume eq oldTrade.volume)
+                        (TradeTable.pair eq oldTrade.pair) and
+                        (TradeTable.side eq oldTrade.side) and
+                        (TradeTable.volume eq oldTrade.volume)
                 }
             }) {
                 it.applyTradeFields(newTrade)
@@ -106,121 +102,109 @@ class SqliteTradeRepositoryImpl(
         }
     }
 
-    override fun getSnapshotsInRange(
-        from: Instant,
-        to: Instant
-    ): List<PortfolioSnapshot> {
+    override fun getSnapshotsInRange(from: Instant, to: Instant): List<PortfolioSnapshot> {
         return transaction(database) {
-            val allIds = PortfolioSnapshotTable
-                .select(PortfolioSnapshotTable.id)
-                .andWhere {
-                    PortfolioSnapshotTable.timestamp greaterEq from.toEpochMilli()
-                }
-                .andWhere {
-                    PortfolioSnapshotTable.timestamp lessEq to.toEpochMilli()
-                }
-                .orderBy(PortfolioSnapshotTable.timestamp, SortOrder.ASC)
-                .map { it[PortfolioSnapshotTable.id] }
+            val allIds =
+                PortfolioSnapshotTable
+                    .select(PortfolioSnapshotTable.id)
+                    .andWhere {
+                        PortfolioSnapshotTable.timestamp greaterEq from.toEpochMilli()
+                    }.andWhere {
+                        PortfolioSnapshotTable.timestamp lessEq to.toEpochMilli()
+                    }.orderBy(PortfolioSnapshotTable.timestamp, SortOrder.ASC)
+                    .map { it[PortfolioSnapshotTable.id] }
 
             if (allIds.isEmpty()) return@transaction emptyList()
 
-            val downsampledIds = if (allIds.size <= 300) {
-                allIds
-            } else {
-                val step = allIds.size / 300
-                allIds.filterIndexed { index, _ -> index % step == 0 }
-            }
+            val downsampledIds =
+                if (allIds.size <= 300) {
+                    allIds
+                } else {
+                    val step = allIds.size / 300
+                    allIds.filterIndexed { index, _ -> index % step == 0 }
+                }
 
-            val snapshotRows = PortfolioSnapshotTable
-                .selectAll()
-                .where { PortfolioSnapshotTable.id inList downsampledIds }
-                .orderBy(PortfolioSnapshotTable.timestamp, SortOrder.ASC)
-                .toList()
+            val snapshotRows =
+                PortfolioSnapshotTable
+                    .selectAll()
+                    .where { PortfolioSnapshotTable.id inList downsampledIds }
+                    .orderBy(PortfolioSnapshotTable.timestamp, SortOrder.ASC)
+                    .toList()
 
             buildSnapshotsFromRows(snapshotRows)
         }
     }
 
-    override fun getTradesInRange(
-        from: Instant,
-        to: Instant
-    ): List<TradeRecord> {
-        return transaction(database) {
-            TradeTable
-                .selectAll()
-                .andWhere {
-                    TradeTable.timestamp greaterEq from.toEpochMilli()
-                }
-                .andWhere {
-                    TradeTable.timestamp lessEq to.toEpochMilli()
-                }
-                .orderBy(TradeTable.timestamp, SortOrder.DESC)
-                .map { row -> buildTradeFromRow(row) }
-        }
+    override fun getTradesInRange(from: Instant, to: Instant): List<TradeRecord> = transaction(database) {
+        TradeTable
+            .selectAll()
+            .andWhere {
+                TradeTable.timestamp greaterEq from.toEpochMilli()
+            }.andWhere {
+                TradeTable.timestamp lessEq to.toEpochMilli()
+            }.orderBy(TradeTable.timestamp, SortOrder.DESC)
+            .map { row -> buildTradeFromRow(row) }
     }
 
-    override fun getTradeSummaryStats(): TradeSummaryStats =
-        getTradeSummaryStats(Instant.EPOCH, Instant.now())
+    override fun getTradeSummaryStats(): TradeSummaryStats = getTradeSummaryStats(Instant.EPOCH, Instant.now())
 
-    override fun getTradeSummaryStats(from: Instant, to: Instant): TradeSummaryStats {
-        return transaction(database) {
-            val countCol = TradeTable.id.count()
-            val volumeCol = TradeTable.usdAmount.sum()
-            val feeCol = TradeTable.fee.sum()
+    override fun getTradeSummaryStats(from: Instant, to: Instant): TradeSummaryStats = transaction(database) {
+        val countCol = TradeTable.id.count()
+        val volumeCol = TradeTable.usdAmount.sum()
+        val feeCol = TradeTable.fee.sum()
 
-            val fromMillis = from.toEpochMilli()
-            val toMillis = to.toEpochMilli()
+        val fromMillis = from.toEpochMilli()
+        val toMillis = to.toEpochMilli()
 
-            val tradeRow = TradeTable
+        val tradeRow =
+            TradeTable
                 .select(countCol, volumeCol, feeCol)
                 .where {
                     (TradeTable.success eq true) and
-                    (TradeTable.timestamp greaterEq fromMillis) and
-                    (TradeTable.timestamp lessEq toMillis)
-                }
-                .firstOrNull()
+                        (TradeTable.timestamp greaterEq fromMillis) and
+                        (TradeTable.timestamp lessEq toMillis)
+                }.firstOrNull()
 
-            val totalTrades = tradeRow?.get(countCol) ?: 0L
-            val totalVolume = tradeRow?.get(volumeCol) ?: BigDecimal.ZERO
-            val totalFees = tradeRow?.get(feeCol) ?: BigDecimal.ZERO
+        val totalTrades = tradeRow?.get(countCol) ?: 0L
+        val totalVolume = tradeRow?.get(volumeCol) ?: BigDecimal.ZERO
+        val totalFees = tradeRow?.get(feeCol) ?: BigDecimal.ZERO
 
-            val periodHighCol = PortfolioSnapshotTable.totalValueUSD.max()
-            val periodHigh = PortfolioSnapshotTable
+        val periodHighCol = PortfolioSnapshotTable.totalValueUSD.max()
+        val periodHigh =
+            PortfolioSnapshotTable
                 .select(periodHighCol)
                 .where {
                     (PortfolioSnapshotTable.timestamp greaterEq fromMillis) and
-                    (PortfolioSnapshotTable.timestamp lessEq toMillis)
-                }
-                .firstOrNull()
+                        (PortfolioSnapshotTable.timestamp lessEq toMillis)
+                }.firstOrNull()
                 ?.get(periodHighCol)
 
-            val latestSnapshotTime = PortfolioSnapshotTable
+        val latestSnapshotTime =
+            PortfolioSnapshotTable
                 .select(PortfolioSnapshotTable.timestamp)
                 .orderBy(PortfolioSnapshotTable.timestamp, SortOrder.DESC)
                 .limit(1)
                 .firstOrNull()
                 ?.let { Instant.ofEpochMilli(it[PortfolioSnapshotTable.timestamp]) }
 
-            TradeSummaryStats(
-                totalTradesExecuted = totalTrades,
-                totalVolumeTraded = totalVolume,
-                totalFeesPaid = totalFees,
-                latestSnapshotTime = latestSnapshotTime,
-                periodHigh = periodHigh
-            )
-        }
+        TradeSummaryStats(
+            totalTradesExecuted = totalTrades,
+            totalVolumeTraded = totalVolume,
+            totalFeesPaid = totalFees,
+            latestSnapshotTime = latestSnapshotTime,
+            periodHigh = periodHigh,
+        )
     }
 
-
-
     private fun insertSnapshotWithChildren(snapshot: PortfolioSnapshot) {
-        val snapshotId = PortfolioSnapshotTable.insert {
-            it[timestamp] = snapshot.timestamp.toEpochMilli()
-            it[totalValueUSD] = snapshot.totalValueUSD
-            it[drawdownPercent] = snapshot.drawdownPercent
-            it[fiatDeploymentPercent] = snapshot.fiatDeploymentPercent
-            it[effectiveUsdTargetPercent] = snapshot.effectiveUsdTargetPercent
-        }[PortfolioSnapshotTable.id]
+        val snapshotId =
+            PortfolioSnapshotTable.insert {
+                it[timestamp] = snapshot.timestamp.toEpochMilli()
+                it[totalValueUSD] = snapshot.totalValueUSD
+                it[drawdownPercent] = snapshot.drawdownPercent
+                it[fiatDeploymentPercent] = snapshot.fiatDeploymentPercent
+                it[effectiveUsdTargetPercent] = snapshot.effectiveUsdTargetPercent
+            }[PortfolioSnapshotTable.id]
 
         for ((_, assetSnapshot) in snapshot.assets) {
             AssetSnapshotTable.insert {
@@ -248,34 +232,38 @@ class SqliteTradeRepositoryImpl(
         if (rows.isEmpty()) return emptyList()
         val snapshotIds = rows.map { it[PortfolioSnapshotTable.id] }
 
-        val allAssetSnapshots = AssetSnapshotTable
-            .selectAll()
-            .where { AssetSnapshotTable.snapshotId inList snapshotIds }
-            .groupBy { it[AssetSnapshotTable.snapshotId] }
+        val allAssetSnapshots =
+            AssetSnapshotTable
+                .selectAll()
+                .where { AssetSnapshotTable.snapshotId inList snapshotIds }
+                .groupBy { it[AssetSnapshotTable.snapshotId] }
 
-        val allActionLogs = ActionLogTable
-            .selectAll()
-            .where { ActionLogTable.snapshotId inList snapshotIds }
-            .groupBy { it[ActionLogTable.snapshotId] }
+        val allActionLogs =
+            ActionLogTable
+                .selectAll()
+                .where { ActionLogTable.snapshotId inList snapshotIds }
+                .groupBy { it[ActionLogTable.snapshotId] }
 
         return rows.map { row ->
             val snapshotId = row[PortfolioSnapshotTable.id]
             val assetRows = allAssetSnapshots[snapshotId] ?: emptyList()
             val actionRows = allActionLogs[snapshotId] ?: emptyList()
 
-            val assetSnapshots = assetRows.associate { assetRow ->
-                val symbol = assetRow[AssetSnapshotTable.symbol]
-                symbol to PortfolioSnapshot.AssetSnapshot(
-                    symbol = Asset(symbol),
-                    balance = assetRow[AssetSnapshotTable.balance],
-                    price = assetRow[AssetSnapshotTable.price],
-                    valueUSD = assetRow[AssetSnapshotTable.valueUSD],
-                    targetPercent = assetRow[AssetSnapshotTable.targetPercent],
-                    currentPercent = assetRow[AssetSnapshotTable.currentPercent],
-                    deviationPercent = assetRow[AssetSnapshotTable.deviationPercent],
-                    deviationUSD = assetRow[AssetSnapshotTable.deviationUSD]
-                )
-            }
+            val assetSnapshots =
+                assetRows.associate { assetRow ->
+                    val symbol = assetRow[AssetSnapshotTable.symbol]
+                    symbol to
+                        PortfolioSnapshot.AssetSnapshot(
+                            symbol = Asset(symbol),
+                            balance = assetRow[AssetSnapshotTable.balance],
+                            price = assetRow[AssetSnapshotTable.price],
+                            valueUSD = assetRow[AssetSnapshotTable.valueUSD],
+                            targetPercent = assetRow[AssetSnapshotTable.targetPercent],
+                            currentPercent = assetRow[AssetSnapshotTable.currentPercent],
+                            deviationPercent = assetRow[AssetSnapshotTable.deviationPercent],
+                            deviationUSD = assetRow[AssetSnapshotTable.deviationUSD],
+                        )
+                }
 
             val actions = actionRows.map { it[ActionLogTable.message] }
 
@@ -286,60 +274,51 @@ class SqliteTradeRepositoryImpl(
                 actions = actions,
                 drawdownPercent = row[PortfolioSnapshotTable.drawdownPercent],
                 fiatDeploymentPercent = row[PortfolioSnapshotTable.fiatDeploymentPercent],
-                effectiveUsdTargetPercent = row[PortfolioSnapshotTable.effectiveUsdTargetPercent]
+                effectiveUsdTargetPercent = row[PortfolioSnapshotTable.effectiveUsdTargetPercent],
             )
         }
     }
 
+    private fun buildTradeFromRow(row: ResultRow): TradeRecord = TradeRecord(
+        timestamp = Instant.ofEpochMilli(row[TradeTable.timestamp]),
+        pair = row[TradeTable.pair],
+        side = row[TradeTable.side],
+        symbol = row[TradeTable.symbol],
+        volume = row[TradeTable.volume],
+        usdAmount = row[TradeTable.usdAmount],
+        success = row[TradeTable.success],
+        dryRun = row[TradeTable.dryRun],
+        errorMessage = row[TradeTable.errorMessage],
+        price = row[TradeTable.price],
+        fee = row[TradeTable.fee],
+        slippagePercent = row[TradeTable.slippagePercent],
+        id = row[TradeTable.id],
+    )
 
-    private fun buildTradeFromRow(row: ResultRow): TradeRecord {
-        return TradeRecord(
-            timestamp = Instant.ofEpochMilli(row[TradeTable.timestamp]),
-            pair = row[TradeTable.pair],
-            side = row[TradeTable.side],
-            symbol = row[TradeTable.symbol],
-            volume = row[TradeTable.volume],
-            usdAmount = row[TradeTable.usdAmount],
-            success = row[TradeTable.success],
-            dryRun = row[TradeTable.dryRun],
-            errorMessage = row[TradeTable.errorMessage],
-            price = row[TradeTable.price],
-            fee = row[TradeTable.fee],
-            slippagePercent = row[TradeTable.slippagePercent],
-            id = row[TradeTable.id]
-        )
+    override fun getLatestTradeTime(): Instant? = transaction(database) {
+        TradeTable
+            .selectAll()
+            .where { TradeTable.dryRun eq false }
+            .orderBy(TradeTable.timestamp, SortOrder.DESC)
+            .limit(1)
+            .firstOrNull()
+            ?.let {
+                Instant.ofEpochMilli(it[TradeTable.timestamp])
+            }
     }
 
-    override fun getLatestTradeTime(): Instant? {
-        return transaction(database) {
-            TradeTable
-                .selectAll()
-                .where { TradeTable.dryRun eq false }
-                .orderBy(TradeTable.timestamp, SortOrder.DESC)
-                .limit(1)
-                .firstOrNull()
-                ?.let {
-                    Instant.ofEpochMilli(it[TradeTable.timestamp])
-                }
-        }
-    }
-
-    override fun isHistorySeeded(): Boolean {
-        return getSyncMetadata(HISTORY_SEEDED) == "true"
-    }
+    override fun isHistorySeeded(): Boolean = getSyncMetadata(HISTORY_SEEDED) == "true"
 
     override fun setHistorySeeded(seeded: Boolean) {
         setSyncMetadata(HISTORY_SEEDED, seeded.toString())
     }
 
-    override fun getSyncMetadata(key: String): String? {
-        return transaction(database) {
-            HistorySyncMetadataTable
-                .selectAll()
-                .where { HistorySyncMetadataTable.key eq key }
-                .firstOrNull()
-                ?.get(HistorySyncMetadataTable.value)
-        }
+    override fun getSyncMetadata(key: String): String? = transaction(database) {
+        HistorySyncMetadataTable
+            .selectAll()
+            .where { HistorySyncMetadataTable.key eq key }
+            .firstOrNull()
+            ?.get(HistorySyncMetadataTable.value)
     }
 
     override fun setSyncMetadata(key: String, value: String) {
@@ -350,21 +329,21 @@ class SqliteTradeRepositoryImpl(
             }
         }
     }
-    override fun pruneSnapshotsOlderThan(cutoff: Instant): Int {
-        return transaction(database) {
-            val cutoffMillis = cutoff.toEpochMilli()
-            val idsToDelete = PortfolioSnapshotTable
+
+    override fun pruneSnapshotsOlderThan(cutoff: Instant): Int = transaction(database) {
+        val cutoffMillis = cutoff.toEpochMilli()
+        val idsToDelete =
+            PortfolioSnapshotTable
                 .select(PortfolioSnapshotTable.id)
                 .where { PortfolioSnapshotTable.timestamp less cutoffMillis }
                 .map { it[PortfolioSnapshotTable.id] }
 
-            if (idsToDelete.isNotEmpty()) {
-                AssetSnapshotTable.deleteWhere { snapshotId inList idsToDelete }
-                ActionLogTable.deleteWhere { snapshotId inList idsToDelete }
-                PortfolioSnapshotTable.deleteWhere { id inList idsToDelete }
-            }
-            idsToDelete.size
+        if (idsToDelete.isNotEmpty()) {
+            AssetSnapshotTable.deleteWhere { snapshotId inList idsToDelete }
+            ActionLogTable.deleteWhere { snapshotId inList idsToDelete }
+            PortfolioSnapshotTable.deleteWhere { id inList idsToDelete }
         }
+        idsToDelete.size
     }
 
     override fun cleanupDuplicateTrades() {

@@ -14,10 +14,14 @@ object Formatter {
         String.format(Locale.US, "%.2f", value)
 
     fun getDeviationClass(deviation: BigDecimal?): CssClass? =
-        if (deviation == null) null else when (deviation.signum()) {
-            1 -> CssClass.Utility.TextDanger
-            -1 -> CssClass.Utility.TextSuccess
-            else -> null
+        if (deviation == null) {
+            null
+        } else {
+            when (deviation.signum()) {
+                1 -> CssClass.Utility.TextDanger
+                -1 -> CssClass.Utility.TextSuccess
+                else -> null
+            }
         }
 
     fun getDeviationSign(deviation: BigDecimal?): String = when {

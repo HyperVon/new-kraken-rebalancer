@@ -42,14 +42,14 @@ class PortfolioManagerDrawdownTest : StringSpec() {
             portfolioAnalyzer = PortfolioAnalyzerImpl(
                 krakenService = krakenService,
                 configService = configService,
-                portfolioStatsRepository = portfolioStatsRepository
+                portfolioStatsRepository = portfolioStatsRepository,
             )
             orderExecutor = OrderExecutorImpl(krakenService, portfolioAnalyzer, tradeHistoryService)
             portfolioManager = PortfolioManagerImpl(
                 configService = configService,
                 tradeHistoryService = tradeHistoryService,
                 portfolioAnalyzer = portfolioAnalyzer,
-                orderExecutor = orderExecutor
+                orderExecutor = orderExecutor,
             )
 
             val settings = Settings(
@@ -58,16 +58,16 @@ class PortfolioManagerDrawdownTest : StringSpec() {
                 dustThresholdUSD = 1.0,
                 dryRun = false,
                 fiatMaxDrawdown = 50.0,
-                fiatDeploymentExponent = 1.0
+                fiatDeploymentExponent = 1.0,
             )
             val appConfig =
                 AppConfig(
                     kraken = KrakenCredentials(
                         apiKey = "k",
-                        privateKey = "s"
+                        privateKey = "s",
                     ),
                     settings = settings,
-                    allocations = emptyList()
+                    allocations = emptyList(),
                 )
             every { configService.getConfig() } returns appConfig
         }
@@ -77,12 +77,12 @@ class PortfolioManagerDrawdownTest : StringSpec() {
                 every {
                     portfolioStatsRepository.load()
                 } returns PortfolioStats(
-                    BigDecimal("2000.0")
+                    BigDecimal("2000.0"),
                 )
 
                 val allocs = listOf(
                     Allocation("A", 50.0),
-                    Allocation(Asset.USD, 50.0)
+                    Allocation(Asset.USD, 50.0),
                 )
 
                 val appConfig = AppConfig(
@@ -93,9 +93,9 @@ class PortfolioManagerDrawdownTest : StringSpec() {
                         dustThresholdUSD = 1.0,
                         dryRun = false,
                         fiatMaxDrawdown = 50.0,
-                        fiatDeploymentExponent = 1.0
+                        fiatDeploymentExponent = 1.0,
                     ),
-                    allocations = allocs
+                    allocations = allocs,
                 )
                 every { configService.getConfig() } returns appConfig
 
@@ -104,7 +104,7 @@ class PortfolioManagerDrawdownTest : StringSpec() {
 
                 val balances = mapOf(
                     "A" to 7.5,
-                    Asset.USD to 750.0
+                    Asset.USD to 750.0,
                 )
                 krakenService.balanceSupplier = { balances }
 
@@ -115,8 +115,10 @@ class PortfolioManagerDrawdownTest : StringSpec() {
                 order.pair shouldBe "AUSD"
                 order.type shouldBe "market"
                 order.side shouldBe "buy"
-                (order.volume.subtract(BigDecimal.valueOf(3.75))
-                    .abs() < BigDecimal("0.01")).shouldBeTrue()
+                (
+                    order.volume.subtract(BigDecimal.valueOf(3.75))
+                        .abs() < BigDecimal("0.01")
+                    ).shouldBeTrue()
 
                 val captor = slot<PortfolioSnapshot>()
                 verify { tradeHistoryService.addSnapshot(capture(captor)) }
@@ -136,8 +138,8 @@ class PortfolioManagerDrawdownTest : StringSpec() {
                 val allocs = listOf(
                     Allocation(
                         symbol = Asset.USD,
-                        targetPercent = 100.0
-                    )
+                        targetPercent = 100.0,
+                    ),
                 )
 
                 val appConfig = AppConfig(
@@ -148,9 +150,9 @@ class PortfolioManagerDrawdownTest : StringSpec() {
                         dustThresholdUSD = 1.0,
                         dryRun = false,
                         fiatMaxDrawdown = 50.0,
-                        fiatDeploymentExponent = 1.0
+                        fiatDeploymentExponent = 1.0,
                     ),
-                    allocations = allocs
+                    allocations = allocs,
                 )
                 every { configService.getConfig() } returns appConfig
                 krakenService.pricesSupplier = { emptyMap() }

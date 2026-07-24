@@ -7,5 +7,5 @@ data class Settings(
     val dryRun: Boolean,
     val fiatMaxDrawdown: Double = 0.0,
     val fiatDeploymentExponent: Double = 1.0,
-    val simulation: Boolean = false
+    val simulation: Boolean = false,
 )

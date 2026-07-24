@@ -6,6 +6,55 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.12.0] - 2026-07-23
+
+### Added
+
+- **Spotless / `ktlint` Integration (`build.gradle.kts`)**: Integrated Spotless (`com.diffplug.spotless` v7.0.2) powered by `ktlint` (v1.3.1), enforcing Official Kotlin Coding Conventions and a strict **120-character maximum line length limit** across all `.kt` and `.kts` source files.
+- **Pre-Commit Automated Code Formatting (`pre_commit_check.sh`)**: Updated automated pre-commit script, `commit-and-push` skill, and `audit_and_verify.sh` scanner to run `./gradlew spotlessCheck` and `./gradlew spotlessApply`.
+
+## [6.11.0] - 2026-07-23
+
+### Changed
+
+- **JaCoCo Coverage Exclusion Refinement (`build.gradle.kts`)**: Un-excluded `**/model/**`, `**/util/**`, and `**/service/ServiceUtilsKt*` from JaCoCo test coverage filters to enforce 95%+ coverage on domain logic, trade deduplication, and financial math utilities.
+- **Environment Agnosticism & Public Repository Safety (`.agents/AGENTS.md`)**: Updated core agent rules, code review skills, Kotest spec guidelines, and `audit_and_verify.sh` scanner script to prohibit machine-specific hostnames (`my-macbook`, `charles-pc`) or local user paths in code, configs, or test assertions.
+- **`NetworkUtils.kt` Refactoring**: Extracted private Class B IP range (`172.16.x.x`–`172.31.x.x`) check into a clean `isPrivateClassB172` helper method.
+
+### Added
+
+- **New Unit Test Specs (`src/test/`)**:
+  - `ServiceUtilsTest.kt`: Unit tests for `safeParseBigDecimal` and `isWithinRelativeTolerance`.
+  - `TradeDeduplicatorTest.kt`: Unit tests for trade record deduplication algorithms.
+  - `NetworkUtilsTest.kt`: Environment-agnostic unit tests for local/private IP origin checks.
+  - `ModelTest.kt`: Added `OrderResult` companion factory and `TradeRecord` extension method branch tests.
+
+## [6.10.0] - 2026-07-23
+
+### Added
+
+- **Agent Rules & Guidelines (`.agents/AGENTS.md`)**: Updated core rules with coroutine dispatcher requirements (`withContext(Dispatchers.IO)`), KMP `:common` module boundary integrity rules, security/secret protection directives, and build/JaCoCo synchronization directives.
+- **5 New Specialized Agent Skills (`.agents/skills/`)**: Created 5 new domain skills complete with executable scripts and reference Kotlin templates:
+  - **`frontend-js-development`**: Client-side Kotlin/JS subproject development (`:frontend-js`), Chart.js deep-cloning, DOM cleanup, HTMX event hooks, and SSE streaming.
+  - **`ktor-html-views`**: Server-side HTML DSL (`kotlinx.html`), layout component helpers (`Layouts.kt`), CSS styling (`kotlinx-css`), and type safety.
+  - **`kraken-api-integration`**: Kraken REST API integration, symbol mapping (`BTC` $\rightarrow$ `XBTUSD`/`XXBT`), `Mutex` rate limiting, exponential backoff on `EGeneral:Temporary lockout`, and secret masking.
+  - **`portfolio-rebalancing-math`**: Financial math precision (`BigDecimal` scale 8 for crypto, 2 for USD), signed relative allocation deviation logic ($-$/$+$), cash reserve caps (99% USD cap), and order execution safety sequence.
+  - **`koin-di-and-config`**: Koin DI module setup (`appModule`), singletons vs factories, reactive configuration watching (`ConfigService.watchConfigChanges()`), environment variables, and JVM shutdown hooks.
+  - **`autonomous-code-optimizer`**: Multi-pass codebase audit and refactoring loop skill and automated scanner script (`audit_and_verify.sh`).
+- **Skill Resource Scripts & Templates (`.agents/skills/`)**: Created executable pre-commit script (`pre_commit_check.sh`), anti-pattern scanner (`find_anti_patterns.sh`), and reference code templates (`SqliteExampleRepositoryImpl.kt`, `BackendServiceTest.kt`, `FrontendJsTest.kt`, `sample_code_review.md`).
+
+## [6.9.0] - 2026-07-23
+
+### Added
+
+- **`code-review` Workspace Skill (`.agents/skills/code-review/SKILL.md`)**: Created reusable workspace skill providing structured code review guidelines across Code Quality, Bug Detection, Security Analysis, Performance, and Best Practices.
+
+### Refactored
+
+- **CSS Styles Package & Modularization (`com.gemini.krakenbot.view.css`)**: Created dedicated `css` package (`com.gemini.krakenbot.view.css`) and decomposed the monolithic 1,000-line `CssStyles` object into 8 domain-focused modules (`CssTheme`, `LayoutStyles`, `ComponentStyles`, `TableStyles`, `FormStyles`, `NavigationStyles`, `MediaQueries`, and `CssStyles` aggregator facade).
+- **Type-Safe CSS Class Query Selectors (`:common`)**: Replaced brittle `.value.replace(" ", ".")` string transformations with type-safe `querySelector` extension calls on `CssClass.Navigation.LinkActive` and `CssClass.History.TimeRangeBtnActive`.
+- **Theme Tokens & `kotlinx-css` Property Standardization (`src/main`)**: Consolidated inline hex colors, accent gradients, and pill border radii into centralized theme tokens in `CssTheme`. Replaced raw string `put(...)` calls with strongly typed `kotlinx-css` DSL properties (`gridTemplateColumns`, `opacity`, `transition`).
+
 ## [6.8.9] - 2026-07-23
 
 ### Fixed
