@@ -113,6 +113,32 @@ class HistoryTest : StringSpec() {
             result.size shouldBe 3
         }
 
+        "calculateCumulativePL skips unknown order sides" {
+            val trades =
+                arrayOf(
+                    TestDomBuilders.tradeJson(
+                        timestamp = "2023-01-01T10:00:00Z",
+                        side = OrderSide.SELL.name,
+                        usdAmount = 50.0,
+                    ),
+                    TestDomBuilders.tradeJson(
+                        timestamp = "2023-01-01T11:00:00Z",
+                        side = "HOLD",
+                        usdAmount = 999.0,
+                    ),
+                    TestDomBuilders.tradeJson(
+                        timestamp = "2023-01-01T12:00:00Z",
+                        side = OrderSide.BUY.name,
+                        usdAmount = 20.0,
+                    ),
+                )
+
+            val result = calculateCumulativePL(trades.unsafeCast<Array<JsTradeRecord>>())
+            result.size shouldBe 2
+            result[0].y.toString().toDouble() shouldBe 50.0
+            result[1].y.toString().toDouble() shouldBe 30.0
+        }
+
         "renderTradeTable filters dry runs and displays empty states" {
             val container = document.createElement(HtmlTags.DIV)
             container.innerHTML = TestDomBuilders.tradeTableDom()

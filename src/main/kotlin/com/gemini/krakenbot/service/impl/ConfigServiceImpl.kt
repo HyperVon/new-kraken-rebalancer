@@ -74,25 +74,23 @@ class ConfigServiceImpl(
 
     private fun parseConfig(content: String): AppConfig = objectMapper.readValue(content, AppConfig::class.java)
 
-    private fun resolveEnvVars(content: String): String =
-        ENV_VAR_PATTERN.replace(content) { matchResult ->
-            val placeholder = matchResult.groupValues[1]
-            val parts = placeholder.split(ENV_VAR_DEFAULT_SEPARATOR, limit = 2)
-            val key = parts[0]
-            val defaultValue = parts.getOrElse(1) { "" }
-            val resolvedValue =
-                System
-                    .getenv(key)
-                    ?.takeIf { it.isNotBlank() }
-                    ?: defaultValue
+    private fun resolveEnvVars(content: String): String = ENV_VAR_PATTERN.replace(content) { matchResult ->
+        val placeholder = matchResult.groupValues[1]
+        val parts = placeholder.split(ENV_VAR_DEFAULT_SEPARATOR, limit = 2)
+        val key = parts[0]
+        val defaultValue = parts.getOrElse(1) { "" }
+        val resolvedValue =
+            System
+                .getenv(key)
+                ?.takeIf { it.isNotBlank() }
+                ?: defaultValue
 
-            escapeJsonStringValue(resolvedValue)
-        }
+        escapeJsonStringValue(resolvedValue)
+    }
 
-    private fun escapeJsonStringValue(value: String): String =
-        value
-            .replace("\\", "\\\\")
-            .replace("\"", "\\\"")
+    private fun escapeJsonStringValue(value: String): String = value
+        .replace("\\", "\\\\")
+        .replace("\"", "\\\"")
 
     private fun validateOrThrowInvalidConfiguration(config: AppConfig): AppConfig {
         try {
@@ -161,7 +159,8 @@ class ConfigServiceImpl(
                 "Allocation symbols cannot be blank."
             }
             require(SYMBOL_PATTERN.matches(allocation.symbol.value.uppercase())) {
-                "Invalid allocation symbol '${allocation.symbol.value}'. Symbols must be uppercase alphanumeric and up to 16 characters long."
+                "Invalid allocation symbol '${allocation.symbol.value}'. " +
+                    "Symbols must be uppercase alphanumeric and up to 16 characters long."
             }
             require(allocation.targetPercent >= 0) {
                 "Target percent for ${allocation.symbol} cannot be negative."

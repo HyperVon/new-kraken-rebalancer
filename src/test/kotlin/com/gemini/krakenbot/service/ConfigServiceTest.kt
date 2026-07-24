@@ -2,7 +2,6 @@
 
 package com.gemini.krakenbot.service
 
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.databind.ObjectWriter
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
@@ -19,6 +18,7 @@ import io.mockk.every
 import io.mockk.mockk
 import io.mockk.mockkStatic
 import io.mockk.unmockkStatic
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
@@ -40,7 +40,7 @@ class ConfigServiceTest : StringSpec() {
             dustThresholdUSD = 1.0,
             dryRun = true,
             fiatMaxDrawdown = 0.0,
-            fiatDeploymentExponent = 1.0
+            fiatDeploymentExponent = 1.0,
         )
         val config = AppConfig(
             kraken = KrakenCredentials("k", "s"),
@@ -48,9 +48,9 @@ class ConfigServiceTest : StringSpec() {
             allocations = listOf(
                 element = Allocation(
                     symbol = Asset.USD,
-                    targetPercent = 100.0
-                )
-            )
+                    targetPercent = 100.0,
+                ),
+            ),
         )
         objectMapper.writeValue(file, config)
     }
@@ -79,7 +79,7 @@ class ConfigServiceTest : StringSpec() {
             val ex = shouldThrow<RuntimeException> {
                 ConfigServiceImpl(
                     objectMapper,
-                    missingFile.absolutePath
+                    missingFile.absolutePath,
                 )
             }
             ex.message!!.contains("not found").shouldBeTrue()
@@ -89,11 +89,12 @@ class ConfigServiceTest : StringSpec() {
             configService.loadConfig()
             val oldConfig = configService.getConfig()
             val newConfig = AppConfig(
-                oldConfig.kraken, oldConfig.settings,
+                oldConfig.kraken,
+                oldConfig.settings,
                 listOf(
                     Allocation(Asset.USD, 50.0),
-                    Allocation(Asset.BTC, 50.0)
-                )
+                    Allocation(Asset.BTC, 50.0),
+                ),
             )
 
             configService.updateConfig(newConfig)
@@ -101,7 +102,7 @@ class ConfigServiceTest : StringSpec() {
             configService.getConfig().allocations.size shouldBe 2
             val readBack = objectMapper.readValue(
                 tempFile,
-                AppConfig::class.java
+                AppConfig::class.java,
             )
             readBack.allocations.size shouldBe 2
         }
@@ -115,14 +116,14 @@ class ConfigServiceTest : StringSpec() {
                 allocations = listOf(
                     Allocation(
                         symbol = Asset.USD,
-                        targetPercent = 90.0
-                    )
-                )
+                        targetPercent = 90.0,
+                    ),
+                ),
             )
 
             shouldThrow<InvalidConfigurationException> {
                 configService.updateConfig(
-                    invalidConfig
+                    invalidConfig,
                 )
             }
         }
@@ -136,14 +137,14 @@ class ConfigServiceTest : StringSpec() {
                 allocations = listOf(
                     Allocation(
                         symbol = Asset.BTC,
-                        targetPercent = 100.0
-                    )
-                )
+                        targetPercent = 100.0,
+                    ),
+                ),
             )
 
             shouldThrow<InvalidConfigurationException> {
                 configService.updateConfig(
-                    invalidConfig
+                    invalidConfig,
                 )
             }
         }
@@ -157,18 +158,18 @@ class ConfigServiceTest : StringSpec() {
                 allocations = listOf(
                     Allocation(
                         symbol = Asset.BTC,
-                        targetPercent = 50.0
+                        targetPercent = 50.0,
                     ),
                     Allocation(
                         symbol = Asset.BTC.lowercase(),
-                        targetPercent = 50.0
-                    )
-                )
+                        targetPercent = 50.0,
+                    ),
+                ),
             )
 
             shouldThrow<InvalidConfigurationException> {
                 configService.updateConfig(
-                    invalidConfig
+                    invalidConfig,
                 )
             }
         }
@@ -182,18 +183,18 @@ class ConfigServiceTest : StringSpec() {
                 allocations = listOf(
                     Allocation(
                         symbol = Asset.USD,
-                        targetPercent = 110.0
+                        targetPercent = 110.0,
                     ),
                     Allocation(
                         symbol = Asset.BTC,
-                        targetPercent = -10.0
-                    )
-                )
+                        targetPercent = -10.0,
+                    ),
+                ),
             )
 
             shouldThrow<InvalidConfigurationException> {
                 configService.updateConfig(
-                    invalidConfig
+                    invalidConfig,
                 )
             }
         }
@@ -204,12 +205,12 @@ class ConfigServiceTest : StringSpec() {
             val invalidConfig = AppConfig(
                 kraken = oldConfig.kraken,
                 settings = oldConfig.settings,
-                allocations = emptyList()
+                allocations = emptyList(),
             )
 
             shouldThrow<InvalidConfigurationException> {
                 configService.updateConfig(
-                    invalidConfig
+                    invalidConfig,
                 )
             }
         }
@@ -223,17 +224,18 @@ class ConfigServiceTest : StringSpec() {
                 allocations = listOf(
                     Allocation(
                         symbol = Asset.USD,
-                        targetPercent = 50.0
-                    ), Allocation(
+                        targetPercent = 50.0,
+                    ),
+                    Allocation(
                         symbol = "  ",
-                        targetPercent = 50.0
-                    )
-                )
+                        targetPercent = 50.0,
+                    ),
+                ),
             )
 
             shouldThrow<InvalidConfigurationException> {
                 configService.updateConfig(
-                    invalidConfig
+                    invalidConfig,
                 )
             }
         }
@@ -244,66 +246,66 @@ class ConfigServiceTest : StringSpec() {
             val badLoopDelay = AppConfig(
                 kraken = oldConfig.kraken,
                 settings = oldConfig.settings.copy(loopDelaySeconds = 0),
-                allocations = oldConfig.allocations
+                allocations = oldConfig.allocations,
             )
             shouldThrow<InvalidConfigurationException> {
                 configService.updateConfig(
-                    badLoopDelay
+                    badLoopDelay,
                 )
             }
 
             val badDev = AppConfig(
                 kraken = oldConfig.kraken,
                 settings = oldConfig.settings.copy(deviationTriggerPercent = -1.0),
-                allocations = oldConfig.allocations
+                allocations = oldConfig.allocations,
             )
             shouldThrow<InvalidConfigurationException> {
                 configService.updateConfig(
-                    badDev
+                    badDev,
                 )
             }
 
             val badDust = AppConfig(
                 kraken = oldConfig.kraken,
                 settings = oldConfig.settings.copy(dustThresholdUSD = -1.0),
-                allocations = oldConfig.allocations
+                allocations = oldConfig.allocations,
             )
             shouldThrow<InvalidConfigurationException> {
                 configService.updateConfig(
-                    badDust
+                    badDust,
                 )
             }
 
             val badFiatDrawdown1 = AppConfig(
                 kraken = oldConfig.kraken,
                 settings = oldConfig.settings.copy(fiatMaxDrawdown = -1.0),
-                allocations = oldConfig.allocations
+                allocations = oldConfig.allocations,
             )
             shouldThrow<InvalidConfigurationException> {
                 configService.updateConfig(
-                    badFiatDrawdown1
+                    badFiatDrawdown1,
                 )
             }
 
             val badFiatDrawdown2 = AppConfig(
                 kraken = oldConfig.kraken,
                 settings = oldConfig.settings.copy(fiatMaxDrawdown = 101.0),
-                allocations = oldConfig.allocations
+                allocations = oldConfig.allocations,
             )
             shouldThrow<InvalidConfigurationException> {
                 configService.updateConfig(
-                    badFiatDrawdown2
+                    badFiatDrawdown2,
                 )
             }
 
             val badFiatExp = AppConfig(
                 kraken = oldConfig.kraken,
                 settings = oldConfig.settings.copy(fiatDeploymentExponent = 0.0),
-                allocations = oldConfig.allocations
+                allocations = oldConfig.allocations,
             )
             shouldThrow<InvalidConfigurationException> {
                 configService.updateConfig(
-                    badFiatExp
+                    badFiatExp,
                 )
             }
         }
@@ -315,7 +317,7 @@ class ConfigServiceTest : StringSpec() {
             every {
                 mockMapper.readValue(
                     any<String>(),
-                    AppConfig::class.java
+                    AppConfig::class.java,
                 )
             } returns AppConfig(
                 kraken = KrakenCredentials("a", "b"),
@@ -325,25 +327,25 @@ class ConfigServiceTest : StringSpec() {
                     dustThresholdUSD = 1.0,
                     dryRun = true,
                     fiatMaxDrawdown = 0.0,
-                    fiatDeploymentExponent = 1.0
+                    fiatDeploymentExponent = 1.0,
                 ),
                 allocations = listOf(
                     Allocation(
                         symbol = Asset.USD,
-                        targetPercent = 100.0
-                    )
-                )
+                        targetPercent = 100.0,
+                    ),
+                ),
             )
             every {
                 mockWriter.writeValue(
                     any<File>(),
-                    any<Any>()
+                    any<Any>(),
                 )
             } throws IOException("Write error")
 
             configService = ConfigServiceImpl(
                 mockMapper,
-                tempFile.absolutePath
+                tempFile.absolutePath,
             )
 
             shouldThrow<RuntimeException> {
@@ -351,7 +353,7 @@ class ConfigServiceTest : StringSpec() {
                     AppConfig(
                         kraken = KrakenCredentials(
                             apiKey = "a",
-                            privateKey = "b"
+                            privateKey = "b",
                         ),
                         settings = Settings(
                             loopDelaySeconds = 1,
@@ -359,15 +361,16 @@ class ConfigServiceTest : StringSpec() {
                             dustThresholdUSD = 1.0,
                             dryRun = true,
                             fiatMaxDrawdown = 0.0,
-                            fiatDeploymentExponent = 1.0
+                            fiatDeploymentExponent = 1.0,
                         ),
                         allocations = listOf(
                             Allocation(
                                 symbol = Asset.USD,
-                                targetPercent = 100.0
-                            )
-                        )
-                    ))
+                                targetPercent = 100.0,
+                            ),
+                        ),
+                    ),
+                )
             }
         }
 
@@ -380,14 +383,14 @@ class ConfigServiceTest : StringSpec() {
                     dustThresholdUSD = 1.0,
                     dryRun = true,
                     fiatMaxDrawdown = 0.0,
-                    fiatDeploymentExponent = 1.0
+                    fiatDeploymentExponent = 1.0,
                 ),
                 allocations = listOf(
                     Allocation(
                         symbol = Asset.USD,
-                        targetPercent = 90.0
-                    )
-                )
+                        targetPercent = 90.0,
+                    ),
+                ),
             )
             objectMapper.writeValue(tempFile, invalidConfig)
             shouldThrow<InvalidConfigurationException> {
@@ -396,11 +399,11 @@ class ConfigServiceTest : StringSpec() {
         }
 
         "loadConfig_ResolveEnvVars" {
-            val content = $$"""
+            val content = """
                 {
                   "kraken": {
-                    "apiKey": "${TEST_KRAKEN_API_KEY:default-api-key}",
-                    "privateKey": "${TEST_KRAKEN_PRIVATE_KEY:default-private-key}"
+                    "apiKey": "${'$'}{TEST_KRAKEN_API_KEY:default-api-key}",
+                    "privateKey": "${'$'}{TEST_KRAKEN_PRIVATE_KEY:default-private-key}"
                   },
                   "settings": {
                     "loopDelaySeconds": 60,
@@ -427,10 +430,10 @@ class ConfigServiceTest : StringSpec() {
 
         "loadConfig_ResolveEnvVars_WithActualEnvValue" {
             val pathValue = System.getenv("PATH") ?: "fallback"
-            val content = $$"""
+            val content = """
                 {
                   "kraken": {
-                    "apiKey": "${PATH:fallback-path}",
+                    "apiKey": "${'$'}{PATH:fallback-path}",
                     "privateKey": "some-private-key"
                   },
                   "settings": {
@@ -456,10 +459,10 @@ class ConfigServiceTest : StringSpec() {
         }
 
         "loadConfig_ResolveEnvVars_NoDefaultValue" {
-            val content = $$"""
+            val content = """
                 {
                   "kraken": {
-                    "apiKey": "${NON_EXISTENT_VAR_NO_DEFAULT}",
+                    "apiKey": "${'$'}{NON_EXISTENT_VAR_NO_DEFAULT}",
                     "privateKey": "some-private-key"
                   },
                   "settings": {
@@ -488,10 +491,10 @@ class ConfigServiceTest : StringSpec() {
             mockkStatic(System::class)
             every { System.getenv("SOME_BLANK_VAR") } returns "  "
 
-            val content = $$"""
+            val content = """
                 {
                   "kraken": {
-                    "apiKey": "${SOME_BLANK_VAR:default-val}",
+                    "apiKey": "${'$'}{SOME_BLANK_VAR:default-val}",
                     "privateKey": "some-private-key"
                   },
                   "settings": {
@@ -531,7 +534,7 @@ class ConfigServiceTest : StringSpec() {
                 events[0].dryRun shouldBe service.getConfig().settings.dryRun
 
                 val updated = service.getConfig().copy(
-                    settings = service.getConfig().settings.copy(dryRun = !service.getConfig().settings.dryRun)
+                    settings = service.getConfig().settings.copy(dryRun = !service.getConfig().settings.dryRun),
                 )
                 service.updateConfig(updated)
                 advanceUntilIdle()
