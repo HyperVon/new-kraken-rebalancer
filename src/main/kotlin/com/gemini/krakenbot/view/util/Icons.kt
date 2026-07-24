@@ -4,9 +4,7 @@ import kotlinx.html.HTMLTag
 import kotlinx.html.unsafe
 
 object Icons {
-    private fun loadIcon(name: String): String {
-        return Icons::class.java.getResource("/icons/$name")?.readText() ?: ""
-    }
+    private fun loadIcon(name: String): String = Icons::class.java.getResource("/icons/$name")?.readText() ?: ""
 
     val COG = loadIcon("cog.svg")
     val TREND_UP = loadIcon("trend_up.svg")

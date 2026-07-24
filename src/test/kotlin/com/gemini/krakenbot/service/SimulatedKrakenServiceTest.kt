@@ -37,8 +37,8 @@ class SimulatedKrakenServiceTest : StringSpec() {
             balances[Asset.USD] shouldNotBe null
 
             val totalValue = balances[Asset.USD]!!.toDouble() +
-                    balances[Asset.BTC]!!.toDouble() * prices[TestFixtures.XXBTZUSD]!!.toDouble() +
-                    balances[Asset.ETH]!!.toDouble() * prices[TestFixtures.XETHZUSD]!!.toDouble()
+                balances[Asset.BTC]!!.toDouble() * prices[TestFixtures.XXBTZUSD]!!.toDouble() +
+                balances[Asset.ETH]!!.toDouble() * prices[TestFixtures.XETHZUSD]!!.toDouble()
 
             // Total value should be around $100,000
             totalValue shouldBeGreaterThan 70000.0
@@ -52,8 +52,8 @@ class SimulatedKrakenServiceTest : StringSpec() {
                 settings = TestFixtures.DEFAULT_TEST_SETTINGS,
                 allocations = listOf(
                     Allocation(Asset.BTC, 50.0),
-                    Allocation(Asset.USD, 50.0)
-                )
+                    Allocation(Asset.USD, 50.0),
+                ),
             )
             every { configService.getConfig() } returns config
 
@@ -67,7 +67,12 @@ class SimulatedKrakenServiceTest : StringSpec() {
             val btcPrice = prices[TestFixtures.BTCUSD]!!.toDouble()
 
             val buyVolume = BigDecimal.valueOf(0.5)
-            val result = simulatedService.executeOrder(TestFixtures.BTCUSD, TestFixtures.MARKET, TestFixtures.BUY, buyVolume)
+            val result = simulatedService.executeOrder(
+                TestFixtures.BTCUSD,
+                TestFixtures.MARKET,
+                TestFixtures.BUY,
+                buyVolume,
+            )
 
             result.success shouldBe true
 
@@ -83,8 +88,8 @@ class SimulatedKrakenServiceTest : StringSpec() {
                 settings = TestFixtures.DEFAULT_TEST_SETTINGS,
                 allocations = listOf(
                     Allocation(Asset.BTC, 50.0),
-                    Allocation(Asset.USD, 50.0)
-                )
+                    Allocation(Asset.USD, 50.0),
+                ),
             )
             every { configService.getConfig() } returns config
 
@@ -98,7 +103,12 @@ class SimulatedKrakenServiceTest : StringSpec() {
             val btcPrice = prices[TestFixtures.BTCUSD]!!.toDouble()
 
             val sellVolume = BigDecimal.valueOf(0.2)
-            val result = simulatedService.executeOrder(TestFixtures.BTCUSD, TestFixtures.MARKET, TestFixtures.SELL, sellVolume)
+            val result = simulatedService.executeOrder(
+                TestFixtures.BTCUSD,
+                TestFixtures.MARKET,
+                TestFixtures.SELL,
+                sellVolume,
+            )
 
             result.success shouldBe true
 
@@ -114,8 +124,8 @@ class SimulatedKrakenServiceTest : StringSpec() {
                 settings = TestFixtures.DEFAULT_TEST_SETTINGS,
                 allocations = listOf(
                     Allocation(Asset.BTC, 50.0),
-                    Allocation(Asset.USD, 50.0)
-                )
+                    Allocation(Asset.USD, 50.0),
+                ),
             )
             every { configService.getConfig() } returns config
 
@@ -126,7 +136,12 @@ class SimulatedKrakenServiceTest : StringSpec() {
 
             // Try to sell way too much BTC
             val sellVolume = BigDecimal.valueOf(initialBtc + 10.0)
-            val result = simulatedService.executeOrder(TestFixtures.BTCUSD, TestFixtures.MARKET, TestFixtures.SELL, sellVolume)
+            val result = simulatedService.executeOrder(
+                TestFixtures.BTCUSD,
+                TestFixtures.MARKET,
+                TestFixtures.SELL,
+                sellVolume,
+            )
 
             result.success shouldBe false
             result.errorMessage shouldNotBe null
@@ -141,12 +156,12 @@ class SimulatedKrakenServiceTest : StringSpec() {
                     deviationTriggerPercent = 2.0,
                     dustThresholdUSD = 1.0,
                     dryRun = true,
-                    simulation = true
+                    simulation = true,
                 ),
                 allocations = listOf(
                     Allocation(Asset.BTC, 50.0),
-                    Allocation(Asset.USD, 50.0)
-                )
+                    Allocation(Asset.USD, 50.0),
+                ),
             )
             every { configService.getConfig() } returns config
 
@@ -155,7 +170,7 @@ class SimulatedKrakenServiceTest : StringSpec() {
                 TestFixtures.BTCUSD,
                 TestFixtures.MARKET,
                 TestFixtures.BUY,
-                BigDecimal.valueOf(0.1)
+                BigDecimal.valueOf(0.1),
             )
 
             result.success shouldBe true
@@ -169,8 +184,8 @@ class SimulatedKrakenServiceTest : StringSpec() {
                 settings = TestFixtures.DEFAULT_TEST_SETTINGS,
                 allocations = listOf(
                     Allocation(Asset.BTC, 50.0),
-                    Allocation(Asset.USD, 50.0)
-                )
+                    Allocation(Asset.USD, 50.0),
+                ),
             )
             every { configService.getConfig() } returns config
 
@@ -199,11 +214,11 @@ class SimulatedKrakenServiceTest : StringSpec() {
                     deviationTriggerPercent = 2.0,
                     dustThresholdUSD = 1.0,
                     dryRun = false,
-                    simulation = true
+                    simulation = true,
                 ),
                 allocations = listOf(
-                    Allocation(TestFixtures.USD, 100.0)
-                )
+                    Allocation(TestFixtures.USD, 100.0),
+                ),
             )
             every { configService.getConfig() } returns config
 
@@ -221,13 +236,13 @@ class SimulatedKrakenServiceTest : StringSpec() {
                     deviationTriggerPercent = 2.0,
                     dustThresholdUSD = 1.0,
                     dryRun = false,
-                    simulation = true
+                    simulation = true,
                 ),
                 // "UNKNOWN" exercises initialPrices and simulatedPrices fallback paths (?: 10.0)
                 allocations = listOf(
                     Allocation("UNKNOWN", 50.0),
-                    Allocation(TestFixtures.USD, 50.0)
-                )
+                    Allocation(TestFixtures.USD, 50.0),
+                ),
             )
             every { configService.getConfig() } returns config
 
@@ -246,7 +261,7 @@ class SimulatedKrakenServiceTest : StringSpec() {
                 TestFixtures.ADAEUR,
                 TestFixtures.MARKET,
                 TestFixtures.BUY,
-                BigDecimal.valueOf(0.1)
+                BigDecimal.valueOf(0.1),
             )
             buyResult.success shouldBe true
 
@@ -255,7 +270,7 @@ class SimulatedKrakenServiceTest : StringSpec() {
                 TestFixtures.ADAEUR,
                 TestFixtures.MARKET,
                 TestFixtures.SELL,
-                BigDecimal.valueOf(10.0)
+                BigDecimal.valueOf(10.0),
             )
             sellResult.success shouldBe false
             sellResult.errorMessage?.contains("Insufficient ADAEUR funds") shouldBe true
@@ -265,7 +280,7 @@ class SimulatedKrakenServiceTest : StringSpec() {
                 TestFixtures.ADAEUR,
                 TestFixtures.MARKET,
                 TestFixtures.BUY,
-                BigDecimal.valueOf(100000.0)
+                BigDecimal.valueOf(100000.0),
             )
             buyTooMuchResult.success shouldBe false
             buyTooMuchResult.errorMessage?.contains("Insufficient USD funds") shouldBe true
@@ -275,7 +290,7 @@ class SimulatedKrakenServiceTest : StringSpec() {
                 TestFixtures.ADAEUR,
                 TestFixtures.MARKET,
                 "hold",
-                BigDecimal.valueOf(1.0)
+                BigDecimal.valueOf(1.0),
             )
             invalidResult.success shouldBe true
 

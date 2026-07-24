@@ -8,7 +8,10 @@ import java.io.IOException
 interface ConfigService {
     @Throws(IOException::class)
     fun loadConfig()
+
     fun getConfig(): AppConfig
+
     fun updateConfig(newConfig: AppConfig)
+
     fun watchConfigChanges(): Flow<Settings>
 }

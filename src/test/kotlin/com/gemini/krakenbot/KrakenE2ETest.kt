@@ -23,7 +23,6 @@ import java.util.*
 
 @Suppress("unused")
 class KrakenE2ETest : StringSpec() {
-
     override fun isolationMode() = IsolationMode.InstancePerTest
 
     init {
@@ -33,76 +32,84 @@ class KrakenE2ETest : StringSpec() {
                     Base64
                         .getEncoder()
                         .encodeToString("secret".toByteArray())
-                val appConfig = AppConfig(
-                    kraken = KrakenCredentials(
-                        apiKey = "apiKey",
-                        privateKey = validSecret
-                    ),
-                    settings = Settings(
-                        loopDelaySeconds = 60L,
-                        deviationTriggerPercent = 2.0,
-                        dustThresholdUSD = 1.0,
-                        dryRun = false,
-                        fiatMaxDrawdown = 50.0,
-                        fiatDeploymentExponent = 1.0
-                    ),
-                    allocations = listOf(
-                        Allocation(Asset.BTC, 50.0),
-                        Allocation(Asset.USD, 50.0)
+                val appConfig =
+                    AppConfig(
+                        kraken =
+                        KrakenCredentials(
+                            apiKey = "apiKey",
+                            privateKey = validSecret,
+                        ),
+                        settings =
+                        Settings(
+                            loopDelaySeconds = 60L,
+                            deviationTriggerPercent = 2.0,
+                            dustThresholdUSD = 1.0,
+                            dryRun = false,
+                            fiatMaxDrawdown = 50.0,
+                            fiatDeploymentExponent = 1.0,
+                        ),
+                        allocations =
+                        listOf(
+                            Allocation(Asset.BTC, 50.0),
+                            Allocation(Asset.USD, 50.0),
+                        ),
                     )
-                )
 
                 val mockConfigService = mockk<ConfigService>(relaxed = true)
                 every { mockConfigService.getConfig() } returns appConfig
 
                 var capturedOrderPayload: String? = null
 
-                val mockEngine = MockEngine { request ->
-                    when (request.url.encodedPath) {
-                        "/0/private/Balance" -> {
-                            respond(
-                                content = "{\"error\":[],\"result\":{\"XXBT\":0.5,\"ZUSD\":25000.0}}",
-                                status = HttpStatusCode.OK,
-                                headers = headersOf(
-                                    HttpHeaders.ContentType,
-                                    TestFixtures.APPLICATION_JSON
+                val mockEngine =
+                    MockEngine { request ->
+                        when (request.url.encodedPath) {
+                            "/0/private/Balance" -> {
+                                respond(
+                                    content = "{\"error\":[],\"result\":{\"XXBT\":0.5,\"ZUSD\":25000.0}}",
+                                    status = HttpStatusCode.OK,
+                                    headers =
+                                    headersOf(
+                                        HttpHeaders.ContentType,
+                                        TestFixtures.APPLICATION_JSON,
+                                    ),
                                 )
-                            )
-                        }
+                            }
 
-                        "/0/public/Ticker" -> {
-                            respond(
-                                content = "{\"error\":[],\"result\":{\"XXBTZUSD\":{\"c\":[\"50000.0\"]}}}",
-                                status = HttpStatusCode.OK,
-                                headers = headersOf(
-                                    HttpHeaders.ContentType,
-                                    TestFixtures.APPLICATION_JSON
+                            "/0/public/Ticker" -> {
+                                respond(
+                                    content = "{\"error\":[],\"result\":{\"XXBTZUSD\":{\"c\":[\"50000.0\"]}}}",
+                                    status = HttpStatusCode.OK,
+                                    headers =
+                                    headersOf(
+                                        HttpHeaders.ContentType,
+                                        TestFixtures.APPLICATION_JSON,
+                                    ),
                                 )
-                            )
-                        }
+                            }
 
-                        "/0/private/AddOrder" -> {
-                            capturedOrderPayload =
-                                (request.body as TextContent).text
-                            respond(
-                                content =
+                            "/0/private/AddOrder" -> {
+                                capturedOrderPayload =
+                                    (request.body as TextContent).text
+                                respond(
+                                    content =
                                     "{\"error\":[],\"result\":{\"descr\":{\"order\":\"buy\"},\"txid\":[\"TX-1\"]}}",
-                                status = HttpStatusCode.OK,
-                                headers = headersOf(
-                                    HttpHeaders.ContentType,
-                                    TestFixtures.APPLICATION_JSON
+                                    status = HttpStatusCode.OK,
+                                    headers =
+                                    headersOf(
+                                        HttpHeaders.ContentType,
+                                        TestFixtures.APPLICATION_JSON,
+                                    ),
                                 )
-                            )
-                        }
+                            }
 
-                        else -> {
-                            respond(
-                                "{\"error\":[\"Unknown path\"]}",
-                                HttpStatusCode.NotFound
-                            )
+                            else -> {
+                                respond(
+                                    "{\"error\":[\"Unknown path\"]}",
+                                    HttpStatusCode.NotFound,
+                                )
+                            }
                         }
                     }
-                }
 
                 val httpClient = HttpClient(mockEngine)
                 val objectMapper =
@@ -113,16 +120,18 @@ class KrakenE2ETest : StringSpec() {
                 val tradesRepo = SqliteTradeRepositoryImpl(db)
 
                 // Services
-                val krakenService = KrakenServiceImpl(
-                    configService = mockConfigService,
-                    objectMapper = objectMapper,
-                    httpClient = httpClient
-                )
-                val portfolioAnalyzer = PortfolioAnalyzerImpl(
-                    krakenService = krakenService,
-                    configService = mockConfigService,
-                    portfolioStatsRepository = statsRepo
-                )
+                val krakenService =
+                    KrakenServiceImpl(
+                        configService = mockConfigService,
+                        objectMapper = objectMapper,
+                        httpClient = httpClient,
+                    )
+                val portfolioAnalyzer =
+                    PortfolioAnalyzerImpl(
+                        krakenService = krakenService,
+                        configService = mockConfigService,
+                        portfolioStatsRepository = statsRepo,
+                    )
                 val tradeHistoryService =
                     TradeHistoryServiceImpl(
                         repository = tradesRepo,
@@ -130,17 +139,18 @@ class KrakenE2ETest : StringSpec() {
                         krakenService = krakenService,
                         configService = mockConfigService,
                         objectMapper = objectMapper,
-                        portfolioAnalyzer = portfolioAnalyzer
+                        portfolioAnalyzer = portfolioAnalyzer,
                     )
 
                 val orderExecutor =
                     OrderExecutorImpl(krakenService, portfolioAnalyzer, tradeHistoryService)
-                val portfolioManager = PortfolioManagerImpl(
-                    configService = mockConfigService,
-                    tradeHistoryService = tradeHistoryService,
-                    portfolioAnalyzer = portfolioAnalyzer,
-                    orderExecutor = orderExecutor
-                )
+                val portfolioManager =
+                    PortfolioManagerImpl(
+                        configService = mockConfigService,
+                        tradeHistoryService = tradeHistoryService,
+                        portfolioAnalyzer = portfolioAnalyzer,
+                        orderExecutor = orderExecutor,
+                    )
 
                 // Execute E2E Rebalance
                 portfolioManager.performRebalanceCycle()
@@ -154,74 +164,83 @@ class KrakenE2ETest : StringSpec() {
             runTest {
                 val validSecret =
                     Base64.getEncoder().encodeToString("secret".toByteArray())
-                val appConfig = AppConfig(
-                    kraken = KrakenCredentials(
-                        apiKey = "apiKey",
-                        privateKey = validSecret
-                    ),
-                    settings = Settings(
-                        loopDelaySeconds = 60L,
-                        deviationTriggerPercent = 2.0,
-                        dustThresholdUSD = 1.0,
-                        dryRun = false,
-                        fiatMaxDrawdown = 50.0,
-                        fiatDeploymentExponent = 1.0
-                    ),
-                    allocations = listOf(
-                        Allocation(Asset.BTC, 50.0),
-                        Allocation(Asset.USD, 50.0)
+                val appConfig =
+                    AppConfig(
+                        kraken =
+                        KrakenCredentials(
+                            apiKey = "apiKey",
+                            privateKey = validSecret,
+                        ),
+                        settings =
+                        Settings(
+                            loopDelaySeconds = 60L,
+                            deviationTriggerPercent = 2.0,
+                            dustThresholdUSD = 1.0,
+                            dryRun = false,
+                            fiatMaxDrawdown = 50.0,
+                            fiatDeploymentExponent = 1.0,
+                        ),
+                        allocations =
+                        listOf(
+                            Allocation(Asset.BTC, 50.0),
+                            Allocation(Asset.USD, 50.0),
+                        ),
                     )
-                )
 
                 val mockConfigService = mockk<ConfigService>(relaxed = true)
                 every { mockConfigService.getConfig() } returns appConfig
 
                 var capturedOrderPayload: String? = null
 
-                val mockEngine = MockEngine { request ->
-                    when (request.url.encodedPath) {
-                        "/0/private/Balance" -> {
-                            respond(
-                                content = "{\"error\":[],\"result\":{\"XXBT\":0.4,\"ZUSD\":30000.0}}",
-                                status = HttpStatusCode.OK,
-                                headers = headersOf(
-                                    HttpHeaders.ContentType,
-                                    TestFixtures.APPLICATION_JSON
+                val mockEngine =
+                    MockEngine { request ->
+                        when (request.url.encodedPath) {
+                            "/0/private/Balance" -> {
+                                respond(
+                                    content = "{\"error\":[],\"result\":{\"XXBT\":0.4,\"ZUSD\":30000.0}}",
+                                    status = HttpStatusCode.OK,
+                                    headers =
+                                    headersOf(
+                                        HttpHeaders.ContentType,
+                                        TestFixtures.APPLICATION_JSON,
+                                    ),
                                 )
-                            )
-                        }
+                            }
 
-                        "/0/public/Ticker" -> {
-                            respond(
-                                content = "{\"error\":[],\"result\":{\"XXBTZUSD\":{\"c\":[\"50000.0\"]}}}",
-                                status = HttpStatusCode.OK,
-                                headers = headersOf(
-                                    HttpHeaders.ContentType,
-                                    TestFixtures.APPLICATION_JSON
+                            "/0/public/Ticker" -> {
+                                respond(
+                                    content = "{\"error\":[],\"result\":{\"XXBTZUSD\":{\"c\":[\"50000.0\"]}}}",
+                                    status = HttpStatusCode.OK,
+                                    headers =
+                                    headersOf(
+                                        HttpHeaders.ContentType,
+                                        TestFixtures.APPLICATION_JSON,
+                                    ),
                                 )
-                            )
-                        }
+                            }
 
-                        "/0/private/AddOrder" -> {
-                            capturedOrderPayload =
-                                (request.body as TextContent).text
-                            respond(
-                                content =
+                            "/0/private/AddOrder" -> {
+                                capturedOrderPayload =
+                                    (request.body as TextContent).text
+                                respond(
+                                    content =
                                     "{\"error\":[],\"result\":{\"descr\":{\"order\":\"buy\"},\"txid\":[\"TX-1\"]}}",
-                                status = HttpStatusCode.OK,
-                                headers = headersOf(
-                                    HttpHeaders.ContentType,
-                                    TestFixtures.APPLICATION_JSON
+                                    status = HttpStatusCode.OK,
+                                    headers =
+                                    headersOf(
+                                        HttpHeaders.ContentType,
+                                        TestFixtures.APPLICATION_JSON,
+                                    ),
                                 )
-                            )
-                        }
+                            }
 
-                        else -> respond(
-                            "{\"error\":[\"Unknown path\"]}",
-                            HttpStatusCode.NotFound
-                        )
+                            else ->
+                                respond(
+                                    "{\"error\":[\"Unknown path\"]}",
+                                    HttpStatusCode.NotFound,
+                                )
+                        }
                     }
-                }
 
                 val httpClient = HttpClient(mockEngine)
                 val objectMapper =
@@ -231,16 +250,18 @@ class KrakenE2ETest : StringSpec() {
                 val statsRepo = SqlitePortfolioStatsRepositoryImpl(db, objectMapper)
                 val tradesRepo = SqliteTradeRepositoryImpl(db)
 
-                val krakenService = KrakenServiceImpl(
-                    configService = mockConfigService,
-                    objectMapper = objectMapper,
-                    httpClient = httpClient
-                )
-                val portfolioAnalyzer = PortfolioAnalyzerImpl(
-                    krakenService = krakenService,
-                    configService = mockConfigService,
-                    portfolioStatsRepository = statsRepo
-                )
+                val krakenService =
+                    KrakenServiceImpl(
+                        configService = mockConfigService,
+                        objectMapper = objectMapper,
+                        httpClient = httpClient,
+                    )
+                val portfolioAnalyzer =
+                    PortfolioAnalyzerImpl(
+                        krakenService = krakenService,
+                        configService = mockConfigService,
+                        portfolioStatsRepository = statsRepo,
+                    )
                 val tradeHistoryService =
                     TradeHistoryServiceImpl(
                         repository = tradesRepo,
@@ -248,17 +269,18 @@ class KrakenE2ETest : StringSpec() {
                         krakenService = krakenService,
                         configService = mockConfigService,
                         objectMapper = objectMapper,
-                        portfolioAnalyzer = portfolioAnalyzer
+                        portfolioAnalyzer = portfolioAnalyzer,
                     )
 
                 val orderExecutor =
                     OrderExecutorImpl(krakenService, portfolioAnalyzer, tradeHistoryService)
-                val portfolioManager = PortfolioManagerImpl(
-                    configService = mockConfigService,
-                    tradeHistoryService = tradeHistoryService,
-                    portfolioAnalyzer = portfolioAnalyzer,
-                    orderExecutor = orderExecutor
-                )
+                val portfolioManager =
+                    PortfolioManagerImpl(
+                        configService = mockConfigService,
+                        tradeHistoryService = tradeHistoryService,
+                        portfolioAnalyzer = portfolioAnalyzer,
+                        orderExecutor = orderExecutor,
+                    )
 
                 portfolioManager.performRebalanceCycle()
 
@@ -272,4 +294,3 @@ class KrakenE2ETest : StringSpec() {
         }
     }
 }
-

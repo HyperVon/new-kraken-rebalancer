@@ -7,11 +7,11 @@ import com.gemini.krakenbot.config.*
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.HistoryStats
 import com.gemini.krakenbot.model.PortfolioSnapshot
+import com.gemini.krakenbot.model.TimeRange
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.TradeHistoryService
 import com.gemini.krakenbot.view.DashboardView
 import com.gemini.krakenbot.view.component.*
-import com.gemini.krakenbot.model.TimeRange
 import com.gemini.krakenbot.view.util.FormFields
 import com.gemini.krakenbot.view.util.HtmxHeaders
 import com.gemini.krakenbot.view.util.Routes
@@ -46,7 +46,6 @@ import io.ktor.server.sse.SSE as ServerSSE
 
 @Suppress("unused")
 class DashboardControllerTest : StringSpec() {
-
     override fun isolationMode() = IsolationMode.InstancePerTest
 
     private val tradeHistoryService = mockk<TradeHistoryService>(relaxed = true)
@@ -60,35 +59,36 @@ class DashboardControllerTest : StringSpec() {
     }
 
     init {
-        val testModule = module {
-            single { tradeHistoryService }
-            single { configService }
-            single { objectMapper }
-            single { DashboardShellComponent() }
-            single { SettingsFormComponent() }
-            single { OverviewGridComponent() }
-            single { AllocationChartComponent() }
-            single { PerformanceTableComponent() }
-            single { RecentActivityComponent() }
-            single {
-                DashboardFragmentComponent(
-                    overviewGridComponent = get(),
-                    allocationChartComponent = get(),
-                    performanceTableComponent = get(),
-                    recentActivityComponent = get()
-                )
+        val testModule =
+            module {
+                single { tradeHistoryService }
+                single { configService }
+                single { objectMapper }
+                single { DashboardShellComponent() }
+                single { SettingsFormComponent() }
+                single { OverviewGridComponent() }
+                single { AllocationChartComponent() }
+                single { PerformanceTableComponent() }
+                single { RecentActivityComponent() }
+                single {
+                    DashboardFragmentComponent(
+                        overviewGridComponent = get(),
+                        allocationChartComponent = get(),
+                        performanceTableComponent = get(),
+                        recentActivityComponent = get(),
+                    )
+                }
+                single { HistoryPageComponent() }
+                single {
+                    DashboardView(
+                        shellComponent = get(),
+                        settingsFormComponent = get(),
+                        fragmentComponent = get(),
+                        historyPageComponent = get(),
+                    )
+                }
+                single { DashboardController(get(), get(), get(), get()) }
             }
-            single { HistoryPageComponent() }
-            single {
-                DashboardView(
-                    shellComponent = get(),
-                    settingsFormComponent = get(),
-                    fragmentComponent = get(),
-                    historyPageComponent = get()
-                )
-            }
-            single { DashboardController(get(), get(), get(), get()) }
-        }
 
         beforeTest {
             stopKoin()
@@ -130,46 +130,51 @@ class DashboardControllerTest : StringSpec() {
 
         "getDashboardFragment_WithSnapshot_ReturnsPopulatedHtml" {
             val nowTime = Instant.now()
-            val snapshot = PortfolioSnapshot(
-                timestamp = nowTime,
-                totalValueUSD = BigDecimal("15000.00"),
-                assets = mapOf(
-                    Asset.USD to PortfolioSnapshot.AssetSnapshot(
-                        symbol = Asset.USD,
-                        balance = BigDecimal("5000.0"),
-                        price = BigDecimal("1.0"),
-                        valueUSD = BigDecimal("5000.0"),
-                        targetPercent = BigDecimal("33.33"),
-                        currentPercent = BigDecimal("33.33"),
-                        deviationPercent = BigDecimal("0.0"),
-                        deviationUSD = BigDecimal("0.0")
+            val snapshot =
+                PortfolioSnapshot(
+                    timestamp = nowTime,
+                    totalValueUSD = BigDecimal("15000.00"),
+                    assets =
+                    mapOf(
+                        Asset.USD to
+                            PortfolioSnapshot.AssetSnapshot(
+                                symbol = Asset.USD,
+                                balance = BigDecimal("5000.0"),
+                                price = BigDecimal("1.0"),
+                                valueUSD = BigDecimal("5000.0"),
+                                targetPercent = BigDecimal("33.33"),
+                                currentPercent = BigDecimal("33.33"),
+                                deviationPercent = BigDecimal("0.0"),
+                                deviationUSD = BigDecimal("0.0"),
+                            ),
+                        Asset.BTC to
+                            PortfolioSnapshot.AssetSnapshot(
+                                symbol = Asset.BTC,
+                                balance = BigDecimal("0.1"),
+                                price = BigDecimal("50000.0"),
+                                valueUSD = BigDecimal("5000.0"),
+                                targetPercent = BigDecimal("33.33"),
+                                currentPercent = BigDecimal("33.33"),
+                                deviationPercent = BigDecimal("5.0"),
+                                deviationUSD = BigDecimal("250.0"),
+                            ),
+                        Asset.ETH to
+                            PortfolioSnapshot.AssetSnapshot(
+                                symbol = Asset.ETH,
+                                balance = BigDecimal("2.5"),
+                                price = BigDecimal("2000.0"),
+                                valueUSD = BigDecimal("5000.0"),
+                                targetPercent = BigDecimal("33.33"),
+                                currentPercent = BigDecimal("33.33"),
+                                deviationPercent = BigDecimal("-2.0"),
+                                deviationUSD = BigDecimal("-100.0"),
+                            ),
                     ),
-                    Asset.BTC to PortfolioSnapshot.AssetSnapshot(
-                        symbol = Asset.BTC,
-                        balance = BigDecimal("0.1"),
-                        price = BigDecimal("50000.0"),
-                        valueUSD = BigDecimal("5000.0"),
-                        targetPercent = BigDecimal("33.33"),
-                        currentPercent = BigDecimal("33.33"),
-                        deviationPercent = BigDecimal("5.0"),
-                        deviationUSD = BigDecimal("250.0")
-                    ),
-                    Asset.ETH to PortfolioSnapshot.AssetSnapshot(
-                        symbol = Asset.ETH,
-                        balance = BigDecimal("2.5"),
-                        price = BigDecimal("2000.0"),
-                        valueUSD = BigDecimal("5000.0"),
-                        targetPercent = BigDecimal("33.33"),
-                        currentPercent = BigDecimal("33.33"),
-                        deviationPercent = BigDecimal("-2.0"),
-                        deviationUSD = BigDecimal("-100.0")
-                    )
-                ),
-                actions = listOf("BUY BTC 0.1"),
-                drawdownPercent = BigDecimal.ZERO,
-                fiatDeploymentPercent = BigDecimal.ZERO,
-                effectiveUsdTargetPercent = BigDecimal("33.33")
-            )
+                    actions = listOf("BUY BTC 0.1"),
+                    drawdownPercent = BigDecimal.ZERO,
+                    fiatDeploymentPercent = BigDecimal.ZERO,
+                    effectiveUsdTargetPercent = BigDecimal("33.33"),
+                )
             every { tradeHistoryService.getLatestSnapshot() } returns snapshot
             every { tradeHistoryService.getHistory() } returns listOf(snapshot)
 
@@ -203,23 +208,26 @@ class DashboardControllerTest : StringSpec() {
         }
 
         "getSettingsPage_ReturnsSettingsForm" {
-            val config = AppConfig(
-                kraken = KrakenCredentials("real-api-key", "real-private-key"),
-                settings = Settings(
-                    loopDelaySeconds = 60L,
-                    deviationTriggerPercent = 2.0,
-                    dustThresholdUSD = 1.0,
-                    dryRun = true,
-                    fiatMaxDrawdown = 0.0,
-                    fiatDeploymentExponent = 1.0
-                ),
-                allocations = listOf(
-                    Allocation(
-                        symbol = Asset.USD,
-                        targetPercent = 100.0
-                    )
+            val config =
+                AppConfig(
+                    kraken = KrakenCredentials("real-api-key", "real-private-key"),
+                    settings =
+                    Settings(
+                        loopDelaySeconds = 60L,
+                        deviationTriggerPercent = 2.0,
+                        dustThresholdUSD = 1.0,
+                        dryRun = true,
+                        fiatMaxDrawdown = 0.0,
+                        fiatDeploymentExponent = 1.0,
+                    ),
+                    allocations =
+                    listOf(
+                        Allocation(
+                            symbol = Asset.USD,
+                            targetPercent = 100.0,
+                        ),
+                    ),
                 )
-            )
             every { configService.getConfig() } returns config
 
             testApplication {
@@ -235,26 +243,30 @@ class DashboardControllerTest : StringSpec() {
         }
 
         "postSettings_SucceedsAndSetsHxRedirectHeader" {
-            val serverConfig = AppConfig(
-                kraken = KrakenCredentials(
-                    apiKey = TestFixtures.TEST_SERVER_API_KEY,
-                    privateKey = TestFixtures.TEST_SERVER_API_SECRET
-                ),
-                settings = Settings(
-                    loopDelaySeconds = 60L,
-                    deviationTriggerPercent = 2.0,
-                    dustThresholdUSD = 1.0,
-                    dryRun = true,
-                    fiatMaxDrawdown = 0.0,
-                    fiatDeploymentExponent = 1.0
-                ),
-                allocations = listOf(
-                    Allocation(
-                        symbol = Asset.USD,
-                        targetPercent = 100.0
-                    )
+            val serverConfig =
+                AppConfig(
+                    kraken =
+                    KrakenCredentials(
+                        apiKey = TestFixtures.TEST_SERVER_API_KEY,
+                        privateKey = TestFixtures.TEST_SERVER_API_SECRET,
+                    ),
+                    settings =
+                    Settings(
+                        loopDelaySeconds = 60L,
+                        deviationTriggerPercent = 2.0,
+                        dustThresholdUSD = 1.0,
+                        dryRun = true,
+                        fiatMaxDrawdown = 0.0,
+                        fiatDeploymentExponent = 1.0,
+                    ),
+                    allocations =
+                    listOf(
+                        Allocation(
+                            symbol = Asset.USD,
+                            targetPercent = 100.0,
+                        ),
+                    ),
                 )
-            )
             val captured = slot<AppConfig>()
             every { configService.getConfig() } returns serverConfig
             every { configService.updateConfig(capture(captured)) } returns Unit
@@ -263,25 +275,26 @@ class DashboardControllerTest : StringSpec() {
                 application {
                     configureTestEnv()
                 }
-                val response = client.post(Routes.SETTINGS) {
-                    setBody(
-                        parametersOf(
-                            FormFields.LOOP_DELAY_SECONDS to listOf("120"),
-                            FormFields.DEVIATION_TRIGGER_PERCENT to listOf("3.5"),
-                            FormFields.DUST_THRESHOLD_USD to listOf("2.0"),
-                            FormFields.FIAT_MAX_DRAWDOWN to listOf("5.0"),
-                            FormFields.FIAT_DEPLOYMENT_EXPONENT to listOf("1.5"),
-                            FormFields.DRY_RUN to listOf("on"),
-                            FormFields.SIMULATION to listOf("on"),
-                            FormFields.SYMBOLS to listOf(Asset.USD),
-                            FormFields.TARGETS to listOf("100.0")
-                        ).formUrlEncode()
-                    )
-                    header(
-                        HttpHeaders.ContentType,
-                        ContentType.Application.FormUrlEncoded.toString()
-                    )
-                }
+                val response =
+                    client.post(Routes.SETTINGS) {
+                        setBody(
+                            parametersOf(
+                                FormFields.LOOP_DELAY_SECONDS to listOf("120"),
+                                FormFields.DEVIATION_TRIGGER_PERCENT to listOf("3.5"),
+                                FormFields.DUST_THRESHOLD_USD to listOf("2.0"),
+                                FormFields.FIAT_MAX_DRAWDOWN to listOf("5.0"),
+                                FormFields.FIAT_DEPLOYMENT_EXPONENT to listOf("1.5"),
+                                FormFields.DRY_RUN to listOf("on"),
+                                FormFields.SIMULATION to listOf("on"),
+                                FormFields.SYMBOLS to listOf(Asset.USD),
+                                FormFields.TARGETS to listOf("100.0"),
+                            ).formUrlEncode(),
+                        )
+                        header(
+                            HttpHeaders.ContentType,
+                            ContentType.Application.FormUrlEncoded.toString(),
+                        )
+                    }
                 response.status shouldBe HttpStatusCode.OK
                 response.headers[HtmxHeaders.HX_REDIRECT] shouldBe Routes.ROOT
             }
@@ -291,50 +304,56 @@ class DashboardControllerTest : StringSpec() {
         }
 
         "postSettings_OnValidationError_ReturnsErrorHtmlBody" {
-            val serverConfig = AppConfig(
-                kraken = KrakenCredentials(
-                    apiKey = TestFixtures.TEST_SERVER_API_KEY,
-                    privateKey = TestFixtures.TEST_SERVER_API_SECRET
-                ),
-                settings = Settings(
-                    loopDelaySeconds = 60L,
-                    deviationTriggerPercent = 2.0,
-                    dustThresholdUSD = 1.0,
-                    dryRun = true,
-                    fiatMaxDrawdown = 0.0,
-                    fiatDeploymentExponent = 1.0
-                ),
-                allocations = listOf(
-                    Allocation(
-                        symbol = Asset.USD,
-                        targetPercent = 100.0
-                    )
+            val serverConfig =
+                AppConfig(
+                    kraken =
+                    KrakenCredentials(
+                        apiKey = TestFixtures.TEST_SERVER_API_KEY,
+                        privateKey = TestFixtures.TEST_SERVER_API_SECRET,
+                    ),
+                    settings =
+                    Settings(
+                        loopDelaySeconds = 60L,
+                        deviationTriggerPercent = 2.0,
+                        dustThresholdUSD = 1.0,
+                        dryRun = true,
+                        fiatMaxDrawdown = 0.0,
+                        fiatDeploymentExponent = 1.0,
+                    ),
+                    allocations =
+                    listOf(
+                        Allocation(
+                            symbol = Asset.USD,
+                            targetPercent = 100.0,
+                        ),
+                    ),
                 )
-            )
             every { configService.getConfig() } returns serverConfig
-            every { configService.updateConfig(any()) } throws InvalidConfigurationException(
-                "Total allocation percentage must be exactly 100%."
-            )
+            every { configService.updateConfig(any()) } throws
+                InvalidConfigurationException(
+                    "Total allocation percentage must be exactly 100%.",
+                )
 
             testApplication {
                 application {
                     configureTestEnv()
                 }
-                val response = client.post(Routes.SETTINGS) {
-                    setBody(
-                        parametersOf(
-                            FormFields.LOOP_DELAY_SECONDS to listOf("60"),
-                            FormFields.DEVIATION_TRIGGER_PERCENT to listOf("2.0"),
-                            FormFields.DUST_THRESHOLD_USD to listOf("1.0"),
-                            FormFields.SYMBOLS to listOf(Asset.USD),
-                            FormFields.TARGETS to listOf("90.0") // sum != 100
-                        ).formUrlEncode()
-                    )
-                    header(
-                        HttpHeaders.ContentType,
-                        ContentType.Application.FormUrlEncoded.toString()
-                    )
-                }
+                val response =
+                    client.post(Routes.SETTINGS) {
+                        setBody(
+                            parametersOf(
+                                FormFields.LOOP_DELAY_SECONDS to listOf("60"),
+                                FormFields.DEVIATION_TRIGGER_PERCENT to listOf("2.0"),
+                                FormFields.DUST_THRESHOLD_USD to listOf("1.0"),
+                                FormFields.SYMBOLS to listOf(Asset.USD),
+                                FormFields.TARGETS to listOf("90.0"), // sum != 100
+                            ).formUrlEncode(),
+                        )
+                        header(
+                            HttpHeaders.ContentType,
+                            ContentType.Application.FormUrlEncoded.toString(),
+                        )
+                    }
                 response.status shouldBe HttpStatusCode.OK
                 response.bodyAsText() shouldContain "Total allocation percentage must be exactly 100%."
             }
@@ -363,59 +382,66 @@ class DashboardControllerTest : StringSpec() {
         }
 
         "postSettings_WithMissingOrInvalidParams_UsesDefaultsAndHandlesValidation" {
-            val serverConfig = AppConfig(
-                kraken = KrakenCredentials(
-                    apiKey = TestFixtures.TEST_SERVER_API_KEY,
-                    privateKey = TestFixtures.TEST_SERVER_API_SECRET
-                ),
-                settings = Settings(
-                    loopDelaySeconds = 60L,
-                    deviationTriggerPercent = 2.0,
-                    dustThresholdUSD = 1.0,
-                    dryRun = true,
-                    fiatMaxDrawdown = 0.0,
-                    fiatDeploymentExponent = 1.0
-                ),
-                allocations = listOf(
-                    Allocation(
-                        symbol = Asset.USD,
-                        targetPercent = 100.0
-                    )
+            val serverConfig =
+                AppConfig(
+                    kraken =
+                    KrakenCredentials(
+                        apiKey = TestFixtures.TEST_SERVER_API_KEY,
+                        privateKey = TestFixtures.TEST_SERVER_API_SECRET,
+                    ),
+                    settings =
+                    Settings(
+                        loopDelaySeconds = 60L,
+                        deviationTriggerPercent = 2.0,
+                        dustThresholdUSD = 1.0,
+                        dryRun = true,
+                        fiatMaxDrawdown = 0.0,
+                        fiatDeploymentExponent = 1.0,
+                    ),
+                    allocations =
+                    listOf(
+                        Allocation(
+                            symbol = Asset.USD,
+                            targetPercent = 100.0,
+                        ),
+                    ),
                 )
-            )
             every { configService.getConfig() } returns serverConfig
             val capturedConfig = slot<AppConfig>()
             every {
                 configService.updateConfig(capture(capturedConfig))
-            } throws InvalidConfigurationException(
-                "Mocked validation error"
-            )
+            } throws
+                InvalidConfigurationException(
+                    "Mocked validation error",
+                )
 
             testApplication {
                 application {
                     configureTestEnv()
                 }
-                val response = client.post(Routes.SETTINGS) {
-                    setBody(
-                        parametersOf(
-                            FormFields.LOOP_DELAY_SECONDS to listOf(TestFixtures.INVALID),
-                            FormFields.DEVIATION_TRIGGER_PERCENT to listOf(TestFixtures.INVALID),
-                            FormFields.DUST_THRESHOLD_USD to listOf(TestFixtures.INVALID),
-                            FormFields.FIAT_MAX_DRAWDOWN to listOf(TestFixtures.INVALID),
-                            FormFields.FIAT_DEPLOYMENT_EXPONENT to listOf(TestFixtures.INVALID),
-                            // "dryRun" is absent, meaning false
-                            FormFields.SYMBOLS to listOf(
-                                Asset.BTC,
-                                Asset.ETH
-                            ),
-                            FormFields.TARGETS to listOf(TestFixtures.INVALID, "30.0")
-                        ).formUrlEncode()
-                    )
-                    header(
-                        HttpHeaders.ContentType,
-                        ContentType.Application.FormUrlEncoded.toString()
-                    )
-                }
+                val response =
+                    client.post(Routes.SETTINGS) {
+                        setBody(
+                            parametersOf(
+                                FormFields.LOOP_DELAY_SECONDS to listOf(TestFixtures.INVALID),
+                                FormFields.DEVIATION_TRIGGER_PERCENT to listOf(TestFixtures.INVALID),
+                                FormFields.DUST_THRESHOLD_USD to listOf(TestFixtures.INVALID),
+                                FormFields.FIAT_MAX_DRAWDOWN to listOf(TestFixtures.INVALID),
+                                FormFields.FIAT_DEPLOYMENT_EXPONENT to listOf(TestFixtures.INVALID),
+                                // "dryRun" is absent, meaning false
+                                FormFields.SYMBOLS to
+                                    listOf(
+                                        Asset.BTC,
+                                        Asset.ETH,
+                                    ),
+                                FormFields.TARGETS to listOf(TestFixtures.INVALID, "30.0"),
+                            ).formUrlEncode(),
+                        )
+                        header(
+                            HttpHeaders.ContentType,
+                            ContentType.Application.FormUrlEncoded.toString(),
+                        )
+                    }
                 response.status shouldBe HttpStatusCode.OK
                 response.bodyAsText() shouldContain "Mocked validation error"
             }
@@ -427,54 +453,62 @@ class DashboardControllerTest : StringSpec() {
             capturedConfig.captured.settings.fiatMaxDrawdown shouldBe 0.0
             capturedConfig.captured.settings.fiatDeploymentExponent shouldBe 1.0
             capturedConfig.captured.allocations.size shouldBe 2
-            capturedConfig.captured.allocations[0].symbol.value shouldBe Asset.BTC
+            capturedConfig.captured.allocations[0]
+                .symbol.value shouldBe Asset.BTC
             capturedConfig.captured.allocations[0].targetPercent shouldBe 0.0
-            capturedConfig.captured.allocations[1].symbol.value shouldBe Asset.ETH
+            capturedConfig.captured.allocations[1]
+                .symbol.value shouldBe Asset.ETH
             capturedConfig.captured.allocations[1].targetPercent shouldBe 30.0
         }
 
         "postSettings_WithAbsentParamsAndNullErrorMessage_UsesDefaultsAndFallbackMessage" {
-            val serverConfig = AppConfig(
-                kraken = KrakenCredentials(
-                    apiKey = TestFixtures.TEST_SERVER_API_KEY,
-                    privateKey = TestFixtures.TEST_SERVER_API_SECRET
-                ),
-                settings = Settings(
-                    loopDelaySeconds = 60L,
-                    deviationTriggerPercent = 2.0,
-                    dustThresholdUSD = 1.0,
-                    dryRun = true,
-                    fiatMaxDrawdown = 0.0,
-                    fiatDeploymentExponent = 1.0
-                ),
-                allocations = listOf(
-                    Allocation(
-                        symbol = Asset.USD,
-                        targetPercent = 100.0
-                    )
+            val serverConfig =
+                AppConfig(
+                    kraken =
+                    KrakenCredentials(
+                        apiKey = TestFixtures.TEST_SERVER_API_KEY,
+                        privateKey = TestFixtures.TEST_SERVER_API_SECRET,
+                    ),
+                    settings =
+                    Settings(
+                        loopDelaySeconds = 60L,
+                        deviationTriggerPercent = 2.0,
+                        dustThresholdUSD = 1.0,
+                        dryRun = true,
+                        fiatMaxDrawdown = 0.0,
+                        fiatDeploymentExponent = 1.0,
+                    ),
+                    allocations =
+                    listOf(
+                        Allocation(
+                            symbol = Asset.USD,
+                            targetPercent = 100.0,
+                        ),
+                    ),
                 )
-            )
             every { configService.getConfig() } returns serverConfig
             val capturedConfig = slot<AppConfig>()
             every {
                 configService.updateConfig(capture(capturedConfig))
-            } throws InvalidConfigurationException(
-                null
-            )
+            } throws
+                InvalidConfigurationException(
+                    null,
+                )
 
             testApplication {
                 application {
                     configureTestEnv()
                 }
-                val response = client.post(Routes.SETTINGS) {
-                    setBody(
-                        parametersOf().formUrlEncode()
-                    )
-                    header(
-                        HttpHeaders.ContentType,
-                        ContentType.Application.FormUrlEncoded.toString()
-                    )
-                }
+                val response =
+                    client.post(Routes.SETTINGS) {
+                        setBody(
+                            parametersOf().formUrlEncode(),
+                        )
+                        header(
+                            HttpHeaders.ContentType,
+                            ContentType.Application.FormUrlEncoded.toString(),
+                        )
+                    }
                 response.status shouldBe HttpStatusCode.OK
                 response.bodyAsText() shouldContain "Invalid configuration"
             }
@@ -489,59 +523,67 @@ class DashboardControllerTest : StringSpec() {
         }
 
         "sseStatusStream_EmitsInitialAndFlowSnapshots" {
-            val snapshot1 = PortfolioSnapshot(
-                timestamp = Instant.now(),
-                totalValueUSD = BigDecimal("10000.0"),
-                assets = emptyMap(),
-                actions = emptyList(),
-                drawdownPercent = BigDecimal.ZERO,
-                fiatDeploymentPercent = BigDecimal.ZERO,
-                effectiveUsdTargetPercent = BigDecimal.ZERO
-            )
-            val snapshot2 = PortfolioSnapshot(
-                timestamp = Instant.now().plusSeconds(60),
-                totalValueUSD = BigDecimal("12000.0"),
-                assets = emptyMap(),
-                actions = emptyList(),
-                drawdownPercent = BigDecimal.ZERO,
-                fiatDeploymentPercent = BigDecimal.ZERO,
-                effectiveUsdTargetPercent = BigDecimal.ZERO
-            )
+            val snapshot1 =
+                PortfolioSnapshot(
+                    timestamp = Instant.now(),
+                    totalValueUSD = BigDecimal("10000.0"),
+                    assets = emptyMap(),
+                    actions = emptyList(),
+                    drawdownPercent = BigDecimal.ZERO,
+                    fiatDeploymentPercent = BigDecimal.ZERO,
+                    effectiveUsdTargetPercent = BigDecimal.ZERO,
+                )
+            val snapshot2 =
+                PortfolioSnapshot(
+                    timestamp = Instant.now().plusSeconds(60),
+                    totalValueUSD = BigDecimal("12000.0"),
+                    assets = emptyMap(),
+                    actions = emptyList(),
+                    drawdownPercent = BigDecimal.ZERO,
+                    fiatDeploymentPercent = BigDecimal.ZERO,
+                    effectiveUsdTargetPercent = BigDecimal.ZERO,
+                )
 
             every { tradeHistoryService.getLatestSnapshot() } returns snapshot1
-            every { tradeHistoryService.getHistoryFlow() } returns flowOf(
-                snapshot2
-            )
+            every { tradeHistoryService.getHistoryFlow() } returns
+                flowOf(
+                    snapshot2,
+                )
 
             testApplication {
-                val client = createClient {
-                    install(ClientSSE)
-                }
+                val client =
+                    createClient {
+                        install(ClientSSE)
+                    }
                 application {
                     configureTestEnv()
                 }
                 client.sse(Routes.API_STATUS_STREAM) {
                     val events = incoming.take(2).toList()
-                    events[0].data shouldBe objectMapper.writeValueAsString(
-                        snapshot1
-                    )
-                    events[1].data shouldBe objectMapper.writeValueAsString(
-                        snapshot2
-                    )
+                    events[0].data shouldBe
+                        objectMapper.writeValueAsString(
+                            snapshot1,
+                        )
+                    events[1].data shouldBe
+                        objectMapper.writeValueAsString(
+                            snapshot2,
+                        )
                 }
             }
         }
 
         "sseStatusStream_HandlesCancellationException" {
             every { tradeHistoryService.getLatestSnapshot() } returns null
-            every { tradeHistoryService.getHistoryFlow() } returns flow {
-                throw CancellationException("Simulated cancel")
-            }
+            every { tradeHistoryService.getHistoryFlow() } returns
+                flow {
+                    throw CancellationException("Simulated cancel")
+                }
 
             testApplication {
-                val client = createClient {
-                    install(ClientSSE)
-                }
+                val client =
+                    createClient {
+                        install(ClientSSE)
+                    }
                 application {
                     configureTestEnv()
                 }
@@ -557,14 +599,16 @@ class DashboardControllerTest : StringSpec() {
 
         "sseStatusStream_HandlesGenericExceptionGracefully" {
             every { tradeHistoryService.getLatestSnapshot() } returns null
-            every { tradeHistoryService.getHistoryFlow() } returns flow {
-                throw RuntimeException("Simulated error")
-            }
+            every { tradeHistoryService.getHistoryFlow() } returns
+                flow {
+                    throw RuntimeException("Simulated error")
+                }
 
             testApplication {
-                val client = createClient {
-                    install(ClientSSE)
-                }
+                val client =
+                    createClient {
+                        install(ClientSSE)
+                    }
                 application {
                     configureTestEnv()
                 }
@@ -611,13 +655,14 @@ class DashboardControllerTest : StringSpec() {
         }
 
         "getApiHistoryStats_ReturnsJson" {
-            val stats = HistoryStats(
-                allTimeHigh = BigDecimal("15000.00"),
-                totalTradesExecuted = 12L,
-                totalVolumeTraded = BigDecimal("50000.00"),
-                totalFeesPaid = BigDecimal("25.50"),
-                latestSnapshotTime = Instant.now()
-            )
+            val stats =
+                HistoryStats(
+                    allTimeHigh = BigDecimal("15000.00"),
+                    totalTradesExecuted = 12L,
+                    totalVolumeTraded = BigDecimal("50000.00"),
+                    totalFeesPaid = BigDecimal("25.50"),
+                    latestSnapshotTime = Instant.now(),
+                )
             every { tradeHistoryService.getHistoryStats(any(), any()) } returns stats
             testApplication {
                 application {
@@ -636,11 +681,14 @@ class DashboardControllerTest : StringSpec() {
                     configureTestEnv()
                 }
                 // Test "7d" range
-                client.get(Routes.API_HISTORY_SNAPSHOTS.withRange(TimeRange.SEVEN_DAYS)).status shouldBe HttpStatusCode.OK
+                client.get(Routes.API_HISTORY_SNAPSHOTS.withRange(TimeRange.SEVEN_DAYS)).status shouldBe
+                    HttpStatusCode.OK
                 // Test "30d" range
-                client.get(Routes.API_HISTORY_SNAPSHOTS.withRange(TimeRange.THIRTY_DAYS)).status shouldBe HttpStatusCode.OK
+                client.get(Routes.API_HISTORY_SNAPSHOTS.withRange(TimeRange.THIRTY_DAYS)).status shouldBe
+                    HttpStatusCode.OK
                 // Test "90d" range
-                client.get(Routes.API_HISTORY_SNAPSHOTS.withRange(TimeRange.NINETY_DAYS)).status shouldBe HttpStatusCode.OK
+                client.get(Routes.API_HISTORY_SNAPSHOTS.withRange(TimeRange.NINETY_DAYS)).status shouldBe
+                    HttpStatusCode.OK
                 // Test fallback else range
                 client.get(Routes.API_HISTORY_SNAPSHOTS.withRange("invalid")).status shouldBe HttpStatusCode.OK
             }
@@ -660,22 +708,24 @@ class DashboardControllerTest : StringSpec() {
         }
 
         "getApiHealth_ReturnsJsonWithStats" {
-            val stats = HistoryStats(
-                allTimeHigh = BigDecimal("15000.00"),
-                totalTradesExecuted = 12L,
-                totalVolumeTraded = BigDecimal("50000.00"),
-                totalFeesPaid = BigDecimal("25.50"),
-                latestSnapshotTime = Instant.now()
-            )
-            val snapshot = PortfolioSnapshot(
-                timestamp = Instant.now(),
-                totalValueUSD = BigDecimal("12000.0"),
-                assets = emptyMap(),
-                actions = emptyList(),
-                drawdownPercent = BigDecimal.ZERO,
-                fiatDeploymentPercent = BigDecimal.ZERO,
-                effectiveUsdTargetPercent = BigDecimal.ZERO
-            )
+            val stats =
+                HistoryStats(
+                    allTimeHigh = BigDecimal("15000.00"),
+                    totalTradesExecuted = 12L,
+                    totalVolumeTraded = BigDecimal("50000.00"),
+                    totalFeesPaid = BigDecimal("25.50"),
+                    latestSnapshotTime = Instant.now(),
+                )
+            val snapshot =
+                PortfolioSnapshot(
+                    timestamp = Instant.now(),
+                    totalValueUSD = BigDecimal("12000.0"),
+                    assets = emptyMap(),
+                    actions = emptyList(),
+                    drawdownPercent = BigDecimal.ZERO,
+                    fiatDeploymentPercent = BigDecimal.ZERO,
+                    effectiveUsdTargetPercent = BigDecimal.ZERO,
+                )
             every { tradeHistoryService.getHistoryStats() } returns stats
             every { tradeHistoryService.getLatestSnapshot() } returns snapshot
 
@@ -694,13 +744,14 @@ class DashboardControllerTest : StringSpec() {
         }
 
         "getApiHealth_NoLatestSnapshot_ReturnsJsonWithFallback" {
-            val stats = HistoryStats(
-                allTimeHigh = BigDecimal("15000.00"),
-                totalTradesExecuted = 12L,
-                totalVolumeTraded = BigDecimal("50000.00"),
-                totalFeesPaid = BigDecimal("25.50"),
-                latestSnapshotTime = Instant.now()
-            )
+            val stats =
+                HistoryStats(
+                    allTimeHigh = BigDecimal("15000.00"),
+                    totalTradesExecuted = 12L,
+                    totalVolumeTraded = BigDecimal("50000.00"),
+                    totalFeesPaid = BigDecimal("25.50"),
+                    latestSnapshotTime = Instant.now(),
+                )
             every { tradeHistoryService.getHistoryStats() } returns stats
             every { tradeHistoryService.getLatestSnapshot() } returns null
 

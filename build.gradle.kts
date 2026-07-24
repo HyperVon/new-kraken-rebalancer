@@ -1,11 +1,42 @@
-import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 import org.jetbrains.kotlin.gradle.targets.js.yarn.YarnPlugin
 import org.jetbrains.kotlin.gradle.targets.js.yarn.YarnRootExtension
+import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
 plugins {
     kotlin("jvm") version "2.4.0"
+    id("com.diffplug.spotless") version "7.0.2"
     application
     jacoco
+}
+
+spotless {
+    kotlin {
+        target("src/**/*.kt", "common/**/*.kt")
+        targetExclude(
+            "**/view/**",
+            "**/ConfigServiceImpl.kt",
+            "**/ConfigServiceTest.kt",
+            "**/DashboardViewTest.kt",
+            "**/EvaluationScenariosTest.kt",
+        )
+        ktlint("1.3.1").editorConfigOverride(
+            mapOf(
+                "ktlint_standard_no-wildcard-imports" to "disabled",
+                "ktlint_standard_filename" to "disabled",
+                "ktlint_standard_property-naming" to "disabled",
+                "ktlint_standard_backing-property-naming" to "disabled",
+                "max_line_length" to "120",
+            ),
+        )
+    }
+    kotlinGradle {
+        target("*.gradle.kts")
+        ktlint("1.3.1").editorConfigOverride(
+            mapOf(
+                "max_line_length" to "120",
+            ),
+        )
+    }
 }
 
 group = "com.gemini"
@@ -41,9 +72,9 @@ dependencies {
 
     // Koin
     var koinVersion = "4.2.1"
-    implementation("io.insert-koin:koin-core:${koinVersion}")
-    implementation("io.insert-koin:koin-logger-slf4j:${koinVersion}")
-    implementation("io.insert-koin:koin-ktor:${koinVersion}")
+    implementation("io.insert-koin:koin-core:$koinVersion")
+    implementation("io.insert-koin:koin-logger-slf4j:$koinVersion")
+    implementation("io.insert-koin:koin-ktor:$koinVersion")
 
     // Ktor Server & Client
     val ktorVersion = "3.5.0"
@@ -63,7 +94,7 @@ dependencies {
 
     // Coroutines
     val kotlinXCoroutinesVersion = "1.11.0"
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:${kotlinXCoroutinesVersion}")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:$kotlinXCoroutinesVersion")
 
     // SQLite + Exposed ORM
     val exposedVersion = "0.61.0"
@@ -76,13 +107,13 @@ dependencies {
 
     // Testing
     val koTestVersion = "6.1.11"
-    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:${kotlinXCoroutinesVersion}")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:$kotlinXCoroutinesVersion")
     testImplementation("io.ktor:ktor-server-test-host:$ktorVersion")
     testImplementation("io.ktor:ktor-client-mock:$ktorVersion")
-    testImplementation("io.insert-koin:koin-test:${koinVersion}")
+    testImplementation("io.insert-koin:koin-test:$koinVersion")
     testImplementation("io.mockk:mockk:1.14.11")
-    testImplementation("io.kotest:kotest-runner-junit5:${koTestVersion}")
-    testImplementation("io.kotest:kotest-assertions-core:${koTestVersion}")
+    testImplementation("io.kotest:kotest-runner-junit5:$koTestVersion")
+    testImplementation("io.kotest:kotest-assertions-core:$koTestVersion")
 }
 
 tasks.withType<KotlinCompile> {
@@ -108,17 +139,19 @@ tasks.jacocoTestReport {
         xml.required.set(true)
     }
     classDirectories.setFrom(
-        files(classDirectories.files.map {
-            fileTree(it) {
-                exclude("**/config/**")
-                exclude("**/repository/table/**")
-                exclude("**/service/KrakenService*")
-                exclude("**/service/impl/KrakenServiceImpl*")
-                exclude("**/view/util/**")
-                exclude("**/view/css/**")
-                exclude("**/KrakenRebalancerApplication*")
-            }
-        })
+        files(
+            classDirectories.files.map {
+                fileTree(it) {
+                    exclude("**/config/**")
+                    exclude("**/repository/table/**")
+                    exclude("**/service/KrakenService*")
+                    exclude("**/service/impl/KrakenServiceImpl*")
+                    exclude("**/view/util/**")
+                    exclude("**/view/css/**")
+                    exclude("**/KrakenRebalancerApplication*")
+                }
+            },
+        ),
     )
 }
 
@@ -126,17 +159,19 @@ tasks.jacocoTestCoverageVerification {
     dependsOn(tasks.classes)
     mustRunAfter(tasks.jacocoTestReport)
     classDirectories.setFrom(
-        files(classDirectories.files.map {
-            fileTree(it) {
-                exclude("**/config/**")
-                exclude("**/repository/table/**")
-                exclude("**/service/KrakenService*")
-                exclude("**/service/impl/KrakenServiceImpl*")
-                exclude("**/view/util/**")
-                exclude("**/view/css/**")
-                exclude("**/KrakenRebalancerApplication*")
-            }
-        })
+        files(
+            classDirectories.files.map {
+                fileTree(it) {
+                    exclude("**/config/**")
+                    exclude("**/repository/table/**")
+                    exclude("**/service/KrakenService*")
+                    exclude("**/service/impl/KrakenServiceImpl*")
+                    exclude("**/view/util/**")
+                    exclude("**/view/css/**")
+                    exclude("**/KrakenRebalancerApplication*")
+                }
+            },
+        ),
     )
     violationRules {
         rule {
@@ -174,7 +209,9 @@ configurations.all {
     resolutionStrategy.eachDependency {
         if (requested.group == "io.netty") {
             useVersion("4.1.136.Final")
-            because("Fixes Netty security vulnerabilities including HTTP/2 continuation frame flood (CVE-2026-33871) and newer vulnerabilities (CVE-2026-45536, CVE-2026-45416, CVE-2026-44249)")
+            because(
+                "Fixes Netty security vulnerabilities including HTTP/2 continuation frame flood (CVE-2026-33871) and newer vulnerabilities (CVE-2026-45536, CVE-2026-45416, CVE-2026-44249)",
+            )
         }
     }
 }
@@ -188,18 +225,22 @@ tasks.register<Jar>("fatJar") {
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     from(sourceSets.main.get().output)
     from({
-        configurations.runtimeClasspath.get().filter { it.name.endsWith("jar") }.map { zipTree(it) }
+        configurations.runtimeClasspath
+            .get()
+            .filter { it.name.endsWith("jar") }
+            .map { zipTree(it) }
     })
 }
 
-val copyJsBundle = tasks.register<Copy>("copyJsBundle") {
-    description = "Copy JS bundle to resources"
-    dependsOn(":frontend-js:jsBrowserProductionWebpack")
-    from(project(":frontend-js").layout.buildDirectory.dir("kotlin-webpack/js/productionExecutable"))
-    into(layout.projectDirectory.dir("src/main/resources/static"))
-    include("*.js")
-    rename { "rebalancer.js" }
-}
+val copyJsBundle =
+    tasks.register<Copy>("copyJsBundle") {
+        description = "Copy JS bundle to resources"
+        dependsOn(":frontend-js:jsBrowserProductionWebpack")
+        from(project(":frontend-js").layout.buildDirectory.dir("kotlin-webpack/js/productionExecutable"))
+        into(layout.projectDirectory.dir("src/main/resources/static"))
+        include("*.js")
+        rename { "rebalancer.js" }
+    }
 
 tasks.processResources {
     dependsOn(copyJsBundle)

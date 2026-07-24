@@ -17,9 +17,8 @@ import kotlin.math.abs
 
 class ConfigServiceImpl(
     private val objectMapper: ObjectMapper,
-    private val configFilePath: String = DEFAULT_CONFIG_FILE_PATH
+    private val configFilePath: String = DEFAULT_CONFIG_FILE_PATH,
 ) : ConfigService {
-
     @Volatile
     private lateinit var appConfig: AppConfig
 
@@ -30,10 +29,11 @@ class ConfigServiceImpl(
      * - onBufferOverflow = BufferOverflow.DROP_OLDEST: Since we drop oldest values on overflow, tryEmit() is
      *   guaranteed to succeed without suspending, preventing configuration emissions from blocking caller threads.
      */
-    private val _configFlow = MutableSharedFlow<Settings>(
-        replay = 1,
-        onBufferOverflow = BufferOverflow.DROP_OLDEST
-    )
+    private val _configFlow =
+        MutableSharedFlow<Settings>(
+            replay = 1,
+            onBufferOverflow = BufferOverflow.DROP_OLDEST,
+        )
 
     init {
         loadConfig()
@@ -60,8 +60,7 @@ class ConfigServiceImpl(
     /**
      * Exposes the internal mutable shared flow as a read-only Flow for external subscribers.
      */
-    override fun watchConfigChanges(): Flow<Settings> =
-        _configFlow.asSharedFlow()
+    override fun watchConfigChanges(): Flow<Settings> = _configFlow.asSharedFlow()
 
     private fun readResolvedConfigContent(): String {
         val configFile = File(configFilePath)
@@ -73,8 +72,7 @@ class ConfigServiceImpl(
         return resolveEnvVars(configFile.readText())
     }
 
-    private fun parseConfig(content: String): AppConfig =
-        objectMapper.readValue(content, AppConfig::class.java)
+    private fun parseConfig(content: String): AppConfig = objectMapper.readValue(content, AppConfig::class.java)
 
     private fun resolveEnvVars(content: String): String =
         ENV_VAR_PATTERN.replace(content) { matchResult ->
@@ -82,15 +80,18 @@ class ConfigServiceImpl(
             val parts = placeholder.split(ENV_VAR_DEFAULT_SEPARATOR, limit = 2)
             val key = parts[0]
             val defaultValue = parts.getOrElse(1) { "" }
-            val resolvedValue = System.getenv(key)
-                ?.takeIf { it.isNotBlank() }
-                ?: defaultValue
+            val resolvedValue =
+                System
+                    .getenv(key)
+                    ?.takeIf { it.isNotBlank() }
+                    ?: defaultValue
 
             escapeJsonStringValue(resolvedValue)
         }
 
     private fun escapeJsonStringValue(value: String): String =
-        value.replace("\\", "\\\\")
+        value
+            .replace("\\", "\\\\")
             .replace("\"", "\\\"")
 
     private fun validateOrThrowInvalidConfiguration(config: AppConfig): AppConfig {
@@ -107,14 +108,15 @@ class ConfigServiceImpl(
             val tempFile = File("$configFilePath.tmp")
             val targetPath = File(configFilePath).toPath()
 
-            objectMapper.writerWithDefaultPrettyPrinter()
+            objectMapper
+                .writerWithDefaultPrettyPrinter()
                 .writeValue(tempFile, config)
 
             Files.move(
                 tempFile.toPath(),
                 targetPath,
                 StandardCopyOption.REPLACE_EXISTING,
-                StandardCopyOption.ATOMIC_MOVE
+                StandardCopyOption.ATOMIC_MOVE,
             )
         } catch (e: IOException) {
             throw RuntimeException("Failed to save configuration", e)
@@ -168,12 +170,13 @@ class ConfigServiceImpl(
     }
 
     private fun validateDuplicateAllocationSymbols(config: AppConfig) {
-        val duplicateSymbols = config.allocations
-            .map { it.symbol.value.uppercase() }
-            .groupingBy { it }
-            .eachCount()
-            .filterValues { count -> count > 1 }
-            .keys
+        val duplicateSymbols =
+            config.allocations
+                .map { it.symbol.value.uppercase() }
+                .groupingBy { it }
+                .eachCount()
+                .filterValues { count -> count > 1 }
+                .keys
 
         require(duplicateSymbols.isEmpty()) {
             "Duplicate allocation symbols are not allowed: ${duplicateSymbols.joinToString(", ")}"

@@ -10,13 +10,12 @@ import kotlin.time.Duration.Companion.milliseconds
  * Thread-safe rate limiter for API calls using exponential decay.
  * Implements Kraken's call counter algorithm with configurable costs per endpoint.
  */
-class RateLimiter(
-    private val safeLimit: Double = 12.0,
-    private val decayRate: Double = 0.33
-) {
+class RateLimiter(private val safeLimit: Double = 12.0, private val decayRate: Double = 0.33) {
     private val mutex = Mutex()
+
     @Volatile
     private var callCounter: Double = 0.0
+
     @Volatile
     private var lastUpdateTimeMs: Long = System.currentTimeMillis()
 

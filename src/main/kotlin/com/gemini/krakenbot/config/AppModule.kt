@@ -40,59 +40,60 @@ import org.koin.core.module.dsl.bind
 import org.koin.core.module.dsl.singleOf
 import org.koin.dsl.module
 
-val appModule = module {
-    single<HttpClient> {
-        HttpClient(CIO) {
-            install(HttpTimeout) {
-                connectTimeoutMillis = 5000
-                socketTimeoutMillis = 15000
-                requestTimeoutMillis = 15000
+val appModule =
+    module {
+        single<HttpClient> {
+            HttpClient(CIO) {
+                install(HttpTimeout) {
+                    connectTimeoutMillis = 5000
+                    socketTimeoutMillis = 15000
+                    requestTimeoutMillis = 15000
+                }
             }
         }
-    }
-    single<ObjectMapper> {
-        jacksonObjectMapper().apply {
-            registerModule(JavaTimeModule())
-            disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)
+        single<ObjectMapper> {
+            jacksonObjectMapper().apply {
+                registerModule(JavaTimeModule())
+                disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)
+            }
         }
-    }
 
-    // Database
-    single<Database> { DatabaseConfig.init() }
+        // Database
+        single<Database> { DatabaseConfig.init() }
 
-    single<ConfigService> { ConfigServiceImpl(objectMapper = get()) }
-    singleOf(::SqliteTradeRepositoryImpl) { bind<TradeRepository>() }
-    single<PortfolioStatsRepository> { SqlitePortfolioStatsRepositoryImpl(database = get(), objectMapper = get()) }
-    single<TradeHistoryService> {
-        TradeHistoryServiceImpl(
-            repository = get(),
-            portfolioStatsRepository = get(),
-            krakenService = get(),
-            configService = get(),
-            objectMapper = get(),
-            portfolioAnalyzer = get()
-        ).apply { init() }
+        single<ConfigService> { ConfigServiceImpl(objectMapper = get()) }
+        singleOf(::SqliteTradeRepositoryImpl) { bind<TradeRepository>() }
+        single<PortfolioStatsRepository> { SqlitePortfolioStatsRepositoryImpl(database = get(), objectMapper = get()) }
+        single<TradeHistoryService> {
+            TradeHistoryServiceImpl(
+                repository = get(),
+                portfolioStatsRepository = get(),
+                krakenService = get(),
+                configService = get(),
+                objectMapper = get(),
+                portfolioAnalyzer = get(),
+            ).apply { init() }
+        }
+        singleOf(::KrakenServiceImpl)
+        singleOf(::SimulatedKrakenService)
+        single<KrakenService> {
+            DynamicKrakenService(
+                realService = get(),
+                simulatedService = get(),
+                configService = get(),
+            )
+        }
+        singleOf(::PortfolioAnalyzerImpl) { bind<PortfolioAnalyzer>() }
+        singleOf(::OrderExecutorImpl) { bind<OrderExecutor>() }
+        singleOf(::PortfolioManagerImpl) { bind<PortfolioManager>() }
+        singleOf(::DashboardShellComponent)
+        singleOf(::SettingsFormComponent)
+        singleOf(::OverviewGridComponent)
+        singleOf(::AllocationChartComponent)
+        singleOf(::PerformanceTableComponent)
+        singleOf(::RecentActivityComponent)
+        singleOf(::DashboardFragmentComponent)
+        singleOf(::HistoryPageComponent)
+        singleOf(::DashboardView)
+        singleOf(::DashboardController)
     }
-    singleOf(::KrakenServiceImpl)
-    singleOf(::SimulatedKrakenService)
-    single<KrakenService> {
-        DynamicKrakenService(
-            realService = get(),
-            simulatedService = get(),
-            configService = get()
-        )
-    }
-    singleOf(::PortfolioAnalyzerImpl) { bind<PortfolioAnalyzer>() }
-    singleOf(::OrderExecutorImpl) { bind<OrderExecutor>() }
-    singleOf(::PortfolioManagerImpl) { bind<PortfolioManager>() }
-    singleOf(::DashboardShellComponent)
-    singleOf(::SettingsFormComponent)
-    singleOf(::OverviewGridComponent)
-    singleOf(::AllocationChartComponent)
-    singleOf(::PerformanceTableComponent)
-    singleOf(::RecentActivityComponent)
-    singleOf(::DashboardFragmentComponent)
-    singleOf(::HistoryPageComponent)
-    singleOf(::DashboardView)
-    singleOf(::DashboardController)
-}

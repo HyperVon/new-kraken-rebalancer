@@ -6,7 +6,7 @@ import kotlinx.html.*
 fun FlowContent.glassPanel(
     title: String,
     iconSvg: String? = null,
-    block: DIV.() -> Unit
+    block: DIV.() -> Unit,
 ) {
     div(CssClass.Layout.GlassPanel) {
         h2(CssClass.Utility.GlassPanelTitle) {
@@ -26,7 +26,7 @@ fun FlowContent.statusCard(
     isSuccess: Boolean = false,
     valueId: String? = null,
     titleId: String? = null,
-    block: (DIV.() -> Unit)? = null
+    block: (DIV.() -> Unit)? = null,
 ) {
     val cardClass = if (isSuccess) CssClass.StatusCard.Success else CssClass.StatusCard.Default
     div(cardClass) {

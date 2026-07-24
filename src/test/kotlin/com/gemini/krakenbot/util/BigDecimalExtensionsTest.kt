@@ -5,35 +5,36 @@ import io.kotest.matchers.shouldBe
 import java.math.BigDecimal
 
 @Suppress("unused")
-class BigDecimalExtensionsTest : StringSpec({
+class BigDecimalExtensionsTest :
+    StringSpec({
 
-    "isZero should correctly identify zero values" {
-        BigDecimal.ZERO.isZero shouldBe true
-        BigDecimal("0.00").isZero shouldBe true
-        BigDecimal("1.50").isZero shouldBe false
-    }
+        "isZero should correctly identify zero values" {
+            BigDecimal.ZERO.isZero shouldBe true
+            BigDecimal("0.00").isZero shouldBe true
+            BigDecimal("1.50").isZero shouldBe false
+        }
 
-    "isNonZero should correctly identify non-zero values" {
-        BigDecimal.ZERO.isNonZero shouldBe false
-        BigDecimal("0.00").isNonZero shouldBe false
-        BigDecimal("1.50").isNonZero shouldBe true
-    }
+        "isNonZero should correctly identify non-zero values" {
+            BigDecimal.ZERO.isNonZero shouldBe false
+            BigDecimal("0.00").isNonZero shouldBe false
+            BigDecimal("1.50").isNonZero shouldBe true
+        }
 
-    "isPositive should correctly identify positive values" {
-        BigDecimal("10.00").isPositive shouldBe true
-        BigDecimal.ZERO.isPositive shouldBe false
-        BigDecimal("-5.00").isPositive shouldBe false
-    }
+        "isPositive should correctly identify positive values" {
+            BigDecimal("10.00").isPositive shouldBe true
+            BigDecimal.ZERO.isPositive shouldBe false
+            BigDecimal("-5.00").isPositive shouldBe false
+        }
 
-    "isNegative should correctly identify negative values" {
-        BigDecimal("-10.00").isNegative shouldBe true
-        BigDecimal.ZERO.isNegative shouldBe false
-        BigDecimal("5.00").isNegative shouldBe false
-    }
+        "isNegative should correctly identify negative values" {
+            BigDecimal("-10.00").isNegative shouldBe true
+            BigDecimal.ZERO.isNegative shouldBe false
+            BigDecimal("5.00").isNegative shouldBe false
+        }
 
-    "scale extension functions should scale correctly" {
-        BigDecimal("10.123456789").toUsdScale().toString() shouldBe "10.12"
-        BigDecimal("10.123456789").toCryptoScale().toString() shouldBe "10.12345679"
-        BigDecimal("10.123456789").toPercentScale().toString() shouldBe "10.1235"
-    }
-})
+        "scale extension functions should scale correctly" {
+            BigDecimal("10.123456789").toUsdScale().toString() shouldBe "10.12"
+            BigDecimal("10.123456789").toCryptoScale().toString() shouldBe "10.12345679"
+            BigDecimal("10.123456789").toPercentScale().toString() shouldBe "10.1235"
+        }
+    })

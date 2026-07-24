@@ -41,14 +41,14 @@ class PortfolioManagerOrderExecutionTest : StringSpec() {
             portfolioAnalyzer = PortfolioAnalyzerImpl(
                 krakenService = krakenService,
                 configService = configService,
-                portfolioStatsRepository = portfolioStatsRepository
+                portfolioStatsRepository = portfolioStatsRepository,
             )
             orderExecutor = OrderExecutorImpl(krakenService, portfolioAnalyzer, tradeHistoryService)
             portfolioManager = PortfolioManagerImpl(
                 configService = configService,
                 tradeHistoryService = tradeHistoryService,
                 portfolioAnalyzer = portfolioAnalyzer,
-                orderExecutor = orderExecutor
+                orderExecutor = orderExecutor,
             )
         }
 
@@ -58,7 +58,7 @@ class PortfolioManagerOrderExecutionTest : StringSpec() {
                 val allocB = Allocation("B", 90.0)
                 val allocUSD = Allocation(
                     Asset.USD,
-                    0.0
+                    0.0,
                 )
                 val allAllocations = listOf(allocA, allocB, allocUSD)
 
@@ -66,12 +66,12 @@ class PortfolioManagerOrderExecutionTest : StringSpec() {
                     loopDelaySeconds = 0L,
                     deviationTriggerPercent = 1.0,
                     dustThresholdUSD = 1.0,
-                    dryRun = false
+                    dryRun = false,
                 )
                 val mockConfig = AppConfig(
                     kraken = KrakenCredentials("k", "s"),
                     settings = mockSettings,
-                    allocations = allAllocations
+                    allocations = allAllocations,
                 )
 
                 every { configService.getConfig() } returns mockConfig
@@ -104,12 +104,12 @@ class PortfolioManagerOrderExecutionTest : StringSpec() {
                     loopDelaySeconds = 0L,
                     deviationTriggerPercent = 1.0,
                     dustThresholdUSD = 1.0,
-                    dryRun = false
+                    dryRun = false,
                 )
                 val mockConfig = AppConfig(
                     kraken = KrakenCredentials("k", "s"),
                     settings = mockSettings,
-                    allocations = allAllocations
+                    allocations = allAllocations,
                 )
 
                 every { configService.getConfig() } returns mockConfig
@@ -122,8 +122,12 @@ class PortfolioManagerOrderExecutionTest : StringSpec() {
 
                 portfolioManager.performRebalanceCycle()
 
-                krakenService.executedOrders.any { it.side.equals("sell", ignoreCase = true) && it.pair == "AUSD" }.shouldBeTrue()
-                krakenService.executedOrders.any { it.side.equals("buy", ignoreCase = true) && it.pair == "BUSD" }.shouldBeTrue()
+                krakenService.executedOrders.any {
+                    it.side.equals("sell", ignoreCase = true) && it.pair == "AUSD"
+                }.shouldBeTrue()
+                krakenService.executedOrders.any {
+                    it.side.equals("buy", ignoreCase = true) && it.pair == "BUSD"
+                }.shouldBeTrue()
             }
         }
 
@@ -132,7 +136,7 @@ class PortfolioManagerOrderExecutionTest : StringSpec() {
                 val allocA = Allocation("A", 10.0)
                 val allocUSD = Allocation(
                     Asset.USD,
-                    90.0
+                    90.0,
                 )
                 val allAllocations = listOf(allocA, allocUSD)
 
@@ -140,12 +144,12 @@ class PortfolioManagerOrderExecutionTest : StringSpec() {
                     loopDelaySeconds = 0L,
                     deviationTriggerPercent = 0.1,
                     dustThresholdUSD = 10.0,
-                    dryRun = false
+                    dryRun = false,
                 )
                 val mockConfig = AppConfig(
                     kraken = KrakenCredentials("k", "s"),
                     settings = mockSettings,
-                    allocations = allAllocations
+                    allocations = allAllocations,
                 )
 
                 every { configService.getConfig() } returns mockConfig
@@ -170,22 +174,23 @@ class PortfolioManagerOrderExecutionTest : StringSpec() {
                     listOf(
                         Allocation(
                             "A",
-                            10.0
-                        ), Allocation(
+                            10.0,
+                        ),
+                        Allocation(
                             "B",
-                            90.0
-                        )
+                            90.0,
+                        ),
                     )
                 val mockSettings = Settings(
                     loopDelaySeconds = 0L,
                     deviationTriggerPercent = 1.0,
                     dustThresholdUSD = 1.0,
-                    dryRun = false
+                    dryRun = false,
                 )
                 val mockConfig = AppConfig(
                     kraken = KrakenCredentials("k", "s"),
                     settings = mockSettings,
-                    allocations = allAllocations
+                    allocations = allAllocations,
                 )
                 every { configService.getConfig() } returns mockConfig
 
@@ -199,7 +204,7 @@ class PortfolioManagerOrderExecutionTest : StringSpec() {
                         initialBalances
                     } else {
                         throw RuntimeException(
-                            "API Error during verification!"
+                            "API Error during verification!",
                         )
                     }
                 }
@@ -223,22 +228,23 @@ class PortfolioManagerOrderExecutionTest : StringSpec() {
                     listOf(
                         Allocation(
                             "A",
-                            10.0
-                        ), Allocation(
+                            10.0,
+                        ),
+                        Allocation(
                             "B",
-                            90.0
-                        )
+                            90.0,
+                        ),
                     )
                 val mockSettings = Settings(
                     loopDelaySeconds = 0L,
                     deviationTriggerPercent = 1.0,
                     dustThresholdUSD = 1.0,
-                    dryRun = false
+                    dryRun = false,
                 )
                 val mockConfig = AppConfig(
                     kraken = KrakenCredentials("k", "s"),
                     settings = mockSettings,
-                    allocations = allAllocations
+                    allocations = allAllocations,
                 )
                 every { configService.getConfig() } returns mockConfig
 
@@ -263,11 +269,13 @@ class PortfolioManagerOrderExecutionTest : StringSpec() {
                 krakenService.executedOrders[0].side shouldBe "sell"
                 krakenService.executedOrders[1].pair shouldBe "BUSD"
                 krakenService.executedOrders[1].side shouldBe "buy"
-                (krakenService.executedOrders[1].volume.subtract(
-                    BigDecimal.valueOf(
-                        19.8
-                    )
-                ).abs() < BigDecimal("0.1")).shouldBeTrue()
+                (
+                    krakenService.executedOrders[1].volume.subtract(
+                        BigDecimal.valueOf(
+                            19.8,
+                        ),
+                    ).abs() < BigDecimal("0.1")
+                    ).shouldBeTrue()
             }
         }
     }

@@ -11,11 +11,12 @@ class HelperTest : StringSpec() {
 
     init {
         "getUniqueSymbols excludes and includes USD correctly" {
-            val snapshots = arrayOf(
-                mockSnapshotRecord(assets = json(Asset.BTC to jsObject(), Asset.ETH to jsObject(), Asset.USD to jsObject())),
-                mockSnapshotRecord(assets = null),
-                jsObject()
-            )
+            val snapshots =
+                arrayOf(
+                    mockSnapshotRecord(assets = json(Asset.BTC to jsObject(), Asset.ETH to jsObject(), Asset.USD to jsObject())),
+                    mockSnapshotRecord(assets = null),
+                    jsObject(),
+                )
             val symbolsExcludeUsd = getUniqueSymbols(snapshots, excludeUsd = true)
             symbolsExcludeUsd shouldBe listOf(Asset.BTC, Asset.ETH)
 
@@ -24,10 +25,11 @@ class HelperTest : StringSpec() {
         }
 
         "getUniqueSymbols returns empty list when no assets" {
-            val snapshots = arrayOf(
-                jsObject(),
-                mockSnapshotRecord(assets = null)
-            )
+            val snapshots =
+                arrayOf(
+                    jsObject(),
+                    mockSnapshotRecord(assets = null),
+                )
             getUniqueSymbols(snapshots, excludeUsd = true) shouldBe emptyList()
         }
     }

@@ -99,18 +99,18 @@ object TestFixtures {
         deviationTriggerPercent = 2.0,
         dustThresholdUSD = 1.0,
         dryRun = false,
-        simulation = true
+        simulation = true,
     )
 
     val DEFAULT_TEST_ALLOCATIONS = listOf(
         Allocation(Asset.BTC, 50.0),
         Allocation(Asset.ETH, 30.0),
-        Allocation(Asset.USD, 20.0)
+        Allocation(Asset.USD, 20.0),
     )
 
     val DEFAULT_TEST_CONFIG = AppConfig(
         kraken = KrakenCredentials(TestConstants.API_KEY, TestConstants.API_SECRET),
         settings = DEFAULT_TEST_SETTINGS,
-        allocations = DEFAULT_TEST_ALLOCATIONS
+        allocations = DEFAULT_TEST_ALLOCATIONS,
     )
 }

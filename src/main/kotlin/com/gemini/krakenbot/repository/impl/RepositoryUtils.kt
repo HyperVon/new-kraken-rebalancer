@@ -10,7 +10,7 @@ inline fun <T> Database.safeTransaction(
     log: Logger,
     logMessage: String,
     exceptionMessage: String = "Database write failed",
-    crossinline block: Transaction.() -> T
+    crossinline block: Transaction.() -> T,
 ): T {
     try {
         return transaction(this) { block() }

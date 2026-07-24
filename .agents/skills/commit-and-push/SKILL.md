@@ -38,10 +38,11 @@ Or manually:
 
 ```bash
 npx markdownlint-cli AGENTS.md CHANGELOG.md README.md docs/*.md
+./gradlew spotlessCheck
 ./gradlew test :frontend-js:jsTest
 ```
 
-Both linting and unit/JS tests must pass with zero failures. Do NOT proceed if tests fail.
+If formatting or line length (>120 chars) violations occur, run `./gradlew spotlessApply` to format automatically. Both linting, formatting checks, and unit/JS tests must pass with zero failures. Do NOT proceed if tests fail.
 
 ## Step 3: Stage and Commit
 

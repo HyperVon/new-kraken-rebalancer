@@ -3,8 +3,6 @@ package com.gemini.krakenbot.frontend
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.util.PrecisionConstants
 import com.gemini.krakenbot.view.util.CssClass
-import com.gemini.krakenbot.view.util.CssClass.Query.SYMBOL_INPUTS as SYMBOL_INPUTS_QUERY
-import com.gemini.krakenbot.view.util.CssClass.Query.TARGET_INPUTS as TARGET_INPUTS_QUERY
 import com.gemini.krakenbot.view.util.FormFields
 import com.gemini.krakenbot.view.util.HtmlIds
 import com.gemini.krakenbot.view.util.ViewText
@@ -12,6 +10,8 @@ import kotlinx.browser.document
 import kotlinx.browser.window
 import org.w3c.dom.*
 import kotlin.math.abs
+import com.gemini.krakenbot.view.util.CssClass.Query.SYMBOL_INPUTS as SYMBOL_INPUTS_QUERY
+import com.gemini.krakenbot.view.util.CssClass.Query.TARGET_INPUTS as TARGET_INPUTS_QUERY
 
 fun initSettings() {
     registerSettingsGlobals()
@@ -130,6 +130,4 @@ fun addAssetRow() {
 
 private val SYMBOL_REGEX = Regex("^[A-Z0-9]{1,16}$")
 
-fun Double.toFixed(digits: Int): String {
-    return this.asDynamic().toFixed(digits).toString()
-}
+fun Double.toFixed(digits: Int): String = this.asDynamic().toFixed(digits).toString()

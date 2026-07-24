@@ -23,7 +23,7 @@ object LayoutStyles {
             put(
                 "background-image",
                 "radial-gradient(circle at 15% 50%, rgba(56, 189, 248, 0.06) 0%, transparent 50%), " +
-                        "radial-gradient(circle at 85% 30%, rgba(16, 185, 129, 0.06) 0%, transparent 50%)"
+                    "radial-gradient(circle at 85% 30%, rgba(16, 185, 129, 0.06) 0%, transparent 50%)",
             )
             backgroundAttachment = BackgroundAttachment.fixed
         }

@@ -10,8 +10,8 @@ import com.gemini.krakenbot.model.TimeRange
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.TradeHistoryService
 import com.gemini.krakenbot.view.DashboardView
-import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.css.CssStyles
+import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.FormFields
 import com.gemini.krakenbot.view.util.HealthStatusKeys
 import com.gemini.krakenbot.view.util.HtmxHeaders
@@ -50,7 +50,7 @@ class DashboardController(
     private val tradeHistoryService: TradeHistoryService,
     private val configService: ConfigService,
     private val objectMapper: ObjectMapper,
-    private val dashboardView: DashboardView
+    private val dashboardView: DashboardView,
 ) {
     fun registerRoutes(routing: Routing) {
         with(routing) {
@@ -132,37 +132,41 @@ class DashboardController(
         val symbols = params.getAll(FormFields.SYMBOLS) ?: emptyList()
         val targets = params.getAll(FormFields.TARGETS) ?: emptyList()
 
-        val allocations = symbols.zip(targets).map { (symbol, targetStr) ->
-            Allocation(symbol, targetStr.toDoubleOrNull() ?: 0.0)
-        }
+        val allocations =
+            symbols.zip(targets).map { (symbol, targetStr) ->
+                Allocation(symbol, targetStr.toDoubleOrNull() ?: 0.0)
+            }
 
         val currentConfig = configService.getConfig()
-        val updatedConfig = AppConfig(
-            kraken = currentConfig.kraken,
-            settings = Settings(
-                loopDelaySeconds = loopDelaySeconds,
-                deviationTriggerPercent = deviationTriggerPercent,
-                dustThresholdUSD = dustThresholdUSD,
-                dryRun = dryRun,
-                simulation = simulation,
-                fiatMaxDrawdown = fiatMaxDrawdown,
-                fiatDeploymentExponent = fiatDeploymentExponent
-            ),
-            allocations = allocations
-        )
+        val updatedConfig =
+            AppConfig(
+                kraken = currentConfig.kraken,
+                settings =
+                Settings(
+                    loopDelaySeconds = loopDelaySeconds,
+                    deviationTriggerPercent = deviationTriggerPercent,
+                    dustThresholdUSD = dustThresholdUSD,
+                    dryRun = dryRun,
+                    simulation = simulation,
+                    fiatMaxDrawdown = fiatMaxDrawdown,
+                    fiatDeploymentExponent = fiatDeploymentExponent,
+                ),
+                allocations = allocations,
+            )
 
         try {
             configService.updateConfig(updatedConfig)
             call.response.header(HtmxHeaders.HX_REDIRECT, Routes.ROOT)
             call.respond(HttpStatusCode.OK)
         } catch (e: InvalidConfigurationException) {
-            val errHtml = createHTML(prettyPrint = false).div {
-                dashboardView.renderSettingsFormFragment(
-                    this,
-                    updatedConfig,
-                    e.message ?: "Invalid configuration"
-                )
-            }
+            val errHtml =
+                createHTML(prettyPrint = false).div {
+                    dashboardView.renderSettingsFormFragment(
+                        this,
+                        updatedConfig,
+                        e.message ?: "Invalid configuration",
+                    )
+                }
             call.respondText(errHtml, ContentType.Text.Html)
         }
     }
@@ -185,9 +189,10 @@ class DashboardController(
             return
         }
 
-        val html = createHTML(prettyPrint = false).div {
-            dashboardView.renderDashboardFragment(latest, history)
-        }
+        val html =
+            createHTML(prettyPrint = false).div {
+                dashboardView.renderDashboardFragment(latest, history)
+            }
         call.respondText(html, ContentType.Text.Html)
     }
 
@@ -209,12 +214,13 @@ class DashboardController(
     }
 
     private suspend fun RoutingContext.handleGetHistoryStats() {
-        val stats = if (call.parameters[QueryParamKeys.RANGE] != null) {
-            val (from, to) = parseTimeRange(call)
-            tradeHistoryService.getHistoryStats(from, to)
-        } else {
-            tradeHistoryService.getHistoryStats()
-        }
+        val stats =
+            if (call.parameters[QueryParamKeys.RANGE] != null) {
+                val (from, to) = parseTimeRange(call)
+                tradeHistoryService.getHistoryStats(from, to)
+            } else {
+                tradeHistoryService.getHistoryStats()
+            }
         respondJson(stats)
     }
 
@@ -244,26 +250,28 @@ class DashboardController(
         val offset = tradeHistoryService.getSyncMetadata(SyncMetadataKeys.SYNC_OFFSET)
         val total = tradeHistoryService.getSyncMetadata(SyncMetadataKeys.SYNC_TOTAL)
         val seeded = tradeHistoryService.isHistorySeeded()
-        val responseMap = mapOf(
-            SyncMetadataKeys.IS_SEEDED to seeded,
-            SyncMetadataKeys.OFFSET to offset,
-            SyncMetadataKeys.TOTAL to total
-        )
+        val responseMap =
+            mapOf(
+                SyncMetadataKeys.IS_SEEDED to seeded,
+                SyncMetadataKeys.OFFSET to offset,
+                SyncMetadataKeys.TOTAL to total,
+            )
         respondJson(responseMap)
     }
 
     private suspend fun RoutingContext.handleGetHealth() {
         val stats = tradeHistoryService.getHistoryStats()
         val latestSnapshot = tradeHistoryService.getLatestSnapshot()
-        val responseMap = mapOf(
-            HealthStatusKeys.STATUS to HealthStatusKeys.STATUS_UP,
-            HealthStatusKeys.TIMESTAMP to Instant.now().toString(),
-            HealthStatusKeys.UPTIME_SECONDS to ManagementFactory.getRuntimeMXBean().uptime / 1000,
-            HealthStatusKeys.TOTAL_TRADES_EXECUTED to stats.totalTradesExecuted,
-            HealthStatusKeys.TOTAL_VOLUME_TRADED to stats.totalVolumeTraded,
-            HealthStatusKeys.LAST_SNAPSHOT_TIME to (latestSnapshot?.timestamp?.toString() ?: "N/A"),
-            HealthStatusKeys.LAST_SNAPSHOT_TOTAL_VALUE_USD to (latestSnapshot?.totalValueUSD ?: BigDecimal.ZERO)
-        )
+        val responseMap =
+            mapOf(
+                HealthStatusKeys.STATUS to HealthStatusKeys.STATUS_UP,
+                HealthStatusKeys.TIMESTAMP to Instant.now().toString(),
+                HealthStatusKeys.UPTIME_SECONDS to ManagementFactory.getRuntimeMXBean().uptime / 1000,
+                HealthStatusKeys.TOTAL_TRADES_EXECUTED to stats.totalTradesExecuted,
+                HealthStatusKeys.TOTAL_VOLUME_TRADED to stats.totalVolumeTraded,
+                HealthStatusKeys.LAST_SNAPSHOT_TIME to (latestSnapshot?.timestamp?.toString() ?: "N/A"),
+                HealthStatusKeys.LAST_SNAPSHOT_TOTAL_VALUE_USD to (latestSnapshot?.totalValueUSD ?: BigDecimal.ZERO),
+            )
         respondJson(responseMap)
     }
 }

@@ -33,16 +33,16 @@ class PortfolioManagerFiatCorrectionTest : StringSpec() {
                 dustThresholdUSD = 1.0,
                 dryRun = false,
                 fiatMaxDrawdown = 0.0,
-                fiatDeploymentExponent = 1.0
+                fiatDeploymentExponent = 1.0,
             ),
-            allocations = allocs.toList()
+            allocations = allocs.toList(),
         )
         every { configService.getConfig() } returns config
 
         return PortfolioAnalyzerImpl(
             krakenService = FakeKrakenService(),
             configService = configService,
-            portfolioStatsRepository = repo
+            portfolioStatsRepository = repo,
         )
     }
 
@@ -50,14 +50,14 @@ class PortfolioManagerFiatCorrectionTest : StringSpec() {
         "testDistributeFiatCorrection_Deposit_OnlyBuysUnderweight" {
             val portfolioAnalyzer = makePortfolioAnalyzer(
                 Allocation("A", 50.0),
-                Allocation("B", 50.0)
+                Allocation("B", 50.0),
             )
 
             val usdDev = BigDecimal.valueOf(100.0)
             // A is overweight (+10), B is underweight (-10) → only B should receive a buy
             val allDevs = mapOf(
                 "A" to BigDecimal.valueOf(10.0),
-                "B" to BigDecimal.valueOf(-10.0)
+                "B" to BigDecimal.valueOf(-10.0),
             )
             val buyOrders = mutableMapOf<String, BigDecimal>()
             val sellOrders = mutableMapOf<String, BigDecimal>()
@@ -67,7 +67,7 @@ class PortfolioManagerFiatCorrectionTest : StringSpec() {
                 allDevs = allDevs,
                 buyOrders = buyOrders,
                 sellOrders = sellOrders,
-                actionLog = mutableListOf()
+                actionLog = mutableListOf(),
             )
 
             buyOrders.containsKey("B").shouldBeTrue()
@@ -79,14 +79,14 @@ class PortfolioManagerFiatCorrectionTest : StringSpec() {
         "testDistributeFiatCorrection_Withdrawal_OnlySellsOverweight" {
             val portfolioAnalyzer = makePortfolioAnalyzer(
                 Allocation("A", 50.0),
-                Allocation("B", 50.0)
+                Allocation("B", 50.0),
             )
 
             val usdDev = BigDecimal.valueOf(-100.0)
             // A is overweight (+10), B is underweight (-10) → only A should receive a sell
             val allDevs = mapOf(
                 "A" to BigDecimal.valueOf(10.0),
-                "B" to BigDecimal.valueOf(-10.0)
+                "B" to BigDecimal.valueOf(-10.0),
             )
             val buyOrders = mutableMapOf<String, BigDecimal>()
             val sellOrders = mutableMapOf<String, BigDecimal>()
@@ -96,7 +96,7 @@ class PortfolioManagerFiatCorrectionTest : StringSpec() {
                 allDevs = allDevs,
                 buyOrders = buyOrders,
                 sellOrders = sellOrders,
-                actionLog = mutableListOf()
+                actionLog = mutableListOf(),
             )
 
             sellOrders.containsKey("A").shouldBeTrue()
@@ -109,7 +109,7 @@ class PortfolioManagerFiatCorrectionTest : StringSpec() {
             val portfolioAnalyzer = makePortfolioAnalyzer(
                 Allocation("A", 30.0),
                 Allocation("B", 30.0),
-                Allocation("C", 40.0)
+                Allocation("C", 40.0),
             )
 
             val usdDev = BigDecimal.valueOf(100.0)
@@ -119,7 +119,7 @@ class PortfolioManagerFiatCorrectionTest : StringSpec() {
             val allDevs = mapOf(
                 "A" to BigDecimal.valueOf(-200.0),
                 "B" to BigDecimal.valueOf(-50.0),
-                "C" to BigDecimal.valueOf(50.0)
+                "C" to BigDecimal.valueOf(50.0),
             )
             val buyOrders = mutableMapOf<String, BigDecimal>()
             val sellOrders = mutableMapOf<String, BigDecimal>()
@@ -129,7 +129,7 @@ class PortfolioManagerFiatCorrectionTest : StringSpec() {
                 allDevs = allDevs,
                 buyOrders = buyOrders,
                 sellOrders = sellOrders,
-                actionLog = mutableListOf()
+                actionLog = mutableListOf(),
             )
 
             buyOrders.getOrDefault("A", BigDecimal.ZERO)

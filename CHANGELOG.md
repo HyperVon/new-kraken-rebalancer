@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.12.0] - 2026-07-23
+
+### Added
+
+- **Spotless / `ktlint` Integration (`build.gradle.kts`)**: Integrated Spotless (`com.diffplug.spotless` v7.0.2) powered by `ktlint` (v1.3.1), enforcing Official Kotlin Coding Conventions and a strict **120-character maximum line length limit** across all `.kt` and `.kts` source files.
+- **Pre-Commit Automated Code Formatting (`pre_commit_check.sh`)**: Updated automated pre-commit script, `commit-and-push` skill, and `audit_and_verify.sh` scanner to run `./gradlew spotlessCheck` and `./gradlew spotlessApply`.
+
 ## [6.11.0] - 2026-07-23
 
 ### Changed

@@ -3,7 +3,6 @@ package com.gemini.krakenbot.service.impl
 import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.Result
-import com.gemini.krakenbot.view.util.ViewText
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.service.AnalysisResult
 import com.gemini.krakenbot.service.AssetDeviations
@@ -16,19 +15,20 @@ import com.gemini.krakenbot.service.PortfolioAnalyzer
 import com.gemini.krakenbot.service.PortfolioValues
 import com.gemini.krakenbot.service.RawBalances
 import com.gemini.krakenbot.service.RawPrices
-import org.slf4j.LoggerFactory
-import java.math.BigDecimal
-import java.math.RoundingMode
-import kotlin.math.pow
 import com.gemini.krakenbot.service.impl.PortfolioCalculations.HUNDRED
 import com.gemini.krakenbot.service.impl.PortfolioCalculations.SCALE_PERCENT
 import com.gemini.krakenbot.service.impl.PortfolioCalculations.SCALE_PRICE
 import com.gemini.krakenbot.service.impl.PortfolioCalculations.SCALE_USD
+import com.gemini.krakenbot.view.util.ViewText
+import org.slf4j.LoggerFactory
+import java.math.BigDecimal
+import java.math.RoundingMode
+import kotlin.math.pow
 
 class PortfolioAnalyzerImpl(
     private val krakenService: KrakenService,
     private val configService: ConfigService,
-    private val portfolioStatsRepository: PortfolioStatsRepository
+    private val portfolioStatsRepository: PortfolioStatsRepository,
 ) : PortfolioAnalyzer {
     private val log = LoggerFactory.getLogger(PortfolioAnalyzerImpl::class.java)
 
@@ -50,17 +50,15 @@ class PortfolioAnalyzerImpl(
         val rawPrices = krakenService.getTickerPrices(pairs)
 
         return nonUsd.associate { (symbol, _) ->
-            symbol.value to resolvePriceFromTicker(
-                symbol.value,
-                rawPrices
-            )
+            symbol.value to
+                resolvePriceFromTicker(
+                    symbol.value,
+                    rawPrices,
+                )
         }
     }
 
-    override fun resolvePriceFromTicker(
-        symbol: String,
-        rawPrices: RawPrices
-    ): BigDecimal {
+    override fun resolvePriceFromTicker(symbol: String, rawPrices: RawPrices): BigDecimal {
         val expectedPair = Asset.tradingPair(symbol)
         rawPrices[expectedPair]?.let { return it }
 
@@ -75,10 +73,7 @@ class PortfolioAnalyzerImpl(
         return BigDecimal.ZERO
     }
 
-    override fun calculatePortfolioValues(
-        balances: RawBalances,
-        prices: AssetPrices
-    ): Result<PortfolioValues> {
+    override fun calculatePortfolioValues(balances: RawBalances, prices: AssetPrices): Result<PortfolioValues> {
         val currentValuesUSD = mutableMapOf<String, BigDecimal>()
         var totalPortfolioValueUSD = BigDecimal.ZERO
 
@@ -92,10 +87,10 @@ class PortfolioAnalyzerImpl(
                 if (p.signum() == 0) {
                     log.error(
                         "Price not found for {}. Aborting rebalance cycle to prevent erroneous trades.",
-                        symbol
+                        symbol,
                     )
                     return Result.Failure(
-                        IllegalStateException("${ViewText.PRICE_NOT_FOUND_PREFIX}$symbol")
+                        IllegalStateException("${ViewText.PRICE_NOT_FOUND_PREFIX}$symbol"),
                     )
                 }
                 price = p
@@ -109,11 +104,10 @@ class PortfolioAnalyzerImpl(
         return Result.Success(PortfolioValues(totalPortfolioValueUSD, currentValuesUSD))
     }
 
-    override fun resolveBalance(symbol: String, balances: RawBalances): BigDecimal {
-        return Asset.possibleBalanceKeys(symbol)
-            .firstNotNullOfOrNull { balances[it] }
-            ?: BigDecimal.ZERO
-    }
+    override fun resolveBalance(symbol: String, balances: RawBalances): BigDecimal = Asset
+        .possibleBalanceKeys(symbol)
+        .firstNotNullOfOrNull { balances[it] }
+        ?: BigDecimal.ZERO
 
     override fun updateAthAndCalculateDrawdown(totalPortfolioValueUSD: BigDecimal): BigDecimal {
         val stats = portfolioStatsRepository.load()
@@ -124,7 +118,7 @@ class PortfolioAnalyzerImpl(
                 ath = totalPortfolioValueUSD
                 log.info(
                     "Initial ATH set to {}",
-                    ath.setScale(SCALE_USD, RoundingMode.HALF_UP)
+                    ath.setScale(SCALE_USD, RoundingMode.HALF_UP),
                 )
             }
 
@@ -132,7 +126,7 @@ class PortfolioAnalyzerImpl(
                 ath = totalPortfolioValueUSD
                 log.info(
                     "New All-Time High detected: {}",
-                    ath.setScale(SCALE_USD, RoundingMode.HALF_UP)
+                    ath.setScale(SCALE_USD, RoundingMode.HALF_UP),
                 )
             }
         }
@@ -142,28 +136,27 @@ class PortfolioAnalyzerImpl(
 
         return if (ath > BigDecimal.ZERO && totalPortfolioValueUSD < ath) {
             val diff = ath.subtract(totalPortfolioValueUSD)
-            diff.divide(
-                ath,
-                SCALE_PERCENT,
-                RoundingMode.HALF_UP
-            ).multiply(HUNDRED)
+            diff
+                .divide(
+                    ath,
+                    SCALE_PERCENT,
+                    RoundingMode.HALF_UP,
+                ).multiply(HUNDRED)
         } else {
             BigDecimal.ZERO
         }
     }
 
-    override fun calculateFiatDeployment(
-        drawdownPct: BigDecimal,
-        settings: Settings
-    ): BigDecimal {
+    override fun calculateFiatDeployment(drawdownPct: BigDecimal, settings: Settings): BigDecimal {
         if (settings.fiatMaxDrawdown <= 0.0) return BigDecimal.ZERO
 
         val maxDD = BigDecimal.valueOf(settings.fiatMaxDrawdown)
-        var ratio = drawdownPct.divide(
-            maxDD,
-            SCALE_PERCENT,
-            RoundingMode.HALF_UP
-        )
+        var ratio =
+            drawdownPct.divide(
+                maxDD,
+                SCALE_PERCENT,
+                RoundingMode.HALF_UP,
+            )
         ratio = ratio.coerceAtMost(BigDecimal.ONE)
 
         val deployDouble =
@@ -172,15 +165,18 @@ class PortfolioAnalyzerImpl(
     }
 
     override fun calculateEffectiveUsdTarget(fiatDeploymentPct: BigDecimal): BigDecimal {
-        val baseUsdTarget = configService.getConfig()
-            .allocations
-            .filter { it.symbol.isUsd }
-            .sumOf { it.targetPercent.toBigDecimal() }
+        val baseUsdTarget =
+            configService
+                .getConfig()
+                .allocations
+                .filter { it.symbol.isUsd }
+                .sumOf { it.targetPercent.toBigDecimal() }
 
         return if (fiatDeploymentPct > BigDecimal.ZERO) {
-            val factor = BigDecimal.ONE.subtract(
-                fiatDeploymentPct.divide(HUNDRED, SCALE_PERCENT, RoundingMode.HALF_UP)
-            )
+            val factor =
+                BigDecimal.ONE.subtract(
+                    fiatDeploymentPct.divide(HUNDRED, SCALE_PERCENT, RoundingMode.HALF_UP),
+                )
             baseUsdTarget.multiply(factor)
         } else {
             baseUsdTarget
@@ -188,17 +184,19 @@ class PortfolioAnalyzerImpl(
     }
 
     override fun calculateCryptoScaleFactor(effectiveUsdTarget: BigDecimal): BigDecimal {
-        val totalNonUsdTarget = configService.getConfig()
-            .allocations
-            .filter { !it.symbol.isUsd }
-            .sumOf { it.targetPercent.toBigDecimal() }
+        val totalNonUsdTarget =
+            configService
+                .getConfig()
+                .allocations
+                .filter { !it.symbol.isUsd }
+                .sumOf { it.targetPercent.toBigDecimal() }
 
         val remainingForCrypto = HUNDRED.subtract(effectiveUsdTarget)
         return if (totalNonUsdTarget > BigDecimal.ZERO) {
             remainingForCrypto.divide(
                 totalNonUsdTarget,
                 SCALE_PRICE,
-                RoundingMode.HALF_UP
+                RoundingMode.HALF_UP,
             )
         } else {
             BigDecimal.ONE
@@ -209,7 +207,7 @@ class PortfolioAnalyzerImpl(
         totalPortfolioValueUSD: BigDecimal,
         currentValuesUSD: AssetValues,
         effectiveUsdTarget: BigDecimal,
-        cryptoScaleFactor: BigDecimal
+        cryptoScaleFactor: BigDecimal,
     ): AnalysisResult {
         val buyOrders = mutableMapOf<String, BigDecimal>()
         val sellOrders = mutableMapOf<String, BigDecimal>()
@@ -226,15 +224,16 @@ class PortfolioAnalyzerImpl(
             val currentVal = currentValuesUSD[symbolVal] ?: BigDecimal.ZERO
 
             // Use consolidated calculation logic
-            val metrics = PortfolioCalculations.calculateAssetMetrics(
-                symbol = symbol,
-                baseTargetPercent = BigDecimal.valueOf(targetPercent),
-                currentValueUSD = currentVal,
-                totalPortfolioValueUSD = totalPortfolioValueUSD,
-                effectiveUsdTarget = effectiveUsdTarget,
-                cryptoScaleFactor = cryptoScaleFactor,
-                dustThresholdUSD = s.dustThresholdUSD
-            )
+            val metrics =
+                PortfolioCalculations.calculateAssetMetrics(
+                    symbol = symbol,
+                    baseTargetPercent = BigDecimal.valueOf(targetPercent),
+                    currentValueUSD = currentVal,
+                    totalPortfolioValueUSD = totalPortfolioValueUSD,
+                    effectiveUsdTarget = effectiveUsdTarget,
+                    cryptoScaleFactor = cryptoScaleFactor,
+                    dustThresholdUSD = s.dustThresholdUSD,
+                )
 
             allDeviations[symbolVal] = metrics.deviationUSD
 
@@ -243,14 +242,15 @@ class PortfolioAnalyzerImpl(
                 symbolVal,
                 metrics.deviationPercent,
                 metrics.deviationUSD.setScale(SCALE_USD, RoundingMode.HALF_UP),
-                s.deviationTriggerPercent
+                s.deviationTriggerPercent,
             )
 
-            val isTriggered = metrics.deviationPercent.abs().toDouble() >= s.deviationTriggerPercent && metrics.isSignificant
+            val isTriggered =
+                metrics.deviationPercent.abs().toDouble() >= s.deviationTriggerPercent && metrics.isSignificant
 
             if (isTriggered) {
                 actionLog.add(
-                    "Deviation Triggered details: $symbolVal Dev: ${metrics.deviationPercent}%"
+                    "Deviation Triggered details: $symbolVal Dev: ${metrics.deviationPercent}%",
                 )
             }
 
@@ -260,7 +260,7 @@ class PortfolioAnalyzerImpl(
                         "Asset USD Deviation: {}% (Trigger: {}%). USD Dev: {}",
                         metrics.deviationPercent,
                         s.deviationTriggerPercent,
-                        metrics.deviationUSD
+                        metrics.deviationUSD,
                     )
                     usdTriggered = true
                     usdDeviationAmount = metrics.deviationUSD
@@ -272,7 +272,7 @@ class PortfolioAnalyzerImpl(
                         symbolVal,
                         metrics.deviationPercent,
                         s.deviationTriggerPercent,
-                        metrics.deviationUSD
+                        metrics.deviationUSD,
                     )
 
                     if (metrics.deviationUSD > BigDecimal.ZERO) {
@@ -287,7 +287,7 @@ class PortfolioAnalyzerImpl(
         if (buyOrders.isEmpty() && sellOrders.isEmpty() && usdTriggered) {
             log.info(
                 "USD Deviation triggered but no individual asset triggers. " +
-                        "Enforcing fiat correction."
+                    "Enforcing fiat correction.",
             )
             actionLog.add("USD Deviation Triggered. Enforcing fiat correction.")
             distributeFiatCorrection(
@@ -295,7 +295,7 @@ class PortfolioAnalyzerImpl(
                 allDevs = allDeviations,
                 buyOrders = buyOrders,
                 sellOrders = sellOrders,
-                actionLog = actionLog
+                actionLog = actionLog,
             )
         }
 
@@ -307,7 +307,7 @@ class PortfolioAnalyzerImpl(
         allDevs: AssetDeviations,
         buyOrders: MutableRebalanceOrders,
         sellOrders: MutableRebalanceOrders,
-        actionLog: MutableList<String>
+        actionLog: MutableList<String>,
     ) {
         val deviationAbs = usdDev.abs()
         val isDeposit = usdDev > BigDecimal.ZERO
@@ -329,7 +329,7 @@ class PortfolioAnalyzerImpl(
         if (totalCounterDev.signum() == 0) {
             log.info(
                 "Fiat correction required but no suitable " +
-                        "counter-balancing assets found."
+                    "counter-balancing assets found.",
             )
             return
         }
@@ -338,22 +338,22 @@ class PortfolioAnalyzerImpl(
             "Distributing Fiat Correction ($${
                 deviationAbs.setScale(
                     SCALE_USD,
-                    RoundingMode.HALF_UP
+                    RoundingMode.HALF_UP,
                 )
             }) among ${candidates.size} candidates. Total Counter-Dev: $${
                 totalCounterDev.setScale(
                     SCALE_USD,
-                    RoundingMode.HALF_UP
+                    RoundingMode.HALF_UP,
                 )
-            }"
+            }",
         )
         actionLog.add(
             "Distributing Fiat Correction ($${
                 deviationAbs.setScale(
                     SCALE_USD,
-                    RoundingMode.HALF_UP
+                    RoundingMode.HALF_UP,
                 )
-            }) among ${candidates.size} candidates."
+            }) among ${candidates.size} candidates.",
         )
 
         for (symbol in candidates) {
@@ -362,7 +362,7 @@ class PortfolioAnalyzerImpl(
                 assetDev.divide(
                     totalCounterDev,
                     SCALE_PRICE,
-                    RoundingMode.HALF_UP
+                    RoundingMode.HALF_UP,
                 )
             val share = deviationAbs.multiply(ratio)
 

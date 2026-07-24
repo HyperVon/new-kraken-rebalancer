@@ -32,7 +32,16 @@ else
 fi
 
 echo ""
-echo "--- 3. Running Markdown Linting ---"
+echo "--- 3. Running Kotlin Code Formatting & Line-Length Check (Spotless / ktlint) ---"
+if ./gradlew spotlessCheck; then
+    echo "[✓] Spotless Kotlin code formatting and 120-char line length check passed cleanly."
+else
+    echo "[!] Spotless code formatting violations found. Run ./gradlew spotlessApply to fix."
+    ERRORS_FOUND=$((ERRORS_FOUND + 1))
+fi
+
+echo ""
+echo "--- 4. Running Markdown Linting ---"
 if npx markdownlint-cli AGENTS.md CHANGELOG.md README.md docs/*.md .agents/skills/**/SKILL.md .agents/skills/**/*.md; then
     echo "[✓] Markdown linting passed cleanly."
 else

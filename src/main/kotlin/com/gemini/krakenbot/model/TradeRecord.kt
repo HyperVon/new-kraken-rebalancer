@@ -1,9 +1,9 @@
 package com.gemini.krakenbot.model
 
+import com.gemini.krakenbot.service.isWithinRelativeTolerance
 import java.math.BigDecimal
 import java.math.RoundingMode
 import java.time.Instant
-import com.gemini.krakenbot.service.isWithinRelativeTolerance
 import kotlin.math.abs
 
 /**
@@ -23,29 +23,28 @@ data class TradeRecord(
     val price: BigDecimal = BigDecimal.ZERO,
     val fee: BigDecimal = BigDecimal.ZERO,
     val slippagePercent: BigDecimal? = null,
-    val id: Int? = null
+    val id: Int? = null,
 )
 
 fun TradeRecord.isSameSymbolAndSide(other: TradeRecord): Boolean =
     this.symbol.equals(other.symbol, ignoreCase = true) &&
-            this.side.equals(other.side, ignoreCase = true)
+        this.side.equals(other.side, ignoreCase = true)
 
-fun TradeRecord.isPairAliasDuplicateOf(other: TradeRecord): Boolean =
-    this.isSameSymbolAndSide(other) &&
-            this.volume.compareTo(other.volume) == 0 &&
-            this.pair != other.pair
+fun TradeRecord.isPairAliasDuplicateOf(other: TradeRecord): Boolean = this.isSameSymbolAndSide(other) &&
+    this.volume.compareTo(other.volume) == 0 &&
+    this.pair != other.pair
 
 fun TradeRecord.isLocalEstimateDuplicateOf(
     other: TradeRecord,
     windowMillis: Long = 10_000L,
-    tolerance: BigDecimal = BigDecimal("0.01")
+    tolerance: BigDecimal = BigDecimal("0.01"),
 ): Boolean {
     val diff = abs(this.timestamp.toEpochMilli() - other.timestamp.toEpochMilli())
     return this.isSameSymbolAndSide(other) &&
-            this.pair.equals(other.pair, ignoreCase = true) &&
-            diff <= windowMillis &&
-            isWithinRelativeTolerance(this.volume, other.volume, tolerance) &&
-            isWithinRelativeTolerance(this.usdAmount, other.usdAmount, tolerance)
+        this.pair.equals(other.pair, ignoreCase = true) &&
+        diff <= windowMillis &&
+        isWithinRelativeTolerance(this.volume, other.volume, tolerance) &&
+        isWithinRelativeTolerance(this.usdAmount, other.usdAmount, tolerance)
 }
 
 fun TradeRecord.feePercentDiffersMateriallyFrom(other: TradeRecord): Boolean {
@@ -59,7 +58,7 @@ fun TradeRecord.isMatchingApiTrade(
     apiTrade: TradeRecord,
     allocations: List<String>,
     windowMillis: Long = 10_000L,
-    tolerance: BigDecimal = BigDecimal("0.01")
+    tolerance: BigDecimal = BigDecimal("0.01"),
 ): Boolean {
     val timeDifference = abs(this.timestamp.toEpochMilli() - apiTrade.timestamp.toEpochMilli())
     if (timeDifference > windowMillis || !this.side.equals(apiTrade.side, ignoreCase = true)) {
@@ -68,7 +67,9 @@ fun TradeRecord.isMatchingApiTrade(
     val thisSymbol = Asset.fromTradingPair(this.pair, allocations) ?: this.symbol
     val apiSymbol = Asset.fromTradingPair(apiTrade.pair, allocations) ?: apiTrade.symbol
     return thisSymbol.equals(apiSymbol, ignoreCase = true) &&
-            isWithinRelativeTolerance(this.volume, apiTrade.volume, tolerance) &&
-            (this.volume.compareTo(apiTrade.volume) == 0 ||
-                    isWithinRelativeTolerance(this.usdAmount, apiTrade.usdAmount, tolerance))
+        isWithinRelativeTolerance(this.volume, apiTrade.volume, tolerance) &&
+        (
+            this.volume.compareTo(apiTrade.volume) == 0 ||
+                isWithinRelativeTolerance(this.usdAmount, apiTrade.usdAmount, tolerance)
+            )
 }

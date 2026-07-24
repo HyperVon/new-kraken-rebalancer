@@ -28,7 +28,6 @@ import java.util.*
 
 @Suppress("unused")
 class PrecisionRoundingFuzzTest : StringSpec() {
-
     override fun isolationMode() = IsolationMode.InstancePerTest
 
     init {
@@ -36,100 +35,111 @@ class PrecisionRoundingFuzzTest : StringSpec() {
             runTest {
                 val validSecret =
                     Base64.getEncoder().encodeToString("secret".toByteArray())
-                val appConfig = AppConfig(
-                    kraken = KrakenCredentials(
-                        apiKey = "apiKey",
-                        privateKey = validSecret
-                    ),
-                    settings = Settings(
-                        loopDelaySeconds = 60L,
-                        deviationTriggerPercent = 2.0,
-                        dustThresholdUSD = 1.0,
-                        dryRun = false,
-                        fiatMaxDrawdown = 50.0,
-                        fiatDeploymentExponent = 1.0
-                    ),
-                    allocations = listOf(
-                        Allocation(Asset.BTC, 50.0),
-                        Allocation(Asset.USD, 50.0)
+                val appConfig =
+                    AppConfig(
+                        kraken =
+                        KrakenCredentials(
+                            apiKey = "apiKey",
+                            privateKey = validSecret,
+                        ),
+                        settings =
+                        Settings(
+                            loopDelaySeconds = 60L,
+                            deviationTriggerPercent = 2.0,
+                            dustThresholdUSD = 1.0,
+                            dryRun = false,
+                            fiatMaxDrawdown = 50.0,
+                            fiatDeploymentExponent = 1.0,
+                        ),
+                        allocations =
+                        listOf(
+                            Allocation(Asset.BTC, 50.0),
+                            Allocation(Asset.USD, 50.0),
+                        ),
                     )
-                )
 
                 val mockConfigService = mockk<ConfigService>(relaxed = true)
                 every { mockConfigService.getConfig() } returns appConfig
 
                 var capturedOrderPayload: String? = null
 
-                val mockEngine = MockEngine { request ->
-                    when (request.url.encodedPath) {
-                        "/0/private/Balance" -> {
-                            respond(
-                                content =
+                val mockEngine =
+                    MockEngine { request ->
+                        when (request.url.encodedPath) {
+                            "/0/private/Balance" -> {
+                                respond(
+                                    content =
                                     "{\"error\":[],\"result\":{\"XXBT\":0.3333333333333333,\"ZUSD\":31415.9265358979323846}}",
-                                status = HttpStatusCode.OK,
-                                headers = headersOf(
-                                    HttpHeaders.ContentType,
-                                    "application/json"
+                                    status = HttpStatusCode.OK,
+                                    headers =
+                                    headersOf(
+                                        HttpHeaders.ContentType,
+                                        "application/json",
+                                    ),
                                 )
-                            )
-                        }
+                            }
 
-                        "/0/public/Ticker" -> {
-                            respond(
-                                content = "{\"error\":[],\"result\":{\"XXBTZUSD\":{\"c\":[\"68453.123456789\"]}}}",
-                                status = HttpStatusCode.OK,
-                                headers = headersOf(
-                                    HttpHeaders.ContentType,
-                                    "application/json"
+                            "/0/public/Ticker" -> {
+                                respond(
+                                    content = "{\"error\":[],\"result\":{\"XXBTZUSD\":{\"c\":[\"68453.123456789\"]}}}",
+                                    status = HttpStatusCode.OK,
+                                    headers =
+                                    headersOf(
+                                        HttpHeaders.ContentType,
+                                        "application/json",
+                                    ),
                                 )
-                            )
-                        }
+                            }
 
-                        "/0/private/AddOrder" -> {
-                            capturedOrderPayload =
-                                (request.body as TextContent).text
-                            respond(
-                                content =
+                            "/0/private/AddOrder" -> {
+                                capturedOrderPayload =
+                                    (request.body as TextContent).text
+                                respond(
+                                    content =
                                     "{\"error\":[],\"result\":{\"descr\":{\"order\":\"buy\"},\"txid\":[\"TX-1\"]}}",
-                                status = HttpStatusCode.OK,
-                                headers = headersOf(
-                                    HttpHeaders.ContentType,
-                                    "application/json"
+                                    status = HttpStatusCode.OK,
+                                    headers =
+                                    headersOf(
+                                        HttpHeaders.ContentType,
+                                        "application/json",
+                                    ),
                                 )
-                            )
-                        }
+                            }
 
-                        else -> respond(
-                            "{\"error\":[\"Unknown path\"]}",
-                            HttpStatusCode.NotFound
-                        )
+                            else ->
+                                respond(
+                                    "{\"error\":[\"Unknown path\"]}",
+                                    HttpStatusCode.NotFound,
+                                )
+                        }
                     }
-                }
 
                 val httpClient = HttpClient(mockEngine)
                 val objectMapper =
                     jacksonObjectMapper().findAndRegisterModules()
-                val krakenService = KrakenServiceImpl(
-                    configService = mockConfigService,
-                    objectMapper = objectMapper,
-                    httpClient = httpClient
-                )
+                val krakenService =
+                    KrakenServiceImpl(
+                        configService = mockConfigService,
+                        objectMapper = objectMapper,
+                        httpClient = httpClient,
+                    )
 
                 val portfolioAnalyzer =
                     PortfolioAnalyzerImpl(
                         krakenService = krakenService,
                         configService = mockConfigService,
-                        portfolioStatsRepository = mockk<PortfolioStatsRepository>(relaxed = true)
+                        portfolioStatsRepository = mockk<PortfolioStatsRepository>(relaxed = true),
                     )
                 val tradeHistoryService = mockk<TradeHistoryService>(relaxed = true)
                 val orderExecutor =
                     OrderExecutorImpl(krakenService, portfolioAnalyzer, tradeHistoryService)
-                val portfolioManager = PortfolioManagerImpl(
-                    configService = mockConfigService,
-                    tradeHistoryService = tradeHistoryService,
-                    portfolioAnalyzer = portfolioAnalyzer,
-                    orderExecutor = orderExecutor
-                )
+                val portfolioManager =
+                    PortfolioManagerImpl(
+                        configService = mockConfigService,
+                        tradeHistoryService = tradeHistoryService,
+                        portfolioAnalyzer = portfolioAnalyzer,
+                        orderExecutor = orderExecutor,
+                    )
 
                 shouldNotThrowAny {
                     portfolioManager.performRebalanceCycle()
@@ -140,9 +150,10 @@ class PrecisionRoundingFuzzTest : StringSpec() {
                 capturedOrderPayload.shouldNotBeNull()
 
                 // Regex asserts volume is a number with 1 to 8 decimal places
-                val volumeMatch = Regex("volume=(\\d+\\.\\d{1,8})(&|$)").find(
-                    capturedOrderPayload
-                )
+                val volumeMatch =
+                    Regex("volume=(\\d+\\.\\d{1,8})(&|$)").find(
+                        capturedOrderPayload,
+                    )
                 volumeMatch.shouldNotBeNull()
             }
         }

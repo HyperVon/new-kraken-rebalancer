@@ -18,18 +18,18 @@ import java.nio.file.StandardCopyOption
 class SqlitePortfolioStatsRepositoryImpl(
     private val database: Database,
     private val objectMapper: ObjectMapper,
-    private val statsFilePath: String = "portfolio-stats.json"
+    private val statsFilePath: String = "portfolio-stats.json",
 ) : PortfolioStatsRepository {
-
     private val log =
         LoggerFactory.getLogger(SqlitePortfolioStatsRepositoryImpl::class.java)
 
     override fun load(): PortfolioStats = try {
         transaction(database) {
-            val dbStats = PortfolioStatsTable
-                .selectAll()
-                .firstOrNull()
-                ?.let { PortfolioStats(it[PortfolioStatsTable.allTimeHigh] ?: BigDecimal.ZERO) }
+            val dbStats =
+                PortfolioStatsTable
+                    .selectAll()
+                    .firstOrNull()
+                    ?.let { PortfolioStats(it[PortfolioStatsTable.allTimeHigh] ?: BigDecimal.ZERO) }
 
             if (dbStats != null) {
                 return@transaction dbStats

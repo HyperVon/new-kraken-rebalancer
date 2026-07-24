@@ -39,9 +39,10 @@ class TradeHistoryServiceImpl(
     private val configService: ConfigService,
     private val objectMapper: ObjectMapper,
     private val portfolioAnalyzer: PortfolioAnalyzer,
-    private val tradeHistoryFilePath: String = "trade-history.json"
+    private val tradeHistoryFilePath: String = "trade-history.json",
 ) : TradeHistoryService {
     private val log = LoggerFactory.getLogger(TradeHistoryServiceImpl::class.java)
+
     /**
      * A hot SharedFlow that broadcasts newly created portfolio snapshots to all active dashboard SSE connections.
      *
@@ -52,8 +53,9 @@ class TradeHistoryServiceImpl(
     private val snapshotFlow =
         MutableSharedFlow<PortfolioSnapshot>(
             extraBufferCapacity = 16,
-            onBufferOverflow = BufferOverflow.DROP_OLDEST
+            onBufferOverflow = BufferOverflow.DROP_OLDEST,
         )
+
     @Volatile
     private var lastSyncTime: Instant = Instant.EPOCH
 
@@ -69,10 +71,11 @@ class TradeHistoryServiceImpl(
             if (file.exists()) {
                 log.info("Found trade-history.json. Migrating snapshots to database...")
                 try {
-                    val snapshots = objectMapper.readValue(
-                        file,
-                        object : TypeReference<List<PortfolioSnapshot>>() {}
-                    )
+                    val snapshots =
+                        objectMapper.readValue(
+                            file,
+                            object : TypeReference<List<PortfolioSnapshot>>() {},
+                        )
                     if (!snapshots.isNullOrEmpty()) {
                         log.info("Loaded {} snapshots from trade-history.json. Saving to SQLite...", snapshots.size)
                         repository.save(snapshots)
@@ -178,14 +181,15 @@ class TradeHistoryServiceImpl(
                 val symbolU = symbol.value.uppercase()
                 val balance = currentBalances.getValue(symbolU)
                 val price = currentPrices.getValue(symbolU)
-                assetSnapshots[symbolU] = PortfolioCalculations.createAssetSnapshot(
-                    symbol = symbolU,
-                    balance = BigDecimal.valueOf(balance),
-                    price = BigDecimal.valueOf(price),
-                    valueUSD = BigDecimal.valueOf(balance * price),
-                    targetPercent = BigDecimal.valueOf(targetPercent),
-                    totalPortfolioValueUSD = BigDecimal.valueOf(exactPortfolioValue)
-                )
+                assetSnapshots[symbolU] =
+                    PortfolioCalculations.createAssetSnapshot(
+                        symbol = symbolU,
+                        balance = BigDecimal.valueOf(balance),
+                        price = BigDecimal.valueOf(price),
+                        valueUSD = BigDecimal.valueOf(balance * price),
+                        targetPercent = BigDecimal.valueOf(targetPercent),
+                        totalPortfolioValueUSD = BigDecimal.valueOf(exactPortfolioValue),
+                    )
             }
 
             var targetUsdPercent = 5.0
@@ -195,15 +199,16 @@ class TradeHistoryServiceImpl(
                 }
             }
 
-            val snapshot = PortfolioSnapshot(
-                timestamp = timestamp,
-                totalValueUSD = BigDecimal.valueOf(exactPortfolioValue).setScale(2, RoundingMode.HALF_UP),
-                assets = assetSnapshots,
-                actions = emptyList(),
-                drawdownPercent = BigDecimal.ZERO,
-                fiatDeploymentPercent = BigDecimal.ZERO,
-                effectiveUsdTargetPercent = BigDecimal.valueOf(targetUsdPercent).setScale(2, RoundingMode.HALF_UP)
-            )
+            val snapshot =
+                PortfolioSnapshot(
+                    timestamp = timestamp,
+                    totalValueUSD = BigDecimal.valueOf(exactPortfolioValue).setScale(2, RoundingMode.HALF_UP),
+                    assets = assetSnapshots,
+                    actions = emptyList(),
+                    drawdownPercent = BigDecimal.ZERO,
+                    fiatDeploymentPercent = BigDecimal.ZERO,
+                    effectiveUsdTargetPercent = BigDecimal.valueOf(targetUsdPercent).setScale(2, RoundingMode.HALF_UP),
+                )
             repository.saveSnapshot(snapshot)
             step++
         }
@@ -231,26 +236,16 @@ class TradeHistoryServiceImpl(
     /**
      * Exposes the internal mutable shared flow as a read-only Flow for streaming updates.
      */
-    override fun getHistoryFlow(): Flow<PortfolioSnapshot> =
-        snapshotFlow.asSharedFlow()
+    override fun getHistoryFlow(): Flow<PortfolioSnapshot> = snapshotFlow.asSharedFlow()
 
     override fun saveTrade(trade: TradeRecord) {
         repository.saveTrade(trade)
     }
 
-    override fun getSnapshotsInRange(
-        from: Instant,
-        to: Instant
-    ): List<PortfolioSnapshot> {
-        return repository.getSnapshotsInRange(from, to)
-    }
+    override fun getSnapshotsInRange(from: Instant, to: Instant): List<PortfolioSnapshot> =
+        repository.getSnapshotsInRange(from, to)
 
-    override fun getTradesInRange(
-        from: Instant,
-        to: Instant
-    ): List<TradeRecord> {
-        return repository.getTradesInRange(from, to)
-    }
+    override fun getTradesInRange(from: Instant, to: Instant): List<TradeRecord> = repository.getTradesInRange(from, to)
 
     override fun getHistoryStats(): HistoryStats {
         val stats = portfolioStatsRepository.load()
@@ -260,25 +255,32 @@ class TradeHistoryServiceImpl(
             totalTradesExecuted = summary.totalTradesExecuted,
             totalVolumeTraded = summary.totalVolumeTraded,
             totalFeesPaid = summary.totalFeesPaid,
-            latestSnapshotTime = summary.latestSnapshotTime
+            latestSnapshotTime = summary.latestSnapshotTime,
         )
     }
 
     override fun getHistoryStats(from: Instant, to: Instant): HistoryStats {
         val stats = portfolioStatsRepository.load()
-        val summary = if (from == Instant.EPOCH) repository.getTradeSummaryStats() else repository.getTradeSummaryStats(from, to)
-        val ath = if (from == Instant.EPOCH) {
-            val snapshotMax = summary.periodHigh ?: BigDecimal.ZERO
-            if (stats.allTimeHigh > snapshotMax) stats.allTimeHigh else snapshotMax
+        val summary = if (from ==
+            Instant.EPOCH
+        ) {
+            repository.getTradeSummaryStats()
         } else {
-            summary.periodHigh ?: BigDecimal.ZERO
+            repository.getTradeSummaryStats(from, to)
         }
+        val ath =
+            if (from == Instant.EPOCH) {
+                val snapshotMax = summary.periodHigh ?: BigDecimal.ZERO
+                if (stats.allTimeHigh > snapshotMax) stats.allTimeHigh else snapshotMax
+            } else {
+                summary.periodHigh ?: BigDecimal.ZERO
+            }
         return HistoryStats(
             allTimeHigh = ath,
             totalTradesExecuted = summary.totalTradesExecuted,
             totalVolumeTraded = summary.totalVolumeTraded,
             totalFeesPaid = summary.totalFeesPaid,
-            latestSnapshotTime = summary.latestSnapshotTime
+            latestSnapshotTime = summary.latestSnapshotTime,
         )
     }
 
@@ -322,15 +324,20 @@ class TradeHistoryServiceImpl(
                     // The local order record has requested values; the API record has actual
                     // fills. Match their small expected variances so the API record reconciles
                     // the local one instead of appearing as a second trade in History.
-                    val matchingLocalTrade = originalLocalTrades.find { local ->
-                        local.isMatchingApiTrade(apiTrade, allocations)
-                    }
+                    val matchingLocalTrade =
+                        originalLocalTrades.find { local ->
+                            local.isMatchingApiTrade(apiTrade, allocations)
+                        }
 
                     if (matchingLocalTrade != null) {
                         if (matchingLocalTrade != apiTrade) {
-
-                            log.info("Reconciling trade record: local (timestamp={}, usdAmount={}) with API (timestamp={}, usdAmount={})",
-                                matchingLocalTrade.timestamp, matchingLocalTrade.usdAmount, apiTrade.timestamp, apiTrade.usdAmount)
+                            log.info(
+                                "Reconciling trade record: local (timestamp={}, usdAmount={}) with API (timestamp={}, usdAmount={})",
+                                matchingLocalTrade.timestamp,
+                                matchingLocalTrade.usdAmount,
+                                apiTrade.timestamp,
+                                apiTrade.usdAmount,
+                            )
 
                             repository.updateTrade(matchingLocalTrade, apiTrade)
                             totalReconciled++
@@ -353,7 +360,7 @@ class TradeHistoryServiceImpl(
             log.info(
                 "Historical snapshots are missing or insufficient (found {} snapshots, {} trades). Starting reconstruction...",
                 snapshots.size,
-                totalTrades
+                totalTrades,
             )
             try {
                 reconstructHistoricalSnapshots()
@@ -371,8 +378,6 @@ class TradeHistoryServiceImpl(
         log.info("Trade history synchronization completed. Added: {} new, Reconciled: {}.", totalAdded, totalReconciled)
     }
 
-
-
     /**
      * A cold Flow that fetches trade history from Kraken paginated by 50.
      *
@@ -383,9 +388,7 @@ class TradeHistoryServiceImpl(
      *    automatic backpressure to prevent overloading the system or API rate limits.
      * 4. Once all batches are fetched, the Flow completes and the collector's loop naturally finishes.
      */
-    private fun getTradeHistoryPaginated(
-        startSec: Long?
-    ): Flow<List<TradeRecord>> = flow {
+    private fun getTradeHistoryPaginated(startSec: Long?): Flow<List<TradeRecord>> = flow {
         val pageSize = 50
         var offset = 0
         val isSeeded = repository.isHistorySeeded()
@@ -394,11 +397,12 @@ class TradeHistoryServiceImpl(
             log.info("Fetching trade history batch with offset={}", offset)
             val apiTrades = krakenService.getTradeHistory(startSec = startSec, offset = offset)
 
-            val realKrakenService = when (krakenService) {
-                is KrakenServiceImpl -> krakenService
-                is DynamicKrakenService -> krakenService.realService
-                else -> null
-            }
+            val realKrakenService =
+                when (krakenService) {
+                    is KrakenServiceImpl -> krakenService
+                    is DynamicKrakenService -> krakenService.realService
+                    else -> null
+                }
             val totalCount = realKrakenService?.lastFetchedCount?.get() ?: 0
 
             if (!isSeeded) {
@@ -425,12 +429,13 @@ class TradeHistoryServiceImpl(
 
         val cutoffTime = oldestSnapshot?.timestamp ?: Instant.now()
 
-        val currentBalances = try {
-            krakenService.getBalances()
-        } catch (e: Exception) {
-            log.error("Failed to fetch balances for snapshot reconstruction", e)
-            emptyMap()
-        }
+        val currentBalances =
+            try {
+                krakenService.getBalances()
+            } catch (e: Exception) {
+                log.error("Failed to fetch balances for snapshot reconstruction", e)
+                emptyMap()
+            }
 
         if (oldestSnapshot == null && currentBalances.isEmpty()) {
             log.warn("Aborting historical snapshot reconstruction: starting balances unavailable.")
@@ -456,12 +461,13 @@ class TradeHistoryServiceImpl(
                 allocations.filter { !it.symbol.isUsd }.joinToString(",") {
                     Asset.tradingPair(it.symbol.value)
                 }
-            val prices = try {
-                krakenService.getTickerPrices(pairsStr)
-            } catch (e: Exception) {
-                log.error("Failed to fetch starting prices for snapshot reconstruction", e)
-                emptyMap()
-            }
+            val prices =
+                try {
+                    krakenService.getTickerPrices(pairsStr)
+                } catch (e: Exception) {
+                    log.error("Failed to fetch starting prices for snapshot reconstruction", e)
+                    emptyMap()
+                }
             for ((symbol) in allocations) {
                 val symbolU = symbol.value.uppercase()
                 currentPrices[symbolU] = prices[Asset.tradingPair(symbolU)] ?: BigDecimal.ZERO
@@ -487,30 +493,35 @@ class TradeHistoryServiceImpl(
         }
 
         // 4. Fetch all trades from database
-        val trades = repository.getTradesInRange(Instant.now().minus(95, ChronoUnit.DAYS), Instant.now())
-            .filter { it.success && !it.dryRun }
+        val trades =
+            repository
+                .getTradesInRange(Instant.now().minus(95, ChronoUnit.DAYS), Instant.now())
+                .filter { it.success && !it.dryRun }
 
-
-        val tradePrices = trades.groupBy { it.symbol.uppercase() }
-            .mapValues { entry ->
-                entry.value.map { Pair(it.timestamp, it.price) }
-            }
+        val tradePrices =
+            trades
+                .groupBy { it.symbol.uppercase() }
+                .mapValues { entry ->
+                    entry.value.map { Pair(it.timestamp, it.price) }
+                }
 
         val historicalTrades = trades.filter { it.timestamp.isBefore(cutoffTime) }
 
-        val events = SnapshotHistoryCalculator.buildTimelineEvents(
-            historicalTrades = historicalTrades,
-            cutoffTime = cutoffTime
-        )
+        val events =
+            SnapshotHistoryCalculator.buildTimelineEvents(
+                historicalTrades = historicalTrades,
+                cutoffTime = cutoffTime,
+            )
 
-        val snapshotsToSave = SnapshotHistoryCalculator.calculateHistoricalSnapshots(
-            events = events,
-            allocations = allocations,
-            runningBalances = runningBalances,
-            currentPrices = currentPrices,
-            ohlcData = ohlcData,
-            tradePrices = tradePrices
-        )
+        val snapshotsToSave =
+            SnapshotHistoryCalculator.calculateHistoricalSnapshots(
+                events = events,
+                allocations = allocations,
+                runningBalances = runningBalances,
+                currentPrices = currentPrices,
+                ohlcData = ohlcData,
+                tradePrices = tradePrices,
+            )
 
         if (snapshotsToSave.isNotEmpty()) {
             log.info("Saving {} reconstructed historical snapshots...", snapshotsToSave.size)
@@ -519,6 +530,8 @@ class TradeHistoryServiceImpl(
     }
 
     override fun getSyncMetadata(key: String): String? = repository.getSyncMetadata(key)
+
     override fun setSyncMetadata(key: String, value: String) = repository.setSyncMetadata(key, value)
+
     override fun isHistorySeeded(): Boolean = repository.isHistorySeeded()
 }

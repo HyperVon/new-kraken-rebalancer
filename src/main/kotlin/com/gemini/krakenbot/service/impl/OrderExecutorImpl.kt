@@ -13,10 +13,10 @@ import com.gemini.krakenbot.service.PortfolioAnalyzer
 import com.gemini.krakenbot.service.RebalanceOrders
 import com.gemini.krakenbot.service.TradeHistoryService
 import com.gemini.krakenbot.util.ActionLogFormatter
-import com.gemini.krakenbot.util.TradeCalculator
-import com.gemini.krakenbot.util.PrecisionConstants
 import com.gemini.krakenbot.util.CASH_RESERVE_FACTOR
 import com.gemini.krakenbot.util.FEE_RATE_ESTIMATE
+import com.gemini.krakenbot.util.PrecisionConstants
+import com.gemini.krakenbot.util.TradeCalculator
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -29,7 +29,7 @@ import kotlin.time.Duration.Companion.milliseconds
 class OrderExecutorImpl(
     private val krakenService: KrakenService,
     private val portfolioAnalyzer: PortfolioAnalyzer,
-    private val tradeHistoryService: TradeHistoryService
+    private val tradeHistoryService: TradeHistoryService,
 ) : OrderExecutor {
     private val log = LoggerFactory.getLogger(OrderExecutorImpl::class.java)
 
@@ -46,7 +46,7 @@ class OrderExecutorImpl(
         currentValuesUSD: AssetValues,
         prices: AssetPrices,
         settings: Settings,
-        actionLog: MutableList<String>
+        actionLog: MutableList<String>,
     ) {
         var projectedCash = currentValuesUSD[Asset.USD] ?: BigDecimal.ZERO
         var executedSells = false
@@ -77,7 +77,7 @@ class OrderExecutorImpl(
                     "Not enough cash to buy {}. Cost: {}, Cash: {}. Reducing.",
                     symbol,
                     cost,
-                    actualCash
+                    actualCash,
                 )
                 cost = actualCash.multiply(CASH_RESERVE_FACTOR)
             }
@@ -100,38 +100,38 @@ class OrderExecutorImpl(
         usdAmount: BigDecimal,
         side: OrderSide,
         prices: AssetPrices,
-        actionLog: MutableList<String>
+        actionLog: MutableList<String>,
     ): OrderResult? {
         val price = prices[symbol] ?: BigDecimal.ZERO
         if (price.signum() == 0) return null
 
         val volume = usdAmount.divide(price, PrecisionConstants.SCALE_CRYPTO, RoundingMode.HALF_UP)
         val pair = Asset.tradingPair(symbol)
-        val result = krakenService.executeOrder(
-            pair = pair,
-            type = OrderType.MARKET.apiValue,
-            side = side.apiValue,
-            volume = volume
-        )
+        val result =
+            krakenService.executeOrder(
+                pair = pair,
+                type = OrderType.MARKET.apiValue,
+                side = side.apiValue,
+                volume = volume,
+            )
         logOrderResult(
             result = result,
             actionLog = actionLog,
             symbol = symbol,
             volume = volume,
             usdAmount = usdAmount,
-            side = side.uppercaseName
+            side = side.uppercaseName,
         )
         recordTrade(result, symbol, pair, side.uppercaseName, volume, usdAmount, prices)
         return result
     }
 
-    private suspend fun refreshUsdBalanceAfterSells(projectedCash: BigDecimal): BigDecimal {
-        return pollUsdBalanceAfterSells(projectedCash).last()
-    }
+    private suspend fun refreshUsdBalanceAfterSells(projectedCash: BigDecimal): BigDecimal =
+        pollUsdBalanceAfterSells(projectedCash).last()
 
     private fun pollUsdBalanceAfterSells(
         projectedCash: BigDecimal,
-        targetThreshold: BigDecimal = projectedCash.multiply(BigDecimal("0.95"))
+        targetThreshold: BigDecimal = projectedCash.multiply(BigDecimal("0.95")),
     ): Flow<BigDecimal> = flow {
         var lastBalance = projectedCash
         var backoffMs = REFRESH_DELAY_MS
@@ -145,7 +145,7 @@ class OrderExecutorImpl(
                     val usdBalance = portfolioAnalyzer.resolveBalance(Asset.USD, updatedBalances)
                     if (usdBalance > BigDecimal.ZERO) {
                         lastBalance = usdBalance
-                        log.info("Updated USD balance after sells (attempt {}): $${lastBalance}", attempt + 1)
+                        log.info("Updated USD balance after sells (attempt {}): $$lastBalance", attempt + 1)
                         emit(lastBalance)
                         if (lastBalance >= targetThreshold) return@flow
                     }
@@ -156,7 +156,7 @@ class OrderExecutorImpl(
             backoffMs = (backoffMs * 2).coerceAtMost(32000L)
         }
         emit(lastBalance)
-        log.warn("Using best observed USD balance after sell refresh: $${lastBalance}")
+        log.warn("Using best observed USD balance after sell refresh: $$lastBalance")
     }
 
     internal fun logOrderResult(
@@ -165,7 +165,7 @@ class OrderExecutorImpl(
         symbol: String,
         volume: BigDecimal,
         usdAmount: BigDecimal,
-        side: String
+        side: String,
     ) {
         if (result.success) {
             actionLog.add(
@@ -174,16 +174,16 @@ class OrderExecutorImpl(
                     symbol = symbol,
                     volume = volume,
                     usdAmount = usdAmount,
-                    isDryRun = result.dryRun
-                )
+                    isDryRun = result.dryRun,
+                ),
             )
         } else {
             actionLog.add(
                 ActionLogFormatter.formatOrderFailure(
                     side = side,
                     symbol = symbol,
-                    errorMessage = result.errorMessage
-                )
+                    errorMessage = result.errorMessage,
+                ),
             )
         }
     }
@@ -195,17 +195,18 @@ class OrderExecutorImpl(
         side: String,
         volume: BigDecimal,
         usdAmount: BigDecimal,
-        prices: AssetPrices
+        prices: AssetPrices,
     ) {
-        val trade = TradeCalculator.createTradeRecord(
-            result = result,
-            symbol = symbol,
-            pair = pair,
-            side = side,
-            volume = volume,
-            usdAmount = usdAmount,
-            prices = prices
-        )
+        val trade =
+            TradeCalculator.createTradeRecord(
+                result = result,
+                symbol = symbol,
+                pair = pair,
+                side = side,
+                volume = volume,
+                usdAmount = usdAmount,
+                prices = prices,
+            )
         tradeHistoryService.saveTrade(trade)
     }
 }

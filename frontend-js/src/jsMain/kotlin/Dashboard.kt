@@ -2,11 +2,6 @@ package com.gemini.krakenbot.frontend
 
 import com.gemini.krakenbot.util.PrecisionConstants
 import com.gemini.krakenbot.view.util.CssClass
-import com.gemini.krakenbot.view.util.CssClass.Query.DATA_AGE_TIME as DATA_AGE_TIME_QUERY
-import com.gemini.krakenbot.view.util.CssClass.Query.DATA_AGE_VALUE as DATA_AGE_VALUE_QUERY
-import com.gemini.krakenbot.view.util.CssClass.Query.HOVERABLE_TR as HOVERABLE_TR_QUERY
-import com.gemini.krakenbot.view.util.CssClass.Query.SORTABLE_TH as SORTABLE_TH_QUERY
-import com.gemini.krakenbot.view.util.CssClass.Query.STATUS_BADGE as STATUS_BADGE_QUERY
 import com.gemini.krakenbot.view.util.HtmlAttrs
 import com.gemini.krakenbot.view.util.HtmlTags
 import com.gemini.krakenbot.view.util.ViewText
@@ -14,6 +9,11 @@ import kotlinx.browser.document
 import kotlinx.browser.window
 import org.w3c.dom.*
 import kotlin.js.Date
+import com.gemini.krakenbot.view.util.CssClass.Query.DATA_AGE_TIME as DATA_AGE_TIME_QUERY
+import com.gemini.krakenbot.view.util.CssClass.Query.DATA_AGE_VALUE as DATA_AGE_VALUE_QUERY
+import com.gemini.krakenbot.view.util.CssClass.Query.HOVERABLE_TR as HOVERABLE_TR_QUERY
+import com.gemini.krakenbot.view.util.CssClass.Query.SORTABLE_TH as SORTABLE_TH_QUERY
+import com.gemini.krakenbot.view.util.CssClass.Query.STATUS_BADGE as STATUS_BADGE_QUERY
 
 internal var currentSortCol: Int = PrecisionConstants.DEFAULT_SORT_COL_INDEX
 internal var currentSortDir: String = CssClass.Utility.Asc.toString()
@@ -42,7 +42,14 @@ fun updateAge() {
     val date = Date(epoch)
     val hours = date.getHours()
     val ampm = if (hours >= PrecisionConstants.HOURS_PER_HALF_DAY) ViewText.PM else ViewText.AM
-    val displayHours = if (hours % PrecisionConstants.HOURS_PER_HALF_DAY == 0) PrecisionConstants.HOURS_PER_HALF_DAY else hours % PrecisionConstants.HOURS_PER_HALF_DAY
+    val displayHours =
+        if (hours % PrecisionConstants.HOURS_PER_HALF_DAY ==
+            0
+        ) {
+            PrecisionConstants.HOURS_PER_HALF_DAY
+        } else {
+            hours % PrecisionConstants.HOURS_PER_HALF_DAY
+        }
     val hh = displayHours.toString().padStart(2, '0')
     val mm = date.getMinutes().toString().padStart(2, '0')
     val ss = date.getSeconds().toString().padStart(2, '0')
@@ -73,7 +80,11 @@ fun reapplySort() {
     }
 }
 
-fun sortTable(header: HTMLElement, colIdx: Int, forceDir: String? = null) {
+fun sortTable(
+    header: HTMLElement,
+    colIdx: Int,
+    forceDir: String? = null,
+) {
     val table = header.closest(HtmlTags.TABLE) as? HTMLTableElement ?: return
     val tbody = table.querySelector(HtmlTags.TBODY) as? HTMLTableSectionElement ?: return
     val rows = mutableListOf<HTMLTableRowElement>()
@@ -87,24 +98,30 @@ fun sortTable(header: HTMLElement, colIdx: Int, forceDir: String? = null) {
     val sortAsc = if (forceDir != null) forceDir == CssClass.Utility.Asc.toString() else !isAsc
     val key = if (colIdx == 0) "string" else "float"
 
-    rows.sortWith(Comparator { a, b ->
-        val aCell = a.cells.item(colIdx) as? HTMLElement
-        val bCell = b.cells.item(colIdx) as? HTMLElement
-        val aText = (aCell?.dataset?.get(HtmlAttrs.DATASET_SORT_VALUE) ?: aCell?.textContent)?.trim()
-            ?.replace(CURRENCY_CLEANUP_REGEX, "") ?: ""
-        val bText = (bCell?.dataset?.get(HtmlAttrs.DATASET_SORT_VALUE) ?: bCell?.textContent)?.trim()
-            ?.replace(CURRENCY_CLEANUP_REGEX, "") ?: ""
+    rows.sortWith(
+        Comparator { a, b ->
+            val aCell = a.cells.item(colIdx) as? HTMLElement
+            val bCell = b.cells.item(colIdx) as? HTMLElement
+            val aText =
+                (aCell?.dataset?.get(HtmlAttrs.DATASET_SORT_VALUE) ?: aCell?.textContent)
+                    ?.trim()
+                    ?.replace(CURRENCY_CLEANUP_REGEX, "") ?: ""
+            val bText =
+                (bCell?.dataset?.get(HtmlAttrs.DATASET_SORT_VALUE) ?: bCell?.textContent)
+                    ?.trim()
+                    ?.replace(CURRENCY_CLEANUP_REGEX, "") ?: ""
 
-        if (key == "float") {
-            val aVal = aText.toDoubleOrNull() ?: 0.0
-            val bVal = bText.toDoubleOrNull() ?: 0.0
-            val cmp = aVal.compareTo(bVal)
-            if (sortAsc) cmp else -cmp
-        } else {
-            val cmp = aText.compareTo(bText)
-            if (sortAsc) cmp else -cmp
-        }
-    })
+            if (key == "float") {
+                val aVal = aText.toDoubleOrNull() ?: 0.0
+                val bVal = bText.toDoubleOrNull() ?: 0.0
+                val cmp = aVal.compareTo(bVal)
+                if (sortAsc) cmp else -cmp
+            } else {
+                val cmp = aText.compareTo(bText)
+                if (sortAsc) cmp else -cmp
+            }
+        },
+    )
 
     val headersList = table.querySelectorAll(SORTABLE_TH_QUERY)
     for (i in 0 until headersList.length) {
