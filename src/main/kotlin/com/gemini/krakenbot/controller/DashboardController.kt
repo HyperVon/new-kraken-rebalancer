@@ -11,7 +11,7 @@ import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.TradeHistoryService
 import com.gemini.krakenbot.view.DashboardView
 import com.gemini.krakenbot.view.util.CssClass
-import com.gemini.krakenbot.view.util.CssStyles
+import com.gemini.krakenbot.view.css.CssStyles
 import com.gemini.krakenbot.view.util.FormFields
 import com.gemini.krakenbot.view.util.HealthStatusKeys
 import com.gemini.krakenbot.view.util.HtmxHeaders

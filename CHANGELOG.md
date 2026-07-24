@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.9.0] - 2026-07-23
+
+### Added
+
+- **`code-review` Workspace Skill (`.agents/skills/code-review/SKILL.md`)**: Created reusable workspace skill providing structured code review guidelines across Code Quality, Bug Detection, Security Analysis, Performance, and Best Practices.
+
+### Refactored
+
+- **CSS Styles Package & Modularization (`com.gemini.krakenbot.view.css`)**: Created dedicated `css` package (`com.gemini.krakenbot.view.css`) and decomposed the monolithic 1,000-line `CssStyles` object into 8 domain-focused modules (`CssTheme`, `LayoutStyles`, `ComponentStyles`, `TableStyles`, `FormStyles`, `NavigationStyles`, `MediaQueries`, and `CssStyles` aggregator facade).
+- **Type-Safe CSS Class Query Selectors (`:common`)**: Replaced brittle `.value.replace(" ", ".")` string transformations with type-safe `querySelector` extension calls on `CssClass.Navigation.LinkActive` and `CssClass.History.TimeRangeBtnActive`.
+- **Theme Tokens & `kotlinx-css` Property Standardization (`src/main`)**: Consolidated inline hex colors, accent gradients, and pill border radii into centralized theme tokens in `CssTheme`. Replaced raw string `put(...)` calls with strongly typed `kotlinx-css` DSL properties (`gridTemplateColumns`, `opacity`, `transition`).
+
 ## [6.8.9] - 2026-07-23
 
 ### Fixed
