@@ -1,6 +1,6 @@
 # Agent Rules & Technical Guidelines — Kraken Rebalancer
 
-Welcome, Antigravity/AI Agent. This repository contains **Kraken Rebalancer**, an autonomous, production-grade cryptocurrency portfolio rebalancing engine.
+This repository contains **Kraken Rebalancer**, an autonomous, production-grade cryptocurrency portfolio rebalancing engine.
 
 Below are the architectural rules, coding constraints, financial math guidelines, UI/UX conventions, git/CLI directives, and quality gates you must strictly adhere to when modifying this codebase.
 
