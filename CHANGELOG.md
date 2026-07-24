@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.12.13] - 2026-07-24
+
+### Added
+
+- **`ui-manual-qa` agent skill**: Simulation-mode click-through QA of Dashboard /
+  Settings / History interactions (browser MCP), with a maintained case
+  checklist and pass/fail report artifacts.
+
 ## [6.12.12] - 2026-07-24
 
 ### Added

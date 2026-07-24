@@ -20,6 +20,7 @@ Related:
 - Flag semantics → [dry-run-and-simulation](../dry-run-and-simulation/SKILL.md)
 - Visual critique (recommend) → [ui-visual-review](../ui-visual-review/SKILL.md)
 - Apply + verify UI changes → [ui-visual-implement](../ui-visual-implement/SKILL.md)
+- Functional click-through QA → [ui-manual-qa](../ui-manual-qa/SKILL.md)
 
 ---
 

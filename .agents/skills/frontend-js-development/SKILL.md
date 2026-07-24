@@ -69,7 +69,9 @@ Chart / History / SSE-driven UI changes that alter README visuals should refresh
 
 Visual redesign / polish passes:
 [ui-visual-review](../ui-visual-review/SKILL.md) →
-[ui-visual-implement](../ui-visual-implement/SKILL.md).
+[ui-visual-implement](../ui-visual-implement/SKILL.md). After chart/DOM
+behavior changes, run [ui-manual-qa](../ui-manual-qa/SKILL.md) (History
+views, zoom, dry-run filter, legend toggles).
 
 ## Checklist
 

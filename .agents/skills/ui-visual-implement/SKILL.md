@@ -17,6 +17,7 @@ diff alone.
 Related:
 
 - Review / brief → [ui-visual-review](../ui-visual-review/SKILL.md)
+- Functional click-through QA → [ui-manual-qa](../ui-manual-qa/SKILL.md)
 - SSR / CSS → [ktor-html-views](../ktor-html-views/SKILL.md)
 - Charts / SSE → [frontend-js-development](../frontend-js-development/SKILL.md)
 - Shared IDs/strings → [common-kmp-module](../common-kmp-module/SKILL.md)

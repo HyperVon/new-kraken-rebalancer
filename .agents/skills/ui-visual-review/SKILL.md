@@ -17,6 +17,7 @@ hand approved findings to [ui-visual-implement](../ui-visual-implement/SKILL.md)
 Related:
 
 - Capture plumbing → [docs-screenshot-refresh](../docs-screenshot-refresh/SKILL.md)
+- Functional click-through QA → [ui-manual-qa](../ui-manual-qa/SKILL.md)
 - SSR / CSS → [ktor-html-views](../ktor-html-views/SKILL.md)
 - Charts / SSE DOM → [frontend-js-development](../frontend-js-development/SKILL.md)
 - Operator meaning → [user-guide](../user-guide/SKILL.md)
