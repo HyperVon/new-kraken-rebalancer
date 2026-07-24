@@ -9,13 +9,13 @@ import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.service.impl.SimulatedKrakenService
 import com.gemini.krakenbot.test.TestConstants
 import io.kotest.core.spec.style.StringSpec
-import io.kotest.matchers.doubles.shouldBeGreaterThan
-import io.kotest.matchers.doubles.shouldBeLessThan
+import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
 import io.mockk.every
 import io.mockk.mockk
 import java.math.BigDecimal
+import java.math.RoundingMode
 
 @Suppress("unused")
 class SimulatedKrakenServiceTest : StringSpec() {
@@ -29,20 +29,21 @@ class SimulatedKrakenServiceTest : StringSpec() {
             val prices = simulatedService.getTickerPrices("XXBTZUSD,XETHZUSD")
             prices[TestFixtures.XXBTZUSD] shouldNotBe null
             prices[TestFixtures.XETHZUSD] shouldNotBe null
-            prices[TestFixtures.XXBTZUSD]!!.toDouble() shouldBeGreaterThan 0.0
+            (prices[TestFixtures.XXBTZUSD]!! > BigDecimal.ZERO) shouldBe true
 
             val balances = simulatedService.getBalances()
             balances[Asset.BTC] shouldNotBe null
             balances[Asset.ETH] shouldNotBe null
             balances[Asset.USD] shouldNotBe null
 
-            val totalValue = balances[Asset.USD]!!.toDouble() +
-                balances[Asset.BTC]!!.toDouble() * prices[TestFixtures.XXBTZUSD]!!.toDouble() +
-                balances[Asset.ETH]!!.toDouble() * prices[TestFixtures.XETHZUSD]!!.toDouble()
+            val totalValue =
+                balances[Asset.USD]!!
+                    .add(balances[Asset.BTC]!!.multiply(prices[TestFixtures.XXBTZUSD]!!))
+                    .add(balances[Asset.ETH]!!.multiply(prices[TestFixtures.XETHZUSD]!!))
 
             // Total value should be around $100,000
-            totalValue shouldBeGreaterThan 70000.0
-            totalValue shouldBeLessThan 130000.0
+            (totalValue > BigDecimal("70000")) shouldBe true
+            (totalValue < BigDecimal("130000")) shouldBe true
         }
 
         "should execute buy orders and update balances" {
@@ -60,13 +61,13 @@ class SimulatedKrakenServiceTest : StringSpec() {
             val simulatedService = SimulatedKrakenService(configService)
 
             val initialBalances = simulatedService.getBalances()
-            val initialBtc = (initialBalances[Asset.BTC] ?: BigDecimal.ZERO).toDouble()
-            val initialUsd = (initialBalances[Asset.USD] ?: BigDecimal.ZERO).toDouble()
+            val initialBtc = initialBalances[Asset.BTC] ?: BigDecimal.ZERO
+            val initialUsd = initialBalances[Asset.USD] ?: BigDecimal.ZERO
 
             val prices = simulatedService.getTickerPrices(TestFixtures.BTCUSD)
-            val btcPrice = prices[TestFixtures.BTCUSD]!!.toDouble()
+            val btcPrice = prices[TestFixtures.BTCUSD]!!
 
-            val buyVolume = BigDecimal.valueOf(0.5)
+            val buyVolume = BigDecimal("0.5")
             val result = simulatedService.executeOrder(
                 TestFixtures.BTCUSD,
                 TestFixtures.MARKET,
@@ -77,8 +78,10 @@ class SimulatedKrakenServiceTest : StringSpec() {
             result.success shouldBe true
 
             val newBalances = simulatedService.getBalances()
-            newBalances[Asset.BTC]!!.toDouble() shouldBe (initialBtc + 0.5)
-            newBalances[Asset.USD]!!.toDouble() shouldBe (initialUsd - 0.5 * btcPrice)
+            newBalances[Asset.BTC]!!.shouldBeEqualComparingTo(initialBtc.add(buyVolume))
+            newBalances[Asset.USD]!!.shouldBeEqualComparingTo(
+                initialUsd.subtract(buyVolume.multiply(btcPrice).setScale(2, RoundingMode.HALF_UP)),
+            )
         }
 
         "should execute sell orders and update balances" {
@@ -96,13 +99,13 @@ class SimulatedKrakenServiceTest : StringSpec() {
             val simulatedService = SimulatedKrakenService(configService)
 
             val initialBalances = simulatedService.getBalances()
-            val initialBtc = (initialBalances[Asset.BTC] ?: BigDecimal.ZERO).toDouble()
-            val initialUsd = (initialBalances[Asset.USD] ?: BigDecimal.ZERO).toDouble()
+            val initialBtc = initialBalances[Asset.BTC] ?: BigDecimal.ZERO
+            val initialUsd = initialBalances[Asset.USD] ?: BigDecimal.ZERO
 
             val prices = simulatedService.getTickerPrices(TestFixtures.BTCUSD)
-            val btcPrice = prices[TestFixtures.BTCUSD]!!.toDouble()
+            val btcPrice = prices[TestFixtures.BTCUSD]!!
 
-            val sellVolume = BigDecimal.valueOf(0.2)
+            val sellVolume = BigDecimal("0.2")
             val result = simulatedService.executeOrder(
                 TestFixtures.BTCUSD,
                 TestFixtures.MARKET,
@@ -113,8 +116,10 @@ class SimulatedKrakenServiceTest : StringSpec() {
             result.success shouldBe true
 
             val newBalances = simulatedService.getBalances()
-            newBalances[Asset.BTC]!!.toDouble() shouldBe (initialBtc - 0.2)
-            newBalances[Asset.USD]!!.toDouble() shouldBe (initialUsd + 0.2 * btcPrice)
+            newBalances[Asset.BTC]!!.shouldBeEqualComparingTo(initialBtc.subtract(sellVolume))
+            newBalances[Asset.USD]!!.shouldBeEqualComparingTo(
+                initialUsd.add(sellVolume.multiply(btcPrice).setScale(2, RoundingMode.HALF_UP)),
+            )
         }
 
         "should fail orders if balance is insufficient" {
@@ -132,10 +137,9 @@ class SimulatedKrakenServiceTest : StringSpec() {
             val simulatedService = SimulatedKrakenService(configService)
 
             val initialBalances = simulatedService.getBalances()
-            val initialBtc = (initialBalances[Asset.BTC] ?: BigDecimal.ZERO).toDouble()
+            val initialBtc = initialBalances[Asset.BTC] ?: BigDecimal.ZERO
 
-            // Try to sell way too much BTC
-            val sellVolume = BigDecimal.valueOf(initialBtc + 10.0)
+            val sellVolume = initialBtc.add(BigDecimal.TEN)
             val result = simulatedService.executeOrder(
                 TestFixtures.BTCUSD,
                 TestFixtures.MARKET,
@@ -170,7 +174,7 @@ class SimulatedKrakenServiceTest : StringSpec() {
                 TestFixtures.BTCUSD,
                 TestFixtures.MARKET,
                 TestFixtures.BUY,
-                BigDecimal.valueOf(0.1),
+                BigDecimal("0.1"),
             )
 
             result.success shouldBe true
@@ -238,7 +242,7 @@ class SimulatedKrakenServiceTest : StringSpec() {
                     dryRun = false,
                     simulation = true,
                 ),
-                // "UNKNOWN" exercises initialPrices and simulatedPrices fallback paths (?: 10.0)
+                // "UNKNOWN" exercises initialPrices and simulatedPrices fallback paths
                 allocations = listOf(
                     Allocation("UNKNOWN", 50.0),
                     Allocation(TestFixtures.USD, 50.0),
@@ -248,53 +252,46 @@ class SimulatedKrakenServiceTest : StringSpec() {
 
             val simulatedService = SimulatedKrakenService(configService)
 
-            // Triggers initialization including the UNKNOWN allocation
             val balances = simulatedService.getBalances()
             balances["UNKNOWN"] shouldNotBe null
 
-            // Query ticker price of non-existent pair to trigger fallback prices
             val prices = simulatedService.getTickerPrices(TestFixtures.ADAEUR)
-            prices[TestFixtures.ADAEUR]!!.toDouble() shouldBe 10.0
+            prices[TestFixtures.ADAEUR]!!.shouldBeEqualComparingTo(BigDecimal.TEN)
 
-            // Try to execute a BUY order on ADAEUR (ADAEUR has 0 balance, USD has positive balance)
             val buyResult = simulatedService.executeOrder(
                 TestFixtures.ADAEUR,
                 TestFixtures.MARKET,
                 TestFixtures.BUY,
-                BigDecimal.valueOf(0.1),
+                BigDecimal("0.1"),
             )
             buyResult.success shouldBe true
 
-            // Try to execute a SELL order on ADAEUR with more volume than possessed
             val sellResult = simulatedService.executeOrder(
                 TestFixtures.ADAEUR,
                 TestFixtures.MARKET,
                 TestFixtures.SELL,
-                BigDecimal.valueOf(10.0),
+                BigDecimal("10.0"),
             )
             sellResult.success shouldBe false
             sellResult.errorMessage?.contains("Insufficient ADAEUR funds") shouldBe true
 
-            // Try to execute a BUY order on ADAEUR with way too much volume to trigger insufficient USD funds
             val buyTooMuchResult = simulatedService.executeOrder(
                 TestFixtures.ADAEUR,
                 TestFixtures.MARKET,
                 TestFixtures.BUY,
-                BigDecimal.valueOf(100000.0),
+                BigDecimal("100000.0"),
             )
             buyTooMuchResult.success shouldBe false
             buyTooMuchResult.errorMessage?.contains("Insufficient USD funds") shouldBe true
 
-            // Try to execute an order with an invalid side (covers the fallback branches in executeOrder)
             val invalidResult = simulatedService.executeOrder(
                 TestFixtures.ADAEUR,
                 TestFixtures.MARKET,
                 "hold",
-                BigDecimal.valueOf(1.0),
+                BigDecimal.ONE,
             )
             invalidResult.success shouldBe true
 
-            // Query trade history with offset >= size to cover the bounds checking branch
             val emptyHistory = simulatedService.getTradeHistory(null, 100)
             emptyHistory.size shouldBe 17
         }

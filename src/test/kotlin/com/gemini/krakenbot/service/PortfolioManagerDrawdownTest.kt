@@ -16,10 +16,11 @@ import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
+import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
-import io.mockk.verify
 import kotlinx.coroutines.test.runTest
 import java.math.BigDecimal
 
@@ -74,7 +75,7 @@ class PortfolioManagerDrawdownTest : StringSpec() {
 
         "testDrawdownAndFiatDeployment" {
             runTest {
-                every {
+                coEvery {
                     portfolioStatsRepository.load()
                 } returns PortfolioStats(
                     BigDecimal("2000.0"),
@@ -121,7 +122,7 @@ class PortfolioManagerDrawdownTest : StringSpec() {
                     ).shouldBeTrue()
 
                 val captor = slot<PortfolioSnapshot>()
-                verify { tradeHistoryService.addSnapshot(capture(captor)) }
+                coVerify { tradeHistoryService.addSnapshot(capture(captor)) }
                 val s = captor.captured
 
                 s.drawdownPercent.compareTo(BigDecimal("25.0")) shouldBe 0
@@ -133,7 +134,7 @@ class PortfolioManagerDrawdownTest : StringSpec() {
         "testNewATH" {
             runTest {
                 val stats = PortfolioStats(BigDecimal("1000.0"))
-                every { portfolioStatsRepository.load() } returns stats
+                coEvery { portfolioStatsRepository.load() } returns stats
 
                 val allocs = listOf(
                     Allocation(
@@ -163,7 +164,7 @@ class PortfolioManagerDrawdownTest : StringSpec() {
                 portfolioManager.performRebalanceCycle()
 
                 val captor = slot<PortfolioStats>()
-                verify { portfolioStatsRepository.save(capture(captor)) }
+                coVerify { portfolioStatsRepository.save(capture(captor)) }
                 captor.captured.allTimeHigh.shouldNotBeNull()
                 BigDecimal("1500.0").compareTo(captor.captured.allTimeHigh) shouldBe 0
             }

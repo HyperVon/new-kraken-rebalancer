@@ -1,13 +1,17 @@
 package com.gemini.krakenbot.util
 
 import com.gemini.krakenbot.model.OrderSide
+import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
 import java.math.BigDecimal
 
 @Suppress("unused")
-class ActionLogFormatterTest :
-    StringSpec({
+class ActionLogFormatterTest : StringSpec() {
+
+    override fun isolationMode() = IsolationMode.InstancePerTest
+
+    init {
 
         "formatDeviationTrigger should format deviation message" {
             val msg = ActionLogFormatter.formatDeviationTrigger("BTC", BigDecimal("5.2"))
@@ -53,4 +57,5 @@ class ActionLogFormatterTest :
             val msg = ActionLogFormatter.formatSkippedDust("buy", "DOGE", BigDecimal("0.50"))
             msg shouldBe "Skipping dust buy for DOGE ($0.50)"
         }
-    })
+    }
+}

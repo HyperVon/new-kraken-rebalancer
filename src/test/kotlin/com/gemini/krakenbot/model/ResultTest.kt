@@ -1,13 +1,17 @@
 package com.gemini.krakenbot.model
 
 import com.gemini.krakenbot.TestFixtures
+import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
 
 @Suppress("unused")
-class ResultTest :
-    StringSpec({
+class ResultTest : StringSpec() {
+
+    override fun isolationMode() = IsolationMode.InstancePerTest
+
+    init {
         "Success.fold calls onSuccess" {
             val result: Result<Int> = Result.Success(42)
             val value =
@@ -77,4 +81,5 @@ class ResultTest :
             val result = Result.runCatching<String> { throw Exception("boom") }
             result.shouldBeInstanceOf<Result.Failure<String>>()
         }
-    })
+    }
+}

@@ -218,7 +218,7 @@ with a wide range of tools and paradigms:
 - **Atomic File Writes** — config updates use write-then-atomic-rename (NIO Files.move with StandardCopyOption.ATOMIC_MOVE) to prevent file system corruption
 - **Graceful Shutdown** — JVM shutdown hook cleanly cancels the coroutine loop scope, closes Ktor HttpClient, and stops Koin DI
 - **Redacted Secret Logging** — value class `toString()` implementations for API credentials return redacts to protect application logs
-- **Rate-Limiting & Retries** — `RateLimiter` implements Kraken's exponential-decay call counter (safe limit 12.0, per-endpoint costs) with observable `RateLimitEvent` flow; `retryWithFlow` automatically retries transient socket/HTTP/rate-limit/lockout errors with exponential backoff (15-minute wait on temporary lockout)
+- **Rate-Limiting & Retries** — `RateLimiter` implements Kraken's exponential-decay call counter (safe limit 12.0, per-endpoint costs) with observable `RateLimitEvent` flow; `retryWithFlow` automatically retries transient socket/HTTP/rate-limit/lockout errors with exponential backoff (lockouts start at 10s and scale up to a 15-minute ceiling)
 - **CORS Restrictions** — locks down server allowed origins to local machine addresses (`localhost`, `127.0.0.1`, `::1`), Bonjour multicast DNS domains (`*.local`), and private local subnets (`192.168.x.x`, `10.x.x.x`, etc.) to permit local Wi-Fi access from other devices while blocking public web threats
 - **Database Indexing & Auto Migrations** — database schemas utilize index optimizations for timestamps, and run dynamic `SchemaUtils.createMissingTablesAndColumns` auto-migrations on startup
 - Dust threshold filtering to avoid minimum order size errors
@@ -374,7 +374,7 @@ two complementary `SharedFlow` channels:
 │   ├── model/                             # Domain: PortfolioSnapshot, OrderResult, Result, TradeRecord
 │   ├── repository/                        # Persistence interfaces: TradeRepository, PortfolioStatsRepository
 │   │   └── impl/                          # SQLite-backed implementations (via Exposed ORM)
-│   │       └── RepositoryUtils.kt         # Database safe transaction helper
+│   │       └── RepositoryUtils.kt         # safeTransaction + Dispatchers.IO helpers
 │   ├── service/                           # Core logic interfaces and shared utilities
 │   │   ├── ServiceUtils.kt               # Retry helpers, safe BigDecimal parsing
 │   │   └── impl/                          # Service implementations (coroutine-aware)

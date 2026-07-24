@@ -8,6 +8,9 @@ import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.KrakenService
 import com.gemini.krakenbot.service.RawBalances
 import com.gemini.krakenbot.service.RawPrices
+import com.gemini.krakenbot.util.PrecisionConstants
+import com.gemini.krakenbot.util.toCryptoScale
+import com.gemini.krakenbot.util.toUsdScale
 import org.slf4j.LoggerFactory
 import java.math.BigDecimal
 import java.math.RoundingMode
@@ -20,8 +23,8 @@ import java.util.concurrent.ThreadLocalRandom
 class SimulatedKrakenService(private val configService: ConfigService) : KrakenService {
     private val log = LoggerFactory.getLogger(SimulatedKrakenService::class.java)
 
-    private val balances = ConcurrentHashMap<String, Double>()
-    private val simulatedPrices = ConcurrentHashMap<String, Double>()
+    private val balances = ConcurrentHashMap<String, BigDecimal>()
+    private val simulatedPrices = ConcurrentHashMap<String, BigDecimal>()
     private val simulatedTrades = CopyOnWriteArrayList<TradeRecord>()
 
     init {
@@ -37,28 +40,33 @@ class SimulatedKrakenService(private val configService: ConfigService) : KrakenS
         // 1. Initialize prices
         for ((symbol) in allocations) {
             val symbolU = symbol.value.uppercase()
-            val basePrice = SimulationDefaults.INITIAL_PRICES[symbolU] ?: 10.0
-            simulatedPrices[symbolU] = basePrice
+            val basePrice = SimulationDefaults.INITIAL_PRICES[symbolU] ?: SimulationDefaults.DEFAULT_PRICE
+            simulatedPrices[symbolU] = basePrice.toCryptoScale()
         }
-        simulatedPrices[Asset.USD] = 1.0
+        simulatedPrices[Asset.USD] = BigDecimal.ONE
 
         // 2. Initialize balances with some random drift (+/- 25%) so they need rebalancing
-        val totalSimulatedValueUSD = 100000.0
+        val totalSimulatedValueUSD = SimulationDefaults.TOTAL_PORTFOLIO_VALUE_USD
         val random = ThreadLocalRandom.current()
 
         for ((symbol, targetPercent) in allocations) {
             val symbolU = symbol.value.uppercase()
-            val targetUSDValue = (targetPercent / 100.0) * totalSimulatedValueUSD
+            val targetUSDValue =
+                PortfolioCalculations.calculateTargetValue(
+                    BigDecimal.valueOf(targetPercent),
+                    totalSimulatedValueUSD,
+                )
 
             // Apply a drift factor between 0.75 and 1.25
-            val driftFactor = 0.75 + random.nextDouble() * 0.50
-            val driftedUSDValue = targetUSDValue * driftFactor
+            val driftFactor = BigDecimal.valueOf(0.75 + random.nextDouble() * 0.50)
+            val driftedUSDValue = targetUSDValue.multiply(driftFactor).toUsdScale()
 
             if (symbolU == Asset.USD) {
                 balances[Asset.USD] = driftedUSDValue
             } else {
                 val price = simulatedPrices.getValue(symbolU)
-                balances[symbolU] = driftedUSDValue / price
+                balances[symbolU] =
+                    driftedUSDValue.divide(price, PrecisionConstants.SCALE_CRYPTO, RoundingMode.HALF_UP)
             }
         }
 
@@ -83,9 +91,12 @@ class SimulatedKrakenService(private val configService: ConfigService) : KrakenS
             val side = if (random.nextBoolean()) OrderSide.BUY.name else OrderSide.SELL.name
             val price = simulatedPrices.getValue(symbol)
             // Slight noise on the trade price compared to current price
-            val tradePrice = price * (0.95 + random.nextDouble() * 0.10)
-            val usdValue = 500.0 + random.nextDouble() * 2500.0
-            val volume = usdValue / tradePrice
+            val tradePrice =
+                price
+                    .multiply(BigDecimal.valueOf(0.95 + random.nextDouble() * 0.10))
+                    .toCryptoScale()
+            val usdValue = BigDecimal.valueOf(500.0 + random.nextDouble() * 2500.0).toUsdScale()
+            val volume = usdValue.divide(tradePrice, PrecisionConstants.SCALE_CRYPTO, RoundingMode.HALF_UP)
 
             simulatedTrades.add(
                 TradeRecord(
@@ -93,8 +104,8 @@ class SimulatedKrakenService(private val configService: ConfigService) : KrakenS
                     pair = pair,
                     side = side,
                     symbol = symbol,
-                    volume = BigDecimal.valueOf(volume).setScale(8, RoundingMode.HALF_UP),
-                    usdAmount = BigDecimal.valueOf(usdValue).setScale(2, RoundingMode.HALF_UP),
+                    volume = volume,
+                    usdAmount = usdValue,
                     success = true,
                     dryRun = false,
                 ),
@@ -110,14 +121,14 @@ class SimulatedKrakenService(private val configService: ConfigService) : KrakenS
         for ((symbol, currentPrice) in simulatedPrices) {
             if (symbol == Asset.USD) continue
             // Random walk between -0.6% and +0.6%
-            val changePercent = (random.nextDouble() - 0.5) * 0.012
-            simulatedPrices[symbol] = currentPrice * (1.0 + changePercent)
+            val changeFactor = BigDecimal.ONE.add(BigDecimal.valueOf((random.nextDouble() - 0.5) * 0.012))
+            simulatedPrices[symbol] = currentPrice.multiply(changeFactor).toCryptoScale()
         }
     }
 
     override suspend fun getBalances(): RawBalances {
         initializeBalancesAndPricesIfEmpty()
-        return balances.mapValues { BigDecimal.valueOf(it.value) }
+        return balances.toMap()
     }
 
     override suspend fun getTickerPrices(pairs: String): RawPrices {
@@ -129,8 +140,8 @@ class SimulatedKrakenService(private val configService: ConfigService) : KrakenS
         val allocations = configService.getConfig().allocations.map { it.symbol.value }
         for (pair in pairList) {
             val symbol = Asset.fromTradingPair(pair, allocations) ?: pair
-            val price = simulatedPrices[symbol] ?: 10.0
-            results[pair] = BigDecimal.valueOf(price)
+            val price = simulatedPrices[symbol] ?: BigDecimal.TEN
+            results[pair] = price
         }
         return results
     }
@@ -140,12 +151,13 @@ class SimulatedKrakenService(private val configService: ConfigService) : KrakenS
 
         val allocations = configService.getConfig().allocations.map { it.symbol.value }
         val symbol = Asset.fromTradingPair(pair, allocations) ?: pair
-        val price = simulatedPrices[symbol] ?: 10.0
-        val volDouble = volume.toDouble()
-        val usdAmountDouble = volDouble * price
+        val price = simulatedPrices[symbol] ?: BigDecimal.TEN
+        val normalizedVolume = volume.toCryptoScale()
+        val usdAmount = normalizedVolume.multiply(price).toUsdScale()
 
         log.info(
-            "[EMULATOR] Executing $side order on $pair, volume: $volume, calculated price: $price ($$usdAmountDouble)",
+            "[EMULATOR] Executing $side order on $pair, volume: $normalizedVolume, " +
+                "calculated price: $price ($$usdAmount)",
         )
 
         if (configService.getConfig().settings.dryRun) {
@@ -154,42 +166,44 @@ class SimulatedKrakenService(private val configService: ConfigService) : KrakenS
                 success = true,
                 pair = pair,
                 side = side,
-                volume = volume,
+                volume = normalizedVolume,
                 dryRun = true,
             )
         }
 
-        val usdBalance = balances[Asset.USD] ?: 0.0
-        val tokenBalance = balances[symbol] ?: 0.0
+        val usdBalance = balances[Asset.USD] ?: BigDecimal.ZERO
+        val tokenBalance = balances[symbol] ?: BigDecimal.ZERO
 
         if (side.equals(OrderSide.BUY.apiValue, ignoreCase = true)) {
-            if (usdBalance < usdAmountDouble) {
-                val error = "Insufficient USD funds in emulator balance: needed $usdAmountDouble, had $usdBalance"
+            if (usdBalance < usdAmount) {
+                val error =
+                    "Insufficient USD funds in emulator balance: needed $usdAmount, had $usdBalance"
                 log.warn("[EMULATOR] $error")
                 return OrderResult(
                     success = false,
                     pair = pair,
                     side = side,
-                    volume = volume,
+                    volume = normalizedVolume,
                     errorMessage = error,
                 )
             }
-            balances[Asset.USD] = usdBalance - usdAmountDouble
-            balances[symbol] = tokenBalance + volDouble
+            balances[Asset.USD] = usdBalance.subtract(usdAmount).toUsdScale()
+            balances[symbol] = tokenBalance.add(normalizedVolume).toCryptoScale()
         } else if (side.equals(OrderSide.SELL.apiValue, ignoreCase = true)) {
-            if (tokenBalance < volDouble) {
-                val error = "Insufficient $symbol funds in emulator balance: needed $volDouble, had $tokenBalance"
+            if (tokenBalance < normalizedVolume) {
+                val error =
+                    "Insufficient $symbol funds in emulator balance: needed $normalizedVolume, had $tokenBalance"
                 log.warn("[EMULATOR] $error")
                 return OrderResult(
                     success = false,
                     pair = pair,
                     side = side,
-                    volume = volume,
+                    volume = normalizedVolume,
                     errorMessage = error,
                 )
             }
-            balances[symbol] = tokenBalance - volDouble
-            balances[Asset.USD] = usdBalance + usdAmountDouble
+            balances[symbol] = tokenBalance.subtract(normalizedVolume).toCryptoScale()
+            balances[Asset.USD] = usdBalance.add(usdAmount).toUsdScale()
         }
 
         val trade =
@@ -198,11 +212,11 @@ class SimulatedKrakenService(private val configService: ConfigService) : KrakenS
                 pair = pair,
                 side = side.uppercase(),
                 symbol = symbol,
-                volume = volume,
-                usdAmount = BigDecimal.valueOf(usdAmountDouble).setScale(2, RoundingMode.HALF_UP),
+                volume = normalizedVolume,
+                usdAmount = usdAmount,
                 success = true,
                 dryRun = false,
-                price = BigDecimal.valueOf(price).setScale(8, RoundingMode.HALF_UP),
+                price = price.toCryptoScale(),
                 fee = BigDecimal.ZERO,
             )
         simulatedTrades.add(trade)
@@ -211,7 +225,7 @@ class SimulatedKrakenService(private val configService: ConfigService) : KrakenS
             success = true,
             pair = pair,
             side = side,
-            volume = volume,
+            volume = normalizedVolume,
         )
     }
 

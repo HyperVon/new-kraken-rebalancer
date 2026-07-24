@@ -137,13 +137,24 @@ sealed class CssClass(open val value: String) {
         object LinkActive : Navigation("nav-link active")
     }
 
-    // History
+    // History page
     sealed class History(override val value: String) : CssClass(value) {
         object StatsGrid : History("history-stats-grid")
         object TimeRangeSelector : History("time-range-selector")
         object TimeRangeBtn : History("time-range-btn")
         object TimeRangeBtnActive : History("time-range-btn active")
         object ChartContainer : History("chart-container")
+        object TradeLogHeader : History("history-trade-log-header")
+        object MutedSmallText : History("history-muted-small-text")
+        object EmptyTableCell : History("history-empty-table-cell")
+        object SyncBanner : History("history-sync-banner")
+        object SyncHeader : History("history-sync-header")
+        object SyncTitle : History("history-sync-title")
+        object SyncSpinner : History("history-sync-spinner")
+        object SyncText : History("history-sync-text")
+        object ProgressTrack : History("history-progress-track")
+        object ProgressBar : History("history-progress-bar")
+        object TitleNoMargin : History("history-title-no-margin")
     }
 
     // Utility

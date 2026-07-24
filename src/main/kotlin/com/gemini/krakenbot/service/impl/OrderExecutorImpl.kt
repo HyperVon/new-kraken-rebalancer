@@ -17,6 +17,7 @@ import com.gemini.krakenbot.util.CASH_RESERVE_FACTOR
 import com.gemini.krakenbot.util.FEE_RATE_ESTIMATE
 import com.gemini.krakenbot.util.PrecisionConstants
 import com.gemini.krakenbot.util.TradeCalculator
+import com.gemini.krakenbot.util.toUsdScale
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -70,16 +71,24 @@ class OrderExecutorImpl(
             actualCash = refreshUsdBalanceAfterSells(projectedCash)
         }
 
+        // Cycle-level budget: 99% of post-sell settled USD so multi-buy batches cannot erode the reserve.
+        val cycleBuyBudget = actualCash.multiply(CASH_RESERVE_FACTOR).toUsdScale()
+        var remainingBuyBudget = cycleBuyBudget
+
         for ((symbol, originalCost) in buyOrders) {
+            val maxAffordable = remainingBuyBudget.min(actualCash).toUsdScale()
             var cost = originalCost
-            if (cost > actualCash) {
+            if (cost > maxAffordable) {
                 log.warn(
-                    "Not enough cash to buy {}. Cost: {}, Cash: {}. Reducing.",
+                    "Buy {} exceeds cycle 99% cash reserve. Cost: {}, Max affordable: {}, " +
+                        "Remaining budget: {}, Cash: {}. Reducing.",
                     symbol,
                     cost,
+                    maxAffordable,
+                    remainingBuyBudget,
                     actualCash,
                 )
-                cost = actualCash.multiply(CASH_RESERVE_FACTOR)
+                cost = maxAffordable
             }
 
             if (cost < BigDecimal.valueOf(settings.dustThresholdUSD)) {
@@ -91,6 +100,7 @@ class OrderExecutorImpl(
             val result = executeSingleOrder(symbol, cost, OrderSide.BUY, prices, actionLog)
             if (result?.success == true) {
                 actualCash = actualCash.subtract(cost)
+                remainingBuyBudget = remainingBuyBudget.subtract(cost).toUsdScale()
             }
         }
     }
@@ -188,7 +198,7 @@ class OrderExecutorImpl(
         }
     }
 
-    internal fun recordTrade(
+    internal suspend fun recordTrade(
         result: OrderResult,
         symbol: String,
         pair: String,

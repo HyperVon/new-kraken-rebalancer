@@ -42,7 +42,7 @@ object TableStyles {
             put("vertical-align", "middle")
             borderBottomWidth = 1.px
             borderBottomStyle = BorderStyle.solid
-            borderBottomColor = Color("rgba(51, 65, 85, 0.2)")
+            borderBottomColor = CssTheme.colorBorderFaint
         }
 
         "tr:last-child td" {
@@ -50,7 +50,7 @@ object TableStyles {
         }
 
         "tr.hoverable:hover" {
-            backgroundColor = Color("rgba(255, 255, 255, 0.02)")
+            backgroundColor = CssTheme.colorWhiteSubtle
         }
 
         ".${CssClass.Table.SymbolCol}" {
@@ -97,22 +97,22 @@ object TableStyles {
             fontSize = 0.675.rem
             fontWeight = FontWeight.w700
             put("letter-spacing", "0.05em")
-            backgroundColor = Color("rgba(255, 255, 255, 0.05)")
+            backgroundColor = CssTheme.colorWhiteMuted
             borderWidth = 1.px
             borderStyle = BorderStyle.solid
-            borderColor = Color("rgba(255, 255, 255, 0.1)")
+            borderColor = CssTheme.colorWhiteBorder
             color = CssTheme.colorTextSecondary
         }
 
         ".badge.badge-buy" {
-            backgroundColor = Color("rgba(16, 185, 129, 0.1)")
-            borderColor = Color("rgba(16, 185, 129, 0.2)")
+            backgroundColor = CssTheme.colorSuccessBgSubtle
+            borderColor = CssTheme.colorSuccessBorderSubtle
             color = CssTheme.colorSuccess
         }
 
         ".badge.badge-sell" {
-            backgroundColor = Color("rgba(239, 68, 68, 0.1)")
-            borderColor = Color("rgba(239, 68, 68, 0.2)")
+            backgroundColor = CssTheme.colorDangerBgSubtle
+            borderColor = CssTheme.colorDangerBorderSubtle
             color = CssTheme.colorDanger
         }
 

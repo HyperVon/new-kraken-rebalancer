@@ -1,12 +1,16 @@
 package com.gemini.krakenbot.view.util
 
+import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
 import java.math.BigDecimal
 
 @Suppress("unused")
-class FormatterTest :
-    StringSpec({
+class FormatterTest : StringSpec() {
+
+    override fun isolationMode() = IsolationMode.InstancePerTest
+
+    init {
         "formatCurrency formats values and handles null" {
             Formatter.formatCurrency(BigDecimal("1234.567")) shouldBe "1,234.57"
             Formatter.formatCurrency(null) shouldBe "0.00"
@@ -29,4 +33,5 @@ class FormatterTest :
             Formatter.getDeviationSign(BigDecimal.ZERO) shouldBe ""
             Formatter.getDeviationSign(null) shouldBe ""
         }
-    })
+    }
+}

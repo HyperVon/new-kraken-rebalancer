@@ -24,7 +24,6 @@ import org.jetbrains.exposed.sql.max
 import org.jetbrains.exposed.sql.selectAll
 import org.jetbrains.exposed.sql.statements.UpdateBuilder
 import org.jetbrains.exposed.sql.sum
-import org.jetbrains.exposed.sql.transactions.transaction
 import org.jetbrains.exposed.sql.update
 import org.jetbrains.exposed.sql.upsert
 import org.slf4j.LoggerFactory
@@ -52,15 +51,15 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
         this[TradeTable.slippagePercent] = trade.slippagePercent
     }
 
-    override fun save(history: List<PortfolioSnapshot>) {
-        database.safeTransaction(log, "Failed to save history to database") {
+    override suspend fun save(history: List<PortfolioSnapshot>) {
+        database.safeTransactionIO(log, "Failed to save history to database") {
             for (snapshot in history) {
                 insertSnapshotWithChildren(snapshot)
             }
         }
     }
 
-    override fun load(): List<PortfolioSnapshot> = transaction(database) {
+    override suspend fun load(): List<PortfolioSnapshot> = database.readTransactionIO {
         val snapshotRows =
             PortfolioSnapshotTable
                 .selectAll()
@@ -71,22 +70,22 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
         buildSnapshotsFromRows(snapshotRows)
     }
 
-    override fun saveSnapshot(snapshot: PortfolioSnapshot) {
-        database.safeTransaction(log, "Failed to save snapshot to database") {
+    override suspend fun saveSnapshot(snapshot: PortfolioSnapshot) {
+        database.safeTransactionIO(log, "Failed to save snapshot to database") {
             insertSnapshotWithChildren(snapshot)
         }
     }
 
-    override fun saveTrade(trade: TradeRecord) {
-        database.safeTransaction(log, "Failed to save trade to database") {
+    override suspend fun saveTrade(trade: TradeRecord) {
+        database.safeTransactionIO(log, "Failed to save trade to database") {
             TradeTable.insert {
                 it.applyTradeFields(trade)
             }
         }
     }
 
-    override fun updateTrade(oldTrade: TradeRecord, newTrade: TradeRecord) {
-        database.safeTransaction(log, "Failed to update trade in database", "Database update failed") {
+    override suspend fun updateTrade(oldTrade: TradeRecord, newTrade: TradeRecord) {
+        database.safeTransactionIO(log, "Failed to update trade in database", "Database update failed") {
             TradeTable.update({
                 if (oldTrade.id != null) {
                     TradeTable.id eq oldTrade.id
@@ -102,8 +101,8 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
         }
     }
 
-    override fun getSnapshotsInRange(from: Instant, to: Instant): List<PortfolioSnapshot> {
-        return transaction(database) {
+    override suspend fun getSnapshotsInRange(from: Instant, to: Instant): List<PortfolioSnapshot> =
+        database.readTransactionIO {
             val allIds =
                 PortfolioSnapshotTable
                     .select(PortfolioSnapshotTable.id)
@@ -114,7 +113,7 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
                     }.orderBy(PortfolioSnapshotTable.timestamp, SortOrder.ASC)
                     .map { it[PortfolioSnapshotTable.id] }
 
-            if (allIds.isEmpty()) return@transaction emptyList()
+            if (allIds.isEmpty()) return@readTransactionIO emptyList()
 
             val downsampledIds =
                 if (allIds.size <= 300) {
@@ -133,9 +132,8 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
 
             buildSnapshotsFromRows(snapshotRows)
         }
-    }
 
-    override fun getTradesInRange(from: Instant, to: Instant): List<TradeRecord> = transaction(database) {
+    override suspend fun getTradesInRange(from: Instant, to: Instant): List<TradeRecord> = database.readTransactionIO {
         TradeTable
             .selectAll()
             .andWhere {
@@ -146,55 +144,56 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
             .map { row -> buildTradeFromRow(row) }
     }
 
-    override fun getTradeSummaryStats(): TradeSummaryStats = getTradeSummaryStats(Instant.EPOCH, Instant.now())
+    override suspend fun getTradeSummaryStats(): TradeSummaryStats = getTradeSummaryStats(Instant.EPOCH, Instant.now())
 
-    override fun getTradeSummaryStats(from: Instant, to: Instant): TradeSummaryStats = transaction(database) {
-        val countCol = TradeTable.id.count()
-        val volumeCol = TradeTable.usdAmount.sum()
-        val feeCol = TradeTable.fee.sum()
+    override suspend fun getTradeSummaryStats(from: Instant, to: Instant): TradeSummaryStats =
+        database.readTransactionIO {
+            val countCol = TradeTable.id.count()
+            val volumeCol = TradeTable.usdAmount.sum()
+            val feeCol = TradeTable.fee.sum()
 
-        val fromMillis = from.toEpochMilli()
-        val toMillis = to.toEpochMilli()
+            val fromMillis = from.toEpochMilli()
+            val toMillis = to.toEpochMilli()
 
-        val tradeRow =
-            TradeTable
-                .select(countCol, volumeCol, feeCol)
-                .where {
-                    (TradeTable.success eq true) and
-                        (TradeTable.timestamp greaterEq fromMillis) and
-                        (TradeTable.timestamp lessEq toMillis)
-                }.firstOrNull()
+            val tradeRow =
+                TradeTable
+                    .select(countCol, volumeCol, feeCol)
+                    .where {
+                        (TradeTable.success eq true) and
+                            (TradeTable.timestamp greaterEq fromMillis) and
+                            (TradeTable.timestamp lessEq toMillis)
+                    }.firstOrNull()
 
-        val totalTrades = tradeRow?.get(countCol) ?: 0L
-        val totalVolume = tradeRow?.get(volumeCol) ?: BigDecimal.ZERO
-        val totalFees = tradeRow?.get(feeCol) ?: BigDecimal.ZERO
+            val totalTrades = tradeRow?.get(countCol) ?: 0L
+            val totalVolume = tradeRow?.get(volumeCol) ?: BigDecimal.ZERO
+            val totalFees = tradeRow?.get(feeCol) ?: BigDecimal.ZERO
 
-        val periodHighCol = PortfolioSnapshotTable.totalValueUSD.max()
-        val periodHigh =
-            PortfolioSnapshotTable
-                .select(periodHighCol)
-                .where {
-                    (PortfolioSnapshotTable.timestamp greaterEq fromMillis) and
-                        (PortfolioSnapshotTable.timestamp lessEq toMillis)
-                }.firstOrNull()
-                ?.get(periodHighCol)
+            val periodHighCol = PortfolioSnapshotTable.totalValueUSD.max()
+            val periodHigh =
+                PortfolioSnapshotTable
+                    .select(periodHighCol)
+                    .where {
+                        (PortfolioSnapshotTable.timestamp greaterEq fromMillis) and
+                            (PortfolioSnapshotTable.timestamp lessEq toMillis)
+                    }.firstOrNull()
+                    ?.get(periodHighCol)
 
-        val latestSnapshotTime =
-            PortfolioSnapshotTable
-                .select(PortfolioSnapshotTable.timestamp)
-                .orderBy(PortfolioSnapshotTable.timestamp, SortOrder.DESC)
-                .limit(1)
-                .firstOrNull()
-                ?.let { Instant.ofEpochMilli(it[PortfolioSnapshotTable.timestamp]) }
+            val latestSnapshotTime =
+                PortfolioSnapshotTable
+                    .select(PortfolioSnapshotTable.timestamp)
+                    .orderBy(PortfolioSnapshotTable.timestamp, SortOrder.DESC)
+                    .limit(1)
+                    .firstOrNull()
+                    ?.let { Instant.ofEpochMilli(it[PortfolioSnapshotTable.timestamp]) }
 
-        TradeSummaryStats(
-            totalTradesExecuted = totalTrades,
-            totalVolumeTraded = totalVolume,
-            totalFeesPaid = totalFees,
-            latestSnapshotTime = latestSnapshotTime,
-            periodHigh = periodHigh,
-        )
-    }
+            TradeSummaryStats(
+                totalTradesExecuted = totalTrades,
+                totalVolumeTraded = totalVolume,
+                totalFeesPaid = totalFees,
+                latestSnapshotTime = latestSnapshotTime,
+                periodHigh = periodHigh,
+            )
+        }
 
     private fun insertSnapshotWithChildren(snapshot: PortfolioSnapshot) {
         val snapshotId =
@@ -295,7 +294,7 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
         id = row[TradeTable.id],
     )
 
-    override fun getLatestTradeTime(): Instant? = transaction(database) {
+    override suspend fun getLatestTradeTime(): Instant? = database.readTransactionIO {
         TradeTable
             .selectAll()
             .where { TradeTable.dryRun eq false }
@@ -307,13 +306,13 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
             }
     }
 
-    override fun isHistorySeeded(): Boolean = getSyncMetadata(HISTORY_SEEDED) == "true"
+    override suspend fun isHistorySeeded(): Boolean = getSyncMetadata(HISTORY_SEEDED) == "true"
 
-    override fun setHistorySeeded(seeded: Boolean) {
+    override suspend fun setHistorySeeded(seeded: Boolean) {
         setSyncMetadata(HISTORY_SEEDED, seeded.toString())
     }
 
-    override fun getSyncMetadata(key: String): String? = transaction(database) {
+    override suspend fun getSyncMetadata(key: String): String? = database.readTransactionIO {
         HistorySyncMetadataTable
             .selectAll()
             .where { HistorySyncMetadataTable.key eq key }
@@ -321,8 +320,8 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
             ?.get(HistorySyncMetadataTable.value)
     }
 
-    override fun setSyncMetadata(key: String, value: String) {
-        transaction(database) {
+    override suspend fun setSyncMetadata(key: String, value: String) {
+        database.safeTransactionIO(log, "Failed to upsert sync metadata") {
             HistorySyncMetadataTable.upsert {
                 it[HistorySyncMetadataTable.key] = key
                 it[HistorySyncMetadataTable.value] = value
@@ -330,24 +329,25 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
         }
     }
 
-    override fun pruneSnapshotsOlderThan(cutoff: Instant): Int = transaction(database) {
-        val cutoffMillis = cutoff.toEpochMilli()
-        val idsToDelete =
-            PortfolioSnapshotTable
-                .select(PortfolioSnapshotTable.id)
-                .where { PortfolioSnapshotTable.timestamp less cutoffMillis }
-                .map { it[PortfolioSnapshotTable.id] }
+    override suspend fun pruneSnapshotsOlderThan(cutoff: Instant): Int =
+        database.safeTransactionIO(log, "Failed to prune old snapshots") {
+            val cutoffMillis = cutoff.toEpochMilli()
+            val idsToDelete =
+                PortfolioSnapshotTable
+                    .select(PortfolioSnapshotTable.id)
+                    .where { PortfolioSnapshotTable.timestamp less cutoffMillis }
+                    .map { it[PortfolioSnapshotTable.id] }
 
-        if (idsToDelete.isNotEmpty()) {
-            AssetSnapshotTable.deleteWhere { snapshotId inList idsToDelete }
-            ActionLogTable.deleteWhere { snapshotId inList idsToDelete }
-            PortfolioSnapshotTable.deleteWhere { id inList idsToDelete }
+            if (idsToDelete.isNotEmpty()) {
+                AssetSnapshotTable.deleteWhere { snapshotId inList idsToDelete }
+                ActionLogTable.deleteWhere { snapshotId inList idsToDelete }
+                PortfolioSnapshotTable.deleteWhere { id inList idsToDelete }
+            }
+            idsToDelete.size
         }
-        idsToDelete.size
-    }
 
-    override fun cleanupDuplicateTrades() {
-        transaction(database) {
+    override suspend fun cleanupDuplicateTrades() {
+        database.safeTransactionIO(log, "Failed to cleanup duplicate trades") {
             val allTradeRows = TradeTable.selectAll().orderBy(TradeTable.timestamp, SortOrder.ASC).toList()
             val allRecords = allTradeRows.map { buildTradeFromRow(it) }
             val toDelete = TradeDeduplicator.findDuplicateTradeIds(allRecords)

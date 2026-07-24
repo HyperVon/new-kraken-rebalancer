@@ -37,6 +37,7 @@ import io.ktor.client.statement.*
 import io.ktor.http.*
 import io.ktor.server.application.*
 import io.ktor.server.testing.*
+import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
@@ -60,6 +61,7 @@ import kotlin.math.abs
 import kotlin.time.Duration.Companion.milliseconds
 import io.ktor.client.plugins.sse.SSE as ClientSSE
 import io.ktor.server.sse.SSE as ServerSSE
+import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 
 @Suppress("unused")
 class EvaluationScenariosTest : StringSpec() {
@@ -370,14 +372,14 @@ class EvaluationScenariosTest : StringSpec() {
                 val prices = mapOf(Asset.BTC to BigDecimal("50000.0"), Asset.ETH to BigDecimal("2000.0"))
                 // Total portfolio value = 0.1*50000 + 2.5*2000 = $10,000
                 val valInitial = analyzer.calculatePortfolioValues(balances, prices).getOrNull()!!
-                valInitial.totalValueUSD.toDouble() shouldBe 10000.0
+                valInitial.totalValueUSD.shouldBeEqualComparingTo(BigDecimal("10000.0"))
 
                 val drawdown1 = analyzer.updateAthAndCalculateDrawdown(valInitial.totalValueUSD)
-                drawdown1.toDouble() shouldBe 0.0
+                drawdown1.shouldBeEqualComparingTo(BigDecimal("0.0"))
 
                 // Stats file should exist and record ATH = $10,000
                 val statsLoaded = statsRepo.load()
-                statsLoaded.allTimeHigh.toDouble() shouldBe 10000.0
+                statsLoaded.allTimeHigh.shouldBeEqualComparingTo(BigDecimal("10000.0"))
 
                 // 2. Next run: Deep Drawdown to $8,000 (20% drawdown)
                 // Drawdown is 20%. fiatMaxDrawdown is 20%.
@@ -386,16 +388,16 @@ class EvaluationScenariosTest : StringSpec() {
                 // Scale factor for crypto = (100 - 0) / 80 = 1.25.
                 // Adjusted target: BTC = 50%, ETH = 50%, USD = 0%.
                 val drawdown2 = analyzer.updateAthAndCalculateDrawdown(BigDecimal("8000.00"))
-                drawdown2.toDouble() shouldBe 20.0
+                drawdown2.shouldBeEqualComparingTo(BigDecimal("20.0"))
 
                 val deployPct2 = analyzer.calculateFiatDeployment(drawdown2, appConfig.settings)
-                deployPct2.toDouble() shouldBe 100.0
+                deployPct2.shouldBeEqualComparingTo(BigDecimal("100.0"))
 
                 val effectiveUsd2 = analyzer.calculateEffectiveUsdTarget(deployPct2)
-                effectiveUsd2.toDouble() shouldBe 0.0
+                effectiveUsd2.shouldBeEqualComparingTo(BigDecimal("0.0"))
 
                 val scaleFactor2 = analyzer.calculateCryptoScaleFactor(effectiveUsd2)
-                scaleFactor2.toDouble() shouldBe 1.25
+                scaleFactor2.shouldBeEqualComparingTo(BigDecimal("1.25"))
 
                 // 3. Sub-case 3: Drawdown to $9,000 (10% drawdown)
                 // Drawdown is 10%. fiatMaxDrawdown is 20%.
@@ -404,16 +406,16 @@ class EvaluationScenariosTest : StringSpec() {
                 // Scale factor for crypto = (100 - 15) / 80 = 85 / 80 = 1.0625.
                 // Adjusted target: BTC = 42.5%, ETH = 42.5%, USD = 15%.
                 val drawdown3 = analyzer.updateAthAndCalculateDrawdown(BigDecimal("9000.00"))
-                drawdown3.toDouble() shouldBe 10.0
+                drawdown3.shouldBeEqualComparingTo(BigDecimal("10.0"))
 
                 val deployPct3 = analyzer.calculateFiatDeployment(drawdown3, appConfig.settings)
-                deployPct3.toDouble() shouldBe 25.0
+                deployPct3.shouldBeEqualComparingTo(BigDecimal("25.0"))
 
                 val effectiveUsd3 = analyzer.calculateEffectiveUsdTarget(deployPct3)
-                effectiveUsd3.toDouble() shouldBe 15.0
+                effectiveUsd3.shouldBeEqualComparingTo(BigDecimal("15.0"))
 
                 val scaleFactor3 = analyzer.calculateCryptoScaleFactor(effectiveUsd3)
-                scaleFactor3.toDouble() shouldBe 1.0625
+                scaleFactor3.shouldBeEqualComparingTo(BigDecimal("1.0625"))
 
                 val success =
                     (deployPct2.toDouble() == 100.0 && effectiveUsd2.toDouble() == 0.0 && scaleFactor2.toDouble() == 1.25) &&
@@ -648,7 +650,7 @@ class EvaluationScenariosTest : StringSpec() {
                         fiatDeploymentPercent = BigDecimal.ZERO,
                         effectiveUsdTargetPercent = BigDecimal.ZERO,
                     )
-                every { tradeHistoryService.getLatestSnapshot() } returns snapshot
+                coEvery { tradeHistoryService.getLatestSnapshot() } returns snapshot
                 every { tradeHistoryService.getHistoryFlow() } returns flowOf(snapshot)
 
                 val clientSse = createClient { install(ClientSSE) }
@@ -733,7 +735,7 @@ class EvaluationScenariosTest : StringSpec() {
 
                 val capturedActions = mutableListOf<String>()
                 val mockHistory = mockk<TradeHistoryService>(relaxed = true)
-                every { mockHistory.addSnapshot(any()) } answers {
+                coEvery { mockHistory.addSnapshot(any()) } answers {
                     capturedActions.addAll(firstArg<PortfolioSnapshot>().actions)
                 }
 
@@ -1739,7 +1741,7 @@ class EvaluationScenariosTest : StringSpec() {
                         BigDecimal.ZERO,
                     )
 
-                every { tradeHistoryService.getLatestSnapshot() } returns snap1
+                coEvery { tradeHistoryService.getLatestSnapshot() } returns snap1
                 every { tradeHistoryService.getHistoryFlow() } returns flowOf(snap2, snap3)
 
                 val clientSse = createClient { install(ClientSSE) }
@@ -1886,7 +1888,7 @@ class EvaluationScenariosTest : StringSpec() {
 
                 val mockHistory = mockk<TradeHistoryService>(relaxed = true)
                 val capturedActions = mutableListOf<String>()
-                every { mockHistory.addSnapshot(any()) } answers {
+                coEvery { mockHistory.addSnapshot(any()) } answers {
                     capturedActions.addAll(firstArg<PortfolioSnapshot>().actions)
                 }
 
@@ -1976,7 +1978,7 @@ class EvaluationScenariosTest : StringSpec() {
 
                 val mockHistory = mockk<TradeHistoryService>(relaxed = true)
                 val capturedActions = mutableListOf<String>()
-                every { mockHistory.addSnapshot(any()) } answers {
+                coEvery { mockHistory.addSnapshot(any()) } answers {
                     capturedActions.addAll(firstArg<PortfolioSnapshot>().actions)
                 }
 
@@ -2194,7 +2196,7 @@ class EvaluationScenariosTest : StringSpec() {
 
                 val mockHistory = mockk<TradeHistoryService>(relaxed = true)
                 val capturedActions = mutableListOf<String>()
-                every { mockHistory.addSnapshot(any()) } answers {
+                coEvery { mockHistory.addSnapshot(any()) } answers {
                     capturedActions.addAll(firstArg<PortfolioSnapshot>().actions)
                 }
 
@@ -2322,7 +2324,7 @@ class EvaluationScenariosTest : StringSpec() {
                         fiatDeploymentPercent = BigDecimal.ZERO,
                         effectiveUsdTargetPercent = BigDecimal.ZERO,
                     )
-                every { tradeHistoryService.getLatestSnapshot() } returns snap
+                coEvery { tradeHistoryService.getLatestSnapshot() } returns snap
                 every { tradeHistoryService.getHistoryFlow() } returns flowOf(snap)
 
                 val clientSse = createClient { install(ClientSSE) }
@@ -2489,7 +2491,7 @@ class EvaluationScenariosTest : StringSpec() {
 
                 val mockHistory = mockk<TradeHistoryService>(relaxed = true)
                 val capturedActions = mutableListOf<String>()
-                every { mockHistory.addSnapshot(any()) } answers {
+                coEvery { mockHistory.addSnapshot(any()) } answers {
                     capturedActions.addAll(firstArg<PortfolioSnapshot>().actions)
                 }
 
@@ -2566,7 +2568,7 @@ class EvaluationScenariosTest : StringSpec() {
 
                 val mockHistory = mockk<TradeHistoryService>(relaxed = true)
                 val capturedSnapshots = mutableListOf<PortfolioSnapshot>()
-                every { mockHistory.addSnapshot(any()) } answers {
+                coEvery { mockHistory.addSnapshot(any()) } answers {
                     capturedSnapshots.add(firstArg())
                 }
 

@@ -7,32 +7,32 @@ import kotlinx.coroutines.flow.Flow
 import java.time.Instant
 
 interface TradeHistoryService {
-    fun init()
+    suspend fun init()
 
-    fun addSnapshot(snapshot: PortfolioSnapshot)
+    suspend fun addSnapshot(snapshot: PortfolioSnapshot)
 
-    fun getHistory(): List<PortfolioSnapshot>
+    suspend fun getHistory(): List<PortfolioSnapshot>
 
-    fun getLatestSnapshot(): PortfolioSnapshot?
+    suspend fun getLatestSnapshot(): PortfolioSnapshot?
 
     fun getHistoryFlow(): Flow<PortfolioSnapshot>
 
     // History page methods
-    fun saveTrade(trade: TradeRecord)
+    suspend fun saveTrade(trade: TradeRecord)
 
-    fun getSnapshotsInRange(from: Instant, to: Instant): List<PortfolioSnapshot>
+    suspend fun getSnapshotsInRange(from: Instant, to: Instant): List<PortfolioSnapshot>
 
-    fun getTradesInRange(from: Instant, to: Instant): List<TradeRecord>
+    suspend fun getTradesInRange(from: Instant, to: Instant): List<TradeRecord>
 
-    fun getHistoryStats(): HistoryStats
+    suspend fun getHistoryStats(): HistoryStats
 
-    fun getHistoryStats(from: Instant, to: Instant): HistoryStats
+    suspend fun getHistoryStats(from: Instant, to: Instant): HistoryStats
 
     suspend fun syncTradesFromKraken()
 
-    fun getSyncMetadata(key: String): String?
+    suspend fun getSyncMetadata(key: String): String?
 
-    fun setSyncMetadata(key: String, value: String)
+    suspend fun setSyncMetadata(key: String, value: String)
 
-    fun isHistorySeeded(): Boolean
+    suspend fun isHistorySeeded(): Boolean
 }

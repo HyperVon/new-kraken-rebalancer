@@ -44,14 +44,21 @@ class KrakenServiceImpl(
     private suspend fun <T> retryWithFlow(
         actionName: String,
         maxAttempts: Int = 5,
+        // Enough retries for 10s → 15min lockout doubling to reach the ceiling.
+        maxLockoutAttempts: Int = 9,
         initialBackoffMs: Long = 2000,
         rateLimitBackoffMs: Long = 10000,
+        initialLockoutBackoffMs: Long = 10_000,
+        maxLockoutBackoffMs: Long = 15.minutes.inWholeMilliseconds,
         block: suspend () -> T,
     ): T = flow {
         var currentBackoff = initialBackoffMs
         var currentRateLimitBackoff = rateLimitBackoffMs
+        var currentLockoutBackoff = initialLockoutBackoffMs
+        var attempt = 0
+        var lockoutAttempt = 0
 
-        repeat(maxAttempts) { attempt ->
+        while (true) {
             try {
                 emit(block())
                 return@flow
@@ -59,28 +66,41 @@ class KrakenServiceImpl(
                 val isRateLimit = e.message?.contains(KrakenApiConstants.ERROR_RATE_LIMIT_EXCEEDED) == true
                 val isLockout = e.message?.contains(KrakenApiConstants.ERROR_TEMPORARY_LOCKOUT) == true
                 val isNetworkOrTransient = e is IOException || e is ResponseException
+                val retryable = isNetworkOrTransient || isRateLimit || isLockout
+                val attemptsUsed = if (isLockout) lockoutAttempt else attempt
+                val attemptLimit = if (isLockout) maxLockoutAttempts else maxAttempts
 
-                if ((isNetworkOrTransient || isRateLimit || isLockout) && attempt < maxAttempts - 1) {
+                if (retryable && attemptsUsed < attemptLimit - 1) {
                     val waitTime =
                         when {
-                            isLockout -> 15.minutes.inWholeMilliseconds
+                            isLockout -> currentLockoutBackoff.coerceAtMost(maxLockoutBackoffMs)
                             isRateLimit -> currentRateLimitBackoff
                             else -> currentBackoff
                         }
                     log.warn(
                         "Transient failure in {} (attempt {}/{}). Retrying in {}ms... Error: {}",
                         actionName,
-                        attempt + 1,
-                        maxAttempts,
+                        attemptsUsed + 1,
+                        attemptLimit,
                         waitTime,
                         e.message,
                     )
                     delay(waitTime.milliseconds)
 
-                    if (isRateLimit) {
-                        currentRateLimitBackoff *= 2
-                    } else if (!isLockout) {
-                        currentBackoff *= 2
+                    when {
+                        isLockout -> {
+                            currentLockoutBackoff =
+                                (currentLockoutBackoff * 2).coerceAtMost(maxLockoutBackoffMs)
+                            lockoutAttempt++
+                        }
+                        isRateLimit -> {
+                            currentRateLimitBackoff *= 2
+                            attempt++
+                        }
+                        else -> {
+                            currentBackoff *= 2
+                            attempt++
+                        }
                     }
                 } else {
                     throw e

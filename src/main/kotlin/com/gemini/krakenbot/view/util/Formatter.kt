@@ -10,9 +10,6 @@ object Formatter {
     fun formatPercent(value: BigDecimal?): String =
         value?.let { String.format(Locale.US, "%.2f", it) } ?: "0.00"
 
-    fun formatPercent(value: Double): String =
-        String.format(Locale.US, "%.2f", value)
-
     fun getDeviationClass(deviation: BigDecimal?): CssClass? =
         if (deviation == null) {
             null

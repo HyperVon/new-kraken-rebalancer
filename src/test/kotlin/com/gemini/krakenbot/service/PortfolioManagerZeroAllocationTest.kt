@@ -13,6 +13,7 @@ import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
+import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
@@ -34,7 +35,7 @@ class PortfolioManagerZeroAllocationTest : StringSpec() {
 
     init {
         beforeTest {
-            every {
+            coEvery {
                 portfolioStatsRepository.load()
             } returns PortfolioStats(
                 BigDecimal.ZERO,

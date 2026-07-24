@@ -2,6 +2,7 @@
 
 package com.gemini.krakenbot.service.impl
 
+import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.shouldBe
@@ -10,8 +11,11 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 
 @Suppress("unused")
-class RateLimiterTest :
-    StringSpec({
+class RateLimiterTest : StringSpec() {
+
+    override fun isolationMode() = IsolationMode.InstancePerTest
+
+    init {
         "acquireWithCost increments counter" {
             runTest {
                 val limiter = RateLimiter()
@@ -57,4 +61,5 @@ class RateLimiterTest :
                 advanceUntilIdle()
             }
         }
-    })
+    }
+}

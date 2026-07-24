@@ -172,8 +172,8 @@ class DashboardController(
     }
 
     private suspend fun RoutingContext.handleGetDashboardFragment() {
-        val latest = tradeHistoryService.getLatestSnapshot()
         val history = tradeHistoryService.getHistory()
+        val latest = history.firstOrNull()
 
         if (latest == null) {
             val noSnapshotHtml =

@@ -23,7 +23,7 @@ object FormStyles {
         }
 
         ".btn-primary" {
-            background = "linear-gradient(135deg, #2563eb, #1d4ed8)"
+            background = "linear-gradient(135deg, ${CssTheme.colorBlueDeep.value}, ${CssTheme.colorBlueHover.value})"
             color = Color.white
             put("box-shadow", "0 4px 10px rgba(37, 99, 235, 0.2)")
         }
@@ -37,26 +37,26 @@ object FormStyles {
             background = "rgba(30, 41, 59, 0.5)"
             borderWidth = 1.px
             borderStyle = BorderStyle.solid
-            borderColor = Color("rgba(71, 85, 105, 0.5)")
-            color = Color("#cbd5e1")
+            borderColor = CssTheme.colorBorderInput
+            color = CssTheme.colorMutedLight
         }
 
         ".btn-secondary:hover" {
             background = "rgba(30, 41, 59, 0.8)"
-            borderColor = Color("rgba(148, 163, 184, 0.5)")
+            borderColor = CssTheme.colorBorderInputHover
             color = Color.white
         }
 
         ".btn-danger" {
-            background = Color("rgba(239, 68, 68, 0.1)").value
+            background = CssTheme.colorDangerBgSubtle.value
             borderWidth = 1.px
             borderStyle = BorderStyle.solid
-            borderColor = Color("rgba(239, 68, 68, 0.3)")
+            borderColor = CssTheme.colorDangerBorder
             color = CssTheme.colorDanger
         }
 
         ".btn-danger:hover" {
-            background = Color("rgba(239, 68, 68, 0.2)").value
+            background = CssTheme.colorDangerBgHover.value
             borderColor = CssTheme.colorDanger
         }
 
@@ -78,7 +78,7 @@ object FormStyles {
         ".${CssClass.Form.Section}" {
             borderBottomWidth = 1.px
             borderBottomStyle = BorderStyle.solid
-            borderBottomColor = Color("rgba(51, 65, 85, 0.3)")
+            borderBottomColor = CssTheme.colorBorderSubtle
             paddingBottom = 1.25.rem
             marginBottom = 1.25.rem
         }
@@ -121,7 +121,7 @@ object FormStyles {
             background = "rgba(15, 23, 42, 0.4)"
             borderWidth = 1.px
             borderStyle = BorderStyle.solid
-            borderColor = Color("rgba(71, 85, 105, 0.5)")
+            borderColor = CssTheme.colorBorderInput
             color = Color.white
             padding = Padding(0.5.rem, 0.75.rem)
             borderRadius = 0.5.rem
@@ -150,7 +150,7 @@ object FormStyles {
             height = 1.25.rem
             borderWidth = 2.px
             borderStyle = BorderStyle.solid
-            borderColor = Color("rgba(71, 85, 105, 0.6)")
+            borderColor = CssTheme.colorBorderInputStrong
             borderRadius = 0.25.rem
             put("transition", "all 0.2s ease")
         }
@@ -193,7 +193,7 @@ object FormStyles {
             borderRadius = 0.75.rem
             borderWidth = 1.px
             borderStyle = BorderStyle.solid
-            borderColor = Color("rgba(51, 65, 85, 0.3)")
+            borderColor = CssTheme.colorBorderSubtle
         }
 
         ".${CssClass.Form.AllocationEditSymbol}" {
@@ -230,7 +230,7 @@ object FormStyles {
             borderRadius = 0.75.rem
             borderWidth = 1.px
             borderStyle = BorderStyle.dashed
-            borderColor = Color("rgba(71, 85, 105, 0.5)")
+            borderColor = CssTheme.colorBorderInput
             background = "rgba(15, 23, 42, 0.2)"
         }
 

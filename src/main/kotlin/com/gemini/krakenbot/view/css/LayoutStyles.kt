@@ -22,8 +22,8 @@ object LayoutStyles {
             put("line-height", "1.5")
             put(
                 "background-image",
-                "radial-gradient(circle at 15% 50%, rgba(56, 189, 248, 0.06) 0%, transparent 50%), " +
-                    "radial-gradient(circle at 85% 30%, rgba(16, 185, 129, 0.06) 0%, transparent 50%)",
+                "radial-gradient(circle at 15% 50%, ${CssTheme.colorBgGlowBlue.value} 0%, transparent 50%), " +
+                    "radial-gradient(circle at 85% 30%, ${CssTheme.colorBgGlowGreen.value} 0%, transparent 50%)",
             )
             backgroundAttachment = BackgroundAttachment.fixed
         }
@@ -87,7 +87,7 @@ object LayoutStyles {
             fontFamily = CssTheme.fontMono
             fontSize = 0.875.rem
             fontWeight = FontWeight.w700
-            color = Color("#e2e8f0")
+            color = CssTheme.colorTextBright
         }
 
         ".${CssClass.DataAge.Value}.stale" {

@@ -6,6 +6,76 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.12.4] - 2026-07-24
+
+### Fixed
+
+- **Startup History Race (`KrakenRebalancerApplication`)**: Run `tradeHistoryService.init()` to completion before binding the HTTP server so History/API routes never observe an empty DB during cleanup, JSON migration, or simulation seeding.
+- **Chart.js Option Mutation (`History.kt`)**: Clone shared `chartDefaults` before applying time-range units so range switches no longer mutate global Chart.js options.
+- **History Sync Banner Styles**: Move sync progress and trade-log chrome to typed `CssClass.History` styles backed by `CssTheme` tokens (replacing undefined `--color-text` / `--color-primary` inline CSS).
+- **Dashboard Double History Load**: Load portfolio history once in `handleGetDashboardFragment` and derive the latest snapshot from that list.
+- **Eclipse JGit XXE (`CVE-2025-4949`)**: Bump Spotless Gradle plugin from `7.0.2` to `7.0.4` so the build classpath uses patched `org.eclipse.jgit` `6.10.1.202505221210-r`.
+
+### Changed
+
+- **Suspend Repository IO Boundary**: Make `TradeRepository` / `PortfolioStatsRepository` suspend and route all JDBC through `safeTransactionIO` / `readTransactionIO` (`withContext(Dispatchers.IO)`).
+- **Simulation Seed Precision**: Store `SimulationDefaults` prices as `BigDecimal` and seed historical snapshots with scale 8/2 math via `PortfolioCalculations.calculateTargetValue`, written in a single batched `repository.save(...)` call.
+- **CSS Theme Token Expansion**: Centralize muted success/danger/warning/glass rgba literals in `CssTheme` and consume them from style builders.
+- **BigDecimal Test Assertions**: Prefer `shouldBeEqualComparingTo` / `compareTo` over scale-sensitive `==` and `toDouble()` matchers.
+- **Allocation Chart Bar Widths**: Compute fill percentages with `PortfolioCalculations.calculateCurrentPercent` instead of `Double` division.
+
+## [6.12.3] - 2026-07-24
+
+### Fixed
+
+- **Sync Metadata Writes (`SqliteTradeRepositoryImpl`)**: Wrap `setSyncMetadata` upserts in `database.safeTransaction` for consistent error handling with other repository writes.
+- **BigDecimal Test Assertions**: Replace `.equals()`-based `shouldBe` with `shouldBeEqualComparingTo` across five test suites so scale-sensitive financial values compare correctly.
+
+### Changed
+
+- **CSS Theme Tokens (`CssTheme`)**: Replace duplicated hardcoded hex colors in `ComponentStyles`, `FormStyles`, `LayoutStyles`, and `NavigationStyles` with shared theme tokens.
+- **Settings Allocation Row (`Settings.kt`)**: Remove unused `symbol-label` CSS class suffix from dynamically created allocation rows.
+
+### Removed
+
+- **Dead `Formatter.formatPercent(Double)` Overload**: Drop unused `Double`-based percent formatter; all callers use `BigDecimal`.
+
+### Added
+
+- **`HtmlEvents.INPUT` Constant**: Shared DOM event name for Kotlin/JS input handlers.
+- **Settings Row Callback Coverage (`SettingsTest`)**: Exercise `addAssetRow()` target-input and remove-button handlers so non-cached `:frontend-js:jsTest` runs satisfy the 90% function-coverage gate.
+
+## [6.12.2] - 2026-07-24
+
+### Fixed
+
+- **Cycle-Level Cash Reserve (`OrderExecutorImpl`)**: Cap the full buy batch against 99% of opening USD cash so sequential buys cannot erode the reserve beyond the cycle budget.
+- **Lockout Backoff Schedule (`KrakenServiceImpl`)**: Use a dedicated lockout attempt budget and initial backoff so exponential waits reach the 15-minute ceiling instead of exhausting after ~2.5 minutes.
+- **Portfolio Total Rounding (`PortfolioAnalyzerImpl`)**: Accumulate unrounded mark-to-market products and round the portfolio total once to avoid sum-of-rounded drift.
+
+### Added
+
+- **Multi-Buy Cash Cap & Lockout Schedule Specs**: Cover aggregate multi-buy spend ≤ 99% of opening cash and assert lockout wait durations including the 15-minute cap.
+
+## [6.12.1] - 2026-07-24
+
+### Fixed
+
+- **Cash-Reserve Buy Cap (`OrderExecutorImpl`)**: Cap buys that would exceed 99% of available USD cash when sizing orders, preventing buys from exhausting the full cash buffer.
+- **Allocation Deviation Triggers (`PortfolioAnalyzerImpl`)**: Use `BigDecimal` relative deviation math and USD valuation scaling so rebalance triggers stay precise under mixed asset prices.
+- **Snapshot Allocation Percents (`SnapshotHistoryCalculator`)**: Build allocation percentages via `BigDecimal.valueOf` instead of floating-point intermediate values.
+- **API Lockout Backoff (`KrakenServiceImpl`)**: Use exponential backoff on temporary Kraken API lockouts instead of a fixed wait.
+- **Simulated Exchange Math (`SimulatedKrakenService`)**: Keep simulated order and balance math fully on `BigDecimal` for parity with live execution.
+- **Overview Allocation Summing (`OverviewGridComponent`)**: Sum allocation percents with `BigDecimal` to avoid display drift from floating-point accumulation.
+
+### Added
+
+- **Cash Cap & Portfolio Calculation Specs**: Added `OrderExecutorCashCapTest` and `PortfolioCalculationsTest`, and expanded coverage for cash-cap sizing, `SimulatedKrakenService`, and `SnapshotHistoryCalculator`.
+
+### Changed
+
+- **Kotest Spec Style**: Converted several StringSpec suites to `init`-block style for consistency with project test conventions.
+
 ## [6.12.0] - 2026-07-23
 
 ### Added

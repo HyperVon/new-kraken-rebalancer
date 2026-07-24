@@ -230,13 +230,13 @@ internal fun mapSnapshotsToPoints(
         }.toTypedArray()
 
 internal fun getClonedChartOptions(): dynamic {
+    val options: dynamic = JSON.parse(JSON.stringify(window.asDynamic().chartDefaults))
     when (currentRange) {
-        TimeRange.TWENTY_FOUR_HOURS.key -> chartDefaults.scales.x.time.unit = "hour"
-        TimeRange.ALL.key -> js("delete chartDefaults.scales.x.time.unit")
-        else -> chartDefaults.scales.x.time.unit = "day"
+        TimeRange.TWENTY_FOUR_HOURS.key -> options.scales.x.time.unit = "hour"
+        TimeRange.ALL.key -> js("delete options.scales.x.time.unit")
+        else -> options.scales.x.time.unit = "day"
     }
-
-    return JSON.parse(JSON.stringify(window.asDynamic().chartDefaults))
+    return options
 }
 
 internal fun createLineChartConfig(
@@ -600,7 +600,7 @@ internal fun renderTradeTable(trades: Array<JsTradeRecord>) {
         val tr = document.createElement(HtmlTags.TR)
         val td = document.createElement(HtmlTags.TD) as HTMLTableCellElement
         td.colSpan = PrecisionConstants.TRADE_TABLE_COLSPAN
-        td.setAttribute("style", "text-align:center;color:var(--color-text-muted);padding:2rem;")
+        td.className = CssClass.History.EmptyTableCell.value
         td.textContent = ViewText.NO_TRADES_FOUND_PERIOD
         tr.appendChild(td)
         tbody.appendChild(tr)

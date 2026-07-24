@@ -13,6 +13,9 @@ import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.KrakenService
 import com.gemini.krakenbot.service.PortfolioAnalyzer
 import com.gemini.krakenbot.service.TradeHistoryService
+import com.gemini.krakenbot.util.PrecisionConstants
+import com.gemini.krakenbot.util.toCryptoScale
+import com.gemini.krakenbot.util.toUsdScale
 import com.gemini.krakenbot.view.util.SyncMetadataKeys
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.delay
@@ -59,7 +62,7 @@ class TradeHistoryServiceImpl(
     @Volatile
     private var lastSyncTime: Instant = Instant.EPOCH
 
-    override fun init() {
+    override suspend fun init() {
         try {
             repository.cleanupDuplicateTrades()
         } catch (e: Exception) {
@@ -104,117 +107,146 @@ class TradeHistoryServiceImpl(
         }
     }
 
-    private fun seedHistoricalSnapshots() {
+    private suspend fun seedHistoricalSnapshots() {
         log.info("Simulation mode: Seeding historical snapshots in database...")
         val config = configService.getConfig()
         val allocations = config.allocations
+        val random = ThreadLocalRandom.current()
 
-        // Start prices
-        val currentPrices = mutableMapOf<String, Double>()
+        val currentPrices = mutableMapOf<String, BigDecimal>()
         for ((symbol) in allocations) {
             val symbolU = symbol.value.uppercase()
-            currentPrices[symbolU] = SimulationDefaults.INITIAL_PRICES[symbolU] ?: 10.0
+            currentPrices[symbolU] =
+                (SimulationDefaults.INITIAL_PRICES[symbolU] ?: SimulationDefaults.DEFAULT_PRICE).toCryptoScale()
         }
-        currentPrices[Asset.USD] = 1.0
+        currentPrices[Asset.USD] = BigDecimal.ONE
 
-        // Start balances
-        val currentBalances = mutableMapOf<String, Double>()
-        val totalPortfolioValue = 100000.0
-        val random = ThreadLocalRandom.current()
+        val currentBalances = mutableMapOf<String, BigDecimal>()
+        val totalPortfolioValue = SimulationDefaults.TOTAL_PORTFOLIO_VALUE_USD
 
         for ((symbol, targetPercent) in allocations) {
             val symbolU = symbol.value.uppercase()
-            val targetUSD = targetPercent / 100.0 * totalPortfolioValue
+            val targetUSD =
+                PortfolioCalculations.calculateTargetValue(
+                    BigDecimal.valueOf(targetPercent),
+                    totalPortfolioValue,
+                )
             // Slightly drifted initial balance (+/- 15%)
-            val drift = 0.85 + random.nextDouble() * 0.30
+            val driftFactor = BigDecimal.valueOf(0.85 + random.nextDouble() * 0.30)
+            val driftedUSD = targetUSD.multiply(driftFactor).toUsdScale()
             val price = currentPrices.getValue(symbolU)
-            currentBalances[symbolU] = (targetUSD * drift) / price
+            currentBalances[symbolU] =
+                driftedUSD.divide(price, PrecisionConstants.SCALE_CRYPTO, RoundingMode.HALF_UP)
         }
 
         val now = Instant.now()
         val startInstant = now.minus(15, ChronoUnit.DAYS)
         val stepHours = 6L
         val steps = (15 * 24) / stepHours
+        val snapshotsToSave = mutableListOf<PortfolioSnapshot>()
+
+        data class ValuedAsset(
+            val symbol: String,
+            val targetPercent: Double,
+            val balance: BigDecimal,
+            val price: BigDecimal,
+            val valueUSD: BigDecimal,
+        )
 
         var step = 0
         while (step <= steps) {
             val timestamp = startInstant.plus(step * stepHours, ChronoUnit.HOURS)
 
-            // 1. Fluctuate prices
+            // 1. Fluctuate prices (+/- 1.5%)
             for (symbol in currentPrices.keys) {
                 if (symbol == Asset.USD) continue
                 val price = currentPrices.getValue(symbol)
-                // random fluctuation +/- 1.5%
-                val change = (random.nextDouble() - 0.5) * 0.03
-                currentPrices[symbol] = price * (1.0 + change)
+                val changeFactor = BigDecimal.ONE.add(BigDecimal.valueOf((random.nextDouble() - 0.5) * 0.03))
+                currentPrices[symbol] = price.multiply(changeFactor).toCryptoScale()
             }
 
-            // 2. Compute portfolio value and rebalance
-            var portfolioValue = 0.0
+            // 2. Portfolio mark-to-market before rebalance
+            var portfolioValue = BigDecimal.ZERO
             for (symbol in currentBalances.keys) {
-                portfolioValue += currentBalances.getValue(symbol) * currentPrices.getValue(symbol)
-            }
-
-            // Rebalance balances towards target allocations
-            for ((symbol, targetPercent) in allocations) {
-                val symbolU = symbol.value.uppercase()
-                val targetUSD = targetPercent / 100.0 * portfolioValue
-                // Keep it close to target, but let it drift slightly (+/- 3%)
-                val drift = 0.97 + random.nextDouble() * 0.06
-                val price = currentPrices.getValue(symbolU)
-                currentBalances[symbolU] = (targetUSD * drift) / price
-            }
-
-            // Recompute exact portfolio value
-            var exactPortfolioValue = 0.0
-            val assetSnapshots = mutableMapOf<String, PortfolioSnapshot.AssetSnapshot>()
-
-            for ((symbol) in allocations) {
-                val symbolU = symbol.value.uppercase()
-                val balance = currentBalances.getValue(symbolU)
-                val price = currentPrices.getValue(symbolU)
-                val valueUSD = balance * price
-                exactPortfolioValue += valueUSD
-            }
-
-            for ((symbol, targetPercent) in allocations) {
-                val symbolU = symbol.value.uppercase()
-                val balance = currentBalances.getValue(symbolU)
-                val price = currentPrices.getValue(symbolU)
-                assetSnapshots[symbolU] =
-                    PortfolioCalculations.createAssetSnapshot(
-                        symbol = symbolU,
-                        balance = BigDecimal.valueOf(balance),
-                        price = BigDecimal.valueOf(price),
-                        valueUSD = BigDecimal.valueOf(balance * price),
-                        targetPercent = BigDecimal.valueOf(targetPercent),
-                        totalPortfolioValueUSD = BigDecimal.valueOf(exactPortfolioValue),
+                portfolioValue =
+                    portfolioValue.add(
+                        currentBalances.getValue(symbol).multiply(currentPrices.getValue(symbol)),
                     )
             }
+            portfolioValue = portfolioValue.toUsdScale()
 
-            var targetUsdPercent = 5.0
+            // 3. Rebalance balances toward targets with slight drift (+/- 3%)
             for ((symbol, targetPercent) in allocations) {
-                if (symbol.isUsd) {
-                    targetUsdPercent = targetPercent
-                }
+                val symbolU = symbol.value.uppercase()
+                val targetUSD =
+                    PortfolioCalculations.calculateTargetValue(
+                        BigDecimal.valueOf(targetPercent),
+                        portfolioValue,
+                    )
+                val driftFactor = BigDecimal.valueOf(0.97 + random.nextDouble() * 0.06)
+                val driftedUSD = targetUSD.multiply(driftFactor).toUsdScale()
+                val price = currentPrices.getValue(symbolU)
+                currentBalances[symbolU] =
+                    driftedUSD.divide(price, PrecisionConstants.SCALE_CRYPTO, RoundingMode.HALF_UP)
             }
 
-            val snapshot =
+            // 4. One valuation pass, then build snapshots against the total
+            val valuedAssets =
+                allocations.map { (symbol, targetPercent) ->
+                    val symbolU = symbol.value.uppercase()
+                    val balance = currentBalances.getValue(symbolU)
+                    val price = currentPrices.getValue(symbolU)
+                    ValuedAsset(
+                        symbol = symbolU,
+                        targetPercent = targetPercent,
+                        balance = balance,
+                        price = price,
+                        valueUSD = balance.multiply(price).toUsdScale(),
+                    )
+                }
+            val exactPortfolioValue =
+                valuedAssets
+                    .fold(BigDecimal.ZERO) { acc, asset -> acc.add(asset.valueUSD) }
+                    .toUsdScale()
+
+            val assetSnapshots =
+                valuedAssets.associate { asset ->
+                    asset.symbol to
+                        PortfolioCalculations.createAssetSnapshot(
+                            symbol = asset.symbol,
+                            balance = asset.balance,
+                            price = asset.price,
+                            valueUSD = asset.valueUSD,
+                            targetPercent = BigDecimal.valueOf(asset.targetPercent),
+                            totalPortfolioValueUSD = exactPortfolioValue,
+                        )
+                }
+
+            val targetUsdPercent =
+                allocations
+                    .firstOrNull { it.symbol.isUsd }
+                    ?.let { BigDecimal.valueOf(it.targetPercent) }
+                    ?: BigDecimal.valueOf(PrecisionConstants.DEFAULT_USD_TARGET_PERCENT)
+
+            snapshotsToSave.add(
                 PortfolioSnapshot(
                     timestamp = timestamp,
-                    totalValueUSD = BigDecimal.valueOf(exactPortfolioValue).setScale(2, RoundingMode.HALF_UP),
+                    totalValueUSD = exactPortfolioValue,
                     assets = assetSnapshots,
                     actions = emptyList(),
                     drawdownPercent = BigDecimal.ZERO,
                     fiatDeploymentPercent = BigDecimal.ZERO,
-                    effectiveUsdTargetPercent = BigDecimal.valueOf(targetUsdPercent).setScale(2, RoundingMode.HALF_UP),
-                )
-            repository.saveSnapshot(snapshot)
+                    effectiveUsdTargetPercent = targetUsdPercent.toUsdScale(),
+                ),
+            )
             step++
         }
+
+        repository.save(snapshotsToSave)
+        log.info("Simulation mode: seeded {} historical snapshots", snapshotsToSave.size)
     }
 
-    override fun addSnapshot(snapshot: PortfolioSnapshot) {
+    override suspend fun addSnapshot(snapshot: PortfolioSnapshot) {
         repository.saveSnapshot(snapshot)
         try {
             val cutoff = Instant.now().minus(90, ChronoUnit.DAYS)
@@ -229,25 +261,26 @@ class TradeHistoryServiceImpl(
         snapshotFlow.tryEmit(snapshot)
     }
 
-    override fun getHistory(): List<PortfolioSnapshot> = repository.load()
+    override suspend fun getHistory(): List<PortfolioSnapshot> = repository.load()
 
-    override fun getLatestSnapshot(): PortfolioSnapshot? = repository.load().firstOrNull()
+    override suspend fun getLatestSnapshot(): PortfolioSnapshot? = repository.load().firstOrNull()
 
     /**
      * Exposes the internal mutable shared flow as a read-only Flow for streaming updates.
      */
     override fun getHistoryFlow(): Flow<PortfolioSnapshot> = snapshotFlow.asSharedFlow()
 
-    override fun saveTrade(trade: TradeRecord) {
+    override suspend fun saveTrade(trade: TradeRecord) {
         repository.saveTrade(trade)
     }
 
-    override fun getSnapshotsInRange(from: Instant, to: Instant): List<PortfolioSnapshot> =
+    override suspend fun getSnapshotsInRange(from: Instant, to: Instant): List<PortfolioSnapshot> =
         repository.getSnapshotsInRange(from, to)
 
-    override fun getTradesInRange(from: Instant, to: Instant): List<TradeRecord> = repository.getTradesInRange(from, to)
+    override suspend fun getTradesInRange(from: Instant, to: Instant): List<TradeRecord> =
+        repository.getTradesInRange(from, to)
 
-    override fun getHistoryStats(): HistoryStats {
+    override suspend fun getHistoryStats(): HistoryStats {
         val stats = portfolioStatsRepository.load()
         val summary = repository.getTradeSummaryStats()
         return HistoryStats(
@@ -259,7 +292,7 @@ class TradeHistoryServiceImpl(
         )
     }
 
-    override fun getHistoryStats(from: Instant, to: Instant): HistoryStats {
+    override suspend fun getHistoryStats(from: Instant, to: Instant): HistoryStats {
         val stats = portfolioStatsRepository.load()
         val summary = if (from ==
             Instant.EPOCH
@@ -529,9 +562,9 @@ class TradeHistoryServiceImpl(
         }
     }
 
-    override fun getSyncMetadata(key: String): String? = repository.getSyncMetadata(key)
+    override suspend fun getSyncMetadata(key: String): String? = repository.getSyncMetadata(key)
 
-    override fun setSyncMetadata(key: String, value: String) = repository.setSyncMetadata(key, value)
+    override suspend fun setSyncMetadata(key: String, value: String) = repository.setSyncMetadata(key, value)
 
-    override fun isHistorySeeded(): Boolean = repository.isHistorySeeded()
+    override suspend fun isHistorySeeded(): Boolean = repository.isHistorySeeded()
 }

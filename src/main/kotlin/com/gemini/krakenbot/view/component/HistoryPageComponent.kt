@@ -17,6 +17,8 @@ import com.gemini.krakenbot.view.util.div
 import com.gemini.krakenbot.view.util.h2
 import com.gemini.krakenbot.view.util.label
 import com.gemini.krakenbot.view.util.nav
+import com.gemini.krakenbot.view.util.span
+import com.gemini.krakenbot.view.util.td
 import kotlinx.html.*
 import kotlinx.html.InputType.checkBox
 
@@ -105,10 +107,8 @@ class HistoryPageComponent {
 
     private fun DIV.renderTradeTable() {
         div(CssClass.Layout.GlassPanel) {
-            div {
-                style = STYLE_FLEX_BETWEEN_MB1
-                h2(CssClass.Utility.GlassPanelTitle) {
-                    style = STYLE_MB0
+            div(CssClass.History.TradeLogHeader) {
+                h2(CssClass.Utility.GlassPanelTitle + CssClass.History.TitleNoMargin) {
                     icon(Icons.CHART)
                     +ViewText.HISTORY_TRADE_LOG
                 }
@@ -118,8 +118,7 @@ class HistoryPageComponent {
                         checked = true
                     }
                     div(CssClass.Form.CheckboxCustom) {}
-                    span {
-                        style = STYLE_MUTED_SMALL_TEXT
+                    span(CssClass.History.MutedSmallText) {
                         +ViewText.SHOW_DRY_RUN_TRADES
                     }
                 }
@@ -140,9 +139,8 @@ class HistoryPageComponent {
                     tbody {
                         id = HtmlIds.TRADE_TABLE_BODY
                         tr {
-                            td {
+                            td(CssClass.History.EmptyTableCell) {
                                 colSpan = TABLE_COLSPAN
-                                style = STYLE_EMPTY_TABLE_CELL
                                 +ViewText.HISTORY_NO_DATA
                             }
                         }
@@ -153,29 +151,21 @@ class HistoryPageComponent {
     }
 
     private fun DIV.renderSyncProgressBanner() {
-        div(CssClass.Layout.GlassPanel) {
+        div(CssClass.Layout.GlassPanel + CssClass.History.SyncBanner) {
             id = HtmlIds.SYNC_PROGRESS_BANNER
-            style = STYLE_SYNC_BANNER
-            div {
-                style = STYLE_SYNC_HEADER
-                span {
-                    style = STYLE_SYNC_TITLE
-                    div {
-                        style = STYLE_SYNC_SPINNER
-                    }
+            div(CssClass.History.SyncHeader) {
+                span(CssClass.History.SyncTitle) {
+                    div(CssClass.History.SyncSpinner) {}
                     +ViewText.SYNCHRONIZING_TRADE_HISTORY
                 }
-                span {
+                span(CssClass.History.SyncText) {
                     id = HtmlIds.SYNC_PROGRESS_TEXT
-                    style = STYLE_SYNC_TEXT
                     +ViewText.INITIAL_SYNC_PROGRESS
                 }
             }
-            div {
-                style = STYLE_PROGRESS_TRACK
-                div {
+            div(CssClass.History.ProgressTrack) {
+                div(CssClass.History.ProgressBar) {
                     id = HtmlIds.SYNC_PROGRESS_BAR
-                    style = STYLE_PROGRESS_BAR
                 }
             }
         }
@@ -185,18 +175,6 @@ class HistoryPageComponent {
         const val CDN_CHART_JS = "https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"
         const val CDN_CHART_JS_DATE_FNS = "https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"
         const val TABLE_COLSPAN = "6"
-
-        const val STYLE_FLEX_BETWEEN_MB1 = "display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;"
-        const val STYLE_MB0 = "margin-bottom: 0;"
-        const val STYLE_MUTED_SMALL_TEXT = "font-size: 0.875rem; color: var(--color-text-muted);"
-        const val STYLE_EMPTY_TABLE_CELL = "text-align:center; color: var(--color-text-muted); padding: 2rem;"
-        const val STYLE_SYNC_BANNER = "display: none; margin-bottom: 1.5rem; padding: 1.5rem;"
-        const val STYLE_SYNC_HEADER = "display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.75rem;"
-        const val STYLE_SYNC_TITLE = "font-weight: 600; color: var(--color-text); display: flex; align-items: center; gap: 0.5rem;"
-        const val STYLE_SYNC_SPINNER = "width: 1rem; height: 1rem; border: 2px solid var(--color-primary); border-top-color: transparent; border-radius: 50%; animation: spin 1s linear infinite;"
-        const val STYLE_SYNC_TEXT = "font-family: var(--font-mono); font-size: 0.875rem; color: var(--color-text-muted);"
-        const val STYLE_PROGRESS_TRACK = "width: 100%; height: 0.5rem; background: rgba(255, 255, 255, 0.05); border-radius: 9999px; overflow: hidden;"
-        const val STYLE_PROGRESS_BAR = "width: 0%; height: 100%; background: var(--color-primary); transition: width 0.3s ease; border-radius: 9999px;"
     }
 }
 

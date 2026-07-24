@@ -2,23 +2,28 @@ package com.gemini.krakenbot.util
 
 import com.gemini.krakenbot.model.OrderResult
 import com.gemini.krakenbot.model.OrderSide
+import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
+import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.shouldBe
 import java.math.BigDecimal
 import java.time.Instant
 
 @Suppress("unused")
-class TradeCalculatorTest :
-    StringSpec({
+class TradeCalculatorTest : StringSpec() {
+
+    override fun isolationMode() = IsolationMode.InstancePerTest
+
+    init {
 
         "calculateExecutedPrice should divide usdAmount by volume when positive" {
             val price = TradeCalculator.calculateExecutedPrice(BigDecimal("100.00"), BigDecimal("2.0"))
-            price.compareTo(BigDecimal("50.00")) shouldBe 0
+            price.shouldBeEqualComparingTo(BigDecimal("50.00"))
         }
 
         "calculateExecutedPrice should return zero when volume is zero" {
             val price = TradeCalculator.calculateExecutedPrice(BigDecimal("100.00"), BigDecimal.ZERO)
-            price.compareTo(BigDecimal.ZERO) shouldBe 0
+            price.shouldBeEqualComparingTo(BigDecimal.ZERO)
         }
 
         "calculateSlippage should return zero when expected price is zero" {
@@ -27,7 +32,7 @@ class TradeCalculatorTest :
                 BigDecimal("105.0"),
                 BigDecimal.ZERO,
             )
-            slippage.compareTo(BigDecimal.ZERO) shouldBe 0
+            slippage.shouldBeEqualComparingTo(BigDecimal.ZERO)
         }
 
         "calculateSlippage should compute buy slippage correctly" {
@@ -36,7 +41,7 @@ class TradeCalculatorTest :
                 BigDecimal("105.0"),
                 BigDecimal("100.0"),
             )
-            slippage.compareTo(BigDecimal("5.0000")) shouldBe 0
+            slippage.shouldBeEqualComparingTo(BigDecimal("5.0000"))
         }
 
         "calculateSlippage should compute sell slippage correctly" {
@@ -45,12 +50,12 @@ class TradeCalculatorTest :
                 BigDecimal("95.0"),
                 BigDecimal("100.0"),
             )
-            slippage.compareTo(BigDecimal("5.0000")) shouldBe 0
+            slippage.shouldBeEqualComparingTo(BigDecimal("5.0000"))
         }
 
         "estimateFee should calculate fee correctly" {
             val fee = TradeCalculator.estimateFee(BigDecimal("1000.00"))
-            fee.compareTo(BigDecimal("2.6000")) shouldBe 0
+            fee.shouldBeEqualComparingTo(BigDecimal("2.6000"))
         }
 
         "createTradeRecord should assemble full TradeRecord" {
@@ -79,6 +84,7 @@ class TradeCalculatorTest :
             trade.pair shouldBe "XBTUSD"
             trade.side shouldBe OrderSide.BUY.uppercaseName
             trade.dryRun shouldBe true
-            trade.price.compareTo(BigDecimal("50000.00")) shouldBe 0
+            trade.price.shouldBeEqualComparingTo(BigDecimal("50000.00"))
         }
-    })
+    }
+}
