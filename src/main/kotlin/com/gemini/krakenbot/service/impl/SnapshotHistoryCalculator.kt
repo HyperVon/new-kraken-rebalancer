@@ -96,17 +96,17 @@ object SnapshotHistoryCalculator {
                         balance = balance,
                         price = price,
                         valueUSD = valueUSD,
-                        targetPercent = BigDecimal(targetPercent),
+                        targetPercent = BigDecimal.valueOf(targetPercent),
                         totalPortfolioValueUSD = exactPortfolioValue,
                     )
             }
 
             val targetUsdPercent =
-                BigDecimal(
-                    allocations.firstOrNull { it.symbol.isUsd }?.targetPercent
-                        ?: PrecisionConstants.DEFAULT_USD_TARGET_PERCENT,
-                )
-                    .setScale(PrecisionConstants.SCALE_USD, RoundingMode.HALF_UP)
+                BigDecimal
+                    .valueOf(
+                        allocations.firstOrNull { it.symbol.isUsd }?.targetPercent
+                            ?: PrecisionConstants.DEFAULT_USD_TARGET_PERCENT,
+                    ).setScale(PrecisionConstants.SCALE_USD, RoundingMode.HALF_UP)
 
             val snapshot =
                 PortfolioSnapshot(

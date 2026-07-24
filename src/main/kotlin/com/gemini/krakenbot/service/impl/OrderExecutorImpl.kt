@@ -71,15 +71,18 @@ class OrderExecutorImpl(
         }
 
         for ((symbol, originalCost) in buyOrders) {
+            // Always cap buys to 99% of available USD to buffer fees and slippage.
+            val maxAffordable = actualCash.multiply(CASH_RESERVE_FACTOR)
             var cost = originalCost
-            if (cost > actualCash) {
+            if (cost > maxAffordable) {
                 log.warn(
-                    "Not enough cash to buy {}. Cost: {}, Cash: {}. Reducing.",
+                    "Buy {} exceeds 99% cash reserve. Cost: {}, Max affordable: {}, Cash: {}. Reducing.",
                     symbol,
                     cost,
+                    maxAffordable,
                     actualCash,
                 )
-                cost = actualCash.multiply(CASH_RESERVE_FACTOR)
+                cost = maxAffordable
             }
 
             if (cost < BigDecimal.valueOf(settings.dustThresholdUSD)) {

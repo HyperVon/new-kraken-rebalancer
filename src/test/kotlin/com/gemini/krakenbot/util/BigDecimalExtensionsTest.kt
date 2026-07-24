@@ -1,12 +1,16 @@
 package com.gemini.krakenbot.util
 
+import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
 import java.math.BigDecimal
 
 @Suppress("unused")
-class BigDecimalExtensionsTest :
-    StringSpec({
+class BigDecimalExtensionsTest : StringSpec() {
+
+    override fun isolationMode() = IsolationMode.InstancePerTest
+
+    init {
 
         "isZero should correctly identify zero values" {
             BigDecimal.ZERO.isZero shouldBe true
@@ -37,4 +41,5 @@ class BigDecimalExtensionsTest :
             BigDecimal("10.123456789").toCryptoScale().toString() shouldBe "10.12345679"
             BigDecimal("10.123456789").toPercentScale().toString() shouldBe "10.1235"
         }
-    })
+    }
+}

@@ -4,17 +4,21 @@ import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.TradeRecord
+import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.collections.shouldNotBeEmpty
+import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.shouldBe
 import java.math.BigDecimal
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 
 @Suppress("unused")
-class SnapshotHistoryCalculatorTest :
-    StringSpec({
+class SnapshotHistoryCalculatorTest : StringSpec() {
 
+    override fun isolationMode() = IsolationMode.InstancePerTest
+
+    init {
         "buildTimelineEvents should generate trade and daily close events sorted descending" {
             val now = Instant.now()
             val cutoff = now.minus(5, ChronoUnit.DAYS)
@@ -82,5 +86,10 @@ class SnapshotHistoryCalculatorTest :
             )
 
             snapshots.shouldNotBeEmpty()
+
+            // After reverse-applying the BUY: BTC -= 0.1, USD += 5000 + 13
+            runningBalances["BTC"]!!.shouldBeEqualComparingTo(BigDecimal("0.4"))
+            runningBalances["USD"]!!.shouldBeEqualComparingTo(BigDecimal("15013.00"))
         }
-    })
+    }
+}

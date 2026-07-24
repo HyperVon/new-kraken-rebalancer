@@ -46,10 +46,13 @@ class KrakenServiceImpl(
         maxAttempts: Int = 5,
         initialBackoffMs: Long = 2000,
         rateLimitBackoffMs: Long = 10000,
+        maxLockoutBackoffMs: Long = 15.minutes.inWholeMilliseconds,
         block: suspend () -> T,
     ): T = flow {
         var currentBackoff = initialBackoffMs
         var currentRateLimitBackoff = rateLimitBackoffMs
+        // Lockouts start at 10s and scale exponentially up to 15 minutes.
+        var currentLockoutBackoff = rateLimitBackoffMs
 
         repeat(maxAttempts) { attempt ->
             try {
@@ -63,7 +66,7 @@ class KrakenServiceImpl(
                 if ((isNetworkOrTransient || isRateLimit || isLockout) && attempt < maxAttempts - 1) {
                     val waitTime =
                         when {
-                            isLockout -> 15.minutes.inWholeMilliseconds
+                            isLockout -> currentLockoutBackoff.coerceAtMost(maxLockoutBackoffMs)
                             isRateLimit -> currentRateLimitBackoff
                             else -> currentBackoff
                         }
@@ -77,10 +80,13 @@ class KrakenServiceImpl(
                     )
                     delay(waitTime.milliseconds)
 
-                    if (isRateLimit) {
-                        currentRateLimitBackoff *= 2
-                    } else if (!isLockout) {
-                        currentBackoff *= 2
+                    when {
+                        isLockout -> {
+                            currentLockoutBackoff =
+                                (currentLockoutBackoff * 2).coerceAtMost(maxLockoutBackoffMs)
+                        }
+                        isRateLimit -> currentRateLimitBackoff *= 2
+                        else -> currentBackoff *= 2
                     }
                 } else {
                     throw e

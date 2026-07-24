@@ -108,7 +108,8 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
                 val buy =
                     krakenService.executedOrders.first { it.side == TestFixtures.BUY }
                 buy.pair shouldBe TestFixtures.BUSD
-                buy.volume.subtract(BigDecimal.ONE)
+                // Buy capped to 99% of cash raised from the sell ($100 → $99)
+                buy.volume.subtract(BigDecimal("0.99"))
                     .abs() shouldBeLessThan BigDecimal("0.0001")
             }
         }
@@ -245,7 +246,8 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
                 val buy =
                     krakenService.executedOrders.first { it.side == TestFixtures.BUY }
                 buy.pair shouldBe TestFixtures.AUSD
-                buy.volume.subtract(BigDecimal.TEN)
+                // Full deployment capped to 99% of available USD ($1000 → $990 → 9.9 units)
+                buy.volume.subtract(BigDecimal("9.9"))
                     .abs() shouldBeLessThan BigDecimal("0.0001")
             }
         }

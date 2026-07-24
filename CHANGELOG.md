@@ -6,6 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.12.1] - 2026-07-24
+
+### Fixed
+
+- **Cash-Reserve Buy Cap (`OrderExecutorImpl`)**: Always apply the 99% USD liquidity cash-reserve cap when sizing buy orders, preventing buys from exhausting the full cash buffer.
+- **Allocation Deviation Triggers (`PortfolioAnalyzerImpl`)**: Use `BigDecimal` relative deviation math and USD valuation scaling so rebalance triggers stay precise under mixed asset prices.
+- **Snapshot Allocation Percents (`SnapshotHistoryCalculator`)**: Build allocation percentages via `BigDecimal.valueOf` instead of floating-point intermediate values.
+- **API Lockout Backoff (`KrakenServiceImpl`)**: Use exponential backoff on temporary Kraken API lockouts instead of a fixed wait.
+- **Simulated Exchange Math (`SimulatedKrakenService`)**: Keep simulated order and balance math fully on `BigDecimal` for parity with live execution.
+- **Overview Allocation Summing (`OverviewGridComponent`)**: Sum allocation percents with `BigDecimal` to avoid display drift from floating-point accumulation.
+
+### Added
+
+- **Cash Cap & Portfolio Calculation Specs**: Added `OrderExecutorCashCapTest` and `PortfolioCalculationsTest`, and expanded coverage for cash-cap sizing, `SimulatedKrakenService`, and `SnapshotHistoryCalculator`.
+
+### Changed
+
+- **Kotest Spec Style**: Converted several StringSpec suites to `init`-block style for consistency with project test conventions.
+
 ## [6.12.0] - 2026-07-23
 
 ### Added

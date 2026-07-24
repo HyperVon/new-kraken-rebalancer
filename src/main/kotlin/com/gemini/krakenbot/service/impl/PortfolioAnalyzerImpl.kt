@@ -96,12 +96,20 @@ class PortfolioAnalyzerImpl(
                 price = p
             }
 
-            val valUSD = balance.multiply(price)
+            val valUSD =
+                balance
+                    .multiply(price)
+                    .setScale(SCALE_USD, RoundingMode.HALF_UP)
             currentValuesUSD[symbol] = valUSD
             totalPortfolioValueUSD = totalPortfolioValueUSD.add(valUSD)
         }
 
-        return Result.Success(PortfolioValues(totalPortfolioValueUSD, currentValuesUSD))
+        return Result.Success(
+            PortfolioValues(
+                totalPortfolioValueUSD.setScale(SCALE_USD, RoundingMode.HALF_UP),
+                currentValuesUSD,
+            ),
+        )
     }
 
     override fun resolveBalance(symbol: String, balances: RawBalances): BigDecimal = Asset
@@ -159,9 +167,12 @@ class PortfolioAnalyzerImpl(
             )
         ratio = ratio.coerceAtMost(BigDecimal.ONE)
 
+        // Fractional exponents require Double.pow; re-enter BigDecimal immediately and scale.
         val deployDouble =
             ratio.toDouble().pow(settings.fiatDeploymentExponent) * 100.0
-        return BigDecimal.valueOf(deployDouble)
+        return BigDecimal
+            .valueOf(deployDouble)
+            .setScale(SCALE_PERCENT, RoundingMode.HALF_UP)
     }
 
     override fun calculateEffectiveUsdTarget(fiatDeploymentPct: BigDecimal): BigDecimal {
@@ -245,8 +256,9 @@ class PortfolioAnalyzerImpl(
                 s.deviationTriggerPercent,
             )
 
+            val triggerThreshold = BigDecimal.valueOf(s.deviationTriggerPercent)
             val isTriggered =
-                metrics.deviationPercent.abs().toDouble() >= s.deviationTriggerPercent && metrics.isSignificant
+                metrics.deviationPercent.abs() >= triggerThreshold && metrics.isSignificant
 
             if (isTriggered) {
                 actionLog.add(

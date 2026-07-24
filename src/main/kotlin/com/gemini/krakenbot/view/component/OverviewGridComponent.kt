@@ -11,7 +11,6 @@ import com.gemini.krakenbot.view.util.div
 import com.gemini.krakenbot.view.util.span
 import kotlinx.html.DIV
 import java.math.BigDecimal
-import kotlin.math.abs
 
 class OverviewGridComponent {
     context(div: DIV)
@@ -23,9 +22,10 @@ class OverviewGridComponent {
 
         val assetsList =
             latest.assets.values.filter { !it.symbol.isUsd }
-        val cryptoPercent = assetsList.sumOf { it.currentPercent.toDouble() }
+        val cryptoPercent =
+            assetsList.fold(BigDecimal.ZERO) { acc, asset -> acc.add(asset.currentPercent) }
         val cryptoTargetPercent =
-            assetsList.sumOf { it.targetPercent.toDouble() }
+            assetsList.fold(BigDecimal.ZERO) { acc, asset -> acc.add(asset.targetPercent) }
         val cryptoCount = assetsList.size
 
         div.div(CssClass.Layout.OverviewGrid) {
@@ -67,7 +67,7 @@ class OverviewGridComponent {
                                 targetPct
                             )
                         }%"
-                        if (abs(targetPct.toDouble() - baseTargetPct.toDouble()) > 0.01) {
+                        if ((targetPct - baseTargetPct).abs() > BigDecimal("0.01")) {
                             +" (${ViewText.BASE_PREFIX}${
                                 Formatter.formatPercent(
                                     baseTargetPct
