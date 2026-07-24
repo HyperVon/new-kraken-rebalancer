@@ -65,10 +65,14 @@ val file = File("data/test.json")
 - **Extract Layout Helpers**: Refactor recurring HTML/CSS components into reusable Kotlin extension functions or modular helper objects (e.g., `Layouts.kt` helpers like `statusCard`, `glassPanel`).
 - **Utility Methods**: Move repeated validation, math formatting, or array manipulation logic into dedicated extension functions or utility objects.
 
-## 6. High-Value Code Documentation
+## 7. Modular CSS & Package Layout Synchronization
 
-- Add concise, clear KDoc comments (`/** ... */`) to complex algorithms, coroutine flows, state transitions, or non-obvious domain math.
-- Avoid obvious or repetitive comments that merely repeat function names.
+- **Modular CSS Packages**: Keep CSS definitions organized under domain-specific files inside `com.gemini.krakenbot.view.css` (`CssTheme`, `LayoutStyles`, `ComponentStyles`, `TableStyles`, `FormStyles`, `NavigationStyles`, `MediaQueries`, `CssStyles` facade).
+- **Type-Safe Selectors**: Use `querySelector` extension properties on `CssClass` rather than string replacements (e.g. `.replace(" ", ".")`).
+- **Strongly Typed `kotlinx-css` Properties**: Use typed properties and `CssTheme` color tokens rather than raw `put(...)` calls or hardcoded hex colors.
+- **Documentation & Build Sync**: Whenever adding, moving, or deleting packages under `src/main/kotlin/`, immediately update:
+  1. The project structure directory tree in `README.md`.
+  2. JaCoCo coverage exclusion filters in `build.gradle.kts` (`tasks.jacocoTestReport` and `tasks.jacocoTestCoverageVerification`).
 
 ## Refactoring Checklist
 
@@ -78,5 +82,7 @@ Before declaring a refactoring task complete:
 - [ ] Raw strings/magic numbers replaced with type-safe constants/enums
 - [ ] No compiler warnings or unused imports remain
 - [ ] No hardcoded user paths (`/Users/...`) present
+- [ ] Directory tree in `README.md` updated for any package or layout changes
+- [ ] JaCoCo exclusions in `build.gradle.kts` updated for any new non-tested view/DSL packages
 - [ ] Automated tests executed (`./gradlew test :frontend-js:jsTest`) to verify zero regressions
 - [ ] Markdown files formatted and validated (`npx markdownlint-cli`)

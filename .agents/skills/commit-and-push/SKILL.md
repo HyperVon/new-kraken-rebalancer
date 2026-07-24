@@ -15,8 +15,8 @@ exact workflow in order. Do NOT skip steps.
   - Use the next appropriate semantic version number.
   - Categorize changes under `### Added`, `### Changed`, `### Fixed`, or
     `### Removed` as appropriate.
-- Update `README.md` if the changes affect features, tech stack, or
-  documentation described there.
+- Update `README.md` whenever changes affect features, tech stack, or directory/package structure trees (e.g., updates under `src/main/kotlin/com/gemini/krakenbot/`).
+- Update `build.gradle.kts` JaCoCo coverage exclusions (`tasks.jacocoTestReport` and `tasks.jacocoTestCoverageVerification`) whenever new non-tested packages or view/DSL modules are added, moved, or deleted.
 
 ## Step 2: Run Markdown Linting
 
