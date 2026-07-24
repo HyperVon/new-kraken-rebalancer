@@ -387,7 +387,8 @@ two complementary `SharedFlow` channels:
 │   ├── view/                              # HTML templates & components (kotlinx.html DSL)
 │   │   ├── DashboardView.kt              # Facade class delegating to components
 │   │   ├── component/                    # Modular components (Shell, Grid, Form, etc.)
-│   │   └── util/                         # CssClass, CssStyles (kotlinx-css DSL), Formatter, Extensions, Icons, Layouts
+│   │   ├── css/                          # Modular domain CSS modules (CssTheme, LayoutStyles, TableStyles, FormStyles, NavigationStyles)
+│   │   └── util/                         # CssClass, Formatter, Extensions, Icons, Layouts
 │   └── table/                             # Exposed table definitions
 ├── src/test/kotlin/                       # Unit tests (95%+ coverage enforced via JaCoCo)
 │   └── com/gemini/krakenbot/
@@ -397,7 +398,7 @@ two complementary `SharedFlow` channels:
 │   │       └── SimulatedKrakenServiceTest.kt # Unit tests verifying mock exchange emulator
 ├── src/main/resources/                    # Static resources
 │   └── static/
-│       ├── (style.css served dynamically) # Stylesheet compiled from CssStyles.kt via kotlinx-css DSL
+│       ├── (style.css served dynamically) # Stylesheet compiled from view/css/ via kotlinx-css DSL
 │       └── (rebalancer.js copy-bundled)   # Dynamic JS bundle compiled from frontend-js subproject
 ├── docs/                                  # Project documentation and architecture guides
 │   ├── FLOWS.md                           # Kotlin Flow architecture guide
