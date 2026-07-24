@@ -55,7 +55,7 @@ class OrderExecutorImpl(
         for ((symbol, usdToSell) in sellOrders) {
             if (usdToSell < BigDecimal.valueOf(settings.dustThresholdUSD)) {
                 log.info("Skipping dust sell for {} ($ {})", symbol, usdToSell)
-                actionLog.add("Skipping dust sell for $symbol ($$usdToSell)")
+                actionLog.add(ActionLogFormatter.formatSkippedDust("sell", symbol, usdToSell))
                 continue
             }
 
@@ -93,7 +93,7 @@ class OrderExecutorImpl(
 
             if (cost < BigDecimal.valueOf(settings.dustThresholdUSD)) {
                 log.info("Skipping dust buy for {} ($ {})", symbol, cost)
-                actionLog.add("Skipping dust buy for $symbol ($$cost)")
+                actionLog.add(ActionLogFormatter.formatSkippedDust("buy", symbol, cost))
                 continue
             }
 

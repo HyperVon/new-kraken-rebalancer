@@ -41,11 +41,19 @@ object NavigationStyles {
             fontWeight = FontWeight.w600
         }
 
+        ".${CssClass.History.ToolbarRow}" {
+            display = Display.flex
+            alignItems = Align.center
+            put("flex-wrap", "wrap")
+            gap = 0.75.rem
+            marginBottom = 1.25.rem
+        }
+
         ".${CssClass.History.TimeRangeSelector}" {
             display = Display.flex
             alignItems = Align.center
             gap = 0.375.rem
-            marginBottom = 1.25.rem
+            marginBottom = 0.px
             padding = Padding(0.25.rem)
             background = CssTheme.colorGlass.value
             borderWidth = 1.px
@@ -79,6 +87,101 @@ object NavigationStyles {
             color = CssTheme.colorTextPrimary
             background = CssTheme.colorBlueGlassBgHover.value
             borderColor = CssTheme.colorBlueGlassBorderHover
+        }
+
+        ".${CssClass.History.ViewsToolbar}" {
+            display = Display.flex
+            alignItems = Align.center
+            gap = 0.5.rem
+            padding = Padding(0.25.rem, 0.5.rem)
+            background = CssTheme.colorGlass.value
+            borderWidth = 1.px
+            borderStyle = BorderStyle.solid
+            borderColor = CssTheme.colorGlassBorder
+            borderRadius = 0.75.rem
+            put("flex-wrap", "wrap")
+        }
+
+        ".${CssClass.History.ViewsLabel}" {
+            fontSize = 0.8125.rem
+            fontWeight = FontWeight.w600
+            color = CssTheme.colorTextSecondary
+            fontFamily = CssTheme.fontSans
+            paddingLeft = 0.375.rem
+        }
+
+        ".${CssClass.History.ViewsSelect}" {
+            background = CssTheme.colorGlassHover.value
+            color = CssTheme.colorTextPrimary
+            borderWidth = 1.px
+            borderStyle = BorderStyle.solid
+            borderColor = CssTheme.colorGlassBorder
+            borderRadius = 0.5.rem
+            padding = Padding(0.375.rem, 0.625.rem)
+            fontSize = 0.8125.rem
+            fontFamily = CssTheme.fontSans
+            cursor = Cursor.pointer
+            put("min-width", "10rem")
+        }
+
+        ".${CssClass.History.ViewsActions}" {
+            display = Display.flex
+            alignItems = Align.center
+            gap = 0.25.rem
+        }
+
+        ".${CssClass.History.ViewsBtn}" {
+            padding = Padding(0.375.rem, 0.625.rem)
+            borderRadius = 0.5.rem
+            fontSize = 0.75.rem
+            fontWeight = FontWeight.w600
+            color = CssTheme.colorTextSecondary
+            background = "transparent"
+            borderWidth = 1.px
+            borderStyle = BorderStyle.solid
+            borderColor = Color.transparent
+            cursor = Cursor.pointer
+            put("transition", "all 0.2s ease")
+            fontFamily = CssTheme.fontSans
+        }
+
+        ".${CssClass.History.ViewsBtn}:hover" {
+            color = CssTheme.colorTextPrimary
+            background = CssTheme.colorGlassHover.value
+        }
+
+        ".${CssClass.History.ViewsBtn}:disabled" {
+            opacity = 0.4
+            cursor = Cursor.notAllowed
+        }
+
+        ".${CssClass.History.ChartTools}" {
+            display = Display.flex
+            alignItems = Align.center
+            gap = 0.25.rem
+            marginBottom = 0.25.rem
+            put("justify-content", "flex-end")
+        }
+
+        ".${CssClass.History.ZoomBtn}" {
+            padding = Padding(0.25.rem, 0.5.rem)
+            borderRadius = 0.375.rem
+            fontSize = 0.75.rem
+            fontWeight = FontWeight.w600
+            color = CssTheme.colorTextSecondary
+            background = CssTheme.colorGlass.value
+            borderWidth = 1.px
+            borderStyle = BorderStyle.solid
+            borderColor = CssTheme.colorGlassBorder
+            cursor = Cursor.pointer
+            put("transition", "all 0.2s ease")
+            fontFamily = CssTheme.fontSans
+        }
+
+        ".${CssClass.History.ZoomBtn}:hover" {
+            color = CssTheme.colorTextPrimary
+            background = CssTheme.colorGlassHover.value
+            borderColor = CssTheme.colorBlueGlassBorder
         }
 
         ".${CssClass.History.ChartContainer}" {
@@ -188,8 +291,32 @@ object NavigationStyles {
 
         ".${CssClass.Activity.RowContainer}" {
             display = Display.flex
-            alignItems = Align.center
+            alignItems = Align.flexStart
             gap = 0.75.rem
+        }
+
+        "tr.${CssClass.Activity.RowTrade.value} td" {
+            paddingTop = 0.85.rem
+            paddingBottom = 0.85.rem
+        }
+
+        "tr.${CssClass.Activity.RowInfo.value} td" {
+            paddingTop = 0.55.rem
+            paddingBottom = 0.55.rem
+            opacity = 0.85
+        }
+
+        ".${CssClass.Activity.Message}" {
+            fontWeight = FontWeight.w600
+            color = CssTheme.colorTextPrimary
+            put("line-height", "1.35")
+        }
+
+        ".${CssClass.Activity.MessageMuted}" {
+            fontWeight = FontWeight.w400
+            color = CssTheme.colorTextSecondary
+            fontSize = 0.8125.rem
+            put("line-height", "1.35")
         }
 
         ".${CssClass.Performance.DevContainer}" {
@@ -202,6 +329,46 @@ object NavigationStyles {
             fontSize = 0.675.rem
             opacity = 0.7
             fontFamily = CssTheme.fontMono
+        }
+
+        ".${CssClass.Performance.DevLegend}" {
+            display = Display.flex
+            alignItems = Align.center
+            gap = 1.rem
+            marginBottom = 0.75.rem
+            fontSize = 0.75.rem
+            color = CssTheme.colorTextMuted
+        }
+
+        ".${CssClass.Performance.DevLegendItem}" {
+            display = Display.inlineFlex
+            alignItems = Align.center
+            gap = 0.35.rem
+            fontWeight = FontWeight.w600
+        }
+
+        ".${CssClass.Performance.DevLegendItem}::before" {
+            content = QuotedString("")
+            width = 0.5.rem
+            height = 0.5.rem
+            borderRadius = 50.pct
+            display = Display.inlineBlock
+        }
+
+        ".${CssClass.Performance.DevLegendOver}" {
+            color = CssTheme.colorWarning
+        }
+
+        ".${CssClass.Performance.DevLegendOver}::before" {
+            backgroundColor = CssTheme.colorWarning
+        }
+
+        ".${CssClass.Performance.DevLegendUnder}" {
+            color = CssTheme.colorBlueAccent
+        }
+
+        ".${CssClass.Performance.DevLegendUnder}::before" {
+            backgroundColor = CssTheme.colorBlueAccent
         }
 
         ".${CssClass.Utility.ErrorBanner}" {

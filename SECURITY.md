@@ -56,3 +56,17 @@ trades. When deploying:
   trading
 - Restrict access to the machine running this application
 - Regularly rotate your Kraken API keys
+
+### Dashboard trust model
+
+The web dashboard and HTTP API have **no user authentication**. Security relies
+on **local / private-network trust**:
+
+- CORS only allows origins that pass `isLocalOrPrivateOrigin` (`localhost`,
+  `127.0.0.1`, `::1`, `*.local`, RFC1918 private ranges, link-local `169.254.*`)
+- Do **not** expose port 8080 to the public internet
+- Prefer binding/access only from the host or trusted LAN devices that can reach
+  the process
+
+Treat any machine that can open the dashboard as fully trusted for config
+changes and (if `dryRun` / `simulation` are off) live trading.

@@ -23,6 +23,10 @@ sealed class CssClass(open val value: String) {
         object HeaderTitleSection : Layout("header-title-section")
         object HeaderActions : Layout("header-actions")
         object OverviewGrid : Layout("overview-grid")
+        object BrandMark : Layout("brand-mark")
+        object BrandPrimary : Layout("brand-primary")
+        object BrandAccent : Layout("brand-accent")
+        object StatusCluster : Layout("status-cluster")
     }
 
     // Status Cards
@@ -67,6 +71,8 @@ sealed class CssClass(open val value: String) {
         object AddAssetBox : Form("add-asset-box")
         object GroupCentered : Form("form-group-centered")
         object SectionHeader : Form("section-header")
+        object SafetyGroup : Form("form-safety-group")
+        object SafetyToggles : Form("form-safety-toggles")
     }
 
     // Buttons
@@ -77,11 +83,13 @@ sealed class CssClass(open val value: String) {
         object Icon : Button("btn-icon")
     }
 
-    // Badges
+    // Badges (shared outline system for activity + trade log)
     sealed class Badge(override val value: String) : CssClass(value) {
         object Buy : Badge("badge badge-buy")
         object Sell : Badge("badge badge-sell")
         object Info : Badge("badge badge-info")
+        object Success : Badge("badge badge-success")
+        object Failed : Badge("badge badge-failed")
     }
 
     // Allocation Chart
@@ -99,6 +107,10 @@ sealed class CssClass(open val value: String) {
         object EmptyText : Activity("recent-activity-empty-text")
         object DotMarker : Activity("recent-activity-dot-marker")
         object RowContainer : Activity("recent-activity-row-container")
+        object RowTrade : Activity("recent-activity-row-trade")
+        object RowInfo : Activity("recent-activity-row-info")
+        object Message : Activity("recent-activity-message")
+        object MessageMuted : Activity("recent-activity-message-muted")
         object EmptyHistoryBox : Activity("empty-history-box")
         object CustomScrollbarMaxH100 : Activity("custom-scrollbar max-h-100")
     }
@@ -107,6 +119,10 @@ sealed class CssClass(open val value: String) {
     sealed class Performance(override val value: String) : CssClass(value) {
         object DevContainer : Performance("performance-dev-container")
         object DevUsdLabel : Performance("performance-dev-usd-label")
+        object DevLegend : Performance("performance-dev-legend")
+        object DevLegendItem : Performance("performance-dev-legend-item")
+        object DevLegendOver : Performance("performance-dev-legend-over")
+        object DevLegendUnder : Performance("performance-dev-legend-under")
     }
 
     // Data Age
@@ -140,9 +156,17 @@ sealed class CssClass(open val value: String) {
     // History page
     sealed class History(override val value: String) : CssClass(value) {
         object StatsGrid : History("history-stats-grid")
+        object ToolbarRow : History("history-toolbar-row")
         object TimeRangeSelector : History("time-range-selector")
         object TimeRangeBtn : History("time-range-btn")
         object TimeRangeBtnActive : History("time-range-btn active")
+        object ViewsToolbar : History("history-views-toolbar")
+        object ViewsLabel : History("history-views-label")
+        object ViewsSelect : History("history-views-select")
+        object ViewsActions : History("history-views-actions")
+        object ViewsBtn : History("history-views-btn")
+        object ChartTools : History("history-chart-tools")
+        object ZoomBtn : History("history-zoom-btn")
         object ChartContainer : History("chart-container")
         object TradeLogHeader : History("history-trade-log-header")
         object MutedSmallText : History("history-muted-small-text")
@@ -161,6 +185,8 @@ sealed class CssClass(open val value: String) {
     sealed class Utility(override val value: String) : CssClass(value) {
         object TextDanger : Utility("text-danger")
         object TextSuccess : Utility("text-success")
+        object TextOverweight : Utility("text-overweight")
+        object TextUnderweight : Utility("text-underweight")
         object GlassPanelTitle : Utility("glass-panel-title")
         object ErrorBanner : Utility("error-banner")
         object Stale : Utility("stale")
@@ -178,6 +204,7 @@ sealed class CssClass(open val value: String) {
         val SORTABLE_TH = "th" + Table.Sortable.querySelector
         val HOVERABLE_TR = "tr" + Table.Hoverable.querySelector
         val TIME_RANGE_BTNS = History.TimeRangeBtn.querySelector
+        val ZOOM_BTNS = History.ZoomBtn.querySelector
         const val TARGET_INPUTS = "input[name=\"${FormFields.TARGETS}\"]"
         const val SYMBOL_INPUTS = "input[name=\"${FormFields.SYMBOLS}\"]"
     }

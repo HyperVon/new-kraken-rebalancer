@@ -12,6 +12,9 @@ object MediaQueries {
             ".${CssClass.History.StatsGrid}" {
                 gridTemplateColumns = GridTemplateColumns("repeat(2, 1fr)")
             }
+            ".${CssClass.History.ToolbarRow}" {
+                put("flex-wrap", "nowrap")
+            }
         }
 
         "@media (min-width: 768px)" {
@@ -28,6 +31,10 @@ object MediaQueries {
             }
             ".${CssClass.Form.Grid2Col}" {
                 gridTemplateColumns = GridTemplateColumns("1fr 1fr")
+            }
+            ".${CssClass.Form.SafetyToggles}" {
+                flexDirection = FlexDirection.row
+                gap = 1.5.rem
             }
         }
 

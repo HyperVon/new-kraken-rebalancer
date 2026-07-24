@@ -6,6 +6,109 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.12.13] - 2026-07-24
+
+### Added
+
+- **`ui-manual-qa` agent skill**: Simulation-mode click-through QA of Dashboard /
+  Settings / History interactions (browser MCP), with a maintained case
+  checklist and pass/fail report artifacts.
+
+## [6.12.12] - 2026-07-24
+
+### Added
+
+- **History view presets**: Built-in Overview / Day · Total only / Week ·
+  Allocation / Month · P&L, plus named user saves with a default, persisted in
+  browser `localStorage` (`kraken.history.views`).
+- **Density-aware chart markers**: Full point radius at ≤24 samples, half
+  through 48, then line-only; hit radius stays usable for tooltips.
+- **Chart.js x-axis zoom**: `chartjs-plugin-zoom` (wheel / pinch / drag) with
+  per-chart Zoom − / Zoom + / Reset controls.
+
+## [6.12.11] - 2026-07-24
+
+### Changed
+
+- **UI visual polish (approved review findings)**: Unified Dashboard / History /
+  Settings text-tab nav and brand wordmark; compact LIVE + Data Age status
+  cluster; Safety Modes card on Settings; fixed per-asset chart/bar colors;
+  Allocation Drift chart as unstacked 0–100% shares; amber/blue over/under
+  deviation legend (not P&L red/green); activity log USD precision and scan
+  hierarchy; signed `-$` P&L ticks; aligned trade SIDE/STATUS outline badges;
+  roomier History summary card icons. Docs screenshots and User Guide updated.
+
+## [6.12.10] - 2026-07-24
+
+### Added
+
+- **`docs-screenshot-refresh` agent skill**: Boot in simulation mode and refresh
+  README `docs/images/*.png` after UI / frontend visual changes; adaptive
+  `targets.json` + `--discover` for new pages/sections; isolated run directory
+  for clean seeded History charts.
+- **`docs/USER_GUIDE.md`**: Visual end-user walkthrough of Dashboard, Settings,
+  and History (embeds all documentation screenshots); **`user-guide`** agent
+  skill to keep it current.
+- **`docs/images/history-charts.png`**: Mid-History capture (allocation drift +
+  cumulative P&L) for README and the User Guide.
+- **`ui-visual-review` / `ui-visual-implement` agent skills**: Recommend-only
+  visual UI critique (simulation captures + image read), then implement approved
+  findings and verify by re-running the app and inspecting after-PNGs; capture
+  script gains `--out-dir` so review/verify does not overwrite `docs/images/`.
+
+### Changed
+
+- **README screenshots**: Recaptured from a fresh simulation seed at a tightly
+  framed 2880×1800 Retina resolution; Playwright helper preferred over embedded
+  browser capture. Simulation required for screenshots; dry-run optional so
+  emulator fills can show as successful trades.
+- **README / AGENTS**: Link the User Guide from the README intro and Screenshots
+  section; index the new skills.
+
+### Fixed
+
+- **Mermaid diagrams render in older viewers**: Quote the `Any Deviation ≥ Trigger?`
+  decision label in `docs/ALGORITHM.md` (unquoted non-ASCII text is a lexical error)
+  and use `participant` instead of the newer `actor` keyword in the config hot-reload
+  sequence diagram in `docs/FLOWS.md`. Both previously failed with
+  *"Syntax error in graph"* in IDE preview panes that bundle Mermaid 8.x.
+- **`validate_mermaid.py`**: Documentation-review helper that parses every Mermaid
+  fence under Mermaid 8.8.0 (the IDE baseline); wired into documentation-review,
+  changelog-and-docs-sync, portfolio-rebalancing-math, and coroutines-flows-sse so
+  diagram edits are checked before ship.
+
+## [6.12.9] - 2026-07-24
+
+### Fixed
+
+- **Documentation review**: Align README package tree (`repository/table/`, `:common`,
+  `DynamicKrakenService`), History summary-card labels (All-Time High / Period High),
+  API endpoint table (`/history`, history JSON routes), and JaCoCo exclusion wording
+  with source/build; correct FLOWS route names (`POST /settings`,
+  `GET /api/status/stream`); document USD poll exponential backoff in ALGORITHM /
+  AGENTS / skills; add `simulation` to `rebalancer-config-template.json`; expand
+  SECURITY dashboard trust / CORS guidance; refresh CONTRIBUTING coverage gates and
+  remove stale test-count claims.
+
+## [6.12.8] - 2026-07-24
+
+### Added
+
+- **`documentation-review` agent skill**: Full documentation audit against source
+  code (missing / wrong / stale / orphan) covering README, SECURITY,
+  CONTRIBUTING, `docs/*`, `.agents/AGENTS.md`, skills, and config templates.
+
+## [6.12.7] - 2026-07-24
+
+### Changed
+
+- **Agent docs & skills**: Rewrite `.agents/AGENTS.md` as invariants + skill index;
+  expand domain skills (algorithm, Kraken API, Koin/config, views, JS, Kotest);
+  add `common-kmp-module`, `coroutines-flows-sse`, `dry-run-and-simulation`,
+  `gradle-quality-gates`, `changelog-and-docs-sync`, and `trade-history-sync`;
+  fix markdown-lint paths to `.agents/AGENTS.md`, coverage gate wording, matcher
+  name `shouldBeEqualComparingTo`, and commit-and-push current-branch push.
+
 ## [6.12.6] - 2026-07-24
 
 ### Changed

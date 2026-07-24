@@ -2,6 +2,8 @@ package com.gemini.krakenbot.view.util
 
 object ViewText {
     const val APP_TITLE = "Kraken Rebalancer"
+    const val APP_BRAND_PRIMARY = "Kraken"
+    const val APP_BRAND_ACCENT = "Rebalancer"
     const val SETTINGS_TITLE = "Settings"
     const val PORTFOLIO_ALLOCATION = "Portfolio Allocation (Top Assets)"
     const val ASSET_PERFORMANCE = "Asset Performance"
@@ -16,6 +18,7 @@ object ViewText {
     const val REBALANCER_RUNNING =
         "The rebalancer is running. Portfolio data will appear here after the first cycle completes."
     const val GLOBAL_PARAMETERS = "Global Parameters"
+    const val SAFETY_MODES = "Safety Modes"
     const val LOOP_INTERVAL = "Loop Interval (Seconds)"
     const val DEVIATION_TRIGGER = "Deviation Trigger (%)"
     const val DUST_THRESHOLD = "Dust Threshold ($)"
@@ -24,6 +27,8 @@ object ViewText {
     const val DRY_RUN_MODE = "Dry Run Mode (Safe)"
     const val SIMULATION_MODE = "Simulation Mode (Kraken Emulator)"
     const val TARGET_ALLOCATIONS = "Target Allocations"
+    const val LEGEND_OVER_TARGET = "Over target"
+    const val LEGEND_UNDER_TARGET = "Under target"
     const val ADD_ASSET = "Add Asset"
     const val SAVE_CONFIGURATION = "Save Configuration"
 
@@ -70,6 +75,22 @@ object ViewText {
     const val INITIAL_SYNC_PROGRESS = "0 / 0 (0%)"
     const val LABEL_ALL = "All"
 
+    // History views & zoom
+    const val HISTORY_VIEWS = "Views"
+    const val HISTORY_SAVE_VIEW = "Save view…"
+    const val HISTORY_SET_DEFAULT = "Set as default"
+    const val HISTORY_DELETE_VIEW = "Delete"
+    const val HISTORY_SAVE_VIEW_PROMPT = "Name this view:"
+    const val HISTORY_ZOOM_IN = "Zoom +"
+    const val HISTORY_ZOOM_OUT = "Zoom −"
+    const val HISTORY_ZOOM_RESET = "Reset"
+    const val HISTORY_VIEW_OVERVIEW = "Overview"
+    const val HISTORY_VIEW_DAY_TOTAL = "Day · Total only"
+    const val HISTORY_VIEW_WEEK_ALLOCATION = "Week · Allocation"
+    const val HISTORY_VIEW_MONTH_PNL = "Month · P&L"
+    const val HISTORY_VIEW_UNSAVED = "Custom (unsaved)"
+    const val HISTORY_VIEWS_STORAGE_KEY = "kraken.history.views"
+
     // Navigation
     const val NAV_DASHBOARD = "Dashboard"
     const val NAV_HISTORY = "History"
@@ -95,4 +116,12 @@ object ViewText {
     const val NO_TRADES_FOUND_PERIOD = "No trades found for this period."
     const val INVALID_SYMBOL_ALERT = "Invalid symbol. Symbols must be alphanumeric and up to 16 characters."
     const val SYMBOL_EXISTS_ALERT = "Symbol already exists"
+}
+
+/** Built-in History view preset identifiers (localStorage). */
+object HistoryViewIds {
+    const val OVERVIEW = "overview"
+    const val DAY_TOTAL = "day-total"
+    const val WEEK_ALLOCATION = "week-allocation"
+    const val MONTH_PNL = "month-pnl"
 }

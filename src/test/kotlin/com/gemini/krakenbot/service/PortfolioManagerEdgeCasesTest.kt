@@ -1008,7 +1008,7 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
                     usdAmount = BigDecimal.TEN,
                     side = "SELL",
                 )
-                log1.first() shouldBe "[DRY RUN] SELL BTC Volume: 1 Value: $10"
+                log1.first() shouldBe "[DRY RUN] SELL BTC Volume: 1 Value: $10.00"
 
                 val log2 = mutableListOf<String>()
                 (orderExecutor as OrderExecutorImpl).logOrderResult(
@@ -1025,7 +1025,7 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
                     usdAmount = BigDecimal.TEN,
                     side = "BUY",
                 )
-                log2.first() shouldBe "BUY BTC Volume: 1 Cost: $10"
+                log2.first() shouldBe "BUY BTC Volume: 1 Cost: $10.00"
             }
         }
 

@@ -93,7 +93,7 @@ Known migration-sensitive areas in this codebase:
 - **Ktor** — plugin install APIs, SSE, HTML builder, client engine config change across majors.
 - **Exposed** — DSL/DAO signatures and `java-time` module shift between 0.5x/0.6x+.
 - **Koin** — module DSL / `KoinApplication` lifecycle.
-- **Kotest / MockK** — assertion + matcher package moves; keep `BigDecimal` comparisons on `shouldBeEqualByComparingTo`.
+- **Kotest / MockK** — assertion + matcher package moves; keep `BigDecimal` comparisons on `shouldBeEqualComparingTo`.
 - **Jackson** — always bump via the `jackson-bom` platform, not individual artifacts.
 - **Kotlin / KSP** — KSP version must track the Kotlin version (`<kotlin>-<ksp>`).
 
@@ -113,7 +113,10 @@ or manually:
 ./gradlew test :frontend-js:jsTest
 ```
 
-Backend coverage (95% line / 90% branch) and Kotlin/JS tests must pass. If a bump breaks something you cannot resolve, revert that single bump and report it rather than lowering quality gates.
+Backend coverage (JaCoCo: 95% line/method/instruction, 90% branch) and Kotlin/JS
+Karma gates (90% statements/functions/lines, 75% branches) must pass. If a bump
+breaks something you cannot resolve, revert that single bump and report it
+rather than lowering quality gates.
 
 ### Step 7: Update docs
 

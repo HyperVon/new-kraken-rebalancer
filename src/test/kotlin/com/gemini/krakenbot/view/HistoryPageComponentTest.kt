@@ -21,6 +21,11 @@ class HistoryPageComponentTest : StringSpec() {
             htmlString shouldContain "id=\"allocation-drift-chart\""
             htmlString shouldContain "id=\"cumulative-pl-chart\""
             htmlString shouldContain "id=\"trade-table-body\""
+            htmlString shouldContain "id=\"history-views-select\""
+            htmlString shouldContain "id=\"history-save-view-btn\""
+            htmlString shouldContain "chartjs-plugin-zoom"
+            htmlString shouldContain "hammer.min.js"
+            htmlString shouldContain "data-zoom-action=\"in\""
             htmlString shouldContain "rebalancer.js"
         }
     }

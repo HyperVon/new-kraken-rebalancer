@@ -48,6 +48,20 @@ object TestDomBuilders {
         ${syncProgressDom()}
         """.trimIndent()
 
+    fun historyViewsDom(): String =
+        """
+        <div class="${CssClass.History.TimeRangeSelector}">
+            <button class="${CssClass.History.TimeRangeBtn}" ${HtmlAttrs.DATA_RANGE}="24h">24h</button>
+            <button class="${CssClass.History.TimeRangeBtn}" ${HtmlAttrs.DATA_RANGE}="7d">7d</button>
+            <button class="${CssClass.History.TimeRangeBtnActive}" ${HtmlAttrs.DATA_RANGE}="30d">30d</button>
+        </div>
+        <select id="${HtmlIds.HISTORY_VIEWS_SELECT}"></select>
+        <button id="${HtmlIds.HISTORY_SAVE_VIEW_BTN}"></button>
+        <button id="${HtmlIds.HISTORY_SET_DEFAULT_BTN}"></button>
+        <button id="${HtmlIds.HISTORY_DELETE_VIEW_BTN}"></button>
+        ${historyDom()}
+        """.trimIndent()
+
     fun settingsDom(): String =
         """
         <span id="${HtmlIds.TOTAL_ALLOCATED_DISPLAY}"></span>

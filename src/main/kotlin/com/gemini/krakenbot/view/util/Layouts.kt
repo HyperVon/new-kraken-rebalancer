@@ -19,6 +19,43 @@ fun FlowContent.glassPanel(
     }
 }
 
+enum class ActiveNav {
+    DASHBOARD,
+    HISTORY,
+    SETTINGS,
+}
+
+fun FlowContent.brandMark() {
+    h1(CssClass.Layout.BrandMark) {
+        span(CssClass.Layout.BrandPrimary) { +ViewText.APP_BRAND_PRIMARY }
+        +" "
+        span(CssClass.Layout.BrandAccent) { +ViewText.APP_BRAND_ACCENT }
+    }
+}
+
+fun FlowContent.primaryNav(active: ActiveNav) {
+    nav(CssClass.Navigation.Bar) {
+        a(
+            cssClass = if (active == ActiveNav.DASHBOARD) CssClass.Navigation.LinkActive else CssClass.Navigation.Link,
+            href = Routes.ROOT,
+        ) {
+            +ViewText.NAV_DASHBOARD
+        }
+        a(
+            cssClass = if (active == ActiveNav.HISTORY) CssClass.Navigation.LinkActive else CssClass.Navigation.Link,
+            href = Routes.HISTORY,
+        ) {
+            +ViewText.NAV_HISTORY
+        }
+        a(
+            cssClass = if (active == ActiveNav.SETTINGS) CssClass.Navigation.LinkActive else CssClass.Navigation.Link,
+            href = Routes.SETTINGS,
+        ) {
+            +ViewText.NAV_SETTINGS
+        }
+    }
+}
+
 fun FlowContent.statusCard(
     title: String,
     iconSvg: String,

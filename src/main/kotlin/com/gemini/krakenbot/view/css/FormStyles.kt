@@ -239,6 +239,24 @@ object FormStyles {
             paddingTop = 1.rem
         }
 
+        ".${CssClass.Form.SafetyGroup}" {
+            display = Display.flex
+            flexDirection = FlexDirection.column
+            gap = 0.75.rem
+            padding = Padding(1.rem, 1.15.rem)
+            borderRadius = 0.75.rem
+            background = "rgba(15, 23, 42, 0.35)"
+            borderWidth = 1.px
+            borderStyle = BorderStyle.solid
+            borderColor = CssTheme.colorBorderSubtle
+        }
+
+        ".${CssClass.Form.SafetyToggles}" {
+            display = Display.flex
+            flexDirection = FlexDirection.column
+            gap = 0.875.rem
+        }
+
         ".${CssClass.Form.SectionHeader}" {
             display = Display.flex
             put("justify-content", "space-between")

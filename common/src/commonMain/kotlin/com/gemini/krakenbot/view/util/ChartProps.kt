@@ -56,6 +56,37 @@ object ChartProps {
     const val POINT_HOVER_RADIUS_PRIMARY = 6
     const val POINT_HOVER_RADIUS_SECONDARY = 5
     const val POINT_HIT_RADIUS_DEFAULT = 10
+    const val POINT_RADIUS_HIDDEN = 0
+
+    /** Density thresholds: full radius ≤ FULL_MAX; half until HALF_MAX; then hidden. */
+    const val POINT_DENSITY_FULL_MAX = 24
+    const val POINT_DENSITY_HALF_MAX = 48
+
+    // chartjs-plugin-zoom option keys
+    const val ZOOM = "zoom"
+    const val PAN = "pan"
+    const val WHEEL = "wheel"
+    const val PINCH = "pinch"
+    const val DRAG = "drag"
+    const val ENABLED = "enabled"
+    const val MODE = "mode"
+    const val MODE_X = "x"
+    const val LIMITS = "limits"
+    const val MIN_RANGE = "minRange"
+    const val MIN = "min"
+    const val MAX = "max"
+    const val ORIGINAL = "original"
+
+    /** Minimum visible x-span after zoom (ms) — prevents collapsing the time axis. */
+    const val ZOOM_MIN_RANGE_MS = 3_600_000
+    const val ZOOM_FACTOR_IN = 1.2
+    const val ZOOM_FACTOR_OUT = 0.8
+
+    /**
+     * Sentinel label in visibility maps: when present, datasets whose labels are
+     * absent from the map inherit this default (used by “Total only” presets).
+     */
+    const val DATASET_VISIBILITY_DEFAULT = "*"
 
     // Fonts & Theme colors
     const val FONT_INTER = "'Inter', sans-serif"
@@ -77,6 +108,7 @@ object ChartProps {
     const val COLOR_TEAL = "rgba(45, 212, 191, 1)"
     const val COLOR_ORANGE = "rgba(251, 146, 60, 1)"
     const val COLOR_FUCHSIA = "rgba(232, 121, 249, 1)"
+    const val COLOR_SLATE = "rgba(148, 163, 184, 1)"
 
     const val COLOR_BLUE_BG = "rgba(96, 165, 250, 0.08)"
     const val COLOR_GREEN_BG = "rgba(52, 211, 153, 0.08)"
@@ -89,6 +121,13 @@ object ChartProps {
     const val COLOR_TEAL_BG_PALETTE = "rgba(45, 212, 191, 0.1)"
     const val COLOR_ORANGE_BG_PALETTE = "rgba(251, 146, 60, 0.1)"
     const val COLOR_FUCHSIA_BG_PALETTE = "rgba(232, 121, 249, 0.1)"
+    const val COLOR_SLATE_BG_PALETTE = "rgba(148, 163, 184, 0.12)"
+
+    /** Solid hex colors for SSR allocation bars (match chart palette). */
+    const val SOLID_BTC = "#fbbf24"
+    const val SOLID_ETH = "#a78bfa"
+    const val SOLID_USD = "#94a3b8"
+    const val SOLID_FALLBACK = "#60a5fa"
 
     val PALETTE_BORDER_COLORS = arrayOf(
         COLOR_BLUE,
@@ -111,4 +150,41 @@ object ChartProps {
         COLOR_ORANGE_BG_PALETTE,
         COLOR_FUCHSIA_BG_PALETTE,
     )
+
+    /** Fixed per-asset colors shared by History charts and Dashboard allocation bars. */
+    fun borderColorForSymbol(symbol: String, fallbackIndex: Int = 0): String =
+        when (symbol.uppercase()) {
+            "BTC" -> COLOR_AMBER
+            "ETH" -> COLOR_VIOLET
+            "USD" -> COLOR_SLATE
+            else -> PALETTE_BORDER_COLORS[fallbackIndex % PALETTE_BORDER_COLORS.size]
+        }
+
+    fun backgroundColorForSymbol(symbol: String, fallbackIndex: Int = 0): String =
+        when (symbol.uppercase()) {
+            "BTC" -> COLOR_AMBER_BG_PALETTE
+            "ETH" -> COLOR_VIOLET_BG_PALETTE
+            "USD" -> COLOR_SLATE_BG_PALETTE
+            else -> PALETTE_BG_COLORS[fallbackIndex % PALETTE_BG_COLORS.size]
+        }
+
+    fun solidColorForSymbol(symbol: String, fallbackIndex: Int = 0): String =
+        when (symbol.uppercase()) {
+            "BTC" -> SOLID_BTC
+            "ETH" -> SOLID_ETH
+            "USD" -> SOLID_USD
+            else -> SOLID_FALLBACK_PALETTE[fallbackIndex % SOLID_FALLBACK_PALETTE.size]
+        }
+
+    private val SOLID_FALLBACK_PALETTE =
+        arrayOf(
+            SOLID_FALLBACK,
+            "#34d399",
+            SOLID_BTC,
+            SOLID_ETH,
+            "#f87171",
+            "#2dd4bf",
+            "#fb923c",
+            "#e879f9",
+        )
 }

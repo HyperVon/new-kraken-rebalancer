@@ -1,0 +1,210 @@
+---
+name: ui-manual-qa
+description: >-
+  Agent-driven manual QA of live Dashboard / Settings / History interactions in
+  simulation mode — click every control, verify charts/forms/nav/SSE behavior,
+  and report pass/fail. Use when the user asks for UI QA, manual testing,
+  interaction smoke test, click-through testing, or to verify the UI still works
+  after frontend/SSR changes. Report only; do not redesign (ui-visual-review) or
+  implement visual polish (ui-visual-implement) unless asked to fix a found bug.
+---
+
+# UI Manual QA (agent click-through)
+
+Exercise **every interactive control** on the live app the way a human QA
+tester would: open pages, click / type / toggle, and confirm the UI responds
+correctly. Prefer evidence from the browser (snapshot + screenshot) over code
+inspection alone.
+
+This skill is **functional** — not a visual design critique.
+
+| Skill | Concern |
+| :--- | :--- |
+| **ui-manual-qa** (this) | Does each control work? |
+| [ui-visual-review](../ui-visual-review/SKILL.md) | Does it look right? (recommend only) |
+| [ui-visual-implement](../ui-visual-implement/SKILL.md) | Apply approved visual findings |
+| [docs-screenshot-refresh](../docs-screenshot-refresh/SKILL.md) | Refresh README PNGs |
+| [write-kotest](../write-kotest/SKILL.md) | Automated unit/JS tests |
+
+Related: [ktor-html-views](../ktor-html-views/SKILL.md),
+[frontend-js-development](../frontend-js-development/SKILL.md),
+[user-guide](../user-guide/SKILL.md),
+[dry-run-and-simulation](../dry-run-and-simulation/SKILL.md).
+
+Full case list → [checklist.md](checklist.md) (read it before Step 3).
+
+---
+
+## Scope
+
+| Mode | When |
+| :--- | :--- |
+| **Full suite** (default) | User says “QA the UI”, “manual test”, “smoke the app”, or after broad UI work |
+| **Scoped** | User names a page or feature (e.g. “QA History views + zoom only”) — run that subset + Global nav |
+
+**Always in simulation** on an isolated run directory. Never point QA at the
+user’s real `rebalancer-config.json` / DB. Never flip live trading flags.
+
+**Out of scope unless asked:** fixing bugs, visual redesign, rewriting docs,
+changing trading math, live Kraken API calls.
+
+---
+
+## Workflow
+
+```text
+- [ ] Step 0: Confirm scope (full vs page/feature) and output dir
+- [ ] Step 1: Boot isolated simulation (same as docs-screenshot-refresh)
+- [ ] Step 2: Open browser → lock tab → wait for seeded data
+- [ ] Step 3: Run checklist cases; record pass / fail / blocked
+- [ ] Step 4: Write QA_DIR/report.md + findings.json
+- [ ] Step 5: Stop app; clean RUN_DIR; present summary + next actions
+```
+
+### Step 1: Isolated simulation
+
+```bash
+./gradlew fatJar
+RUN_DIR=$(mktemp -d)
+cp rebalancer-config-template.json "$RUN_DIR/rebalancer-config.json"
+# set simulation: true, loopDelaySeconds: 15
+# start jar from $RUN_DIR; wait for curl -sf http://localhost:8080/api/health
+```
+
+Prefer `dryRun: false` under simulation so trade rows and activity look realistic
+(emulator fills). Use `dryRun: true` only when testing dry-run badges / filter.
+
+```bash
+QA_DIR=$(mktemp -d /tmp/ui-manual-qa.XXXXXX)
+```
+
+### Step 2: Browser setup
+
+Use the **cursor-ide-browser** MCP (navigate → lock → snapshot/screenshot):
+
+1. `browser_navigate` → `http://localhost:8080/`
+2. `browser_lock` `{ action: "lock" }`
+3. Wait until Dashboard shows portfolio cards (not empty seed flash) — poll
+   health / snapshot / screenshot until data age is recent.
+4. Prefer `browser_snapshot` for structure + refs; `browser_take_screenshot`
+   when asserting chart/visual state after an interaction.
+5. Unlock only when **all** cases for this run are finished.
+
+If a control has no stable accessibility name, use DOM ids from
+`:common` `HtmlIds` / visible `ViewText` labels (see checklist).
+
+### Step 3: Execute cases
+
+For each case in [checklist.md](checklist.md) (or the scoped subset):
+
+1. **Setup** — navigate / preconditions.
+2. **Act** — click, type, select, toggle, scroll as specified.
+3. **Assert** — expected DOM text, enabled/disabled state, chart rebuild,
+   table rows, toast/alert, URL, or localStorage side effect.
+4. **Record** — `pass` | `fail` | `blocked` with one-line evidence.
+5. **Recover** — if a fail leaves the UI dirty, reset via reload or Undo path
+   before the next case (especially Settings mutations — restore values or
+   re-copy template config and restart only if necessary).
+
+**Hard stop rule:** After **4** consecutive interaction failures with no new
+evidence, stop the suite, report what blocked progress, and ask how to proceed.
+
+Do **not** skip Global nav cases even in a scoped History/Settings run — broken
+routing makes other results meaningless.
+
+### Step 4: Report
+
+Write `$QA_DIR/report.md` and `$QA_DIR/findings.json`. Chat summary:
+
+```markdown
+# UI manual QA
+
+## Summary
+- Scope: full | History | …
+- Result: N passed / N failed / N blocked
+- Simulation seed: yes; dryRun: on/off
+- Artifacts: `$QA_DIR`
+
+## Failures
+### [P0|P1|P2] CASE-ID — Title
+- **Page**: Dashboard | Settings | History | Global
+- **Steps**: what you did
+- **Expected**: …
+- **Actual**: … (screenshot / snapshot note)
+- **Repro**: minimal steps
+
+## Passed (compact)
+- GLOBAL-1, DASH-1, … (ids only)
+
+## Suggested next steps
+- Fix failures in chat, or open a follow-up implement pass
+- Optional: ui-visual-review if failures look like design/layout
+```
+
+`findings.json` shape (for handoff):
+
+```json
+{
+  "qaDir": "/tmp/ui-manual-qa.XXX",
+  "generatedAt": "ISO-8601",
+  "scope": "full",
+  "results": [
+    {
+      "id": "HIST-ZOOM-1",
+      "status": "fail",
+      "severity": "P1",
+      "page": "History",
+      "title": "Zoom + expands x-axis",
+      "expected": "…",
+      "actual": "…",
+      "evidence": "screenshot or snapshot note"
+    }
+  ]
+}
+```
+
+Severity: **P0** broken navigation / data loss / unsafe mode confusion;
+**P1** control does nothing or wrong result; **P2** polish / edge / flaky timing.
+
+### Step 5: Cleanup
+
+Stop the Java process, `rm -rf "$RUN_DIR"`. Keep `$QA_DIR` until the user is
+done reviewing. Unlock the browser tab.
+
+---
+
+## Interaction principles
+
+1. **One assertion per case** where possible — easier triage.
+2. **Prefer labeled controls** (`ViewText`) and `HtmlIds` over brittle CSS paths.
+3. **Wait for async** — History sync banner, chart rebuild after range change,
+   HTMX/SSE dashboard refresh; snapshot again after settle.
+4. **Do not trust console silence** — assert visible outcome.
+5. **Safety modes stay obvious** — Settings Dry Run / Simulation toggles must
+   remain reachable and labeled; never hide them while “cleaning up” after a case.
+6. **Settings mutations are reversible** — change a disposable field, save, verify
+   hot-reload signal if observable, then restore prior values and save again
+   before leaving the page (throwaway DB, but keep later cases predictable).
+
+---
+
+## Anti-patterns
+
+- Judging “works” from static screenshots without clicking
+- Using the user’s real config/DB
+- Declaring pass when charts are blank / still syncing
+- Auto-implementing fixes mid-suite without user ask (finish the report first)
+- Confusing this skill with ui-visual-review (looks) or Kotest (unit coverage)
+- Skipping zoom / view-preset / allocation add-remove because they feel “extra”
+
+---
+
+## Checklist
+
+- [ ] Isolated sim; `QA_DIR` created; real config untouched
+- [ ] Browser locked; seeded data visible
+- [ ] [checklist.md](checklist.md) cases run (full or scoped)
+- [ ] Failures have expected/actual + evidence
+- [ ] `report.md` + `findings.json` written
+- [ ] App stopped; browser unlocked; summary delivered
+- [ ] No unsolicited redesign or live-trading changes

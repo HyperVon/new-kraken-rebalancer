@@ -1,52 +1,112 @@
 ---
 name: portfolio-rebalancing-math
-description: Portfolio rebalancing engine math — BigDecimal scale rules (8/2), signed relative allocation deviations, cash reserve caps (99% USD liquidity cap), ATH/drawdown tracking, and order sequence safety.
+description: >-
+  Portfolio rebalancing engine math — BigDecimal scales, ATH/drawdown fiat
+  deployment, deviation triggers, fiat correction, dust thresholds, sell-first
+  execution, and 99% cash caps. Use when changing PortfolioCalculations,
+  PortfolioAnalyzerImpl, OrderExecutorImpl, or docs/ALGORITHM.md.
 ---
 
 # Portfolio Rebalancing Engine Math
 
-Use this skill when modifying portfolio valuation algorithms, target allocation math, rebalance order generation, or liquidity execution sequences (`PortfolioAnalyzerImpl`, `OrderExecutorImpl`).
+Canonical deep doc: [`docs/ALGORITHM.md`](../../../docs/ALGORITHM.md).
 
-## Financial Math Precision Rules (CRITICAL)
+Primary code:
 
-- **Strict `BigDecimal`**: **NEVER** use `Double` or `Float` for balances, currency amounts, trade volumes, or prices.
-- **Scale Requirements**:
-  - Cryptocurrency quantities: **8 decimal places** (`setScale(8, RoundingMode.HALF_UP)`).
-  - USD valuations & fiat totals: **2 decimal places** (`setScale(2, RoundingMode.HALF_UP)`).
-- **Assertions**: Compare `BigDecimal` values using `compareTo() == 0` or Kotest `shouldBeEqualByComparingTo`. NEVER use `.equals()`.
-- **Null Safety**: Always use `BigDecimal.ZERO` as non-null default values.
+- `PortfolioCalculations` — shared % / target / deviation math
+- `PortfolioAnalyzerImpl` — snapshot, ATH, drawdown, order generation
+- `OrderExecutorImpl` — sell-first execution, USD poll, buy cap
 
----
+## Financial precision (CRITICAL)
 
-## Signed Relative Allocation Deviations
+- **Never** use `Double`/`Float` for balances, volumes, prices, or USD amounts.
+- Crypto quantities: scale **8**, `RoundingMode.HALF_UP`.
+- USD valuations: scale **2**, `RoundingMode.HALF_UP`.
+- Tests: `shouldBeEqualComparingTo` or `compareTo() == 0` — never `.equals()` /
+  `shouldBeEqualByComparingTo`.
+- Defaults: `BigDecimal.ZERO` for nullable stats (e.g. ATH).
 
-Compute signed relative allocation deviations to convey portfolio drift accurately on dashboard indicators:
-
-$$\text{Relative Deviation} = \frac{\text{Current Allocation \%} - \text{Target Allocation \%}}{\text{Target Allocation \%}}$$
-
-- **Negative ($-$)**: Asset is **underweight** (requires `BUY` order).
-- **Positive ($+$)**: Asset is **overweight** (requires `SELL` order).
+Shared scales also live in `:common` `PrecisionConstants` (`SCALE_CRYPTO=8`,
+`SCALE_USD=2`, `CASH_RESERVE_FACTOR_DOUBLE=0.99`).
 
 ---
 
-## Order Execution Safety Sequence
+## Phase overview
 
-When executing a portfolio rebalance loop, `OrderExecutorImpl` must strictly enforce cash safety:
+1. **Snapshot** — balances × prices → total portfolio value.
+2. **Analysis** — ATH/drawdown → effective targets → deviations → orders.
+3. **Execution** — sell → settle cash → buy → persist snapshot.
 
-1. **Sell Overweight Assets First**: Execute all sell orders first to accumulate settled USD cash reserves.
-2. **Poll USD Liquidity**: Poll Kraken API up to 3 times (250ms interval) to verify settled cash liquidity.
-3. **Buy Underweight Assets Second**: Cap buy allocations to **99% of available USD cash** to account for market slippage and exchange fee deductions:
+---
 
-$$\text{Max Buy Cash} = \text{Available USD Cash} \times 0.99$$
+## ATH → drawdown → fiat deployment
+
+1. Track portfolio **ATH** in SQLite (`PortfolioStatsRepository`). Update on new highs.
+2. `Drawdown% = (ATH - Current) / ATH × 100`.
+3. `Deploy% = (Drawdown% / fiatMaxDrawdown)^fiatDeploymentExponent`, capped at 100%.
+   - Exponent `< 1` = aggressive early deployment; `> 1` = conservative; `1` = linear.
+   - `fiatMaxDrawdown = 0` disables deployment.
+4. `EffectiveUsdTarget = BaseUsdTarget × (1 - Deploy%)`.
+5. Freed allocation redistributed **proportionally to crypto** so totals remain 100%.
+
+---
+
+## Deviations & triggers
+
+```text
+DeviationUSD = CurrentValue - TargetValue
+Deviation%   = DeviationUSD / TargetValue × 100   (signed relative)
+```
+
+- Negative → underweight → **BUY**.
+- Positive → overweight → **SELL**.
+- Rebalance only if `|Deviation%| ≥ deviationTriggerPercent`.
+
+### Fiat correction (USD-only trigger)
+
+When **only** USD exceeds the trigger (deposit/withdrawal):
+
+- **Surplus**: buy underweight crypto proportional to USD deficits.
+- **Shortage**: sell overweight crypto proportional to USD surpluses.
+
+This concentrates trades on assets furthest from target and clears dust more
+effectively than spreading across all pairs.
+
+---
+
+## Execution safety (`OrderExecutorImpl`)
+
+1. **Sell first** — only successful sells update projected cash.
+2. **USD poll** (non–dry-run): up to **3** attempts with exponential backoff
+   starting at **250ms** (doubling each attempt, capped at 32s); accept when
+   balance ≥ **95%** of projected, else best observed.
+3. **Buy second** — verify cash; if short, scale buys to **99%** of available USD
+   (`PrecisionConstants.CASH_RESERVE_FACTOR_DOUBLE`).
+4. **Dust** — skip orders with USD notional `< dustThresholdUSD`.
+5. Market orders; volumes at crypto scale 8.
+6. **dryRun**: log `[DRY RUN]` intents; do not place (see dry-run-and-simulation skill).
+
+---
+
+## Key settings (`rebalancer-config.json`)
+
+| Setting | Role |
+| :--- | :--- |
+| `deviationTriggerPercent` | Absolute relative deviation gate |
+| `dustThresholdUSD` | Min order notional |
+| `fiatMaxDrawdown` / `fiatDeploymentExponent` | Deployment curve |
+| `dryRun` / `simulation` | Distinct safety / emulator flags |
+| `loopDelaySeconds` | Cycle sleep |
 
 ---
 
 ## Checklist
 
-Before completing portfolio math or order execution code:
-
-- [ ] All math uses `BigDecimal` (scale 8 for crypto, scale 2 for USD)
-- [ ] Relative allocation deviations retain sign ($-$/$+$)
-- [ ] Rebalance sequence executes sell legs *before* buy legs
-- [ ] Buy allocations capped at 99% of settled USD cash
-- [ ] Unit tests compare `BigDecimal` with `shouldBeEqualComparingTo` or `compareTo() == 0`
+- [ ] BigDecimal only; scales 8/2; matcher `shouldBeEqualComparingTo`
+- [ ] ATH/drawdown deployment and crypto redistribution correct
+- [ ] Signed deviations retained; trigger uses absolute value
+- [ ] Fiat correction only when USD alone triggers
+- [ ] Sell → 3× poll (250ms exponential backoff) → 95% settle → 99% buy cap → dust skip
+- [ ] Changes reflected in `docs/ALGORITHM.md` when behavior changes
+- [ ] If ALGORITHM Mermaid changed → run
+      [validate_mermaid.py](../documentation-review/scripts/validate_mermaid.py)

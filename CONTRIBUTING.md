@@ -44,8 +44,6 @@ improve reliability, safety, and functionality are very welcome.
 
 ### Reporting Bugs
 
--
-
 Search [existing issues](https://github.com/HyperVon/new-kraken-rebalancer/issues)
 first
 
@@ -68,22 +66,31 @@ first
    ```
 
 2. Make your changes, keeping commits focused and descriptive
-3. Ensure existing tests pass: `./gradlew test` (requires a valid
-   `rebalancer-config.json`)
+3. Ensure existing tests and coverage gates pass:
+
+   ```bash
+   ./gradlew build jacocoTestCoverageVerification
+   ```
+
+   (requires a valid `rebalancer-config.json` for local runs that load config)
 4. Open a pull request against `main` with a clear description of what and why
 
 ## Code Guidelines
 
-- **Language:** Kotlin for all development; server-side HTML (kotlinx.html DSL)
-  for the frontend
+- **Language:** Kotlin for all development (JVM backend + Kotlin/JS client);
+  server-side HTML (kotlinx.html DSL + HTMX) for the dashboard
 - **Style:** Follow existing code formatting conventions; use idiomatic Kotlin (
-  data classes, coroutines, extension functions)
+  data classes, coroutines, extension functions). Run
+  `./gradlew spotlessApply` (Spotless + ktlint, 120-char line length) before
+  opening a PR
 - **Safety first:** Any change touching order execution must be tested with
-  `dryRun: true`
+  `dryRun: true`. Keep `dryRun` and `simulation` distinct — see
+  [docs/ALGORITHM.md](docs/ALGORITHM.md) and the dry-run skill under `.agents/`
 - **No credentials:** Never include API keys, secrets, or real account data in
   commits
 - **Tests:** Add or update tests for any non-trivial logic changes. The project
-  enforces **95%+ coverage** via JaCoCo (316 tests as of v6.1.0).
+  enforces JaCoCo **95%** line/method/instruction and **90%** branch coverage on
+  the JVM, plus Karma/Istanbul **90/90/90/75** on `:frontend-js`
 - **Coroutines:** Any method interacting with `KrakenService` must be a
   `suspend` function and tested with `runTest`. Flow-based APIs (e.g.
   `watchConfigChanges()`) should use

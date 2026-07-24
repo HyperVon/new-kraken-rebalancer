@@ -1,34 +1,34 @@
 ---
 name: commit-and-push
-description: Workflow for finalizing changes — update CHANGELOG/README, run lints and tests, commit, and push to GitHub using `gh` for authentication.
+description: >-
+  Finalize changes — update CHANGELOG/README/docs, run quality gates, commit,
+  and push the current branch with gh auth. Use when the user asks to commit
+  and/or push (not for casual WIP).
 ---
 
 # Commit and Push Workflow
 
-When the user asks to "commit and push", "commit / push", or similar, follow this exact workflow in order. Do NOT skip steps.
+When the user asks to "commit and push", "commit / push", or similar, follow
+this workflow in order. Do NOT skip steps.
 
-## Step 0: Git Status & Branch Safety Check
-
-Inspect git working tree state and target branch before modifying documentation or staging:
+## Step 0: Status & branch
 
 ```bash
 git status
 git branch --show-current
 ```
 
-Ensure you are on the intended branch and not on a detached `HEAD`.
+Ensure you are on the intended branch (not detached HEAD).
 
-## Step 1: Update Documentation
+## Step 1: Documentation
 
-- Update `CHANGELOG.md` with a new version entry following the [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) format.
-  - Use the next appropriate semantic version number.
-  - Categorize changes under `### Added`, `### Changed`, `### Fixed`, or `### Removed` as appropriate.
-- Update `README.md` whenever changes affect features, tech stack, or directory/package structure trees (e.g., updates under `src/main/kotlin/com/gemini/krakenbot/`).
-- Update `build.gradle.kts` JaCoCo coverage exclusions (`tasks.jacocoTestReport` and `tasks.jacocoTestCoverageVerification`) whenever new non-tested packages or view/DSL modules are added, moved, or deleted.
+- Update `CHANGELOG.md` (Keep a Changelog).
+- Update `README.md` when features, stack, or package trees change.
+- Sync `docs/ALGORITHM.md` / `FLOWS.md` / `EVALUATION.md` when behavior changes.
+- Update JaCoCo exclusions in `build.gradle.kts` when packages move.
+- Agent rules: `.agents/AGENTS.md` (not root `AGENTS.md`).
 
-## Step 2: Automated Pre-Commit Checks
-
-Run the automated pre-commit script `.agents/skills/commit-and-push/scripts/pre_commit_check.sh` or execute markdown linting and test runs manually:
+## Step 2: Pre-commit checks
 
 ```bash
 ./.agents/skills/commit-and-push/scripts/pre_commit_check.sh
@@ -37,33 +37,48 @@ Run the automated pre-commit script `.agents/skills/commit-and-push/scripts/pre_
 Or manually:
 
 ```bash
-npx markdownlint-cli AGENTS.md CHANGELOG.md README.md docs/*.md
+npx markdownlint-cli .agents/AGENTS.md CHANGELOG.md README.md docs/*.md .agents/skills/**/SKILL.md
 ./gradlew spotlessCheck
 ./gradlew test :frontend-js:jsTest
 ```
 
-If formatting or line length (>120 chars) violations occur, run `./gradlew spotlessApply` to format automatically. Both linting, formatting checks, and unit/JS tests must pass with zero failures. Do NOT proceed if tests fail.
+Fix Spotless with `./gradlew spotlessApply`. Do not proceed on failures.
 
-## Step 3: Stage and Commit
+Coverage expectations: JVM JaCoCo 95% line/method/instruction, 90% branch;
+JS Karma 90% statements/functions/lines, 75% branches.
+
+## Step 3: Commit
 
 ```bash
 git add -A
-git commit -m "<type>: <concise description>"
+git commit -m "$(cat <<'EOF'
+<type>: <concise description>
+
+EOF
+)"
 ```
 
-Use conventional commit types: `feat`, `fix`, `refactor`, `docs`, `style`, `test`, `build`, `chore`.
+Types: `feat`, `fix`, `refactor`, `docs`, `style`, `test`, `build`, `chore`.
 
-## Step 4: Push Using GitHub CLI
+## Step 4: Push current branch
 
-**Always** use the `gh` CLI for authentication. The `GITHUB_TOKEN` environment variable may be stale, so unset it:
+Push **the current branch**, not always `main`:
 
 ```bash
+BRANCH=$(git branch --show-current)
 gh auth setup-git
-env -u GITHUB_TOKEN git push origin main
+env -u GITHUB_TOKEN git push -u origin "$BRANCH"
 ```
 
-If the push fails due to authentication, run `gh auth status` to diagnose and `gh auth login` to re-authenticate. **Do NOT ask the user to authenticate manually.**
+If auth fails, `gh auth status` / `gh auth login`. Do not ask the user to
+authenticate manually.
 
 ## Step 5: Verify
 
-Confirm the push succeeded by checking `git status` shows the branch is up to date with `origin/main`.
+`git status` should show the branch up to date with `origin/<branch>`.
+
+## Checklist
+
+- [ ] Docs/CHANGELOG/JaCoCo synced as needed
+- [ ] Lint paths include `.agents/AGENTS.md` and skills
+- [ ] Tests green; pushed **current** branch via `gh`

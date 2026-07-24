@@ -1,6 +1,7 @@
 package com.gemini.krakenbot.view.component
 
 import com.gemini.krakenbot.config.AppConfig
+import com.gemini.krakenbot.view.util.ActiveNav
 import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.FormFields
 import com.gemini.krakenbot.view.util.HtmlAttrs
@@ -9,11 +10,12 @@ import com.gemini.krakenbot.view.util.HtmxAttrs
 import com.gemini.krakenbot.view.util.HtmxValues
 import com.gemini.krakenbot.view.util.Icons
 import com.gemini.krakenbot.view.util.Icons.icon
+import com.gemini.krakenbot.view.util.brandMark
 import com.gemini.krakenbot.view.util.formGroup
 import com.gemini.krakenbot.view.util.formSection
+import com.gemini.krakenbot.view.util.primaryNav
 import com.gemini.krakenbot.view.util.Routes
 import com.gemini.krakenbot.view.util.ViewText
-import com.gemini.krakenbot.view.util.a
 import com.gemini.krakenbot.view.util.button
 import com.gemini.krakenbot.view.util.div
 import com.gemini.krakenbot.view.util.h3
@@ -41,21 +43,18 @@ class SettingsFormComponent {
 
                 header {
                     div(CssClass.Layout.HeaderTitleSection) {
-                        a(
-                            cssClass = CssClass.Button.Secondary + CssClass.Button.Icon,
-                            href = Routes.ROOT
-                        ) {
-                            icon(Icons.BACK_ARROW)
-                        }
-                        h1 { +ViewText.SETTINGS_TITLE }
+                        brandMark()
                     }
-                    button(
-                        CssClass.Button.Primary,
-                        type = submit
-                    ) {
-                        id = HtmlIds.SAVE_BUTTON
-                        icon(Icons.FLOPPY_DISK)
-                        span { +ViewText.SAVE_CONFIGURATION }
+                    div(CssClass.Layout.HeaderActions) {
+                        primaryNav(ActiveNav.SETTINGS)
+                        button(
+                            CssClass.Button.Primary,
+                            type = submit
+                        ) {
+                            id = HtmlIds.SAVE_BUTTON
+                            icon(Icons.FLOPPY_DISK)
+                            span { +ViewText.SAVE_CONFIGURATION }
+                        }
                     }
                 }
 
@@ -67,6 +66,7 @@ class SettingsFormComponent {
 
                 div(CssClass.Layout.GlassPanel) {
                     renderGlobalParametersSection(config)
+                    renderSafetyModesSection(config)
                     renderTargetAllocationsSection(config)
                 }
             }
@@ -133,8 +133,14 @@ class SettingsFormComponent {
                             config.settings.fiatDeploymentExponent.toString()
                     }
                 }
+            }
+        }
+    }
 
-                div(CssClass.Form.Group + CssClass.Form.GroupCentered) {
+    private fun DIV.renderSafetyModesSection(config: AppConfig) {
+        formSection(ViewText.SAFETY_MODES, Icons.SHIELD_EXCLAMATION) {
+            div(CssClass.Form.SafetyGroup) {
+                div(CssClass.Form.SafetyToggles) {
                     label(CssClass.Form.CheckboxContainer) {
                         input(
                             type = checkBox,
@@ -145,9 +151,6 @@ class SettingsFormComponent {
                         div(CssClass.Form.CheckboxCustom) {}
                         span { +ViewText.DRY_RUN_MODE }
                     }
-                }
-
-                div(CssClass.Form.Group + CssClass.Form.GroupCentered) {
                     label(CssClass.Form.CheckboxContainer) {
                         input(
                             type = checkBox,

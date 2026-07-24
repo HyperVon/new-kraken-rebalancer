@@ -42,7 +42,7 @@ fi
 
 echo ""
 echo "--- 4. Running Markdown Linting ---"
-if npx markdownlint-cli AGENTS.md CHANGELOG.md README.md docs/*.md .agents/skills/**/SKILL.md .agents/skills/**/*.md; then
+if npx markdownlint-cli .agents/AGENTS.md CHANGELOG.md README.md docs/*.md .agents/skills/**/SKILL.md .agents/skills/**/*.md; then
     echo "[✓] Markdown linting passed cleanly."
 else
     echo "[!] Markdown linting encountered issues."

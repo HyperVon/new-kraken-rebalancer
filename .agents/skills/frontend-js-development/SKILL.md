@@ -1,98 +1,82 @@
 ---
 name: frontend-js-development
-description: Client-side Kotlin/JS subproject development guidelines — DOM manipulation, HTMX event hooks, Ktor SSE streaming, Chart.js JS interop, deep-cloning, and event listener lifecycle cleanup.
+description: >-
+  Client Kotlin/JS — EventSource SSE, SharedFlow payload consumption, HTMX
+  hooks, Chart.js deep-clone, History timeframe updating all 4 summary cards,
+  and Karma coverage thresholds. Use when editing frontend-js/src.
 ---
 
 # Kotlin/JS Client Development (`:frontend-js`)
 
-Use this skill when modifying, extending, or refactoring client-side JavaScript written in Kotlin in the `:frontend-js` subproject (`frontend-js/src/jsMain/kotlin/`).
+Compiles via Kotlin JS IR to `/static/rebalancer.js`.
 
-## Architecture & Responsibilities
+## Responsibilities
 
-The `:frontend-js` subproject compiles to JavaScript via the Kotlin JS IR backend, outputting `/static/rebalancer.js` served by Ktor.
+1. **SSE** — `EventSource` on `Routes` status stream (`/api/status/stream`);
+   parse JSON snapshot payloads broadcast from server `SharedFlow`.
+2. **HTMX hooks** — `htmx:afterSwap` / `htmx:configRequest` to rebind charts after
+   fragment swaps.
+3. **Chart.js** — deep-clone options before each render.
+4. **History timeframe** — when user selects 24h / 7d / 30d / 90d / All, update
+   **all four** summary cards (**All-Time High** / **Period High**, **Total
+   Trades**, **Total Volume Traded**, **Total Fees Paid**) plus charts and trade
+   table.
 
-Key responsibilities:
-
-1. **Live SSE Streaming Listener**: Handles real-time updates over Server-Sent Events (`EventSource("/api/status/stream")`).
-2. **HTMX Event Hooks**: Listens to HTMX request lifecycle events (`htmx:afterSwap`, `htmx:configRequest`) to re-trigger charts and updates.
-3. **Chart.js Integration**: Renders and updates real-time portfolio performance charts without memory leaks.
-4. **Time Frame Selection**: Updates portfolio metric cards and charts dynamically when users select time ranges (24h, 7d, 30d, 90d, All).
-
----
-
-## Chart.js Option Integrity (CRITICAL)
-
-When creating or updating Chart.js instances, **ALWAYS deep-clone** configuration option objects in Kotlin/JS before passing them to Chart.js. Direct object references cause global option mutations across chart re-renders.
+## Chart.js integrity
 
 ```kotlin
 val chartOptions = JSON.parse<dynamic>(JSON.stringify(DEFAULT_CHART_OPTIONS))
-chartOptions.plugins.title.text = "Portfolio Allocation"
-
-val chart = Chart(ctx, json(
-    "type" to "doughnut",
-    "data" to chartData,
-    "options" to chartOptions
-))
 ```
 
----
+Never pass a shared options object by reference.
 
-## DOM Lifecycle & Event Listener Cleanup
+## DOM lifecycle
 
-To prevent memory leaks in single-page HTMX web applications:
+- Clear intervals/timeouts and `removeEventListener` on detach.
+- Null-guard: `document.getElementById(...) ?: return`.
 
-- **Clear Interval Timers**: Cancel active `window.setInterval` or `window.setTimeout` timers when DOM components detach or route changes occur.
-- **Remove Event Listeners**: Always call `removeEventListener` when unmounting dynamic view components.
-- **DOM Container Guards**: Null-check target DOM containers before querying or mutating properties:
+## Shared `:common` constants
 
 ```kotlin
-val container = document.getElementById("chart-container") ?: return
-container.innerHTML = "" // Clean previous canvas node before re-mounting
+import com.gemini.krakenbot.view.util.CssClass
+import com.gemini.krakenbot.view.util.HtmlIds
 ```
 
----
+Do not redefine HTML IDs or CSS class name strings in JS.
 
-## Consuming Shared KMP Core Constants
+## Coverage (Karma / Istanbul)
 
-Client JS code **MUST** consume shared domain constants, HTML IDs, and `CssClass` sealed class names from the shared `:common` module rather than redefining string literals:
+Thresholds in `frontend-js/karma.config.d/coverage.js`:
 
-```kotlin
-// CORRECT — use shared constants:
-import com.gemini.krakenbot.common.CssClass
-import com.gemini.krakenbot.common.HtmlIds
-
-val statusCard = document.getElementById(HtmlIds.STATUS_CARD)
-statusCard?.className = CssClass.StatusCardActive.name
-
-// WRONG — duplicate string literals:
-val statusCard = document.getElementById("status-card")
-statusCard?.className = "status-card-active"
-```
-
----
-
-## Verification & Testing
-
-Verify Kotlin/JS modifications:
+| Metric | Minimum |
+| :--- | ---: |
+| Statements | 90% |
+| Functions | 90% |
+| Lines | 90% |
+| Branches | 75% |
 
 ```bash
 ./gradlew :frontend-js:jsTest
 ```
 
-Build the compiled production `/static/rebalancer.js` bundle:
+## Docs screenshots
 
-```bash
-./gradlew :frontend-js:jsJar
-```
+Chart / History / SSE-driven UI changes that alter README visuals should refresh
+`docs/images/*.png` via
+[docs-screenshot-refresh](../docs-screenshot-refresh/SKILL.md) and keep
+[docs/USER_GUIDE.md](../../../docs/USER_GUIDE.md) aligned
+([user-guide](../user-guide/SKILL.md)).
 
----
+Visual redesign / polish passes:
+[ui-visual-review](../ui-visual-review/SKILL.md) →
+[ui-visual-implement](../ui-visual-implement/SKILL.md). After chart/DOM
+behavior changes, run [ui-manual-qa](../ui-manual-qa/SKILL.md) (History
+views, zoom, dry-run filter, legend toggles).
 
 ## Checklist
 
-Before completing Kotlin/JS frontend tasks:
-
-- [ ] Chart.js options deep-cloned via `JSON.parse(JSON.stringify(...))` before rendering
-- [ ] Active timers and event listeners cleaned up to prevent DOM memory leaks
-- [ ] Shared constants from `:common` consumed for HTML IDs, attributes, and CSS classes
-- [ ] Element null safety enforced (`document.getElementById(...) ?: return`)
-- [ ] Client unit tests pass cleanly (`./gradlew :frontend-js:jsTest`)
+- [ ] SSE consumes `/api/status/stream` payloads correctly
+- [ ] Timeframe change updates **all 4** summary cards
+- [ ] Chart options deep-cloned; listeners cleaned up
+- [ ] `:common` IDs/classes used; Karma thresholds still met
+- [ ] Visual changes → run docs-screenshot-refresh when shipping docs

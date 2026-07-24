@@ -19,6 +19,7 @@ import com.gemini.krakenbot.service.impl.PortfolioCalculations.HUNDRED
 import com.gemini.krakenbot.service.impl.PortfolioCalculations.SCALE_PERCENT
 import com.gemini.krakenbot.service.impl.PortfolioCalculations.SCALE_PRICE
 import com.gemini.krakenbot.service.impl.PortfolioCalculations.SCALE_USD
+import com.gemini.krakenbot.util.ActionLogFormatter
 import com.gemini.krakenbot.view.util.ViewText
 import org.slf4j.LoggerFactory
 import java.math.BigDecimal
@@ -260,7 +261,7 @@ class PortfolioAnalyzerImpl(
 
             if (isTriggered) {
                 actionLog.add(
-                    "Deviation Triggered details: $symbolVal Dev: ${metrics.deviationPercent}%",
+                    ActionLogFormatter.formatDeviationTrigger(symbolVal, metrics.deviationPercent),
                 )
             }
 
@@ -299,7 +300,7 @@ class PortfolioAnalyzerImpl(
                 "USD Deviation triggered but no individual asset triggers. " +
                     "Enforcing fiat correction.",
             )
-            actionLog.add("USD Deviation Triggered. Enforcing fiat correction.")
+            actionLog.add(ActionLogFormatter.formatFiatCorrectionEnforced())
             distributeFiatCorrection(
                 usdDev = usdDeviationAmount,
                 allDevs = allDeviations,

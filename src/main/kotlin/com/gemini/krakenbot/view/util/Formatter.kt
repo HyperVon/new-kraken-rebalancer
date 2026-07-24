@@ -15,8 +15,8 @@ object Formatter {
             null
         } else {
             when (deviation.signum()) {
-                1 -> CssClass.Utility.TextDanger
-                -1 -> CssClass.Utility.TextSuccess
+                1 -> CssClass.Utility.TextOverweight
+                -1 -> CssClass.Utility.TextUnderweight
                 else -> null
             }
         }

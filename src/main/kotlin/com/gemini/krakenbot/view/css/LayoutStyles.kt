@@ -53,25 +53,44 @@ object LayoutStyles {
             gap = 0.75.rem
         }
 
-        ".${CssClass.Layout.HeaderTitleSection} h1" {
+        ".${CssClass.Layout.HeaderTitleSection} h1, .${CssClass.Layout.BrandMark}" {
             fontFamily = CssTheme.fontHeading
-            fontSize = 1.5.rem
+            fontSize = 1.75.rem
             fontWeight = FontWeight.w800
-            background = "linear-gradient(90deg, ${CssTheme.colorBlueAccent.value}, ${CssTheme.colorGreenAccent.value})"
-            put("-webkit-background-clip", "text")
-            put("background-clip", "text")
-            put("-webkit-text-fill-color", "transparent")
-            put("letter-spacing", "-0.025em")
+            put("letter-spacing", "-0.03em")
+            put("line-height", "1.1")
+            margin = Margin(0.px)
+        }
+
+        ".${CssClass.Layout.BrandPrimary}" {
+            color = CssTheme.colorTextPrimary
+        }
+
+        ".${CssClass.Layout.BrandAccent}" {
+            color = CssTheme.colorBlueAccent
         }
 
         ".${CssClass.Layout.HeaderActions}" {
             display = Display.flex
             alignItems = Align.center
-            gap = 1.25.rem
+            gap = 1.rem
+            flexWrap = FlexWrap.wrap
+        }
+
+        ".${CssClass.Layout.StatusCluster}" {
+            display = Display.flex
+            alignItems = Align.center
+            gap = 0.75.rem
+            padding = Padding(0.375.rem, 0.75.rem)
+            borderRadius = 0.75.rem
+            background = CssTheme.colorWhiteSubtle.value
+            borderWidth = 1.px
+            borderStyle = BorderStyle.solid
+            borderColor = CssTheme.colorWhiteFaint
         }
 
         ".${CssClass.DataAge.Container}" {
-            textAlign = TextAlign.right
+            textAlign = TextAlign.left
         }
 
         ".${CssClass.DataAge.Label}" {

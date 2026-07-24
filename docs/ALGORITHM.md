@@ -31,7 +31,7 @@ flowchart TD
 
     subgraph ANALYSIS["Phase 2: Analysis"]
         A1["Calculate Deviation per Asset\n(Current Value vs Target Value)"]
-        A1 --> A2{Any Deviation ≥ Trigger?}
+        A1 --> A2{"Any Deviation ≥ Trigger?"}
         A2 -- "Crypto Triggered" --> A3["Generate BUY/SELL orders"]
         A2 -- "Only USD Triggered" --> A4["Fiat Correction:\nDistribute among counter-balanced assets"]
         A2 -- "None Triggered" --> SKIP[No trades needed]
@@ -45,7 +45,7 @@ flowchart TD
         E1R -- No --> E1F["Log failure, skip cash update"]
         E1C --> E2
         E1F --> E2
-        E2["Refresh USD balance\n(retry up to 3×250ms)"] --> E3["Execute BUY orders second\n(verify cash sufficiency)"]
+        E2["Refresh USD balance\n(up to 3× backoff from 250ms)"] --> E3["Execute BUY orders second\n(verify cash sufficiency)"]
         E3 --> E4["Record Snapshot\n& Trade History\nto SQLite database"]
     end
 
@@ -176,8 +176,9 @@ failure.
     - Only successful sells update the projected cash balance. Failed sells are
       logged but do not inflate the available cash.
 2. **USD Balance Refresh**: After sells complete (if not in dry-run mode), the
-   system polls the Kraken API up to 3 times at 250ms intervals to fetch the
-   settled USD balance. It accepts the balance once it reaches 95% of the
+   system polls the Kraken API up to **3** times with exponential backoff
+   starting at **250ms** (doubling each attempt, capped at 32s) to fetch the
+   settled USD balance. It accepts the balance once it reaches **95%** of the
    projected amount, or uses the best observed value.
 3. **Buy Orders Second**:
     - The system verifies that sufficient cash exists for each planned BUY

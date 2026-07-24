@@ -21,8 +21,8 @@ class FormatterTest : StringSpec() {
         }
 
         "getDeviationClass returns correct class for deviation" {
-            Formatter.getDeviationClass(BigDecimal("1.0")) shouldBe CssClass.Utility.TextDanger
-            Formatter.getDeviationClass(BigDecimal("-1.0")) shouldBe CssClass.Utility.TextSuccess
+            Formatter.getDeviationClass(BigDecimal("1.0")) shouldBe CssClass.Utility.TextOverweight
+            Formatter.getDeviationClass(BigDecimal("-1.0")) shouldBe CssClass.Utility.TextUnderweight
             Formatter.getDeviationClass(BigDecimal.ZERO) shouldBe null
             Formatter.getDeviationClass(null) shouldBe null
         }

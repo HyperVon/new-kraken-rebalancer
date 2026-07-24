@@ -1,82 +1,67 @@
 ---
 name: open-pr
-description: Workflow for opening structured GitHub Pull Requests using GitHub CLI (gh pr create) with pre-PR quality gate checks, automated commit log summarization, and markdown PR body templates.
+description: >-
+  Open a GitHub PR with gh — pre-PR quality gates (Spotless, tests, coverage,
+  markdown lint on .agents/AGENTS.md), conventional title, and structured body.
+  Use when the user asks to open or create a pull request.
 ---
 
 # Open Pull Request Skill
 
-Use this skill when opening a new GitHub Pull Request for the current working branch. It ensures pre-PR quality checks pass, formats conventional PR titles and structured markdown descriptions, and executes `gh pr create` seamlessly.
-
-## Step-by-Step Workflow
-
-### Step 0: Branch & Remote Check
-
-Verify active branch name and remote status:
+## Step 0: Branch & remote
 
 ```bash
 git branch --show-current
 git status
 ```
 
-- **Guard**: Do NOT open a PR from `main`. Ensure you are on a feature/refactor branch (e.g. `refactor/css-styles-cleanup`).
-- **Guard**: Ensure all local commits are pushed to `origin` before creating the PR (`git push origin <branch>`).
+- Do **not** open a PR from `main`.
+- Push the **current** feature branch before creating the PR.
 
-### Step 1: Check Active PRs
-
-Check if a Pull Request is already open for the current branch:
+## Step 1: Existing PRs
 
 ```bash
-gh pr list --head $(git branch --show-current)
+gh pr list --head "$(git branch --show-current)"
 ```
 
-If a PR already exists, output its URL to the user instead of opening a duplicate PR.
+If one exists, return its URL instead of duplicating.
 
-### Step 2: Run Pre-PR Quality Verification
-
-Execute the pre-commit check script to ensure all tests and linting pass:
+## Step 2: Quality gates
 
 ```bash
 ./.agents/skills/commit-and-push/scripts/pre_commit_check.sh
 ```
 
-Both backend JVM tests (`./gradlew test`), JaCoCo coverage verification, markdown linting, and client Kotlin/JS Karma tests MUST pass with zero errors.
+Must pass: markdown lint (`.agents/AGENTS.md` + skills), Spotless 120,
+`./gradlew test`, `:frontend-js:jsTest`, and coverage expectations (JaCoCo
+95%/90%, Karma 90%/75%).
 
-### Step 3: Format PR Title and Markdown Body
+## Step 3: Title & body
 
-1. **PR Title**: Use Conventional Commits format (`feat: ...`, `refactor: ...`, `fix: ...`).
-2. **PR Body Structure**: Use the standardized template in `examples/sample_pr_body.md`:
-   - **Overview**: 2-3 sentence high-level summary of the PR.
-   - **Changes Breakdown**: Grouped bullet points detailing modified/added components.
-   - **Verification Results**: Test pass status, JaCoCo coverage metrics, and linting results.
+Conventional title (`feat:`, `fix:`, `docs:`, …). Body template:
+`examples/sample_pr_body.md` (overview, changes, verification including
+coverage/lint).
 
-### Step 4: Create Pull Request via GitHub CLI
-
-Execute `gh pr create` using GitHub CLI authentication:
+## Step 4: Create via `gh`
 
 ```bash
+BRANCH=$(git branch --show-current)
 gh auth setup-git
-env -u GITHUB_TOKEN gh pr create --base main --head $(git branch --show-current) --title "<title>" --body "<body>"
+env -u GITHUB_TOKEN gh pr create --base main --head "$BRANCH" --title "<title>" --body "<body>"
 ```
 
-Or run the automated helper script:
+Or:
 
 ```bash
 ./.agents/skills/open-pr/scripts/create_pr.sh
 ```
 
-### Step 5: Output PR Link to User
+## Step 5: Return URL
 
-Provide the resulting GitHub Pull Request URL in a clickable link format to the user.
+Give the user the clickable PR link.
 
----
+## Checklist
 
-## Review Completion Checklist
-
-Before finalizing:
-
-- [ ] Branch is pushed to remote origin (`git push origin <branch>`)
-- [ ] Active branch is not `main`
-- [ ] Pre-PR verification script passed cleanly (`pre_commit_check.sh`)
-- [ ] PR title follows Conventional Commits format
-- [ ] PR body contains structured markdown description
-- [ ] Executed `gh pr create` using GitHub CLI
+- [ ] Not on `main`; current branch pushed
+- [ ] `pre_commit_check.sh` green with accurate AGENTS lint path
+- [ ] Conventional title + structured body; `gh pr create` succeeded
