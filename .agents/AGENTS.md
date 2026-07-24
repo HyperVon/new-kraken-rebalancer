@@ -1,143 +1,152 @@
-# Agent Rules & Technical Guidelines — Kraken Rebalancer
+# Agent Rules — Kraken Rebalancer
 
-This repository contains **Kraken Rebalancer**, an autonomous, production-grade cryptocurrency portfolio rebalancing engine.
+Primary agent rules live here: **`.agents/AGENTS.md`** (there is no root `AGENTS.md`).
+Domain skills live under **`.agents/skills/*/SKILL.md`**. Prefer skills for deep how-to; keep this file as non-negotiable invariants and pointers.
 
-Below are the architectural rules, coding constraints, financial math guidelines, UI/UX conventions, git/CLI directives, and quality gates you must strictly adhere to when modifying this codebase.
+Canonical deep docs:
 
----
-
-## 1. Technology Stack & Architecture
-
-### Stack Specification
-
-- **Language**: Kotlin 2.4.10 (100% Kotlin Multiplatform: JVM + JS)
-- **Backend**: Ktor 3.5.1 (Netty engine, Jackson `ContentNegotiation`), Koin 4.2.2 (DI)
-- **Database**: SQLite (`kraken-rebalancer.db`) via JetBrains Exposed ORM 1.3.1
-- **Concurrency**: Kotlin Coroutines (`kotlinx.coroutines` 1.11.0) & Kotlin `Flow` / `SharedFlow`. Offload database queries and network calls to `Dispatchers.IO` (`withContext(Dispatchers.IO)`). Avoid `GlobalScope`; use structured concurrency via component-bound scopes.
-- **Shared Core (`:common`) Integrity**: Kotlin Multiplatform shared module (`common/src/commonMain/`) housing `CssClass` sealed class hierarchies, `HtmlIds`, `HtmlAttrs`, `ViewText`, `TimeRange`, `OrderSide`, `OrderType`, and `PrecisionConstants` shared identically by backend and frontend. `commonMain` must remain 100% pure Kotlin Multiplatform — do NOT import JVM-only (e.g. `java.math.BigDecimal`, SLF4J) or JS-only DOM libraries into `:common`.
-- **Frontend**: Server-side HTML (`kotlinx.html` DSL) + `kotlinx-css` DSL (`CssStyles.kt` with shared `CssClass` sealed hierarchy) + HTMX + Ktor SSE + Client-side Kotlin/JS (`:frontend-js` subproject compiling to JS via Kotlin JS IR backend served as `/static/rebalancer.js`)
-- **Testing**: Kotest 6.2 (`StringSpec`), MockK 1.14, Ktor MockEngine, Karma/Istanbul
-- **Build**: Gradle (Kotlin DSL)
-
-### Architecture Decomposition (SRP)
-
-The engine adheres strictly to the **Single Responsibility Principle**:
-
-1. **`KrakenRebalancerApplication.kt`**: Application entry point, Ktor setup, Koin DI initialization, coroutine lifecycle management, and JVM shutdown hooks.
-2. **`PortfolioManagerImpl` (Orchestrator)**: Manages continuous coroutine rebalancing loops (`startRebalancingLoop`, `stopRebalancingLoop`, `runLoop`) and listens reactively to `ConfigService.watchConfigChanges()`.
-3. **`PortfolioAnalyzerImpl` (Brain)**: Fetches prices and balances, calculates portfolio values, tracks All-Time High (ATH) and drawdown levels, computes signed relative allocation deviations, and generates target `BUY`/`SELL` orders.
-4. **`OrderExecutorImpl` (Brawn)**: Safely executes order sequences with strict cash protection:
-   - **Sell Overweight First**: Executes sell orders to build USD cash reserves.
-   - **USD Balance Verification**: Polls Kraken API up to 3 times (250ms interval) to verify settled liquidity.
-   - **Buy Underweight Second**: Caps buy allocations to **99% of available USD cash** to account for market slippage and exchange fees.
-5. **Persistence Repositories** (`SqliteTradeRepositoryImpl`, `SqlitePortfolioStatsRepositoryImpl`): Handles database persistence, trades, metrics, and cascade operations.
-6. **`TradeHistoryServiceImpl`**: Maintains live snapshot streaming over Ktor SSE (`/api/status/stream`).
+- [`docs/ALGORITHM.md`](../docs/ALGORITHM.md) — rebalancing math & execution
+- [`docs/FLOWS.md`](../docs/FLOWS.md) — Kotlin Flow / SharedFlow / SSE architecture
+- [`docs/EVALUATION.md`](../docs/EVALUATION.md) — scenario evaluation suite
 
 ---
 
-## 2. Code Quality & Codebase Cleanliness
+## Skill index (task → skill)
 
-### No Fully Qualified Names (FQNs)
-
-- **NEVER** use Fully Qualified Names (FQNs) in standard code, services, controllers, HTML DSL components, or test files unless resolving an unavoidable class name collision.
-- Always use explicit `import` statements at the top of the file (e.g. `import com.gemini.krakenbot.util.Formatter` instead of `com.gemini.krakenbot.util.Formatter.formatUSD(...)`).
-
-### Markdown Lint & Code Formatting
-
-- **ALWAYS** address and resolve all markdown lint errors across `.md` files (`README.md`, `CHANGELOG.md`, `AGENTS.md`, `docs/*.md`).
-  - Maintain clean heading hierarchies (`#`, `##`, `###`).
-  - Quote mermaid diagram labels containing special characters.
-  - Surround lists with blank lines and ensure standard indentations.
-  - Ensure markdown table columns use consistent pipe alignments.
-  - Avoid trailing whitespace at the ends of lines.
-- Address all Kotlin compiler warnings (remove unused imports, redundant casts, unnecessary escape characters, and redundant `inline` modifiers).
-
-### Security & Environment Variables
-
-- **NEVER** hardcode API keys, secret tokens (`kraken.key`, `kraken.secret`), or private credentials in source code, properties files, or test assets.
-- Always load secret credentials from environment variables or `rebalancer-config.json` (which is excluded from git via `.gitignore`).
-
----
-
-## 3. Financial Math & Precision Guidelines (CRITICAL)
-
-### BigDecimal Precision Rules
-
-- **NEVER** use `Double` or `Float` for currency amounts, asset balances, trade volumes, or prices.
-- Always use `BigDecimal` with:
-  - **8 decimal places** (`setScale(8, RoundingMode.HALF_UP)`) for cryptocurrency quantities and balances.
-  - **2 decimal places** (`setScale(2, RoundingMode.HALF_UP)`) for USD valuations and fiat totals.
-- **Test Comparisons**: In unit tests, ALWAYS compare `BigDecimal` values using `compareTo() == 0` or Kotest `shouldBeEqualByComparingTo`. NEVER use `.equals()`, as scale differences (e.g. `1.0` vs `1.00`) cause false test failures.
-- **Null Safety Defaults**: Always use `BigDecimal.ZERO` as non-null defaults for stats (e.g., `allTimeHigh`) to prevent NullPointerExceptions.
-- **Signed Relative Deviations**: Keep signed relative deviations (`-` for underweight, `+` for overweight) rather than absolute values so dashboard indicators accurately convey portfolio state.
+| Task | Skill |
+| :--- | :--- |
+| Portfolio math, ATH/drawdown, orders | [portfolio-rebalancing-math](skills/portfolio-rebalancing-math/SKILL.md) |
+| Kraken REST, signing, rate limits | [kraken-api-integration](skills/kraken-api-integration/SKILL.md) |
+| dryRun vs simulation flags | [dry-run-and-simulation](skills/dry-run-and-simulation/SKILL.md) |
+| Koin DI & `rebalancer-config.json` | [koin-di-and-config](skills/koin-di-and-config/SKILL.md) |
+| `:common` KMP shared module | [common-kmp-module](skills/common-kmp-module/SKILL.md) |
+| Coroutines, Flows, SSE | [coroutines-flows-sse](skills/coroutines-flows-sse/SKILL.md) |
+| Trade history sync & dedupe | [trade-history-sync](skills/trade-history-sync/SKILL.md) |
+| Exposed ORM repositories | [exposed-repository](skills/exposed-repository/SKILL.md) |
+| Ktor HTML / CSS / HTMX views | [ktor-html-views](skills/ktor-html-views/SKILL.md) |
+| Kotlin/JS client (`:frontend-js`) | [frontend-js-development](skills/frontend-js-development/SKILL.md) |
+| Kotest / FakeKraken / evaluation | [write-kotest](skills/write-kotest/SKILL.md) |
+| Spotless, JaCoCo, Karma, CI | [gradle-quality-gates](skills/gradle-quality-gates/SKILL.md) |
+| CHANGELOG / README / docs sync | [changelog-and-docs-sync](skills/changelog-and-docs-sync/SKILL.md) |
+| Refactor / cleanup | [kotlin-refactoring-and-cleanup](skills/kotlin-refactoring-and-cleanup/SKILL.md) |
+| Code review | [code-review](skills/code-review/SKILL.md) |
+| Dependency upgrades | [dependency-upgrade](skills/dependency-upgrade/SKILL.md) |
+| Commit & push | [commit-and-push](skills/commit-and-push/SKILL.md) |
+| Open PR | [open-pr](skills/open-pr/SKILL.md) |
+| Autonomous multi-pass audit | [autonomous-code-optimizer](skills/autonomous-code-optimizer/SKILL.md) |
 
 ---
 
-## 4. Database Integrity & Persistence
+## 1. Technology stack (verify against build files)
 
-- **JetBrains Exposed ORM**: Execute schema operations within `transaction` blocks.
-- **Primary Key Targeting**: Always target SQLite records by primary key ID for updates and deletions.
-- **Cascading Cleanups**: Maintain referential integrity by explicitly removing associated child snapshot and action log records when trades or stats are deleted.
-- **Atomic Operations**: Prefer Exposed `upsert` and atomic updates over non-atomic fetch-then-write patterns.
-- **Test Isolation**: All backend tests **MUST** execute against an in-memory SQLite database (`jdbc:sqlite::memory:`) to ensure production databases (`kraken-rebalancer.db`) and local JSON files are never modified during test runs.
+- **Language**: Kotlin **2.4.10** (KMP: JVM + JS)
+- **JDK**: **25** (`java.toolchain`)
+- **Backend**: Ktor **3.5.1** (Netty, Jackson, SSE, HTML), Koin **4.2.2**
+- **Database**: SQLite via JetBrains Exposed **1.3.1**
+- **Concurrency**: `kotlinx.coroutines` **1.11.0** — prefer `Dispatchers.IO` for DB/network; no `GlobalScope`
+- **Frontend**: `kotlinx.html` + `kotlinx-css` + HTMX + Kotlin/JS (`:frontend-js` → `/static/rebalancer.js`)
+- **Testing**: Kotest **6.2**, MockK **1.14**, Karma/Istanbul
+- **Formatting**: Spotless + ktlint **1.3.1**, **120**-char line length; `allWarningsAsErrors` in all modules
 
----
+### Architecture names (SRP)
 
-## 5. Kraken API & Ticker Normalization
-
-- **Symbol Mapping Conventions**:
-  - `BTC` $\rightarrow$ `XBTUSD` (ticker) / `XXBT` or `XBT` (balance)
-  - `DOGE` $\rightarrow$ `XDGUSD` (ticker) / `XXDG` or `DOGE` (balance)
-- **Ticker Normalization**: Standardize all display symbols into clean `BASE/USD` format across UI components, logs, and API payloads.
-- **Rate Limiting**: Protect private Kraken API endpoints using `RateLimiter` backed by coroutine `Mutex` locks. Handle `EGeneral:Temporary lockout` with exponential backoff (starting at 10 seconds, scaling up to 15 minutes on repeated lockouts).
-
----
-
-## 6. Frontend UI/UX & Kotlin/JS Conventions
-
-- **Server-Side HTML & CSS**: Render markup with `kotlinx.html` DSL and style with `kotlinx-css` DSL (`CssStyles.kt`). Use modular layout helpers in `Layouts.kt` (`statusCard`, `glassPanel`).
-- **Visual Design**: Maintain sleek, modern dark mode aesthetics with curated HSL accent colors, clean typography (Inter font), dynamic badges, and responsive tables.
-- **Kotlin/JS Subproject (`:frontend-js`)**: All client-side JavaScript is written in type-safe Kotlin in `:frontend-js`.
-  - **Chart.js Integrity**: Deep-clone configuration option objects in Kotlin/JS before passing them to Chart.js to prevent global option mutations across re-renders.
-  - **DOM Cleanup**: Clear interval timers and event listeners on DOM element detachment to avoid memory leaks.
-- **Time Frame Selector Functionality**: When a user selects a time range (24h, 7d, 30d, 90d, All) on the History page, **all 4 top summary metric cards** (**High Value**, **Total Trades**, **Total Volume Traded**, **Total Fees Paid**) MUST update dynamically alongside the charts and trade log table.
-
----
-
-## 7. Git Workflow & GitHub CLI (`gh`) Directives
-
-- **Token & Push Resolution via GitHub CLI (`gh`)**:
-  - If you encounter git credential prompts, personal access token (PAT) expiration, or push authentication errors, use the GitHub CLI (`gh auth status`, `gh auth login`, `gh git-credential`) or `gh pr create` / `gh release` commands to resolve authentication seamlessly.
-  - **Do NOT ask the user to authenticate manually.** The `gh` CLI is installed and available; use it proactively.
-- **Environment Agnosticism & Public Repository Safety**:
-  - **NEVER** hardcode user-specific filesystem paths (`/Users/...`, `/home/...`, `C:\Users\...`), local machine hostnames (`my-macbook`, `charles-pc`), or developer-specific local network hosts in source code, configuration files, test data, or mock assertions.
-  - **ALWAYS** use relative paths, classpath resources (`getResourceAsStream`), workspace-relative temp paths, or generic environment-agnostic hostnames (`app-server.local`, `localhost`, `example.com`).
-  - This is an open-source, public GitHub repository — all code, configurations, and unit tests must compile and pass seamlessly on any developer machine, CI/CD runner, or OS container.
+| Role | Type |
+| :--- | :--- |
+| Entry / DI / lifecycle | `KrakenRebalancerApplication`, `AppModule` |
+| Orchestrator | `PortfolioManagerImpl` |
+| Brain (snapshot + analysis) | `PortfolioAnalyzerImpl` |
+| Shared math | `PortfolioCalculations` |
+| Brawn (execution) | `OrderExecutorImpl` |
+| Exchange gateway | `DynamicKrakenService` → `KrakenServiceImpl` or `SimulatedKrakenService` |
+| Rate limit | `RateLimiter` (safeLimit **12**, decay **0.33**, `Mutex`) |
+| History reconstruction | `SnapshotHistoryCalculator` |
+| Live history / SSE source | `TradeHistoryServiceImpl` |
+| HTTP | `DashboardRoutes` / `DashboardController` |
+| Views | `view/component/*`, `DashboardView`, `view/css/*` |
+| Shared routes/IDs | `:common` `Routes`, `HtmlIds`, `CssClass`, `ViewText` |
 
 ---
 
-## 8. Testing & Quality Gates
+## 2. Algorithm critical rules
 
-- **Coverage Standard**: Maintain 95%+ (aiming for 100%) line, method, and branch coverage on backend JVM code and 75%+ coverage on Kotlin/JS.
-- **Kotest Spec Structure**: Define Kotest specs (`StringSpec`) using standard class body `init { ... }` blocks with the `@Suppress("unused")` annotation:
+Full detail: [`docs/ALGORITHM.md`](../docs/ALGORITHM.md) and skill [portfolio-rebalancing-math](skills/portfolio-rebalancing-math/SKILL.md).
 
-  ```kotlin
-  @Suppress("unused")
-  class PortfolioServiceTest : StringSpec() {
-      init {
-          "should calculate target allocations correctly" {
-              // Test implementation
-          }
-      }
-  }
-  ```
+- **ATH → drawdown → fiat deployment**: `Deploy% = (DD / MaxDD)^exponent` (capped 100%); effective USD target reduced and redistributed to crypto.
+- **Trigger**: absolute signed relative deviation ≥ `deviationTriggerPercent`.
+- **Fiat correction**: if *only* USD triggers (deposit/withdrawal), redistribute among counter-balanced assets.
+- **Dust**: skip orders below `dustThresholdUSD`.
+- **Sell then buy**: sell overweight first; poll USD up to **3×250ms**; accept balance at **≥95%** of projected; buy capped at **99%** of available USD.
+- **Precision**: `BigDecimal` only — crypto scale **8**, USD scale **2**. Tests: `shouldBeEqualComparingTo` (never `shouldBeEqualByComparingTo` / `.equals()`).
 
-- **Test Doubles**: Use `FakeKrakenService.kt` for integration tests rather than complex `coEvery` mocks.
-- **Async Coroutines**: Wrap suspend calls in `runTest` to execute in virtual time without wall-clock delays.
-- **Mandatory Runtime Verification**: NEVER declare a task, bug fix, or feature complete without running automated build and test commands:
-  - Backend: `./gradlew test`
-  - Frontend: `./gradlew :frontend-js:jsTest`
-- **Build & Documentation Synchronization**: Whenever adding, moving, or deleting packages under `src/main/kotlin/`, immediately update:
-  1. The project structure directory tree in `README.md`.
-  2. JaCoCo coverage exclusion filters in `build.gradle.kts` (`tasks.jacocoTestReport` and `tasks.jacocoTestCoverageVerification`).
-- **Documentation Maintenance**: Update `README.md`, `CHANGELOG.md`, and relevant markdown documentation whenever adding features, modifying public APIs, or refactoring architecture.
+---
+
+## 3. dryRun vs simulation (DISTINCT)
+
+See [dry-run-and-simulation](skills/dry-run-and-simulation/SKILL.md).
+
+- **`simulation`**: `DynamicKrakenService` routes to `SimulatedKrakenService` (offline emulator).
+- **`dryRun`**: suppresses real order placement inside the active backend (`[DRY RUN]` / `[EMULATOR DRY RUN]`).
+- Defaults are `false`. **Never** flip `dryRun = false` casually in examples/tests aimed at live paths. Live trading moves real money — treat credential + live mode changes as high risk.
+
+---
+
+## 4. `:common` ownership & purity
+
+See [common-kmp-module](skills/common-kmp-module/SKILL.md).
+
+Belongs in `common/src/commonMain/`: `CssClass`, `HtmlIds`, `HtmlAttrs`, `HtmxAttrs`, `ViewText`, `Routes`, `TimeRange`, `OrderSide` / `OrderType`, `PrecisionConstants`, `AppConfig` / `Settings` / `Allocation`.
+
+`commonMain` must stay **pure KMP** — no JVM-only (`java.math.BigDecimal`, SLF4J) or JS-only DOM imports.
+
+---
+
+## 5. Quality gates
+
+See [gradle-quality-gates](skills/gradle-quality-gates/SKILL.md).
+
+| Gate | Thresholds |
+| :--- | :--- |
+| JVM JaCoCo | Line / method / instruction **95%**; branch **90%** |
+| JS Istanbul (Karma) | Statements / functions / lines **90%**; branches **75%** |
+
+Mandatory verify before declaring work done:
+
+```bash
+./gradlew build jacocoTestCoverageVerification
+./gradlew :frontend-js:jsTest
+npx markdownlint-cli .agents/AGENTS.md CHANGELOG.md README.md docs/*.md .agents/skills/**/SKILL.md
+./gradlew spotlessCheck
+```
+
+**CodeQL**: currently **disabled** (Kotlin 2.4.x unsupported) — workflow triggers on a non-`main` branch. Do not claim CodeQL is active CI until re-enabled.
+
+---
+
+## 6. Security & local-trust dashboard
+
+- **No user auth** on the dashboard/API — security model is local/private network trust.
+- CORS allows only origins passing `isLocalOrPrivateOrigin` (`localhost`, private RFC1918, `*.local`, etc.).
+- **NEVER** hardcode API keys/secrets. Load from env or gitignored `rebalancer-config.json`.
+- Do not log HMAC signatures or private keys.
+
+---
+
+## 7. Code quality invariants
+
+- **No FQNs** unless resolving a name collision — use imports.
+- **No absolute user paths** or machine-specific hostnames in source/tests.
+- Markdown: lint `.agents/AGENTS.md`, skills, `README.md`, `CHANGELOG.md`, `docs/*.md` — clean heading hierarchy, blank lines around lists.
+- Offload blocking IO with `withContext(Dispatchers.IO)`.
+- GitHub auth via `gh` CLI (`gh auth setup-git`); do not ask the user to authenticate manually.
+- Keep a Changelog; sync README tree + JaCoCo exclusions when packages move — see [changelog-and-docs-sync](skills/changelog-and-docs-sync/SKILL.md).
+
+---
+
+## 8. Testing invariants
+
+See [write-kotest](skills/write-kotest/SKILL.md).
+
+- Kotest `StringSpec` + `init { }`, `@Suppress("unused")`, prefer `IsolationMode.InstancePerTest`.
+- In-memory SQLite only (`:memory:`).
+- Prefer `FakeKrakenService` for deterministic tests; `SimulatedKrakenService` is the production emulator (not the same).
+- Evaluation/E2E/chaos: `EvaluationScenariosTest`, `docs/EVALUATION.md`; Flow tests use `advanceUntilIdle()`.

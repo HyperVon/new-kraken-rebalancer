@@ -19,7 +19,7 @@ The target pull request refactors the `OrderExecutorImpl` class to enforce stric
 - **Suggested Fix**:
 
 ```kotlin
-// Replace .equals() with Kotest shouldBeEqualByComparingTo or compareTo() == 0:
+// Replace .equals() with Kotest shouldBeEqualComparingTo or compareTo() == 0:
 executedOrder.usdAmount shouldBeEqualComparingTo BigDecimal("100.50")
 ```
 

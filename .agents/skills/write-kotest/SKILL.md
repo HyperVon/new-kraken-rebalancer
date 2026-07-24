@@ -1,18 +1,17 @@
 ---
 name: write-kotest
-description: Write Kotest unit tests following the project's established patterns — StringSpec init blocks, BigDecimal comparisons, in-memory SQLite, and FakeKrakenService test doubles.
+description: >-
+  Write Kotest specs and evaluation/E2E tests — StringSpec init blocks,
+  IsolationMode, TestFixtures, FakeKraken vs SimulatedKraken, BigDecimal
+  shouldBeEqualComparingTo, in-memory SQLite, and advanceUntilIdle for Flow
+  tests. Use when adding or changing JVM/JS tests or EvaluationScenariosTest.
 ---
 
 # Writing Kotest Unit Tests
 
-When writing or modifying unit tests for this project, follow these patterns
-exactly.
+Canonical evaluation doc: [`docs/EVALUATION.md`](../../../docs/EVALUATION.md).
 
-## Spec Structure
-
-Always use `StringSpec` with a standard class body `init { ... }` block.
-Apply `@Suppress("unused")` to the class to prevent IDE warnings from
-reflection-based test discovery.
+## Spec structure
 
 ```kotlin
 @Suppress("unused")
@@ -22,158 +21,90 @@ class MyServiceTest : StringSpec() {
 
     init {
         "should do something correctly" {
-            // Test implementation
-        }
-
-        "should handle edge case" {
-            // Test implementation
+            // …
         }
     }
 }
 ```
 
-**Never** use the constructor-lambda form `StringSpec({ ... })`. It causes test
-discovery failures in Gradle and IDE runners.
+Never use constructor-lambda `StringSpec({ … })`. Prefer
+`IsolationMode.InstancePerTest` for mutable fixtures.
 
-## BigDecimal Comparisons
+## TestFixtures
 
-**Never** use `.equals()` to compare `BigDecimal` values. Scale differences
-(e.g. `1.0` vs `1.00`) cause `.equals()` to return false.
+Use `src/test/.../TestFixtures.kt` for shared credentials, pair symbols
+(`XBTUSD`, `XXBTZUSD`), sync keys, and `DEFAULT_TEST_SETTINGS` /
+`DEFAULT_TEST_CONFIG`. Avoid duplicating magic test constants.
 
-```kotlin
-// CORRECT:
-result.shouldBeEqualComparingTo(BigDecimal("100.50"))
-result.compareTo(expected) shouldBe 0
-
-// WRONG — will fail on scale differences:
-result shouldBe BigDecimal("100.50")
-result.equals(expected) shouldBe true
-```
-
-Import the matcher:
+## BigDecimal comparisons
 
 ```kotlin
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
+
+result.shouldBeEqualComparingTo(BigDecimal("100.50"))
 ```
 
-## In-Memory Database Isolation
+Never `.equals()`, `shouldBe` alone on `BigDecimal`, or
+`shouldBeEqualByComparingTo`.
 
-All database tests **must** use an in-memory SQLite database to prevent
-modifying the production `kraken-rebalancer.db` file:
+## In-memory SQLite
 
 ```kotlin
 private val db = DatabaseConfig.init(":memory:")
-private val repository = SqliteTradeRepositoryImpl(db)
 ```
 
-**Never** use a file-based database path in tests.
+Never touch `kraken-rebalancer.db` from tests.
 
-## FakeKrakenService Test Double
+## FakeKrakenService vs SimulatedKrakenService
 
-For tests involving `KrakenService`, use `FakeKrakenService` instead of
-complex `coEvery` mock chains:
+| Double | Role |
+| :--- | :--- |
+| **`FakeKrakenService`** | Test-only controllable fake (suppliers, `executedOrders`) — prefer in unit/evaluation tests |
+| **`SimulatedKrakenService`** | Production emulator used when `settings.simulation=true` |
+
+Do not confuse the two. Evaluation suite uses `FakeKrakenService` — see
+`EvaluationScenariosTest`.
 
 ```kotlin
 val fakeKraken = FakeKrakenService().apply {
     balanceSupplier = {
         mapOf("XXBT" to BigDecimal("0.5"), "ZUSD" to BigDecimal("1000.00"))
     }
-    pricesSupplier = {
-        mapOf("XBTUSD" to BigDecimal("50000.00"))
-    }
 }
 ```
 
-Inspect executed orders via `fakeKraken.executedOrders`.
-
-## Coroutine Testing
-
-Wrap all suspend function calls in `runTest` to use virtual time:
+## Coroutines & Flows
 
 ```kotlin
-"should complete async operation" {
-    runTest {
-        val result = myService.doSomethingAsync()
-        result shouldBe expected
-    }
+runTest {
+    // suspend work
+    advanceUntilIdle() // Flow / SharedFlow collectors, rate limiter, loop events
 }
 ```
 
-Import: `import kotlinx.coroutines.test.runTest`
+Opt in `ExperimentalCoroutinesApi` when using `advanceUntilIdle`.
 
-## IOException Testing for Repositories
+## Evaluation / E2E / chaos
 
-Use the delegating `TransactionManager` pattern to test database error paths:
+- Suite: `EvaluationScenariosTest` (~30 scenarios)
+- Report: `build/reports/scenarios_evaluation_report.md`
+- Run: `./gradlew test --tests "com.gemini.krakenbot.EvaluationScenariosTest"`
+- Principles: no absolute paths, FakeKraken, virtual time, SSE multi-subscriber checks
 
-```kotlin
-class ThrowingTransactionManager(
-    private val delegate: TransactionManager
-) : TransactionManager by delegate {
-    override fun newTransaction(
-        isolation: Int,
-        readOnly: Boolean,
-        outerTransaction: Transaction?
-    ): Transaction {
-        throw IOException("Simulated IO failure")
-    }
-}
-```
+## Kotlin/JS tests
 
-## Client-Side Kotlin/JS (`:frontend-js`) Testing
-
-For client-side tests under `frontend-js/src/jsTest/kotlin/`, use standard `kotlin.test.Test` annotations and manipulate mock DOM containers cleanly:
-
-```kotlin
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlinx.browser.document
-
-class RebalancerJsTest {
-
-    @Test
-    fun shouldUpdateMetricsSummaryCardsOnTimeFrameSelect() {
-        val container = document.createElement("div")
-        container.id = "summary-metrics-container"
-        document.body?.appendChild(container)
-
-        // Run JS handler
-        updateSummaryMetrics("24h")
-
-        val updatedCard = document.getElementById("metric-high-value")
-        assertEquals("$105,250.00", updatedCard?.textContent)
-
-        document.body?.removeChild(container)
-    }
-}
-```
-
-Run client JS tests via Gradle:
+Under `frontend-js/src/jsTest/` — `kotlin.test`, mock DOM, clean up nodes.
+Coverage gates: 90% statements/functions/lines, 75% branches.
 
 ```bash
 ./gradlew :frontend-js:jsTest
+./gradlew test jacocoTestReport jacocoTestCoverageVerification
 ```
-
-## Code Coverage & Reporting
-
-Generate JaCoCo HTML code coverage reports to verify JVM backend tests achieve 95%+ coverage:
-
-```bash
-./gradlew test jacocoTestReport
-```
-
-Inspect HTML coverage reports at `build/reports/jacoco/test/html/index.html`.
 
 ## Checklist
 
-Before submitting test code, verify:
-
-- [ ] JVM tests use `init { ... }` block (not constructor lambda)
-- [ ] Has `@Suppress("unused")` annotation on Kotest spec classes
-- [ ] Uses `shouldBeEqualComparingTo` for `BigDecimal` assertions
-- [ ] Uses in-memory database (`:memory:`)
-- [ ] Uses `FakeKrakenService` instead of complex mocks
-- [ ] Suspend calls wrapped in `runTest`
-- [ ] Client Kotlin/JS tests pass cleanly (`./gradlew :frontend-js:jsTest`)
-- [ ] Code coverage checked via `./gradlew test jacocoTestReport`
-- [ ] Environment agnosticism checked (no machine hostnames like `my-macbook` or user paths in test cases)
-- [ ] No FQNs — all types imported at the top
+- [ ] `init` block + `@Suppress("unused")` + isolation mode
+- [ ] `shouldBeEqualComparingTo`; `:memory:` DB; `TestFixtures` where useful
+- [ ] FakeKraken for tests; Flow tests use `advanceUntilIdle`
+- [ ] Evaluation scenarios updated when algorithm behavior changes
+- [ ] No machine paths/hostnames; no FQNs

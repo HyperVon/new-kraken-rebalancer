@@ -1,79 +1,73 @@
 ---
 name: ktor-html-views
-description: Server-side HTML DSL and CSS development — kotlinx.html DSL, kotlinx-css styling, HTMX dynamic attributes, Layouts.kt helpers, and Ktor HTML routing.
+description: >-
+  Server-side HTML/CSS for the dashboard — view/component/*, DashboardRoutes,
+  DashboardController, kotlinx.html/css, HTMX, and Routes from :common. Use when
+  changing SSR templates, CSS modules, or Ktor HTML/SSE routes.
 ---
 
 # Ktor Server-Side HTML & CSS Views
 
-Use this skill when creating or modifying server-side rendered HTML web templates, Ktor routing endpoints, layout helpers, or CSS styles (`kotlinx.html` DSL, `kotlinx-css` DSL).
+## Layout (actual package structure)
 
-## Architectural Decomposition
+1. **Routing** — `DashboardRoutes.dashboardRouting()` injects `DashboardController`
+   and registers routes.
+2. **Controller** — `DashboardController.registerRoutes()` — HTML pages, fragments,
+   history APIs, SSE `/api/status/stream`.
+3. **Page orchestration** — `DashboardView` composes feature pages.
+4. **Components** — `view/component/*`:
+   - `DashboardShellComponent`, `DashboardFragmentComponent`
+   - `OverviewGridComponent`, `AllocationChartComponent`, `PerformanceTableComponent`
+   - `RecentActivityComponent`, `HistoryPageComponent`, `SettingsFormComponent`
+5. **CSS** — `view/css/*` (`CssTheme`, `LayoutStyles`, `ComponentStyles`, …,
+   `CssStyles` facade).
+6. **Shared paths/IDs** — `:common` `view/util/Routes.kt`, `HtmlIds`, `HtmlAttrs`,
+   `HtmxAttrs`, `ViewText`, `CssClass`.
 
-Server-side HTML rendering follows a strict modular structure:
-
-1. **View Routes** (`com.gemini.krakenbot.controller`): Ktor routing functions that respond to HTTP GET/POST with `call.respondHtml { ... }`.
-2. **Layout Helpers** (`com.gemini.krakenbot.view.Layouts`): Reusable layout components (e.g. `statusCard`, `glassPanel`, `headerNav`).
-3. **Domain Views** (`com.gemini.krakenbot.view`): Feature pages (`DashboardView.kt`, `HistoryView.kt`, `SettingsView.kt`).
-4. **Modular CSS Styles** (`com.gemini.krakenbot.view.css`): Domain-specific styling files (`CssTheme`, `LayoutStyles`, `ComponentStyles`, `FormStyles`, `NavigationStyles`, `MediaQueries`, `CssStyles` facade).
+Path constants (`Routes`): `/`, `/settings`, `/history`, `/fragments/dashboard`,
+`/api/status/stream`, `/api/history/*`, `/api/health`, `/static/*`.
 
 ---
 
-## Type Safety & Shared `:common` Core
-
-HTML templates and CSS builders **MUST** consume shared domain constants, HTML IDs/attributes, and `CssClass` sealed class hierarchies from the shared `:common` module rather than duplicating string literals:
+## Type-safe `:common` usage
 
 ```kotlin
-// CORRECT:
-import com.gemini.krakenbot.common.CssClass
-import com.gemini.krakenbot.common.HtmlIds
-import com.gemini.krakenbot.common.ViewText
+import com.gemini.krakenbot.view.util.CssClass
+import com.gemini.krakenbot.view.util.HtmlIds
+import com.gemini.krakenbot.view.util.ViewText
 
-div(CssClass.GlassCard.name) {
+div(classes = CssClass.GlassCard.name) {
     id = HtmlIds.STATUS_CARD
     h2 { +ViewText.PORTFOLIO_SUMMARY }
 }
-
-// WRONG — magic string literals:
-div("glass-card") {
-    id = "status-card"
-    h2 { +"Portfolio Summary" }
-}
 ```
 
----
+No duplicated magic strings for IDs, CSS classes, or user-visible labels.
 
-## HTMX Integration
+## HTMX
 
-Use `HtmxAttrs` constants for dynamic partial page updates without full browser reloads:
+Use `HtmxAttrs` / `Routes` for partial swaps (e.g. dashboard fragment refresh).
+Prefer type-safe attribute keys over raw `"hx-*"`.
 
-```kotlin
-button {
-    attributes["hx-post"] = "/api/rebalance/trigger"
-    attributes["hx-target"] = "#status-card"
-    attributes["hx-swap"] = "outerHTML"
-    +ViewText.TRIGGER_REBALANCE
-}
-```
+## SSE
 
----
+Live updates: `GET /api/status/stream` — controller collects
+`TradeHistoryService` snapshot flow and sends `ServerSentEvent` payloads.
+See [coroutines-flows-sse](../coroutines-flows-sse/SKILL.md).
 
-## Visual Design System & Aesthetics
+## Design notes
 
-All views must maintain modern dark mode aesthetics:
+Dark glass aesthetic via `CssTheme` HSL tokens; responsive grid/flex. Prefer
+component helpers over one-off markup copies.
 
-- **Colors**: Use HSL color tokens defined in `CssTheme` (dark background, sleek glassmorphism borders, neon accent badges).
-- **Typography**: Clean hierarchy utilizing Inter font styling.
-- **Layout**: Dynamic CSS Grid and Flexbox responsive layouts.
+## Security note
 
----
+Dashboard has **no user authentication**. CORS is limited by
+`isLocalOrPrivateOrigin` — do not weaken origin checks casually.
 
 ## Checklist
 
-Before submitting server-side HTML/CSS code:
-
-- [ ] Consumes `CssClass`, `HtmlIds`, `HtmlAttrs`, and `ViewText` from `:common`
-- [ ] Uses modular layout helpers in `Layouts.kt` for repeated UI structures
-- [ ] Modular CSS definitions placed in `com.gemini.krakenbot.view.css`
-- [ ] HTMX attributes use type-safe `HtmxAttrs` constants
-- [ ] No inline FQNs present
-- [ ] Zero markdown lint or Kotlin compiler warnings
+- [ ] New UI goes in `view/component/` + CSS module; routes via controller
+- [ ] Consumes `CssClass` / `HtmlIds` / `ViewText` / `Routes` from `:common`
+- [ ] SSE path remains `/api/status/stream`
+- [ ] No FQNs; markdown/docs updated if route tree changes

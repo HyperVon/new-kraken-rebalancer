@@ -358,7 +358,7 @@ two complementary `SharedFlow` channels:
 ```text
 ├── .agents/                                # AI Agent rules, guidelines & domain skills
 │   ├── AGENTS.md                          # Repository rules & technical guidelines
-│   └── skills/                            # Domain skills (code-review, commit-and-push, exposed-repository, frontend-js-development, koin-di-and-config, kotlin-refactoring-and-cleanup, kraken-api-integration, ktor-html-views, open-pr, portfolio-rebalancing-math, write-kotest, autonomous-code-optimizer)
+│   └── skills/                            # Domain skills (see .agents/AGENTS.md skill index)
 ├── frontend-js/                            # Kotlin/JS client-side subproject compiling to rebalancer.js
 │   ├── src/jsMain/kotlin/                 # Kotlin/JS frontend source files
 │   │   ├── main.kt                        # Client-side routing entry point

@@ -1,74 +1,89 @@
 ---
 name: kraken-api-integration
-description: Kraken REST API integration — endpoint signatures, symbol mapping (BTC -> XBTUSD/XXBT), rate limiting via Mutex, exponential lockout backoff, and secret key protection.
+description: >-
+  Kraken REST integration — symbol mapping, HMAC-SHA512 signing, RateLimiter
+  call-counter (safeLimit 12, decay 0.33), Mutex, retryWithFlow lockout backoff,
+  and public vs private paths. Use when changing KrakenServiceImpl, RateLimiter,
+  DynamicKrakenService, or exchange credentials handling.
 ---
 
 # Kraken API & Exchange Integration
 
-Use this skill when implementing, modifying, or testing REST API client calls to the Kraken Cryptocurrency Exchange.
+Related: [dry-run-and-simulation](../dry-run-and-simulation/SKILL.md) for
+`dryRun` / `simulation` and `DynamicKrakenService` routing.
 
-## Kraken Symbol Conventions
+## Symbol conventions
 
-Kraken uses legacy ISO-4217 symbol prefixes for major assets. All code interacting with Kraken API payloads **MUST** map display symbols into Kraken REST format:
+| Display | Ticker pair | Balance keys |
+| :--- | :--- | :--- |
+| BTC | `XBTUSD` | `XXBT`, `XBT` |
+| DOGE | `XDGUSD` | `XXDG`, `DOGE` |
+| USD | — | `ZUSD`, `USD` |
 
-- **BTC**:
-  - Ticker Pair: `XBTUSD`
-  - Balance Key: `XXBT` or `XBT`
-- **DOGE**:
-  - Ticker Pair: `XDGUSD`
-  - Balance Key: `XXDG` or `DOGE`
-- **USD**:
-  - Fiat Balance Key: `ZUSD` or `USD`
+Normalize UI/logs to clean `BASE/USD` display form.
 
-```kotlin
-fun normalizeSymbol(krakenSymbol: String): String = when (krakenSymbol) {
-    "XXBT", "XBT" -> "BTC"
-    "XXDG", "XDG", "DOGE" -> "DOGE"
-    "ZUSD" -> "USD"
-    else -> krakenSymbol
-}
-```
+## Public vs private
+
+- **Public** (`queryPublic`): ticker/OHLC — no rate limiter, no HMAC.
+- **Private** (`queryPrivate`): balances, orders, trades history — `RateLimiter` +
+  HMAC-SHA512 + `retryWithFlow`.
+
+DI binds `KrakenService` → `DynamicKrakenService` (live `KrakenServiceImpl` or
+`SimulatedKrakenService`).
 
 ---
 
-## Rate Limiting & Backoff
+## RateLimiter
 
-Private Kraken API endpoints are protected by an IP-based call counter. Exceeding call rate limits triggers `EGeneral:Temporary lockout`.
+`service/impl/RateLimiter.kt`:
 
-Rules:
+- `safeLimit = 12.0`, `decayRate = 0.33` (counter/sec exponential decay)
+- All counter updates under coroutine **`Mutex`**
+- Waits until `callCounter + cost ≤ safeLimit`
 
-1. **Mutex Protection**: Wrap private API calls in a coroutine `Mutex` rate-limiter.
-2. **Exponential Backoff**: Handle lockout responses by backing off with exponential delays (starting at 10 seconds, scaling up to 15 minutes on repeated lockouts).
+Per-endpoint **cost** (in `KrakenServiceImpl.queryPrivate`):
 
-```kotlin
-suspend fun <T> executeRateLimitedCall(block: suspend () -> T): T {
-    return rateLimiter.withLock {
-        try {
-            block()
-        } catch (e: KrakenLockoutException) {
-            log.error("Kraken temporary lockout encountered. Backing off for {}s", backoffSeconds)
-            delay(backoffSeconds * 1000L)
-            throw e
-        }
-    }
-}
-```
+- **2.0** if path contains `TradesHistory`, `Ledgers`, or `ClosedOrders`
+- **1.0** otherwise
 
 ---
 
-## Security & API Credentials
+## HMAC-SHA512 signing
 
-- **Secrets**: API Key (`kraken.key`) and API Secret (`kraken.secret`) must be loaded from environment variables or `rebalancer-config.json`.
-- **Log Masking**: Never print raw HMAC-SHA512 request signatures or private API keys to application logs.
+`KrakenServiceImpl.signRequest` / `KrakenApiConstants`:
+
+1. SHA-256 of `(nonce + postData)`
+2. Prepend URI path bytes
+3. HMAC-SHA512 with Base64-decoded private key
+4. Base64 signature header
+
+Never log raw signatures, API keys, or secrets. Load credentials from env or
+gitignored config.
+
+---
+
+## retryWithFlow & lockout backoff
+
+Defaults in `KrakenServiceImpl`:
+
+| Param | Value |
+| :--- | :--- |
+| `maxAttempts` | 5 (network / rate-limit) |
+| `maxLockoutAttempts` | 9 |
+| `initialBackoffMs` | 2000 |
+| `rateLimitBackoffMs` | 10000 |
+| Lockout start | **10_000** ms |
+| Lockout cap | **15 minutes** (doubles each lockout) |
+
+Retry on `IOException`, `ResponseException`, and messages containing
+`Rate limit exceeded` or `Temporary lockout`.
 
 ---
 
 ## Checklist
 
-Before submitting Kraken API integration code:
-
-- [ ] Ticker and balance symbols mapped cleanly (`BTC` -> `XBTUSD`/`XXBT`)
-- [ ] Tickers normalized to `BASE/USD` display format across UI and logs
-- [ ] Private endpoint calls protected by coroutine `Mutex` rate limiter
-- [ ] `EGeneral:Temporary lockout` handled with exponential backoff
-- [ ] No API keys or secret tokens logged
+- [ ] Symbols mapped (`BTC` → `XBTUSD`/`XXBT`, etc.)
+- [ ] Private calls use RateLimiter + Mutex; public do not
+- [ ] Signing and secrets never logged
+- [ ] Lockout backoff 10s → 15m via `retryWithFlow`
+- [ ] Cross-check dryRun/simulation via DynamicKrakenService

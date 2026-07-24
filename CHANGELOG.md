@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.12.7] - 2026-07-24
+
+### Changed
+
+- **Agent docs & skills**: Rewrite `.agents/AGENTS.md` as invariants + skill index;
+  expand domain skills (algorithm, Kraken API, Koin/config, views, JS, Kotest);
+  add `common-kmp-module`, `coroutines-flows-sse`, `dry-run-and-simulation`,
+  `gradle-quality-gates`, `changelog-and-docs-sync`, and `trade-history-sync`;
+  fix markdown-lint paths to `.agents/AGENTS.md`, coverage gate wording, matcher
+  name `shouldBeEqualComparingTo`, and commit-and-push current-branch push.
+
 ## [6.12.6] - 2026-07-24
 
 ### Changed
