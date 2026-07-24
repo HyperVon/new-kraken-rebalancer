@@ -771,7 +771,7 @@ internal fun buildAllocationDriftChart(snapshots: Array<dynamic>) {
                     mapSnapshotsToPoints(snapshots) { s ->
                         if (s.assets != null && s.assets[sym] != null) {
                             s.assets[sym]
-                                .currentPercent
+                                .deviationPercent
                                 .toString()
                                 .toDoubleOrNull() ?: 0.0
                         } else {
@@ -801,13 +801,17 @@ internal fun buildAllocationDriftChart(snapshots: Array<dynamic>) {
             ctx.parsed.y
                 .toString()
                 .toDoubleOrNull() ?: 0.0
-        "$label: ${yVal.toFixed(PrecisionConstants.SCALE_USD)}%"
+        val sign = if (yVal >= 0.0) "+" else ""
+        "$label: $sign${yVal.toFixed(PrecisionConstants.SCALE_USD)}% ${ViewText.HISTORY_VS_TARGET}"
     }
 
-    options.scales.y.min = 0
-    options.scales.y.max = PrecisionConstants.TOTAL_ALLOCATION_PERCENTAGE
+    options.scales.y[ChartProps.BEGIN_AT_ZERO] = true
+    options.scales.y.grid.color = { ctx: dynamic ->
+        val tickValue = ctx.tick?.value.toString().toDoubleOrNull()
+        if (tickValue == 0.0) ChartProps.COLOR_ZERO_LINE else ChartProps.COLOR_GRID_LINE
+    }
     options.scales.y.ticks.callback = { v: Double, _: dynamic, _: dynamic ->
-        formatPctTick(v, includePlus = false)
+        formatPctTick(v, includePlus = true)
     }
 
     createOrUpdate(HtmlIds.ALLOCATION_DRIFT_CHART, createLineChartConfig(datasets, options))

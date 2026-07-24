@@ -223,12 +223,14 @@ class HistoryTest : StringSpec() {
                                             "valueUSD" to 60,
                                             "balance" to 2,
                                             "currentPercent" to 60,
+                                            "deviationPercent" to 20,
                                         ),
                                     Asset.USD to
                                         json(
                                             "valueUSD" to 40,
                                             "balance" to 40,
                                             "currentPercent" to 40,
+                                            "deviationPercent" to -20,
                                         ),
                                 ),
                         ),
@@ -242,6 +244,7 @@ class HistoryTest : StringSpec() {
                                             "valueUSD" to 80,
                                             "balance" to 3,
                                             "currentPercent" to 80,
+                                            "deviationPercent" to 60,
                                         ),
                                 ),
                         ),
@@ -270,6 +273,10 @@ class HistoryTest : StringSpec() {
                 (window.asDynamic().chartConfigs.length as Int) shouldBe 5
                 val portfolioConfig = window.asDynamic().chartConfigs[0]
                 portfolioConfig.data.datasets.length as Int shouldBe 2
+                val deviationConfig = window.asDynamic().chartConfigs[2]
+                deviationConfig.data.datasets[0].data[0].y.toString().toDouble() shouldBe 20.0
+                deviationConfig.data.datasets[1].data[0].y.toString().toDouble() shouldBe -20.0
+                (deviationConfig.options.scales.y.beginAtZero as Boolean) shouldBe true
                 val updatedPortfolioConfig = window.asDynamic().chartConfigs[4]
                 (updatedPortfolioConfig.data.datasets[1].hidden as Boolean) shouldBe true
                 createOrUpdate(

@@ -37,6 +37,7 @@ object ChartProps {
     const val GRID = "grid"
     const val TICKS = "ticks"
     const val MAX_TICKS_LIMIT = "maxTicksLimit"
+    const val BEGIN_AT_ZERO = "beginAtZero"
     const val USE_POINT_STYLE = "usePointStyle"
     const val POINT_STYLE = "pointStyle"
     const val POINT_STYLE_WIDTH = "pointStyleWidth"
@@ -105,6 +106,7 @@ object ChartProps {
     const val COLOR_TOOLTIP_TITLE = "#f8fafc"
     const val COLOR_TOOLTIP_BODY = "#cbd5e1"
     const val COLOR_GRID_LINE = "rgba(51, 65, 85, 0.3)"
+    const val COLOR_ZERO_LINE = "rgba(148, 163, 184, 0.65)"
     const val COLOR_TICK = "#64748b"
 
     // Color palette

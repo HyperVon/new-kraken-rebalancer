@@ -171,13 +171,15 @@ Each chart has **Zoom − / Zoom + / Reset**. You can also wheel, pinch, or
 drag-to-zoom on the **x-axis** only. Changing the time range rebuilds charts and
 clears zoom. Reset restores the full selected window.
 
-### Allocation drift & P&L
+### Allocation deviation & P&L
 
-![History — allocation drift and cumulative P&L](images/history-charts.png)
+![History — allocation deviation and cumulative P&L](images/history-charts.png)
 
-- **Allocation Drift Over Time** — Each series is that asset’s **current
-  allocation %** of the portfolio (0–100% Y scale). At any point BTC + ETH + USD
-  (and other symbols) should roughly sum to 100%.
+- **Allocation Deviation from Target** — Each series shows signed relative
+  deviation from that asset’s target. **0%** means on target, positive values
+  are overweight, and negative values are underweight. The Y-axis scales around
+  the observed drift so small departures and post-rebalance corrections remain
+  visible.
 - **Cumulative Realized P&L** — Net cash-flow style P&L over the window
   (includes dry-run trades when that filter is enabled). Negative axis ticks use
   `-$…` formatting.

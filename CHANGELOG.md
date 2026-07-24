@@ -39,6 +39,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **History allocation signal**: Replaced the low-signal 0–100% current-share
+  chart with signed relative deviation from each asset’s target. The axis now
+  includes a 0% on-target baseline and auto-scales to make small overweight /
+  underweight movements and rebalance corrections visible.
 - **Dashboard header density**: Looser StatusCluster / Data Age / status-card
   spacing on laptop widths so LIVE + Data Age and overview cards are not
   vertically crammed.
