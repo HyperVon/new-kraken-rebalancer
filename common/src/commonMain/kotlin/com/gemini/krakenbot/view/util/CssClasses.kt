@@ -168,6 +168,8 @@ sealed class CssClass(open val value: String) {
         object ChartTools : History("history-chart-tools")
         object ZoomBtn : History("history-zoom-btn")
         object ChartContainer : History("chart-container")
+        object ChartScrubber : History("history-chart-scrubber")
+        object ChartScrubberInput : History("history-chart-scrubber-input")
         object TradeLogHeader : History("history-trade-log-header")
         object MutedSmallText : History("history-muted-small-text")
         object EmptyTableCell : History("history-empty-table-cell")
@@ -205,6 +207,7 @@ sealed class CssClass(open val value: String) {
         val HOVERABLE_TR = "tr" + Table.Hoverable.querySelector
         val TIME_RANGE_BTNS = History.TimeRangeBtn.querySelector
         val ZOOM_BTNS = History.ZoomBtn.querySelector
+        val CHART_SCRUBBERS = History.ChartScrubberInput.querySelector
         const val TARGET_INPUTS = "input[name=\"${FormFields.TARGETS}\"]"
         const val SYMBOL_INPUTS = "input[name=\"${FormFields.SYMBOLS}\"]"
     }

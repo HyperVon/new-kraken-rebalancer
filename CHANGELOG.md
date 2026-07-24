@@ -6,6 +6,47 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Parallel multi-agent guidance**: Always-on Cursor rule
+  (`.cursor/rules/parallel-multi-agent.mdc`) plus
+  [`parallel-multi-agent`](.agents/skills/parallel-multi-agent/SKILL.md) skill so
+  agents fan out independent workstreams concurrently and keep coupled edits
+  single-threaded.
+- **Agent operating rules**: `.cursor/rules/no-blocking-long-processes.mdc`,
+  `prefer-project-skills.mdc`, and path-triggered `ui-change-verification.mdc`
+  (laptop viewport, CSS cache-bust, post-UI QA smells).
+- **Portable agent norms**: [`.agents/OPERATING.md`](.agents/OPERATING.md) is the
+  framework-agnostic source of truth for always-on rules; Cursor `.mdc` files
+  project it. Also added root [`CLAUDE.md`](CLAUDE.md) and
+  [`.github/copilot-instructions.md`](.github/copilot-instructions.md) so Claude
+  Code and Copilot load the same guidance from a clone.
+- **`post-deploy-ui-smoke` skill**: Fast post-deploy hard-refresh + STYLE /
+  REGRESSION smoke (complements full `ui-manual-qa`).
+- **History chart pan scrubber**: After x-axis zoom, a bottom range slider pans
+  the visible window; drag-pan is disabled so drag-to-zoom no longer competes
+  with scroll/pan on the same gesture.
+- **Stylesheet cache-bust**: `/static/style.css?v=<content-hash>` so 24h CSS
+  caching cannot leave clients on stale rules after deploy.
+
+### Changed
+
+- **Dashboard header density**: Looser StatusCluster / Data Age / status-card
+  spacing on laptop widths so LIVE + Data Age and overview cards are not
+  vertically crammed.
+- **History view presets**: Applying a preset (e.g. Day · Total only) no longer
+  gets overwritten by the previous chart’s legend visibility on rebuild.
+- **Chart legends**: Prefer line point-style markers instead of heavy bordered
+  boxes around every series label.
+- **Agent skill guardrails (post-deploy UI QA)**: Expanded `ui-manual-qa`
+  checklist with `STYLE-*` (CSS cache-bust / glass controls), `REGRESSION-*`
+  (desktop header density, deviation legend, chart legend markers),
+  strengthened **Day · Total only** and chart zoom/scrubber cases;
+  `ui-visual-review` now calls out the same production regression smells at
+  laptop viewport (~1280–1440px).
+
 ## [6.12.13] - 2026-07-24
 
 ### Added

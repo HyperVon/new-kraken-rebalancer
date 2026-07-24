@@ -53,8 +53,8 @@ object ComponentStyles {
         ".glass-panel.status-card" {
             display = Display.flex
             flexDirection = FlexDirection.column
-            gap = 0.75.rem
-            padding = Padding(1.35.rem, 1.5.rem)
+            gap = 1.rem
+            padding = Padding(1.5.rem, 1.625.rem)
         }
 
         ".${CssClass.StatusCard.Header}" {
@@ -89,6 +89,7 @@ object ComponentStyles {
             fontWeight = FontWeight.w700
             fontFamily = CssTheme.fontHeading
             put("letter-spacing", "-0.02em")
+            put("line-height", "1.2")
         }
 
         ".status-card.success .${CssClass.StatusCard.Value}" {
@@ -97,8 +98,10 @@ object ComponentStyles {
 
         ".${CssClass.StatusCard.Sub}" {
             put("margin-top", "auto")
+            paddingTop = 0.125.rem
             fontSize = 0.75.rem
             color = CssTheme.colorTextSecondary
+            put("line-height", "1.4")
         }
 
         // Allocation Charts

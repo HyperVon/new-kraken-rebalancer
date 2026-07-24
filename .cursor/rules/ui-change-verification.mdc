@@ -1,0 +1,27 @@
+---
+description: After UI/SSR/JS visual changes, verify laptop density, cache-bust, and QA skills
+globs: src/main/kotlin/com/gemini/krakenbot/view/**/*.kt,frontend-js/src/**/*.kt,common/src/commonMain/kotlin/com/gemini/krakenbot/view/util/**/*.kt
+alwaysApply: false
+---
+
+<!-- Canonical portable copy: .agents/OPERATING.md § UI change verification -->
+
+# UI change verification
+
+When editing dashboard HTML/CSS/HTMX or `:frontend-js` charts/DOM:
+
+## Before calling done
+
+1. **Viewport** — Judge layout at **laptop ~1280–1440px**, not only mobile. Cropped screenshots are not “mobile” unless the user says so.
+2. **Cache** — Stylesheet must stay cache-busted (`/static/style.css?v=…`). New controls that look like native white buttons usually mean stale CSS.
+3. **Interactions** — Prefer running `.agents/skills/ui-manual-qa` (or its STYLE/REGRESSION cases) after meaningful UI work; don’t rely on unit tests alone for click/zoom/view presets.
+4. **Visuals** — If appearance changed for README/User Guide, run docs-screenshot-refresh when shipping docs.
+5. **Safety chrome** — Keep Simulation / Dry Run obvious; never hide trading-mode clarity.
+
+## Common misses (regression smells)
+
+- Squished LIVE + Data Age header cluster
+- Concatenated deviation legend (“Over targetUnder target”)
+- History Views/Zoom unstyled native buttons
+- View presets that don’t hide series (Day · Total only)
+- Chart drag that both zooms and pans without a separate pan control

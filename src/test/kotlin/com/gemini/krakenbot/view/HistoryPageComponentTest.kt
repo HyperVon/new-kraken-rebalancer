@@ -26,6 +26,8 @@ class HistoryPageComponentTest : StringSpec() {
             htmlString shouldContain "chartjs-plugin-zoom"
             htmlString shouldContain "hammer.min.js"
             htmlString shouldContain "data-zoom-action=\"in\""
+            htmlString shouldContain "history-chart-scrubber-input"
+            htmlString shouldContain "aria-label=\"Pan zoomed chart"
             htmlString shouldContain "rebalancer.js"
         }
     }

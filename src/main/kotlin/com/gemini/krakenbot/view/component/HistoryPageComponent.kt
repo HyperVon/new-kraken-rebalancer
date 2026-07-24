@@ -137,6 +137,17 @@ class HistoryPageComponent {
                     id = chart.canvasId
                 }
             }
+            div(CssClass.History.ChartScrubber) {
+                input(classes = CssClass.History.ChartScrubberInput.value, type = InputType.range) {
+                    min = "0"
+                    max = "100"
+                    step = "0.1"
+                    value = "0"
+                    disabled = true
+                    attributes[HtmlAttrs.DATA_CHART_ID] = chart.canvasId
+                    attributes[HtmlAttrs.ARIA_LABEL] = "${ViewText.HISTORY_PAN_CHART}: ${chart.title}"
+                }
+            }
         }
     }
 

@@ -75,6 +75,22 @@ first
    (requires a valid `rebalancer-config.json` for local runs that load config)
 4. Open a pull request against `main` with a clear description of what and why
 
+## AI / coding agents
+
+Agent guidance is **in the repo** (commit it; do not gitignore `.cursor/`):
+
+| Path | Audience |
+| :--- | :--- |
+| [`.agents/AGENTS.md`](.agents/AGENTS.md) | All agents — stack, invariants, skill index |
+| [`.agents/OPERATING.md`](.agents/OPERATING.md) | All agents — always-on operating norms |
+| [`.agents/skills/`](.agents/skills/) | All agents — task workflows |
+| [`.cursor/rules/`](.cursor/rules/) | Cursor — auto-loaded projections of OPERATING.md |
+| [`CLAUDE.md`](CLAUDE.md) | Claude Code — points at `.agents/` |
+| [`.github/copilot-instructions.md`](.github/copilot-instructions.md) | GitHub Copilot — points at `.agents/` |
+
+When changing always-on norms, update **OPERATING.md** and the matching
+`.cursor/rules/*.mdc` files together.
+
 ## Code Guidelines
 
 - **Language:** Kotlin for all development (JVM backend + Kotlin/JS client);

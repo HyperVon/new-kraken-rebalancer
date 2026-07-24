@@ -22,6 +22,7 @@ import kotlin.js.Date
 import kotlin.js.Promise
 import kotlin.js.json
 import com.gemini.krakenbot.view.util.CssClass.Query.TIME_RANGE_BTNS as TIME_RANGE_BTNS_QUERY
+import com.gemini.krakenbot.view.util.CssClass.Query.CHART_SCRUBBERS as CHART_SCRUBBERS_QUERY
 import com.gemini.krakenbot.view.util.CssClass.Query.ZOOM_BTNS as ZOOM_BTNS_QUERY
 
 @JsName("Chart")
@@ -50,6 +51,9 @@ private fun buildLegendConfig(): dynamic =
                         ChartProps.FAMILY to ChartProps.FONT_INTER,
                         ChartProps.SIZE to ChartProps.FONT_SIZE_LEGEND,
                     ),
+                ChartProps.USE_POINT_STYLE to true,
+                ChartProps.POINT_STYLE to ChartProps.LEGEND_POINT_STYLE_LINE,
+                ChartProps.POINT_STYLE_WIDTH to ChartProps.LEGEND_POINT_STYLE_WIDTH,
             ),
     )
 
@@ -104,7 +108,7 @@ private fun buildZoomPluginConfig(): dynamic =
     json(
         ChartProps.PAN to
             json(
-                ChartProps.ENABLED to true,
+                ChartProps.ENABLED to false,
                 ChartProps.MODE to ChartProps.MODE_X,
             ),
         ChartProps.ZOOM to
@@ -144,6 +148,15 @@ private val charts = mutableMapOf<String, dynamic>()
 internal var currentRange = TimeRange.THIRTY_DAYS.key
 private var allTrades: Array<dynamic> = emptyArray()
 internal val visibilityStates = mutableMapOf<String, MutableMap<String, Boolean>>()
+private val pendingPresetVisibility = mutableSetOf<String>()
+private val originalChartRanges = mutableMapOf<String, ChartRange>()
+private val historyChartIds =
+    listOf(
+        HtmlIds.PORTFOLIO_VALUE_CHART,
+        HtmlIds.ASSET_HOLDINGS_CHART,
+        HtmlIds.ALLOCATION_DRIFT_CHART,
+        HtmlIds.CUMULATIVE_PL_CHART,
+    )
 
 fun registerHistoryGlobals() {
     window.asDynamic().chartDefaults = chartDefaults
@@ -152,6 +165,7 @@ fun registerHistoryGlobals() {
 fun initHistory() {
     HistoryViewPrefs.initToolbar()
     setupZoomButtons()
+    setupChartScrubbers()
     setupSyncProgressAndLoad()
 }
 
@@ -184,6 +198,8 @@ internal fun historyCaptureVisibility(): Map<String, Map<String, Boolean>> {
 
 internal fun historyApplyVisibility(visibility: Map<String, Map<String, Boolean>>) {
     visibilityStates.clear()
+    pendingPresetVisibility.clear()
+    pendingPresetVisibility.addAll(historyChartIds)
     for ((canvasId, labels) in visibility) {
         visibilityStates[canvasId] = labels.toMutableMap()
     }
@@ -199,6 +215,8 @@ internal fun resetHistoryUiState() {
     }
     charts.clear()
     visibilityStates.clear()
+    pendingPresetVisibility.clear()
+    originalChartRanges.clear()
     currentRange = TimeRange.THIRTY_DAYS.key
     allTrades = emptyArray()
     HistoryViewPrefs.resetInteractionState()
@@ -255,8 +273,127 @@ internal fun setupZoomButtons() {
                 ZoomActions.OUT -> chart.zoom(ChartProps.ZOOM_FACTOR_OUT)
                 ZoomActions.RESET -> chart.resetZoom()
             }
+            syncChartScrubber(canvasId)
         })
     }
+}
+
+internal data class ChartRange(
+    val min: Double,
+    val max: Double,
+) {
+    val span: Double
+        get() = max - min
+}
+
+internal data class ChartScrubberState(
+    val enabled: Boolean,
+    val position: Double,
+)
+
+internal fun setupChartScrubbers() {
+    val scrubbers = document.querySelectorAll(CHART_SCRUBBERS_QUERY)
+    for (i in 0 until scrubbers.length) {
+        val scrubber = scrubbers.item(i) as? HTMLInputElement ?: continue
+        scrubber.addEventListener(HtmlEvents.INPUT, {
+            val canvasId = scrubber.getAttribute(HtmlAttrs.DATA_CHART_ID) ?: return@addEventListener
+            panChartToScrubberPosition(canvasId, scrubber.value.toDoubleOrNull() ?: 0.0)
+        })
+    }
+}
+
+internal fun chartScrubberState(
+    chart: dynamic,
+    fallbackRange: ChartRange?,
+): ChartScrubberState? {
+    val fullRange = chartInitialRange(chart) ?: fallbackRange ?: return null
+    val currentRange = chartCurrentRange(chart) ?: return null
+    if (fullRange.span <= 0.0 || currentRange.span <= 0.0 || currentRange.span >= fullRange.span) {
+        return ChartScrubberState(enabled = false, position = 0.0)
+    }
+
+    val movableSpan = fullRange.span - currentRange.span
+    val position = ((currentRange.min - fullRange.min) / movableSpan * PrecisionConstants.HUNDRED_INT)
+        .coerceIn(0.0, PrecisionConstants.HUNDRED_INT.toDouble())
+    return ChartScrubberState(enabled = true, position = position)
+}
+
+internal fun syncChartScrubber(canvasId: String) {
+    val scrubber =
+        document
+            .querySelector("$CHART_SCRUBBERS_QUERY[${HtmlAttrs.DATA_CHART_ID}=\"$canvasId\"]")
+            as? HTMLInputElement ?: return
+    val state = chartScrubberState(charts[canvasId], originalChartRanges[canvasId])
+    scrubber.disabled = state?.enabled != true
+    scrubber.value = if (state?.enabled == true) state.position.toString() else "0"
+}
+
+internal fun panChartToScrubberPosition(
+    canvasId: String,
+    position: Double,
+) {
+    val chart = charts[canvasId] ?: return
+    val fullRange = chartInitialRange(chart) ?: originalChartRanges[canvasId] ?: return
+    val currentRange = chartCurrentRange(chart) ?: return
+    if (fullRange.span <= currentRange.span) return
+
+    val start =
+        fullRange.min +
+            (fullRange.span - currentRange.span) *
+                (position / PrecisionConstants.HUNDRED_INT).coerceIn(0.0, 1.0)
+    setChartXRange(chart, ChartRange(start, start + currentRange.span))
+    syncChartScrubber(canvasId)
+}
+
+private fun chartInitialRange(chart: dynamic): ChartRange? {
+    val getInitialScaleBounds = chart?.getInitialScaleBounds
+    if (getInitialScaleBounds != null && getInitialScaleBounds != undefined) {
+        val bounds = getInitialScaleBounds()
+        val min = dynamicNumber(bounds?.x?.min)
+        val max = dynamicNumber(bounds?.x?.max)
+        if (min != null && max != null) return ChartRange(min, max)
+    }
+    return null
+}
+
+private fun chartCurrentRange(chart: dynamic): ChartRange? {
+    val scale = chart?.scales?.x ?: return null
+    val min = dynamicNumber(scale.min) ?: return null
+    val max = dynamicNumber(scale.max) ?: return null
+    return ChartRange(min, max)
+}
+
+private fun configDataRange(config: dynamic): ChartRange? {
+    val datasets = config.data?.datasets ?: return null
+    val points = mutableListOf<Double>()
+    val datasetCount: Int = datasets.length.unsafeCast<Int>()
+    for (i in 0 until datasetCount) {
+        val data = datasets[i].data ?: continue
+        val pointCount: Int = data.length.unsafeCast<Int>()
+        for (j in 0 until pointCount) {
+            dynamicNumber(data[j].x)?.let(points::add)
+        }
+    }
+    return if (points.isEmpty()) null else ChartRange(points.min(), points.max())
+}
+
+private fun dynamicNumber(value: dynamic): Double? {
+    if (value == null || value == undefined) return null
+    value.toString().toDoubleOrNull()?.let { return it }
+    return Date(value.toString()).getTime().takeUnless { it.isNaN() }
+}
+
+private fun setChartXRange(
+    chart: dynamic,
+    range: ChartRange,
+) {
+    if (chart.options == null || chart.options == undefined) chart.options = json()
+    if (chart.options.scales == null || chart.options.scales == undefined) chart.options.scales = json()
+    if (chart.options.scales.x == null || chart.options.scales.x == undefined) chart.options.scales.x = json()
+    chart.options.scales.x.min = range.min
+    chart.options.scales.x.max = range.max
+    val update = chart.update
+    if (update != null && update != undefined) update()
 }
 
 internal fun loadHistoryAfterSync(): Promise<Unit> =
@@ -390,19 +527,22 @@ internal fun createOrUpdate(
     config: dynamic,
 ) {
     val existingChart: dynamic = charts[canvasId]
+    val applyingPresetVisibility = canvasId in pendingPresetVisibility
     if (existingChart != null && existingChart != undefined) {
-        val states = mutableMapOf<String, Boolean>()
-        val datasets = existingChart.data.datasets
-        if (datasets != null && datasets != undefined) {
-            val length: Int = (datasets.length).unsafeCast<Int>()
-            for (i in 0 until length) {
-                val ds = datasets[i]
-                val label = ds.label.toString()
-                val visible: Boolean = (existingChart.isDatasetVisible(i)).unsafeCast<Boolean>()
-                states[label] = visible
+        if (!applyingPresetVisibility) {
+            val states = mutableMapOf<String, Boolean>()
+            val datasets = existingChart.data.datasets
+            if (datasets != null && datasets != undefined) {
+                val length: Int = (datasets.length).unsafeCast<Int>()
+                for (i in 0 until length) {
+                    val ds = datasets[i]
+                    val label = ds.label.toString()
+                    val visible: Boolean = (existingChart.isDatasetVisible(i)).unsafeCast<Boolean>()
+                    states[label] = visible
+                }
             }
+            visibilityStates[canvasId] = states
         }
-        visibilityStates[canvasId] = states
         try {
             existingChart.destroy()
         } catch (_: Throwable) {
@@ -426,6 +566,9 @@ internal fun createOrUpdate(
 
     val ctx = document.getElementById(canvasId) ?: return
     charts[canvasId] = Chart(ctx, config)
+    configDataRange(config)?.let { originalChartRanges[canvasId] = it }
+    pendingPresetVisibility.remove(canvasId)
+    syncChartScrubber(canvasId)
 }
 
 internal fun buildPortfolioValueChart(snapshots: Array<dynamic>) {

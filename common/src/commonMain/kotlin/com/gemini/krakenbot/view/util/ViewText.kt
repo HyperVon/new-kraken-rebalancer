@@ -84,6 +84,7 @@ object ViewText {
     const val HISTORY_ZOOM_IN = "Zoom +"
     const val HISTORY_ZOOM_OUT = "Zoom −"
     const val HISTORY_ZOOM_RESET = "Reset"
+    const val HISTORY_PAN_CHART = "Pan zoomed chart"
     const val HISTORY_VIEW_OVERVIEW = "Overview"
     const val HISTORY_VIEW_DAY_TOTAL = "Day · Total only"
     const val HISTORY_VIEW_WEEK_ALLOCATION = "Week · Allocation"

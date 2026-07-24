@@ -37,6 +37,9 @@ object ChartProps {
     const val GRID = "grid"
     const val TICKS = "ticks"
     const val MAX_TICKS_LIMIT = "maxTicksLimit"
+    const val USE_POINT_STYLE = "usePointStyle"
+    const val POINT_STYLE = "pointStyle"
+    const val POINT_STYLE_WIDTH = "pointStyleWidth"
 
     const val TIME_TYPE = "time"
     const val TIME_FORMAT_DEFAULT = "MMM d, yyyy HH:mm"
@@ -47,6 +50,8 @@ object ChartProps {
     const val PADDING_TOOLTIP = 12
     const val CORNER_RADIUS_TOOLTIP = 8
     const val MAX_TICKS_LIMIT_DEFAULT = 8
+    const val LEGEND_POINT_STYLE_LINE = "line"
+    const val LEGEND_POINT_STYLE_WIDTH = 24
 
     const val TENSION_CURVED = 0.3
     const val BORDER_WIDTH_PRIMARY = 2.0

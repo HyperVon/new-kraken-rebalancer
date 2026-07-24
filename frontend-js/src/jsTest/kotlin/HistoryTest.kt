@@ -7,6 +7,7 @@ import com.gemini.krakenbot.view.util.ChartProps
 import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.HistoryViewIds
 import com.gemini.krakenbot.view.util.HtmlAttrs
+import com.gemini.krakenbot.view.util.HtmlEvents
 import com.gemini.krakenbot.view.util.HtmlIds
 import com.gemini.krakenbot.view.util.HtmlTags
 import com.gemini.krakenbot.view.util.ViewText
@@ -20,6 +21,7 @@ import kotlinx.browser.localStorage
 import kotlinx.browser.window
 import kotlinx.coroutines.await
 import org.w3c.dom.*
+import org.w3c.dom.events.Event
 import kotlin.js.json
 import kotlin.test.assertEquals
 
@@ -566,6 +568,119 @@ class HistoryTest : StringSpec() {
                 }
                 zoomCalls shouldBe 2
                 resetCalls shouldBe 1
+            } finally {
+                document.body!!.removeChild(container)
+                resetHistoryUiState()
+            }
+        }
+
+        "createOrUpdate keeps pending Day · Total only visibility on rebuild" {
+            resetHistoryUiState()
+            val container = document.createElement(HtmlTags.DIV)
+            container.innerHTML = """<canvas id="${HtmlIds.PORTFOLIO_VALUE_CHART}"></canvas>"""
+            document.body!!.appendChild(container)
+            var lastConfig: dynamic = null
+            window.asDynamic().Chart =
+                mockChartConstructor { config ->
+                    lastConfig = config
+                }
+            registerHistoryGlobals()
+            try {
+                val datasets =
+                    arrayOf(
+                        json(ChartProps.LABEL to ViewText.TOTAL_PORTFOLIO, ChartProps.DATA to emptyArray<dynamic>()),
+                        json(ChartProps.LABEL to Asset.BTC, ChartProps.DATA to emptyArray<dynamic>()),
+                    )
+                createOrUpdate(
+                    HtmlIds.PORTFOLIO_VALUE_CHART,
+                    createLineChartConfig(datasets, getClonedChartOptions()),
+                )
+
+                val dayTotal = HistoryViewPrefs.builtInViews().first { it.id == HistoryViewIds.DAY_TOTAL }
+                historyApplyVisibility(dayTotal.visibility)
+                createOrUpdate(
+                    HtmlIds.PORTFOLIO_VALUE_CHART,
+                    createLineChartConfig(datasets, getClonedChartOptions()),
+                )
+
+                (lastConfig.data.datasets[0].hidden as Boolean) shouldBe false
+                (lastConfig.data.datasets[1].hidden as Boolean) shouldBe true
+                visibilityStates[HtmlIds.PORTFOLIO_VALUE_CHART]
+                    ?.get(ChartProps.DATASET_VISIBILITY_DEFAULT) shouldBe false
+            } finally {
+                document.body!!.removeChild(container)
+                resetHistoryUiState()
+            }
+        }
+
+        "chartScrubberState enables only when zoomed" {
+            val full =
+                jsObject {
+                    getInitialScaleBounds = {
+                        json("x" to json("min" to 0.0, "max" to 100.0))
+                    }
+                    scales = json("x" to json("min" to 0.0, "max" to 100.0))
+                }
+            chartScrubberState(full, null)?.enabled shouldBe false
+
+            val zoomed =
+                jsObject {
+                    getInitialScaleBounds = {
+                        json("x" to json("min" to 0.0, "max" to 100.0))
+                    }
+                    scales = json("x" to json("min" to 20.0, "max" to 40.0))
+                }
+            val state = chartScrubberState(zoomed, null)
+            state?.enabled shouldBe true
+            state?.position shouldBe 25.0
+        }
+
+        "setupChartScrubbers pans x window from slider input" {
+            resetHistoryUiState()
+            val container = document.createElement(HtmlTags.DIV)
+            container.innerHTML =
+                """
+                <canvas id="${HtmlIds.PORTFOLIO_VALUE_CHART}"></canvas>
+                <input class="${CssClass.History.ChartScrubberInput}" type="range" min="0" max="100"
+                  ${HtmlAttrs.DATA_CHART_ID}="${HtmlIds.PORTFOLIO_VALUE_CHART}" value="0" disabled />
+                """.trimIndent()
+            document.body!!.appendChild(container)
+            var updateCalls = 0
+            window.asDynamic().Chart = { _: dynamic, config: dynamic ->
+                jsObject {
+                    data = config.data
+                    options = config.options
+                    destroy = {}
+                    isDatasetVisible = { _: Int -> true }
+                    getInitialScaleBounds = {
+                        json("x" to json("min" to 0.0, "max" to 100.0))
+                    }
+                    scales = json("x" to json("min" to 20.0, "max" to 40.0))
+                    update = { updateCalls++ }
+                }
+            }
+            registerHistoryGlobals()
+            try {
+                val points =
+                    arrayOf(
+                        json("x" to 0.0, "y" to 1.0),
+                        json("x" to 100.0, "y" to 2.0),
+                    )
+                createOrUpdate(
+                    HtmlIds.PORTFOLIO_VALUE_CHART,
+                    createLineChartConfig(
+                        arrayOf(json(ChartProps.LABEL to ViewText.TOTAL_PORTFOLIO, ChartProps.DATA to points)),
+                        getClonedChartOptions(),
+                    ),
+                )
+                setupChartScrubbers()
+                syncChartScrubber(HtmlIds.PORTFOLIO_VALUE_CHART)
+                val scrubber =
+                    document.querySelector(CssClass.Query.CHART_SCRUBBERS) as HTMLInputElement
+                scrubber.disabled shouldBe false
+                scrubber.value = "50"
+                scrubber.dispatchEvent(Event(HtmlEvents.INPUT))
+                updateCalls shouldBe 1
             } finally {
                 document.body!!.removeChild(container)
                 resetHistoryUiState()

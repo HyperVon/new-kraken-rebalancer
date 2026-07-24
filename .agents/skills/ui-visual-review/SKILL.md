@@ -38,6 +38,10 @@ Also note empty/error/loading states if you can trigger them safely in simulatio
 (e.g. before seed finishes — usually skip; prefer seeded happy path + obvious
 clutter).
 
+Capture at **desktop/laptop width (~1280–1440px)** in addition to any narrow
+viewport shots — recent production regressions (header status cluster density,
+History toolbar styling) only show at laptop breakpoints, not mobile-only QA.
+
 **Out of scope for this skill:** implementing CSS/HTML/JS, changing trading
 math, rewriting docs (except quoting findings).
 
@@ -153,6 +157,28 @@ pixel tweaks. Cover at least:
 9. **Responsive risk** — Does `80rem` max-width leave awkward margins; would
    narrow viewports collapse badly?
 10. **Motion / feedback** — HTMX/SSE updates feel calm vs jumpy (if observed live).
+
+### Production regression smells (mandatory on full reviews)
+
+Flag these explicitly when seen — they map to `ui-manual-qa` `STYLE-*` /
+`REGRESSION-*` / History cases:
+
+1. **Stale CSS after deploy** — controls render as default white native
+   `<button>` / `<select>` because `/static/style.css` was cached (24h); verify
+   `?v=` cache-bust or hard-refresh before judging styling.
+2. **Desktop header density (~1280–1440px)** — Status cluster **LIVE** +
+   **Data Age** vertically squished, clipped, or illegibly stacked (not only a
+   mobile problem).
+3. **Deviation legend spacing** — Dashboard Asset Performance **Over target** /
+   **Under target** labels concatenated without spaced amber/blue dots.
+4. **History toolbar styling** — Views select and Zoom − / + / Reset must match
+   dark glass theme; white OS-native chrome is a regression.
+5. **Day · Total only preset** — Portfolio Value chart should hide non-**Total**
+   series in legend and on canvas (not just de-emphasized).
+6. **Chart zoom vs pan** — Drag on chart should zoom the x-axis, not pan; after
+   zoom, bottom range scrubber pans the visible window (not drag-pan).
+7. **Chart.js legend markers** — Line/point swatches (`usePointStyle`); not
+   heavy bordered box chips around every legend label.
 
 ### Design-system stance
 
