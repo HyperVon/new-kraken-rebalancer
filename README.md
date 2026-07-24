@@ -17,14 +17,14 @@ several months.**
 
 | Layer           | Technology                                                                                           |
 | --------------- | ---------------------------------------------------------------------------------------------------- |
-| **Language**    | Kotlin 2.4.0 (Kotlin Multiplatform: JVM + JS)                                                        |
-| **Backend**     | Ktor 3.5.0 (Netty engine), Koin 4.2.1 (DI), Jackson 2.22                                             |
-| **Database**    | SQLite (via JetBrains Exposed ORM 0.61.0)                                                            |
+| **Language**    | Kotlin 2.4.10 (Kotlin Multiplatform: JVM + JS)                                                       |
+| **Backend**     | Ktor 3.5.1 (Netty engine), Koin 4.2.2 (DI), Jackson 2.22                                             |
+| **Database**    | SQLite (via JetBrains Exposed ORM 1.3.1)                                                             |
 | **HTTP Client** | Ktor CIO Client (async, coroutine-native)                                                            |
 | **Concurrency** | Kotlin Coroutines (`kotlinx.coroutines` 1.11.0)                                                      |
 | **Frontend**    | Server-side HTML (kotlinx.html DSL + HTMX), kotlinx-css DSL, Ktor SSE + Client-side Kotlin/JS        |
 | **API**         | Kraken REST API with HMAC-SHA512 authentication                                                      |
-| **Testing**     | Kotest 6.1, MockK 1.14, JaCoCo (95%+ JVM coverage), Karma/Istanbul (90%+ JS statement/func coverage) |
+| **Testing**     | Kotest 6.2, MockK 1.14, JaCoCo (95%+ JVM coverage), Karma/Istanbul (90%+ JS statement/func coverage) |
 | **Build**       | Gradle (Kotlin DSL)                                                                                  |
 
 ---

@@ -1,7 +1,7 @@
 package com.gemini.krakenbot.repository.table
 
-import org.jetbrains.exposed.sql.ReferenceOption
-import org.jetbrains.exposed.sql.Table
+import org.jetbrains.exposed.v1.core.ReferenceOption
+import org.jetbrains.exposed.v1.core.Table
 
 /** Exposed table definition for asset snapshots — one row per asset per rebalancing cycle. */
 object AssetSnapshotTable : Table("asset_snapshots") {

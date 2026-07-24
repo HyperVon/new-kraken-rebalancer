@@ -6,10 +6,10 @@ import com.gemini.krakenbot.repository.table.HistorySyncMetadataTable
 import com.gemini.krakenbot.repository.table.PortfolioSnapshotTable
 import com.gemini.krakenbot.repository.table.PortfolioStatsTable
 import com.gemini.krakenbot.repository.table.TradeTable
-import org.jetbrains.exposed.sql.Database
-import org.jetbrains.exposed.sql.SchemaUtils
-import org.jetbrains.exposed.sql.transactions.transaction
-import org.jetbrains.exposed.sql.vendors.currentDialect
+import org.jetbrains.exposed.v1.jdbc.Database
+import org.jetbrains.exposed.v1.jdbc.SchemaUtils
+import org.jetbrains.exposed.v1.jdbc.transactions.transaction
+import org.jetbrains.exposed.v1.jdbc.vendors.currentDialectMetadata
 import org.slf4j.LoggerFactory
 import java.sql.Connection
 import java.sql.DriverManager
@@ -56,7 +56,7 @@ object DatabaseConfig {
             // SchemaUtils.createMissingTablesAndColumns is deprecated; use the non-deprecated
             // building blocks sequentially within one transaction instead.
             transaction(database) {
-                currentDialect.resetCaches()
+                currentDialectMetadata.resetCaches()
 
                 val createStatements = SchemaUtils.createStatements(*tables)
                 createStatements.forEach { exec(it) }
@@ -71,7 +71,7 @@ object DatabaseConfig {
                         .filter { it !in executedStatements }
                 mappingStatements.forEach { exec(it) }
 
-                currentDialect.resetCaches()
+                currentDialectMetadata.resetCaches()
             }
             log.info("Database initialized successfully.")
         }

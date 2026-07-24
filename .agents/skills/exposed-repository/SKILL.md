@@ -7,6 +7,17 @@ description: Create or modify JetBrains Exposed ORM repository implementations f
 
 When creating or modifying Exposed ORM repository implementations and table schemas, follow these patterns exactly.
 
+## Exposed 1.x Packages
+
+This project uses Exposed **1.3.x**. Prefer these import roots:
+
+- Table / column / operator APIs: `org.jetbrains.exposed.v1.core.*` (e.g. `Table`, `eq`, `and`, `inList`)
+- JDBC query / DML APIs: `org.jetbrains.exposed.v1.jdbc.*` (e.g. `Database`, `selectAll`, `insert`, `update`, `deleteWhere`)
+- Transactions: `org.jetbrains.exposed.v1.jdbc.transactions.transaction` and `JdbcTransaction` receivers
+- Schema metadata caches: `org.jetbrains.exposed.v1.jdbc.vendors.currentDialectMetadata`
+
+Do **not** use the legacy `org.jetbrains.exposed.sql.*` packages.
+
 ## Table & Schema Definitions
 
 Define database tables extending `LongIdTable` or `Table` with explicit precision and foreign key cascading rules:
