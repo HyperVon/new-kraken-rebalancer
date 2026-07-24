@@ -14,6 +14,7 @@ import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.shouldBe
+import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
@@ -35,7 +36,7 @@ class PortfolioManagerOrderExecutionTest : StringSpec() {
 
     init {
         beforeTest {
-            every {
+            coEvery {
                 portfolioStatsRepository.load()
             } returns PortfolioStats(BigDecimal.ZERO)
             portfolioAnalyzer = PortfolioAnalyzerImpl(

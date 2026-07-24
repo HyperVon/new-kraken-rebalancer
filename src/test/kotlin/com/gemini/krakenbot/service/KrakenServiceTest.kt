@@ -95,9 +95,9 @@ class KrakenServiceTest : StringSpec() {
 
                 val balances = service.getBalances()
 
-                balances[TestFixtures.XXBTZUSD]?.toDouble() shouldBe 63000.0
-                balances["XETHZUSD"]?.toDouble() shouldBe 3000.0
-                balances["USD"]?.toDouble() shouldBe 5000.0
+                balances[TestFixtures.XXBTZUSD]!!.shouldBeEqualComparingTo(BigDecimal("63000.0"))
+                balances["XETHZUSD"]!!.shouldBeEqualComparingTo(BigDecimal("3000.0"))
+                balances["USD"]!!.shouldBeEqualComparingTo(BigDecimal("5000.0"))
             }
         }
 
@@ -109,8 +109,8 @@ class KrakenServiceTest : StringSpec() {
 
                 val prices = service.getTickerPrices("XXBTZUSD,XETHZUSD")
 
-                prices[TestFixtures.XXBTZUSD]?.toDouble() shouldBe 65000.0
-                prices["XETHZUSD"]?.toDouble() shouldBe 3200.0
+                prices[TestFixtures.XXBTZUSD]!!.shouldBeEqualComparingTo(BigDecimal("65000.0"))
+                prices["XETHZUSD"]!!.shouldBeEqualComparingTo(BigDecimal("3200.0"))
             }
         }
 
@@ -414,7 +414,7 @@ class KrakenServiceTest : StringSpec() {
                 )
 
                 val balances = service.getBalances()
-                balances[TestFixtures.XXBTZUSD]?.toDouble() shouldBe 63000.0
+                balances[TestFixtures.XXBTZUSD]!!.shouldBeEqualComparingTo(BigDecimal("63000.0"))
             }
         }
 
@@ -1017,7 +1017,7 @@ class KrakenServiceTest : StringSpec() {
                 )
 
                 val balances = service.getBalances()
-                balances[TestFixtures.XXBTZUSD]?.toDouble() shouldBe 63000.0
+                balances[TestFixtures.XXBTZUSD]!!.shouldBeEqualComparingTo(BigDecimal("63000.0"))
                 attempt shouldBe 2
             }
         }
@@ -1063,7 +1063,7 @@ class KrakenServiceTest : StringSpec() {
                 )
 
                 val balances = service.getBalances()
-                balances[TestFixtures.XXBTZUSD]?.toDouble() shouldBe 63000.0
+                balances[TestFixtures.XXBTZUSD]!!.shouldBeEqualComparingTo(BigDecimal("63000.0"))
                 attempt shouldBe 2
                 // First lockout wait starts at 10s.
                 currentTime shouldBe 10_000L
@@ -1112,7 +1112,7 @@ class KrakenServiceTest : StringSpec() {
                 )
 
                 val balances = service.getBalances()
-                balances[TestFixtures.XXBTZUSD]?.toDouble() shouldBe 63000.0
+                balances[TestFixtures.XXBTZUSD]!!.shouldBeEqualComparingTo(BigDecimal("63000.0"))
                 attempt shouldBe 9
                 // 10+20+40+80+160+320+640 seconds, then the 15-minute cap.
                 val expectedWaitMs =
@@ -1196,7 +1196,7 @@ class KrakenServiceTest : StringSpec() {
                 )
 
                 val balances = service.getBalances()
-                balances[TestFixtures.XXBTZUSD]?.toDouble() shouldBe 63000.0
+                balances[TestFixtures.XXBTZUSD]!!.shouldBeEqualComparingTo(BigDecimal("63000.0"))
                 attempt shouldBe 2
             }
         }
@@ -1239,7 +1239,7 @@ class KrakenServiceTest : StringSpec() {
                 )
 
                 val balances = service.getBalances()
-                balances[TestFixtures.XXBTZUSD]?.toDouble() shouldBe 63000.0
+                balances[TestFixtures.XXBTZUSD]!!.shouldBeEqualComparingTo(BigDecimal("63000.0"))
                 attempt shouldBe 2
             }
         }
@@ -1252,7 +1252,7 @@ class KrakenServiceTest : StringSpec() {
                 val ohlc = service.getOHLC(TestFixtures.XXBTZUSD, 1440, null)
                 ohlc.size shouldBe 1
                 ohlc[0].first shouldBe 1616662800L
-                ohlc[0].second.toDouble() shouldBe 52500.0
+                ohlc[0].second.shouldBeEqualComparingTo(BigDecimal("52500.0"))
                 service.lastFetchedCount.get() shouldBe 0
             }
         }

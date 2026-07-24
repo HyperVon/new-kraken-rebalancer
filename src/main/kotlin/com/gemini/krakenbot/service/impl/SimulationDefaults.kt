@@ -1,21 +1,25 @@
 package com.gemini.krakenbot.service.impl
 
 import com.gemini.krakenbot.model.Asset
+import java.math.BigDecimal
 
 object SimulationDefaults {
-    val INITIAL_PRICES =
+    val DEFAULT_PRICE: BigDecimal = BigDecimal("10")
+    val TOTAL_PORTFOLIO_VALUE_USD: BigDecimal = BigDecimal("100000.00")
+
+    val INITIAL_PRICES: Map<String, BigDecimal> =
         mapOf(
-            Asset.BTC to 60000.0,
-            Asset.ETH to 3000.0,
-            Asset.USD to 1.0,
-            Asset.USDT to 1.0,
-            Asset.USDC to 1.0,
-            Asset.DOGE to 0.15,
-            Asset.SOL to 140.0,
-            Asset.ADA to 0.50,
-            Asset.XRP to 0.60,
-            Asset.DOT to 6.0,
-            Asset.LINK to 15.0,
-            Asset.LTC to 80.0,
+            Asset.BTC to BigDecimal("60000"),
+            Asset.ETH to BigDecimal("3000"),
+            Asset.USD to BigDecimal.ONE,
+            Asset.USDT to BigDecimal.ONE,
+            Asset.USDC to BigDecimal.ONE,
+            Asset.DOGE to BigDecimal("0.15"),
+            Asset.SOL to BigDecimal("140"),
+            Asset.ADA to BigDecimal("0.50"),
+            Asset.XRP to BigDecimal("0.60"),
+            Asset.DOT to BigDecimal("6"),
+            Asset.LINK to BigDecimal("15"),
+            Asset.LTC to BigDecimal("80"),
         )
 }

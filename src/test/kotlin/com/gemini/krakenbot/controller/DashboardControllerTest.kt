@@ -27,6 +27,7 @@ import io.ktor.client.statement.*
 import io.ktor.http.*
 import io.ktor.server.application.*
 import io.ktor.server.testing.*
+import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
@@ -115,7 +116,7 @@ class DashboardControllerTest : StringSpec() {
         }
 
         "getDashboardFragment_NoSnapshot_ReturnsWaitingMessage" {
-            every { tradeHistoryService.getLatestSnapshot() } returns null
+            coEvery { tradeHistoryService.getLatestSnapshot() } returns null
 
             testApplication {
                 application {
@@ -175,8 +176,8 @@ class DashboardControllerTest : StringSpec() {
                     fiatDeploymentPercent = BigDecimal.ZERO,
                     effectiveUsdTargetPercent = BigDecimal("33.33"),
                 )
-            every { tradeHistoryService.getLatestSnapshot() } returns snapshot
-            every { tradeHistoryService.getHistory() } returns listOf(snapshot)
+            coEvery { tradeHistoryService.getLatestSnapshot() } returns snapshot
+            coEvery { tradeHistoryService.getHistory() } returns listOf(snapshot)
 
             testApplication {
                 application {
@@ -544,7 +545,7 @@ class DashboardControllerTest : StringSpec() {
                     effectiveUsdTargetPercent = BigDecimal.ZERO,
                 )
 
-            every { tradeHistoryService.getLatestSnapshot() } returns snapshot1
+            coEvery { tradeHistoryService.getLatestSnapshot() } returns snapshot1
             every { tradeHistoryService.getHistoryFlow() } returns
                 flowOf(
                     snapshot2,
@@ -573,7 +574,7 @@ class DashboardControllerTest : StringSpec() {
         }
 
         "sseStatusStream_HandlesCancellationException" {
-            every { tradeHistoryService.getLatestSnapshot() } returns null
+            coEvery { tradeHistoryService.getLatestSnapshot() } returns null
             every { tradeHistoryService.getHistoryFlow() } returns
                 flow {
                     throw CancellationException("Simulated cancel")
@@ -598,7 +599,7 @@ class DashboardControllerTest : StringSpec() {
         }
 
         "sseStatusStream_HandlesGenericExceptionGracefully" {
-            every { tradeHistoryService.getLatestSnapshot() } returns null
+            coEvery { tradeHistoryService.getLatestSnapshot() } returns null
             every { tradeHistoryService.getHistoryFlow() } returns
                 flow {
                     throw RuntimeException("Simulated error")
@@ -631,7 +632,7 @@ class DashboardControllerTest : StringSpec() {
         }
 
         "getApiHistorySnapshots_ReturnsJson" {
-            every { tradeHistoryService.getSnapshotsInRange(any(), any()) } returns emptyList()
+            coEvery { tradeHistoryService.getSnapshotsInRange(any(), any()) } returns emptyList()
             testApplication {
                 application {
                     configureTestEnv()
@@ -643,7 +644,7 @@ class DashboardControllerTest : StringSpec() {
         }
 
         "getApiHistoryTrades_ReturnsJson" {
-            every { tradeHistoryService.getTradesInRange(any(), any()) } returns emptyList()
+            coEvery { tradeHistoryService.getTradesInRange(any(), any()) } returns emptyList()
             testApplication {
                 application {
                     configureTestEnv()
@@ -663,7 +664,7 @@ class DashboardControllerTest : StringSpec() {
                     totalFeesPaid = BigDecimal("25.50"),
                     latestSnapshotTime = Instant.now(),
                 )
-            every { tradeHistoryService.getHistoryStats(any(), any()) } returns stats
+            coEvery { tradeHistoryService.getHistoryStats(any(), any()) } returns stats
             testApplication {
                 application {
                     configureTestEnv()
@@ -675,7 +676,7 @@ class DashboardControllerTest : StringSpec() {
         }
 
         "getApiHistorySnapshots_RangeFilters_Branches" {
-            every { tradeHistoryService.getSnapshotsInRange(any(), any()) } returns emptyList()
+            coEvery { tradeHistoryService.getSnapshotsInRange(any(), any()) } returns emptyList()
             testApplication {
                 application {
                     configureTestEnv()
@@ -695,7 +696,7 @@ class DashboardControllerTest : StringSpec() {
         }
 
         "getApiHistorySnapshots_NoRangeParam_DefaultsTo30d" {
-            every { tradeHistoryService.getSnapshotsInRange(any(), any()) } returns emptyList()
+            coEvery { tradeHistoryService.getSnapshotsInRange(any(), any()) } returns emptyList()
             testApplication {
                 application {
                     configureTestEnv()
@@ -726,8 +727,8 @@ class DashboardControllerTest : StringSpec() {
                     fiatDeploymentPercent = BigDecimal.ZERO,
                     effectiveUsdTargetPercent = BigDecimal.ZERO,
                 )
-            every { tradeHistoryService.getHistoryStats() } returns stats
-            every { tradeHistoryService.getLatestSnapshot() } returns snapshot
+            coEvery { tradeHistoryService.getHistoryStats() } returns stats
+            coEvery { tradeHistoryService.getLatestSnapshot() } returns snapshot
 
             testApplication {
                 application {
@@ -752,8 +753,8 @@ class DashboardControllerTest : StringSpec() {
                     totalFeesPaid = BigDecimal("25.50"),
                     latestSnapshotTime = Instant.now(),
                 )
-            every { tradeHistoryService.getHistoryStats() } returns stats
-            every { tradeHistoryService.getLatestSnapshot() } returns null
+            coEvery { tradeHistoryService.getHistoryStats() } returns stats
+            coEvery { tradeHistoryService.getLatestSnapshot() } returns null
 
             testApplication {
                 application {
@@ -768,9 +769,9 @@ class DashboardControllerTest : StringSpec() {
         }
 
         "getSyncProgress_ReturnsJson" {
-            every { tradeHistoryService.isHistorySeeded() } returns false
-            every { tradeHistoryService.getSyncMetadata("sync_offset") } returns "123"
-            every { tradeHistoryService.getSyncMetadata("sync_total") } returns "456"
+            coEvery { tradeHistoryService.isHistorySeeded() } returns false
+            coEvery { tradeHistoryService.getSyncMetadata("sync_offset") } returns "123"
+            coEvery { tradeHistoryService.getSyncMetadata("sync_total") } returns "456"
 
             testApplication {
                 application {

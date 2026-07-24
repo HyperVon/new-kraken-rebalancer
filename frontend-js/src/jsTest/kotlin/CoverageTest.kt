@@ -236,29 +236,20 @@ class CoverageTest : StringSpec() {
             try {
                 registerHistoryGlobals()
 
-                // Test 24h range
+                // Test 24h range — mutate clone only, leave shared defaults untouched
                 loadAll(TimeRange.TWENTY_FOUR_HOURS.key).await()
-                (
-                    window
-                        .asDynamic()
-                        .chartDefaults.scales.x.time.unit as String
-                ) shouldBe "hour"
+                (getClonedChartOptions().scales.x.time.unit as String) shouldBe "hour"
+                (window.asDynamic().chartDefaults.scales.x.time.unit == null) shouldBe true
 
-                // Test 'all' range (should delete unit)
+                // Test 'all' range (should delete unit on clone)
                 loadAll(TimeRange.ALL.key).await()
-                (
-                    window
-                        .asDynamic()
-                        .chartDefaults.scales.x.time.unit == null
-                ) shouldBe true
+                (getClonedChartOptions().scales.x.time.unit == null) shouldBe true
+                (window.asDynamic().chartDefaults.scales.x.time.unit == null) shouldBe true
 
                 // Test default (day) range
                 loadAll(TimeRange.THIRTY_DAYS.key).await()
-                (
-                    window
-                        .asDynamic()
-                        .chartDefaults.scales.x.time.unit as String
-                ) shouldBe "day"
+                (getClonedChartOptions().scales.x.time.unit as String) shouldBe "day"
+                (window.asDynamic().chartDefaults.scales.x.time.unit == null) shouldBe true
             } finally {
                 document.body!!.removeChild(container)
             }

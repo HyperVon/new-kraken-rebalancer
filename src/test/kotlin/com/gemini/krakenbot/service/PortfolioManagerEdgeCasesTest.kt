@@ -46,7 +46,7 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
 
     init {
         beforeTest {
-            every { portfolioStatsRepository.load() } returns PortfolioStats(
+            coEvery { portfolioStatsRepository.load() } returns PortfolioStats(
                 BigDecimal.ZERO,
             )
             portfolioAnalyzer = PortfolioAnalyzerImpl(
@@ -167,33 +167,35 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
                 portfolioManager.startRebalancingLoop()
                 portfolioManager.performRebalanceCycle()
 
-                verify(exactly = 0) { tradeHistoryService.addSnapshot(any()) }
+                coVerify(exactly = 0) { tradeHistoryService.addSnapshot(any()) }
             }
         }
 
         "testDistributeFiatCorrection_NoCounterbalancingAssets" {
-            val allDevs = mapOf(
-                Asset.USD to BigDecimal("100.0"),
-                "A" to BigDecimal("10.0"),
-            )
-            val buyOrders = mutableMapOf<String, BigDecimal>()
-            val sellOrders = mutableMapOf<String, BigDecimal>()
+            runTest {
+                val allDevs = mapOf(
+                    Asset.USD to BigDecimal("100.0"),
+                    "A" to BigDecimal("10.0"),
+                )
+                val buyOrders = mutableMapOf<String, BigDecimal>()
+                val sellOrders = mutableMapOf<String, BigDecimal>()
 
-            portfolioAnalyzer.distributeFiatCorrection(
-                usdDev = BigDecimal("100.0"),
-                allDevs = allDevs,
-                buyOrders = buyOrders,
-                sellOrders = sellOrders,
-                actionLog = mutableListOf(),
-            )
+                portfolioAnalyzer.distributeFiatCorrection(
+                    usdDev = BigDecimal("100.0"),
+                    allDevs = allDevs,
+                    buyOrders = buyOrders,
+                    sellOrders = sellOrders,
+                    actionLog = mutableListOf(),
+                )
 
-            buyOrders.isEmpty().shouldBeTrue()
-            sellOrders.isEmpty().shouldBeTrue()
+                buyOrders.isEmpty().shouldBeTrue()
+                sellOrders.isEmpty().shouldBeTrue()
+            }
         }
 
         "testFiatDeploymentRatioExceedsOne" {
             runTest {
-                every {
+                coEvery {
                     portfolioStatsRepository.load()
                 } returns PortfolioStats(
                     BigDecimal("2000.0"),
@@ -228,24 +230,26 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
                 portfolioManager.performRebalanceCycle()
 
                 val captor = slot<PortfolioSnapshot>()
-                verify { tradeHistoryService.addSnapshot(capture(captor)) }
-                captor.captured.fiatDeploymentPercent.toDouble() shouldBe 100.0
+                coVerify { tradeHistoryService.addSnapshot(capture(captor)) }
+                captor.captured.fiatDeploymentPercent.shouldBeEqualComparingTo(BigDecimal("100.0"))
             }
         }
 
         "testResolvePriceFromTicker_ExplicitPairAndFallback" {
-            val rawPrices = mapOf("ETHEUR" to 3000.0, "ETHUSD" to 3100.0).toBigDecimalMap()
+            runTest {
+                val rawPrices = mapOf("ETHEUR" to 3000.0, "ETHUSD" to 3100.0).toBigDecimalMap()
 
-            val priceEth = portfolioAnalyzer.resolvePriceFromTicker(
-                Asset.ETH,
-                rawPrices,
-            )
-            priceEth.shouldBeEqualComparingTo(BigDecimal("3100.0"))
+                val priceEth = portfolioAnalyzer.resolvePriceFromTicker(
+                    Asset.ETH,
+                    rawPrices,
+                )
+                priceEth.shouldBeEqualComparingTo(BigDecimal("3100.0"))
 
-            val priceMissing =
-                portfolioAnalyzer
-                    .resolvePriceFromTicker("LTC", rawPrices)
-            priceMissing.compareTo(BigDecimal.ZERO) shouldBe 0
+                val priceMissing =
+                    portfolioAnalyzer
+                        .resolvePriceFromTicker("LTC", rawPrices)
+                priceMissing.compareTo(BigDecimal.ZERO) shouldBe 0
+            }
         }
 
         "testExecuteOrders_ZeroPriceContinues" {
@@ -364,14 +368,16 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
         }
 
         "testUpdateAthAndCalculateDrawdown_NewAth" {
-            every { portfolioStatsRepository.load() } returns PortfolioStats(
-                BigDecimal("1000.0"),
-            )
-            val drawdown = portfolioAnalyzer.updateAthAndCalculateDrawdown(
-                BigDecimal("1500.0"),
-            )
-            drawdown.compareTo(BigDecimal.ZERO) shouldBe 0
-            verify { portfolioStatsRepository.save(any()) }
+            runTest {
+                coEvery { portfolioStatsRepository.load() } returns PortfolioStats(
+                    BigDecimal("1000.0"),
+                )
+                val drawdown = portfolioAnalyzer.updateAthAndCalculateDrawdown(
+                    BigDecimal("1500.0"),
+                )
+                drawdown.compareTo(BigDecimal.ZERO) shouldBe 0
+                coVerify { portfolioStatsRepository.save(any()) }
+            }
         }
 
         "testExecuteOrders_UpdateBalancesEmptyUsdOrNull" {
@@ -449,46 +455,48 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
         }
 
         "testAnalyzeDeviations_UsdTriggeredButOrdersNotEmpty" {
-            val currentValuesUSD = mapOf(
-                Asset.USD to BigDecimal.valueOf(1100.0),
-                Asset.BTC to BigDecimal.valueOf(900.0),
-            )
-            val totalVal = BigDecimal.valueOf(2000.0)
-            val effUsdTarget = BigDecimal.valueOf(50.0)
-            val cryptoScale = BigDecimal.ONE
-            val buyOrders = mutableMapOf<String, BigDecimal>()
-            val sellOrders = mutableMapOf<String, BigDecimal>()
-            val actionLog = mutableListOf<String>()
+            runTest {
+                val currentValuesUSD = mapOf(
+                    Asset.USD to BigDecimal.valueOf(1100.0),
+                    Asset.BTC to BigDecimal.valueOf(900.0),
+                )
+                val totalVal = BigDecimal.valueOf(2000.0)
+                val effUsdTarget = BigDecimal.valueOf(50.0)
+                val cryptoScale = BigDecimal.ONE
+                val buyOrders = mutableMapOf<String, BigDecimal>()
+                val sellOrders = mutableMapOf<String, BigDecimal>()
+                val actionLog = mutableListOf<String>()
 
-            val allocs = listOf(
-                Allocation(Asset.USD, 50.0),
-                Allocation(Asset.BTC, 50.0),
-            )
-            val settings = Settings(
-                loopDelaySeconds = 0L,
-                deviationTriggerPercent = 2.0,
-                dustThresholdUSD = 1.0,
-                dryRun = true,
-                fiatMaxDrawdown = 0.0,
-                fiatDeploymentExponent = 1.0,
-            )
-            every { configService.getConfig() } returns AppConfig(
-                kraken = KrakenCredentials(apiKey = "k", privateKey = "s"),
-                settings = settings,
-                allocations = allocs,
-            )
+                val allocs = listOf(
+                    Allocation(Asset.USD, 50.0),
+                    Allocation(Asset.BTC, 50.0),
+                )
+                val settings = Settings(
+                    loopDelaySeconds = 0L,
+                    deviationTriggerPercent = 2.0,
+                    dustThresholdUSD = 1.0,
+                    dryRun = true,
+                    fiatMaxDrawdown = 0.0,
+                    fiatDeploymentExponent = 1.0,
+                )
+                every { configService.getConfig() } returns AppConfig(
+                    kraken = KrakenCredentials(apiKey = "k", privateKey = "s"),
+                    settings = settings,
+                    allocations = allocs,
+                )
 
-            val result = portfolioAnalyzer.analyzeDeviations(
-                totalPortfolioValueUSD = totalVal,
-                currentValuesUSD = currentValuesUSD,
-                effectiveUsdTarget = effUsdTarget,
-                cryptoScaleFactor = cryptoScale,
-            )
-            buyOrders.putAll(result.buyOrders)
-            sellOrders.putAll(result.sellOrders)
-            actionLog.addAll(result.actionLog)
+                val result = portfolioAnalyzer.analyzeDeviations(
+                    totalPortfolioValueUSD = totalVal,
+                    currentValuesUSD = currentValuesUSD,
+                    effectiveUsdTarget = effUsdTarget,
+                    cryptoScaleFactor = cryptoScale,
+                )
+                buyOrders.putAll(result.buyOrders)
+                sellOrders.putAll(result.sellOrders)
+                actionLog.addAll(result.actionLog)
 
-            buyOrders.isEmpty() shouldBe false
+                buyOrders.isEmpty() shouldBe false
+            }
         }
 
         "testPerformRebalanceCycle_TradeHistorySaveIOException" {
@@ -520,7 +528,7 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
                     )
                 every { configService.getConfig() } returns config
 
-                every {
+                coEvery {
                     tradeHistoryService.addSnapshot(any())
                 } throws IOException(
                     "Disk full",
@@ -534,267 +542,281 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
         }
 
         "testResolvePriceFromTicker_FallbackBranches" {
-            val rawPrices = mapOf(
-                "BTCEUR" to 60000.0,
-                "XBTUSD" to 61000.0,
-            ).toBigDecimalMap()
-            val price = portfolioAnalyzer.resolvePriceFromTicker(
-                Asset.BTC,
-                rawPrices,
-            )
-            price.shouldBeEqualComparingTo(BigDecimal("61000.0"))
+            runTest {
+                val rawPrices = mapOf(
+                    "BTCEUR" to 60000.0,
+                    "XBTUSD" to 61000.0,
+                ).toBigDecimalMap()
+                val price = portfolioAnalyzer.resolvePriceFromTicker(
+                    Asset.BTC,
+                    rawPrices,
+                )
+                price.shouldBeEqualComparingTo(BigDecimal("61000.0"))
 
-            val rawPricesOnlyEur = mapOf(
-                "XBTEUR" to 55000.0,
-            ).toBigDecimalMap()
-            val priceEurOnly = portfolioAnalyzer.resolvePriceFromTicker(
-                symbol = Asset.BTC,
-                rawPrices = rawPricesOnlyEur,
-            )
-            priceEurOnly.compareTo(BigDecimal.ZERO) shouldBe 0
+                val rawPricesOnlyEur = mapOf(
+                    "XBTEUR" to 55000.0,
+                ).toBigDecimalMap()
+                val priceEurOnly = portfolioAnalyzer.resolvePriceFromTicker(
+                    symbol = Asset.BTC,
+                    rawPrices = rawPricesOnlyEur,
+                )
+                priceEurOnly.compareTo(BigDecimal.ZERO) shouldBe 0
+            }
         }
 
         "testCalculatePortfolioValues_PriceNotFoundAbort" {
-            val balances =
-                mapOf(Asset.USD to 1000.0, Asset.BTC to 1.0).toBigDecimalMap()
-            val prices = mapOf(Asset.USD to BigDecimal.ONE)
+            runTest {
+                val balances =
+                    mapOf(Asset.USD to 1000.0, Asset.BTC to 1.0).toBigDecimalMap()
+                val prices = mapOf(Asset.USD to BigDecimal.ONE)
 
-            val allocs = listOf(
-                Allocation(Asset.USD, 50.0),
-                Allocation(Asset.BTC, 50.0),
-            )
-            every { configService.getConfig() } returns AppConfig(
-                kraken = KrakenCredentials(apiKey = "k", privateKey = "s"),
-                settings = Settings(
-                    loopDelaySeconds = 0L,
-                    deviationTriggerPercent = 2.0,
-                    dustThresholdUSD = 1.0,
-                    dryRun = true,
-                    fiatMaxDrawdown = 0.0,
-                    fiatDeploymentExponent = 1.0,
-                ),
-                allocations = allocs,
-            )
+                val allocs = listOf(
+                    Allocation(Asset.USD, 50.0),
+                    Allocation(Asset.BTC, 50.0),
+                )
+                every { configService.getConfig() } returns AppConfig(
+                    kraken = KrakenCredentials(apiKey = "k", privateKey = "s"),
+                    settings = Settings(
+                        loopDelaySeconds = 0L,
+                        deviationTriggerPercent = 2.0,
+                        dustThresholdUSD = 1.0,
+                        dryRun = true,
+                        fiatMaxDrawdown = 0.0,
+                        fiatDeploymentExponent = 1.0,
+                    ),
+                    allocations = allocs,
+                )
 
-            val result = portfolioAnalyzer.calculatePortfolioValues(
-                balances,
-                prices,
-            )
-            (result.exceptionOrNull() != null) shouldBe true
+                val result = portfolioAnalyzer.calculatePortfolioValues(
+                    balances,
+                    prices,
+                )
+                (result.exceptionOrNull() != null) shouldBe true
+            }
         }
 
         "testResolveBalance_FallbackChain" {
-            portfolioAnalyzer.resolveBalance(
-                Asset.BTC,
-                mapOf(Asset.BTC to 1.1).toBigDecimalMap(),
-            ).toDouble() shouldBe 1.1
-            portfolioAnalyzer.resolveBalance(
-                Asset.BTC,
-                mapOf("XBTC" to 1.2).toBigDecimalMap(),
-            ).toDouble() shouldBe 1.2
-            portfolioAnalyzer.resolveBalance(
-                Asset.USD,
-                mapOf("ZUSD" to 1.3).toBigDecimalMap(),
-            ).toDouble() shouldBe 1.3
-            portfolioAnalyzer.resolveBalance(
-                Asset.BTC,
-                mapOf(Asset.XBT to 1.4).toBigDecimalMap(),
-            ).toDouble() shouldBe 1.4
-            portfolioAnalyzer.resolveBalance(
-                Asset.BTC,
-                mapOf("XXBT" to 1.5).toBigDecimalMap(),
-            ).toDouble() shouldBe 1.5
-            portfolioAnalyzer.resolveBalance(
-                Asset.BTC,
-                mapOf(Asset.ETH to 1.6).toBigDecimalMap(),
-            ).toDouble() shouldBe 0.0
+            runTest {
+                portfolioAnalyzer.resolveBalance(
+                    Asset.BTC,
+                    mapOf(Asset.BTC to 1.1).toBigDecimalMap(),
+                ).shouldBeEqualComparingTo(BigDecimal("1.1"))
+                portfolioAnalyzer.resolveBalance(
+                    Asset.BTC,
+                    mapOf("XBTC" to 1.2).toBigDecimalMap(),
+                ).shouldBeEqualComparingTo(BigDecimal("1.2"))
+                portfolioAnalyzer.resolveBalance(
+                    Asset.USD,
+                    mapOf("ZUSD" to 1.3).toBigDecimalMap(),
+                ).shouldBeEqualComparingTo(BigDecimal("1.3"))
+                portfolioAnalyzer.resolveBalance(
+                    Asset.BTC,
+                    mapOf(Asset.XBT to 1.4).toBigDecimalMap(),
+                ).shouldBeEqualComparingTo(BigDecimal("1.4"))
+                portfolioAnalyzer.resolveBalance(
+                    Asset.BTC,
+                    mapOf("XXBT" to 1.5).toBigDecimalMap(),
+                ).shouldBeEqualComparingTo(BigDecimal("1.5"))
+                portfolioAnalyzer.resolveBalance(
+                    Asset.BTC,
+                    mapOf(Asset.ETH to 1.6).toBigDecimalMap(),
+                ).shouldBeEqualComparingTo(BigDecimal.ZERO)
+            }
         }
 
         "testUpdateAthAndCalculateDrawdown_NegativeAth" {
-            every { portfolioStatsRepository.load() } returns PortfolioStats(
-                BigDecimal("-500.0"),
-            )
-            val drawdown =
-                portfolioAnalyzer
-                    .updateAthAndCalculateDrawdown(
-                        BigDecimal("1000.0"),
-                    )
-            drawdown.compareTo(BigDecimal.ZERO) shouldBe 0
-            verify {
-                portfolioStatsRepository.save(
-                    match {
-                        it.allTimeHigh == BigDecimal(
-                            "1000.0",
-                        )
-                    },
+            runTest {
+                coEvery { portfolioStatsRepository.load() } returns PortfolioStats(
+                    BigDecimal("-500.0"),
                 )
+                val drawdown =
+                    portfolioAnalyzer
+                        .updateAthAndCalculateDrawdown(
+                            BigDecimal("1000.0"),
+                        )
+                drawdown.compareTo(BigDecimal.ZERO) shouldBe 0
+                coVerify {
+                    portfolioStatsRepository.save(
+                        match {
+                            it.allTimeHigh.compareTo(BigDecimal("1000.0")) == 0
+                        },
+                    )
+                }
             }
         }
 
         "testUpdateAthAndCalculateDrawdown_NullAth" {
-            every { portfolioStatsRepository.load() } returns PortfolioStats(
-                BigDecimal.ZERO,
-            )
-            val drawdown =
-                portfolioAnalyzer.updateAthAndCalculateDrawdown(
-                    BigDecimal("1200.0"),
+            runTest {
+                coEvery { portfolioStatsRepository.load() } returns PortfolioStats(
+                    BigDecimal.ZERO,
                 )
-            drawdown.compareTo(BigDecimal.ZERO) shouldBe 0
-            verify {
-                portfolioStatsRepository.save(
-                    match {
-                        it.allTimeHigh == BigDecimal(
-                            "1200.0",
-                        )
-                    },
-                )
+                val drawdown =
+                    portfolioAnalyzer.updateAthAndCalculateDrawdown(
+                        BigDecimal("1200.0"),
+                    )
+                drawdown.compareTo(BigDecimal.ZERO) shouldBe 0
+                coVerify {
+                    portfolioStatsRepository.save(
+                        match {
+                            it.allTimeHigh.compareTo(BigDecimal("1200.0")) == 0
+                        },
+                    )
+                }
             }
         }
 
         "testUpdateAthAndCalculateDrawdown_StatsSaveIOException" {
-            every {
-                portfolioStatsRepository.load()
-            } returns PortfolioStats(
-                BigDecimal("1000.0"),
-            )
-            every {
-                portfolioStatsRepository.save(any())
-            } throws IOException(
-                "Save failed",
-            )
-
-            val drawdown =
-                portfolioAnalyzer.updateAthAndCalculateDrawdown(
-                    BigDecimal("800.0"),
+            runTest {
+                coEvery {
+                    portfolioStatsRepository.load()
+                } returns PortfolioStats(
+                    BigDecimal("1000.0"),
                 )
-            drawdown.compareTo(BigDecimal("20.0")) shouldBe 0
+                coEvery {
+                    portfolioStatsRepository.save(any())
+                } throws IOException(
+                    "Save failed",
+                )
+
+                val drawdown =
+                    portfolioAnalyzer.updateAthAndCalculateDrawdown(
+                        BigDecimal("800.0"),
+                    )
+                drawdown.compareTo(BigDecimal("20.0")) shouldBe 0
+            }
         }
 
         "testAnalyzeDeviations_MissingSymbolInCurrentValues" {
-            val totalVal = BigDecimal.valueOf(1000.0)
-            val currentValuesUSD =
-                mapOf(Asset.USD to BigDecimal.valueOf(1000.0))
-            val effUsdTarget = BigDecimal.valueOf(50.0)
-            val cryptoScale = BigDecimal.valueOf(0.5)
-            val buyOrders = mutableMapOf<String, BigDecimal>()
-            val sellOrders = mutableMapOf<String, BigDecimal>()
-            val actionLog = mutableListOf<String>()
+            runTest {
+                val totalVal = BigDecimal.valueOf(1000.0)
+                val currentValuesUSD =
+                    mapOf(Asset.USD to BigDecimal.valueOf(1000.0))
+                val effUsdTarget = BigDecimal.valueOf(50.0)
+                val cryptoScale = BigDecimal.valueOf(0.5)
+                val buyOrders = mutableMapOf<String, BigDecimal>()
+                val sellOrders = mutableMapOf<String, BigDecimal>()
+                val actionLog = mutableListOf<String>()
 
-            val allocs = listOf(
-                Allocation(Asset.USD, 50.0),
-                Allocation(Asset.BTC, 50.0),
-            )
-            every { configService.getConfig() } returns AppConfig(
-                kraken = KrakenCredentials(apiKey = "k", privateKey = "s"),
-                settings = Settings(
+                val allocs = listOf(
+                    Allocation(Asset.USD, 50.0),
+                    Allocation(Asset.BTC, 50.0),
+                )
+                every { configService.getConfig() } returns AppConfig(
+                    kraken = KrakenCredentials(apiKey = "k", privateKey = "s"),
+                    settings = Settings(
+                        loopDelaySeconds = 0L,
+                        deviationTriggerPercent = 2.0,
+                        dustThresholdUSD = 1.0,
+                        dryRun = true,
+                        fiatMaxDrawdown = 0.0,
+                        fiatDeploymentExponent = 1.0,
+                    ),
+                    allocations = allocs,
+                )
+
+                val result = portfolioAnalyzer.analyzeDeviations(
+                    totalPortfolioValueUSD = totalVal,
+                    currentValuesUSD = currentValuesUSD,
+                    effectiveUsdTarget = effUsdTarget,
+                    cryptoScaleFactor = cryptoScale,
+                )
+                buyOrders.putAll(result.buyOrders)
+                sellOrders.putAll(result.sellOrders)
+                actionLog.addAll(result.actionLog)
+                buyOrders[Asset.BTC]?.compareTo(
+                    BigDecimal("250.0"),
+                ) shouldBe 0
+            }
+        }
+
+        "testAnalyzeDeviations_USDTriggerOnlyEnforcesFiatCorrection" {
+            runTest {
+                val allocs = listOf(
+                    Allocation(Asset.USD, 20.0),
+                    Allocation(Asset.BTC, 40.0),
+                    Allocation(Asset.ETH, 40.0),
+                )
+                val settings = Settings(
                     loopDelaySeconds = 0L,
-                    deviationTriggerPercent = 2.0,
+                    deviationTriggerPercent = 15.0,
                     dustThresholdUSD = 1.0,
                     dryRun = true,
                     fiatMaxDrawdown = 0.0,
                     fiatDeploymentExponent = 1.0,
-                ),
-                allocations = allocs,
-            )
+                )
+                every { configService.getConfig() } returns AppConfig(
+                    kraken = KrakenCredentials(apiKey = "k", privateKey = "s"),
+                    settings = settings,
+                    allocations = allocs,
+                )
 
-            val result = portfolioAnalyzer.analyzeDeviations(
-                totalPortfolioValueUSD = totalVal,
-                currentValuesUSD = currentValuesUSD,
-                effectiveUsdTarget = effUsdTarget,
-                cryptoScaleFactor = cryptoScale,
-            )
-            buyOrders.putAll(result.buyOrders)
-            sellOrders.putAll(result.sellOrders)
-            actionLog.addAll(result.actionLog)
-            buyOrders[Asset.BTC]?.compareTo(
-                BigDecimal("250.0"),
-            ) shouldBe 0
-        }
+                val currentValuesUSD = mapOf(
+                    Asset.USD to BigDecimal("240.0"),
+                    Asset.BTC to BigDecimal("380.0"),
+                    Asset.ETH to BigDecimal("380.0"),
+                )
+                val buyOrders = mutableMapOf<String, BigDecimal>()
+                val sellOrders = mutableMapOf<String, BigDecimal>()
+                val actionLog = mutableListOf<String>()
 
-        "testAnalyzeDeviations_USDTriggerOnlyEnforcesFiatCorrection" {
-            val allocs = listOf(
-                Allocation(Asset.USD, 20.0),
-                Allocation(Asset.BTC, 40.0),
-                Allocation(Asset.ETH, 40.0),
-            )
-            val settings = Settings(
-                loopDelaySeconds = 0L,
-                deviationTriggerPercent = 15.0,
-                dustThresholdUSD = 1.0,
-                dryRun = true,
-                fiatMaxDrawdown = 0.0,
-                fiatDeploymentExponent = 1.0,
-            )
-            every { configService.getConfig() } returns AppConfig(
-                kraken = KrakenCredentials(apiKey = "k", privateKey = "s"),
-                settings = settings,
-                allocations = allocs,
-            )
+                val result = portfolioAnalyzer.analyzeDeviations(
+                    totalPortfolioValueUSD = BigDecimal("1000.0"),
+                    currentValuesUSD = currentValuesUSD,
+                    effectiveUsdTarget = BigDecimal("20.0"),
+                    cryptoScaleFactor = BigDecimal.ONE,
+                )
+                buyOrders.putAll(result.buyOrders)
+                sellOrders.putAll(result.sellOrders)
+                actionLog.addAll(result.actionLog)
 
-            val currentValuesUSD = mapOf(
-                Asset.USD to BigDecimal("240.0"),
-                Asset.BTC to BigDecimal("380.0"),
-                Asset.ETH to BigDecimal("380.0"),
-            )
-            val buyOrders = mutableMapOf<String, BigDecimal>()
-            val sellOrders = mutableMapOf<String, BigDecimal>()
-            val actionLog = mutableListOf<String>()
-
-            val result = portfolioAnalyzer.analyzeDeviations(
-                totalPortfolioValueUSD = BigDecimal("1000.0"),
-                currentValuesUSD = currentValuesUSD,
-                effectiveUsdTarget = BigDecimal("20.0"),
-                cryptoScaleFactor = BigDecimal.ONE,
-            )
-            buyOrders.putAll(result.buyOrders)
-            sellOrders.putAll(result.sellOrders)
-            actionLog.addAll(result.actionLog)
-
-            buyOrders.isNotEmpty() shouldBe true
-            buyOrders[Asset.BTC]!!.compareTo(
-                BigDecimal("20.0"),
-            ) shouldBe 0
-            buyOrders[Asset.ETH]!!.compareTo(
-                BigDecimal("20.0"),
-            ) shouldBe 0
+                buyOrders.isNotEmpty() shouldBe true
+                buyOrders[Asset.BTC]!!.compareTo(
+                    BigDecimal("20.0"),
+                ) shouldBe 0
+                buyOrders[Asset.ETH]!!.compareTo(
+                    BigDecimal("20.0"),
+                ) shouldBe 0
+            }
         }
 
         "testAnalyzeDeviations_dustDeviationIsIgnored" {
-            val totalVal = BigDecimal.valueOf(1000.0)
-            val currentValuesUSD = mapOf(
-                Asset.USD to BigDecimal("0.0001"),
-                Asset.BTC to BigDecimal("999.9999"),
-            )
-            val effUsdTarget = BigDecimal.ZERO
-            val cryptoScale = BigDecimal("2.0")
-            val allocs = listOf(
-                Allocation(Asset.USD, 50.0),
-                Allocation(Asset.BTC, 50.0),
-            )
-            val settings = Settings(
-                loopDelaySeconds = 0L,
-                deviationTriggerPercent = 2.0,
-                dustThresholdUSD = 5.0,
-                dryRun = true,
-                fiatMaxDrawdown = 0.0,
-                fiatDeploymentExponent = 1.0,
-            )
-            every { configService.getConfig() } returns AppConfig(
-                kraken = KrakenCredentials(apiKey = "k", privateKey = "s"),
-                settings = settings,
-                allocations = allocs,
-            )
+            runTest {
+                val totalVal = BigDecimal.valueOf(1000.0)
+                val currentValuesUSD = mapOf(
+                    Asset.USD to BigDecimal("0.0001"),
+                    Asset.BTC to BigDecimal("999.9999"),
+                )
+                val effUsdTarget = BigDecimal.ZERO
+                val cryptoScale = BigDecimal("2.0")
+                val allocs = listOf(
+                    Allocation(Asset.USD, 50.0),
+                    Allocation(Asset.BTC, 50.0),
+                )
+                val settings = Settings(
+                    loopDelaySeconds = 0L,
+                    deviationTriggerPercent = 2.0,
+                    dustThresholdUSD = 5.0,
+                    dryRun = true,
+                    fiatMaxDrawdown = 0.0,
+                    fiatDeploymentExponent = 1.0,
+                )
+                every { configService.getConfig() } returns AppConfig(
+                    kraken = KrakenCredentials(apiKey = "k", privateKey = "s"),
+                    settings = settings,
+                    allocations = allocs,
+                )
 
-            val result = portfolioAnalyzer.analyzeDeviations(
-                totalPortfolioValueUSD = totalVal,
-                currentValuesUSD = currentValuesUSD,
-                effectiveUsdTarget = effUsdTarget,
-                cryptoScaleFactor = cryptoScale,
-            )
+                val result = portfolioAnalyzer.analyzeDeviations(
+                    totalPortfolioValueUSD = totalVal,
+                    currentValuesUSD = currentValuesUSD,
+                    effectiveUsdTarget = effUsdTarget,
+                    cryptoScaleFactor = cryptoScale,
+                )
 
-            result.buyOrders.isEmpty() shouldBe true
-            result.sellOrders.isEmpty() shouldBe true
-            result.actionLog.none { it.contains("USD Dev") } shouldBe true
+                result.buyOrders.isEmpty() shouldBe true
+                result.sellOrders.isEmpty() shouldBe true
+                result.actionLog.none { it.contains("USD Dev") } shouldBe true
+            }
         }
 
         "testExecuteOrders_DryRunAndSellsSuccess" {
@@ -971,122 +993,126 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
         }
 
         "testLogOrderResult" {
-            val log1 = mutableListOf<String>()
-            (orderExecutor as OrderExecutorImpl).logOrderResult(
-                result = OrderResult(
-                    success = true,
-                    pair = "XBTUSD",
-                    side = "sell",
+            runTest {
+                val log1 = mutableListOf<String>()
+                (orderExecutor as OrderExecutorImpl).logOrderResult(
+                    result = OrderResult(
+                        success = true,
+                        pair = "XBTUSD",
+                        side = "sell",
+                        volume = BigDecimal.ONE,
+                        dryRun = true,
+                    ),
+                    actionLog = log1,
+                    symbol = Asset.BTC,
                     volume = BigDecimal.ONE,
-                    dryRun = true,
-                ),
-                actionLog = log1,
-                symbol = Asset.BTC,
-                volume = BigDecimal.ONE,
-                usdAmount = BigDecimal.TEN,
-                side = "SELL",
-            )
-            log1.first() shouldBe "[DRY RUN] SELL BTC Volume: 1 Value: $10"
+                    usdAmount = BigDecimal.TEN,
+                    side = "SELL",
+                )
+                log1.first() shouldBe "[DRY RUN] SELL BTC Volume: 1 Value: $10"
 
-            val log2 = mutableListOf<String>()
-            (orderExecutor as OrderExecutorImpl).logOrderResult(
-                result = OrderResult(
-                    success = true,
-                    pair = "XBTUSD",
-                    side = "buy",
+                val log2 = mutableListOf<String>()
+                (orderExecutor as OrderExecutorImpl).logOrderResult(
+                    result = OrderResult(
+                        success = true,
+                        pair = "XBTUSD",
+                        side = "buy",
+                        volume = BigDecimal.ONE,
+                        dryRun = false,
+                    ),
+                    actionLog = log2,
+                    symbol = Asset.BTC,
                     volume = BigDecimal.ONE,
-                    dryRun = false,
-                ),
-                actionLog = log2,
-                symbol = Asset.BTC,
-                volume = BigDecimal.ONE,
-                usdAmount = BigDecimal.TEN,
-                side = "BUY",
-            )
-            log2.first() shouldBe "BUY BTC Volume: 1 Cost: $10"
+                    usdAmount = BigDecimal.TEN,
+                    side = "BUY",
+                )
+                log2.first() shouldBe "BUY BTC Volume: 1 Cost: $10"
+            }
         }
 
         "testBuildSnapshot_Reflection" {
-            val buildSnapshotMethod =
-                PortfolioManagerImpl::class.java.getDeclaredMethod(
-                    "buildSnapshot",
-                    Map::class.java,
-                    Map::class.java,
-                    Map::class.java,
-                    BigDecimal::class.java,
-                    BigDecimal::class.java,
-                    BigDecimal::class.java,
-                    BigDecimal::class.java,
-                    BigDecimal::class.java,
-                    List::class.java,
-                ).apply { isAccessible = true }
+            runTest {
+                val buildSnapshotMethod =
+                    PortfolioManagerImpl::class.java.getDeclaredMethod(
+                        "buildSnapshot",
+                        Map::class.java,
+                        Map::class.java,
+                        Map::class.java,
+                        BigDecimal::class.java,
+                        BigDecimal::class.java,
+                        BigDecimal::class.java,
+                        BigDecimal::class.java,
+                        BigDecimal::class.java,
+                        List::class.java,
+                    ).apply { isAccessible = true }
 
-            val balances =
-                mapOf(TestFixtures.USD to 500.0, "BTC" to 0.01).toBigDecimalMap()
-            val prices = mapOf("BTC" to BigDecimal("50000.0"))
-            val currentValuesUSD = mapOf(
-                TestFixtures.USD to BigDecimal("500.0"),
-                "BTC" to BigDecimal("500.0"),
-            )
-            val totalVal = BigDecimal("1000.0")
-            val effUsdTarget = BigDecimal("50.0")
-            val cryptoScale = BigDecimal.ONE
-            val drawdown = BigDecimal.ZERO
-            val deployment = BigDecimal.ZERO
-            val actionLog = listOf("Cycle completed")
+                val balances =
+                    mapOf(TestFixtures.USD to 500.0, "BTC" to 0.01).toBigDecimalMap()
+                val prices = mapOf("BTC" to BigDecimal("50000.0"))
+                val currentValuesUSD = mapOf(
+                    TestFixtures.USD to BigDecimal("500.0"),
+                    "BTC" to BigDecimal("500.0"),
+                )
+                val totalVal = BigDecimal("1000.0")
+                val effUsdTarget = BigDecimal("50.0")
+                val cryptoScale = BigDecimal.ONE
+                val drawdown = BigDecimal.ZERO
+                val deployment = BigDecimal.ZERO
+                val actionLog = listOf("Cycle completed")
 
-            val allocs = listOf(
-                Allocation(Asset.USD, 50.0),
-                Allocation(Asset.BTC, 50.0),
-            )
-            every { configService.getConfig() } returns AppConfig(
-                kraken = KrakenCredentials(apiKey = "k", privateKey = "s"),
-                settings = Settings(
-                    loopDelaySeconds = 0L,
-                    deviationTriggerPercent = 2.0,
-                    dustThresholdUSD = 1.0,
-                    dryRun = true,
-                    fiatMaxDrawdown = 0.0,
-                    fiatDeploymentExponent = 1.0,
-                ),
-                allocations = allocs,
-            )
+                val allocs = listOf(
+                    Allocation(Asset.USD, 50.0),
+                    Allocation(Asset.BTC, 50.0),
+                )
+                every { configService.getConfig() } returns AppConfig(
+                    kraken = KrakenCredentials(apiKey = "k", privateKey = "s"),
+                    settings = Settings(
+                        loopDelaySeconds = 0L,
+                        deviationTriggerPercent = 2.0,
+                        dustThresholdUSD = 1.0,
+                        dryRun = true,
+                        fiatMaxDrawdown = 0.0,
+                        fiatDeploymentExponent = 1.0,
+                    ),
+                    allocations = allocs,
+                )
 
-            val snapshot = buildSnapshotMethod.invoke(
-                portfolioManager,
-                balances,
-                prices,
-                currentValuesUSD,
-                totalVal,
-                effUsdTarget,
-                cryptoScale,
-                drawdown,
-                deployment,
-                actionLog,
-            ) as PortfolioSnapshot
+                val snapshot = buildSnapshotMethod.invoke(
+                    portfolioManager,
+                    balances,
+                    prices,
+                    currentValuesUSD,
+                    totalVal,
+                    effUsdTarget,
+                    cryptoScale,
+                    drawdown,
+                    deployment,
+                    actionLog,
+                ) as PortfolioSnapshot
 
-            snapshot.totalValueUSD.compareTo(BigDecimal("1000.0")) shouldBe 0
+                snapshot.totalValueUSD.compareTo(BigDecimal("1000.0")) shouldBe 0
 
-            val currentValuesUSDMissing =
-                mapOf(TestFixtures.USD to BigDecimal("500.0"))
-            val pricesMissing = emptyMap<String, BigDecimal>()
+                val currentValuesUSDMissing =
+                    mapOf(TestFixtures.USD to BigDecimal("500.0"))
+                val pricesMissing = emptyMap<String, BigDecimal>()
 
-            val snapshotFallback = buildSnapshotMethod.invoke(
-                portfolioManager,
-                balances,
-                pricesMissing,
-                currentValuesUSDMissing,
-                totalVal,
-                effUsdTarget,
-                cryptoScale,
-                drawdown,
-                deployment,
-                actionLog,
-            ) as PortfolioSnapshot
+                val snapshotFallback = buildSnapshotMethod.invoke(
+                    portfolioManager,
+                    balances,
+                    pricesMissing,
+                    currentValuesUSDMissing,
+                    totalVal,
+                    effUsdTarget,
+                    cryptoScale,
+                    drawdown,
+                    deployment,
+                    actionLog,
+                ) as PortfolioSnapshot
 
-            val btcSnap = snapshotFallback.assets[Asset.BTC]
-            btcSnap!!.valueUSD.compareTo(BigDecimal.ZERO) shouldBe 0
-            btcSnap.price.compareTo(BigDecimal.ONE) shouldBe 0
+                val btcSnap = snapshotFallback.assets[Asset.BTC]
+                btcSnap!!.valueUSD.compareTo(BigDecimal.ZERO) shouldBe 0
+                btcSnap.price.compareTo(BigDecimal.ONE) shouldBe 0
+            }
         }
 
         "testExecuteOrders_SkipDustSells" {
@@ -1152,24 +1178,26 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
         }
 
         "testRecordTrade_EdgeCases" {
-            val result = OrderResult(
-                success = true,
-                pair = "XBTUSD",
-                side = "BUY",
-                volume = BigDecimal.ZERO,
-                dryRun = false,
-            )
-            // Test zero volume and zero price to hit the else branches
-            (orderExecutor as OrderExecutorImpl).recordTrade(
-                result = result,
-                symbol = "BTC",
-                pair = "XBTUSD",
-                side = "BUY",
-                volume = BigDecimal.ZERO,
-                usdAmount = BigDecimal.ZERO,
-                prices = emptyMap(),
-            )
-            verify(exactly = 1) { tradeHistoryService.saveTrade(any()) }
+            runTest {
+                val result = OrderResult(
+                    success = true,
+                    pair = "XBTUSD",
+                    side = "BUY",
+                    volume = BigDecimal.ZERO,
+                    dryRun = false,
+                )
+                // Test zero volume and zero price to hit the else branches
+                (orderExecutor as OrderExecutorImpl).recordTrade(
+                    result = result,
+                    symbol = "BTC",
+                    pair = "XBTUSD",
+                    side = "BUY",
+                    volume = BigDecimal.ZERO,
+                    usdAmount = BigDecimal.ZERO,
+                    prices = emptyMap(),
+                )
+                coVerify(exactly = 1) { tradeHistoryService.saveTrade(any()) }
+            }
         }
 
         "runLoop_handlesCycleExceptions" {

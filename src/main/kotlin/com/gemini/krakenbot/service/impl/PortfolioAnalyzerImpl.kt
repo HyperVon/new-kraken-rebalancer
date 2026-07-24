@@ -115,7 +115,7 @@ class PortfolioAnalyzerImpl(
         .firstNotNullOfOrNull { balances[it] }
         ?: BigDecimal.ZERO
 
-    override fun updateAthAndCalculateDrawdown(totalPortfolioValueUSD: BigDecimal): BigDecimal {
+    override suspend fun updateAthAndCalculateDrawdown(totalPortfolioValueUSD: BigDecimal): BigDecimal {
         val stats = portfolioStatsRepository.load()
         var ath = stats.allTimeHigh
 

@@ -374,7 +374,7 @@ two complementary `SharedFlow` channels:
 │   ├── model/                             # Domain: PortfolioSnapshot, OrderResult, Result, TradeRecord
 │   ├── repository/                        # Persistence interfaces: TradeRepository, PortfolioStatsRepository
 │   │   └── impl/                          # SQLite-backed implementations (via Exposed ORM)
-│   │       └── RepositoryUtils.kt         # Database safe transaction helper
+│   │       └── RepositoryUtils.kt         # safeTransaction + Dispatchers.IO helpers
 │   ├── service/                           # Core logic interfaces and shared utilities
 │   │   ├── ServiceUtils.kt               # Retry helpers, safe BigDecimal parsing
 │   │   └── impl/                          # Service implementations (coroutine-aware)

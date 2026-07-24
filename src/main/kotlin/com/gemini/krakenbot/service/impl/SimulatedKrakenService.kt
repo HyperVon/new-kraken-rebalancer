@@ -8,7 +8,6 @@ import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.KrakenService
 import com.gemini.krakenbot.service.RawBalances
 import com.gemini.krakenbot.service.RawPrices
-import com.gemini.krakenbot.util.HUNDRED
 import com.gemini.krakenbot.util.PrecisionConstants
 import com.gemini.krakenbot.util.toCryptoScale
 import com.gemini.krakenbot.util.toUsdScale
@@ -41,23 +40,22 @@ class SimulatedKrakenService(private val configService: ConfigService) : KrakenS
         // 1. Initialize prices
         for ((symbol) in allocations) {
             val symbolU = symbol.value.uppercase()
-            val basePrice = SimulationDefaults.INITIAL_PRICES[symbolU] ?: 10.0
-            simulatedPrices[symbolU] = BigDecimal.valueOf(basePrice).toCryptoScale()
+            val basePrice = SimulationDefaults.INITIAL_PRICES[symbolU] ?: SimulationDefaults.DEFAULT_PRICE
+            simulatedPrices[symbolU] = basePrice.toCryptoScale()
         }
         simulatedPrices[Asset.USD] = BigDecimal.ONE
 
         // 2. Initialize balances with some random drift (+/- 25%) so they need rebalancing
-        val totalSimulatedValueUSD = BigDecimal("100000.00")
+        val totalSimulatedValueUSD = SimulationDefaults.TOTAL_PORTFOLIO_VALUE_USD
         val random = ThreadLocalRandom.current()
 
         for ((symbol, targetPercent) in allocations) {
             val symbolU = symbol.value.uppercase()
             val targetUSDValue =
-                BigDecimal
-                    .valueOf(targetPercent)
-                    .divide(PrecisionConstants.HUNDRED, PrecisionConstants.SCALE_USD, RoundingMode.HALF_UP)
-                    .multiply(totalSimulatedValueUSD)
-                    .toUsdScale()
+                PortfolioCalculations.calculateTargetValue(
+                    BigDecimal.valueOf(targetPercent),
+                    totalSimulatedValueUSD,
+                )
 
             // Apply a drift factor between 0.75 and 1.25
             val driftFactor = BigDecimal.valueOf(0.75 + random.nextDouble() * 0.50)

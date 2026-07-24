@@ -16,6 +16,7 @@ import io.mockk.every
 import io.mockk.mockk
 import io.mockk.mockkStatic
 import io.mockk.unmockkStatic
+import kotlinx.coroutines.test.runTest
 import org.jetbrains.exposed.sql.Database
 import org.jetbrains.exposed.sql.Transaction
 import org.jetbrains.exposed.sql.transactions.TransactionManager
@@ -40,105 +41,117 @@ class SqlitePortfolioStatsRepositoryImplTest : StringSpec() {
 
     init {
         "load returns zero when empty" {
-            val stats = repository.load()
-            stats.allTimeHigh.shouldNotBeNull()
-            stats.allTimeHigh.shouldBeEqualComparingTo(BigDecimal.ZERO)
+            runTest {
+                val stats = repository.load()
+                stats.allTimeHigh.shouldNotBeNull()
+                stats.allTimeHigh.shouldBeEqualComparingTo(BigDecimal.ZERO)
+            }
         }
 
         "save and load stats" {
-            val stats = PortfolioStats(BigDecimal("12345.67"))
-            repository.save(stats)
+            runTest {
+                val stats = PortfolioStats(BigDecimal("12345.67"))
+                repository.save(stats)
 
-            val loaded = repository.load()
-            loaded.allTimeHigh.shouldNotBeNull()
-            loaded.allTimeHigh.shouldBeEqualComparingTo(BigDecimal("12345.67"))
+                val loaded = repository.load()
+                loaded.allTimeHigh.shouldNotBeNull()
+                loaded.allTimeHigh.shouldBeEqualComparingTo(BigDecimal("12345.67"))
 
-            // Update stats
-            val updated = stats.copy(allTimeHigh = BigDecimal("20000.00"))
-            repository.save(updated)
+                // Update stats
+                val updated = stats.copy(allTimeHigh = BigDecimal("20000.00"))
+                repository.save(updated)
 
-            val loadedUpdated = repository.load()
-            loadedUpdated.allTimeHigh.shouldNotBeNull()
-            loadedUpdated.allTimeHigh.shouldBeEqualComparingTo(BigDecimal("20000.00"))
+                val loadedUpdated = repository.load()
+                loadedUpdated.allTimeHigh.shouldNotBeNull()
+                loadedUpdated.allTimeHigh.shouldBeEqualComparingTo(BigDecimal("20000.00"))
+            }
         }
 
         "load returns default stats when database throws exception" {
-            // Create a db and drop the stats table to trigger an exception on load
-            val brokenDb = DatabaseConfig.init(TestFixtures.MEMORY_)
-            val brokenRepo = SqlitePortfolioStatsRepositoryImpl(brokenDb, objectMapper)
+            runTest {
+                // Create a db and drop the stats table to trigger an exception on load
+                val brokenDb = DatabaseConfig.init(TestFixtures.MEMORY_)
+                val brokenRepo = SqlitePortfolioStatsRepositoryImpl(brokenDb, objectMapper)
 
-            transaction(brokenDb) {
-                exec(TestFixtures.DROP_TABLE_IF_EXISTS_PORTFOLIO_STATS)
+                transaction(brokenDb) {
+                    exec(TestFixtures.DROP_TABLE_IF_EXISTS_PORTFOLIO_STATS)
+                }
+
+                val result = brokenRepo.load()
+                result.allTimeHigh.shouldNotBeNull()
+                result.allTimeHigh.shouldBeEqualComparingTo(BigDecimal.ZERO)
             }
-
-            val result = brokenRepo.load()
-            result.allTimeHigh.shouldNotBeNull()
-            result.allTimeHigh.shouldBeEqualComparingTo(BigDecimal.ZERO)
         }
 
         "save wraps non-IOException as IOException" {
-            val brokenDb = DatabaseConfig.init(TestFixtures.MEMORY_)
-            val brokenRepo = SqlitePortfolioStatsRepositoryImpl(brokenDb, objectMapper)
+            runTest {
+                val brokenDb = DatabaseConfig.init(TestFixtures.MEMORY_)
+                val brokenRepo = SqlitePortfolioStatsRepositoryImpl(brokenDb, objectMapper)
 
-            transaction(brokenDb) {
-                exec(TestFixtures.DROP_TABLE_IF_EXISTS_PORTFOLIO_STATS)
-            }
-
-            val stats = PortfolioStats(BigDecimal("10000.00"))
-
-            val thrown =
-                shouldThrow<IOException> {
-                    brokenRepo.save(stats)
+                transaction(brokenDb) {
+                    exec(TestFixtures.DROP_TABLE_IF_EXISTS_PORTFOLIO_STATS)
                 }
-            thrown.message shouldBe "Database write failed"
-            thrown.cause shouldNotBe null
+
+                val stats = PortfolioStats(BigDecimal("10000.00"))
+
+                val thrown =
+                    shouldThrow<IOException> {
+                        brokenRepo.save(stats)
+                    }
+                thrown.message shouldBe "Database write failed"
+                thrown.cause shouldNotBe null
+            }
         }
 
         "save rethrows IOException directly without wrapping" {
-            // Clear current transaction if it exists
-            TransactionManager.currentOrNull()?.close()
+            runTest {
+                // Clear current transaction if it exists
+                TransactionManager.currentOrNull()?.close()
 
-            val realTxManager = db.transactionManager
-            val throwingTxManager = StatsThrowingTransactionManager(realTxManager)
+                val realTxManager = db.transactionManager
+                val throwingTxManager = StatsThrowingTransactionManager(realTxManager)
 
-            val mockDb = mockk<Database>(relaxed = true)
-            mockkStatic(TestFixtures.ORG_JETBRAINS_EXPOSED_SQL_TRANSACTIONS_TRANSACTION_API_KT)
-            every { mockDb.transactionManager } returns throwingTxManager
+                val mockDb = mockk<Database>(relaxed = true)
+                mockkStatic(TestFixtures.ORG_JETBRAINS_EXPOSED_SQL_TRANSACTIONS_TRANSACTION_API_KT)
+                every { mockDb.transactionManager } returns throwingTxManager
 
-            val ioRepo = SqlitePortfolioStatsRepositoryImpl(mockDb, objectMapper)
-            val stats = PortfolioStats(BigDecimal("10000.00"))
+                val ioRepo = SqlitePortfolioStatsRepositoryImpl(mockDb, objectMapper)
+                val stats = PortfolioStats(BigDecimal("10000.00"))
 
-            val thrown =
-                shouldThrow<IOException> {
-                    ioRepo.save(stats)
-                }
-            thrown.message shouldBe "Direct IO failure"
+                val thrown =
+                    shouldThrow<IOException> {
+                        ioRepo.save(stats)
+                    }
+                thrown.message shouldBe "Direct IO failure"
 
-            unmockkStatic(TestFixtures.ORG_JETBRAINS_EXPOSED_SQL_TRANSACTIONS_TRANSACTION_API_KT)
+                unmockkStatic(TestFixtures.ORG_JETBRAINS_EXPOSED_SQL_TRANSACTIONS_TRANSACTION_API_KT)
+            }
         }
 
         "load migrates portfolio-stats.json if database is empty" {
-            val testFile = File("test-portfolio-stats.json")
-            val testBakFile = File("test-portfolio-stats.json.bak")
-            val testRepo = SqlitePortfolioStatsRepositoryImpl(db, objectMapper, "test-portfolio-stats.json")
-            try {
-                testFile.delete()
-                testBakFile.delete()
-                testFile.writeText("""{"allTimeHigh": 18000.0}""")
+            runTest {
+                val testFile = File("test-portfolio-stats.json")
+                val testBakFile = File("test-portfolio-stats.json.bak")
+                val testRepo = SqlitePortfolioStatsRepositoryImpl(db, objectMapper, "test-portfolio-stats.json")
+                try {
+                    testFile.delete()
+                    testBakFile.delete()
+                    testFile.writeText("""{"allTimeHigh": 18000.0}""")
 
-                val stats = testRepo.load()
-                stats.allTimeHigh.shouldNotBeNull()
-                stats.allTimeHigh.shouldBeEqualComparingTo(BigDecimal("18000.00"))
+                    val stats = testRepo.load()
+                    stats.allTimeHigh.shouldNotBeNull()
+                    stats.allTimeHigh.shouldBeEqualComparingTo(BigDecimal("18000.00"))
 
-                val loadedFromDb = testRepo.load()
-                loadedFromDb.allTimeHigh.shouldNotBeNull()
-                loadedFromDb.allTimeHigh.shouldBeEqualComparingTo(BigDecimal("18000.00"))
+                    val loadedFromDb = testRepo.load()
+                    loadedFromDb.allTimeHigh.shouldNotBeNull()
+                    loadedFromDb.allTimeHigh.shouldBeEqualComparingTo(BigDecimal("18000.00"))
 
-                testFile.exists() shouldBe false
-                testBakFile.exists() shouldBe true
-            } finally {
-                testFile.delete()
-                testBakFile.delete()
+                    testFile.exists() shouldBe false
+                    testBakFile.exists() shouldBe true
+                } finally {
+                    testFile.delete()
+                    testBakFile.delete()
+                }
             }
         }
     }

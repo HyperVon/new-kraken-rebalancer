@@ -8,6 +8,7 @@ import com.gemini.krakenbot.config.configureCompression
 import com.gemini.krakenbot.config.configureSerialization
 import com.gemini.krakenbot.controller.dashboardRouting
 import com.gemini.krakenbot.service.PortfolioManager
+import com.gemini.krakenbot.service.TradeHistoryService
 import io.ktor.client.*
 import io.ktor.server.application.*
 import io.ktor.server.engine.*
@@ -27,9 +28,13 @@ fun main() {
 
     val koin = GlobalContext.get()
     val portfolioManager = koin.get<PortfolioManager>()
+    val tradeHistoryService = koin.get<TradeHistoryService>()
     val httpClient = koin.get<HttpClient>()
 
     portfolioManager.startRebalancingLoop()
+    // Finish history cleanup/migration/simulation seeding before accepting HTTP traffic.
+    runBlocking { tradeHistoryService.init() }
+
     val applicationScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     applicationScope.launch {
         portfolioManager.runLoop()

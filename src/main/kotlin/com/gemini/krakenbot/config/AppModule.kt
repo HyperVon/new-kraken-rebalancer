@@ -72,7 +72,7 @@ val appModule =
                 configService = get(),
                 objectMapper = get(),
                 portfolioAnalyzer = get(),
-            ).apply { init() }
+            )
         }
         singleOf(::KrakenServiceImpl)
         singleOf(::SimulatedKrakenService)

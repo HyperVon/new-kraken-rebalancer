@@ -14,36 +14,36 @@ data class TradeSummaryStats(
 )
 
 interface TradeRepository {
-    fun save(history: List<PortfolioSnapshot>)
+    suspend fun save(history: List<PortfolioSnapshot>)
 
-    fun load(): List<PortfolioSnapshot>
+    suspend fun load(): List<PortfolioSnapshot>
 
-    fun getTradeSummaryStats(): TradeSummaryStats
+    suspend fun getTradeSummaryStats(): TradeSummaryStats
 
-    fun getTradeSummaryStats(from: Instant, to: Instant): TradeSummaryStats
+    suspend fun getTradeSummaryStats(from: Instant, to: Instant): TradeSummaryStats
 
     // History page query methods
-    fun saveSnapshot(snapshot: PortfolioSnapshot)
+    suspend fun saveSnapshot(snapshot: PortfolioSnapshot)
 
-    fun saveTrade(trade: TradeRecord)
+    suspend fun saveTrade(trade: TradeRecord)
 
-    fun updateTrade(oldTrade: TradeRecord, newTrade: TradeRecord)
+    suspend fun updateTrade(oldTrade: TradeRecord, newTrade: TradeRecord)
 
-    fun getSnapshotsInRange(from: Instant, to: Instant): List<PortfolioSnapshot>
+    suspend fun getSnapshotsInRange(from: Instant, to: Instant): List<PortfolioSnapshot>
 
-    fun getTradesInRange(from: Instant, to: Instant): List<TradeRecord>
+    suspend fun getTradesInRange(from: Instant, to: Instant): List<TradeRecord>
 
-    fun getLatestTradeTime(): Instant?
+    suspend fun getLatestTradeTime(): Instant?
 
-    fun isHistorySeeded(): Boolean
+    suspend fun isHistorySeeded(): Boolean
 
-    fun setHistorySeeded(seeded: Boolean)
+    suspend fun setHistorySeeded(seeded: Boolean)
 
-    fun getSyncMetadata(key: String): String?
+    suspend fun getSyncMetadata(key: String): String?
 
-    fun setSyncMetadata(key: String, value: String)
+    suspend fun setSyncMetadata(key: String, value: String)
 
-    fun pruneSnapshotsOlderThan(cutoff: Instant): Int
+    suspend fun pruneSnapshotsOlderThan(cutoff: Instant): Int
 
-    fun cleanupDuplicateTrades()
+    suspend fun cleanupDuplicateTrades()
 }

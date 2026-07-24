@@ -6,6 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.12.4] - 2026-07-24
+
+### Fixed
+
+- **Startup History Race (`KrakenRebalancerApplication`)**: Run `tradeHistoryService.init()` to completion before binding the HTTP server so History/API routes never observe an empty DB during cleanup, JSON migration, or simulation seeding.
+- **Chart.js Option Mutation (`History.kt`)**: Clone shared `chartDefaults` before applying time-range units so range switches no longer mutate global Chart.js options.
+- **History Sync Banner Styles**: Move sync progress and trade-log chrome to typed `CssClass.History` styles backed by `CssTheme` tokens (replacing undefined `--color-text` / `--color-primary` inline CSS).
+- **Dashboard Double History Load**: Load portfolio history once in `handleGetDashboardFragment` and derive the latest snapshot from that list.
+
+### Changed
+
+- **Suspend Repository IO Boundary**: Make `TradeRepository` / `PortfolioStatsRepository` suspend and route all JDBC through `safeTransactionIO` / `readTransactionIO` (`withContext(Dispatchers.IO)`).
+- **Simulation Seed Precision**: Store `SimulationDefaults` prices as `BigDecimal` and seed historical snapshots with scale 8/2 math via `PortfolioCalculations.calculateTargetValue`, written in a single batched `repository.save(...)` call.
+- **CSS Theme Token Expansion**: Centralize muted success/danger/warning/glass rgba literals in `CssTheme` and consume them from style builders.
+- **BigDecimal Test Assertions**: Prefer `shouldBeEqualComparingTo` / `compareTo` over scale-sensitive `==` and `toDouble()` matchers.
+- **Allocation Chart Bar Widths**: Compute fill percentages with `PortfolioCalculations.calculateCurrentPercent` instead of `Double` division.
+
 ## [6.12.3] - 2026-07-24
 
 ### Fixed

@@ -311,17 +311,11 @@ class HistoryTest : StringSpec() {
                 checkSyncProgress().await() shouldBe false
                 (document.getElementById(HtmlIds.SYNC_PROGRESS_BAR) as HTMLElement).style.width shouldBe "50%"
                 loadAll(TimeRange.TWENTY_FOUR_HOURS.key).await()
-                (
-                    window
-                        .asDynamic()
-                        .chartDefaults.scales.x.time.unit as String
-                ) shouldBe "hour"
+                (getClonedChartOptions().scales.x.time.unit as String) shouldBe "hour"
+                (window.asDynamic().chartDefaults.scales.x.time.unit == null) shouldBe true
                 loadAll(TimeRange.ALL.key).await()
-                (
-                    window
-                        .asDynamic()
-                        .chartDefaults.scales.x.time.unit == null
-                ) shouldBe true
+                (getClonedChartOptions().scales.x.time.unit == null) shouldBe true
+                (window.asDynamic().chartDefaults.scales.x.time.unit == null) shouldBe true
             } finally {
                 document.body!!.removeChild(container)
             }

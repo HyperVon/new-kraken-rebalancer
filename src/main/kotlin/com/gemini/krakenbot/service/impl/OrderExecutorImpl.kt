@@ -71,7 +71,7 @@ class OrderExecutorImpl(
             actualCash = refreshUsdBalanceAfterSells(projectedCash)
         }
 
-        // Cycle-level budget: 99% of opening USD so multi-buy batches cannot erode the reserve.
+        // Cycle-level budget: 99% of post-sell settled USD so multi-buy batches cannot erode the reserve.
         val cycleBuyBudget = actualCash.multiply(CASH_RESERVE_FACTOR).toUsdScale()
         var remainingBuyBudget = cycleBuyBudget
 
@@ -198,7 +198,7 @@ class OrderExecutorImpl(
         }
     }
 
-    internal fun recordTrade(
+    internal suspend fun recordTrade(
         result: OrderResult,
         symbol: String,
         pair: String,

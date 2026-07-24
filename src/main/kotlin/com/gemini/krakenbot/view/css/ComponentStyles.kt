@@ -17,28 +17,28 @@ object ComponentStyles {
         }
 
         ".status-badge.live" {
-            backgroundColor = Color("rgba(16, 185, 129, 0.15)")
+            backgroundColor = CssTheme.colorSuccessMuted
             color = CssTheme.colorSuccess
             borderWidth = 1.px
             borderStyle = BorderStyle.solid
-            borderColor = Color("rgba(16, 185, 129, 0.3)")
+            borderColor = CssTheme.colorSuccessBorder
             put("animation", "pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite")
         }
 
         ".status-badge.delayed" {
-            backgroundColor = Color("rgba(245, 158, 11, 0.15)")
+            backgroundColor = CssTheme.colorWarningMuted
             color = CssTheme.colorWarning
             borderWidth = 1.px
             borderStyle = BorderStyle.solid
-            borderColor = Color("rgba(245, 158, 11, 0.3)")
+            borderColor = CssTheme.colorWarningBorder
         }
 
         ".status-badge.offline" {
-            backgroundColor = Color("rgba(100, 116, 139, 0.15)")
+            backgroundColor = CssTheme.colorSlateMuted
             color = CssTheme.colorTextSecondary
             borderWidth = 1.px
             borderStyle = BorderStyle.solid
-            borderColor = Color("rgba(100, 116, 139, 0.3)")
+            borderColor = CssTheme.colorSlateBorder
         }
 
         "@keyframes pulse" {
@@ -125,12 +125,12 @@ object ComponentStyles {
         ".${CssClass.AllocationChart.BarTrack}" {
             flexGrow = 1.0
             height = 0.75.rem
-            background = "rgba(255, 255, 255, 0.05)"
+            background = CssTheme.colorWhiteMuted.value
             borderRadius = CssTheme.radiusPill
             overflow = Overflow.hidden
             borderWidth = 1.px
             borderStyle = BorderStyle.solid
-            borderColor = Color("rgba(255, 255, 255, 0.02)")
+            borderColor = CssTheme.colorWhiteSubtle
         }
 
         ".${CssClass.AllocationChart.BarFill}" {
@@ -164,12 +164,12 @@ object ComponentStyles {
         }
 
         ".custom-scrollbar::-webkit-scrollbar-thumb" {
-            backgroundColor = Color("rgba(148, 163, 184, 0.15)")
+            backgroundColor = CssTheme.colorScrollbarThumb
             borderRadius = CssTheme.radiusPill
         }
 
         ".custom-scrollbar::-webkit-scrollbar-thumb:hover" {
-            backgroundColor = Color("rgba(148, 163, 184, 0.3)")
+            backgroundColor = CssTheme.colorScrollbarThumbHover
         }
 
         ".max-h-100" {
@@ -214,7 +214,7 @@ object ComponentStyles {
         }
 
         ".${CssClass.Activity.EmptyHistoryBox} svg" {
-            color = Color("rgba(255, 255, 255, 0.1)")
+            color = CssTheme.colorIconFaint
             marginBottom = 0.5.rem
         }
 

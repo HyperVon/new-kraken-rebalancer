@@ -31,7 +31,7 @@ object NavigationStyles {
         ".${CssClass.Navigation.Link}:hover" {
             color = CssTheme.colorTextPrimary
             background = CssTheme.colorGlassHover.value
-            borderColor = Color("rgba(255, 255, 255, 0.06)")
+            borderColor = CssTheme.colorWhiteFaint
         }
 
         CssClass.Navigation.LinkActive.querySelector {
@@ -94,6 +94,82 @@ object NavigationStyles {
             marginBottom = 1.25.rem
         }
 
+        ".${CssClass.History.TradeLogHeader}" {
+            display = Display.flex
+            put("justify-content", "space-between")
+            alignItems = Align.center
+            marginBottom = 1.rem
+        }
+
+        ".${CssClass.History.TitleNoMargin}" {
+            marginBottom = 0.px
+        }
+
+        ".${CssClass.History.MutedSmallText}" {
+            fontSize = 0.875.rem
+            color = CssTheme.colorTextMuted
+        }
+
+        ".${CssClass.History.EmptyTableCell}" {
+            textAlign = TextAlign.center
+            color = CssTheme.colorTextMuted
+            padding = Padding(2.rem)
+        }
+
+        ".${CssClass.History.SyncBanner}" {
+            display = Display.none
+            marginBottom = 1.5.rem
+            padding = Padding(1.5.rem)
+        }
+
+        ".${CssClass.History.SyncHeader}" {
+            display = Display.flex
+            alignItems = Align.center
+            put("justify-content", "space-between")
+            marginBottom = 0.75.rem
+        }
+
+        ".${CssClass.History.SyncTitle}" {
+            fontWeight = FontWeight.w600
+            color = CssTheme.colorTextPrimary
+            display = Display.flex
+            alignItems = Align.center
+            gap = 0.5.rem
+        }
+
+        ".${CssClass.History.SyncSpinner}" {
+            width = 1.rem
+            height = 1.rem
+            borderWidth = 2.px
+            borderStyle = BorderStyle.solid
+            borderColor = CssTheme.colorKrakenBlue
+            put("border-top-color", "transparent")
+            borderRadius = 50.pct
+            put("animation", "spin 1s linear infinite")
+        }
+
+        ".${CssClass.History.SyncText}" {
+            fontFamily = CssTheme.fontMono
+            fontSize = 0.875.rem
+            color = CssTheme.colorTextMuted
+        }
+
+        ".${CssClass.History.ProgressTrack}" {
+            width = 100.pct
+            height = 0.5.rem
+            background = CssTheme.colorWhiteMuted.value
+            borderRadius = CssTheme.radiusPill
+            put("overflow", "hidden")
+        }
+
+        ".${CssClass.History.ProgressBar}" {
+            width = 0.pct
+            height = 100.pct
+            background = CssTheme.colorKrakenBlue.value
+            put("transition", "width 0.3s ease")
+            borderRadius = CssTheme.radiusPill
+        }
+
         // Recent Activity & Deviations
         ".${CssClass.Activity.EmptyText}" {
             color = CssTheme.colorTextMuted
@@ -129,10 +205,10 @@ object NavigationStyles {
         }
 
         ".${CssClass.Utility.ErrorBanner}" {
-            backgroundColor = Color("rgba(239, 68, 68, 0.15)")
+            backgroundColor = CssTheme.colorDangerMuted
             borderWidth = 1.px
             borderStyle = BorderStyle.solid
-            borderColor = Color("rgba(239, 68, 68, 0.3)")
+            borderColor = CssTheme.colorDangerBorder
             color = CssTheme.colorDangerLight
             padding = Padding(1.rem)
             borderRadius = 0.5.rem

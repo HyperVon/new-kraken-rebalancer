@@ -37,7 +37,7 @@ class PortfolioManagerLoopTest : StringSpec() {
     init {
         beforeTest {
             val repo = mockk<PortfolioStatsRepository>(relaxed = true)
-            every {
+            coEvery {
                 repo.load()
             } returns PortfolioStats(BigDecimal.ZERO)
             portfolioAnalyzer =

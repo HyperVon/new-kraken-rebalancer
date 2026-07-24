@@ -17,6 +17,7 @@ import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.comparables.shouldBeLessThan
 import io.kotest.matchers.shouldBe
+import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
@@ -349,7 +350,7 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
                 }
 
                 val snapshots = mutableListOf<PortfolioSnapshot>()
-                every {
+                coEvery {
                     tradeHistoryService.addSnapshot(any<PortfolioSnapshot>())
                 } answers {
                     snapshots.add(
