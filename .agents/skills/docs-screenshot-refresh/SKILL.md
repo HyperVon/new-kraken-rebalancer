@@ -47,7 +47,7 @@ readiness waits, and scroll position. Current set:
 | `dashboard-bottom.png` | `/` — asset table + recent activity |
 | `settings.png` | `/settings` — full settings form |
 | `history.png` | `/history` (30d) — summary cards + first charts |
-| `history-charts.png` | `/history` (30d) — allocation deviation + cumulative P&L |
+| `history-charts.png` | `/history` (30d) — allocation deviation + cumulative net cash flow |
 | `history-bottom.png` | `/history` (30d) — trade log |
 
 Canonical PNGs are **2880×1800** (1440×900 @2×). This closely frames the app's

@@ -10,6 +10,7 @@ import com.gemini.krakenbot.config.*
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.service.impl.ConfigServiceImpl
 import io.kotest.assertions.throwables.shouldThrow
+import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.nulls.shouldNotBeNull
@@ -26,6 +27,7 @@ import java.io.IOException
 import java.nio.file.Files
 
 class ConfigServiceTest : StringSpec() {
+    override fun isolationMode() = IsolationMode.InstancePerTest
 
     private lateinit var configService: ConfigService
     private lateinit var objectMapper: ObjectMapper

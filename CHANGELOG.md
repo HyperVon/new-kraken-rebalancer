@@ -76,6 +76,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   header matches the dataset labels and what the series actually plots (running
   net cash flow from trades — sells add cash, buys subtract it). README and User
   Guide updated to match.
+- **Documentation screenshots**: Refreshed all `docs/images/*.png` from an
+  isolated simulation boot so History assets show the new Cumulative Net Cash
+  Flow title and current Dashboard / Settings / History chrome.
+- **Kotest isolation**: `SettingsTest`, `ConfigServiceTest`, and
+  `SimulatedKrakenServiceTest` now use `IsolationMode.InstancePerTest`.
 
 ### Fixed
 

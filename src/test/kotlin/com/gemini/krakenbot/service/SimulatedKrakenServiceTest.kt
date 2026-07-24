@@ -8,6 +8,7 @@ import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.service.impl.SimulatedKrakenService
 import com.gemini.krakenbot.test.TestConstants
+import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.shouldBe
@@ -18,6 +19,8 @@ import java.math.BigDecimal
 import java.math.RoundingMode
 
 class SimulatedKrakenServiceTest : StringSpec() {
+    override fun isolationMode() = IsolationMode.InstancePerTest
+
     init {
         "should initialize prices and drifted balances based on config allocations" {
             val configService = mockk<ConfigService>()
