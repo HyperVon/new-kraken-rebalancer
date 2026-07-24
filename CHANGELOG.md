@@ -14,6 +14,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Chart.js Option Mutation (`History.kt`)**: Clone shared `chartDefaults` before applying time-range units so range switches no longer mutate global Chart.js options.
 - **History Sync Banner Styles**: Move sync progress and trade-log chrome to typed `CssClass.History` styles backed by `CssTheme` tokens (replacing undefined `--color-text` / `--color-primary` inline CSS).
 - **Dashboard Double History Load**: Load portfolio history once in `handleGetDashboardFragment` and derive the latest snapshot from that list.
+- **Eclipse JGit XXE (`CVE-2025-4949`)**: Bump Spotless Gradle plugin from `7.0.2` to `7.0.4` so the build classpath uses patched `org.eclipse.jgit` `6.10.1.202505221210-r`.
 
 ### Changed
 
