@@ -8,6 +8,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [6.12.17] - 2026-07-24
+
 ### Changed
 
 - **CSS class constants**: Added `CssClass.StatusCard.Offline` and wired status-badge /
