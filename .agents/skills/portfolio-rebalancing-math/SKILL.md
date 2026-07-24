@@ -108,3 +108,5 @@ effectively than spreading across all pairs.
 - [ ] Fiat correction only when USD alone triggers
 - [ ] Sell → 3× poll (250ms exponential backoff) → 95% settle → 99% buy cap → dust skip
 - [ ] Changes reflected in `docs/ALGORITHM.md` when behavior changes
+- [ ] If ALGORITHM Mermaid changed → run
+      [validate_mermaid.py](../documentation-review/scripts/validate_mermaid.py)

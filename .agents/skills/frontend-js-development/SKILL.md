@@ -59,9 +59,18 @@ Thresholds in `frontend-js/karma.config.d/coverage.js`:
 ./gradlew :frontend-js:jsTest
 ```
 
+## Docs screenshots
+
+Chart / History / SSE-driven UI changes that alter README visuals should refresh
+`docs/images/*.png` via
+[docs-screenshot-refresh](../docs-screenshot-refresh/SKILL.md) and keep
+[docs/USER_GUIDE.md](../../../docs/USER_GUIDE.md) aligned
+([user-guide](../user-guide/SKILL.md)).
+
 ## Checklist
 
 - [ ] SSE consumes `/api/status/stream` payloads correctly
 - [ ] Timeframe change updates **all 4** summary cards
 - [ ] Chart options deep-cloned; listeners cleaned up
 - [ ] `:common` IDs/classes used; Karma thresholds still met
+- [ ] Visual changes → run docs-screenshot-refresh when shipping docs

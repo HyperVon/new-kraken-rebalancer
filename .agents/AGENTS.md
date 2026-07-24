@@ -5,6 +5,7 @@ Domain skills live under **`.agents/skills/*/SKILL.md`**. Prefer skills for deep
 
 Canonical deep docs:
 
+- [`docs/USER_GUIDE.md`](../docs/USER_GUIDE.md) — end-user visual walkthrough
 - [`docs/ALGORITHM.md`](../docs/ALGORITHM.md) — rebalancing math & execution
 - [`docs/FLOWS.md`](../docs/FLOWS.md) — Kotlin Flow / SharedFlow / SSE architecture
 - [`docs/EVALUATION.md`](../docs/EVALUATION.md) — scenario evaluation suite
@@ -29,6 +30,8 @@ Canonical deep docs:
 | Spotless, JaCoCo, Karma, CI | [gradle-quality-gates](skills/gradle-quality-gates/SKILL.md) |
 | CHANGELOG / README / docs sync | [changelog-and-docs-sync](skills/changelog-and-docs-sync/SKILL.md) |
 | Full docs audit vs source code | [documentation-review](skills/documentation-review/SKILL.md) |
+| README screenshot PNGs (sim UI) | [docs-screenshot-refresh](skills/docs-screenshot-refresh/SKILL.md) |
+| End-user User Guide (visual) | [user-guide](skills/user-guide/SKILL.md) |
 | Refactor / cleanup | [kotlin-refactoring-and-cleanup](skills/kotlin-refactoring-and-cleanup/SKILL.md) |
 | Code review | [code-review](skills/code-review/SKILL.md) |
 | Dependency upgrades | [dependency-upgrade](skills/dependency-upgrade/SKILL.md) |

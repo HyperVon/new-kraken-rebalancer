@@ -6,6 +6,41 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.12.10] - 2026-07-24
+
+### Added
+
+- **`docs-screenshot-refresh` agent skill**: Boot in simulation mode and refresh
+  README `docs/images/*.png` after UI / frontend visual changes; adaptive
+  `targets.json` + `--discover` for new pages/sections; isolated run directory
+  for clean seeded History charts.
+- **`docs/USER_GUIDE.md`**: Visual end-user walkthrough of Dashboard, Settings,
+  and History (embeds all documentation screenshots); **`user-guide`** agent
+  skill to keep it current.
+- **`docs/images/history-charts.png`**: Mid-History capture (allocation drift +
+  cumulative P&L) for README and the User Guide.
+
+### Changed
+
+- **README screenshots**: Recaptured from a fresh simulation seed at a tightly
+  framed 2880×1800 Retina resolution; Playwright helper preferred over embedded
+  browser capture. Simulation required for screenshots; dry-run optional so
+  emulator fills can show as successful trades.
+- **README / AGENTS**: Link the User Guide from the README intro and Screenshots
+  section; index the new skills.
+
+### Fixed
+
+- **Mermaid diagrams render in older viewers**: Quote the `Any Deviation ≥ Trigger?`
+  decision label in `docs/ALGORITHM.md` (unquoted non-ASCII text is a lexical error)
+  and use `participant` instead of the newer `actor` keyword in the config hot-reload
+  sequence diagram in `docs/FLOWS.md`. Both previously failed with
+  *"Syntax error in graph"* in IDE preview panes that bundle Mermaid 8.x.
+- **`validate_mermaid.py`**: Documentation-review helper that parses every Mermaid
+  fence under Mermaid 8.8.0 (the IDE baseline); wired into documentation-review,
+  changelog-and-docs-sync, portfolio-rebalancing-math, and coroutines-flows-sse so
+  diagram edits are checked before ship.
+
 ## [6.12.9] - 2026-07-24
 
 ### Fixed

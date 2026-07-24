@@ -42,6 +42,9 @@ DI: `AppModule` binds `KrakenService` → `DynamicKrakenService(live, simulated,
   require explicit user intent before enabling.
 - `TestFixtures.DEFAULT_TEST_SETTINGS` typically uses `simulation = true` with
   `dryRun = false` against Fake/sim paths — keep evaluation offline.
+- README screenshot / user-guide capture requires **`simulation = true`**;
+  `dryRun` is optional in that context (emulator orders are still offline) —
+  see [docs-screenshot-refresh](../docs-screenshot-refresh/SKILL.md).
 
 ## Checklist
 

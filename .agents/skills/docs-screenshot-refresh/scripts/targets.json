@@ -1,0 +1,49 @@
+{
+  "viewport": {
+    "width": 1440,
+    "height": 900,
+    "deviceScaleFactor": 2
+  },
+  "targets": [
+    {
+      "file": "dashboard.png",
+      "path": "/",
+      "await_text": ["Total Portfolio", "Recent Activity"],
+      "position": "top"
+    },
+    {
+      "file": "dashboard-bottom.png",
+      "path": "/",
+      "await_text": ["Recent Activity"],
+      "position": "bottom"
+    },
+    {
+      "file": "settings.png",
+      "path": "/settings",
+      "await_text": ["Global Parameters", "Target Allocations"],
+      "position": "top"
+    },
+    {
+      "file": "history.png",
+      "path": "/history",
+      "click_button": "30d",
+      "await_text": ["Total Trades"],
+      "await_charts": 4,
+      "position": "top"
+    },
+    {
+      "file": "history-charts.png",
+      "path": "/history",
+      "click_button": "30d",
+      "await_charts": 4,
+      "anchor": "Allocation Drift Over Time"
+    },
+    {
+      "file": "history-bottom.png",
+      "path": "/history",
+      "click_button": "30d",
+      "await_charts": 4,
+      "anchor": "Trade History"
+    }
+  ]
+}

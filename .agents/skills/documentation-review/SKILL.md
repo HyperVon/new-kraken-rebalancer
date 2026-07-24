@@ -16,6 +16,11 @@ always the code / Gradle / CI — never older docs or CHANGELOG history.
 
 This skill is the **full audit**. For incremental “I just shipped X, touch the
 relevant docs” work, use [changelog-and-docs-sync](../changelog-and-docs-sync/SKILL.md).
+For regenerating README screenshots from a running simulation UI, use
+[docs-screenshot-refresh](../docs-screenshot-refresh/SKILL.md) (do not try to
+“fix” PNGs by editing markdown alone). For the end-user walkthrough, maintain
+[docs/USER_GUIDE.md](../../../docs/USER_GUIDE.md) via
+[user-guide](../user-guide/SKILL.md).
 
 ---
 
@@ -24,6 +29,7 @@ relevant docs” work, use [changelog-and-docs-sync](../changelog-and-docs-sync/
 | Document | Role |
 | :--- | :--- |
 | `README.md` | Product overview, stack versions, setup, package tree, screenshots |
+| `docs/USER_GUIDE.md` | End-user visual walkthrough (must embed current `docs/images/*`) |
 | `CHANGELOG.md` | Keep a Changelog — note gaps only; do not rewrite history |
 | `CONTRIBUTING.md` | Dev setup, PR expectations, coding guidelines |
 | `SECURITY.md` | Vulnerability reporting, deploy/security guidance |
@@ -93,6 +99,8 @@ For every in-scope doc, classify findings:
 | **Missing** | Important behavior exists in code but undocumented | Add concise coverage |
 | **Orphan** | Doc describes removed APIs/packages/flags | Remove or rewrite |
 | **Skill drift** | `.agents` skill/AGENTS contradicts code | Fix skill or AGENTS |
+| **Stale screenshots** | README UI images lag recent view/CSS/JS changes | Defer capture to [docs-screenshot-refresh](../docs-screenshot-refresh/SKILL.md) |
+| **Broken diagram** | Mermaid block fails to render in a viewer | Rewrite to syntax supported by Mermaid 8.x (see below) |
 
 High-risk mismatch examples:
 
@@ -105,6 +113,34 @@ High-risk mismatch examples:
 - Lint paths pointing at root `AGENTS.md` (file is `.agents/AGENTS.md`)
 - Evaluation scenario table out of sync with `EvaluationScenariosTest`
 - Config template missing keys present on `Settings`
+
+#### Mermaid compatibility
+
+GitHub ships a modern Mermaid, but IDE preview panes may still bundle 8.x, where a
+diagram that renders on GitHub shows *"Syntax error in graph"*. Keep every block in
+`README.md`, `docs/ALGORITHM.md`, and `docs/FLOWS.md` parseable by 8.x:
+
+- **Quote any label containing non-ASCII or punctuation** — `B{"Deviation ≥ Trigger?"}`,
+  not `B{Deviation ≥ Trigger?}`; unquoted `≥ → × ±` is a lexical error.
+- **Use `participant`, not `actor`** in sequence diagrams (`actor` is newer syntax).
+- `\n` and `<br/>` both work inside quoted labels; either is fine.
+
+**Always run the validator** after editing any ```mermaid fence (do not rely on GitHub
+preview alone):
+
+```bash
+python3 -m venv /tmp/kraken-screenshots
+/tmp/kraken-screenshots/bin/pip install -q playwright
+/tmp/kraken-screenshots/bin/python \
+  .agents/skills/documentation-review/scripts/validate_mermaid.py
+# Optional visual check:
+#   .../validate_mermaid.py --render /tmp/mermaid-renders
+```
+
+The script downloads/caches Mermaid **8.8.0** and fails if any block does not parse.
+Treat a non-zero exit as a **Broken diagram** finding and fix before declaring the
+docs review complete. Incremental edits that touch diagrams should use the same
+script via [changelog-and-docs-sync](../changelog-and-docs-sync/SKILL.md).
 
 ### Step 2: Findings report (before editing)
 
@@ -163,6 +199,13 @@ After product docs are fixed:
 npx markdownlint-cli .agents/AGENTS.md CHANGELOG.md README.md CONTRIBUTING.md SECURITY.md docs/*.md .agents/skills/**/SKILL.md
 ```
 
+When any Mermaid fence was added or changed (or as part of a full audit):
+
+```bash
+/tmp/kraken-screenshots/bin/python \
+  .agents/skills/documentation-review/scripts/validate_mermaid.py
+```
+
 Spot-check:
 
 - [ ] README tech stack versions match Gradle
@@ -173,6 +216,8 @@ Spot-check:
 - [ ] Template JSON keys ⊆ `Settings` / `AppConfig`
 - [ ] AGENTS skill index links resolve to existing `SKILL.md` files
 - [ ] `dryRun` vs `simulation` distinguished wherever both appear
+- [ ] Stale README screenshots flagged; refresh via docs-screenshot-refresh when visuals drifted
+- [ ] Every Mermaid block parses under Mermaid 8.x (`validate_mermaid.py` exit 0)
 
 Do not declare complete until markdown lint is clean on touched files.
 
@@ -199,6 +244,10 @@ Do not declare complete until markdown lint is clean on touched files.
 - Leaving README package trees with removed or renamed packages
 - Expanding CHANGELOG with speculative unreleased features not in code
 - Skipping `.agents` skills when product docs were wrong for the same fact
+- Updating README screenshot captions while leaving stale `docs/images/*.png`
+  (use docs-screenshot-refresh instead)
+- Shipping Mermaid that only renders on GitHub (skipping `validate_mermaid.py`
+  against 8.x / IDE preview)
 
 ---
 
@@ -210,3 +259,4 @@ Do not declare complete until markdown lint is clean on touched files.
 - [ ] AGENTS + skills coherent with the same facts
 - [ ] CHANGELOG entry if user-visible doc fixes were applied
 - [ ] `markdownlint-cli` clean on touched markdown
+- [ ] Mermaid fences validated with `scripts/validate_mermaid.py` when diagrams touched

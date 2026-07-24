@@ -31,7 +31,7 @@ flowchart TD
 
     subgraph ANALYSIS["Phase 2: Analysis"]
         A1["Calculate Deviation per Asset\n(Current Value vs Target Value)"]
-        A1 --> A2{Any Deviation ≥ Trigger?}
+        A1 --> A2{"Any Deviation ≥ Trigger?"}
         A2 -- "Crypto Triggered" --> A3["Generate BUY/SELL orders"]
         A2 -- "Only USD Triggered" --> A4["Fiat Correction:\nDistribute among counter-balanced assets"]
         A2 -- "None Triggered" --> SKIP[No trades needed]

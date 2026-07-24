@@ -11,6 +11,10 @@ several months.**
 
 ![Dashboard](docs/images/dashboard.png)
 
+**New here?** Start with the [User Guide](docs/USER_GUIDE.md) — a visual
+walkthrough of Dashboard, Settings, History, and safety modes
+(simulation / dry run).
+
 ---
 
 ## Tech Stack
@@ -265,7 +269,12 @@ The dedicated History view provides detailed analysis and charts tracking portfo
 
 ![History Charts](docs/images/history.png)
 
+![History — Allocation Drift & P&L](docs/images/history-charts.png)
+
 ![Trade History Log](docs/images/history-bottom.png)
+
+For a full walkthrough of what each control and chart means, see the
+[User Guide](docs/USER_GUIDE.md).
 
 ---
 

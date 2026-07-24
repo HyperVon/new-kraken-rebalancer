@@ -65,9 +65,17 @@ component helpers over one-off markup copies.
 Dashboard has **no user authentication**. CORS is limited by
 `isLocalOrPrivateOrigin` — do not weaken origin checks casually.
 
+## Docs screenshots
+
+Visible changes to Dashboard / Settings / History should refresh README PNGs via
+[docs-screenshot-refresh](../docs-screenshot-refresh/SKILL.md) and update
+[docs/USER_GUIDE.md](../../../docs/USER_GUIDE.md) when user-facing meaning
+changes ([user-guide](../user-guide/SKILL.md)).
+
 ## Checklist
 
 - [ ] New UI goes in `view/component/` + CSS module; routes via controller
 - [ ] Consumes `CssClass` / `HtmlIds` / `ViewText` / `Routes` from `:common`
 - [ ] SSE path remains `/api/status/stream`
 - [ ] No FQNs; markdown/docs updated if route tree changes
+- [ ] Visual changes → run docs-screenshot-refresh when shipping docs

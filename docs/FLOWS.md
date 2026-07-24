@@ -98,7 +98,7 @@ flowchart TB
 
 ```mermaid
 sequenceDiagram
-    actor User as User (Browser)
+    participant User as User (Browser)
     participant API as Config Endpoint
     participant CS as ConfigServiceImpl
     participant PM as PortfolioManagerImpl

@@ -52,6 +52,8 @@ On connect, send latest snapshot from DB, then collect the SharedFlow.
 ## Checklist
 
 - [ ] Hot vs cold choice matches `docs/FLOWS.md`
+- [ ] If FLOWS Mermaid changed → run
+      [validate_mermaid.py](../documentation-review/scripts/validate_mermaid.py)
 - [ ] Config watch uses `collectLatest`
 - [ ] SSE endpoint remains `/api/status/stream`
 - [ ] Flow tests use `runTest` + `advanceUntilIdle`
