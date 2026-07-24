@@ -30,7 +30,6 @@ import java.io.IOException
 import java.math.BigDecimal
 import kotlin.time.Duration.Companion.milliseconds
 
-@Suppress("unused")
 class PortfolioManagerEdgeCasesTest : StringSpec() {
 
     override fun isolationMode() = IsolationMode.InstancePerTest

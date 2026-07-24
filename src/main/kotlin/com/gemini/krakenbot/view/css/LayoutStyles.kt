@@ -2,7 +2,6 @@ package com.gemini.krakenbot.view.css
 
 import com.gemini.krakenbot.view.util.CssClass
 import kotlinx.css.*
-import kotlinx.css.properties.*
 
 object LayoutStyles {
     fun CssBuilder.applyLayoutStyles() {

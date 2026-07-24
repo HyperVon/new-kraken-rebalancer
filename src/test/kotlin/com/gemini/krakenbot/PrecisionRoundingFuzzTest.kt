@@ -26,7 +26,6 @@ import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
 import java.util.*
 
-@Suppress("unused")
 class PrecisionRoundingFuzzTest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
 

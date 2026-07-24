@@ -20,7 +20,6 @@ import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
 import java.math.BigDecimal
 
-@Suppress("unused")
 class PortfolioManagerOrderExecutionTest : StringSpec() {
 
     override fun isolationMode() = IsolationMode.InstancePerTest

@@ -41,7 +41,6 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.time.Duration.Companion.minutes
 
-@Suppress("unused")
 class KrakenServiceTest : StringSpec() {
 
     override fun isolationMode() = IsolationMode.InstancePerTest

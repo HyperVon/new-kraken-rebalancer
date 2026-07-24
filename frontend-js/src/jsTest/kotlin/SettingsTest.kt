@@ -16,7 +16,6 @@ import kotlinx.browser.document
 import kotlinx.browser.window
 import org.w3c.dom.*
 
-@Suppress("unused")
 class SettingsTest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
 

@@ -22,13 +22,16 @@ class TradeDeduplicatorTest : StringSpec() {
                     BigDecimal(
                         "1.0",
                     ),
-                    BigDecimal("50000.00"), true, false, id = 1,
+                    BigDecimal("50000.00"), success = true, dryRun = false, id = 1,
                 ),
                 TradeRecord(
                     now.plusSeconds(
                         600,
                     ),
-                    "XDGUSD", "BUY", "DOGE", BigDecimal("100.0"), BigDecimal("10.00"), true, false, id = 2,
+                    "XDGUSD", "BUY", "DOGE", BigDecimal("100.0"), BigDecimal("10.00"),
+                    success = true,
+                    dryRun = false,
+                    id = 2,
                 ),
             )
 
@@ -39,13 +42,21 @@ class TradeDeduplicatorTest : StringSpec() {
         "should identify pair alias duplicate trade records" {
             val now = Instant.now()
             val record1 =
-                TradeRecord(now, "XBTUSD", "BUY", "BTC", BigDecimal("1.0"), BigDecimal("50000.00"), true, false, id = 1)
+                TradeRecord(
+                    now, "XBTUSD", "BUY", "BTC", BigDecimal("1.0"), BigDecimal("50000.00"),
+                    success = true,
+                    dryRun = false,
+                    id = 1,
+                )
             val record2 =
                 TradeRecord(
                     now.plusMillis(
                         100,
                     ),
-                    "XXBTZUSD", "BUY", "BTC", BigDecimal("1.0"), BigDecimal("50000.00"), true, false, id = 2,
+                    "XXBTZUSD", "BUY", "BTC", BigDecimal("1.0"), BigDecimal("50000.00"),
+                    success = true,
+                    dryRun = false,
+                    id = 2,
                 )
 
             val duplicates = TradeDeduplicator.findDuplicateTradeIds(listOf(record1, record2))
@@ -86,13 +97,21 @@ class TradeDeduplicatorTest : StringSpec() {
         "should stop checking pairs if timestamp difference exceeds 300 seconds" {
             val now = Instant.now()
             val record1 =
-                TradeRecord(now, "XBTUSD", "BUY", "BTC", BigDecimal("1.0"), BigDecimal("50000.00"), true, false, id = 1)
+                TradeRecord(
+                    now, "XBTUSD", "BUY", "BTC", BigDecimal("1.0"), BigDecimal("50000.00"),
+                    success = true,
+                    dryRun = false,
+                    id = 1,
+                )
             val record2 =
                 TradeRecord(
                     now.plusSeconds(
                         301,
                     ),
-                    "XBTUSD", "BUY", "BTC", BigDecimal("1.0"), BigDecimal("50000.00"), true, false, id = 2,
+                    "XBTUSD", "BUY", "BTC", BigDecimal("1.0"), BigDecimal("50000.00"),
+                    success = true,
+                    dryRun = false,
+                    id = 2,
                 )
 
             val duplicates = TradeDeduplicator.findDuplicateTradeIds(listOf(record1, record2))

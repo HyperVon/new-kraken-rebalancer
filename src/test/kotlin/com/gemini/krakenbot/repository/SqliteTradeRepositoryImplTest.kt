@@ -32,7 +32,6 @@ class TradeThrowingTransactionManager(private val delegate: TransactionManager) 
         throw IOException("Direct IO failure")
 }
 
-@Suppress("unused")
 class SqliteTradeRepositoryImplTest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
 

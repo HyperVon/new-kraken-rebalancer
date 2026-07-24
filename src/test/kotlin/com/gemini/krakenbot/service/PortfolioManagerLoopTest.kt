@@ -22,7 +22,6 @@ import kotlinx.coroutines.yield
 import java.math.BigDecimal
 import kotlin.time.Duration.Companion.milliseconds
 
-@Suppress("unused")
 class PortfolioManagerLoopTest : StringSpec() {
 
     override fun isolationMode() = IsolationMode.InstancePerTest

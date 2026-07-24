@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.gemini.krakenbot.model.PortfolioStats
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.repository.table.PortfolioStatsTable
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import org.jetbrains.exposed.sql.Database
 import org.jetbrains.exposed.sql.insert
 import org.jetbrains.exposed.sql.selectAll
@@ -52,7 +54,9 @@ class SqlitePortfolioStatsRepositoryImpl(
 
             try {
                 val targetPath = File("$statsFilePath.bak").toPath()
-                Files.move(file.toPath(), targetPath, StandardCopyOption.REPLACE_EXISTING)
+                withContext(Dispatchers.IO) {
+                    Files.move(file.toPath(), targetPath, StandardCopyOption.REPLACE_EXISTING)
+                }
                 log.info("Renamed stats file to backup successfully.")
             } catch (ex: Exception) {
                 log.warn("Failed to rename stats file to backup", ex)

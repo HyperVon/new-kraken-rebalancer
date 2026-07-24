@@ -12,7 +12,6 @@ import io.kotest.matchers.shouldBe
 import java.math.BigDecimal
 import java.time.Instant
 
-@Suppress("unused")
 class ModelTest : StringSpec() {
     init {
         "testAssetMappings" {
@@ -172,8 +171,8 @@ class ModelTest : StringSpec() {
                     BigDecimal(
                         "50000.00",
                     ),
-                    true,
-                    false,
+                    success = true,
+                    dryRun = false,
                     id = 1,
                     fee = BigDecimal("10.00"),
                 )
@@ -187,8 +186,8 @@ class ModelTest : StringSpec() {
                     BigDecimal(
                         "50000.00",
                     ),
-                    true,
-                    false,
+                    success = true,
+                    dryRun = false,
                     id = 2,
                     fee = BigDecimal("100.00"),
                 )
@@ -202,8 +201,8 @@ class ModelTest : StringSpec() {
                     "DOGE",
                     BigDecimal.TEN,
                     BigDecimal("10.00"),
-                    true,
-                    false,
+                    success = true,
+                    dryRun = false,
                     id = 3,
                     fee = BigDecimal("0.10"),
                 )

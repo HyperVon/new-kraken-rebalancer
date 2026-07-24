@@ -45,7 +45,6 @@ import java.time.Instant
 import io.ktor.client.plugins.sse.SSE as ClientSSE
 import io.ktor.server.sse.SSE as ServerSSE
 
-@Suppress("unused")
 class DashboardControllerTest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
 

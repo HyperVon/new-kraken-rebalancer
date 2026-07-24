@@ -8,7 +8,6 @@ import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import java.math.BigDecimal
 
-@Suppress("unused")
 class PortfolioCalculationsTest : StringSpec() {
 
     override fun isolationMode() = IsolationMode.InstancePerTest

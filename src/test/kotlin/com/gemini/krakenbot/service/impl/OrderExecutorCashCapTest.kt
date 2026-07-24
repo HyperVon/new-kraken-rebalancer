@@ -13,7 +13,6 @@ import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
 import java.math.BigDecimal
 
-@Suppress("unused")
 class OrderExecutorCashCapTest : StringSpec() {
 
     override fun isolationMode() = IsolationMode.InstancePerTest

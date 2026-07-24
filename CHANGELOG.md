@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.12.5] - 2026-07-24
+
+### Changed
+
+- **Gradle Wrapper**: Bump distribution from `9.5.1` to `9.6.1`.
+- **Legacy File Rename IO**: Move stats and trade-history `.bak` renames onto `Dispatchers.IO` via `withContext` in `SqlitePortfolioStatsRepositoryImpl` and `TradeHistoryServiceImpl`.
+
+### Fixed
+
+- **Test Call Sites**: Use named `success` / `dryRun` arguments for `TradeRecord` construction and drop unused imports / suppressions across JVM and Kotlin/JS specs.
+
 ## [6.12.4] - 2026-07-24
 
 ### Fixed

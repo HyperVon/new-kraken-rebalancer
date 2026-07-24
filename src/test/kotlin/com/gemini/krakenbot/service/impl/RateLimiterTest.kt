@@ -10,7 +10,6 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 
-@Suppress("unused")
 class RateLimiterTest : StringSpec() {
 
     override fun isolationMode() = IsolationMode.InstancePerTest

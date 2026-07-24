@@ -11,7 +11,6 @@ import org.w3c.dom.*
 import kotlin.js.Date
 import com.gemini.krakenbot.view.util.CssClass.Query.DATA_AGE_VALUE as DATA_AGE_VALUE_QUERY
 
-@Suppress("unused")
 class MainTest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
 

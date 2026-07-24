@@ -6,7 +6,6 @@ import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
 
-@Suppress("unused")
 class ResultTest : StringSpec() {
 
     override fun isolationMode() = IsolationMode.InstancePerTest

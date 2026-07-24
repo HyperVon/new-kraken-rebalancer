@@ -4,7 +4,6 @@ import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.shouldBe
 
-@Suppress("unused")
 class SettingsTest : StringSpec() {
     init {
         "constructor_defaultsNullValues" {

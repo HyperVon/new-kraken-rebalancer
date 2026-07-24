@@ -18,7 +18,6 @@ import io.mockk.every
 import io.mockk.mockk
 import java.math.BigDecimal
 
-@Suppress("unused")
 class DynamicKrakenServiceTest : StringSpec() {
 
     override fun isolationMode() = IsolationMode.InstancePerTest

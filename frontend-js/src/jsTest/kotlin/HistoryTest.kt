@@ -17,7 +17,6 @@ import org.w3c.dom.*
 import kotlin.js.json
 import kotlin.test.assertEquals
 
-@Suppress("unused")
 class HistoryTest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
 

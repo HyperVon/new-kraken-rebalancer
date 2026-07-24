@@ -25,7 +25,6 @@ import java.io.File
 import java.io.IOException
 import java.nio.file.Files
 
-@Suppress("unused")
 class ConfigServiceTest : StringSpec() {
 
     private lateinit var configService: ConfigService

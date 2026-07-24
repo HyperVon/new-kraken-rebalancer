@@ -17,12 +17,14 @@ import com.gemini.krakenbot.util.PrecisionConstants
 import com.gemini.krakenbot.util.toCryptoScale
 import com.gemini.krakenbot.util.toUsdScale
 import com.gemini.krakenbot.view.util.SyncMetadataKeys
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import java.io.File
 import java.math.BigDecimal
@@ -85,7 +87,9 @@ class TradeHistoryServiceImpl(
                         try {
                             val sourcePath = file.toPath()
                             val targetPath = File("$tradeHistoryFilePath.bak").toPath()
-                            Files.move(sourcePath, targetPath, StandardCopyOption.REPLACE_EXISTING)
+                            withContext(Dispatchers.IO) {
+                                Files.move(sourcePath, targetPath, StandardCopyOption.REPLACE_EXISTING)
+                            }
                             log.info("Renamed trade history file to backup successfully.")
                         } catch (ex: Exception) {
                             log.warn("Failed to rename trade history file to backup", ex)

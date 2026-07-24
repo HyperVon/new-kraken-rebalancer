@@ -33,7 +33,6 @@ import java.time.Instant
 import java.time.temporal.ChronoUnit
 import kotlin.time.Duration.Companion.milliseconds
 
-@Suppress("unused")
 class TradeHistoryServiceTest : StringSpec() {
 
     override fun isolationMode() = IsolationMode.InstancePerTest

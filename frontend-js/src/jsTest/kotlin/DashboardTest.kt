@@ -14,7 +14,6 @@ import kotlinx.browser.window
 import org.w3c.dom.*
 import kotlin.js.Date
 
-@Suppress("unused")
 class DashboardTest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
 

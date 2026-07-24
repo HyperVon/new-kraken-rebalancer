@@ -31,7 +31,6 @@ class StatsThrowingTransactionManager(private val delegate: TransactionManager) 
         throw IOException("Direct IO failure")
 }
 
-@Suppress("unused")
 class SqlitePortfolioStatsRepositoryImplTest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
 

@@ -16,7 +16,6 @@ import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
 
-@Suppress("unused")
 class PortfolioManagerDogeTest : StringSpec() {
 
     override fun isolationMode() = IsolationMode.InstancePerTest

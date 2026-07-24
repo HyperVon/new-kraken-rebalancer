@@ -17,7 +17,6 @@ import io.mockk.mockk
 import java.math.BigDecimal
 import java.math.RoundingMode
 
-@Suppress("unused")
 class SimulatedKrakenServiceTest : StringSpec() {
     init {
         "should initialize prices and drifted balances based on config allocations" {

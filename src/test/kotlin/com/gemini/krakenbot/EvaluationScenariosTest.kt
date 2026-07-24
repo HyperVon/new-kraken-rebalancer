@@ -63,7 +63,6 @@ import io.ktor.client.plugins.sse.SSE as ClientSSE
 import io.ktor.server.sse.SSE as ServerSSE
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 
-@Suppress("unused")
 class EvaluationScenariosTest : StringSpec() {
     override fun isolationMode() = IsolationMode.SingleInstance
 

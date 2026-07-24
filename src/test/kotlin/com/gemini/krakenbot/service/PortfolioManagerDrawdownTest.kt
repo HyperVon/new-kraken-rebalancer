@@ -24,7 +24,6 @@ import io.mockk.slot
 import kotlinx.coroutines.test.runTest
 import java.math.BigDecimal
 
-@Suppress("unused")
 class PortfolioManagerDrawdownTest : StringSpec() {
 
     override fun isolationMode() = IsolationMode.InstancePerTest
