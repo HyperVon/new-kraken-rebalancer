@@ -11,7 +11,7 @@ plugins {
 
 spotless {
     kotlin {
-        target("src/**/*.kt", "common/**/*.kt")
+        target("src/**/*.kt", "common/**/*.kt", "frontend-js/src/**/*.kt")
         targetExclude(
             "**/view/**",
             "**/DashboardViewTest.kt",

@@ -13,7 +13,13 @@ class HelperTest : StringSpec() {
         "getUniqueSymbols excludes and includes USD correctly" {
             val snapshots =
                 arrayOf(
-                    mockSnapshotRecord(assets = json(Asset.BTC to jsObject(), Asset.ETH to jsObject(), Asset.USD to jsObject())),
+                    mockSnapshotRecord(
+                        assets = json(
+                            Asset.BTC to jsObject(),
+                            Asset.ETH to jsObject(),
+                            Asset.USD to jsObject(),
+                        ),
+                    ),
                     mockSnapshotRecord(assets = null),
                     jsObject(),
                 )

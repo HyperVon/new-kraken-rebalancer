@@ -80,11 +80,7 @@ fun reapplySort() {
     }
 }
 
-fun sortTable(
-    header: HTMLElement,
-    colIdx: Int,
-    forceDir: String? = null,
-) {
+fun sortTable(header: HTMLElement, colIdx: Int, forceDir: String? = null) {
     val table = header.closest(HtmlTags.TABLE) as? HTMLTableElement ?: return
     val tbody = table.querySelector(HtmlTags.TBODY) as? HTMLTableSectionElement ?: return
     val rows = mutableListOf<HTMLTableRowElement>()

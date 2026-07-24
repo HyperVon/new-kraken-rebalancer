@@ -214,9 +214,14 @@ class CoverageTest : StringSpec() {
                             arrayOf(
                                 mockSnapshotRecord(
                                     assets =
-                                        json(
-                                            Asset.BTC to json("valueUSD" to 100, "balance" to 1, "currentPercent" to 100),
-                                        ),
+                                    json(
+                                        Asset.BTC to
+                                            json(
+                                                "valueUSD" to 100,
+                                                "balance" to 1,
+                                                "currentPercent" to 100,
+                                            ),
+                                    ),
                                 ),
                             )
                         url.contains("trades") ->
@@ -539,18 +544,23 @@ class CoverageTest : StringSpec() {
                 sortTable(fakeHeader, 0) // Should not throw
 
                 // Normal sorting
-                val header0 = document.getElementsByClassName(CssClass.Table.Sortable.toString())[0] as HTMLTableCellElement
-                val header1 = document.getElementsByClassName(CssClass.Table.Sortable.toString())[1] as HTMLTableCellElement
+                val sortableClass = CssClass.Table.Sortable.toString()
+                val header0 =
+                    document.getElementsByClassName(sortableClass)[0] as HTMLTableCellElement
+                val header1 =
+                    document.getElementsByClassName(sortableClass)[1] as HTMLTableCellElement
 
                 // Sort by col0 ascending (default)
                 sortTable(header0, 0)
                 var rows = container.querySelectorAll("${HtmlTags.TBODY} ${HtmlTags.TR}")
-                (rows.item(0) as HTMLTableRowElement).cells.item(0)?.textContent shouldBe "A" // "10" < "5" lexicographically
+                // "10" < "5" lexicographically
+                (rows.item(0) as HTMLTableRowElement).cells.item(0)?.textContent shouldBe "A"
 
                 // Sort by col0 descending
                 sortTable(header0, 0, CssClass.Utility.Desc.toString())
                 rows = container.querySelectorAll("${HtmlTags.TBODY} ${HtmlTags.TR}")
-                (rows.item(0) as HTMLTableRowElement).cells.item(0)?.textContent shouldBe "C" // "5" > "10" lexicographically
+                // "5" > "10" lexicographically
+                (rows.item(0) as HTMLTableRowElement).cells.item(0)?.textContent shouldBe "C"
 
                 // Sort by col1 ascending
                 sortTable(header1, 1)
@@ -573,11 +583,10 @@ class CoverageTest : StringSpec() {
                 row2.appendChild(td2b)
                 container.querySelector("tbody")!!.appendChild(row2)
 
+                // Covers textContent fallback when data-sort-value is missing.
                 sortTable(header0, 0) // Sort by first column text
                 rows = container.querySelectorAll("${HtmlTags.TBODY} ${HtmlTags.TR}")
-                // Should order: A (10), C (5), Apple (lexicographically after numbers? Actually strings: "A", "C", "Apple"),
-                // But we have data-sort-value on the first two rows, the third row uses textContent
-                // This is just to ensure no exception
+                // Ensures no exception when mixing sort-value and textContent rows.
             } finally {
                 document.body!!.removeChild(container)
             }
@@ -737,16 +746,10 @@ class CoverageTest : StringSpec() {
                 """
                 <button class="${CssClass.History.TimeRangeBtn}" ${HtmlAttrs.DATA_RANGE}="24h"></button>
                 <button class="${CssClass.History.TimeRangeBtnActive}" ${HtmlAttrs.DATA_RANGE}="30d"></button>
-                <input type="checkbox" id="${HtmlIds.SHOW_DRY_RUN_CHECKBOX}" checked>
-                <div id="${HtmlIds.SYNC_PROGRESS_BANNER}"></div>
-                <div id="${HtmlIds.SYNC_PROGRESS_BAR}"></div>
-                <div id="${HtmlIds.SYNC_PROGRESS_TEXT}"></div>
-                <canvas id="${HtmlIds.PORTFOLIO_VALUE_CHART}"></canvas>
-                <canvas id="${HtmlIds.ASSET_HOLDINGS_CHART}"></canvas>
-                <canvas id="${HtmlIds.ALLOCATION_DRIFT_CHART}"></canvas>
-                <canvas id="${HtmlIds.CUMULATIVE_PL_CHART}"></canvas>
-                <table><tbody id="${HtmlIds.TRADE_TABLE_BODY}"></tbody></table>
-                <div id="${HtmlIds.STAT_ATH}"></div><div id="${HtmlIds.STAT_TOTAL_TRADES}"></div><div id="${HtmlIds.STAT_TOTAL_VOLUME}"></div><div id="${HtmlIds.STAT_TOTAL_FEES}"></div>
+                ${TestDomBuilders.syncProgressDom()}
+                ${TestDomBuilders.chartsDom()}
+                ${TestDomBuilders.tradeTableDom()}
+                ${TestDomBuilders.statsDom()}
                 """.trimIndent()
             document.body!!.appendChild(container)
 
@@ -830,11 +833,14 @@ class CoverageTest : StringSpec() {
             val container = document.createElement(HtmlTags.DIV)
             container.innerHTML =
                 """
-                <input id="${HtmlIds.NEW_SYMBOL_INPUT}" value="">
-                <span id="${HtmlIds.TOTAL_ALLOCATED_DISPLAY}"></span>
-                <button id="${HtmlIds.SAVE_BUTTON}"></button>
-                <div id="${HtmlIds.ALLOCATIONS_CONTAINER}"></div>
-                <table><thead><tr><th class="${CssClass.Table.Sortable}">${ViewText.HEADER_ASSET}</th></tr></thead><tbody></tbody></table>
+                ${TestDomBuilders.assetEditDom("")}
+                ${TestDomBuilders.settingsDom()}
+                <table>
+                  <thead>
+                    <tr><th class="${CssClass.Table.Sortable}">${ViewText.HEADER_ASSET}</th></tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
                 """.trimIndent()
             document.body!!.appendChild(container)
             try {

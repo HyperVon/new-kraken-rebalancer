@@ -1,11 +1,14 @@
 package com.gemini.krakenbot.config
 
+import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldNotBe
 import java.io.File
 
 @Suppress("unused")
 class DatabaseConfigTest : StringSpec() {
+    override fun isolationMode() = IsolationMode.InstancePerTest
+
     init {
         "should initialize database and create file" {
             val dbFile = File("test-config.db")

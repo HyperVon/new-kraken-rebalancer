@@ -37,7 +37,8 @@ fun updateAllocationTotal() {
     totalDisplay.textContent = "Total: ${total.toFixed(PrecisionConstants.SCALE_USD)}%"
 
     val saveButton = document.getElementById(HtmlIds.SAVE_BUTTON) as? HTMLButtonElement ?: return
-    val isValid = abs(total - PrecisionConstants.TOTAL_ALLOCATION_PERCENTAGE) <= PrecisionConstants.ALLOCATION_TOLERANCE_DELTA
+    val isValid =
+        abs(total - PrecisionConstants.TOTAL_ALLOCATION_PERCENTAGE) <= PrecisionConstants.ALLOCATION_TOLERANCE_DELTA
 
     val hasUsd = currentAllocationSymbols().contains(Asset.USD)
 

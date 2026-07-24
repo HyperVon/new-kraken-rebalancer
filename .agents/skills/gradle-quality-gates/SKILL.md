@@ -12,6 +12,8 @@ description: >-
 ## Formatting & compiler
 
 - **Spotless** + **ktlint 1.3.1**, `max_line_length = 120`
+- Targets: `src/**/*.kt`, `common/**/*.kt`, `frontend-js/src/**/*.kt`
+- Excludes (still): `**/view/**`, `DashboardViewTest.kt`, `EvaluationScenariosTest.kt`
 - Apply: `./gradlew spotlessApply` — check: `./gradlew spotlessCheck`
 - **`allWarningsAsErrors`** enabled in root, `:common`, and `:frontend-js`
 

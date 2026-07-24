@@ -2,6 +2,7 @@ package com.gemini.krakenbot
 
 import com.gemini.krakenbot.config.appModule
 import com.gemini.krakenbot.service.PortfolioManager
+import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.nulls.shouldNotBeNull
 import org.koin.core.context.startKoin
@@ -14,6 +15,8 @@ import java.io.File
 class KrakenRebalancerApplicationTest :
     StringSpec(),
     KoinTest {
+    override fun isolationMode() = IsolationMode.InstancePerTest
+
     init {
         "verify koin modules" {
             val configFile = File("rebalancer-config.json")

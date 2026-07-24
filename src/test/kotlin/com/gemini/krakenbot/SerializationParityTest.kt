@@ -4,12 +4,15 @@ import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.fasterxml.jackson.module.kotlin.readValue
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.PortfolioStats
+import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.shouldBe
 import java.math.BigDecimal
 
 class SerializationParityTest : StringSpec() {
+    override fun isolationMode() = IsolationMode.InstancePerTest
+
     private val mapper = jacksonObjectMapper().findAndRegisterModules()
 
     init {

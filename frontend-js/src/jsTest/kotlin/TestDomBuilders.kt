@@ -91,11 +91,40 @@ object TestDomBuilders {
                 </tr>
             </thead>
             <tbody>
-                <tr class="${CssClass.Table.Hoverable}"><td ${HtmlAttrs.DATA_SORT_VALUE}="10">A</td><td ${HtmlAttrs.DATA_SORT_VALUE}="20">B</td></tr>
-                <tr class="${CssClass.Table.Hoverable}"><td ${HtmlAttrs.DATA_SORT_VALUE}="5">C</td><td ${HtmlAttrs.DATA_SORT_VALUE}="15">D</td></tr>
+                <tr class="${CssClass.Table.Hoverable}">
+                    <td ${HtmlAttrs.DATA_SORT_VALUE}="10">A</td>
+                    <td ${HtmlAttrs.DATA_SORT_VALUE}="20">B</td>
+                </tr>
+                <tr class="${CssClass.Table.Hoverable}">
+                    <td ${HtmlAttrs.DATA_SORT_VALUE}="5">C</td>
+                    <td ${HtmlAttrs.DATA_SORT_VALUE}="15">D</td>
+                </tr>
             </tbody>
         </table>
         """.trimIndent()
+
+    fun zoomControlsDom(canvasId: String = HtmlIds.PORTFOLIO_VALUE_CHART): String =
+        """
+        <canvas id="$canvasId"></canvas>
+        <button class="${CssClass.History.ZoomBtn}"
+          ${HtmlAttrs.DATA_CHART_ID}="$canvasId" ${HtmlAttrs.DATA_ZOOM_ACTION}="in"></button>
+        <button class="${CssClass.History.ZoomBtn}"
+          ${HtmlAttrs.DATA_CHART_ID}="$canvasId" ${HtmlAttrs.DATA_ZOOM_ACTION}="out"></button>
+        <button class="${CssClass.History.ZoomBtn}"
+          ${HtmlAttrs.DATA_CHART_ID}="$canvasId" ${HtmlAttrs.DATA_ZOOM_ACTION}="reset"></button>
+        """.trimIndent()
+
+    fun scrubberDom(
+        canvasId: String = HtmlIds.PORTFOLIO_VALUE_CHART,
+        disabled: Boolean = true,
+        value: String = "0",
+    ): String {
+        val disabledAttr = if (disabled) " disabled" else ""
+        return """
+        <input class="${CssClass.History.ChartScrubberInput}" type="range" min="0" max="100"
+          ${HtmlAttrs.DATA_CHART_ID}="$canvasId" value="$value"$disabledAttr />
+        """.trimIndent()
+    }
 
     fun tradeJson(
         timestamp: String = "2023-01-01",
@@ -105,16 +134,15 @@ object TestDomBuilders {
         usdAmount: Any? = 100.0,
         success: Boolean? = true,
         dryRun: Boolean? = false,
-    ): dynamic =
-        json(
-            DataProps.TIMESTAMP to timestamp,
-            DataProps.SYMBOL to symbol,
-            DataProps.SIDE to side,
-            DataProps.VOLUME to volume,
-            DataProps.USD_AMOUNT to usdAmount,
-            DataProps.SUCCESS to success,
-            DataProps.DRY_RUN to dryRun,
-        )
+    ): dynamic = json(
+        DataProps.TIMESTAMP to timestamp,
+        DataProps.SYMBOL to symbol,
+        DataProps.SIDE to side,
+        DataProps.VOLUME to volume,
+        DataProps.USD_AMOUNT to usdAmount,
+        DataProps.SUCCESS to success,
+        DataProps.DRY_RUN to dryRun,
+    )
 
     fun setupMockChart(isDatasetVisible: (Int) -> Boolean = { true }) {
         var callCount = 0
@@ -139,20 +167,15 @@ object TestDomBuilders {
         window.asDynamic().Chart = chartConstructor
     }
 
-    fun chartConfig(vararg datasets: dynamic): dynamic =
-        json(
-            "type" to "line",
-            "data" to json("datasets" to datasets),
-            "options" to json(),
-        )
+    fun chartConfig(vararg datasets: dynamic): dynamic = json(
+        "type" to "line",
+        "data" to json("datasets" to datasets),
+        "options" to json(),
+    )
 
-    fun datasetConfig(
-        label: String,
-        hidden: Boolean? = null,
-    ): dynamic =
-        if (hidden == null) {
-            json("label" to label)
-        } else {
-            json("label" to label, DataProps.HIDDEN to hidden)
-        }
+    fun datasetConfig(label: String, hidden: Boolean? = null): dynamic = if (hidden == null) {
+        json("label" to label)
+    } else {
+        json("label" to label, DataProps.HIDDEN to hidden)
+    }
 }

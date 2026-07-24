@@ -14,10 +14,8 @@ fun DOMTokenList.remove(vararg cssClasses: CssClass) {
     remove(*names)
 }
 
-fun DOMTokenList.toggle(
-    cssClass: CssClass,
-    force: Boolean? = null,
-): Boolean = if (force != null) toggle(cssClass.value, force) else toggle(cssClass.value)
+fun DOMTokenList.toggle(cssClass: CssClass, force: Boolean? = null): Boolean =
+    if (force != null) toggle(cssClass.value, force) else toggle(cssClass.value)
 
 fun DOMTokenList.contains(cssClass: CssClass): Boolean = contains(cssClass.value)
 
