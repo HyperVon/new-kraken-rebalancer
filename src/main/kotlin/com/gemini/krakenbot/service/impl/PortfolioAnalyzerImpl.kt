@@ -358,14 +358,7 @@ class PortfolioAnalyzerImpl(
                 )
             }",
         )
-        actionLog.add(
-            "Distributing Fiat Correction ($${
-                deviationAbs.setScale(
-                    SCALE_USD,
-                    RoundingMode.HALF_UP,
-                )
-            }) among ${candidates.size} candidates.",
-        )
+        actionLog.add(ActionLogFormatter.formatFiatCorrectionDistribution(deviationAbs, candidates.size))
 
         for (symbol in candidates) {
             val assetDev = allDevs.getValue(symbol).abs()

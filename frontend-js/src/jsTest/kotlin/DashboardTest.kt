@@ -90,7 +90,7 @@ class DashboardTest : StringSpec() {
             container.appendChild(ageTime)
 
             val badge = document.createElement(HtmlTags.SPAN) as HTMLSpanElement
-            badge.className = "status-badge"
+            badge.className = CssClass.StatusCard.Badge.toString()
             container.appendChild(badge)
 
             document.body!!.appendChild(container)

@@ -2,12 +2,8 @@ package com.gemini.krakenbot.service
 
 import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.config.Allocation
-import com.gemini.krakenbot.config.AppConfig
-import com.gemini.krakenbot.config.KrakenCredentials
-import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.service.impl.SimulatedKrakenService
-import com.gemini.krakenbot.test.TestConstants
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
@@ -20,6 +16,15 @@ import java.math.RoundingMode
 
 class SimulatedKrakenServiceTest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
+
+    private val btcUsdConfig =
+        TestFixtures.DEFAULT_TEST_CONFIG.copy(
+            allocations =
+            listOf(
+                Allocation(Asset.BTC, 50.0),
+                Allocation(Asset.USD, 50.0),
+            ),
+        )
 
     init {
         "should initialize prices and drifted balances based on config allocations" {
@@ -50,15 +55,7 @@ class SimulatedKrakenServiceTest : StringSpec() {
 
         "should execute buy orders and update balances" {
             val configService = mockk<ConfigService>()
-            val config = AppConfig(
-                kraken = KrakenCredentials(TestConstants.API_KEY, TestConstants.API_SECRET),
-                settings = TestFixtures.DEFAULT_TEST_SETTINGS,
-                allocations = listOf(
-                    Allocation(Asset.BTC, 50.0),
-                    Allocation(Asset.USD, 50.0),
-                ),
-            )
-            every { configService.getConfig() } returns config
+            every { configService.getConfig() } returns btcUsdConfig
 
             val simulatedService = SimulatedKrakenService(configService)
 
@@ -70,12 +67,13 @@ class SimulatedKrakenServiceTest : StringSpec() {
             val btcPrice = prices[TestFixtures.BTCUSD]!!
 
             val buyVolume = BigDecimal("0.5")
-            val result = simulatedService.executeOrder(
-                TestFixtures.BTCUSD,
-                TestFixtures.MARKET,
-                TestFixtures.BUY,
-                buyVolume,
-            )
+            val result =
+                simulatedService.executeOrder(
+                    TestFixtures.BTCUSD,
+                    TestFixtures.MARKET,
+                    TestFixtures.BUY,
+                    buyVolume,
+                )
 
             result.success shouldBe true
 
@@ -88,15 +86,7 @@ class SimulatedKrakenServiceTest : StringSpec() {
 
         "should execute sell orders and update balances" {
             val configService = mockk<ConfigService>()
-            val config = AppConfig(
-                kraken = KrakenCredentials(TestConstants.API_KEY, TestConstants.API_SECRET),
-                settings = TestFixtures.DEFAULT_TEST_SETTINGS,
-                allocations = listOf(
-                    Allocation(Asset.BTC, 50.0),
-                    Allocation(Asset.USD, 50.0),
-                ),
-            )
-            every { configService.getConfig() } returns config
+            every { configService.getConfig() } returns btcUsdConfig
 
             val simulatedService = SimulatedKrakenService(configService)
 
@@ -108,12 +98,13 @@ class SimulatedKrakenServiceTest : StringSpec() {
             val btcPrice = prices[TestFixtures.BTCUSD]!!
 
             val sellVolume = BigDecimal("0.2")
-            val result = simulatedService.executeOrder(
-                TestFixtures.BTCUSD,
-                TestFixtures.MARKET,
-                TestFixtures.SELL,
-                sellVolume,
-            )
+            val result =
+                simulatedService.executeOrder(
+                    TestFixtures.BTCUSD,
+                    TestFixtures.MARKET,
+                    TestFixtures.SELL,
+                    sellVolume,
+                )
 
             result.success shouldBe true
 
@@ -126,15 +117,7 @@ class SimulatedKrakenServiceTest : StringSpec() {
 
         "should fail orders if balance is insufficient" {
             val configService = mockk<ConfigService>()
-            val config = AppConfig(
-                kraken = KrakenCredentials(TestConstants.API_KEY, TestConstants.API_SECRET),
-                settings = TestFixtures.DEFAULT_TEST_SETTINGS,
-                allocations = listOf(
-                    Allocation(Asset.BTC, 50.0),
-                    Allocation(Asset.USD, 50.0),
-                ),
-            )
-            every { configService.getConfig() } returns config
+            every { configService.getConfig() } returns btcUsdConfig
 
             val simulatedService = SimulatedKrakenService(configService)
 
@@ -142,12 +125,13 @@ class SimulatedKrakenServiceTest : StringSpec() {
             val initialBtc = initialBalances[Asset.BTC] ?: BigDecimal.ZERO
 
             val sellVolume = initialBtc.add(BigDecimal.TEN)
-            val result = simulatedService.executeOrder(
-                TestFixtures.BTCUSD,
-                TestFixtures.MARKET,
-                TestFixtures.SELL,
-                sellVolume,
-            )
+            val result =
+                simulatedService.executeOrder(
+                    TestFixtures.BTCUSD,
+                    TestFixtures.MARKET,
+                    TestFixtures.SELL,
+                    sellVolume,
+                )
 
             result.success shouldBe false
             result.errorMessage shouldNotBe null
@@ -155,29 +139,17 @@ class SimulatedKrakenServiceTest : StringSpec() {
 
         "should support dryRun mode when executing orders" {
             val configService = mockk<ConfigService>()
-            val config = AppConfig(
-                kraken = KrakenCredentials(TestConstants.API_KEY, TestConstants.API_SECRET),
-                settings = Settings(
-                    loopDelaySeconds = 60,
-                    deviationTriggerPercent = 2.0,
-                    dustThresholdUSD = 1.0,
-                    dryRun = true,
-                    simulation = true,
-                ),
-                allocations = listOf(
-                    Allocation(Asset.BTC, 50.0),
-                    Allocation(Asset.USD, 50.0),
-                ),
-            )
-            every { configService.getConfig() } returns config
+            every { configService.getConfig() } returns
+                btcUsdConfig.copy(settings = TestFixtures.DEFAULT_TEST_SETTINGS.copy(dryRun = true))
 
             val simulatedService = SimulatedKrakenService(configService)
-            val result = simulatedService.executeOrder(
-                TestFixtures.BTCUSD,
-                TestFixtures.MARKET,
-                TestFixtures.BUY,
-                BigDecimal("0.1"),
-            )
+            val result =
+                simulatedService.executeOrder(
+                    TestFixtures.BTCUSD,
+                    TestFixtures.MARKET,
+                    TestFixtures.BUY,
+                    BigDecimal("0.1"),
+                )
 
             result.success shouldBe true
             result.dryRun shouldBe true
@@ -185,15 +157,7 @@ class SimulatedKrakenServiceTest : StringSpec() {
 
         "should return trade history and support filtering" {
             val configService = mockk<ConfigService>()
-            val config = AppConfig(
-                kraken = KrakenCredentials(TestConstants.API_KEY, TestConstants.API_SECRET),
-                settings = TestFixtures.DEFAULT_TEST_SETTINGS,
-                allocations = listOf(
-                    Allocation(Asset.BTC, 50.0),
-                    Allocation(Asset.USD, 50.0),
-                ),
-            )
-            every { configService.getConfig() } returns config
+            every { configService.getConfig() } returns btcUsdConfig
 
             val simulatedService = SimulatedKrakenService(configService)
 
@@ -213,20 +177,10 @@ class SimulatedKrakenServiceTest : StringSpec() {
 
         "should seed nothing if there are no non-usd allocations" {
             val configService = mockk<ConfigService>()
-            val config = AppConfig(
-                kraken = KrakenCredentials("api", "sec"),
-                settings = Settings(
-                    loopDelaySeconds = 60,
-                    deviationTriggerPercent = 2.0,
-                    dustThresholdUSD = 1.0,
-                    dryRun = false,
-                    simulation = true,
-                ),
-                allocations = listOf(
-                    Allocation(TestFixtures.USD, 100.0),
-                ),
-            )
-            every { configService.getConfig() } returns config
+            every { configService.getConfig() } returns
+                TestFixtures.DEFAULT_TEST_CONFIG.copy(
+                    allocations = listOf(Allocation(Asset.USD, 100.0)),
+                )
 
             val simulatedService = SimulatedKrakenService(configService)
             val history = simulatedService.getTradeHistory(null, null)
@@ -235,22 +189,15 @@ class SimulatedKrakenServiceTest : StringSpec() {
 
         "should handle unknown symbols and missing balances/prices in edge cases" {
             val configService = mockk<ConfigService>()
-            val config = AppConfig(
-                kraken = KrakenCredentials("api", "sec"),
-                settings = Settings(
-                    loopDelaySeconds = 60,
-                    deviationTriggerPercent = 2.0,
-                    dustThresholdUSD = 1.0,
-                    dryRun = false,
-                    simulation = true,
-                ),
-                // "UNKNOWN" exercises initialPrices and simulatedPrices fallback paths
-                allocations = listOf(
-                    Allocation("UNKNOWN", 50.0),
-                    Allocation(TestFixtures.USD, 50.0),
-                ),
-            )
-            every { configService.getConfig() } returns config
+            every { configService.getConfig() } returns
+                TestFixtures.DEFAULT_TEST_CONFIG.copy(
+                    // "UNKNOWN" exercises initialPrices and simulatedPrices fallback paths
+                    allocations =
+                    listOf(
+                        Allocation("UNKNOWN", 50.0),
+                        Allocation(Asset.USD, 50.0),
+                    ),
+                )
 
             val simulatedService = SimulatedKrakenService(configService)
 
@@ -260,38 +207,42 @@ class SimulatedKrakenServiceTest : StringSpec() {
             val prices = simulatedService.getTickerPrices(TestFixtures.ADAEUR)
             prices[TestFixtures.ADAEUR]!!.shouldBeEqualComparingTo(BigDecimal.TEN)
 
-            val buyResult = simulatedService.executeOrder(
-                TestFixtures.ADAEUR,
-                TestFixtures.MARKET,
-                TestFixtures.BUY,
-                BigDecimal("0.1"),
-            )
+            val buyResult =
+                simulatedService.executeOrder(
+                    TestFixtures.ADAEUR,
+                    TestFixtures.MARKET,
+                    TestFixtures.BUY,
+                    BigDecimal("0.1"),
+                )
             buyResult.success shouldBe true
 
-            val sellResult = simulatedService.executeOrder(
-                TestFixtures.ADAEUR,
-                TestFixtures.MARKET,
-                TestFixtures.SELL,
-                BigDecimal("10.0"),
-            )
+            val sellResult =
+                simulatedService.executeOrder(
+                    TestFixtures.ADAEUR,
+                    TestFixtures.MARKET,
+                    TestFixtures.SELL,
+                    BigDecimal("10.0"),
+                )
             sellResult.success shouldBe false
             sellResult.errorMessage?.contains("Insufficient ADAEUR funds") shouldBe true
 
-            val buyTooMuchResult = simulatedService.executeOrder(
-                TestFixtures.ADAEUR,
-                TestFixtures.MARKET,
-                TestFixtures.BUY,
-                BigDecimal("100000.0"),
-            )
+            val buyTooMuchResult =
+                simulatedService.executeOrder(
+                    TestFixtures.ADAEUR,
+                    TestFixtures.MARKET,
+                    TestFixtures.BUY,
+                    BigDecimal("100000.0"),
+                )
             buyTooMuchResult.success shouldBe false
             buyTooMuchResult.errorMessage?.contains("Insufficient USD funds") shouldBe true
 
-            val invalidResult = simulatedService.executeOrder(
-                TestFixtures.ADAEUR,
-                TestFixtures.MARKET,
-                "hold",
-                BigDecimal.ONE,
-            )
+            val invalidResult =
+                simulatedService.executeOrder(
+                    TestFixtures.ADAEUR,
+                    TestFixtures.MARKET,
+                    "hold",
+                    BigDecimal.ONE,
+                )
             invalidResult.success shouldBe false
             invalidResult.errorMessage?.contains("Unsupported order side") shouldBe true
 
@@ -303,23 +254,16 @@ class SimulatedKrakenServiceTest : StringSpec() {
 
         "should reject unsupported order types" {
             val configService = mockk<ConfigService>()
-            val config = AppConfig(
-                kraken = KrakenCredentials(TestConstants.API_KEY, TestConstants.API_SECRET),
-                settings = TestFixtures.DEFAULT_TEST_SETTINGS,
-                allocations = listOf(
-                    Allocation(Asset.BTC, 50.0),
-                    Allocation(Asset.USD, 50.0),
-                ),
-            )
-            every { configService.getConfig() } returns config
+            every { configService.getConfig() } returns btcUsdConfig
 
             val simulatedService = SimulatedKrakenService(configService)
-            val result = simulatedService.executeOrder(
-                TestFixtures.BTCUSD,
-                "limit",
-                TestFixtures.BUY,
-                BigDecimal.ONE,
-            )
+            val result =
+                simulatedService.executeOrder(
+                    TestFixtures.BTCUSD,
+                    "limit",
+                    TestFixtures.BUY,
+                    BigDecimal.ONE,
+                )
 
             result.success shouldBe false
             result.errorMessage?.contains("Unsupported order type") shouldBe true

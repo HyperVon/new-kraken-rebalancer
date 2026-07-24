@@ -472,7 +472,7 @@ class CoverageTest : StringSpec() {
                 timeEl.setAttribute(HtmlAttrs.DATA_EPOCH, recentTime.toString())
                 updateAge()
                 ageVal.textContent shouldBe "5s ago"
-                val badge = document.getElementsByClassName("status-badge")[0] as HTMLElement
+                val badge = document.getElementsByClassName(CssClass.StatusCard.Badge.toString())[0] as HTMLElement
                 badge.classList.contains(CssClass.Utility.Live).shouldBeTrue()
                 badge.classList.contains(CssClass.Utility.Delayed).shouldBeFalse()
 
@@ -487,19 +487,19 @@ class CoverageTest : StringSpec() {
                 // Test AM/PM branches and hour % 12 == 0 branches
                 // 9:30 AM (9:30)
                 val amTime = Date(2023, 0, 1, 9, 30, 0).getTime()
-                timeEl.setAttribute("data-epoch", amTime.toString())
+                timeEl.setAttribute(HtmlAttrs.DATA_EPOCH, amTime.toString())
                 updateAge()
                 timeEl.textContent shouldBe "09:30:00 AM"
 
                 // 3:30 PM (15:30)
                 val pmTime = Date(2023, 0, 1, 15, 30, 0).getTime()
-                timeEl.setAttribute("data-epoch", pmTime.toString())
+                timeEl.setAttribute(HtmlAttrs.DATA_EPOCH, pmTime.toString())
                 updateAge()
                 timeEl.textContent shouldBe "03:30:00 PM"
 
                 // 12:30 PM
                 val noonTime = Date(2023, 0, 1, 12, 30, 0).getTime()
-                timeEl.setAttribute("data-epoch", noonTime.toString())
+                timeEl.setAttribute(HtmlAttrs.DATA_EPOCH, noonTime.toString())
                 updateAge()
                 timeEl.textContent shouldBe "12:30:00 PM"
 
@@ -564,7 +564,7 @@ class CoverageTest : StringSpec() {
 
                 // Test with missing data-sort-value (falls back to textContent)
                 val row2 = document.createElement("tr")
-                row2.className = "hoverable"
+                row2.className = CssClass.Table.Hoverable.toString()
                 val td2a = document.createElement(HtmlTags.TD)
                 td2a.textContent = "Apple"
                 val td2b = document.createElement(HtmlTags.TD)
@@ -919,11 +919,11 @@ class CoverageTest : StringSpec() {
                     """
                     <table>
                         <thead>
-                            <tr><th class="sortable">C0</th></tr>
+                            <tr><th class="${CssClass.Table.Sortable}">C0</th></tr>
                         </thead>
                         <tbody>
-                            <tr class="hoverable"><td></td></tr>
-                            <tr class="hoverable"><td></td></tr>
+                            <tr class="${CssClass.Table.Hoverable}"><td></td></tr>
+                            <tr class="${CssClass.Table.Hoverable}"><td></td></tr>
                         </tbody>
                     </table>
                     """.trimIndent()

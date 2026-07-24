@@ -1,6 +1,7 @@
 package com.gemini.krakenbot.view.component
 
 import com.gemini.krakenbot.model.TimeRange
+import com.gemini.krakenbot.util.PrecisionConstants
 import com.gemini.krakenbot.view.util.ActiveNav
 import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.HtmlAttrs
@@ -195,7 +196,7 @@ class HistoryPageComponent {
                         id = HtmlIds.TRADE_TABLE_BODY
                         tr {
                             td(CssClass.History.EmptyTableCell) {
-                                colSpan = TABLE_COLSPAN
+                                colSpan = PrecisionConstants.TRADE_TABLE_COLSPAN.toString()
                                 +ViewText.HISTORY_NO_DATA
                             }
                         }
@@ -233,7 +234,6 @@ class HistoryPageComponent {
         const val CDN_HAMMER_JS = "https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js"
         const val CDN_CHART_JS_ZOOM =
             "https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.2.0/dist/chartjs-plugin-zoom.min.js"
-        const val TABLE_COLSPAN = "6"
     }
 }
 

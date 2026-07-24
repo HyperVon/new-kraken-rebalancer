@@ -8,6 +8,23 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **Action-log DRY**: Fiat-correction distribution messages now go through
+  `ActionLogFormatter.formatFiatCorrectionDistribution()` instead of an inline
+  duplicate in `PortfolioAnalyzerImpl`.
+- **History cash-flow sides**: Cumulative net cash flow ignores unknown order
+  sides (previously treated every non-SELL as a BUY); trade-table side badges
+  use an explicit BUY/SELL/`info` mapping.
+- **Spotless carve-outs**: `ConfigServiceImpl` / `ConfigServiceTest` are back under
+  Spotless; multi-dollar raw strings in the env-var tests were rewritten for
+  ktlint 1.3.1.
+- **Test hygiene**: `SimulatedKrakenServiceTest` builds configs from
+  `DEFAULT_TEST_CONFIG.copy(...)`; JS tests use shared `CssClass` /
+  `HtmlAttrs` constants instead of raw `"status-badge"` / `"hoverable"` /
+  `"sortable"` / `"data-epoch"` strings; History empty-table colspan uses
+  `PrecisionConstants.TRADE_TABLE_COLSPAN`.
+
 ## [6.12.14] - 2026-07-24
 
 ### Added

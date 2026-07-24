@@ -843,7 +843,13 @@ internal fun calculateCumulativePL(
     for (t in filtered) {
         val amt = t.usdAmount.toString().toDoubleOrNull() ?: 0.0
         val side = t.side.toString().uppercase()
-        cumulative += if (side == OrderSide.SELL.name) amt else -amt
+        val delta =
+            when (side) {
+                OrderSide.SELL.name -> amt
+                OrderSide.BUY.name -> -amt
+                else -> continue
+            }
+        cumulative += delta
         points.add(json("x" to t.timestamp, "y" to cumulative))
     }
 
@@ -927,7 +933,12 @@ private fun renderTradeRow(t: JsTradeRecord): HTMLTableRowElement {
 
     val time = Date(t.timestamp.toString()).asDynamic().toLocaleString()
     val side = t.side ?: ""
-    val sideClass = if (side == OrderSide.BUY.name) CssClass.Badge.Buy else CssClass.Badge.Sell
+    val sideClass =
+        when (side) {
+            OrderSide.BUY.name -> CssClass.Badge.Buy
+            OrderSide.SELL.name -> CssClass.Badge.Sell
+            else -> CssClass.Badge.Info
+        }
     val success = isTrue(t.success)
     val dryRun = isTrue(t.dryRun)
     val statusText = if (success) (if (dryRun) ViewText.STATUS_DRY_RUN else ViewText.STATUS_SUCCESS) else ViewText.STATUS_FAILED

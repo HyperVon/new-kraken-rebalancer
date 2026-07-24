@@ -14,8 +14,6 @@ spotless {
         target("src/**/*.kt", "common/**/*.kt")
         targetExclude(
             "**/view/**",
-            "**/ConfigServiceImpl.kt",
-            "**/ConfigServiceTest.kt",
             "**/DashboardViewTest.kt",
             "**/EvaluationScenariosTest.kt",
         )
