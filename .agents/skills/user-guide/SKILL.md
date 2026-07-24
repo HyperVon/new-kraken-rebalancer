@@ -66,7 +66,7 @@ Suggested section order (match the live nav):
 | `docs/images/dashboard-bottom.png` | Allocation, performance table, recent activity |
 | `docs/images/settings.png` | Global parameters + allocations + safety toggles |
 | `docs/images/history.png` | Range pills, summary cards, value/holdings charts |
-| `docs/images/history-charts.png` | Allocation drift + cumulative P&L |
+| `docs/images/history-charts.png` | Allocation drift + cumulative net cash flow |
 | `docs/images/history-bottom.png` | Trade history table |
 
 When `docs-screenshot-refresh` gains a new target file, add it here **and**
