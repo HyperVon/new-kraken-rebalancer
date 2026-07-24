@@ -225,11 +225,11 @@ object ComponentStyles {
         ".${CssClass.Dashboard.WaitingTitle}" {
             fontSize = 1.25.rem
             fontWeight = FontWeight.w600
-            color = Color("#e2e8f0")
+            color = CssTheme.colorTextBright
         }
 
         ".${CssClass.Dashboard.WaitingText}" {
-            color = Color("#94a3b8")
+            color = CssTheme.colorTextSecondary
             fontSize = 0.875.rem
             textAlign = TextAlign.center
             maxWidth = 24.rem

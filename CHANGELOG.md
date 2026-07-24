@@ -6,6 +6,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.12.3] - 2026-07-24
+
+### Fixed
+
+- **Sync Metadata Writes (`SqliteTradeRepositoryImpl`)**: Wrap `setSyncMetadata` upserts in `database.safeTransaction` for consistent error handling with other repository writes.
+- **BigDecimal Test Assertions**: Replace `.equals()`-based `shouldBe` with `shouldBeEqualComparingTo` across five test suites so scale-sensitive financial values compare correctly.
+
+### Changed
+
+- **CSS Theme Tokens (`CssTheme`)**: Replace duplicated hardcoded hex colors in `ComponentStyles`, `FormStyles`, `LayoutStyles`, and `NavigationStyles` with shared theme tokens.
+- **Settings Allocation Row (`Settings.kt`)**: Remove unused `symbol-label` CSS class suffix from dynamically created allocation rows.
+
+### Removed
+
+- **Dead `Formatter.formatPercent(Double)` Overload**: Drop unused `Double`-based percent formatter; all callers use `BigDecimal`.
+
+### Added
+
+- **`HtmlEvents.INPUT` Constant**: Shared DOM event name for Kotlin/JS input handlers.
+- **Settings Row Callback Coverage (`SettingsTest`)**: Exercise `addAssetRow()` target-input and remove-button handlers so non-cached `:frontend-js:jsTest` runs satisfy the 90% function-coverage gate.
+
 ## [6.12.2] - 2026-07-24
 
 ### Fixed

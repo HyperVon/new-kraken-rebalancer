@@ -23,7 +23,7 @@ object FormStyles {
         }
 
         ".btn-primary" {
-            background = "linear-gradient(135deg, #2563eb, #1d4ed8)"
+            background = "linear-gradient(135deg, ${CssTheme.colorBlueDeep.value}, ${CssTheme.colorBlueHover.value})"
             color = Color.white
             put("box-shadow", "0 4px 10px rgba(37, 99, 235, 0.2)")
         }
@@ -38,7 +38,7 @@ object FormStyles {
             borderWidth = 1.px
             borderStyle = BorderStyle.solid
             borderColor = Color("rgba(71, 85, 105, 0.5)")
-            color = Color("#cbd5e1")
+            color = CssTheme.colorMutedLight
         }
 
         ".btn-secondary:hover" {

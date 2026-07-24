@@ -19,6 +19,7 @@ import com.gemini.krakenbot.service.impl.TradeHistoryServiceImpl
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.booleans.shouldBeTrue
+import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.shouldBe
 import io.mockk.*
@@ -231,10 +232,10 @@ class TradeHistoryServiceTest : StringSpec() {
             )
 
             val stats = tradeHistoryService.getHistoryStats()
-            stats.allTimeHigh shouldBe BigDecimal("12345.67")
+            stats.allTimeHigh.shouldBeEqualComparingTo(BigDecimal("12345.67"))
             stats.totalTradesExecuted shouldBe 42L
-            stats.totalVolumeTraded shouldBe BigDecimal("98765.43")
-            stats.totalFeesPaid shouldBe BigDecimal("12.34")
+            stats.totalVolumeTraded.shouldBeEqualComparingTo(BigDecimal("98765.43"))
+            stats.totalFeesPaid.shouldBeEqualComparingTo(BigDecimal("12.34"))
             stats.latestSnapshotTime shouldBe latestTime
         }
 
@@ -253,10 +254,10 @@ class TradeHistoryServiceTest : StringSpec() {
             )
 
             val stats = tradeHistoryService.getHistoryStats(from, to)
-            stats.allTimeHigh shouldBe BigDecimal("14000.00")
+            stats.allTimeHigh.shouldBeEqualComparingTo(BigDecimal("14000.00"))
             stats.totalTradesExecuted shouldBe 10L
-            stats.totalVolumeTraded shouldBe BigDecimal("5000.00")
-            stats.totalFeesPaid shouldBe BigDecimal("5.00")
+            stats.totalVolumeTraded.shouldBeEqualComparingTo(BigDecimal("5000.00"))
+            stats.totalFeesPaid.shouldBeEqualComparingTo(BigDecimal("5.00"))
             stats.latestSnapshotTime shouldBe latestTime
         }
 

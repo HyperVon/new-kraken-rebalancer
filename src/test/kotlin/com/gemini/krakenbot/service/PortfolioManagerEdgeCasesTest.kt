@@ -18,6 +18,7 @@ import com.gemini.krakenbot.toBigDecimalMap
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.booleans.shouldBeTrue
+import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.shouldBe
 import io.mockk.*
 import kotlinx.coroutines.delay
@@ -239,7 +240,7 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
                 Asset.ETH,
                 rawPrices,
             )
-            priceEth shouldBe BigDecimal("3100.0")
+            priceEth.shouldBeEqualComparingTo(BigDecimal("3100.0"))
 
             val priceMissing =
                 portfolioAnalyzer
@@ -541,7 +542,7 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
                 Asset.BTC,
                 rawPrices,
             )
-            price shouldBe BigDecimal("61000.0")
+            price.shouldBeEqualComparingTo(BigDecimal("61000.0"))
 
             val rawPricesOnlyEur = mapOf(
                 "XBTEUR" to 55000.0,

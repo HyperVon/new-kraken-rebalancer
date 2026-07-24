@@ -3,6 +3,7 @@ package com.gemini.krakenbot.frontend
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.FormFields
+import com.gemini.krakenbot.view.util.HtmlEvents
 import com.gemini.krakenbot.view.util.HtmlIds
 import com.gemini.krakenbot.view.util.HtmlTags
 import io.kotest.core.spec.IsolationMode
@@ -120,6 +121,48 @@ class SettingsTest : StringSpec() {
                 val firstRow = rows.item(0) as HTMLElement
                 val hiddenSymInput = firstRow.querySelector("input[name=\"${FormFields.SYMBOLS}\"]") as HTMLInputElement
                 hiddenSymInput.value shouldBe Asset.LTC
+            } finally {
+                document.body!!.removeChild(container)
+            }
+        }
+
+        "addAssetRow wires up target input and remove button callbacks" {
+            val container = document.createElement(HtmlTags.DIV) as HTMLDivElement
+
+            val totalDisplay = document.createElement(HtmlTags.SPAN) as HTMLSpanElement
+            totalDisplay.id = HtmlIds.TOTAL_ALLOCATED_DISPLAY
+            container.appendChild(totalDisplay)
+
+            val saveButton = document.createElement(HtmlTags.BUTTON) as HTMLButtonElement
+            saveButton.id = HtmlIds.SAVE_BUTTON
+            container.appendChild(saveButton)
+
+            val symContainer = document.createElement(HtmlTags.DIV) as HTMLDivElement
+            symContainer.id = HtmlIds.ALLOCATIONS_CONTAINER
+            container.appendChild(symContainer)
+
+            val symInput = document.createElement(HtmlTags.INPUT) as HTMLInputElement
+            symInput.id = HtmlIds.NEW_SYMBOL_INPUT
+            symInput.value = Asset.LTC
+            container.appendChild(symInput)
+
+            document.body!!.appendChild(container)
+
+            try {
+                addAssetRow()
+                val row = symContainer.querySelector(".${CssClass.Form.AllocationEditRow}") as HTMLElement
+                val targetInput = row.querySelector("input[name=\"${FormFields.TARGETS}\"]") as HTMLInputElement
+
+                targetInput.value = "25.0"
+                val inputEvent = document.createEvent(HtmlEvents.EVENT)
+                inputEvent.initEvent(type = HtmlEvents.INPUT, bubbles = true, cancelable = true)
+                targetInput.dispatchEvent(inputEvent)
+                totalDisplay.textContent shouldBe "Total: 25.00%"
+
+                val removeBtn = row.querySelector(CssClass.Button.Danger.querySelector) as HTMLButtonElement
+                removeBtn.click()
+                symContainer.querySelectorAll(".${CssClass.Form.AllocationEditRow}").length shouldBe 0
+                totalDisplay.textContent shouldBe "Total: 0.00%"
             } finally {
                 document.body!!.removeChild(container)
             }

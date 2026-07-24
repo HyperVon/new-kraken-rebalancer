@@ -18,6 +18,7 @@ import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.booleans.shouldBeFalse
 import io.kotest.matchers.booleans.shouldBeTrue
+import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import io.ktor.client.*
@@ -1299,7 +1300,7 @@ class KrakenServiceTest : StringSpec() {
                 val service = createService(responseJson) as KrakenServiceImpl
                 val ohlc = service.getOHLC(TestFixtures.XXBTZUSD, 1440, null)
                 ohlc.size shouldBe 1
-                ohlc[0].second shouldBe BigDecimal.ZERO
+                ohlc[0].second.shouldBeEqualComparingTo(BigDecimal.ZERO)
             }
         }
 

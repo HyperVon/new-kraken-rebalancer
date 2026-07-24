@@ -87,7 +87,7 @@ object LayoutStyles {
             fontFamily = CssTheme.fontMono
             fontSize = 0.875.rem
             fontWeight = FontWeight.w700
-            color = Color("#e2e8f0")
+            color = CssTheme.colorTextBright
         }
 
         ".${CssClass.DataAge.Value}.stale" {

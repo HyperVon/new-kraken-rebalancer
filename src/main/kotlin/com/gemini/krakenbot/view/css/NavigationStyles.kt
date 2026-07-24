@@ -133,7 +133,7 @@ object NavigationStyles {
             borderWidth = 1.px
             borderStyle = BorderStyle.solid
             borderColor = Color("rgba(239, 68, 68, 0.3)")
-            color = Color("#fecaca")
+            color = CssTheme.colorDangerLight
             padding = Padding(1.rem)
             borderRadius = 0.5.rem
             marginBottom = 1.5.rem

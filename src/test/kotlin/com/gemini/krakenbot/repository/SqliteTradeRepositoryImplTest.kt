@@ -764,8 +764,8 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
         "getTradeSummaryStats aggregates metrics correctly" {
             val startStats = repository.getTradeSummaryStats()
             startStats.totalTradesExecuted shouldBe 0L
-            startStats.totalVolumeTraded shouldBe BigDecimal.ZERO
-            startStats.totalFeesPaid shouldBe BigDecimal.ZERO
+            startStats.totalVolumeTraded.shouldBeEqualComparingTo(BigDecimal.ZERO)
+            startStats.totalFeesPaid.shouldBeEqualComparingTo(BigDecimal.ZERO)
             startStats.latestSnapshotTime shouldBe null
 
             val trade1 =

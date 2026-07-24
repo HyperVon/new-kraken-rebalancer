@@ -322,7 +322,7 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
     }
 
     override fun setSyncMetadata(key: String, value: String) {
-        transaction(database) {
+        database.safeTransaction(log, "Failed to upsert sync metadata") {
             HistorySyncMetadataTable.upsert {
                 it[HistorySyncMetadataTable.key] = key
                 it[HistorySyncMetadataTable.value] = value
