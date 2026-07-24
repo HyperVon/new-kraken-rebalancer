@@ -533,7 +533,10 @@ class KrakenServiceTest : StringSpec() {
             runTest {
                 val mockConfigService = mockk<ConfigService>(relaxed = true)
                 val config = AppConfig(
-                    kraken = KrakenCredentials("YOUR_KRAKEN_API_KEY", "YOUR_KRAKEN_PRIVATE_KEY"),
+                    kraken = KrakenCredentials(
+                        KrakenCredentials.PLACEHOLDER_API_KEY,
+                        KrakenCredentials.PLACEHOLDER_PRIVATE_KEY,
+                    ),
                     settings = Settings(
                         loopDelaySeconds = 60L,
                         deviationTriggerPercent = 2.0,

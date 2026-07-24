@@ -21,126 +21,115 @@ import kotlin.collections.mutableMapOf
 import kotlin.js.Date
 import kotlin.js.Promise
 import kotlin.js.json
-import com.gemini.krakenbot.view.util.CssClass.Query.TIME_RANGE_BTNS as TIME_RANGE_BTNS_QUERY
 import com.gemini.krakenbot.view.util.CssClass.Query.CHART_SCRUBBERS as CHART_SCRUBBERS_QUERY
+import com.gemini.krakenbot.view.util.CssClass.Query.TIME_RANGE_BTNS as TIME_RANGE_BTNS_QUERY
 import com.gemini.krakenbot.view.util.CssClass.Query.ZOOM_BTNS as ZOOM_BTNS_QUERY
 
 @JsName("Chart")
-private external class Chart(
-    ctx: dynamic,
-    config: dynamic,
-)
+private external class Chart(ctx: dynamic, config: dynamic)
 
 @JsName("Object")
 private external object JSObject {
     fun keys(obj: dynamic): Array<String>
 
-    fun assign(
-        target: dynamic,
-        vararg sources: dynamic,
-    ): dynamic
+    fun assign(target: dynamic, vararg sources: dynamic): dynamic
 }
 
-private fun buildLegendConfig(): dynamic =
-    json(
-        ChartProps.LABELS to
-            json(
-                ChartProps.COLOR to ChartProps.COLOR_LEGEND_LABEL,
-                ChartProps.FONT to
-                    json(
-                        ChartProps.FAMILY to ChartProps.FONT_INTER,
-                        ChartProps.SIZE to ChartProps.FONT_SIZE_LEGEND,
-                    ),
-                ChartProps.USE_POINT_STYLE to true,
-                ChartProps.POINT_STYLE to ChartProps.LEGEND_POINT_STYLE_LINE,
-                ChartProps.POINT_STYLE_WIDTH to ChartProps.LEGEND_POINT_STYLE_WIDTH,
-            ),
-    )
+private fun buildLegendConfig(): dynamic = json(
+    ChartProps.LABELS to
+        json(
+            ChartProps.COLOR to ChartProps.COLOR_LEGEND_LABEL,
+            ChartProps.FONT to
+                json(
+                    ChartProps.FAMILY to ChartProps.FONT_INTER,
+                    ChartProps.SIZE to ChartProps.FONT_SIZE_LEGEND,
+                ),
+            ChartProps.USE_POINT_STYLE to true,
+            ChartProps.POINT_STYLE to ChartProps.LEGEND_POINT_STYLE_LINE,
+            ChartProps.POINT_STYLE_WIDTH to ChartProps.LEGEND_POINT_STYLE_WIDTH,
+        ),
+)
 
-private fun buildTooltipConfig(): dynamic =
-    json(
-        ChartProps.BACKGROUND_COLOR to ChartProps.COLOR_TOOLTIP_BG,
-        ChartProps.BORDER_COLOR to ChartProps.COLOR_TOOLTIP_BORDER,
-        ChartProps.BORDER_WIDTH to ChartProps.BORDER_WIDTH_TOOLTIP,
-        ChartProps.TITLE_COLOR to ChartProps.COLOR_TOOLTIP_TITLE,
-        ChartProps.BODY_COLOR to ChartProps.COLOR_TOOLTIP_BODY,
-        ChartProps.BODY_FONT to
-            json(
-                ChartProps.FAMILY to ChartProps.FONT_MONO,
-            ),
-        ChartProps.PADDING to ChartProps.PADDING_TOOLTIP,
-        ChartProps.CORNER_RADIUS to ChartProps.CORNER_RADIUS_TOOLTIP,
-    )
+private fun buildTooltipConfig(): dynamic = json(
+    ChartProps.BACKGROUND_COLOR to ChartProps.COLOR_TOOLTIP_BG,
+    ChartProps.BORDER_COLOR to ChartProps.COLOR_TOOLTIP_BORDER,
+    ChartProps.BORDER_WIDTH to ChartProps.BORDER_WIDTH_TOOLTIP,
+    ChartProps.TITLE_COLOR to ChartProps.COLOR_TOOLTIP_TITLE,
+    ChartProps.BODY_COLOR to ChartProps.COLOR_TOOLTIP_BODY,
+    ChartProps.BODY_FONT to
+        json(
+            ChartProps.FAMILY to ChartProps.FONT_MONO,
+        ),
+    ChartProps.PADDING to ChartProps.PADDING_TOOLTIP,
+    ChartProps.CORNER_RADIUS to ChartProps.CORNER_RADIUS_TOOLTIP,
+)
 
-private fun buildScalesConfig(): dynamic =
-    json(
-        ChartProps.X to
-            json(
-                ChartProps.TYPE to ChartProps.TIME_TYPE,
-                ChartProps.TIME to
-                    json(
-                        ChartProps.TOOLTIP_FORMAT to ChartProps.TIME_FORMAT_DEFAULT,
-                    ),
-                ChartProps.GRID to
-                    json(
-                        ChartProps.COLOR to ChartProps.COLOR_GRID_LINE,
-                    ),
-                ChartProps.TICKS to
-                    json(
-                        ChartProps.COLOR to ChartProps.COLOR_TICK,
-                        ChartProps.MAX_TICKS_LIMIT to ChartProps.MAX_TICKS_LIMIT_DEFAULT,
-                    ),
-            ),
-        ChartProps.Y to
-            json(
-                ChartProps.GRID to
-                    json(
-                        ChartProps.COLOR to ChartProps.COLOR_GRID_LINE,
-                    ),
-                ChartProps.TICKS to
-                    json(
-                        ChartProps.COLOR to ChartProps.COLOR_TICK,
-                    ),
-            ),
-    )
+private fun buildScalesConfig(): dynamic = json(
+    ChartProps.X to
+        json(
+            ChartProps.TYPE to ChartProps.TIME_TYPE,
+            ChartProps.TIME to
+                json(
+                    ChartProps.TOOLTIP_FORMAT to ChartProps.TIME_FORMAT_DEFAULT,
+                ),
+            ChartProps.GRID to
+                json(
+                    ChartProps.COLOR to ChartProps.COLOR_GRID_LINE,
+                ),
+            ChartProps.TICKS to
+                json(
+                    ChartProps.COLOR to ChartProps.COLOR_TICK,
+                    ChartProps.MAX_TICKS_LIMIT to ChartProps.MAX_TICKS_LIMIT_DEFAULT,
+                ),
+        ),
+    ChartProps.Y to
+        json(
+            ChartProps.GRID to
+                json(
+                    ChartProps.COLOR to ChartProps.COLOR_GRID_LINE,
+                ),
+            ChartProps.TICKS to
+                json(
+                    ChartProps.COLOR to ChartProps.COLOR_TICK,
+                ),
+        ),
+)
 
-private fun buildZoomPluginConfig(): dynamic =
-    json(
-        ChartProps.PAN to
-            json(
-                ChartProps.ENABLED to false,
-                ChartProps.MODE to ChartProps.MODE_X,
-            ),
-        ChartProps.ZOOM to
-            json(
-                ChartProps.WHEEL to json(ChartProps.ENABLED to true),
-                ChartProps.PINCH to json(ChartProps.ENABLED to true),
-                ChartProps.DRAG to json(ChartProps.ENABLED to true),
-                ChartProps.MODE to ChartProps.MODE_X,
-            ),
-        ChartProps.LIMITS to
-            json(
-                ChartProps.X to
-                    json(
-                        ChartProps.MIN to ChartProps.ORIGINAL,
-                        ChartProps.MAX to ChartProps.ORIGINAL,
-                        ChartProps.MIN_RANGE to ChartProps.ZOOM_MIN_RANGE_MS,
-                    ),
-            ),
-    )
+private fun buildZoomPluginConfig(): dynamic = json(
+    ChartProps.PAN to
+        json(
+            ChartProps.ENABLED to false,
+            ChartProps.MODE to ChartProps.MODE_X,
+        ),
+    ChartProps.ZOOM to
+        json(
+            ChartProps.WHEEL to json(ChartProps.ENABLED to true),
+            ChartProps.PINCH to json(ChartProps.ENABLED to true),
+            ChartProps.DRAG to json(ChartProps.ENABLED to true),
+            ChartProps.MODE to ChartProps.MODE_X,
+        ),
+    ChartProps.LIMITS to
+        json(
+            ChartProps.X to
+                json(
+                    ChartProps.MIN to ChartProps.ORIGINAL,
+                    ChartProps.MAX to ChartProps.ORIGINAL,
+                    ChartProps.MIN_RANGE to ChartProps.ZOOM_MIN_RANGE_MS,
+                ),
+        ),
+)
 
-private fun buildDefaultChartOptions(): dynamic =
-    json(
-        ChartProps.RESPONSIVE to true,
-        ChartProps.MAINTAIN_ASPECT_RATIO to false,
-        ChartProps.PLUGINS to
-            json(
-                ChartProps.LEGEND to buildLegendConfig(),
-                ChartProps.TOOLTIP to buildTooltipConfig(),
-                ChartProps.ZOOM to buildZoomPluginConfig(),
-            ),
-        ChartProps.SCALES to buildScalesConfig(),
-    )
+private fun buildDefaultChartOptions(): dynamic = json(
+    ChartProps.RESPONSIVE to true,
+    ChartProps.MAINTAIN_ASPECT_RATIO to false,
+    ChartProps.PLUGINS to
+        json(
+            ChartProps.LEGEND to buildLegendConfig(),
+            ChartProps.TOOLTIP to buildTooltipConfig(),
+            ChartProps.ZOOM to buildZoomPluginConfig(),
+        ),
+    ChartProps.SCALES to buildScalesConfig(),
+)
 
 private val chartDefaults: dynamic = buildDefaultChartOptions()
 
@@ -237,27 +226,22 @@ internal fun syncTimeRangeButtons(range: String) {
 }
 
 /** Density-based radius: full radius up to FULL_MAX points, half until HALF_MAX, then hidden. */
-private fun radiusForCount(
-    pointCount: Int,
-    fullRadius: Int,
-): Int =
-    when {
-        pointCount <= ChartProps.POINT_DENSITY_FULL_MAX -> fullRadius
-        pointCount <= ChartProps.POINT_DENSITY_HALF_MAX -> fullRadius / 2
-        else -> ChartProps.POINT_RADIUS_HIDDEN
-    }
+private fun radiusForCount(pointCount: Int, fullRadius: Int): Int = when {
+    pointCount <= ChartProps.POINT_DENSITY_FULL_MAX -> fullRadius
+    pointCount <= ChartProps.POINT_DENSITY_HALF_MAX -> fullRadius / 2
+    else -> ChartProps.POINT_RADIUS_HIDDEN
+}
 
-internal fun pointRadiusForCount(
-    pointCount: Int,
-    primary: Boolean,
-): Int =
-    radiusForCount(pointCount, if (primary) ChartProps.POINT_RADIUS_PRIMARY else ChartProps.POINT_RADIUS_SECONDARY)
+internal fun pointRadiusForCount(pointCount: Int, primary: Boolean): Int {
+    val full = if (primary) ChartProps.POINT_RADIUS_PRIMARY else ChartProps.POINT_RADIUS_SECONDARY
+    return radiusForCount(pointCount, full)
+}
 
-internal fun pointHoverRadiusForCount(
-    pointCount: Int,
-    primary: Boolean,
-): Int =
-    radiusForCount(pointCount, if (primary) ChartProps.POINT_HOVER_RADIUS_PRIMARY else ChartProps.POINT_HOVER_RADIUS_SECONDARY)
+internal fun pointHoverRadiusForCount(pointCount: Int, primary: Boolean): Int {
+    val full =
+        if (primary) ChartProps.POINT_HOVER_RADIUS_PRIMARY else ChartProps.POINT_HOVER_RADIUS_SECONDARY
+    return radiusForCount(pointCount, full)
+}
 
 internal fun setupZoomButtons() {
     val buttons = document.querySelectorAll(ZOOM_BTNS_QUERY)
@@ -277,18 +261,12 @@ internal fun setupZoomButtons() {
     }
 }
 
-internal data class ChartRange(
-    val min: Double,
-    val max: Double,
-) {
+internal data class ChartRange(val min: Double, val max: Double) {
     val span: Double
         get() = max - min
 }
 
-internal data class ChartScrubberState(
-    val enabled: Boolean,
-    val position: Double,
-)
+internal data class ChartScrubberState(val enabled: Boolean, val position: Double)
 
 internal fun setupChartScrubbers() {
     val scrubbers = document.querySelectorAll(CHART_SCRUBBERS_QUERY)
@@ -301,10 +279,7 @@ internal fun setupChartScrubbers() {
     }
 }
 
-internal fun chartScrubberState(
-    chart: dynamic,
-    fallbackRange: ChartRange?,
-): ChartScrubberState? {
+internal fun chartScrubberState(chart: dynamic, fallbackRange: ChartRange?): ChartScrubberState? {
     val fullRange = chartInitialRange(chart) ?: fallbackRange ?: return null
     val currentRange = chartCurrentRange(chart) ?: return null
     if (fullRange.span <= 0.0 || currentRange.span <= 0.0 || currentRange.span >= fullRange.span) {
@@ -327,10 +302,7 @@ internal fun syncChartScrubber(canvasId: String) {
     scrubber.value = if (state?.enabled == true) state.position.toString() else "0"
 }
 
-internal fun panChartToScrubberPosition(
-    canvasId: String,
-    position: Double,
-) {
+internal fun panChartToScrubberPosition(canvasId: String, position: Double) {
     val chart = charts[canvasId] ?: return
     val fullRange = chartInitialRange(chart) ?: originalChartRanges[canvasId] ?: return
     val currentRange = chartCurrentRange(chart) ?: return
@@ -339,7 +311,7 @@ internal fun panChartToScrubberPosition(
     val start =
         fullRange.min +
             (fullRange.span - currentRange.span) *
-                (position / PrecisionConstants.HUNDRED_INT).coerceIn(0.0, 1.0)
+            (position / PrecisionConstants.HUNDRED_INT).coerceIn(0.0, 1.0)
     setChartXRange(chart, ChartRange(start, start + currentRange.span))
     // Keep the user's slider position; do not re-read the chart mid-drag (that can
     // snap the thumb if scale reads lag one frame behind zoomScale).
@@ -383,10 +355,7 @@ private fun dynamicNumber(value: dynamic): Double? {
     return Date(value.toString()).getTime().takeUnless { it.isNaN() }
 }
 
-private fun setChartXRange(
-    chart: dynamic,
-    range: ChartRange,
-) {
+private fun setChartXRange(chart: dynamic, range: ChartRange) {
     // chartjs-plugin-zoom owns scale limits after any zoom; writing options.scales.x
     // and calling update() is ignored. Prefer zoomScale so the plugin's state matches.
     val zoomScale = chart.zoomScale
@@ -407,12 +376,11 @@ private fun setChartXRange(
     if (update != null && update != undefined) update.call(chart)
 }
 
-internal fun loadHistoryAfterSync(): Promise<Unit> =
-    if (HistoryViewPrefs.hasUserInteracted()) {
-        historyLoadAll(historyCurrentRange())
-    } else {
-        HistoryViewPrefs.applyDefaultView()
-    }
+internal fun loadHistoryAfterSync(): Promise<Unit> = if (HistoryViewPrefs.hasUserInteracted()) {
+    historyLoadAll(historyCurrentRange())
+} else {
+    HistoryViewPrefs.applyDefaultView()
+}
 
 private fun setupSyncProgressAndLoad() {
     checkSyncProgress().then { isDone ->
@@ -455,10 +423,9 @@ private fun setupSyncProgressAndLoad() {
     })
 }
 
-private fun fetchJSON(url: String): Promise<dynamic> =
-    window
-        .fetch(url)
-        .then { res -> res.json() }
+private fun fetchJSON(url: String): Promise<dynamic> = window
+    .fetch(url)
+    .then { res -> res.json() }
 
 private const val EN_US = "en-US"
 
@@ -471,10 +438,7 @@ fun formatUSD(valDouble: Double): String {
     return if (valDouble < 0) "-$$formatted" else "$$formatted"
 }
 
-fun formatPctTick(
-    v: Double,
-    includePlus: Boolean = true,
-): String {
+fun formatPctTick(v: Double, includePlus: Boolean = true): String {
     val d = v.toString().toDoubleOrNull() ?: 0.0
     val sign = if (includePlus && d >= 0.0) "+" else ""
     val options: dynamic = json()
@@ -483,10 +447,7 @@ fun formatPctTick(
     return sign + d.asDynamic().toLocaleString(EN_US, options) + "%"
 }
 
-internal fun getUniqueSymbols(
-    snapshots: Array<dynamic>,
-    excludeUsd: Boolean = true,
-): List<String> {
+internal fun getUniqueSymbols(snapshots: Array<dynamic>, excludeUsd: Boolean = true): List<String> {
     val symbolsSet = mutableSetOf<String>()
     snapshots.forEach { s: dynamic ->
         val assets = s.assets
@@ -502,10 +463,7 @@ internal fun getUniqueSymbols(
     }
 }
 
-internal fun mapSnapshotsToPoints(
-    snapshots: Array<dynamic>,
-    valueSelector: (dynamic) -> Double,
-): Array<dynamic> =
+internal fun mapSnapshotsToPoints(snapshots: Array<dynamic>, valueSelector: (dynamic) -> Double): Array<dynamic> =
     snapshots
         .map { s: dynamic ->
             json("x" to s.timestamp, "y" to valueSelector(s))
@@ -532,10 +490,7 @@ internal fun syncScrubberFromZoomContext(ctx: dynamic) {
     if (id != null && id != undefined) syncChartScrubber(id.toString())
 }
 
-internal fun createLineChartConfig(
-    datasets: Array<dynamic>,
-    options: dynamic,
-): dynamic {
+internal fun createLineChartConfig(datasets: Array<dynamic>, options: dynamic): dynamic {
     val config: dynamic = json()
     config.type = "line"
     config.data = json()
@@ -544,10 +499,7 @@ internal fun createLineChartConfig(
     return config
 }
 
-internal fun createOrUpdate(
-    canvasId: String,
-    config: dynamic,
-) {
+internal fun createOrUpdate(canvasId: String, config: dynamic) {
     val existingChart: dynamic = charts[canvasId]
     val applyingPresetVisibility = canvasId in pendingPresetVisibility
     if (existingChart != null && existingChart != undefined) {
@@ -707,7 +659,11 @@ internal fun buildAssetHoldingsChart(snapshots: Array<dynamic>) {
                                 0.0
                             }
                         val base = baselines[sym] ?: 0.0
-                        if (base > 0.0) ((current - base) / base) * PrecisionConstants.TOTAL_ALLOCATION_PERCENTAGE else 0.0
+                        if (base > 0.0) {
+                            ((current - base) / base) * PrecisionConstants.TOTAL_ALLOCATION_PERCENTAGE
+                        } else {
+                            0.0
+                        }
                     }
 
                 json(
@@ -745,7 +701,8 @@ internal fun buildAssetHoldingsChart(snapshots: Array<dynamic>) {
         val balOpts: dynamic = json()
         balOpts.minimumFractionDigits = PrecisionConstants.MIN_CRYPTO_DECIMAL_PLACES
         balOpts.maximumFractionDigits = PrecisionConstants.SCALE_CRYPTO
-        "$sym: $pctSign${pctChange.toFixed(PrecisionConstants.SCALE_USD)}% (${balance.asDynamic().toLocaleString(EN_US, balOpts)})"
+        val balFormatted = balance.asDynamic().toLocaleString(EN_US, balOpts)
+        "$sym: $pctSign${pctChange.toFixed(PrecisionConstants.SCALE_USD)}% ($balFormatted)"
     }
 
     options.scales.y.ticks.callback = { v: Double, _: dynamic, _: dynamic ->
@@ -816,10 +773,7 @@ internal fun buildAllocationDriftChart(snapshots: Array<dynamic>) {
     createOrUpdate(HtmlIds.ALLOCATION_DRIFT_CHART, createLineChartConfig(datasets, options))
 }
 
-internal fun calculateCumulativePL(
-    trades: Array<dynamic>,
-    includeDryRun: Boolean = false,
-): Array<dynamic> {
+internal fun calculateCumulativePL(trades: Array<dynamic>, includeDryRun: Boolean = false): Array<dynamic> {
     if (trades.asDynamic().length == 0) return emptyArray()
 
     val sorted =
@@ -856,10 +810,7 @@ internal fun calculateCumulativePL(
     return points.toTypedArray()
 }
 
-internal fun buildCumulativePLChart(
-    trades: Array<dynamic>,
-    includeDryRun: Boolean = false,
-) {
+internal fun buildCumulativePLChart(trades: Array<dynamic>, includeDryRun: Boolean = false) {
     val rawData = calculateCumulativePL(trades, includeDryRun)
     if (rawData.asDynamic().length == 0) return
 
@@ -941,7 +892,12 @@ private fun renderTradeRow(t: JsTradeRecord): HTMLTableRowElement {
         }
     val success = isTrue(t.success)
     val dryRun = isTrue(t.dryRun)
-    val statusText = if (success) (if (dryRun) ViewText.STATUS_DRY_RUN else ViewText.STATUS_SUCCESS) else ViewText.STATUS_FAILED
+    val statusText =
+        when {
+            !success -> ViewText.STATUS_FAILED
+            dryRun -> ViewText.STATUS_DRY_RUN
+            else -> ViewText.STATUS_SUCCESS
+        }
     val statusClass =
         when {
             !success -> CssClass.Badge.Failed
@@ -961,20 +917,14 @@ private fun renderTradeRow(t: JsTradeRecord): HTMLTableRowElement {
     return tr
 }
 
-private fun createCell(
-    text: String,
-    cssClass: CssClass,
-): HTMLTableCellElement {
+private fun createCell(text: String, cssClass: CssClass): HTMLTableCellElement {
     val td = document.createElement(HtmlTags.TD) as HTMLTableCellElement
     td.className = cssClass.toString()
     td.textContent = text
     return td
 }
 
-private fun createBadgeCell(
-    text: String,
-    badgeClass: CssClass,
-): HTMLTableCellElement {
+private fun createBadgeCell(text: String, badgeClass: CssClass): HTMLTableCellElement {
     val td = document.createElement(HtmlTags.TD) as HTMLTableCellElement
     val span = document.createElement(HtmlTags.SPAN) as HTMLSpanElement
     span.className = badgeClass.toString()
@@ -991,21 +941,27 @@ internal fun updateStats(stats: JsHistoryStats) {
     val totalFees = document.getElementById(HtmlIds.STAT_TOTAL_FEES)
 
     if (athTitle != null) {
-        athTitle.textContent = if (currentRange == TimeRange.ALL.key) ViewText.HISTORY_ALL_TIME_HIGH else ViewText.PERIOD_HIGH
+        athTitle.textContent =
+            if (currentRange == TimeRange.ALL.key) {
+                ViewText.HISTORY_ALL_TIME_HIGH
+            } else {
+                ViewText.PERIOD_HIGH
+            }
     }
     if (ath != null) ath.textContent = formatUSD(stats.allTimeHigh.toString().toDoubleOrNull() ?: 0.0)
     if (totalTrades != null) {
         val count = stats.totalTradesExecuted.toString().toDoubleOrNull() ?: 0.0
         totalTrades.textContent = count.asDynamic().toLocaleString()
     }
-    if (totalVolume != null) totalVolume.textContent = formatUSD(stats.totalVolumeTraded.toString().toDoubleOrNull() ?: 0.0)
+    if (totalVolume != null) {
+        totalVolume.textContent =
+            formatUSD(stats.totalVolumeTraded.toString().toDoubleOrNull() ?: 0.0)
+    }
     if (totalFees != null) totalFees.textContent = formatUSD(stats.totalFeesPaid.toString().toDoubleOrNull() ?: 0.0)
 }
 
-private fun fetchRanged(
-    vararg routes: String,
-    range: String,
-): Array<Promise<dynamic>> = routes.map { route -> fetchJSON(route.withRange(range)) }.toTypedArray()
+private fun fetchRanged(vararg routes: String, range: String): Array<Promise<dynamic>> =
+    routes.map { route -> fetchJSON(route.withRange(range)) }.toTypedArray()
 
 internal fun loadAll(range: String): Promise<Unit> {
     currentRange = range
@@ -1033,44 +989,43 @@ internal fun loadAll(range: String): Promise<Unit> {
     }
 }
 
-internal fun checkSyncProgress(): Promise<Boolean> =
-    fetchJSON(Routes.API_HISTORY_SYNC_PROGRESS)
-        .then { rawStatus: dynamic ->
-            val status = rawStatus.unsafeCast<JsSyncProgress>()
-            val banner = document.getElementById(HtmlIds.SYNC_PROGRESS_BANNER) as? HTMLElement
-            if (banner == null) {
+internal fun checkSyncProgress(): Promise<Boolean> = fetchJSON(Routes.API_HISTORY_SYNC_PROGRESS)
+    .then { rawStatus: dynamic ->
+        val status = rawStatus.unsafeCast<JsSyncProgress>()
+        val banner = document.getElementById(HtmlIds.SYNC_PROGRESS_BANNER) as? HTMLElement
+        if (banner == null) {
+            true
+        } else {
+            val seeded = status.seeded ?: false
+            if (seeded) {
+                banner.style.display = "none"
                 true
             } else {
-                val seeded = status.seeded ?: false
-                if (seeded) {
-                    banner.style.display = "none"
-                    true
-                } else {
-                    banner.style.display = "block"
-                    val offset = status.offset.toString().toDoubleOrNull() ?: 0.0
-                    val total = status.total.toString().toDoubleOrNull() ?: 0.0
-                    var pct = 0
-                    if (total > 0.0) {
-                        pct =
-                            (offset / total * PrecisionConstants.TOTAL_ALLOCATION_PERCENTAGE).toInt().coerceAtMost(
-                                PrecisionConstants.HUNDRED_INT,
-                            )
-                    }
-
-                    val bar = document.getElementById(HtmlIds.SYNC_PROGRESS_BAR) as? HTMLElement
-                    val text = document.getElementById(HtmlIds.SYNC_PROGRESS_TEXT) as? HTMLElement
-
-                    if (bar != null) bar.style.width = "$pct%"
-                    if (text !=
-                        null
-                    ) {
-                        text.textContent = "${offset.asDynamic().toLocaleString()} / ${total.asDynamic().toLocaleString()} ($pct%)"
-                    }
-
-                    false
+                banner.style.display = "block"
+                val offset = status.offset.toString().toDoubleOrNull() ?: 0.0
+                val total = status.total.toString().toDoubleOrNull() ?: 0.0
+                var pct = 0
+                if (total > 0.0) {
+                    pct =
+                        (offset / total * PrecisionConstants.TOTAL_ALLOCATION_PERCENTAGE).toInt().coerceAtMost(
+                            PrecisionConstants.HUNDRED_INT,
+                        )
                 }
+
+                val bar = document.getElementById(HtmlIds.SYNC_PROGRESS_BAR) as? HTMLElement
+                val text = document.getElementById(HtmlIds.SYNC_PROGRESS_TEXT) as? HTMLElement
+
+                if (bar != null) bar.style.width = "$pct%"
+                if (text != null) {
+                    val offsetLabel = offset.asDynamic().toLocaleString()
+                    val totalLabel = total.asDynamic().toLocaleString()
+                    text.textContent = "$offsetLabel / $totalLabel ($pct%)"
+                }
+
+                false
             }
-        }.`catch` { e ->
-            console.error("Error checking sync progress", e)
-            false
         }
+    }.`catch` { e ->
+        console.error("Error checking sync progress", e)
+        false
+    }

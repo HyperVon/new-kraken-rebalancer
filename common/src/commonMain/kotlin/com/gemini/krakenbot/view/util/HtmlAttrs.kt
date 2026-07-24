@@ -58,6 +58,7 @@ object HtmlTags {
     const val TD = "td"
     const val TH = "th"
     const val TABLE = "table"
+    const val THEAD = "thead"
     const val TBODY = "tbody"
     const val A = "a"
     const val SELECT = "select"

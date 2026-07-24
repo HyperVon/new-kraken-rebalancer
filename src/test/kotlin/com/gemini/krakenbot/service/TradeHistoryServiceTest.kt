@@ -561,7 +561,10 @@ class TradeHistoryServiceTest : StringSpec() {
             runTest {
                 coEvery { repository.isHistorySeeded() } returns false
                 val placeholderConfig = AppConfig(
-                    kraken = KrakenCredentials("YOUR_KRAKEN_API_KEY", "YOUR_KRAKEN_PRIVATE_KEY"),
+                    kraken = KrakenCredentials(
+                        KrakenCredentials.PLACEHOLDER_API_KEY,
+                        KrakenCredentials.PLACEHOLDER_PRIVATE_KEY,
+                    ),
                     settings = Settings(
                         loopDelaySeconds = 60,
                         deviationTriggerPercent = 5.0,

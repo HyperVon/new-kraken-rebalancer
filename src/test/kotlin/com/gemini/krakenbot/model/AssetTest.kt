@@ -1,9 +1,12 @@
 package com.gemini.krakenbot.model
 
+import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
 
 class AssetTest : StringSpec() {
+    override fun isolationMode() = IsolationMode.InstancePerTest
+
     init {
         "fromTradingPair resolves all standard USD-quoted BTC aliases" {
             val allocations = listOf(Asset.BTC, Asset.USD)

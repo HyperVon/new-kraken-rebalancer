@@ -35,10 +35,7 @@ data class HistoryViewDef(
     val visibility: Map<String, Map<String, Boolean>>,
 )
 
-data class HistoryViewsStore(
-    val defaultId: String,
-    val views: List<HistoryViewDef>,
-)
+data class HistoryViewsStore(val defaultId: String, val views: List<HistoryViewDef>)
 
 /**
  * Browser-local History view presets (built-ins + user saves).
@@ -76,48 +73,47 @@ object HistoryViewPrefs {
         (document.getElementById(HtmlIds.HISTORY_DELETE_VIEW_BTN) as? HTMLButtonElement)?.disabled = true
     }
 
-    fun builtInViews(): List<HistoryViewDef> =
-        listOf(
-            HistoryViewDef(
-                id = HistoryViewIds.OVERVIEW,
-                name = ViewText.HISTORY_VIEW_OVERVIEW,
-                builtIn = true,
-                range = TimeRange.THIRTY_DAYS.key,
-                showDryRun = true,
-                visibility = emptyMap(),
-            ),
-            HistoryViewDef(
-                id = HistoryViewIds.DAY_TOTAL,
-                name = ViewText.HISTORY_VIEW_DAY_TOTAL,
-                builtIn = true,
-                range = TimeRange.TWENTY_FOUR_HOURS.key,
-                showDryRun = true,
-                visibility =
+    fun builtInViews(): List<HistoryViewDef> = listOf(
+        HistoryViewDef(
+            id = HistoryViewIds.OVERVIEW,
+            name = ViewText.HISTORY_VIEW_OVERVIEW,
+            builtIn = true,
+            range = TimeRange.THIRTY_DAYS.key,
+            showDryRun = true,
+            visibility = emptyMap(),
+        ),
+        HistoryViewDef(
+            id = HistoryViewIds.DAY_TOTAL,
+            name = ViewText.HISTORY_VIEW_DAY_TOTAL,
+            builtIn = true,
+            range = TimeRange.TWENTY_FOUR_HOURS.key,
+            showDryRun = true,
+            visibility =
+            mapOf(
+                HtmlIds.PORTFOLIO_VALUE_CHART to
                     mapOf(
-                        HtmlIds.PORTFOLIO_VALUE_CHART to
-                            mapOf(
-                                ChartProps.DATASET_VISIBILITY_DEFAULT to false,
-                                ViewText.TOTAL_PORTFOLIO to true,
-                            ),
+                        ChartProps.DATASET_VISIBILITY_DEFAULT to false,
+                        ViewText.TOTAL_PORTFOLIO to true,
                     ),
             ),
-            HistoryViewDef(
-                id = HistoryViewIds.WEEK_ALLOCATION,
-                name = ViewText.HISTORY_VIEW_WEEK_ALLOCATION,
-                builtIn = true,
-                range = TimeRange.SEVEN_DAYS.key,
-                showDryRun = true,
-                visibility = emptyMap(),
-            ),
-            HistoryViewDef(
-                id = HistoryViewIds.MONTH_PNL,
-                name = ViewText.HISTORY_VIEW_MONTH_PNL,
-                builtIn = true,
-                range = TimeRange.THIRTY_DAYS.key,
-                showDryRun = false,
-                visibility = emptyMap(),
-            ),
-        )
+        ),
+        HistoryViewDef(
+            id = HistoryViewIds.WEEK_ALLOCATION,
+            name = ViewText.HISTORY_VIEW_WEEK_ALLOCATION,
+            builtIn = true,
+            range = TimeRange.SEVEN_DAYS.key,
+            showDryRun = true,
+            visibility = emptyMap(),
+        ),
+        HistoryViewDef(
+            id = HistoryViewIds.MONTH_PNL,
+            name = ViewText.HISTORY_VIEW_MONTH_PNL,
+            builtIn = true,
+            range = TimeRange.THIRTY_DAYS.key,
+            showDryRun = false,
+            visibility = emptyMap(),
+        ),
+    )
 
     fun defaultStore(): HistoryViewsStore =
         HistoryViewsStore(defaultId = HistoryViewIds.OVERVIEW, views = builtInViews())
@@ -233,10 +229,7 @@ object HistoryViewPrefs {
         return result.unsafeCast<Json>()
     }
 
-    fun captureCurrentView(
-        name: String,
-        id: String = "user-${Date.now().toLong()}",
-    ): HistoryViewDef {
+    fun captureCurrentView(name: String, id: String = "user-${Date.now().toLong()}"): HistoryViewDef {
         val showDryRun =
             (document.getElementById(HtmlIds.SHOW_DRY_RUN_CHECKBOX) as? HTMLInputElement)?.checked ?: true
         return HistoryViewDef(
@@ -302,7 +295,9 @@ object HistoryViewPrefs {
         (document.getElementById(HtmlIds.HISTORY_SET_DEFAULT_BTN) as? HTMLButtonElement)?.addEventListener(
             HtmlEvents.CLICK,
             {
-                val selectEl = document.getElementById(HtmlIds.HISTORY_VIEWS_SELECT) as? HTMLSelectElement ?: return@addEventListener
+                val selectEl =
+                    document.getElementById(HtmlIds.HISTORY_VIEWS_SELECT) as? HTMLSelectElement
+                        ?: return@addEventListener
                 val id = selectEl.value
                 if (id.isBlank()) return@addEventListener
                 val current = loadStore()
@@ -316,7 +311,9 @@ object HistoryViewPrefs {
         (document.getElementById(HtmlIds.HISTORY_DELETE_VIEW_BTN) as? HTMLButtonElement)?.addEventListener(
             HtmlEvents.CLICK,
             {
-                val selectEl = document.getElementById(HtmlIds.HISTORY_VIEWS_SELECT) as? HTMLSelectElement ?: return@addEventListener
+                val selectEl =
+                    document.getElementById(HtmlIds.HISTORY_VIEWS_SELECT) as? HTMLSelectElement
+                        ?: return@addEventListener
                 val id = selectEl.value
                 val current = loadStore()
                 val view = current.views.firstOrNull { it.id == id } ?: return@addEventListener
@@ -331,10 +328,7 @@ object HistoryViewPrefs {
         )
     }
 
-    fun refreshSelect(
-        store: HistoryViewsStore,
-        selectedId: String,
-    ) {
+    fun refreshSelect(store: HistoryViewsStore, selectedId: String) {
         val select = document.getElementById(HtmlIds.HISTORY_VIEWS_SELECT) as? HTMLSelectElement ?: return
         select.innerHTML = ""
         for (view in store.views) {

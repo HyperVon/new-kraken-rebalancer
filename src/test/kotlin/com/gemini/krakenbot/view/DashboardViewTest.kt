@@ -30,6 +30,7 @@ import com.gemini.krakenbot.view.util.ViewText.SAFETY_MODES
 import com.gemini.krakenbot.view.util.ViewText.SETTINGS_TITLE
 import com.gemini.krakenbot.view.util.ViewText.TARGET_PREFIX
 import com.gemini.krakenbot.view.util.ViewText.TOTAL_PORTFOLIO
+import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
@@ -43,6 +44,8 @@ import java.time.Instant
 
 @Suppress("unused")
 class DashboardViewTest : StringSpec() {
+    override fun isolationMode() = IsolationMode.InstancePerTest
+
     private val shell = DashboardShellComponent()
     private val overview = OverviewGridComponent()
     private val chart = AllocationChartComponent()

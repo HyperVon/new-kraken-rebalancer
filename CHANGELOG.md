@@ -10,6 +10,19 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **Spotless covers `:frontend-js`**: ktlint 120 now formats `frontend-js/src/**/*.kt`
+  (in addition to `src/**` and `common/**`); remaining excludes are `**/view/**`,
+  `DashboardViewTest`, and `EvaluationScenariosTest`.
+- **JS test DOM builders**: CoverageTest / HistoryTest reuse `TestDomBuilders`
+  for charts, stats, trade table, sync progress, zoom controls, and scrubbers.
+- **Kotest isolation**: Added `IsolationMode.InstancePerTest` across remaining
+  JVM specs that lacked it; placeholder credentials in Kraken/TradeHistory tests
+  use `KrakenCredentials.PLACEHOLDER_*`.
+
+## [6.12.15] - 2026-07-24
+
+### Changed
+
 - **Action-log DRY**: Fiat-correction distribution messages now go through
   `ActionLogFormatter.formatFiatCorrectionDistribution()` instead of an inline
   duplicate in `PortfolioAnalyzerImpl`.

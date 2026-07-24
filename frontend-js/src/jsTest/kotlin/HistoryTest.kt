@@ -6,7 +6,6 @@ import com.gemini.krakenbot.model.TimeRange
 import com.gemini.krakenbot.view.util.ChartProps
 import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.HistoryViewIds
-import com.gemini.krakenbot.view.util.HtmlAttrs
 import com.gemini.krakenbot.view.util.HtmlEvents
 import com.gemini.krakenbot.view.util.HtmlIds
 import com.gemini.krakenbot.view.util.HtmlTags
@@ -326,9 +325,10 @@ class HistoryTest : StringSpec() {
                             arrayOf(
                                 mockSnapshotRecord(
                                     assets =
-                                        json(
-                                            Asset.BTC to json("valueUSD" to 100, "balance" to 1, "currentPercent" to 100),
-                                        ),
+                                    json(
+                                        Asset.BTC to
+                                            json("valueUSD" to 100, "balance" to 1, "currentPercent" to 100),
+                                    ),
                                 ),
                             )
                         url.contains("trades") ->
@@ -391,19 +391,19 @@ class HistoryTest : StringSpec() {
                 HistoryViewsStore(
                     defaultId = HistoryViewIds.DAY_TOTAL,
                     views =
-                        HistoryViewPrefs.builtInViews() +
-                            HistoryViewDef(
-                                id = "user-1",
-                                name = "Custom",
-                                builtIn = false,
-                                range = TimeRange.SEVEN_DAYS.key,
-                                showDryRun = false,
-                                visibility =
-                                    mapOf(
-                                        HtmlIds.PORTFOLIO_VALUE_CHART to
-                                            mapOf(ViewText.TOTAL_PORTFOLIO to true),
-                                    ),
+                    HistoryViewPrefs.builtInViews() +
+                        HistoryViewDef(
+                            id = "user-1",
+                            name = "Custom",
+                            builtIn = false,
+                            range = TimeRange.SEVEN_DAYS.key,
+                            showDryRun = false,
+                            visibility =
+                            mapOf(
+                                HtmlIds.PORTFOLIO_VALUE_CHART to
+                                    mapOf(ViewText.TOTAL_PORTFOLIO to true),
                             ),
+                        ),
                 )
             HistoryViewPrefs.saveStore(store)
             val loaded = HistoryViewPrefs.loadStore()
@@ -427,9 +427,10 @@ class HistoryTest : StringSpec() {
                             arrayOf(
                                 mockSnapshotRecord(
                                     assets =
-                                        json(
-                                            Asset.BTC to json("valueUSD" to 100, "balance" to 1, "currentPercent" to 100),
-                                        ),
+                                    json(
+                                        Asset.BTC to
+                                            json("valueUSD" to 100, "balance" to 1, "currentPercent" to 100),
+                                    ),
                                 ),
                             )
                         url.contains("trades") -> emptyArray<dynamic>()
@@ -447,7 +448,8 @@ class HistoryTest : StringSpec() {
             try {
                 val dayTotal = HistoryViewPrefs.builtInViews().first { it.id == HistoryViewIds.DAY_TOTAL }
                 historyApplyVisibility(dayTotal.visibility)
-                visibilityStates[HtmlIds.PORTFOLIO_VALUE_CHART]?.get(ChartProps.DATASET_VISIBILITY_DEFAULT) shouldBe false
+                visibilityStates[HtmlIds.PORTFOLIO_VALUE_CHART]?.get(ChartProps.DATASET_VISIBILITY_DEFAULT) shouldBe
+                    false
                 visibilityStates[HtmlIds.PORTFOLIO_VALUE_CHART]?.get(ViewText.TOTAL_PORTFOLIO) shouldBe true
 
                 HistoryViewPrefs.applyView(HistoryViewIds.DAY_TOTAL).await()
@@ -492,17 +494,26 @@ class HistoryTest : StringSpec() {
                             arrayOf(
                                 mockSnapshotRecord(
                                     assets =
-                                        json(
-                                            Asset.BTC to json("valueUSD" to 60, "balance" to 1, "currentPercent" to 60),
-                                            Asset.USD to json("valueUSD" to 40, "balance" to 40, "currentPercent" to 40),
+                                    json(
+                                        Asset.BTC to json("valueUSD" to 60, "balance" to 1, "currentPercent" to 60),
+                                        Asset.USD to json(
+                                            "valueUSD" to 40,
+                                            "balance" to 40,
+                                            "currentPercent" to 40,
                                         ),
+                                    ),
                                 ),
                                 mockSnapshotRecord(
                                     assets =
-                                        json(
-                                            Asset.BTC to json("valueUSD" to 70, "balance" to 1.1, "currentPercent" to 70),
-                                            Asset.USD to json("valueUSD" to 30, "balance" to 30, "currentPercent" to 30),
+                                    json(
+                                        Asset.BTC to
+                                            json("valueUSD" to 70, "balance" to 1.1, "currentPercent" to 70),
+                                        Asset.USD to json(
+                                            "valueUSD" to 30,
+                                            "balance" to 30,
+                                            "currentPercent" to 30,
                                         ),
+                                    ),
                                 ),
                             )
                         url.contains("trades") ->
@@ -556,9 +567,14 @@ class HistoryTest : StringSpec() {
 
                 // Empty prompt cancels save
                 window.asDynamic().prompt = { _: String -> "  " }
-                val beforeCancel = (document.getElementById(HtmlIds.HISTORY_VIEWS_SELECT) as HTMLSelectElement).options.length
+                val beforeCancel = (
+                    document.getElementById(
+                        HtmlIds.HISTORY_VIEWS_SELECT,
+                    ) as HTMLSelectElement
+                    ).options.length
                 (document.getElementById(HtmlIds.HISTORY_SAVE_VIEW_BTN) as HTMLButtonElement).click()
-                (document.getElementById(HtmlIds.HISTORY_VIEWS_SELECT) as HTMLSelectElement).options.length shouldBe beforeCancel
+                (document.getElementById(HtmlIds.HISTORY_VIEWS_SELECT) as HTMLSelectElement).options.length shouldBe
+                    beforeCancel
             } finally {
                 document.body!!.removeChild(container)
                 localStorage.removeItem(ViewText.HISTORY_VIEWS_STORAGE_KEY)
@@ -569,13 +585,7 @@ class HistoryTest : StringSpec() {
         "setupZoomButtons invoke chart zoom APIs" {
             resetHistoryUiState()
             val container = document.createElement(HtmlTags.DIV)
-            container.innerHTML =
-                """
-                <canvas id="${HtmlIds.PORTFOLIO_VALUE_CHART}"></canvas>
-                <button class="${CssClass.History.ZoomBtn}" ${HtmlAttrs.DATA_CHART_ID}="${HtmlIds.PORTFOLIO_VALUE_CHART}" ${HtmlAttrs.DATA_ZOOM_ACTION}="in"></button>
-                <button class="${CssClass.History.ZoomBtn}" ${HtmlAttrs.DATA_CHART_ID}="${HtmlIds.PORTFOLIO_VALUE_CHART}" ${HtmlAttrs.DATA_ZOOM_ACTION}="out"></button>
-                <button class="${CssClass.History.ZoomBtn}" ${HtmlAttrs.DATA_CHART_ID}="${HtmlIds.PORTFOLIO_VALUE_CHART}" ${HtmlAttrs.DATA_ZOOM_ACTION}="reset"></button>
-                """.trimIndent()
+            container.innerHTML = TestDomBuilders.zoomControlsDom()
             document.body!!.appendChild(container)
             var zoomCalls = 0
             var resetCalls = 0
@@ -674,8 +684,7 @@ class HistoryTest : StringSpec() {
             container.innerHTML =
                 """
                 <canvas id="${HtmlIds.PORTFOLIO_VALUE_CHART}"></canvas>
-                <input class="${CssClass.History.ChartScrubberInput}" type="range" min="0" max="100"
-                  ${HtmlAttrs.DATA_CHART_ID}="${HtmlIds.PORTFOLIO_VALUE_CHART}" value="0" disabled />
+                ${TestDomBuilders.scrubberDom(disabled = true)}
                 """.trimIndent()
             document.body!!.appendChild(container)
             var zoomScaleCalls = 0
@@ -735,8 +744,7 @@ class HistoryTest : StringSpec() {
             container.innerHTML =
                 """
                 <canvas id="${HtmlIds.PORTFOLIO_VALUE_CHART}"></canvas>
-                <input class="${CssClass.History.ChartScrubberInput}" type="range" min="0" max="100"
-                  ${HtmlAttrs.DATA_CHART_ID}="${HtmlIds.PORTFOLIO_VALUE_CHART}" value="0" />
+                ${TestDomBuilders.scrubberDom(disabled = false)}
                 """.trimIndent()
             document.body!!.appendChild(container)
             var updateCalls = 0
@@ -793,8 +801,7 @@ class HistoryTest : StringSpec() {
             container.innerHTML =
                 """
                 <canvas id="${HtmlIds.PORTFOLIO_VALUE_CHART}"></canvas>
-                <input class="${CssClass.History.ChartScrubberInput}" type="range" min="0" max="100"
-                  ${HtmlAttrs.DATA_CHART_ID}="${HtmlIds.PORTFOLIO_VALUE_CHART}" value="0" disabled />
+                ${TestDomBuilders.scrubberDom(disabled = true)}
                 """.trimIndent()
             document.body!!.appendChild(container)
             window.asDynamic().Chart = { _: dynamic, config: dynamic ->
@@ -845,8 +852,7 @@ class HistoryTest : StringSpec() {
             container.innerHTML =
                 """
                 <canvas id="${HtmlIds.PORTFOLIO_VALUE_CHART}"></canvas>
-                <input class="${CssClass.History.ChartScrubberInput}" type="range" min="0" max="100"
-                  ${HtmlAttrs.DATA_CHART_ID}="${HtmlIds.PORTFOLIO_VALUE_CHART}" value="0" />
+                ${TestDomBuilders.scrubberDom(disabled = false)}
                 """.trimIndent()
             document.body!!.appendChild(container)
             var zoomScaleCalls = 0

@@ -19,8 +19,8 @@ class DashboardTest : StringSpec() {
 
     init {
         "sortTable orders strings and amounts in both directions" {
-            val table = document.createElement("table") as HTMLTableElement
-            val tbody = document.createElement("tbody") as HTMLTableSectionElement
+            val table = document.createElement(HtmlTags.TABLE) as HTMLTableElement
+            val tbody = document.createElement(HtmlTags.TBODY) as HTMLTableSectionElement
             table.appendChild(tbody)
 
             val headerRow = document.createElement(HtmlTags.TR) as HTMLTableRowElement
@@ -169,7 +169,8 @@ class DashboardTest : StringSpec() {
             val container = document.createElement(HtmlTags.DIV)
             container.innerHTML =
                 """
-                <span class="${CssClass.DataAge.Value}"></span><span class="${CssClass.DataAge.Time}" ${HtmlAttrs.DATA_EPOCH}="invalid"></span>
+                <span class="${CssClass.DataAge.Value}"></span>
+                <span class="${CssClass.DataAge.Time}" ${HtmlAttrs.DATA_EPOCH}="invalid"></span>
                 <div id="orphan-header"></div>
                 """.trimIndent()
             document.body!!.appendChild(container)

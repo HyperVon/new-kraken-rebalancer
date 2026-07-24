@@ -1,9 +1,12 @@
 package com.gemini.krakenbot.config
 
+import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
 
 class KrakenCredentialsTest : StringSpec() {
+    override fun isolationMode() = IsolationMode.InstancePerTest
+
     init {
         "hasValidCredentials is true only when both key and secret are real" {
             KrakenCredentials("real-api-key", "real-private-key").hasValidCredentials() shouldBe true

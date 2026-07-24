@@ -10,6 +10,7 @@ import com.gemini.krakenbot.service.TradeHistoryService
 import com.gemini.krakenbot.view.DashboardView
 import com.gemini.krakenbot.view.component.*
 import com.gemini.krakenbot.view.util.Routes
+import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
@@ -25,6 +26,8 @@ import org.koin.dsl.module
 
 @Suppress("unused")
 class ServerFeaturesIntegrationTest : StringSpec() {
+    override fun isolationMode() = IsolationMode.InstancePerTest
+
     init {
         val testModule =
             module {
