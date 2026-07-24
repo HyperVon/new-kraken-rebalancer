@@ -41,6 +41,7 @@ sealed class CssClass(open val value: String) {
         object Badge : StatusCard("status-badge")
         object Live : StatusCard("status-badge live")
         object Delayed : StatusCard("status-badge delayed")
+        object Offline : StatusCard("status-badge offline")
     }
 
     // Table Styling

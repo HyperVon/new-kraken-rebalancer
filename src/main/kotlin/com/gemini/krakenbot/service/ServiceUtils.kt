@@ -4,7 +4,7 @@ import java.math.BigDecimal
 import java.math.RoundingMode
 
 /**
- * Utility functions for service operations including retry logic, parsing, and common patterns.
+ * Utility functions for service operations including parsing and common patterns.
  * Promotes consistent error handling and reduces code duplication.
  */
 

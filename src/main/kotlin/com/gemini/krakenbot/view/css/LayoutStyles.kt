@@ -89,7 +89,7 @@ object LayoutStyles {
             borderColor = CssTheme.colorWhiteFaint
         }
 
-        ".${CssClass.Layout.StatusCluster} .status-badge" {
+        ".${CssClass.Layout.StatusCluster} .${CssClass.StatusCard.Badge}" {
             flexShrink = 0.0
         }
 
@@ -117,7 +117,7 @@ object LayoutStyles {
             put("line-height", "1.35")
         }
 
-        ".${CssClass.DataAge.Value}.stale" {
+        ".${CssClass.DataAge.Value}.${CssClass.Utility.Stale}" {
             color = CssTheme.colorWarning
         }
 

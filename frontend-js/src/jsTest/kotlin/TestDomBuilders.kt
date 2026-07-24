@@ -126,6 +126,23 @@ object TestDomBuilders {
         """.trimIndent()
     }
 
+    fun emptyTradeTableDom(): String =
+        """
+        <table><tbody id="${HtmlIds.TRADE_TABLE_BODY}"></tbody></table>
+        """.trimIndent()
+
+    fun emptyTableDom(): String =
+        """
+        <table><tbody></tbody></table>
+        """.trimIndent()
+
+    fun settingsAndSyncDom(): String =
+        """
+        ${syncProgressDom()}
+        <div id="${HtmlIds.ALLOCATIONS_CONTAINER}"></div>
+        ${settingsDom()}
+        """.trimIndent()
+
     fun tradeJson(
         timestamp: String = "2023-01-01",
         symbol: String? = Asset.BTC,

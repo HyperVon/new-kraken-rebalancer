@@ -529,7 +529,7 @@ class CoverageTest : StringSpec() {
             try {
                 // Case: no sortable headers -> reapplySort should not throw
                 val noHeadersContainer = document.createElement(HtmlTags.DIV)
-                noHeadersContainer.innerHTML = "<table><tbody></tbody></table>"
+                noHeadersContainer.innerHTML = TestDomBuilders.emptyTableDom()
                 document.body!!.appendChild(noHeadersContainer)
                 try {
                     reapplySort() // Should not throw
@@ -538,7 +538,7 @@ class CoverageTest : StringSpec() {
                 }
 
                 // Case: header missing -> sortTable should return early
-                val fakeHeader = document.createElement("th") as HTMLElement
+                val fakeHeader = document.createElement(HtmlTags.TH) as HTMLElement
                 fakeHeader.className = CssClass.Table.Sortable.toString()
                 // Not attached to document
                 sortTable(fakeHeader, 0) // Should not throw
@@ -573,7 +573,7 @@ class CoverageTest : StringSpec() {
                 (rows.item(0) as HTMLTableRowElement).cells.item(1)?.textContent shouldBe "B" // 20 > 15
 
                 // Test with missing data-sort-value (falls back to textContent)
-                val row2 = document.createElement("tr")
+                val row2 = document.createElement(HtmlTags.TR)
                 row2.className = CssClass.Table.Hoverable.toString()
                 val td2a = document.createElement(HtmlTags.TD)
                 td2a.textContent = "Apple"
@@ -581,7 +581,7 @@ class CoverageTest : StringSpec() {
                 td2b.textContent = "Banana"
                 row2.appendChild(td2a)
                 row2.appendChild(td2b)
-                container.querySelector("tbody")!!.appendChild(row2)
+                container.querySelector(HtmlTags.TBODY)!!.appendChild(row2)
 
                 // Covers textContent fallback when data-sort-value is missing.
                 sortTable(header0, 0) // Sort by first column text
@@ -616,13 +616,7 @@ class CoverageTest : StringSpec() {
 
         "chart builders config callbacks cover tooltip and ticks formatting" {
             val container = document.createElement(HtmlTags.DIV)
-            container.innerHTML =
-                """
-                <canvas id="${HtmlIds.PORTFOLIO_VALUE_CHART}"></canvas>
-                <canvas id="${HtmlIds.ASSET_HOLDINGS_CHART}"></canvas>
-                <canvas id="${HtmlIds.ALLOCATION_DRIFT_CHART}"></canvas>
-                <canvas id="${HtmlIds.CUMULATIVE_PL_CHART}"></canvas>
-                """.trimIndent()
+            container.innerHTML = TestDomBuilders.chartsDom()
             document.body!!.appendChild(container)
             TestDomBuilders.setupMockChart()
             try {
@@ -855,15 +849,7 @@ class CoverageTest : StringSpec() {
         "helpers tolerate null, invalid, and edge cases to maximize branch coverage" {
             // 1. checkSyncProgress with total == 0
             val container = document.createElement(HtmlTags.DIV)
-            container.innerHTML =
-                """
-                <div id="${HtmlIds.SYNC_PROGRESS_BANNER}"></div>
-                <div id="${HtmlIds.SYNC_PROGRESS_BAR}"></div>
-                <div id="${HtmlIds.SYNC_PROGRESS_TEXT}"></div>
-                <div id="${HtmlIds.ALLOCATIONS_CONTAINER}"></div>
-                <span id="${HtmlIds.TOTAL_ALLOCATED_DISPLAY}"></span>
-                <button id="${HtmlIds.SAVE_BUTTON}"></button>
-                """.trimIndent()
+            container.innerHTML = TestDomBuilders.settingsAndSyncDom()
             document.body!!.appendChild(container)
 
             window.asDynamic().fetch = mockFetch { json("seeded" to false, "offset" to 0, "total" to 0) }
@@ -888,7 +874,7 @@ class CoverageTest : StringSpec() {
 
                 // 3. renderTradeTable with null/missing values and success = false
                 val tableContainer = document.createElement(HtmlTags.DIV)
-                tableContainer.innerHTML = "<table><tbody id='${HtmlIds.TRADE_TABLE_BODY}'></tbody></table>"
+                tableContainer.innerHTML = TestDomBuilders.emptyTradeTableDom()
                 container.appendChild(tableContainer)
 
                 val badTrades =
@@ -909,13 +895,7 @@ class CoverageTest : StringSpec() {
 
                 // 4. updateStats with missing values
                 val statsContainer = document.createElement(HtmlTags.DIV)
-                statsContainer.innerHTML =
-                    """
-                    <div id="${HtmlIds.STAT_ATH}"></div>
-                    <div id="${HtmlIds.STAT_TOTAL_TRADES}"></div>
-                    <div id="${HtmlIds.STAT_TOTAL_VOLUME}"></div>
-                    <div id="${HtmlIds.STAT_TOTAL_FEES}"></div>
-                    """.trimIndent()
+                statsContainer.innerHTML = TestDomBuilders.statsDom()
                 container.appendChild(statsContainer)
                 updateStats(json().unsafeCast<JsHistoryStats>())
 

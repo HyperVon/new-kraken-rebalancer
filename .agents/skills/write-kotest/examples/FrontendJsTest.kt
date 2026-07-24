@@ -1,23 +1,35 @@
-package com.gemini.krakenbot.client
+package com.gemini.krakenbot.frontend
 
+import com.gemini.krakenbot.view.util.CssClass
+import com.gemini.krakenbot.view.util.HtmlIds
+import com.gemini.krakenbot.view.util.HtmlTags
+import io.kotest.core.spec.IsolationMode
+import io.kotest.core.spec.style.StringSpec
+import io.kotest.matchers.nulls.shouldNotBeNull
+import io.kotest.matchers.shouldBe
 import kotlinx.browser.document
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertNotNull
 
-class FrontendJsTest {
+/**
+ * Example Kotest StringSpec for `:frontend-js` — prefer this shape over kotlin.test.
+ * Production specs live under `frontend-js/src/jsTest/kotlin/`.
+ */
+class FrontendJsTest : StringSpec() {
+    override fun isolationMode() = IsolationMode.InstancePerTest
 
-    @Test
-    fun shouldRenderStatusBadgeElement() {
-        val badge = document.createElement("span")
-        badge.id = "status-badge"
-        badge.textContent = "ACTIVE"
-        document.body?.appendChild(badge)
+    init {
+        "should render a status badge element" {
+            val badge = document.createElement(HtmlTags.SPAN)
+            badge.id = HtmlIds.STAT_ATH
+            badge.className = CssClass.StatusCard.Badge.toString()
+            badge.textContent = "ACTIVE"
+            document.body?.appendChild(badge)
 
-        val foundElement = document.getElementById("status-badge")
-        assertNotNull(foundElement)
-        assertEquals("ACTIVE", foundElement.textContent)
+            val found = document.getElementById(HtmlIds.STAT_ATH)
+            found.shouldNotBeNull()
+            found.textContent shouldBe "ACTIVE"
+            found.className shouldBe CssClass.StatusCard.Badge.toString()
 
-        document.body?.removeChild(badge)
+            document.body?.removeChild(badge)
+        }
     }
 }

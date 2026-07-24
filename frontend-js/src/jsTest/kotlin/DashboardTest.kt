@@ -34,7 +34,7 @@ class DashboardTest : StringSpec() {
             th1.textContent = "Price"
             headerRow.appendChild(th1)
 
-            val thead = document.createElement("thead") as HTMLTableSectionElement
+            val thead = document.createElement(HtmlTags.THEAD) as HTMLTableSectionElement
             thead.appendChild(headerRow)
             table.appendChild(thead)
 
@@ -77,25 +77,19 @@ class DashboardTest : StringSpec() {
         }
 
         "updateAge displays fresh and stale data" {
-            val container = document.createElement(HtmlTags.DIV) as HTMLDivElement
-
-            val ageVal = document.createElement(HtmlTags.SPAN) as HTMLSpanElement
-            ageVal.className = CssClass.DataAge.Value.toString()
-            container.appendChild(ageVal)
-
-            val ageTime = document.createElement(HtmlTags.SPAN) as HTMLSpanElement
-            ageTime.className = CssClass.DataAge.Time.toString()
             val offsetTime = Date.now() - 10000.0
-            ageTime.setAttribute(HtmlAttrs.DATA_EPOCH, offsetTime.toString())
-            container.appendChild(ageTime)
-
-            val badge = document.createElement(HtmlTags.SPAN) as HTMLSpanElement
-            badge.className = CssClass.StatusCard.Badge.toString()
-            container.appendChild(badge)
-
+            val container = document.createElement(HtmlTags.DIV) as HTMLDivElement
+            container.innerHTML = TestDomBuilders.dataAgeDom(offsetTime.toString())
             document.body!!.appendChild(container)
 
             try {
+                val ageVal =
+                    document.getElementsByClassName(CssClass.DataAge.Value.toString())[0] as HTMLSpanElement
+                val ageTime =
+                    document.getElementsByClassName(CssClass.DataAge.Time.toString())[0] as HTMLSpanElement
+                val badge =
+                    document.getElementsByClassName(CssClass.StatusCard.Badge.toString())[0] as HTMLElement
+
                 updateAge()
                 ageVal.textContent shouldBe "10s ago"
                 badge.classList.contains(CssClass.Utility.Live).shouldBeTrue()
@@ -138,7 +132,7 @@ class DashboardTest : StringSpec() {
                 """.trimIndent()
             document.body!!.appendChild(container)
             try {
-                val headers = container.querySelectorAll("th.sortable")
+                val headers = container.querySelectorAll(CssClass.Query.SORTABLE_TH)
                 val targetHeader = headers.item(0) as HTMLElement
 
                 // Set initial state to sort by col 5
