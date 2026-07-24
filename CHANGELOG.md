@@ -71,6 +71,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   local-estimate vs API reconciliation, fee tolerance, ~5 min window); synced
   the README project tree and Jackson version (2.22.1); and fixed the broken
   `docs/EVALUATION.md` test-file links.
+- **History chart naming**: Renamed the fourth History chart title from
+  “Cumulative Realized P&L” to **“Cumulative Net Cash Flow”** so the section
+  header matches the dataset labels and what the series actually plots (running
+  net cash flow from trades — sells add cash, buys subtract it). README and User
+  Guide updated to match.
 
 ### Fixed
 

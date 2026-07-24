@@ -267,12 +267,12 @@ The dedicated History view provides detailed analysis and charts tracking portfo
 - **Portfolio Value Over Time** (overall portfolio value in USD + individual asset values)
 - **Asset Holdings Over Time** (% change in asset balance)
 - **Allocation Deviation from Target** (signed relative drift around a 0% on-target baseline)
-- **Cumulative P&L** (realized profit & loss over time)
+- **Cumulative Net Cash Flow** (running net cash flow from trades — sells add cash, buys subtract it)
 - **Comprehensive Trade Log Table** (showing all executions, with a toggle to filter/show dry-run trades)
 
 ![History Charts](docs/images/history.png)
 
-![History — Allocation Deviation & P&L](docs/images/history-charts.png)
+![History — Allocation Deviation & Net Cash Flow](docs/images/history-charts.png)
 
 ![Trade History Log](docs/images/history-bottom.png)
 

@@ -64,7 +64,7 @@ object ViewText {
     const val HISTORY_ASSET_HOLDINGS = "Asset Holdings Over Time"
     const val HISTORY_ALLOCATION_DRIFT = "Allocation Deviation from Target"
     const val HISTORY_VS_TARGET = "vs target"
-    const val HISTORY_CUMULATIVE_PL = "Cumulative Realized P&L"
+    const val HISTORY_NET_CASH_FLOW = "Cumulative Net Cash Flow"
     const val HISTORY_TRADE_LOG = "Trade History"
     const val HISTORY_ALL_TIME_HIGH = "All-Time High"
     const val HISTORY_TOTAL_TRADES = "Total Trades"

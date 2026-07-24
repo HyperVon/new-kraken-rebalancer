@@ -136,7 +136,7 @@ range, series visibility, and **Show Dry Run Trades**:
 | **Overview** (default) | 30d | All series visible |
 | **Day · Total only** | 24h | Portfolio Value shows **Total Portfolio** only |
 | **Week · Allocation** | 7d | Full series for allocation review |
-| **Month · P&L** | 30d | Cumulative P&L focus; dry-run trades off |
+| **Month · P&L** | 30d | Cumulative net cash flow focus; dry-run trades off |
 
 **Save view…** stores the current range, legend visibility, and dry-run toggle
 under a name in browser `localStorage` (`kraken.history.views`). **Set as
@@ -176,18 +176,18 @@ scrubber** below the chart becomes enabled. Use it to slide the visible window
 across the full selected time range. Dragging on the chart zooms; it does not
 pan. **Reset** returns to the full window and disables the scrubber again.
 
-### Allocation deviation & P&L
+### Allocation deviation & net cash flow
 
-![History — allocation deviation and cumulative P&L](images/history-charts.png)
+![History — allocation deviation and cumulative net cash flow](images/history-charts.png)
 
 - **Allocation Deviation from Target** — Each series shows signed relative
   deviation from that asset’s target. **0%** means on target, positive values
   are overweight, and negative values are underweight. The Y-axis scales around
   the observed drift so small departures and post-rebalance corrections remain
   visible.
-- **Cumulative Realized P&L** — Net cash-flow style P&L over the window
-  (includes dry-run trades when that filter is enabled). Negative axis ticks use
-  `-$…` formatting.
+- **Cumulative Net Cash Flow** — Running net cash flow from trades over the
+  window: sells add cash, buys subtract it (includes dry-run trades when that
+  filter is enabled). Negative axis ticks use `-$…` formatting.
 
 ### Trade log
 

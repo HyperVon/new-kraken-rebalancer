@@ -245,7 +245,7 @@ private sealed class HistoryChartSection(
     object PortfolioValue : HistoryChartSection(HtmlIds.PORTFOLIO_VALUE_CHART, ViewText.HISTORY_PORTFOLIO_VALUE, Icons.CHART)
     object AssetHoldings : HistoryChartSection(HtmlIds.ASSET_HOLDINGS_CHART, ViewText.HISTORY_ASSET_HOLDINGS, Icons.CHART)
     object AllocationDrift : HistoryChartSection(HtmlIds.ALLOCATION_DRIFT_CHART, ViewText.HISTORY_ALLOCATION_DRIFT, Icons.CHART)
-    object CumulativePL : HistoryChartSection(HtmlIds.CUMULATIVE_PL_CHART, ViewText.HISTORY_CUMULATIVE_PL, Icons.WALLET)
+    object CumulativePL : HistoryChartSection(HtmlIds.CUMULATIVE_PL_CHART, ViewText.HISTORY_NET_CASH_FLOW, Icons.WALLET)
 
     companion object {
         val ALL = listOf(PortfolioValue, AssetHoldings, AllocationDrift, CumulativePL)
