@@ -1,3 +1,5 @@
+@file:OptIn(ExperimentalCoroutinesApi::class)
+
 package com.gemini.krakenbot.service
 
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
@@ -27,6 +29,8 @@ import io.ktor.http.*
 import io.ktor.http.content.TextContent
 import io.mockk.every
 import io.mockk.mockk
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.currentTime
 import kotlinx.coroutines.test.runTest
 import java.math.BigDecimal
 import java.util.*
@@ -34,6 +38,7 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
+import kotlin.time.Duration.Companion.minutes
 
 @Suppress("unused")
 class KrakenServiceTest : StringSpec() {
@@ -1059,6 +1064,60 @@ class KrakenServiceTest : StringSpec() {
                 val balances = service.getBalances()
                 balances[TestFixtures.XXBTZUSD]?.toDouble() shouldBe 63000.0
                 attempt shouldBe 2
+                // First lockout wait starts at 10s.
+                currentTime shouldBe 10_000L
+            }
+        }
+
+        "retryOnTransientFailure_LockoutBackoffReachesFifteenMinuteCap" {
+            runTest {
+                var attempt = 0
+                val mockEngine = MockEngine { request ->
+                    // 8 lockouts then success → waits 10+20+40+80+160+320+640+900s
+                    if (attempt++ < 8) {
+                        respond(
+                            content = "{\"error\":[\"EGeneral:Temporary lockout\"]}",
+                            status = HttpStatusCode.OK,
+                            headers = headersOf(HttpHeaders.ContentType, TestFixtures.APPLICATION_JSON),
+                        )
+                    } else {
+                        respond(
+                            content = "{\"error\":[],\"result\":{\"XXBTZUSD\":63000.0}}",
+                            status = HttpStatusCode.OK,
+                            headers = headersOf(HttpHeaders.ContentType, TestFixtures.APPLICATION_JSON),
+                        )
+                    }
+                }
+                val mockConfigService = mockk<ConfigService>(relaxed = true)
+                val credentials = KrakenCredentials(
+                    "k",
+                    Base64.getEncoder().encodeToString(TestFixtures.SECRET.toByteArray()),
+                )
+                every { mockConfigService.getConfig() } returns AppConfig(
+                    credentials,
+                    Settings(
+                        loopDelaySeconds = 60,
+                        deviationTriggerPercent = 2.0,
+                        dustThresholdUSD = 1.0,
+                        dryRun = false,
+                    ),
+                    emptyList(),
+                )
+
+                val service = KrakenServiceImpl(
+                    configService = mockConfigService,
+                    objectMapper = jacksonObjectMapper(),
+                    httpClient = HttpClient(mockEngine),
+                )
+
+                val balances = service.getBalances()
+                balances[TestFixtures.XXBTZUSD]?.toDouble() shouldBe 63000.0
+                attempt shouldBe 9
+                // 10+20+40+80+160+320+640 seconds, then the 15-minute cap.
+                val expectedWaitMs =
+                    (10L + 20 + 40 + 80 + 160 + 320 + 640) * 1_000 +
+                        15.minutes.inWholeMilliseconds
+                currentTime shouldBe expectedWaitMs
             }
         }
 

@@ -96,12 +96,10 @@ class PortfolioAnalyzerImpl(
                 price = p
             }
 
-            val valUSD =
-                balance
-                    .multiply(price)
-                    .setScale(SCALE_USD, RoundingMode.HALF_UP)
-            currentValuesUSD[symbol] = valUSD
-            totalPortfolioValueUSD = totalPortfolioValueUSD.add(valUSD)
+            val rawValUSD = balance.multiply(price)
+            // Per-asset values stay USD-scaled for order sizing; accumulate raw then round once.
+            currentValuesUSD[symbol] = rawValUSD.setScale(SCALE_USD, RoundingMode.HALF_UP)
+            totalPortfolioValueUSD = totalPortfolioValueUSD.add(rawValUSD)
         }
 
         return Result.Success(

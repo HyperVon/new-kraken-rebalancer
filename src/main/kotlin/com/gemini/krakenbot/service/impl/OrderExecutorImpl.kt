@@ -17,6 +17,7 @@ import com.gemini.krakenbot.util.CASH_RESERVE_FACTOR
 import com.gemini.krakenbot.util.FEE_RATE_ESTIMATE
 import com.gemini.krakenbot.util.PrecisionConstants
 import com.gemini.krakenbot.util.TradeCalculator
+import com.gemini.krakenbot.util.toUsdScale
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -70,16 +71,21 @@ class OrderExecutorImpl(
             actualCash = refreshUsdBalanceAfterSells(projectedCash)
         }
 
+        // Cycle-level budget: 99% of opening USD so multi-buy batches cannot erode the reserve.
+        val cycleBuyBudget = actualCash.multiply(CASH_RESERVE_FACTOR).toUsdScale()
+        var remainingBuyBudget = cycleBuyBudget
+
         for ((symbol, originalCost) in buyOrders) {
-            // Always cap buys to 99% of available USD to buffer fees and slippage.
-            val maxAffordable = actualCash.multiply(CASH_RESERVE_FACTOR)
+            val maxAffordable = remainingBuyBudget.min(actualCash).toUsdScale()
             var cost = originalCost
             if (cost > maxAffordable) {
                 log.warn(
-                    "Buy {} exceeds 99% cash reserve. Cost: {}, Max affordable: {}, Cash: {}. Reducing.",
+                    "Buy {} exceeds cycle 99% cash reserve. Cost: {}, Max affordable: {}, " +
+                        "Remaining budget: {}, Cash: {}. Reducing.",
                     symbol,
                     cost,
                     maxAffordable,
+                    remainingBuyBudget,
                     actualCash,
                 )
                 cost = maxAffordable
@@ -94,6 +100,7 @@ class OrderExecutorImpl(
             val result = executeSingleOrder(symbol, cost, OrderSide.BUY, prices, actionLog)
             if (result?.success == true) {
                 actualCash = actualCash.subtract(cost)
+                remainingBuyBudget = remainingBuyBudget.subtract(cost).toUsdScale()
             }
         }
     }

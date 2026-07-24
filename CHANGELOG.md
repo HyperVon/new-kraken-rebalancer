@@ -6,11 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.12.2] - 2026-07-24
+
+### Fixed
+
+- **Cycle-Level Cash Reserve (`OrderExecutorImpl`)**: Cap the full buy batch against 99% of opening USD cash so sequential buys cannot erode the reserve beyond the cycle budget.
+- **Lockout Backoff Schedule (`KrakenServiceImpl`)**: Use a dedicated lockout attempt budget and initial backoff so exponential waits reach the 15-minute ceiling instead of exhausting after ~2.5 minutes.
+- **Portfolio Total Rounding (`PortfolioAnalyzerImpl`)**: Accumulate unrounded mark-to-market products and round the portfolio total once to avoid sum-of-rounded drift.
+
+### Added
+
+- **Multi-Buy Cash Cap & Lockout Schedule Specs**: Cover aggregate multi-buy spend ≤ 99% of opening cash and assert lockout wait durations including the 15-minute cap.
+
 ## [6.12.1] - 2026-07-24
 
 ### Fixed
 
-- **Cash-Reserve Buy Cap (`OrderExecutorImpl`)**: Always apply the 99% USD liquidity cash-reserve cap when sizing buy orders, preventing buys from exhausting the full cash buffer.
+- **Cash-Reserve Buy Cap (`OrderExecutorImpl`)**: Cap buys that would exceed 99% of available USD cash when sizing orders, preventing buys from exhausting the full cash buffer.
 - **Allocation Deviation Triggers (`PortfolioAnalyzerImpl`)**: Use `BigDecimal` relative deviation math and USD valuation scaling so rebalance triggers stay precise under mixed asset prices.
 - **Snapshot Allocation Percents (`SnapshotHistoryCalculator`)**: Build allocation percentages via `BigDecimal.valueOf` instead of floating-point intermediate values.
 - **API Lockout Backoff (`KrakenServiceImpl`)**: Use exponential backoff on temporary Kraken API lockouts instead of a fixed wait.

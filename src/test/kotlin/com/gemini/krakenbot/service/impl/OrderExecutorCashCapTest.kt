@@ -128,5 +128,49 @@ class OrderExecutorCashCapTest : StringSpec() {
                 krakenService.executedOrders[0].volume.shouldBeEqualComparingTo(BigDecimal("0.5"))
             }
         }
+
+        "should keep aggregate multi-buy spend within 99% of opening cash" {
+            runTest {
+                krakenService.orderResultFactory = { pair, _, side, volume ->
+                    OrderResult(success = true, pair = pair, side = side, volume = volume)
+                }
+
+                // Two $500 buys against $1000 cash must spend at most $990 total (not $995).
+                val buyOrders =
+                    linkedMapOf(
+                        Asset.ETH to BigDecimal("500.00"),
+                        Asset.BTC to BigDecimal("500.00"),
+                    )
+                val sellOrders = emptyMap<String, BigDecimal>()
+                val currentValuesUSD = mapOf(Asset.USD to BigDecimal("1000.00"))
+                val prices =
+                    mapOf(
+                        Asset.ETH to BigDecimal("1000.00"),
+                        Asset.BTC to BigDecimal("1000.00"),
+                    )
+                val settings = Settings(
+                    loopDelaySeconds = 0L,
+                    deviationTriggerPercent = 2.0,
+                    dustThresholdUSD = 1.0,
+                    dryRun = true,
+                    fiatMaxDrawdown = 0.0,
+                    fiatDeploymentExponent = 1.0,
+                )
+
+                orderExecutor.executeOrders(
+                    buyOrders = buyOrders,
+                    sellOrders = sellOrders,
+                    currentValuesUSD = currentValuesUSD,
+                    prices = prices,
+                    settings = settings,
+                    actionLog = mutableListOf(),
+                )
+
+                krakenService.executedOrders.size shouldBe 2
+                krakenService.executedOrders[0].volume.shouldBeEqualComparingTo(BigDecimal("0.5"))
+                // Remaining cycle budget after first buy: 990 - 500 = 490 → 0.49 BTC
+                krakenService.executedOrders[1].volume.shouldBeEqualComparingTo(BigDecimal("0.49"))
+            }
+        }
     }
 }
