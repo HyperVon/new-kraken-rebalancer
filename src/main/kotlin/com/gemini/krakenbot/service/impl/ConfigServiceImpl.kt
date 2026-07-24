@@ -3,6 +3,7 @@ package com.gemini.krakenbot.service.impl
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.InvalidConfigurationException
+import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.service.ConfigService
 import kotlinx.coroutines.channels.BufferOverflow
@@ -21,6 +22,10 @@ class ConfigServiceImpl(
 ) : ConfigService {
     @Volatile
     private lateinit var appConfig: AppConfig
+
+    /** Raw credential strings from disk (env placeholders), not resolved runtime secrets. */
+    @Volatile
+    private lateinit var persistedKrakenCredentials: KrakenCredentials
 
     /**
      * A hot SharedFlow that broadcasts configuration settings updates to all active collectors.
@@ -41,7 +46,9 @@ class ConfigServiceImpl(
 
     @Synchronized
     override fun loadConfig() {
-        val parsedConfig = parseConfig(readResolvedConfigContent())
+        val rawContent = readRawConfigContent()
+        persistedKrakenCredentials = parseConfig(rawContent).kraken
+        val parsedConfig = parseConfig(resolveEnvVars(rawContent))
         val validatedConfig = validateOrThrowInvalidConfiguration(parsedConfig)
         appConfig = validatedConfig
         _configFlow.tryEmit(validatedConfig.settings)
@@ -52,8 +59,11 @@ class ConfigServiceImpl(
     @Synchronized
     override fun updateConfig(newConfig: AppConfig) {
         val validatedConfig = validateOrThrowInvalidConfiguration(newConfig)
+        val previousKraken = appConfig.kraken
+        val persistedConfig = configForPersistence(validatedConfig, previousKraken)
         appConfig = validatedConfig
-        writeConfigAtomically(validatedConfig)
+        writeConfigAtomically(persistedConfig)
+        persistedKrakenCredentials = persistedConfig.kraken
         _configFlow.tryEmit(validatedConfig.settings)
     }
 
@@ -62,15 +72,28 @@ class ConfigServiceImpl(
      */
     override fun watchConfigChanges(): Flow<Settings> = _configFlow.asSharedFlow()
 
-    private fun readResolvedConfigContent(): String {
+    private fun readRawConfigContent(): String {
         val configFile = File(configFilePath)
 
         check(configFile.exists()) {
             "Configuration file '$configFilePath' not found in the application directory."
         }
 
-        return resolveEnvVars(configFile.readText())
+        return configFile.readText()
     }
+
+    private fun configForPersistence(config: AppConfig, previousKraken: KrakenCredentials): AppConfig {
+        val krakenToPersist =
+            if (krakenCredentialsEqual(config.kraken, previousKraken)) {
+                persistedKrakenCredentials
+            } else {
+                config.kraken
+            }
+        return config.copy(kraken = krakenToPersist)
+    }
+
+    private fun krakenCredentialsEqual(left: KrakenCredentials, right: KrakenCredentials): Boolean =
+        left.apiKey.value == right.apiKey.value && left.privateKey.value == right.privateKey.value
 
     private fun parseConfig(content: String): AppConfig = objectMapper.readValue(content, AppConfig::class.java)
 

@@ -51,7 +51,8 @@ trades. When deploying:
 - **Never commit your `rebalancer-config.json`** — it contains your API keys and
   is listed in `.gitignore` for this reason
 - Run with the **minimum required API permissions** on Kraken (Query Funds,
-  Query Open Orders, Create & Modify Orders)
+  Query Closed Orders & Trades, Create & Modify Orders). Query Open Orders is
+  not required by the endpoints this application uses.
 - Consider running in **dry-run mode** (`dryRun: true`) before enabling live
   trading
 - Restrict access to the machine running this application

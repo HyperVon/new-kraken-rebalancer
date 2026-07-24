@@ -220,12 +220,16 @@ sequenceDiagram
         end
     end
 
-    note over OE: .last() returns the final<br/>emitted balance, execution<br/>continues to place buy orders.
+    note over OE: .last() returns the last positive<br/>observed balance, or projected cash<br/>if no positive balance was observed.
 ```
 
 **Key design choices:**
 
-- Using `.last()` instead of `.collect()` is intentional — the caller only cares about the **final stable value**, not the intermediate poll results.
+- Using `.last()` instead of `.collect()` is intentional — the caller uses the
+  **last positive observed balance**, not the maximum observation. If no
+  positive balance is observed, the initial projected amount is emitted as the
+  fallback. That fail-open fallback is tracked separately in
+  [#54](https://github.com/HyperVon/new-kraken-rebalancer/issues/54).
 - Exponential backoff is managed entirely inside the cold flow, keeping `OrderExecutorImpl`'s orchestration logic clean.
 - Being cold means this only runs when explicitly triggered after sells — it never polls in the background.
 

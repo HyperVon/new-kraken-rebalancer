@@ -49,6 +49,7 @@ Canonical deep docs:
 | Autonomous multi-pass audit | [autonomous-code-optimizer](skills/autonomous-code-optimizer/SKILL.md) |
 | Parallel multi-agent splits | [parallel-multi-agent](skills/parallel-multi-agent/SKILL.md) |
 | Continuous improvement (whole shebang) | [continuous-improvement](skills/continuous-improvement/SKILL.md) |
+| Continuous improvement backlog | [improvement-backlog.md](improvement-backlog.md) |
 
 **Always-on norms** — full text in [OPERATING.md](OPERATING.md). Cursor loads the
 same content via committed `.cursor/rules/`:
@@ -116,7 +117,11 @@ See [dry-run-and-simulation](skills/dry-run-and-simulation/SKILL.md).
 
 - **`simulation`**: `DynamicKrakenService` routes to `SimulatedKrakenService` (offline emulator).
 - **`dryRun`**: suppresses real order placement inside the active backend (`[DRY RUN]` / `[EMULATOR DRY RUN]`).
-- Defaults are `false`. **Never** flip `dryRun = false` casually in examples/tests aimed at live paths. Live trading moves real money — treat credential + live mode changes as high risk.
+- The shipped template and README default `dryRun` to `true`; `Settings.dryRun`
+  has no Kotlin default and must be supplied. `simulation` defaults to `false`.
+  **Never** flip `dryRun = false` casually in examples/tests aimed at live
+  paths. Live trading moves real money — treat credential + live mode changes
+  as high risk.
 
 ---
 
@@ -144,7 +149,7 @@ Mandatory verify before declaring work done:
 ```bash
 ./gradlew build jacocoTestCoverageVerification
 ./gradlew :frontend-js:jsTest
-npx markdownlint-cli .agents/AGENTS.md CHANGELOG.md README.md docs/*.md .agents/skills/**/SKILL.md
+npx markdownlint-cli .agents/AGENTS.md CHANGELOG.md CONTRIBUTING.md README.md SECURITY.md docs/*.md .agents/skills/**/SKILL.md
 ./gradlew spotlessCheck
 ```
 
@@ -165,7 +170,9 @@ npx markdownlint-cli .agents/AGENTS.md CHANGELOG.md README.md docs/*.md .agents/
 
 - **No FQNs** unless resolving a name collision — use imports.
 - **No absolute user paths** or machine-specific hostnames in source/tests.
-- Markdown: lint `.agents/AGENTS.md`, skills, `README.md`, `CHANGELOG.md`, `docs/*.md` — clean heading hierarchy, blank lines around lists.
+- Markdown: lint `.agents/AGENTS.md`, skills, `README.md`, `CHANGELOG.md`,
+  `CONTRIBUTING.md` / `SECURITY.md` when present, and `docs/*.md` — clean
+  heading hierarchy and blank lines around lists.
 - Offload blocking IO with `withContext(Dispatchers.IO)`.
 - GitHub auth via `gh` CLI (`gh auth setup-git`); do not ask the user to authenticate manually.
 - Keep a Changelog; sync README tree + JaCoCo exclusions when packages move — see [changelog-and-docs-sync](skills/changelog-and-docs-sync/SKILL.md).
@@ -176,7 +183,8 @@ npx markdownlint-cli .agents/AGENTS.md CHANGELOG.md README.md docs/*.md .agents/
 
 See [write-kotest](skills/write-kotest/SKILL.md).
 
-- Kotest `StringSpec` + `init { }`, `@Suppress("unused")`, prefer `IsolationMode.InstancePerTest`.
+- Kotest `StringSpec` + `init { }`; prefer `IsolationMode.InstancePerTest`.
+  Add suppressions only for demonstrated warnings, not by default.
 - In-memory SQLite only (`:memory:`).
 - Prefer `FakeKrakenService` for deterministic tests; `SimulatedKrakenService` is the production emulator (not the same).
 - Evaluation/E2E/chaos: `EvaluationScenariosTest`, `docs/EVALUATION.md`; Flow tests use `advanceUntilIdle()`.

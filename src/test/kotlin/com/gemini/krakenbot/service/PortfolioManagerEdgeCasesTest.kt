@@ -10,9 +10,7 @@ import com.gemini.krakenbot.model.OrderResult
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.PortfolioStats
-import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.service.impl.OrderExecutorImpl
-import com.gemini.krakenbot.service.impl.PortfolioAnalyzerImpl
 import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
 import com.gemini.krakenbot.toBigDecimalMap
 import io.kotest.core.spec.IsolationMode
@@ -34,31 +32,20 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
 
     override fun isolationMode() = IsolationMode.InstancePerTest
 
-    private val krakenService = FakeKrakenService()
-    private val configService = mockk<ConfigService>(relaxed = true)
-    private val tradeHistoryService = mockk<TradeHistoryService>(relaxed = true)
-    private val portfolioStatsRepository =
-        mockk<PortfolioStatsRepository>(relaxed = true)
-    private lateinit var portfolioManager: PortfolioManagerImpl
-    private lateinit var portfolioAnalyzer: PortfolioAnalyzer
-    private lateinit var orderExecutor: OrderExecutor
+    private lateinit var fixture: PortfolioManagerTestFixture
+    private val krakenService get() = fixture.krakenService
+    private val configService get() = fixture.configService
+    private val tradeHistoryService get() = fixture.tradeHistoryService
+    private val portfolioStatsRepository get() = fixture.portfolioStatsRepository
+    private val portfolioAnalyzer get() = fixture.portfolioAnalyzer
+    private val orderExecutor get() = fixture.orderExecutor
+    private val portfolioManager: PortfolioManagerImpl get() = fixture.portfolioManager
 
     init {
         beforeTest {
+            fixture = createPortfolioManagerTestFixture()
             coEvery { portfolioStatsRepository.load() } returns PortfolioStats(
                 BigDecimal.ZERO,
-            )
-            portfolioAnalyzer = PortfolioAnalyzerImpl(
-                krakenService = krakenService,
-                configService = configService,
-                portfolioStatsRepository = portfolioStatsRepository,
-            )
-            orderExecutor = OrderExecutorImpl(krakenService, portfolioAnalyzer, tradeHistoryService)
-            portfolioManager = PortfolioManagerImpl(
-                configService = configService,
-                tradeHistoryService = tradeHistoryService,
-                portfolioAnalyzer = portfolioAnalyzer,
-                orderExecutor = orderExecutor,
             )
             every { configService.watchConfigChanges() } answers {
                 flowOf(configService.getConfig().settings)
@@ -314,13 +301,11 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
                     actionLog = actionLog,
                 )
 
-                krakenService.executedOrders.size shouldBe 2
+                // Fail-closed: no positive observed USD → sell only
+                krakenService.executedOrders.size shouldBe 1
                 krakenService.executedOrders[0].pair shouldBe Asset.BTC_USD_PAIR
                 krakenService.executedOrders[0].side shouldBe OrderSide.SELL.apiValue
                 krakenService.executedOrders[0].volume.compareTo(BigDecimal.TEN) shouldBe 0
-                krakenService.executedOrders[1].pair shouldBe Asset.ETH_USD_PAIR
-                krakenService.executedOrders[1].side shouldBe OrderSide.BUY.apiValue
-                krakenService.executedOrders[1].volume.compareTo(BigDecimal.valueOf(2)) shouldBe 0
             }
         }
 
@@ -356,13 +341,10 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
                     actionLog = actionLog,
                 )
 
-                krakenService.executedOrders.size shouldBe 2
+                krakenService.executedOrders.size shouldBe 1
                 krakenService.executedOrders[0].pair shouldBe Asset.BTC_USD_PAIR
                 krakenService.executedOrders[0].side shouldBe OrderSide.SELL.apiValue
                 krakenService.executedOrders[0].volume.compareTo(BigDecimal.TEN) shouldBe 0
-                krakenService.executedOrders[1].pair shouldBe Asset.ETH_USD_PAIR
-                krakenService.executedOrders[1].side shouldBe OrderSide.BUY.apiValue
-                krakenService.executedOrders[1].volume.compareTo(BigDecimal.valueOf(2)) shouldBe 0
             }
         }
 
@@ -412,13 +394,10 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
                     actionLog = actionLog,
                 )
 
-                krakenService.executedOrders.size shouldBe 2
+                krakenService.executedOrders.size shouldBe 1
                 krakenService.executedOrders[0].pair shouldBe "XBTUSD"
                 krakenService.executedOrders[0].side shouldBe "sell"
                 krakenService.executedOrders[0].volume.compareTo(BigDecimal.TEN) shouldBe 0
-                krakenService.executedOrders[1].pair shouldBe "ETHUSD"
-                krakenService.executedOrders[1].side shouldBe "buy"
-                krakenService.executedOrders[1].volume.compareTo(BigDecimal.valueOf(2)) shouldBe 0
             }
         }
 
@@ -974,8 +953,14 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
 
                 every { configService.getConfig() } returns mockConfig
 
-                val balances = mapOf("A" to 5.0, "B" to 50.0, Asset.USD to 0.0)
-                krakenService.balanceSupplier = { balances }
+                krakenService.balanceSupplier = {
+                    val sold = krakenService.executedOrders.any { it.side.equals("sell", ignoreCase = true) }
+                    if (sold) {
+                        mapOf("A" to 1.0, "B" to 50.0, Asset.USD to 400.0)
+                    } else {
+                        mapOf("A" to 5.0, "B" to 50.0, Asset.USD to 0.0)
+                    }
+                }
 
                 val prices = mapOf("AUSD" to 100.0, "BUSD" to 10.0)
                 krakenService.pricesSupplier = { prices }
@@ -1006,7 +991,7 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
                     symbol = Asset.BTC,
                     volume = BigDecimal.ONE,
                     usdAmount = BigDecimal.TEN,
-                    side = "SELL",
+                    side = OrderSide.SELL,
                 )
                 log1.first() shouldBe "[DRY RUN] SELL BTC Volume: 1 Value: $10.00"
 
@@ -1023,7 +1008,7 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
                     symbol = Asset.BTC,
                     volume = BigDecimal.ONE,
                     usdAmount = BigDecimal.TEN,
-                    side = "BUY",
+                    side = OrderSide.BUY,
                 )
                 log2.first() shouldBe "BUY BTC Volume: 1 Cost: $10.00"
             }
@@ -1190,7 +1175,7 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
                     result = result,
                     symbol = "BTC",
                     pair = "XBTUSD",
-                    side = "BUY",
+                    side = OrderSide.BUY,
                     volume = BigDecimal.ZERO,
                     usdAmount = BigDecimal.ZERO,
                     prices = emptyMap(),

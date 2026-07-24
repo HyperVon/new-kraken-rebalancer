@@ -14,7 +14,6 @@ Canonical evaluation doc: [`docs/EVALUATION.md`](../../../docs/EVALUATION.md).
 ## Spec structure
 
 ```kotlin
-@Suppress("unused")
 class MyServiceTest : StringSpec() {
 
     override fun isolationMode() = IsolationMode.InstancePerTest
@@ -29,6 +28,8 @@ class MyServiceTest : StringSpec() {
 
 Never use constructor-lambda `StringSpec({ … })`. Prefer
 `IsolationMode.InstancePerTest` for mutable fixtures.
+Add `@Suppress("unused")` only when the compiler or IDE reports a real warning;
+reflection-based discovery does not require it on every spec.
 
 ## TestFixtures
 
@@ -113,7 +114,7 @@ History chart zoom/scrubber specs should cover:
 
 ## Checklist
 
-- [ ] `init` block + `@Suppress("unused")` + isolation mode
+- [ ] `init` block + isolation mode; suppress only demonstrated warnings
 - [ ] `shouldBeEqualComparingTo`; `:memory:` DB; `TestFixtures` where useful
 - [ ] FakeKraken for tests; Flow tests use `advanceUntilIdle`
 - [ ] Evaluation scenarios updated when algorithm behavior changes

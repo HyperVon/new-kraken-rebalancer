@@ -171,5 +171,83 @@ class OrderExecutorCashCapTest : StringSpec() {
                 krakenService.executedOrders[1].volume.shouldBeEqualComparingTo(BigDecimal("0.49"))
             }
         }
+
+        "should abort live buys when no positive USD balance is observed after sells" {
+            runTest {
+                var balancePoll = 0
+                krakenService.balanceSupplier = {
+                    balancePoll++
+                    when (balancePoll) {
+                        1 -> error("Temporary balance failure")
+                        2 -> emptyMap()
+                        else -> mapOf(Asset.USD to BigDecimal.ZERO)
+                    }
+                }
+
+                orderExecutor.executeOrders(
+                    buyOrders = mapOf(Asset.ETH to BigDecimal("100.00")),
+                    sellOrders = mapOf(Asset.BTC to BigDecimal("100.00")),
+                    currentValuesUSD = mapOf(Asset.USD to BigDecimal("100.00")),
+                    prices =
+                    mapOf(
+                        Asset.BTC to BigDecimal("1000.00"),
+                        Asset.ETH to BigDecimal("1000.00"),
+                    ),
+                    settings =
+                    Settings(
+                        loopDelaySeconds = 0L,
+                        deviationTriggerPercent = 2.0,
+                        dustThresholdUSD = 1.0,
+                        dryRun = false,
+                        fiatMaxDrawdown = 0.0,
+                        fiatDeploymentExponent = 1.0,
+                    ),
+                    actionLog = mutableListOf(),
+                )
+
+                krakenService.getBalancesCallCount shouldBe 3
+                krakenService.executedOrders.size shouldBe 1
+                krakenService.executedOrders.single().side shouldBe "sell"
+            }
+        }
+
+        "should cap live buys using the best positive USD balance observed after sells" {
+            runTest {
+                val observedBalances =
+                    listOf(
+                        mapOf(Asset.USD to BigDecimal("50.00")),
+                        mapOf(Asset.USD to BigDecimal("25.00")),
+                        emptyMap(),
+                    )
+                var balancePoll = 0
+                krakenService.balanceSupplier = { observedBalances[balancePoll++] }
+
+                orderExecutor.executeOrders(
+                    buyOrders = mapOf(Asset.ETH to BigDecimal("100.00")),
+                    sellOrders = mapOf(Asset.BTC to BigDecimal("100.00")),
+                    currentValuesUSD = mapOf(Asset.USD to BigDecimal("100.00")),
+                    prices =
+                    mapOf(
+                        Asset.BTC to BigDecimal("1000.00"),
+                        Asset.ETH to BigDecimal("1000.00"),
+                    ),
+                    settings =
+                    Settings(
+                        loopDelaySeconds = 0L,
+                        deviationTriggerPercent = 2.0,
+                        dustThresholdUSD = 1.0,
+                        dryRun = false,
+                        fiatMaxDrawdown = 0.0,
+                        fiatDeploymentExponent = 1.0,
+                    ),
+                    actionLog = mutableListOf(),
+                )
+
+                krakenService.getBalancesCallCount shouldBe 3
+                krakenService.executedOrders.size shouldBe 2
+                krakenService.executedOrders[1].side shouldBe "buy"
+                krakenService.executedOrders[1].volume.shouldBeEqualComparingTo(BigDecimal("0.0495"))
+            }
+        }
     }
 }

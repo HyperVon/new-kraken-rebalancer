@@ -30,7 +30,7 @@ class ActionLogFormatterTest : StringSpec() {
 
         "formatOrderExecution should format buy and sell order messages" {
             val sellMsg = ActionLogFormatter.formatOrderExecution(
-                side = OrderSide.SELL.uppercaseName,
+                side = OrderSide.SELL,
                 symbol = "ETH",
                 volume = BigDecimal("1.5"),
                 usdAmount = BigDecimal("3000.00"),
@@ -39,7 +39,7 @@ class ActionLogFormatterTest : StringSpec() {
             sellMsg shouldBe "[DRY RUN] SELL ETH Volume: 1.5 Value: $3000.00"
 
             val buyMsg = ActionLogFormatter.formatOrderExecution(
-                side = OrderSide.BUY.uppercaseName,
+                side = OrderSide.BUY,
                 symbol = "BTC",
                 volume = BigDecimal("0.1"),
                 usdAmount = BigDecimal("5000.00"),
@@ -50,7 +50,7 @@ class ActionLogFormatterTest : StringSpec() {
 
         "formatOrderExecution should trim USD to 2 decimals" {
             val msg = ActionLogFormatter.formatOrderExecution(
-                side = OrderSide.BUY.uppercaseName,
+                side = OrderSide.BUY,
                 symbol = "BTC",
                 volume = BigDecimal("0.012345678"),
                 usdAmount = BigDecimal("1063.3999959596"),
@@ -60,12 +60,12 @@ class ActionLogFormatterTest : StringSpec() {
         }
 
         "formatOrderFailure should format error message" {
-            val msg = ActionLogFormatter.formatOrderFailure(OrderSide.BUY.uppercaseName, "SOL", "Insufficient funds")
+            val msg = ActionLogFormatter.formatOrderFailure(OrderSide.BUY, "SOL", "Insufficient funds")
             msg shouldBe "FAILED BUY SOL: Insufficient funds"
         }
 
         "formatSkippedDust should format dust message" {
-            val msg = ActionLogFormatter.formatSkippedDust("buy", "DOGE", BigDecimal("0.50"))
+            val msg = ActionLogFormatter.formatSkippedDust(OrderSide.BUY, "DOGE", BigDecimal("0.50"))
             msg shouldBe "Skipping dust buy for DOGE ($0.50)"
         }
     }

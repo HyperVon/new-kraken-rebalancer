@@ -4,13 +4,8 @@ import java.math.BigDecimal
 import java.math.RoundingMode
 
 /**
- * Utility functions for service operations including parsing and common patterns.
- * Promotes consistent error handling and reduces code duplication.
- */
-
-/**
  * Safe BigDecimal parsing that returns ZERO on failure instead of throwing.
- * Replaces try-catch patterns for BigDecimal parsing.
+ * Centralizes fallback handling for service response parsing.
  */
 fun safeParseBigDecimal(value: String?, default: BigDecimal = BigDecimal.ZERO): BigDecimal = value?.let {
     try {

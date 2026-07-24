@@ -76,9 +76,14 @@ class PortfolioManagerOrderExecutionTest : StringSpec() {
 
                 every { configService.getConfig() } returns mockConfig
 
-                val balances =
-                    mapOf("A" to 5.0, "B" to 50.0, Asset.USD to 0.0)
-                krakenService.balanceSupplier = { balances }
+                krakenService.balanceSupplier = {
+                    val sold = krakenService.executedOrders.any { it.side.equals("sell", ignoreCase = true) }
+                    if (sold) {
+                        mapOf("A" to 1.0, "B" to 50.0, Asset.USD to 400.0)
+                    } else {
+                        mapOf("A" to 5.0, "B" to 50.0, Asset.USD to 0.0)
+                    }
+                }
 
                 val prices = mapOf("AUSD" to 100.0, "BUSD" to 10.0)
                 krakenService.pricesSupplier = { prices }
@@ -114,8 +119,14 @@ class PortfolioManagerOrderExecutionTest : StringSpec() {
 
                 every { configService.getConfig() } returns mockConfig
 
-                val balances = mapOf("A" to 5.0, "B" to 50.0, Asset.USD to 0.0)
-                krakenService.balanceSupplier = { balances }
+                krakenService.balanceSupplier = {
+                    val sold = krakenService.executedOrders.any { it.side.equals("sell", ignoreCase = true) }
+                    if (sold) {
+                        mapOf("A" to 1.0, "B" to 50.0, Asset.USD to 400.0)
+                    } else {
+                        mapOf("A" to 5.0, "B" to 50.0, Asset.USD to 0.0)
+                    }
+                }
 
                 val prices = mapOf("AUSD" to 100.0, "BUSD" to 10.0)
                 krakenService.pricesSupplier = { prices }
@@ -214,11 +225,10 @@ class PortfolioManagerOrderExecutionTest : StringSpec() {
 
                 portfolioManager.performRebalanceCycle()
 
-                krakenService.executedOrders.size shouldBe 2
+                // Fail-closed: balance polls throw → no positive USD observed → buys aborted
+                krakenService.executedOrders.size shouldBe 1
                 krakenService.executedOrders[0].pair shouldBe "AUSD"
                 krakenService.executedOrders[0].side shouldBe "sell"
-                krakenService.executedOrders[1].pair shouldBe "BUSD"
-                krakenService.executedOrders[1].side shouldBe "buy"
             }
         }
 

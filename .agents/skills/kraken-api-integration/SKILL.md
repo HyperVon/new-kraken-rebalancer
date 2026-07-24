@@ -37,7 +37,8 @@ DI binds `KrakenService` → `DynamicKrakenService` (live `KrakenServiceImpl` or
 
 `service/impl/RateLimiter.kt`:
 
-- `safeLimit = 12.0`, `decayRate = 0.33` (counter/sec exponential decay)
+- `safeLimit = 12.0`, `decayRate = 0.33`; the counter decays linearly by
+  `elapsedSeconds × 0.33`
 - All counter updates under coroutine **`Mutex`**
 - Waits until `callCounter + cost ≤ safeLimit`
 

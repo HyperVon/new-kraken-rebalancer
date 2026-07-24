@@ -148,9 +148,9 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
                 repository.saveTrade(failedTrade)
 
                 val stats = repository.getTradeSummaryStats()
-                stats.totalTradesExecuted shouldBe 2L // only successful
-                stats.totalVolumeTraded.shouldBeEqualComparingTo(BigDecimal("7000.00")) // 5000 + 2000
-                stats.totalFeesPaid.shouldBeEqualComparingTo(BigDecimal("20.75")) // 15.50 + 5.25 (ignores failedTrade)
+                stats.totalTradesExecuted shouldBe 1L // successful, executed trades only
+                stats.totalVolumeTraded.shouldBeEqualComparingTo(BigDecimal("5000.00"))
+                stats.totalFeesPaid.shouldBeEqualComparingTo(BigDecimal("15.50"))
 
                 val trades = repository.getTradesInRange(now.minusSeconds(20), now.plusSeconds(20))
                 trades.size shouldBe 3
@@ -207,9 +207,9 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
                 repository.saveSnapshot(s1)
 
                 val rangeStats = repository.getTradeSummaryStats(from = now.minus(3, ChronoUnit.DAYS), to = now)
-                rangeStats.totalTradesExecuted shouldBe 1L
-                rangeStats.totalVolumeTraded.shouldBeEqualComparingTo(BigDecimal("2000.00"))
-                rangeStats.totalFeesPaid.shouldBeEqualComparingTo(BigDecimal("5.25"))
+                rangeStats.totalTradesExecuted shouldBe 0L
+                rangeStats.totalVolumeTraded.shouldBeEqualComparingTo(BigDecimal.ZERO)
+                rangeStats.totalFeesPaid.shouldBeEqualComparingTo(BigDecimal.ZERO)
                 rangeStats.periodHigh?.shouldBeEqualComparingTo(BigDecimal("15000.00"))
             }
         }
@@ -362,6 +362,7 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
                         usdAmount = BigDecimal("16.63"),
                         price = BigDecimal("215.6867"),
                         fee = BigDecimal("0.0998"),
+                        slippagePercent = BigDecimal.ZERO,
                     )
                 val distinctOrder =
                     krakenFill.copy(
@@ -490,7 +491,7 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
                 repository.cleanupDuplicateTrades()
 
                 val all = repository.getTradesInRange(now.minusSeconds(1), now.plusSeconds(3600))
-                all.size shouldBe 6
+                all.size shouldBe 8
             }
         }
 

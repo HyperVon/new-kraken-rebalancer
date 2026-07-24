@@ -8,6 +8,50 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Config save no longer writes env-resolved Kraken credentials to disk**: Settings
+  updates keep `${VAR:default}` placeholders (or other on-disk credential forms) instead
+  of serializing runtime secrets from environment resolution; reload still resolves from
+  env.
+- **History reconciliation and reconstruction**: Duplicate cleanup preserves settled
+  Kraken fills, distinguishes legitimate equal-sized trades using financial details and
+  provenance, reconstructs snapshots from fetched live balances, and permits immediate
+  retries after skipped credentials or failed sync attempts.
+- **Simulation consistency**: Trade-history responses use Kraken-style 50-record pages,
+  and newly configured allocation symbols receive simulated prices and balances.
+- **Post-sell cash verification**: Live rebalances now abort subsequent buys
+  when every USD balance refresh fails or returns no positive observed balance,
+  instead of spending against projected-only sale proceeds.
+- **Executed trade summaries**: Dry-run intents remain available in trade
+  history but no longer inflate executed trade count, volume, or fee totals.
+- **Kraken credentials validation**: `hasValidCredentials()` now rejects private keys
+  that are not decodable Base64 (malformed material is treated as invalid at
+  config-check time instead of failing later during HMAC signing).
+- **Test and utility KDoc**: Corrected stale helper descriptions and removed the
+  blanket `@Suppress("unused")` guidance for Kotest specs.
+
+### Changed
+
+- **Documentation accuracy**: Clarified rate-limit decay, post-sell USD fallback
+  behavior, deviation thresholds, Kraken API permissions, and shipped safety
+  defaults across the README, algorithm/flow docs, and agent skills.
+- **Quality workflow**: Expanded markdown lint coverage to top-level
+  contributing/security docs and aligned pre-commit Gradle gates with the
+  repository's mandatory build and coverage checks.
+- **Type-safe quality cleanup**: Order execution logs now carry `OrderSide`
+  until string-only persistence boundaries; shared DOM selectors and zoom
+  actions replace raw tag/action strings, with unused CSS/HTML/DOM helpers removed.
+- **Portfolio-manager test setup**: Doge, zero-allocation, edge-case, and
+  comprehensive suites share one fixture; the redundant `DashboardViewTest`
+  Spotless carve-out was removed because the broader view exclusion already applies.
+- **Continuous-improvement backlog**: `.agents/improvement-backlog.md` tracks
+  open/done/deferred items across cycles; Large/deferred items get GitHub
+  issues (`continuous-improvement` / `size/*` labels).
+- **Dependabot in agent workflows**: `dependency-upgrade` and
+  `continuous-improvement` skills now require checking open Dependabot alerts
+  each cycle/deps pass and remediating critical/high issues.
+
 ## [6.12.17] - 2026-07-24
 
 ### Changed

@@ -11,10 +11,10 @@ description: >-
 
 These flags are **independent**. Do not treat them as synonyms.
 
-| Flag | Default | Effect |
+| Flag | Shipped template / Kotlin model | Effect |
 | :--- | :--- | :--- |
-| `simulation` | `false` | `DynamicKrakenService` delegates to **`SimulatedKrakenService`** (offline emulator). When `false`, uses **`KrakenServiceImpl`** (live API). |
-| `dryRun` | `false` | Within the **active** backend, order placement is suppressed and logged (`[DRY RUN]` live / `[EMULATOR DRY RUN]` sim). Calculations still run. |
+| `simulation` | `false` / defaults to `false` | `DynamicKrakenService` delegates to **`SimulatedKrakenService`** (offline emulator). When `false`, uses **`KrakenServiceImpl`** (live API). |
+| `dryRun` | `true` / required constructor value (no Kotlin default) | Within the **active** backend, order placement is suppressed and logged (`[DRY RUN]` live / `[EMULATOR DRY RUN]` sim). Calculations still run. |
 
 ## Routing
 

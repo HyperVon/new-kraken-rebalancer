@@ -58,7 +58,7 @@ object HistoryViewPrefs {
         userInteracted = true
         val select = document.getElementById(HtmlIds.HISTORY_VIEWS_SELECT) as? HTMLSelectElement
         if (select != null) {
-            val existing = select.querySelector("option[value='']") as? HTMLOptionElement
+            val existing = select.querySelector("${HtmlTags.OPTION}[value='']") as? HTMLOptionElement
             if (existing != null) {
                 existing.selected = true
             } else {

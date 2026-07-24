@@ -765,6 +765,41 @@ class TradeHistoryServiceTest : StringSpec() {
             }
         }
 
+        "syncTradesFromKraken_MissingCredentialsDoesNotThrottleImmediateRetry" {
+            runTest {
+                val service = createService()
+                val validConfig = configService.getConfig()
+                val missingCredentialsConfig = validConfig.copy(kraken = KrakenCredentials("", ""))
+                every { configService.getConfig() } returns missingCredentialsConfig andThen validConfig
+                coEvery { krakenService.getTradeHistory(any(), any()) } returns emptyList()
+
+                service.syncTradesFromKraken()
+                service.syncTradesFromKraken()
+
+                coVerify(exactly = 1) { krakenService.getTradeHistory(any(), any()) }
+            }
+        }
+
+        "syncTradesFromKraken_FailedAttemptDoesNotThrottleImmediateRetry" {
+            runTest {
+                val service = createService()
+                var attempts = 0
+                coEvery { krakenService.getTradeHistory(any(), any()) } coAnswers {
+                    if (attempts++ == 0) throw RuntimeException("Kraken API down")
+                    emptyList()
+                }
+
+                try {
+                    service.syncTradesFromKraken()
+                } catch (_: RuntimeException) {
+                    // A failed sync remains visible to the caller and must not start the throttle window.
+                }
+                service.syncTradesFromKraken()
+
+                coVerify(exactly = 2) { krakenService.getTradeHistory(any(), any()) }
+            }
+        }
+
         "syncTradesFromKraken_MatchingFailuresSavedAsNew" {
             runTest {
                 coEvery { repository.isHistorySeeded() } returns true
@@ -1004,7 +1039,11 @@ class TradeHistoryServiceTest : StringSpec() {
         "syncTradesFromKraken_TriggersReconstructionWhenSnapshotsEmpty" {
             runTest {
                 val appConfig = AppConfig(
-                    kraken = KrakenCredentials(TestFixtures.KEY, TestFixtures.SECRET),
+                    kraken =
+                    KrakenCredentials(
+                        TestFixtures.TRADE_HISTORY_API_KEY,
+                        TestFixtures.TRADE_HISTORY_API_SECRET,
+                    ),
 
                     settings = Settings(
                         loopDelaySeconds = 60,
@@ -1077,6 +1116,11 @@ class TradeHistoryServiceTest : StringSpec() {
                     TestFixtures.USD to BigDecimal("5000.0"),
                 )
                 coEvery { krakenService.getBalances() } returns mockBalances
+                every { portfolioAnalyzer.resolveBalance(Asset.BTC, mockBalances) } returns BigDecimal("1.0")
+                every { portfolioAnalyzer.resolveBalance("ETH", mockBalances) } returns BigDecimal("2.0")
+                every { portfolioAnalyzer.resolveBalance("EUR", mockBalances) } returns BigDecimal("100.0")
+                every { portfolioAnalyzer.resolveBalance("DOGE", mockBalances) } returns BigDecimal.ZERO
+                every { portfolioAnalyzer.resolveBalance(TestFixtures.USD, mockBalances) } returns BigDecimal("5000.0")
                 coEvery { krakenService.getTickerPrices(any()) } returns
                     mapOf(TestFixtures.BTCUSD to BigDecimal("30000.0"))
                 val dayStart = Instant.now().minus(2, ChronoUnit.DAYS).truncatedTo(ChronoUnit.DAYS).epochSecond
@@ -1086,13 +1130,17 @@ class TradeHistoryServiceTest : StringSpec() {
                 coEvery { krakenService.getOHLC("EURUSD", 1440, any()) } returns emptyList()
                 coEvery { krakenService.getOHLC("DOGEUSD", 1440, any()) } returns emptyList()
 
-                coEvery { repository.save(any()) } just Runs
+                val reconstructedSnapshots = slot<List<PortfolioSnapshot>>()
+                coEvery { repository.save(capture(reconstructedSnapshots)) } just Runs
 
                 val service = createService()
                 every { configService.getConfig() } returns appConfig
                 service.syncTradesFromKraken()
 
-                coVerify { repository.save(any()) }
+                reconstructedSnapshots.captured.first().assets.getValue(Asset.BTC).balance
+                    .shouldBeEqualComparingTo(BigDecimal("1.0"))
+                reconstructedSnapshots.captured.first().assets.getValue(TestFixtures.USD).balance
+                    .shouldBeEqualComparingTo(BigDecimal("5000.0"))
             }
         }
 
@@ -1115,7 +1163,11 @@ class TradeHistoryServiceTest : StringSpec() {
                 val service = createService()
 
                 val appConfig = AppConfig(
-                    kraken = KrakenCredentials(TestFixtures.KEY, TestFixtures.SECRET),
+                    kraken =
+                    KrakenCredentials(
+                        TestFixtures.TRADE_HISTORY_API_KEY,
+                        TestFixtures.TRADE_HISTORY_API_SECRET,
+                    ),
                     settings = Settings(
                         loopDelaySeconds = 60,
                         deviationTriggerPercent = 5.0,
@@ -1205,7 +1257,11 @@ class TradeHistoryServiceTest : StringSpec() {
         "reconstructHistoricalSnapshots_FallbackMappingsAndExceptions" {
             runTest {
                 val appConfig = AppConfig(
-                    kraken = KrakenCredentials(TestFixtures.KEY, TestFixtures.SECRET),
+                    kraken =
+                    KrakenCredentials(
+                        TestFixtures.TRADE_HISTORY_API_KEY,
+                        TestFixtures.TRADE_HISTORY_API_SECRET,
+                    ),
                     settings = Settings(
                         loopDelaySeconds = 60,
                         deviationTriggerPercent = 5.0,
@@ -1268,7 +1324,11 @@ class TradeHistoryServiceTest : StringSpec() {
         "reconstructHistoricalSnapshots_FallbackMappingsAndSimulation" {
             runTest {
                 val appConfig = AppConfig(
-                    kraken = KrakenCredentials(TestFixtures.KEY, TestFixtures.SECRET),
+                    kraken =
+                    KrakenCredentials(
+                        TestFixtures.TRADE_HISTORY_API_KEY,
+                        TestFixtures.TRADE_HISTORY_API_SECRET,
+                    ),
                     settings = Settings(
                         loopDelaySeconds = 60,
                         deviationTriggerPercent = 5.0,
@@ -1334,7 +1394,11 @@ class TradeHistoryServiceTest : StringSpec() {
         "syncTradesFromKraken_ApiFailure" {
             runTest {
                 val appConfig = AppConfig(
-                    kraken = KrakenCredentials(TestFixtures.KEY, TestFixtures.SECRET),
+                    kraken =
+                    KrakenCredentials(
+                        TestFixtures.TRADE_HISTORY_API_KEY,
+                        TestFixtures.TRADE_HISTORY_API_SECRET,
+                    ),
                     settings = Settings(
                         loopDelaySeconds = 60,
                         deviationTriggerPercent = 5.0,

@@ -6,7 +6,6 @@ import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.service.impl.PortfolioAnalyzerImpl
-import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.booleans.shouldBeTrue
@@ -19,7 +18,7 @@ class PortfolioManagerFiatCorrectionTest : StringSpec() {
 
     override fun isolationMode() = IsolationMode.InstancePerTest
 
-    /** Creates a [PortfolioManagerImpl] wired with a given [AppConfig]. */
+    /** Creates a [PortfolioAnalyzerImpl] configured with the supplied allocations. */
     private fun makePortfolioAnalyzer(vararg allocs: Allocation): PortfolioAnalyzer {
         val configService = mockk<ConfigService>(relaxed = true)
         val repo = mockk<PortfolioStatsRepository>(relaxed = true)

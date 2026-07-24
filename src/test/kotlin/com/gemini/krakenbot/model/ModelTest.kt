@@ -213,8 +213,10 @@ class ModelTest : StringSpec() {
             t1.isSameSymbolAndSide(t2) shouldBe true
             t1.isSameSymbolAndSide(t3) shouldBe false
 
-            t1.isPairAliasDuplicateOf(t2) shouldBe true
+            // Different fees with identical provenance → not an alias duplicate
+            t1.isPairAliasDuplicateOf(t2) shouldBe false
             t1.isPairAliasDuplicateOf(t3) shouldBe false
+            t1.copy(fee = t2.fee).isPairAliasDuplicateOf(t2) shouldBe true
 
             t1.feePercentDiffersMateriallyFrom(t2) shouldBe true
 

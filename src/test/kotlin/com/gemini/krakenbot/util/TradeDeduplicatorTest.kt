@@ -46,6 +46,8 @@ class TradeDeduplicatorTest : StringSpec() {
                     now, "XBTUSD", "BUY", "BTC", BigDecimal("1.0"), BigDecimal("50000.00"),
                     success = true,
                     dryRun = false,
+                    fee = BigDecimal("100.00"),
+                    slippagePercent = BigDecimal.ZERO,
                     id = 1,
                 )
             val record2 =
@@ -56,11 +58,12 @@ class TradeDeduplicatorTest : StringSpec() {
                     "XXBTZUSD", "BUY", "BTC", BigDecimal("1.0"), BigDecimal("50000.00"),
                     success = true,
                     dryRun = false,
+                    fee = BigDecimal("100.00"),
                     id = 2,
                 )
 
             val duplicates = TradeDeduplicator.findDuplicateTradeIds(listOf(record1, record2))
-            duplicates shouldContainExactly listOf(2)
+            duplicates shouldContainExactly listOf(1)
         }
 
         "should identify local estimate duplicate trade records with material fee rate differences" {
@@ -75,6 +78,7 @@ class TradeDeduplicatorTest : StringSpec() {
                 success = true,
                 dryRun = false,
                 fee = BigDecimal("10.00"), // 0.02% fee rate
+                slippagePercent = BigDecimal.ZERO,
                 id = 10,
             )
             val settledFill = TradeRecord(
@@ -91,7 +95,34 @@ class TradeDeduplicatorTest : StringSpec() {
             )
 
             val duplicates = TradeDeduplicator.findDuplicateTradeIds(listOf(localEstimate, settledFill))
-            duplicates shouldContainExactly listOf(11)
+            duplicates shouldContainExactly listOf(10)
+        }
+
+        "should preserve legitimate equal-sized fills with different financial details" {
+            val now = Instant.now()
+            val firstFill = TradeRecord(
+                timestamp = now,
+                pair = "XBTUSD",
+                side = "BUY",
+                symbol = "BTC",
+                volume = BigDecimal("1.0"),
+                usdAmount = BigDecimal("50000.00"),
+                success = true,
+                dryRun = false,
+                price = BigDecimal("50000.00"),
+                fee = BigDecimal("100.00"),
+                id = 20,
+            )
+            val secondFill = firstFill.copy(
+                timestamp = now.plusSeconds(30),
+                pair = "XXBTZUSD",
+                usdAmount = BigDecimal("50500.00"),
+                price = BigDecimal("50500.00"),
+                fee = BigDecimal("101.00"),
+                id = 21,
+            )
+
+            TradeDeduplicator.findDuplicateTradeIds(listOf(firstFill, secondFill)).isEmpty() shouldBe true
         }
 
         "should stop checking pairs if timestamp difference exceeds 300 seconds" {

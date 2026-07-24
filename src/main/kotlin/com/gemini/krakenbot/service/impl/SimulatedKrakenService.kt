@@ -27,30 +27,37 @@ class SimulatedKrakenService(private val configService: ConfigService) : KrakenS
     private val balances = ConcurrentHashMap<String, BigDecimal>()
     private val simulatedPrices = ConcurrentHashMap<String, BigDecimal>()
     private val simulatedTrades = CopyOnWriteArrayList<TradeRecord>()
+    private var historicalTradesSeeded = false
 
     init {
         log.info("Initialized SimulatedKrakenService")
     }
 
-    private fun initializeBalancesAndPricesIfEmpty() {
-        if (balances.isNotEmpty()) return
-
-        log.info("SimulatedKrakenService: initializing starting portfolio...")
+    @Synchronized
+    private fun initializeMissingBalancesAndPrices() {
         val allocations = configService.getConfig().allocations
+        val missingSymbols = allocations.filter { !balances.containsKey(it.symbol.value.uppercase()) }
 
-        // 1. Initialize prices
+        if (missingSymbols.isNotEmpty()) {
+            log.info(
+                "SimulatedKrakenService: initializing {} missing portfolio asset(s)...",
+                missingSymbols.size,
+            )
+        }
+
+        // 1. Initialize prices for newly configured assets.
         for ((symbol) in allocations) {
             val symbolU = symbol.value.uppercase()
             val basePrice = SimulationDefaults.INITIAL_PRICES[symbolU] ?: SimulationDefaults.DEFAULT_PRICE
-            simulatedPrices[symbolU] = basePrice.toCryptoScale()
+            simulatedPrices.putIfAbsent(symbolU, basePrice.toCryptoScale())
         }
-        simulatedPrices[Asset.USD] = BigDecimal.ONE
+        simulatedPrices.putIfAbsent(Asset.USD, BigDecimal.ONE)
 
-        // 2. Initialize balances with some random drift (+/- 25%) so they need rebalancing
+        // 2. Initialize missing balances with random drift (+/- 25%) so they need rebalancing.
         val totalSimulatedValueUSD = SimulationDefaults.TOTAL_PORTFOLIO_VALUE_USD
         val random = ThreadLocalRandom.current()
 
-        for ((symbol, targetPercent) in allocations) {
+        for ((symbol, targetPercent) in missingSymbols) {
             val symbolU = symbol.value.uppercase()
             val targetUSDValue =
                 PortfolioCalculations.calculateTargetValue(
@@ -71,8 +78,11 @@ class SimulatedKrakenService(private val configService: ConfigService) : KrakenS
             }
         }
 
-        // 3. Seed some historical trades
-        seedSimulatedTrades()
+        // 3. Seed historical trades once a non-USD allocation exists.
+        if (!historicalTradesSeeded && allocations.any { !it.symbol.isUsd }) {
+            seedSimulatedTrades()
+            historicalTradesSeeded = true
+        }
     }
 
     private fun seedSimulatedTrades() {
@@ -128,12 +138,12 @@ class SimulatedKrakenService(private val configService: ConfigService) : KrakenS
     }
 
     override suspend fun getBalances(): RawBalances {
-        initializeBalancesAndPricesIfEmpty()
+        initializeMissingBalancesAndPrices()
         return balances.toMap()
     }
 
     override suspend fun getTickerPrices(pairs: String): RawPrices {
-        initializeBalancesAndPricesIfEmpty()
+        initializeMissingBalancesAndPrices()
         fluctuatePrices()
 
         val results = mutableMapOf<String, BigDecimal>()
@@ -148,7 +158,7 @@ class SimulatedKrakenService(private val configService: ConfigService) : KrakenS
     }
 
     override suspend fun executeOrder(pair: String, type: String, side: String, volume: BigDecimal): OrderResult {
-        initializeBalancesAndPricesIfEmpty()
+        initializeMissingBalancesAndPrices()
 
         val normalizedVolumeForError = volume.toCryptoScale()
         if (!type.equals(OrderType.MARKET.apiValue, ignoreCase = true)) {
@@ -256,7 +266,7 @@ class SimulatedKrakenService(private val configService: ConfigService) : KrakenS
     }
 
     override suspend fun getTradeHistory(startSec: Long?, offset: Int?): List<TradeRecord> {
-        initializeBalancesAndPricesIfEmpty()
+        initializeMissingBalancesAndPrices()
 
         var filtered =
             if (startSec != null) {
@@ -268,13 +278,14 @@ class SimulatedKrakenService(private val configService: ConfigService) : KrakenS
 
         filtered = filtered.sortedBy { it.timestamp }
 
-        // An offset at/beyond the result size yields an empty page (Kraken-style
-        // pagination), not the whole history.
-        if (offset != null) {
-            return filtered.drop(offset.coerceAtLeast(0))
-        }
-        return filtered
+        // Kraken returns at most 50 records per page. An offset at/beyond the
+        // result size therefore yields an empty page, not the whole history.
+        return filtered.drop(offset?.coerceAtLeast(0) ?: 0).take(TRADE_HISTORY_PAGE_SIZE)
     }
 
     override suspend fun getOHLC(pair: String, interval: Int, since: Long?): List<Pair<Long, BigDecimal>> = emptyList()
+
+    private companion object {
+        const val TRADE_HISTORY_PAGE_SIZE = 50
+    }
 }

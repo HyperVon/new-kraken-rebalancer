@@ -222,7 +222,11 @@ with a wide range of tools and paradigms:
 - **Atomic File Writes** — config updates use write-then-atomic-rename (NIO Files.move with StandardCopyOption.ATOMIC_MOVE) to prevent file system corruption
 - **Graceful Shutdown** — JVM shutdown hook cleanly cancels the coroutine loop scope, closes Ktor HttpClient, and stops Koin DI
 - **Redacted Secret Logging** — value class `toString()` implementations for API credentials return redacts to protect application logs
-- **Rate-Limiting & Retries** — `RateLimiter` implements Kraken's exponential-decay call counter (safe limit 12.0, per-endpoint costs) with observable `RateLimitEvent` flow; `retryWithFlow` automatically retries transient socket/HTTP/rate-limit/lockout errors with exponential backoff (lockouts start at 10s and scale up to a 15-minute ceiling)
+- **Rate-Limiting & Retries** — `RateLimiter` implements Kraken's linearly
+  decaying call counter (elapsed seconds × 0.33; safe limit 12.0; per-endpoint
+  costs); `retryWithFlow` automatically retries transient
+  socket/HTTP/rate-limit/lockout errors with exponential backoff (lockouts
+  start at 10s and scale up to a 15-minute ceiling)
 - **CORS Restrictions** — locks down server allowed origins to local machine addresses (`localhost`, `127.0.0.1`, `::1`), Bonjour multicast DNS domains (`*.local`), and private local subnets (`192.168.x.x`, `10.x.x.x`, etc.) to permit local Wi-Fi access from other devices while blocking public web threats
 - **Database Indexing & Auto Migrations** — database schemas utilize index optimizations for timestamps, and run dynamic `SchemaUtils.createMissingTablesAndColumns` auto-migrations on startup
 - Dust threshold filtering to avoid minimum order size errors
@@ -398,7 +402,7 @@ two complementary `SharedFlow` channels:
 │   │   │   └── RepositoryUtils.kt         # safeTransaction + Dispatchers.IO helpers
 │   │   └── table/                         # Exposed table definitions (Trade, Snapshot, Stats, Sync metadata)
 │   ├── service/                           # Core logic interfaces and shared utilities
-│   │   ├── ServiceUtils.kt               # Retry helpers, safe BigDecimal parsing
+│   │   ├── ServiceUtils.kt               # BigDecimal parsing and relative-tolerance helpers
 │   │   └── impl/                          # Service implementations (coroutine-aware)
 │   │       ├── PortfolioManagerImpl.kt   # Loop orchestrator
 │   │       ├── PortfolioAnalyzerImpl.kt  # Snapshot/analysis logic
@@ -446,8 +450,8 @@ two complementary `SharedFlow` channels:
 
 - JDK 25 or higher
 - Gradle (or use the included `./gradlew` wrapper — no installation required)
-- A Kraken account with API Keys (Permissions: **Query Funds**, **Create &
-  Modify Orders**)
+- A Kraken account with API Keys (Permissions: **Query Funds**, **Query Closed
+  Orders & Trades**, **Create & Modify Orders**)
 
 ### 1. Clone & Configure
 
@@ -606,7 +610,7 @@ Tests cover:
 - `ConfigServiceTest` — validation, hot-reload, persistence, duplicate/blank
   symbol rejection, and `watchConfigChanges()` flow
 - `ServiceUtilsTest` / `FormatterTest` — utility function coverage
-- `RateLimiterTest` — call-counter algorithm and rate limit event flow
+- `RateLimiterTest` — call-counter decay, endpoint costs, waiting, and reset behavior
 - `DashboardControllerTest` — REST API endpoints, invalid config error responses, and trade history sync status
 - `TradeHistoryServiceTest` — snapshot storage, size limits, and historical synchronization states
 - `DynamicKrakenServiceTest` / `SimulatedKrakenServiceTest` — dynamic real/simulation routing and offline exchange simulation logic
