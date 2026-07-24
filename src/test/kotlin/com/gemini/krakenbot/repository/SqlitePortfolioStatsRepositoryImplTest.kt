@@ -17,18 +17,23 @@ import io.mockk.mockk
 import io.mockk.mockkStatic
 import io.mockk.unmockkStatic
 import kotlinx.coroutines.test.runTest
-import org.jetbrains.exposed.sql.Database
-import org.jetbrains.exposed.sql.Transaction
-import org.jetbrains.exposed.sql.transactions.TransactionManager
-import org.jetbrains.exposed.sql.transactions.transaction
-import org.jetbrains.exposed.sql.transactions.transactionManager
+import org.jetbrains.exposed.v1.jdbc.Database
+import org.jetbrains.exposed.v1.jdbc.JdbcTransaction
+import org.jetbrains.exposed.v1.jdbc.transactions.JdbcTransactionManager
+import org.jetbrains.exposed.v1.jdbc.transactions.TransactionManager
+import org.jetbrains.exposed.v1.jdbc.transactions.transaction
+import org.jetbrains.exposed.v1.jdbc.transactions.transactionManager
 import java.io.File
 import java.io.IOException
 import java.math.BigDecimal
 
-class StatsThrowingTransactionManager(private val delegate: TransactionManager) : TransactionManager by delegate {
-    override fun newTransaction(isolation: Int, readOnly: Boolean, outerTransaction: Transaction?): Transaction =
-        throw IOException("Direct IO failure")
+class StatsThrowingTransactionManager(private val delegate: JdbcTransactionManager) :
+    JdbcTransactionManager by delegate {
+    override fun newTransaction(
+        isolation: Int,
+        readOnly: Boolean,
+        outerTransaction: JdbcTransaction?,
+    ): JdbcTransaction = throw IOException("Direct IO failure")
 }
 
 class SqlitePortfolioStatsRepositoryImplTest : StringSpec() {

@@ -3,8 +3,8 @@ import org.jetbrains.kotlin.gradle.targets.js.yarn.YarnRootExtension
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
 plugins {
-    kotlin("jvm") version "2.4.0"
-    id("com.diffplug.spotless") version "7.0.4"
+    kotlin("jvm") version "2.4.10"
+    id("com.diffplug.spotless") version "8.8.0"
     application
     jacoco
 }
@@ -66,18 +66,18 @@ dependencies {
 
     // Jackson BOM — pins jackson-core & jackson-databind to a secure, explicit version
     implementation(platform("com.fasterxml.jackson:jackson-bom:2.22.1"))
-    implementation("io.ktor:ktor-server-caching-headers:3.5.0")
-    implementation("io.ktor:ktor-server-compression:3.5.0")
-    implementation("io.ktor:ktor-server-conditional-headers:3.5.0")
+    implementation("io.ktor:ktor-server-caching-headers:3.5.1")
+    implementation("io.ktor:ktor-server-compression:3.5.1")
+    implementation("io.ktor:ktor-server-conditional-headers:3.5.1")
 
     // Koin
-    var koinVersion = "4.2.1"
+    var koinVersion = "4.2.2"
     implementation("io.insert-koin:koin-core:$koinVersion")
     implementation("io.insert-koin:koin-logger-slf4j:$koinVersion")
     implementation("io.insert-koin:koin-ktor:$koinVersion")
 
     // Ktor Server & Client
-    val ktorVersion = "3.5.0"
+    val ktorVersion = "3.5.1"
     implementation("io.ktor:ktor-server-core:$ktorVersion")
     implementation("io.ktor:ktor-server-netty:$ktorVersion")
     implementation("io.ktor:ktor-server-content-negotiation:$ktorVersion")
@@ -90,23 +90,23 @@ dependencies {
     implementation("io.ktor:ktor-client-cio:$ktorVersion")
 
     // Logging
-    implementation("ch.qos.logback:logback-classic:1.5.38")
+    implementation("ch.qos.logback:logback-classic:1.6.0")
 
     // Coroutines
     val kotlinXCoroutinesVersion = "1.11.0"
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:$kotlinXCoroutinesVersion")
 
     // SQLite + Exposed ORM
-    val exposedVersion = "0.61.0"
+    val exposedVersion = "1.3.1"
     implementation("org.jetbrains.exposed:exposed-core:$exposedVersion")
     implementation("org.jetbrains.exposed:exposed-dao:$exposedVersion")
     implementation("org.jetbrains.exposed:exposed-jdbc:$exposedVersion")
     implementation("org.jetbrains.exposed:exposed-java-time:$exposedVersion")
-    implementation("org.xerial:sqlite-jdbc:3.49.1.0")
-    implementation("org.jetbrains.kotlin-wrappers:kotlin-css-jvm:2026.4.8")
+    implementation("org.xerial:sqlite-jdbc:3.53.2.1")
+    implementation("org.jetbrains.kotlin-wrappers:kotlin-css-jvm:2026.7.5")
 
     // Testing
-    val koTestVersion = "6.1.11"
+    val koTestVersion = "6.2.3"
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:$kotlinXCoroutinesVersion")
     testImplementation("io.ktor:ktor-server-test-host:$ktorVersion")
     testImplementation("io.ktor:ktor-client-mock:$ktorVersion")
@@ -249,10 +249,10 @@ tasks.processResources {
 rootProject.plugins.withType<YarnPlugin> {
     rootProject.extensions.configure<YarnRootExtension> {
         resolution("webpack-dev-server", "5.2.6")
-        resolution("serialize-javascript", "7.0.5")
+        resolution("serialize-javascript", "7.0.7")
         resolution("uuid", "11.1.1")
-        resolution("webpack", "5.104.1")
-        resolution("diff", "8.0.3")
+        resolution("webpack", "5.109.0")
+        resolution("diff", "8.0.4")
         resolution("fast-uri", "3.1.4")
     }
 }

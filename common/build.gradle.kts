@@ -14,8 +14,7 @@ kotlin {
         browser()
     }
     sourceSets {
-        val commonMain by getting
-        val commonTest by getting {
+        getByName("commonTest") {
             dependencies {
                 implementation(kotlin("test"))
             }

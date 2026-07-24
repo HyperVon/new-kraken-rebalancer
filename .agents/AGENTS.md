@@ -10,13 +10,13 @@ Below are the architectural rules, coding constraints, financial math guidelines
 
 ### Stack Specification
 
-- **Language**: Kotlin 2.4.0 (100% Kotlin Multiplatform: JVM + JS)
-- **Backend**: Ktor 3.5.0 (Netty engine, Jackson `ContentNegotiation`), Koin 4.2.1 (DI)
-- **Database**: SQLite (`kraken-rebalancer.db`) via JetBrains Exposed ORM 0.61.0
+- **Language**: Kotlin 2.4.10 (100% Kotlin Multiplatform: JVM + JS)
+- **Backend**: Ktor 3.5.1 (Netty engine, Jackson `ContentNegotiation`), Koin 4.2.2 (DI)
+- **Database**: SQLite (`kraken-rebalancer.db`) via JetBrains Exposed ORM 1.3.1
 - **Concurrency**: Kotlin Coroutines (`kotlinx.coroutines` 1.11.0) & Kotlin `Flow` / `SharedFlow`. Offload database queries and network calls to `Dispatchers.IO` (`withContext(Dispatchers.IO)`). Avoid `GlobalScope`; use structured concurrency via component-bound scopes.
 - **Shared Core (`:common`) Integrity**: Kotlin Multiplatform shared module (`common/src/commonMain/`) housing `CssClass` sealed class hierarchies, `HtmlIds`, `HtmlAttrs`, `ViewText`, `TimeRange`, `OrderSide`, `OrderType`, and `PrecisionConstants` shared identically by backend and frontend. `commonMain` must remain 100% pure Kotlin Multiplatform — do NOT import JVM-only (e.g. `java.math.BigDecimal`, SLF4J) or JS-only DOM libraries into `:common`.
 - **Frontend**: Server-side HTML (`kotlinx.html` DSL) + `kotlinx-css` DSL (`CssStyles.kt` with shared `CssClass` sealed hierarchy) + HTMX + Ktor SSE + Client-side Kotlin/JS (`:frontend-js` subproject compiling to JS via Kotlin JS IR backend served as `/static/rebalancer.js`)
-- **Testing**: Kotest 6.1 (`StringSpec`), MockK 1.14, Ktor MockEngine, Karma/Istanbul
+- **Testing**: Kotest 6.2 (`StringSpec`), MockK 1.14, Ktor MockEngine, Karma/Istanbul
 - **Build**: Gradle (Kotlin DSL)
 
 ### Architecture Decomposition (SRP)

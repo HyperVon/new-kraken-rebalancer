@@ -1,6 +1,6 @@
 package com.gemini.krakenbot.repository.table
 
-import org.jetbrains.exposed.sql.Table
+import org.jetbrains.exposed.v1.core.Table
 
 /** Exposed table definition for portfolio snapshots — one row per rebalancing cycle. */
 object PortfolioSnapshotTable : Table("portfolio_snapshots") {

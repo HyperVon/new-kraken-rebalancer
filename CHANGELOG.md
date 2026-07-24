@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.12.6] - 2026-07-24
+
+### Changed
+
+- **Dependency Upgrades**: Kotlin `2.4.0` → `2.4.10`, Ktor `3.5.0` → `3.5.1`, Koin `4.2.1` → `4.2.2`,
+  Kotest `6.1.11` → `6.2.3`, Spotless `7.0.4` → `8.8.0`, KSP `2.3.9` → `2.3.10`,
+  Logback `1.5.38` → `1.6.0`, sqlite-jdbc `3.49.1.0` → `3.53.2.1`,
+  kotlin-css-jvm `2026.4.8` → `2026.7.5`, plus yarn security pins (`webpack` `5.109.0`,
+  `serialize-javascript` `7.0.7`, `diff` `8.0.4`).
+- **Exposed ORM `0.61.0` → `1.3.1`**: Migrate imports to `org.jetbrains.exposed.v1.core` /
+  `org.jetbrains.exposed.v1.jdbc`, use `JdbcTransaction` / `JdbcTransactionManager`,
+  top-level comparison operators (`eq`, `greaterEq`, …), and
+  `currentDialectMetadata.resetCaches()` for schema init.
+- **Gradle Kotlin DSL**: Replace deprecated `by getting` source-set delegates with `getByName(...)`.
+
 ## [6.12.5] - 2026-07-24
 
 ### Changed

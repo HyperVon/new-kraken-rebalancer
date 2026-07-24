@@ -92,7 +92,7 @@ object TestFixtures {
 
     /** Fully-qualified class name used in mockk verification. */
     const val ORG_JETBRAINS_EXPOSED_SQL_TRANSACTIONS_TRANSACTION_API_KT =
-        "org.jetbrains.exposed.sql.transactions.TransactionApiKt"
+        "org.jetbrains.exposed.v1.jdbc.transactions.JdbcTransactionInterfaceKt"
 
     val DEFAULT_TEST_SETTINGS = Settings(
         loopDelaySeconds = 60,
