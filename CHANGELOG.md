@@ -59,6 +59,22 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `frontend-js-development`, `write-kotest`, and `code-review` call out the same
   `zoomScale` / `onZoomComplete` failure modes.
 
+### Fixed
+
+- **Credential validation**: `KrakenCredentials.hasValidCredentials()` now also
+  rejects a blank or placeholder (`YOUR_KRAKEN_PRIVATE_KEY`) **private key**, not
+  just the API key — so live Kraken calls stay disabled when only half the
+  credentials are configured.
+- **Trading-pair resolution**: `Asset.fromTradingPair()` now matches on the exact
+  set of USD-quoted Kraken aliases (e.g. `XBTUSD` / `BTCUSD` / `XXBTZUSD`) instead
+  of loose prefix matching, so a different-quote pair such as `XBTUSDT` /
+  `XBTUSDC` can no longer be mis-resolved to BTC.
+- **Simulated exchange correctness**: `SimulatedKrakenService.executeOrder()` now
+  rejects unsupported order **sides** and non-`market` order **types** with a
+  failed `OrderResult` (previously recorded as successful with no balance change),
+  and `getTradeHistory()` returns an empty page when the `offset` is at or beyond
+  the result size (previously returned the entire history).
+
 ## [6.12.13] - 2026-07-24
 
 ### Added

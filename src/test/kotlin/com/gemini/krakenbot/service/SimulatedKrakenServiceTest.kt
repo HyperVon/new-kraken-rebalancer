@@ -289,10 +289,37 @@ class SimulatedKrakenServiceTest : StringSpec() {
                 "hold",
                 BigDecimal.ONE,
             )
-            invalidResult.success shouldBe true
+            invalidResult.success shouldBe false
+            invalidResult.errorMessage?.contains("Unsupported order side") shouldBe true
 
+            // 15 seeded + 1 successful buy above; the rejected "hold" adds nothing,
+            // and an offset past the end returns an empty page (not the whole history).
             val emptyHistory = simulatedService.getTradeHistory(null, 100)
-            emptyHistory.size shouldBe 17
+            emptyHistory.size shouldBe 0
+        }
+
+        "should reject unsupported order types" {
+            val configService = mockk<ConfigService>()
+            val config = AppConfig(
+                kraken = KrakenCredentials(TestConstants.API_KEY, TestConstants.API_SECRET),
+                settings = TestFixtures.DEFAULT_TEST_SETTINGS,
+                allocations = listOf(
+                    Allocation(Asset.BTC, 50.0),
+                    Allocation(Asset.USD, 50.0),
+                ),
+            )
+            every { configService.getConfig() } returns config
+
+            val simulatedService = SimulatedKrakenService(configService)
+            val result = simulatedService.executeOrder(
+                TestFixtures.BTCUSD,
+                "limit",
+                TestFixtures.BUY,
+                BigDecimal.ONE,
+            )
+
+            result.success shouldBe false
+            result.errorMessage?.contains("Unsupported order type") shouldBe true
         }
 
         "getOHLC should return empty list" {
