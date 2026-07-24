@@ -24,14 +24,27 @@ fi
 echo "--- Step 1: Running Pre-PR Quality Verification ---"
 ./.agents/skills/commit-and-push/scripts/pre_commit_check.sh
 
-# Step 3: Extract commit summary for PR body
+# Step 3: Extract commit summary and CHANGELOG for PR body
 LAST_COMMIT_MSG=$(git log -1 --pretty=%B | head -n 1)
 TITLE="$LAST_COMMIT_MSG"
 
+COMMIT_LOGS=$(git log origin/main..HEAD --pretty=format:"- %s")
+
+CHANGELOG_SUMMARY=$(sed -n '/^## \[/!d; p; q' CHANGELOG.md 2>/dev/null || echo "")
+LATEST_VERSION_BLOCK=$(awk '/^## \[/{if (count++) exit} count{print}' CHANGELOG.md 2>/dev/null || echo "")
+
 BODY=$(cat <<EOF
-## Summary
+## Overview
 
 Pull Request created automatically for branch \`$BRANCH\`.
+
+## Commits Included
+
+$COMMIT_LOGS
+
+## Release Notes (\`CHANGELOG.md\`)
+
+$LATEST_VERSION_BLOCK
 
 ## Verification Results
 
