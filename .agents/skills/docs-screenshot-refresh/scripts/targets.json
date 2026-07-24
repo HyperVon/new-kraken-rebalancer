@@ -36,7 +36,7 @@
       "path": "/history",
       "click_button": "30d",
       "await_charts": 4,
-      "anchor": "Allocation Drift Over Time"
+      "anchor": "Allocation Deviation from Target"
     },
     {
       "file": "history-bottom.png",

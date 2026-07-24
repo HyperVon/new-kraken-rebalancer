@@ -630,6 +630,7 @@ class CoverageTest : StringSpec() {
                                             "valueUSD" to 100,
                                             "balance" to 100,
                                             "currentPercent" to 100,
+                                            "deviationPercent" to 5,
                                         ),
                                 ),
                         ),
@@ -643,12 +644,14 @@ class CoverageTest : StringSpec() {
                                             "valueUSD" to 60,
                                             "balance" to 2,
                                             "currentPercent" to 37.5,
+                                            "deviationPercent" to -25,
                                         ),
                                     Asset.USD to
                                         json(
                                             "valueUSD" to 100,
                                             "balance" to 50,
                                             "currentPercent" to 62.5,
+                                            "deviationPercent" to 25,
                                         ),
                                 ),
                         ),
@@ -702,7 +705,7 @@ class CoverageTest : StringSpec() {
                 tick2(12.34, 0, null).toString() shouldBe "+12.34%"
                 tick2(-5.6, 0, null).toString() shouldBe "-5.6%"
 
-                // 3. Allocation drift chart callbacks
+                // 3. Allocation deviation chart callbacks
                 val driftConfig = window.asDynamic().chartConfigs[2]
                 val label3 = driftConfig.options.plugins.tooltip.callbacks.label
                 val mockCtx3 =
@@ -710,9 +713,14 @@ class CoverageTest : StringSpec() {
                         dataset = json("label" to Asset.BTC)
                         parsed = json("y" to 12.34)
                     }
-                label3(mockCtx3).toString() shouldBe "BTC: 12.34%"
+                label3(mockCtx3).toString() shouldBe "BTC: +12.34% vs target"
                 val tick3 = driftConfig.options.scales.y.ticks.callback
-                tick3(12.34, 0, null).toString() shouldBe "12.34%"
+                tick3(12.34, 0, null).toString() shouldBe "+12.34%"
+                tick3(-5.6, 0, null).toString() shouldBe "-5.6%"
+                (driftConfig.options.scales.y.beginAtZero as Boolean) shouldBe true
+                val gridColor3 = driftConfig.options.scales.y.grid.color
+                gridColor3(json("tick" to json("value" to 0))).toString() shouldBe ChartProps.COLOR_ZERO_LINE
+                gridColor3(json("tick" to json("value" to 1))).toString() shouldBe ChartProps.COLOR_GRID_LINE
 
                 // 4. Cumulative P&L chart callbacks
                 val plConfig = window.asDynamic().chartConfigs[3]

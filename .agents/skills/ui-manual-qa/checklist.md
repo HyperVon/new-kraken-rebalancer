@@ -56,7 +56,7 @@ width (~1280–1440px), not only narrow mobile.
 | :--- | :--- | :--- |
 | REGRESSION-1 | Dashboard at ~1280–1440px (`GLOBAL-6`) | Status cluster **LIVE**/**DELAYED** + **Data Age** not vertically squished, clipped, or stacked illegibly |
 | REGRESSION-2 | Dashboard → Asset Performance deviation legend | **Over target** and **Under target** each with amber/blue dot; labels spaced — not concatenated run-on text |
-| REGRESSION-3 | History chart legends (Portfolio Value, Asset Holdings, Allocation Drift, Cumulative P&L) | Legend swatches use line/point markers; not heavy bordered box chips around every label |
+| REGRESSION-3 | History chart legends (Portfolio Value, Asset Holdings, Allocation Deviation, Cumulative P&L) | Legend swatches use line/point markers; not heavy bordered box chips around every label |
 
 ---
 
@@ -125,7 +125,7 @@ Wait until sync banner completes (or is absent) before chart assertions.
 | :--- | :--- | :--- |
 | HIST-CHART-1 | Portfolio Value chart has drawn series | Canvas non-empty after seed |
 | HIST-CHART-2 | Asset Holdings chart drawn | Same |
-| HIST-CHART-3 | Scroll to Allocation Drift | Unstacked %-style series (0–100 domain intent) |
+| HIST-CHART-3 | Scroll to Allocation Deviation from Target | Signed %-style series around 0%; positive = overweight, negative = underweight; Y-axis is not fixed to 0–100% |
 | HIST-CHART-4 | Cumulative P&L chart drawn | Axis ticks readable; negatives use `-$` if present |
 | HIST-CHART-5 | Click chart legend item to hide a series (if interactive) | Series hides; click again restores |
 | HIST-ZOOM-1 | On Portfolio Value: **Zoom +** twice | X-axis time window narrows (fewer ticks / shorter span visible); bottom scrubber becomes **enabled** (not stuck disabled) |

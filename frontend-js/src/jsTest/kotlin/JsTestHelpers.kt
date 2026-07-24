@@ -29,7 +29,16 @@ fun mockTradeRecord(
 fun mockSnapshotRecord(
     timestamp: String = "2023-01-01",
     totalValueUSD: Any? = 100.0,
-    assets: Any? = json(Asset.BTC to json("valueUSD" to 100, "balance" to 1, "currentPercent" to 100)),
+    assets: Any? =
+        json(
+            Asset.BTC to
+                json(
+                    "valueUSD" to 100,
+                    "balance" to 1,
+                    "currentPercent" to 100,
+                    "deviationPercent" to 0,
+                ),
+        ),
 ): dynamic =
     json(
         "timestamp" to timestamp,
