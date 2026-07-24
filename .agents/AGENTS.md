@@ -13,8 +13,8 @@ Below are the architectural rules, coding constraints, financial math guidelines
 - **Language**: Kotlin 2.4.0 (100% Kotlin Multiplatform: JVM + JS)
 - **Backend**: Ktor 3.5.0 (Netty engine, Jackson `ContentNegotiation`), Koin 4.2.1 (DI)
 - **Database**: SQLite (`kraken-rebalancer.db`) via JetBrains Exposed ORM 0.61.0
-- **Concurrency**: Kotlin Coroutines (`kotlinx.coroutines` 1.11.0) & Kotlin `Flow` / `SharedFlow`
-- **Shared Core (`:common`)**: Kotlin Multiplatform shared module (`common/src/commonMain/`) housing `CssClass` sealed class hierarchies, `HtmlIds`, `HtmlAttrs`, `ViewText`, `TimeRange`, `OrderSide`, `OrderType`, and `PrecisionConstants` shared identically by backend and frontend.
+- **Concurrency**: Kotlin Coroutines (`kotlinx.coroutines` 1.11.0) & Kotlin `Flow` / `SharedFlow`. Offload database queries and network calls to `Dispatchers.IO` (`withContext(Dispatchers.IO)`). Avoid `GlobalScope`; use structured concurrency via component-bound scopes.
+- **Shared Core (`:common`) Integrity**: Kotlin Multiplatform shared module (`common/src/commonMain/`) housing `CssClass` sealed class hierarchies, `HtmlIds`, `HtmlAttrs`, `ViewText`, `TimeRange`, `OrderSide`, `OrderType`, and `PrecisionConstants` shared identically by backend and frontend. `commonMain` must remain 100% pure Kotlin Multiplatform — do NOT import JVM-only (e.g. `java.math.BigDecimal`, SLF4J) or JS-only DOM libraries into `:common`.
 - **Frontend**: Server-side HTML (`kotlinx.html` DSL) + `kotlinx-css` DSL (`CssStyles.kt` with shared `CssClass` sealed hierarchy) + HTMX + Ktor SSE + Client-side Kotlin/JS (`:frontend-js` subproject compiling to JS via Kotlin JS IR backend served as `/static/rebalancer.js`)
 - **Testing**: Kotest 6.1 (`StringSpec`), MockK 1.14, Ktor MockEngine, Karma/Istanbul
 - **Build**: Gradle (Kotlin DSL)
@@ -51,6 +51,11 @@ The engine adheres strictly to the **Single Responsibility Principle**:
   - Ensure markdown table columns use consistent pipe alignments.
   - Avoid trailing whitespace at the ends of lines.
 - Address all Kotlin compiler warnings (remove unused imports, redundant casts, unnecessary escape characters, and redundant `inline` modifiers).
+
+### Security & Environment Variables
+
+- **NEVER** hardcode API keys, secret tokens (`kraken.key`, `kraken.secret`), or private credentials in source code, properties files, or test assets.
+- Always load secret credentials from environment variables or `rebalancer-config.json` (which is excluded from git via `.gitignore`).
 
 ---
 
@@ -129,4 +134,7 @@ The engine adheres strictly to the **Single Responsibility Principle**:
 - **Mandatory Runtime Verification**: NEVER declare a task, bug fix, or feature complete without running automated build and test commands:
   - Backend: `./gradlew test`
   - Frontend: `./gradlew :frontend-js:jsTest`
+- **Build & Documentation Synchronization**: Whenever adding, moving, or deleting packages under `src/main/kotlin/`, immediately update:
+  1. The project structure directory tree in `README.md`.
+  2. JaCoCo coverage exclusion filters in `build.gradle.kts` (`tasks.jacocoTestReport` and `tasks.jacocoTestCoverageVerification`).
 - **Documentation Maintenance**: Update `README.md`, `CHANGELOG.md`, and relevant markdown documentation whenever adding features, modifying public APIs, or refactoring architecture.

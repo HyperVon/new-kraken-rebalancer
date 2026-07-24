@@ -65,7 +65,7 @@ val file = File("data/test.json")
 - **Extract Layout Helpers**: Refactor recurring HTML/CSS components into reusable Kotlin extension functions or modular helper objects (e.g., `Layouts.kt` helpers like `statusCard`, `glassPanel`).
 - **Utility Methods**: Move repeated validation, math formatting, or array manipulation logic into dedicated extension functions or utility objects.
 
-## 7. Modular CSS & Package Layout Synchronization
+## 6. Modular CSS & Package Layout Synchronization
 
 - **Modular CSS Packages**: Keep CSS definitions organized under domain-specific files inside `com.gemini.krakenbot.view.css` (`CssTheme`, `LayoutStyles`, `ComponentStyles`, `TableStyles`, `FormStyles`, `NavigationStyles`, `MediaQueries`, `CssStyles` facade).
 - **Type-Safe Selectors**: Use `querySelector` extension properties on `CssClass` rather than string replacements (e.g. `.replace(" ", ".")`).
@@ -73,6 +73,14 @@ val file = File("data/test.json")
 - **Documentation & Build Sync**: Whenever adding, moving, or deleting packages under `src/main/kotlin/`, immediately update:
   1. The project structure directory tree in `README.md`.
   2. JaCoCo coverage exclusion filters in `build.gradle.kts` (`tasks.jacocoTestReport` and `tasks.jacocoTestCoverageVerification`).
+
+## Anti-Pattern Detection Script
+
+Execute `.agents/skills/kotlin-refactoring-and-cleanup/scripts/find_anti_patterns.sh` to scan the codebase for inline FQNs, magic strings, and absolute paths (`/Users/`):
+
+```bash
+./.agents/skills/kotlin-refactoring-and-cleanup/scripts/find_anti_patterns.sh
+```
 
 ## Refactoring Checklist
 
