@@ -79,7 +79,10 @@ To maintain the Single Responsibility Principle (SRP) and keep domain logic high
 - **`PortfolioAnalyzer` (The Brain)**: Responsible for Phase 1 and 2. It resolves prices, tracks the All-Time High (ATH), calculates dynamic fiat deployment ratios, computes deviations, and determines the exact `BUY`/`SELL` amounts required. Portfolio value calculation returns a `Result<PortfolioValues>` for graceful error handling.
 - **`PortfolioCalculations` (Shared Math)**: Consolidated percentage, target, and deviation calculations shared between the analyzer and snapshot builder — eliminates duplicate math across the codebase.
 - **`OrderExecutor` (The Brawn)**: Responsible for Phase 3. It takes the calculated orders and safely executes them against the Kraken API. It manages the strict sell-before-buy sequence, projected vs. actual cash tracking, dust-threshold filtering, and invokes an `onOrderExecuted` callback for each order result.
-- **`KrakenServiceImpl` + `RateLimiter` (The Gateway)**: Handles HMAC-SHA512 authenticated API calls with a Kraken call-counter rate limiter (exponential decay, per-endpoint costs) and `retryWithFlow` for transient failures, rate limits, and temporary lockouts.
+- **`KrakenServiceImpl` + `RateLimiter` (The Gateway)**: Handles HMAC-SHA512
+  authenticated API calls with a Kraken call-counter rate limiter (linear
+  elapsed-time decay of `elapsedSeconds × 0.33`, plus per-endpoint costs) and
+  `retryWithFlow` for transient failures, rate limits, and temporary lockouts.
 - **Persistence Impls (`SqliteTradeRepositoryImpl`, `SqlitePortfolioStatsRepositoryImpl`, `ConfigServiceImpl`)**: Config uses atomic write-then-rename file operations and exposes `watchConfigChanges()` as a reactive `Flow<Settings>`. Trade logs and portfolio statistics are persisted to SQLite (using JetBrains Exposed ORM).
 - **`TradeHistoryServiceImpl`**: Maintains a reactive `MutableSharedFlow<PortfolioSnapshot>` that broadcasts snapshots to the Ktor Server-Sent Events (SSE) stream in real-time. Trade history sync uses a flow-based paginated fetch from the Kraken API.
 
@@ -140,11 +143,12 @@ The difference between current and target value is calculated:
 
 ### 3. Trigger Logic
 
-A rebalance is only attempted if an asset's absolute `Deviation (%)` (`|Deviation (%)|`) exceeds the
-configured `deviationTriggerPercent` (e.g., 5%).
+A rebalance is only attempted if an asset's absolute `Deviation (%)`
+(`|Deviation (%)|`) is at or above (≥) the configured
+`deviationTriggerPercent` (e.g., 5%).
 
 - **Scenario A: Standard Rebalance**
-  If a crypto asset (e.g., BTC) exceeds the threshold:
+  If a crypto asset (e.g., BTC) is at or above the threshold:
   - **Overweight (> 0)**: A **SELL** order is generated for the excess USD
       amount.
   - **Underweight (< 0)**: A **BUY** order is generated for the deficit
@@ -179,7 +183,10 @@ failure.
    system polls the Kraken API up to **3** times with exponential backoff
    starting at **250ms** (doubling each attempt, capped at 32s) to fetch the
    settled USD balance. It accepts the balance once it reaches **95%** of the
-   projected amount, or uses the best observed value.
+   projected amount. Otherwise, the last positive observed balance is used; if
+   no positive balance is observed, the projected amount remains the fallback.
+   This fail-open fallback is tracked separately in
+   [#54](https://github.com/HyperVon/new-kraken-rebalancer/issues/54).
 3. **Buy Orders Second**:
     - The system verifies that sufficient cash exists for each planned BUY
       order.

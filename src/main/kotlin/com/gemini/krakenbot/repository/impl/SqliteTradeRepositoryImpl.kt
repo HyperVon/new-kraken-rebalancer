@@ -165,6 +165,7 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
                     .select(countCol, volumeCol, feeCol)
                     .where {
                         (TradeTable.success eq true) and
+                            (TradeTable.dryRun eq false) and
                             (TradeTable.timestamp greaterEq fromMillis) and
                             (TradeTable.timestamp lessEq toMillis)
                     }.firstOrNull()

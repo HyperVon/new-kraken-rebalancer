@@ -2,9 +2,10 @@
 name: continuous-improvement
 description: >-
   Orchestrate a continuous-improvement cycle: discover improvements (code, UI,
-  docs, deps), auto-apply small/medium fixes, pause for user approval on large
-  or high-impact changes, run full quality gates, then commit and open a PR.
-  Use when the user asks for the whole shebang, continuous improvement, CI
+  docs, deps), track backlog in .agents/improvement-backlog.md (GitHub issues
+  for L/deferred), auto-apply small/medium fixes, pause for user approval on
+  large or high-impact changes, run full quality gates, then commit and open a
+  PR. Use when the user asks for the whole shebang, continuous improvement, CI
   enhancement loops, auto-improve, or “just run with it.”
 ---
 
@@ -17,6 +18,9 @@ with light supervision; run child skills alone when they want a narrow pass.
 Related always-on norms: [OPERATING.md](../../OPERATING.md),
 [parallel-multi-agent](../parallel-multi-agent/SKILL.md).
 
+**Persistent backlog:** [improvement-backlog.md](../../improvement-backlog.md)
+is the source of truth for open / done / deferred items across cycles.
+
 ---
 
 ## Modes
@@ -25,7 +29,7 @@ Related always-on norms: [OPERATING.md](../../OPERATING.md),
 | :--- | :--- | :--- |
 | **Cycle** (default) | “whole shebang”, “continuous improvement”, “auto-improve once” | One full loop → PR → stop |
 | **Loop** | “keep improving”, “continuous improvement loop”, “run N cycles” | Repeat Cycle until stop condition |
-| **Discover-only** | “what would you improve?”, “improvement backlog” | Produce backlog + sizes; **no** edits |
+| **Discover-only** | “what would you improve?”, “improvement backlog” | Produce backlog + sizes; **no** code edits (still update backlog file + issues) |
 
 Default to **Cycle** unless the user asks for Loop or Discover-only.
 
@@ -56,16 +60,96 @@ When in doubt between M and L → treat as **L** and ask.
 
 ---
 
+## Backlog tracking (mandatory)
+
+Track work in **two places** with different roles:
+
+| Store | What goes there | Why |
+| :--- | :--- | :--- |
+| [`.agents/improvement-backlog.md`](../../improvement-backlog.md) | **All** findings (S/M/L) with status `open` / `in_progress` / `done` / `deferred` / `dropped` | Readable remaining-vs-done history in-repo; survives chat compaction |
+| GitHub issues | Every **L** item + any item **deferred** past the current cycle | Discussion, approval, cross-session visibility; link from the backlog `Issue` column |
+
+### File rules
+
+1. **Read** the backlog at Step 0 (avoid rediscovering `done` / already-`deferred` rows).
+2. After Step 1 discovery, **upsert** new rows (`Status=open`, IDs like `CI-8-1`
+   = cycle 8 item 1). Update existing rows instead of duplicating summaries.
+3. When implementing: set `in_progress` + branch name in Notes.
+4. When shipping: move rows to the **Done** section with PR number; set
+   `Status=done`.
+5. Keep long-lived deferred **L** rows in the open table until the user drops
+   them (`dropped`) or they ship.
+6. Commit backlog updates on the cycle branch with the rest of the cycle (or in
+   Discover-only as the only change if no code shipped).
+
+### GitHub issue rules
+
+1. Ensure labels exist (create once if missing):
+
+   ```bash
+   gh label create "continuous-improvement" --color "0E8A16" --description "From continuous-improvement cycles" 2>/dev/null || true
+   gh label create "size/S" --color "C2E0C6" --description "Small continuous-improvement item" 2>/dev/null || true
+   gh label create "size/M" --color "FEF2C0" --description "Medium continuous-improvement item" 2>/dev/null || true
+   gh label create "size/L" --color "F9D0C4" --description "Large / needs approval" 2>/dev/null || true
+   ```
+
+2. Before creating, **dedupe**:
+
+   ```bash
+   gh issue list --state open --label continuous-improvement --limit 50
+   # also: gh issue list --state open --search "keyword from summary"
+   ```
+
+3. Create an issue for each **L** or cross-cycle **deferred** item that has no
+   Issue link yet:
+
+   ```bash
+   gh issue create \
+     --title "[CI-8-3] Short summary" \
+     --label "continuous-improvement,size/L" \
+     --body "$(cat <<'EOF'
+   ## Summary
+   …
+
+   ## Size / risk
+   L — …
+
+   ## Evidence
+   `path` / symbol …
+
+   ## Proposed approach
+   …
+
+   ## Cycle
+   Discovered in cycle 8 on branch `improve/…`
+   EOF
+   )"
+   ```
+
+4. Write the issue number into the backlog `Issue` column (`#NN`).
+5. **Do not** open issues for S/M items that will ship in the same cycle PR
+   unless the user asks — the backlog file is enough.
+6. When a PR ships an item: comment on linked issues and `gh issue close N`
+   (or leave open if only partially addressed). Reference issues in the PR body
+   (`Closes #NN` when fully done).
+
+### Discover-only mode
+
+Still update `improvement-backlog.md` and create/link GitHub issues for L /
+deferred items. Do not implement code or open an improve PR unless asked.
+
+---
+
 ## One Cycle — workflow
 
 ```text
-- [ ] Step 0: Branch & safety
-- [ ] Step 1: Discover backlog (classify S/M/L)
+- [ ] Step 0: Branch & safety (+ read improvement-backlog.md)
+- [ ] Step 1: Discover backlog (classify S/M/L; upsert file; issues for L/deferred)
 - [ ] Step 2: Gate Large items (user feedback)
 - [ ] Step 3: Implement approved S/M (+ approved L)
 - [ ] Step 4: Verify (tests + targeted UI QA)
-- [ ] Step 5: Docs / CHANGELOG
-- [ ] Step 6: Commit, push, open PR
+- [ ] Step 5: Docs / CHANGELOG / backlog Done rows
+- [ ] Step 6: Commit, push, open PR (Closes #… where applicable)
 - [ ] Step 7: Cycle report → stop or Loop
 ```
 
@@ -74,9 +158,11 @@ When in doubt between M and L → treat as **L** and ask.
 1. Start from an up-to-date `main` (or user-named base).
 2. Create a dedicated branch, e.g. `improve/cycle-YYYYMMDD-HHMM` or
    `improve/<theme>`.
-3. Never use the user’s production `rebalancer-config.json` / DB for UI boots —
+3. Read [improvement-backlog.md](../../improvement-backlog.md); skip rediscovery
+   of `done` / already-tracked `deferred` unless verifying they still apply.
+4. Never use the user’s production `rebalancer-config.json` / DB for UI boots —
    isolated simulation only.
-4. Do **not** flip live trading flags.
+5. Do **not** flip live trading flags.
 
 ### Step 1 — Discover backlog
 
@@ -89,13 +175,25 @@ when tracks are disjoint. Suggested discovery tracks (pick what fits timebox):
 | UI polish | [ui-visual-review](../ui-visual-review/SKILL.md) — recommend only; size each finding |
 | Docs | [documentation-review](../documentation-review/SKILL.md) or [changelog-and-docs-sync](../changelog-and-docs-sync/SKILL.md) gap scan |
 | Deps (optional) | [dependency-upgrade](../dependency-upgrade/SKILL.md) — list only unless user wants bumps this cycle |
+| Security alerts (always) | Check `gh api repos/{owner}/{repo}/dependabot/alerts` (see [dependency-upgrade](../dependency-upgrade/SKILL.md) § Security alerts). Every cycle — surface open alerts even when skipping routine bumps |
 | Known smells | [OPERATING.md](../../OPERATING.md) UI misses; open TODOs/FIXMEs; failing or flaky tests |
 
-Produce a **Cycle backlog** table:
+**Dependabot alerts are not optional.** Even in a cycle where you are not doing
+routine version bumps, run the Dependabot alert query. Fix clean critical/high
+pin bumps this cycle (S/M); otherwise add a backlog row + GitHub issue and
+gate anything requiring a major migration as **L**.
+
+Produce a **Cycle backlog** table (chat + file):
 
 | ID | Area | Size | Summary | Child skill | Ship this cycle? |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| CI-1 | … | S/M/L | … | … | yes / defer / ask |
+| CI-8-1 | … | S/M/L | … | … | yes / defer / ask |
+
+Then:
+
+1. Upsert rows into [improvement-backlog.md](../../improvement-backlog.md).
+2. Create/link GitHub issues for **L** and cross-cycle **deferred** items.
+3. Show the user the table **with issue links** for anything needing approval.
 
 Timebox discovery (~15–30 min of agent work unless user expands). Prefer a
 **shippable** slice over boiling the ocean.
@@ -104,11 +202,14 @@ Timebox discovery (~15–30 min of agent work unless user expands). Prefer a
 
 If any **L** items exist (or M items that risk trading/safety):
 
-1. Present a short proposal: problem, approach, files touched, risk, rollback.
+1. Present a short proposal: problem, approach, files touched, risk, rollback,
+   and GitHub issue URL/number.
 2. Ask which IDs to **approve / defer / drop**.
 3. **Wait** for the user before implementing those IDs.
 4. Continue with S/M items in parallel only if file ownership does not overlap
    the pending L work.
+5. Reflect the decision in the backlog (`deferred` / `dropped` / `in_progress`)
+   and comment on the GitHub issue.
 
 If the user said “run with it” / “whole shebang” **and** there are **no** L
 items → proceed without pausing.
@@ -152,6 +253,8 @@ Fix failures before commit. Do not open a red PR.
 ### Step 5 — Docs
 
 - `CHANGELOG.md` Unreleased for user-visible or workflow changes
+- Update [improvement-backlog.md](../../improvement-backlog.md) Done / deferred
+  rows to match what this cycle actually shipped
 - README / User Guide / screenshots only if visuals or public behavior changed
   ([docs-screenshot-refresh](../docs-screenshot-refresh/SKILL.md),
   [user-guide](../user-guide/SKILL.md))
@@ -159,19 +262,22 @@ Fix failures before commit. Do not open a red PR.
 ### Step 6 — Ship
 
 1. [commit-and-push](../commit-and-push/SKILL.md) on the cycle branch
-2. [open-pr](../open-pr/SKILL.md) against `main`
+2. [open-pr](../open-pr/SKILL.md) against `main` — body lists backlog IDs and
+   `Closes #NN` for finished issues
 3. Return the PR URL
 
 Conventional title examples: `improve: …`, `refactor: …`, `fix: …`, `docs: …`.
-PR body: summary of S/M shipped, L deferred, verification results, test plan.
+PR body: summary of S/M shipped, L deferred (with issue links), verification
+results, test plan.
 
 ### Step 7 — Cycle report
 
 ```markdown
 # Continuous improvement — cycle report
 - Branch / PR: …
-- Shipped: CI-… (S/M)
-- Deferred / awaiting approval: CI-… (L)
+- Backlog file: .agents/improvement-backlog.md (updated)
+- Shipped: CI-… (S/M) — Done in backlog; issues closed if any
+- Deferred / awaiting approval: CI-… (L) — issue #…
 - Gates: pre_commit_check …
 - Next: merge / start Loop cycle N+1 / stop
 ```
@@ -184,8 +290,9 @@ PR body: summary of S/M shipped, L deferred, verification results, test plan.
 | :--- | :--- |
 | S/M cleanups, polish inside current design system | L refactors, redesigns, trading-path changes |
 | Skill/checklist/docs sync tied to shipped fixes | Major dependency upgrades |
-| Opening an improve/* PR after green gates | Merging the PR; deploying; live config edits |
-| Another Loop cycle after a clean ship (if Loop mode) | Continuing after an L proposal with no reply |
+| Backlog file upserts; GitHub issues for L/deferred | Merging the PR; deploying; live config edits |
+| Opening an improve/* PR after green gates | Continuing after an L proposal with no reply |
+| Another Loop cycle after a clean ship (if Loop mode) | Closing backlog rows as `dropped` without user say-so |
 
 ---
 
@@ -199,16 +306,21 @@ PR body: summary of S/M shipped, L deferred, verification results, test plan.
 - Skipping `pre_commit_check.sh` because “it’s just docs”
 - Silent live-trading or production-config use
 - Parallel edits to the same hot file (`History.kt`, one CSS module)
+- Filing a GitHub issue for every trivial S polish that ships same-day (noise)
+- Leaving discoveries only in chat — always persist to
+  `improvement-backlog.md`
+- Rediscovering and re-adding items already marked `done` or `deferred`
 
 ---
 
 ## Checklist
 
 - [ ] Mode chosen (Cycle / Loop / Discover-only)
-- [ ] Improve branch from fresh base
-- [ ] Backlog classified S/M/L; L gated with user when present
+- [ ] Improve branch from fresh base; backlog file read
+- [ ] Backlog classified S/M/L; file upserted; issues for L/deferred
+- [ ] L gated with user when present
 - [ ] Child skills followed for each shipped item
 - [ ] `pre_commit_check.sh` green; UI QA if UI changed
-- [ ] CHANGELOG/docs updated as needed
-- [ ] Commit + PR; cycle report delivered
+- [ ] CHANGELOG/docs + backlog Done rows updated
+- [ ] Commit + PR (with `Closes #…`); cycle report delivered
 - [ ] Individual skills still usable alone (this skill only orchestrates)

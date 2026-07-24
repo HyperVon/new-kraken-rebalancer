@@ -14,6 +14,8 @@ import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.string.shouldContain
+import io.kotest.matchers.string.shouldNotContain
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.mockkStatic
@@ -105,6 +107,67 @@ class ConfigServiceTest : StringSpec() {
                 AppConfig::class.java,
             )
             readBack.allocations.size shouldBe 2
+            readBack.kraken.apiKey.value shouldBe "k"
+            readBack.kraken.privateKey.value shouldBe "s"
+        }
+
+        "updateConfig_DoesNotPersistEnvResolvedCredentials" {
+            val secretFromEnv = System.getenv("PATH") ?: "fallback-path"
+            val content = """
+                {
+                  "kraken": {
+                    "apiKey": "${'$'}{PATH:fallback-path}",
+                    "privateKey": "${'$'}{TEST_KRAKEN_PRIVATE_KEY:default-private-key}"
+                  },
+                  "settings": {
+                    "loopDelaySeconds": 60,
+                    "deviationTriggerPercent": 2.0,
+                    "dustThresholdUSD": 1.0,
+                    "dryRun": true,
+                    "fiatMaxDrawdown": 0.0,
+                    "fiatDeploymentExponent": 1.0
+                  },
+                  "allocations": [
+                    {
+                      "symbol": "USD",
+                      "targetPercent": 100.0
+                    }
+                  ]
+                }
+            """.trimIndent()
+            tempFile.writeText(content)
+
+            val service = ConfigServiceImpl(objectMapper, tempFile.absolutePath)
+            service.getConfig().kraken.apiKey.value shouldBe secretFromEnv
+
+            val updated = service.getConfig().copy(
+                settings = service.getConfig().settings.copy(dryRun = false),
+            )
+            service.updateConfig(updated)
+
+            val savedContent = tempFile.readText()
+            savedContent shouldContain "\${PATH:fallback-path}"
+            savedContent shouldContain "\${TEST_KRAKEN_PRIVATE_KEY:default-private-key}"
+            savedContent shouldNotContain secretFromEnv
+
+            val reloaded = ConfigServiceImpl(objectMapper, tempFile.absolutePath)
+            reloaded.getConfig().kraken.apiKey.value shouldBe secretFromEnv
+            reloaded.getConfig().settings.dryRun shouldBe false
+        }
+
+        "updateConfig_PersistsUserChangedCredentials" {
+            configService.loadConfig()
+            val oldConfig = configService.getConfig()
+            val updated = oldConfig.copy(
+                kraken = KrakenCredentials("new-api-key", "new-private-key"),
+            )
+
+            configService.updateConfig(updated)
+
+            val readBack = objectMapper.readValue(tempFile, AppConfig::class.java)
+            readBack.kraken.apiKey.value shouldBe "new-api-key"
+            readBack.kraken.privateKey.value shouldBe "new-private-key"
+            configService.getConfig().kraken.apiKey.value shouldBe "new-api-key"
         }
 
         "validateConfig_InvalidTotal" {

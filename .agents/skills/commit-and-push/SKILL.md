@@ -37,11 +37,13 @@ Ensure you are on the intended branch (not detached HEAD).
 Or manually:
 
 ```bash
-npx markdownlint-cli .agents/AGENTS.md CHANGELOG.md README.md docs/*.md .agents/skills/**/SKILL.md
+npx markdownlint-cli .agents/AGENTS.md CHANGELOG.md CONTRIBUTING.md README.md SECURITY.md docs/*.md .agents/skills/**/SKILL.md
 ./gradlew spotlessCheck
-./gradlew test :frontend-js:jsTest
+./gradlew build jacocoTestCoverageVerification
+./gradlew :frontend-js:jsTest
 ```
 
+Include `CONTRIBUTING.md` and `SECURITY.md` in markdownlint when present.
 Fix Spotless with `./gradlew spotlessApply`. Do not proceed on failures.
 
 Coverage expectations: JVM JaCoCo 95% line/method/instruction, 90% branch;
@@ -80,5 +82,5 @@ authenticate manually.
 ## Checklist
 
 - [ ] Docs/CHANGELOG/JaCoCo synced as needed
-- [ ] Lint paths include `.agents/AGENTS.md` and skills
+- [ ] Lint paths include `.agents/AGENTS.md`, skills, and present top-level docs
 - [ ] Tests green; pushed **current** branch via `gh`

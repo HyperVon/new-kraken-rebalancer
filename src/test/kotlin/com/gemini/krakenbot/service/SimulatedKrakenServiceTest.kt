@@ -175,6 +175,53 @@ class SimulatedKrakenServiceTest : StringSpec() {
             paginated.size shouldBe 10
         }
 
+        "should cap trade history pages at 50 records and advance offsets" {
+            val configService = mockk<ConfigService>()
+            every { configService.getConfig() } returns btcUsdConfig
+            val simulatedService = SimulatedKrakenService(configService)
+
+            repeat(40) {
+                simulatedService.executeOrder(
+                    TestFixtures.BTCUSD,
+                    TestFixtures.MARKET,
+                    TestFixtures.BUY,
+                    BigDecimal("0.00001"),
+                ).success shouldBe true
+            }
+
+            val firstPage = simulatedService.getTradeHistory(null, 0)
+            val secondPage = simulatedService.getTradeHistory(null, 50)
+
+            firstPage.size shouldBe 50
+            secondPage.size shouldBe 5
+            (secondPage.first().timestamp >= firstPage.last().timestamp) shouldBe true
+        }
+
+        "should initialize assets added after the simulation portfolio already exists" {
+            val configService = mockk<ConfigService>()
+            var config = btcUsdConfig
+            every { configService.getConfig() } answers { config }
+            val simulatedService = SimulatedKrakenService(configService)
+
+            val initialBalances = simulatedService.getBalances()
+            initialBalances[Asset.ETH] shouldBe null
+
+            config =
+                config.copy(
+                    allocations =
+                    listOf(
+                        Allocation(Asset.BTC, 40.0),
+                        Allocation(Asset.ETH, 20.0),
+                        Allocation(Asset.USD, 40.0),
+                    ),
+                )
+
+            val updatedBalances = simulatedService.getBalances()
+            updatedBalances[Asset.ETH] shouldNotBe null
+            (updatedBalances.getValue(Asset.ETH) > BigDecimal.ZERO) shouldBe true
+            simulatedService.getTickerPrices(TestFixtures.ETHUSD)[TestFixtures.ETHUSD] shouldNotBe null
+        }
+
         "should seed nothing if there are no non-usd allocations" {
             val configService = mockk<ConfigService>()
             every { configService.getConfig() } returns

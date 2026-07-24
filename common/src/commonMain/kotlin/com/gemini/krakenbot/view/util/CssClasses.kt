@@ -11,7 +11,6 @@ sealed class CssClass(open val value: String) {
         get() = value.split(" ").filter { it.isNotBlank() }.joinToString("") { ".$it" }
 
     operator fun plus(other: CssClass): CssClass = Composite("$value ${other.value}".trim())
-    operator fun plus(other: String): CssClass = Composite("$value $other".trim())
 
     class Composite(override val value: String) : CssClass(value)
 
@@ -204,12 +203,12 @@ sealed class CssClass(open val value: String) {
         val DATA_AGE_VALUE = DataAge.Value.querySelector
         val DATA_AGE_TIME = DataAge.Time.querySelector
         val STATUS_BADGE = StatusCard.Badge.querySelector
-        val SORTABLE_TH = "th" + Table.Sortable.querySelector
-        val HOVERABLE_TR = "tr" + Table.Hoverable.querySelector
+        val SORTABLE_TH = HtmlTags.TH + Table.Sortable.querySelector
+        val HOVERABLE_TR = HtmlTags.TR + Table.Hoverable.querySelector
         val TIME_RANGE_BTNS = History.TimeRangeBtn.querySelector
         val ZOOM_BTNS = History.ZoomBtn.querySelector
         val CHART_SCRUBBERS = History.ChartScrubberInput.querySelector
-        const val TARGET_INPUTS = "input[name=\"${FormFields.TARGETS}\"]"
-        const val SYMBOL_INPUTS = "input[name=\"${FormFields.SYMBOLS}\"]"
+        const val TARGET_INPUTS = "${HtmlTags.INPUT}[name=\"${FormFields.TARGETS}\"]"
+        const val SYMBOL_INPUTS = "${HtmlTags.INPUT}[name=\"${FormFields.SYMBOLS}\"]"
     }
 }

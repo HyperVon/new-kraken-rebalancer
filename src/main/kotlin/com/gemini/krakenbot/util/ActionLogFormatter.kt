@@ -20,26 +20,24 @@ object ActionLogFormatter {
     }
 
     fun formatOrderExecution(
-        side: String,
+        side: OrderSide,
         symbol: String,
         volume: BigDecimal,
         usdAmount: BigDecimal,
         isDryRun: Boolean,
     ): String {
         val prefix = if (isDryRun) "[DRY RUN] " else ""
-        val isSell = side == OrderSide.SELL.uppercaseName
-        val actionVerb = if (isSell) OrderSide.SELL.uppercaseName else OrderSide.BUY.uppercaseName
-        val valueLabel = if (isSell) "Value" else "Cost"
+        val valueLabel = if (side == OrderSide.SELL) "Value" else "Cost"
         val formattedVolume = volume.toCryptoScale().stripTrailingZeros().toPlainString()
         val formattedUsd = usdAmount.toUsdScale().toPlainString()
-        return "${prefix}$actionVerb $symbol Volume: $formattedVolume $valueLabel: $$formattedUsd"
+        return "${prefix}${side.uppercaseName} $symbol Volume: $formattedVolume $valueLabel: $$formattedUsd"
     }
 
-    fun formatOrderFailure(side: String, symbol: String, errorMessage: String?): String =
-        "FAILED $side $symbol: $errorMessage"
+    fun formatOrderFailure(side: OrderSide, symbol: String, errorMessage: String?): String =
+        "FAILED ${side.uppercaseName} $symbol: $errorMessage"
 
-    fun formatSkippedDust(side: String, symbol: String, usdCost: BigDecimal): String {
+    fun formatSkippedDust(side: OrderSide, symbol: String, usdCost: BigDecimal): String {
         val formattedUsd = usdCost.toUsdScale().toPlainString()
-        return "Skipping dust $side for $symbol ($$formattedUsd)"
+        return "Skipping dust ${side.apiValue} for $symbol ($$formattedUsd)"
     }
 }

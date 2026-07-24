@@ -31,10 +31,6 @@ fun Document.createDiv(): HTMLDivElement = createElement(HtmlTags.DIV) as HTMLDi
 
 fun Document.createSpan(): HTMLSpanElement = createElement(HtmlTags.SPAN) as HTMLSpanElement
 
-fun Document.createTableCell(): HTMLTableCellElement = createElement(HtmlTags.TD) as HTMLTableCellElement
-
-fun Document.createTableRow(): HTMLTableRowElement = createElement(HtmlTags.TR) as HTMLTableRowElement
-
 fun Document.createInput(): HTMLInputElement = createElement(HtmlTags.INPUT) as HTMLInputElement
 
 fun Document.createButton(): HTMLButtonElement = createElement(HtmlTags.BUTTON) as HTMLButtonElement

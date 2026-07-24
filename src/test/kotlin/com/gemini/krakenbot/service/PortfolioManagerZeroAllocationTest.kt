@@ -6,16 +6,12 @@ import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.PortfolioStats
-import com.gemini.krakenbot.repository.PortfolioStatsRepository
-import com.gemini.krakenbot.service.impl.OrderExecutorImpl
-import com.gemini.krakenbot.service.impl.PortfolioAnalyzerImpl
 import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
 import io.mockk.coEvery
 import io.mockk.every
-import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
 import java.math.BigDecimal
 
@@ -23,33 +19,19 @@ class PortfolioManagerZeroAllocationTest : StringSpec() {
 
     override fun isolationMode() = IsolationMode.InstancePerTest
 
-    private val krakenService = FakeKrakenService()
-    private val configService = mockk<ConfigService>(relaxed = true)
-    private val tradeHistoryService = mockk<TradeHistoryService>(relaxed = true)
-    private val portfolioStatsRepository =
-        mockk<PortfolioStatsRepository>(relaxed = true)
-    private lateinit var portfolioManager: PortfolioManagerImpl
-    private lateinit var portfolioAnalyzer: PortfolioAnalyzer
-    private lateinit var orderExecutor: OrderExecutor
+    private lateinit var fixture: PortfolioManagerTestFixture
+    private val krakenService get() = fixture.krakenService
+    private val configService get() = fixture.configService
+    private val portfolioStatsRepository get() = fixture.portfolioStatsRepository
+    private val portfolioManager: PortfolioManagerImpl get() = fixture.portfolioManager
 
     init {
         beforeTest {
+            fixture = createPortfolioManagerTestFixture()
             coEvery {
                 portfolioStatsRepository.load()
             } returns PortfolioStats(
                 BigDecimal.ZERO,
-            )
-            portfolioAnalyzer = PortfolioAnalyzerImpl(
-                krakenService = krakenService,
-                configService = configService,
-                portfolioStatsRepository = portfolioStatsRepository,
-            )
-            orderExecutor = OrderExecutorImpl(krakenService, portfolioAnalyzer, tradeHistoryService)
-            portfolioManager = PortfolioManagerImpl(
-                configService = configService,
-                tradeHistoryService = tradeHistoryService,
-                portfolioAnalyzer = portfolioAnalyzer,
-                orderExecutor = orderExecutor,
             )
         }
 

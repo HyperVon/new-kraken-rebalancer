@@ -25,7 +25,9 @@ object TestFixtures {
 
     /** Credentials used in TradeHistoryServiceTest. */
     const val TRADE_HISTORY_API_KEY = "test-api-key"
-    const val TRADE_HISTORY_API_SECRET = "test-private-key"
+
+    /** Base64 of `test-private-key` — Kraken private keys must decode as Base64. */
+    const val TRADE_HISTORY_API_SECRET = "dGVzdC1wcml2YXRlLWtleQ=="
 
     /** Trading side constants (lowercase, matching OrderSide.apiValue). */
     const val BUY = "buy"

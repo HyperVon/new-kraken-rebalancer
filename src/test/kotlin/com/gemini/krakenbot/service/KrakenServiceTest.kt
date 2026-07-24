@@ -560,6 +560,37 @@ class KrakenServiceTest : StringSpec() {
             }
         }
 
+        "getTradeHistory_MalformedPrivateKey" {
+            runTest {
+                val mockConfigService = mockk<ConfigService>(relaxed = true)
+                val config = AppConfig(
+                    kraken = KrakenCredentials(
+                        apiKey = "apiKey",
+                        privateKey = "invalid_base64_!@#$",
+                    ),
+                    settings = Settings(
+                        loopDelaySeconds = 60L,
+                        deviationTriggerPercent = 2.0,
+                        dustThresholdUSD = 1.0,
+                        dryRun = false,
+                        fiatMaxDrawdown = 0.0,
+                        fiatDeploymentExponent = 1.0,
+                    ),
+                    allocations = emptyList(),
+                )
+                every { mockConfigService.getConfig() } returns config
+
+                val service = KrakenServiceImpl(
+                    configService = mockConfigService,
+                    objectMapper = jacksonObjectMapper(),
+                    httpClient = HttpClient(MockEngine { respond("") }),
+                )
+
+                val trades = service.getTradeHistory()
+                trades.isEmpty().shouldBeTrue()
+            }
+        }
+
         "getTradeHistory_FallbackSymbols" {
             runTest {
                 val responseJson = """

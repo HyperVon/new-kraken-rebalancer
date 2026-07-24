@@ -118,7 +118,7 @@ class SettingsTest : StringSpec() {
                 rows.item(0)!!.textContent!!.shouldContain(Asset.LTC)
 
                 val firstRow = rows.item(0) as HTMLElement
-                val hiddenSymInput = firstRow.querySelector("input[name=\"${FormFields.SYMBOLS}\"]") as HTMLInputElement
+                val hiddenSymInput = firstRow.querySelector(CssClass.Query.SYMBOL_INPUTS) as HTMLInputElement
                 hiddenSymInput.value shouldBe Asset.LTC
             } finally {
                 document.body!!.removeChild(container)
@@ -150,7 +150,7 @@ class SettingsTest : StringSpec() {
             try {
                 addAssetRow()
                 val row = symContainer.querySelector(".${CssClass.Form.AllocationEditRow}") as HTMLElement
-                val targetInput = row.querySelector("input[name=\"${FormFields.TARGETS}\"]") as HTMLInputElement
+                val targetInput = row.querySelector(CssClass.Query.TARGET_INPUTS) as HTMLInputElement
 
                 targetInput.value = "25.0"
                 val inputEvent = document.createEvent(HtmlEvents.EVENT)

@@ -14,7 +14,6 @@ spotless {
         target("src/**/*.kt", "common/**/*.kt", "frontend-js/src/**/*.kt")
         targetExclude(
             "**/view/**",
-            "**/DashboardViewTest.kt",
             "**/EvaluationScenariosTest.kt",
         )
         ktlint("1.3.1").editorConfigOverride(

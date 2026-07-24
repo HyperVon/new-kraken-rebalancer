@@ -13,7 +13,7 @@ description: >-
 
 - **Spotless** + **ktlint 1.3.1**, `max_line_length = 120`
 - Targets: `src/**/*.kt`, `common/**/*.kt`, `frontend-js/src/**/*.kt`
-- Excludes (still): `**/view/**`, `DashboardViewTest.kt`, `EvaluationScenariosTest.kt`
+- Excludes (still): `**/view/**`, `EvaluationScenariosTest.kt`
 - Apply: `./gradlew spotlessApply` — check: `./gradlew spotlessCheck`
 - **`allWarningsAsErrors`** enabled in root, `:common`, and `:frontend-js`
 
@@ -53,10 +53,11 @@ When adding non-tested packages (views/DSL), update **both**
 ./gradlew build jacocoTestCoverageVerification
 ./gradlew :frontend-js:jsTest
 ./gradlew spotlessCheck
-npx markdownlint-cli .agents/AGENTS.md CHANGELOG.md README.md docs/*.md .agents/skills/**/SKILL.md
+npx markdownlint-cli .agents/AGENTS.md CHANGELOG.md CONTRIBUTING.md README.md SECURITY.md docs/*.md .agents/skills/**/SKILL.md
 ```
 
 `check` depends on JaCoCo verification and frontend browser tests.
+Include `CONTRIBUTING.md` and `SECURITY.md` in markdownlint when present.
 
 ## CodeQL
 

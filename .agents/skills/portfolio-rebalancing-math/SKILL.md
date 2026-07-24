@@ -79,7 +79,10 @@ effectively than spreading across all pairs.
 1. **Sell first** — only successful sells update projected cash.
 2. **USD poll** (non–dry-run): up to **3** attempts with exponential backoff
    starting at **250ms** (doubling each attempt, capped at 32s); accept when
-   balance ≥ **95%** of projected, else best observed.
+   balance ≥ **95%** of projected. Otherwise use the last positive observation
+   (not the maximum); if no positive balance is observed, projected cash remains
+   the fallback. The fail-open fallback is tracked separately in
+   [#54](https://github.com/HyperVon/new-kraken-rebalancer/issues/54).
 3. **Buy second** — verify cash; if short, scale buys to **99%** of available USD
    (`PrecisionConstants.CASH_RESERVE_FACTOR_DOUBLE`).
 4. **Dust** — skip orders with USD notional `< dustThresholdUSD`.

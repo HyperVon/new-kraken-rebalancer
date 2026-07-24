@@ -8,9 +8,6 @@ import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderResult
 import com.gemini.krakenbot.model.PortfolioSnapshot
-import com.gemini.krakenbot.repository.PortfolioStatsRepository
-import com.gemini.krakenbot.service.impl.OrderExecutorImpl
-import com.gemini.krakenbot.service.impl.PortfolioAnalyzerImpl
 import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
@@ -19,7 +16,6 @@ import io.kotest.matchers.comparables.shouldBeLessThan
 import io.kotest.matchers.shouldBe
 import io.mockk.coEvery
 import io.mockk.every
-import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
 import java.math.BigDecimal
 
@@ -27,18 +23,16 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
 
     override fun isolationMode() = IsolationMode.InstancePerTest
 
-    private val krakenService = FakeKrakenService()
-    private val configService = mockk<ConfigService>(relaxed = true)
-    private val tradeHistoryService = mockk<TradeHistoryService>(relaxed = true)
-    private val portfolioStatsRepository =
-        mockk<PortfolioStatsRepository>(relaxed = true)
-    private lateinit var portfolioManager: PortfolioManagerImpl
-    private lateinit var portfolioAnalyzer: PortfolioAnalyzer
-    private lateinit var orderExecutor: OrderExecutor
+    private lateinit var fixture: PortfolioManagerTestFixture
+    private val krakenService get() = fixture.krakenService
+    private val configService get() = fixture.configService
+    private val tradeHistoryService get() = fixture.tradeHistoryService
+    private val portfolioManager: PortfolioManagerImpl get() = fixture.portfolioManager
 
-    /** Builds an [AppConfig] with the given allocations and
-     * default settings (2% deviation, 1 USD dust).
-     * */
+    /**
+     * Builds an [AppConfig] with the supplied allocations and test settings
+     * (2% deviation trigger, 1 USD dust threshold, and order execution enabled).
+     */
     private fun makeConfig(vararg allocs: Allocation) = AppConfig(
         kraken = KrakenCredentials(apiKey = "k", privateKey = "s"),
         settings = Settings(
@@ -54,19 +48,7 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
 
     init {
         beforeTest {
-            krakenService.executedOrders.clear()
-            portfolioAnalyzer = PortfolioAnalyzerImpl(
-                krakenService = krakenService,
-                configService = configService,
-                portfolioStatsRepository = portfolioStatsRepository,
-            )
-            orderExecutor = OrderExecutorImpl(krakenService, portfolioAnalyzer, tradeHistoryService)
-            portfolioManager = PortfolioManagerImpl(
-                configService = configService,
-                tradeHistoryService = tradeHistoryService,
-                portfolioAnalyzer = portfolioAnalyzer,
-                orderExecutor = orderExecutor,
-            )
+            fixture = createPortfolioManagerTestFixture()
         }
 
         "Scenario: Balanced Portfolio - No Trades Expected" {
@@ -94,8 +76,14 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
                 )
                 krakenService.pricesSupplier =
                     { mapOf(TestFixtures.AUSD to 100.0, TestFixtures.BUSD to 100.0) }
-                krakenService.balanceSupplier =
-                    { mapOf(TestFixtures.A to 11.0, TestFixtures.B to 9.0) }
+                krakenService.balanceSupplier = {
+                    val sold = krakenService.executedOrders.any { it.side == TestFixtures.SELL }
+                    if (sold) {
+                        mapOf(TestFixtures.A to 10.0, TestFixtures.B to 9.0, Asset.USD to 100.0)
+                    } else {
+                        mapOf(TestFixtures.A to 11.0, TestFixtures.B to 9.0)
+                    }
+                }
 
                 portfolioManager.performRebalanceCycle()
 
@@ -157,6 +145,7 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
                 )
                 krakenService.pricesSupplier =
                     { mapOf(TestFixtures.AUSD to 100.0, TestFixtures.BUSD to 100.0) }
+                // Balance polls never show settled USD → fail-closed aborts buys
                 krakenService.balanceSupplier =
                     { mapOf(TestFixtures.A to 5.0, TestFixtures.B to 0.0, Asset.USD to 0.0) }
 
@@ -168,11 +157,7 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
                 sell.volume.subtract(BigDecimal.valueOf(4.5))
                     .abs() shouldBeLessThan BigDecimal("0.0001")
 
-                val buy =
-                    krakenService.executedOrders.first { it.side == TestFixtures.BUY }
-                buy.pair shouldBe TestFixtures.BUSD
-                buy.volume.subtract(BigDecimal.valueOf(4.5))
-                    .abs() shouldBeLessThan BigDecimal("0.05")
+                krakenService.executedOrders.none { it.side == TestFixtures.BUY }.shouldBeTrue()
             }
         }
 

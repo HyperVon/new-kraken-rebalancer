@@ -328,7 +328,6 @@ class TradeHistoryServiceImpl(
             log.info("Skipping trade history synchronization; last run was only {} seconds ago.", elapsedSeconds)
             return
         }
-        lastSyncTime = now
 
         val config = configService.getConfig()
         if (!config.settings.simulation && !config.kraken.hasValidCredentials()) {
@@ -412,6 +411,7 @@ class TradeHistoryServiceImpl(
             repository.setSyncMetadata(SyncMetadataKeys.SYNC_OFFSET, SyncMetadataKeys.COMPLETED)
             repository.setSyncMetadata(SyncMetadataKeys.SYNC_TOTAL, SyncMetadataKeys.COMPLETED)
         }
+        lastSyncTime = Instant.now()
         log.info("Trade history synchronization completed. Added: {} new, Reconciled: {}.", totalAdded, totalReconciled)
     }
 
@@ -466,7 +466,7 @@ class TradeHistoryServiceImpl(
 
         val cutoffTime = oldestSnapshot?.timestamp ?: Instant.now()
 
-        val currentBalances =
+        val fetchedLiveBalances =
             try {
                 krakenService.getBalances()
             } catch (e: Exception) {
@@ -474,7 +474,7 @@ class TradeHistoryServiceImpl(
                 emptyMap()
             }
 
-        if (oldestSnapshot == null && currentBalances.isEmpty()) {
+        if (oldestSnapshot == null && fetchedLiveBalances.isEmpty()) {
             log.warn("Aborting historical snapshot reconstruction: starting balances unavailable.")
             return
         }
@@ -490,7 +490,7 @@ class TradeHistoryServiceImpl(
         } else {
             for ((symbol) in allocations) {
                 val symbolU = symbol.value.uppercase()
-                val bal = portfolioAnalyzer.resolveBalance(symbolU, currentBalances)
+                val bal = portfolioAnalyzer.resolveBalance(symbolU, fetchedLiveBalances)
                 runningBalances[symbolU] = bal
             }
             // Fetch active prices to initialize current prices

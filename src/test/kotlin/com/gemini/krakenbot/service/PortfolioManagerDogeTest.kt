@@ -5,45 +5,25 @@ import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.Asset
-import com.gemini.krakenbot.repository.PortfolioStatsRepository
-import com.gemini.krakenbot.service.impl.OrderExecutorImpl
-import com.gemini.krakenbot.service.impl.PortfolioAnalyzerImpl
 import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
 import io.mockk.every
-import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
 
 class PortfolioManagerDogeTest : StringSpec() {
 
     override fun isolationMode() = IsolationMode.InstancePerTest
 
-    private val krakenService = FakeKrakenService()
-    private val configService = mockk<ConfigService>(relaxed = true)
-    private val tradeHistoryService = mockk<TradeHistoryService>(relaxed = true)
-    private lateinit var portfolioManager: PortfolioManagerImpl
-    private lateinit var portfolioAnalyzer: PortfolioAnalyzer
-    private lateinit var orderExecutor: OrderExecutor
+    private lateinit var fixture: PortfolioManagerTestFixture
+    private val krakenService get() = fixture.krakenService
+    private val configService get() = fixture.configService
+    private val portfolioManager: PortfolioManagerImpl get() = fixture.portfolioManager
 
     init {
         beforeTest {
-            krakenService.executedOrders.clear()
-            val repo = mockk<PortfolioStatsRepository>(relaxed = true)
-            portfolioAnalyzer =
-                PortfolioAnalyzerImpl(
-                    krakenService = krakenService,
-                    configService = configService,
-                    portfolioStatsRepository = repo,
-                )
-            orderExecutor = OrderExecutorImpl(krakenService, portfolioAnalyzer, tradeHistoryService)
-            portfolioManager = PortfolioManagerImpl(
-                configService = configService,
-                tradeHistoryService = tradeHistoryService,
-                portfolioAnalyzer = portfolioAnalyzer,
-                orderExecutor = orderExecutor,
-            )
+            fixture = createPortfolioManagerTestFixture()
         }
 
         "testDogeMapping" {

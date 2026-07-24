@@ -6,6 +6,7 @@ import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.DataProps
 import com.gemini.krakenbot.view.util.HtmlAttrs
 import com.gemini.krakenbot.view.util.HtmlIds
+import com.gemini.krakenbot.view.util.ZoomActions
 import kotlinx.browser.window
 import kotlin.js.json
 
@@ -107,11 +108,11 @@ object TestDomBuilders {
         """
         <canvas id="$canvasId"></canvas>
         <button class="${CssClass.History.ZoomBtn}"
-          ${HtmlAttrs.DATA_CHART_ID}="$canvasId" ${HtmlAttrs.DATA_ZOOM_ACTION}="in"></button>
+          ${HtmlAttrs.DATA_CHART_ID}="$canvasId" ${HtmlAttrs.DATA_ZOOM_ACTION}="${ZoomActions.IN}"></button>
         <button class="${CssClass.History.ZoomBtn}"
-          ${HtmlAttrs.DATA_CHART_ID}="$canvasId" ${HtmlAttrs.DATA_ZOOM_ACTION}="out"></button>
+          ${HtmlAttrs.DATA_CHART_ID}="$canvasId" ${HtmlAttrs.DATA_ZOOM_ACTION}="${ZoomActions.OUT}"></button>
         <button class="${CssClass.History.ZoomBtn}"
-          ${HtmlAttrs.DATA_CHART_ID}="$canvasId" ${HtmlAttrs.DATA_ZOOM_ACTION}="reset"></button>
+          ${HtmlAttrs.DATA_CHART_ID}="$canvasId" ${HtmlAttrs.DATA_ZOOM_ACTION}="${ZoomActions.RESET}"></button>
         """.trimIndent()
 
     fun scrubberDom(

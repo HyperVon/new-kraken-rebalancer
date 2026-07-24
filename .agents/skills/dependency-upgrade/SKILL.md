@@ -7,6 +7,38 @@ description: Check every dependency, plugin, tool, and the Gradle/Kotlin toolcha
 
 Systematically discover newer versions of everything the application depends on, upgrade to the latest **stable** releases, and update the code to match (deprecations, breaking changes, new features).
 
+## Security alerts (Dependabot) — check first, always
+
+Before (and independently of) routine version bumps, check GitHub Dependabot
+alerts. These are security vulnerabilities and take priority over cosmetic
+upgrades. Run this whenever you touch dependencies, open/close a cycle, or the
+user mentions a Dependabot/security alert:
+
+```bash
+gh api repos/{owner}/{repo}/dependabot/alerts \
+  --jq '.[] | select(.state=="open") | {number, severity: .security_advisory.severity, pkg: .dependency.package.name, manifest: .dependency.manifest_path, patched: .security_vulnerability.first_patched_version.identifier, summary: .security_advisory.summary}'
+```
+
+(push output also surfaces these as `GitHub found N vulnerabilities …`.)
+
+Remediation by manifest:
+
+- **`build.gradle.kts` (JVM / Maven)** — raise the offending artifact, or add/raise
+  a `resolutionStrategy { force(...) }` pin (as already done for Netty) when the
+  vulnerable dep is transitive. Never drop an existing security pin.
+- **`kotlin-js-store/yarn.lock` / npm transitive** — pin the patched version via a
+  yarn `resolution("<pkg>@<patched>")` in the root `build.gradle.kts` (or bump the
+  direct `npm(...)` / `devNpm(...)` dependency that pulls it in), then regenerate
+  the lockfile with `./gradlew kotlinUpgradeYarnLock` (or `kotlinStoreYarnLock`).
+- Confirm the fix: re-run the `gh api … dependabot/alerts` query (alert should
+  auto-resolve after the patched version lands on the default branch) and
+  `./gradlew build`.
+
+Severity handling: **critical/high** should be fixed promptly (own PR is fine,
+even outside a full upgrade) — treat as **S/M** if it is a clean pin bump, **L**
+only if the patched version forces a major/API migration. Track anything not
+fixed immediately in `.agents/improvement-backlog.md` with a GitHub issue.
+
 ## Where versions live
 
 There is **no** Gradle version catalog. Versions are inline string literals spread across:
@@ -25,6 +57,7 @@ Many versions are declared once as a local `val`/`var` (e.g. `ktorVersion`, `koi
 Copy this checklist and track progress:
 
 ```text
+- [ ] Step 0: Check Dependabot alerts (fix criticals/highs first)
 - [ ] Step 1: Detect current versions + latest available
 - [ ] Step 2: Present upgrade plan, confirm scope
 - [ ] Step 3: Apply version bumps (one logical group at a time)

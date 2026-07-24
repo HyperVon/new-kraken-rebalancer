@@ -60,8 +60,6 @@ object HtmlTags {
     const val TABLE = "table"
     const val THEAD = "thead"
     const val TBODY = "tbody"
-    const val A = "a"
-    const val SELECT = "select"
     const val OPTION = "option"
 }
 

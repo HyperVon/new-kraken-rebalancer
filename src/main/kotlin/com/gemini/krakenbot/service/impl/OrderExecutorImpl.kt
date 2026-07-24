@@ -55,7 +55,7 @@ class OrderExecutorImpl(
         for ((symbol, usdToSell) in sellOrders) {
             if (usdToSell < BigDecimal.valueOf(settings.dustThresholdUSD)) {
                 log.info("Skipping dust sell for {} ($ {})", symbol, usdToSell)
-                actionLog.add(ActionLogFormatter.formatSkippedDust("sell", symbol, usdToSell))
+                actionLog.add(ActionLogFormatter.formatSkippedDust(OrderSide.SELL, symbol, usdToSell))
                 continue
             }
 
@@ -69,6 +69,10 @@ class OrderExecutorImpl(
         var actualCash = projectedCash
         if (executedSells && !settings.dryRun) {
             actualCash = refreshUsdBalanceAfterSells(projectedCash)
+            if (actualCash <= BigDecimal.ZERO) {
+                log.error("Aborting buys because no positive USD balance was observed after sells")
+                return
+            }
         }
 
         // Cycle-level budget: 99% of post-sell settled USD so multi-buy batches cannot erode the reserve.
@@ -93,7 +97,7 @@ class OrderExecutorImpl(
 
             if (cost < BigDecimal.valueOf(settings.dustThresholdUSD)) {
                 log.info("Skipping dust buy for {} ($ {})", symbol, cost)
-                actionLog.add(ActionLogFormatter.formatSkippedDust("buy", symbol, cost))
+                actionLog.add(ActionLogFormatter.formatSkippedDust(OrderSide.BUY, symbol, cost))
                 continue
             }
 
@@ -130,9 +134,9 @@ class OrderExecutorImpl(
             symbol = symbol,
             volume = volume,
             usdAmount = usdAmount,
-            side = side.uppercaseName,
+            side = side,
         )
-        recordTrade(result, symbol, pair, side.uppercaseName, volume, usdAmount, prices)
+        recordTrade(result, symbol, pair, side, volume, usdAmount, prices)
         return result
     }
 
@@ -143,7 +147,7 @@ class OrderExecutorImpl(
         projectedCash: BigDecimal,
         targetThreshold: BigDecimal = projectedCash.multiply(BigDecimal("0.95")),
     ): Flow<BigDecimal> = flow {
-        var lastBalance = projectedCash
+        var bestObservedBalance = BigDecimal.ZERO
         var backoffMs = REFRESH_DELAY_MS
         val maxAttempts = MAX_REFRESH_ATTEMPTS
 
@@ -154,10 +158,10 @@ class OrderExecutorImpl(
                 if (updatedBalances.isNotEmpty()) {
                     val usdBalance = portfolioAnalyzer.resolveBalance(Asset.USD, updatedBalances)
                     if (usdBalance > BigDecimal.ZERO) {
-                        lastBalance = usdBalance
-                        log.info("Updated USD balance after sells (attempt {}): $$lastBalance", attempt + 1)
-                        emit(lastBalance)
-                        if (lastBalance >= targetThreshold) return@flow
+                        bestObservedBalance = bestObservedBalance.max(usdBalance)
+                        log.info("Updated USD balance after sells (attempt {}): $$usdBalance", attempt + 1)
+                        emit(bestObservedBalance)
+                        if (usdBalance >= targetThreshold) return@flow
                     }
                 }
             } catch (e: Exception) {
@@ -165,8 +169,12 @@ class OrderExecutorImpl(
             }
             backoffMs = (backoffMs * 2).coerceAtMost(32000L)
         }
-        emit(lastBalance)
-        log.warn("Using best observed USD balance after sell refresh: $$lastBalance")
+        emit(bestObservedBalance)
+        if (bestObservedBalance > BigDecimal.ZERO) {
+            log.warn("Using best observed USD balance after sell refresh: $$bestObservedBalance")
+        } else {
+            log.error("No positive USD balance observed after sell refresh")
+        }
     }
 
     internal fun logOrderResult(
@@ -175,7 +183,7 @@ class OrderExecutorImpl(
         symbol: String,
         volume: BigDecimal,
         usdAmount: BigDecimal,
-        side: String,
+        side: OrderSide,
     ) {
         if (result.success) {
             actionLog.add(
@@ -202,7 +210,7 @@ class OrderExecutorImpl(
         result: OrderResult,
         symbol: String,
         pair: String,
-        side: String,
+        side: OrderSide,
         volume: BigDecimal,
         usdAmount: BigDecimal,
         prices: AssetPrices,
@@ -212,7 +220,7 @@ class OrderExecutorImpl(
                 result = result,
                 symbol = symbol,
                 pair = pair,
-                side = side,
+                side = side.uppercaseName,
                 volume = volume,
                 usdAmount = usdAmount,
                 prices = prices,

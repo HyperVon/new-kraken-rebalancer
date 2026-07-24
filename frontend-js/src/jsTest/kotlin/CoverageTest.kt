@@ -796,7 +796,10 @@ class CoverageTest : StringSpec() {
                 clearIntervalCalled.shouldBeTrue()
 
                 // Trigger button click
-                val button24h = document.querySelector("button[data-range='24h']") as HTMLElement
+                val button24h =
+                    document.querySelector(
+                        "${HtmlTags.BUTTON}[${HtmlAttrs.DATA_RANGE}='${TimeRange.TWENTY_FOUR_HOURS.key}']",
+                    ) as HTMLElement
                 button24h.click()
 
                 // Trigger checkbox change
@@ -924,11 +927,9 @@ class CoverageTest : StringSpec() {
 
         "testDomExtensionsCompleteCoverage" {
             val div = document.createDiv()
-            val span = document.createSpan()
-            val td = document.createTableCell()
-            val tr = document.createTableRow()
-            val input = document.createInput()
-            val button = document.createButton()
+            document.createSpan()
+            document.createInput()
+            document.createButton()
 
             div.classList.add(CssClass.Table.Sortable)
             div.classList.contains(CssClass.Table.Sortable).shouldBeTrue()

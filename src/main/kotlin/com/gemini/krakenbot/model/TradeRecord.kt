@@ -30,9 +30,21 @@ fun TradeRecord.isSameSymbolAndSide(other: TradeRecord): Boolean =
     this.symbol.equals(other.symbol, ignoreCase = true) &&
         this.side.equals(other.side, ignoreCase = true)
 
-fun TradeRecord.isPairAliasDuplicateOf(other: TradeRecord): Boolean = this.isSameSymbolAndSide(other) &&
-    this.volume.compareTo(other.volume) == 0 &&
-    this.pair != other.pair
+fun TradeRecord.isPairAliasDuplicateOf(other: TradeRecord, tolerance: BigDecimal = BigDecimal("0.01")): Boolean =
+    this.isSameSymbolAndSide(other) &&
+        !this.pair.equals(other.pair, ignoreCase = true) &&
+        this.success == other.success &&
+        this.dryRun == other.dryRun &&
+        isWithinRelativeTolerance(this.volume, other.volume, tolerance) &&
+        isWithinRelativeTolerance(this.usdAmount, other.usdAmount, tolerance) &&
+        (
+            this.hasDifferentTradeProvenanceFrom(other) ||
+                (
+                    this.usdAmount.compareTo(other.usdAmount) == 0 &&
+                        this.fee.compareTo(other.fee) == 0 &&
+                        this.price.compareTo(other.price) == 0
+                    )
+            )
 
 fun TradeRecord.isLocalEstimateDuplicateOf(
     other: TradeRecord,
@@ -53,6 +65,14 @@ fun TradeRecord.feePercentDiffersMateriallyFrom(other: TradeRecord): Boolean {
     val otherFeeRate = other.fee.divide(other.usdAmount, 8, RoundingMode.HALF_UP)
     return thisFeeRate.subtract(otherFeeRate).abs() >= BigDecimal("0.001")
 }
+
+fun TradeRecord.isLocalEstimate(): Boolean = slippagePercent != null
+
+fun TradeRecord.isSettledApiFill(): Boolean = success && !dryRun && errorMessage == null && slippagePercent == null
+
+fun TradeRecord.hasDifferentTradeProvenanceFrom(other: TradeRecord): Boolean =
+    (this.isLocalEstimate() && other.isSettledApiFill()) ||
+        (other.isLocalEstimate() && this.isSettledApiFill())
 
 fun TradeRecord.isMatchingApiTrade(
     apiTrade: TradeRecord,
