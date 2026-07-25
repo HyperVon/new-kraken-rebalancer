@@ -8,6 +8,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **Documentation screenshots**: Refreshed all `docs/images/*.png` from an isolated
+  simulation boot so History shows six summary cards (including Avg Fee Rate / Avg
+  Slippage), Price/Fee/Slippage trade-log columns, and the Net After Fees chart series.
+
 ## [6.12.19] - 2026-07-24
 
 ### Added
