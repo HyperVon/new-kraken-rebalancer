@@ -211,25 +211,27 @@ sequenceDiagram
         Flow->>Flow: delay(backoffMs)
         Flow->>API: getBalances()
         API-->>Flow: USD balance
-        alt Balance >= 95% of expected
-            Flow->>OE: emit(balance)
+        alt "Balance >= 95% of expected"
+            Flow->>OE: emit(bestObserved)
             Flow->>OE: (flow completes early)
-        else Balance too low
-            Flow->>OE: emit(balance)
-            Flow->>Flow: backoffMs = min(backoffMs * 2, 32s)
+        else "Positive but below 95%"
+            Flow->>OE: emit(bestObserved)
+            Flow->>Flow: "backoffMs = min(backoffMs * 2, 32s)"
+        else "Zero / empty / error"
+            Flow->>Flow: "backoffMs = min(backoffMs * 2, 32s)"
         end
     end
 
-    note over OE: .last() returns the last positive<br/>observed balance, or projected cash<br/>if no positive balance was observed.
+    note over OE: .last() returns the best (max)<br/>positive observed balance, or 0<br/>if none — then OE aborts buys.
 ```
 
 **Key design choices:**
 
-- Using `.last()` instead of `.collect()` is intentional — the caller uses the
-  **last positive observed balance**, not the maximum observation. If no
-  positive balance is observed, the initial projected amount is emitted as the
-  fallback. That fail-open fallback is tracked separately in
-  [#54](https://github.com/HyperVon/new-kraken-rebalancer/issues/54).
+- Using `.last()` instead of `.collect()` is intentional — the flow tracks the
+  **best (maximum) positive** USD observation across attempts and emits that
+  running max. If no positive balance is observed, `.last()` yields `0` and
+  `OrderExecutorImpl` **aborts buys** (fail-closed; projected proceeds are not
+  confirmed cash).
 - Exponential backoff is managed entirely inside the cold flow, keeping `OrderExecutorImpl`'s orchestration logic clean.
 - Being cold means this only runs when explicitly triggered after sells — it never polls in the background.
 

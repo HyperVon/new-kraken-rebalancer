@@ -22,7 +22,8 @@ description: >-
 
 - BigDecimal scales 8/2; tests use **`shouldBeEqualComparingTo`**.
 - ATH → drawdown deployment, fiat correction, dust threshold.
-- Sell-first; USD poll up to 3× with 250ms exponential backoff; 95% settle; 99% buy cap.
+- Sell-first; USD poll up to 3× with 250ms exponential backoff; best positive /
+  95% settle; abort buys if none; cycle 99% buy budget (`withStableBackend`).
 - See portfolio-rebalancing-math + `docs/ALGORITHM.md`.
 
 ### 3. Kraken & modes
@@ -81,6 +82,6 @@ description: >-
 ## Checklist
 
 - [ ] Matcher name `shouldBeEqualComparingTo`; coverage gates precise
-- [ ] dryRun/simulation distinct; sell-then-buy + 99% cap
+- [ ] dryRun/simulation distinct; sell-then-buy + fail-closed settle + cycle 99% budget
 - [ ] `:common` purity; no-auth/CORS local-trust noted if relevant
 - [ ] Docs/JaCoCo/markdown paths correct

@@ -78,13 +78,13 @@ effectively than spreading across all pairs.
 
 1. **Sell first** — only successful sells update projected cash.
 2. **USD poll** (non–dry-run): up to **3** attempts with exponential backoff
-   starting at **250ms** (doubling each attempt: 250ms → 500ms → 1000ms); accept when
-   balance ≥ **95%** of projected. Otherwise use the last positive observation
-   (not the maximum); if no positive balance is observed, projected cash remains
-   the fallback. The fail-open fallback is tracked separately in
-   [#54](https://github.com/HyperVon/new-kraken-rebalancer/issues/54).
-3. **Buy second** — verify cash; if short, scale buys to **99%** of available USD
-   (`PrecisionConstants.CASH_RESERVE_FACTOR_DOUBLE`).
+   starting at **250ms** (doubling each attempt: 250ms → 500ms → 1000ms); track the
+   **best (maximum) positive** observation and accept early when balance ≥ **95%**
+   of projected. If no positive balance is observed, **abort buys** (fail-closed).
+3. **Buy second** — wrap the sell→buy sequence in `withStableBackend`; apply a
+   **cycle-level 99%** budget of settled USD
+   (`PrecisionConstants.CASH_RESERVE_FACTOR` / `CASH_RESERVE_FACTOR_DOUBLE`), then
+   cap each buy by remaining budget.
 4. **Dust** — skip orders with USD notional `< dustThresholdUSD`.
 5. Market orders; volumes at crypto scale 8.
 6. **dryRun**: log `[DRY RUN]` intents; do not place (see dry-run-and-simulation skill).
@@ -109,7 +109,7 @@ effectively than spreading across all pairs.
 - [ ] ATH/drawdown deployment and crypto redistribution correct
 - [ ] Signed deviations retained; trigger uses absolute value
 - [ ] Fiat correction only when USD alone triggers
-- [ ] Sell → 3× poll (250ms exponential backoff) → 95% settle → 99% buy cap → dust skip
+- [ ] Sell → 3× poll (250ms exponential backoff) → best observed / 95% settle → fail-closed abort → cycle 99% buy budget → dust skip
 - [ ] Changes reflected in `docs/ALGORITHM.md` when behavior changes
 - [ ] If ALGORITHM Mermaid changed → run
       [validate_mermaid.py](../documentation-review/scripts/validate_mermaid.py)

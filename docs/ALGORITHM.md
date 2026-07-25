@@ -45,7 +45,7 @@ flowchart TD
         E1R -- No --> E1F["Log failure, skip cash update"]
         E1C --> E2
         E1F --> E2
-        E2["Refresh USD balance\n(up to 3× backoff from 250ms)"] --> E3["Execute BUY orders second\n(verify cash sufficiency)"]
+        E2["Refresh USD balance\n(best of 3× backoff from 250ms;\nabort buys if none positive)"] --> E3["Execute BUY orders second\n(99% cycle cash budget)"]
         E3 --> E4["Record Snapshot\n& Trade History\nto SQLite database"]
     end
 
@@ -182,17 +182,18 @@ failure.
 2. **USD Balance Refresh**: After sells complete (if not in dry-run mode), the
    system polls the Kraken API up to **3** times with exponential backoff
    starting at **250ms** (doubling each attempt: 250ms → 500ms → 1000ms) to fetch the
-   settled USD balance. It accepts the balance once it reaches **95%** of the
-   projected amount. Otherwise, the last positive observed balance is used; if
-   no positive balance is observed, the projected amount remains the fallback.
-   This fail-open fallback is tracked separately in
-   [#54](https://github.com/HyperVon/new-kraken-rebalancer/issues/54).
+   settled USD balance. It tracks the **best (maximum) positive** observation and
+   accepts early once the balance reaches **≥95%** of the projected amount. If no
+   positive USD balance is observed after all attempts, **buys are aborted**
+   (fail-closed — projected proceeds are never treated as confirmed cash).
 3. **Buy Orders Second**:
-    - The system verifies that sufficient cash exists for each planned BUY
-      order.
-    - If cash is insufficient (rare, usually due to price slippage or failed
-      sells), buy orders are reduced to 99% of available cash.
-    - Only successful buys deduct from the available cash balance.
+    - The whole sell→buy sequence runs inside `KrakenService.withStableBackend`
+      so a mid-cycle `simulation` flip cannot split sells and buys across backends.
+    - A **cycle-level budget** of **99%** of post-sell settled USD caps aggregate
+      multi-buy spend (`PrecisionConstants.CASH_RESERVE_FACTOR`).
+    - Each buy is further capped by the remaining cycle budget; dust buys below
+      `dustThresholdUSD` are skipped.
+    - Only successful buys deduct from available cash and the remaining budget.
 4. **Order Placement**:
     - Orders are placed as **Market Orders** for immediate execution.
     - "Dust" orders (below the configured `dustThresholdUSD`) are skipped to
