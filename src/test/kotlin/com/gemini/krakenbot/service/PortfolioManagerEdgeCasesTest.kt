@@ -592,6 +592,41 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
             }
         }
 
+        "testCalculatePortfolioValues_ZeroTickerPriceAborts" {
+            runTest {
+                val balances =
+                    mapOf(Asset.USD to 1000.0, Asset.BTC to 1.0).toBigDecimalMap()
+                val prices =
+                    mapOf(
+                        Asset.USD to BigDecimal.ONE,
+                        Asset.BTC to BigDecimal.ZERO,
+                    )
+
+                val allocs = listOf(
+                    Allocation(Asset.USD, 50.0),
+                    Allocation(Asset.BTC, 50.0),
+                )
+                every { configService.getConfig() } returns AppConfig(
+                    kraken = KrakenCredentials(apiKey = "k", privateKey = "s"),
+                    settings = Settings(
+                        loopDelaySeconds = 0L,
+                        deviationTriggerPercent = 2.0,
+                        dustThresholdUSD = 1.0,
+                        dryRun = true,
+                        fiatMaxDrawdown = 0.0,
+                        fiatDeploymentExponent = 1.0,
+                    ),
+                    allocations = allocs,
+                )
+
+                val result = portfolioAnalyzer.calculatePortfolioValues(
+                    balances,
+                    prices,
+                )
+                (result.exceptionOrNull() != null) shouldBe true
+            }
+        }
+
         "testResolveBalance_FallbackChain" {
             runTest {
                 portfolioAnalyzer.resolveBalance(

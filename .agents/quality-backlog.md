@@ -22,12 +22,38 @@ Product polish discovered during QA belongs in
 
 | ID | Size | Kind | Status | Area | Summary | Cycle | Issue | Notes |
 | :--- | :---: | :--- | :--- | :--- | :--- | :---: | :--- | :--- |
-| — | — | — | — | — | _(none)_ | — | — | — |
+| CQ-3-5 | M | gap | open | flows | `collectLatest` config emit mid-`delay` cancels and restarts loop with new settings | 3 | — | next cycle |
+| CQ-3-6 | S | gap | open | lockout | 9 consecutive `Temporary lockout` exhausts `maxLockoutAttempts` and throws | 3 | — | next cycle |
+| CQ-3-7 | S | gap | open | modes | `simulation=true` + `dryRun=true`: DynamicKraken → sim; orders must not mutate balances | 3 | — | merge of discover notes; DynamicKrakenServiceTest always dryRun=false |
+| CQ-3-8 | S | gap | open | dedupe | API_FILL then LOCAL_ESTIMATE deletes local; same fee-rate pair kept | 3 | — | next cycle |
+| CQ-3-9 | S | gap | open | history | Sync OK but reconstruct throws still sets `lastSyncTime` (throttle starts) | 3 | — | next cycle |
+| CQ-3-10 | S | gap | open | DynamicKraken | Nested/reentrant `withStableBackend` (pinDepth > 0) | 3 | — | JaCoCo pinDepth 0→1 only |
+| CQ-3-11 | S | gap | open | DashboardController | History stats with no `range` → no-arg `getHistoryStats()` | 3 | — | next cycle |
+| CQ-3-12 | S | gap | open | dedupe | Null-id skip / null `idToDelete` when deleting unsettled | 3 | — | fixtures always set ids |
+| CQ-3-13 | S | gap | open | ConfigService | Reject invalid allocation symbol (`SYMBOL_PATTERN`) | 3 | — | next cycle |
+| CQ-3-14 | M | gap | open | history/repo | Lift `TradeHistoryServiceImpl` + `repository.impl` branch coverage | 3 | — | overall branch ~91%; next cycle |
+| CQ-3-15 | S | gap | open | orders | Failed buy must not reduce cycle 99% budget for subsequent buys | 3 | — | CashCapTest has no fail-then-succeed case |
+| CQ-3-16 | S | gap | open | math | Underweight exact dust `\|dev\|==threshold` significant; just-below not | 3 | — | dust cases overweight-only today |
+| CQ-3-17 | M | gap | open | eval | Eval scenario for USD refresh ≥95% early-accept / fail-closed | 3 | — | unit coverage shipped CQ-3-1/2; eval optional |
+| CQ-3-18 | S | gap | open | drawdown | Aggressive exponent `0.5` ALGORITHM table points (e.g. 7.5% DD → 50%) | 3 | — | exponents 1.0 & 2.0 covered |
+| CQ-3-19 | S | bug | open | flows | Rethrow `CancellationException` in cycle/sync `catch (Exception)` (don’t log as cycle error) | 3 | — | `PortfolioManagerImpl` L67–73; CE ⊆ Exception; blocks clean `collectLatest` cancel |
+| CQ-3-20 | M | gap | open | history/SSE | Real `snapshotFlow`: ≥2 subscribers receive; `DROP_OLDEST` keeps `addSnapshot`/`tryEmit` non-blocking | 3 | — | tests use single collector / mocked `flowOf` |
+| CQ-3-21 | S | gap | open | dedupe | Fee-rate Δ **exactly** `0.001`; local-estimate window `10_000` vs `10_001` ms | 3 | — | outer 300s shipped CQ-3-3; inner thresholds still unasserted |
+| CQ-3-22 | M | gap | open | rate-limit | Public ticker/OHLC never `acquire`; private TradesHistory/Ledgers/ClosedOrders cost **2.0** | 3 | — | throttle test is Balance×8 only; needs injectable limiter like CQ-1-9 |
+| CQ-3-24 | S | gap | open | orders | Buy trimmed by remaining budget below dust → skip; budget never negative | 3 | — | CashCapTest remainder always $490 |
+| CQ-3-25 | M | gap | open | manager | Post-trade snapshot fallback: `Result.Failure` + thrown branch fall back to pre-trade values | 3 | — | `PortfolioManagerImpl` L154–176 untested |
+| CQ-3-26 | S | gap | open | fiat | Fiat-correction share rounding to `$0.00` must not enqueue zero orders; shares ≤ `\|usdDev\|` | 3 | — | analyzer companion to CQ-3-23 |
+| CQ-3-27 | M | gap | open | eval | Multi-cycle convergence (Scenario 31): fills fed back, zero orders by cycle 3 | 3 | — | needs docs/EVALUATION row |
 
 ## Done (recent)
 
 | ID | Size | Kind | Status | Area | Summary | Cycle | PR |
-| :--- | :---: | :--- | :--- | :--- | :--- | :---: | :--- |
+| :--- | :---: | :--- | :--- | :--- | :---: | :--- | :--- |
+| CQ-3-1 | S | gap | done | orders | USD refresh early-accept at ≥95% of projected stops polling | 3 | [#73](https://github.com/HyperVon/new-kraken-rebalancer/pull/73) |
+| CQ-3-2 | S | gap | done | orders | Below 95% keeps polling; later ≥95% accepts early | 3 | [#73](https://github.com/HyperVon/new-kraken-rebalancer/pull/73) |
+| CQ-3-3 | S | gap | done | dedupe | 5min window: `diff == 300_000` still duplicates; `> 300_000` does not | 3 | [#73](https://github.com/HyperVon/new-kraken-rebalancer/pull/73) |
+| CQ-3-4 | S | gap | done | analyzer | Explicit zero ticker price aborts (not only missing key) | 3 | [#73](https://github.com/HyperVon/new-kraken-rebalancer/pull/73) |
+| CQ-3-23 | L | bug | done | orders | Skip zero/negative-value orders (`dustThresholdUSD=0` / budget-trimmed `$0`) — no zero-volume order or `$0` TradeRecord (closes #74) | 3 | [#73](https://github.com/HyperVon/new-kraken-rebalancer/pull/73) |
 | CQ-1-10 | L | bug | done | simulation | Pin live/sim backend across `executeOrders` via `withStableBackend` | 2 | [#71](https://github.com/HyperVon/new-kraken-rebalancer/pull/71) |
 | CQ-1-11 | L | bug | done | analyzer | Exact USD pair-alias ticker match (no substring `contains`) | 2 | [#71](https://github.com/HyperVon/new-kraken-rebalancer/pull/71) |
 | CQ-1-9 | M | harness | done | rate-limit | Injectable `RateLimiter` clock + deterministic decay test | 2 | [#71](https://github.com/HyperVon/new-kraken-rebalancer/pull/71) |

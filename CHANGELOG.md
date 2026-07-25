@@ -6,6 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.12.25] - 2026-07-24
+
+### Fixed
+
+- **Zero-volume order guard**: `OrderExecutor` no longer places a `$0` /
+  zero-volume market order (or persists a `$0` trade) when `dustThresholdUSD=0`
+  lets a `$0` amount past the dust guard, or a budget-trimmed buy lands at `$0`.
+  `executeSingleOrder` now skips when the USD amount or computed volume is
+  non-positive ([#74](https://github.com/HyperVon/new-kraken-rebalancer/issues/74)).
+
+### Added
+
+- **tests**: Continuous-quality cycle 3 — USD refresh early-accept at ≥95% of
+  projected (and continue-below-then-accept), TradeDeduplicator inclusive
+  5-minute window boundary, explicit zero ticker price abort, and zero-volume
+  order suppression at `dustThresholdUSD=0`.
+
 ## [6.12.24] - 2026-07-24
 
 ### Fixed
