@@ -20,10 +20,8 @@ open class RateLimiter(
 ) {
     private val mutex = Mutex()
 
-    @Volatile
+    // Guarded by [mutex] — every read and write must happen inside `mutex.withLock`.
     private var callCounter: Double = 0.0
-
-    @Volatile
     private var lastUpdateTimeMs: Long = clock()
 
     open suspend fun acquireWithCost(cost: Double): Double = mutex.withLock {

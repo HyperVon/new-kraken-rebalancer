@@ -124,6 +124,8 @@ fun addAssetRow() {
     val numberInput = document.createInput()
     numberInput.type = "number"
     numberInput.step = "0.1"
+    numberInput.min = "0"
+    numberInput.max = "100"
     numberInput.name = FormFields.TARGETS
     numberInput.className = CssClass.Form.InputGlass.toString()
     numberInput.value = "0.0"

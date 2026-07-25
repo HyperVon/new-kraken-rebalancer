@@ -107,6 +107,7 @@ class SettingsFormComponent {
                         name = FormFields.DUST_THRESHOLD_USD,
                     ) {
                         step = "0.5"
+                        min = "0"
                         value = config.settings.dustThresholdUSD.toString()
                     }
                 }
@@ -118,6 +119,8 @@ class SettingsFormComponent {
                         name = FormFields.FIAT_MAX_DRAWDOWN,
                     ) {
                         step = "1.0"
+                        min = "0"
+                        max = "100"
                         value = config.settings.fiatMaxDrawdown.toString()
                     }
                 }
@@ -129,6 +132,8 @@ class SettingsFormComponent {
                         name = FormFields.FIAT_DEPLOYMENT_EXPONENT,
                     ) {
                         step = "0.1"
+                        // HTML min is inclusive; step floor keeps spinner off invalid 0.
+                        min = "0.1"
                         value =
                             config.settings.fiatDeploymentExponent.toString()
                     }
@@ -209,6 +214,8 @@ class SettingsFormComponent {
                                 name = FormFields.TARGETS,
                             ) {
                                 step = "0.1"
+                                min = "0"
+                                max = "100"
                                 value = alloc.targetPercent.toString()
                                 attributes[HtmlAttrs.ONINPUT] =
                                     "updateAllocationTotal()"

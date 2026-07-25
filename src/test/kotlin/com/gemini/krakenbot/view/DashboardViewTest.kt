@@ -10,7 +10,11 @@ import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.view.component.*
 import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.FormFields.DEVIATION_TRIGGER_PERCENT
+import com.gemini.krakenbot.view.util.FormFields.DUST_THRESHOLD_USD
+import com.gemini.krakenbot.view.util.FormFields.FIAT_DEPLOYMENT_EXPONENT
+import com.gemini.krakenbot.view.util.FormFields.FIAT_MAX_DRAWDOWN
 import com.gemini.krakenbot.view.util.FormFields.LOOP_DELAY_SECONDS
+import com.gemini.krakenbot.view.util.FormFields.TARGETS
 import com.gemini.krakenbot.view.util.Icons
 import com.gemini.krakenbot.view.util.Routes.API_STATUS_STREAM
 import com.gemini.krakenbot.view.util.Routes.STATIC_STYLE_CSS
@@ -33,6 +37,7 @@ import com.gemini.krakenbot.view.util.ViewText.TARGET_PREFIX
 import com.gemini.krakenbot.view.util.ViewText.TOTAL_PORTFOLIO
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
+import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldNotContain
@@ -132,6 +137,33 @@ class DashboardViewTest : StringSpec() {
             html shouldContain "safety-state-off"
             html shouldContain "id=\"mode-plate\""
             html shouldNotContain ERROR_BANNER
+        }
+
+        "renderSettingsPage_allocationTargets_carryPercentBounds" {
+            val html = createHTML().html {
+                view.renderSettingsPage(baseConfig, null)
+            }
+            val targetInput = Regex("<input[^>]*name=\"$TARGETS\"[^>]*>").find(html)?.value
+            targetInput.shouldNotBeNull()
+            targetInput shouldContain "min=\"0\""
+            targetInput shouldContain "max=\"100\""
+        }
+
+        "renderSettingsPage_globalParameters_carryValidationBounds" {
+            val html = createHTML().html {
+                view.renderSettingsPage(baseConfig, null)
+            }
+            fun namedInput(name: String): String {
+                val input = Regex("<input[^>]*name=\"$name\"[^>]*>").find(html)?.value
+                input.shouldNotBeNull()
+                return input
+            }
+
+            namedInput(DUST_THRESHOLD_USD) shouldContain "min=\"0\""
+            val fiatMax = namedInput(FIAT_MAX_DRAWDOWN)
+            fiatMax shouldContain "min=\"0\""
+            fiatMax shouldContain "max=\"100\""
+            namedInput(FIAT_DEPLOYMENT_EXPONENT) shouldContain "min=\"0.1\""
         }
 
         "renderSettingsPage_withError_displaysError" {

@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.13.2] - 2026-07-25
+
+### Added
+
+- **Allocation Target Input Bounds**: Target allocation inputs enforce `min = "0"` and `max = "100"` HTML5 bounds on both server-rendered and dynamically added asset rows on the Settings page, so the step spinner and browser validation match the server-side allocation rules.
+- **Global Parameter Input Bounds**: Settings number inputs for dust threshold (`min = "0"`), fiat max drawdown (`min = "0"` / `max = "100"`), and fiat deployment exponent (`min = "0.1"`) now mirror `ConfigServiceImpl` validation so out-of-range values fail in the browser instead of only after Save.
+
+### Changed
+
+- **User Guide Accuracy**: Documented per-row allocation bounds and global parameter input bounds in `docs/USER_GUIDE.md`.
+- **RateLimiter Concurrency Hygiene**: Removed redundant `@Volatile` annotations from the mutex-guarded counter fields in `RateLimiter`.
+
 ## [6.13.1] - 2026-07-25
 
 ### Fixed
