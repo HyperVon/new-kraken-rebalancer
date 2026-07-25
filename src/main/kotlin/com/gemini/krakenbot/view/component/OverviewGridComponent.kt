@@ -5,10 +5,10 @@ import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.Formatter
 import com.gemini.krakenbot.view.util.Icons
-import com.gemini.krakenbot.view.util.statusCard
 import com.gemini.krakenbot.view.util.ViewText
 import com.gemini.krakenbot.view.util.div
 import com.gemini.krakenbot.view.util.span
+import com.gemini.krakenbot.view.util.statusCard
 import kotlinx.html.DIV
 import java.math.BigDecimal
 
@@ -32,7 +32,7 @@ class OverviewGridComponent {
             statusCard(
                 title = ViewText.TOTAL_PORTFOLIO,
                 iconSvg = Icons.TREND_UP,
-                value = "$${Formatter.formatCurrency(totalValue)}"
+                value = "$${Formatter.formatCurrency(totalValue)}",
             ) {
                 val drawdown = latest.drawdownPercent
                 val isDrawdown = drawdown.signum() > 0
@@ -51,7 +51,7 @@ class OverviewGridComponent {
                 title = ViewText.CASH_USD,
                 iconSvg = Icons.WALLET,
                 value = "$${Formatter.formatCurrency(usdValue)}",
-                isSuccess = true
+                isSuccess = true,
             ) {
                 if (usdAsset != null) {
                     val currentPct = usdAsset.currentPercent
@@ -64,13 +64,13 @@ class OverviewGridComponent {
                     span {
                         +"${Formatter.formatPercent(currentPct)}% | ${ViewText.TARGET_PREFIX}${
                             Formatter.formatPercent(
-                                targetPct
+                                targetPct,
                             )
                         }%"
                         if ((targetPct - baseTargetPct).abs() > BigDecimal("0.01")) {
                             +" (${ViewText.BASE_PREFIX}${
                                 Formatter.formatPercent(
-                                    baseTargetPct
+                                    baseTargetPct,
                                 )
                             }%)"
                         }
@@ -78,7 +78,7 @@ class OverviewGridComponent {
                         span(devClass) {
                             +"${ViewText.DEV_PREFIX}$devSign${
                                 Formatter.formatPercent(
-                                    dev
+                                    dev,
                                 )
                             }%"
                         }
@@ -91,12 +91,12 @@ class OverviewGridComponent {
             statusCard(
                 title = ViewText.CRYPTO_ASSETS,
                 iconSvg = Icons.CIRCLES,
-                value = "$${Formatter.formatCurrency(cryptoValue)}"
+                value = "$${Formatter.formatCurrency(cryptoValue)}",
             ) {
                 span {
                     +"${Formatter.formatPercent(cryptoPercent)}% | ${ViewText.TARGET_PREFIX}${
                         Formatter.formatPercent(
-                            cryptoTargetPercent
+                            cryptoTargetPercent,
                         )
                     }% | $cryptoCount${ViewText.ASSETS_SUFFIX}"
                 }

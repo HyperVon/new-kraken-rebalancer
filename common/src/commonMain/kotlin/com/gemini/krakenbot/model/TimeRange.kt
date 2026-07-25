@@ -10,7 +10,6 @@ enum class TimeRange(val key: String, val days: Long?) {
     ;
 
     companion object {
-        fun fromQueryParam(param: String?): TimeRange =
-            entries.firstOrNull { it.key.equals(param, ignoreCase = true) } ?: THIRTY_DAYS
+        fun fromQueryParam(param: String?): TimeRange = entries.firstOrNull { it.key.equals(param, ignoreCase = true) } ?: THIRTY_DAYS
     }
 }

@@ -92,8 +92,7 @@ class ConfigServiceImpl(
         return config.copy(kraken = krakenToPersist)
     }
 
-    private fun krakenCredentialsEqual(left: KrakenCredentials, right: KrakenCredentials): Boolean =
-        left.apiKey.value == right.apiKey.value && left.privateKey.value == right.privateKey.value
+    private fun krakenCredentialsEqual(left: KrakenCredentials, right: KrakenCredentials): Boolean = left.apiKey.value == right.apiKey.value && left.privateKey.value == right.privateKey.value
 
     private fun parseConfig(content: String): AppConfig = objectMapper.readValue(content, AppConfig::class.java)
 

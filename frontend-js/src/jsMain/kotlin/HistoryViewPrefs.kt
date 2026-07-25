@@ -42,6 +42,9 @@ data class HistoryViewsStore(val defaultId: String, val views: List<HistoryViewD
  * Persistence key: [ViewText.HISTORY_VIEWS_STORAGE_KEY].
  */
 object HistoryViewPrefs {
+    private const val LEGACY_MONTH_PNL_ID = "month-pnl"
+    private const val LEGACY_CUMULATIVE_PL_CHART = "cumulative-pl-chart"
+
     private var userInteracted = false
 
     internal fun hasUserInteracted(): Boolean = userInteracted
@@ -106,8 +109,8 @@ object HistoryViewPrefs {
             visibility = emptyMap(),
         ),
         HistoryViewDef(
-            id = HistoryViewIds.MONTH_PNL,
-            name = ViewText.HISTORY_VIEW_MONTH_PNL,
+            id = HistoryViewIds.MONTH_NET_CASH_FLOW,
+            name = ViewText.HISTORY_VIEW_MONTH_NET_CASH_FLOW,
             builtIn = true,
             range = TimeRange.THIRTY_DAYS.key,
             showDryRun = false,
@@ -115,16 +118,20 @@ object HistoryViewPrefs {
         ),
     )
 
-    fun defaultStore(): HistoryViewsStore =
-        HistoryViewsStore(defaultId = HistoryViewIds.OVERVIEW, views = builtInViews())
+    fun defaultStore(): HistoryViewsStore = HistoryViewsStore(defaultId = HistoryViewIds.OVERVIEW, views = builtInViews())
 
     fun mergeBuiltIns(store: HistoryViewsStore): HistoryViewsStore {
         val builtIns = builtInViews()
         val builtInIds = builtIns.map { it.id }.toSet()
         val userViews = store.views.filter { !it.builtIn && it.id !in builtInIds }
+        val migratedDefaultId =
+            when (store.defaultId) {
+                LEGACY_MONTH_PNL_ID -> HistoryViewIds.MONTH_NET_CASH_FLOW
+                else -> store.defaultId
+            }
         val defaultId =
-            if (store.views.any { it.id == store.defaultId } || builtInIds.contains(store.defaultId)) {
-                store.defaultId
+            if (store.views.any { it.id == migratedDefaultId } || builtInIds.contains(migratedDefaultId)) {
+                migratedDefaultId
             } else {
                 HistoryViewIds.OVERVIEW
             }
@@ -185,6 +192,12 @@ object HistoryViewPrefs {
         val outer = mutableMapOf<String, Map<String, Boolean>>()
         val canvasIds = PrefsObject.keys(raw)
         for (canvasId in canvasIds) {
+            val resolvedCanvasId =
+                if (canvasId == LEGACY_CUMULATIVE_PL_CHART) {
+                    HtmlIds.CUMULATIVE_NET_CASH_FLOW_CHART
+                } else {
+                    canvasId
+                }
             val innerRaw = raw[canvasId]
             val inner = mutableMapOf<String, Boolean>()
             if (innerRaw != null && innerRaw != undefined) {
@@ -196,7 +209,7 @@ object HistoryViewPrefs {
                     }
                 }
             }
-            outer[canvasId] = inner
+            outer[resolvedCanvasId] = inner
         }
         return outer
     }

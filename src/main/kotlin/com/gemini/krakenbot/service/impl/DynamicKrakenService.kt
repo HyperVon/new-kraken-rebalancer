@@ -25,12 +25,9 @@ class DynamicKrakenService(
 
     override suspend fun getTickerPrices(pairs: String): RawPrices = activeService.getTickerPrices(pairs)
 
-    override suspend fun executeOrder(pair: String, type: String, side: String, volume: BigDecimal): OrderResult =
-        activeService.executeOrder(pair, type, side, volume)
+    override suspend fun executeOrder(pair: String, type: String, side: String, volume: BigDecimal): OrderResult = activeService.executeOrder(pair, type, side, volume)
 
-    override suspend fun getTradeHistory(startSec: Long?, offset: Int?): List<TradeRecord> =
-        activeService.getTradeHistory(startSec, offset)
+    override suspend fun getTradeHistory(startSec: Long?, offset: Int?): List<TradeRecord> = activeService.getTradeHistory(startSec, offset)
 
-    override suspend fun getOHLC(pair: String, interval: Int, since: Long?): List<Pair<Long, BigDecimal>> =
-        activeService.getOHLC(pair, interval, since)
+    override suspend fun getOHLC(pair: String, interval: Int, since: Long?): List<Pair<Long, BigDecimal>> = activeService.getOHLC(pair, interval, since)
 }

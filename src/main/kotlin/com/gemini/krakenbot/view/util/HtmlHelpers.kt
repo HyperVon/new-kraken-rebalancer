@@ -19,10 +19,11 @@ fun HEAD.commonMetadataAndStyles() {
     link(rel = "preconnect", href = "https://fonts.gstatic.com") {
         attributes[HtmlAttrs.CROSSORIGIN] = ""
     }
-    link(
-        rel = "stylesheet",
-        href = "https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&family=Roboto+Mono:wght@400;500;700&display=swap",
-    )
+    val fontsHref =
+        "https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800" +
+            "&family=Outfit:wght@400;500;600;700;800" +
+            "&family=Roboto+Mono:wght@400;500;700&display=swap"
+    link(rel = "stylesheet", href = fontsHref)
     // CSS responses are cached for 24 hours. A content-derived version keeps
     // that cache useful while forcing clients to fetch changed rules on deploy.
     val stylesheetVersion = CssStyles.stylesheet.toString().hashCode()

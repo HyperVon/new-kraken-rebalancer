@@ -14,7 +14,7 @@ Stable ids (see `HtmlAttrs.HtmlIds`):
 | `show-dry-run-checkbox` | History dry-run trade filter |
 | `history-views-select` | Views dropdown |
 | `history-save-view-btn` / `history-set-default-btn` / `history-delete-view-btn` | View actions |
-| `portfolio-value-chart` / `asset-holdings-chart` / `allocation-drift-chart` / `cumulative-pl-chart` | Chart canvases |
+| `portfolio-value-chart` / `asset-holdings-chart` / `allocation-drift-chart` / `cumulative-net-cash-flow-chart` | Chart canvases |
 | `trade-table-body` | Trade log rows |
 | `history-stats` / `stat-*` | Summary cards |
 | `history-zoom-btn` / `history-views-select` | Zoom + view toolbar (glass styling) |
@@ -111,7 +111,7 @@ Wait until sync banner completes (or is absent) before chart assertions.
 | HIST-VIEW-1 | Select **Overview** | 30d (or preset range); series visible |
 | HIST-VIEW-2 | Select **Day · Total only** | **24h** applied; Portfolio Value legend lists **Total** only (Cash/Crypto/per-asset labels absent); canvas draws **Total** line only — other series hidden, not merely dimmed |
 | HIST-VIEW-3 | Select **Week · Allocation** | 7d applied |
-| HIST-VIEW-4 | Select **Month · P&L** | 30d; dry-run filter matches preset intent |
+| HIST-VIEW-4 | Select **Month · Net Cash Flow** | 30d; dry-run filter matches preset intent |
 | HIST-VIEW-5 | Manually change time range while a named view is selected | Select shows **Custom (unsaved)** (or equivalent); Set default / Delete disabled as designed |
 | HIST-VIEW-6 | **Save view…** with name `qa-temp`; confirm it appears in select | Custom option listed |
 | HIST-VIEW-7 | **Set as default** on `qa-temp`; reload `/history` | `qa-temp` (or its settings) applied on load |

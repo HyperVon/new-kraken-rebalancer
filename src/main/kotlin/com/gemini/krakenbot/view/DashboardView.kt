@@ -15,7 +15,7 @@ class DashboardView(
     private val shellComponent: DashboardShellComponent,
     private val settingsFormComponent: SettingsFormComponent,
     private val fragmentComponent: DashboardFragmentComponent,
-    private val historyPageComponent: HistoryPageComponent
+    private val historyPageComponent: HistoryPageComponent,
 ) {
 
     context(html: HTML)
@@ -45,10 +45,7 @@ class DashboardView(
     }
 
     context(div: DIV)
-    fun renderDashboardFragment(
-        latest: PortfolioSnapshot,
-        history: List<PortfolioSnapshot>
-    ) {
+    fun renderDashboardFragment(latest: PortfolioSnapshot, history: List<PortfolioSnapshot>) {
         fragmentComponent.render(latest, history)
     }
 }

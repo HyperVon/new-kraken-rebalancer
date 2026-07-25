@@ -8,19 +8,19 @@ import com.gemini.krakenbot.view.util.HtmlAttrs
 import com.gemini.krakenbot.view.util.HtmlIds
 import com.gemini.krakenbot.view.util.Icons
 import com.gemini.krakenbot.view.util.Icons.icon
-import com.gemini.krakenbot.view.util.ZoomActions
-import com.gemini.krakenbot.view.util.brandMark
-import com.gemini.krakenbot.view.util.glassPanel
-import com.gemini.krakenbot.view.util.primaryNav
-import com.gemini.krakenbot.view.util.statusCard
 import com.gemini.krakenbot.view.util.Routes
 import com.gemini.krakenbot.view.util.ViewText
+import com.gemini.krakenbot.view.util.ZoomActions
+import com.gemini.krakenbot.view.util.brandMark
 import com.gemini.krakenbot.view.util.button
 import com.gemini.krakenbot.view.util.commonMetadataAndStyles
 import com.gemini.krakenbot.view.util.div
+import com.gemini.krakenbot.view.util.glassPanel
 import com.gemini.krakenbot.view.util.h2
 import com.gemini.krakenbot.view.util.label
+import com.gemini.krakenbot.view.util.primaryNav
 import com.gemini.krakenbot.view.util.span
+import com.gemini.krakenbot.view.util.statusCard
 import com.gemini.krakenbot.view.util.td
 import kotlinx.html.*
 import kotlinx.html.InputType.checkBox
@@ -70,7 +70,7 @@ class HistoryPageComponent {
                     iconSvg = card.iconSvg,
                     value = ViewText.PLACEHOLDER_DASHES,
                     valueId = card.valueId,
-                    titleId = card.titleId
+                    titleId = card.titleId,
                 )
             }
         }
@@ -237,18 +237,27 @@ class HistoryPageComponent {
     }
 }
 
-private sealed class HistoryChartSection(
-    val canvasId: String,
-    val title: String,
-    val iconSvg: String
-) {
-    object PortfolioValue : HistoryChartSection(HtmlIds.PORTFOLIO_VALUE_CHART, ViewText.HISTORY_PORTFOLIO_VALUE, Icons.CHART)
-    object AssetHoldings : HistoryChartSection(HtmlIds.ASSET_HOLDINGS_CHART, ViewText.HISTORY_ASSET_HOLDINGS, Icons.CHART)
-    object AllocationDrift : HistoryChartSection(HtmlIds.ALLOCATION_DRIFT_CHART, ViewText.HISTORY_ALLOCATION_DRIFT, Icons.CHART)
-    object CumulativePL : HistoryChartSection(HtmlIds.CUMULATIVE_PL_CHART, ViewText.HISTORY_NET_CASH_FLOW, Icons.WALLET)
+private sealed class HistoryChartSection(val canvasId: String, val title: String, val iconSvg: String) {
+    object PortfolioValue : HistoryChartSection(
+        HtmlIds.PORTFOLIO_VALUE_CHART,
+        ViewText.HISTORY_PORTFOLIO_VALUE,
+        Icons.CHART,
+    )
+    object AssetHoldings : HistoryChartSection(
+        HtmlIds.ASSET_HOLDINGS_CHART,
+        ViewText.HISTORY_ASSET_HOLDINGS,
+        Icons.CHART,
+    )
+    object AllocationDrift : HistoryChartSection(
+        HtmlIds.ALLOCATION_DRIFT_CHART,
+        ViewText.HISTORY_ALLOCATION_DRIFT,
+        Icons.CHART,
+    )
+    object CumulativeNetCashFlow :
+        HistoryChartSection(HtmlIds.CUMULATIVE_NET_CASH_FLOW_CHART, ViewText.HISTORY_NET_CASH_FLOW, Icons.WALLET)
 
     companion object {
-        val ALL = listOf(PortfolioValue, AssetHoldings, AllocationDrift, CumulativePL)
+        val ALL = listOf(PortfolioValue, AssetHoldings, AllocationDrift, CumulativeNetCashFlow)
     }
 }
 
@@ -256,12 +265,29 @@ private sealed class HistoryStatCardDefinition(
     val title: String,
     val iconSvg: String,
     val valueId: String,
-    val titleId: String? = null
+    val titleId: String? = null,
 ) {
-    object AllTimeHigh : HistoryStatCardDefinition(ViewText.HISTORY_ALL_TIME_HIGH, Icons.WALLET, HtmlIds.STAT_ATH, HtmlIds.STAT_ATH_TITLE)
-    object TotalTrades : HistoryStatCardDefinition(ViewText.HISTORY_TOTAL_TRADES, Icons.CHART, HtmlIds.STAT_TOTAL_TRADES)
-    object TotalVolume : HistoryStatCardDefinition(ViewText.HISTORY_TOTAL_VOLUME, Icons.WALLET, HtmlIds.STAT_TOTAL_VOLUME)
-    object TotalFees : HistoryStatCardDefinition(ViewText.HISTORY_TOTAL_FEES, Icons.DOLLAR_CIRCLE, HtmlIds.STAT_TOTAL_FEES)
+    object AllTimeHigh : HistoryStatCardDefinition(
+        ViewText.HISTORY_ALL_TIME_HIGH,
+        Icons.WALLET,
+        HtmlIds.STAT_ATH,
+        HtmlIds.STAT_ATH_TITLE,
+    )
+    object TotalTrades : HistoryStatCardDefinition(
+        ViewText.HISTORY_TOTAL_TRADES,
+        Icons.CHART,
+        HtmlIds.STAT_TOTAL_TRADES,
+    )
+    object TotalVolume : HistoryStatCardDefinition(
+        ViewText.HISTORY_TOTAL_VOLUME,
+        Icons.WALLET,
+        HtmlIds.STAT_TOTAL_VOLUME,
+    )
+    object TotalFees : HistoryStatCardDefinition(
+        ViewText.HISTORY_TOTAL_FEES,
+        Icons.DOLLAR_CIRCLE,
+        HtmlIds.STAT_TOTAL_FEES,
+    )
 
     companion object {
         val ALL = listOf(AllTimeHigh, TotalTrades, TotalVolume, TotalFees)

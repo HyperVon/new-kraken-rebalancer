@@ -11,9 +11,9 @@ description: >-
 
 ## Formatting & compiler
 
-- **Spotless** + **ktlint 1.3.1**, `max_line_length = 120`
-- Targets: `src/**/*.kt`, `common/**/*.kt`, `frontend-js/src/**/*.kt`
-- Excludes (still): `**/view/**`, `EvaluationScenariosTest.kt`
+- **Spotless** + **ktlint 1.7.1**, `max_line_length = 120`
+- Targets: `src/**/*.kt`, `common/src/**/*.kt`, `frontend-js/src/**/*.kt`
+- Excludes: none (all Kotlin under `src/**`, `common/src/**`, `frontend-js/src/**`)
 - Apply: `./gradlew spotlessApply` — check: `./gradlew spotlessCheck`
 - **`allWarningsAsErrors`** enabled in root, `:common`, and `:frontend-js`
 
