@@ -41,8 +41,9 @@ On connect, send latest snapshot from DB, then collect the SharedFlow.
 ### Paginated sync / USD poll (cold)
 
 - `getTradeHistoryPaginated()` — `emit` suspends for backpressure.
-- `pollUsdBalanceAfterSells()` — cold poll with exponential backoff; emits the
-  best positive USD observation (or `0`); executor aborts buys when none.
+- `pollUsdBalanceAfterSells()` — cold poll; **3** attempts from **250ms**
+  (doubling → 500ms → 1000ms; defensive `coerceAtMost(32s)`); emits the best
+  positive USD observation (or `0`); executor aborts buys when none.
 
 ## Concurrency rules
 

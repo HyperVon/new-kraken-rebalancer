@@ -2,7 +2,7 @@
 name: frontend-js-development
 description: >-
   Client Kotlin/JS — EventSource SSE, SharedFlow payload consumption, HTMX
-  hooks, Chart.js deep-clone, History timeframe updating all 4 summary cards,
+  hooks, Chart.js deep-clone, History timeframe updating all 6 summary cards,
   zoom/scrubber via chart.zoomScale, and Karma coverage thresholds. Use when
   editing frontend-js/src.
 ---

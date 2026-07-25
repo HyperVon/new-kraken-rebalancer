@@ -207,7 +207,7 @@ sequenceDiagram
     OE->>Flow: .last()
     note over Flow: .last() is a terminal operator.<br/>It collects the entire flow and<br/>returns only the final emitted value.
 
-    loop Up to MAX_REFRESH_ATTEMPTS
+    loop "Up to 3 attempts (250ms → 500ms → 1000ms)"
         Flow->>Flow: delay(backoffMs)
         Flow->>API: getBalances()
         API-->>Flow: USD balance
@@ -232,6 +232,10 @@ sequenceDiagram
   running max. If no positive balance is observed, `.last()` yields `0` and
   `OrderExecutorImpl` **aborts buys** (fail-closed; projected proceeds are not
   confirmed cash).
+- Backoff starts at **250ms** and doubles per attempt
+  (**250ms → 500ms → 1000ms** with `MAX_REFRESH_ATTEMPTS = 3`). Code also
+  `coerceAtMost(32000)` as a defensive ceiling; that cap is unreachable under
+  current constants.
 - Exponential backoff is managed entirely inside the cold flow, keeping `OrderExecutorImpl`'s orchestration logic clean.
 - Being cold means this only runs when explicitly triggered after sells — it never polls in the background.
 

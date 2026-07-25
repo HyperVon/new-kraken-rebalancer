@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.12.24] - 2026-07-24
+
+### Fixed
+
+- **Documentation review**: Documented dual rebalance trigger
+  (`|Deviation%|` and `|DeviationUSD| ≥ dustThresholdUSD` / `isSignificant`),
+  missing/zero ticker price abort, and practical USD settle backoff
+  (250→500→1000ms). Corrected History summary-card count (6, not 4) in
+  frontend/code-review skills; refreshed README model tree and dust setting
+  wording.
+
 ## [6.12.23] - 2026-07-24
 
 ### Fixed

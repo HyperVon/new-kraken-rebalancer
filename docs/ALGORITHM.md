@@ -99,6 +99,9 @@ In this phase, the system builds a complete view of the current portfolio state.
 3. **Calculate Valuation**:
     - Calculates the USD value of every asset (`Balance * Price`).
     - Sums these values to determine the **Total Portfolio Value**.
+4. **Price safety**: If any non-USD configured asset is missing a ticker price or
+   the resolved price is zero, the cycle **aborts** before orders are generated
+   (`Result.Failure`) to avoid erroneous trades.
 
 ---
 
@@ -143,19 +146,24 @@ The difference between current and target value is calculated:
 
 ### 3. Trigger Logic
 
-A rebalance is only attempted if an asset's absolute `Deviation (%)`
-(`|Deviation (%)|`) is at or above (≥) the configured
-`deviationTriggerPercent` (e.g., 5%).
+An asset generates an order only when **both** gates pass:
+
+1. Absolute relative deviation
+   `|Deviation (%)| ≥ deviationTriggerPercent` (e.g., 5%).
+2. Absolute USD deviation is significant:
+   `|Deviation (USD)| ≥ dustThresholdUSD` (`AssetMetrics.isSignificant`).
+
+Dust therefore filters **order generation**, not only execution.
 
 - **Scenario A: Standard Rebalance**
-  If a crypto asset (e.g., BTC) is at or above the threshold:
+  If a crypto asset (e.g., BTC) passes both gates:
   - **Overweight (> 0)**: A **SELL** order is generated for the excess USD
       amount.
   - **Underweight (< 0)**: A **BUY** order is generated for the deficit
       USD amount.
 
 - **Scenario B: Fiat Correction (Deposit/Withdrawal)**
-  If *only* the USD asset triggers the threshold (e.g., due to a fresh
+  If *only* the USD asset passes both gates (e.g., due to a fresh
   deposit of cash), the system recognizes this as a "Fiat Correction" event.
   - The surplus (or deficit) of USD is distributed intelligently among
       assets that counter-balance the deviation.
@@ -222,7 +230,7 @@ The behavior is controlled by `rebalancer-config.json`:
 |:--------------------------|:---------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `loopDelaySeconds`        | Time to wait between cycles.                                                                                                                                               |
 | `deviationTriggerPercent` | Sensitivity of the rebalancer. Lower values track targets closer but trade more frequently (higher fees).                                                                  |
-| `dustThresholdUSD`        | Minimum order value in USD. Trades smaller than this amount are skipped to avoid API errors.                                                                               |
+| `dustThresholdUSD`        | Minimum significant USD deviation **and** minimum order notional. Assets below this USD deviation do not trigger; smaller orders are also skipped at execution.            |
 | `dryRun`                  | If set to `true`, the system performs all calculations and logs intended trades but **does not** send orders to Kraken.                                                    |
 | `simulation`              | If set to `true`, the system runs completely offline in simulation mode using a random walk generator for prices and balances (pre-seeding history if DB is empty).        |
 | `fiatMaxDrawdown`         | The portfolio drawdown percentage at which 100% of the USD allocation should be deployed into assets. Set to `0` to disable.                                               |

@@ -103,9 +103,11 @@ the CLAUDE.md / Copilot stubs) so they get the same norms without Cursor.
 Full detail: [`docs/ALGORITHM.md`](../docs/ALGORITHM.md) and skill [portfolio-rebalancing-math](skills/portfolio-rebalancing-math/SKILL.md).
 
 - **ATH → drawdown → fiat deployment**: `Deploy% = (DD / MaxDD)^exponent` (capped 100%); effective USD target reduced and redistributed to crypto.
-- **Trigger**: absolute signed relative deviation ≥ `deviationTriggerPercent`.
+- **Trigger**: absolute signed relative deviation ≥ `deviationTriggerPercent`
+  **and** `|DeviationUSD| ≥ dustThresholdUSD` (`isSignificant`).
+- **Price safety**: missing/zero non-USD ticker aborts the cycle before orders.
 - **Fiat correction**: if *only* USD triggers (deposit/withdrawal), redistribute among counter-balanced assets.
-- **Dust**: skip orders below `dustThresholdUSD`.
+- **Dust**: also skips execution of orders below `dustThresholdUSD`.
 - **Sell then buy**: sell overweight first; poll USD up to **3** attempts with
   exponential backoff starting at **250ms** (doubling: 250ms → 500ms → 1000ms);
   use the **best positive** observation; accept early at **≥95%** of projected;

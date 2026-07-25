@@ -60,7 +60,11 @@ Deviation%   = DeviationUSD / TargetValue × 100   (signed relative)
 
 - Negative → underweight → **BUY**.
 - Positive → overweight → **SELL**.
-- Rebalance only if `|Deviation%| ≥ deviationTriggerPercent`.
+- Order generation requires **both**:
+  - `|Deviation%| ≥ deviationTriggerPercent`, and
+  - `|DeviationUSD| ≥ dustThresholdUSD` (`AssetMetrics.isSignificant`).
+- Missing or zero non-USD ticker price aborts the cycle before orders
+  (`calculatePortfolioValues` → `Result.Failure`).
 
 ### Fiat correction (USD-only trigger)
 
@@ -96,7 +100,7 @@ effectively than spreading across all pairs.
 | Setting | Role |
 | :--- | :--- |
 | `deviationTriggerPercent` | Absolute relative deviation gate |
-| `dustThresholdUSD` | Min order notional |
+| `dustThresholdUSD` | Significance gate (`isSignificant`) **and** min order notional |
 | `fiatMaxDrawdown` / `fiatDeploymentExponent` | Deployment curve |
 | `dryRun` / `simulation` | Distinct safety / emulator flags |
 | `loopDelaySeconds` | Cycle sleep |
@@ -107,7 +111,8 @@ effectively than spreading across all pairs.
 
 - [ ] BigDecimal only; scales 8/2; matcher `shouldBeEqualComparingTo`
 - [ ] ATH/drawdown deployment and crypto redistribution correct
-- [ ] Signed deviations retained; trigger uses absolute value
+- [ ] Signed deviations retained; trigger uses absolute value **and** dust USD significance
+- [ ] Missing/zero non-USD price aborts cycle before orders
 - [ ] Fiat correction only when USD alone triggers
 - [ ] Sell → 3× poll (250ms exponential backoff) → best observed / 95% settle → fail-closed abort → cycle 99% buy budget → dust skip
 - [ ] Changes reflected in `docs/ALGORITHM.md` when behavior changes

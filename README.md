@@ -400,7 +400,7 @@ two complementary `SharedFlow` channels:
 │   ├── config/                            # JVM: AppModule, DatabaseConfig, KtorConfig, ErrorHandlingConfig
 │   │   └── AppModule.kt                  # Koin dependency injection module
 │   ├── controller/                        # Ktor routes: DashboardRoutes / DashboardController
-│   ├── model/                             # Domain: PortfolioSnapshot, OrderResult, Result, TradeRecord
+│   ├── model/                             # Domain: PortfolioSnapshot, OrderResult, TradeRecord, TradeSource, HistoryStats, PortfolioStats
 │   ├── repository/                        # Persistence interfaces: TradeRepository, PortfolioStatsRepository
 │   │   ├── impl/                          # SQLite-backed implementations (via Exposed ORM)
 │   │   │   └── RepositoryUtils.kt         # safeTransaction + Dispatchers.IO helpers
@@ -543,7 +543,7 @@ If you are modifying the client-side code in `frontend-js/` and want to compile 
 |---------------------------|-----------|---------|---------------------------------------------------------------------------------------|
 | `loopDelaySeconds`        | `Long`    | `60`    | Seconds between rebalance cycles                                                      |
 | `deviationTriggerPercent` | `Double`  | `5.0`   | Minimum deviation % to trigger a trade                                                |
-| `dustThresholdUSD`        | `Double`  | `5.0`   | Minimum trade value in USD (below this is skipped)                                    |
+| `dustThresholdUSD`        | `Double`  | `5.0`   | Min significant USD deviation (order generation) and min order notional (execution)   |
 | `dryRun`                  | `Boolean` | `true`  | If true, logs intended trades without executing them                                  |
 | `simulation`              | `Boolean` | `false` | If true, runs offline in exchange simulation mode (seeds history if DB is empty)      |
 | `fiatMaxDrawdown`         | `Double`  | `0.0`   | Portfolio drawdown % at which 100% of USD is deployed (0 = disabled)                  |
