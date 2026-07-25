@@ -146,6 +146,37 @@ class PortfolioCalculationsTest : StringSpec() {
             metrics.deviationPercent.shouldBeEqualComparingTo(BigDecimal("20.0000"))
         }
 
+        // CQ-3-16: isSignificant uses abs(), so underweight |deviation| must match overweight boundaries.
+        "should mark underweight deviation at exact dust threshold as significant" {
+            val metrics = PortfolioCalculations.calculateAssetMetrics(
+                symbol = Asset(Asset.BTC),
+                baseTargetPercent = BigDecimal("50.00"),
+                currentValueUSD = BigDecimal("499.00"),
+                totalPortfolioValueUSD = BigDecimal("1000.00"),
+                effectiveUsdTarget = BigDecimal("0"),
+                cryptoScaleFactor = BigDecimal.ONE,
+                dustThresholdUSD = 1.0,
+            )
+            // Target $500, current $499.00 → |deviation| == $1.00 dust boundary
+            metrics.isSignificant.shouldBeTrue()
+            metrics.deviationUSD.shouldBeEqualComparingTo(BigDecimal("-1.00"))
+        }
+
+        "should mark underweight deviation just below dust threshold as insignificant" {
+            val metrics = PortfolioCalculations.calculateAssetMetrics(
+                symbol = Asset(Asset.BTC),
+                baseTargetPercent = BigDecimal("50.00"),
+                currentValueUSD = BigDecimal("499.01"),
+                totalPortfolioValueUSD = BigDecimal("1000.00"),
+                effectiveUsdTarget = BigDecimal("0"),
+                cryptoScaleFactor = BigDecimal.ONE,
+                dustThresholdUSD = 1.0,
+            )
+            // Target $500, current $499.01 → |deviation| == $0.99 below dust boundary
+            metrics.isSignificant.shouldBeFalse()
+            metrics.deviationUSD.shouldBeEqualComparingTo(BigDecimal("-0.99"))
+        }
+
         "should apply scale 8/2 when creating asset snapshots" {
             val snapshot = PortfolioCalculations.createAssetSnapshot(
                 symbol = Asset.BTC,

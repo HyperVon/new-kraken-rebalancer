@@ -325,5 +325,285 @@ class TradeDeduplicatorTest : StringSpec() {
 
             TradeDeduplicator.findDuplicateTradeIds(listOf(record1, record2)).isEmpty() shouldBe true
         }
+
+        "CQ-3-8: should delete the later local estimate when the API fill arrives first" {
+            val now = Instant.now()
+            val settledFill =
+                TradeRecord(
+                    timestamp = now,
+                    pair = "XBTUSD",
+                    side = "BUY",
+                    symbol = "BTC",
+                    volume = BigDecimal("1.0"),
+                    usdAmount = BigDecimal("100000.00"),
+                    success = true,
+                    dryRun = false,
+                    fee = BigDecimal("100.00"), // 0.001 fee rate
+                    source = TradeSource.API_FILL,
+                    id = 100,
+                )
+            val localEstimate =
+                TradeRecord(
+                    timestamp = now.plusSeconds(2),
+                    pair = "XBTUSD",
+                    side = "BUY",
+                    symbol = "BTC",
+                    volume = BigDecimal("1.0"),
+                    usdAmount = BigDecimal("100000.00"),
+                    success = true,
+                    dryRun = false,
+                    fee = BigDecimal("300.00"), // 0.003 fee rate (materially different)
+                    slippagePercent = BigDecimal.ZERO,
+                    source = TradeSource.LOCAL_ESTIMATE,
+                    id = 101,
+                )
+
+            TradeDeduplicator.findDuplicateTradeIds(listOf(settledFill, localEstimate)) shouldContainExactly listOf(101)
+        }
+
+        "CQ-3-8: should keep a local/API pair whose fee rates do not differ materially" {
+            val now = Instant.now()
+            val settledFill =
+                TradeRecord(
+                    timestamp = now,
+                    pair = "XBTUSD",
+                    side = "BUY",
+                    symbol = "BTC",
+                    volume = BigDecimal("1.0"),
+                    usdAmount = BigDecimal("100000.00"),
+                    success = true,
+                    dryRun = false,
+                    fee = BigDecimal("100.00"), // 0.001 fee rate
+                    source = TradeSource.API_FILL,
+                    id = 102,
+                )
+            val localEstimate =
+                TradeRecord(
+                    timestamp = now.plusSeconds(2),
+                    pair = "XBTUSD",
+                    side = "BUY",
+                    symbol = "BTC",
+                    volume = BigDecimal("1.0"),
+                    usdAmount = BigDecimal("100000.00"),
+                    success = true,
+                    dryRun = false,
+                    fee = BigDecimal("100.00"), // 0.001 fee rate (identical, not material)
+                    slippagePercent = BigDecimal.ZERO,
+                    source = TradeSource.LOCAL_ESTIMATE,
+                    id = 103,
+                )
+
+            TradeDeduplicator.findDuplicateTradeIds(listOf(settledFill, localEstimate)).isEmpty() shouldBe true
+        }
+
+        "CQ-3-21: should treat a fee-rate delta exactly at the 0.001 material threshold as a duplicate" {
+            val now = Instant.now()
+            val localEstimate =
+                TradeRecord(
+                    timestamp = now,
+                    pair = "XBTUSD",
+                    side = "BUY",
+                    symbol = "BTC",
+                    volume = BigDecimal("1.0"),
+                    usdAmount = BigDecimal("100000.00"),
+                    success = true,
+                    dryRun = false,
+                    fee = BigDecimal("100.00"), // 0.00100000 fee rate
+                    slippagePercent = BigDecimal.ZERO,
+                    source = TradeSource.LOCAL_ESTIMATE,
+                    id = 80,
+                )
+            val settledFill =
+                TradeRecord(
+                    timestamp = now.plusSeconds(2),
+                    pair = "XBTUSD",
+                    side = "BUY",
+                    symbol = "BTC",
+                    volume = BigDecimal("1.0"),
+                    usdAmount = BigDecimal("100000.00"),
+                    success = true,
+                    dryRun = false,
+                    fee = BigDecimal("0.00"), // 0.00000000 fee rate; delta == 0.001 threshold (inclusive)
+                    source = TradeSource.API_FILL,
+                    id = 81,
+                )
+
+            TradeDeduplicator.findDuplicateTradeIds(listOf(localEstimate, settledFill)) shouldContainExactly listOf(80)
+        }
+
+        "CQ-3-21: should keep a pair whose fee-rate delta is one unit below the 0.001 material threshold" {
+            val now = Instant.now()
+            val localEstimate =
+                TradeRecord(
+                    timestamp = now,
+                    pair = "XBTUSD",
+                    side = "BUY",
+                    symbol = "BTC",
+                    volume = BigDecimal("1.0"),
+                    usdAmount = BigDecimal("100000.00"),
+                    success = true,
+                    dryRun = false,
+                    fee = BigDecimal("99.999"), // 0.00099999 fee rate
+                    slippagePercent = BigDecimal.ZERO,
+                    source = TradeSource.LOCAL_ESTIMATE,
+                    id = 82,
+                )
+            val settledFill =
+                TradeRecord(
+                    timestamp = now.plusSeconds(2),
+                    pair = "XBTUSD",
+                    side = "BUY",
+                    symbol = "BTC",
+                    volume = BigDecimal("1.0"),
+                    usdAmount = BigDecimal("100000.00"),
+                    success = true,
+                    dryRun = false,
+                    fee = BigDecimal("0.00"), // delta == 0.00099999 < 0.001 threshold
+                    source = TradeSource.API_FILL,
+                    id = 83,
+                )
+
+            TradeDeduplicator.findDuplicateTradeIds(listOf(localEstimate, settledFill)).isEmpty() shouldBe true
+        }
+
+        "CQ-3-21: should treat a local estimate exactly at the 10-second window as a duplicate" {
+            val now = Instant.now()
+            val localEstimate =
+                TradeRecord(
+                    timestamp = now,
+                    pair = "XBTUSD",
+                    side = "BUY",
+                    symbol = "BTC",
+                    volume = BigDecimal("1.0"),
+                    usdAmount = BigDecimal("100000.00"),
+                    success = true,
+                    dryRun = false,
+                    fee = BigDecimal("100.00"), // 0.001 fee rate
+                    slippagePercent = BigDecimal.ZERO,
+                    source = TradeSource.LOCAL_ESTIMATE,
+                    id = 110,
+                )
+            val settledFill =
+                TradeRecord(
+                    timestamp = now.plusMillis(10_000), // exactly at the inclusive window limit
+                    pair = "XBTUSD",
+                    side = "BUY",
+                    symbol = "BTC",
+                    volume = BigDecimal("1.0"),
+                    usdAmount = BigDecimal("100000.00"),
+                    success = true,
+                    dryRun = false,
+                    fee = BigDecimal("300.00"), // 0.003 fee rate (materially different)
+                    source = TradeSource.API_FILL,
+                    id = 111,
+                )
+
+            TradeDeduplicator.findDuplicateTradeIds(listOf(localEstimate, settledFill)) shouldContainExactly listOf(110)
+        }
+
+        "CQ-3-21: should not treat a local estimate one millisecond beyond the 10-second window as a duplicate" {
+            val now = Instant.now()
+            val localEstimate =
+                TradeRecord(
+                    timestamp = now,
+                    pair = "XBTUSD",
+                    side = "BUY",
+                    symbol = "BTC",
+                    volume = BigDecimal("1.0"),
+                    usdAmount = BigDecimal("100000.00"),
+                    success = true,
+                    dryRun = false,
+                    fee = BigDecimal("100.00"), // 0.001 fee rate
+                    slippagePercent = BigDecimal.ZERO,
+                    source = TradeSource.LOCAL_ESTIMATE,
+                    id = 112,
+                )
+            val settledFill =
+                TradeRecord(
+                    timestamp = now.plusMillis(10_001), // one millisecond beyond the window
+                    pair = "XBTUSD",
+                    side = "BUY",
+                    symbol = "BTC",
+                    volume = BigDecimal("1.0"),
+                    usdAmount = BigDecimal("100000.00"),
+                    success = true,
+                    dryRun = false,
+                    fee = BigDecimal("300.00"), // 0.003 fee rate (materially different)
+                    source = TradeSource.API_FILL,
+                    id = 113,
+                )
+
+            TradeDeduplicator.findDuplicateTradeIds(listOf(localEstimate, settledFill)).isEmpty() shouldBe true
+        }
+
+        "CQ-3-12: should skip safely when the later record has a null id" {
+            val now = Instant.now()
+            val localEstimate =
+                TradeRecord(
+                    timestamp = now,
+                    pair = "XBTUSD",
+                    side = "BUY",
+                    symbol = "BTC",
+                    volume = BigDecimal("1.0"),
+                    usdAmount = BigDecimal("100000.00"),
+                    success = true,
+                    dryRun = false,
+                    fee = BigDecimal("100.00"), // 0.001 fee rate
+                    slippagePercent = BigDecimal.ZERO,
+                    source = TradeSource.LOCAL_ESTIMATE,
+                    id = 90,
+                )
+            val settledFillNullId =
+                TradeRecord(
+                    timestamp = now.plusSeconds(2),
+                    pair = "XBTUSD",
+                    side = "BUY",
+                    symbol = "BTC",
+                    volume = BigDecimal("1.0"),
+                    usdAmount = BigDecimal("100000.00"),
+                    success = true,
+                    dryRun = false,
+                    fee = BigDecimal("300.00"), // 0.003 fee rate (materially different)
+                    source = TradeSource.API_FILL,
+                    id = null,
+                )
+
+            TradeDeduplicator.findDuplicateTradeIds(listOf(localEstimate, settledFillNullId)).isEmpty() shouldBe true
+        }
+
+        "CQ-3-12: should skip safely when the record to delete is the unsettled one with a null id" {
+            val now = Instant.now()
+            val localEstimateNullId =
+                TradeRecord(
+                    timestamp = now,
+                    pair = "XBTUSD",
+                    side = "BUY",
+                    symbol = "BTC",
+                    volume = BigDecimal("1.0"),
+                    usdAmount = BigDecimal("100000.00"),
+                    success = true,
+                    dryRun = false,
+                    fee = BigDecimal("100.00"), // 0.001 fee rate
+                    slippagePercent = BigDecimal.ZERO,
+                    source = TradeSource.LOCAL_ESTIMATE,
+                    id = null,
+                )
+            val settledFill =
+                TradeRecord(
+                    timestamp = now.plusSeconds(2),
+                    pair = "XBTUSD",
+                    side = "BUY",
+                    symbol = "BTC",
+                    volume = BigDecimal("1.0"),
+                    usdAmount = BigDecimal("100000.00"),
+                    success = true,
+                    dryRun = false,
+                    fee = BigDecimal("300.00"), // 0.003 fee rate (materially different)
+                    source = TradeSource.API_FILL,
+                    id = 91,
+                )
+
+            TradeDeduplicator.findDuplicateTradeIds(listOf(localEstimateNullId, settledFill)).isEmpty() shouldBe true
+        }
     }
 }

@@ -1377,5 +1377,87 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
                 job.join()
             }
         }
+
+        "post-trade snapshot falls back to pre-trade values when recalculation fails" {
+            runTest {
+                val allocs = listOf(
+                    Allocation(Asset.BTC, 50.0),
+                    Allocation(Asset.USD, 50.0),
+                )
+                every { configService.getConfig() } returns AppConfig(
+                    kraken = KrakenCredentials(apiKey = "k", privateKey = "s"),
+                    settings = Settings(
+                        loopDelaySeconds = 0L,
+                        deviationTriggerPercent = 2.0,
+                        dustThresholdUSD = 1.0,
+                        dryRun = true,
+                        fiatMaxDrawdown = 0.0,
+                        fiatDeploymentExponent = 1.0,
+                    ),
+                    allocations = allocs,
+                )
+
+                // Pre-trade total $10,000 (BTC +2% → sell triggers); post-trade balances differ,
+                // but the post-trade price lookup comes back empty → Result.Failure → fallback.
+                var priceCalls = 0
+                krakenService.pricesSupplier = {
+                    priceCalls++
+                    if (priceCalls == 1) mapOf(Asset.BTC_USD_PAIR to 50000.0) else emptyMap()
+                }
+                var balanceCalls = 0
+                krakenService.balanceSupplier = {
+                    balanceCalls++
+                    if (balanceCalls == 1) {
+                        mapOf(Asset.BTC to 0.102, Asset.USD to 4900.0)
+                    } else {
+                        mapOf(Asset.BTC to 0.09, Asset.USD to 5400.0)
+                    }
+                }
+
+                portfolioManager.startRebalancingLoop()
+                val snapshot = portfolioManager.performRebalanceCycle()
+
+                krakenService.executedOrders.isNotEmpty() shouldBe true
+                snapshot!!.totalValueUSD.shouldBeEqualComparingTo(BigDecimal("10000.00"))
+            }
+        }
+
+        "post-trade snapshot falls back to pre-trade values when refetch throws" {
+            runTest {
+                val allocs = listOf(
+                    Allocation(Asset.BTC, 50.0),
+                    Allocation(Asset.USD, 50.0),
+                )
+                every { configService.getConfig() } returns AppConfig(
+                    kraken = KrakenCredentials(apiKey = "k", privateKey = "s"),
+                    settings = Settings(
+                        loopDelaySeconds = 0L,
+                        deviationTriggerPercent = 2.0,
+                        dustThresholdUSD = 1.0,
+                        dryRun = true,
+                        fiatMaxDrawdown = 0.0,
+                        fiatDeploymentExponent = 1.0,
+                    ),
+                    allocations = allocs,
+                )
+
+                krakenService.pricesSupplier = { mapOf(Asset.BTC_USD_PAIR to 50000.0) }
+                var balanceCalls = 0
+                krakenService.balanceSupplier = {
+                    balanceCalls++
+                    if (balanceCalls == 1) {
+                        mapOf(Asset.BTC to 0.102, Asset.USD to 4900.0)
+                    } else {
+                        throw IOException("post-trade balance fetch failed")
+                    }
+                }
+
+                portfolioManager.startRebalancingLoop()
+                val snapshot = portfolioManager.performRebalanceCycle()
+
+                krakenService.executedOrders.isNotEmpty() shouldBe true
+                snapshot!!.totalValueUSD.shouldBeEqualComparingTo(BigDecimal("10000.00"))
+            }
+        }
     }
 }

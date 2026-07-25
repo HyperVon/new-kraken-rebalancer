@@ -303,6 +303,31 @@ class ConfigServiceTest : StringSpec() {
             }
         }
 
+        "validateConfig_InvalidSymbolPattern" {
+            configService.loadConfig()
+            val oldConfig = configService.getConfig()
+            val invalidConfig = AppConfig(
+                kraken = oldConfig.kraken,
+                settings = oldConfig.settings,
+                allocations = listOf(
+                    Allocation(
+                        symbol = Asset.USD,
+                        targetPercent = 50.0,
+                    ),
+                    Allocation(
+                        symbol = "BTC-USD",
+                        targetPercent = 50.0,
+                    ),
+                ),
+            )
+
+            shouldThrow<InvalidConfigurationException> {
+                configService.updateConfig(
+                    invalidConfig,
+                )
+            }
+        }
+
         "validateConfig_BadSettings" {
             configService.loadConfig()
             val oldConfig = configService.getConfig()
