@@ -122,7 +122,13 @@ class OrderExecutorImpl(
         val price = prices[symbol] ?: BigDecimal.ZERO
         if (price.signum() == 0) return null
 
+        // Never place a zero/negative-value order (e.g. dustThresholdUSD=0 lets a $0 amount past
+        // the dust guard, or a budget-trimmed buy lands at $0). A zero volume would still hit the
+        // exchange and persist a $0 TradeRecord otherwise (CQ-3-23 / #74).
+        if (usdAmount.signum() <= 0) return null
+
         val volume = usdAmount.divide(price, PrecisionConstants.SCALE_CRYPTO, RoundingMode.HALF_UP)
+        if (volume.signum() <= 0) return null
         val pair = Asset.tradingPair(symbol)
         val result =
             krakenService.executeOrder(
