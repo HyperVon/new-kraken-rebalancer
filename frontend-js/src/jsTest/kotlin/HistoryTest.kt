@@ -37,6 +37,13 @@ class HistoryTest : StringSpec() {
             formatUSD(-12.3456) shouldBe "-$12.35"
         }
 
+        "dynamicNumber parses ISO timestamps as finite epoch milliseconds" {
+            val parsed = dynamicNumber("2023-01-01T00:00:00Z")
+
+            parsed shouldBe 1_672_531_200_000.0
+            parsed!!.isFinite() shouldBe true
+        }
+
         "formatPair handles valid and missing symbols" {
             val trade1: dynamic = mockTradeRecord(symbol = Asset.BTC)
             formatPair(trade1.unsafeCast<JsTradeRecord>()) shouldBe "${Asset.BTC}/${Asset.USD}"

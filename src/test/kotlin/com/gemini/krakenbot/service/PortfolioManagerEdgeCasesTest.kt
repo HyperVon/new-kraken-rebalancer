@@ -894,6 +894,79 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
             }
         }
 
+        "CQ-7-1: testAnalyzeDeviations_USDAndCryptoTriggersCreateCryptoOrders" {
+            runTest {
+                val allocs = listOf(
+                    Allocation(Asset.USD, 20.0),
+                    Allocation(Asset.BTC, 40.0),
+                    Allocation(Asset.ETH, 40.0),
+                )
+                val settings = Settings(
+                    loopDelaySeconds = 0L,
+                    deviationTriggerPercent = 15.0,
+                    dustThresholdUSD = 1.0,
+                    dryRun = true,
+                    fiatMaxDrawdown = 0.0,
+                    fiatDeploymentExponent = 1.0,
+                )
+                every { configService.getConfig() } returns AppConfig(
+                    kraken = KrakenCredentials(apiKey = "k", privateKey = "s"),
+                    settings = settings,
+                    allocations = allocs,
+                )
+
+                val result = portfolioAnalyzer.analyzeDeviations(
+                    totalPortfolioValueUSD = BigDecimal("1000.0"),
+                    currentValuesUSD = mapOf(
+                        Asset.USD to BigDecimal("240.0"),
+                        Asset.BTC to BigDecimal("340.0"),
+                        Asset.ETH to BigDecimal("420.0"),
+                    ),
+                    effectiveUsdTarget = BigDecimal("20.0"),
+                    cryptoScaleFactor = BigDecimal.ONE,
+                )
+
+                result.buyOrders[Asset.BTC]!!.shouldBeEqualComparingTo(BigDecimal("60.0"))
+                result.actionLog.any { it == "USD Deviation Triggered. Enforcing fiat correction." } shouldBe false
+            }
+        }
+
+        "CQ-7-2: testAnalyzeDeviations_ExactTriggerBelowDustSkipsAssetOrder" {
+            runTest {
+                val allocs = listOf(
+                    Allocation(Asset.USD, 90.0),
+                    Allocation(Asset.BTC, 10.0),
+                )
+                val settings = Settings(
+                    loopDelaySeconds = 0L,
+                    deviationTriggerPercent = 2.0,
+                    dustThresholdUSD = 0.50,
+                    dryRun = true,
+                    fiatMaxDrawdown = 0.0,
+                    fiatDeploymentExponent = 1.0,
+                )
+                every { configService.getConfig() } returns AppConfig(
+                    kraken = KrakenCredentials(apiKey = "k", privateKey = "s"),
+                    settings = settings,
+                    allocations = allocs,
+                )
+
+                val result = portfolioAnalyzer.analyzeDeviations(
+                    totalPortfolioValueUSD = BigDecimal("249.50"),
+                    currentValuesUSD = mapOf(
+                        Asset.USD to BigDecimal("224.051"),
+                        Asset.BTC to BigDecimal("25.449"),
+                    ),
+                    effectiveUsdTarget = BigDecimal("90.0"),
+                    cryptoScaleFactor = BigDecimal.ONE,
+                )
+
+                result.buyOrders.containsKey(Asset.BTC) shouldBe false
+                result.sellOrders.containsKey(Asset.BTC) shouldBe false
+                result.actionLog.any { it.contains("Deviation: BTC") } shouldBe false
+            }
+        }
+
         "testAnalyzeDeviations_dustDeviationIsIgnored" {
             runTest {
                 val totalVal = BigDecimal.valueOf(1000.0)

@@ -363,7 +363,7 @@ private fun configDataRange(config: dynamic): ChartRange? {
     return if (points.isEmpty()) null else ChartRange(points.min(), points.max())
 }
 
-private fun dynamicNumber(value: dynamic): Double? {
+internal fun dynamicNumber(value: dynamic): Double? {
     if (value == null || value == undefined) return null
     value.toString().toDoubleOrNull()?.let { return it }
     return Date(value.toString()).getTime().takeUnless { it.isNaN() }
