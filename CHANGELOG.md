@@ -35,6 +35,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **History net cash flow internals**: Renamed `CUMULATIVE_PL_*` chart IDs,
+  `buildCumulativePLChart` / `calculateCumulativePL`, and the **Month · Net Cash Flow**
+  preset id (`month-net-cash-flow`) for consistency with the user-facing chart title;
+  legacy `month-pnl` / `cumulative-pl-chart` localStorage keys are migrated on load.
+- **Spotless covers SSR views + EvaluationScenariosTest**: Bumped ktlint to **1.7.1**
+  (context-parameter support) and removed Spotless excludes for `**/view/**` and
+  `EvaluationScenariosTest.kt`. Evaluation suite keeps `max_line_length = off` via
+  `.editorconfig`; all other Kotlin stays at 120.
 - **Documentation accuracy**: Clarified rate-limit decay, post-sell USD fallback
   behavior, deviation thresholds, Kraken API permissions, and shipped safety
   defaults across the README, algorithm/flow docs, and agent skills.

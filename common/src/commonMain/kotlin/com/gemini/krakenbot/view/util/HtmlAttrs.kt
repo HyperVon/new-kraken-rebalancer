@@ -91,7 +91,7 @@ object HtmlIds {
     const val PORTFOLIO_VALUE_CHART = "portfolio-value-chart"
     const val ASSET_HOLDINGS_CHART = "asset-holdings-chart"
     const val ALLOCATION_DRIFT_CHART = "allocation-drift-chart"
-    const val CUMULATIVE_PL_CHART = "cumulative-pl-chart"
+    const val CUMULATIVE_NET_CASH_FLOW_CHART = "cumulative-net-cash-flow-chart"
 }
 
 /** Centralized sync metadata keys. */

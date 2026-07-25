@@ -85,6 +85,7 @@ object ChartProps {
     const val MAX = "max"
     const val ORIGINAL = "original"
     const val ON_ZOOM_COMPLETE = "onZoomComplete"
+
     /** Chart.js animation mode for instant programmatic zoom/pan (no tween). */
     const val TRANSITION_NONE = "none"
 
@@ -164,29 +165,26 @@ object ChartProps {
     )
 
     /** Fixed per-asset colors shared by History charts and Dashboard allocation bars. */
-    fun borderColorForSymbol(symbol: String, fallbackIndex: Int = 0): String =
-        when (symbol.uppercase()) {
-            Asset.BTC -> COLOR_AMBER
-            Asset.ETH -> COLOR_VIOLET
-            Asset.USD -> COLOR_SLATE
-            else -> PALETTE_BORDER_COLORS[fallbackIndex % PALETTE_BORDER_COLORS.size]
-        }
+    fun borderColorForSymbol(symbol: String, fallbackIndex: Int = 0): String = when (symbol.uppercase()) {
+        Asset.BTC -> COLOR_AMBER
+        Asset.ETH -> COLOR_VIOLET
+        Asset.USD -> COLOR_SLATE
+        else -> PALETTE_BORDER_COLORS[fallbackIndex % PALETTE_BORDER_COLORS.size]
+    }
 
-    fun backgroundColorForSymbol(symbol: String, fallbackIndex: Int = 0): String =
-        when (symbol.uppercase()) {
-            Asset.BTC -> COLOR_AMBER_BG_PALETTE
-            Asset.ETH -> COLOR_VIOLET_BG_PALETTE
-            Asset.USD -> COLOR_SLATE_BG_PALETTE
-            else -> PALETTE_BG_COLORS[fallbackIndex % PALETTE_BG_COLORS.size]
-        }
+    fun backgroundColorForSymbol(symbol: String, fallbackIndex: Int = 0): String = when (symbol.uppercase()) {
+        Asset.BTC -> COLOR_AMBER_BG_PALETTE
+        Asset.ETH -> COLOR_VIOLET_BG_PALETTE
+        Asset.USD -> COLOR_SLATE_BG_PALETTE
+        else -> PALETTE_BG_COLORS[fallbackIndex % PALETTE_BG_COLORS.size]
+    }
 
-    fun solidColorForSymbol(symbol: String, fallbackIndex: Int = 0): String =
-        when (symbol.uppercase()) {
-            Asset.BTC -> SOLID_BTC
-            Asset.ETH -> SOLID_ETH
-            Asset.USD -> SOLID_USD
-            else -> SOLID_FALLBACK_PALETTE[fallbackIndex % SOLID_FALLBACK_PALETTE.size]
-        }
+    fun solidColorForSymbol(symbol: String, fallbackIndex: Int = 0): String = when (symbol.uppercase()) {
+        Asset.BTC -> SOLID_BTC
+        Asset.ETH -> SOLID_ETH
+        Asset.USD -> SOLID_USD
+        else -> SOLID_FALLBACK_PALETTE[fallbackIndex % SOLID_FALLBACK_PALETTE.size]
+    }
 
     private val SOLID_FALLBACK_PALETTE =
         arrayOf(

@@ -33,8 +33,7 @@ object ActionLogFormatter {
         return "${prefix}${side.uppercaseName} $symbol Volume: $formattedVolume $valueLabel: $$formattedUsd"
     }
 
-    fun formatOrderFailure(side: OrderSide, symbol: String, errorMessage: String?): String =
-        "FAILED ${side.uppercaseName} $symbol: $errorMessage"
+    fun formatOrderFailure(side: OrderSide, symbol: String, errorMessage: String?): String = "FAILED ${side.uppercaseName} $symbol: $errorMessage"
 
     fun formatSkippedDust(side: OrderSide, symbol: String, usdCost: BigDecimal): String {
         val formattedUsd = usdCost.toUsdScale().toPlainString()

@@ -276,8 +276,7 @@ class DashboardController(
     }
 }
 
-fun TimeRange.calculateFromInstant(now: Instant): Instant =
-    days?.let { now.minus(it, ChronoUnit.DAYS) } ?: Instant.EPOCH
+fun TimeRange.calculateFromInstant(now: Instant): Instant = days?.let { now.minus(it, ChronoUnit.DAYS) } ?: Instant.EPOCH
 
 internal fun parseTimeRange(call: ApplicationCall): Pair<Instant, Instant> {
     val now = Instant.now()

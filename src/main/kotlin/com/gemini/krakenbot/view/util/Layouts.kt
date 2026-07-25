@@ -3,11 +3,7 @@ package com.gemini.krakenbot.view.util
 import com.gemini.krakenbot.view.util.Icons.icon
 import kotlinx.html.*
 
-fun FlowContent.glassPanel(
-    title: String,
-    iconSvg: String? = null,
-    block: DIV.() -> Unit,
-) {
+fun FlowContent.glassPanel(title: String, iconSvg: String? = null, block: DIV.() -> Unit) {
     div(CssClass.Layout.GlassPanel) {
         h2(CssClass.Utility.GlassPanelTitle) {
             if (iconSvg != null) {

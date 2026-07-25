@@ -19,20 +19,17 @@ class DashboardFragmentComponent(
     private val overviewGridComponent: OverviewGridComponent,
     private val allocationChartComponent: AllocationChartComponent,
     private val performanceTableComponent: PerformanceTableComponent,
-    private val recentActivityComponent: RecentActivityComponent
+    private val recentActivityComponent: RecentActivityComponent,
 ) {
     private val timeFormatter =
         DateTimeFormatter.ofPattern("hh:mm:ss a")
             .withZone(ZoneId.systemDefault())
 
     context(div: DIV)
-    fun render(
-        latest: PortfolioSnapshot,
-        history: List<PortfolioSnapshot>
-    ) {
+    fun render(latest: PortfolioSnapshot, history: List<PortfolioSnapshot>) {
         val timeSinceUpdate =
             0L.coerceAtLeast(
-                Instant.now().epochSecond - latest.timestamp.epochSecond
+                Instant.now().epochSecond - latest.timestamp.epochSecond,
             )
         val isStale = timeSinceUpdate > PrecisionConstants.STALE_THRESHOLD_SECONDS
 
@@ -48,11 +45,7 @@ class DashboardFragmentComponent(
     }
 
     context(div: DIV)
-    private fun renderHeaderSection(
-        latest: PortfolioSnapshot,
-        timeSinceUpdate: Long,
-        isStale: Boolean
-    ) {
+    private fun renderHeaderSection(latest: PortfolioSnapshot, timeSinceUpdate: Long, isStale: Boolean) {
         div.header {
             div(CssClass.Layout.HeaderTitleSection) {
                 brandMark()

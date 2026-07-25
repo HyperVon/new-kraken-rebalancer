@@ -1,6 +1,7 @@
 package com.gemini.krakenbot.view.component
 
 import com.gemini.krakenbot.model.PortfolioSnapshot
+import com.gemini.krakenbot.service.impl.PortfolioCalculations
 import com.gemini.krakenbot.view.util.ChartProps
 import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.Formatter
@@ -8,7 +9,6 @@ import com.gemini.krakenbot.view.util.Icons
 import com.gemini.krakenbot.view.util.ViewText
 import com.gemini.krakenbot.view.util.div
 import com.gemini.krakenbot.view.util.glassPanel
-import com.gemini.krakenbot.service.impl.PortfolioCalculations
 import kotlinx.html.DIV
 import kotlinx.html.style
 import java.math.BigDecimal
@@ -43,7 +43,9 @@ class AllocationChartComponent {
                             }
                         }
                         div(CssClass.AllocationChart.BarValue) {
-                            +"$${Formatter.formatCurrency(asset.valueUSD)} (${Formatter.formatPercent(asset.currentPercent)}%)"
+                            +"$${Formatter.formatCurrency(
+                                asset.valueUSD,
+                            )} (${Formatter.formatPercent(asset.currentPercent)}%)"
                         }
                     }
                 }

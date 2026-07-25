@@ -11,29 +11,29 @@ plugins {
 
 spotless {
     kotlin {
-        target("src/**/*.kt", "common/**/*.kt", "frontend-js/src/**/*.kt")
-        targetExclude(
-            "**/view/**",
-            "**/EvaluationScenariosTest.kt",
-        )
-        ktlint("1.3.1").editorConfigOverride(
+        target("src/**/*.kt", "common/src/**/*.kt", "frontend-js/src/**/*.kt")
+        ktlint("1.7.1").editorConfigOverride(
             mapOf(
                 "ktlint_standard_no-wildcard-imports" to "disabled",
                 "ktlint_standard_filename" to "disabled",
                 "ktlint_standard_property-naming" to "disabled",
                 "ktlint_standard_backing-property-naming" to "disabled",
-                "max_line_length" to "120",
             ),
         )
     }
     kotlinGradle {
         target("*.gradle.kts")
-        ktlint("1.3.1").editorConfigOverride(
+        ktlint("1.7.1").editorConfigOverride(
             mapOf(
                 "max_line_length" to "120",
             ),
         )
     }
+}
+
+// Spotless reads under src/; avoid parallel races with resource copy (Gradle 9 validation).
+tasks.named("spotlessKotlin") {
+    mustRunAfter("copyJsBundle")
 }
 
 group = "com.gemini"

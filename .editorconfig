@@ -1,0 +1,10 @@
+root = true
+
+[*.{kt,kts}]
+indent_style = space
+indent_size = 4
+max_line_length = 120
+
+# Large evaluation suite: Spotless still formats this file; line length alone is relaxed.
+[src/test/kotlin/com/gemini/krakenbot/EvaluationScenariosTest.kt]
+max_line_length = off

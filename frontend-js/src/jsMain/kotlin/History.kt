@@ -144,7 +144,7 @@ private val historyChartIds =
         HtmlIds.PORTFOLIO_VALUE_CHART,
         HtmlIds.ASSET_HOLDINGS_CHART,
         HtmlIds.ALLOCATION_DRIFT_CHART,
-        HtmlIds.CUMULATIVE_PL_CHART,
+        HtmlIds.CUMULATIVE_NET_CASH_FLOW_CHART,
     )
 
 fun registerHistoryGlobals() {
@@ -419,7 +419,7 @@ private fun setupSyncProgressAndLoad() {
     checkbox?.addEventListener(HtmlEvents.CHANGE, {
         HistoryViewPrefs.markCurrentViewModified()
         renderTradeTable(allTrades)
-        buildCumulativePLChart(allTrades, checkbox.checked)
+        buildCumulativeNetCashFlowChart(allTrades, checkbox.checked)
     })
 }
 
@@ -463,11 +463,10 @@ internal fun getUniqueSymbols(snapshots: Array<dynamic>, excludeUsd: Boolean = t
     }
 }
 
-internal fun mapSnapshotsToPoints(snapshots: Array<dynamic>, valueSelector: (dynamic) -> Double): Array<dynamic> =
-    snapshots
-        .map { s: dynamic ->
-            json("x" to s.timestamp, "y" to valueSelector(s))
-        }.toTypedArray()
+internal fun mapSnapshotsToPoints(snapshots: Array<dynamic>, valueSelector: (dynamic) -> Double): Array<dynamic> = snapshots
+    .map { s: dynamic ->
+        json("x" to s.timestamp, "y" to valueSelector(s))
+    }.toTypedArray()
 
 internal fun getClonedChartOptions(): dynamic {
     val options: dynamic = JSON.parse(JSON.stringify(window.asDynamic().chartDefaults))
@@ -773,7 +772,7 @@ internal fun buildAllocationDriftChart(snapshots: Array<dynamic>) {
     createOrUpdate(HtmlIds.ALLOCATION_DRIFT_CHART, createLineChartConfig(datasets, options))
 }
 
-internal fun calculateCumulativePL(trades: Array<dynamic>, includeDryRun: Boolean = false): Array<dynamic> {
+internal fun calculateCumulativeNetCashFlow(trades: Array<dynamic>, includeDryRun: Boolean = false): Array<dynamic> {
     if (trades.asDynamic().length == 0) return emptyArray()
 
     val sorted =
@@ -810,8 +809,8 @@ internal fun calculateCumulativePL(trades: Array<dynamic>, includeDryRun: Boolea
     return points.toTypedArray()
 }
 
-internal fun buildCumulativePLChart(trades: Array<dynamic>, includeDryRun: Boolean = false) {
-    val rawData = calculateCumulativePL(trades, includeDryRun)
+internal fun buildCumulativeNetCashFlowChart(trades: Array<dynamic>, includeDryRun: Boolean = false) {
+    val rawData = calculateCumulativeNetCashFlow(trades, includeDryRun)
     if (rawData.asDynamic().length == 0) return
 
     val chartData =
@@ -847,7 +846,7 @@ internal fun buildCumulativePLChart(trades: Array<dynamic>, includeDryRun: Boole
         formatUSD(v)
     }
 
-    createOrUpdate(HtmlIds.CUMULATIVE_PL_CHART, createLineChartConfig(datasets, options))
+    createOrUpdate(HtmlIds.CUMULATIVE_NET_CASH_FLOW_CHART, createLineChartConfig(datasets, options))
 }
 
 fun formatPair(trade: JsTradeRecord?): String {
@@ -960,8 +959,7 @@ internal fun updateStats(stats: JsHistoryStats) {
     if (totalFees != null) totalFees.textContent = formatUSD(stats.totalFeesPaid.toString().toDoubleOrNull() ?: 0.0)
 }
 
-private fun fetchRanged(vararg routes: String, range: String): Array<Promise<dynamic>> =
-    routes.map { route -> fetchJSON(route.withRange(range)) }.toTypedArray()
+private fun fetchRanged(vararg routes: String, range: String): Array<Promise<dynamic>> = routes.map { route -> fetchJSON(route.withRange(range)) }.toTypedArray()
 
 internal fun loadAll(range: String): Promise<Unit> {
     currentRange = range
@@ -983,7 +981,7 @@ internal fun loadAll(range: String): Promise<Unit> {
         buildAssetHoldingsChart(snapshots.asDynamic())
         buildAllocationDriftChart(snapshots.asDynamic())
         val showDryRun = (document.getElementById(HtmlIds.SHOW_DRY_RUN_CHECKBOX) as? HTMLInputElement)?.checked ?: true
-        buildCumulativePLChart(trades.asDynamic(), showDryRun)
+        buildCumulativeNetCashFlowChart(trades.asDynamic(), showDryRun)
         renderTradeTable(trades)
         updateStats(stats)
     }

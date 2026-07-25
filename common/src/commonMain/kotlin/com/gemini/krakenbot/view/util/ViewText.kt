@@ -89,7 +89,7 @@ object ViewText {
     const val HISTORY_VIEW_OVERVIEW = "Overview"
     const val HISTORY_VIEW_DAY_TOTAL = "Day · Total only"
     const val HISTORY_VIEW_WEEK_ALLOCATION = "Week · Allocation"
-    const val HISTORY_VIEW_MONTH_PNL = "Month · P&L"
+    const val HISTORY_VIEW_MONTH_NET_CASH_FLOW = "Month · Net Cash Flow"
     const val HISTORY_VIEW_UNSAVED = "Custom (unsaved)"
     const val HISTORY_VIEWS_STORAGE_KEY = "kraken.history.views"
 
@@ -125,5 +125,5 @@ object HistoryViewIds {
     const val OVERVIEW = "overview"
     const val DAY_TOTAL = "day-total"
     const val WEEK_ALLOCATION = "week-allocation"
-    const val MONTH_PNL = "month-pnl"
+    const val MONTH_NET_CASH_FLOW = "month-net-cash-flow"
 }

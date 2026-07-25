@@ -11,6 +11,7 @@ import com.gemini.krakenbot.view.component.*
 import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.FormFields.DEVIATION_TRIGGER_PERCENT
 import com.gemini.krakenbot.view.util.FormFields.LOOP_DELAY_SECONDS
+import com.gemini.krakenbot.view.util.Icons
 import com.gemini.krakenbot.view.util.Routes.API_STATUS_STREAM
 import com.gemini.krakenbot.view.util.Routes.STATIC_STYLE_CSS
 import com.gemini.krakenbot.view.util.ViewText.APP_TITLE
@@ -35,7 +36,6 @@ import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldNotContain
-import com.gemini.krakenbot.view.util.Icons
 import kotlinx.html.div
 import kotlinx.html.html
 import kotlinx.html.stream.createHTML
@@ -55,13 +55,13 @@ class DashboardViewTest : StringSpec() {
         overviewGridComponent = overview,
         allocationChartComponent = chart,
         performanceTableComponent = table,
-        recentActivityComponent = activity
+        recentActivityComponent = activity,
     )
     private val view = DashboardView(
         shellComponent = shell,
         settingsFormComponent = SettingsFormComponent(),
         fragmentComponent = fragment,
-        historyPageComponent = HistoryPageComponent()
+        historyPageComponent = HistoryPageComponent(),
     )
 
     private val ALLOCATION_BAR_LABEL = CssClass.AllocationChart.BarLabel.toString()
@@ -73,7 +73,7 @@ class DashboardViewTest : StringSpec() {
     private val baseConfig = AppConfig(
         KrakenCredentials(
             apiKey = TestFixtures.TEST_API_KEY,
-            privateKey = "privateKey"
+            privateKey = "privateKey",
         ),
         Settings(
             loopDelaySeconds = 60L,
@@ -81,13 +81,13 @@ class DashboardViewTest : StringSpec() {
             dustThresholdUSD = 5.0,
             dryRun = true,
             fiatMaxDrawdown = 20.0,
-            fiatDeploymentExponent = 1.0
+            fiatDeploymentExponent = 1.0,
         ),
         listOf(
             Allocation(Asset.USD, 10.0),
             Allocation(Asset.BTC, 50.0),
-            Allocation(Asset.ETH, 40.0)
-        )
+            Allocation(Asset.ETH, 40.0),
+        ),
     )
 
     init {
@@ -137,7 +137,7 @@ class DashboardViewTest : StringSpec() {
                         targetPercent = BigDecimal("10.0"),
                         currentPercent = BigDecimal("10.0"),
                         deviationPercent = BigDecimal("0.0"),
-                        deviationUSD = BigDecimal("0.0")
+                        deviationUSD = BigDecimal("0.0"),
                     ),
                     Asset.BTC to PortfolioSnapshot.AssetSnapshot(
                         symbol = Asset.BTC,
@@ -147,7 +147,7 @@ class DashboardViewTest : StringSpec() {
                         targetPercent = BigDecimal("50.0"),
                         currentPercent = BigDecimal("50.0"),
                         deviationPercent = BigDecimal("5.0"),
-                        deviationUSD = BigDecimal("250.0")
+                        deviationUSD = BigDecimal("250.0"),
                     ),
                     Asset.ETH to PortfolioSnapshot.AssetSnapshot(
                         symbol = Asset.ETH,
@@ -157,16 +157,16 @@ class DashboardViewTest : StringSpec() {
                         targetPercent = BigDecimal("40.0"),
                         currentPercent = BigDecimal("40.0"),
                         deviationPercent = BigDecimal("-2.5"),
-                        deviationUSD = BigDecimal("-100.0")
-                    )
+                        deviationUSD = BigDecimal("-100.0"),
+                    ),
                 ),
                 actions = listOf(
                     "BUY BTC Volume: 0.05 Value: $2500.00",
-                    "SELL ETH Volume: 1.0 Value: $2000.00"
+                    "SELL ETH Volume: 1.0 Value: $2000.00",
                 ),
                 drawdownPercent = BigDecimal("5.0"),
                 fiatDeploymentPercent = BigDecimal("25.0"),
-                effectiveUsdTargetPercent = BigDecimal("7.5")
+                effectiveUsdTargetPercent = BigDecimal("7.5"),
             )
 
             val history = listOf(latest)
@@ -211,13 +211,13 @@ class DashboardViewTest : StringSpec() {
                         targetPercent = BigDecimal("100.0"),
                         currentPercent = BigDecimal("100.0"),
                         deviationPercent = BigDecimal("0.0"),
-                        deviationUSD = BigDecimal("0.0")
-                    )
+                        deviationUSD = BigDecimal("0.0"),
+                    ),
                 ),
                 actions = emptyList(),
                 drawdownPercent = BigDecimal.ZERO,
                 fiatDeploymentPercent = BigDecimal.ZERO,
-                effectiveUsdTargetPercent = BigDecimal("100.0")
+                effectiveUsdTargetPercent = BigDecimal("100.0"),
             )
 
             val html = createHTML().div {
@@ -238,7 +238,7 @@ class DashboardViewTest : StringSpec() {
                 actions = listOf("INFO Rebalancer initialized"),
                 drawdownPercent = BigDecimal.ZERO,
                 fiatDeploymentPercent = BigDecimal.ZERO,
-                effectiveUsdTargetPercent = BigDecimal("10.0")
+                effectiveUsdTargetPercent = BigDecimal("10.0"),
             )
             createHTML().div {
                 view.renderDashboardFragment(emptyAssetsLatest, emptyList())
@@ -256,13 +256,13 @@ class DashboardViewTest : StringSpec() {
                         targetPercent = BigDecimal.ZERO,
                         currentPercent = BigDecimal.ZERO,
                         deviationPercent = BigDecimal.ZERO,
-                        deviationUSD = BigDecimal.ZERO
-                    )
+                        deviationUSD = BigDecimal.ZERO,
+                    ),
                 ), // covers maxVal <= 0 in renderAllocationChart
                 actions = listOf("INFO Rebalancer initialized"), // neither BUY nor SELL
                 drawdownPercent = BigDecimal.ZERO, // drawdown is 0
                 fiatDeploymentPercent = BigDecimal.ZERO,
-                effectiveUsdTargetPercent = BigDecimal("10.0")
+                effectiveUsdTargetPercent = BigDecimal("10.0"),
             )
 
             val noActionsSnapshot = PortfolioSnapshot(
@@ -272,13 +272,13 @@ class DashboardViewTest : StringSpec() {
                 actions = emptyList(), // covers empty actions inside the recent activity table
                 drawdownPercent = BigDecimal.ZERO,
                 fiatDeploymentPercent = BigDecimal.ZERO,
-                effectiveUsdTargetPercent = BigDecimal("10.0")
+                effectiveUsdTargetPercent = BigDecimal("10.0"),
             )
 
             val html = createHTML().div {
                 view.renderDashboardFragment(
                     latest,
-                    listOf(latest, noActionsSnapshot)
+                    listOf(latest, noActionsSnapshot),
                 )
             }
 
@@ -302,13 +302,13 @@ class DashboardViewTest : StringSpec() {
                         targetPercent = BigDecimal("10.0"),
                         currentPercent = BigDecimal("10.0"),
                         deviationPercent = BigDecimal("0.0"),
-                        deviationUSD = BigDecimal("0.0")
-                    )
+                        deviationUSD = BigDecimal("0.0"),
+                    ),
                 ),
                 actions = emptyList(),
                 drawdownPercent = BigDecimal.ZERO,
                 fiatDeploymentPercent = BigDecimal.ZERO,
-                effectiveUsdTargetPercent = BigDecimal("10.0") // Equal to targetPercent
+                effectiveUsdTargetPercent = BigDecimal("10.0"), // Equal to targetPercent
             )
 
             val html = createHTML().div {
@@ -327,7 +327,9 @@ class DashboardViewTest : StringSpec() {
         }
 
         "PerformanceTableComponent_Companion_getCOLUMNS" {
-            val companionClass = Class.forName($$"com.gemini.krakenbot.view.component.PerformanceTableComponent$Companion")
+            val companionClass = Class.forName(
+                $$"com.gemini.krakenbot.view.component.PerformanceTableComponent$Companion",
+            )
             val getCOLUMNS = companionClass.getDeclaredMethod("getCOLUMNS")
             getCOLUMNS.isAccessible = true
             val companionField = PerformanceTableComponent::class.java.getDeclaredField("Companion")

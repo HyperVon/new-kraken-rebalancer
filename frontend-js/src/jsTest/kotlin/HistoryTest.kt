@@ -76,7 +76,7 @@ class HistoryTest : StringSpec() {
             assertEquals("2023-01-01", p0x.toString())
         }
 
-        "calculateCumulativePL filters and orders completed trades" {
+        "calculateCumulativeNetCashFlow filters and orders completed trades" {
             val trades =
                 arrayOf(
                     TestDomBuilders.tradeJson(
@@ -108,11 +108,11 @@ class HistoryTest : StringSpec() {
                     ),
                 )
 
-            val result = calculateCumulativePL(trades.unsafeCast<Array<JsTradeRecord>>())
+            val result = calculateCumulativeNetCashFlow(trades.unsafeCast<Array<JsTradeRecord>>())
             result.size shouldBe 3
         }
 
-        "calculateCumulativePL skips unknown order sides" {
+        "calculateCumulativeNetCashFlow skips unknown order sides" {
             val trades =
                 arrayOf(
                     TestDomBuilders.tradeJson(
@@ -132,7 +132,7 @@ class HistoryTest : StringSpec() {
                     ),
                 )
 
-            val result = calculateCumulativePL(trades.unsafeCast<Array<JsTradeRecord>>())
+            val result = calculateCumulativeNetCashFlow(trades.unsafeCast<Array<JsTradeRecord>>())
             result.size shouldBe 2
             result[0].y.toString().toDouble() shouldBe 50.0
             result[1].y.toString().toDouble() shouldBe 30.0
@@ -288,11 +288,11 @@ class HistoryTest : StringSpec() {
                 buildPortfolioValueChart(emptyArray())
                 buildAssetHoldingsChart(emptyArray())
                 buildAllocationDriftChart(emptyArray())
-                buildCumulativePLChart(emptyArray())
+                buildCumulativeNetCashFlowChart(emptyArray())
                 buildPortfolioValueChart(snapshots)
                 buildAssetHoldingsChart(snapshots)
                 buildAllocationDriftChart(snapshots)
-                buildCumulativePLChart(trades)
+                buildCumulativeNetCashFlowChart(trades)
                 buildPortfolioValueChart(snapshots)
 
                 (window.asDynamic().chartConfigs.length as Int) shouldBe 5
@@ -456,7 +456,7 @@ class HistoryTest : StringSpec() {
                 currentRange shouldBe TimeRange.TWENTY_FOUR_HOURS.key
                 (document.getElementById(HtmlIds.SHOW_DRY_RUN_CHECKBOX) as HTMLInputElement).checked shouldBe true
 
-                HistoryViewPrefs.applyView(HistoryViewIds.MONTH_PNL).await()
+                HistoryViewPrefs.applyView(HistoryViewIds.MONTH_NET_CASH_FLOW).await()
                 currentRange shouldBe TimeRange.THIRTY_DAYS.key
                 (document.getElementById(HtmlIds.SHOW_DRY_RUN_CHECKBOX) as HTMLInputElement).checked shouldBe false
 

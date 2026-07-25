@@ -17,7 +17,7 @@ object TestDomBuilders {
         <canvas id="${HtmlIds.PORTFOLIO_VALUE_CHART}"></canvas>
         <canvas id="${HtmlIds.ASSET_HOLDINGS_CHART}"></canvas>
         <canvas id="${HtmlIds.ALLOCATION_DRIFT_CHART}"></canvas>
-        <canvas id="${HtmlIds.CUMULATIVE_PL_CHART}"></canvas>
+        <canvas id="${HtmlIds.CUMULATIVE_NET_CASH_FLOW_CHART}"></canvas>
         """.trimIndent()
 
     fun statsDom(): String =
