@@ -28,11 +28,11 @@ Product polish discovered during QA belongs in
 
 | ID | Size | Kind | Status | Area | Summary | Cycle | PR |
 | :--- | :---: | :--- | :--- | :--- | :--- | :---: | :--- | :--- |
-| CQ-5-1 | M | harness | done | build | Filtered `--tests` runs no longer fail project-wide JaCoCo gates; full runs still verify | 6 | TBD |
-| CQ-5-2 | S | harness | done | skills | One Gradle build per clone (worktree or parent-owns-build); concurrent builds cause `EOFException` / false `UP-TO-DATE` | 6 | TBD |
-| CQ-5-3 | S | harness | done | skills | Final verification must force re-execution (`--rerun-tasks`) and check JUnit XML counts | 6 | TBD |
-| CQ-5-4 | S | gap | done | history | Remove redundant double-lookup Elvis in snapshot seeding; other defensive branches kept by design | 6 | TBD |
-| CQ-5-5 | S | harness | done | docs | improvement-backlog: 35 completed rows moved out of the Open section | 6 | TBD |
+| CQ-5-1 | M | harness | done | build | Filtered `--tests` runs no longer fail project-wide JaCoCo gates; full runs still verify | 6 | [#79](https://github.com/HyperVon/new-kraken-rebalancer/pull/79) |
+| CQ-5-2 | S | harness | done | skills | One Gradle build per clone (worktree or parent-owns-build); concurrent builds cause `EOFException` / false `UP-TO-DATE` | 6 | [#79](https://github.com/HyperVon/new-kraken-rebalancer/pull/79) |
+| CQ-5-3 | S | harness | done | skills | Final verification must force re-execution (`--rerun-tasks`) and check JUnit XML counts | 6 | [#79](https://github.com/HyperVon/new-kraken-rebalancer/pull/79) |
+| CQ-5-4 | S | gap | done | history | Remove redundant double-lookup Elvis in snapshot seeding; other defensive branches kept by design | 6 | [#79](https://github.com/HyperVon/new-kraken-rebalancer/pull/79) |
+| CQ-5-5 | S | harness | done | docs | improvement-backlog: 35 completed rows moved out of the Open section | 6 | [#79](https://github.com/HyperVon/new-kraken-rebalancer/pull/79) |
 | CQ-3-14 | M | gap | done | history/repo | Lift `TradeHistoryServiceImpl` + `repository.impl` branch coverage (overall ~95%) | 5 | [#78](https://github.com/HyperVon/new-kraken-rebalancer/pull/78) |
 | CQ-3-26 | L | bug | done | fiat | Skip `$0.00` fiat-correction shares; cap sum ≤ `\|usdDev\|` via truncated budget | 5 | [#78](https://github.com/HyperVon/new-kraken-rebalancer/pull/78) |
 | CQ-3-28 | M | gap | done | eval | Scenario 32 — multi-cycle convergence with fill feedback, zero orders by cycle 3 | 5 | [#78](https://github.com/HyperVon/new-kraken-rebalancer/pull/78) |
