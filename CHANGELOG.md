@@ -185,7 +185,6 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   5-minute window boundary, explicit zero ticker price abort, and zero-volume
   order suppression at `dustThresholdUSD=0`.
 
-
 ## [6.12.24] - 2026-07-24
 
 ### Fixed
