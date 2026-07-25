@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [6.13.1] - 2026-07-25
 
 ### Fixed
 
@@ -32,6 +32,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Config template drawdown default**: Documented that
   `rebalancer-config-template.json` ships `fiatMaxDrawdown: 0.0` (deployment off),
   matching `Settings` / README — not a silent strategy change.
+- **Documentation accuracy**: Full docs audit against source — `dryRun` /
+  required Settings defaults, architecture edges, CORS/`::1`, algorithm
+  precision/fee/seed-prune, FLOWS USD-poll wording, History card formulas,
+  Scenario 16 SQLite evidence, stack pins, and `jsBrowserTest` quality-gate
+  commands.
 
 ### Changed
 

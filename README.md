@@ -28,8 +28,8 @@ walkthrough of Dashboard, Settings, History, and safety modes
 | **Concurrency** | Kotlin Coroutines (`kotlinx.coroutines` 1.11.0)                                                        |
 | **Frontend**    | Server-side HTML (kotlinx.html DSL + HTMX), kotlinx-css DSL, Ktor SSE + Client-side Kotlin/JS          |
 | **API**         | Kraken REST API with HMAC-SHA512 authentication                                                        |
-| **Testing**     | Kotest 6.2.3, MockK 1.14, JaCoCo (95%+ JVM coverage), Karma/Istanbul (90%+ JS statement/func coverage) |
-| **Build**       | Gradle 9.6.1 (Kotlin DSL), Spotless + ktlint 1.7.1                                                     |
+| **Testing**     | Kotest 6.2.3, MockK 1.14.11, JaCoCo (95% instr/line/method, 90% branch), Karma/Istanbul (90/90/90/75)  |
+| **Build**       | Gradle 9.6.1 (Kotlin DSL), Spotless 8.8.0 + ktlint 1.7.1                                               |
 
 ---
 
@@ -193,8 +193,8 @@ with a wide range of tools and paradigms:
 - STREAM/STALE SSE stream-health indicator with relative age/time (separate from trading mode)
 - Persistent mode plate (SIMULATION / DRY RUN / LIVE TRADING)
 - **Range-Filtered History Metrics** — Time frame selector controls all six top metric summary cards (All-Time High / Period High, Total Trades, Total Volume Traded, Total Fees Paid, Avg Fee Rate, Avg Slippage) dynamically alongside interactive Chart.js timelines and trade history logs with price, fee, and slippage columns.
-- **Hypermedia-powered** — uses HTMX for dynamic content swapping and form
-  submissions without writing JavaScript
+- **Hypermedia-powered** — uses HTMX for HTML swaps and form submissions, plus
+  Kotlin/JS (`rebalancer.js`) for charts, History controls, and client behavior
 
 ### Hot-Reload Configuration
 
@@ -206,7 +206,7 @@ with a wide range of tools and paradigms:
 ### Offline Exchange Simulator & Pre-Seeding
 
 - **Offline Simulation Mode** — Run the bot completely offline without a real Kraken API key. Enable `"simulation": true` (dynamic toggling supported via the Settings UI) to execute orders and check balances against a realistic random walk price generator.
-- **Automated Database Seeding** — If started in simulation mode with an empty database, the system generates 15 days (60 cycles) of historical snapshots and trade logs, providing immediately interactive graphs.
+- **Automated Database Seeding** — If started in simulation mode with an empty database, the system generates ~15 days of snapshots at 6-hour steps (~61 points) plus trade logs, providing immediately interactive graphs.
 
 ### Historical Trades Synchronization
 
@@ -228,7 +228,7 @@ with a wide range of tools and paradigms:
   costs); `retryWithFlow` automatically retries transient
   socket/HTTP/rate-limit/lockout errors with exponential backoff (lockouts
   start at 10s and scale up to a 15-minute ceiling)
-- **CORS Restrictions** — locks down server allowed origins to local machine addresses (`localhost`, `127.0.0.1`, `::1`), Bonjour multicast DNS domains (`*.local`), and private local subnets (`192.168.x.x`, `10.x.x.x`, etc.) to permit local Wi-Fi access from other devices while blocking public web threats
+- **CORS Restrictions** — locks down server allowed origins to local machine addresses (`localhost`, `127.0.0.1`), Bonjour multicast DNS domains (`*.local`), and private local subnets (`192.168.x.x`, `10.x.x.x`, `172.16–31.x.x`, link-local `169.254.x.x`) to permit local Wi-Fi access from other devices while blocking public web threats
 - **No dashboard user auth** — trust model is local/private network; see [SECURITY.md](SECURITY.md)
 - **Database Indexing & Auto Migrations** — database schemas utilize index optimizations for timestamps, and run dynamic `SchemaUtils.createMissingTablesAndColumns` auto-migrations on startup
 - Dust threshold filtering to avoid minimum order size errors
@@ -315,8 +315,7 @@ graph LR
         PA --> PSR["PortfolioStatsRepository (SQLite)"]
         PA --> PC[PortfolioCalculations]
         OE --> KS
-        OE --> CS
-        OE --> PA
+        OE --> THS
         THS --> TR["TradeRepository (SQLite)"]
         KS --> RL[RateLimiter]
     end
@@ -407,7 +406,7 @@ two complementary `SharedFlow` channels:
 │   ├── repository/                        # Persistence interfaces: TradeRepository, PortfolioStatsRepository
 │   │   ├── impl/                          # SQLite-backed implementations (via Exposed ORM)
 │   │   │   └── RepositoryUtils.kt         # safeTransaction + Dispatchers.IO helpers
-│   │   └── table/                         # Exposed table definitions (Trade, Snapshot, Stats, Sync metadata)
+│   │   └── table/                         # Exposed tables: Trade, PortfolioSnapshot, AssetSnapshot, PortfolioStats, HistorySyncMetadata, ActionLog
 │   ├── service/                           # Core logic interfaces and shared utilities
 │   │   ├── ServiceUtils.kt               # BigDecimal parsing and relative-tolerance helpers
 │   │   └── impl/                          # Service implementations (coroutine-aware)
@@ -424,18 +423,13 @@ two complementary `SharedFlow` channels:
 │   │       ├── SimulationDefaults.kt     # Shared simulation default prices
 │   │       ├── SnapshotHistoryCalculator.kt # History reconstruction helpers
 │   │       └── TradeHistoryServiceImpl.kt # Snapshot storage, trade sync, history flow
-│   ├── util/                              # NetworkUtils, TradeDeduplicator, TradeCalculator, ActionLogFormatter, BigDecimalExtensions
+│   ├── util/                              # NetworkUtils, TradeDeduplicator, TradeCalculator, ActionLogFormatter, BigDecimalExtensions, BalanceKeys, PrecisionConstantsJvm
 │   ├── view/                              # HTML templates & components (kotlinx.html DSL)
 │   │   ├── DashboardView.kt              # Facade class delegating to components
 │   │   ├── component/                    # Modular components (Shell, Grid, Form, History, etc.)
-│   │   ├── css/                          # Modular domain CSS modules (CssTheme, LayoutStyles, TableStyles, FormStyles, NavigationStyles)
-│   │   └── util/                         # Formatter, Extensions, Icons, Layouts (shared IDs/Routes live in :common)
-├── src/test/kotlin/                       # Unit tests (95%+ coverage enforced via JaCoCo)
-│   └── com/gemini/krakenbot/
-│       └── service/
-│           ├── FakeKrakenService.kt       # In-process test double for KrakenService
-│           ├── DynamicKrakenServiceTest.kt # Unit tests verifying dynamic real/simulation routing
-│           └── SimulatedKrakenServiceTest.kt # Unit tests verifying mock exchange emulator
+│   │   ├── css/                          # CssTheme, CssStyles, ComponentStyles, LayoutStyles, TableStyles, FormStyles, NavigationStyles, MediaQueries
+│   │   └── util/                         # Formatter, HtmlExtensions, HtmlHelpers, Icons, Layouts (shared IDs/Routes live in :common)
+├── src/test/kotlin/                       # JVM unit / E2E / evaluation tests (JaCoCo gates)
 ├── src/main/resources/                    # Static resources
 │   └── static/
 │       ├── (style.css served dynamically) # Stylesheet compiled from view/css/ via kotlinx-css DSL
@@ -543,15 +537,15 @@ If you are modifying the client-side code in `frontend-js/` and want to compile 
 
 ## Configuration Reference
 
-| Field                     | Type      | Default | Description                                                                           |
-|---------------------------|-----------|---------|---------------------------------------------------------------------------------------|
-| `loopDelaySeconds`        | `Long`    | `60`    | Seconds between rebalance cycles                                                      |
-| `deviationTriggerPercent` | `Double`  | `5.0`   | Minimum deviation % to trigger a trade                                                |
-| `dustThresholdUSD`        | `Double`  | `5.0`   | Min significant USD deviation (order generation) and min order notional (execution)   |
-| `dryRun`                  | `Boolean` | `true`  | If true, logs intended trades without executing them                                  |
-| `simulation`              | `Boolean` | `false` | If true, runs offline in exchange simulation mode (seeds history if DB is empty)      |
-| `fiatMaxDrawdown`         | `Double`  | `0.0`   | Portfolio drawdown % at which 100% of USD is deployed (0 = disabled)                  |
-| `fiatDeploymentExponent`  | `Double`  | `1.0`   | Controls deployment curve: `1.0` = linear, `<1.0` = aggressive, `>1.0` = conservative |
+| Field                     | Type      | Default                 | Description                                                                           |
+|---------------------------|-----------|-------------------------|---------------------------------------------------------------------------------------|
+| `loopDelaySeconds`        | `Long`    | — (template `60`)       | Seconds between rebalance cycles; required in JSON                                    |
+| `deviationTriggerPercent` | `Double`  | — (template `5.0`)      | Minimum absolute deviation % to trigger a trade; required in JSON                     |
+| `dustThresholdUSD`        | `Double`  | `5.0`                   | Min significant USD deviation (order generation) and min order notional (execution)   |
+| `dryRun`                  | `Boolean` | — (template `true`)     | Required in JSON; if true, logs intended trades without executing them                |
+| `simulation`              | `Boolean` | `false`                 | If true, runs offline in exchange simulation mode (seeds history if DB is empty)      |
+| `fiatMaxDrawdown`         | `Double`  | `0.0`                   | Portfolio drawdown % at which 100% of USD is deployed (0 = disabled)                  |
+| `fiatDeploymentExponent`  | `Double`  | `1.0`                   | Controls deployment curve: `1.0` = linear, `<1.0` = aggressive, `>1.0` = conservative |
 
 ---
 
@@ -581,6 +575,14 @@ The project features a comprehensive test suite for both the backend JVM applica
 ```bash
 ./gradlew check
 ```
+
+CI (`.github/workflows/maven.yml`) runs the equivalent coverage gate explicitly:
+
+```bash
+./gradlew build jacocoTestCoverageVerification
+```
+
+`check` also depends on `:frontend-js:jsBrowserTest` (Karma/Istanbul).
 
 ### Backend JVM Tests
 

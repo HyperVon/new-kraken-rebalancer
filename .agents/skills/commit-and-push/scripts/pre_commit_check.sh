@@ -14,6 +14,6 @@ echo "=== Step 2: Running Gradle Build & JVM Coverage Verification ==="
 ./gradlew build jacocoTestCoverageVerification
 
 echo "=== Step 3: Running Client-Side Kotlin/JS Tests ==="
-./gradlew :frontend-js:jsTest
+./gradlew :frontend-js:jsBrowserTest
 
 echo "=== All pre-commit checks PASSED successfully ==="

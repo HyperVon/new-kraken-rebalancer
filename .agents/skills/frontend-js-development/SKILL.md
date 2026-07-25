@@ -41,8 +41,9 @@ Compiles via Kotlin JS IR to `/static/rebalancer.js`.
 
 ## Trade table rendering (History)
 
-- USD price and fee columns format at **2dp** via the shared USD formatter, and
-  render `ViewText.EM_DASH` for zero/absent values (never `0.00000000`).
+- Trade **Price** formats at crypto precision (**4–8** decimal places);
+  **Fee** formats at **2–4** dp. Both render `ViewText.EM_DASH` for
+  zero/absent values (never `0.00000000`).
 - A plain success row (`success && !dryRun`) renders a quiet
   `CssClass.Table.StatusDot` span with a `SUCCESS` tooltip; **dry-run and failed
   rows keep their labelled badge** so risky rows stay scannable.
@@ -99,7 +100,7 @@ Thresholds in `frontend-js/karma.config.d/coverage.js`:
 | Branches | 75% |
 
 ```bash
-./gradlew :frontend-js:jsTest
+./gradlew :frontend-js:jsBrowserTest
 ```
 
 ## Docs screenshots

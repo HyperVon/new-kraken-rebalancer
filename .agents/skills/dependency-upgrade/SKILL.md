@@ -143,7 +143,7 @@ or manually:
 ```bash
 ./gradlew spotlessApply
 ./gradlew build
-./gradlew test :frontend-js:jsTest
+./gradlew test :frontend-js:jsBrowserTest
 ```
 
 Backend coverage (JaCoCo: 95% line/method/instruction, 90% branch) and Kotlin/JS
