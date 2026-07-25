@@ -8,6 +8,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [6.12.19] - 2026-07-24
+
 ### Added
 
 - **History trade economics**: Trade log columns for execution **Price**, **Fee**, and
@@ -29,6 +31,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Faster repeat builds**: Enabled Gradle parallel execution and build cache;
   JVM tests use up to two forks with configurable heap/fork overrides. Release
   docs recommend retaining incremental outputs instead of routine `clean`.
+
+### Fixed
+
+- **npm `brace-expansion` DoS (Dependabot #102 / CVE-2026-14257)**: Yarn resolution
+  pins `brace-expansion` to `5.0.8` (patched) in the Kotlin/JS lockfile.
 
 ## [6.12.18] - 2026-07-24
 
