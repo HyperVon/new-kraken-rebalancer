@@ -14,6 +14,11 @@ sealed class CssClass(open val value: String) {
 
     class Composite(override val value: String) : CssClass(value)
 
+    companion object {
+        /** Shared active-state token used by nav links and history time-range buttons. */
+        const val ACTIVE = "active"
+    }
+
     // Layout & Panels
     sealed class Layout(override val value: String) : CssClass(value) {
         object Container : Layout("container")

@@ -27,7 +27,7 @@ fun createPortfolioManagerTestFixture(): PortfolioManagerTestFixture {
             configService = configService,
             portfolioStatsRepository = portfolioStatsRepository,
         )
-    val orderExecutor = OrderExecutorImpl(krakenService, portfolioAnalyzer, tradeHistoryService)
+    val orderExecutor = OrderExecutorImpl(krakenService, tradeHistoryService)
     val portfolioManager =
         PortfolioManagerImpl(
             configService = configService,

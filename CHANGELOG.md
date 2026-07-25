@@ -6,6 +6,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.12.29] - 2026-07-25
+
+### Fixed
+
+- **Execution pinning**: `withStableBackend` now passes a per-invocation backend
+  into the block (no process-global pin), and `OrderExecutor` passes the cycle’s
+  `dryRun` into each `executeOrder` so mid-cycle simulation/dry-run flips cannot
+  split a sell→buy sequence or place live orders during a dry-run cycle.
+- **SSE**: `snapshotFlow` uses `replay = 1` so a snapshot emitted between the
+  DB read and SharedFlow subscribe is not dropped on connect.
+- **USD poll** rethrows `CancellationException` instead of logging it as a
+  balance-poll failure.
+
+### Changed
+
+- **JS cache-bust**: Dashboard / Settings / History all load `rebalancer.js`
+  via a content-hash `?v=` (same approach as CSS).
+- **Trades** older than 90 days are pruned alongside snapshots; unused
+  `TradeTable.snapshotId` FK removed from the Exposed mapping.
+- **Docs**: evaluation suite count corrected to 32 scenarios.
+
 ## [6.12.28] - 2026-07-25
 
 ### Changed

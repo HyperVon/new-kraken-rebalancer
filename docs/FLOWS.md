@@ -40,7 +40,7 @@ flowchart TB
 
     subgraph Services["📦 Services"]
         CS["ConfigServiceImpl\n_configFlow\nMutableSharedFlow&lt;Settings&gt;\nreplay=1, DROP_OLDEST"]
-        THS["TradeHistoryServiceImpl\nsnapshotFlow\nMutableSharedFlow&lt;PortfolioSnapshot&gt;\nbuffer=16, DROP_OLDEST"]
+        THS["TradeHistoryServiceImpl\nsnapshotFlow\nMutableSharedFlow&lt;PortfolioSnapshot&gt;\nreplay=1, buffer=16, DROP_OLDEST"]
     end
 
     subgraph External["🌐 External"]
@@ -154,7 +154,7 @@ sequenceDiagram
 
 **Key design choices:**
 
-- `extraBufferCapacity = 16` + `DROP_OLDEST` means a slow browser connection **never** stalls the rebalancing loop. The portfolio manager can always `tryEmit()` and move on immediately.
+- `replay = 1` + `extraBufferCapacity = 16` + `DROP_OLDEST` means late SSE subscribers still get the latest snapshot, and a slow browser connection **never** stalls the rebalancing loop. The portfolio manager can always `tryEmit()` and move on immediately.
 - Multiple browser tabs can all connect simultaneously — each gets its own `collect()` call which independently consumes from the same shared broadcast.
 
 ---

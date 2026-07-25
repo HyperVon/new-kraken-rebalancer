@@ -157,7 +157,13 @@ class SimulatedKrakenService(private val configService: ConfigService) : KrakenS
         return results
     }
 
-    override suspend fun executeOrder(pair: String, type: String, side: String, volume: BigDecimal): OrderResult {
+    override suspend fun executeOrder(
+        pair: String,
+        type: String,
+        side: String,
+        volume: BigDecimal,
+        dryRun: Boolean?,
+    ): OrderResult {
         initializeMissingBalancesAndPrices()
 
         val normalizedVolumeForError = volume.toCryptoScale()
@@ -196,7 +202,7 @@ class SimulatedKrakenService(private val configService: ConfigService) : KrakenS
                 "calculated price: $price ($$usdAmount)",
         )
 
-        if (configService.getConfig().settings.dryRun) {
+        if ((dryRun ?: configService.getConfig().settings.dryRun)) {
             log.info("[EMULATOR DRY RUN] Order would execute successfully")
             return OrderResult(
                 success = true,

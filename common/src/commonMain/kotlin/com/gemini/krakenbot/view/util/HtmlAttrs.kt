@@ -46,6 +46,8 @@ object HtmxAttrs {
 object HtmxValues {
     const val BODY = "body"
     const val INNER_HTML = "innerHTML"
+    const val EXT_SSE = "sse"
+    const val TRIGGER_LOAD_SSE_MESSAGE = "load, sse:message"
 }
 
 /** Centralized HTML tag name constants used for DOM element creation. */

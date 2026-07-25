@@ -30,13 +30,14 @@ loop immediately.
 
 ### Snapshots → SSE (hot)
 
-`TradeHistoryServiceImpl.snapshotFlow` — buffer 16, `DROP_OLDEST`.
+`TradeHistoryServiceImpl.snapshotFlow` — `replay=1`, buffer 16, `DROP_OLDEST`.
 
 Path: rebalance cycle → `addSnapshot` → DB + `tryEmit` →
 `DashboardController` / routes → **`GET /api/status/stream`** → browser
 `EventSource`.
 
-On connect, send latest snapshot from DB, then collect the SharedFlow.
+On connect, send latest snapshot from DB, then collect the SharedFlow (replay
+covers a snapshot emitted between the DB read and subscribe).
 
 ### Paginated sync / USD poll (cold)
 

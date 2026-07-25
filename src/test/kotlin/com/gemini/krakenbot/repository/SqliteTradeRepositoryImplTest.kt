@@ -830,6 +830,42 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
             }
         }
 
+        "pruneTradesOlderThan prunes records" {
+            runTest {
+                val baseTime = Instant.now().truncatedTo(ChronoUnit.MILLIS)
+                val old =
+                    TradeRecord(
+                        timestamp = baseTime.minus(100, ChronoUnit.DAYS),
+                        pair = Asset.BTC_USD_PAIR,
+                        side = OrderSide.BUY.name,
+                        symbol = Asset.BTC,
+                        volume = BigDecimal("0.01"),
+                        usdAmount = BigDecimal("500.00"),
+                        success = true,
+                        dryRun = false,
+                        fee = BigDecimal("1.00"),
+                    )
+                val recent =
+                    old.copy(
+                        timestamp = baseTime,
+                        volume = BigDecimal("0.02"),
+                        usdAmount = BigDecimal("1000.00"),
+                    )
+                repository.saveTrade(old)
+                repository.saveTrade(recent)
+
+                repository.pruneTradesOlderThan(baseTime.minus(90, ChronoUnit.DAYS)) shouldBe 1
+
+                val remaining =
+                    repository.getTradesInRange(
+                        baseTime.minus(1, ChronoUnit.DAYS),
+                        baseTime.plus(1, ChronoUnit.DAYS),
+                    )
+                remaining.size shouldBe 1
+                remaining.single().timestamp shouldBe baseTime
+            }
+        }
+
         "updateTrade wraps non-IOException as IOException" {
             runTest {
                 val closedDb = DatabaseConfig.init(TestFixtures.MEMORY_)

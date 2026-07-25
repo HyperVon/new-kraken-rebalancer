@@ -112,7 +112,8 @@ Full detail: [`docs/ALGORITHM.md`](../docs/ALGORITHM.md) and skill [portfolio-re
   exponential backoff starting at **250ms** (doubling: 250ms → 500ms → 1000ms);
   use the **best positive** observation; accept early at **≥95%** of projected;
   **abort buys** if no positive USD is observed; cycle buy budget **99%** of
-  settled USD (`withStableBackend` pins live vs simulation for the sequence).
+  settled USD (`withStableBackend` captures live vs simulation per invocation;
+  cycle `dryRun` is passed into each `executeOrder`).
 - **Precision**: `BigDecimal` only — crypto scale **8**, USD scale **2**. Tests: `shouldBeEqualComparingTo` (never `shouldBeEqualByComparingTo` / `.equals()`).
 
 ---

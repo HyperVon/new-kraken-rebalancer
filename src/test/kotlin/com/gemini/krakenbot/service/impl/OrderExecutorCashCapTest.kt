@@ -18,13 +18,8 @@ class OrderExecutorCashCapTest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
 
     private val krakenService = FakeKrakenService()
-    private val portfolioAnalyzer = PortfolioAnalyzerImpl(
-        krakenService = krakenService,
-        configService = mockk(relaxed = true),
-        portfolioStatsRepository = mockk(relaxed = true),
-    )
     private val tradeHistoryService = mockk<TradeHistoryService>(relaxed = true)
-    private val orderExecutor = OrderExecutorImpl(krakenService, portfolioAnalyzer, tradeHistoryService)
+    private val orderExecutor = OrderExecutorImpl(krakenService, tradeHistoryService)
 
     init {
         "should always cap buys to 99% of available cash even when cost equals cash" {
@@ -588,6 +583,33 @@ class OrderExecutorCashCapTest : StringSpec() {
                 krakenService.executedOrders.single().side shouldBe "buy"
                 krakenService.executedOrders.single().volume.shouldBeEqualComparingTo(BigDecimal("0.09"))
                 actionLog.any { it == "Skipping dust buy for BTC ($9.00)" } shouldBe true
+            }
+        }
+
+        "passes cycle dryRun into executeOrder so mid-cycle config flips cannot go live" {
+            runTest {
+                krakenService.orderResultFactory = { pair, _, side, volume ->
+                    OrderResult(success = true, pair = pair, side = side, volume = volume, dryRun = true)
+                }
+
+                orderExecutor.executeOrders(
+                    buyOrders = mapOf(Asset.ETH to BigDecimal("100.00")),
+                    sellOrders = emptyMap(),
+                    currentValuesUSD = mapOf(Asset.USD to BigDecimal("1000.00")),
+                    prices = mapOf(Asset.ETH to BigDecimal("2000.00")),
+                    settings =
+                    Settings(
+                        loopDelaySeconds = 0L,
+                        deviationTriggerPercent = 2.0,
+                        dustThresholdUSD = 1.0,
+                        dryRun = true,
+                        fiatMaxDrawdown = 0.0,
+                        fiatDeploymentExponent = 1.0,
+                    ),
+                    actionLog = mutableListOf(),
+                )
+
+                krakenService.executedOrders.single().dryRun shouldBe true
             }
         }
     }

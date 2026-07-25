@@ -21,6 +21,7 @@ import com.gemini.krakenbot.view.util.h3
 import com.gemini.krakenbot.view.util.input
 import com.gemini.krakenbot.view.util.label
 import com.gemini.krakenbot.view.util.primaryNav
+import com.gemini.krakenbot.view.util.rebalancerJsSrc
 import com.gemini.krakenbot.view.util.span
 import kotlinx.html.*
 import kotlinx.html.ButtonType.button
@@ -233,6 +234,6 @@ class SettingsFormComponent {
 
     context(body: BODY)
     private fun renderSettingsScript() {
-        body.script(src = Routes.STATIC_REBALANCER_JS) {}
+        body.script(src = rebalancerJsSrc()) {}
     }
 }

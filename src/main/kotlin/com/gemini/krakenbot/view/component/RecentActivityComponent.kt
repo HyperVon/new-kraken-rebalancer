@@ -1,5 +1,6 @@
 package com.gemini.krakenbot.view.component
 
+import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.Icons
@@ -19,8 +20,8 @@ import java.time.format.DateTimeFormatter
 class RecentActivityComponent {
 
     private enum class TradeAction(val badgeClass: CssClass, val label: String) {
-        BUY(CssClass.Badge.Buy, "BUY"),
-        SELL(CssClass.Badge.Sell, "SELL"),
+        BUY(CssClass.Badge.Buy, OrderSide.BUY.uppercaseName),
+        SELL(CssClass.Badge.Sell, OrderSide.SELL.uppercaseName),
         INFO(CssClass.Badge.Info, "INFO"),
         ;
 
@@ -28,11 +29,11 @@ class RecentActivityComponent {
             fun from(action: String): TradeAction {
                 val stripped =
                     action.uppercase()
-                        .removePrefix("[DRY RUN] ")
+                        .removePrefix(ViewText.DRY_RUN_PREFIX.uppercase())
                         .trim()
                 return when {
-                    stripped.startsWith("BUY") -> BUY
-                    stripped.startsWith("SELL") -> SELL
+                    stripped.startsWith(OrderSide.BUY.uppercaseName) -> BUY
+                    stripped.startsWith(OrderSide.SELL.uppercaseName) -> SELL
                     else -> INFO
                 }
             }

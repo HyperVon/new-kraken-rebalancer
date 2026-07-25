@@ -160,7 +160,7 @@ fun initHistory() {
 
 private var syncIntervalId: Int? = null
 
-private const val ACTIVE = "active"
+private const val ACTIVE = CssClass.ACTIVE
 
 internal fun historyCurrentRange(): String = currentRange
 
@@ -472,9 +472,9 @@ internal fun mapSnapshotsToPoints(snapshots: Array<dynamic>, valueSelector: (dyn
 internal fun getClonedChartOptions(): dynamic {
     val options: dynamic = JSON.parse(JSON.stringify(window.asDynamic().chartDefaults))
     when (currentRange) {
-        TimeRange.TWENTY_FOUR_HOURS.key -> options.scales.x.time.unit = "hour"
+        TimeRange.TWENTY_FOUR_HOURS.key -> options.scales.x.time.unit = ChartProps.TIME_UNIT_HOUR
         TimeRange.ALL.key -> js("delete options.scales.x.time.unit")
-        else -> options.scales.x.time.unit = "day"
+        else -> options.scales.x.time.unit = ChartProps.TIME_UNIT_DAY
     }
     // JSON clone above strips functions, so re-attach the zoom callback here.
     // Any zoom gesture (drag/wheel/pinch/buttons) must re-sync the pan scrubber,

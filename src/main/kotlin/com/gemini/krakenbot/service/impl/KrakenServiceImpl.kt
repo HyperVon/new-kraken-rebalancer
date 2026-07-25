@@ -144,7 +144,13 @@ class KrakenServiceImpl(
             }.toMap()
     }
 
-    override suspend fun executeOrder(pair: String, type: String, side: String, volume: BigDecimal): OrderResult {
+    override suspend fun executeOrder(
+        pair: String,
+        type: String,
+        side: String,
+        volume: BigDecimal,
+        dryRun: Boolean?,
+    ): OrderResult {
         val normalizedVolume =
             volume
                 .setScale(
@@ -152,7 +158,8 @@ class KrakenServiceImpl(
                     RoundingMode.HALF_UP,
                 ).stripTrailingZeros()
 
-        if (configService.getConfig().settings.dryRun) {
+        val isDryRun = dryRun ?: configService.getConfig().settings.dryRun
+        if (isDryRun) {
             log.info(
                 "[DRY RUN] Would execute order: {} {} {} volume={}",
                 type,

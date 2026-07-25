@@ -229,11 +229,7 @@ class EvaluationScenariosTest : StringSpec() {
                         statsRepo,
                     )
                 val executor =
-                    OrderExecutorImpl(
-                        fakeKraken,
-                        analyzer,
-                        tradeHistoryService,
-                    )
+                    OrderExecutorImpl(fakeKraken, tradeHistoryService)
                 val pm =
                     PortfolioManagerImpl(
                         mockConfig,
@@ -474,11 +470,7 @@ class EvaluationScenariosTest : StringSpec() {
                         statsRepo,
                     )
                 val executor =
-                    OrderExecutorImpl(
-                        fakeKraken,
-                        analyzer,
-                        tradeHistoryService,
-                    )
+                    OrderExecutorImpl(fakeKraken, tradeHistoryService)
                 val pm =
                     PortfolioManagerImpl(
                         mockConfig,
@@ -726,11 +718,7 @@ class EvaluationScenariosTest : StringSpec() {
                         statsRepo,
                     )
                 val executor =
-                    OrderExecutorImpl(
-                        fakeKraken,
-                        analyzer,
-                        tradeHistoryService,
-                    )
+                    OrderExecutorImpl(fakeKraken, tradeHistoryService)
 
                 val capturedActions = mutableListOf<String>()
                 val mockHistory = mockk<TradeHistoryService>(relaxed = true)
@@ -866,11 +854,7 @@ class EvaluationScenariosTest : StringSpec() {
                         statsRepo,
                     )
                 val executor =
-                    OrderExecutorImpl(
-                        fakeKraken,
-                        analyzer,
-                        tradeHistoryService,
-                    )
+                    OrderExecutorImpl(fakeKraken, tradeHistoryService)
                 val pm =
                     PortfolioManagerImpl(
                         mockConfig,
@@ -948,11 +932,7 @@ class EvaluationScenariosTest : StringSpec() {
                         statsRepo,
                     )
                 val executor =
-                    OrderExecutorImpl(
-                        fakeKraken,
-                        analyzer,
-                        tradeHistoryService,
-                    )
+                    OrderExecutorImpl(fakeKraken, tradeHistoryService)
                 val pm =
                     PortfolioManagerImpl(
                         mockConfig,
@@ -1053,11 +1033,7 @@ class EvaluationScenariosTest : StringSpec() {
                         statsRepo,
                     )
                 val executor =
-                    OrderExecutorImpl(
-                        fakeKraken,
-                        analyzer,
-                        tradeHistoryService,
-                    )
+                    OrderExecutorImpl(fakeKraken, tradeHistoryService)
                 val pm =
                     PortfolioManagerImpl(
                         mockConfig,
@@ -1123,11 +1099,7 @@ class EvaluationScenariosTest : StringSpec() {
                         statsRepo,
                     )
                 val executor =
-                    OrderExecutorImpl(
-                        fakeKraken,
-                        analyzer,
-                        tradeHistoryService,
-                    )
+                    OrderExecutorImpl(fakeKraken, tradeHistoryService)
                 val pm =
                     PortfolioManagerImpl(
                         mockConfig,
@@ -1310,11 +1282,7 @@ class EvaluationScenariosTest : StringSpec() {
                         statsRepo,
                     )
                 val executor =
-                    OrderExecutorImpl(
-                        fakeKraken,
-                        analyzer,
-                        tradeHistoryService,
-                    )
+                    OrderExecutorImpl(fakeKraken, tradeHistoryService)
 
                 val pm =
                     PortfolioManagerImpl(
@@ -1399,11 +1367,7 @@ class EvaluationScenariosTest : StringSpec() {
                         statsRepo,
                     )
                 val executor =
-                    OrderExecutorImpl(
-                        fakeKraken,
-                        analyzer,
-                        tradeHistoryService,
-                    )
+                    OrderExecutorImpl(fakeKraken, tradeHistoryService)
                 val pm =
                     PortfolioManagerImpl(
                         mockConfig,
@@ -1543,11 +1507,7 @@ class EvaluationScenariosTest : StringSpec() {
                         statsRepo,
                     )
                 val executor =
-                    OrderExecutorImpl(
-                        fakeKraken,
-                        analyzer,
-                        tradeHistoryService,
-                    )
+                    OrderExecutorImpl(fakeKraken, tradeHistoryService)
 
                 val pm =
                     PortfolioManagerImpl(
@@ -1670,11 +1630,7 @@ class EvaluationScenariosTest : StringSpec() {
                         statsRepo,
                     )
                 val executor =
-                    OrderExecutorImpl(
-                        fakeKraken,
-                        analyzer,
-                        tradeHistoryService,
-                    )
+                    OrderExecutorImpl(fakeKraken, tradeHistoryService)
                 val pm =
                     PortfolioManagerImpl(
                         mockConfig,
@@ -1879,11 +1835,7 @@ class EvaluationScenariosTest : StringSpec() {
                         statsRepo,
                     )
                 val executor =
-                    OrderExecutorImpl(
-                        fakeKraken,
-                        analyzer,
-                        tradeHistoryService,
-                    )
+                    OrderExecutorImpl(fakeKraken, tradeHistoryService)
 
                 val mockHistory = mockk<TradeHistoryService>(relaxed = true)
                 val capturedActions = mutableListOf<String>()
@@ -1969,11 +1921,7 @@ class EvaluationScenariosTest : StringSpec() {
                         statsRepo,
                     )
                 val executor =
-                    OrderExecutorImpl(
-                        fakeKraken,
-                        analyzer,
-                        tradeHistoryService,
-                    )
+                    OrderExecutorImpl(fakeKraken, tradeHistoryService)
 
                 val mockHistory = mockk<TradeHistoryService>(relaxed = true)
                 val capturedActions = mutableListOf<String>()
@@ -2044,11 +1992,7 @@ class EvaluationScenariosTest : StringSpec() {
                         statsRepo,
                     )
                 val executor =
-                    OrderExecutorImpl(
-                        fakeKraken,
-                        analyzer,
-                        tradeHistoryService,
-                    )
+                    OrderExecutorImpl(fakeKraken, tradeHistoryService)
 
                 val mockHistory = mockk<TradeHistoryService>(relaxed = true)
                 val pm =
@@ -2187,11 +2131,7 @@ class EvaluationScenariosTest : StringSpec() {
                         statsRepo,
                     )
                 val executor =
-                    OrderExecutorImpl(
-                        fakeKraken,
-                        analyzer,
-                        tradeHistoryService,
-                    )
+                    OrderExecutorImpl(fakeKraken, tradeHistoryService)
 
                 val mockHistory = mockk<TradeHistoryService>(relaxed = true)
                 val capturedActions = mutableListOf<String>()
@@ -2270,11 +2210,7 @@ class EvaluationScenariosTest : StringSpec() {
                         statsRepo,
                     )
                 val executor =
-                    OrderExecutorImpl(
-                        fakeKraken,
-                        analyzer,
-                        tradeHistoryService,
-                    )
+                    OrderExecutorImpl(fakeKraken, tradeHistoryService)
 
                 val pm =
                     PortfolioManagerImpl(
@@ -2403,11 +2339,7 @@ class EvaluationScenariosTest : StringSpec() {
                         statsRepo,
                     )
                 val executor =
-                    OrderExecutorImpl(
-                        fakeKraken,
-                        analyzer,
-                        tradeHistoryService,
-                    )
+                    OrderExecutorImpl(fakeKraken, tradeHistoryService)
 
                 val pm =
                     PortfolioManagerImpl(
@@ -2482,11 +2414,7 @@ class EvaluationScenariosTest : StringSpec() {
                         statsRepo,
                     )
                 val executor =
-                    OrderExecutorImpl(
-                        fakeKraken,
-                        analyzer,
-                        tradeHistoryService,
-                    )
+                    OrderExecutorImpl(fakeKraken, tradeHistoryService)
 
                 val mockHistory = mockk<TradeHistoryService>(relaxed = true)
                 val capturedActions = mutableListOf<String>()
@@ -2559,11 +2487,7 @@ class EvaluationScenariosTest : StringSpec() {
                         statsRepo,
                     )
                 val executor =
-                    OrderExecutorImpl(
-                        fakeKraken,
-                        analyzer,
-                        tradeHistoryService,
-                    )
+                    OrderExecutorImpl(fakeKraken, tradeHistoryService)
 
                 val mockHistory = mockk<TradeHistoryService>(relaxed = true)
                 val capturedSnapshots = mutableListOf<PortfolioSnapshot>()
@@ -2639,11 +2563,7 @@ class EvaluationScenariosTest : StringSpec() {
                         statsRepo,
                     )
                 val executor =
-                    OrderExecutorImpl(
-                        fakeKraken,
-                        analyzer,
-                        tradeHistoryService,
-                    )
+                    OrderExecutorImpl(fakeKraken, tradeHistoryService)
 
                 // Opening $100 + sell $100 → projected $200; early-accept threshold = 95% = $190.
                 // Sub-case A: first poll returns exactly $190 → stop polling; buy budget 99% = $188.10.
@@ -2807,7 +2727,7 @@ class EvaluationScenariosTest : StringSpec() {
                 }
 
                 val analyzer = PortfolioAnalyzerImpl(fakeKraken, mockConfig, statsRepo)
-                val executor = OrderExecutorImpl(fakeKraken, analyzer, mockHistory)
+                val executor = OrderExecutorImpl(fakeKraken, mockHistory)
                 val manager = PortfolioManagerImpl(mockConfig, mockHistory, analyzer, executor)
                 val startingValue =
                     balances.getValue(Asset.BTC).multiply(prices.getValue(Asset.BTC))

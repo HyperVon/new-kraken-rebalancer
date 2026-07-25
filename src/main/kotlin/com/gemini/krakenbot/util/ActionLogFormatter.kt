@@ -1,6 +1,7 @@
 package com.gemini.krakenbot.util
 
 import com.gemini.krakenbot.model.OrderSide
+import com.gemini.krakenbot.view.util.ViewText
 import java.math.BigDecimal
 
 /**
@@ -26,7 +27,7 @@ object ActionLogFormatter {
         usdAmount: BigDecimal,
         isDryRun: Boolean,
     ): String {
-        val prefix = if (isDryRun) "[DRY RUN] " else ""
+        val prefix = if (isDryRun) ViewText.DRY_RUN_PREFIX else ""
         val valueLabel = if (side == OrderSide.SELL) "Value" else "Cost"
         val formattedVolume = volume.toCryptoScale().stripTrailingZeros().toPlainString()
         val formattedUsd = usdAmount.toUsdScale().toPlainString()

@@ -26,7 +26,7 @@ class FakeKrakenService : KrakenService {
     var executedOrders = mutableListOf<OrderCall>()
     var getBalancesCallCount = 0
 
-    data class OrderCall(val pair: String, val type: String, val side: String, val volume: BigDecimal)
+    // OrderCall is a top-level data class so call-site destructuring stays stable.
 
     override suspend fun getBalances(): RawBalances {
         getBalancesCallCount++
@@ -52,8 +52,14 @@ class FakeKrakenService : KrakenService {
     override suspend fun getTradeHistory(startSec: Long?, offset: Int?): List<TradeRecord> =
         tradeHistorySupplier(startSec, offset)
 
-    override suspend fun executeOrder(pair: String, type: String, side: String, volume: BigDecimal): OrderResult {
-        executedOrders.add(OrderCall(pair, type, side, volume))
+    override suspend fun executeOrder(
+        pair: String,
+        type: String,
+        side: String,
+        volume: BigDecimal,
+        dryRun: Boolean?,
+    ): OrderResult {
+        executedOrders.add(OrderCall(pair, type, side, volume, dryRun))
         executeOrderAction?.invoke(pair, type, side, volume)
         return orderResultFactory?.invoke(pair, type, side, volume)
             ?: OrderResult(
@@ -61,8 +67,17 @@ class FakeKrakenService : KrakenService {
                 pair = pair,
                 side = side,
                 volume = volume,
+                dryRun = dryRun == true,
             )
     }
 
     override suspend fun getOHLC(pair: String, interval: Int, since: Long?): List<Pair<Long, BigDecimal>> = emptyList()
 }
+
+data class OrderCall(
+    val pair: String,
+    val type: String,
+    val side: String,
+    val volume: BigDecimal,
+    val dryRun: Boolean? = null,
+)
