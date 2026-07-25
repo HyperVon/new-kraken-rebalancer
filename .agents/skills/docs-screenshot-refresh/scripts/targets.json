@@ -36,7 +36,9 @@
       "path": "/history",
       "click_button": "30d",
       "await_charts": 4,
-      "anchor": "Allocation Deviation from Target"
+      "anchor": "Allocation Deviation from Target",
+      "ensure_visible": "Dry-run rows use estimated fees",
+      "viewport": { "height": 1000 }
     },
     {
       "file": "history-bottom.png",

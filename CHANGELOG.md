@@ -35,6 +35,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **Documentation screenshots**: Refreshed `docs/images/*.png` from a fresh
+  simulation seed (dashboard hero/activity, settings safety cards, history
+  charts/trade table). Screenshot capture now supports `ensure_visible` and a
+  taller viewport for `history-charts.png` so the net cash flow caption stays in
+  frame with the allocation-deviation header.
 - **Hero drawdown + base target restored**: Total portfolio shows drawdown again;
   Cash tile prints `(Base: …%)` when the effective USD target diverges from the
   configured target after fiat deployment.

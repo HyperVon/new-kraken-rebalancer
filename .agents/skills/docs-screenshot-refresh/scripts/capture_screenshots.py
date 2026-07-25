@@ -75,6 +75,13 @@ def prepare(page: Page, base_url: str, target: dict) -> None:
     else:
         page.evaluate("window.scrollTo(0, 0)")
 
+    # Keep a trailing element (e.g. net cash flow caption) in frame after the
+    # primary scroll without jumping past the section the target is documenting.
+    if ensure := target.get("ensure_visible"):
+        page.get_by_text(ensure, exact=False).first.evaluate(
+            "element => element.scrollIntoView({block: 'nearest'})"
+        )
+
 
 def discover(page: Page, base_url: str, targets: list[dict]) -> None:
     covered_paths = {target["path"] for target in targets}
@@ -169,6 +176,13 @@ def main() -> None:
             discover(page, args.base_url, manifest["targets"])
         else:
             for target in targets:
+                # Optional per-target viewport (e.g. taller frame so a chart
+                # header + trailing caption both fit). Device scale stays global.
+                target_vp = {**viewport, **(target.get("viewport") or {})}
+                page.set_viewport_size(
+                    {"width": target_vp["width"], "height": target_vp["height"]}
+                )
+                # device_scale_factor is fixed on the context; recreate if needed
                 prepare(page, args.base_url, target)
                 output = out_dir / target["file"]
                 page.screenshot(path=output)

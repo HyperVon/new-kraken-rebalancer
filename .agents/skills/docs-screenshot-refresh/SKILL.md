@@ -145,6 +145,13 @@ Useful flags:
 - `--discover` — report pages/sections with no target (Step 5)
 - `--base-url`, `--chrome`, `--manifest` — override defaults
 
+Target fields in `targets.json`: `file`, `path`, optional `click_button`,
+`await_text`, `await_charts`, `position` (`top`/`bottom`), `anchor` (heading
+scrolled to start), `ensure_visible` (substring scrolled with
+`block: 'nearest'` so a trailing caption stays in frame after the anchor), and
+optional `viewport` height/width overrides when a section is taller than the
+default 900px frame (keep `deviceScaleFactor` at 2).
+
 Do not use the embedded Cursor browser for these assets: its panel dimensions
 crop the UI, and CDP device emulation can tile the page on Retina displays. The
 Playwright helper is tested at the canonical output size.
