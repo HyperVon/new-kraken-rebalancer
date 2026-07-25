@@ -19,8 +19,8 @@ correctly. Prefer evidence from the browser (snapshot + screenshot) over code
 inspection alone.
 
 This skill is **functional** — not a visual design critique. For a short
-post-deploy hard-refresh smoke (stale CSS, header density, Day · Total only),
-use [post-deploy-ui-smoke](../post-deploy-ui-smoke/SKILL.md).
+post-deploy hard-refresh smoke (stale CSS, mode plate, STREAM/STALE, Day · Total
+only), use [post-deploy-ui-smoke](../post-deploy-ui-smoke/SKILL.md).
 
 | Skill | Concern |
 | :--- | :--- |
@@ -48,17 +48,38 @@ Full case list → [checklist.md](checklist.md) (read it before Step 3).
 | **Scoped** | User names a page or feature (e.g. “QA History views + zoom only”) — run that subset + Global nav + **STYLE-1/2** |
 
 After any UI/CSS/JS change or production deploy, default to the **full**
-checklist — especially `STYLE-*`, `REGRESSION-*`, strengthened `HIST-VIEW-2`,
-and `HIST-ZOOM-*` (zoom vs pan/scrubber). For History zoom work, **always**
-run HIST-ZOOM-5/6/7 and watch the **chart**, not only the scrubber thumb.
-Do not treat mobile-only checks as sufficient for desktop/laptop layout
-regressions.
+checklist — especially `STYLE-*`, `REGRESSION-*`, `GLOBAL-5`/`GLOBAL-7` (mode
+plate + STREAM/STALE), strengthened `HIST-VIEW-2`, and `HIST-ZOOM-*` (zoom vs
+pan/scrubber). For History zoom work, **always** run HIST-ZOOM-5/6/7 and watch
+the **chart**, not only the scrubber thumb. Do not treat mobile-only checks as
+sufficient for desktop/laptop layout regressions.
 
 **Always in simulation** on an isolated run directory. Never point QA at the
 user’s real `rebalancer-config.json` / DB. Never flip live trading flags.
 
 **Out of scope unless asked:** fixing bugs, visual redesign, rewriting docs,
 changing trading math, live Kraken API calls.
+
+---
+
+## Redesign semantics (assert these)
+
+Keep these visible contracts in mind while running cases:
+
+1. **Mode plate (every page)** — Brand-adjacent plate shows **SIMULATION**,
+   **DRY RUN**, or **LIVE TRADING** with an explanatory tooltip. Precedence:
+   simulation → dry run → live trading.
+2. **Stream chip (Dashboard)** — Reads **STREAM** / **STALE**, never
+   **LIVE** / **DELAYED** (that wording meant stream health, not trading mode).
+3. **Dashboard hero** — Total Portfolio + 24H delta/sparkline; Cash/Crypto tiles
+   with bars, target, and deviation/meta.
+4. **Recent Activity** — Grouped by rebalance cycle; **View all history** →
+   `/history`.
+5. **Settings safety** — Simulation / Dry Run are rich cards with visible
+   **ON** / **OFF** state (not bare checkboxes in the numeric grid).
+6. **History** — Six summary cards; chart title + zoom in one header row; net
+   cash flow caption; successful trade rows use a subtle status dot; zero USD
+   price/fee show em dash; failed/dry-run badges remain.
 
 ---
 
@@ -99,8 +120,8 @@ Use the **cursor-ide-browser** MCP (navigate → lock → snapshot/screenshot):
 3. **Post-deploy / cache:** hard-refresh once (or confirm `/static/style.css?v=`
    in the stylesheet link) before style assertions — stale 24h CSS makes controls
    look like default browser buttons (`STYLE-1`).
-4. Wait until Dashboard shows portfolio cards (not empty seed flash) — poll
-   health / snapshot / screenshot until data age is recent.
+4. Wait until Dashboard shows portfolio hero / tiles (not empty seed flash) —
+   poll health / snapshot / screenshot until data age is recent.
 5. For header/status and `REGRESSION-*` cases, set viewport to **~1280–1440px**
    width (desktop/laptop), not only ~375px mobile.
 6. Prefer `browser_snapshot` for structure + refs; `browser_take_screenshot`
@@ -197,8 +218,9 @@ done reviewing. Unlock the browser tab.
 3. **Wait for async** — History sync banner, chart rebuild after range change,
    HTMX/SSE dashboard refresh; snapshot again after settle.
 4. **Do not trust console silence** — assert visible outcome.
-5. **Safety modes stay obvious** — Settings Dry Run / Simulation toggles must
-   remain reachable and labeled; never hide them while “cleaning up” after a case.
+5. **Safety modes stay obvious** — Settings Simulation / Dry Run cards must
+   remain reachable with clear ON/OFF; header mode plate must stay visible on
+   every page. Never hide them while “cleaning up” after a case.
 6. **Settings mutations are reversible** — change a disposable field, save, verify
    hot-reload signal if observable, then restore prior values and save again
    before leaving the page (throwaway DB, but keep later cases predictable).
@@ -215,10 +237,12 @@ done reviewing. Unlock the browser tab.
 - Skipping zoom / view-preset / allocation add-remove because they feel “extra”
 - QA only at mobile width and missing desktop header density / glass-button regressions
 - Skipping `STYLE-*` after a deploy and mis-reporting styled controls as “broken”
+- Expecting **LIVE** / **DELAYED** on the stream chip (it is **STREAM** / **STALE**)
 - Calling HIST-ZOOM-6 pass because the scrubber thumb moved while **time ticks /
   series stayed put** (chart must pan — usually needs `chart.zoomScale`)
 - Enabling scrubber only via Zoom + buttons and skipping drag/wheel zoom
   (HIST-ZOOM-5 / HIST-ZOOM-7)
+- Counting only four History summary cards (there are **six**)
 
 ---
 

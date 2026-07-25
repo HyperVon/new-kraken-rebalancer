@@ -12,7 +12,7 @@ import com.gemini.krakenbot.view.util.Icons
 import com.gemini.krakenbot.view.util.Icons.icon
 import com.gemini.krakenbot.view.util.Routes
 import com.gemini.krakenbot.view.util.ViewText
-import com.gemini.krakenbot.view.util.brandMark
+import com.gemini.krakenbot.view.util.brandWithMode
 import com.gemini.krakenbot.view.util.button
 import com.gemini.krakenbot.view.util.div
 import com.gemini.krakenbot.view.util.formGroup
@@ -20,6 +20,7 @@ import com.gemini.krakenbot.view.util.formSection
 import com.gemini.krakenbot.view.util.h3
 import com.gemini.krakenbot.view.util.input
 import com.gemini.krakenbot.view.util.label
+import com.gemini.krakenbot.view.util.p
 import com.gemini.krakenbot.view.util.primaryNav
 import com.gemini.krakenbot.view.util.rebalancerJsSrc
 import com.gemini.krakenbot.view.util.span
@@ -43,9 +44,7 @@ class SettingsFormComponent {
                 attributes[HtmxAttrs.HX_SWAP] = HtmxValues.INNER_HTML
 
                 header {
-                    div(CssClass.Layout.HeaderTitleSection) {
-                        brandMark()
-                    }
+                    brandWithMode(config.settings)
                     div(CssClass.Layout.HeaderActions) {
                         primaryNav(ActiveNav.SETTINGS)
                         button(
@@ -139,29 +138,44 @@ class SettingsFormComponent {
     }
 
     private fun DIV.renderSafetyModesSection(config: AppConfig) {
+        // SETT-1: promote the two highest-consequence controls to labelled toggle cards.
         formSection(ViewText.SAFETY_MODES, Icons.SHIELD_EXCLAMATION) {
+            p(CssClass.Form.SectionSubtitle) { +ViewText.SAFETY_MODES_SUBTITLE }
             div(CssClass.Form.SafetyGroup) {
                 div(CssClass.Form.SafetyToggles) {
-                    label(CssClass.Form.CheckboxContainer) {
-                        input(
-                            type = checkBox,
-                            name = FormFields.DRY_RUN,
-                        ) {
-                            checked = config.settings.dryRun
+                    renderSafetyCard(
+                        name = FormFields.SIMULATION,
+                        checked = config.settings.simulation,
+                        title = ViewText.SIMULATION_MODE_TITLE,
+                        desc = ViewText.SIMULATION_MODE_DESC,
+                    )
+                    renderSafetyCard(
+                        name = FormFields.DRY_RUN,
+                        checked = config.settings.dryRun,
+                        title = ViewText.DRY_RUN_MODE_TITLE,
+                        desc = ViewText.DRY_RUN_MODE_DESC,
+                    )
+                }
+            }
+        }
+    }
+
+    private fun DIV.renderSafetyCard(name: String, checked: Boolean, title: String, desc: String) {
+        label(CssClass.Form.SafetyCard) {
+            input(type = checkBox, name = name) {
+                this.checked = checked
+            }
+            div(CssClass.Form.SafetyCardInner) {
+                div(CssClass.Form.SafetyCardIcon) { icon(Icons.SHIELD_EXCLAMATION) }
+                div(CssClass.Form.SafetyCardBody) {
+                    div(CssClass.Form.SafetyCardTitleRow) {
+                        span(CssClass.Form.SafetyCardTitle) { +title }
+                        span(CssClass.Form.SafetyStatePill) {
+                            span(CssClass.Form.SafetyStateOn) { +ViewText.SAFETY_ON }
+                            span(CssClass.Form.SafetyStateOff) { +ViewText.SAFETY_OFF }
                         }
-                        div(CssClass.Form.CheckboxCustom) {}
-                        span { +ViewText.DRY_RUN_MODE }
                     }
-                    label(CssClass.Form.CheckboxContainer) {
-                        input(
-                            type = checkBox,
-                            name = FormFields.SIMULATION,
-                        ) {
-                            checked = config.settings.simulation
-                        }
-                        div(CssClass.Form.CheckboxCustom) {}
-                        span { +ViewText.SIMULATION_MODE }
-                    }
+                    div(CssClass.Form.SafetyCardDesc) { +desc }
                 }
             }
         }

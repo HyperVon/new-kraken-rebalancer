@@ -4,8 +4,10 @@ import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.DataProps
+import com.gemini.krakenbot.view.util.FormFields
 import com.gemini.krakenbot.view.util.HtmlAttrs
 import com.gemini.krakenbot.view.util.HtmlIds
+import com.gemini.krakenbot.view.util.ViewText
 import com.gemini.krakenbot.view.util.ZoomActions
 import kotlinx.browser.window
 import kotlin.js.json
@@ -67,6 +69,12 @@ object TestDomBuilders {
 
     fun settingsDom(): String =
         """
+        <span id="${HtmlIds.MODE_PLATE}" class="${CssClass.Mode.DryRun}" title="${ViewText.MODE_DRY_RUN_TITLE}">
+          <span class="${CssClass.Mode.Dot}"></span>
+          <span id="${HtmlIds.MODE_PLATE_LABEL}">${ViewText.MODE_DRY_RUN}</span>
+        </span>
+        <input type="checkbox" name="${FormFields.SIMULATION}">
+        <input type="checkbox" name="${FormFields.DRY_RUN}" checked>
         <span id="${HtmlIds.TOTAL_ALLOCATED_DISPLAY}"></span>
         <button id="${HtmlIds.SAVE_BUTTON}"></button>
         """.trimIndent()

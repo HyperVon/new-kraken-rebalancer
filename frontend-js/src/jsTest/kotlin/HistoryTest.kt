@@ -198,6 +198,31 @@ class HistoryTest : StringSpec() {
             }
         }
 
+        "renderTradeTable keeps sub-cent price and fee precision instead of rounding to zero" {
+            val container = document.createElement(HtmlTags.DIV)
+            container.innerHTML = TestDomBuilders.tradeTableDom()
+            document.body!!.appendChild(container)
+
+            try {
+                val trades =
+                    arrayOf(
+                        TestDomBuilders.tradeJson(
+                            side = OrderSide.BUY.name,
+                            price = 0.0000753,
+                            fee = 0.0033,
+                        ),
+                    )
+
+                renderTradeTable(trades)
+                val tbody = document.getElementById(HtmlIds.TRADE_TABLE_BODY) as HTMLTableSectionElement
+                tbody.innerHTML shouldContain "$0.0000753"
+                tbody.innerHTML shouldContain "$0.0033"
+                tbody.innerHTML shouldContain "aria-label=\"${ViewText.STATUS_SUCCESS}\""
+            } finally {
+                document.body!!.removeChild(container)
+            }
+        }
+
         "renderTradeTable filters dry runs and displays empty states" {
             val container = document.createElement(HtmlTags.DIV)
             container.innerHTML = TestDomBuilders.tradeTableDom()

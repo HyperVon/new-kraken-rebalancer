@@ -113,18 +113,32 @@ class EvaluationScenariosTest : StringSpec() {
             sb.append("| :--- | :--- | :--- | :--- |\n")
             for ((name, description, status, evidence) in results.values.sortedBy { it.name.substringAfter(" ").toIntOrNull() ?: 0 }) {
                 val statusStr = if (status == TestFixtures.PASS) "🟢 **PASS**" else "🔴 **FAIL**"
-                sb.append("| $name | $description | $statusStr | ${evidence.replace("\n", "<br>").replace("|", "\\|")} |\n")
+                sb.append("| $name | $description | $statusStr | ${sanitizeEvidence(evidence)} |\n")
             }
             sb.append("\n## Detailed Evidence for Each Scenario\n\n")
             for ((name, description, status, evidence) in results.values.sortedBy { it.name.substringAfter(" ").toIntOrNull() ?: 0 }) {
                 sb.append("### $name: $description\n\n")
                 sb.append("**Status**: $status\n\n")
                 sb.append("```text\n")
-                sb.append(evidence)
+                sb.append(sanitizeEvidencePlain(evidence))
                 sb.append("\n```\n\n")
             }
             reportFile.writeText(sb.toString())
         }
+
+        /** Keep the markdown report environment-agnostic for docs sync. */
+        private fun sanitizeEvidencePlain(evidence: String): String {
+            val projectRoot = File("").absoluteFile.canonicalPath.trimEnd('/', '\\') + File.separator
+            return evidence
+                .replace(projectRoot, ".../")
+                .replace(Regex("""/var/folders/[^\s]+/"""), ".../")
+                .replace(Regex("""/tmp/[^\s]+/"""), ".../")
+                .replace(Regex("""scenario(\d+)-\d+\.json"""), "scenario$1-*.json")
+        }
+
+        private fun sanitizeEvidence(evidence: String): String = sanitizeEvidencePlain(evidence)
+            .replace("\n", "<br>")
+            .replace("|", "\\|")
     }
 
     init {

@@ -10,9 +10,24 @@ object ViewText {
     const val TOTAL_PORTFOLIO = "Total Portfolio"
     const val CASH_USD = "Cash (USD)"
     const val CRYPTO_ASSETS = "Crypto Assets"
+
+    // DASH-1: hero delta window label (only shown when a true ≥24h baseline exists).
+    const val DELTA_WINDOW_24H = "24H"
+    const val DRAWDOWN_PREFIX = "Drawdown: "
     const val RECENT_ACTIVITY = "Recent Activity"
     const val NO_TRADING_HISTORY = "No trading history available."
     const val NO_TRADES_EXECUTED = "No trades executed (Cycle complete)"
+
+    // DASH-3: activity feed labels.
+    const val ACTIVITY_VIEW_ALL = "View all history"
+    const val ACTIVITY_CYCLE_PREFIX = "Cycle"
+    const val ACTIVITY_NO_TRADES = "No trades — portfolio within tolerance"
+    const val ACTIVITY_ACTIONS_SUFFIX = " actions"
+    const val ACTIVITY_ACTION_SUFFIX = " action"
+    const val ACTIVITY_JUST_NOW = "just now"
+    const val ACTIVITY_MINUTES_AGO_SUFFIX = "m ago"
+    const val ACTIVITY_HOURS_AGO_SUFFIX = "h ago"
+    const val ACTIVITY_DAYS_AGO_SUFFIX = "d ago"
     const val CONNECTING = "Connecting to KrakenRebalancer..."
     const val WAITING_FIRST_CYCLE = "Waiting for first rebalance cycle"
     const val REBALANCER_RUNNING =
@@ -24,20 +39,36 @@ object ViewText {
     const val DUST_THRESHOLD = "Dust Threshold ($)"
     const val FIAT_MAX_DRAWDOWN = "Fiat Max Drawdown (%)"
     const val FIAT_DEPLOYMENT_EXPONENT = "Fiat Deployment Exponent"
-    const val DRY_RUN_MODE = "Dry Run Mode (Safe)"
-    const val SIMULATION_MODE = "Simulation Mode (Kraken Emulator)"
+
+    // SETT-1: safety toggle card copy (consequence prose + state pills).
+    const val DRY_RUN_MODE_TITLE = "Dry Run Mode"
+    const val SIMULATION_MODE_TITLE = "Simulation Mode"
+    const val DRY_RUN_MODE_DESC =
+        "Validates conditions and builds real Kraken orders, but never submits them. A safe way to verify config before going live."
+    const val SIMULATION_MODE_DESC =
+        "Runs the whole strategy against an offline Kraken emulator. No real funds are ever touched — ideal for testing."
+    const val SAFETY_ON = "ON"
+    const val SAFETY_OFF = "OFF"
+    const val SAFETY_MODES_SUBTITLE =
+        "Control how the rebalancer executes orders. Keep at least one safety on unless you intend to trade live."
     const val TARGET_ALLOCATIONS = "Target Allocations"
     const val LEGEND_OVER_TARGET = "Over target"
     const val LEGEND_UNDER_TARGET = "Under target"
     const val ADD_ASSET = "Add Asset"
     const val SAVE_CONFIGURATION = "Save Configuration"
 
-    // Status / Labels
-    const val LIVE = "LIVE"
-    const val DELAYED = "DELAYED"
-    const val DATA_AGE = "Data Age"
+    // GLOB-1: stream-health chip is renamed so it never reads as "live trading".
+    const val STREAM = "STREAM"
+    const val STREAM_STALE = "STALE"
+
+    // GLOB-1/DASH-2: persistent trading-mode plate labels + descriptions.
+    const val MODE_SIMULATION = "SIMULATION"
+    const val MODE_DRY_RUN = "DRY RUN"
+    const val MODE_LIVE = "LIVE TRADING"
+    const val MODE_SIMULATION_TITLE = "Simulation mode — no real orders are placed"
+    const val MODE_DRY_RUN_TITLE = "Dry run — real orders are validated but not submitted"
+    const val MODE_LIVE_TITLE = "Live trading — real orders execute with real funds"
     const val NO_USD_DATA = "No USD Data"
-    const val DRAWDOWN_PREFIX = "Drawdown: "
     const val TARGET_PREFIX = "Target: "
     const val BASE_PREFIX = "Base: "
     const val DEV_PREFIX = "Dev: "
@@ -119,11 +150,14 @@ object ViewText {
     const val STATUS_SUCCESS = "SUCCESS"
     const val STATUS_FAILED = "FAILED"
     const val PERIOD_HIGH = "Period High"
-    const val NET_CASH_FLOW_ALL = "Net Cash Flow (Realized & Dry Run Trades)"
-    const val NET_CASH_FLOW_REALIZED = "Net Cash Flow (Realized Trades)"
+
+    // HIST-2: legend strings shortened to <=~28 chars; caveat moved to a caption.
+    const val NET_CASH_FLOW_ALL = "Net Cash Flow (incl. dry run)"
+    const val NET_CASH_FLOW_REALIZED = "Net Cash Flow (realized)"
     const val NET_AFTER_FEES = "Net After Fees"
-    const val NET_AFTER_FEES_ESTIMATED =
-        "Net After Fees (includes estimated fees for dry-run trades; not accounting P&L)"
+    const val NET_AFTER_FEES_ESTIMATED = "Net After Fees (est.)"
+    const val NET_CASH_FLOW_CAPTION =
+        "Dry-run rows use estimated fees and are not accounted P&L. Toggle \"Show Dry Run Trades\" below to include them."
     const val SLIPPAGE_ESTIMATED_TITLE = "Estimated at order time"
     const val TRADE_FAILED_TITLE_PREFIX = "Error: "
     const val EM_DASH = "—"

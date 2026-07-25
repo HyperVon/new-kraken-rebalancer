@@ -1,5 +1,6 @@
 package com.gemini.krakenbot.view
 
+import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.view.component.HistoryPageComponent
 import com.gemini.krakenbot.view.util.ViewText
 import io.kotest.core.spec.IsolationMode
@@ -15,8 +16,13 @@ class HistoryPageComponentTest : StringSpec() {
     init {
         "should render HistoryPage HTML structure" {
             val component = HistoryPageComponent()
+            val settings = Settings(
+                loopDelaySeconds = 60L,
+                deviationTriggerPercent = 2.0,
+                dryRun = true,
+            )
             val htmlString = createHTML().html {
-                component.render()
+                component.render(settings)
             }
 
             htmlString shouldContain "History - Kraken Rebalancer"

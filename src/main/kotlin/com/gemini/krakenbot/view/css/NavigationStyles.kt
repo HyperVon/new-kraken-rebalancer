@@ -36,9 +36,13 @@ object NavigationStyles {
 
         CssClass.Navigation.LinkActive.querySelector {
             color = CssTheme.colorTextPrimary
-            background = CssTheme.colorBlueGlassBg.value
-            borderColor = CssTheme.colorBlueGlassBorder
+            background = CssTheme.colorBlueGlassBgHover.value
+            borderColor = CssTheme.colorBlueGlassBorderHover
             fontWeight = FontWeight.w600
+            put(
+                "box-shadow",
+                "0 0 18px rgba(59, 130, 246, 0.35), inset 0 1px 0 rgba(255,255,255,0.12)",
+            )
         }
 
         ".${CssClass.History.ToolbarRow}" {
@@ -87,6 +91,10 @@ object NavigationStyles {
             color = CssTheme.colorTextPrimary
             background = CssTheme.colorBlueGlassBgHover.value
             borderColor = CssTheme.colorBlueGlassBorderHover
+            put(
+                "box-shadow",
+                "0 0 14px rgba(59, 130, 246, 0.3), inset 0 1px 0 rgba(255,255,255,0.1)",
+            )
         }
 
         ".${CssClass.History.ViewsToolbar}" {
@@ -110,18 +118,46 @@ object NavigationStyles {
             paddingLeft = 0.375.rem
         }
 
+        // HIST-1: fully themed select (no native chrome) with SVG chevron.
         ".${CssClass.History.ViewsSelect}" {
-            background = CssTheme.colorGlassHover.value
+            put("appearance", "none")
+            put("-webkit-appearance", "none")
+            put("-moz-appearance", "none")
+            background = CssTheme.colorSurface2.value
             color = CssTheme.colorTextPrimary
             borderWidth = 1.px
             borderStyle = BorderStyle.solid
-            borderColor = CssTheme.colorGlassBorder
+            borderColor = CssTheme.colorSurface2Border
             borderRadius = 0.5.rem
-            padding = Padding(0.375.rem, 0.625.rem)
+            padding = Padding(0.375.rem, 2.rem, 0.375.rem, 0.75.rem)
             fontSize = 0.8125.rem
             fontFamily = CssTheme.fontSans
+            fontWeight = FontWeight.w600
             cursor = Cursor.pointer
-            put("min-width", "10rem")
+            put("min-width", "11rem")
+            put(
+                "background-image",
+                "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' " +
+                    "viewBox='0 0 24 24' fill='none' stroke='%23a8b4c8' stroke-width='2' stroke-linecap='round' " +
+                    "stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E\")",
+            )
+            put("background-repeat", "no-repeat")
+            put("background-position", "right 0.625rem center")
+        }
+
+        ".${CssClass.History.ViewsSelect}:hover" {
+            borderColor = CssTheme.colorGlassBorderHover
+        }
+
+        ".${CssClass.History.ViewsSelect}:focus" {
+            put("outline", "none")
+            borderColor = CssTheme.colorBluePrimary
+            put("box-shadow", "0 0 0 3px rgba(59, 130, 246, 0.2)")
+        }
+
+        ".${CssClass.History.ViewsSelect} option" {
+            backgroundColor = CssTheme.colorSurface1
+            color = CssTheme.colorTextPrimary
         }
 
         ".${CssClass.History.ViewsActions}" {
@@ -157,11 +193,28 @@ object NavigationStyles {
             cursor = Cursor.notAllowed
         }
 
+        // HIST-2: single ~44px chart header row (title · inline legend · compact zoom).
+        ".${CssClass.History.ChartHeader.value}" {
+            display = Display.flex
+            alignItems = Align.center
+            put("justify-content", "space-between")
+            gap = 0.75.rem
+            put("flex-wrap", "wrap")
+            put("min-height", "2.25rem")
+            marginBottom = 0.5.rem
+        }
+
+        ".${CssClass.History.ChartHeaderTitle.value}" {
+            display = Display.flex
+            alignItems = Align.center
+            gap = 0.5.rem
+            marginBottom = 0.px
+        }
+
         ".${CssClass.History.ChartTools}" {
             display = Display.flex
             alignItems = Align.center
             gap = 0.25.rem
-            marginBottom = 0.25.rem
             put("justify-content", "flex-end")
         }
 
@@ -190,7 +243,15 @@ object NavigationStyles {
 
         ".${CssClass.History.ChartContainer}" {
             position = Position.relative
-            height = 20.rem
+            // HIST-2: reclaim vertical space from the collapsed 3-row header (+~64px plot).
+            height = 24.rem
+            marginTop = 0.px
+        }
+
+        ".${CssClass.History.ChartCaption.value}" {
+            fontSize = 0.75.rem
+            color = CssTheme.colorTextMuted
+            put("line-height", "1.4")
             marginTop = 0.5.rem
         }
 

@@ -104,16 +104,23 @@ When editing dashboard HTML/CSS/HTMX (`view/**`) or `:frontend-js`:
    meaningful UI work; unit tests alone miss click/zoom/view presets.
 4. **Visuals** — Refresh README/User Guide screenshots when shipping appearance
    changes (`docs-screenshot-refresh`).
-5. **Safety chrome** — Keep Simulation / Dry Run obvious.
+5. **Safety chrome** — Keep the settings-backed trading-mode plate visible on
+   every page (`SIMULATION` > `DRY RUN` > `LIVE TRADING`). Keep the separate
+   stream-health chip labeled `STREAM` / `STALE`; it must not imply live trading.
 
 After a deploy or LAN UI check, run
 [post-deploy-ui-smoke](skills/post-deploy-ui-smoke/SKILL.md) (hard-refresh first).
 
 ### Common misses
 
-- Squished LIVE + Data Age header cluster on laptop widths
+- Missing/misleading mode plate, or a stream-health chip labeled as live trading
+- Squished STREAM/STALE + relative age/time header cluster on laptop widths
+- Dashboard hero delta/sparkline or Cash/Crypto progress tiles clipped/empty
+- Activity cycles flattened into an unreadable list or missing the History link
+- Safety cards whose ON/OFF state is unclear
 - Concatenated deviation legend (“Over targetUnder target”)
 - History Views/Zoom unstyled native buttons
+- History chart title/legend/zoom header wrapping or caption/table semantics lost
 - View presets that don’t hide series (Day · Total only)
 - Chart drag that both zooms and pans without a separate pan control
 - Scrubber stays **disabled** after drag/wheel zoom (only Zoom buttons synced it)

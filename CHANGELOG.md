@@ -6,6 +6,84 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **Hero 24H delta honesty**: The dashboard delta chip is shown only when a true
+  ≥24h baseline exists in history; it no longer falls back to the oldest retained
+  snapshot (often ~50 minutes under the 50-row dashboard window) while still
+  labeling the change `24H`.
+- **History price/fee precision**: Trade Price uses crypto-scale formatting again
+  (4–8 dp); Fee uses up to 4 dp. Zero/missing values still render as an em-dash.
+- **Mode plate on Dashboard load**: Brand + trading-mode plate + nav render in the
+  Dashboard shell outside the HTMX fragment so the mode remains visible while the
+  fragment loads (or if it fails). Stream health stays in the fragment for SSE
+  refresh.
+- **Safety toggle a11y**: Safety checkboxes are visually hidden but focusable;
+  ON/OFF text lives in the DOM (not CSS `::after`); cards show a focus-within
+  ring. Settings mode plate tracks live checkbox state before Save.
+- **Success status a11y**: Quiet trade-status dots expose `role="img"` and an
+  `aria-label` of SUCCESS.
+- **Config template drawdown default**: Documented that
+  `rebalancer-config-template.json` ships `fiatMaxDrawdown: 0.0` (deployment off),
+  matching `Settings` / README — not a silent strategy change.
+
+### Changed
+
+- **Hero drawdown + base target restored**: Total portfolio shows drawdown again;
+  Cash tile prints `(Base: …%)` when the effective USD target diverges from the
+  configured target after fiat deployment.
+- **Activity relative times**: Moved `just now` / `m ago` / `h ago` / `d ago` into
+  `ViewText`; cycle timestamps pin `Locale.US`.
+
+## [6.13.0] - 2026-07-24
+
+### Added
+
+- **Dashboard hero KPI (DASH-1)**: Total portfolio now leads with a large value,
+  a 24h delta chip (up/down), and an inline sparkline, paired with compact Cash
+  and Crypto tiles that show progress bars, target, and deviation.
+- **Cycle-grouped activity feed (DASH-3)**: Recent activity is grouped per
+  rebalance cycle with relative timestamps, per-cycle action counts, a "No trades
+  — portfolio within tolerance" summary for quiet cycles, and a "View all
+  history" link.
+- **Persistent mode plate (GLOB-1 / DASH-2)**: A brand-adjacent plate always shows
+  the active trading mode (Simulation / Dry Run / Live Trading) with an
+  explanatory tooltip, alongside a single-line stream/age status chip.
+- **Safety-mode toggle cards (SETT-1)**: Simulation and Dry Run are now rich
+  cards with an icon, description, and ON/OFF state pill instead of bare
+  checkboxes.
+
+### Changed
+
+- **Refined Glass theme (GLOB-2 / GLOB-3)**: Cool-blue glass sheen with light blur,
+  cyan rim glow, and raised drop shadows — luminous without milky white fog.
+- **History toolbar & charts (HIST-1 / HIST-2)**: Custom-styled views dropdown,
+  muted ghost delete button, consolidated chart headers (title + legend + zoom in
+  one row), taller chart canvas, and a caption on the cumulative net cash flow
+  chart.
+- **Trade history table (HIST-3)**: USD price/fee columns use tabular figures and
+  render an em-dash for zero values; plain successful trades show a subtle status
+  dot while dry-run/failed trades keep their badges.
+- **Documentation screenshots**: Refreshed `docs/images/*.png` for the Refined
+  Glass dashboard hero, activity feed, safety cards, history toolbar/charts, and
+  trade table.
+- **Agent UI skills**: Aligned `ui-manual-qa`, visual review/implement,
+  post-deploy smoke, screenshot refresh, Ktor/JS view skills, and OPERATING
+  norms with the mode plate, STREAM/STALE chip, hero/activity/safety-card, and
+  History header/table contracts.
+- **Documentation review**: Aligned README, USER_GUIDE, and agent stubs with the
+  Refined Glass UI (mode plate, STREAM/STALE, hero KPI, package tree, config
+  template defaults).
+- **Orphan UI chrome cleanup**: Removed unused `ViewText.LIVE` / `DELAYED` /
+  `DATA_AGE` (and related Data Age label/container CSS) after the STREAM/STALE
+  and mode-plate redesign; also dropped unused parenthetical safety labels and
+  `DRAWDOWN_PREFIX`.
+- **EVALUATION evidence refresh**: Regenerated `docs/EVALUATION.md` outcomes
+  from a live `EvaluationScenariosTest` run; report writer now redacts absolute
+  paths for docs sync.
+
 ## [6.12.29] - 2026-07-25
 
 ### Fixed

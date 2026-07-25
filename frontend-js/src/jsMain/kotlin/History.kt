@@ -961,24 +961,39 @@ private fun renderTradeRow(t: JsTradeRecord): HTMLTableRowElement {
             null
         }
 
+    val isPlainSuccess = success && !dryRun
+
     tr.appendChild(createCell(time, CssClass.Table.MonoCol))
     tr.appendChild(createCell(formatPair(t), CssClass.Table.SymbolCol))
     tr.appendChild(createBadgeCell(side, sideClass))
     tr.appendChild(createCell(vol.toFixed(PrecisionConstants.SCALE_CRYPTO), CssClass.Table.MonoCol))
     tr.appendChild(createCell(formatUSD(amt), CssClass.Table.MonoCol))
-    tr.appendChild(createCellWithOptionalTitle(formatPrice(price), CssClass.Table.MonoCol, estimatedTitle))
-    tr.appendChild(createCellWithOptionalTitle(formatUSD(fee), CssClass.Table.MonoCol, estimatedTitle))
+    // HIST-3: price keeps crypto precision (4-8dp) and fee keeps up to 4dp; zero/missing
+    // economics show a muted em-dash, not 0.00000000.
+    tr.appendChild(createCellWithOptionalTitle(formatPriceOrDash(price), CssClass.Table.MonoCol, estimatedTitle))
+    tr.appendChild(createCellWithOptionalTitle(formatFeeOrDash(fee), CssClass.Table.MonoCol, estimatedTitle))
     tr.appendChild(createSlippageCell(slippage, estimatedTitle))
-    tr.appendChild(createStatusCell(statusText, statusClass, t.errorMessage))
+    tr.appendChild(createStatusCell(statusText, statusClass, t.errorMessage, isPlainSuccess))
 
     return tr
 }
 
-private fun formatPrice(value: Double): String {
+/** HIST-3: format a trade price at crypto precision, or a muted em-dash when it is zero/absent. */
+private fun formatPriceOrDash(value: Double): String {
+    if (value == 0.0) return ViewText.EM_DASH
     val options: dynamic = json()
     options.minimumFractionDigits = PrecisionConstants.MIN_CRYPTO_DECIMAL_PLACES
     options.maximumFractionDigits = PrecisionConstants.SCALE_CRYPTO
-    return value.asDynamic().toLocaleString(EN_US, options)
+    return "$" + value.asDynamic().toLocaleString(EN_US, options)
+}
+
+/** HIST-3: format a trade fee at up to 4dp, or a muted em-dash when it is zero/absent. */
+private fun formatFeeOrDash(value: Double): String {
+    if (value == 0.0) return ViewText.EM_DASH
+    val options: dynamic = json()
+    options.minimumFractionDigits = PrecisionConstants.SCALE_USD
+    options.maximumFractionDigits = PrecisionConstants.SCALE_FEE
+    return "$" + value.asDynamic().toLocaleString(EN_US, options)
 }
 
 private fun slippageBadgeClass(value: Double): CssClass = when {
@@ -1010,8 +1025,24 @@ private fun createSlippageCell(slippage: Double?, estimatedTitle: String?): HTML
     return td
 }
 
-private fun createStatusCell(text: String, badgeClass: CssClass, errorMessage: String?): HTMLTableCellElement {
+private fun createStatusCell(
+    text: String,
+    badgeClass: CssClass,
+    errorMessage: String?,
+    isPlainSuccess: Boolean,
+): HTMLTableCellElement {
     val td = document.createElement(HtmlTags.TD) as HTMLTableCellElement
+    // HIST-3: a plain success is a quiet dot (removes the always-"SUCCESS" constant column);
+    // only failures and dry-run rows keep a labelled badge.
+    if (isPlainSuccess) {
+        val dot = document.createElement(HtmlTags.SPAN) as HTMLSpanElement
+        dot.className = CssClass.Table.StatusDot.toString()
+        dot.title = ViewText.STATUS_SUCCESS
+        dot.setAttribute(HtmlAttrs.ARIA_LABEL, ViewText.STATUS_SUCCESS)
+        dot.setAttribute(HtmlAttrs.ROLE, "img")
+        td.appendChild(dot)
+        return td
+    }
     val span = document.createElement(HtmlTags.SPAN) as HTMLSpanElement
     span.className = badgeClass.toString()
     span.textContent = text

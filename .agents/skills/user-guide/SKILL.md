@@ -21,8 +21,10 @@ Agent how-to for screenshots → [docs-screenshot-refresh](../docs-screenshot-re
 | Change | Action |
 | :--- | :--- |
 | New dashboard card / table column / activity badge | Update the matching Dashboard section + screenshot if visuals changed |
-| New Settings field or safety-mode behavior | Update Settings table; clarify dryRun vs simulation |
-| History charts, range pills, summary cards, trade log | Update History sections; refresh related PNGs |
+| Header mode plate or STREAM/STALE stream chip | Clarify trading mode vs stream health; never call the chip “live trading” |
+| Dashboard hero / Cash·Crypto tiles / cycle activity feed | Update Dashboard sections; refresh overview + bottom screenshots |
+| New Settings field or safety-mode cards (ON/OFF) | Update Settings table; clarify dryRun vs simulation |
+| History charts, range pills, six summary cards, trade log | Update History sections; refresh related PNGs |
 | New primary page/route | Add a guide section **and** a capture target in `docs-screenshot-refresh` |
 | Removed UI | Delete the section and README/guide image references |
 
@@ -62,12 +64,12 @@ Suggested section order (match the live nav):
 
 | Image | Typical guide use |
 | :--- | :--- |
-| `docs/images/dashboard.png` | Dashboard overview / summary cards |
-| `docs/images/dashboard-bottom.png` | Allocation, performance table, recent activity |
-| `docs/images/settings.png` | Global parameters + allocations + safety toggles |
-| `docs/images/history.png` | Range pills, summary cards, value/holdings charts |
-| `docs/images/history-charts.png` | Allocation drift + cumulative net cash flow |
-| `docs/images/history-bottom.png` | Trade history table |
+| `docs/images/dashboard.png` | Dashboard overview / hero KPI + Cash·Crypto tiles |
+| `docs/images/dashboard-bottom.png` | Allocation, performance table, cycle activity feed |
+| `docs/images/settings.png` | Global parameters + allocations + safety cards |
+| `docs/images/history.png` | Range pills, six summary cards, value/holdings charts |
+| `docs/images/history-charts.png` | Allocation drift + cumulative net cash flow (+ caption) |
+| `docs/images/history-bottom.png` | Trade history table (status dots / badges) |
 
 When `docs-screenshot-refresh` gains a new target file, add it here **and**
 embed it in USER_GUIDE (and README Screenshots if appropriate).

@@ -151,15 +151,31 @@ Playwright helper is tested at the canonical output size.
 
 ### Step 4: Verify
 
-**Read** every regenerated PNG and check:
+**Read** every regenerated PNG and check the basics:
 
 - Cards, tables, and charts are populated — no empty states or error banners
 - Charts show a continuous series without long flat gaps or vertical stacks
 - Nothing is clipped at the right edge
 - No credentials, personal hostnames, or OS chrome in frame
 
-If a chart looks wrong, fix the data (fresh DB, wait for seeding) rather than
-accepting the image.
+Then confirm the current UI semantics survived the capture:
+
+| Where | Expect |
+| :--- | :--- |
+| Every page header | Mode plate reads **SIMULATION** (the capture run is simulated) |
+| Dashboard header | Stream chip reads **STREAM** / **STALE** (never `LIVE` / `DELAYED`) plus relative age/time |
+| `dashboard.png` | Hero total with 24h delta chip + sparkline; Cash / Crypto tiles show bars, target, deviation |
+| `dashboard-bottom.png` | Activity feed grouped per cycle with relative times, quiet-cycle summary, and the "View all history" link |
+| `settings.png` | Safety Modes render as cards with icon, description, and ON/OFF pill |
+| `history.png` / `history-charts.png` | Single-row chart headers (title + zoom); net cash flow caption visible |
+| `history-bottom.png` | Trade table shows em-dashes for zero economics and status dots for plain successes |
+
+A capture that shows `LIVE TRADING` means the run directory was misconfigured —
+stop, fix `simulation: true`, and recapture. If a chart looks wrong, fix the
+data (fresh DB, wait for seeding) rather than accepting the image.
+
+Functional click-through checks belong in
+[ui-manual-qa](../ui-manual-qa/SKILL.md), not here.
 
 ### Step 5: Adapt targets as the app grows
 
@@ -200,5 +216,8 @@ Conversely, remove targets and README references for pages that no longer exist.
 - [ ] Ran from a throwaway directory; real config/DB untouched
 - [ ] Fresh seeded DB; charts continuous with no gap or spike
 - [ ] Every regenerated PNG read and visually verified
+- [ ] Mode plate reads `SIMULATION`; stream chip reads `STREAM` / `STALE`
+- [ ] Hero, activity feed, safety cards, history headers/caption, and trade
+      table details present in the canonical PNGs
 - [ ] `--discover` reviewed; new pages/sections captured and added to README
 - [ ] App stopped, run directory removed, CHANGELOG updated

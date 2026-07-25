@@ -190,7 +190,8 @@ with a wide range of tools and paradigms:
 - Horizontal bar chart showing asset allocation by value
 - Sortable asset performance table with deviation indicators
 - Trade history log with BUY/SELL badges
-- Live/Delayed status indicator with data age tracking
+- STREAM/STALE SSE stream-health indicator with relative age/time (separate from trading mode)
+- Persistent mode plate (SIMULATION / DRY RUN / LIVE TRADING)
 - **Range-Filtered History Metrics** — Time frame selector controls all six top metric summary cards (All-Time High / Period High, Total Trades, Total Volume Traded, Total Fees Paid, Avg Fee Rate, Avg Slippage) dynamically alongside interactive Chart.js timelines and trade history logs with price, fee, and slippage columns.
 - **Hypermedia-powered** — uses HTMX for dynamic content swapping and form
   submissions without writing JavaScript
@@ -228,6 +229,7 @@ with a wide range of tools and paradigms:
   socket/HTTP/rate-limit/lockout errors with exponential backoff (lockouts
   start at 10s and scale up to a 15-minute ceiling)
 - **CORS Restrictions** — locks down server allowed origins to local machine addresses (`localhost`, `127.0.0.1`, `::1`), Bonjour multicast DNS domains (`*.local`), and private local subnets (`192.168.x.x`, `10.x.x.x`, etc.) to permit local Wi-Fi access from other devices while blocking public web threats
+- **No dashboard user auth** — trust model is local/private network; see [SECURITY.md](SECURITY.md)
 - **Database Indexing & Auto Migrations** — database schemas utilize index optimizations for timestamps, and run dynamic `SchemaUtils.createMissingTablesAndColumns` auto-migrations on startup
 - Dust threshold filtering to avoid minimum order size errors
 - Automatic error recovery — API failures don't crash the rebalancing loop
@@ -240,16 +242,17 @@ with a wide range of tools and paradigms:
 
 ### Dashboard
 
-The main dashboard shows portfolio value, cash position with effective target (
-adjusted for drawdown deployment), crypto asset values, an allocation chart, and
-a sortable asset performance table.
+The main dashboard leads with a hero portfolio KPI and 24h delta, plus cash and
+crypto tiles (effective target adjusted for drawdown deployment), an allocation
+chart, and a sortable asset performance table.
 
 ![Dashboard](docs/images/dashboard.png)
 
-### Asset Table & Trade History
+### Asset Performance & Recent Cycle Activity
 
 The lower section shows detailed per-asset metrics (price, value, target %,
-current %, deviation) and a chronological trade activity log.
+current %, deviation) and recent rebalance-cycle activity (not the full History
+page trade log).
 
 ![Dashboard Bottom](docs/images/dashboard-bottom.png)
 
@@ -421,6 +424,7 @@ two complementary `SharedFlow` channels:
 │   │       ├── SimulationDefaults.kt     # Shared simulation default prices
 │   │       ├── SnapshotHistoryCalculator.kt # History reconstruction helpers
 │   │       └── TradeHistoryServiceImpl.kt # Snapshot storage, trade sync, history flow
+│   ├── util/                              # NetworkUtils, TradeDeduplicator, TradeCalculator, ActionLogFormatter, BigDecimalExtensions
 │   ├── view/                              # HTML templates & components (kotlinx.html DSL)
 │   │   ├── DashboardView.kt              # Facade class delegating to components
 │   │   ├── component/                    # Modular components (Shell, Grid, Form, History, etc.)

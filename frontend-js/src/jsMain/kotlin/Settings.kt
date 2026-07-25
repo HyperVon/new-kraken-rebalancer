@@ -9,6 +9,7 @@ import com.gemini.krakenbot.view.util.ViewText
 import kotlinx.browser.document
 import kotlinx.browser.window
 import org.w3c.dom.*
+import org.w3c.dom.events.Event
 import kotlin.math.abs
 import com.gemini.krakenbot.view.util.CssClass.Query.SYMBOL_INPUTS as SYMBOL_INPUTS_QUERY
 import com.gemini.krakenbot.view.util.CssClass.Query.TARGET_INPUTS as TARGET_INPUTS_QUERY
@@ -16,11 +17,53 @@ import com.gemini.krakenbot.view.util.CssClass.Query.TARGET_INPUTS as TARGET_INP
 fun initSettings() {
     registerSettingsGlobals()
     updateAllocationTotal()
+    wireModePlateSync()
 }
 
 fun registerSettingsGlobals() {
     window.asDynamic().updateAllocationTotal = { updateAllocationTotal() }
     window.asDynamic().addAssetRow = { addAssetRow() }
+}
+
+/** Keep the header mode plate in sync with live safety toggles before Save. */
+private fun wireModePlateSync() {
+    val simulation =
+        document.querySelector("input[name=\"${FormFields.SIMULATION}\"]") as? HTMLInputElement
+    val dryRun =
+        document.querySelector("input[name=\"${FormFields.DRY_RUN}\"]") as? HTMLInputElement
+    if (simulation == null && dryRun == null) return
+    val onChange: (Event) -> Unit = { syncModePlateFromSafetyToggles() }
+    simulation?.addEventListener("change", onChange)
+    dryRun?.addEventListener("change", onChange)
+    syncModePlateFromSafetyToggles()
+}
+
+internal fun syncModePlateFromSafetyToggles() {
+    val plate = document.getElementById(HtmlIds.MODE_PLATE) as? HTMLElement ?: return
+    val labelEl = document.getElementById(HtmlIds.MODE_PLATE_LABEL) as? HTMLElement ?: return
+    val simulation =
+        (document.querySelector("input[name=\"${FormFields.SIMULATION}\"]") as? HTMLInputElement)
+            ?.checked == true
+    val dryRun =
+        (document.querySelector("input[name=\"${FormFields.DRY_RUN}\"]") as? HTMLInputElement)
+            ?.checked == true
+    when {
+        simulation -> {
+            plate.className = CssClass.Mode.Simulation.toString()
+            labelEl.textContent = ViewText.MODE_SIMULATION
+            plate.title = ViewText.MODE_SIMULATION_TITLE
+        }
+        dryRun -> {
+            plate.className = CssClass.Mode.DryRun.toString()
+            labelEl.textContent = ViewText.MODE_DRY_RUN
+            plate.title = ViewText.MODE_DRY_RUN_TITLE
+        }
+        else -> {
+            plate.className = CssClass.Mode.Live.toString()
+            labelEl.textContent = ViewText.MODE_LIVE
+            plate.title = ViewText.MODE_LIVE_TITLE
+        }
+    }
 }
 
 fun updateAllocationTotal() {

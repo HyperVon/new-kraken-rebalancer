@@ -16,12 +16,41 @@ object CssTheme {
     // Color Tokens
     val colorBg = Color("#030712")
     val colorTextPrimary = Color("#f8fafc")
-    val colorTextSecondary = Color("#94a3b8")
-    val colorTextMuted = Color("#64748b")
-    val colorGlass = Color("rgba(15, 23, 42, 0.6)")
-    val colorGlassBorder = Color("rgba(255, 255, 255, 0.08)")
-    val colorGlassBorderHover = Color("rgba(255, 255, 255, 0.18)")
+
+    // GLOB-3: lifted for WCAG AA (>=4.5:1) on glass surfaces.
+    val colorTextSecondary = Color("#a8b4c8")
+    val colorTextMuted = Color("#7e8ba3")
+    val colorGlass = Color("rgba(15, 23, 42, 0.72)")
+    val colorGlassBorder = Color("rgba(96, 165, 250, 0.22)")
+    val colorGlassBorderHover = Color("rgba(125, 185, 255, 0.4)")
     val colorGlassHover = Color("rgba(255, 255, 255, 0.04)")
+
+    // Semi-glass raised cards: cool blue sheen (not white fog), clear lift off page.
+    val colorSurface1 = Color("rgba(18, 28, 48, 0.9)")
+    val colorSurface2 = Color("rgba(24, 36, 56, 0.94)")
+    val colorSurface1Border = Color("rgba(96, 165, 250, 0.26)")
+    val colorSurface2Border = Color("rgba(96, 165, 250, 0.3)")
+    val colorInsetHighlight = Color("rgba(147, 197, 253, 0.2)")
+
+    // Cool blue glass wash — luminous without milky white glare.
+    const val glassSurfaceGradient =
+        "linear-gradient(165deg, rgba(96,165,250,0.14) 0%, rgba(59,130,246,0.05) 20%, " +
+            "rgba(18,28,48,0.92) 58%, rgba(12,20,36,0.96) 100%)"
+    const val glassBarSheen =
+        "linear-gradient(180deg, rgba(186,230,255,0.4) 0%, rgba(255,255,255,0.08) 38%, " +
+            "rgba(0,0,0,0.16) 100%)"
+
+    // Depth + soft cyan rim light (raised glass, not flat matte).
+    const val shadowSurface1 =
+        "0 1px 2px rgba(0,0,0,0.45), 0 10px 26px rgba(0,0,0,0.5), 0 0 26px rgba(56,189,248,0.1), " +
+            "inset 0 1px 0 rgba(147,197,253,0.22), inset 0 -1px 0 rgba(0,0,0,0.28)"
+    const val shadowSurface2 =
+        "0 2px 4px rgba(0,0,0,0.5), 0 16px 36px rgba(0,0,0,0.55), 0 0 34px rgba(56,189,248,0.14), " +
+            "inset 0 1px 0 rgba(147,197,253,0.28), inset 0 -1px 0 rgba(0,0,0,0.32)"
+    const val insetTopHighlight = "inset 0 1px 0 rgba(147, 197, 253, 0.22)"
+    const val glowBlueSoft = "0 0 16px rgba(56, 189, 248, 0.3)"
+    const val glowGreenSoft = "0 0 14px rgba(16, 185, 129, 0.28)"
+    const val glowPurpleSoft = "0 0 14px rgba(167, 139, 250, 0.32)"
     val colorKrakenBlue = Color("#0052ff")
     val colorBluePrimary = Color("#3b82f6")
     val colorBlueHover = Color("#1d4ed8")
@@ -64,8 +93,12 @@ object CssTheme {
     val colorScrollbarThumb = Color("rgba(148, 163, 184, 0.15)")
     val colorScrollbarThumbHover = Color("rgba(148, 163, 184, 0.3)")
     val colorIconFaint = Color("rgba(255, 255, 255, 0.1)")
-    val colorBgGlowBlue = Color("rgba(56, 189, 248, 0.06)")
-    val colorBgGlowGreen = Color("rgba(16, 185, 129, 0.06)")
+    val colorBgGlowBlue = Color("rgba(56, 189, 248, 0.1)")
+    val colorBgGlowGreen = Color("rgba(16, 185, 129, 0.055)")
+    val colorBgGlowPurple = Color("rgba(139, 92, 246, 0.08)")
+    val colorPurpleAccent = Color("#a78bfa")
+    val colorPurpleMuted = Color("rgba(167, 139, 250, 0.18)")
+    val colorPurpleBorder = Color("rgba(167, 139, 250, 0.35)")
 
     fun CssBuilder.applyRootVariables() {
         ":root" {
@@ -79,6 +112,11 @@ object CssTheme {
             put("--color-glass", colorGlass.value)
             put("--color-glass-border", colorGlassBorder.value)
             put("--color-glass-border-hover", colorGlassBorderHover.value)
+            put("--color-surface-1", colorSurface1.value)
+            put("--color-surface-2", colorSurface2.value)
+            put("--shadow-surface-1", shadowSurface1)
+            put("--shadow-surface-2", shadowSurface2)
+            put("--inset-top-highlight", insetTopHighlight)
             put("--color-kraken-blue", colorKrakenBlue.value)
             put("--color-success", colorSuccess.value)
             put("--color-danger", colorDanger.value)

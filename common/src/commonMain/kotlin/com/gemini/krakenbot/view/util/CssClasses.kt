@@ -31,6 +31,44 @@ sealed class CssClass(open val value: String) {
         object BrandPrimary : Layout("brand-primary")
         object BrandAccent : Layout("brand-accent")
         object StatusCluster : Layout("status-cluster")
+        object HeaderStatus : Layout("header-status")
+        object HeroGrid : Layout("hero-grid")
+        object HeroSide : Layout("hero-side")
+    }
+
+    // GLOB-1/DASH-2: persistent trading-mode plate shown on every page.
+    sealed class Mode(override val value: String) : CssClass(value) {
+        object Plate : Mode("mode-plate")
+        object Simulation : Mode("mode-plate mode-simulation")
+        object DryRun : Mode("mode-plate mode-dry-run")
+        object Live : Mode("mode-plate mode-live")
+        object Dot : Mode("mode-plate-dot")
+    }
+
+    // DASH-1: dashboard hero (total portfolio) card.
+    sealed class Hero(override val value: String) : CssClass(value) {
+        object Card : Hero("glass-panel hero-card")
+        object CardText : Hero("hero-card-text")
+        object Label : Hero("hero-label")
+        object Value : Hero("hero-value")
+        object DeltaRow : Hero("hero-delta-row")
+        object Delta : Hero("hero-delta")
+        object DeltaUp : Hero("hero-delta up")
+        object DeltaDown : Hero("hero-delta down")
+        object DeltaFlat : Hero("hero-delta flat")
+        object DeltaWindow : Hero("hero-delta-window")
+        object Drawdown : Hero("hero-drawdown")
+        object Spark : Hero("hero-spark")
+        object Tile : Hero("glass-panel hero-tile")
+        object TileCash : Hero("glass-panel hero-tile hero-tile-cash")
+        object TileCrypto : Hero("glass-panel hero-tile hero-tile-crypto")
+        object TileHeader : Hero("hero-tile-header")
+        object TileTitle : Hero("hero-tile-title")
+        object TileValue : Hero("hero-tile-value")
+        object TileBarRow : Hero("hero-tile-bar-row")
+        object TileBarTrack : Hero("hero-tile-bar-track")
+        object TileBarFill : Hero("hero-tile-bar-fill")
+        object TileMeta : Hero("hero-tile-meta")
     }
 
     // Status Cards
@@ -56,6 +94,7 @@ sealed class CssClass(open val value: String) {
         object SymbolCol : Table("symbol-col")
         object Sortable : Table("sortable")
         object SortableAsc : Table("sortable asc")
+        object StatusDot : Table("trade-status-dot")
     }
 
     // Form Elements
@@ -76,8 +115,21 @@ sealed class CssClass(open val value: String) {
         object AddAssetBox : Form("add-asset-box")
         object GroupCentered : Form("form-group-centered")
         object SectionHeader : Form("section-header")
+        object SectionSubtitle : Form("form-section-subtitle")
         object SafetyGroup : Form("form-safety-group")
         object SafetyToggles : Form("form-safety-toggles")
+
+        // SETT-1: safety toggle cards
+        object SafetyCard : Form("safety-card")
+        object SafetyCardInner : Form("safety-card-inner")
+        object SafetyCardIcon : Form("safety-card-icon")
+        object SafetyCardBody : Form("safety-card-body")
+        object SafetyCardTitleRow : Form("safety-card-title-row")
+        object SafetyCardTitle : Form("safety-card-title")
+        object SafetyCardDesc : Form("safety-card-desc")
+        object SafetyStatePill : Form("safety-state-pill")
+        object SafetyStateOn : Form("safety-state-on")
+        object SafetyStateOff : Form("safety-state-off")
     }
 
     // Buttons
@@ -85,6 +137,7 @@ sealed class CssClass(open val value: String) {
         object Primary : Button("btn btn-primary")
         object Secondary : Button("btn btn-secondary")
         object Danger : Button("btn btn-danger")
+        object DangerGhost : Button("btn btn-danger-ghost")
         object Icon : Button("btn-icon")
     }
 
@@ -121,6 +174,20 @@ sealed class CssClass(open val value: String) {
         object MessageMuted : Activity("recent-activity-message-muted")
         object EmptyHistoryBox : Activity("empty-history-box")
         object CustomScrollbarMaxH100 : Activity("custom-scrollbar max-h-100")
+
+        // DASH-3: cycle-grouped activity feed
+        object Feed : Activity("activity-feed")
+        object Cycle : Activity("activity-cycle")
+        object CycleHeader : Activity("activity-cycle-header")
+        object CycleTime : Activity("activity-cycle-time")
+        object CycleMeta : Activity("activity-cycle-meta")
+        object CycleBody : Activity("activity-cycle-body")
+        object Item : Activity("activity-item")
+        object ItemTrade : Activity("activity-item trade")
+        object ItemText : Activity("activity-item-text")
+        object NoopSummary : Activity("activity-noop-summary")
+        object FeedFooter : Activity("activity-feed-footer")
+        object ViewAll : Activity("activity-view-all")
     }
 
     // Performance
@@ -135,8 +202,6 @@ sealed class CssClass(open val value: String) {
 
     // Data Age
     sealed class DataAge(override val value: String) : CssClass(value) {
-        object Container : DataAge("data-age-container")
-        object Label : DataAge("data-age-label")
         object Value : DataAge("data-age-value")
         object ValueStale : DataAge("data-age-value stale")
         object Time : DataAge("data-age-time")
@@ -174,8 +239,13 @@ sealed class CssClass(open val value: String) {
         object ViewsActions : History("history-views-actions")
         object ViewsBtn : History("history-views-btn")
         object ChartTools : History("history-chart-tools")
+        object ChartHeader : History("history-chart-header")
+        object ChartHeaderTitle : History("history-chart-header-title")
+        object ChartLegend : History("history-chart-legend")
+        object ChartLegendItem : History("history-chart-legend-item")
         object ZoomBtn : History("history-zoom-btn")
         object ChartContainer : History("chart-container")
+        object ChartCaption : History("history-chart-caption")
         object ChartScrubber : History("history-chart-scrubber")
         object ChartScrubberInput : History("history-chart-scrubber-input")
         object TradeLogHeader : History("history-trade-log-header")

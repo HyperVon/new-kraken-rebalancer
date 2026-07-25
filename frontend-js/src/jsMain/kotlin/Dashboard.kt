@@ -63,7 +63,8 @@ fun updateAge() {
     if (badgeEl != null) {
         badgeEl.classList.toggle(CssClass.Utility.Delayed, isStale)
         badgeEl.classList.toggle(CssClass.Utility.Live, !isStale)
-        val badgeText = if (isStale) ViewText.DELAYED else ViewText.LIVE
+        // GLOB-1: this chip reflects SSE stream health, not trading mode.
+        val badgeText = if (isStale) ViewText.STREAM_STALE else ViewText.STREAM
         if (badgeEl.textContent != badgeText) {
             badgeEl.textContent = badgeText
         }

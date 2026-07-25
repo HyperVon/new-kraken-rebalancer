@@ -88,8 +88,11 @@ Opt in `ExperimentalCoroutinesApi` when using `advanceUntilIdle`.
 ## Evaluation / E2E / chaos
 
 - Suite: `EvaluationScenariosTest` (32 scenarios)
-- Report: `build/reports/scenarios_evaluation_report.md`
+- Report: `build/reports/scenarios_evaluation_report.md` (absolute paths redacted)
 - Run: `./gradlew test --tests "com.gemini.krakenbot.EvaluationScenariosTest"`
+  (use `-x jacocoTestCoverageVerification` when running the suite alone)
+- After scenario/evidence changes, refresh the outcomes table in
+  [`docs/EVALUATION.md`](../../../docs/EVALUATION.md) from that report
 - Principles: no absolute paths, FakeKraken, virtual time, SSE multi-subscriber checks
 
 ## Kotlin/JS tests

@@ -60,8 +60,9 @@ class DashboardController(
             staticResources(Routes.STATIC_PREFIX, Routes.STATIC_RESOURCES_DIR)
 
             get(Routes.ROOT) {
+                val settings = configService.getConfig().settings
                 call.respondHtml(HttpStatusCode.OK) {
-                    dashboardView.renderDashboardShell()
+                    dashboardView.renderDashboardShell(settings)
                 }
             }
 
@@ -81,8 +82,9 @@ class DashboardController(
             }
 
             get(Routes.HISTORY) {
+                val settings = configService.getConfig().settings
                 call.respondHtml(HttpStatusCode.OK) {
-                    dashboardView.renderHistoryPage()
+                    dashboardView.renderHistoryPage(settings)
                 }
             }
 
