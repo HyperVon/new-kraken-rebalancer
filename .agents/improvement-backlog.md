@@ -23,8 +23,8 @@ need only this file (no issue spam).
 
 | ID | Size | Status | Area | Summary | Cycle | PR |
 | :--- | :---: | :--- | :--- | :--- | :---: | :--- |
-| CI-12-Q1..4 | S | done | common/views | CdnUrls (charts/fonts), TradeSourceKeys, HISTORY_SEEDED SyncMetadataKeys | 12 | (this PR) |
-| CI-12-UI1 | M | done | css | Remove orphaned pre-DASH-3 activity + Offline badge CSS | 12 | (this PR) |
+| CI-12-Q1..4 | S | done | common/views | CdnUrls (charts/fonts), TradeSourceKeys, HISTORY_SEEDED SyncMetadataKeys | 12 | #91 |
+| CI-12-UI1 | M | done | css | Remove orphaned pre-DASH-3 activity + Offline badge CSS | 12 | #91 |
 | CI-11-Q01..08 | S/M | done | code/docs/ui | RateLimiter KDoc, Settings POST 5.0 fallbacks, shared constants, Routes/CDN/SyncMetadataKeys DRY, History dynamicNumber, docs drift, allocation-total pill, dead CSS, stream placeholder | 11 | #87 |
 | CI-11-D01..05 | S | done | docs | EVALUATION/README/skill trigger & stream wording | 11 | #87 |
 | CI-11-UI1..05 | S/M | done | ui/css | Allocation total pill, StatusCluster/scrollbar cleanup, stream time slot, HeaderActions margin | 11 | #87 |
