@@ -36,6 +36,10 @@ Product polish discovered during QA belongs in
 | CQ-3-16 | S | gap | open | math | Underweight exact dust `\|dev\|==threshold` significant; just-below not | 3 | — | dust cases overweight-only today |
 | CQ-3-17 | M | gap | open | eval | Eval scenario for USD refresh ≥95% early-accept / fail-closed | 3 | — | unit coverage shipped CQ-3-1/2; eval optional |
 | CQ-3-18 | S | gap | open | drawdown | Aggressive exponent `0.5` ALGORITHM table points (e.g. 7.5% DD → 50%) | 3 | — | exponents 1.0 & 2.0 covered |
+| CQ-3-19 | S | bug | open | flows | Rethrow `CancellationException` in cycle/sync `catch (Exception)` (don’t log as cycle error) | 3 | — | `PortfolioManagerImpl` L67–73; CE ⊆ Exception; blocks clean `collectLatest` cancel |
+| CQ-3-20 | M | gap | open | history/SSE | Real `snapshotFlow`: ≥2 subscribers receive; `DROP_OLDEST` keeps `addSnapshot`/`tryEmit` non-blocking | 3 | — | tests use single collector / mocked `flowOf` |
+| CQ-3-21 | S | gap | open | dedupe | Fee-rate Δ **exactly** `0.001`; local-estimate window `10_000` vs `10_001` ms | 3 | — | outer 300s shipped CQ-3-3; inner thresholds still unasserted |
+| CQ-3-22 | M | gap | open | rate-limit | Public ticker/OHLC never `acquire`; private TradesHistory/Ledgers/ClosedOrders cost **2.0** | 3 | — | throttle test is Balance×8 only; needs injectable limiter like CQ-1-9 |
 
 ## Done (recent)
 
