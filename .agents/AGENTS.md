@@ -107,8 +107,10 @@ Full detail: [`docs/ALGORITHM.md`](../docs/ALGORITHM.md) and skill [portfolio-re
 - **Fiat correction**: if *only* USD triggers (deposit/withdrawal), redistribute among counter-balanced assets.
 - **Dust**: skip orders below `dustThresholdUSD`.
 - **Sell then buy**: sell overweight first; poll USD up to **3** attempts with
-  exponential backoff starting at **250ms** (doubling: 250ms → 500ms → 1000ms); accept balance
-  at **≥95%** of projected; buy capped at **99%** of available USD.
+  exponential backoff starting at **250ms** (doubling: 250ms → 500ms → 1000ms);
+  use the **best positive** observation; accept early at **≥95%** of projected;
+  **abort buys** if no positive USD is observed; cycle buy budget **99%** of
+  settled USD (`withStableBackend` pins live vs simulation for the sequence).
 - **Precision**: `BigDecimal` only — crypto scale **8**, USD scale **2**. Tests: `shouldBeEqualComparingTo` (never `shouldBeEqualByComparingTo` / `.equals()`).
 
 ---

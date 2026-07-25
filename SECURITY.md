@@ -19,12 +19,12 @@ Kraken exchange API. Security vulnerabilities should be treated with care.
 
 ### How to Report
 
-Please use GitHub's *
-*[Private Vulnerability Reporting](https://github.com/HyperVon/new-kraken-rebalancer/security/advisories/new)
-** feature to submit a vulnerability report confidentially.
+Please use GitHub's
+**[Private Vulnerability Reporting](https://github.com/HyperVon/new-kraken-rebalancer/security/advisories/new)**
+feature to submit a vulnerability report confidentially.
 
-Alternatively, you may open a GitHub Security Advisory directly from the *
-*Security** tab of this repository.
+Alternatively, you may open a GitHub Security Advisory directly from the
+**Security** tab of this repository.
 
 ### What to Include
 

@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.12.23] - 2026-07-24
+
+### Fixed
+
+- **Docs vs OrderExecutor cash settle**: `docs/ALGORITHM.md`, `docs/FLOWS.md`, and
+  portfolio/coroutines skills now match fail-closed USD refresh (best observed
+  balance; abort buys when none positive), cycle-level 99% buy budget, and
+  `withStableBackend` pinning — removing stale fail-open / “last positive”
+  wording left after [#54](https://github.com/HyperVon/new-kraken-rebalancer/issues/54).
+- **SECURITY.md** Private Vulnerability Reporting markdown bolding.
+- **changelog-and-docs-sync** markdownlint paths include `CONTRIBUTING.md` and
+  `SECURITY.md` (aligned with AGENTS / commit-and-push).
+
 ## [6.12.22] - 2026-07-24
 
 ### Fixed
