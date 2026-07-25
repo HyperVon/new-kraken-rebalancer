@@ -36,10 +36,12 @@ Stay single-threaded (or one dedicated agent) when streams **share** the same ho
 1. **Name the tracks** briefly for the user (what is parallel vs coupled).
 2. Give each Task agent: repo path, branch, **already-done context**, exact files to touch/avoid, and acceptance criteria.
 3. Reserve **one coupled track** for interdependent code; run independent tracks in **one message with multiple Task calls**.
-4. After agents return: merge, resolve conflicts, run quality gates, then continue.
+4. Keep Gradle to **one build per clone** — either the parent runs all builds, or each agent gets its own `git worktree`. Concurrent `./gradlew` in one directory kills test workers (`EOFException`) and fakes `UP-TO-DATE`.
+5. After agents return: merge, resolve conflicts, run quality gates with `--rerun-tasks`, then continue.
 
 ## Anti-patterns
 
 - Parallel edits to the **same file** without a single owner
 - Spawning agents for tiny one-liners (overhead > benefit)
 - Parallelizing when the next step is blocked on a single design decision — decide first, then fan out
+- Trusting a cached / overlapped green build as final verification

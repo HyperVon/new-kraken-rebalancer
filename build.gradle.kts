@@ -121,10 +121,18 @@ tasks.withType<KotlinCompile> {
     }
 }
 
+// A `--tests` run only exercises a slice of the codebase, so the project-wide JaCoCo
+// thresholds can never be met and would fail an otherwise-green focused run. Full runs
+// (`./gradlew test`, `./gradlew build`) still finalize with report + verification.
+val isFilteredTestRun =
+    gradle.startParameter.taskRequests.any { request -> request.args.contains("--tests") }
+
 tasks.withType<Test> {
     useJUnitPlatform()
-    finalizedBy(tasks.jacocoTestReport)
-    finalizedBy(tasks.jacocoTestCoverageVerification)
+    if (!isFilteredTestRun) {
+        finalizedBy(tasks.jacocoTestReport)
+        finalizedBy(tasks.jacocoTestCoverageVerification)
+    }
     maxParallelForks =
         providers.gradleProperty("testForks").orNull?.toIntOrNull()?.coerceAtLeast(1)
             ?: (Runtime.getRuntime().availableProcessors() / 2).coerceIn(1, 2)

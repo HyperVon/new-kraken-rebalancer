@@ -6,6 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.12.28] - 2026-07-25
+
+### Changed
+
+- **Build**: focused test runs (`./gradlew test --tests …`) no longer fail on
+  project-wide JaCoCo thresholds they cannot possibly meet. Unfiltered runs
+  (`./gradlew test`, `./gradlew build`) still finalize with the coverage report
+  and 95/90 verification, and CI is unchanged.
+- **Snapshot seeding** reads each asset once while iterating
+  `PortfolioSnapshot.assets` instead of re-looking-up the map with a redundant
+  null fallback.
+- **Agent docs**: `parallel-multi-agent` and `OPERATING.md` now require one Gradle
+  build per clone (worktree per agent, or parent-owns-build), and
+  `continuous-quality` requires a forced `--rerun-tasks` final verification —
+  concurrent builds in one clone kill test workers and cached runs can report a
+  green gate that never executed the new tests.
+
 ## [6.12.27] - 2026-07-24
 
 ### Fixed

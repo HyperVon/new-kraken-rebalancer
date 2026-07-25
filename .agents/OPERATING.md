@@ -61,13 +61,18 @@ cross-cutting refactors).
 2. Give each agent: repo path, branch, already-done context, files to
    touch/avoid, acceptance criteria.
 3. Reserve one coupled track for interdependent code; fan out the rest together.
-4. After agents return: merge, resolve conflicts, run quality gates, continue.
+4. Keep Gradle to **one build per clone** — either the parent runs all builds, or
+   each agent gets its own `git worktree`. Concurrent `./gradlew` in one directory
+   kills test workers (`EOFException`) and fakes `UP-TO-DATE`.
+5. After agents return: merge, resolve conflicts, run quality gates with
+   `--rerun-tasks`, continue.
 
 ### Anti-patterns
 
 - Parallel edits to the **same file** without a single owner
 - Spawning agents for tiny one-liners
 - Parallelizing before a blocking design decision is settled
+- Trusting a cached / overlapped green build as final verification
 
 Details: [skills/parallel-multi-agent/SKILL.md](skills/parallel-multi-agent/SKILL.md).
 

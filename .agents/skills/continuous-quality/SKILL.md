@@ -289,6 +289,17 @@ Always:
 ./.agents/skills/commit-and-push/scripts/pre_commit_check.sh
 ```
 
+**Force re-execution for the final pass.** Gradle's build cache happily replays a
+subagent's earlier run, so an all-`UP-TO-DATE` / `FROM-CACHE` "PASSED" in a few
+seconds proves nothing about tests you just added or re-enabled:
+
+```bash
+./gradlew test jacocoTestCoverageVerification spotlessCheck :frontend-js:jsTest --rerun-tasks
+```
+
+Confirm the count actually moved (JUnit XML under `build/test-results/test/`) —
+`tests`, `failures`, and `skipped` should all match what you expect.
+
 Also when UI changed or UI findings were in the backlog:
 
 - Prefer [ui-manual-qa](../ui-manual-qa/SKILL.md) scoped or full (include
