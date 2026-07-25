@@ -90,7 +90,7 @@ class CoverageTest : StringSpec() {
                 buildPortfolioValueChart(emptyArray())
                 buildAssetHoldingsChart(emptyArray())
                 buildAllocationDriftChart(emptyArray())
-                buildCumulativePLChart(emptyArray())
+                buildCumulativeNetCashFlowChart(emptyArray())
 
                 // Verify no charts were created (since early return)
                 // We can't easily check, but at least no exception
@@ -99,10 +99,10 @@ class CoverageTest : StringSpec() {
             }
         }
 
-        // Test calculateCumulativePL edge cases
-        "calculateCumulativePL handles various trade scenarios" {
+        // Test calculateCumulativeNetCashFlow edge cases
+        "calculateCumulativeNetCashFlow handles various trade scenarios" {
             // Empty trades
-            val empty = calculateCumulativePL(emptyArray())
+            val empty = calculateCumulativeNetCashFlow(emptyArray())
             empty.size shouldBe 0
 
             // Single successful buy
@@ -112,7 +112,7 @@ class CoverageTest : StringSpec() {
                     side = OrderSide.BUY.name,
                     usdAmount = 100.0,
                 )
-            val resultBuy = calculateCumulativePL(arrayOf(buy))
+            val resultBuy = calculateCumulativeNetCashFlow(arrayOf(buy))
             resultBuy.size shouldBe 1
             val r0 = resultBuy[0]
             r0.y.toString().toDouble() shouldBe -100.0 // BUY subtracts
@@ -124,7 +124,7 @@ class CoverageTest : StringSpec() {
                     side = OrderSide.SELL.name,
                     usdAmount = 50.0,
                 )
-            val resultSell = calculateCumulativePL(arrayOf(sell))
+            val resultSell = calculateCumulativeNetCashFlow(arrayOf(sell))
             resultSell.size shouldBe 1
             val s0 = resultSell[0]
             s0.y.toString().toDouble() shouldBe 50.0 // SELL adds
@@ -155,7 +155,7 @@ class CoverageTest : StringSpec() {
                         usdAmount = 30.0,
                     ),
                 )
-            val resultMixed = calculateCumulativePL(mixed)
+            val resultMixed = calculateCumulativeNetCashFlow(mixed)
             resultMixed.size shouldBe 2 // Only the buy and sell (first and last)
             val m0 = resultMixed[0]
             val m1 = resultMixed[1]
@@ -673,7 +673,7 @@ class CoverageTest : StringSpec() {
                 buildPortfolioValueChart(snapshots)
                 buildAssetHoldingsChart(snapshots)
                 buildAllocationDriftChart(snapshots)
-                buildCumulativePLChart(trades)
+                buildCumulativeNetCashFlowChart(trades)
 
                 // 1. Portfolio chart callbacks
                 val portConfig = window.asDynamic().chartConfigs[0]
@@ -725,7 +725,7 @@ class CoverageTest : StringSpec() {
                 gridColor3(json("tick" to json("value" to 0))).toString() shouldBe ChartProps.COLOR_ZERO_LINE
                 gridColor3(json("tick" to json("value" to 1))).toString() shouldBe ChartProps.COLOR_GRID_LINE
 
-                // 4. Cumulative P&L chart callbacks
+                // 4. Cumulative net cash flow chart callbacks
                 val plConfig = window.asDynamic().chartConfigs[3]
                 val tick4 = plConfig.options.scales.y.ticks.callback
                 tick4(12.34, 0, null).toString() shouldContain "$12.34"

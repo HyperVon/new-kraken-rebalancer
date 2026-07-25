@@ -29,7 +29,7 @@ walkthrough of Dashboard, Settings, History, and safety modes
 | **Frontend**    | Server-side HTML (kotlinx.html DSL + HTMX), kotlinx-css DSL, Ktor SSE + Client-side Kotlin/JS          |
 | **API**         | Kraken REST API with HMAC-SHA512 authentication                                                        |
 | **Testing**     | Kotest 6.2.3, MockK 1.14, JaCoCo (95%+ JVM coverage), Karma/Istanbul (90%+ JS statement/func coverage) |
-| **Build**       | Gradle 9.6.1 (Kotlin DSL), Spotless + ktlint 1.3.1                                                     |
+| **Build**       | Gradle 9.6.1 (Kotlin DSL), Spotless + ktlint 1.7.1                                                     |
 
 ---
 
@@ -265,7 +265,7 @@ targets.
 
 The dedicated History view provides detailed analysis and charts tracking portfolio metrics over time. Users can select different time ranges (24h, 7d, 30d, 90d, All) to update the charts and trade log. It features:
 
-- **View presets** — **Overview**, **Day · Total only**, **Week · Allocation**, and **Month · P&L**, plus **Save view…** / **Set as default** / **Delete** for browser-local custom views
+- **View presets** — **Overview**, **Day · Total only**, **Week · Allocation**, and **Month · Net Cash Flow**, plus **Save view…** / **Set as default** / **Delete** for browser-local custom views
 - **Chart zoom** — **Zoom −** / **Zoom +** / **Reset**, plus wheel, pinch, and drag-to-zoom on the x-axis
 - **Pan scrubber** — after zooming in, a horizontal scrubber below each chart pans the visible window across the full time range (chart drag zooms; it does not pan)
 - **Portfolio Value Over Time** (overall portfolio value in USD + individual asset values)

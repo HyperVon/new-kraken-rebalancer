@@ -29,6 +29,7 @@ import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.booleans.shouldBeTrue
+import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.ktor.client.plugins.sse.*
@@ -61,7 +62,6 @@ import kotlin.math.abs
 import kotlin.time.Duration.Companion.milliseconds
 import io.ktor.client.plugins.sse.SSE as ClientSSE
 import io.ktor.server.sse.SSE as ServerSSE
-import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 
 class EvaluationScenariosTest : StringSpec() {
     override fun isolationMode() = IsolationMode.SingleInstance

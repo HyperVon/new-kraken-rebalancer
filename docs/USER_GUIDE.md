@@ -136,7 +136,7 @@ range, series visibility, and **Show Dry Run Trades**:
 | **Overview** (default) | 30d | All series visible |
 | **Day · Total only** | 24h | Portfolio Value shows **Total Portfolio** only |
 | **Week · Allocation** | 7d | Full series for allocation review |
-| **Month · P&L** | 30d | Cumulative net cash flow focus; dry-run trades off |
+| **Month · Net Cash Flow** | 30d | Cumulative net cash flow focus; dry-run trades off |
 
 **Save view…** stores the current range, legend visibility, and dry-run toggle
 under a name in browser `localStorage` (`kraken.history.views`). **Set as

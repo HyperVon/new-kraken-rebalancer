@@ -4,9 +4,9 @@ import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.Icons
 import com.gemini.krakenbot.view.util.Icons.icon
-import com.gemini.krakenbot.view.util.glassPanel
 import com.gemini.krakenbot.view.util.ViewText
 import com.gemini.krakenbot.view.util.div
+import com.gemini.krakenbot.view.util.glassPanel
 import com.gemini.krakenbot.view.util.h3
 import com.gemini.krakenbot.view.util.p
 import com.gemini.krakenbot.view.util.span
@@ -21,7 +21,8 @@ class RecentActivityComponent {
     private enum class TradeAction(val badgeClass: CssClass, val label: String) {
         BUY(CssClass.Badge.Buy, "BUY"),
         SELL(CssClass.Badge.Sell, "SELL"),
-        INFO(CssClass.Badge.Info, "INFO");
+        INFO(CssClass.Badge.Info, "INFO"),
+        ;
 
         companion object {
             fun from(action: String): TradeAction {
@@ -70,7 +71,7 @@ class RecentActivityComponent {
                                     snapshot.actions.forEach { action ->
                                         renderActionRow(
                                             timeStr,
-                                            action
+                                            action,
                                         )
                                     }
                                 }

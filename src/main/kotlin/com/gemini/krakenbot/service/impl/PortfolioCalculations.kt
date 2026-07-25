@@ -35,7 +35,9 @@ object PortfolioCalculations {
      * Calculate current percentage for an asset.
      */
     fun calculateCurrentPercent(valueUSD: BigDecimal, totalPortfolioValueUSD: BigDecimal): BigDecimal =
-        if (totalPortfolioValueUSD > BigDecimal.ZERO) {
+        if (totalPortfolioValueUSD >
+            BigDecimal.ZERO
+        ) {
             valueUSD
                 .divide(totalPortfolioValueUSD, SCALE_PERCENT, RoundingMode.HALF_UP)
                 .multiply(HUNDRED)

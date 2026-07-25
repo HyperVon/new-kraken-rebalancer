@@ -17,10 +17,10 @@ need only this file (no issue spam).
 
 | ID | Size | Status | Area | Summary | Cycle | Issue | Notes |
 | :--- | :---: | :--- | :--- | :--- | :---: | :--- | :--- |
-| CI-L1 | L | deferred | build | Spotless/ktlint for `**/view/**` | — | [#50](https://github.com/HyperVon/new-kraken-rebalancer/issues/50) | Historical |
-| CI-L2 | L | deferred | test | Spotless for `EvaluationScenariosTest` | — | [#51](https://github.com/HyperVon/new-kraken-rebalancer/issues/51) | Historical |
-| CI-L3 | L | deferred | frontend | Internal `CUMULATIVE_PL_*` rename | — | [#52](https://github.com/HyperVon/new-kraken-rebalancer/issues/52) | Historical |
-| CI-L4 | L | deferred | trading | Trading-math / dryRun·simulation umbrella gate | — | [#53](https://github.com/HyperVon/new-kraken-rebalancer/issues/53) | Historical |
+| CI-L1 | L | done | build | Spotless/ktlint for `**/view/**` | — | [#50](https://github.com/HyperVon/new-kraken-rebalancer/issues/50) | Shipped with ktlint 1.7.1 |
+| CI-L2 | L | done | test | Spotless for `EvaluationScenariosTest` | — | [#51](https://github.com/HyperVon/new-kraken-rebalancer/issues/51) | Shipped; max_line_length off via .editorconfig |
+| CI-L3 | L | done | frontend | Internal `CUMULATIVE_PL_*` rename | — | [#52](https://github.com/HyperVon/new-kraken-rebalancer/issues/52) | Shipped WIP |
+| CI-L4 | L | done | trading | Trading-math / dryRun·simulation umbrella gate | — | [#53](https://github.com/HyperVon/new-kraken-rebalancer/issues/53) | Closed — standing policy in skill |
 | CI-8-T01 | L | done | orders | USD refresh fails open → buys on unconfirmed cash | 8 | [#54](https://github.com/HyperVon/new-kraken-rebalancer/issues/54) | Shipped WIP |
 | CI-8-T02 | L | done | credentials | Env credentials materialized to disk on save | 8 | [#55](https://github.com/HyperVon/new-kraken-rebalancer/issues/55) | Shipped WIP |
 | CI-8-T03 | L | done | credentials | `hasValidCredentials` blank/placeholder only | 8 | [#56](https://github.com/HyperVon/new-kraken-rebalancer/issues/56) | Shipped WIP |

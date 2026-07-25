@@ -22,7 +22,7 @@ class HistoryPageComponentTest : StringSpec() {
             htmlString shouldContain "id=\"portfolio-value-chart\""
             htmlString shouldContain "id=\"asset-holdings-chart\""
             htmlString shouldContain "id=\"allocation-drift-chart\""
-            htmlString shouldContain "id=\"cumulative-pl-chart\""
+            htmlString shouldContain "id=\"cumulative-net-cash-flow-chart\""
             htmlString shouldContain "id=\"trade-table-body\""
             htmlString shouldContain "id=\"history-views-select\""
             htmlString shouldContain "id=\"history-save-view-btn\""

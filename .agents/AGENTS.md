@@ -75,7 +75,7 @@ the CLAUDE.md / Copilot stubs) so they get the same norms without Cursor.
 - **Concurrency**: `kotlinx.coroutines` **1.11.0** — prefer `Dispatchers.IO` for DB/network; no `GlobalScope`
 - **Frontend**: `kotlinx.html` + `kotlinx-css` + HTMX + Kotlin/JS (`:frontend-js` → `/static/rebalancer.js`)
 - **Testing**: Kotest **6.2**, MockK **1.14**, Karma/Istanbul
-- **Formatting**: Spotless + ktlint **1.3.1**, **120**-char line length; `allWarningsAsErrors` in all modules
+- **Formatting**: Spotless + ktlint **1.7.1**, **120**-char line length; `allWarningsAsErrors` in all modules
 
 ### Architecture names (SRP)
 

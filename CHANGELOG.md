@@ -8,6 +8,16 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **npm resolution pins (majors)**: `diff` 8→9, `fast-uri` 3→4, `uuid` 11→14,
+  `webpack-dev-server` 5→6 (Kotlin/JS yarn resolutions).
+- **Faster repeat builds**: Enabled Gradle parallel execution and build cache;
+  JVM tests use up to two forks with configurable heap/fork overrides. Release
+  docs recommend retaining incremental outputs instead of routine `clean`.
+
+## [6.12.18] - 2026-07-24
+
 ### Fixed
 
 - **Config save no longer writes env-resolved Kraken credentials to disk**: Settings
@@ -33,11 +43,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
-- **npm resolution pins (majors)**: `diff` 8→9, `fast-uri` 3→4, `uuid` 11→14,
-  `webpack-dev-server` 5→6 (Kotlin/JS yarn resolutions).
-- **Faster repeat builds**: Enabled Gradle parallel execution and build cache;
-  JVM tests use up to two forks with configurable heap/fork overrides. Release
-  docs recommend retaining incremental outputs instead of routine `clean`.
+- **History net cash flow internals**: Renamed `CUMULATIVE_PL_*` chart IDs,
+  `buildCumulativePLChart` / `calculateCumulativePL`, and the **Month · Net Cash Flow**
+  preset id (`month-net-cash-flow`) for consistency with the user-facing chart title;
+  legacy `month-pnl` / `cumulative-pl-chart` localStorage keys are migrated on load.
+- **Spotless covers SSR views + EvaluationScenariosTest**: Bumped ktlint to **1.7.1**
+  (context-parameter support) and removed Spotless excludes for `**/view/**` and
+  `EvaluationScenariosTest.kt`. Evaluation suite keeps `max_line_length = off` via
+  `.editorconfig`; all other Kotlin stays at 120.
 - **Documentation accuracy**: Clarified rate-limit decay, post-sell USD fallback
   behavior, deviation thresholds, Kraken API permissions, and shipped safety
   defaults across the README, algorithm/flow docs, and agent skills.
