@@ -256,7 +256,8 @@ Fix failures before commit. Do not open a red PR.
 
 ### Step 5 — Docs
 
-- `CHANGELOG.md` Unreleased for user-visible or workflow changes
+- `CHANGELOG.md` dated SemVer heading (never `[Unreleased]`) for user-visible or
+  workflow changes — see [changelog-and-docs-sync](../changelog-and-docs-sync/SKILL.md)
 - Update [improvement-backlog.md](../../improvement-backlog.md) Done / deferred
   rows to match what this cycle actually shipped
 - README / User Guide / screenshots only if visuals or public behavior changed

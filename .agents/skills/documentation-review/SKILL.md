@@ -180,8 +180,10 @@ Edit docs to match code. Rules:
    precise; FLOWS diagram-friendly).
 3. **Cross-link** rather than duplicate: ALGORITHM ↔ portfolio skill; FLOWS ↔
    coroutines-flows-sse; EVALUATION ↔ write-kotest.
-4. **CHANGELOG** — add a `### Changed` / `### Fixed` entry under the next
-   version when user-visible docs change; do not fabricate past releases.
+4. **CHANGELOG** — add a `### Changed` / `### Fixed` entry under a **dated**
+   SemVer heading (never `[Unreleased]`; see
+   [changelog-and-docs-sync](../changelog-and-docs-sync/SKILL.md)) when
+   user-visible docs change; do not fabricate past releases.
 5. **Secrets** — never paste real API keys; templates keep placeholders.
 6. **Environment agnostic** — no `/Users/...` paths or machine hostnames.
 

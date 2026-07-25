@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [6.12.21] - 2026-07-24
 
 ### Added
 
@@ -17,6 +17,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Continuous-quality cycle 1 tests**: Added 19 edge-case regressions covering
   rate limiting, dust boundaries, drawdown saturation, trigger equality, ATH
   persistence failure, trade deduplication, and historical reconstruction.
+
+### Changed
+
+- **Changelog policy**: Stop using an `[Unreleased]` section — every shippable
+  change set gets a dated SemVer heading immediately (`## [X.Y.Z] - YYYY-MM-DD`).
 
 ## [6.12.20] - 2026-07-24
 

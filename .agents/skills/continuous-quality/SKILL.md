@@ -306,9 +306,10 @@ Fix failures before commit. Do not open a red PR.
 
 ### Step 5 — Docs
 
-- `CHANGELOG.md` Unreleased for user-visible fixes (tests-only cycles: note under
-  Changed/Fixed only if behavior changed; pure coverage can be a short Added
-  “tests: …” line)
+- `CHANGELOG.md` dated SemVer heading (never `[Unreleased]`) for user-visible
+  fixes (tests-only cycles: note under Changed/Fixed only if behavior changed;
+  pure coverage can be a short Added “tests: …” line) — see
+  [changelog-and-docs-sync](../changelog-and-docs-sync/SKILL.md)
 - Update [quality-backlog.md](../../quality-backlog.md) Done / deferred rows
 - `docs/EVALUATION.md` when scenarios change
 - Skills / ALGORITHM only if a fix revealed wrong docs

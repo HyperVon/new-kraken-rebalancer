@@ -28,26 +28,20 @@ Product polish discovered during QA belongs in
 | CQ-1-4 | S | gap | deferred | orders | Dry-run sells inflate `projectedCash` for buy sizing with no balance refresh — documenting test still pending | 1 | — | Out of cycle-1 ship slice; keep for cycle 2 |
 | CQ-1-8 | S | bug | deferred | fiat | Fiat-correction `share` not `toUsdScale()` before USD enqueue | 1 | — | Test + tiny scale fix deferred (near trading path) |
 
-## In progress (cycle 1 — `quality/cycle-20260724-2047`)
-
-| ID | Size | Kind | Status | Area | Summary | Cycle | Issue | Notes |
-| :--- | :---: | :--- | :--- | :--- | :--- | :---: | :--- | :--- |
-| CQ-1-1 | S | gap | in_progress | rate-limit | Assert throttle path leaves counter ≈ `safeLimit`; subsequent acquire behavior | 1 | — | `RateLimiterTest` |
-| CQ-1-2 | M | gap | in_progress | analyzer | Document `contains()` first-match collision for ticker fallback (test only) | 1 | [#69](https://github.com/HyperVon/new-kraken-rebalancer/issues/69) | `PortfolioManagerEdgeCasesTest` |
-| CQ-1-3 | S | gap | in_progress | ATH | New-ATH path when `save` throws still returns drawdown without crashing | 1 | — | `PortfolioManagerEdgeCasesTest` |
-| CQ-1-5 | S | gap | in_progress | dedupe | Pair-alias fee mismatch; both API fills → later id; side mismatch non-dup | 1 | — | `TradeDeduplicatorTest` |
-| CQ-1-6 | S | gap | in_progress | drawdown | MaxDD saturation / over-MaxDD coerce → 100% fiat deploy (exponents 1 & 2) | 1 | — | `PortfolioManagerDrawdownTest` |
-| CQ-1-7 | S | gap | in_progress | docs | ALGORITHM / AGENTS / skill: USD refresh backoff is 250→500→1000ms (not 32s cap) | 1 | — | Doc-only |
-| CQ-1-12 | S | gap | in_progress | dust | Exact dust `>=` boundary significant; just below not | 1 | — | `PortfolioCalculationsTest` |
-| CQ-1-13 | S | gap | in_progress | orders | Executor dust: sell `==` threshold executes; `threshold - ε` skips | 1 | — | `OrderExecutorCashCapTest` |
-| CQ-1-14 | M | gap | in_progress | history | SELL reverse-apply + OHLC closest price + negative/missing balance clamp | 1 | — | `SnapshotHistoryCalculatorTest` |
-| CQ-1-15 | M | gap | in_progress | trigger | Deviation **exactly** at trigger fires; just below does not | 1 | — | `PortfolioManagerEdgeCasesTest` |
-
 ## Done (recent)
 
 | ID | Size | Kind | Status | Area | Summary | Cycle | PR |
 | :--- | :---: | :--- | :--- | :--- | :--- | :---: | :--- |
-| — | — | — | — | — | — | — | — |
+| CQ-1-1 | S | gap | done | rate-limit | Assert throttle path leaves counter ≈ `safeLimit`; subsequent acquire behavior | 1 | [#70](https://github.com/HyperVon/new-kraken-rebalancer/pull/70) |
+| CQ-1-2 | M | gap | done | analyzer | Document `contains()` first-match collision for ticker fallback (test only) | 1 | [#70](https://github.com/HyperVon/new-kraken-rebalancer/pull/70) |
+| CQ-1-3 | S | gap | done | ATH | New-ATH path when `save` throws still returns drawdown without crashing | 1 | [#70](https://github.com/HyperVon/new-kraken-rebalancer/pull/70) |
+| CQ-1-5 | S | gap | done | dedupe | Pair-alias fee mismatch; both API fills → later id; side mismatch non-dup | 1 | [#70](https://github.com/HyperVon/new-kraken-rebalancer/pull/70) |
+| CQ-1-6 | S | gap | done | drawdown | MaxDD saturation / over-MaxDD coerce → 100% fiat deploy (exponents 1 & 2) | 1 | [#70](https://github.com/HyperVon/new-kraken-rebalancer/pull/70) |
+| CQ-1-7 | S | gap | done | docs | ALGORITHM / AGENTS / skill: USD refresh backoff is 250→500→1000ms (not 32s cap) | 1 | [#70](https://github.com/HyperVon/new-kraken-rebalancer/pull/70) |
+| CQ-1-12 | S | gap | done | dust | Exact dust `>=` boundary significant; just below not | 1 | [#70](https://github.com/HyperVon/new-kraken-rebalancer/pull/70) |
+| CQ-1-13 | S | gap | done | orders | Executor dust: sell `==` threshold executes; `threshold - ε` skips | 1 | [#70](https://github.com/HyperVon/new-kraken-rebalancer/pull/70) |
+| CQ-1-14 | M | gap | done | history | SELL reverse-apply + OHLC closest price + negative/missing balance clamp | 1 | [#70](https://github.com/HyperVon/new-kraken-rebalancer/pull/70) |
+| CQ-1-15 | M | gap | done | trigger | Deviation **exactly** at trigger fires; just below does not | 1 | [#70](https://github.com/HyperVon/new-kraken-rebalancer/pull/70) |
 
 ## How to update
 
