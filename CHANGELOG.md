@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.13.4] - 2026-07-25
+
+### Added
+
+- **Tests (CQ-7)**: Analyzer path when USD+crypto both trigger (no fiat-only
+  correction); exact trigger% with dust-below skip; simulation sync with
+  placeholder credentials; reconstruction timeline excludes dry-run trades;
+  pair-alias volume &gt;1% non-dedupe; History `dynamicNumber` ISO parse;
+  Settings allocation tolerance edges and invalid-symbol alert.
+
+### Fixed
+
+- **History reconstruction side match**: Reverse-apply trades now compares order
+  side case-insensitively so Kraken/`buy` records are applied (previously only
+  uppercase `BUY` matched `OrderSide.BUY.name`).
+
 ## [6.13.3] - 2026-07-25
 
 ### Changed

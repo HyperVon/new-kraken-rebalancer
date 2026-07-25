@@ -83,6 +83,57 @@ class SettingsTest : StringSpec() {
             }
         }
 
+        "updateAllocationTotal accepts ±0.01 tolerance edges and rejects outside" {
+            // IEEE-safe sums: exact 99.99 (30+69.99) exceeds 0.01 by ulp and fails `<=`.
+            val container = document.createElement(HtmlTags.DIV) as HTMLDivElement
+
+            val totalDisplay = document.createElement(HtmlTags.SPAN) as HTMLSpanElement
+            totalDisplay.id = HtmlIds.TOTAL_ALLOCATED_DISPLAY
+            container.appendChild(totalDisplay)
+
+            val saveButton = document.createElement(HtmlTags.BUTTON) as HTMLButtonElement
+            saveButton.id = HtmlIds.SAVE_BUTTON
+            container.appendChild(saveButton)
+
+            val firstTarget = document.createElement(HtmlTags.INPUT) as HTMLInputElement
+            firstTarget.name = FormFields.TARGETS
+            firstTarget.value = "50"
+            container.appendChild(firstTarget)
+            val firstSymbol = document.createElement(HtmlTags.INPUT) as HTMLInputElement
+            firstSymbol.name = FormFields.SYMBOLS
+            firstSymbol.value = Asset.BTC
+            container.appendChild(firstSymbol)
+
+            val secondTarget = document.createElement(HtmlTags.INPUT) as HTMLInputElement
+            secondTarget.name = FormFields.TARGETS
+            secondTarget.value = "49.995"
+            container.appendChild(secondTarget)
+            val secondSymbol = document.createElement(HtmlTags.INPUT) as HTMLInputElement
+            secondSymbol.name = FormFields.SYMBOLS
+            secondSymbol.value = Asset.USD
+            container.appendChild(secondSymbol)
+
+            document.body!!.appendChild(container)
+
+            try {
+                updateAllocationTotal()
+                totalDisplay.classList.contains(CssClass.Form.AllocationTotalOk).shouldBeTrue()
+                saveButton.disabled.shouldBeFalse()
+
+                secondTarget.value = "50.005"
+                updateAllocationTotal()
+                totalDisplay.classList.contains(CssClass.Form.AllocationTotalOk).shouldBeTrue()
+                saveButton.disabled.shouldBeFalse()
+
+                secondTarget.value = "50.02"
+                updateAllocationTotal()
+                totalDisplay.classList.contains(CssClass.Form.AllocationTotalBad).shouldBeTrue()
+                saveButton.disabled.shouldBeTrue()
+            } finally {
+                document.body!!.removeChild(container)
+            }
+        }
+
         "addAssetRow appends a valid allocation" {
             val container = document.createElement(HtmlTags.DIV) as HTMLDivElement
 
@@ -126,6 +177,30 @@ class SettingsTest : StringSpec() {
                 numInput.min shouldBe "0"
                 numInput.max shouldBe "100"
             } finally {
+                document.body!!.removeChild(container)
+            }
+        }
+
+        "addAssetRow alerts and does not append invalid symbols" {
+            val container = document.createElement(HtmlTags.DIV) as HTMLDivElement
+            container.innerHTML = TestDomBuilders.assetEditDom()
+            document.body!!.appendChild(container)
+
+            val symbolInput = document.getElementById(HtmlIds.NEW_SYMBOL_INPUT) as HTMLInputElement
+            val allocations = document.getElementById(HtmlIds.ALLOCATIONS_CONTAINER) as HTMLElement
+            val originalAlert = window.asDynamic().alert
+            var alertMessage: String? = null
+            window.asDynamic().alert = { message: String -> alertMessage = message }
+
+            try {
+                symbolInput.value = "BTC-USD"
+                addAssetRow()
+
+                alertMessage shouldBe ViewText.INVALID_SYMBOL_ALERT
+                allocations.childElementCount shouldBe 0
+                symbolInput.value shouldBe "BTC-USD"
+            } finally {
+                window.asDynamic().alert = originalAlert
                 document.body!!.removeChild(container)
             }
         }

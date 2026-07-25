@@ -650,6 +650,44 @@ class TradeHistoryServiceTest : StringSpec() {
             }
         }
 
+        "CQ-7-3: syncTradesFromKraken_SimulationAllowsPlaceholderCredentials" {
+            runTest {
+                coEvery { repository.isHistorySeeded() } returns false
+                val simulationConfig = AppConfig(
+                    kraken = KrakenCredentials(
+                        KrakenCredentials.PLACEHOLDER_API_KEY,
+                        KrakenCredentials.PLACEHOLDER_PRIVATE_KEY,
+                    ),
+                    settings = Settings(
+                        loopDelaySeconds = 60,
+                        deviationTriggerPercent = 5.0,
+                        dustThresholdUSD = 5.0,
+                        dryRun = false,
+                        simulation = true,
+                        fiatMaxDrawdown = 30.0,
+                        fiatDeploymentExponent = 1.0,
+                    ),
+                    allocations = emptyList(),
+                )
+                every { configService.getConfig() } returns simulationConfig
+                coEvery { krakenService.getTradeHistory(any(), any()) } returns emptyList()
+
+                val tradeHistoryService = TradeHistoryServiceImpl(
+                    repository,
+                    statsRepository,
+                    krakenService,
+                    configService,
+                    objectMapper,
+                    portfolioAnalyzer,
+                    TestFixtures.TEST_TRADE_HISTORY_JSON,
+                )
+                tradeHistoryService.syncTradesFromKraken()
+
+                coVerify(exactly = 1) { krakenService.getTradeHistory(any(), any()) }
+                coVerify(exactly = 1) { repository.setHistorySeeded(true) }
+            }
+        }
+
         "init_InSimulationMode_SeedsHistoricalSnapshots" {
             runTest {
                 val appConfig = AppConfig(
@@ -1929,6 +1967,113 @@ class TradeHistoryServiceTest : StringSpec() {
 
                 coVerify(exactly = 0) { repository.save(any()) }
                 coVerify(exactly = 1) { repository.setHistorySeeded(true) }
+            }
+        }
+
+        "CQ-7-4: reconstructionExcludesDryRunTradesButIncludesSuccessfulLiveTwin" {
+            runTest {
+                val appConfig = AppConfig(
+                    kraken = KrakenCredentials(
+                        TestFixtures.TRADE_HISTORY_API_KEY,
+                        TestFixtures.TRADE_HISTORY_API_SECRET,
+                    ),
+                    settings = Settings(
+                        loopDelaySeconds = 60,
+                        deviationTriggerPercent = 5.0,
+                        dustThresholdUSD = 5.0,
+                        dryRun = true,
+                        simulation = false,
+                    ),
+                    allocations = listOf(
+                        Allocation(Asset.BTC, 50.0),
+                        Allocation(TestFixtures.USD, 50.0),
+                    ),
+                )
+                every { configService.getConfig() } returns appConfig
+
+                val service = createService()
+                every { configService.getConfig() } returns appConfig
+
+                coEvery { repository.isHistorySeeded() } returns false
+                coEvery { repository.getLatestTradeTime() } returns null
+                coEvery { repository.getSyncMetadata(any()) } returns null
+
+                val cutoff = Instant.now().minus(5, ChronoUnit.DAYS)
+                val existingSnapshot = PortfolioSnapshot(
+                    timestamp = cutoff,
+                    totalValueUSD = BigDecimal("10000.00"),
+                    assets = mapOf(
+                        Asset.BTC to PortfolioSnapshot.AssetSnapshot(
+                            Asset.BTC,
+                            BigDecimal("0.2"),
+                            BigDecimal("25000.00"),
+                            BigDecimal("5000.00"),
+                            BigDecimal("50.00"),
+                            BigDecimal("50.00"),
+                            BigDecimal.ZERO,
+                            BigDecimal.ZERO,
+                        ),
+                        TestFixtures.USD to PortfolioSnapshot.AssetSnapshot(
+                            TestFixtures.USD,
+                            BigDecimal("5000.00"),
+                            BigDecimal.ONE,
+                            BigDecimal("5000.00"),
+                            BigDecimal("50.00"),
+                            BigDecimal("50.00"),
+                            BigDecimal.ZERO,
+                            BigDecimal.ZERO,
+                        ),
+                    ),
+                    actions = emptyList(),
+                    drawdownPercent = BigDecimal.ZERO,
+                    fiatDeploymentPercent = BigDecimal.ZERO,
+                    effectiveUsdTargetPercent = BigDecimal.ZERO,
+                )
+                coEvery { repository.load() } returns listOf(existingSnapshot)
+                coEvery { repository.getTradeSummaryStats() } returns TradeSummaryStats(
+                    totalTradesExecuted = 2L,
+                    totalVolumeTraded = BigDecimal("5000.00"),
+                    totalFeesPaid = BigDecimal.ZERO,
+                    latestSnapshotTime = cutoff,
+                )
+
+                // Identical BUY twins before cutoff: live must reverse-apply; dry-run must not.
+                // Reverse of one BUY 0.1 @ 2500 → BTC 0.1, USD 7500. If dry-run also applied → BTC 0.0, USD 10000.
+                val dryRunTwin = TradeRecord(
+                    timestamp = cutoff.minus(2, ChronoUnit.DAYS),
+                    pair = TestFixtures.BTCUSD,
+                    side = TestFixtures.BUY,
+                    symbol = Asset.BTC,
+                    volume = BigDecimal("0.1"),
+                    usdAmount = BigDecimal("2500.00"),
+                    success = true,
+                    dryRun = true,
+                    price = BigDecimal("25000.00"),
+                    fee = BigDecimal("5.00"),
+                )
+                val liveTwin = dryRunTwin.copy(
+                    dryRun = false,
+                    timestamp = cutoff.minus(1, ChronoUnit.DAYS),
+                )
+
+                coEvery { krakenService.getTradeHistory(any(), 0) } returns emptyList()
+                coEvery { repository.getTradesInRange(any(), any()) } returns listOf(dryRunTwin, liveTwin)
+                coEvery { repository.saveTrade(any()) } just Runs
+                coEvery { repository.updateTrade(any(), any()) } just Runs
+                coEvery { repository.setHistorySeeded(true) } just Runs
+                coEvery { repository.setSyncMetadata(any(), any()) } just Runs
+                coEvery { krakenService.getOHLC(TestFixtures.BTCUSD, 1440, any()) } returns emptyList()
+
+                val reconstructed = slot<List<PortfolioSnapshot>>()
+                coEvery { repository.save(capture(reconstructed)) } just Runs
+
+                service.syncTradesFromKraken()
+
+                reconstructed.isCaptured.shouldBeTrue()
+                val earliest = reconstructed.captured.minBy { it.timestamp }
+                earliest.assets.getValue(Asset.BTC).balance.shouldBeEqualComparingTo(BigDecimal("0.1"))
+                // Reverse BUY restores usdAmount + fee onto USD.
+                earliest.assets.getValue(TestFixtures.USD).balance.shouldBeEqualComparingTo(BigDecimal("7505.00"))
             }
         }
 

@@ -67,6 +67,29 @@ class TradeDeduplicatorTest : StringSpec() {
             duplicates shouldContainExactly listOf(1)
         }
 
+        "CQ-7-5: should not treat pair aliases with volume over one percent apart as duplicates" {
+            val now = Instant.now()
+            val record1 = TradeRecord(
+                timestamp = now,
+                pair = "XBTUSD",
+                side = "BUY",
+                symbol = "BTC",
+                volume = BigDecimal("1.0"),
+                usdAmount = BigDecimal("50000.00"),
+                success = true,
+                dryRun = false,
+                id = 3,
+            )
+            val record2 = record1.copy(
+                timestamp = now.plusMillis(100),
+                pair = "XXBTZUSD",
+                volume = BigDecimal("1.02"),
+                id = 4,
+            )
+
+            TradeDeduplicator.findDuplicateTradeIds(listOf(record1, record2)).isEmpty() shouldBe true
+        }
+
         "should identify local estimate duplicate trade records with material fee rate differences" {
             val now = Instant.now()
             val localEstimate = TradeRecord(
