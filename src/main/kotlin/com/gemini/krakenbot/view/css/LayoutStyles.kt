@@ -21,8 +21,12 @@ object LayoutStyles {
             put("line-height", "1.5")
             put(
                 "background-image",
-                "radial-gradient(circle at 15% 50%, ${CssTheme.colorBgGlowBlue.value} 0%, transparent 50%), " +
-                    "radial-gradient(circle at 85% 30%, ${CssTheme.colorBgGlowGreen.value} 0%, transparent 50%)",
+                "radial-gradient(ellipse 90% 55% at 12% 0%, " +
+                    "${CssTheme.colorBgGlowBlue.value} 0%, transparent 55%), " +
+                    "radial-gradient(ellipse 70% 45% at 92% 8%, " +
+                    "${CssTheme.colorBgGlowPurple.value} 0%, transparent 50%), " +
+                    "radial-gradient(ellipse 60% 40% at 70% 95%, " +
+                    "${CssTheme.colorBgGlowGreen.value} 0%, transparent 50%)",
             )
             backgroundAttachment = BackgroundAttachment.fixed
         }
@@ -36,10 +40,16 @@ object LayoutStyles {
             padding = Padding(1.rem, 1.rem, 3.rem, 1.rem)
         }
 
+        // DASH-2: one standardized header row across every page (brand · status · nav · action).
         header {
             display = Display.flex
-            flexDirection = FlexDirection.column
-            gap = 0.75.rem
+            flexDirection = FlexDirection.row
+            alignItems = Align.center
+            put("justify-content", "space-between")
+            flexWrap = FlexWrap.wrap
+            rowGap = 0.75.rem
+            columnGap = 1.rem
+            put("min-height", "3rem")
             paddingBottom = 1.25.rem
             borderBottomWidth = 1.px
             borderBottomStyle = BorderStyle.solid
@@ -127,22 +137,108 @@ object LayoutStyles {
             put("line-height", "1.35")
         }
 
-        ".${CssClass.Layout.GlassPanel}" {
-            background = CssTheme.colorGlass.value
-            put("backdrop-filter", "blur(20px)")
-            put("-webkit-backdrop-filter", "blur(20px)")
+        // GLOB-1/DASH-2: persistent trading-mode plate + compact single-line stream status.
+        ".${CssClass.Mode.Plate.value}" {
+            display = Display.inlineFlex
+            alignItems = Align.center
+            gap = 0.4.rem
+            padding = Padding(0.3125.rem, 0.75.rem)
+            borderRadius = CssTheme.radiusPill
+            fontSize = 0.6875.rem
+            fontWeight = FontWeight.w700
+            put("letter-spacing", "0.08em")
+            borderWidth = 1.px
+            borderStyle = BorderStyle.solid
+            put("text-transform", "uppercase")
+            put("white-space", "nowrap")
+        }
+
+        ".${CssClass.Mode.Plate.value} svg" {
+            width = 0.875.rem
+            height = 0.875.rem
+        }
+
+        ".${CssClass.Mode.Dot.value}" {
+            width = 0.4375.rem
+            height = 0.4375.rem
+            borderRadius = 50.pct
+            put("background-color", "currentColor")
+            flexShrink = 0.0
+        }
+
+        ".mode-simulation" {
+            color = CssTheme.colorBlueAccent
+            backgroundColor = CssTheme.colorBlueGlassBg
+            borderColor = CssTheme.colorBlueGlassBorderHover
+            put("box-shadow", "0 0 16px rgba(59, 130, 246, 0.25), ${CssTheme.insetTopHighlight}")
+        }
+
+        ".mode-dry-run" {
+            color = CssTheme.colorWarning
+            backgroundColor = CssTheme.colorWarningMuted
+            borderColor = CssTheme.colorWarningBorder
+            put("box-shadow", "0 0 14px rgba(245, 158, 11, 0.22), ${CssTheme.insetTopHighlight}")
+        }
+
+        ".mode-live" {
+            color = CssTheme.colorDanger
+            backgroundColor = CssTheme.colorDangerMuted
+            borderColor = CssTheme.colorDangerBorder
+            put("box-shadow", "0 0 14px rgba(239, 68, 68, 0.22), ${CssTheme.insetTopHighlight}")
+        }
+
+        ".${CssClass.Layout.HeaderStatus.value}" {
+            display = Display.inlineFlex
+            alignItems = Align.center
+            gap = 0.5.rem
+            padding = Padding(0.375.rem, 0.75.rem)
+            borderRadius = CssTheme.radiusPill
+            background = CssTheme.colorSurface2.value
             borderWidth = 1.px
             borderStyle = BorderStyle.solid
             borderColor = CssTheme.colorGlassBorder
-            put("box-shadow", "0 25px 50px -12px rgba(0, 0, 0, 0.5)")
-            borderRadius = 1.25.rem
+            put(
+                "box-shadow",
+                "0 4px 12px rgba(0,0,0,0.4), inset 0 1px 0 rgba(186,220,255,0.1)",
+            )
+            fontSize = 0.75.rem
+            color = CssTheme.colorTextSecondary
+            put("white-space", "nowrap")
+            fontFamily = CssTheme.fontMono
+        }
+
+        // Hero grid (DASH-1): 2fr total + 1fr stacked compact tiles.
+        ".${CssClass.Layout.HeroGrid.value}" {
+            display = Display.grid
+            gridTemplateColumns = GridTemplateColumns("1fr")
+            gap = 1.rem
+            marginBottom = 1.25.rem
+            alignItems = Align.stretch
+        }
+
+        ".${CssClass.Layout.HeroSide.value}" {
+            display = Display.grid
+            gridTemplateColumns = GridTemplateColumns("1fr")
+            gap = 1.rem
+        }
+
+        ".${CssClass.Layout.GlassPanel}" {
+            // Raised glass: cool blue sheen + light blur + cyan rim (not matte, not milky).
+            background = CssTheme.glassSurfaceGradient
+            put("backdrop-filter", "blur(16px)")
+            put("-webkit-backdrop-filter", "blur(16px)")
+            borderWidth = 1.px
+            borderStyle = BorderStyle.solid
+            borderColor = CssTheme.colorSurface1Border
+            put("box-shadow", CssTheme.shadowSurface1)
+            borderRadius = 0.875.rem
             padding = Padding(1.5.rem)
-            put("transition", "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)")
+            put("transition", "border-color 0.25s ease, box-shadow 0.25s ease")
         }
 
         ".${CssClass.Layout.GlassPanel}:hover" {
             borderColor = CssTheme.colorGlassBorderHover
-            put("box-shadow", "0 0 30px rgba(56, 189, 248, 0.08), 0 25px 50px -12px rgba(0, 0, 0, 0.5)")
+            put("box-shadow", CssTheme.shadowSurface2)
         }
 
         ".${CssClass.Layout.Container} > .${CssClass.Layout.GlassPanel}" {

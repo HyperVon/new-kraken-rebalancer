@@ -1,5 +1,6 @@
 package com.gemini.krakenbot.view.component
 
+import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.TimeRange
 import com.gemini.krakenbot.util.PrecisionConstants
 import com.gemini.krakenbot.view.util.ActiveNav
@@ -11,13 +12,13 @@ import com.gemini.krakenbot.view.util.Icons.icon
 import com.gemini.krakenbot.view.util.Routes
 import com.gemini.krakenbot.view.util.ViewText
 import com.gemini.krakenbot.view.util.ZoomActions
-import com.gemini.krakenbot.view.util.brandMark
+import com.gemini.krakenbot.view.util.brandWithMode
 import com.gemini.krakenbot.view.util.button
 import com.gemini.krakenbot.view.util.commonMetadataAndStyles
 import com.gemini.krakenbot.view.util.div
-import com.gemini.krakenbot.view.util.glassPanel
 import com.gemini.krakenbot.view.util.h2
 import com.gemini.krakenbot.view.util.label
+import com.gemini.krakenbot.view.util.p
 import com.gemini.krakenbot.view.util.primaryNav
 import com.gemini.krakenbot.view.util.rebalancerJsSrc
 import com.gemini.krakenbot.view.util.span
@@ -29,7 +30,7 @@ import kotlinx.html.InputType.checkBox
 class HistoryPageComponent {
 
     context(html: HTML)
-    fun render() {
+    fun render(settings: Settings) {
         html.head {
             commonMetadataAndStyles()
             title("${ViewText.HISTORY_TITLE} - ${ViewText.APP_TITLE}")
@@ -40,7 +41,7 @@ class HistoryPageComponent {
         }
         html.body {
             div(CssClass.Layout.Container) {
-                renderHeader()
+                renderHeader(settings)
                 renderSyncProgressBanner()
                 renderToolbar()
                 renderStatsGrid()
@@ -53,11 +54,9 @@ class HistoryPageComponent {
         }
     }
 
-    private fun DIV.renderHeader() {
+    private fun DIV.renderHeader(settings: Settings) {
         header {
-            div(CssClass.Layout.HeaderTitleSection) {
-                brandMark()
-            }
+            brandWithMode(settings)
             primaryNav(ActiveNav.HISTORY)
         }
     }
@@ -118,7 +117,7 @@ class HistoryPageComponent {
                     type = ButtonType.button
                     +ViewText.HISTORY_SET_DEFAULT
                 }
-                button(CssClass.History.ViewsBtn) {
+                button(CssClass.Button.DangerGhost) {
                     id = HtmlIds.HISTORY_DELETE_VIEW_BTN
                     type = ButtonType.button
                     +ViewText.HISTORY_DELETE_VIEW
@@ -128,16 +127,26 @@ class HistoryPageComponent {
     }
 
     private fun DIV.renderChartSection(chart: HistoryChartSection) {
-        glassPanel(chart.title, chart.iconSvg) {
-            div(CssClass.History.ChartTools) {
-                zoomButton(chart.canvasId, ZoomActions.OUT, ViewText.HISTORY_ZOOM_OUT)
-                zoomButton(chart.canvasId, ZoomActions.IN, ViewText.HISTORY_ZOOM_IN)
-                zoomButton(chart.canvasId, ZoomActions.RESET, ViewText.HISTORY_ZOOM_RESET)
+        // HIST-2: one 44px header row (title + compact zoom) instead of three stacked rows.
+        div(CssClass.Layout.GlassPanel) {
+            div(CssClass.History.ChartHeader) {
+                h2(CssClass.Utility.GlassPanelTitle + CssClass.History.ChartHeaderTitle) {
+                    icon(chart.iconSvg)
+                    +chart.title
+                }
+                div(CssClass.History.ChartTools) {
+                    zoomButton(chart.canvasId, ZoomActions.OUT, ViewText.HISTORY_ZOOM_OUT)
+                    zoomButton(chart.canvasId, ZoomActions.IN, ViewText.HISTORY_ZOOM_IN)
+                    zoomButton(chart.canvasId, ZoomActions.RESET, ViewText.HISTORY_ZOOM_RESET)
+                }
             }
             div(CssClass.History.ChartContainer) {
                 canvas {
                     id = chart.canvasId
                 }
+            }
+            if (chart.caption != null) {
+                p(CssClass.History.ChartCaption) { +chart.caption }
             }
             div(CssClass.History.ChartScrubber) {
                 input(classes = CssClass.History.ChartScrubberInput.value, type = InputType.range) {
@@ -241,7 +250,12 @@ class HistoryPageComponent {
     }
 }
 
-private sealed class HistoryChartSection(val canvasId: String, val title: String, val iconSvg: String) {
+private sealed class HistoryChartSection(
+    val canvasId: String,
+    val title: String,
+    val iconSvg: String,
+    val caption: String? = null,
+) {
     object PortfolioValue : HistoryChartSection(
         HtmlIds.PORTFOLIO_VALUE_CHART,
         ViewText.HISTORY_PORTFOLIO_VALUE,
@@ -258,7 +272,13 @@ private sealed class HistoryChartSection(val canvasId: String, val title: String
         Icons.CHART,
     )
     object CumulativeNetCashFlow :
-        HistoryChartSection(HtmlIds.CUMULATIVE_NET_CASH_FLOW_CHART, ViewText.HISTORY_NET_CASH_FLOW, Icons.WALLET)
+        HistoryChartSection(
+            HtmlIds.CUMULATIVE_NET_CASH_FLOW_CHART,
+            ViewText.HISTORY_NET_CASH_FLOW,
+            Icons.WALLET,
+            // HIST-2: legend caveat moved out of the chart legend into a caption.
+            ViewText.NET_CASH_FLOW_CAPTION,
+        )
 
     companion object {
         val ALL = listOf(PortfolioValue, AssetHoldings, AllocationDrift, CumulativeNetCashFlow)

@@ -14,21 +14,21 @@ import com.gemini.krakenbot.view.util.FormFields.LOOP_DELAY_SECONDS
 import com.gemini.krakenbot.view.util.Icons
 import com.gemini.krakenbot.view.util.Routes.API_STATUS_STREAM
 import com.gemini.krakenbot.view.util.Routes.STATIC_STYLE_CSS
+import com.gemini.krakenbot.view.util.ViewText.ACTIVITY_NO_TRADES
 import com.gemini.krakenbot.view.util.ViewText.APP_TITLE
 import com.gemini.krakenbot.view.util.ViewText.ASSETS_SUFFIX
-import com.gemini.krakenbot.view.util.ViewText.BASE_PREFIX
 import com.gemini.krakenbot.view.util.ViewText.CASH_USD
 import com.gemini.krakenbot.view.util.ViewText.CONNECTING
 import com.gemini.krakenbot.view.util.ViewText.CRYPTO_ASSETS
-import com.gemini.krakenbot.view.util.ViewText.DELAYED
 import com.gemini.krakenbot.view.util.ViewText.DEV_PREFIX
-import com.gemini.krakenbot.view.util.ViewText.DRAWDOWN_PREFIX
-import com.gemini.krakenbot.view.util.ViewText.LIVE
-import com.gemini.krakenbot.view.util.ViewText.NO_TRADES_EXECUTED
+import com.gemini.krakenbot.view.util.ViewText.MODE_DRY_RUN
+import com.gemini.krakenbot.view.util.ViewText.MODE_SIMULATION
 import com.gemini.krakenbot.view.util.ViewText.NO_TRADING_HISTORY
 import com.gemini.krakenbot.view.util.ViewText.NO_USD_DATA
 import com.gemini.krakenbot.view.util.ViewText.SAFETY_MODES
 import com.gemini.krakenbot.view.util.ViewText.SETTINGS_TITLE
+import com.gemini.krakenbot.view.util.ViewText.STREAM
+import com.gemini.krakenbot.view.util.ViewText.STREAM_STALE
 import com.gemini.krakenbot.view.util.ViewText.TARGET_PREFIX
 import com.gemini.krakenbot.view.util.ViewText.TOTAL_PORTFOLIO
 import io.kotest.core.spec.IsolationMode
@@ -88,6 +88,16 @@ class DashboardViewTest : StringSpec() {
             Allocation(Asset.BTC, 50.0),
             Allocation(Asset.ETH, 40.0),
         ),
+    )
+
+    private fun snap(ageSeconds: Long, total: String) = PortfolioSnapshot(
+        timestamp = Instant.now().minusSeconds(ageSeconds),
+        totalValueUSD = BigDecimal(total),
+        assets = emptyMap(),
+        actions = emptyList(),
+        drawdownPercent = BigDecimal.ZERO,
+        fiatDeploymentPercent = BigDecimal.ZERO,
+        effectiveUsdTargetPercent = BigDecimal("10.0"),
     )
 
     init {
@@ -172,21 +182,20 @@ class DashboardViewTest : StringSpec() {
             val history = listOf(latest)
 
             val html = createHTML().div {
-                view.renderDashboardFragment(latest, history)
+                view.renderDashboardFragment(latest, history, baseConfig.settings)
             }
 
-            html shouldContain LIVE
-            html shouldNotContain DELAYED
+            html shouldContain STREAM
+            html shouldContain MODE_DRY_RUN
             html shouldContain TOTAL_PORTFOLIO
             html shouldContain "$10,000.00"
-            html shouldContain "${DRAWDOWN_PREFIX}5.00%"
             html shouldContain CASH_USD
             html shouldContain "$1,000.00"
-            html shouldContain "10.00% | ${TARGET_PREFIX}7.50% (${BASE_PREFIX}10.00%)"
+            html shouldContain "${TARGET_PREFIX}7.50%"
             html shouldContain "${DEV_PREFIX}0.00%"
             html shouldContain CRYPTO_ASSETS
             html shouldContain "$9,000.00"
-            html shouldContain "90.00% | ${TARGET_PREFIX}90.00% | 2${ASSETS_SUFFIX}"
+            html shouldContain "${TARGET_PREFIX}90.00% | 2${ASSETS_SUFFIX}"
 
             // Allocation bars
             html shouldContain "${ALLOCATION_BAR_LABEL}\">BTC"
@@ -221,11 +230,10 @@ class DashboardViewTest : StringSpec() {
             )
 
             val html = createHTML().div {
-                view.renderDashboardFragment(latest, emptyList())
+                view.renderDashboardFragment(latest, emptyList(), baseConfig.settings)
             }
 
-            html shouldContain DELAYED
-            html shouldNotContain LIVE
+            html shouldContain STREAM_STALE
             html shouldContain NO_TRADING_HISTORY
         }
 
@@ -241,7 +249,7 @@ class DashboardViewTest : StringSpec() {
                 effectiveUsdTargetPercent = BigDecimal("10.0"),
             )
             createHTML().div {
-                view.renderDashboardFragment(emptyAssetsLatest, emptyList())
+                view.renderDashboardFragment(emptyAssetsLatest, emptyList(), baseConfig.settings)
             }
 
             val latest = PortfolioSnapshot(
@@ -279,13 +287,13 @@ class DashboardViewTest : StringSpec() {
                 view.renderDashboardFragment(
                     latest,
                     listOf(latest, noActionsSnapshot),
+                    baseConfig.settings,
                 )
             }
 
             html shouldContain NO_USD_DATA
-            html shouldContain "${DRAWDOWN_PREFIX}0.00%"
             html shouldContain "${BADGE_INFO}\">INFO"
-            html shouldContain NO_TRADES_EXECUTED
+            html shouldContain ACTIVITY_NO_TRADES
         }
 
         "renderDashboardFragment_usdTargetEqual_doesNotPrintBaseTarget" {
@@ -312,11 +320,83 @@ class DashboardViewTest : StringSpec() {
             )
 
             val html = createHTML().div {
-                view.renderDashboardFragment(latest, emptyList())
+                view.renderDashboardFragment(latest, emptyList(), baseConfig.settings)
             }
 
-            html shouldContain "10.00% | ${TARGET_PREFIX}10.00%"
+            html shouldContain "${TARGET_PREFIX}10.00%"
             html shouldNotContain "(Base: 10.00%)"
+        }
+
+        "compute24hDelta_coversAllBranches" {
+            // Too few points -> null
+            OverviewGridComponent.compute24hDelta(snap(0, "100"), emptyList()) shouldBe null
+
+            // A snapshot older than 24h exists -> uses it as base (+10%)
+            val latestUp = snap(0, "11000")
+            val olderBase = snap(90_000, "10000")
+            OverviewGridComponent.compute24hDelta(latestUp, listOf(latestUp, olderBase))!!
+                .compareTo(BigDecimal("10.000000")) shouldBe 0
+
+            // No snapshot older than 24h -> falls back to history.last()
+            val latestDown = snap(0, "9000")
+            val recent = snap(3_600, "10000")
+            OverviewGridComponent.compute24hDelta(latestDown, listOf(latestDown, recent))!!
+                .compareTo(BigDecimal("-10.000000")) shouldBe 0
+
+            // Base value is zero -> null
+            val latestZeroBase = snap(0, "5000")
+            val zeroBase = snap(90_000, "0")
+            OverviewGridComponent.compute24hDelta(latestZeroBase, listOf(latestZeroBase, zeroBase)) shouldBe null
+        }
+
+        "sparklineSvg_coversRangeBranches" {
+            OverviewGridComponent.sparklineSvg(emptyList()) shouldBe ""
+
+            // Flat series (range == 0) still renders an svg
+            val flat = OverviewGridComponent.sparklineSvg(listOf(snap(0, "1000"), snap(3_600, "1000")))
+            flat shouldContain "<svg"
+
+            // Varied series renders a polyline
+            val varied = OverviewGridComponent.sparklineSvg(listOf(snap(0, "1200"), snap(3_600, "1000")))
+            varied shouldContain "polyline"
+        }
+
+        "renderDashboardFragment_deltaChip_rendersUpDownAndRelativeTimes" {
+            val deltaUp = CssClass.Hero.DeltaUp.toString()
+            val deltaDown = CssClass.Hero.DeltaDown.toString()
+
+            // Up delta + relative-time variants (minutes/hours/days) across cycles
+            val latestUp = snap(0, "11000")
+            val historyUp =
+                listOf(
+                    latestUp,
+                    snap(120, "10900"), // "m ago"
+                    snap(7_200, "10500"), // "h ago"
+                    snap(90_000, "10000"), // "d ago" and 24h base
+                )
+            val htmlUp = createHTML().div {
+                view.renderDashboardFragment(latestUp, historyUp, baseConfig.settings)
+            }
+            htmlUp shouldContain deltaUp
+            htmlUp shouldContain "m ago"
+            htmlUp shouldContain "h ago"
+            htmlUp shouldContain "d ago"
+
+            // Down delta
+            val latestDown = snap(0, "9000")
+            val historyDown = listOf(latestDown, snap(3_600, "10000"))
+            val htmlDown = createHTML().div {
+                view.renderDashboardFragment(latestDown, historyDown, baseConfig.settings)
+            }
+            htmlDown shouldContain deltaDown
+        }
+
+        "renderDashboardFragment_simulationMode_rendersSimulationPlate" {
+            val simSettings = baseConfig.settings.copy(simulation = true)
+            val html = createHTML().div {
+                view.renderDashboardFragment(snap(0, "1000"), emptyList(), simSettings)
+            }
+            html shouldContain MODE_SIMULATION
         }
 
         "Icons_loadIcon_returnsEmptyOnMissingResource" {
@@ -341,7 +421,7 @@ class DashboardViewTest : StringSpec() {
 
         "DashboardView_renderHistoryPage" {
             val html = createHTML().html {
-                view.renderHistoryPage()
+                view.renderHistoryPage(baseConfig.settings)
             }
             html shouldContain "History - Kraken Rebalancer"
         }

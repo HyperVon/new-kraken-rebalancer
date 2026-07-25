@@ -81,8 +81,9 @@ class DashboardController(
             }
 
             get(Routes.HISTORY) {
+                val settings = configService.getConfig().settings
                 call.respondHtml(HttpStatusCode.OK) {
-                    dashboardView.renderHistoryPage()
+                    dashboardView.renderHistoryPage(settings)
                 }
             }
 
@@ -189,9 +190,10 @@ class DashboardController(
             return
         }
 
+        val settings = configService.getConfig().settings
         val html =
             createHTML(prettyPrint = false).div {
-                dashboardView.renderDashboardFragment(latest, history)
+                dashboardView.renderDashboardFragment(latest, history, settings)
             }
         call.respondText(html, ContentType.Text.Html)
     }

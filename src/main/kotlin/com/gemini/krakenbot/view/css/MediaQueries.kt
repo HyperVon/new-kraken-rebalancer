@@ -44,6 +44,10 @@ object MediaQueries {
                 gap = 0.75.rem
                 alignItems = Align.start
             }
+            // DASH-1: hero KPI card (left) + stacked compact tiles (right) on wider viewports.
+            ".${CssClass.Layout.HeroGrid}" {
+                gridTemplateColumns = GridTemplateColumns("1.6fr 1fr")
+            }
             ".${CssClass.History.StatsGrid}" {
                 gridTemplateColumns = GridTemplateColumns("repeat(3, 1fr)")
             }

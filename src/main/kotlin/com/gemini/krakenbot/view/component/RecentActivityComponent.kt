@@ -5,15 +5,17 @@ import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.Icons
 import com.gemini.krakenbot.view.util.Icons.icon
+import com.gemini.krakenbot.view.util.Routes
 import com.gemini.krakenbot.view.util.ViewText
+import com.gemini.krakenbot.view.util.a
 import com.gemini.krakenbot.view.util.div
 import com.gemini.krakenbot.view.util.glassPanel
 import com.gemini.krakenbot.view.util.h3
 import com.gemini.krakenbot.view.util.p
 import com.gemini.krakenbot.view.util.span
-import com.gemini.krakenbot.view.util.td
-import com.gemini.krakenbot.view.util.tr
-import kotlinx.html.*
+import kotlinx.html.DIV
+import java.time.Duration
+import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
@@ -40,8 +42,8 @@ class RecentActivityComponent {
         }
     }
 
-    private val activityTimeFormatter =
-        DateTimeFormatter.ofPattern("yyyy-MM-dd hh:mm:ss a")
+    private val cycleTimeFormatter =
+        DateTimeFormatter.ofPattern("MMM d · hh:mm:ss a")
             .withZone(ZoneId.systemDefault())
 
     context(div: DIV)
@@ -54,66 +56,66 @@ class RecentActivityComponent {
                     p { +ViewText.NO_TRADING_HISTORY }
                 }
             } else {
-                div(CssClass.Table.Wrapper + CssClass.Activity.CustomScrollbarMaxH100) {
-                    table {
-                        thead {
-                            tr {
-                                th { +ViewText.HEADER_TIME }
-                                th { +ViewText.HEADER_ACTION }
-                            }
-                        }
-                        tbody {
-                            history.forEach { snapshot ->
-                                val timeStr =
-                                    activityTimeFormatter.format(snapshot.timestamp)
-                                if (snapshot.actions.isEmpty()) {
-                                    renderEmptyActionsRow(timeStr)
-                                } else {
-                                    snapshot.actions.forEach { action ->
-                                        renderActionRow(
-                                            timeStr,
-                                            action,
-                                        )
-                                    }
-                                }
-                            }
-                        }
+                val now = Instant.now()
+                div(CssClass.Activity.Feed) {
+                    history.take(MAX_CYCLES).forEach { snapshot ->
+                        renderCycle(snapshot, now)
+                    }
+                }
+                div(CssClass.Activity.FeedFooter) {
+                    a(CssClass.Activity.ViewAll, href = Routes.HISTORY) {
+                        +ViewText.ACTIVITY_VIEW_ALL
                     }
                 }
             }
         }
     }
 
-    private fun TBODY.renderEmptyActionsRow(timeStr: String) {
-        tr(CssClass.Table.Hoverable + CssClass.Activity.RowInfo) {
-            td(CssClass.Table.MonoCol) { +timeStr }
-            td {
-                span(CssClass.Activity.EmptyText) {
-                    span(CssClass.Activity.DotMarker) {}
-                    +ViewText.NO_TRADES_EXECUTED
+    private fun DIV.renderCycle(snapshot: PortfolioSnapshot, now: Instant) {
+        val actionCount = snapshot.actions.size
+        div(CssClass.Activity.Cycle) {
+            div(CssClass.Activity.CycleHeader) {
+                span(CssClass.Badge.Info) { +ViewText.ACTIVITY_CYCLE_PREFIX }
+                span(CssClass.Activity.CycleMeta) {
+                    +if (actionCount > 0) "$actionCount${tradeSuffix(actionCount)}" else ViewText.ACTIVITY_NO_TRADES
+                }
+                span(CssClass.Activity.CycleTime) {
+                    +"${relativeTime(snapshot.timestamp, now)} · ${cycleTimeFormatter.format(snapshot.timestamp)}"
+                }
+            }
+            if (snapshot.actions.isNotEmpty()) {
+                div(CssClass.Activity.CycleBody) {
+                    snapshot.actions.forEach { action ->
+                        renderItem(action)
+                    }
                 }
             }
         }
     }
 
-    private fun TBODY.renderActionRow(timeStr: String, action: String) {
+    private fun DIV.renderItem(action: String) {
         val tradeAction = TradeAction.from(action)
-        val isTrade = tradeAction == TradeAction.BUY || tradeAction == TradeAction.SELL
-        val rowClass =
-            if (isTrade) {
-                CssClass.Table.Hoverable + CssClass.Activity.RowTrade
-            } else {
-                CssClass.Table.Hoverable + CssClass.Activity.RowInfo
-            }
-        val messageClass =
-            if (isTrade) CssClass.Activity.Message else CssClass.Activity.MessageMuted
-        tr(rowClass) {
-            td(CssClass.Table.MonoCol) { +timeStr }
-            td {
-                div(CssClass.Activity.RowContainer) {
-                    span(tradeAction.badgeClass) { +tradeAction.label }
-                    span(messageClass) { +action }
-                }
+        val isTrade = tradeAction != TradeAction.INFO
+        val itemClass = if (isTrade) CssClass.Activity.ItemTrade else CssClass.Activity.Item
+        div(itemClass) {
+            span(tradeAction.badgeClass) { +tradeAction.label }
+            span(CssClass.Activity.ItemText) { +action }
+        }
+    }
+
+    private companion object {
+        const val MAX_CYCLES = 6
+
+        fun tradeSuffix(count: Int): String =
+            if (count == 1) ViewText.ACTIVITY_ACTION_SUFFIX else ViewText.ACTIVITY_ACTIONS_SUFFIX
+
+        fun relativeTime(timestamp: Instant, now: Instant): String {
+            val seconds = Duration.between(timestamp, now).seconds.coerceAtLeast(0)
+            return when {
+                seconds < 60 -> "just now"
+                seconds < 3_600 -> "${seconds / 60}m ago"
+                seconds < 86_400 -> "${seconds / 3_600}h ago"
+                else -> "${seconds / 86_400}d ago"
             }
         }
     }

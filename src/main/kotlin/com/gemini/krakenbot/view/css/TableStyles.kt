@@ -60,6 +60,18 @@ object TableStyles {
 
         ".${CssClass.Table.MonoCol}" {
             fontFamily = CssTheme.fontMono
+            // HIST-3: tabular figures keep decimal columns aligned.
+            put("font-variant-numeric", "tabular-nums")
+        }
+
+        // HIST-3: quiet success indicator (replaces the always-"SUCCESS" text column).
+        ".${CssClass.Table.StatusDot.value}" {
+            display = Display.inlineBlock
+            width = 0.5.rem
+            height = 0.5.rem
+            borderRadius = 50.pct
+            backgroundColor = CssTheme.colorSuccess
+            put("box-shadow", "0 0 0 3px rgba(16, 185, 129, 0.15)")
         }
 
         "th.sortable" {

@@ -1,6 +1,7 @@
 package com.gemini.krakenbot.view
 
 import com.gemini.krakenbot.config.AppConfig
+import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.view.component.DashboardFragmentComponent
 import com.gemini.krakenbot.view.component.DashboardShellComponent
@@ -40,12 +41,12 @@ class DashboardView(
     }
 
     context(html: HTML)
-    fun renderHistoryPage() {
-        historyPageComponent.render()
+    fun renderHistoryPage(settings: Settings) {
+        historyPageComponent.render(settings)
     }
 
     context(div: DIV)
-    fun renderDashboardFragment(latest: PortfolioSnapshot, history: List<PortfolioSnapshot>) {
-        fragmentComponent.render(latest, history)
+    fun renderDashboardFragment(latest: PortfolioSnapshot, history: List<PortfolioSnapshot>, settings: Settings) {
+        fragmentComponent.render(latest, history, settings)
     }
 }

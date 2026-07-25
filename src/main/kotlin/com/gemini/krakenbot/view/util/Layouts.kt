@@ -1,5 +1,6 @@
 package com.gemini.krakenbot.view.util
 
+import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.view.util.Icons.icon
 import kotlinx.html.*
 
@@ -26,6 +27,47 @@ fun FlowContent.brandMark() {
         span(CssClass.Layout.BrandPrimary) { +ViewText.APP_BRAND_PRIMARY }
         +" "
         span(CssClass.Layout.BrandAccent) { +ViewText.APP_BRAND_ACCENT }
+    }
+}
+
+/**
+ * GLOB-1/DASH-2: persistent trading-mode plate shown next to the brand on every
+ * page. Simulation and dry-run read as safe (blue/amber); live trading reads as
+ * high-consequence (red) so the current mode is identifiable within ~1s.
+ */
+fun FlowContent.modePlate(settings: Settings) {
+    val cssClass: CssClass
+    val label: String
+    val plateTitle: String
+    when {
+        settings.simulation -> {
+            cssClass = CssClass.Mode.Simulation
+            label = ViewText.MODE_SIMULATION
+            plateTitle = ViewText.MODE_SIMULATION_TITLE
+        }
+        settings.dryRun -> {
+            cssClass = CssClass.Mode.DryRun
+            label = ViewText.MODE_DRY_RUN
+            plateTitle = ViewText.MODE_DRY_RUN_TITLE
+        }
+        else -> {
+            cssClass = CssClass.Mode.Live
+            label = ViewText.MODE_LIVE
+            plateTitle = ViewText.MODE_LIVE_TITLE
+        }
+    }
+    span(cssClass) {
+        attributes[HtmlAttrs.TITLE] = plateTitle
+        span(CssClass.Mode.Dot) {}
+        +label
+    }
+}
+
+/** Standard header brand + mode plate group used across all pages (DASH-2). */
+fun FlowContent.brandWithMode(settings: Settings) {
+    div(CssClass.Layout.HeaderTitleSection) {
+        brandMark()
+        modePlate(settings)
     }
 }
 

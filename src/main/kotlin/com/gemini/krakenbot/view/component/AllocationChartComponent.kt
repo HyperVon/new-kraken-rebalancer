@@ -39,7 +39,7 @@ class AllocationChartComponent {
                         div(CssClass.AllocationChart.BarLabel) { +asset.symbol.value }
                         div(CssClass.AllocationChart.BarTrack) {
                             div(CssClass.AllocationChart.BarFill) {
-                                style = "width: $fillPct%; background: $barColor;"
+                                style = "width: $fillPct%; background-color: $barColor;"
                             }
                         }
                         div(CssClass.AllocationChart.BarValue) {

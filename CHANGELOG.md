@@ -6,6 +6,39 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Dashboard hero KPI (DASH-1)**: Total portfolio now leads with a large value,
+  a 24h delta chip (up/down), and an inline sparkline, paired with compact Cash
+  and Crypto tiles that show progress bars, target, and deviation.
+- **Cycle-grouped activity feed (DASH-3)**: Recent activity is grouped per
+  rebalance cycle with relative timestamps, per-cycle action counts, a "No trades
+  — portfolio within tolerance" summary for quiet cycles, and a "View all
+  history" link.
+- **Persistent mode plate (GLOB-1 / DASH-2)**: A brand-adjacent plate always shows
+  the active trading mode (Simulation / Dry Run / Live Trading) with an
+  explanatory tooltip, alongside a single-line stream/age status chip.
+- **Safety-mode toggle cards (SETT-1)**: Simulation and Dry Run are now rich
+  cards with an icon, description, and ON/OFF state pill instead of bare
+  checkboxes.
+
+### Changed
+
+- **Refined Glass theme (GLOB-2 / GLOB-3)**: Cool-blue glass sheen with light blur,
+  cyan rim glow, and raised drop shadows — luminous without milky white fog.
+- **History toolbar & charts (HIST-1 / HIST-2)**: Custom-styled views dropdown,
+  muted ghost delete button, consolidated chart headers (title + legend + zoom in
+  one row), taller chart canvas, and a caption on the cumulative net cash flow
+  chart.
+- **Trade history table (HIST-3)**: USD price/fee columns use tabular figures and
+  render an em-dash for zero values; plain successful trades show a subtle status
+  dot while dry-run/failed trades keep their badges.
+- **Documentation screenshots**: Refreshed `docs/images/*.png` for the Refined
+  Glass dashboard hero, activity feed, safety cards, history toolbar/charts, and
+  trade table.
+
 ## [6.12.29] - 2026-07-25
 
 ### Fixed
@@ -106,6 +139,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   projected (and continue-below-then-accept), TradeDeduplicator inclusive
   5-minute window boundary, explicit zero ticker price abort, and zero-volume
   order suppression at `dustThresholdUSD=0`.
+
 
 ## [6.12.24] - 2026-07-24
 
