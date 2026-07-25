@@ -36,10 +36,15 @@ object MediaQueries {
                 gap = 0.375.rem
             }
             "${CssClass.StatusCard.Default.querySelector}" {
-                gap = 1.125.rem
-                padding = Padding(1.625.rem, 1.75.rem)
+                gap = 0.375.rem
+                padding = Padding(0.75.rem, 0.875.rem)
             }
             ".${CssClass.Layout.OverviewGrid}" {
+                gridTemplateColumns = GridTemplateColumns("repeat(3, 1fr)")
+                gap = 0.75.rem
+                alignItems = Align.start
+            }
+            ".${CssClass.History.StatsGrid}" {
                 gridTemplateColumns = GridTemplateColumns("repeat(3, 1fr)")
             }
             ".${CssClass.Form.Grid2Col}" {
@@ -59,7 +64,17 @@ object MediaQueries {
                 gridTemplateColumns = GridTemplateColumns("repeat(3, 1fr)")
             }
             ".${CssClass.History.StatsGrid}" {
-                gridTemplateColumns = GridTemplateColumns("repeat(3, 1fr)")
+                gridTemplateColumns = GridTemplateColumns("repeat(6, 1fr)")
+                gap = 0.625.rem
+            }
+            ".${CssClass.History.StatsGrid} ${CssClass.StatusCard.Default.querySelector}" {
+                padding = Padding(0.75.rem, 0.75.rem)
+            }
+            ".${CssClass.History.StatsGrid} .${CssClass.StatusCard.Value}" {
+                fontSize = 1.2.rem
+            }
+            ".${CssClass.History.StatsGrid} .${CssClass.StatusCard.Title}" {
+                fontSize = 0.75.rem
             }
         }
     }
