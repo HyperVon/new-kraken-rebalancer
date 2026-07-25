@@ -38,6 +38,20 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Documentation screenshots**: Refreshed `docs/images/*.png` for the Refined
   Glass dashboard hero, activity feed, safety cards, history toolbar/charts, and
   trade table.
+- **Agent UI skills**: Aligned `ui-manual-qa`, visual review/implement,
+  post-deploy smoke, screenshot refresh, Ktor/JS view skills, and OPERATING
+  norms with the mode plate, STREAM/STALE chip, hero/activity/safety-card, and
+  History header/table contracts.
+- **Documentation review**: Aligned README, USER_GUIDE, and agent stubs with the
+  Refined Glass UI (mode plate, STREAM/STALE, hero KPI, package tree, config
+  template defaults).
+- **Orphan UI chrome cleanup**: Removed unused `ViewText.LIVE` / `DELAYED` /
+  `DATA_AGE` (and related Data Age label/container CSS) after the STREAM/STALE
+  and mode-plate redesign; also dropped unused parenthetical safety labels and
+  `DRAWDOWN_PREFIX`.
+- **EVALUATION evidence refresh**: Regenerated `docs/EVALUATION.md` outcomes
+  from a live `EvaluationScenariosTest` run; report writer now redacts absolute
+  paths for docs sync.
 
 ## [6.12.29] - 2026-07-25
 

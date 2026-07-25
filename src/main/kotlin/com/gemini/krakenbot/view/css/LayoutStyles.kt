@@ -103,22 +103,6 @@ object LayoutStyles {
             flexShrink = 0.0
         }
 
-        ".${CssClass.DataAge.Container}" {
-            display = Display.flex
-            flexDirection = FlexDirection.column
-            gap = 0.25.rem
-            textAlign = TextAlign.left
-        }
-
-        ".${CssClass.DataAge.Label}" {
-            fontSize = 0.75.rem
-            color = CssTheme.colorTextMuted
-            put("text-transform", "uppercase")
-            put("letter-spacing", "0.05em")
-            fontWeight = FontWeight.w600
-            put("line-height", "1.2")
-        }
-
         ".${CssClass.DataAge.Value}" {
             fontFamily = CssTheme.fontMono
             fontSize = 0.875.rem

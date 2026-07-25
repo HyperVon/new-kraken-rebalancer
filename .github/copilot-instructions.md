@@ -11,4 +11,6 @@ follow it. Prefer project skills over inventing ad-hoc workflows.
 
 Key norms from OPERATING.md: fan out independent workstreams in parallel;
 never block on long-lived servers in the foreground; after UI changes verify
-laptop (~1280–1440) density and CSS cache-bust (`/static/style.css?v=`).
+laptop (~1280–1440) density and CSS cache-bust (`/static/style.css?v=`);
+keep the mode plate (`SIMULATION` > `DRY RUN` > `LIVE TRADING`) and the
+separate STREAM/STALE stream-health chip (not a trading-mode label).

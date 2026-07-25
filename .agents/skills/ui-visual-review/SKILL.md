@@ -47,6 +47,28 @@ math, rewriting docs (except quoting findings).
 
 ---
 
+## Refined Glass baseline (current UI)
+
+The UI ships the **Refined Glass** redesign (CHANGELOG `6.13.0`). Review these
+for execution quality — do **not** re-propose them as new ideas, and treat a
+missing or broken one as **P0/P1**.
+
+| Area | What ships today |
+| :--- | :--- |
+| Global header | `brandWithMode()` — brand mark + persistent **mode plate** (`SIMULATION` / `DRY RUN` / `LIVE TRADING`, with tooltip) on Dashboard, Settings, **and** History |
+| Stream health | Dashboard-only one-line chip reading **STREAM** / **STALE** with relative age + timestamp (`header-status`) — SSE health, never trading mode |
+| Dashboard hero | Large total value, **24H** delta chip (up/down), inline sparkline, plus Cash / Crypto tiles with progress bars, target, and deviation |
+| Activity | Cycle-grouped feed (≤6 cycles) — relative time, per-cycle action count, `No trades — portfolio within tolerance` for quiet cycles, **View all history** link |
+| Settings safety | Simulation / Dry Run as toggle **cards** — icon, consequence prose, `ON`/`OFF` state pill, section subtitle |
+| History charts | One header row per chart (title + zoom) above the legend, taller canvas, muted caption under cumulative net cash flow |
+| Trade table | Tabular USD figures, **em dash** for zero price/fee, quiet status **dot** for plain success (badges only for dry-run / failed) |
+
+If you genuinely think one of these is wrong, file it as an explicit `redesign`
+finding with migration scope — do not quietly recommend reverting to pre-6.13
+status cards, the table-based activity log, or a `LIVE` stream chip.
+
+---
+
 ## Workflow
 
 ```text
@@ -103,9 +125,10 @@ Present findings to the user **before** any implementation. Use this structure:
 1–3 sentences: overall impression + biggest opportunity.
 
 ## Baseline
-- Theme: dark glass (`CssTheme` — Inter/Outfit, slate glass, blue accents)
+- Theme: Refined Glass (`CssTheme` — Inter/Outfit, cool-blue glass, cyan rim)
 - Captures: `$REVIEW_DIR` (list files)
 - Simulation seed: yes/no; dryRun: on/off
+- Mode plate observed: SIMULATION | DRY RUN | LIVE TRADING (must match settings)
 
 ## Findings
 
@@ -141,8 +164,8 @@ Severity guide:
 Be willing to recommend **redesigns, removals, and additions** — not only
 pixel tweaks. Cover at least:
 
-1. **Hierarchy** — What does the eye hit first? Is LIVE / Data Age / portfolio
-   value competing with noise?
+1. **Hierarchy** — What does the eye hit first? Is the mode plate / STREAM chip /
+   portfolio hero competing with noise?
 2. **Density & whitespace** — Cramped cards vs sparse voids; consistent gaps.
 3. **Alignment & rhythm** — Columns, table headers, form labels, chart legends.
 4. **Contrast & color** — Secondary text on glass; success/danger badges;
@@ -153,10 +176,40 @@ pixel tweaks. Cover at least:
    field grouping / labels?
 7. **Charts** — Legend clutter, overlapping lines, timeframe control clarity,
    History mid-page charts vs summary.
-8. **Activity / trade log** — Scanability of BUY/SELL/DRY RUN / SUCCESS.
+8. **Activity / trade log** — Scanability of cycle groups, BUY/SELL/DRY RUN
+   badges, and the quiet success dot (see Refined Glass checks below).
 9. **Responsive risk** — Does `80rem` max-width leave awkward margins; would
    narrow viewports collapse badly?
 10. **Motion / feedback** — HTMX/SSE updates feel calm vs jumpy (if observed live).
+
+### Refined Glass checks (mandatory on full reviews)
+
+Judge each from the PNGs; report any miss as a finding rather than assuming the
+implementation is fine:
+
+1. **Mode plate** — Present beside the brand on **all three** pages, label
+   matches the run's settings (`simulation: true` → `SIMULATION`), and
+   `LIVE TRADING` reads as high-consequence. Fail if it is missing on Settings /
+   History, or if plate and stream chip look like the same control.
+2. **Stream chip** — On Dashboard only: reads `STREAM` / `STALE` (never `LIVE`)
+   and sits on one line with relative age + timestamp at 1280–1440px, no wrap or
+   clipping.
+3. **Hero** — Total value clearly dominant; 24H delta colour/sign match the
+   direction; sparkline actually renders (not an empty or clipped box).
+4. **Cash / Crypto tiles** — Bar fill visually matches the stated percentage,
+   fill colour matches the asset series, target and deviation stay legible.
+5. **Activity feed** — Cycles visually separated with relative time and correct
+   singular/plural action counts; quiet cycles show the tolerance summary;
+   **View all history** reads as a link, not stray text.
+6. **Safety cards** — Checked vs unchecked is obvious from the `ON`/`OFF` pill
+   and card treatment; consequence prose is readable, not truncated; cards never
+   degrade to bare native checkboxes.
+7. **History chart header** — Title and zoom share one compact row above the
+   legend (no three stacked bands); the net cash flow caption is present and
+   muted; canvases look taller, not squat.
+8. **Trade table** — Zero price/fee render as a muted em dash (not
+   `0.00000000`); the plain-success dot is visible and not mistaken for an empty
+   cell; dry-run and failed rows keep labelled badges.
 
 ### Production regression smells (mandatory on full reviews)
 
@@ -166,8 +219,8 @@ Flag these explicitly when seen — they map to `ui-manual-qa` `STYLE-*` /
 1. **Stale CSS after deploy** — controls render as default white native
    `<button>` / `<select>` because `/static/style.css` was cached (24h); verify
    `?v=` cache-bust or hard-refresh before judging styling.
-2. **Desktop header density (~1280–1440px)** — Status cluster **LIVE** +
-   **Data Age** vertically squished, clipped, or illegibly stacked (not only a
+2. **Desktop header density (~1280–1440px)** — Brand, mode plate, stream chip,
+   age, and nav vertically squished, clipped, or illegibly stacked (not only a
    mobile problem).
 3. **Deviation legend spacing** — Dashboard Asset Performance **Over target** /
    **Under target** labels concatenated without spaced amber/blue dots.
@@ -195,6 +248,8 @@ Flag these explicitly when seen — they map to `ui-manual-qa` `STYLE-*` /
   as product/API dependencies.
 - **Do not** recommend live-trading UI that hides `simulation` / `dryRun`
   clarity — safety modes must stay obvious ([dry-run-and-simulation](../dry-run-and-simulation/SKILL.md)).
+  The mode plate and the Settings safety cards are the authoritative indicators;
+  never propose merging the plate into the stream chip or dropping either.
 
 ---
 
@@ -283,6 +338,8 @@ Then wait for the user’s selection before running ui-visual-implement.
 
 - [ ] Isolated sim run; captures in temp dir (docs/images untouched)
 - [ ] Every capture PNG read with vision
+- [ ] Refined Glass checks 1–8 evaluated (mode plate, stream chip, hero, tiles,
+      activity feed, safety cards, chart header, trade table)
 - [ ] Findings use SHORT-IDs, severity, acceptance criteria
 - [ ] `findings.json` written under `$REVIEW_DIR`
 - [ ] Interactive canvas picker created + linked (checkboxes + Implement selected)

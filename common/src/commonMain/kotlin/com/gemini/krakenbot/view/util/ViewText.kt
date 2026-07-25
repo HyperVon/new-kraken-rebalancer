@@ -34,8 +34,6 @@ object ViewText {
     const val DUST_THRESHOLD = "Dust Threshold ($)"
     const val FIAT_MAX_DRAWDOWN = "Fiat Max Drawdown (%)"
     const val FIAT_DEPLOYMENT_EXPONENT = "Fiat Deployment Exponent"
-    const val DRY_RUN_MODE = "Dry Run Mode (Safe)"
-    const val SIMULATION_MODE = "Simulation Mode (Kraken Emulator)"
 
     // SETT-1: safety toggle card copy (consequence prose + state pills).
     const val DRY_RUN_MODE_TITLE = "Dry Run Mode"
@@ -54,14 +52,9 @@ object ViewText {
     const val ADD_ASSET = "Add Asset"
     const val SAVE_CONFIGURATION = "Save Configuration"
 
-    // Status / Labels
-    const val LIVE = "LIVE"
-    const val DELAYED = "DELAYED"
-
     // GLOB-1: stream-health chip is renamed so it never reads as "live trading".
     const val STREAM = "STREAM"
     const val STREAM_STALE = "STALE"
-    const val DATA_AGE = "Data Age"
 
     // GLOB-1/DASH-2: persistent trading-mode plate labels + descriptions.
     const val MODE_SIMULATION = "SIMULATION"
@@ -71,7 +64,6 @@ object ViewText {
     const val MODE_DRY_RUN_TITLE = "Dry run — real orders are validated but not submitted"
     const val MODE_LIVE_TITLE = "Live trading — real orders execute with real funds"
     const val NO_USD_DATA = "No USD Data"
-    const val DRAWDOWN_PREFIX = "Drawdown: "
     const val TARGET_PREFIX = "Target: "
     const val BASE_PREFIX = "Base: "
     const val DEV_PREFIX = "Dev: "

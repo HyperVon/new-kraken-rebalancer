@@ -198,8 +198,6 @@ sealed class CssClass(open val value: String) {
 
     // Data Age
     sealed class DataAge(override val value: String) : CssClass(value) {
-        object Container : DataAge("data-age-container")
-        object Label : DataAge("data-age-label")
         object Value : DataAge("data-age-value")
         object ValueStale : DataAge("data-age-value stale")
         object Time : DataAge("data-age-time")

@@ -86,7 +86,22 @@ Rules:
 - Prefer token-level and shared component changes over one-off inline styles.
 - Keep `:common` pure; no JVM/JS-only imports there.
 - Preserve safety-mode clarity (Simulation / Dry Run labels and settings).
+- Preserve the Refined Glass invariants below unless an approved finding changes
+  one explicitly.
 - Match project formatting (Spotless / 120 cols).
+
+### Refined Glass invariants (CHANGELOG 6.13.0)
+
+| Invariant | Owned by | Regression looks like |
+| :--- | :--- | :--- |
+| Mode plate on every page | `view/util/Layouts.kt` (`brandWithMode`) | Settings or History header renders `brandMark()` alone |
+| Stream chip separate from mode | `DashboardFragmentComponent`, `frontend-js` `Dashboard.kt` | Chip labelled `LIVE` again (reads as live trading) instead of `STREAM` / `STALE` |
+| Hero value + 24H delta + sparkline | `OverviewGridComponent` | Back to three equal status cards; empty sparkline slot |
+| Cash / Crypto tile progress bars | `OverviewGridComponent.renderTileBar` | Bar width detached from the stated percentage |
+| Cycle-grouped activity + View all | `RecentActivityComponent` | Flat time/action table returns; link dropped |
+| Safety toggle cards + ON/OFF pill | `SettingsFormComponent` | Bare checkbox labels; pill not tracking checked state |
+| Chart header row + net cash flow caption | `HistoryPageComponent` | Title / zoom split into stacked rows; caveat pushed back into the legend string |
+| Em dash + status dot in trade table | `frontend-js` `History.kt` | `0.00000000` prices, constant `SUCCESS` column |
 
 ### Step 3: Gates before verify
 
@@ -126,6 +141,28 @@ For each acceptance criterion:
 
 Optional: browser snapshot for hover/focus if the finding required it.
 
+Before judging any styling as wrong, confirm `/static/style.css` is fresh
+(hard refresh or `?v=` cache-bust) — cached CSS renders native white controls
+and fakes a regression.
+
+#### Refined Glass regression sweep (every full-set verify)
+
+Cheap to read off the same after-PNGs, and it catches redesign regressions the
+approved IDs did not cover:
+
+- [ ] Dashboard, Settings, **and** History headers each show the mode plate, and
+      it matches the verify run (`simulation: true` → `SIMULATION`)
+- [ ] Stream chip (Dashboard only) reads `STREAM` / `STALE`, one line with
+      relative age/time at ~1280–1440px
+- [ ] Hero shows value + 24H delta + sparkline; Cash / Crypto bars fill
+      proportionally
+- [ ] Activity feed still cycle-grouped with the **View all history** link
+- [ ] Settings safety cards show `ON` / `OFF` pills matching checkbox state
+- [ ] History charts: one header row (title + zoom), net cash flow caption
+      present, canvases not squat
+- [ ] Trade table: em dash for zero price/fee; plain success is a dot, dry-run
+      and failed keep badges
+
 If acceptance touched History zoom/pan: also run
 [ui-manual-qa](../ui-manual-qa/SKILL.md) `HIST-ZOOM-5/6/7` — scrubber must enable
 after drag/wheel zoom and **pan the chart** (thumb-only motion is a fail).
@@ -162,6 +199,9 @@ artifacts. Final message:
 ## Docs
 - screenshots refreshed: yes/no
 - USER_GUIDE touched: yes/no
+
+## Refined Glass sweep
+- clean, or list what regressed
 ```
 
 ---
@@ -173,6 +213,8 @@ artifacts. Final message:
 - Using the user’s real `rebalancer-config.json` / DB for verify runs
 - Implementing unapproved redesign scope “while we’re here”
 - Weakening CORS / adding auth theater / hiding dryRun·simulation
+- Dropping the mode plate from a page, or relabelling the stream chip `LIVE`
+- Judging styling from a stale cached `/static/style.css`
 - Skipping `:frontend-js` tests after chart/DOM changes
 
 ---
@@ -183,6 +225,8 @@ artifacts. Final message:
 - [ ] Changes in view/css/component / frontend-js / :common as appropriate
 - [ ] spotless + relevant tests green
 - [ ] Isolated sim verify; after PNGs read against acceptance
+- [ ] Refined Glass regression sweep clean (mode plate, stream chip, hero,
+      activity feed, safety cards, chart header, trade table)
 - [ ] Iterations capped; regressions noted
 - [ ] docs-screenshot-refresh + USER_GUIDE/CHANGELOG when shipping
 - [ ] App stopped; real config/DB untouched

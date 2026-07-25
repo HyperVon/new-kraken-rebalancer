@@ -32,9 +32,6 @@ object MediaQueries {
                 gap = 1.5.rem
                 padding = Padding(0.75.rem, 1.25.rem)
             }
-            ".${CssClass.DataAge.Container}" {
-                gap = 0.375.rem
-            }
             "${CssClass.StatusCard.Default.querySelector}" {
                 gap = 0.375.rem
                 padding = Padding(0.75.rem, 0.875.rem)

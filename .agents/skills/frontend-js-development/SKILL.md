@@ -2,9 +2,10 @@
 name: frontend-js-development
 description: >-
   Client Kotlin/JS — EventSource SSE, SharedFlow payload consumption, HTMX
-  hooks, Chart.js deep-clone, History timeframe updating all 6 summary cards,
-  zoom/scrubber via chart.zoomScale, and Karma coverage thresholds. Use when
-  editing frontend-js/src.
+  hooks, STREAM/STALE status chip semantics, Chart.js deep-clone, History
+  timeframe updating all 6 summary cards, trade-table formatting, zoom/scrubber
+  via chart.zoomScale, and Karma coverage thresholds. Use when editing
+  frontend-js/src.
 ---
 
 # Kotlin/JS Client Development (`:frontend-js`)
@@ -23,6 +24,29 @@ Compiles via Kotlin JS IR to `/static/rebalancer.js`.
    **all six** summary cards (**All-Time High** / **Period High**, **Total
    Trades**, **Total Volume Traded**, **Total Fees Paid**, **Avg Fee Rate**,
    **Avg Slippage**) plus charts and trade table.
+
+## Status chip = stream health, not trading mode
+
+`updateAge()` owns the dashboard header chip. It toggles
+`CssClass.Utility.Live` / `CssClass.Utility.Delayed` (styling only) and writes
+**`ViewText.STREAM`** when fresh, **`ViewText.STREAM_STALE`** when past
+`STALE_THRESHOLD_SECONDS`.
+
+- The chip reports **SSE freshness**. It must never read `LIVE` / `DELAYED` or
+  otherwise imply that real orders are executing.
+- Trading mode is server-rendered in the settings-backed mode plate
+  (`SIMULATION` / `DRY RUN` / `LIVE TRADING`) — see
+  [ktor-html-views](../ktor-html-views/SKILL.md). Do not infer or re-render mode
+  from client state.
+
+## Trade table rendering (History)
+
+- USD price and fee columns format at **2dp** via the shared USD formatter, and
+  render `ViewText.EM_DASH` for zero/absent values (never `0.00000000`).
+- A plain success row (`success && !dryRun`) renders a quiet
+  `CssClass.Table.StatusDot` span with a `SUCCESS` tooltip; **dry-run and failed
+  rows keep their labelled badge** so risky rows stay scannable.
+- Keep the estimated-value tooltip on price / fee / slippage cells.
 
 ## Chart.js integrity
 
@@ -95,7 +119,10 @@ views, zoom, scrubber pan, dry-run filter, legend toggles).
 ## Checklist
 
 - [ ] SSE consumes `/api/status/stream` payloads correctly
+- [ ] Status chip reads `STREAM` / `STALE` and never implies live trading
 - [ ] Timeframe change updates **all 6** summary cards
+- [ ] Trade rows: 2dp USD, em-dash for zero, dot for plain success, badge for
+      dry-run/failed
 - [ ] Chart options deep-cloned; zoom callbacks re-attached after clone
 - [ ] Zoomed History charts pan via `zoomScale` + scrubber (not options.scales only)
 - [ ] `:common` IDs/classes used; Karma thresholds still met

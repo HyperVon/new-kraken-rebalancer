@@ -24,6 +24,11 @@ Two independent settings control how “real” trading is. Change them from
 that moves real funds. Prefer simulation (and/or dry run) until you understand
 the screens below.
 
+On **Settings**, these appear as two toggle cards — **Simulation Mode** first,
+then **Dry Run Mode** — each with an **ON** / **OFF** state pill and a short line
+of consequence prose (e.g. "No real funds are ever touched"). Keep at least one
+safety on unless you intend to trade live.
+
 ![Settings — Safety modes and targets](images/settings.png)
 
 ---
@@ -31,9 +36,13 @@ the screens below.
 ## Navigation
 
 Dashboard, History, and Settings share the same top nav tabs (active page is
-highlighted). The header brand reads **Kraken** + **Rebalancer**; on the
-Dashboard, **LIVE** / **DELAYED** and **Data Age** sit together in a compact
-status chip next to the tabs.
+highlighted). The header brand reads **Kraken** + **Rebalancer**, and right next
+to it a **persistent mode plate** shows the current trading mode on **every**
+page: **SIMULATION** (blue), **DRY RUN** (amber), or **LIVE TRADING** (red).
+Precedence is simulation first (even if dry run is also on), then dry run, then
+live. The plate reflects your Settings, and hovering it reveals a tooltip
+explaining the consequence (e.g. "Live trading — real orders execute with real
+funds").
 
 | Page | Route | Purpose |
 | :--- | :--- | :--- |
@@ -42,8 +51,13 @@ status chip next to the tabs.
 | **Settings** | `/settings` | Loop timing, triggers, fiat deployment, safety modes, allocations |
 
 The dashboard pushes live updates over Server-Sent Events (`/api/status/stream`).
-You should see a green **LIVE** badge and a recent **Data Age** when the loop is
-healthy.
+**Only the Dashboard** shows a stream-health chip next to the tabs: **STREAM**
+(green) when data is flowing, or **STALE** when the feed has gone quiet. Beside
+it are the relative age of the last update (e.g. `12s`) and its clock time.
+
+The stream chip describes **feed health, not trading mode** — a healthy
+**STREAM** chip does not mean live trading is on. Always read the mode plate for
+that.
 
 ---
 
@@ -51,29 +65,37 @@ healthy.
 
 ![Dashboard overview](images/dashboard.png)
 
-### Summary cards
+### Portfolio overview
 
-| Card | Meaning |
+The top of the Dashboard is a hero card plus two tiles:
+
+| Element | Meaning |
 | :--- | :--- |
-| **Total Portfolio** | Mark-to-market value of all tracked assets. **Drawdown** is how far you are below the recorded all-time high. |
-| **Cash (USD)** | Fiat balance vs its **effective** target (after drawdown-based fiat deployment). Shows current %, target %, and deviation. |
-| **Crypto Assets** | Combined crypto value, share of the portfolio, and how many crypto symbols you hold. |
+| **Total Portfolio** (hero) | Mark-to-market value of all tracked assets, with a signed **24H** delta (green up / red down) and an inline **sparkline** of recent value. |
+| **Cash (USD)** (tile) | Fiat balance with a progress bar for its current share, plus target % (the **effective** target after drawdown-based fiat deployment) and deviation. |
+| **Crypto Assets** (tile) | Combined crypto value with a progress bar for its share, its target %, and how many crypto symbols you hold. |
 
 ### Allocation & performance
 
 ![Dashboard allocation, table, and activity](images/dashboard-bottom.png)
 
-- **Portfolio Allocation** — Horizontal bars for the largest holdings by USD
-  value (and cash). Each symbol uses a fixed color (BTC amber, ETH violet, USD
-  slate) shared with History charts.
+- **Portfolio Allocation (Top Assets)** — Horizontal bars for the largest
+  holdings by USD value (and cash), showing up to the **top 15**. Bar lengths are
+  relative to the largest holding (the biggest fills the track), with each bar
+  labelled by its USD value and current %. Each symbol uses a fixed color (BTC
+  amber, ETH violet, USD slate) shared with History charts.
 - **Asset Performance** — Sortable table of price, value, target %, current %,
   and **Dev %** (how far each asset is from target, with dollar impact).
   Amber = over target, blue = under target (not profit/loss green/red); a small
   legend sits above the table.
-- **Recent Activity** — Chronological log for the latest cycle:
+- **Recent Activity** — A **cycle-grouped feed** of the most recent rebalance
+  cycles (up to 6). Each cycle is headed by a **Cycle** badge, an action summary
+  (e.g. `3 actions`, or **No trades — portfolio within tolerance**), and both a
+  relative and an absolute timestamp. Cycles with trades expand to the individual
+  actions beneath:
   - Blue **INFO** — compact deviation notes (e.g. `Deviation: BTC 5.2%`)
   - Red **SELL** / green **BUY** — orders with USD to 2 decimals
-  - Grey status lines when a cycle finishes with no trade
+  - A **View all history** link at the bottom jumps to `/history`.
 
 Use this page as your “is the bot healthy right now?” view.
 
@@ -97,16 +119,18 @@ Open **Settings** from the shared top nav, or go to `/settings`.
 
 ### Safety modes
 
-Dry Run and Simulation live in their own **Safety Modes** block (not mixed into
-the numeric parameter grid):
+Simulation and Dry Run live in their own **Safety Modes** block (not mixed into
+the numeric parameter grid), as two toggle cards each with an **ON** / **OFF**
+state pill:
 
-| Field | Purpose |
+| Card | Purpose |
 | :--- | :--- |
-| **Dry Run Mode (Safe)** | Log intents without placing orders. |
-| **Simulation Mode (Kraken Emulator)** | Use the offline emulator instead of the live Kraken API. |
+| **Simulation Mode** | Runs the whole strategy against an offline Kraken emulator — no real funds are ever touched. |
+| **Dry Run Mode** | Validates conditions and builds real Kraken orders but never submits them. |
 
-Click **Save Configuration** to apply. The running loop hot-reloads — no process
-restart required.
+**Simulation Mode** is listed first. **Save Configuration** lives in the page
+header next to the nav (not at the bottom of the form). Saving hot-reloads the
+running loop — no process restart required.
 
 ### Target allocations
 
@@ -191,7 +215,11 @@ pan. **Reset** returns to the full window and disables the scrubber again.
   window: sells add cash, buys subtract it (includes dry-run trades when that
   filter is enabled). A dashed **Net After Fees** series subtracts fees from the
   same signed cash-flow math (estimated fees when dry-run rows are included — not
-  accounting P&L). Negative axis ticks use `-$…` formatting.
+  accounting P&L). Negative axis ticks use `-$…` formatting. An on-screen caption
+  below the chart spells out the dry-run caveat, and the legend labels switch with
+  the **Show Dry Run Trades** toggle — e.g. "Net Cash Flow (incl. dry run)" and
+  "Net After Fees (est.)" when dry-run rows are shown, versus "Net Cash Flow
+  (realized)" and "Net After Fees" when they're hidden.
 
 ### Trade log
 
@@ -204,15 +232,19 @@ pan. **Reset** returns to the full window and disables the scrubber again.
 | **Side** | **BUY** (green) or **SELL** (red). |
 | **Volume** | Asset quantity. |
 | **USD Amount** | Notional in USD. |
-| **Price** | Executed price (USD per unit). |
-| **Fee** | Fee in USD (estimated for dry-run / local-estimate rows). |
-| **Slippage** | Signed % vs expected quote at order time (favorable/adverse badges); em dash when unknown. |
-| **Status** | **SUCCESS**, **FAILED** (hover for error message), or **DRY RUN**. |
+| **Price** | Executed price (USD per unit); shows an em dash (—) when zero/unknown. |
+| **Fee** | Fee in USD; shows an em dash (—) when zero. Estimated for dry-run / local-estimate rows. |
+| **Slippage** | Signed % vs expected quote at order time — favorable, adverse, or a neutral badge at exactly 0%; em dash when unknown. |
+| **Status** | A quiet success **dot** for plain fills (hover shows a **SUCCESS** tooltip); **FAILED** (hover for the error message) and **DRY RUN** keep labelled badges. |
+
+For dry-run and local-estimate rows, the Price, Fee, and Slippage cells carry an
+"estimated at order time" tooltip so estimated economics aren't mistaken for
+settled fills.
 
 Toggle **Show Dry Run Trades** to include or hide rehearsal rows.
 
-In **simulation** with dry run off, successful emulator fills show as
-**SUCCESS** (as in the screenshot above). With dry run on, expect **DRY RUN**
+In **simulation** with dry run off, successful emulator fills show as the quiet
+success **dot** (as in the screenshot above). With dry run on, expect **DRY RUN**
 badges instead.
 
 ---
@@ -224,7 +256,7 @@ badges instead.
 1. Enable **Simulation Mode** (dry run optional).
 2. Start with an empty database so the emulator seeds ~15 days of history.
 3. Explore Dashboard → History charts → Settings, then save a small allocation
-   change and watch the next cycle’s activity log.
+   change and watch the next cycle appear in the **Recent Activity** feed.
 
 ### 2. Rehearse against live market data (no orders)
 
