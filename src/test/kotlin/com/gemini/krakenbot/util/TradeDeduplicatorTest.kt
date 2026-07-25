@@ -275,5 +275,55 @@ class TradeDeduplicatorTest : StringSpec() {
 
             TradeDeduplicator.findDuplicateTradeIds(listOf(buyRecord, sellRecord)).isEmpty() shouldBe true
         }
+
+        "should still treat pair-alias matches at exactly the 5-minute window as duplicates" {
+            val now = Instant.now()
+            val record1 =
+                TradeRecord(
+                    timestamp = now,
+                    pair = "XBTUSD",
+                    side = "BUY",
+                    symbol = "BTC",
+                    volume = BigDecimal("1.0"),
+                    usdAmount = BigDecimal("50000.00"),
+                    success = true,
+                    dryRun = false,
+                    fee = BigDecimal("100.00"),
+                    id = 70,
+                )
+            val record2 =
+                record1.copy(
+                    timestamp = now.plusMillis(300_000),
+                    pair = "XXBTZUSD",
+                    id = 71,
+                )
+
+            TradeDeduplicator.findDuplicateTradeIds(listOf(record1, record2)) shouldContainExactly listOf(71)
+        }
+
+        "should not treat pair-alias matches beyond the 5-minute window as duplicates" {
+            val now = Instant.now()
+            val record1 =
+                TradeRecord(
+                    timestamp = now,
+                    pair = "XBTUSD",
+                    side = "BUY",
+                    symbol = "BTC",
+                    volume = BigDecimal("1.0"),
+                    usdAmount = BigDecimal("50000.00"),
+                    success = true,
+                    dryRun = false,
+                    fee = BigDecimal("100.00"),
+                    id = 72,
+                )
+            val record2 =
+                record1.copy(
+                    timestamp = now.plusMillis(300_001),
+                    pair = "XXBTZUSD",
+                    id = 73,
+                )
+
+            TradeDeduplicator.findDuplicateTradeIds(listOf(record1, record2)).isEmpty() shouldBe true
+        }
     }
 }

@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.12.25] - 2026-07-24
+
+### Added
+
+- **tests**: Continuous-quality cycle 3 — USD refresh early-accept at ≥95% of
+  projected (and continue-below-then-accept), TradeDeduplicator inclusive
+  5-minute window boundary, and explicit zero ticker price abort coverage.
+
 ## [6.12.24] - 2026-07-24
 
 ### Fixed

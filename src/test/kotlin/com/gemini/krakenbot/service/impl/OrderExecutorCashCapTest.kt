@@ -349,5 +349,79 @@ class OrderExecutorCashCapTest : StringSpec() {
                 krakenService.executedOrders[1].volume.shouldBeEqualComparingTo(BigDecimal("0.198"))
             }
         }
+
+        // Opening $100 + sell $100 → projected $200; early-accept threshold = 95% = $190.
+        "should stop USD refresh early when balance reaches exactly 95% of projected" {
+            runTest {
+                krakenService.balanceSupplier = {
+                    mapOf(Asset.USD to BigDecimal("190.00"))
+                }
+
+                orderExecutor.executeOrders(
+                    buyOrders = mapOf(Asset.ETH to BigDecimal("200.00")),
+                    sellOrders = mapOf(Asset.BTC to BigDecimal("100.00")),
+                    currentValuesUSD = mapOf(Asset.USD to BigDecimal("100.00")),
+                    prices =
+                    mapOf(
+                        Asset.BTC to BigDecimal("1000.00"),
+                        Asset.ETH to BigDecimal("1000.00"),
+                    ),
+                    settings =
+                    Settings(
+                        loopDelaySeconds = 0L,
+                        deviationTriggerPercent = 2.0,
+                        dustThresholdUSD = 1.0,
+                        dryRun = false,
+                        fiatMaxDrawdown = 0.0,
+                        fiatDeploymentExponent = 1.0,
+                    ),
+                    actionLog = mutableListOf(),
+                )
+
+                krakenService.getBalancesCallCount shouldBe 1
+                krakenService.executedOrders.size shouldBe 2
+                krakenService.executedOrders[1].side shouldBe "buy"
+                // Buy budget = 99% of observed $190 = $188.10 → volume 0.1881
+                krakenService.executedOrders[1].volume.shouldBeEqualComparingTo(BigDecimal("0.1881"))
+            }
+        }
+
+        "should keep polling USD when below 95% then accept early once threshold is met" {
+            runTest {
+                val observedBalances =
+                    listOf(
+                        mapOf(Asset.USD to BigDecimal("189.99")),
+                        mapOf(Asset.USD to BigDecimal("190.00")),
+                    )
+                var balancePoll = 0
+                krakenService.balanceSupplier = { observedBalances[balancePoll++] }
+
+                orderExecutor.executeOrders(
+                    buyOrders = mapOf(Asset.ETH to BigDecimal("200.00")),
+                    sellOrders = mapOf(Asset.BTC to BigDecimal("100.00")),
+                    currentValuesUSD = mapOf(Asset.USD to BigDecimal("100.00")),
+                    prices =
+                    mapOf(
+                        Asset.BTC to BigDecimal("1000.00"),
+                        Asset.ETH to BigDecimal("1000.00"),
+                    ),
+                    settings =
+                    Settings(
+                        loopDelaySeconds = 0L,
+                        deviationTriggerPercent = 2.0,
+                        dustThresholdUSD = 1.0,
+                        dryRun = false,
+                        fiatMaxDrawdown = 0.0,
+                        fiatDeploymentExponent = 1.0,
+                    ),
+                    actionLog = mutableListOf(),
+                )
+
+                krakenService.getBalancesCallCount shouldBe 2
+                krakenService.executedOrders.size shouldBe 2
+                krakenService.executedOrders[1].side shouldBe "buy"
+                krakenService.executedOrders[1].volume.shouldBeEqualComparingTo(BigDecimal("0.1881"))
+            }
+        }
     }
 }
