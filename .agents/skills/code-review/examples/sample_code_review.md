@@ -47,4 +47,4 @@ val resourceStream = javaClass.classLoader.getResourceAsStream("mock_ticker.json
 - [x] Kotlin/JS DOM listener cleanup and Chart.js deep-cloning verified
 - [x] JaCoCo build exclusions and `README.md` structure tree verified for package updates
 - [x] Markdown files formatted and linted (`npx markdownlint-cli`)
-- [x] Tests and builds executed (`./gradlew test :frontend-js:jsTest`) to verify zero regressions
+- [x] Tests and builds executed (`./gradlew test :frontend-js:jsBrowserTest`) to verify zero regressions

@@ -52,7 +52,8 @@ funds").
 
 The dashboard pushes live updates over Server-Sent Events (`/api/status/stream`).
 **Only the Dashboard** shows a stream-health chip next to the tabs: **STREAM**
-(green) when data is flowing, or **STALE** when the feed has gone quiet. Beside
+(green) when data is flowing, or **STALE** when the last snapshot is older than
+**90 seconds**. Beside
 it are the relative age of the last update (e.g. `12s`) and its clock time.
 
 The stream chip describes **feed health, not trading mode** — a healthy
@@ -113,7 +114,7 @@ Open **Settings** from the shared top nav, or go to `/settings`.
 | :--- | :--- |
 | **Loop Interval (Seconds)** | How often the rebalancer wakes up to snapshot and potentially trade. |
 | **Deviation Trigger (%)** | Minimum absolute deviation from target before an asset can trigger trades. |
-| **Dust Threshold ($)** | Skip orders smaller than this USD amount (avoids exchange min-size noise). |
+| **Dust Threshold ($)** | Dual role: absolute USD deviation must meet this for an asset to trigger, and orders below this notional are skipped at execution. |
 | **Fiat Max Drawdown (%)** | Drawdown at which cash is fully eligible for deployment into crypto. |
 | **Fiat Deployment Exponent** | Shape of the cash→crypto deployment curve as drawdown grows (1.0 ≈ linear). |
 
@@ -174,10 +175,10 @@ user-saved views only (built-ins stay locked).
 | Card | Meaning |
 | :--- | :--- |
 | **All-Time High** / **Period High** | Label switches with the selected range (“All” → ATH; finite ranges → period high). |
-| **Total Trades** | Executions in the selected window. |
+| **Total Trades** | Successful, non-dry-run executions in the selected window. |
 | **Total Volume Traded** | Sum of USD amounts for those trades. |
-| **Total Fees Paid** | Fees attributed to trades in the window. |
-| **Avg Fee Rate** | `SUM(fee) / SUM(usdAmount)` for successful, non-dry-run trades in the window. |
+| **Total Fees Paid** | Fees attributed to those trades. |
+| **Avg Fee Rate** | `(SUM(fee) / SUM(usdAmount)) × 100` (%) for successful, non-dry-run trades in the window. |
 | **Avg Slippage** | Mean signed slippage % for successful, non-dry-run trades with slippage data. |
 
 Charts on this view:
@@ -255,6 +256,7 @@ badges instead.
 
 1. Enable **Simulation Mode** (dry run optional).
 2. Start with an empty database so the emulator seeds ~15 days of history.
+   Snapshots and trades older than 90 days are pruned automatically.
 3. Explore Dashboard → History charts → Settings, then save a small allocation
    change and watch the next cycle appear in the **Recent Activity** feed.
 

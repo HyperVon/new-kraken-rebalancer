@@ -111,7 +111,7 @@ History chart zoom/scrubber specs should cover:
 - No-op pan when full span == current span
 
 ```bash
-./gradlew :frontend-js:jsTest
+./gradlew :frontend-js:jsBrowserTest
 ./gradlew test jacocoTestReport jacocoTestCoverageVerification
 ```
 

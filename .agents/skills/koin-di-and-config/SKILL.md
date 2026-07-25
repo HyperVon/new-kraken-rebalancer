@@ -15,7 +15,9 @@ description: >-
 Bindings live in `config/AppModule.kt` using Koin DSL (`single` / `singleOf`):
 
 ```kotlin
-singleOf(::KrakenServiceImpl)
+// Explicit constructor (not singleOf) so the default RateLimiter() is used:
+// the limiter is a constructor param only so tests can inject a recording fake.
+single { KrakenServiceImpl(configService = get(), objectMapper = get(), httpClient = get()) }
 singleOf(::SimulatedKrakenService)
 single<KrakenService> {
     DynamicKrakenService(

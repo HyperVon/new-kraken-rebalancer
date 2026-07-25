@@ -31,7 +31,7 @@ flowchart TD
 
     subgraph ANALYSIS["Phase 2: Analysis"]
         A1["Calculate Deviation per Asset\n(Current Value vs Target Value)"]
-        A1 --> A2{"Any Deviation ≥ Trigger?"}
+        A1 --> A2{"Triggered (Dev% + dust)?"}
         A2 -- "Crypto Triggered" --> A3["Generate BUY/SELL orders"]
         A2 -- "Only USD Triggered" --> A4["Fiat Correction:\nDistribute among counter-balanced assets"]
         A2 -- "None Triggered" --> SKIP[No trades needed]
@@ -78,7 +78,7 @@ To maintain the Single Responsibility Principle (SRP) and keep domain logic high
 - **`PortfolioManagerImpl` (The Orchestrator)**: Manages the continuous coroutine loop. It acts as a lightweight facade that delegates domain logic to the analyzer and executor, and coordinates snapshot persistence. It reactively restarts the loop upon configuration changes via `watchConfigChanges()`.
 - **`PortfolioAnalyzer` (The Brain)**: Responsible for Phase 1 and 2. It resolves prices, tracks the All-Time High (ATH), calculates dynamic fiat deployment ratios, computes deviations, and determines the exact `BUY`/`SELL` amounts required. Portfolio value calculation returns a `Result<PortfolioValues>` for graceful error handling.
 - **`PortfolioCalculations` (Shared Math)**: Consolidated percentage, target, and deviation calculations shared between the analyzer and snapshot builder — eliminates duplicate math across the codebase.
-- **`OrderExecutor` (The Brawn)**: Responsible for Phase 3. It takes the calculated orders and safely executes them against the Kraken API. It manages the strict sell-before-buy sequence, projected vs. actual cash tracking, dust-threshold filtering, and invokes an `onOrderExecuted` callback for each order result.
+- **`OrderExecutor` (The Brawn)**: Responsible for Phase 3. It takes the calculated orders and safely executes them against the Kraken API. It manages the strict sell-before-buy sequence, projected vs. actual cash tracking, dust-threshold filtering, action-log formatting, and persisting each order via `TradeHistoryService.saveTrade`.
 - **`KrakenServiceImpl` + `RateLimiter` (The Gateway)**: Handles HMAC-SHA512
   authenticated API calls with a Kraken call-counter rate limiter (linear
   elapsed-time decay of `elapsedSeconds × 0.33`, plus per-endpoint costs) and
@@ -120,6 +120,10 @@ Normally, the target value is `Total Portfolio Value * Target %`. However, the s
 3. **Fiat Deployment Percentage**:
    Based on the configured `fiatMaxDrawdown` (e.g., 30%) and `fiatDeploymentExponent` (e.g., 1.0):
    `Deployment % = (Drawdown % / Max Drawdown %) ^ Exponent` (Capped at 100%)
+
+   Fractional exponents use `Double.pow`, then the result is re-entered as
+   `BigDecimal` at percent scale (`SCALE_PERCENT = 4`). When `fiatMaxDrawdown ≤ 0`,
+   deployment is **disabled** (`Deploy% = 0`).
 
    **Examples (Max Drawdown = 30%)**:
 
@@ -198,6 +202,8 @@ failure.
    accepts early once the balance reaches **≥95%** of the projected amount. If no
    positive USD balance is observed after all attempts, **buys are aborted**
    (fail-closed — projected proceeds are never treated as confirmed cash).
+   In **dry-run** mode the poll is skipped and buys use the **projected** cash
+   balance instead.
 3. **Buy Orders Second**:
     - The whole sell→buy sequence runs inside `KrakenService.withStableBackend`
       so a mid-cycle `simulation` flip cannot split sells and buys across backends.
@@ -219,7 +225,7 @@ failure.
 
 Each executed order creates a **local estimate** row at rebalance time:
 
-- **`TradeSource.LOCAL_ESTIMATE`** — `expectedPrice` from the ticker snapshot used for planning; fee from the configured estimate rate; slippage computed vs that expected price.
+- **`TradeSource.LOCAL_ESTIMATE`** — `expectedPrice` from the ticker snapshot used for planning; fee from the configured estimate rate (`PrecisionConstants.FEE_RATE_ESTIMATE` = **0.0026**); slippage computed vs that expected price.
 - **`TradeSource.API_FILL`** — Kraken `/0/private/TradesHistory` fills (or reconciled rows after sync).
 
 During **Kraken sync**, a matching local row is updated in place: API fill price/volume/fee replace the estimate, **`expectedPrice` is preserved**, slippage is **recomputed** against the API execution price, and `source` becomes `API_FILL`. Rows without the new `source` column infer provenance from legacy data (API fills had null slippage; local estimates had slippage set).
@@ -230,12 +236,23 @@ Dedupe prefers settled API fills over local estimates when pair alias or estimat
 
 The behavior is controlled by `rebalancer-config.json`:
 
-| Parameter                 | Description                                                                                                                                                                |
-|:--------------------------|:---------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `loopDelaySeconds`        | Time to wait between cycles.                                                                                                                                               |
-| `deviationTriggerPercent` | Sensitivity of the rebalancer. Lower values track targets closer but trade more frequently (higher fees).                                                                  |
-| `dustThresholdUSD`        | Minimum significant USD deviation **and** minimum order notional. Assets below this USD deviation do not trigger; smaller orders are also skipped at execution.            |
-| `dryRun`                  | If set to `true`, the system performs all calculations and logs intended trades but **does not** send orders to Kraken.                                                    |
-| `simulation`              | If set to `true`, the system runs completely offline in simulation mode using a random walk generator for prices and balances (pre-seeding history if DB is empty).        |
-| `fiatMaxDrawdown`         | The portfolio drawdown percentage at which 100% of the USD allocation should be deployed into assets. Set to `0` to disable.                                               |
-| `fiatDeploymentExponent`  | Controls the aggressiveness of deployment. `1.0` is linear. Values `< 1.0` deploy more cash earlier (aggressive). Values `> 1.0` save cash for deeper dips (conservative). |
+| Parameter | Description |
+| :--- | :--- |
+| `loopDelaySeconds` | Time to wait between cycles. |
+| `deviationTriggerPercent` | Sensitivity of the rebalancer. Lower values track targets closer but trade more frequently (higher fees). |
+| `dustThresholdUSD` | Minimum significant USD deviation **and** minimum order notional. Assets below this USD deviation do not trigger; smaller orders are also skipped at execution. |
+| `dryRun` | If set to `true`, the system performs all calculations and logs intended trades but **does not** send orders to Kraken. |
+| `simulation` | If set to `true`, runs completely offline with a random-walk emulator. Empty DB pre-seeds ~**15 days** of snapshots at 6-hour steps. Snapshots/trades older than **90 days** are pruned on each `addSnapshot`. |
+| `fiatMaxDrawdown` | The portfolio drawdown percentage at which 100% of the USD allocation should be deployed into assets. Set to `0` to disable. |
+| `fiatDeploymentExponent` | Controls the aggressiveness of deployment. `1.0` is linear. Values `< 1.0` deploy more cash earlier (aggressive). Values `> 1.0` save cash for deeper dips (conservative). |
+
+## Precision
+
+Monetary and ratio math uses `BigDecimal` with these scales (`PrecisionConstants`):
+
+| Constant | Scale | Use |
+| :--- | ---: | :--- |
+| `SCALE_CRYPTO` | **8** | Balances, prices, order volumes |
+| `SCALE_USD` | **2** | USD notionals and snapshot USD fields |
+| `SCALE_PERCENT` | **4** | Analysis percents (drawdown, deploy, deviation) |
+| `SCALE_FEE` | **4** | Fee amounts |

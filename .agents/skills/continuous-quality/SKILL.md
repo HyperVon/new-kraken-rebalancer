@@ -195,7 +195,7 @@ If that is too heavy for a first probe, at minimum:
 
 ```bash
 ./gradlew build jacocoTestCoverageVerification
-./gradlew :frontend-js:jsTest
+./gradlew :frontend-js:jsBrowserTest
 ```
 
 Fan out discovery with [parallel-multi-agent](../parallel-multi-agent/SKILL.md)
@@ -294,7 +294,7 @@ subagent's earlier run, so an all-`UP-TO-DATE` / `FROM-CACHE` "PASSED" in a few
 seconds proves nothing about tests you just added or re-enabled:
 
 ```bash
-./gradlew test jacocoTestCoverageVerification spotlessCheck :frontend-js:jsTest --rerun-tasks
+./gradlew test jacocoTestCoverageVerification spotlessCheck :frontend-js:jsBrowserTest --rerun-tasks
 ```
 
 Confirm the count actually moved (JUnit XML under `build/test-results/test/`) —

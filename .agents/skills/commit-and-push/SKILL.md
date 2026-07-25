@@ -40,7 +40,7 @@ Or manually:
 npx markdownlint-cli .agents/AGENTS.md CHANGELOG.md CONTRIBUTING.md README.md SECURITY.md docs/*.md .agents/skills/**/SKILL.md
 ./gradlew spotlessCheck
 ./gradlew build jacocoTestCoverageVerification
-./gradlew :frontend-js:jsTest
+./gradlew :frontend-js:jsBrowserTest
 ```
 
 Include `CONTRIBUTING.md` and `SECURITY.md` in markdownlint when present.

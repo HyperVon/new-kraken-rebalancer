@@ -39,7 +39,7 @@ flowchart TB
     end
 
     subgraph Services["📦 Services"]
-        CS["ConfigServiceImpl\n_configFlow\nMutableSharedFlow&lt;Settings&gt;\nreplay=1, DROP_OLDEST"]
+        CS["ConfigServiceImpl\n_configFlow\nMutableSharedFlow&lt;Settings&gt;\nreplay=1, no extraBufferCapacity, DROP_OLDEST"]
         THS["TradeHistoryServiceImpl\nsnapshotFlow\nMutableSharedFlow&lt;PortfolioSnapshot&gt;\nreplay=1, buffer=16, DROP_OLDEST"]
     end
 
@@ -61,7 +61,7 @@ flowchart TB
     PM -->|"loop delay\nsettings.loopDelaySeconds"| PM
     PM -->|"performRebalanceCycle()"| OE
     OE -->|"place buy/sell orders"| Kraken
-    OE -->|"COLD pollUsdBalanceAfterSells()\n.last() — polls until stable"| Kraken
+    OE -->|"COLD pollUsdBalanceAfterSells()\n.last() — best of ≤3 / early ≥95%"| Kraken
 
     %% Snapshot emission
     PM -->|"addSnapshot(snapshot)"| THS
@@ -116,6 +116,7 @@ sequenceDiagram
 **Key design choices:**
 
 - `replay = 1` means `PortfolioManager` immediately gets the current config the moment it subscribes on startup — no race condition on boot.
+- Config’s `MutableSharedFlow` uses **no** `extraBufferCapacity` (default 0) with `DROP_OLDEST`; snapshot flow uses `extraBufferCapacity = 16` so slow SSE clients do not stall emitters.
 - `collectLatest` (not `collect`) is used so that a settings change during a long loop `delay()` takes effect immediately, without waiting for the delay to expire.
 
 ---
@@ -154,6 +155,7 @@ sequenceDiagram
 
 **Key design choices:**
 
+- Each SSE `data` payload is Jackson-serialized **`PortfolioSnapshot` JSON** (`timestamp`, `totalValueUSD`, `assets`, `actions`, drawdown/deploy fields).
 - `replay = 1` + `extraBufferCapacity = 16` + `DROP_OLDEST` means late SSE subscribers still get the latest snapshot, and a slow browser connection **never** stalls the rebalancing loop. The portfolio manager can always `tryEmit()` and move on immediately.
 - Multiple browser tabs can all connect simultaneously — each gets its own `collect()` call which independently consumes from the same shared broadcast.
 

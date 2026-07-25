@@ -64,7 +64,7 @@ When adding non-tested packages (views/DSL), update **both**
 
 ```bash
 ./gradlew build jacocoTestCoverageVerification
-./gradlew :frontend-js:jsTest
+./gradlew :frontend-js:jsBrowserTest
 ./gradlew spotlessCheck
 npx markdownlint-cli .agents/AGENTS.md CHANGELOG.md CONTRIBUTING.md README.md SECURITY.md docs/*.md .agents/skills/**/SKILL.md
 ```

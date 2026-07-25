@@ -72,7 +72,11 @@ first
    ./gradlew build jacocoTestCoverageVerification
    ```
 
-   (requires a valid `rebalancer-config.json` for local runs that load config)
+   (requires a valid `rebalancer-config.json` for local runs that load config).
+   Frontend browser tests are included via `check` → `:frontend-js:jsBrowserTest`.
+   **CodeQL** is present under `.github/workflows/codeql.yml` but **disabled** for
+   `main` (triggers only on a non-`main` branch while Kotlin 2.4.x is unsupported) —
+   do not expect CodeQL status checks on PRs.
 4. Open a pull request against `main` with a clear description of what and why
 
 ## AI / coding agents

@@ -33,7 +33,7 @@ If one exists, return its URL instead of duplicating.
 ```
 
 Must pass: markdown lint (`.agents/AGENTS.md` + skills), Spotless 120,
-`./gradlew test`, `:frontend-js:jsTest`, and coverage expectations (JaCoCo
+`./gradlew test`, `:frontend-js:jsBrowserTest`, and coverage expectations (JaCoCo
 95%/90%, Karma 90%/75%).
 
 ## Step 3: Title & body

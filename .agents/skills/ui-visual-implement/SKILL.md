@@ -109,7 +109,7 @@ At minimum for UI-facing Kotlin:
 
 ```bash
 ./gradlew spotlessApply spotlessCheck
-./gradlew test :frontend-js:jsTest
+./gradlew test :frontend-js:jsBrowserTest
 ```
 
 Fix failures before claiming visual success.
