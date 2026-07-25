@@ -86,8 +86,8 @@ fun updateAllocationTotal() {
     val hasUsd = currentAllocationSymbols().contains(Asset.USD)
 
     val isSuccess = isValid && hasUsd
-    totalDisplay.classList.toggle(CssClass.Utility.Live, isSuccess)
-    totalDisplay.classList.toggle(CssClass.Utility.Delayed, !isSuccess)
+    totalDisplay.classList.toggle(CssClass.Form.AllocationTotalOk, isSuccess)
+    totalDisplay.classList.toggle(CssClass.Form.AllocationTotalBad, !isSuccess)
     saveButton.disabled = !isSuccess
 }
 

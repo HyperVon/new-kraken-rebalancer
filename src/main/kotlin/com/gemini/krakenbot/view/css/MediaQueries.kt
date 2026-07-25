@@ -28,10 +28,6 @@ object MediaQueries {
                 paddingBottom = 1.5.rem
                 marginBottom = 1.75.rem
             }
-            ".${CssClass.Layout.StatusCluster}" {
-                gap = 1.5.rem
-                padding = Padding(0.75.rem, 1.25.rem)
-            }
             "${CssClass.StatusCard.Default.querySelector}" {
                 gap = 0.375.rem
                 padding = Padding(0.75.rem, 0.875.rem)

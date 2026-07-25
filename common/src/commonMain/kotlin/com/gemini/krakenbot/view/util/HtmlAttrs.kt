@@ -54,6 +54,12 @@ object HtmxValues {
     const val TRIGGER_LOAD_SSE_MESSAGE = "load, sse:message"
 }
 
+/** CDN URLs used by the dashboard shell and settings page. */
+object CdnUrls {
+    const val HTMX = "https://unpkg.com/htmx.org@2.0.4"
+    const val HTMX_SSE = "https://unpkg.com/htmx-ext-sse@2.2.2/sse.js"
+}
+
 /** Centralized HTML tag name constants used for DOM element creation. */
 object HtmlTags {
     const val DIV = "div"

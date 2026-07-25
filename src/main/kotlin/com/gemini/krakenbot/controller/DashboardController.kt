@@ -121,9 +121,9 @@ class DashboardController(
         val loopDelaySeconds =
             params[FormFields.LOOP_DELAY_SECONDS]?.toLongOrNull() ?: 60L
         val deviationTriggerPercent =
-            params[FormFields.DEVIATION_TRIGGER_PERCENT]?.toDoubleOrNull() ?: 2.0
+            params[FormFields.DEVIATION_TRIGGER_PERCENT]?.toDoubleOrNull() ?: 5.0
         val dustThresholdUSD =
-            params[FormFields.DUST_THRESHOLD_USD]?.toDoubleOrNull() ?: 1.0
+            params[FormFields.DUST_THRESHOLD_USD]?.toDoubleOrNull() ?: 5.0
         val dryRun = params[FormFields.DRY_RUN] != null
         val simulation = params[FormFields.SIMULATION] != null
         val fiatMaxDrawdown =

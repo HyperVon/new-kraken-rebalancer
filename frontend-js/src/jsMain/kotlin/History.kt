@@ -288,7 +288,7 @@ internal fun setupChartScrubbers() {
         val scrubber = scrubbers.item(i) as? HTMLInputElement ?: continue
         scrubber.addEventListener(HtmlEvents.INPUT, {
             val canvasId = scrubber.getAttribute(HtmlAttrs.DATA_CHART_ID) ?: return@addEventListener
-            panChartToScrubberPosition(canvasId, scrubber.value.toDoubleOrNull() ?: 0.0)
+            panChartToScrubberPosition(canvasId, dynamicNumber(scrubber.value) ?: 0.0)
         })
     }
 }
@@ -453,7 +453,7 @@ fun formatUSD(valDouble: Double): String {
 }
 
 fun formatPctTick(v: Double, includePlus: Boolean = true): String {
-    val d = v.toString().toDoubleOrNull() ?: 0.0
+    val d = dynamicNumber(v) ?: 0.0
     val sign = if (includePlus && d >= 0.0) "+" else ""
     val options: dynamic = json()
     options.minimumFractionDigits = 0
@@ -570,7 +570,7 @@ internal fun buildPortfolioValueChart(snapshots: Array<dynamic>) {
 
     val totalPortfolioData =
         mapSnapshotsToPoints(snapshots) { s ->
-            s.totalValueUSD.toString().toDoubleOrNull() ?: 0.0
+            dynamicNumber(s.totalValueUSD) ?: 0.0
         }
 
     val datasets = mutableListOf<dynamic>()
@@ -594,10 +594,7 @@ internal fun buildPortfolioValueChart(snapshots: Array<dynamic>) {
         val symbolData =
             mapSnapshotsToPoints(snapshots) { s ->
                 if (s.assets != null && s.assets[sym] != null) {
-                    s.assets[sym]
-                        .valueUSD
-                        .toString()
-                        .toDoubleOrNull() ?: 0.0
+                    dynamicNumber(s.assets[sym].valueUSD) ?: 0.0
                 } else {
                     0.0
                 }
@@ -622,10 +619,7 @@ internal fun buildPortfolioValueChart(snapshots: Array<dynamic>) {
     options.plugins.tooltip.callbacks = json()
     options.plugins.tooltip.callbacks.label = { ctx: dynamic ->
         val label = ctx.dataset.label.toString()
-        val yVal =
-            ctx.parsed.y
-                .toString()
-                .toDoubleOrNull() ?: 0.0
+        val yVal = dynamicNumber(ctx.parsed.y) ?: 0.0
         "$label: ${formatUSD(yVal)}"
     }
 
@@ -650,10 +644,7 @@ internal fun buildAssetHoldingsChart(snapshots: Array<dynamic>) {
     symbolList.forEach { sym ->
         val baseVal =
             if (baseline.assets != null && baseline.assets[sym] != null) {
-                baseline.assets[sym]
-                    .balance
-                    .toString()
-                    .toDoubleOrNull() ?: 0.0
+                dynamicNumber(baseline.assets[sym].balance) ?: 0.0
             } else {
                 0.0
             }
@@ -668,10 +659,7 @@ internal fun buildAssetHoldingsChart(snapshots: Array<dynamic>) {
                     mapSnapshotsToPoints(snapshots) { s ->
                         val current =
                             if (s.assets != null && s.assets[sym] != null) {
-                                s.assets[sym]
-                                    .balance
-                                    .toString()
-                                    .toDoubleOrNull() ?: 0.0
+                                dynamicNumber(s.assets[sym].balance) ?: 0.0
                             } else {
                                 0.0
                             }
@@ -700,17 +688,11 @@ internal fun buildAssetHoldingsChart(snapshots: Array<dynamic>) {
     options.plugins.tooltip.callbacks = json()
     options.plugins.tooltip.callbacks.label = { ctx: dynamic ->
         val sym = ctx.dataset.label.toString()
-        val pctChange =
-            ctx.parsed.y
-                .toString()
-                .toDoubleOrNull() ?: 0.0
+        val pctChange = dynamicNumber(ctx.parsed.y) ?: 0.0
         val snapshot = snapshots[ctx.dataIndex as Int]
         val balance =
             if (snapshot.assets != null && snapshot.assets[sym] != null) {
-                snapshot.assets[sym]
-                    .balance
-                    .toString()
-                    .toDoubleOrNull() ?: 0.0
+                dynamicNumber(snapshot.assets[sym].balance) ?: 0.0
             } else {
                 0.0
             }
@@ -743,10 +725,7 @@ internal fun buildAllocationDriftChart(snapshots: Array<dynamic>) {
                 val symbolData =
                     mapSnapshotsToPoints(snapshots) { s ->
                         if (s.assets != null && s.assets[sym] != null) {
-                            s.assets[sym]
-                                .deviationPercent
-                                .toString()
-                                .toDoubleOrNull() ?: 0.0
+                            dynamicNumber(s.assets[sym].deviationPercent) ?: 0.0
                         } else {
                             0.0
                         }
@@ -770,17 +749,14 @@ internal fun buildAllocationDriftChart(snapshots: Array<dynamic>) {
     options.plugins.tooltip.callbacks = json()
     options.plugins.tooltip.callbacks.label = { ctx: dynamic ->
         val label = ctx.dataset.label.toString()
-        val yVal =
-            ctx.parsed.y
-                .toString()
-                .toDoubleOrNull() ?: 0.0
+        val yVal = dynamicNumber(ctx.parsed.y) ?: 0.0
         val sign = if (yVal >= 0.0) "+" else ""
         "$label: $sign${yVal.toFixed(PrecisionConstants.SCALE_USD)}% ${ViewText.HISTORY_VS_TARGET}"
     }
 
     options.scales.y[ChartProps.BEGIN_AT_ZERO] = true
     options.scales.y.grid.color = { ctx: dynamic ->
-        val tickValue = ctx.tick?.value.toString().toDoubleOrNull()
+        val tickValue = dynamicNumber(ctx.tick?.value)
         if (tickValue == 0.0) ChartProps.COLOR_ZERO_LINE else ChartProps.COLOR_GRID_LINE
     }
     options.scales.y.ticks.callback = { v: Double, _: dynamic, _: dynamic ->
@@ -800,7 +776,7 @@ internal fun calculateCumulativeNetCashFlow(trades: Array<dynamic>, includeDryRu
 
 internal fun calculateCumulativeNetAfterFees(trades: Array<dynamic>, includeDryRun: Boolean = false): Array<dynamic> =
     calculateSignedCashFlowSeries(trades, includeDryRun) { trade, delta ->
-        val fee = trade.fee.toString().toDoubleOrNull() ?: 0.0
+        val fee = dynamicNumber(trade.fee) ?: 0.0
         delta - fee
     }
 
@@ -830,7 +806,7 @@ private inline fun calculateSignedCashFlowSeries(
     val points = mutableListOf<dynamic>()
     var cumulative = 0.0
     for (t in filtered) {
-        val amt = t.usdAmount.toString().toDoubleOrNull() ?: 0.0
+        val amt = dynamicNumber(t.usdAmount) ?: 0.0
         val side = t.side.toString().uppercase()
         val delta =
             when (side) {
@@ -965,11 +941,11 @@ private fun renderTradeRow(t: JsTradeRecord): HTMLTableRowElement {
             dryRun -> CssClass.Badge.Info
             else -> CssClass.Badge.Success
         }
-    val vol = t.volume.toString().toDoubleOrNull() ?: 0.0
-    val amt = t.usdAmount.toString().toDoubleOrNull() ?: 0.0
-    val price = t.price.toString().toDoubleOrNull() ?: 0.0
-    val fee = t.fee.toString().toDoubleOrNull() ?: 0.0
-    val slippage = t.slippagePercent?.toString()?.toDoubleOrNull()
+    val vol = dynamicNumber(t.volume) ?: 0.0
+    val amt = dynamicNumber(t.usdAmount) ?: 0.0
+    val price = dynamicNumber(t.price) ?: 0.0
+    val fee = dynamicNumber(t.fee) ?: 0.0
+    val slippage = dynamicNumber(t.slippagePercent)
     val isEstimatedEconomics = dryRun || t.source == "LOCAL_ESTIMATE"
     val estimatedTitle =
         if (isEstimatedEconomics) {
@@ -1103,18 +1079,18 @@ internal fun updateStats(stats: JsHistoryStats) {
                 ViewText.PERIOD_HIGH
             }
     }
-    if (ath != null) ath.textContent = formatUSD(stats.allTimeHigh.toString().toDoubleOrNull() ?: 0.0)
+    if (ath != null) ath.textContent = formatUSD(dynamicNumber(stats.allTimeHigh) ?: 0.0)
     if (totalTrades != null) {
-        val count = stats.totalTradesExecuted.toString().toDoubleOrNull() ?: 0.0
+        val count = dynamicNumber(stats.totalTradesExecuted) ?: 0.0
         totalTrades.textContent = count.asDynamic().toLocaleString()
     }
     if (totalVolume != null) {
         totalVolume.textContent =
-            formatUSD(stats.totalVolumeTraded.toString().toDoubleOrNull() ?: 0.0)
+            formatUSD(dynamicNumber(stats.totalVolumeTraded) ?: 0.0)
     }
-    if (totalFees != null) totalFees.textContent = formatUSD(stats.totalFeesPaid.toString().toDoubleOrNull() ?: 0.0)
+    if (totalFees != null) totalFees.textContent = formatUSD(dynamicNumber(stats.totalFeesPaid) ?: 0.0)
     if (avgFeeRate != null) {
-        val rate = stats.avgFeeRatePercent?.toString()?.toDoubleOrNull()
+        val rate = dynamicNumber(stats.avgFeeRatePercent)
         avgFeeRate.textContent =
             if (rate == null) {
                 ViewText.PLACEHOLDER_DASHES
@@ -1123,7 +1099,7 @@ internal fun updateStats(stats: JsHistoryStats) {
             }
     }
     if (avgSlippage != null) {
-        val slip = stats.avgSlippagePercent?.toString()?.toDoubleOrNull()
+        val slip = dynamicNumber(stats.avgSlippagePercent)
         avgSlippage.textContent =
             if (slip == null) {
                 ViewText.PLACEHOLDER_DASHES
@@ -1176,8 +1152,8 @@ internal fun checkSyncProgress(): Promise<Boolean> = fetchJSON(Routes.API_HISTOR
                 true
             } else {
                 banner.style.display = "block"
-                val offset = status.offset.toString().toDoubleOrNull() ?: 0.0
-                val total = status.total.toString().toDoubleOrNull() ?: 0.0
+                val offset = dynamicNumber(status.offset) ?: 0.0
+                val total = dynamicNumber(status.total) ?: 0.0
                 var pct = 0
                 if (total > 0.0) {
                     pct =

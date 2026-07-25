@@ -2,6 +2,8 @@ package com.gemini.krakenbot.view.component
 
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.PortfolioSnapshot
+import com.gemini.krakenbot.service.impl.PortfolioCalculations.HUNDRED
+import com.gemini.krakenbot.util.PrecisionConstants
 import com.gemini.krakenbot.view.util.ChartProps
 import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.Formatter
@@ -107,7 +109,10 @@ class OverviewGridComponent {
                 val devSign = Formatter.getDeviationSign(dev)
                 div(CssClass.Hero.TileMeta) {
                     +"${ViewText.TARGET_PREFIX}${Formatter.formatPercent(targetPct)}%"
-                    if ((targetPct - baseTargetPct).abs() > BASE_TARGET_EPS) {
+                    if (
+                        (targetPct - baseTargetPct).abs() >
+                        BigDecimal.valueOf(PrecisionConstants.ALLOCATION_TOLERANCE_DELTA)
+                    ) {
                         +" (${ViewText.BASE_PREFIX}${Formatter.formatPercent(baseTargetPct)}%)"
                     }
                     +" | "
@@ -152,8 +157,6 @@ class OverviewGridComponent {
     }
 
     companion object {
-        private val HUNDRED = BigDecimal("100")
-        private val BASE_TARGET_EPS = BigDecimal("0.01")
         private const val SECONDS_PER_DAY = 86_400L
         private const val SPARK_WIDTH = 300.0
         private const val SPARK_HEIGHT = 80.0

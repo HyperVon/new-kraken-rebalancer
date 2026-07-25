@@ -30,7 +30,6 @@ sealed class CssClass(open val value: String) {
         object BrandMark : Layout("brand-mark")
         object BrandPrimary : Layout("brand-primary")
         object BrandAccent : Layout("brand-accent")
-        object StatusCluster : Layout("status-cluster")
         object HeaderStatus : Layout("header-status")
         object HeroGrid : Layout("hero-grid")
         object HeroSide : Layout("hero-side")
@@ -109,6 +108,9 @@ sealed class CssClass(open val value: String) {
         object CheckboxCustom : Form("checkbox-custom")
         object AllocationListContainer : Form("allocation-list-container")
         object AllocationEditRow : Form("allocation-edit-row")
+        object AllocationTotal : Form("allocation-total")
+        object AllocationTotalOk : Form("allocation-total-ok")
+        object AllocationTotalBad : Form("allocation-total-bad")
         object AllocationEditSymbol : Form("allocation-edit-symbol")
         object AllocationEditInputWrapper : Form("allocation-edit-input-wrapper")
         object PercentSuffix : Form("percent-suffix")
@@ -173,7 +175,6 @@ sealed class CssClass(open val value: String) {
         object Message : Activity("recent-activity-message")
         object MessageMuted : Activity("recent-activity-message-muted")
         object EmptyHistoryBox : Activity("empty-history-box")
-        object CustomScrollbarMaxH100 : Activity("custom-scrollbar max-h-100")
 
         // DASH-3: cycle-grouped activity feed
         object Feed : Activity("activity-feed")

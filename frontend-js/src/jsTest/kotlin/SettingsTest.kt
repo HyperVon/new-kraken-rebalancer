@@ -66,13 +66,13 @@ class SettingsTest : StringSpec() {
                 updateAllocationTotal()
                 totalDisplay.textContent shouldBe "Total: 100.00%"
                 saveButton.disabled.shouldBeFalse()
-                totalDisplay.classList.contains(CssClass.Utility.Live).shouldBeTrue()
+                totalDisplay.classList.contains(CssClass.Form.AllocationTotalOk).shouldBeTrue()
 
                 input2.value = "60.0"
                 updateAllocationTotal()
                 totalDisplay.textContent shouldBe "Total: 90.00%"
                 saveButton.disabled.shouldBeTrue()
-                totalDisplay.classList.contains(CssClass.Utility.Delayed).shouldBeTrue()
+                totalDisplay.classList.contains(CssClass.Form.AllocationTotalBad).shouldBeTrue()
 
                 input2.value = "70.0"
                 sym2.value = Asset.ETH

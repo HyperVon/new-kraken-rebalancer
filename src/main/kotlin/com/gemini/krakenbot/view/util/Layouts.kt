@@ -77,6 +77,7 @@ fun FlowContent.streamStatusPlaceholder() {
         id = HtmlIds.HEADER_STATUS
         div(CssClass.StatusCard.Live) { +ViewText.STREAM }
         span(CssClass.DataAge.Value) { +"…" }
+        span(CssClass.DataAge.Time) {}
     }
 }
 

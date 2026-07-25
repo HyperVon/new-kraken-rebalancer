@@ -17,12 +17,15 @@ need only this file (no issue spam).
 
 | ID | Size | Status | Area | Summary | Cycle | Issue | Notes |
 | :--- | :---: | :--- | :--- | :--- | :---: | :--- | :--- |
-| — | — | — | — | *(empty — nothing open)* | — | — | — |
+| CI-11-UI6 | M | deferred | history | Tighten 9-col trade table density at ~1280 | 11 | #86 | Optional polish; not blocking convergence |
 
 ## Done (recent)
 
 | ID | Size | Status | Area | Summary | Cycle | PR |
 | :--- | :---: | :--- | :--- | :--- | :---: | :--- |
+| CI-11-Q01..08 | S/M | done | code/docs/ui | RateLimiter KDoc, Settings POST 5.0 fallbacks, shared constants, Routes/CDN/SyncMetadataKeys DRY, History dynamicNumber, docs drift, allocation-total pill, dead CSS, stream placeholder | 11 | (this PR) |
+| CI-11-D01..05 | S | done | docs | EVALUATION/README/skill trigger & stream wording | 11 | (this PR) |
+| CI-11-UI1..05 | S/M | done | ui/css | Allocation total pill, StatusCluster/scrollbar cleanup, stream time slot, HeaderActions margin | 11 | (this PR) |
 | CI-10-Q01..05 | S/M | done | frontend/service/docs | Settings HTML5 input bounds (allocations + global params), RateLimiter cleanup, tests, USER_GUIDE | 10 | #84 |
 | — | — | done | docs | Cut Unreleased → 6.12.17 | 7 | #49 |
 | — | — | done | css/tests | CssClass.Offline, TestDomBuilders, write-kotest | 7 | #48 |

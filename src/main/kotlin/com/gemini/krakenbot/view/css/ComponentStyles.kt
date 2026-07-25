@@ -41,6 +41,30 @@ object ComponentStyles {
             borderColor = CssTheme.colorSlateBorder
         }
 
+        ".${CssClass.Form.AllocationTotal}" {
+            display = Display.inlineFlex
+            alignItems = Align.center
+            padding = Padding(0.25.rem, 0.75.rem)
+            borderRadius = CssTheme.radiusPill
+            fontSize = 0.75.rem
+            fontWeight = FontWeight.w700
+            put("letter-spacing", "0.04em")
+            borderWidth = 1.px
+            borderStyle = BorderStyle.solid
+        }
+
+        ".${CssClass.Form.AllocationTotalOk}" {
+            backgroundColor = CssTheme.colorSuccessMuted
+            color = CssTheme.colorSuccess
+            borderColor = CssTheme.colorSuccessBorder
+        }
+
+        ".${CssClass.Form.AllocationTotalBad}" {
+            backgroundColor = CssTheme.colorDangerMuted
+            color = CssTheme.colorDanger
+            borderColor = CssTheme.colorDangerBorder
+        }
+
         "@keyframes pulse" {
             "0%, 100%" {
                 opacity = 1
@@ -396,34 +420,7 @@ object ComponentStyles {
             color = CssTheme.colorTextSecondary
         }
 
-        // Scrollbars, Spinners & Toasts
-        ".custom-scrollbar" {
-            put("scrollbar-width", "thin")
-            put("scrollbar-color", "rgba(148, 163, 184, 0.15) transparent")
-        }
-
-        ".custom-scrollbar::-webkit-scrollbar" {
-            width = 6.px
-            height = 6.px
-        }
-
-        ".custom-scrollbar::-webkit-scrollbar-track" {
-            background = "transparent"
-        }
-
-        ".custom-scrollbar::-webkit-scrollbar-thumb" {
-            backgroundColor = CssTheme.colorScrollbarThumb
-            borderRadius = CssTheme.radiusPill
-        }
-
-        ".custom-scrollbar::-webkit-scrollbar-thumb:hover" {
-            backgroundColor = CssTheme.colorScrollbarThumbHover
-        }
-
-        ".max-h-100" {
-            maxHeight = 25.rem
-        }
-
+        // Spinners & Toasts
         ".${CssClass.Loading.SpinnerContainer}" {
             display = Display.flex
             flexDirection = FlexDirection.column
