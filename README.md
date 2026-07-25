@@ -503,6 +503,12 @@ Or if you wish to build and execute the Fat JAR manually:
 java -Xshare:off --sun-misc-unsafe-memory-access=allow --enable-native-access=ALL-UNNAMED -jar build/libs/kraken-bot-0.0.1-SNAPSHOT-all.jar
 ```
 
+For a local quality-gated release build, use `./gradlew build fatJar` without
+`clean` so Gradle can reuse compilation, Kotlin/JS, Webpack, and test outputs.
+Reserve `clean` for troubleshooting stale outputs. Gradle runs independent
+projects in parallel and uses up to two JVM test forks by default; override on
+smaller machines with `-PtestForks=1` or `-PtestMaxHeap=1g`.
+
 The backend starts on port **8080** and begins the rebalancing loop immediately.
 
 ### 3. Open Dashboard
@@ -570,7 +576,12 @@ The project features a comprehensive test suite for both the backend JVM applica
 
 ### Backend JVM Tests
 
-The backend enforces **strict line, branch, method, and instruction coverage** via JaCoCo, with thresholds set at **95% instruction coverage, 90% branch coverage, 95% line coverage, and 95% method coverage** (excluding `config/**`, Exposed `repository/table/**`, the Kraken API client interfaces/impl, `view/util/**`, `view/css/**`, and `KrakenRebalancerApplication`).
+The backend enforces **strict line, branch, method, and instruction coverage**
+via JaCoCo: **95% instruction, 90% branch, 95% line, and 95% method**.
+Exclusions are narrow: framework bootstrap (`DatabaseConfig`,
+`ErrorHandlingConfig`, `KtorConfig`), Exposed table declarations, Kraken API
+client interfaces/impl, generated HTML-extension lambdas, CSS DSL, and
+`KrakenRebalancerApplication`.
 
 To run JVM tests only:
 

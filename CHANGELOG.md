@@ -33,6 +33,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **npm resolution pins (majors)**: `diff` 8→9, `fast-uri` 3→4, `uuid` 11→14,
+  `webpack-dev-server` 5→6 (Kotlin/JS yarn resolutions).
+- **Faster repeat builds**: Enabled Gradle parallel execution and build cache;
+  JVM tests use up to two forks with configurable heap/fork overrides. Release
+  docs recommend retaining incremental outputs instead of routine `clean`.
 - **Documentation accuracy**: Clarified rate-limit decay, post-sell USD fallback
   behavior, deviation thresholds, Kraken API permissions, and shipped safety
   defaults across the README, algorithm/flow docs, and agent skills.
