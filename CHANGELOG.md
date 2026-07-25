@@ -8,6 +8,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [6.12.20] - 2026-07-24
+
 ### Changed
 
 - **Denser summary cards**: Reduced padding, icon size, and value typography on
