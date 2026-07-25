@@ -28,9 +28,9 @@ Product polish discovered during QA belongs in
 
 | ID | Size | Kind | Status | Area | Summary | Cycle | PR |
 | :--- | :---: | :--- | :--- | :--- | :--- | :---: | :--- | :--- |
-| CQ-3-14 | M | gap | done | history/repo | Lift `TradeHistoryServiceImpl` + `repository.impl` branch coverage (overall ~95%) | 5 | [#77](https://github.com/HyperVon/new-kraken-rebalancer/pull/77) |
-| CQ-3-26 | L | bug | done | fiat | Skip `$0.00` fiat-correction shares; cap sum ≤ `\|usdDev\|` via truncated budget | 5 | [#77](https://github.com/HyperVon/new-kraken-rebalancer/pull/77) |
-| CQ-3-28 | M | gap | done | eval | Scenario 32 — multi-cycle convergence with fill feedback, zero orders by cycle 3 | 5 | [#77](https://github.com/HyperVon/new-kraken-rebalancer/pull/77) |
+| CQ-3-14 | M | gap | done | history/repo | Lift `TradeHistoryServiceImpl` + `repository.impl` branch coverage (overall ~95%) | 5 | [#77](https://github.com/HyperVon/new-kraken-rebalancer/pull/78) |
+| CQ-3-26 | L | bug | done | fiat | Skip `$0.00` fiat-correction shares; cap sum ≤ `\|usdDev\|` via truncated budget | 5 | [#77](https://github.com/HyperVon/new-kraken-rebalancer/pull/78) |
+| CQ-3-28 | M | gap | done | eval | Scenario 32 — multi-cycle convergence with fill feedback, zero orders by cycle 3 | 5 | [#77](https://github.com/HyperVon/new-kraken-rebalancer/pull/78) |
 | CQ-3-9 | S | gap | done | history | Reconstruct failure is best-effort: throttle window still opens, no extra Kraken calls | 5 | [#77](https://github.com/HyperVon/new-kraken-rebalancer/pull/77) |
 | CQ-3-17 | M | gap | done | eval | Scenario 31 — USD refresh ≥95% early-accept + fail-closed buys | 5 | [#77](https://github.com/HyperVon/new-kraken-rebalancer/pull/77) |
 | CQ-3-18 | S | gap | done | drawdown | Aggressive exponent `0.5` ALGORITHM table points | 5 | [#77](https://github.com/HyperVon/new-kraken-rebalancer/pull/77) |
