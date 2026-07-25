@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **Dashboard stream chip placement**: STREAM/STALE + age/time sit in the header
+  beside the mode plate (Brand · Mode · Stream · Nav) instead of a separate
+  right-aligned row above the hero. The shell owns a placeholder; the HTMX/SSE
+  fragment refreshes it via `hx-swap-oob`. Updated `docs/images/dashboard*.png`
+  and `docs/USER_GUIDE.md` to match.
+
 ## [6.13.2] - 2026-07-25
 
 ### Added

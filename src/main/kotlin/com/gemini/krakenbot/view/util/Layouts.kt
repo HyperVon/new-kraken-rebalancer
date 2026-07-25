@@ -67,11 +67,31 @@ fun FlowContent.modePlate(settings: Settings) {
     }
 }
 
-/** Standard header brand + mode plate group used across all pages (DASH-2). */
-fun FlowContent.brandWithMode(settings: Settings) {
+/**
+ * Dashboard-only placeholder for the STREAM/STALE chip. Lives in the shell so
+ * the header cluster is complete before the HTMX fragment arrives; the fragment
+ * refreshes this node via `hx-swap-oob`.
+ */
+fun FlowContent.streamStatusPlaceholder() {
+    div(CssClass.Layout.HeaderStatus) {
+        id = HtmlIds.HEADER_STATUS
+        div(CssClass.StatusCard.Live) { +ViewText.STREAM }
+        span(CssClass.DataAge.Value) { +"…" }
+    }
+}
+
+/**
+ * Standard header brand + mode plate group used across all pages (DASH-2).
+ * Pass [includeStreamSlot] on the Dashboard shell so STREAM sits beside the
+ * mode plate (not on a separate right-aligned row).
+ */
+fun FlowContent.brandWithMode(settings: Settings, includeStreamSlot: Boolean = false) {
     div(CssClass.Layout.HeaderTitleSection) {
         brandMark()
         modePlate(settings)
+        if (includeStreamSlot) {
+            streamStatusPlaceholder()
+        }
     }
 }
 

@@ -70,7 +70,9 @@ persisted `Settings`, with strict precedence:
 - Each plate carries a `MODE_*_TITLE` tooltip; live trading is styled as
   high-consequence. **Never** drop, hide, or downgrade the plate.
 - The header's separate stream chip (`ViewText.STREAM` / `STREAM_STALE`) reports
-  SSE freshness only and must not read as live trading.
+  SSE freshness only and must not read as live trading. On the Dashboard it sits
+  beside the mode plate in `HeaderTitleSection`; the shell renders a placeholder
+  and the fragment refreshes `#header-status` via `hx-swap-oob`.
 
 ### Settings must reach the renderers
 

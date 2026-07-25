@@ -61,6 +61,7 @@ object LayoutStyles {
             display = Display.flex
             alignItems = Align.center
             gap = 0.75.rem
+            flexWrap = FlexWrap.wrap
         }
 
         ".${CssClass.Layout.HeaderTitleSection} h1, .${CssClass.Layout.BrandMark}" {
