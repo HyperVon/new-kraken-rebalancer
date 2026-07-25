@@ -11,7 +11,10 @@ import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.OrderType
+import com.gemini.krakenbot.service.impl.KrakenApiConstants
 import com.gemini.krakenbot.service.impl.KrakenServiceImpl
+import com.gemini.krakenbot.service.impl.RateLimiter
+import com.gemini.krakenbot.service.impl.krakenPrivateEndpointCost
 import com.gemini.krakenbot.test.TestConstants
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.IsolationMode
@@ -47,7 +50,22 @@ class KrakenServiceTest : StringSpec() {
 
     private lateinit var configService: ConfigService
 
-    private fun createService(responseContent: String): KrakenService {
+    /** Records each [RateLimiter.acquireWithCost] argument for CQ-3-22 assertions. */
+    private class RecordingRateLimiter :
+        RateLimiter(
+            safeLimit = 100.0,
+            decayRate = 0.0,
+            clock = { 0L },
+        ) {
+        val acquiredCosts = mutableListOf<Double>()
+
+        override suspend fun acquireWithCost(cost: Double): Double {
+            acquiredCosts += cost
+            return super.acquireWithCost(cost)
+        }
+    }
+
+    private fun createService(responseContent: String, rateLimiter: RateLimiter = RateLimiter()): KrakenService {
         val objectMapper = jacksonObjectMapper()
         configService = mockk(relaxed = true)
 
@@ -82,7 +100,7 @@ class KrakenServiceTest : StringSpec() {
             )
         }
         val httpClient = HttpClient(mockEngine)
-        return KrakenServiceImpl(configService, objectMapper, httpClient)
+        return KrakenServiceImpl(configService, objectMapper, httpClient, rateLimiter)
     }
 
     init {
@@ -1421,6 +1439,71 @@ class KrakenServiceTest : StringSpec() {
                 }
                 callCount shouldBe 8
             }
+        }
+
+        "queryPublic_getTickerPrices_neverAcquiresRateLimiter" {
+            runTest {
+                val limiter = RecordingRateLimiter()
+                val responseJson =
+                    "{\"error\":[],\"result\":{\"XXBTZUSD\":{\"c\":[\"65000.0\"]}}}"
+                val service = createService(responseJson, limiter)
+
+                service.getTickerPrices(TestFixtures.XXBTZUSD)
+
+                limiter.acquiredCosts shouldBe emptyList()
+            }
+        }
+
+        "queryPublic_getOHLC_neverAcquiresRateLimiter" {
+            runTest {
+                val limiter = RecordingRateLimiter()
+                val responseJson =
+                    "{\"error\":[],\"result\":{\"XXBTZUSD\":[[1700000000,\"1\",\"2\",\"3\",\"50000.0\",\"4\",\"5\",6]],\"last\":1700000000}}"
+                val service = createService(responseJson, limiter)
+
+                service.getOHLC(TestFixtures.XXBTZUSD, 1440, null)
+
+                limiter.acquiredCosts shouldBe emptyList()
+            }
+        }
+
+        "queryPrivate_Balance_acquiresWithCost1" {
+            runTest {
+                val limiter = RecordingRateLimiter()
+                val service = createService("{\"error\":[],\"result\":{\"ZUSD\":\"100.0\"}}", limiter)
+
+                service.getBalances()
+
+                limiter.acquiredCosts shouldBe listOf(1.0)
+            }
+        }
+
+        "queryPrivate_TradesHistory_acquiresWithCost2" {
+            runTest {
+                val limiter = RecordingRateLimiter()
+                val responseJson = """
+                    {"error":[],"result":{"trades":{},"count":0}}
+                """.trimIndent()
+                val service = createService(responseJson, limiter)
+
+                service.getTradeHistory()
+
+                limiter.acquiredCosts shouldBe listOf(2.0)
+            }
+        }
+
+        "krakenPrivateEndpointCost_TradesHistory_Ledgers_ClosedOrders_are2" {
+            krakenPrivateEndpointCost(KrakenApiConstants.PATH_TRADES_HISTORY) shouldBe 2.0
+            krakenPrivateEndpointCost("/0/private/Ledgers") shouldBe 2.0
+            krakenPrivateEndpointCost("/0/private/ClosedOrders") shouldBe 2.0
+            KrakenApiConstants.SUBSTRING_TRADES_HISTORY shouldBe "TradesHistory"
+            KrakenApiConstants.SUBSTRING_LEDGERS shouldBe "Ledgers"
+            KrakenApiConstants.SUBSTRING_CLOSED_ORDERS shouldBe "ClosedOrders"
+        }
+
+        "krakenPrivateEndpointCost_Balance_and_AddOrder_are1" {
+            krakenPrivateEndpointCost(KrakenApiConstants.PATH_BALANCE) shouldBe 1.0
+            krakenPrivateEndpointCost(KrakenApiConstants.PATH_ADD_ORDER) shouldBe 1.0
         }
     }
 }

@@ -30,17 +30,24 @@ import kotlin.io.encoding.Base64
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.minutes
 
+/** Call-counter cost for a private Kraken path (heavy history endpoints cost 2.0). */
+internal fun krakenPrivateEndpointCost(path: String): Double = when {
+    path.contains(KrakenApiConstants.SUBSTRING_TRADES_HISTORY) ||
+        path.contains(KrakenApiConstants.SUBSTRING_LEDGERS) ||
+        path.contains(KrakenApiConstants.SUBSTRING_CLOSED_ORDERS) -> 2.0
+    else -> 1.0
+}
+
 class KrakenServiceImpl(
     private val configService: ConfigService,
     private val objectMapper: ObjectMapper,
     private val httpClient: HttpClient,
+    private val rateLimiter: RateLimiter = RateLimiter(),
 ) : KrakenService {
     private val log = LoggerFactory.getLogger(KrakenServiceImpl::class.java)
     private val apiUrl = KrakenApiConstants.API_URL
     private val nonceGenerator = AtomicLong(System.currentTimeMillis() * 1_000_000L)
     val lastFetchedCount = AtomicInteger(0)
-
-    private val rateLimiter = RateLimiter()
 
     private suspend fun <T> retryWithFlow(
         actionName: String,
@@ -352,14 +359,7 @@ class KrakenServiceImpl(
             var retryCount = 0
             var result: JsonNode? = null
             while (result == null) {
-                val cost =
-                    when {
-                        path.contains(KrakenApiConstants.SUBSTRING_TRADES_HISTORY) ||
-                            path.contains(KrakenApiConstants.SUBSTRING_LEDGERS) ||
-                            path.contains(KrakenApiConstants.SUBSTRING_CLOSED_ORDERS) -> 2.0
-                        else -> 1.0
-                    }
-                rateLimiter.acquireWithCost(cost)
+                rateLimiter.acquireWithCost(krakenPrivateEndpointCost(path))
 
                 val nonce = nonceGenerator.incrementAndGet().toString()
                 val payload = data.toMutableMap()
