@@ -6,6 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.12.26] - 2026-07-24
+
+### Fixed
+
+- **Cancellation hygiene**: `PortfolioManager` rethrows `CancellationException`
+  from startup sync, in-cycle sync, the rebalance body, and post-trade refetch
+  instead of logging it as a generic cycle/sync error — so `collectLatest`
+  config restarts and shutdown cancel cleanly.
+
+### Added
+
+- **tests**: Continuous-quality cycle 4 — failed-buy budget preservation,
+  budget-trimmed dust skip, underweight dust boundaries, dedupe reverse
+  provenance / fee-rate `0.001` / 10s window / null-id paths, lockout
+  exhaustion, `simulation`+`dryRun` routing and dry-run balance freeze,
+  nested `withStableBackend`, no-range history stats, invalid allocation
+  symbol rejection, config mid-delay loop restart, and post-trade snapshot
+  fallback.
+
 ## [6.12.25] - 2026-07-24
 
 ### Fixed

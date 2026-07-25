@@ -46,6 +46,8 @@ class PortfolioManagerImpl(
         try {
             log.info("Checking and performing historical trades synchronization from Kraken API...")
             tradeHistoryService.syncTradesFromKraken()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             log.error("Failed to synchronize historical trades on startup", e)
         }
@@ -64,10 +66,16 @@ class PortfolioManagerImpl(
                         )
                         try {
                             tradeHistoryService.syncTradesFromKraken()
+                        } catch (e: CancellationException) {
+                            throw e
                         } catch (e: Exception) {
                             log.error("Failed to synchronize historical trades during cycle", e)
                         }
                         performRebalanceCycle()
+                    } catch (e: CancellationException) {
+                        // Cancellation drives collectLatest restarts and shutdown; never treat it
+                        // as a cycle error, or a config change would leave the old loop running.
+                        throw e
                     } catch (e: Exception) {
                         log.error("Error in rebalancing cycle", e)
                     }
@@ -164,6 +172,8 @@ class PortfolioManagerImpl(
                                 RebalanceState(balances, prices, currentValuesUSD, totalPortfolioValueUSD)
                             },
                         )
+                    } catch (e: CancellationException) {
+                        throw e
                     } catch (e: Exception) {
                         log.warn(
                             "Failed to fetch post-trade balances/prices for snapshot, falling back to pre-trade values",

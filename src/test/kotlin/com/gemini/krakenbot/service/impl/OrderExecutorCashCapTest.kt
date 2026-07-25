@@ -493,5 +493,102 @@ class OrderExecutorCashCapTest : StringSpec() {
                 krakenService.executedOrders[1].volume.shouldBeEqualComparingTo(BigDecimal("0.1881"))
             }
         }
+
+        // CQ-3-15: failed buys must not shrink remainingBuyBudget / actualCash for later buys.
+        "should not reduce cycle buy budget when a prior buy fails" {
+            runTest {
+                var buyAttempts = 0
+                krakenService.orderResultFactory = { pair, _, side, volume ->
+                    if (side == "buy") {
+                        buyAttempts++
+                        OrderResult(
+                            success = buyAttempts > 1,
+                            pair = pair,
+                            side = side,
+                            volume = volume,
+                            errorMessage = if (buyAttempts == 1) "simulated buy failure" else null,
+                        )
+                    } else {
+                        OrderResult(success = true, pair = pair, side = side, volume = volume)
+                    }
+                }
+
+                // Opening $1000 → cycle budget $990. First $500 buy fails; second must still see $990.
+                // If budget were wrongly reduced on failure, second buy would be trimmed to $490 (0.49).
+                val actionLog = mutableListOf<String>()
+                orderExecutor.executeOrders(
+                    buyOrders =
+                    linkedMapOf(
+                        Asset.ETH to BigDecimal("500.00"),
+                        Asset.BTC to BigDecimal("500.00"),
+                    ),
+                    sellOrders = emptyMap(),
+                    currentValuesUSD = mapOf(Asset.USD to BigDecimal("1000.00")),
+                    prices =
+                    mapOf(
+                        Asset.ETH to BigDecimal("1000.00"),
+                        Asset.BTC to BigDecimal("1000.00"),
+                    ),
+                    settings =
+                    Settings(
+                        loopDelaySeconds = 0L,
+                        deviationTriggerPercent = 2.0,
+                        dustThresholdUSD = 1.0,
+                        dryRun = true,
+                        fiatMaxDrawdown = 0.0,
+                        fiatDeploymentExponent = 1.0,
+                    ),
+                    actionLog = actionLog,
+                )
+
+                krakenService.executedOrders.size shouldBe 2
+                krakenService.executedOrders[0].side shouldBe "buy"
+                krakenService.executedOrders[0].volume.shouldBeEqualComparingTo(BigDecimal("0.5"))
+                krakenService.executedOrders[1].side shouldBe "buy"
+                krakenService.executedOrders[1].volume.shouldBeEqualComparingTo(BigDecimal("0.5"))
+                actionLog.any { it.contains("FAILED BUY ETH") } shouldBe true
+            }
+        }
+
+        // CQ-3-24: budget trim that lands strictly below a positive dust threshold → skip, no order.
+        "should skip budget-trimmed buy below positive dust threshold without sending an order" {
+            runTest {
+                krakenService.orderResultFactory = { pair, _, side, volume ->
+                    OrderResult(success = true, pair = pair, side = side, volume = volume)
+                }
+
+                // Opening $100 → cycle budget $99. First buy $90 leaves $9; second $50 trimmed to $9 < $10 dust.
+                val actionLog = mutableListOf<String>()
+                orderExecutor.executeOrders(
+                    buyOrders =
+                    linkedMapOf(
+                        Asset.ETH to BigDecimal("90.00"),
+                        Asset.BTC to BigDecimal("50.00"),
+                    ),
+                    sellOrders = emptyMap(),
+                    currentValuesUSD = mapOf(Asset.USD to BigDecimal("100.00")),
+                    prices =
+                    mapOf(
+                        Asset.ETH to BigDecimal("1000.00"),
+                        Asset.BTC to BigDecimal("1000.00"),
+                    ),
+                    settings =
+                    Settings(
+                        loopDelaySeconds = 0L,
+                        deviationTriggerPercent = 2.0,
+                        dustThresholdUSD = 10.0,
+                        dryRun = true,
+                        fiatMaxDrawdown = 0.0,
+                        fiatDeploymentExponent = 1.0,
+                    ),
+                    actionLog = actionLog,
+                )
+
+                krakenService.executedOrders.size shouldBe 1
+                krakenService.executedOrders.single().side shouldBe "buy"
+                krakenService.executedOrders.single().volume.shouldBeEqualComparingTo(BigDecimal("0.09"))
+                actionLog.any { it == "Skipping dust buy for BTC ($9.00)" } shouldBe true
+            }
+        }
     }
 }

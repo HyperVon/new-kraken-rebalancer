@@ -674,6 +674,27 @@ class DashboardControllerTest : StringSpec() {
             }
         }
 
+        "getApiHistoryStats_NoRangeParam_UsesNoArgGetHistoryStats" {
+            val stats =
+                HistoryStats(
+                    allTimeHigh = BigDecimal("15000.00"),
+                    totalTradesExecuted = 12L,
+                    totalVolumeTraded = BigDecimal("50000.00"),
+                    totalFeesPaid = BigDecimal("25.50"),
+                    latestSnapshotTime = Instant.now(),
+                )
+            // No-arg path only — with-range stub omitted so wrong branch would fail
+            coEvery { tradeHistoryService.getHistoryStats() } returns stats
+            testApplication {
+                application {
+                    configureTestEnv()
+                }
+                val response = client.get(Routes.API_HISTORY_STATS)
+                response.status shouldBe HttpStatusCode.OK
+                response.bodyAsText() shouldContain "\"allTimeHigh\":15000.00"
+            }
+        }
+
         "getApiHistorySnapshots_RangeFilters_Branches" {
             coEvery { tradeHistoryService.getSnapshotsInRange(any(), any()) } returns emptyList()
             testApplication {

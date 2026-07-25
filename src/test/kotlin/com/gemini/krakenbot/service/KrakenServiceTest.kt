@@ -1192,6 +1192,52 @@ class KrakenServiceTest : StringSpec() {
             }
         }
 
+        "retryOnTransientFailure_LockoutFailsExhausted" {
+            runTest {
+                // maxLockoutAttempts = 9: nine consecutive Temporary lockout responses exhaust retries.
+                var attempt = 0
+                val mockEngine = MockEngine { request ->
+                    attempt++
+                    respond(
+                        content = "{\"error\":[\"EGeneral:Temporary lockout\"]}",
+                        status = HttpStatusCode.OK,
+                        headers = headersOf(HttpHeaders.ContentType, TestFixtures.APPLICATION_JSON),
+                    )
+                }
+                val mockConfigService = mockk<ConfigService>(relaxed = true)
+                val credentials = KrakenCredentials(
+                    "k",
+                    Base64.getEncoder().encodeToString(TestFixtures.SECRET.toByteArray()),
+                )
+                every { mockConfigService.getConfig() } returns AppConfig(
+                    credentials,
+                    Settings(
+                        loopDelaySeconds = 60,
+                        deviationTriggerPercent = 2.0,
+                        dustThresholdUSD = 1.0,
+                        dryRun = false,
+                    ),
+                    emptyList(),
+                )
+
+                val service = KrakenServiceImpl(
+                    configService = mockConfigService,
+                    objectMapper = jacksonObjectMapper(),
+                    httpClient = HttpClient(mockEngine),
+                )
+
+                shouldThrow<RuntimeException> {
+                    service.getBalances()
+                }
+                attempt shouldBe 9
+                // Eight retries: 10+20+40+80+160+320+640s, then the 15-minute cap (no 9th wait).
+                val expectedWaitMs =
+                    (10L + 20 + 40 + 80 + 160 + 320 + 640) * 1_000 +
+                        15.minutes.inWholeMilliseconds
+                currentTime shouldBe expectedWaitMs
+            }
+        }
+
         "retryOnTransientFailure_SocketTimeoutException_RetrySuccess" {
             runTest {
                 var attempt = 0

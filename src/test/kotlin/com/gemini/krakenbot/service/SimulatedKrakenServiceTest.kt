@@ -143,6 +143,10 @@ class SimulatedKrakenServiceTest : StringSpec() {
                 btcUsdConfig.copy(settings = TestFixtures.DEFAULT_TEST_SETTINGS.copy(dryRun = true))
 
             val simulatedService = SimulatedKrakenService(configService)
+            val initialBalances = simulatedService.getBalances()
+            val initialBtc = initialBalances[Asset.BTC] ?: BigDecimal.ZERO
+            val initialUsd = initialBalances[Asset.USD] ?: BigDecimal.ZERO
+
             val result =
                 simulatedService.executeOrder(
                     TestFixtures.BTCUSD,
@@ -153,6 +157,10 @@ class SimulatedKrakenServiceTest : StringSpec() {
 
             result.success shouldBe true
             result.dryRun shouldBe true
+
+            val afterBalances = simulatedService.getBalances()
+            afterBalances[Asset.BTC]!!.shouldBeEqualComparingTo(initialBtc)
+            afterBalances[Asset.USD]!!.shouldBeEqualComparingTo(initialUsd)
         }
 
         "should return trade history and support filtering" {

@@ -206,5 +206,102 @@ class DynamicKrakenServiceTest : StringSpec() {
                 realService.executeOrder(any(), any(), any(), any())
             }
         }
+
+        "delegates to simulated service when simulation and dryRun are both true" {
+            val appConfig = AppConfig(
+                kraken = KrakenCredentials("test-api-key", "test-private-key"),
+                settings = Settings(
+                    loopDelaySeconds = 60,
+                    deviationTriggerPercent = 5.0,
+                    dustThresholdUSD = 5.0,
+                    dryRun = true,
+                    simulation = true,
+                    fiatMaxDrawdown = 30.0,
+                    fiatDeploymentExponent = 1.0,
+                ),
+                allocations = emptyList(),
+            )
+            every { configService.getConfig() } returns appConfig
+
+            val dynamicService = createService()
+
+            dynamicService.getBalances()
+            coVerify(exactly = 1) { simulatedService.getBalances() }
+            coVerify(exactly = 0) { realService.getBalances() }
+
+            dynamicService.executeOrder(
+                Asset.BTC_USD_PAIR,
+                OrderSide.BUY.apiValue,
+                OrderType.MARKET.apiValue,
+                BigDecimal.ONE,
+            )
+            coVerify(exactly = 1) {
+                simulatedService.executeOrder(
+                    Asset.BTC_USD_PAIR,
+                    OrderSide.BUY.apiValue,
+                    OrderType.MARKET.apiValue,
+                    BigDecimal.ONE,
+                )
+            }
+            coVerify(exactly = 0) {
+                realService.executeOrder(any(), any(), any(), any())
+            }
+        }
+
+        "withStableBackend nested pins stay on entry backend until outer block exits" {
+            val appConfig = AppConfig(
+                kraken = KrakenCredentials("test-api-key", "test-private-key"),
+                settings = Settings(
+                    loopDelaySeconds = 60,
+                    deviationTriggerPercent = 5.0,
+                    dustThresholdUSD = 5.0,
+                    dryRun = false,
+                    simulation = true,
+                    fiatMaxDrawdown = 30.0,
+                    fiatDeploymentExponent = 1.0,
+                ),
+                allocations = emptyList(),
+            )
+            every { configService.getConfig() } returns appConfig
+
+            val dynamicService = createService()
+            dynamicService.withStableBackend {
+                dynamicService.executeOrder(
+                    Asset.BTC_USD_PAIR,
+                    OrderSide.SELL.apiValue,
+                    OrderType.MARKET.apiValue,
+                    BigDecimal.ONE,
+                )
+
+                dynamicService.withStableBackend {
+                    every { configService.getConfig() } returns appConfig.copy(
+                        settings = appConfig.settings.copy(simulation = false),
+                    )
+
+                    dynamicService.executeOrder(
+                        Asset.ETH_USD_PAIR,
+                        OrderSide.BUY.apiValue,
+                        OrderType.MARKET.apiValue,
+                        BigDecimal.ONE,
+                    )
+                }
+
+                // Inner exit must not release the outer pin.
+                dynamicService.getBalances()
+            }
+
+            coVerify(exactly = 2) {
+                simulatedService.executeOrder(any(), any(), any(), any())
+            }
+            coVerify(exactly = 1) { simulatedService.getBalances() }
+            coVerify(exactly = 0) {
+                realService.executeOrder(any(), any(), any(), any())
+            }
+            coVerify(exactly = 0) { realService.getBalances() }
+
+            // After the outer block, the flipped config is observed.
+            dynamicService.getBalances()
+            coVerify(exactly = 1) { realService.getBalances() }
+        }
     }
 }
