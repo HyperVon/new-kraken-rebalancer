@@ -6,6 +6,7 @@ import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.TradeRecord
+import com.gemini.krakenbot.model.TradeSource
 import com.gemini.krakenbot.repository.impl.SqliteTradeRepositoryImpl
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.IsolationMode
@@ -512,6 +513,95 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
                 stats.totalVolumeTraded.shouldBeEqualComparingTo(BigDecimal.ZERO)
                 stats.totalFeesPaid.shouldBeEqualComparingTo(BigDecimal.ZERO)
                 stats.totalTradesExecuted shouldBe 0L
+                stats.avgFeeRatePercent.shouldBeEqualComparingTo(BigDecimal.ZERO)
+                stats.avgSlippagePercent shouldBe null
+                stats.failedTradeCount shouldBe 0L
+                stats.dryRunTradeCount shouldBe 0L
+            }
+        }
+
+        "save trade round trips expectedPrice and source" {
+            runTest {
+                val now = Instant.now().truncatedTo(ChronoUnit.MILLIS)
+                val trade =
+                    TradeRecord(
+                        timestamp = now,
+                        pair = TestFixtures.XBTUSD,
+                        side = TestFixtures.BUY,
+                        symbol = Asset.BTC,
+                        volume = BigDecimal("0.1"),
+                        usdAmount = BigDecimal("5000.00"),
+                        success = true,
+                        dryRun = false,
+                        price = BigDecimal("50000.00"),
+                        fee = BigDecimal("13.0000"),
+                        slippagePercent = BigDecimal("0.2500"),
+                        expectedPrice = BigDecimal("49875.00"),
+                        source = TradeSource.LOCAL_ESTIMATE,
+                    )
+                repository.saveTrade(trade)
+
+                val loaded = repository.getTradesInRange(now.minusSeconds(1), now.plusSeconds(1)).single()
+                loaded.expectedPrice!!.shouldBeEqualComparingTo(BigDecimal("49875.00"))
+                loaded.source shouldBe TradeSource.LOCAL_ESTIMATE
+                loaded.slippagePercent!!.shouldBeEqualComparingTo(BigDecimal("0.2500"))
+            }
+        }
+
+        "getTradeSummaryStats aggregates fee rate slippage and status counts" {
+            runTest {
+                val now = Instant.now().truncatedTo(ChronoUnit.MILLIS)
+                repository.saveTrade(
+                    TradeRecord(
+                        timestamp = now,
+                        pair = TestFixtures.XBTUSD,
+                        side = TestFixtures.BUY,
+                        symbol = Asset.BTC,
+                        volume = BigDecimal.ONE,
+                        usdAmount = BigDecimal("1000.00"),
+                        success = true,
+                        dryRun = false,
+                        fee = BigDecimal("2.6000"),
+                        slippagePercent = BigDecimal("0.1000"),
+                        source = TradeSource.API_FILL,
+                    ),
+                )
+                repository.saveTrade(
+                    TradeRecord(
+                        timestamp = now.plusSeconds(1),
+                        pair = TestFixtures.ETHUSD,
+                        side = TestFixtures.SELL,
+                        symbol = Asset.ETH,
+                        volume = BigDecimal.ONE,
+                        usdAmount = BigDecimal("500.00"),
+                        success = true,
+                        dryRun = true,
+                        fee = BigDecimal("1.3000"),
+                        slippagePercent = BigDecimal("0.2000"),
+                    ),
+                )
+                repository.saveTrade(
+                    TradeRecord(
+                        timestamp = now.plusSeconds(2),
+                        pair = TestFixtures.DOGEUSD,
+                        side = TestFixtures.BUY,
+                        symbol = Asset.DOGE,
+                        volume = BigDecimal.TEN,
+                        usdAmount = BigDecimal("10.00"),
+                        success = false,
+                        dryRun = false,
+                        fee = BigDecimal.ZERO,
+                    ),
+                )
+
+                val stats = repository.getTradeSummaryStats(now.minusSeconds(5), now.plusSeconds(5))
+                stats.totalTradesExecuted shouldBe 1L
+                stats.totalVolumeTraded.shouldBeEqualComparingTo(BigDecimal("1000.00"))
+                stats.totalFeesPaid.shouldBeEqualComparingTo(BigDecimal("2.6000"))
+                stats.avgFeeRatePercent.shouldBeEqualComparingTo(BigDecimal("0.2600"))
+                stats.avgSlippagePercent!!.shouldBeEqualComparingTo(BigDecimal("0.1000"))
+                stats.failedTradeCount shouldBe 1L
+                stats.dryRunTradeCount shouldBe 1L
             }
         }
 

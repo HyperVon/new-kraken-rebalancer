@@ -6,6 +6,7 @@ import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.HistoryStats
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.TradeRecord
+import com.gemini.krakenbot.model.TradeSource
 import com.gemini.krakenbot.model.isMatchingApiTrade
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.repository.TradeRepository
@@ -14,6 +15,7 @@ import com.gemini.krakenbot.service.KrakenService
 import com.gemini.krakenbot.service.PortfolioAnalyzer
 import com.gemini.krakenbot.service.TradeHistoryService
 import com.gemini.krakenbot.util.PrecisionConstants
+import com.gemini.krakenbot.util.TradeCalculator
 import com.gemini.krakenbot.util.toCryptoScale
 import com.gemini.krakenbot.util.toUsdScale
 import com.gemini.krakenbot.view.util.SyncMetadataKeys
@@ -293,6 +295,10 @@ class TradeHistoryServiceImpl(
             totalVolumeTraded = summary.totalVolumeTraded,
             totalFeesPaid = summary.totalFeesPaid,
             latestSnapshotTime = summary.latestSnapshotTime,
+            avgFeeRatePercent = summary.avgFeeRatePercent,
+            avgSlippagePercent = summary.avgSlippagePercent,
+            failedTradeCount = summary.failedTradeCount,
+            dryRunTradeCount = summary.dryRunTradeCount,
         )
     }
 
@@ -318,6 +324,10 @@ class TradeHistoryServiceImpl(
             totalVolumeTraded = summary.totalVolumeTraded,
             totalFeesPaid = summary.totalFeesPaid,
             latestSnapshotTime = summary.latestSnapshotTime,
+            avgFeeRatePercent = summary.avgFeeRatePercent,
+            avgSlippagePercent = summary.avgSlippagePercent,
+            failedTradeCount = summary.failedTradeCount,
+            dryRunTradeCount = summary.dryRunTradeCount,
         )
     }
 
@@ -367,6 +377,21 @@ class TradeHistoryServiceImpl(
 
                     if (matchingLocalTrade != null) {
                         if (matchingLocalTrade != apiTrade) {
+                            val expectedPrice = matchingLocalTrade.expectedPrice
+                            val reconciledSlippage =
+                                expectedPrice?.let { expected ->
+                                    TradeCalculator.calculateSlippage(
+                                        apiTrade.side,
+                                        apiTrade.price,
+                                        expected,
+                                    )
+                                }
+                            val reconciledTrade =
+                                apiTrade.copy(
+                                    expectedPrice = expectedPrice,
+                                    slippagePercent = reconciledSlippage,
+                                    source = TradeSource.API_FILL,
+                                )
                             log.info(
                                 "Reconciling trade record: local (timestamp={}, usdAmount={}) with API (timestamp={}, usdAmount={})",
                                 matchingLocalTrade.timestamp,
@@ -375,7 +400,7 @@ class TradeHistoryServiceImpl(
                                 apiTrade.usdAmount,
                             )
 
-                            repository.updateTrade(matchingLocalTrade, apiTrade)
+                            repository.updateTrade(matchingLocalTrade, reconciledTrade)
                             totalReconciled++
                         }
                         // Remove matched trade so it cannot be matched again in this sync run

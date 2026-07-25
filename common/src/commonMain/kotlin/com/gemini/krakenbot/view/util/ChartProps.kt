@@ -11,6 +11,7 @@ object ChartProps {
     const val FILL = "fill"
     const val TENSION = "tension"
     const val BORDER_WIDTH = "borderWidth"
+    const val BORDER_DASH = "borderDash"
     const val POINT_RADIUS = "pointRadius"
     const val POINT_HOVER_RADIUS = "pointHoverRadius"
     const val POINT_HIT_RADIUS = "pointHitRadius"
@@ -59,6 +60,8 @@ object ChartProps {
     const val TENSION_CURVED = 0.3
     const val BORDER_WIDTH_PRIMARY = 2.0
     const val BORDER_WIDTH_SECONDARY = 1.5
+    const val BORDER_DASH_SEGMENT = 6
+    const val BORDER_DASH_GAP = 4
     const val POINT_RADIUS_PRIMARY = 4
     const val POINT_RADIUS_SECONDARY = 3
     const val POINT_HOVER_RADIUS_PRIMARY = 6

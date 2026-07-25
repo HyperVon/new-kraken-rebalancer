@@ -8,8 +8,22 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **History trade economics**: Trade log columns for execution **Price**, **Fee**, and
+  signed **Slippage**; summary cards for **Avg Fee Rate** and **Avg Slippage**; dashed
+  **Net After Fees** series on the cumulative net cash flow chart (fee-adjusted cash
+  movement — not accounting P&L).
+- **Trade provenance**: `TradeSource` (`LOCAL_ESTIMATE` / `API_FILL`) and persisted
+  `expectedPrice` on trade records; Kraken reconcile preserves expected price and
+  recomputes settled slippage against API fills.
+
 ### Changed
 
+- **History summary cards**: Six cards now update together when the time range changes
+  (ATH/Period High, Total Trades, Total Volume, Total Fees, Avg Fee Rate, Avg Slippage).
+- **Trade table layout**: Nine columns (Time, Pair, Side, Volume, USD Amount, Price,
+  Fee, Slippage, Status) with semantic slippage badges and failure tooltips.
 - **npm resolution pins (majors)**: `diff` 8→9, `fast-uri` 3→4, `uuid` 11→14,
   `webpack-dev-server` 5→6 (Kotlin/JS yarn resolutions).
 - **Faster repeat builds**: Enabled Gradle parallel execution and build cache;

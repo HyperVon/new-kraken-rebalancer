@@ -26,6 +26,7 @@ need only this file (no issue spam).
 | CI-8-T03 | L | done | credentials | `hasValidCredentials` blank/placeholder only | 8 | [#56](https://github.com/HyperVon/new-kraken-rebalancer/issues/56) | Shipped WIP |
 | CI-8-T04 | L | done | dryRun | Dry-run intents inflate success stats/fees | 8 | [#57](https://github.com/HyperVon/new-kraken-rebalancer/issues/57) | Shipped WIP |
 | CI-8-D09 | L | done | deps | Major npm pins: diff/fast-uri/uuid/webpack-dev-server | 8 | [#58](https://github.com/HyperVon/new-kraken-rebalancer/issues/58) | Shipped WIP |
+| CI-9-UI1 | M | done | history | History fees/slippage/price UI (#63) | 9 | [#63](https://github.com/HyperVon/new-kraken-rebalancer/issues/63) | Shipped on `feature/trade-economics-ui-20260724` |
 | CI-8-SEC1 | S | open | security | Dependabot #102: `brace-expansion` high (DoS) in `kotlin-js-store/yarn.lock` — regenerate lock / pin patched version | 8 | [dependabot #102](https://github.com/HyperVon/new-kraken-rebalancer/security/dependabot/102) | Transitive npm; do as standalone deps PR off main, not on cycle 8 branch |
 | CI-9-B01 | S | done | build | Parallel Gradle execution/cache + bounded JVM test forks | 9 | — | Shipped WIP; override with `testForks` / `testMaxHeap` |
 | CI-8-T05 | M | done | history | Deduper deletes later row; may drop settled API fill | 8 | — | Shipped WIP |

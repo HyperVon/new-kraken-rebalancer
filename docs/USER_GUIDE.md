@@ -124,7 +124,7 @@ Deeper behavior (drawdown deployment, sell-then-buy, dust) is documented in
 
 The History page is for longer-term review: performance charts and the full
 trade log. Use the **24h / 7d / 30d / 90d / All** pills to change the window —
-all four summary cards and the charts update together.
+all six summary cards and the charts update together.
 
 ### Views
 
@@ -153,6 +153,8 @@ user-saved views only (built-ins stay locked).
 | **Total Trades** | Executions in the selected window. |
 | **Total Volume Traded** | Sum of USD amounts for those trades. |
 | **Total Fees Paid** | Fees attributed to trades in the window. |
+| **Avg Fee Rate** | `SUM(fee) / SUM(usdAmount)` for successful, non-dry-run trades in the window. |
+| **Avg Slippage** | Mean signed slippage % for successful, non-dry-run trades with slippage data. |
 
 Charts on this view:
 
@@ -187,7 +189,9 @@ pan. **Reset** returns to the full window and disables the scrubber again.
   visible.
 - **Cumulative Net Cash Flow** — Running net cash flow from trades over the
   window: sells add cash, buys subtract it (includes dry-run trades when that
-  filter is enabled). Negative axis ticks use `-$…` formatting.
+  filter is enabled). A dashed **Net After Fees** series subtracts fees from the
+  same signed cash-flow math (estimated fees when dry-run rows are included — not
+  accounting P&L). Negative axis ticks use `-$…` formatting.
 
 ### Trade log
 
@@ -200,7 +204,10 @@ pan. **Reset** returns to the full window and disables the scrubber again.
 | **Side** | **BUY** (green) or **SELL** (red). |
 | **Volume** | Asset quantity. |
 | **USD Amount** | Notional in USD. |
-| **Status** | **SUCCESS**, **FAILED**, or **DRY RUN**. |
+| **Price** | Executed price (USD per unit). |
+| **Fee** | Fee in USD (estimated for dry-run / local-estimate rows). |
+| **Slippage** | Signed % vs expected quote at order time (favorable/adverse badges); em dash when unknown. |
+| **Status** | **SUCCESS**, **FAILED** (hover for error message), or **DRY RUN**. |
 
 Toggle **Show Dry Run Trades** to include or hide rehearsal rows.
 

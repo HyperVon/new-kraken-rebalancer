@@ -3,6 +3,7 @@ package com.gemini.krakenbot.repository.impl
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.TradeRecord
+import com.gemini.krakenbot.model.TradeSource
 import com.gemini.krakenbot.repository.TradeRepository
 import com.gemini.krakenbot.repository.TradeSummaryStats
 import com.gemini.krakenbot.repository.table.ActionLogTable
@@ -10,14 +11,17 @@ import com.gemini.krakenbot.repository.table.AssetSnapshotTable
 import com.gemini.krakenbot.repository.table.HistorySyncMetadataTable
 import com.gemini.krakenbot.repository.table.PortfolioSnapshotTable
 import com.gemini.krakenbot.repository.table.TradeTable
+import com.gemini.krakenbot.util.PrecisionConstants
 import com.gemini.krakenbot.util.TradeDeduplicator
 import org.jetbrains.exposed.v1.core.ResultRow
 import org.jetbrains.exposed.v1.core.SortOrder
 import org.jetbrains.exposed.v1.core.and
+import org.jetbrains.exposed.v1.core.avg
 import org.jetbrains.exposed.v1.core.count
 import org.jetbrains.exposed.v1.core.eq
 import org.jetbrains.exposed.v1.core.greaterEq
 import org.jetbrains.exposed.v1.core.inList
+import org.jetbrains.exposed.v1.core.isNotNull
 import org.jetbrains.exposed.v1.core.less
 import org.jetbrains.exposed.v1.core.lessEq
 import org.jetbrains.exposed.v1.core.max
@@ -33,6 +37,7 @@ import org.jetbrains.exposed.v1.jdbc.update
 import org.jetbrains.exposed.v1.jdbc.upsert
 import org.slf4j.LoggerFactory
 import java.math.BigDecimal
+import java.math.RoundingMode
 import java.time.Instant
 
 private const val HISTORY_SEEDED = "history_seeded"
@@ -54,6 +59,8 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
         this[TradeTable.price] = trade.price
         this[TradeTable.fee] = trade.fee
         this[TradeTable.slippagePercent] = trade.slippagePercent
+        this[TradeTable.expectedPrice] = trade.expectedPrice
+        this[TradeTable.tradeSource] = trade.source?.name
     }
 
     override suspend fun save(history: List<PortfolioSnapshot>) {
@@ -159,29 +166,73 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
 
             val fromMillis = from.toEpochMilli()
             val toMillis = to.toEpochMilli()
+            val tradeInRange =
+                (TradeTable.timestamp greaterEq fromMillis) and
+                    (TradeTable.timestamp lessEq toMillis)
+            val snapshotInRange =
+                (PortfolioSnapshotTable.timestamp greaterEq fromMillis) and
+                    (PortfolioSnapshotTable.timestamp lessEq toMillis)
+            val executedFilter =
+                (TradeTable.success eq true) and
+                    (TradeTable.dryRun eq false) and
+                    tradeInRange
 
             val tradeRow =
                 TradeTable
                     .select(countCol, volumeCol, feeCol)
-                    .where {
-                        (TradeTable.success eq true) and
-                            (TradeTable.dryRun eq false) and
-                            (TradeTable.timestamp greaterEq fromMillis) and
-                            (TradeTable.timestamp lessEq toMillis)
-                    }.firstOrNull()
+                    .where { executedFilter }
+                    .firstOrNull()
 
             val totalTrades = tradeRow?.get(countCol) ?: 0L
             val totalVolume = tradeRow?.get(volumeCol) ?: BigDecimal.ZERO
             val totalFees = tradeRow?.get(feeCol) ?: BigDecimal.ZERO
 
+            val avgFeeRatePercent =
+                if (totalVolume.signum() == 0) {
+                    BigDecimal.ZERO
+                } else {
+                    totalFees
+                        .divide(totalVolume, PrecisionConstants.SCALE_PERCENT + 2, RoundingMode.HALF_UP)
+                        .multiply(BigDecimal.valueOf(PrecisionConstants.HUNDRED_INT.toLong()))
+                        .setScale(PrecisionConstants.SCALE_PERCENT, RoundingMode.HALF_UP)
+                }
+
+            val slippageAvgCol = TradeTable.slippagePercent.avg()
+            val slippageRow =
+                TradeTable
+                    .select(slippageAvgCol)
+                    .where {
+                        executedFilter and TradeTable.slippagePercent.isNotNull()
+                    }.firstOrNull()
+            val avgSlippagePercent = slippageRow?.get(slippageAvgCol)?.setScale(
+                PrecisionConstants.SCALE_PERCENT,
+                RoundingMode.HALF_UP,
+            )
+
+            val failedCountCol = TradeTable.id.count()
+            val failedTradeCount =
+                TradeTable
+                    .select(failedCountCol)
+                    .where {
+                        (TradeTable.success eq false) and tradeInRange
+                    }.firstOrNull()
+                    ?.get(failedCountCol) ?: 0L
+
+            val dryRunCountCol = TradeTable.id.count()
+            val dryRunTradeCount =
+                TradeTable
+                    .select(dryRunCountCol)
+                    .where {
+                        (TradeTable.dryRun eq true) and tradeInRange
+                    }.firstOrNull()
+                    ?.get(dryRunCountCol) ?: 0L
+
             val periodHighCol = PortfolioSnapshotTable.totalValueUSD.max()
             val periodHigh =
                 PortfolioSnapshotTable
                     .select(periodHighCol)
-                    .where {
-                        (PortfolioSnapshotTable.timestamp greaterEq fromMillis) and
-                            (PortfolioSnapshotTable.timestamp lessEq toMillis)
-                    }.firstOrNull()
+                    .where { snapshotInRange }
+                    .firstOrNull()
                     ?.get(periodHighCol)
 
             val latestSnapshotTime =
@@ -198,6 +249,10 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
                 totalFeesPaid = totalFees,
                 latestSnapshotTime = latestSnapshotTime,
                 periodHigh = periodHigh,
+                avgFeeRatePercent = avgFeeRatePercent,
+                avgSlippagePercent = avgSlippagePercent,
+                failedTradeCount = failedTradeCount,
+                dryRunTradeCount = dryRunTradeCount,
             )
         }
 
@@ -297,6 +352,8 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
         price = row[TradeTable.price],
         fee = row[TradeTable.fee],
         slippagePercent = row[TradeTable.slippagePercent],
+        expectedPrice = row[TradeTable.expectedPrice],
+        source = TradeSource.fromDbValue(row[TradeTable.tradeSource]),
         id = row[TradeTable.id],
     )
 

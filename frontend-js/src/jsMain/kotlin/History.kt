@@ -773,7 +773,25 @@ internal fun buildAllocationDriftChart(snapshots: Array<dynamic>) {
     createOrUpdate(HtmlIds.ALLOCATION_DRIFT_CHART, createLineChartConfig(datasets, options))
 }
 
-internal fun calculateCumulativeNetCashFlow(trades: Array<dynamic>, includeDryRun: Boolean = false): Array<dynamic> {
+internal fun calculateCumulativeNetCashFlow(trades: Array<dynamic>, includeDryRun: Boolean = false): Array<dynamic> =
+    calculateSignedCashFlowSeries(trades, includeDryRun) {
+            trade,
+            delta,
+        ->
+        delta
+    }
+
+internal fun calculateCumulativeNetAfterFees(trades: Array<dynamic>, includeDryRun: Boolean = false): Array<dynamic> =
+    calculateSignedCashFlowSeries(trades, includeDryRun) { trade, delta ->
+        val fee = trade.fee.toString().toDoubleOrNull() ?: 0.0
+        delta - fee
+    }
+
+private inline fun calculateSignedCashFlowSeries(
+    trades: Array<dynamic>,
+    includeDryRun: Boolean,
+    crossinline adjustDelta: (dynamic, Double) -> Double,
+): Array<dynamic> {
     if (trades.asDynamic().length == 0) return emptyArray()
 
     val sorted =
@@ -803,7 +821,7 @@ internal fun calculateCumulativeNetCashFlow(trades: Array<dynamic>, includeDryRu
                 OrderSide.BUY.name -> -amt
                 else -> continue
             }
-        cumulative += delta
+        cumulative += adjustDelta(t, delta)
         points.add(json("x" to t.timestamp, "y" to cumulative))
     }
 
@@ -811,26 +829,27 @@ internal fun calculateCumulativeNetCashFlow(trades: Array<dynamic>, includeDryRu
 }
 
 internal fun buildCumulativeNetCashFlowChart(trades: Array<dynamic>, includeDryRun: Boolean = false) {
-    val rawData = calculateCumulativeNetCashFlow(trades, includeDryRun)
-    if (rawData.asDynamic().length == 0) return
+    val grossData = calculateCumulativeNetCashFlow(trades, includeDryRun)
+    val netAfterFeesData = calculateCumulativeNetAfterFees(trades, includeDryRun)
+    if (grossData.asDynamic().length == 0) return
 
-    val chartData =
-        if (rawData.size == 1) {
-            val firstTradeTime = Date(rawData[0].x.toString()).getTime()
-            val startTime = Date(firstTradeTime - PrecisionConstants.ONE_HOUR_MS).toISOString()
-            arrayOf(json(ChartProps.X to startTime, ChartProps.Y to 0.0), rawData[0])
+    val grossChartData = padSinglePointSeries(grossData)
+    val netChartData = padSinglePointSeries(netAfterFeesData)
+
+    val grossLabel = if (includeDryRun) ViewText.NET_CASH_FLOW_ALL else ViewText.NET_CASH_FLOW_REALIZED
+    val netLabel =
+        if (includeDryRun) {
+            ViewText.NET_AFTER_FEES_ESTIMATED
         } else {
-            rawData
+            ViewText.NET_AFTER_FEES
         }
-
-    val labelText = if (includeDryRun) ViewText.NET_CASH_FLOW_ALL else ViewText.NET_CASH_FLOW_REALIZED
-    val pointCount = (chartData.asDynamic().length as Int)
+    val pointCount = (grossChartData.asDynamic().length as Int)
 
     val datasets =
         arrayOf(
             json(
-                ChartProps.LABEL to labelText,
-                ChartProps.DATA to chartData,
+                ChartProps.LABEL to grossLabel,
+                ChartProps.DATA to grossChartData,
                 ChartProps.BORDER_COLOR to ChartProps.COLOR_EMERALD,
                 ChartProps.BACKGROUND_COLOR to ChartProps.COLOR_GREEN_BG,
                 ChartProps.FILL to true,
@@ -838,6 +857,23 @@ internal fun buildCumulativeNetCashFlowChart(trades: Array<dynamic>, includeDryR
                 ChartProps.BORDER_WIDTH to ChartProps.BORDER_WIDTH_PRIMARY,
                 ChartProps.POINT_RADIUS to pointRadiusForCount(pointCount, primary = true),
                 ChartProps.POINT_HOVER_RADIUS to pointHoverRadiusForCount(pointCount, primary = true),
+                ChartProps.POINT_HIT_RADIUS to ChartProps.POINT_HIT_RADIUS_DEFAULT,
+            ),
+            json(
+                ChartProps.LABEL to netLabel,
+                ChartProps.DATA to netChartData,
+                ChartProps.BORDER_COLOR to ChartProps.COLOR_AMBER,
+                ChartProps.BACKGROUND_COLOR to ChartProps.TRANSPARENT,
+                ChartProps.FILL to false,
+                ChartProps.TENSION to ChartProps.TENSION_CURVED,
+                ChartProps.BORDER_WIDTH to ChartProps.BORDER_WIDTH_SECONDARY,
+                ChartProps.BORDER_DASH to
+                    arrayOf(
+                        ChartProps.BORDER_DASH_SEGMENT,
+                        ChartProps.BORDER_DASH_GAP,
+                    ),
+                ChartProps.POINT_RADIUS to pointRadiusForCount(pointCount, primary = false),
+                ChartProps.POINT_HOVER_RADIUS to pointHoverRadiusForCount(pointCount, primary = false),
                 ChartProps.POINT_HIT_RADIUS to ChartProps.POINT_HIT_RADIUS_DEFAULT,
             ),
         )
@@ -848,6 +884,14 @@ internal fun buildCumulativeNetCashFlowChart(trades: Array<dynamic>, includeDryR
     }
 
     createOrUpdate(HtmlIds.CUMULATIVE_NET_CASH_FLOW_CHART, createLineChartConfig(datasets, options))
+}
+
+private fun padSinglePointSeries(rawData: Array<dynamic>): Array<dynamic> = if (rawData.size == 1) {
+    val firstTradeTime = Date(rawData[0].x.toString()).getTime()
+    val startTime = Date(firstTradeTime - PrecisionConstants.ONE_HOUR_MS).toISOString()
+    arrayOf(json(ChartProps.X to startTime, ChartProps.Y to 0.0), rawData[0])
+} else {
+    rawData
 }
 
 fun formatPair(trade: JsTradeRecord?): String {
@@ -906,15 +950,76 @@ private fun renderTradeRow(t: JsTradeRecord): HTMLTableRowElement {
         }
     val vol = t.volume.toString().toDoubleOrNull() ?: 0.0
     val amt = t.usdAmount.toString().toDoubleOrNull() ?: 0.0
+    val price = t.price.toString().toDoubleOrNull() ?: 0.0
+    val fee = t.fee.toString().toDoubleOrNull() ?: 0.0
+    val slippage = t.slippagePercent?.toString()?.toDoubleOrNull()
+    val isEstimatedEconomics = dryRun || t.source == "LOCAL_ESTIMATE"
+    val estimatedTitle =
+        if (isEstimatedEconomics) {
+            ViewText.SLIPPAGE_ESTIMATED_TITLE
+        } else {
+            null
+        }
 
     tr.appendChild(createCell(time, CssClass.Table.MonoCol))
     tr.appendChild(createCell(formatPair(t), CssClass.Table.SymbolCol))
     tr.appendChild(createBadgeCell(side, sideClass))
     tr.appendChild(createCell(vol.toFixed(PrecisionConstants.SCALE_CRYPTO), CssClass.Table.MonoCol))
     tr.appendChild(createCell(formatUSD(amt), CssClass.Table.MonoCol))
-    tr.appendChild(createBadgeCell(statusText, statusClass))
+    tr.appendChild(createCellWithOptionalTitle(formatPrice(price), CssClass.Table.MonoCol, estimatedTitle))
+    tr.appendChild(createCellWithOptionalTitle(formatUSD(fee), CssClass.Table.MonoCol, estimatedTitle))
+    tr.appendChild(createSlippageCell(slippage, estimatedTitle))
+    tr.appendChild(createStatusCell(statusText, statusClass, t.errorMessage))
 
     return tr
+}
+
+private fun formatPrice(value: Double): String {
+    val options: dynamic = json()
+    options.minimumFractionDigits = PrecisionConstants.MIN_CRYPTO_DECIMAL_PLACES
+    options.maximumFractionDigits = PrecisionConstants.SCALE_CRYPTO
+    return value.asDynamic().toLocaleString(EN_US, options)
+}
+
+private fun slippageBadgeClass(value: Double): CssClass = when {
+    value > 0.0 -> CssClass.Badge.SlippageAdverse
+    value < 0.0 -> CssClass.Badge.SlippageFavorable
+    else -> CssClass.Badge.SlippageNeutral
+}
+
+private fun formatSignedSlippage(value: Double): String = formatPctTick(value, includePlus = true)
+
+private fun createCellWithOptionalTitle(text: String, cssClass: CssClass, title: String?): HTMLTableCellElement {
+    val td = createCell(text, cssClass)
+    if (title != null) td.title = title
+    return td
+}
+
+private fun createSlippageCell(slippage: Double?, estimatedTitle: String?): HTMLTableCellElement {
+    val td = document.createElement(HtmlTags.TD) as HTMLTableCellElement
+    td.className = CssClass.Table.MonoCol.toString()
+    if (slippage == null) {
+        td.textContent = ViewText.EM_DASH
+        return td
+    }
+    val span = document.createElement(HtmlTags.SPAN) as HTMLSpanElement
+    span.className = slippageBadgeClass(slippage).toString()
+    span.textContent = formatSignedSlippage(slippage)
+    if (estimatedTitle != null) span.title = estimatedTitle
+    td.appendChild(span)
+    return td
+}
+
+private fun createStatusCell(text: String, badgeClass: CssClass, errorMessage: String?): HTMLTableCellElement {
+    val td = document.createElement(HtmlTags.TD) as HTMLTableCellElement
+    val span = document.createElement(HtmlTags.SPAN) as HTMLSpanElement
+    span.className = badgeClass.toString()
+    span.textContent = text
+    if (!errorMessage.isNullOrBlank()) {
+        span.title = ViewText.TRADE_FAILED_TITLE_PREFIX + errorMessage
+    }
+    td.appendChild(span)
+    return td
 }
 
 private fun createCell(text: String, cssClass: CssClass): HTMLTableCellElement {
@@ -939,6 +1044,8 @@ internal fun updateStats(stats: JsHistoryStats) {
     val totalTrades = document.getElementById(HtmlIds.STAT_TOTAL_TRADES)
     val totalVolume = document.getElementById(HtmlIds.STAT_TOTAL_VOLUME)
     val totalFees = document.getElementById(HtmlIds.STAT_TOTAL_FEES)
+    val avgFeeRate = document.getElementById(HtmlIds.STAT_AVG_FEE_RATE)
+    val avgSlippage = document.getElementById(HtmlIds.STAT_AVG_SLIPPAGE)
 
     if (athTitle != null) {
         athTitle.textContent =
@@ -958,6 +1065,24 @@ internal fun updateStats(stats: JsHistoryStats) {
             formatUSD(stats.totalVolumeTraded.toString().toDoubleOrNull() ?: 0.0)
     }
     if (totalFees != null) totalFees.textContent = formatUSD(stats.totalFeesPaid.toString().toDoubleOrNull() ?: 0.0)
+    if (avgFeeRate != null) {
+        val rate = stats.avgFeeRatePercent?.toString()?.toDoubleOrNull()
+        avgFeeRate.textContent =
+            if (rate == null) {
+                ViewText.PLACEHOLDER_DASHES
+            } else {
+                formatPctTick(rate, includePlus = false)
+            }
+    }
+    if (avgSlippage != null) {
+        val slip = stats.avgSlippagePercent?.toString()?.toDoubleOrNull()
+        avgSlippage.textContent =
+            if (slip == null) {
+                ViewText.PLACEHOLDER_DASHES
+            } else {
+                formatSignedSlippage(slip)
+            }
+    }
 }
 
 private fun fetchRanged(vararg routes: String, range: String): Array<Promise<dynamic>> = routes.map { route ->

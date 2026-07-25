@@ -15,6 +15,11 @@ fun mockTradeRecord(
     dryRun: Boolean = false,
     timestamp: String = "2023-01-01",
     volume: Number = 1.0,
+    price: Number = 50000.0,
+    fee: Number = 2.6,
+    slippagePercent: Number? = null,
+    source: String? = null,
+    errorMessage: String? = null,
 ): dynamic = json(
     "symbol" to symbol,
     "side" to side,
@@ -23,6 +28,11 @@ fun mockTradeRecord(
     "dryRun" to dryRun,
     "timestamp" to timestamp,
     "volume" to volume,
+    "price" to price,
+    "fee" to fee,
+    "slippagePercent" to slippagePercent,
+    "source" to source,
+    "errorMessage" to errorMessage,
 )
 
 fun mockSnapshotRecord(
@@ -49,11 +59,15 @@ fun mockPortfolioStatsRecord(
     totalTradesExecuted: Number = 42,
     totalVolumeTraded: Number = 1000000.0,
     totalFeesPaid: Number = 250.75,
+    avgFeeRatePercent: Number? = 0.26,
+    avgSlippagePercent: Number? = 0.15,
 ): dynamic = json(
     "allTimeHigh" to allTimeHigh,
     "totalTradesExecuted" to totalTradesExecuted,
     "totalVolumeTraded" to totalVolumeTraded,
     "totalFeesPaid" to totalFeesPaid,
+    "avgFeeRatePercent" to avgFeeRatePercent,
+    "avgSlippagePercent" to avgSlippagePercent,
 )
 
 fun mockFetch(handler: (String) -> Any?): dynamic = { url: String ->

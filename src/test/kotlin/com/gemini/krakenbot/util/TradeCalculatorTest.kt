@@ -2,6 +2,7 @@ package com.gemini.krakenbot.util
 
 import com.gemini.krakenbot.model.OrderResult
 import com.gemini.krakenbot.model.OrderSide
+import com.gemini.krakenbot.model.TradeSource
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
@@ -85,6 +86,9 @@ class TradeCalculatorTest : StringSpec() {
             trade.side shouldBe OrderSide.BUY.uppercaseName
             trade.dryRun shouldBe true
             trade.price.shouldBeEqualComparingTo(BigDecimal("50000.00"))
+            trade.expectedPrice!!.shouldBeEqualComparingTo(BigDecimal("50000.00"))
+            trade.source shouldBe TradeSource.LOCAL_ESTIMATE
+            trade.slippagePercent!!.shouldBeEqualComparingTo(BigDecimal.ZERO)
         }
     }
 }

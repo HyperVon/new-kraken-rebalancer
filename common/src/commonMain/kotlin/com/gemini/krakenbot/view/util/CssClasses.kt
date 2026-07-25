@@ -90,6 +90,9 @@ sealed class CssClass(open val value: String) {
         object Info : Badge("badge badge-info")
         object Success : Badge("badge badge-success")
         object Failed : Badge("badge badge-failed")
+        object SlippageFavorable : Badge("badge badge-slippage-favorable")
+        object SlippageAdverse : Badge("badge badge-slippage-adverse")
+        object SlippageNeutral : Badge("badge badge-slippage-neutral")
     }
 
     // Allocation Chart

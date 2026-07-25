@@ -11,6 +11,10 @@ data class TradeSummaryStats(
     val totalFeesPaid: BigDecimal,
     val latestSnapshotTime: Instant?,
     val periodHigh: BigDecimal? = null,
+    val avgFeeRatePercent: BigDecimal = BigDecimal.ZERO,
+    val avgSlippagePercent: BigDecimal? = null,
+    val failedTradeCount: Long = 0L,
+    val dryRunTradeCount: Long = 0L,
 )
 
 interface TradeRepository {

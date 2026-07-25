@@ -189,6 +189,9 @@ class HistoryPageComponent {
                             th { +ViewText.HEADER_SIDE }
                             th { +ViewText.HEADER_VOLUME }
                             th { +ViewText.HEADER_USD_AMOUNT }
+                            th { +ViewText.HEADER_PRICE }
+                            th { +ViewText.HEADER_FEE }
+                            th { +ViewText.HEADER_SLIPPAGE }
                             th { +ViewText.HEADER_STATUS }
                         }
                     }
@@ -288,8 +291,18 @@ private sealed class HistoryStatCardDefinition(
         Icons.DOLLAR_CIRCLE,
         HtmlIds.STAT_TOTAL_FEES,
     )
+    object AvgFeeRate : HistoryStatCardDefinition(
+        ViewText.HISTORY_AVG_FEE_RATE,
+        Icons.DOLLAR_CIRCLE,
+        HtmlIds.STAT_AVG_FEE_RATE,
+    )
+    object AvgSlippage : HistoryStatCardDefinition(
+        ViewText.HISTORY_AVG_SLIPPAGE,
+        Icons.CHART,
+        HtmlIds.STAT_AVG_SLIPPAGE,
+    )
 
     companion object {
-        val ALL = listOf(AllTimeHigh, TotalTrades, TotalVolume, TotalFees)
+        val ALL = listOf(AllTimeHigh, TotalTrades, TotalVolume, TotalFees, AvgFeeRate, AvgSlippage)
     }
 }
