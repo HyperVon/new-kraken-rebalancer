@@ -22,14 +22,15 @@ Product polish discovered during QA belongs in
 
 | ID | Size | Kind | Status | Area | Summary | Cycle | Issue | Notes |
 | :--- | :---: | :--- | :--- | :--- | :--- | :---: | :--- | :--- |
-| CQ-3-14 | M | gap | open | history/repo | Lift `TradeHistoryServiceImpl` + `repository.impl` branch coverage | 3 | — | overall branch ~91%; next cycle |
-| CQ-3-26 | L | bug | deferred | fiat | Fiat-correction can enqueue `$0.00` shares and overshoot `\|usdDev\|` after HALF_UP | 5 | [#76](https://github.com/HyperVon/new-kraken-rebalancer/issues/76) | **gated** — 3 disabled regression tests in FiatCorrectionTest; CQ-3-23 mitigates `$0` at executor only |
-| CQ-3-28 | M | gap | open | eval | Multi-cycle convergence scenario: fills fed back, zero orders by cycle 3 | 5 | — | was CQ-3-27; renumbered (Scenario 31 taken by CQ-3-17) |
+| — | — | — | — | — | *(empty — backlog clear)* | — | — | — |
 
 ## Done (recent)
 
 | ID | Size | Kind | Status | Area | Summary | Cycle | PR |
-| :--- | :---: | :--- | :--- | :--- | :---: | :--- | :--- |
+| :--- | :---: | :--- | :--- | :--- | :--- | :---: | :--- | :--- |
+| CQ-3-14 | M | gap | done | history/repo | Lift `TradeHistoryServiceImpl` + `repository.impl` branch coverage (overall ~95%) | 5 | [#78](https://github.com/HyperVon/new-kraken-rebalancer/pull/78) |
+| CQ-3-26 | L | bug | done | fiat | Skip `$0.00` fiat-correction shares; cap sum ≤ `\|usdDev\|` via truncated budget | 5 | [#78](https://github.com/HyperVon/new-kraken-rebalancer/pull/78) |
+| CQ-3-28 | M | gap | done | eval | Scenario 32 — multi-cycle convergence with fill feedback, zero orders by cycle 3 | 5 | [#78](https://github.com/HyperVon/new-kraken-rebalancer/pull/78) |
 | CQ-3-9 | S | gap | done | history | Reconstruct failure is best-effort: throttle window still opens, no extra Kraken calls | 5 | [#77](https://github.com/HyperVon/new-kraken-rebalancer/pull/77) |
 | CQ-3-17 | M | gap | done | eval | Scenario 31 — USD refresh ≥95% early-accept + fail-closed buys | 5 | [#77](https://github.com/HyperVon/new-kraken-rebalancer/pull/77) |
 | CQ-3-18 | S | gap | done | drawdown | Aggressive exponent `0.5` ALGORITHM table points | 5 | [#77](https://github.com/HyperVon/new-kraken-rebalancer/pull/77) |

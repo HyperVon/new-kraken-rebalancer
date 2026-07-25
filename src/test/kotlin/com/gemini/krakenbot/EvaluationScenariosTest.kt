@@ -106,7 +106,7 @@ class EvaluationScenariosTest : StringSpec() {
             val sb = StringBuilder()
             sb.append("# Scenarios Evaluation Report\n\n")
             sb.append(
-                "This report lists the outcomes of the 30 realistic scenarios designed to evaluate the major capabilities of the Kraken Rebalancer.\n\n",
+                "This report lists the outcomes of the 32 realistic scenarios designed to evaluate the major capabilities of the Kraken Rebalancer.\n\n",
             )
             sb.append("## Evaluation Rubric & Status\n\n")
             sb.append("| Scenario | Description | Status | Details / Evidence |\n")
@@ -2734,6 +2734,124 @@ class EvaluationScenariosTest : StringSpec() {
                 recordResult(
                     "Scenario 31",
                     "USD Refresh Early-Accept and Fail-Closed Buys",
+                    TestFixtures.PASS,
+                    evidence,
+                )
+            }
+        }
+
+        "Scenario 32: Multi-Cycle Convergence with Fill Feedback" {
+            runTest {
+                val fakeKraken = FakeKrakenService()
+                val mockConfig = mockk<ConfigService>(relaxed = true)
+                val statsRepo = mockk<PortfolioStatsRepository>(relaxed = true)
+                val mockHistory = mockk<TradeHistoryService>(relaxed = true)
+                val prices =
+                    mapOf(
+                        Asset.BTC to BigDecimal("50000.00"),
+                        Asset.ETH to BigDecimal("2000.00"),
+                    )
+                val balances =
+                    mutableMapOf(
+                        Asset.BTC to BigDecimal("0.18"),
+                        Asset.ETH to BigDecimal("0.50"),
+                        Asset.USD to BigDecimal.ZERO,
+                    )
+                val appConfig =
+                    AppConfig(
+                        kraken = KrakenCredentials("k", "s"),
+                        settings =
+                        Settings(
+                            loopDelaySeconds = 60L,
+                            deviationTriggerPercent = 0.1,
+                            dustThresholdUSD = 1.0,
+                            dryRun = false,
+                            fiatMaxDrawdown = 0.0,
+                            fiatDeploymentExponent = 1.0,
+                        ),
+                        allocations =
+                        listOf(
+                            Allocation(Asset.BTC, 50.0),
+                            Allocation(Asset.ETH, 40.0),
+                            Allocation(Asset.USD, 10.0),
+                        ),
+                    )
+                every { mockConfig.getConfig() } returns appConfig
+                fakeKraken.balanceSupplier = { balances.toMap() }
+                fakeKraken.pricesSupplier = {
+                    mapOf(
+                        TestFixtures.XBTUSD to prices.getValue(Asset.BTC),
+                        TestFixtures.ETHUSD to prices.getValue(Asset.ETH),
+                    )
+                }
+
+                val fillRatio = BigDecimal("0.99")
+                fakeKraken.executeOrderAction = { pair, _, side, volume ->
+                    val symbol =
+                        when (pair) {
+                            TestFixtures.XBTUSD -> Asset.BTC
+                            TestFixtures.ETHUSD -> Asset.ETH
+                            else -> error("Unexpected pair: $pair")
+                        }
+                    val price = prices.getValue(symbol)
+                    val filledVolume = if (side == TestFixtures.BUY) volume.multiply(fillRatio) else volume
+                    val filledValue = filledVolume.multiply(price)
+
+                    if (side == TestFixtures.BUY) {
+                        balances[symbol] = balances.getValue(symbol).add(filledVolume)
+                        balances[Asset.USD] = balances.getValue(Asset.USD).subtract(filledValue)
+                    } else {
+                        balances[symbol] = balances.getValue(symbol).subtract(filledVolume)
+                        balances[Asset.USD] = balances.getValue(Asset.USD).add(filledValue)
+                    }
+                }
+
+                val analyzer = PortfolioAnalyzerImpl(fakeKraken, mockConfig, statsRepo)
+                val executor = OrderExecutorImpl(fakeKraken, analyzer, mockHistory)
+                val manager = PortfolioManagerImpl(mockConfig, mockHistory, analyzer, executor)
+                val startingValue =
+                    balances.getValue(Asset.BTC).multiply(prices.getValue(Asset.BTC))
+                        .add(balances.getValue(Asset.ETH).multiply(prices.getValue(Asset.ETH)))
+                        .add(balances.getValue(Asset.USD))
+
+                val ordersPerCycle = mutableListOf<Int>()
+                val snapshots = mutableListOf<PortfolioSnapshot>()
+                repeat(3) {
+                    val orderCountBefore = fakeKraken.executedOrders.size
+                    snapshots += requireNotNull(manager.performRebalanceCycle())
+                    ordersPerCycle += fakeKraken.executedOrders.size - orderCountBefore
+                }
+
+                val maxDeviations =
+                    snapshots.map { snapshot ->
+                        snapshot.assets.values.maxOf { asset -> asset.deviationPercent.abs() }
+                    }
+                maxDeviations[0].shouldBeEqualComparingTo(BigDecimal("3.00"))
+                maxDeviations[1].shouldBeEqualComparingTo(BigDecimal("0.03"))
+                (maxDeviations[1] < maxDeviations[0]).shouldBeTrue()
+                (maxDeviations[2] <= maxDeviations[1]).shouldBeTrue()
+
+                ordersPerCycle shouldBe listOf(2, 1, 0)
+                snapshots[2].actions.none { it.startsWith("Deviation:") }.shouldBeTrue()
+                fakeKraken.executedOrders
+                    .all { order ->
+                        val symbol = if (order.pair == TestFixtures.XBTUSD) Asset.BTC else Asset.ETH
+                        order.volume.multiply(prices.getValue(symbol)).signum() > 0
+                    }.shouldBeTrue()
+                snapshots.forEach { snapshot ->
+                    snapshot.totalValueUSD.shouldBeEqualComparingTo(startingValue)
+                }
+
+                val evidence =
+                    "Start: BTC=0.18 @ $50000, ETH=0.50 @ $2000, USD=$0; targets=50%/40%/10%\n" +
+                        "99% partial-buy fills fed back into balances\n" +
+                        "Post-cycle max |deviation|: $maxDeviations\n" +
+                        "Executed orders per cycle: $ordersPerCycle\n" +
+                        "Total value per cycle: ${snapshots.map { it.totalValueUSD }}"
+
+                recordResult(
+                    "Scenario 32",
+                    "Multi-Cycle Convergence with Fill Feedback",
                     TestFixtures.PASS,
                     evidence,
                 )

@@ -359,6 +359,10 @@ class PortfolioAnalyzerImpl(
         )
         actionLog.add(ActionLogFormatter.formatFiatCorrectionDistribution(deviationAbs, candidates.size))
 
+        // Truncate rather than round the budget so the shares can never sum above the
+        // deviation we are actually correcting (CQ-3-26 / #76).
+        var remaining = deviationAbs.setScale(SCALE_USD, RoundingMode.DOWN)
+
         for (symbol in candidates) {
             val assetDev = allDevs.getValue(symbol).abs()
             val ratio =
@@ -367,7 +371,12 @@ class PortfolioAnalyzerImpl(
                     SCALE_PRICE,
                     RoundingMode.HALF_UP,
                 )
-            val share = deviationAbs.multiply(ratio).toUsdScale()
+            val share = deviationAbs.multiply(ratio).toUsdScale().min(remaining)
+
+            // A tiny counter-deviation rounds to $0.00, and HALF_UP shares can collectively
+            // exceed the budget; either way there is nothing left to trade for this symbol.
+            if (share.signum() <= 0) continue
+            remaining = remaining.subtract(share)
 
             if (isDeposit) {
                 buyOrders[symbol] = share

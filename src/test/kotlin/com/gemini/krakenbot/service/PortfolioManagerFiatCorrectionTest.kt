@@ -167,8 +167,8 @@ class PortfolioManagerFiatCorrectionTest : StringSpec() {
             buyOrders.getValue("B").shouldBeEqualComparingTo(BigDecimal("30.00"))
         }
 
-        // CQ-3-26 / #76 (L): documents current bug — disabled until production fix lands.
-        "testDistributeFiatCorrection_ZeroRoundedShareNotEnqueued_Deposit".config(enabled = false) {
+        // CQ-3-26 / #76: a $0.00 rounded share must never be enqueued as an order.
+        "testDistributeFiatCorrection_ZeroRoundedShareNotEnqueued_Deposit" {
             val portfolioAnalyzer = makePortfolioAnalyzer(
                 Allocation("TINY", 1.0),
                 Allocation("BIG", 99.0),
@@ -200,8 +200,8 @@ class PortfolioManagerFiatCorrectionTest : StringSpec() {
                 ).shouldBeTrue()
         }
 
-        // CQ-3-26 / #76 (L): same zero-share filter on withdrawal sells — disabled until fix.
-        "testDistributeFiatCorrection_ZeroRoundedShareNotEnqueued_Withdrawal".config(enabled = false) {
+        // CQ-3-26 / #76: same zero-share filter on withdrawal sells.
+        "testDistributeFiatCorrection_ZeroRoundedShareNotEnqueued_Withdrawal" {
             val portfolioAnalyzer = makePortfolioAnalyzer(
                 Allocation("TINY", 1.0),
                 Allocation("BIG", 99.0),
@@ -232,8 +232,8 @@ class PortfolioManagerFiatCorrectionTest : StringSpec() {
                 ).shouldBeTrue()
         }
 
-        // CQ-3-26 / #76 (L): HALF_UP USD rounding must not let shares sum exceed |usdDev| — disabled until fix.
-        "testDistributeFiatCorrection_RoundedSharesDoNotExceedUsdDev".config(enabled = false) {
+        // CQ-3-26 / #76: HALF_UP USD rounding must not let shares sum exceed |usdDev|.
+        "testDistributeFiatCorrection_RoundedSharesDoNotExceedUsdDev" {
             val portfolioAnalyzer = makePortfolioAnalyzer(
                 Allocation("A", 50.0),
                 Allocation("B", 50.0),
