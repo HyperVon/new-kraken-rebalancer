@@ -49,62 +49,65 @@ class OrderExecutorImpl(
         settings: Settings,
         actionLog: MutableList<String>,
     ) {
-        var projectedCash = currentValuesUSD[Asset.USD] ?: BigDecimal.ZERO
-        var executedSells = false
+        // Pin live vs simulation for the whole sell→buy sequence (CQ-1-10 / #68).
+        krakenService.withStableBackend {
+            var projectedCash = currentValuesUSD[Asset.USD] ?: BigDecimal.ZERO
+            var executedSells = false
 
-        for ((symbol, usdToSell) in sellOrders) {
-            if (usdToSell < BigDecimal.valueOf(settings.dustThresholdUSD)) {
-                log.info("Skipping dust sell for {} ($ {})", symbol, usdToSell)
-                actionLog.add(ActionLogFormatter.formatSkippedDust(OrderSide.SELL, symbol, usdToSell))
-                continue
+            for ((symbol, usdToSell) in sellOrders) {
+                if (usdToSell < BigDecimal.valueOf(settings.dustThresholdUSD)) {
+                    log.info("Skipping dust sell for {} ($ {})", symbol, usdToSell)
+                    actionLog.add(ActionLogFormatter.formatSkippedDust(OrderSide.SELL, symbol, usdToSell))
+                    continue
+                }
+
+                val result = executeSingleOrder(symbol, usdToSell, OrderSide.SELL, prices, actionLog)
+                if (result?.success == true) {
+                    projectedCash = projectedCash.add(usdToSell)
+                    executedSells = true
+                }
             }
 
-            val result = executeSingleOrder(symbol, usdToSell, OrderSide.SELL, prices, actionLog)
-            if (result?.success == true) {
-                projectedCash = projectedCash.add(usdToSell)
-                executedSells = true
-            }
-        }
-
-        var actualCash = projectedCash
-        if (executedSells && !settings.dryRun) {
-            actualCash = refreshUsdBalanceAfterSells(projectedCash)
-            if (actualCash <= BigDecimal.ZERO) {
-                log.error("Aborting buys because no positive USD balance was observed after sells")
-                return
-            }
-        }
-
-        // Cycle-level budget: 99% of post-sell settled USD so multi-buy batches cannot erode the reserve.
-        val cycleBuyBudget = actualCash.multiply(CASH_RESERVE_FACTOR).toUsdScale()
-        var remainingBuyBudget = cycleBuyBudget
-
-        for ((symbol, originalCost) in buyOrders) {
-            val maxAffordable = remainingBuyBudget.min(actualCash).toUsdScale()
-            var cost = originalCost
-            if (cost > maxAffordable) {
-                log.warn(
-                    "Buy {} exceeds cycle 99% cash reserve. Cost: {}, Max affordable: {}, " +
-                        "Remaining budget: {}, Cash: {}. Reducing.",
-                    symbol,
-                    cost,
-                    maxAffordable,
-                    remainingBuyBudget,
-                    actualCash,
-                )
-                cost = maxAffordable
+            var actualCash = projectedCash
+            if (executedSells && !settings.dryRun) {
+                actualCash = refreshUsdBalanceAfterSells(projectedCash)
+                if (actualCash <= BigDecimal.ZERO) {
+                    log.error("Aborting buys because no positive USD balance was observed after sells")
+                    return@withStableBackend
+                }
             }
 
-            if (cost < BigDecimal.valueOf(settings.dustThresholdUSD)) {
-                log.info("Skipping dust buy for {} ($ {})", symbol, cost)
-                actionLog.add(ActionLogFormatter.formatSkippedDust(OrderSide.BUY, symbol, cost))
-                continue
-            }
+            // Cycle-level budget: 99% of post-sell settled USD so multi-buy batches cannot erode the reserve.
+            val cycleBuyBudget = actualCash.multiply(CASH_RESERVE_FACTOR).toUsdScale()
+            var remainingBuyBudget = cycleBuyBudget
 
-            val result = executeSingleOrder(symbol, cost, OrderSide.BUY, prices, actionLog)
-            if (result?.success == true) {
-                actualCash = actualCash.subtract(cost)
-                remainingBuyBudget = remainingBuyBudget.subtract(cost).toUsdScale()
+            for ((symbol, originalCost) in buyOrders) {
+                val maxAffordable = remainingBuyBudget.min(actualCash).toUsdScale()
+                var cost = originalCost
+                if (cost > maxAffordable) {
+                    log.warn(
+                        "Buy {} exceeds cycle 99% cash reserve. Cost: {}, Max affordable: {}, " +
+                            "Remaining budget: {}, Cash: {}. Reducing.",
+                        symbol,
+                        cost,
+                        maxAffordable,
+                        remainingBuyBudget,
+                        actualCash,
+                    )
+                    cost = maxAffordable
+                }
+
+                if (cost < BigDecimal.valueOf(settings.dustThresholdUSD)) {
+                    log.info("Skipping dust buy for {} ($ {})", symbol, cost)
+                    actionLog.add(ActionLogFormatter.formatSkippedDust(OrderSide.BUY, symbol, cost))
+                    continue
+                }
+
+                val result = executeSingleOrder(symbol, cost, OrderSide.BUY, prices, actionLog)
+                if (result?.success == true) {
+                    actualCash = actualCash.subtract(cost)
+                    remainingBuyBudget = remainingBuyBudget.subtract(cost).toUsdScale()
+                }
             }
         }
     }

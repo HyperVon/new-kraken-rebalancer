@@ -45,6 +45,15 @@ class ModelTest : StringSpec() {
             Asset.BTC_USD_PAIR shouldBe TestFixtures.XBTUSD
         }
 
+        "matchesUsdQuotedPair accepts exact aliases and rejects substring collisions" {
+            Asset.matchesUsdQuotedPair("ETHUSD", Asset.ETH) shouldBe true
+            Asset.matchesUsdQuotedPair("XETHZUSD", Asset.ETH) shouldBe true
+            Asset.matchesUsdQuotedPair("SOMETHINGETHUSD", Asset.ETH) shouldBe false
+            Asset.matchesUsdQuotedPair("XBTUSD", Asset.BTC) shouldBe true
+            Asset.matchesUsdQuotedPair("XXBTZUSD", Asset.BTC) shouldBe true
+            Asset.matchesUsdQuotedPair("XBTUSDT", Asset.BTC) shouldBe false
+        }
+
         "testPortfolioSnapshot" {
             val asset =
                 PortfolioSnapshot.AssetSnapshot(

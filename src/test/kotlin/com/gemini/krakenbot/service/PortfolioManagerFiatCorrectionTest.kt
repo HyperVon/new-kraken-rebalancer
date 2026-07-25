@@ -9,6 +9,7 @@ import com.gemini.krakenbot.service.impl.PortfolioAnalyzerImpl
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.booleans.shouldBeTrue
+import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.shouldBe
 import io.mockk.every
 import io.mockk.mockk
@@ -136,6 +137,34 @@ class PortfolioManagerFiatCorrectionTest : StringSpec() {
                 .compareTo(BigDecimal.valueOf(20.0)) shouldBe 0
             buyOrders.getOrDefault("C", BigDecimal.ZERO)
                 .compareTo(BigDecimal.ZERO) shouldBe 0
+        }
+
+        "testDistributeFiatCorrection_ShareUsesUsdScale" {
+            val portfolioAnalyzer = makePortfolioAnalyzer(
+                Allocation("A", 50.0),
+                Allocation("B", 50.0),
+            )
+
+            // Uneven counter-devs produce a many-decimal ratio; share must round to USD scale 2.
+            val usdDev = BigDecimal("100.00")
+            val allDevs = mapOf(
+                "A" to BigDecimal("-70.00"),
+                "B" to BigDecimal("-30.00"),
+            )
+            val buyOrders = mutableMapOf<String, BigDecimal>()
+
+            portfolioAnalyzer.distributeFiatCorrection(
+                usdDev = usdDev,
+                allDevs = allDevs,
+                buyOrders = buyOrders,
+                sellOrders = mutableMapOf(),
+                actionLog = mutableListOf(),
+            )
+
+            buyOrders.getValue("A").scale() shouldBe 2
+            buyOrders.getValue("B").scale() shouldBe 2
+            buyOrders.getValue("A").shouldBeEqualComparingTo(BigDecimal("70.00"))
+            buyOrders.getValue("B").shouldBeEqualComparingTo(BigDecimal("30.00"))
         }
     }
 }

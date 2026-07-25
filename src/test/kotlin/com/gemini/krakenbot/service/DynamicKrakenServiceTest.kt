@@ -161,5 +161,50 @@ class DynamicKrakenServiceTest : StringSpec() {
             // getRealService
             dynamicService.realService shouldBe realService
         }
+
+        "withStableBackend keeps sell and buy on the backend pinned at entry despite mid-call flip" {
+            val appConfig = AppConfig(
+                kraken = KrakenCredentials("test-api-key", "test-private-key"),
+                settings = Settings(
+                    loopDelaySeconds = 60,
+                    deviationTriggerPercent = 5.0,
+                    dustThresholdUSD = 5.0,
+                    dryRun = false,
+                    simulation = true,
+                    fiatMaxDrawdown = 30.0,
+                    fiatDeploymentExponent = 1.0,
+                ),
+                allocations = emptyList(),
+            )
+            every { configService.getConfig() } returns appConfig
+
+            val dynamicService = createService()
+            dynamicService.withStableBackend {
+                dynamicService.executeOrder(
+                    Asset.BTC_USD_PAIR,
+                    OrderSide.SELL.apiValue,
+                    OrderType.MARKET.apiValue,
+                    BigDecimal.ONE,
+                )
+
+                every { configService.getConfig() } returns appConfig.copy(
+                    settings = appConfig.settings.copy(simulation = false),
+                )
+
+                dynamicService.executeOrder(
+                    Asset.ETH_USD_PAIR,
+                    OrderSide.BUY.apiValue,
+                    OrderType.MARKET.apiValue,
+                    BigDecimal.ONE,
+                )
+            }
+
+            coVerify(exactly = 2) {
+                simulatedService.executeOrder(any(), any(), any(), any())
+            }
+            coVerify(exactly = 0) {
+                realService.executeOrder(any(), any(), any(), any())
+            }
+        }
     }
 }

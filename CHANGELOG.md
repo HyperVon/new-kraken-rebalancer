@@ -6,6 +6,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.12.22] - 2026-07-24
+
+### Fixed
+
+- **Stable Kraken backend for order cycles**: `DynamicKrakenService.withStableBackend`
+  pins live vs simulation for the duration of `OrderExecutor.executeOrders`, so a
+  mid-cycle config flip cannot send sells to one backend and buys to another
+  ([#68](https://github.com/HyperVon/new-kraken-rebalancer/issues/68)).
+- **Ticker price resolution**: Fallback matching uses exact USD pair aliases
+  (`ETHUSD` / `XETHZUSD`, etc.) instead of substring `contains`, avoiding
+  collisions like `SOMETHINGETHUSD`
+  ([#69](https://github.com/HyperVon/new-kraken-rebalancer/issues/69)).
+- **Fiat-correction USD scale**: Distributed correction shares are rounded with
+  `toUsdScale()` before enqueue.
+
+### Added
+
+- **RateLimiter injectable clock** for deterministic decay tests.
+- **Continuous-quality cycle 2 tests**: dry-run projected-cash buy sizing, backend
+  pin under mid-cycle flip, exact ticker aliases, fiat share scale, clock decay.
+
 ## [6.12.21] - 2026-07-24
 
 ### Added

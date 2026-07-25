@@ -542,17 +542,22 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
             }
         }
 
-        "testResolvePriceFromTicker_ContainsCollisionReturnsFirstMatch" {
+        "testResolvePriceFromTicker_RejectsSubstringCollisions" {
             runTest {
-                // No exact ETHUSD key — fallback uses key.contains("ETH") && key.contains("USD").
-                // Documents current first-match iteration order when multiple keys qualify.
-                val rawPrices = linkedMapOf(
+                // Substring keys must not match; only exact aliases (ETHUSD / XETHZUSD).
+                val colliding = linkedMapOf(
                     "SOMETHINGETHUSD" to 1111.0,
                     "OTHERETHUSD" to 2222.0,
                 ).toBigDecimalMap()
+                portfolioAnalyzer.resolvePriceFromTicker(Asset.ETH, colliding)
+                    .shouldBeEqualComparingTo(BigDecimal.ZERO)
 
-                val price = portfolioAnalyzer.resolvePriceFromTicker(Asset.ETH, rawPrices)
-                price.shouldBeEqualComparingTo(BigDecimal("1111.0"))
+                val exactAlias = linkedMapOf(
+                    "SOMETHINGETHUSD" to 1111.0,
+                    "XETHZUSD" to 3333.0,
+                ).toBigDecimalMap()
+                portfolioAnalyzer.resolvePriceFromTicker(Asset.ETH, exactAlias)
+                    .shouldBeEqualComparingTo(BigDecimal("3333.0"))
             }
         }
 

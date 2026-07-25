@@ -81,7 +81,7 @@ value class Asset(val value: String) {
          * `XBTUSD`, `BTCUSD`, `XXBTZUSD`). Exact equality prevents prefix collisions
          * where e.g. a `XBTUSDT`/`XBTUSDC` quote could be mis-resolved to BTC.
          */
-        private fun acceptedKrakenPairs(symbol: String): Set<String> {
+        fun acceptedUsdQuotedPairs(symbol: String): Set<String> {
             val normalizedSymbol = normalizedSymbol(symbol)
             val krakenTicker = toKrakenTicker(normalizedSymbol)
             return setOf(
@@ -91,6 +91,11 @@ value class Asset(val value: String) {
                 "X${normalizedSymbol}Z$USD",
             )
         }
+
+        fun matchesUsdQuotedPair(pairKey: String, symbol: String): Boolean =
+            pairKey.uppercase() in acceptedUsdQuotedPairs(symbol)
+
+        private fun acceptedKrakenPairs(symbol: String): Set<String> = acceptedUsdQuotedPairs(symbol)
 
         fun possibleBalanceKeys(symbol: String): List<String> {
             val normalized = normalizedSymbol(symbol)

@@ -26,6 +26,12 @@ Settings.simulation == false → KrakenServiceImpl
 
 DI: `AppModule` binds `KrakenService` → `DynamicKrakenService(live, simulated, configService)`.
 
+`OrderExecutor.executeOrders` wraps the sell→buy sequence in
+`KrakenService.withStableBackend { … }`. On `DynamicKrakenService` this **pins**
+the resolved backend for the block so a mid-cycle `simulation` flip cannot send
+sells to one backend and buys to the other. Outside a pin, each call still
+re-reads `settings.simulation` (hot-reload between cycles remains intact).
+
 ## SimulatedKrakenService
 
 - Random-walk prices/balances for offline demos.

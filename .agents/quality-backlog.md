@@ -22,16 +22,17 @@ Product polish discovered during QA belongs in
 
 | ID | Size | Kind | Status | Area | Summary | Cycle | Issue | Notes |
 | :--- | :---: | :--- | :--- | :--- | :--- | :---: | :--- | :--- |
-| CQ-1-10 | L | bug | deferred | simulation | Mid-cycle `settings.simulation` flip can split sell/buy backends in one `executeOrders` | 1 | [#68](https://github.com/HyperVon/new-kraken-rebalancer/issues/68) | Needs approval before routing pin |
-| CQ-1-11 | L | bug | deferred | analyzer | `resolvePriceFromTicker` substring `contains` can collide; hardening changes live sizing | 1 | [#69](https://github.com/HyperVon/new-kraken-rebalancer/issues/69) | Documenting collision test shipped as CQ-1-2; matcher change gated |
-| CQ-1-9 | M | harness | deferred | rate-limit | `RateLimiter` uses wall-clock `System.currentTimeMillis` — decay hard to assert under `runTest` | 1 | — | Partial cover via CQ-1-1; clock injection is larger refactor |
-| CQ-1-4 | S | gap | deferred | orders | Dry-run sells inflate `projectedCash` for buy sizing with no balance refresh — documenting test still pending | 1 | — | Out of cycle-1 ship slice; keep for cycle 2 |
-| CQ-1-8 | S | bug | deferred | fiat | Fiat-correction `share` not `toUsdScale()` before USD enqueue | 1 | — | Test + tiny scale fix deferred (near trading path) |
+| — | — | — | — | — | _(none)_ | — | — | — |
 
 ## Done (recent)
 
 | ID | Size | Kind | Status | Area | Summary | Cycle | PR |
 | :--- | :---: | :--- | :--- | :--- | :--- | :---: | :--- |
+| CQ-1-10 | L | bug | done | simulation | Pin live/sim backend across `executeOrders` via `withStableBackend` | 2 | TBD |
+| CQ-1-11 | L | bug | done | analyzer | Exact USD pair-alias ticker match (no substring `contains`) | 2 | TBD |
+| CQ-1-9 | M | harness | done | rate-limit | Injectable `RateLimiter` clock + deterministic decay test | 2 | TBD |
+| CQ-1-4 | S | gap | done | orders | Dry-run buy budget uses projected cash (no USD refresh) | 2 | TBD |
+| CQ-1-8 | S | bug | done | fiat | Fiat-correction shares use `toUsdScale()` | 2 | TBD |
 | CQ-1-1 | S | gap | done | rate-limit | Assert throttle path leaves counter ≈ `safeLimit`; subsequent acquire behavior | 1 | [#70](https://github.com/HyperVon/new-kraken-rebalancer/pull/70) |
 | CQ-1-2 | M | gap | done | analyzer | Document `contains()` first-match collision for ticker fallback (test only) | 1 | [#70](https://github.com/HyperVon/new-kraken-rebalancer/pull/70) |
 | CQ-1-3 | S | gap | done | ATH | New-ATH path when `save` throws still returns drawdown without crashing | 1 | [#70](https://github.com/HyperVon/new-kraken-rebalancer/pull/70) |

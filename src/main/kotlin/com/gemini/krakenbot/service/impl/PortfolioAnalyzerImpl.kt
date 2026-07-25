@@ -20,6 +20,7 @@ import com.gemini.krakenbot.service.impl.PortfolioCalculations.SCALE_PERCENT
 import com.gemini.krakenbot.service.impl.PortfolioCalculations.SCALE_PRICE
 import com.gemini.krakenbot.service.impl.PortfolioCalculations.SCALE_USD
 import com.gemini.krakenbot.util.ActionLogFormatter
+import com.gemini.krakenbot.util.toUsdScale
 import com.gemini.krakenbot.view.util.ViewText
 import org.slf4j.LoggerFactory
 import java.math.BigDecimal
@@ -63,11 +64,9 @@ class PortfolioAnalyzerImpl(
         val expectedPair = Asset.tradingPair(symbol)
         rawPrices[expectedPair]?.let { return it }
 
-        val krakenTicker = Asset.toKrakenTicker(symbol)
+        // Exact pair-alias match only (CQ-1-11 / #69) — never substring contains().
         for ((key, value) in rawPrices) {
-            if (key.contains(krakenTicker) &&
-                key.contains(Asset.USD)
-            ) {
+            if (Asset.matchesUsdQuotedPair(key, symbol)) {
                 return value
             }
         }
@@ -368,7 +367,7 @@ class PortfolioAnalyzerImpl(
                     SCALE_PRICE,
                     RoundingMode.HALF_UP,
                 )
-            val share = deviationAbs.multiply(ratio)
+            val share = deviationAbs.multiply(ratio).toUsdScale()
 
             if (isDeposit) {
                 buyOrders[symbol] = share

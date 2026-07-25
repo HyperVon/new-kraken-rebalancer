@@ -94,5 +94,24 @@ class RateLimiterTest : StringSpec() {
                 limiter.getCurrentCounter() shouldBe 0.0
             }
         }
+
+        "injected clock decays counter deterministically without waiting" {
+            runTest {
+                var nowMs = 1_000_000L
+                val limiter = RateLimiter(
+                    safeLimit = 12.0,
+                    decayRate = 1.0,
+                    clock = { nowMs },
+                )
+                limiter.acquireWithCost(5.0)
+                limiter.getCurrentCounter() shouldBe 5.0
+
+                nowMs += 2_000L // 2s * decayRate 1.0 → counter falls by 2
+                limiter.getCurrentCounter() shouldBe 3.0
+
+                nowMs += 10_000L // fully decayed
+                limiter.getCurrentCounter() shouldBe 0.0
+            }
+        }
     }
 }

@@ -13,13 +13,37 @@ class DynamicKrakenService(
     private val simulatedService: SimulatedKrakenService,
     private val configService: ConfigService,
 ) : KrakenService {
+    private val pinLock = Any()
+    private var pinnedService: KrakenService? = null
+    private var pinDepth = 0
+
+    private fun resolveFromConfig(): KrakenService = if (configService.getConfig().settings.simulation) {
+        simulatedService
+    } else {
+        realService
+    }
+
     private val activeService: KrakenService
-        get() =
-            if (configService.getConfig().settings.simulation) {
-                simulatedService
-            } else {
-                realService
+        get() = synchronized(pinLock) { pinnedService } ?: resolveFromConfig()
+
+    override suspend fun <T> withStableBackend(block: suspend () -> T): T {
+        synchronized(pinLock) {
+            if (pinDepth == 0) {
+                pinnedService = resolveFromConfig()
             }
+            pinDepth++
+        }
+        try {
+            return block()
+        } finally {
+            synchronized(pinLock) {
+                pinDepth--
+                if (pinDepth == 0) {
+                    pinnedService = null
+                }
+            }
+        }
+    }
 
     override suspend fun getBalances(): RawBalances = activeService.getBalances()
 

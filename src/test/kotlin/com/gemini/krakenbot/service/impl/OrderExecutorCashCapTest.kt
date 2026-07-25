@@ -313,5 +313,41 @@ class OrderExecutorCashCapTest : StringSpec() {
                 krakenService.executedOrders[1].volume.shouldBeEqualComparingTo(BigDecimal("0.0495"))
             }
         }
+
+        "dry-run sizes buys from projected cash without refreshing USD balances" {
+            runTest {
+                krakenService.orderResultFactory = { pair, _, side, volume ->
+                    OrderResult(success = true, pair = pair, side = side, volume = volume)
+                }
+
+                // Opening cash $100 + dry-run sell $100 → projected $200; buy budget 99% = $198.
+                orderExecutor.executeOrders(
+                    buyOrders = mapOf(Asset.ETH to BigDecimal("500.00")),
+                    sellOrders = mapOf(Asset.BTC to BigDecimal("100.00")),
+                    currentValuesUSD = mapOf(Asset.USD to BigDecimal("100.00")),
+                    prices =
+                    mapOf(
+                        Asset.BTC to BigDecimal("1000.00"),
+                        Asset.ETH to BigDecimal("1000.00"),
+                    ),
+                    settings =
+                    Settings(
+                        loopDelaySeconds = 0L,
+                        deviationTriggerPercent = 2.0,
+                        dustThresholdUSD = 1.0,
+                        dryRun = true,
+                        fiatMaxDrawdown = 0.0,
+                        fiatDeploymentExponent = 1.0,
+                    ),
+                    actionLog = mutableListOf(),
+                )
+
+                krakenService.getBalancesCallCount shouldBe 0
+                krakenService.executedOrders.size shouldBe 2
+                krakenService.executedOrders[0].side shouldBe "sell"
+                krakenService.executedOrders[1].side shouldBe "buy"
+                krakenService.executedOrders[1].volume.shouldBeEqualComparingTo(BigDecimal("0.198"))
+            }
+        }
     }
 }
