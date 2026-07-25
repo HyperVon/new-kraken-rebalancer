@@ -8,6 +8,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [6.12.18] - 2026-07-24
+
 ### Fixed
 
 - **Config save no longer writes env-resolved Kraken credentials to disk**: Settings
