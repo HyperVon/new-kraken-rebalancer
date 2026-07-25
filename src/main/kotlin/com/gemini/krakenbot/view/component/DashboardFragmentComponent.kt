@@ -4,6 +4,9 @@ import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.util.PrecisionConstants
 import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.HtmlAttrs
+import com.gemini.krakenbot.view.util.HtmlIds
+import com.gemini.krakenbot.view.util.HtmxAttrs
+import com.gemini.krakenbot.view.util.HtmxValues
 import com.gemini.krakenbot.view.util.ViewText
 import com.gemini.krakenbot.view.util.div
 import com.gemini.krakenbot.view.util.span
@@ -30,8 +33,8 @@ class DashboardFragmentComponent(
             )
         val isStale = timeSinceUpdate > PrecisionConstants.STALE_THRESHOLD_SECONDS
 
-        // Brand + mode plate + nav live in DashboardShell (outside this HTMX swap target).
-        // The fragment only refreshes stream health so SSE updates keep STREAM/STALE fresh.
+        // Brand + mode plate + nav + stream slot live in DashboardShell. Stream health
+        // is refreshed out-of-band so SSE swaps keep STREAM/STALE in the header cluster.
         renderStreamStatus(latest, timeSinceUpdate, isStale)
         overviewGridComponent.render(latest, history)
 
@@ -45,18 +48,18 @@ class DashboardFragmentComponent(
 
     context(div: DIV)
     private fun renderStreamStatus(latest: PortfolioSnapshot, timeSinceUpdate: Long, isStale: Boolean) {
-        div.div(CssClass.Layout.HeaderActions) {
-            div(CssClass.Layout.HeaderStatus) {
-                val badgeClass = if (isStale) CssClass.StatusCard.Delayed else CssClass.StatusCard.Live
-                val badgeText = if (isStale) ViewText.STREAM_STALE else ViewText.STREAM
-                div(badgeClass) { +badgeText }
-                val ageClass = if (isStale) CssClass.DataAge.ValueStale else CssClass.DataAge.Value
-                span(ageClass) { +"$timeSinceUpdate${ViewText.AGO_SECONDS}" }
-                span(CssClass.DataAge.Time) {
-                    attributes[HtmlAttrs.DATA_EPOCH] =
-                        latest.timestamp.toEpochMilli().toString()
-                    +timeFormatter.format(latest.timestamp)
-                }
+        div.div(CssClass.Layout.HeaderStatus) {
+            id = HtmlIds.HEADER_STATUS
+            attributes[HtmxAttrs.HX_SWAP_OOB] = HtmxValues.TRUE
+            val badgeClass = if (isStale) CssClass.StatusCard.Delayed else CssClass.StatusCard.Live
+            val badgeText = if (isStale) ViewText.STREAM_STALE else ViewText.STREAM
+            div(badgeClass) { +badgeText }
+            val ageClass = if (isStale) CssClass.DataAge.ValueStale else CssClass.DataAge.Value
+            span(ageClass) { +"$timeSinceUpdate${ViewText.AGO_SECONDS}" }
+            span(CssClass.DataAge.Time) {
+                attributes[HtmlAttrs.DATA_EPOCH] =
+                    latest.timestamp.toEpochMilli().toString()
+                +timeFormatter.format(latest.timestamp)
             }
         }
     }

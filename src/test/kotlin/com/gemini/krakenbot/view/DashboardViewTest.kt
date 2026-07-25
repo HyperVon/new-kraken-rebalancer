@@ -115,6 +115,8 @@ class DashboardViewTest : StringSpec() {
             html shouldContain "sse-connect=\"${API_STATUS_STREAM}\""
             html shouldContain CONNECTING
             html shouldContain MODE_DRY_RUN
+            html shouldContain "id=\"header-status\""
+            html shouldContain STREAM
         }
 
         "renderDashboardShell_simulationMode_rendersSimulationPlate" {
@@ -228,6 +230,8 @@ class DashboardViewTest : StringSpec() {
             }
 
             html shouldContain STREAM
+            html shouldContain "id=\"header-status\""
+            html shouldContain "hx-swap-oob=\"true\""
             html shouldContain TOTAL_PORTFOLIO
             html shouldContain "$10,000.00"
             html shouldContain CASH_USD

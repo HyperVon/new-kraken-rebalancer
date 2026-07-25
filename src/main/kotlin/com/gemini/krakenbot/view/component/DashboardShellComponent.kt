@@ -29,7 +29,7 @@ class DashboardShellComponent {
                 // Mode plate + nav live outside the HTMX fragment so the trading mode
                 // is visible during the initial load (and if the fragment request fails).
                 header {
-                    brandWithMode(settings)
+                    brandWithMode(settings, includeStreamSlot = true)
                     primaryNav(ActiveNav.DASHBOARD)
                 }
                 div {

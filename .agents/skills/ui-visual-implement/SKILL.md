@@ -95,7 +95,7 @@ Rules:
 | Invariant | Owned by | Regression looks like |
 | :--- | :--- | :--- |
 | Mode plate on every page | `view/util/Layouts.kt` (`brandWithMode`) | Settings or History header renders `brandMark()` alone |
-| Stream chip separate from mode | `DashboardFragmentComponent`, `frontend-js` `Dashboard.kt` | Chip labelled `LIVE` again (reads as live trading) instead of `STREAM` / `STALE` |
+| Stream chip separate from mode | `Layouts.streamStatusPlaceholder` + `DashboardFragmentComponent` OOB swap, `frontend-js` `Dashboard.kt` | Chip labelled `LIVE` again (reads as live trading) instead of `STREAM` / `STALE`; chip back on a separate right-aligned row |
 | Hero value + 24H delta + sparkline | `OverviewGridComponent` | Back to three equal status cards; empty sparkline slot |
 | Cash / Crypto tile progress bars | `OverviewGridComponent.renderTileBar` | Bar width detached from the stated percentage |
 | Cycle-grouped activity + View all | `RecentActivityComponent` | Flat time/action table returns; link dropped |

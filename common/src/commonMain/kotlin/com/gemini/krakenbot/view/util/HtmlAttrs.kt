@@ -40,6 +40,7 @@ object HtmxAttrs {
     const val HX_GET = "hx-get"
     const val HX_POST = "hx-post"
     const val HX_SWAP = "hx-swap"
+    const val HX_SWAP_OOB = "hx-swap-oob"
     const val HX_TARGET = "hx-target"
     const val HX_TRIGGER = "hx-trigger"
     const val SSE_CONNECT = "sse-connect"
@@ -48,6 +49,7 @@ object HtmxAttrs {
 object HtmxValues {
     const val BODY = "body"
     const val INNER_HTML = "innerHTML"
+    const val TRUE = "true"
     const val EXT_SSE = "sse"
     const val TRIGGER_LOAD_SSE_MESSAGE = "load, sse:message"
 }
@@ -75,6 +77,9 @@ object HtmlIds {
     const val NEW_SYMBOL_INPUT = "new-symbol-input"
     const val MODE_PLATE = "mode-plate"
     const val MODE_PLATE_LABEL = "mode-plate-label"
+
+    /** Dashboard stream-health chip; SSE fragment updates it via hx-swap-oob. */
+    const val HEADER_STATUS = "header-status"
 
     // History Page IDs
     const val HISTORY_STATS = "history-stats"
