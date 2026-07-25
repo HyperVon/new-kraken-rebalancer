@@ -9,18 +9,24 @@ import kotlin.time.Duration.Companion.milliseconds
 /**
  * Thread-safe rate limiter for API calls using exponential decay.
  * Implements Kraken's call counter algorithm with configurable costs per endpoint.
+ *
+ * @param clock Millisecond epoch supplier (injectable for deterministic tests).
  */
-class RateLimiter(private val safeLimit: Double = 12.0, private val decayRate: Double = 0.33) {
+class RateLimiter(
+    private val safeLimit: Double = 12.0,
+    private val decayRate: Double = 0.33,
+    private val clock: () -> Long = { System.currentTimeMillis() },
+) {
     private val mutex = Mutex()
 
     @Volatile
     private var callCounter: Double = 0.0
 
     @Volatile
-    private var lastUpdateTimeMs: Long = System.currentTimeMillis()
+    private var lastUpdateTimeMs: Long = clock()
 
     suspend fun acquireWithCost(cost: Double): Double = mutex.withLock {
-        val now = System.currentTimeMillis()
+        val now = clock()
         val elapsedSeconds = (now - lastUpdateTimeMs) / 1000.0
 
         // Apply decay to counter
@@ -35,7 +41,7 @@ class RateLimiter(private val safeLimit: Double = 12.0, private val decayRate: D
             if (waitMs > 0) {
                 delay(waitMs.milliseconds)
                 callCounter = safeLimit - cost
-                lastUpdateTimeMs = System.currentTimeMillis()
+                lastUpdateTimeMs = clock()
             }
         }
 
@@ -46,7 +52,7 @@ class RateLimiter(private val safeLimit: Double = 12.0, private val decayRate: D
     }
 
     suspend fun getCurrentCounter(): Double = mutex.withLock {
-        val now = System.currentTimeMillis()
+        val now = clock()
         val lastUpdate = lastUpdateTimeMs
         val elapsedSeconds = (now - lastUpdate) / 1000.0
         return maxOf(0.0, callCounter - (elapsedSeconds * decayRate))
@@ -54,6 +60,6 @@ class RateLimiter(private val safeLimit: Double = 12.0, private val decayRate: D
 
     suspend fun reset() = mutex.withLock {
         callCounter = 0.0
-        lastUpdateTimeMs = System.currentTimeMillis()
+        lastUpdateTimeMs = clock()
     }
 }
