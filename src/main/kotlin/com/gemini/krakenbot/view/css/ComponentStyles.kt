@@ -33,14 +33,6 @@ object ComponentStyles {
             borderColor = CssTheme.colorWarningBorder
         }
 
-        ".${CssClass.StatusCard.Badge}.offline" {
-            backgroundColor = CssTheme.colorSlateMuted
-            color = CssTheme.colorTextSecondary
-            borderWidth = 1.px
-            borderStyle = BorderStyle.solid
-            borderColor = CssTheme.colorSlateBorder
-        }
-
         ".${CssClass.Form.AllocationTotal}" {
             display = Display.inlineFlex
             alignItems = Align.center

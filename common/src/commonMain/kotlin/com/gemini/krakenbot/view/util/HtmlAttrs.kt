@@ -58,6 +58,18 @@ object HtmxValues {
 object CdnUrls {
     const val HTMX = "https://unpkg.com/htmx.org@2.0.4"
     const val HTMX_SSE = "https://unpkg.com/htmx-ext-sse@2.2.2/sse.js"
+    const val CHART_JS = "https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"
+    const val CHART_JS_DATE_FNS =
+        "https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"
+    const val HAMMER_JS = "https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js"
+    const val CHART_JS_ZOOM =
+        "https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.2.0/dist/chartjs-plugin-zoom.min.js"
+    const val GOOGLE_FONTS_PRECONNECT = "https://fonts.googleapis.com"
+    const val GOOGLE_FONTS_GSTATIC_PRECONNECT = "https://fonts.gstatic.com"
+    const val GOOGLE_FONTS_STYLESHEET =
+        "https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800" +
+            "&family=Outfit:wght@400;500;600;700;800" +
+            "&family=Roboto+Mono:wght@400;500;700&display=swap"
 }
 
 /** Centralized HTML tag name constants used for DOM element creation. */
@@ -117,6 +129,7 @@ object HtmlIds {
 object SyncMetadataKeys {
     const val SYNC_OFFSET = "sync_offset"
     const val SYNC_TOTAL = "sync_total"
+    const val HISTORY_SEEDED = "history_seeded"
     const val COMPLETED = "completed"
     const val IS_SEEDED = "seeded"
     const val OFFSET = "offset"

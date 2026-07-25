@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.13.5] - 2026-07-25
+
+### Changed
+
+- **Shared web constants**: Centralized chart, zoom, font, trade-source, and
+  history-seeding keys for reuse across JVM and Kotlin/JS code.
+
+### Removed
+
+- **Orphaned UI styles**: Removed unused pre-DASH-3 Recent Activity tokens and
+  CSS, plus the unused offline status badge styling.
+
 ## [6.13.4] - 2026-07-25
 
 ### Added

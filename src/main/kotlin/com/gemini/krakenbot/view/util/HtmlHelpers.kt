@@ -15,15 +15,11 @@ fun HEAD.commonMetadataAndStyles() {
         name = "viewport",
         content = "width=device-width, initial-scale=1.0",
     )
-    link(rel = "preconnect", href = "https://fonts.googleapis.com")
-    link(rel = "preconnect", href = "https://fonts.gstatic.com") {
+    link(rel = "preconnect", href = CdnUrls.GOOGLE_FONTS_PRECONNECT)
+    link(rel = "preconnect", href = CdnUrls.GOOGLE_FONTS_GSTATIC_PRECONNECT) {
         attributes[HtmlAttrs.CROSSORIGIN] = ""
     }
-    val fontsHref =
-        "https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800" +
-            "&family=Outfit:wght@400;500;600;700;800" +
-            "&family=Roboto+Mono:wght@400;500;700&display=swap"
-    link(rel = "stylesheet", href = fontsHref)
+    link(rel = "stylesheet", href = CdnUrls.GOOGLE_FONTS_STYLESHEET)
     // CSS responses are cached for 24 hours. A content-derived version keeps
     // that cache useful while forcing clients to fetch changed rules on deploy.
     val stylesheetVersion = CssStyles.stylesheet.toString().hashCode()

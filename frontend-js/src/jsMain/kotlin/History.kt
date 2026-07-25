@@ -3,6 +3,7 @@ package com.gemini.krakenbot.frontend
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.TimeRange
+import com.gemini.krakenbot.model.TradeSourceKeys
 import com.gemini.krakenbot.util.PrecisionConstants
 import com.gemini.krakenbot.view.util.ChartProps
 import com.gemini.krakenbot.view.util.CssClass
@@ -946,7 +947,7 @@ private fun renderTradeRow(t: JsTradeRecord): HTMLTableRowElement {
     val price = dynamicNumber(t.price) ?: 0.0
     val fee = dynamicNumber(t.fee) ?: 0.0
     val slippage = dynamicNumber(t.slippagePercent)
-    val isEstimatedEconomics = dryRun || t.source == "LOCAL_ESTIMATE"
+    val isEstimatedEconomics = dryRun || t.source == TradeSourceKeys.LOCAL_ESTIMATE
     val estimatedTitle =
         if (isEstimatedEconomics) {
             ViewText.SLIPPAGE_ESTIMATED_TITLE
