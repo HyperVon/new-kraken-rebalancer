@@ -17,6 +17,20 @@ need only this file (no issue spam).
 
 | ID | Size | Status | Area | Summary | Cycle | Issue | Notes |
 | :--- | :---: | :--- | :--- | :--- | :---: | :--- | :--- |
+| — | — | — | — | *(empty — nothing open)* | — | — | — |
+
+## Done (recent)
+
+| ID | Size | Status | Area | Summary | Cycle | PR |
+| :--- | :---: | :--- | :--- | :--- | :---: | :--- |
+| — | — | done | docs | Cut Unreleased → 6.12.17 | 7 | #49 |
+| — | — | done | css/tests | CssClass.Offline, TestDomBuilders, write-kotest | 7 | #48 |
+| — | — | done | build/tests | Spotless frontend-js, IsolationMode, 6.12.15/16 | 6 | #47 |
+
+## Done (earlier cycles)
+
+| ID | Size | Status | Area | Summary | Cycle | Issue | Notes |
+| :--- | :---: | :--- | :--- | :--- | :---: | :--- | :--- |
 | CI-L1 | L | done | build | Spotless/ktlint for `**/view/**` | — | [#50](https://github.com/HyperVon/new-kraken-rebalancer/issues/50) | Shipped with ktlint 1.7.1 |
 | CI-L2 | L | done | test | Spotless for `EvaluationScenariosTest` | — | [#51](https://github.com/HyperVon/new-kraken-rebalancer/issues/51) | Shipped; max_line_length off via .editorconfig |
 | CI-L3 | L | done | frontend | Internal `CUMULATIVE_PL_*` rename | — | [#52](https://github.com/HyperVon/new-kraken-rebalancer/issues/52) | Shipped WIP |
@@ -52,14 +66,6 @@ need only this file (no issue spam).
 | CI-8-D06 | S | done | docs | API permission lists README vs SECURITY mismatch | 8 | — | Shipped WIP |
 | CI-8-D07 | S | done | docs | ALGORITHM “exceed” vs inclusive `>=` | 8 | — | Shipped WIP |
 | CI-8-D08 | M | done | skills | pre_commit_check: lint SECURITY/CONTRIBUTING; align build gate | 8 | — | Shipped WIP |
-
-## Done (recent)
-
-| ID | Size | Status | Area | Summary | Cycle | PR |
-| :--- | :---: | :--- | :--- | :--- | :---: | :--- |
-| — | — | done | docs | Cut Unreleased → 6.12.17 | 7 | #49 |
-| — | — | done | css/tests | CssClass.Offline, TestDomBuilders, write-kotest | 7 | #48 |
-| — | — | done | build/tests | Spotless frontend-js, IsolationMode, 6.12.15/16 | 6 | #47 |
 
 ## How to update
 

@@ -508,9 +508,9 @@ class TradeHistoryServiceImpl(
         val currentPrices = mutableMapOf<String, BigDecimal>()
 
         if (oldestSnapshot != null) {
-            for (symbol in oldestSnapshot.assets.keys) {
-                runningBalances[symbol] = oldestSnapshot.assets[symbol]?.balance ?: BigDecimal.ZERO
-                currentPrices[symbol] = oldestSnapshot.assets[symbol]?.price ?: BigDecimal.ZERO
+            for ((symbol, asset) in oldestSnapshot.assets) {
+                runningBalances[symbol] = asset.balance
+                currentPrices[symbol] = asset.price
             }
         } else {
             for ((symbol) in allocations) {
