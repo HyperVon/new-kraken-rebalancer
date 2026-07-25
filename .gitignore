@@ -16,11 +16,6 @@ out/
 .vscode/
 *.iml
 
-# Personal Cursor BYOK / Gemini helpers (user-local; never ship)
-.cursor/rules/byok-gemini.mdc
-.cursor/agents/gemini-*.md
-.cursor/scripts/gemini-*
-
 # Application data files
 *.txt
 *.log
