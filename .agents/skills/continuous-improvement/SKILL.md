@@ -15,6 +15,10 @@ Orchestrator skill. It **does not replace** individual skills — it sequences
 them. Prefer this when the user wants an end-to-end enhance → test → PR loop
 with light supervision; run child skills alone when they want a narrow pass.
 
+Sibling: [continuous-quality](../continuous-quality/SKILL.md) hardens
+correctness (tests, regressions, evaluation gaps, defect fixes). Hand QA-only
+work there; keep product polish / redesigns on this skill.
+
 Related always-on norms: [OPERATING.md](../../OPERATING.md),
 [parallel-multi-agent](../parallel-multi-agent/SKILL.md).
 

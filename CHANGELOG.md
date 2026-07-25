@@ -8,6 +8,16 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **`continuous-quality` agent skill**: QA orchestrator (baseline gates → bug/gap
+  discovery → S/M tests+fixes → L approval gate → PR) with persistent
+  [`.agents/quality-backlog.md`](.agents/quality-backlog.md); sibling to
+  `continuous-improvement` for correctness hardening rather than product polish.
+- **Continuous-quality cycle 1 tests**: Added 19 edge-case regressions covering
+  rate limiting, dust boundaries, drawdown saturation, trigger equality, ATH
+  persistence failure, trade deduplication, and historical reconstruction.
+
 ## [6.12.20] - 2026-07-24
 
 ### Changed

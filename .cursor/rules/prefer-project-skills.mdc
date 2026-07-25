@@ -22,5 +22,6 @@ process.
 | Fan-out parallel work | `parallel-multi-agent` (+ always-on rule) |
 | Post-deploy UI smoke | `post-deploy-ui-smoke` |
 | Continuous improvement / “whole shebang” | `continuous-improvement` (+ `.agents/improvement-backlog.md`) |
+| Continuous quality / QA loop / test hardening | `continuous-quality` (+ `.agents/quality-backlog.md`) |
 
 If no skill fits, proceed normally. Don’t skip quality gates the skill names.

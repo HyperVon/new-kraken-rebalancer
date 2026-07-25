@@ -542,6 +542,20 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
             }
         }
 
+        "testResolvePriceFromTicker_ContainsCollisionReturnsFirstMatch" {
+            runTest {
+                // No exact ETHUSD key — fallback uses key.contains("ETH") && key.contains("USD").
+                // Documents current first-match iteration order when multiple keys qualify.
+                val rawPrices = linkedMapOf(
+                    "SOMETHINGETHUSD" to 1111.0,
+                    "OTHERETHUSD" to 2222.0,
+                ).toBigDecimalMap()
+
+                val price = portfolioAnalyzer.resolvePriceFromTicker(Asset.ETH, rawPrices)
+                price.shouldBeEqualComparingTo(BigDecimal("1111.0"))
+            }
+        }
+
         "testCalculatePortfolioValues_PriceNotFoundAbort" {
             runTest {
                 val balances =
@@ -660,7 +674,90 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
                     portfolioAnalyzer.updateAthAndCalculateDrawdown(
                         BigDecimal("800.0"),
                     )
-                drawdown.compareTo(BigDecimal("20.0")) shouldBe 0
+                drawdown.shouldBeEqualComparingTo(BigDecimal("20.0"))
+            }
+        }
+
+        "testUpdateAthAndCalculateDrawdown_NewAthSaveFailure" {
+            runTest {
+                coEvery { portfolioStatsRepository.load() } returns PortfolioStats(
+                    BigDecimal("1000.0"),
+                )
+                coEvery { portfolioStatsRepository.save(any()) } throws IOException("Save failed")
+
+                val drawdown = portfolioAnalyzer.updateAthAndCalculateDrawdown(
+                    BigDecimal("1500.0"),
+                )
+                drawdown.shouldBeEqualComparingTo(BigDecimal.ZERO)
+            }
+        }
+
+        "testPerformRebalanceCycle_DeviationExactTriggerGeneratesOrders" {
+            runTest {
+                val allocs = listOf(
+                    Allocation(Asset.BTC, 50.0),
+                    Allocation(Asset.USD, 50.0),
+                )
+                every { configService.getConfig() } returns AppConfig(
+                    kraken = KrakenCredentials(apiKey = "k", privateKey = "s"),
+                    settings = Settings(
+                        loopDelaySeconds = 0L,
+                        deviationTriggerPercent = 2.0,
+                        dustThresholdUSD = 1.0,
+                        dryRun = false,
+                        fiatMaxDrawdown = 0.0,
+                        fiatDeploymentExponent = 1.0,
+                    ),
+                    allocations = allocs,
+                )
+
+                krakenService.pricesSupplier = { mapOf(Asset.BTC_USD_PAIR to 50000.0) }
+                // Total $10,000: BTC $5,100 (+2.0% vs $5,000 target), USD $4,900
+                krakenService.balanceSupplier = {
+                    mapOf(Asset.BTC to 0.102, Asset.USD to 4900.0)
+                }
+
+                portfolioManager.startRebalancingLoop()
+                portfolioManager.performRebalanceCycle()
+
+                krakenService.executedOrders.isNotEmpty() shouldBe true
+                krakenService.executedOrders.any { it.pair == Asset.BTC_USD_PAIR } shouldBe true
+
+                val captor = slot<PortfolioSnapshot>()
+                coVerify { tradeHistoryService.addSnapshot(capture(captor)) }
+                captor.captured.actions.any { it.contains("Deviation: BTC") } shouldBe true
+            }
+        }
+
+        "testPerformRebalanceCycle_DeviationJustBelowTriggerNoCryptoOrders" {
+            runTest {
+                val allocs = listOf(
+                    Allocation(Asset.BTC, 50.0),
+                    Allocation(Asset.USD, 50.0),
+                )
+                every { configService.getConfig() } returns AppConfig(
+                    kraken = KrakenCredentials(apiKey = "k", privateKey = "s"),
+                    settings = Settings(
+                        loopDelaySeconds = 0L,
+                        deviationTriggerPercent = 2.0,
+                        dustThresholdUSD = 1.0,
+                        dryRun = false,
+                        fiatMaxDrawdown = 0.0,
+                        fiatDeploymentExponent = 1.0,
+                    ),
+                    allocations = allocs,
+                )
+
+                krakenService.pricesSupplier = { mapOf(Asset.BTC_USD_PAIR to 50000.0) }
+                // Total $10,000: BTC $5,099.50 (+1.99% vs $5,000 target), USD $4,900.50
+                krakenService.balanceSupplier = {
+                    mapOf(Asset.BTC to 0.10199, Asset.USD to 4900.50)
+                }
+
+                portfolioManager.startRebalancingLoop()
+                portfolioManager.performRebalanceCycle()
+
+                krakenService.executedOrders.isEmpty() shouldBe true
             }
         }
 

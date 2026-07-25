@@ -172,6 +172,70 @@ class OrderExecutorCashCapTest : StringSpec() {
             }
         }
 
+        "should execute sell at exact dust threshold boundary" {
+            runTest {
+                krakenService.orderResultFactory = { pair, _, side, volume ->
+                    OrderResult(success = true, pair = pair, side = side, volume = volume)
+                }
+
+                orderExecutor.executeOrders(
+                    buyOrders = emptyMap(),
+                    sellOrders = mapOf(Asset.BTC to BigDecimal("1.00")),
+                    currentValuesUSD =
+                    mapOf(
+                        Asset.USD to BigDecimal("1000.00"),
+                        Asset.BTC to BigDecimal("600.00"),
+                    ),
+                    prices = mapOf(Asset.BTC to BigDecimal("50000.00")),
+                    settings =
+                    Settings(
+                        loopDelaySeconds = 0L,
+                        deviationTriggerPercent = 2.0,
+                        dustThresholdUSD = 1.0,
+                        dryRun = true,
+                        fiatMaxDrawdown = 0.0,
+                        fiatDeploymentExponent = 1.0,
+                    ),
+                    actionLog = mutableListOf(),
+                )
+
+                krakenService.executedOrders.size shouldBe 1
+                krakenService.executedOrders.single().side shouldBe "sell"
+                krakenService.executedOrders.single().volume.shouldBeEqualComparingTo(BigDecimal("0.00002"))
+            }
+        }
+
+        "should skip sell just below dust threshold" {
+            runTest {
+                krakenService.orderResultFactory = { pair, _, side, volume ->
+                    OrderResult(success = true, pair = pair, side = side, volume = volume)
+                }
+
+                orderExecutor.executeOrders(
+                    buyOrders = emptyMap(),
+                    sellOrders = mapOf(Asset.BTC to BigDecimal("0.99")),
+                    currentValuesUSD =
+                    mapOf(
+                        Asset.USD to BigDecimal("1000.00"),
+                        Asset.BTC to BigDecimal("600.00"),
+                    ),
+                    prices = mapOf(Asset.BTC to BigDecimal("50000.00")),
+                    settings =
+                    Settings(
+                        loopDelaySeconds = 0L,
+                        deviationTriggerPercent = 2.0,
+                        dustThresholdUSD = 1.0,
+                        dryRun = true,
+                        fiatMaxDrawdown = 0.0,
+                        fiatDeploymentExponent = 1.0,
+                    ),
+                    actionLog = mutableListOf(),
+                )
+
+                krakenService.executedOrders shouldBe emptyList()
+            }
+        }
+
         "should abort live buys when no positive USD balance is observed after sells" {
             runTest {
                 var balancePoll = 0
