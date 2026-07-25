@@ -78,7 +78,7 @@ effectively than spreading across all pairs.
 
 1. **Sell first** — only successful sells update projected cash.
 2. **USD poll** (non–dry-run): up to **3** attempts with exponential backoff
-   starting at **250ms** (doubling each attempt, capped at 32s); accept when
+   starting at **250ms** (doubling each attempt: 250ms → 500ms → 1000ms); accept when
    balance ≥ **95%** of projected. Otherwise use the last positive observation
    (not the maximum); if no positive balance is observed, projected cash remains
    the fallback. The fail-open fallback is tracked separately in

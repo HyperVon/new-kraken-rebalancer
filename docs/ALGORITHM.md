@@ -181,7 +181,7 @@ failure.
       logged but do not inflate the available cash.
 2. **USD Balance Refresh**: After sells complete (if not in dry-run mode), the
    system polls the Kraken API up to **3** times with exponential backoff
-   starting at **250ms** (doubling each attempt, capped at 32s) to fetch the
+   starting at **250ms** (doubling each attempt: 250ms → 500ms → 1000ms) to fetch the
    settled USD balance. It accepts the balance once it reaches **95%** of the
    projected amount. Otherwise, the last positive observed balance is used; if
    no positive balance is observed, the projected amount remains the fallback.

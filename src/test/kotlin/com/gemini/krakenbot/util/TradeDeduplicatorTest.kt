@@ -179,5 +179,101 @@ class TradeDeduplicatorTest : StringSpec() {
             val duplicates = TradeDeduplicator.findDuplicateTradeIds(listOf(record1, record2))
             duplicates.isEmpty() shouldBe true
         }
+
+        "should not treat pair alias API fills with different fees as duplicates" {
+            val now = Instant.now()
+            val record1 =
+                TradeRecord(
+                    timestamp = now,
+                    pair = "XBTUSD",
+                    side = "BUY",
+                    symbol = "BTC",
+                    volume = BigDecimal("1.0"),
+                    usdAmount = BigDecimal("50000.00"),
+                    success = true,
+                    dryRun = false,
+                    fee = BigDecimal("100.00"),
+                    source = TradeSource.API_FILL,
+                    id = 40,
+                )
+            val record2 =
+                TradeRecord(
+                    timestamp = now.plusMillis(100),
+                    pair = "XXBTZUSD",
+                    side = "BUY",
+                    symbol = "BTC",
+                    volume = BigDecimal("1.0"),
+                    usdAmount = BigDecimal("50000.00"),
+                    success = true,
+                    dryRun = false,
+                    fee = BigDecimal("150.00"),
+                    source = TradeSource.API_FILL,
+                    id = 41,
+                )
+
+            TradeDeduplicator.findDuplicateTradeIds(listOf(record1, record2)).isEmpty() shouldBe true
+        }
+
+        "should delete later id when both pair alias records are settled API fills" {
+            val now = Instant.now()
+            val record1 =
+                TradeRecord(
+                    timestamp = now,
+                    pair = "XBTUSD",
+                    side = "BUY",
+                    symbol = "BTC",
+                    volume = BigDecimal("1.0"),
+                    usdAmount = BigDecimal("50000.00"),
+                    success = true,
+                    dryRun = false,
+                    price = BigDecimal("50000.00"),
+                    fee = BigDecimal("100.00"),
+                    source = TradeSource.API_FILL,
+                    id = 50,
+                )
+            val record2 =
+                TradeRecord(
+                    timestamp = now.plusMillis(100),
+                    pair = "XXBTZUSD",
+                    side = "BUY",
+                    symbol = "BTC",
+                    volume = BigDecimal("1.0"),
+                    usdAmount = BigDecimal("50000.00"),
+                    success = true,
+                    dryRun = false,
+                    price = BigDecimal("50000.00"),
+                    fee = BigDecimal("100.00"),
+                    source = TradeSource.API_FILL,
+                    id = 51,
+                )
+
+            TradeDeduplicator.findDuplicateTradeIds(listOf(record1, record2)) shouldContainExactly listOf(51)
+        }
+
+        "should not treat opposite sides as duplicates even when otherwise identical" {
+            val now = Instant.now()
+            val buyRecord =
+                TradeRecord(
+                    timestamp = now,
+                    pair = "XBTUSD",
+                    side = "BUY",
+                    symbol = "BTC",
+                    volume = BigDecimal("1.0"),
+                    usdAmount = BigDecimal("50000.00"),
+                    success = true,
+                    dryRun = false,
+                    fee = BigDecimal("100.00"),
+                    source = TradeSource.API_FILL,
+                    id = 60,
+                )
+            val sellRecord =
+                buyRecord.copy(
+                    timestamp = now.plusMillis(100),
+                    side = "SELL",
+                    id = 61,
+                )
+
+            TradeDeduplicator.findDuplicateTradeIds(listOf(buyRecord, sellRecord)).isEmpty() shouldBe true
+        }
     }
 }

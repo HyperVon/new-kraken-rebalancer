@@ -21,9 +21,21 @@ For the end-user walkthrough, maintain
 
 ## Keep a Changelog
 
-Update `CHANGELOG.md` under the next version with `### Added` / `### Changed` /
-`### Fixed` / `### Removed` as appropriate. Prefer user-visible “why” over file
-lists.
+**Never use `## [Unreleased]`.** Always write (or extend) a dated SemVer heading
+at the top of the body:
+
+```markdown
+## [X.Y.Z] - YYYY-MM-DD
+```
+
+Rules:
+
+1. If the topmost entry is already today’s shippable version for this PR/branch,
+   append under its `### Added` / `### Changed` / `### Fixed` / `### Removed`.
+2. Otherwise bump patch (or minor/major when warranted) and add a **new** dated
+   heading above older releases — do not park work under Unreleased.
+3. Prefer user-visible “why” over file lists.
+4. Same-day multiple patches are fine (`6.12.20`, then `6.12.21`, …).
 
 ## When to update which doc
 

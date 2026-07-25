@@ -50,6 +50,8 @@ Canonical deep docs:
 | Parallel multi-agent splits | [parallel-multi-agent](skills/parallel-multi-agent/SKILL.md) |
 | Continuous improvement (whole shebang) | [continuous-improvement](skills/continuous-improvement/SKILL.md) |
 | Continuous improvement backlog | [improvement-backlog.md](improvement-backlog.md) |
+| Continuous quality (QA loop) | [continuous-quality](skills/continuous-quality/SKILL.md) |
+| Continuous quality backlog | [quality-backlog.md](quality-backlog.md) |
 
 **Always-on norms** — full text in [OPERATING.md](OPERATING.md). Cursor loads the
 same content via committed `.cursor/rules/`:
@@ -105,7 +107,7 @@ Full detail: [`docs/ALGORITHM.md`](../docs/ALGORITHM.md) and skill [portfolio-re
 - **Fiat correction**: if *only* USD triggers (deposit/withdrawal), redistribute among counter-balanced assets.
 - **Dust**: skip orders below `dustThresholdUSD`.
 - **Sell then buy**: sell overweight first; poll USD up to **3** attempts with
-  exponential backoff starting at **250ms** (doubling, cap 32s); accept balance
+  exponential backoff starting at **250ms** (doubling: 250ms → 500ms → 1000ms); accept balance
   at **≥95%** of projected; buy capped at **99%** of available USD.
 - **Precision**: `BigDecimal` only — crypto scale **8**, USD scale **2**. Tests: `shouldBeEqualComparingTo` (never `shouldBeEqualByComparingTo` / `.equals()`).
 

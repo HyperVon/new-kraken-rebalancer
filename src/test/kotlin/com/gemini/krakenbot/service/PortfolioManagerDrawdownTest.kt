@@ -14,6 +14,7 @@ import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.booleans.shouldBeTrue
+import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import io.mockk.coEvery
@@ -166,6 +167,57 @@ class PortfolioManagerDrawdownTest : StringSpec() {
                 coVerify { portfolioStatsRepository.save(capture(captor)) }
                 captor.captured.allTimeHigh.shouldNotBeNull()
                 BigDecimal("1500.0").compareTo(captor.captured.allTimeHigh) shouldBe 0
+            }
+        }
+
+        "testCalculateFiatDeployment_AtMaxDrawdownSaturationExponentOne" {
+            runTest {
+                val settings = Settings(
+                    loopDelaySeconds = 60L,
+                    deviationTriggerPercent = 2.0,
+                    dustThresholdUSD = 1.0,
+                    dryRun = false,
+                    fiatMaxDrawdown = 50.0,
+                    fiatDeploymentExponent = 1.0,
+                )
+                portfolioAnalyzer.calculateFiatDeployment(
+                    BigDecimal("50.0"),
+                    settings,
+                ).shouldBeEqualComparingTo(BigDecimal("100.0"))
+            }
+        }
+
+        "testCalculateFiatDeployment_AtMaxDrawdownSaturationExponentTwo" {
+            runTest {
+                val settings = Settings(
+                    loopDelaySeconds = 60L,
+                    deviationTriggerPercent = 2.0,
+                    dustThresholdUSD = 1.0,
+                    dryRun = false,
+                    fiatMaxDrawdown = 50.0,
+                    fiatDeploymentExponent = 2.0,
+                )
+                portfolioAnalyzer.calculateFiatDeployment(
+                    BigDecimal("50.0"),
+                    settings,
+                ).shouldBeEqualComparingTo(BigDecimal("100.0"))
+            }
+        }
+
+        "testCalculateFiatDeployment_AboveMaxDrawdownCoercesTo100" {
+            runTest {
+                val settings = Settings(
+                    loopDelaySeconds = 60L,
+                    deviationTriggerPercent = 2.0,
+                    dustThresholdUSD = 1.0,
+                    dryRun = false,
+                    fiatMaxDrawdown = 50.0,
+                    fiatDeploymentExponent = 2.0,
+                )
+                portfolioAnalyzer.calculateFiatDeployment(
+                    BigDecimal("75.0"),
+                    settings,
+                ).shouldBeEqualComparingTo(BigDecimal("100.0"))
             }
         }
     }

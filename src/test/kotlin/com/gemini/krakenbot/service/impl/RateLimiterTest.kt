@@ -9,6 +9,7 @@ import io.kotest.matchers.shouldBe
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
+import kotlin.math.absoluteValue
 
 class RateLimiterTest : StringSpec() {
 
@@ -50,7 +51,8 @@ class RateLimiterTest : StringSpec() {
 
         "acquireWithCost delays when limit exceeded" {
             runTest {
-                val limiter = RateLimiter(safeLimit = 2.0, decayRate = 1.0)
+                val safeLimit = 2.0
+                val limiter = RateLimiter(safeLimit = safeLimit, decayRate = 1.0)
                 limiter.acquireWithCost(1.5)
 
                 // Second call asks for 1.0, total 2.5 > 2.0. Needs delay.
@@ -58,6 +60,38 @@ class RateLimiterTest : StringSpec() {
                 // waitSeconds = 0.5 / 1.0 = 0.5s = 500ms
                 limiter.acquireWithCost(1.0)
                 advanceUntilIdle()
+                ((limiter.getCurrentCounter() - safeLimit).absoluteValue < 0.05).shouldBeTrue()
+            }
+        }
+
+        "subsequent acquire after limit wait raises counter or lands at safeLimit plus cost" {
+            runTest {
+                val safeLimit = 2.0
+                val limiter = RateLimiter(safeLimit = safeLimit, decayRate = 1.0)
+                limiter.acquireWithCost(1.5)
+                limiter.acquireWithCost(1.0)
+                advanceUntilIdle()
+
+                val counterBeforeSmallAcquire = limiter.getCurrentCounter()
+                ((counterBeforeSmallAcquire - safeLimit).absoluteValue < 0.05).shouldBeTrue()
+
+                val returnedAfterSmallAcquire = limiter.acquireWithCost(0.5)
+                advanceUntilIdle()
+
+                val incrementedAbovePrevious = returnedAfterSmallAcquire > counterBeforeSmallAcquire + 0.01
+                val landedNearSafeLimit = (returnedAfterSmallAcquire - safeLimit).absoluteValue < 0.05
+                (incrementedAbovePrevious || landedNearSafeLimit).shouldBeTrue()
+            }
+        }
+
+        "getCurrentCounter reflects decay toward zero after reset stays zero" {
+            runTest {
+                val limiter = RateLimiter(safeLimit = 12.0, decayRate = 1.0)
+                limiter.acquireWithCost(3.0)
+                limiter.reset()
+                limiter.getCurrentCounter() shouldBe 0.0
+                advanceUntilIdle()
+                limiter.getCurrentCounter() shouldBe 0.0
             }
         }
     }

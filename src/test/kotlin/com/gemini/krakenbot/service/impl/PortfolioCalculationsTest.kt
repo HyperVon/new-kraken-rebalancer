@@ -101,6 +101,36 @@ class PortfolioCalculationsTest : StringSpec() {
             metrics.deviationUSD.shouldBeEqualComparingTo(BigDecimal("0.40"))
         }
 
+        "should mark deviation at exact dust threshold as significant" {
+            val metrics = PortfolioCalculations.calculateAssetMetrics(
+                symbol = Asset(Asset.BTC),
+                baseTargetPercent = BigDecimal("50.00"),
+                currentValueUSD = BigDecimal("501.00"),
+                totalPortfolioValueUSD = BigDecimal("1000.00"),
+                effectiveUsdTarget = BigDecimal("0"),
+                cryptoScaleFactor = BigDecimal.ONE,
+                dustThresholdUSD = 1.0,
+            )
+            // Target $500, current $501.00 → |deviation| == $1.00 dust boundary
+            metrics.isSignificant.shouldBeTrue()
+            metrics.deviationUSD.shouldBeEqualComparingTo(BigDecimal("1.00"))
+        }
+
+        "should mark deviation just below dust threshold as insignificant" {
+            val metrics = PortfolioCalculations.calculateAssetMetrics(
+                symbol = Asset(Asset.BTC),
+                baseTargetPercent = BigDecimal("50.00"),
+                currentValueUSD = BigDecimal("500.99"),
+                totalPortfolioValueUSD = BigDecimal("1000.00"),
+                effectiveUsdTarget = BigDecimal("0"),
+                cryptoScaleFactor = BigDecimal.ONE,
+                dustThresholdUSD = 1.0,
+            )
+            // Target $500, current $500.99 → |deviation| == $0.99 below dust boundary
+            metrics.isSignificant.shouldBeFalse()
+            metrics.deviationUSD.shouldBeEqualComparingTo(BigDecimal("0.99"))
+        }
+
         "should mark significant deviations above the dust threshold" {
             val metrics = PortfolioCalculations.calculateAssetMetrics(
                 symbol = Asset(Asset.BTC),
