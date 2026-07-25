@@ -27,7 +27,8 @@ import java.io.File
 import java.io.IOException
 import java.math.BigDecimal
 
-class StatsThrowingTransactionManager(private val delegate: JdbcTransactionManager) : JdbcTransactionManager by delegate {
+class StatsThrowingTransactionManager(private val delegate: JdbcTransactionManager) :
+    JdbcTransactionManager by delegate {
     override fun newTransaction(
         isolation: Int,
         readOnly: Boolean,

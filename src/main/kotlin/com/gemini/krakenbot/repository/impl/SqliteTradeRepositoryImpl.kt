@@ -106,36 +106,37 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
         }
     }
 
-    override suspend fun getSnapshotsInRange(from: Instant, to: Instant): List<PortfolioSnapshot> = database.readTransactionIO {
-        val allIds =
-            PortfolioSnapshotTable
-                .select(PortfolioSnapshotTable.id)
-                .andWhere {
-                    PortfolioSnapshotTable.timestamp greaterEq from.toEpochMilli()
-                }.andWhere {
-                    PortfolioSnapshotTable.timestamp lessEq to.toEpochMilli()
-                }.orderBy(PortfolioSnapshotTable.timestamp, SortOrder.ASC)
-                .map { it[PortfolioSnapshotTable.id] }
+    override suspend fun getSnapshotsInRange(from: Instant, to: Instant): List<PortfolioSnapshot> =
+        database.readTransactionIO {
+            val allIds =
+                PortfolioSnapshotTable
+                    .select(PortfolioSnapshotTable.id)
+                    .andWhere {
+                        PortfolioSnapshotTable.timestamp greaterEq from.toEpochMilli()
+                    }.andWhere {
+                        PortfolioSnapshotTable.timestamp lessEq to.toEpochMilli()
+                    }.orderBy(PortfolioSnapshotTable.timestamp, SortOrder.ASC)
+                    .map { it[PortfolioSnapshotTable.id] }
 
-        if (allIds.isEmpty()) return@readTransactionIO emptyList()
+            if (allIds.isEmpty()) return@readTransactionIO emptyList()
 
-        val downsampledIds =
-            if (allIds.size <= 300) {
-                allIds
-            } else {
-                val step = allIds.size / 300
-                allIds.filterIndexed { index, _ -> index % step == 0 }
-            }
+            val downsampledIds =
+                if (allIds.size <= 300) {
+                    allIds
+                } else {
+                    val step = allIds.size / 300
+                    allIds.filterIndexed { index, _ -> index % step == 0 }
+                }
 
-        val snapshotRows =
-            PortfolioSnapshotTable
-                .selectAll()
-                .where { PortfolioSnapshotTable.id inList downsampledIds }
-                .orderBy(PortfolioSnapshotTable.timestamp, SortOrder.ASC)
-                .toList()
+            val snapshotRows =
+                PortfolioSnapshotTable
+                    .selectAll()
+                    .where { PortfolioSnapshotTable.id inList downsampledIds }
+                    .orderBy(PortfolioSnapshotTable.timestamp, SortOrder.ASC)
+                    .toList()
 
-        buildSnapshotsFromRows(snapshotRows)
-    }
+            buildSnapshotsFromRows(snapshotRows)
+        }
 
     override suspend fun getTradesInRange(from: Instant, to: Instant): List<TradeRecord> = database.readTransactionIO {
         TradeTable
@@ -150,54 +151,55 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
 
     override suspend fun getTradeSummaryStats(): TradeSummaryStats = getTradeSummaryStats(Instant.EPOCH, Instant.now())
 
-    override suspend fun getTradeSummaryStats(from: Instant, to: Instant): TradeSummaryStats = database.readTransactionIO {
-        val countCol = TradeTable.id.count()
-        val volumeCol = TradeTable.usdAmount.sum()
-        val feeCol = TradeTable.fee.sum()
+    override suspend fun getTradeSummaryStats(from: Instant, to: Instant): TradeSummaryStats =
+        database.readTransactionIO {
+            val countCol = TradeTable.id.count()
+            val volumeCol = TradeTable.usdAmount.sum()
+            val feeCol = TradeTable.fee.sum()
 
-        val fromMillis = from.toEpochMilli()
-        val toMillis = to.toEpochMilli()
+            val fromMillis = from.toEpochMilli()
+            val toMillis = to.toEpochMilli()
 
-        val tradeRow =
-            TradeTable
-                .select(countCol, volumeCol, feeCol)
-                .where {
-                    (TradeTable.success eq true) and
-                        (TradeTable.dryRun eq false) and
-                        (TradeTable.timestamp greaterEq fromMillis) and
-                        (TradeTable.timestamp lessEq toMillis)
-                }.firstOrNull()
+            val tradeRow =
+                TradeTable
+                    .select(countCol, volumeCol, feeCol)
+                    .where {
+                        (TradeTable.success eq true) and
+                            (TradeTable.dryRun eq false) and
+                            (TradeTable.timestamp greaterEq fromMillis) and
+                            (TradeTable.timestamp lessEq toMillis)
+                    }.firstOrNull()
 
-        val totalTrades = tradeRow?.get(countCol) ?: 0L
-        val totalVolume = tradeRow?.get(volumeCol) ?: BigDecimal.ZERO
-        val totalFees = tradeRow?.get(feeCol) ?: BigDecimal.ZERO
+            val totalTrades = tradeRow?.get(countCol) ?: 0L
+            val totalVolume = tradeRow?.get(volumeCol) ?: BigDecimal.ZERO
+            val totalFees = tradeRow?.get(feeCol) ?: BigDecimal.ZERO
 
-        val periodHighCol = PortfolioSnapshotTable.totalValueUSD.max()
-        val periodHigh =
-            PortfolioSnapshotTable
-                .select(periodHighCol)
-                .where {
-                    (PortfolioSnapshotTable.timestamp greaterEq fromMillis) and
-                        (PortfolioSnapshotTable.timestamp lessEq toMillis)
-                }.firstOrNull()
-                ?.get(periodHighCol)
+            val periodHighCol = PortfolioSnapshotTable.totalValueUSD.max()
+            val periodHigh =
+                PortfolioSnapshotTable
+                    .select(periodHighCol)
+                    .where {
+                        (PortfolioSnapshotTable.timestamp greaterEq fromMillis) and
+                            (PortfolioSnapshotTable.timestamp lessEq toMillis)
+                    }.firstOrNull()
+                    ?.get(periodHighCol)
 
-        val latestSnapshotTime =
-            PortfolioSnapshotTable
-                .select(PortfolioSnapshotTable.timestamp)
-                .orderBy(PortfolioSnapshotTable.timestamp, SortOrder.DESC)
-                .limit(1)
-                .firstOrNull()
-                ?.let { Instant.ofEpochMilli(it[PortfolioSnapshotTable.timestamp]) }
+            val latestSnapshotTime =
+                PortfolioSnapshotTable
+                    .select(PortfolioSnapshotTable.timestamp)
+                    .orderBy(PortfolioSnapshotTable.timestamp, SortOrder.DESC)
+                    .limit(1)
+                    .firstOrNull()
+                    ?.let { Instant.ofEpochMilli(it[PortfolioSnapshotTable.timestamp]) }
 
-        TradeSummaryStats(
-            totalTradesExecuted = totalTrades,
-            totalVolumeTraded = totalVolume,
-            totalFeesPaid = totalFees,
-            latestSnapshotTime = latestSnapshotTime,
-            periodHigh = periodHigh,
-        )
-    }
+            TradeSummaryStats(
+                totalTradesExecuted = totalTrades,
+                totalVolumeTraded = totalVolume,
+                totalFeesPaid = totalFees,
+                latestSnapshotTime = latestSnapshotTime,
+                periodHigh = periodHigh,
+            )
+        }
 
     private fun insertSnapshotWithChildren(snapshot: PortfolioSnapshot) {
         val snapshotId =
@@ -333,21 +335,22 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
         }
     }
 
-    override suspend fun pruneSnapshotsOlderThan(cutoff: Instant): Int = database.safeTransactionIO(log, "Failed to prune old snapshots") {
-        val cutoffMillis = cutoff.toEpochMilli()
-        val idsToDelete =
-            PortfolioSnapshotTable
-                .select(PortfolioSnapshotTable.id)
-                .where { PortfolioSnapshotTable.timestamp less cutoffMillis }
-                .map { it[PortfolioSnapshotTable.id] }
+    override suspend fun pruneSnapshotsOlderThan(cutoff: Instant): Int =
+        database.safeTransactionIO(log, "Failed to prune old snapshots") {
+            val cutoffMillis = cutoff.toEpochMilli()
+            val idsToDelete =
+                PortfolioSnapshotTable
+                    .select(PortfolioSnapshotTable.id)
+                    .where { PortfolioSnapshotTable.timestamp less cutoffMillis }
+                    .map { it[PortfolioSnapshotTable.id] }
 
-        if (idsToDelete.isNotEmpty()) {
-            AssetSnapshotTable.deleteWhere { snapshotId inList idsToDelete }
-            ActionLogTable.deleteWhere { snapshotId inList idsToDelete }
-            PortfolioSnapshotTable.deleteWhere { id inList idsToDelete }
+            if (idsToDelete.isNotEmpty()) {
+                AssetSnapshotTable.deleteWhere { snapshotId inList idsToDelete }
+                ActionLogTable.deleteWhere { snapshotId inList idsToDelete }
+                PortfolioSnapshotTable.deleteWhere { id inList idsToDelete }
+            }
+            idsToDelete.size
         }
-        idsToDelete.size
-    }
 
     override suspend fun cleanupDuplicateTrades() {
         database.safeTransactionIO(log, "Failed to cleanup duplicate trades") {

@@ -118,7 +118,8 @@ object HistoryViewPrefs {
         ),
     )
 
-    fun defaultStore(): HistoryViewsStore = HistoryViewsStore(defaultId = HistoryViewIds.OVERVIEW, views = builtInViews())
+    fun defaultStore(): HistoryViewsStore =
+        HistoryViewsStore(defaultId = HistoryViewIds.OVERVIEW, views = builtInViews())
 
     fun mergeBuiltIns(store: HistoryViewsStore): HistoryViewsStore {
         val builtIns = builtInViews()

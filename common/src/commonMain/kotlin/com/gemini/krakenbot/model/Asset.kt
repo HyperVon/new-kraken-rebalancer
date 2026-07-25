@@ -73,7 +73,8 @@ value class Asset(val value: String) {
 
         private fun isUsdSymbol(symbol: String): Boolean = symbol.equals(USD, ignoreCase = true)
 
-        private fun matchesTradingPair(normalizedPair: String, symbol: String): Boolean = normalizedPair in acceptedKrakenPairs(symbol)
+        private fun matchesTradingPair(normalizedPair: String, symbol: String): Boolean =
+            normalizedPair in acceptedKrakenPairs(symbol)
 
         /**
          * Exact USD-quoted Kraken pair aliases accepted for [symbol] (e.g. BTC →

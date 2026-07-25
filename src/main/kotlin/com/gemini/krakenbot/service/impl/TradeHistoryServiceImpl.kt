@@ -278,9 +278,11 @@ class TradeHistoryServiceImpl(
         repository.saveTrade(trade)
     }
 
-    override suspend fun getSnapshotsInRange(from: Instant, to: Instant): List<PortfolioSnapshot> = repository.getSnapshotsInRange(from, to)
+    override suspend fun getSnapshotsInRange(from: Instant, to: Instant): List<PortfolioSnapshot> =
+        repository.getSnapshotsInRange(from, to)
 
-    override suspend fun getTradesInRange(from: Instant, to: Instant): List<TradeRecord> = repository.getTradesInRange(from, to)
+    override suspend fun getTradesInRange(from: Instant, to: Instant): List<TradeRecord> =
+        repository.getTradesInRange(from, to)
 
     override suspend fun getHistoryStats(): HistoryStats {
         val stats = portfolioStatsRepository.load()

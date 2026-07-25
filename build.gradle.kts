@@ -125,7 +125,11 @@ tasks.withType<Test> {
     useJUnitPlatform()
     finalizedBy(tasks.jacocoTestReport)
     finalizedBy(tasks.jacocoTestCoverageVerification)
-    jvmArgs("-Xshare:off", "--sun-misc-unsafe-memory-access=allow", "--enable-native-access=ALL-UNNAMED", "-Xmx4096m")
+    maxParallelForks =
+        providers.gradleProperty("testForks").orNull?.toIntOrNull()?.coerceAtLeast(1)
+            ?: (Runtime.getRuntime().availableProcessors() / 2).coerceIn(1, 2)
+    maxHeapSize = providers.gradleProperty("testMaxHeap").orElse("2g").get()
+    jvmArgs("-Xshare:off", "--sun-misc-unsafe-memory-access=allow", "--enable-native-access=ALL-UNNAMED")
     systemProperty("kotlinx.coroutines.debug.enable.creation.stack.trace", "false")
     systemProperty("kotest.coroutines.debug.disable", "true")
     systemProperty("kraken.db.path", ":memory:")
@@ -135,11 +139,15 @@ tasks.withType<Test> {
 // report and verification tasks (see .agents/skills/gradle-quality-gates).
 val coverageExcludes =
     listOf(
-        "**/config/**",
+        // Framework/bootstrap code and generated HTML DSL lambdas remain impractical
+        // to exercise to the same 95/90 bundle thresholds; tested helpers now count.
+        "**/config/DatabaseConfig*",
+        "**/config/ErrorHandlingConfig*",
+        "**/config/KtorConfigKt*",
         "**/repository/table/**",
         "**/service/KrakenService*",
         "**/service/impl/KrakenServiceImpl*",
-        "**/view/util/**",
+        "**/view/util/HtmlExtensionsKt*",
         "**/view/css/**",
         "**/KrakenRebalancerApplication*",
     )
@@ -243,11 +251,11 @@ tasks.processResources {
 
 rootProject.plugins.withType<YarnPlugin> {
     rootProject.extensions.configure<YarnRootExtension> {
-        resolution("webpack-dev-server", "5.2.6")
+        resolution("webpack-dev-server", "6.0.0")
         resolution("serialize-javascript", "7.0.7")
-        resolution("uuid", "11.1.1")
+        resolution("uuid", "14.0.1")
         resolution("webpack", "5.109.0")
-        resolution("diff", "8.0.4")
-        resolution("fast-uri", "3.1.4")
+        resolution("diff", "9.0.0")
+        resolution("fast-uri", "4.1.1")
     }
 }

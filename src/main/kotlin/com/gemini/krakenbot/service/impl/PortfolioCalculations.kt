@@ -34,25 +34,30 @@ object PortfolioCalculations {
     /**
      * Calculate current percentage for an asset.
      */
-    fun calculateCurrentPercent(valueUSD: BigDecimal, totalPortfolioValueUSD: BigDecimal): BigDecimal = if (totalPortfolioValueUSD > BigDecimal.ZERO) {
-        valueUSD
-            .divide(totalPortfolioValueUSD, SCALE_PERCENT, RoundingMode.HALF_UP)
-            .multiply(HUNDRED)
-    } else {
-        BigDecimal.ZERO
-    }
+    fun calculateCurrentPercent(valueUSD: BigDecimal, totalPortfolioValueUSD: BigDecimal): BigDecimal =
+        if (totalPortfolioValueUSD >
+            BigDecimal.ZERO
+        ) {
+            valueUSD
+                .divide(totalPortfolioValueUSD, SCALE_PERCENT, RoundingMode.HALF_UP)
+                .multiply(HUNDRED)
+        } else {
+            BigDecimal.ZERO
+        }
 
     /**
      * Calculate target value in USD based on target percentage.
      */
-    fun calculateTargetValue(targetPct: BigDecimal, totalPortfolioValueUSD: BigDecimal): BigDecimal = totalPortfolioValueUSD
-        .multiply(targetPct)
-        .divide(HUNDRED, SCALE_USD, RoundingMode.HALF_UP)
+    fun calculateTargetValue(targetPct: BigDecimal, totalPortfolioValueUSD: BigDecimal): BigDecimal =
+        totalPortfolioValueUSD
+            .multiply(targetPct)
+            .divide(HUNDRED, SCALE_USD, RoundingMode.HALF_UP)
 
     /**
      * Calculate deviation in USD.
      */
-    fun calculateDeviationUSD(currentValueUSD: BigDecimal, targetValueUSD: BigDecimal): BigDecimal = currentValueUSD.subtract(targetValueUSD)
+    fun calculateDeviationUSD(currentValueUSD: BigDecimal, targetValueUSD: BigDecimal): BigDecimal =
+        currentValueUSD.subtract(targetValueUSD)
 
     /**
      * Calculate deviation percentage (signed relative deviation).

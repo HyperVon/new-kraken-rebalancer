@@ -28,7 +28,8 @@ import java.math.BigDecimal
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 
-class TradeThrowingTransactionManager(private val delegate: JdbcTransactionManager) : JdbcTransactionManager by delegate {
+class TradeThrowingTransactionManager(private val delegate: JdbcTransactionManager) :
+    JdbcTransactionManager by delegate {
     override fun newTransaction(
         isolation: Int,
         readOnly: Boolean,

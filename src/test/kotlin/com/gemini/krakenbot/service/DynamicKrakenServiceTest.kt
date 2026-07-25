@@ -26,7 +26,8 @@ class DynamicKrakenServiceTest : StringSpec() {
     private val simulatedService = mockk<SimulatedKrakenService>(relaxed = true)
     private val configService = mockk<ConfigService>(relaxed = true)
 
-    private fun createService(): DynamicKrakenService = DynamicKrakenService(realService, simulatedService, configService)
+    private fun createService(): DynamicKrakenService =
+        DynamicKrakenService(realService, simulatedService, configService)
 
     init {
         "delegates to simulated service when simulation is true" {

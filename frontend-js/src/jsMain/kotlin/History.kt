@@ -463,10 +463,11 @@ internal fun getUniqueSymbols(snapshots: Array<dynamic>, excludeUsd: Boolean = t
     }
 }
 
-internal fun mapSnapshotsToPoints(snapshots: Array<dynamic>, valueSelector: (dynamic) -> Double): Array<dynamic> = snapshots
-    .map { s: dynamic ->
-        json("x" to s.timestamp, "y" to valueSelector(s))
-    }.toTypedArray()
+internal fun mapSnapshotsToPoints(snapshots: Array<dynamic>, valueSelector: (dynamic) -> Double): Array<dynamic> =
+    snapshots
+        .map { s: dynamic ->
+            json("x" to s.timestamp, "y" to valueSelector(s))
+        }.toTypedArray()
 
 internal fun getClonedChartOptions(): dynamic {
     val options: dynamic = JSON.parse(JSON.stringify(window.asDynamic().chartDefaults))
@@ -959,7 +960,9 @@ internal fun updateStats(stats: JsHistoryStats) {
     if (totalFees != null) totalFees.textContent = formatUSD(stats.totalFeesPaid.toString().toDoubleOrNull() ?: 0.0)
 }
 
-private fun fetchRanged(vararg routes: String, range: String): Array<Promise<dynamic>> = routes.map { route -> fetchJSON(route.withRange(range)) }.toTypedArray()
+private fun fetchRanged(vararg routes: String, range: String): Array<Promise<dynamic>> = routes.map { route ->
+    fetchJSON(route.withRange(range))
+}.toTypedArray()
 
 internal fun loadAll(range: String): Promise<Unit> {
     currentRange = range

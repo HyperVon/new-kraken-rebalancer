@@ -49,7 +49,8 @@ class FakeKrakenService : KrakenService {
         }
     }
 
-    override suspend fun getTradeHistory(startSec: Long?, offset: Int?): List<TradeRecord> = tradeHistorySupplier(startSec, offset)
+    override suspend fun getTradeHistory(startSec: Long?, offset: Int?): List<TradeRecord> =
+        tradeHistorySupplier(startSec, offset)
 
     override suspend fun executeOrder(pair: String, type: String, side: String, volume: BigDecimal): OrderResult {
         executedOrders.add(OrderCall(pair, type, side, volume))

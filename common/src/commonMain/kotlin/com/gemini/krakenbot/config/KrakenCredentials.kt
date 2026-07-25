@@ -26,7 +26,8 @@ data class KrakenCredentials(val apiKey: ApiKey, val privateKey: PrivateKey) {
         const val PLACEHOLDER_API_KEY = "YOUR_KRAKEN_API_KEY"
         const val PLACEHOLDER_PRIVATE_KEY = "YOUR_KRAKEN_PRIVATE_KEY"
 
-        operator fun invoke(apiKey: String, privateKey: String): KrakenCredentials = KrakenCredentials(ApiKey(apiKey), PrivateKey(privateKey))
+        operator fun invoke(apiKey: String, privateKey: String): KrakenCredentials =
+            KrakenCredentials(ApiKey(apiKey), PrivateKey(privateKey))
     }
 }
 

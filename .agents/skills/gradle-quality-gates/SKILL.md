@@ -17,6 +17,17 @@ description: >-
 - Apply: `./gradlew spotlessApply` — check: `./gradlew spotlessCheck`
 - **`allWarningsAsErrors`** enabled in root, `:common`, and `:frontend-js`
 
+## Build performance
+
+- `org.gradle.parallel=true` and `org.gradle.caching=true`; configuration cache
+  is also enabled.
+- JVM tests use up to two forks by default. Override with `-PtestForks=1` and
+  `-PtestMaxHeap=1g` on constrained hosts.
+- Routine release build: `./gradlew build fatJar` (no `clean`). Use `clean` only
+  when diagnosing stale outputs; it discards Kotlin/JS, Webpack, compile, and
+  test caches.
+- When CI is already green and only packaging is needed: `./gradlew fatJar`.
+
 ## JVM coverage (JaCoCo)
 
 Minimums in `build.gradle.kts` `jacocoTestCoverageVerification`:
@@ -30,9 +41,11 @@ Minimums in `build.gradle.kts` `jacocoTestCoverageVerification`:
 
 Exclusions (keep report + verification filters in sync):
 
-- `**/config/**`, `**/repository/table/**`
+- `**/config/DatabaseConfig*`, `**/config/ErrorHandlingConfig*`,
+  `**/config/KtorConfigKt*`
+- `**/repository/table/**`
 - `**/service/KrakenService*`, `**/service/impl/KrakenServiceImpl*`
-- `**/view/util/**`, `**/view/css/**`
+- `**/view/util/HtmlExtensionsKt*`, `**/view/css/**`
 - `**/KrakenRebalancerApplication*`
 
 When adding non-tested packages (views/DSL), update **both**

@@ -140,7 +140,8 @@ class OrderExecutorImpl(
         return result
     }
 
-    private suspend fun refreshUsdBalanceAfterSells(projectedCash: BigDecimal): BigDecimal = pollUsdBalanceAfterSells(projectedCash).last()
+    private suspend fun refreshUsdBalanceAfterSells(projectedCash: BigDecimal): BigDecimal =
+        pollUsdBalanceAfterSells(projectedCash).last()
 
     private fun pollUsdBalanceAfterSells(
         projectedCash: BigDecimal,

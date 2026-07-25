@@ -25,8 +25,9 @@ need only this file (no issue spam).
 | CI-8-T02 | L | done | credentials | Env credentials materialized to disk on save | 8 | [#55](https://github.com/HyperVon/new-kraken-rebalancer/issues/55) | Shipped WIP |
 | CI-8-T03 | L | done | credentials | `hasValidCredentials` blank/placeholder only | 8 | [#56](https://github.com/HyperVon/new-kraken-rebalancer/issues/56) | Shipped WIP |
 | CI-8-T04 | L | done | dryRun | Dry-run intents inflate success stats/fees | 8 | [#57](https://github.com/HyperVon/new-kraken-rebalancer/issues/57) | Shipped WIP |
-| CI-8-D09 | L | deferred | deps | Major npm pins: diff/fast-uri/uuid/webpack-dev-server | 8 | [#58](https://github.com/HyperVon/new-kraken-rebalancer/issues/58) | **Deferred** this cycle |
+| CI-8-D09 | L | done | deps | Major npm pins: diff/fast-uri/uuid/webpack-dev-server | 8 | [#58](https://github.com/HyperVon/new-kraken-rebalancer/issues/58) | Shipped WIP |
 | CI-8-SEC1 | S | open | security | Dependabot #102: `brace-expansion` high (DoS) in `kotlin-js-store/yarn.lock` — regenerate lock / pin patched version | 8 | [dependabot #102](https://github.com/HyperVon/new-kraken-rebalancer/security/dependabot/102) | Transitive npm; do as standalone deps PR off main, not on cycle 8 branch |
+| CI-9-B01 | S | done | build | Parallel Gradle execution/cache + bounded JVM test forks | 9 | — | Shipped WIP; override with `testForks` / `testMaxHeap` |
 | CI-8-T05 | M | done | history | Deduper deletes later row; may drop settled API fill | 8 | — | Shipped WIP |
 | CI-8-T06 | M | done | history | Pair-alias dedupe ignores USD/fee/provenance | 8 | — | Shipped WIP |
 | CI-8-T07 | M | done | history | Reconstruct-from-live uses empty map → zero balances | 8 | — | Shipped WIP |
@@ -41,7 +42,7 @@ need only this file (no issue spam).
 | CI-8-Q06 | S | done | docs | KDoc/README ServiceUtils + fiat helper drift | 8 | — | Shipped WIP |
 | CI-8-Q07 | S | done | skills | Drop stale `@Suppress("unused")` mandate | 8 | — | Shipped WIP |
 | CI-8-Q08 | S | done | build | Remove redundant `DashboardViewTest` Spotless exclude | 8 | — | Shipped WIP |
-| CI-8-Q09 | M | deferred | build | Narrow broad JaCoCo `config/**` / `view/util/**` excludes | 8 | — | Skipped — no safe evidence this cycle |
+| CI-8-Q09 | M | done | build | Narrow broad JaCoCo `config/**` / `view/util/**` excludes | 8 | — | Class-specific bootstrap/DSL exclusions; gates green |
 | CI-8-D01 | S | done | docs | Rate-limit decay is linear, not exponential | 8 | — | Shipped WIP |
 | CI-8-D02 | S | done | docs | README invents `RateLimitEvent` flow | 8 | — | Shipped WIP |
 | CI-8-D03 | S | done | docs | AGENTS/skill say dryRun defaults false; template is true | 8 | — | Shipped WIP |
