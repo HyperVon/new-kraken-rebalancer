@@ -257,5 +257,7 @@ rootProject.plugins.withType<YarnPlugin> {
         resolution("webpack", "5.109.0")
         resolution("diff", "9.0.0")
         resolution("fast-uri", "4.1.1")
+        // Dependabot #102 / CVE-2026-14257 — DoS via unbounded expansion length
+        resolution("brace-expansion", "5.0.8")
     }
 }
