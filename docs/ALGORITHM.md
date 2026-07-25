@@ -171,6 +171,10 @@ Dust therefore filters **order generation**, not only execution.
       assets only, proportional to their current USD deficit.
   - **Shortage (Withdrawal)**: Sells are distributed among **Overweight**
       assets only, proportional to their current USD surplus.
+  - Each share is rounded to USD scale (2 decimals) and drawn from a budget
+      truncated to the same scale, so the shares can never sum above the fiat
+      deviation being corrected. A share that rounds to `$0.00` is dropped
+      instead of becoming a zero-value order.
   - *Note: This concentrates the rebalancing power into the assets that
       are furthest from their targets, effectively clearing dust
       thresholds.*

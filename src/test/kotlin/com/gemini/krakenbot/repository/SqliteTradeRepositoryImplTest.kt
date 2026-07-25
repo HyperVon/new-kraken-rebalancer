@@ -13,6 +13,7 @@ import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.shouldNotBe
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.mockkStatic
@@ -981,6 +982,110 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
 
                 repository.setSyncMetadata(TestFixtures.SYNC_KEY, TestFixtures.SYNC_VAL_UPDATED)
                 repository.getSyncMetadata(TestFixtures.SYNC_KEY) shouldBe TestFixtures.SYNC_VAL_UPDATED
+            }
+        }
+
+        "updateTrade targets by primary key when id is present" {
+            runTest {
+                val now = Instant.now().truncatedTo(ChronoUnit.MILLIS)
+                repository.saveTrade(
+                    TradeRecord(
+                        timestamp = now,
+                        pair = TestFixtures.XBTUSD,
+                        side = TestFixtures.BUY,
+                        symbol = Asset.BTC,
+                        volume = BigDecimal("0.5"),
+                        usdAmount = BigDecimal("15000.00"),
+                        success = true,
+                        dryRun = false,
+                    ),
+                )
+                val loaded = repository.getTradesInRange(now.minusSeconds(1), now.plusSeconds(1)).single()
+                loaded.id shouldNotBe null
+
+                repository.updateTrade(
+                    loaded,
+                    loaded.copy(
+                        volume = BigDecimal("0.48000000"),
+                        usdAmount = BigDecimal("14400.00"),
+                        price = BigDecimal("30000.00"),
+                        fee = BigDecimal("10.00"),
+                        source = TradeSource.API_FILL,
+                    ),
+                )
+
+                val updated = repository.getTradesInRange(now.minusSeconds(1), now.plusSeconds(1)).single()
+                updated.id shouldBe loaded.id
+                updated.volume.shouldBeEqualComparingTo(BigDecimal("0.48000000"))
+                updated.usdAmount.shouldBeEqualComparingTo(BigDecimal("14400.00"))
+                updated.price.shouldBeEqualComparingTo(BigDecimal("30000.00"))
+                updated.source shouldBe TradeSource.API_FILL
+            }
+        }
+
+        "getSnapshotsInRange downsamples when more than 300 snapshots" {
+            runTest {
+                val base = Instant.parse("2020-01-01T00:00:00Z")
+                repeat(600) { i ->
+                    repository.saveSnapshot(
+                        PortfolioSnapshot(
+                            timestamp = base.plusSeconds(i.toLong()),
+                            totalValueUSD = BigDecimal.valueOf(1000L + i),
+                            assets = emptyMap(),
+                            actions = emptyList(),
+                            drawdownPercent = BigDecimal.ZERO,
+                            fiatDeploymentPercent = BigDecimal.ZERO,
+                            effectiveUsdTargetPercent = BigDecimal.ZERO,
+                        ),
+                    )
+                }
+
+                val inRange = repository.getSnapshotsInRange(base, base.plusSeconds(599))
+                inRange.size shouldBe 300
+                inRange.first().timestamp shouldBe base
+                inRange.first().totalValueUSD.shouldBeEqualComparingTo(BigDecimal("1000"))
+                // step = 600/300 = 2, so every other snapshot is kept
+                inRange[1].timestamp shouldBe base.plusSeconds(2)
+                inRange.last().timestamp shouldBe base.plusSeconds(598)
+            }
+        }
+
+        "cleanupDuplicateTrades is a no-op when no duplicates exist" {
+            runTest {
+                val now = Instant.now().truncatedTo(ChronoUnit.MILLIS)
+                repository.saveTrade(
+                    TradeRecord(
+                        timestamp = now,
+                        pair = TestFixtures.XBTUSD,
+                        side = TestFixtures.BUY,
+                        symbol = Asset.BTC,
+                        volume = BigDecimal("0.1"),
+                        usdAmount = BigDecimal("3000.00"),
+                        success = true,
+                        dryRun = false,
+                        price = BigDecimal("30000.00"),
+                        fee = BigDecimal("3.00"),
+                    ),
+                )
+                repository.saveTrade(
+                    TradeRecord(
+                        timestamp = now.plus(1, ChronoUnit.DAYS),
+                        pair = TestFixtures.XBTUSD,
+                        side = TestFixtures.SELL,
+                        symbol = Asset.BTC,
+                        volume = BigDecimal("0.05"),
+                        usdAmount = BigDecimal("1600.00"),
+                        success = true,
+                        dryRun = false,
+                        price = BigDecimal("32000.00"),
+                        fee = BigDecimal("1.60"),
+                    ),
+                )
+
+                repository.cleanupDuplicateTrades()
+
+                val remaining = repository.getTradesInRange(now.minusSeconds(1), now.plus(2, ChronoUnit.DAYS))
+                remaining.size shouldBe 2
             }
         }
     }

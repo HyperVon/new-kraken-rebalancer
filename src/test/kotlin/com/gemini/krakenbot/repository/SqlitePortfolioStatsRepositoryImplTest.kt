@@ -5,6 +5,7 @@ import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.config.DatabaseConfig
 import com.gemini.krakenbot.model.PortfolioStats
 import com.gemini.krakenbot.repository.impl.SqlitePortfolioStatsRepositoryImpl
+import com.gemini.krakenbot.repository.table.PortfolioStatsTable
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
@@ -19,6 +20,7 @@ import io.mockk.unmockkStatic
 import kotlinx.coroutines.test.runTest
 import org.jetbrains.exposed.v1.jdbc.Database
 import org.jetbrains.exposed.v1.jdbc.JdbcTransaction
+import org.jetbrains.exposed.v1.jdbc.selectAll
 import org.jetbrains.exposed.v1.jdbc.transactions.JdbcTransactionManager
 import org.jetbrains.exposed.v1.jdbc.transactions.TransactionManager
 import org.jetbrains.exposed.v1.jdbc.transactions.transaction
@@ -152,6 +154,47 @@ class SqlitePortfolioStatsRepositoryImplTest : StringSpec() {
 
                     testFile.exists() shouldBe false
                     testBakFile.exists() shouldBe true
+                } finally {
+                    testFile.delete()
+                    testBakFile.delete()
+                }
+            }
+        }
+
+        "load treats null allTimeHigh column as zero" {
+            runTest {
+                val isolatedDb = DatabaseConfig.init(TestFixtures.MEMORY_)
+                val isolatedRepo = SqlitePortfolioStatsRepositoryImpl(isolatedDb, objectMapper)
+                transaction(isolatedDb) {
+                    exec("INSERT INTO portfolio_stats (all_time_high) VALUES (NULL)")
+                }
+
+                val stats = isolatedRepo.load()
+                stats.allTimeHigh.shouldBeEqualComparingTo(BigDecimal.ZERO)
+            }
+        }
+
+        "load migrates stats file with null allTimeHigh as zero without inserting" {
+            runTest {
+                val testFile = File("test-portfolio-stats-null.json")
+                val testBakFile = File("test-portfolio-stats-null.json.bak")
+                val isolatedDb = DatabaseConfig.init(TestFixtures.MEMORY_)
+                val testRepo =
+                    SqlitePortfolioStatsRepositoryImpl(isolatedDb, objectMapper, "test-portfolio-stats-null.json")
+                try {
+                    testFile.delete()
+                    testBakFile.delete()
+                    testFile.writeText("""{"allTimeHigh": null}""")
+
+                    val stats = testRepo.load()
+                    stats.allTimeHigh.shouldBeEqualComparingTo(BigDecimal.ZERO)
+
+                    // Null ATH short-circuits before migration insert/rename
+                    testFile.exists() shouldBe true
+                    testBakFile.exists() shouldBe false
+                    transaction(isolatedDb) {
+                        PortfolioStatsTable.selectAll().count() shouldBe 0
+                    }
                 } finally {
                     testFile.delete()
                     testBakFile.delete()

@@ -8,6 +8,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [6.12.27] - 2026-07-24
 
+### Fixed
+
+- **Fiat correction** no longer enqueues `$0.00` orders for assets whose
+  proportional share rounds away at USD scale, and the shares it does enqueue can
+  no longer sum above the fiat deviation being corrected — `HALF_UP` rounding of
+  several small shares could previously overshoot `|usdDev|`
+  ([#76](https://github.com/HyperVon/new-kraken-rebalancer/issues/76)).
+
 ### Changed
 
 - **Testability**: `KrakenServiceImpl` accepts an injectable `RateLimiter`, and the
@@ -18,17 +26,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 
 - **tests**: Continuous-quality cycle 5 — evaluation Scenario 31 (USD refresh
-  ≥95% early-accept and fail-closed buys), aggressive `0.5` deployment-exponent
-  table points, sync throttle after reconstruct failure, real `snapshotFlow`
-  multi-subscriber and `DROP_OLDEST` overflow, and public-vs-private rate-limit
-  cost assertions.
-
-### Known issues
-
-- **Fiat correction** can still enqueue `$0.00` shares and let rounded shares
-  sum above `|usdDev|`
-  ([#76](https://github.com/HyperVon/new-kraken-rebalancer/issues/76)); three
-  regression tests are committed but disabled pending the gated fix.
+  ≥95% early-accept and fail-closed buys), Scenario 32 (multi-cycle convergence
+  with fill feedback and zero orders by cycle 3), aggressive `0.5` deployment-
+  exponent table points, sync throttle after reconstruct failure, real
+  `snapshotFlow` multi-subscriber and `DROP_OLDEST` overflow, public-vs-private
+  rate-limit cost assertions, and branch-coverage lift for
+  `TradeHistoryServiceImpl` / `repository.impl` (overall branch ~95%).
 
 ## [6.12.26] - 2026-07-24
 
