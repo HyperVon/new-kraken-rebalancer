@@ -102,6 +102,18 @@ class DashboardControllerTest : StringSpec() {
         }
 
         "getDashboardShell_ReturnsHtml" {
+            every { configService.getConfig() } returns AppConfig(
+                KrakenCredentials(apiKey = TestFixtures.TEST_API_KEY, privateKey = "k"),
+                Settings(
+                    loopDelaySeconds = 60L,
+                    deviationTriggerPercent = 2.0,
+                    dustThresholdUSD = 5.0,
+                    dryRun = true,
+                    fiatMaxDrawdown = 0.0,
+                    fiatDeploymentExponent = 1.0,
+                ),
+                listOf(Allocation(Asset.USD, 100.0)),
+            )
             testApplication {
                 application {
                     configureTestEnv()
@@ -111,6 +123,7 @@ class DashboardControllerTest : StringSpec() {
                 response.headers[HttpHeaders.ContentType] shouldContain TestFixtures.TEXT_HTML
                 response.bodyAsText() shouldContain ViewText.APP_TITLE
                 response.bodyAsText() shouldContain "sse-connect=\"${Routes.API_STATUS_STREAM}\""
+                response.bodyAsText() shouldContain ViewText.MODE_DRY_RUN
             }
         }
 

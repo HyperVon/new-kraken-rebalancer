@@ -8,6 +8,37 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Hero 24H delta honesty**: The dashboard delta chip is shown only when a true
+  ≥24h baseline exists in history; it no longer falls back to the oldest retained
+  snapshot (often ~50 minutes under the 50-row dashboard window) while still
+  labeling the change `24H`.
+- **History price/fee precision**: Trade Price uses crypto-scale formatting again
+  (4–8 dp); Fee uses up to 4 dp. Zero/missing values still render as an em-dash.
+- **Mode plate on Dashboard load**: Brand + trading-mode plate + nav render in the
+  Dashboard shell outside the HTMX fragment so the mode remains visible while the
+  fragment loads (or if it fails). Stream health stays in the fragment for SSE
+  refresh.
+- **Safety toggle a11y**: Safety checkboxes are visually hidden but focusable;
+  ON/OFF text lives in the DOM (not CSS `::after`); cards show a focus-within
+  ring. Settings mode plate tracks live checkbox state before Save.
+- **Success status a11y**: Quiet trade-status dots expose `role="img"` and an
+  `aria-label` of SUCCESS.
+- **Config template drawdown default**: Documented that
+  `rebalancer-config-template.json` ships `fiatMaxDrawdown: 0.0` (deployment off),
+  matching `Settings` / README — not a silent strategy change.
+
+### Changed
+
+- **Hero drawdown + base target restored**: Total portfolio shows drawdown again;
+  Cash tile prints `(Base: …%)` when the effective USD target diverges from the
+  configured target after fiat deployment.
+- **Activity relative times**: Moved `just now` / `m ago` / `h ago` / `d ago` into
+  `ViewText`; cycle timestamps pin `Locale.US`.
+
+## [6.13.0] - 2026-07-24
+
 ### Added
 
 - **Dashboard hero KPI (DASH-1)**: Total portfolio now leads with a large value,

@@ -193,6 +193,18 @@ object ComponentStyles {
             put("box-shadow", "0 0 16px rgba(239, 68, 68, 0.3)")
         }
 
+        ".hero-delta.flat" {
+            color = CssTheme.colorTextMuted
+            backgroundColor = CssTheme.colorSlateMuted
+            borderColor = CssTheme.colorSlateBorder
+        }
+
+        ".${CssClass.Hero.Drawdown.value}" {
+            fontSize = 0.75.rem
+            color = CssTheme.colorTextMuted
+            marginTop = 0.25.rem
+        }
+
         ".${CssClass.Hero.DeltaWindow.value}" {
             fontSize = 0.75.rem
             color = CssTheme.colorTextMuted

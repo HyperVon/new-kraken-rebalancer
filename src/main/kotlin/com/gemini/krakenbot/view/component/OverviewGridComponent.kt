@@ -49,6 +49,7 @@ class OverviewGridComponent {
                 }
                 div(CssClass.Hero.Value) { +"$${Formatter.formatCurrency(latest.totalValueUSD)}" }
                 renderDeltaRow(latest, history)
+                renderDrawdown(latest.drawdownPercent)
             }
             val spark = sparklineSvg(history)
             if (spark.isNotEmpty()) {
@@ -58,15 +59,30 @@ class OverviewGridComponent {
     }
 
     private fun DIV.renderDeltaRow(latest: PortfolioSnapshot, history: List<PortfolioSnapshot>) {
-        val delta = compute24hDelta(latest, history)
+        val delta = compute24hDelta(latest, history) ?: return
         div(CssClass.Hero.DeltaRow) {
-            if (delta != null) {
-                val up = delta.signum() >= 0
-                val cls = if (up) CssClass.Hero.DeltaUp else CssClass.Hero.DeltaDown
-                val sign = if (up) "+" else ""
-                span(cls) { +"$sign${Formatter.formatPercent(delta)}%" }
-            }
+            val signum = delta.signum()
+            val cls =
+                when {
+                    signum > 0 -> CssClass.Hero.DeltaUp
+                    signum < 0 -> CssClass.Hero.DeltaDown
+                    else -> CssClass.Hero.DeltaFlat
+                }
+            val sign = if (signum > 0) "+" else ""
+            span(cls) { +"$sign${Formatter.formatPercent(delta)}%" }
             span(CssClass.Hero.DeltaWindow) { +ViewText.DELTA_WINDOW_24H }
+        }
+    }
+
+    private fun DIV.renderDrawdown(drawdown: BigDecimal) {
+        val cls =
+            if (drawdown.signum() > 0) {
+                CssClass.Utility.TextDanger + CssClass.Hero.Drawdown
+            } else {
+                CssClass.Hero.Drawdown
+            }
+        span(cls) {
+            +"${ViewText.DRAWDOWN_PREFIX}${Formatter.formatPercent(drawdown)}%"
         }
     }
 
@@ -85,11 +101,16 @@ class OverviewGridComponent {
                 val currentPct = usdAsset.currentPercent
                 renderTileBar(currentPct, ChartProps.COLOR_EMERALD)
                 val targetPct = latest.effectiveUsdTargetPercent
+                val baseTargetPct = usdAsset.targetPercent
                 val dev = usdAsset.deviationPercent
                 val devClass = Formatter.getDeviationClass(dev)
                 val devSign = Formatter.getDeviationSign(dev)
                 div(CssClass.Hero.TileMeta) {
-                    +"${ViewText.TARGET_PREFIX}${Formatter.formatPercent(targetPct)}% | "
+                    +"${ViewText.TARGET_PREFIX}${Formatter.formatPercent(targetPct)}%"
+                    if ((targetPct - baseTargetPct).abs() > BASE_TARGET_EPS) {
+                        +" (${ViewText.BASE_PREFIX}${Formatter.formatPercent(baseTargetPct)}%)"
+                    }
+                    +" | "
                     span(devClass) { +"${ViewText.DEV_PREFIX}$devSign${Formatter.formatPercent(dev)}%" }
                 }
             } else {
@@ -132,16 +153,21 @@ class OverviewGridComponent {
 
     companion object {
         private val HUNDRED = BigDecimal("100")
+        private val BASE_TARGET_EPS = BigDecimal("0.01")
         private const val SECONDS_PER_DAY = 86_400L
         private const val SPARK_WIDTH = 300.0
         private const val SPARK_HEIGHT = 80.0
         private const val SPARK_PAD = 4.0
 
-        /** 24h percentage change vs the most recent snapshot at least 24h older; null when unavailable. */
+        /**
+         * 24h percentage change vs the most recent snapshot at least 24h older.
+         * Returns null when fewer than two points exist, no ≥24h baseline is available,
+         * or the baseline value is zero — never invents a shorter window labeled "24H".
+         */
         internal fun compute24hDelta(latest: PortfolioSnapshot, history: List<PortfolioSnapshot>): BigDecimal? {
             if (history.size < 2) return null
             val cutoff = latest.timestamp.minusSeconds(SECONDS_PER_DAY)
-            val past = history.firstOrNull { it.timestamp <= cutoff } ?: history.last()
+            val past = history.firstOrNull { it.timestamp <= cutoff } ?: return null
             val base = past.totalValueUSD
             if (base.signum() == 0) return null
             return (latest.totalValueUSD - base)
@@ -158,26 +184,28 @@ class OverviewGridComponent {
             val range = max - min
             val lastIndex = values.size - 1
             val usableHeight = SPARK_HEIGHT - SPARK_PAD * 2
-            val coords = values.mapIndexed { i, v ->
-                val x = i.toDouble() / lastIndex * SPARK_WIDTH
-                val y = if (range ==
-                    0.0
-                ) {
-                    SPARK_HEIGHT / 2
-                } else {
-                    SPARK_HEIGHT - SPARK_PAD - (v - min) / range * usableHeight
+            val coords =
+                values.mapIndexed { i, v ->
+                    val x = i.toDouble() / lastIndex * SPARK_WIDTH
+                    val y =
+                        if (range == 0.0) {
+                            SPARK_HEIGHT / 2
+                        } else {
+                            SPARK_HEIGHT - SPARK_PAD - (v - min) / range * usableHeight
+                        }
+                    "${fmt(x)},${fmt(y)}"
                 }
-                "${fmt(x)},${fmt(y)}"
-            }
             val line = coords.joinToString(" ")
             val area = "M0,$SPARK_HEIGHT L${coords.joinToString(" L")} L$SPARK_WIDTH,$SPARK_HEIGHT Z"
+            // Unique gradient id per sparkline so HTMX swaps / future reuse cannot collide.
+            val gradId = "hero-spark-grad-${history.first().timestamp.toEpochMilli()}"
             return buildString {
                 append("<svg viewBox=\"0 0 ${fmt(SPARK_WIDTH)} ${fmt(SPARK_HEIGHT)}\" preserveAspectRatio=\"none\">")
-                append("<defs><linearGradient id=\"hero-spark-grad\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\">")
+                append("<defs><linearGradient id=\"$gradId\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\">")
                 append("<stop offset=\"0%\" stop-color=\"${ChartProps.COLOR_BLUE}\" stop-opacity=\"0.55\"/>")
                 append("<stop offset=\"100%\" stop-color=\"${ChartProps.COLOR_BLUE}\" stop-opacity=\"0\"/>")
                 append("</linearGradient></defs>")
-                append("<path d=\"$area\" fill=\"url(#hero-spark-grad)\"/>")
+                append("<path d=\"$area\" fill=\"url(#$gradId)\"/>")
                 append(
                     "<polyline points=\"$line\" fill=\"none\" stroke=\"${ChartProps.COLOR_BLUE}\" " +
                         "stroke-width=\"2.5\" stroke-linejoin=\"round\" stroke-linecap=\"round\"/>",

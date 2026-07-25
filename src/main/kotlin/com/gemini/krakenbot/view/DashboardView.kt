@@ -20,8 +20,8 @@ class DashboardView(
 ) {
 
     context(html: HTML)
-    fun renderDashboardShell() {
-        shellComponent.render()
+    fun renderDashboardShell(settings: Settings) {
+        shellComponent.render(settings)
     }
 
     context(html: HTML)
@@ -46,7 +46,7 @@ class DashboardView(
     }
 
     context(div: DIV)
-    fun renderDashboardFragment(latest: PortfolioSnapshot, history: List<PortfolioSnapshot>, settings: Settings) {
-        fragmentComponent.render(latest, history, settings)
+    fun renderDashboardFragment(latest: PortfolioSnapshot, history: List<PortfolioSnapshot>) {
+        fragmentComponent.render(latest, history)
     }
 }

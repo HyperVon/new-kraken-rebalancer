@@ -102,13 +102,20 @@ class DashboardViewTest : StringSpec() {
 
     init {
         "renderDashboardShell_containsExpectedContent" {
-            val html = createHTML().html { view.renderDashboardShell() }
+            val html = createHTML().html { view.renderDashboardShell(baseConfig.settings) }
             html shouldContain "title>${APP_TITLE}"
             html shouldContain "link href=\"${STATIC_STYLE_CSS}?v="
             html shouldContain "script src=\"https://unpkg.com/htmx.org@2.0.4\""
             html shouldContain "hx-ext=\"sse\""
             html shouldContain "sse-connect=\"${API_STATUS_STREAM}\""
             html shouldContain CONNECTING
+            html shouldContain MODE_DRY_RUN
+        }
+
+        "renderDashboardShell_simulationMode_rendersSimulationPlate" {
+            val simSettings = baseConfig.settings.copy(simulation = true)
+            val html = createHTML().html { view.renderDashboardShell(simSettings) }
+            html shouldContain MODE_SIMULATION
         }
 
         "renderSettingsPage_withNoError_containsForm" {
@@ -121,6 +128,9 @@ class DashboardViewTest : StringSpec() {
             html shouldContain "name=\"${DEVIATION_TRIGGER_PERCENT}\""
             html shouldContain "value=\"2.0\""
             html shouldContain SAFETY_MODES
+            html shouldContain "safety-state-on"
+            html shouldContain "safety-state-off"
+            html shouldContain "id=\"mode-plate\""
             html shouldNotContain ERROR_BANNER
         }
 
@@ -182,17 +192,18 @@ class DashboardViewTest : StringSpec() {
             val history = listOf(latest)
 
             val html = createHTML().div {
-                view.renderDashboardFragment(latest, history, baseConfig.settings)
+                view.renderDashboardFragment(latest, history)
             }
 
             html shouldContain STREAM
-            html shouldContain MODE_DRY_RUN
             html shouldContain TOTAL_PORTFOLIO
             html shouldContain "$10,000.00"
             html shouldContain CASH_USD
             html shouldContain "$1,000.00"
             html shouldContain "${TARGET_PREFIX}7.50%"
+            html shouldContain "(Base: 10.00%)"
             html shouldContain "${DEV_PREFIX}0.00%"
+            html shouldContain "Drawdown: 5.00%"
             html shouldContain CRYPTO_ASSETS
             html shouldContain "$9,000.00"
             html shouldContain "${TARGET_PREFIX}90.00% | 2${ASSETS_SUFFIX}"
@@ -230,7 +241,7 @@ class DashboardViewTest : StringSpec() {
             )
 
             val html = createHTML().div {
-                view.renderDashboardFragment(latest, emptyList(), baseConfig.settings)
+                view.renderDashboardFragment(latest, emptyList())
             }
 
             html shouldContain STREAM_STALE
@@ -249,7 +260,7 @@ class DashboardViewTest : StringSpec() {
                 effectiveUsdTargetPercent = BigDecimal("10.0"),
             )
             createHTML().div {
-                view.renderDashboardFragment(emptyAssetsLatest, emptyList(), baseConfig.settings)
+                view.renderDashboardFragment(emptyAssetsLatest, emptyList())
             }
 
             val latest = PortfolioSnapshot(
@@ -287,7 +298,6 @@ class DashboardViewTest : StringSpec() {
                 view.renderDashboardFragment(
                     latest,
                     listOf(latest, noActionsSnapshot),
-                    baseConfig.settings,
                 )
             }
 
@@ -320,7 +330,7 @@ class DashboardViewTest : StringSpec() {
             )
 
             val html = createHTML().div {
-                view.renderDashboardFragment(latest, emptyList(), baseConfig.settings)
+                view.renderDashboardFragment(latest, emptyList())
             }
 
             html shouldContain "${TARGET_PREFIX}10.00%"
@@ -337,11 +347,10 @@ class DashboardViewTest : StringSpec() {
             OverviewGridComponent.compute24hDelta(latestUp, listOf(latestUp, olderBase))!!
                 .compareTo(BigDecimal("10.000000")) shouldBe 0
 
-            // No snapshot older than 24h -> falls back to history.last()
+            // No snapshot older than 24h -> null (do not invent a shorter window)
             val latestDown = snap(0, "9000")
             val recent = snap(3_600, "10000")
-            OverviewGridComponent.compute24hDelta(latestDown, listOf(latestDown, recent))!!
-                .compareTo(BigDecimal("-10.000000")) shouldBe 0
+            OverviewGridComponent.compute24hDelta(latestDown, listOf(latestDown, recent)) shouldBe null
 
             // Base value is zero -> null
             val latestZeroBase = snap(0, "5000")
@@ -375,28 +384,20 @@ class DashboardViewTest : StringSpec() {
                     snap(90_000, "10000"), // "d ago" and 24h base
                 )
             val htmlUp = createHTML().div {
-                view.renderDashboardFragment(latestUp, historyUp, baseConfig.settings)
+                view.renderDashboardFragment(latestUp, historyUp)
             }
             htmlUp shouldContain deltaUp
             htmlUp shouldContain "m ago"
             htmlUp shouldContain "h ago"
             htmlUp shouldContain "d ago"
 
-            // Down delta
+            // Down delta requires a true ≥24h baseline
             val latestDown = snap(0, "9000")
-            val historyDown = listOf(latestDown, snap(3_600, "10000"))
+            val historyDown = listOf(latestDown, snap(90_000, "10000"))
             val htmlDown = createHTML().div {
-                view.renderDashboardFragment(latestDown, historyDown, baseConfig.settings)
+                view.renderDashboardFragment(latestDown, historyDown)
             }
             htmlDown shouldContain deltaDown
-        }
-
-        "renderDashboardFragment_simulationMode_rendersSimulationPlate" {
-            val simSettings = baseConfig.settings.copy(simulation = true)
-            val html = createHTML().div {
-                view.renderDashboardFragment(snap(0, "1000"), emptyList(), simSettings)
-            }
-            html shouldContain MODE_SIMULATION
         }
 
         "Icons_loadIcon_returnsEmptyOnMissingResource" {

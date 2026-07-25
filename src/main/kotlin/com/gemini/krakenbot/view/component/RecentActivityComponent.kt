@@ -18,6 +18,7 @@ import java.time.Duration
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.util.Locale
 
 class RecentActivityComponent {
 
@@ -44,6 +45,7 @@ class RecentActivityComponent {
 
     private val cycleTimeFormatter =
         DateTimeFormatter.ofPattern("MMM d · hh:mm:ss a")
+            .withLocale(Locale.US)
             .withZone(ZoneId.systemDefault())
 
     context(div: DIV)
@@ -112,10 +114,10 @@ class RecentActivityComponent {
         fun relativeTime(timestamp: Instant, now: Instant): String {
             val seconds = Duration.between(timestamp, now).seconds.coerceAtLeast(0)
             return when {
-                seconds < 60 -> "just now"
-                seconds < 3_600 -> "${seconds / 60}m ago"
-                seconds < 86_400 -> "${seconds / 3_600}h ago"
-                else -> "${seconds / 86_400}d ago"
+                seconds < 60 -> ViewText.ACTIVITY_JUST_NOW
+                seconds < 3_600 -> "${seconds / 60}${ViewText.ACTIVITY_MINUTES_AGO_SUFFIX}"
+                seconds < 86_400 -> "${seconds / 3_600}${ViewText.ACTIVITY_HOURS_AGO_SUFFIX}"
+                else -> "${seconds / 86_400}${ViewText.ACTIVITY_DAYS_AGO_SUFFIX}"
             }
         }
     }

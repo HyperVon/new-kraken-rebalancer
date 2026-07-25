@@ -1,7 +1,6 @@
 package com.gemini.krakenbot.view.css
 
 import com.gemini.krakenbot.view.util.CssClass
-import com.gemini.krakenbot.view.util.ViewText
 import kotlinx.css.*
 import kotlinx.css.properties.*
 
@@ -170,6 +169,7 @@ object FormStyles {
             gap = 0.75.rem
             cursor = Cursor.pointer
             put("user-select", "none")
+            position = Position.relative
         }
 
         ".${CssClass.Form.CheckboxCustom}" {
@@ -184,7 +184,18 @@ object FormStyles {
         }
 
         "input[type=\"checkbox\"]" {
-            display = Display.none
+            // Visually hidden but still focusable (display:none removes from tab order).
+            position = Position.absolute
+            opacity = 0.0
+            width = 1.px
+            height = 1.px
+            margin = Margin((-1).px)
+            padding = Padding(0.px)
+            borderWidth = 0.px
+            overflow = Overflow.hidden
+            put("clip", "rect(0, 0, 0, 0)")
+            put("clip-path", "inset(50%)")
+            put("white-space", "nowrap")
         }
 
         "input[type=\"checkbox\"]:checked + .${CssClass.Form.CheckboxCustom}" {
@@ -297,6 +308,7 @@ object FormStyles {
         // so the sibling `input:checked` selector can tint it (pure CSS, no JS).
         ".${CssClass.Form.SafetyCard.value}" {
             display = Display.block
+            position = Position.relative
             cursor = Cursor.pointer
             put("user-select", "none")
         }
@@ -313,6 +325,11 @@ object FormStyles {
             borderColor = CssTheme.colorSurface2Border
             put("transition", "all 0.2s ease")
             put("box-shadow", CssTheme.shadowSurface1)
+        }
+
+        ".${CssClass.Form.SafetyCard.value}:focus-within .${CssClass.Form.SafetyCardInner.value}" {
+            borderColor = CssTheme.colorKrakenBlue
+            put("box-shadow", "0 0 0 2px rgba(59, 130, 246, 0.45), ${CssTheme.shadowSurface1}")
         }
 
         ".${CssClass.Form.SafetyCard.value}:hover .${CssClass.Form.SafetyCardInner.value}" {
@@ -400,9 +417,12 @@ object FormStyles {
             borderColor = CssTheme.colorSlateBorder
         }
 
-        // Pill text is CSS-driven so the ON/OFF label tracks the checkbox with no JS.
-        ".${CssClass.Form.SafetyStatePill.value}::after" {
-            content = QuotedString(ViewText.SAFETY_OFF)
+        // ON/OFF live in the DOM; CSS toggles which span is visible with the checkbox.
+        ".${CssClass.Form.SafetyStateOn.value}" {
+            display = Display.none
+        }
+        ".${CssClass.Form.SafetyStateOff.value}" {
+            display = Display.inline
         }
 
         val checkedPill =
@@ -413,8 +433,11 @@ object FormStyles {
             color = CssTheme.colorSuccess
             borderColor = CssTheme.colorSuccessBorder
         }
-        "$checkedPill::after" {
-            content = QuotedString(ViewText.SAFETY_ON)
+        "$checkedPill .${CssClass.Form.SafetyStateOn.value}" {
+            display = Display.inline
+        }
+        "$checkedPill .${CssClass.Form.SafetyStateOff.value}" {
+            display = Display.none
         }
 
         ".${CssClass.Form.SectionHeader}" {

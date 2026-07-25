@@ -6,6 +6,7 @@ import com.gemini.krakenbot.view.util.FormFields
 import com.gemini.krakenbot.view.util.HtmlEvents
 import com.gemini.krakenbot.view.util.HtmlIds
 import com.gemini.krakenbot.view.util.HtmlTags
+import com.gemini.krakenbot.view.util.ViewText
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.booleans.shouldBeFalse
@@ -180,6 +181,78 @@ class SettingsTest : StringSpec() {
             try {
                 initSettings()
                 (window.asDynamic().addAssetRow != null) shouldBe true
+            } finally {
+                document.body!!.removeChild(container)
+            }
+        }
+
+        "syncModePlateFromSafetyToggles reflects checkbox state with simulation > dryRun > live precedence" {
+            val container = document.createElement(HtmlTags.DIV) as HTMLDivElement
+
+            val plate = document.createElement(HtmlTags.SPAN) as HTMLSpanElement
+            plate.id = HtmlIds.MODE_PLATE
+            val label = document.createElement(HtmlTags.SPAN) as HTMLSpanElement
+            label.id = HtmlIds.MODE_PLATE_LABEL
+            plate.appendChild(label)
+            container.appendChild(plate)
+
+            val simulation = document.createElement(HtmlTags.INPUT) as HTMLInputElement
+            simulation.type = "checkbox"
+            simulation.name = FormFields.SIMULATION
+            container.appendChild(simulation)
+
+            val dryRun = document.createElement(HtmlTags.INPUT) as HTMLInputElement
+            dryRun.type = "checkbox"
+            dryRun.name = FormFields.DRY_RUN
+            container.appendChild(dryRun)
+
+            document.body!!.appendChild(container)
+            try {
+                syncModePlateFromSafetyToggles()
+                plate.className shouldBe CssClass.Mode.Live.toString()
+                label.textContent shouldBe ViewText.MODE_LIVE
+
+                dryRun.checked = true
+                syncModePlateFromSafetyToggles()
+                plate.className shouldBe CssClass.Mode.DryRun.toString()
+                label.textContent shouldBe ViewText.MODE_DRY_RUN
+
+                simulation.checked = true
+                syncModePlateFromSafetyToggles()
+                plate.className shouldBe CssClass.Mode.Simulation.toString()
+                label.textContent shouldBe ViewText.MODE_SIMULATION
+            } finally {
+                document.body!!.removeChild(container)
+            }
+        }
+
+        "initSettings wires safety toggle change events to the mode plate" {
+            val container = document.createElement(HtmlTags.DIV) as HTMLDivElement
+
+            val plate = document.createElement(HtmlTags.SPAN) as HTMLSpanElement
+            plate.id = HtmlIds.MODE_PLATE
+            val label = document.createElement(HtmlTags.SPAN) as HTMLSpanElement
+            label.id = HtmlIds.MODE_PLATE_LABEL
+            plate.appendChild(label)
+            container.appendChild(plate)
+
+            val simulation = document.createElement(HtmlTags.INPUT) as HTMLInputElement
+            simulation.type = "checkbox"
+            simulation.name = FormFields.SIMULATION
+            container.appendChild(simulation)
+
+            document.body!!.appendChild(container)
+            try {
+                initSettings()
+                plate.className shouldBe CssClass.Mode.Live.toString()
+
+                simulation.checked = true
+                val changeEvent = document.createEvent(HtmlEvents.EVENT)
+                changeEvent.initEvent(type = HtmlEvents.CHANGE, bubbles = true, cancelable = true)
+                simulation.dispatchEvent(changeEvent)
+
+                plate.className shouldBe CssClass.Mode.Simulation.toString()
+                label.textContent shouldBe ViewText.MODE_SIMULATION
             } finally {
                 document.body!!.removeChild(container)
             }

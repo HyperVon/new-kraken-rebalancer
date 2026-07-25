@@ -55,7 +55,9 @@ sealed class CssClass(open val value: String) {
         object Delta : Hero("hero-delta")
         object DeltaUp : Hero("hero-delta up")
         object DeltaDown : Hero("hero-delta down")
+        object DeltaFlat : Hero("hero-delta flat")
         object DeltaWindow : Hero("hero-delta-window")
+        object Drawdown : Hero("hero-drawdown")
         object Spark : Hero("hero-spark")
         object Tile : Hero("glass-panel hero-tile")
         object TileCash : Hero("glass-panel hero-tile hero-tile-cash")
@@ -126,6 +128,8 @@ sealed class CssClass(open val value: String) {
         object SafetyCardTitle : Form("safety-card-title")
         object SafetyCardDesc : Form("safety-card-desc")
         object SafetyStatePill : Form("safety-state-pill")
+        object SafetyStateOn : Form("safety-state-on")
+        object SafetyStateOff : Form("safety-state-off")
     }
 
     // Buttons

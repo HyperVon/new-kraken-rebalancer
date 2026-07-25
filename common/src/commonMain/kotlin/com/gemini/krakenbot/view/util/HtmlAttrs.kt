@@ -14,6 +14,7 @@ object HtmlAttrs {
     const val CROSSORIGIN = "crossorigin"
     const val ARIA_LABEL = "aria-label"
     const val TITLE = "title"
+    const val ROLE = "role"
 }
 
 /** Zoom control action values for History chart toolbar buttons. */
@@ -72,6 +73,8 @@ object HtmlIds {
     const val TOTAL_ALLOCATED_DISPLAY = "total-allocated-display"
     const val ALLOCATIONS_CONTAINER = "allocations-container"
     const val NEW_SYMBOL_INPUT = "new-symbol-input"
+    const val MODE_PLATE = "mode-plate"
+    const val MODE_PLATE_LABEL = "mode-plate-label"
 
     // History Page IDs
     const val HISTORY_STATS = "history-stats"

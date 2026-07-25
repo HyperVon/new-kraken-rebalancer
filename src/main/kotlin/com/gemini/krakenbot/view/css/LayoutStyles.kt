@@ -85,6 +85,8 @@ object LayoutStyles {
             alignItems = Align.center
             gap = 1.rem
             flexWrap = FlexWrap.wrap
+            put("justify-content", "flex-end")
+            marginBottom = 0.75.rem
         }
 
         ".${CssClass.Layout.StatusCluster}" {

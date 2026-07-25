@@ -11,8 +11,9 @@ object ViewText {
     const val CASH_USD = "Cash (USD)"
     const val CRYPTO_ASSETS = "Crypto Assets"
 
-    // DASH-1: hero delta window label.
+    // DASH-1: hero delta window label (only shown when a true ≥24h baseline exists).
     const val DELTA_WINDOW_24H = "24H"
+    const val DRAWDOWN_PREFIX = "Drawdown: "
     const val RECENT_ACTIVITY = "Recent Activity"
     const val NO_TRADING_HISTORY = "No trading history available."
     const val NO_TRADES_EXECUTED = "No trades executed (Cycle complete)"
@@ -23,6 +24,10 @@ object ViewText {
     const val ACTIVITY_NO_TRADES = "No trades — portfolio within tolerance"
     const val ACTIVITY_ACTIONS_SUFFIX = " actions"
     const val ACTIVITY_ACTION_SUFFIX = " action"
+    const val ACTIVITY_JUST_NOW = "just now"
+    const val ACTIVITY_MINUTES_AGO_SUFFIX = "m ago"
+    const val ACTIVITY_HOURS_AGO_SUFFIX = "h ago"
+    const val ACTIVITY_DAYS_AGO_SUFFIX = "d ago"
     const val CONNECTING = "Connecting to KrakenRebalancer..."
     const val WAITING_FIRST_CYCLE = "Waiting for first rebalance cycle"
     const val REBALANCER_RUNNING =

@@ -79,7 +79,7 @@ and threads it through:
 
 ```kotlin
 dashboardView.renderHistoryPage(settings)
-dashboardView.renderDashboardFragment(latest, history, settings)
+dashboardView.renderDashboardFragment(latest, history)
 ```
 
 New pages or HTMX fragments that render a header need the same `Settings`

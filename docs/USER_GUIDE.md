@@ -71,8 +71,8 @@ The top of the Dashboard is a hero card plus two tiles:
 
 | Element | Meaning |
 | :--- | :--- |
-| **Total Portfolio** (hero) | Mark-to-market value of all tracked assets, with a signed **24H** delta (green up / red down) and an inline **sparkline** of recent value. |
-| **Cash (USD)** (tile) | Fiat balance with a progress bar for its current share, plus target % (the **effective** target after drawdown-based fiat deployment) and deviation. |
+| **Total Portfolio** (hero) | Mark-to-market value of all tracked assets, with a signed **24H** delta when a true ≥24h baseline exists (green up / red down / muted flat), current **drawdown**, and an inline **sparkline** of recent retained snapshots. |
+| **Cash (USD)** (tile) | Fiat balance with a progress bar for its current share, plus **effective** target % after drawdown-based fiat deployment (and the configured **Base** target when they differ) and deviation. |
 | **Crypto Assets** (tile) | Combined crypto value with a progress bar for its share, its target %, and how many crypto symbols you hold. |
 
 ### Allocation & performance

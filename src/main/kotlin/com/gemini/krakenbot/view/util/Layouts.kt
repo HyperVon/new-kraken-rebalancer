@@ -57,9 +57,13 @@ fun FlowContent.modePlate(settings: Settings) {
         }
     }
     span(cssClass) {
+        id = HtmlIds.MODE_PLATE
         attributes[HtmlAttrs.TITLE] = plateTitle
         span(CssClass.Mode.Dot) {}
-        +label
+        span {
+            id = HtmlIds.MODE_PLATE_LABEL
+            +label
+        }
     }
 }
 

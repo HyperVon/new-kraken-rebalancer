@@ -170,7 +170,10 @@ class SettingsFormComponent {
                 div(CssClass.Form.SafetyCardBody) {
                     div(CssClass.Form.SafetyCardTitleRow) {
                         span(CssClass.Form.SafetyCardTitle) { +title }
-                        span(CssClass.Form.SafetyStatePill) {}
+                        span(CssClass.Form.SafetyStatePill) {
+                            span(CssClass.Form.SafetyStateOn) { +ViewText.SAFETY_ON }
+                            span(CssClass.Form.SafetyStateOff) { +ViewText.SAFETY_OFF }
+                        }
                     }
                     div(CssClass.Form.SafetyCardDesc) { +desc }
                 }
