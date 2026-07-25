@@ -53,43 +53,50 @@ object ComponentStyles {
         "${CssClass.StatusCard.Default.querySelector}" {
             display = Display.flex
             flexDirection = FlexDirection.column
-            gap = 1.rem
-            padding = Padding(1.5.rem, 1.625.rem)
+            gap = 0.375.rem
+            padding = Padding(0.75.rem, 0.875.rem)
+            borderRadius = 0.875.rem
         }
 
         ".${CssClass.StatusCard.Header}" {
             display = Display.flex
             put("justify-content", "space-between")
             alignItems = Align.flexStart
-            gap = 0.75.rem
+            gap = 0.5.rem
         }
 
         ".${CssClass.StatusCard.Title}" {
-            fontSize = 0.875.rem
+            fontSize = 0.8125.rem
             fontWeight = FontWeight.w600
             color = CssTheme.colorTextSecondary
-            paddingTop = 0.125.rem
+            paddingTop = 0.px
+            put("line-height", "1.25")
         }
 
         ".${CssClass.StatusCard.Icon}" {
             display = Display.flex
             alignItems = Align.center
             put("justify-content", "center")
-            width = 2.25.rem
-            height = 2.25.rem
+            width = 1.75.rem
+            height = 1.75.rem
             flexShrink = 0.0
-            borderRadius = 0.5.rem
+            borderRadius = 0.375.rem
             background = CssTheme.colorGlassHover.value
             color = CssTheme.colorTextSecondary
-            marginLeft = 0.25.rem
+            marginLeft = 0.px
+        }
+
+        ".${CssClass.StatusCard.Icon} svg" {
+            width = 0.9375.rem
+            height = 0.9375.rem
         }
 
         ".${CssClass.StatusCard.Value}" {
-            fontSize = 1.75.rem
+            fontSize = 1.375.rem
             fontWeight = FontWeight.w700
             fontFamily = CssTheme.fontHeading
             put("letter-spacing", "-0.02em")
-            put("line-height", "1.2")
+            put("line-height", "1.15")
         }
 
         ".status-card.success .${CssClass.StatusCard.Value}" {
@@ -97,11 +104,10 @@ object ComponentStyles {
         }
 
         ".${CssClass.StatusCard.Sub}" {
-            put("margin-top", "auto")
-            paddingTop = 0.125.rem
+            paddingTop = 0.px
             fontSize = 0.75.rem
             color = CssTheme.colorTextSecondary
-            put("line-height", "1.4")
+            put("line-height", "1.35")
         }
 
         // Allocation Charts

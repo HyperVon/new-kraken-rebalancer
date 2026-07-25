@@ -241,8 +241,9 @@ object NavigationStyles {
         ".${CssClass.History.StatsGrid}" {
             display = Display.grid
             gridTemplateColumns = GridTemplateColumns("1fr")
-            gap = 1.rem
-            marginBottom = 1.25.rem
+            gap = 0.75.rem
+            marginBottom = 1.rem
+            alignItems = Align.start
         }
 
         ".${CssClass.History.TradeLogHeader}" {

@@ -10,9 +10,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **Denser summary cards**: Reduced padding, icon size, and value typography on
+  Dashboard overview and History metric cards; History uses a single six-column
+  row at laptop widths so the charts sit higher on the page.
 - **Documentation screenshots**: Refreshed all `docs/images/*.png` from an isolated
-  simulation boot so History shows six summary cards (including Avg Fee Rate / Avg
-  Slippage), Price/Fee/Slippage trade-log columns, and the Net After Fees chart series.
+  simulation boot for denser Dashboard / History summary cards and History trade
+  economics (six cards, Price/Fee/Slippage columns, Net After Fees series).
 
 ## [6.12.19] - 2026-07-24
 
