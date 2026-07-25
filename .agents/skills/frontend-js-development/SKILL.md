@@ -20,9 +20,9 @@ Compiles via Kotlin JS IR to `/static/rebalancer.js`.
 3. **Chart.js** — deep-clone options before each render; re-attach functions after
    clone.
 4. **History timeframe** — when user selects 24h / 7d / 30d / 90d / All, update
-   **all four** summary cards (**All-Time High** / **Period High**, **Total
-   Trades**, **Total Volume Traded**, **Total Fees Paid**) plus charts and trade
-   table.
+   **all six** summary cards (**All-Time High** / **Period High**, **Total
+   Trades**, **Total Volume Traded**, **Total Fees Paid**, **Avg Fee Rate**,
+   **Avg Slippage**) plus charts and trade table.
 
 ## Chart.js integrity
 
@@ -95,7 +95,7 @@ views, zoom, scrubber pan, dry-run filter, legend toggles).
 ## Checklist
 
 - [ ] SSE consumes `/api/status/stream` payloads correctly
-- [ ] Timeframe change updates **all 4** summary cards
+- [ ] Timeframe change updates **all 6** summary cards
 - [ ] Chart options deep-cloned; zoom callbacks re-attached after clone
 - [ ] Zoomed History charts pan via `zoomScale` + scrubber (not options.scales only)
 - [ ] `:common` IDs/classes used; Karma thresholds still met

@@ -122,6 +122,24 @@ object TableStyles {
             color = CssTheme.colorBlueAccent
         }
 
+        ".badge.badge-slippage-favorable" {
+            backgroundColor = CssTheme.colorSuccessBgSubtle
+            borderColor = CssTheme.colorSuccessBorderSubtle
+            color = CssTheme.colorSuccess
+        }
+
+        ".badge.badge-slippage-adverse" {
+            backgroundColor = CssTheme.colorDangerBgSubtle
+            borderColor = CssTheme.colorDangerBorderSubtle
+            color = CssTheme.colorDanger
+        }
+
+        ".badge.badge-slippage-neutral" {
+            backgroundColor = Color.transparent
+            borderColor = CssTheme.colorWhiteBorder
+            color = CssTheme.colorTextMuted
+        }
+
         ".text-success" {
             color = CssTheme.colorSuccess
         }

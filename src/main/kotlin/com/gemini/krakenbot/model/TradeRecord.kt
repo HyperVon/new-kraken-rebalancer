@@ -23,8 +23,17 @@ data class TradeRecord(
     val price: BigDecimal = BigDecimal.ZERO,
     val fee: BigDecimal = BigDecimal.ZERO,
     val slippagePercent: BigDecimal? = null,
+    val expectedPrice: BigDecimal? = null,
+    val source: TradeSource? = null,
     val id: Int? = null,
 )
+
+/** Explicit [source] when present; otherwise infer legacy rows before the source column existed. */
+fun TradeRecord.effectiveSource(): TradeSource? = source ?: when {
+    success && !dryRun && errorMessage == null && slippagePercent == null -> TradeSource.API_FILL
+    slippagePercent != null -> TradeSource.LOCAL_ESTIMATE
+    else -> null
+}
 
 fun TradeRecord.isSameSymbolAndSide(other: TradeRecord): Boolean =
     this.symbol.equals(other.symbol, ignoreCase = true) &&
@@ -66,9 +75,9 @@ fun TradeRecord.feePercentDiffersMateriallyFrom(other: TradeRecord): Boolean {
     return thisFeeRate.subtract(otherFeeRate).abs() >= BigDecimal("0.001")
 }
 
-fun TradeRecord.isLocalEstimate(): Boolean = slippagePercent != null
+fun TradeRecord.isLocalEstimate(): Boolean = effectiveSource() == TradeSource.LOCAL_ESTIMATE
 
-fun TradeRecord.isSettledApiFill(): Boolean = success && !dryRun && errorMessage == null && slippagePercent == null
+fun TradeRecord.isSettledApiFill(): Boolean = effectiveSource() == TradeSource.API_FILL
 
 fun TradeRecord.hasDifferentTradeProvenanceFrom(other: TradeRecord): Boolean =
     (this.isLocalEstimate() && other.isSettledApiFill()) ||

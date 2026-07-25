@@ -70,6 +70,8 @@ object ViewText {
     const val HISTORY_TOTAL_TRADES = "Total Trades"
     const val HISTORY_TOTAL_VOLUME = "Total Volume Traded"
     const val HISTORY_TOTAL_FEES = "Total Fees Paid"
+    const val HISTORY_AVG_FEE_RATE = "Avg Fee Rate"
+    const val HISTORY_AVG_SLIPPAGE = "Avg Slippage"
     const val HISTORY_NO_DATA = "No historical data available yet. Data will appear after the first rebalance cycle."
     const val SHOW_DRY_RUN_TRADES = "Show Dry Run Trades"
     const val SYNCHRONIZING_TRADE_HISTORY = "Synchronizing Kraken Trade History..."
@@ -103,6 +105,8 @@ object ViewText {
     const val HEADER_SIDE = "Side"
     const val HEADER_VOLUME = "Volume"
     const val HEADER_USD_AMOUNT = "USD Amount"
+    const val HEADER_FEE = "Fee"
+    const val HEADER_SLIPPAGE = "Slippage"
     const val HEADER_STATUS = "Status"
 
     // Time & Status formatting
@@ -115,6 +119,12 @@ object ViewText {
     const val PERIOD_HIGH = "Period High"
     const val NET_CASH_FLOW_ALL = "Net Cash Flow (Realized & Dry Run Trades)"
     const val NET_CASH_FLOW_REALIZED = "Net Cash Flow (Realized Trades)"
+    const val NET_AFTER_FEES = "Net After Fees"
+    const val NET_AFTER_FEES_ESTIMATED =
+        "Net After Fees (includes estimated fees for dry-run trades; not accounting P&L)"
+    const val SLIPPAGE_ESTIMATED_TITLE = "Estimated at order time"
+    const val TRADE_FAILED_TITLE_PREFIX = "Error: "
+    const val EM_DASH = "—"
     const val NO_TRADES_FOUND_PERIOD = "No trades found for this period."
     const val INVALID_SYMBOL_ALERT = "Invalid symbol. Symbols must be alphanumeric and up to 16 characters."
     const val SYMBOL_EXISTS_ALERT = "Symbol already exists"

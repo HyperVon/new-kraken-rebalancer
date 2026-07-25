@@ -24,6 +24,8 @@ object TradeTable : Table("trades") {
     val price = decimal("price", 24, 8)
     val fee = decimal("fee", 18, 4)
     val slippagePercent = decimal("slippage_percent", 10, 4).nullable()
+    val expectedPrice = decimal("expected_price", 24, 8).nullable()
+    val tradeSource = varchar("source", 16).nullable()
 
     init {
         index("idx_trades_timestamp", false, timestamp)

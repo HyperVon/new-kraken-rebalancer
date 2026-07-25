@@ -3,6 +3,7 @@ package com.gemini.krakenbot.frontend
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.TimeRange
+import com.gemini.krakenbot.util.PrecisionConstants
 import com.gemini.krakenbot.view.util.ChartProps
 import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.HistoryViewIds
@@ -138,6 +139,65 @@ class HistoryTest : StringSpec() {
             result[1].y.toString().toDouble() shouldBe 30.0
         }
 
+        "calculateCumulativeNetAfterFees subtracts fees from signed cash flow" {
+            val trades =
+                arrayOf(
+                    TestDomBuilders.tradeJson(
+                        timestamp = "2023-01-01T08:00:00Z",
+                        side = OrderSide.SELL.name,
+                        usdAmount = 100.0,
+                        fee = 2.6,
+                    ),
+                    TestDomBuilders.tradeJson(
+                        timestamp = "2023-01-01T10:00:00Z",
+                        side = OrderSide.BUY.name,
+                        usdAmount = 40.0,
+                        fee = 1.0,
+                    ),
+                )
+
+            val result = calculateCumulativeNetAfterFees(trades.unsafeCast<Array<JsTradeRecord>>())
+            result.size shouldBe 2
+            result[0].y.toString().toDouble().toFixed(1) shouldBe "97.4"
+            result[1].y.toString().toDouble().toFixed(1) shouldBe "56.4"
+        }
+
+        "renderTradeTable shows nine columns with price fee and slippage" {
+            val container = document.createElement(HtmlTags.DIV)
+            container.innerHTML = TestDomBuilders.tradeTableDom()
+            document.body!!.appendChild(container)
+
+            try {
+                val trades =
+                    arrayOf(
+                        TestDomBuilders.tradeJson(
+                            side = OrderSide.BUY.name,
+                            price = 50000.0,
+                            fee = 13.0,
+                            slippagePercent = 0.5,
+                            source = "LOCAL_ESTIMATE",
+                        ),
+                        TestDomBuilders.tradeJson(
+                            side = OrderSide.SELL.name,
+                            success = false,
+                            errorMessage = "Insufficient funds",
+                            slippagePercent = null,
+                        ),
+                    )
+
+                renderTradeTable(trades)
+                val tbody = document.getElementById(HtmlIds.TRADE_TABLE_BODY) as HTMLTableSectionElement
+                tbody.rows.length shouldBe 2
+                val firstRow = tbody.rows.item(0) as HTMLTableRowElement
+                firstRow.cells.length shouldBe PrecisionConstants.TRADE_TABLE_COLSPAN
+                tbody.innerHTML shouldContain "badge-slippage-adverse"
+                tbody.innerHTML shouldContain ViewText.EM_DASH
+                tbody.innerHTML shouldContain ViewText.TRADE_FAILED_TITLE_PREFIX + "Insufficient funds"
+            } finally {
+                document.body!!.removeChild(container)
+            }
+        }
+
         "renderTradeTable filters dry runs and displays empty states" {
             val container = document.createElement(HtmlTags.DIV)
             container.innerHTML = TestDomBuilders.tradeTableDom()
@@ -212,6 +272,8 @@ class HistoryTest : StringSpec() {
                 document.getElementById(HtmlIds.STAT_TOTAL_TRADES)?.textContent shouldBe "42"
                 document.getElementById(HtmlIds.STAT_TOTAL_VOLUME)?.textContent shouldBe "$1,000,000.00"
                 document.getElementById(HtmlIds.STAT_TOTAL_FEES)?.textContent shouldBe "$250.75"
+                document.getElementById(HtmlIds.STAT_AVG_FEE_RATE)?.textContent shouldBe "0.26%"
+                document.getElementById(HtmlIds.STAT_AVG_SLIPPAGE)?.textContent shouldBe "+0.15%"
             } finally {
                 document.body!!.removeChild(container)
             }
@@ -296,6 +358,8 @@ class HistoryTest : StringSpec() {
                 buildPortfolioValueChart(snapshots)
 
                 (window.asDynamic().chartConfigs.length as Int) shouldBe 5
+                val cashFlowConfig = window.asDynamic().chartConfigs[3]
+                cashFlowConfig.data.datasets.length as Int shouldBe 2
                 val portfolioConfig = window.asDynamic().chartConfigs[0]
                 portfolioConfig.data.datasets.length as Int shouldBe 2
                 val deviationConfig = window.asDynamic().chartConfigs[2]

@@ -1,6 +1,7 @@
 package com.gemini.krakenbot.util
 
 import com.gemini.krakenbot.model.TradeRecord
+import com.gemini.krakenbot.model.TradeSource
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.collections.shouldContainExactly
@@ -79,6 +80,7 @@ class TradeDeduplicatorTest : StringSpec() {
                 dryRun = false,
                 fee = BigDecimal("10.00"), // 0.02% fee rate
                 slippagePercent = BigDecimal.ZERO,
+                source = TradeSource.LOCAL_ESTIMATE,
                 id = 10,
             )
             val settledFill = TradeRecord(
@@ -91,6 +93,7 @@ class TradeDeduplicatorTest : StringSpec() {
                 success = true,
                 dryRun = false,
                 fee = BigDecimal("100.00"), // 0.20% fee rate (materially different)
+                source = TradeSource.API_FILL,
                 id = 11,
             )
 
@@ -123,6 +126,34 @@ class TradeDeduplicatorTest : StringSpec() {
             )
 
             TradeDeduplicator.findDuplicateTradeIds(listOf(firstFill, secondFill)).isEmpty() shouldBe true
+        }
+
+        "should identify legacy local estimate duplicates when source is null" {
+            val now = Instant.now()
+            val legacyEstimate =
+                TradeRecord(
+                    timestamp = now,
+                    pair = "XBTUSD",
+                    side = "BUY",
+                    symbol = "BTC",
+                    volume = BigDecimal("1.0"),
+                    usdAmount = BigDecimal("50000.00"),
+                    success = true,
+                    dryRun = false,
+                    fee = BigDecimal("10.00"),
+                    slippagePercent = BigDecimal.ZERO,
+                    id = 30,
+                )
+            val settledFill =
+                legacyEstimate.copy(
+                    timestamp = now.plusSeconds(2),
+                    fee = BigDecimal("100.00"),
+                    slippagePercent = null,
+                    source = TradeSource.API_FILL,
+                    id = 31,
+                )
+
+            TradeDeduplicator.findDuplicateTradeIds(listOf(legacyEstimate, settledFill)) shouldContainExactly listOf(30)
         }
 
         "should stop checking pairs if timestamp difference exceeds 300 seconds" {

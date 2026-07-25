@@ -12,10 +12,12 @@ import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.PortfolioStats
 import com.gemini.krakenbot.model.TradeRecord
+import com.gemini.krakenbot.model.TradeSource
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.repository.TradeRepository
 import com.gemini.krakenbot.repository.TradeSummaryStats
 import com.gemini.krakenbot.service.impl.TradeHistoryServiceImpl
+import com.gemini.krakenbot.util.TradeCalculator
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.booleans.shouldBeTrue
@@ -416,6 +418,9 @@ class TradeHistoryServiceTest : StringSpec() {
                     usdAmount = BigDecimal.TEN,
                     success = true,
                     dryRun = false,
+                    price = BigDecimal.TEN,
+                    expectedPrice = BigDecimal("10.05"),
+                    source = TradeSource.LOCAL_ESTIMATE,
                 )
                 coEvery { repository.getTradesInRange(any(), any()) } returns listOf(localTrade)
 
@@ -428,15 +433,30 @@ class TradeHistoryServiceTest : StringSpec() {
                     usdAmount = BigDecimal.valueOf(9.95),
                     success = true,
                     dryRun = false,
+                    price = BigDecimal("9.95"),
+                    fee = BigDecimal("0.0259"),
+                    source = TradeSource.API_FILL,
                 )
 
                 coEvery { krakenService.getTradeHistory(1700000000 - 300, 0) } returns listOf(apiTrade)
                 coEvery { krakenService.getTradeHistory(1700000000 - 300, 50) } returns emptyList()
 
+                val reconciledSlot = slot<TradeRecord>()
+                coEvery { repository.updateTrade(localTrade, capture(reconciledSlot)) } just Runs
+
                 val tradeHistoryService = createService()
                 tradeHistoryService.syncTradesFromKraken()
 
-                coVerify(exactly = 1) { repository.updateTrade(localTrade, apiTrade) }
+                coVerify(exactly = 1) { repository.updateTrade(localTrade, any()) }
+                reconciledSlot.captured.source shouldBe TradeSource.API_FILL
+                reconciledSlot.captured.expectedPrice!!.shouldBeEqualComparingTo(BigDecimal("10.05"))
+                reconciledSlot.captured.slippagePercent!!.shouldBeEqualComparingTo(
+                    TradeCalculator.calculateSlippage(
+                        TestFixtures.BUY,
+                        BigDecimal("9.95"),
+                        BigDecimal("10.05"),
+                    ),
+                )
                 coVerify(exactly = 0) { repository.saveTrade(any()) }
             }
         }
@@ -458,6 +478,8 @@ class TradeHistoryServiceTest : StringSpec() {
                     dryRun = false,
                     price = BigDecimal("215.6867"),
                     fee = BigDecimal("0.0998"),
+                    expectedPrice = BigDecimal("216.00"),
+                    source = TradeSource.LOCAL_ESTIMATE,
                 )
                 val krakenFill = localEstimate.copy(
                     timestamp = latestTime.minusMillis(500),
@@ -465,14 +487,29 @@ class TradeHistoryServiceTest : StringSpec() {
                     usdAmount = BigDecimal("16.62393026"),
                     price = BigDecimal("215.66460511"),
                     fee = BigDecimal("0.0432"),
+                    expectedPrice = null,
+                    slippagePercent = null,
+                    source = TradeSource.API_FILL,
                 )
                 coEvery { repository.getTradesInRange(any(), any()) } returns listOf(localEstimate)
                 coEvery { krakenService.getTradeHistory(any(), 0) } returns listOf(krakenFill)
 
+                val reconciledSlot = slot<TradeRecord>()
+                coEvery { repository.updateTrade(localEstimate, capture(reconciledSlot)) } just Runs
+
                 val tradeHistoryService = createService()
                 tradeHistoryService.syncTradesFromKraken()
 
-                coVerify(exactly = 1) { repository.updateTrade(localEstimate, krakenFill) }
+                coVerify(exactly = 1) { repository.updateTrade(localEstimate, any()) }
+                reconciledSlot.captured.expectedPrice!!.shouldBeEqualComparingTo(BigDecimal("216.00"))
+                reconciledSlot.captured.source shouldBe TradeSource.API_FILL
+                reconciledSlot.captured.slippagePercent!!.shouldBeEqualComparingTo(
+                    TradeCalculator.calculateSlippage(
+                        TestFixtures.SELL,
+                        BigDecimal("215.66460511"),
+                        BigDecimal("216.00"),
+                    ),
+                )
                 coVerify(exactly = 0) { repository.saveTrade(any()) }
             }
         }
@@ -863,7 +900,15 @@ class TradeHistoryServiceTest : StringSpec() {
                 val tradeHistoryService = createService()
                 tradeHistoryService.syncTradesFromKraken()
 
-                coVerify(exactly = 1) { repository.updateTrade(localTrade, apiTrade) }
+                coVerify(exactly = 1) {
+                    repository.updateTrade(
+                        localTrade,
+                        match {
+                            it.dryRun == false &&
+                                it.source == TradeSource.API_FILL
+                        },
+                    )
+                }
             }
         }
 
@@ -964,7 +1009,15 @@ class TradeHistoryServiceTest : StringSpec() {
                 val tradeHistoryService = createService()
                 tradeHistoryService.syncTradesFromKraken()
 
-                coVerify(exactly = 1) { repository.updateTrade(localTrade, apiTrade) }
+                coVerify(exactly = 1) {
+                    repository.updateTrade(
+                        localTrade,
+                        match {
+                            it.dryRun == false &&
+                                it.source == TradeSource.API_FILL
+                        },
+                    )
+                }
             }
         }
 
@@ -994,7 +1047,15 @@ class TradeHistoryServiceTest : StringSpec() {
                 val tradeHistoryService = createService()
                 tradeHistoryService.syncTradesFromKraken()
 
-                coVerify(exactly = 1) { repository.updateTrade(localTrade, apiTrade) }
+                coVerify(exactly = 1) {
+                    repository.updateTrade(
+                        localTrade,
+                        match {
+                            it.dryRun == false &&
+                                it.source == TradeSource.API_FILL
+                        },
+                    )
+                }
             }
         }
 

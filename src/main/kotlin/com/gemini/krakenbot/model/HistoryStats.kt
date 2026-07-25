@@ -12,4 +12,8 @@ data class HistoryStats(
     val totalVolumeTraded: BigDecimal,
     val totalFeesPaid: BigDecimal,
     val latestSnapshotTime: Instant?,
+    val avgFeeRatePercent: BigDecimal = BigDecimal.ZERO,
+    val avgSlippagePercent: BigDecimal? = null,
+    val failedTradeCount: Long = 0L,
+    val dryRunTradeCount: Long = 0L,
 )

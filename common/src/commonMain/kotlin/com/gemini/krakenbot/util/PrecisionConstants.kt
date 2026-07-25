@@ -18,7 +18,7 @@ object PrecisionConstants {
     const val HOURS_PER_HALF_DAY = 12
 
     // UI & Table Layout Constants
-    const val TRADE_TABLE_COLSPAN = 6
+    const val TRADE_TABLE_COLSPAN = 9
     const val DEFAULT_SORT_COL_INDEX = 5
     const val TOTAL_ALLOCATION_PERCENTAGE = 100.0
     const val ALLOCATION_TOLERANCE_DELTA = 0.01

@@ -28,7 +28,7 @@ Window: **300_000 ms** (5 minutes).
 | Rule | Behavior |
 | :--- | :--- |
 | Pair alias | Same symbol+side+volume, **different** pair strings (e.g. `XBTUSD` vs `XXBTZUSD`) |
-| Local estimate vs API | Same symbol+side+pair within **10_000 ms**; volume/USD within **1%**; treat as duplicate only if fee-rate differs by ≥ **0.001** (0.1 pp) |
+| Local estimate vs API | Same symbol+side+pair within **10_000 ms**; volume/USD within **1%**; treat as duplicate only if fee-rate differs by ≥ **0.001** (0.1 pp). Prefer deleting the row with `TradeSource.LOCAL_ESTIMATE` (or legacy inferred estimate) when paired with `API_FILL`. |
 | Cleanup | Later record IDs deleted via `cleanupDuplicateTrades()` |
 
 ## Reconcile dry-run vs live

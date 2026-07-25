@@ -26,6 +26,8 @@ object TestDomBuilders {
         <div id="${HtmlIds.STAT_TOTAL_TRADES}"></div>
         <div id="${HtmlIds.STAT_TOTAL_VOLUME}"></div>
         <div id="${HtmlIds.STAT_TOTAL_FEES}"></div>
+        <div id="${HtmlIds.STAT_AVG_FEE_RATE}"></div>
+        <div id="${HtmlIds.STAT_AVG_SLIPPAGE}"></div>
         """.trimIndent()
 
     fun syncProgressDom(): String =
@@ -152,6 +154,12 @@ object TestDomBuilders {
         usdAmount: Any? = 100.0,
         success: Boolean? = true,
         dryRun: Boolean? = false,
+        price: Any? = 50000.0,
+        fee: Any? = 2.6,
+        slippagePercent: Any? = null,
+        expectedPrice: Any? = null,
+        source: String? = null,
+        errorMessage: String? = null,
     ): dynamic = json(
         DataProps.TIMESTAMP to timestamp,
         DataProps.SYMBOL to symbol,
@@ -160,6 +168,12 @@ object TestDomBuilders {
         DataProps.USD_AMOUNT to usdAmount,
         DataProps.SUCCESS to success,
         DataProps.DRY_RUN to dryRun,
+        DataProps.PRICE to price,
+        DataProps.FEE to fee,
+        DataProps.SLIPPAGE_PERCENT to slippagePercent,
+        DataProps.EXPECTED_PRICE to expectedPrice,
+        DataProps.SOURCE to source,
+        DataProps.ERROR_MESSAGE to errorMessage,
     )
 
     fun setupMockChart(isDatasetVisible: (Int) -> Boolean = { true }) {

@@ -202,6 +202,17 @@ failure.
       to Kraken.
 5. **Persistence**: The cycle snapshot (including all trade actions and their outcomes) is saved directly to the SQLite database (under the trade and snapshot tables).
 
+### Trade economics & slippage lifecycle
+
+Each executed order creates a **local estimate** row at rebalance time:
+
+- **`TradeSource.LOCAL_ESTIMATE`** — `expectedPrice` from the ticker snapshot used for planning; fee from the configured estimate rate; slippage computed vs that expected price.
+- **`TradeSource.API_FILL`** — Kraken `/0/private/TradesHistory` fills (or reconciled rows after sync).
+
+During **Kraken sync**, a matching local row is updated in place: API fill price/volume/fee replace the estimate, **`expectedPrice` is preserved**, slippage is **recomputed** against the API execution price, and `source` becomes `API_FILL`. Rows without the new `source` column infer provenance from legacy data (API fills had null slippage; local estimates had slippage set).
+
+Dedupe prefers settled API fills over local estimates when pair alias or estimate-vs-fill rules match (see trade-history sync skill).
+
 ## Configuration
 
 The behavior is controlled by `rebalancer-config.json`:

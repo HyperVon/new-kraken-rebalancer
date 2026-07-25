@@ -59,7 +59,7 @@ object MediaQueries {
                 gridTemplateColumns = GridTemplateColumns("repeat(3, 1fr)")
             }
             ".${CssClass.History.StatsGrid}" {
-                gridTemplateColumns = GridTemplateColumns("repeat(4, 1fr)")
+                gridTemplateColumns = GridTemplateColumns("repeat(3, 1fr)")
             }
         }
     }

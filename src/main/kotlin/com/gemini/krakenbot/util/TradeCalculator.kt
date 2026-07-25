@@ -3,6 +3,7 @@ package com.gemini.krakenbot.util
 import com.gemini.krakenbot.model.OrderResult
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.TradeRecord
+import com.gemini.krakenbot.model.TradeSource
 import com.gemini.krakenbot.service.AssetPrices
 import java.math.BigDecimal
 import java.math.RoundingMode
@@ -65,6 +66,8 @@ object TradeCalculator {
             price = executedPrice,
             fee = estimatedFee,
             slippagePercent = slippage,
+            expectedPrice = expectedPrice,
+            source = TradeSource.LOCAL_ESTIMATE,
         )
     }
 }

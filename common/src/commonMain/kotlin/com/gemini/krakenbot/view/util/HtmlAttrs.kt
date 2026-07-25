@@ -77,6 +77,8 @@ object HtmlIds {
     const val STAT_TOTAL_TRADES = "stat-total-trades"
     const val STAT_TOTAL_VOLUME = "stat-total-volume"
     const val STAT_TOTAL_FEES = "stat-total-fees"
+    const val STAT_AVG_FEE_RATE = "stat-avg-fee-rate"
+    const val STAT_AVG_SLIPPAGE = "stat-avg-slippage"
     const val SHOW_DRY_RUN_CHECKBOX = "show-dry-run-checkbox"
     const val TRADE_TABLE_BODY = "trade-table-body"
     const val SYNC_PROGRESS_BANNER = "sync-progress-banner"

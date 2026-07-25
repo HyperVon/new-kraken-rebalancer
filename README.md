@@ -191,7 +191,7 @@ with a wide range of tools and paradigms:
 - Sortable asset performance table with deviation indicators
 - Trade history log with BUY/SELL badges
 - Live/Delayed status indicator with data age tracking
-- **Range-Filtered History Metrics** — Time frame selector controls all 4 top metric summary cards (All-Time High / Period High, Total Trades, Total Volume Traded, Total Fees Paid) dynamically alongside interactive Chart.js timelines and trade history logs.
+- **Range-Filtered History Metrics** — Time frame selector controls all six top metric summary cards (All-Time High / Period High, Total Trades, Total Volume Traded, Total Fees Paid, Avg Fee Rate, Avg Slippage) dynamically alongside interactive Chart.js timelines and trade history logs with price, fee, and slippage columns.
 - **Hypermedia-powered** — uses HTMX for dynamic content swapping and form
   submissions without writing JavaScript
 
@@ -265,13 +265,17 @@ targets.
 
 The dedicated History view provides detailed analysis and charts tracking portfolio metrics over time. Users can select different time ranges (24h, 7d, 30d, 90d, All) to update the charts and trade log. It features:
 
+- Six summary stat cards including avg fee rate and avg slippage
+- Trade log columns for price, fee, slippage, and status
+- Cumulative net cash flow chart with gross and fee-adjusted (dashed) series
+
 - **View presets** — **Overview**, **Day · Total only**, **Week · Allocation**, and **Month · Net Cash Flow**, plus **Save view…** / **Set as default** / **Delete** for browser-local custom views
 - **Chart zoom** — **Zoom −** / **Zoom +** / **Reset**, plus wheel, pinch, and drag-to-zoom on the x-axis
 - **Pan scrubber** — after zooming in, a horizontal scrubber below each chart pans the visible window across the full time range (chart drag zooms; it does not pan)
 - **Portfolio Value Over Time** (overall portfolio value in USD + individual asset values)
 - **Asset Holdings Over Time** (% change in asset balance)
 - **Allocation Deviation from Target** (signed relative drift around a 0% on-target baseline)
-- **Cumulative Net Cash Flow** (running net cash flow from trades — sells add cash, buys subtract it)
+- **Cumulative Net Cash Flow** (gross signed cash flow plus dashed **Net After Fees** series)
 - **Comprehensive Trade Log Table** (showing all executions, with a toggle to filter/show dry-run trades)
 
 ![History Charts](docs/images/history.png)

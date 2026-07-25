@@ -1,6 +1,7 @@
 package com.gemini.krakenbot.view
 
 import com.gemini.krakenbot.view.component.HistoryPageComponent
+import com.gemini.krakenbot.view.util.ViewText
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.string.shouldContain
@@ -31,6 +32,11 @@ class HistoryPageComponentTest : StringSpec() {
             htmlString shouldContain "data-zoom-action=\"in\""
             htmlString shouldContain "history-chart-scrubber-input"
             htmlString shouldContain "aria-label=\"Pan zoomed chart"
+            htmlString shouldContain "id=\"stat-avg-fee-rate\""
+            htmlString shouldContain "id=\"stat-avg-slippage\""
+            htmlString shouldContain ViewText.HEADER_PRICE
+            htmlString shouldContain ViewText.HEADER_FEE
+            htmlString shouldContain ViewText.HEADER_SLIPPAGE
             htmlString shouldContain "rebalancer.js"
         }
     }

@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderResult
 import com.gemini.krakenbot.model.TradeRecord
+import com.gemini.krakenbot.model.TradeSource
 import com.gemini.krakenbot.service.*
 import com.gemini.krakenbot.util.PrecisionConstants
 import io.ktor.client.*
@@ -264,6 +265,7 @@ class KrakenServiceImpl(
                     dryRun = false,
                     price = rawPrice.setScale(PrecisionConstants.SCALE_CRYPTO, RoundingMode.HALF_UP),
                     fee = rawFee.setScale(PrecisionConstants.SCALE_FEE, RoundingMode.HALF_UP),
+                    source = TradeSource.API_FILL,
                 ),
             )
         }
