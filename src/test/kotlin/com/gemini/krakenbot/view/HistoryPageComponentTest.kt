@@ -2,6 +2,9 @@ package com.gemini.krakenbot.view
 
 import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.view.component.HistoryPageComponent
+import com.gemini.krakenbot.view.util.CdnUrls
+import com.gemini.krakenbot.view.util.CssClass
+import com.gemini.krakenbot.view.util.HtmlIds
 import com.gemini.krakenbot.view.util.ViewText
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
@@ -26,20 +29,20 @@ class HistoryPageComponentTest : StringSpec() {
             }
 
             htmlString shouldContain "History - Kraken Rebalancer"
-            htmlString shouldContain "id=\"portfolio-value-chart\""
-            htmlString shouldContain "id=\"asset-holdings-chart\""
-            htmlString shouldContain "id=\"allocation-drift-chart\""
-            htmlString shouldContain "id=\"cumulative-net-cash-flow-chart\""
-            htmlString shouldContain "id=\"trade-table-body\""
-            htmlString shouldContain "id=\"history-views-select\""
-            htmlString shouldContain "id=\"history-save-view-btn\""
-            htmlString shouldContain "chartjs-plugin-zoom"
-            htmlString shouldContain "hammer.min.js"
+            htmlString shouldContain "id=\"${HtmlIds.PORTFOLIO_VALUE_CHART}\""
+            htmlString shouldContain "id=\"${HtmlIds.ASSET_HOLDINGS_CHART}\""
+            htmlString shouldContain "id=\"${HtmlIds.ALLOCATION_DRIFT_CHART}\""
+            htmlString shouldContain "id=\"${HtmlIds.CUMULATIVE_NET_CASH_FLOW_CHART}\""
+            htmlString shouldContain "id=\"${HtmlIds.TRADE_TABLE_BODY}\""
+            htmlString shouldContain "id=\"${HtmlIds.HISTORY_VIEWS_SELECT}\""
+            htmlString shouldContain "id=\"${HtmlIds.HISTORY_SAVE_VIEW_BTN}\""
+            htmlString shouldContain CdnUrls.CHART_JS_ZOOM.substringAfterLast('/')
+            htmlString shouldContain CdnUrls.HAMMER_JS.substringAfterLast('/')
             htmlString shouldContain "data-zoom-action=\"in\""
-            htmlString shouldContain "history-chart-scrubber-input"
+            htmlString shouldContain CssClass.History.ChartScrubberInput.value
             htmlString shouldContain "aria-label=\"Pan zoomed chart"
-            htmlString shouldContain "id=\"stat-avg-fee-rate\""
-            htmlString shouldContain "id=\"stat-avg-slippage\""
+            htmlString shouldContain "id=\"${HtmlIds.STAT_AVG_FEE_RATE}\""
+            htmlString shouldContain "id=\"${HtmlIds.STAT_AVG_SLIPPAGE}\""
             htmlString shouldContain ViewText.HEADER_PRICE
             htmlString shouldContain ViewText.HEADER_FEE
             htmlString shouldContain ViewText.HEADER_SLIPPAGE

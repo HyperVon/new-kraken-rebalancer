@@ -178,7 +178,6 @@ sealed class CssClass(open val value: String) {
         object Item : Activity("activity-item")
         object ItemTrade : Activity("activity-item trade")
         object ItemText : Activity("activity-item-text")
-        object NoopSummary : Activity("activity-noop-summary")
         object FeedFooter : Activity("activity-feed-footer")
         object ViewAll : Activity("activity-view-all")
     }
@@ -234,8 +233,6 @@ sealed class CssClass(open val value: String) {
         object ChartTools : History("history-chart-tools")
         object ChartHeader : History("history-chart-header")
         object ChartHeaderTitle : History("history-chart-header-title")
-        object ChartLegend : History("history-chart-legend")
-        object ChartLegendItem : History("history-chart-legend-item")
         object ZoomBtn : History("history-zoom-btn")
         object ChartContainer : History("chart-container")
         object ChartCaption : History("history-chart-caption")

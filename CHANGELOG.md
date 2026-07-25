@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.13.6] - 2026-07-25
+
+### Changed
+
+- **View test / CSS DRY**: History/Dashboard view tests assert via `CdnUrls` /
+  `HtmlIds`; activity trade styles use `CssClass.Activity.ItemTrade.querySelector`.
+
+### Removed
+
+- Unused `CssClass.History.ChartLegend*` tokens and `Activity.NoopSummary` CSS.
+
 ## [6.13.5] - 2026-07-25
 
 ### Changed
