@@ -48,6 +48,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Hero drawdown + base target restored**: Total portfolio shows drawdown again;
   Cash tile prints `(Base: …%)` when the effective USD target diverges from the
   configured target after fiat deployment.
+- **Common module JVM toolchain**: Configured `jvmToolchain(25)` explicitly in `:common`
+  KMP module configuration for JDK 25 toolchain alignment across modules.
 - **Activity relative times**: Moved `just now` / `m ago` / `h ago` / `d ago` into
   `ViewText`; cycle timestamps pin `Locale.US`.
 
