@@ -20,6 +20,7 @@ open class RateLimiter(
 ) {
     private val mutex = Mutex()
 
+    // Guarded by [mutex] — every read and write must happen inside `mutex.withLock`.
     private var callCounter: Double = 0.0
     private var lastUpdateTimeMs: Long = clock()
 

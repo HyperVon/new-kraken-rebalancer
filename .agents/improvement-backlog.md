@@ -23,7 +23,7 @@ need only this file (no issue spam).
 
 | ID | Size | Status | Area | Summary | Cycle | PR |
 | :--- | :---: | :--- | :--- | :--- | :---: | :--- |
-| CI-10-Q01..05 | S/M | done | frontend/common/service/docs | Allocation target min/max bounds, HtmlAttrs constants, RateLimiter cleanup, SettingsTest, USER_GUIDE | 10 | — |
+| CI-10-Q01..05 | S/M | done | frontend/service/docs | Settings HTML5 input bounds (allocations + global params), RateLimiter cleanup, tests, USER_GUIDE | 10 | #84 |
 | — | — | done | docs | Cut Unreleased → 6.12.17 | 7 | #49 |
 | — | — | done | css/tests | CssClass.Offline, TestDomBuilders, write-kotest | 7 | #48 |
 | — | — | done | build/tests | Spotless frontend-js, IsolationMode, 6.12.15/16 | 6 | #47 |

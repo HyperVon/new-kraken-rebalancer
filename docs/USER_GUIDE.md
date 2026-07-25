@@ -26,10 +26,8 @@ the screens below.
 
 On **Settings**, these appear as two toggle cards — **Simulation Mode** first,
 then **Dry Run Mode** — each with an **ON** / **OFF** state pill and a short line
-of consequence prose (e.g. "No real funds are ever touched"). Target allocations
-enforce input bounds between **0.0%** and **100.0%** for each asset row, requiring
-a **USD** allocation and an exact total sum of **100.0%** before the **Save**
-button is enabled. Keep at least one safety on unless you intend to trade live.
+of consequence prose (e.g. "No real funds are ever touched"). Keep at least one
+safety on unless you intend to trade live.
 
 ![Settings — Safety modes and targets](images/settings.png)
 
@@ -114,11 +112,11 @@ Open **Settings** from the shared top nav, or go to `/settings`.
 
 | Field | Purpose |
 | :--- | :--- |
-| **Loop Interval (Seconds)** | How often the rebalancer wakes up to snapshot and potentially trade. |
-| **Deviation Trigger (%)** | Minimum absolute deviation from target before an asset can trigger trades. |
-| **Dust Threshold ($)** | Dual role: absolute USD deviation must meet this for an asset to trigger, and orders below this notional are skipped at execution. |
-| **Fiat Max Drawdown (%)** | Drawdown at which cash is fully eligible for deployment into crypto. |
-| **Fiat Deployment Exponent** | Shape of the cash→crypto deployment curve as drawdown grows (1.0 ≈ linear). |
+| **Loop Interval (Seconds)** | How often the rebalancer wakes up to snapshot and potentially trade. Minimum **1**. |
+| **Deviation Trigger (%)** | Minimum absolute deviation from target before an asset can trigger trades. Minimum **0**. |
+| **Dust Threshold ($)** | Dual role: absolute USD deviation must meet this for an asset to trigger, and orders below this notional are skipped at execution. Minimum **0**. |
+| **Fiat Max Drawdown (%)** | Drawdown at which cash is fully eligible for deployment into crypto. Bounded **0–100**. |
+| **Fiat Deployment Exponent** | Shape of the cash→crypto deployment curve as drawdown grows (1.0 ≈ linear). Minimum **0.1** (must be positive). |
 
 ### Safety modes
 
@@ -137,7 +135,8 @@ running loop — no process restart required.
 
 ### Target allocations
 
-- Every allocation row is a symbol + target percent.
+- Every allocation row is a symbol + target percent, bounded to **0–100%** by the
+  input itself.
 - **Total** must read **100.00%** (green badge) before save succeeds.
 - **USD is required** — cash is part of the strategy, not optional.
 - **Add Asset** / **Remove** change the universe without restarting the app.
