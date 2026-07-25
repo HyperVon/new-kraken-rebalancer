@@ -10,6 +10,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **History Day · Total only legend**: Portfolio Value legend lists only visible
+  series — config-hidden datasets (BTC/ETH under that preset) are omitted from
+  the legend, not shown struck-through. Manual legend toggles still remain
+  clickable to restore.
 - **Hero 24H delta honesty**: The dashboard delta chip is shown only when a true
   ≥24h baseline exists in history; it no longer falls back to the oldest retained
   snapshot (often ~50 minutes under the 50-row dashboard window) while still

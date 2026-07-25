@@ -35,6 +35,19 @@ private external object JSObject {
     fun assign(target: dynamic, vararg sources: dynamic): dynamic
 }
 
+/**
+ * Omit datasets with config-time `hidden: true` from the legend (e.g. Day · Total only).
+ * Legend click toggles use `meta.hidden` only, so those series stay listed and can be restored.
+ */
+internal fun legendLabelsFilter(item: dynamic, chart: dynamic): Boolean {
+    val rawIdx = item?.datasetIndex
+    if (rawIdx == null || rawIdx == undefined) return true
+    val idx = (rawIdx as Number).toInt()
+    val datasets = chart?.data?.datasets ?: return true
+    val ds = datasets[idx] ?: return true
+    return ds.hidden != true
+}
+
 private fun buildLegendConfig(): dynamic = json(
     ChartProps.LABELS to
         json(
@@ -47,6 +60,7 @@ private fun buildLegendConfig(): dynamic = json(
             ChartProps.USE_POINT_STYLE to true,
             ChartProps.POINT_STYLE to ChartProps.LEGEND_POINT_STYLE_LINE,
             ChartProps.POINT_STYLE_WIDTH to ChartProps.LEGEND_POINT_STYLE_WIDTH,
+            ChartProps.FILTER to { item: dynamic, chart: dynamic -> legendLabelsFilter(item, chart) },
         ),
 )
 
@@ -476,11 +490,14 @@ internal fun getClonedChartOptions(): dynamic {
         TimeRange.ALL.key -> js("delete options.scales.x.time.unit")
         else -> options.scales.x.time.unit = ChartProps.TIME_UNIT_DAY
     }
-    // JSON clone above strips functions, so re-attach the zoom callback here.
+    // JSON clone above strips functions, so re-attach callbacks here.
     // Any zoom gesture (drag/wheel/pinch/buttons) must re-sync the pan scrubber,
     // not just the toolbar Zoom buttons.
     options.plugins.zoom.zoom[ChartProps.ON_ZOOM_COMPLETE] = { ctx: dynamic ->
         syncScrubberFromZoomContext(ctx)
+    }
+    options.plugins.legend.labels[ChartProps.FILTER] = { item: dynamic, chart: dynamic ->
+        legendLabelsFilter(item, chart)
     }
     return options
 }

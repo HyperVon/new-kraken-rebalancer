@@ -45,6 +45,9 @@ object ChartProps {
     const val POINT_STYLE = "pointStyle"
     const val POINT_STYLE_WIDTH = "pointStyleWidth"
 
+    /** Chart.js `legend.labels.filter` — omit config-hidden datasets from the legend. */
+    const val FILTER = "filter"
+
     const val TIME_TYPE = "time"
     const val TIME_FORMAT_DEFAULT = "MMM d, yyyy HH:mm"
     const val TIME_UNIT_HOUR = "hour"

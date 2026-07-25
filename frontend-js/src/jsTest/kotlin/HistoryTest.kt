@@ -6,6 +6,7 @@ import com.gemini.krakenbot.model.TimeRange
 import com.gemini.krakenbot.util.PrecisionConstants
 import com.gemini.krakenbot.view.util.ChartProps
 import com.gemini.krakenbot.view.util.CssClass
+import com.gemini.krakenbot.view.util.DataProps
 import com.gemini.krakenbot.view.util.HistoryViewIds
 import com.gemini.krakenbot.view.util.HtmlEvents
 import com.gemini.krakenbot.view.util.HtmlIds
@@ -22,6 +23,7 @@ import kotlinx.browser.window
 import kotlinx.coroutines.await
 import org.w3c.dom.*
 import org.w3c.dom.events.Event
+import kotlin.js.jsTypeOf
 import kotlin.js.json
 import kotlin.test.assertEquals
 
@@ -739,10 +741,37 @@ class HistoryTest : StringSpec() {
                 (lastConfig.data.datasets[1].hidden as Boolean) shouldBe true
                 visibilityStates[HtmlIds.PORTFOLIO_VALUE_CHART]
                     ?.get(ChartProps.DATASET_VISIBILITY_DEFAULT) shouldBe false
+
+                val legendFilter: dynamic = lastConfig.options.plugins.legend.labels.filter
+                (jsTypeOf(legendFilter) == "function") shouldBe true
+                val chartLike =
+                    json(
+                        "data" to
+                            json(
+                                "datasets" to lastConfig.data.datasets,
+                            ),
+                    )
+                (legendFilter(json("datasetIndex" to 0), chartLike) as Boolean) shouldBe true
+                (legendFilter(json("datasetIndex" to 1), chartLike) as Boolean) shouldBe false
             } finally {
                 document.body!!.removeChild(container)
                 resetHistoryUiState()
             }
+        }
+
+        "legendLabelsFilter keeps legend-toggled series and drops config-hidden ones" {
+            val visibleDs = json(ChartProps.LABEL to ViewText.TOTAL_PORTFOLIO)
+            val configHiddenDs = json(ChartProps.LABEL to Asset.BTC, DataProps.HIDDEN to true)
+            val chartLike =
+                json(
+                    "data" to
+                        json(
+                            "datasets" to arrayOf(visibleDs, configHiddenDs),
+                        ),
+                )
+            legendLabelsFilter(json("datasetIndex" to 0), chartLike) shouldBe true
+            legendLabelsFilter(json("datasetIndex" to 1), chartLike) shouldBe false
+            legendLabelsFilter(json(), chartLike) shouldBe true
         }
 
         "chartScrubberState enables only when zoomed" {
