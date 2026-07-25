@@ -16,6 +16,10 @@ import io.kotest.matchers.shouldBe
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.test.runTest
 import java.math.BigDecimal
 
 class DynamicKrakenServiceTest : StringSpec() {
@@ -29,36 +33,36 @@ class DynamicKrakenServiceTest : StringSpec() {
     private fun createService(): DynamicKrakenService =
         DynamicKrakenService(realService, simulatedService, configService)
 
+    private fun settings(simulation: Boolean, dryRun: Boolean = false) = Settings(
+        loopDelaySeconds = 60,
+        deviationTriggerPercent = 5.0,
+        dustThresholdUSD = 5.0,
+        dryRun = dryRun,
+        simulation = simulation,
+        fiatMaxDrawdown = 30.0,
+        fiatDeploymentExponent = 1.0,
+    )
+
+    private fun appConfig(simulation: Boolean, dryRun: Boolean = false) = AppConfig(
+        kraken = KrakenCredentials("test-api-key", "test-private-key"),
+        settings = settings(simulation, dryRun),
+        allocations = emptyList(),
+    )
+
     init {
         "delegates to simulated service when simulation is true" {
-            val appConfig = AppConfig(
-                kraken = KrakenCredentials("test-api-key", "test-private-key"),
-                settings = Settings(
-                    loopDelaySeconds = 60,
-                    deviationTriggerPercent = 5.0,
-                    dustThresholdUSD = 5.0,
-                    dryRun = false,
-                    simulation = true, // Simulation mode active
-                    fiatMaxDrawdown = 30.0,
-                    fiatDeploymentExponent = 1.0,
-                ),
-                allocations = emptyList(),
-            )
-            every { configService.getConfig() } returns appConfig
+            every { configService.getConfig() } returns appConfig(simulation = true)
 
             val dynamicService = createService()
 
-            // getBalances
             dynamicService.getBalances()
             coVerify(exactly = 1) { simulatedService.getBalances() }
             coVerify(exactly = 0) { realService.getBalances() }
 
-            // getTickerPrices
             dynamicService.getTickerPrices(TestFixtures.BTCUSD)
             coVerify(exactly = 1) { simulatedService.getTickerPrices(TestFixtures.BTCUSD) }
             coVerify(exactly = 0) { realService.getTickerPrices(any()) }
 
-            // executeOrder
             dynamicService.executeOrder(
                 Asset.BTC_USD_PAIR,
                 OrderSide.SELL.apiValue,
@@ -71,127 +75,82 @@ class DynamicKrakenServiceTest : StringSpec() {
                     OrderSide.SELL.apiValue,
                     OrderType.MARKET.apiValue,
                     BigDecimal.ONE,
+                    null,
                 )
             }
             coVerify(exactly = 0) {
-                realService.executeOrder(
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                )
+                realService.executeOrder(any(), any(), any(), any(), any())
             }
 
-            // getTradeHistory
             dynamicService.getTradeHistory(12345L, 10)
             coVerify(exactly = 1) { simulatedService.getTradeHistory(12345L, 10) }
             coVerify(exactly = 0) { realService.getTradeHistory(any(), any()) }
 
-            // getOHLC
             dynamicService.getOHLC(TestFixtures.BTCUSD, 1440, null)
             coVerify(exactly = 1) { simulatedService.getOHLC(TestFixtures.BTCUSD, 1440, null) }
             coVerify(exactly = 0) { realService.getOHLC(any(), any(), any()) }
 
-            // getRealService
             dynamicService.realService shouldBe realService
         }
 
         "delegates to real service when simulation is false" {
-            val appConfig = AppConfig(
-                kraken = KrakenCredentials("test-api-key", "test-private-key"),
-                settings = Settings(
-                    loopDelaySeconds = 60,
-                    deviationTriggerPercent = 5.0,
-                    dustThresholdUSD = 5.0,
-                    dryRun = false,
-                    simulation = false, // Simulation mode inactive
-                    fiatMaxDrawdown = 30.0,
-                    fiatDeploymentExponent = 1.0,
-                ),
-                allocations = emptyList(),
-            )
-            every { configService.getConfig() } returns appConfig
+            every { configService.getConfig() } returns appConfig(simulation = false)
 
             val dynamicService = createService()
 
-            // getBalances
             dynamicService.getBalances()
             coVerify(exactly = 1) { realService.getBalances() }
             coVerify(exactly = 0) { simulatedService.getBalances() }
 
-            // getTickerPrices
             dynamicService.getTickerPrices(TestFixtures.BTCUSD)
             coVerify(exactly = 1) { realService.getTickerPrices(TestFixtures.BTCUSD) }
             coVerify(exactly = 0) { simulatedService.getTickerPrices(any()) }
 
-            // executeOrder
             dynamicService.executeOrder(
                 Asset.BTC_USD_PAIR,
-                OrderSide.SELL.apiValue,
+                OrderSide.BUY.apiValue,
                 OrderType.MARKET.apiValue,
                 BigDecimal.ONE,
             )
             coVerify(exactly = 1) {
                 realService.executeOrder(
                     Asset.BTC_USD_PAIR,
-                    OrderSide.SELL.apiValue,
+                    OrderSide.BUY.apiValue,
                     OrderType.MARKET.apiValue,
                     BigDecimal.ONE,
+                    null,
                 )
             }
             coVerify(exactly = 0) {
-                simulatedService.executeOrder(
-                    any(),
-                    any(),
-                    any(),
-                    any(),
-                )
+                simulatedService.executeOrder(any(), any(), any(), any(), any())
             }
 
-            // getTradeHistory
-            dynamicService.getTradeHistory(12345L, 10)
-            coVerify(exactly = 1) { realService.getTradeHistory(12345L, 10) }
+            dynamicService.getTradeHistory(null, null)
+            coVerify(exactly = 1) { realService.getTradeHistory(null, null) }
             coVerify(exactly = 0) { simulatedService.getTradeHistory(any(), any()) }
 
-            // getOHLC
-            dynamicService.getOHLC(TestFixtures.BTCUSD, 1440, null)
-            coVerify(exactly = 1) { realService.getOHLC(TestFixtures.BTCUSD, 1440, null) }
+            dynamicService.getOHLC(TestFixtures.BTCUSD, 60, 1L)
+            coVerify(exactly = 1) { realService.getOHLC(TestFixtures.BTCUSD, 60, 1L) }
             coVerify(exactly = 0) { simulatedService.getOHLC(any(), any(), any()) }
 
-            // getRealService
             dynamicService.realService shouldBe realService
         }
 
         "withStableBackend keeps sell and buy on the backend pinned at entry despite mid-call flip" {
-            val appConfig = AppConfig(
-                kraken = KrakenCredentials("test-api-key", "test-private-key"),
-                settings = Settings(
-                    loopDelaySeconds = 60,
-                    deviationTriggerPercent = 5.0,
-                    dustThresholdUSD = 5.0,
-                    dryRun = false,
-                    simulation = true,
-                    fiatMaxDrawdown = 30.0,
-                    fiatDeploymentExponent = 1.0,
-                ),
-                allocations = emptyList(),
-            )
-            every { configService.getConfig() } returns appConfig
+            every { configService.getConfig() } returns appConfig(simulation = true)
 
             val dynamicService = createService()
-            dynamicService.withStableBackend {
-                dynamicService.executeOrder(
+            dynamicService.withStableBackend { backend ->
+                backend.executeOrder(
                     Asset.BTC_USD_PAIR,
                     OrderSide.SELL.apiValue,
                     OrderType.MARKET.apiValue,
                     BigDecimal.ONE,
                 )
 
-                every { configService.getConfig() } returns appConfig.copy(
-                    settings = appConfig.settings.copy(simulation = false),
-                )
+                every { configService.getConfig() } returns appConfig(simulation = false)
 
-                dynamicService.executeOrder(
+                backend.executeOrder(
                     Asset.ETH_USD_PAIR,
                     OrderSide.BUY.apiValue,
                     OrderType.MARKET.apiValue,
@@ -200,28 +159,15 @@ class DynamicKrakenServiceTest : StringSpec() {
             }
 
             coVerify(exactly = 2) {
-                simulatedService.executeOrder(any(), any(), any(), any())
+                simulatedService.executeOrder(any(), any(), any(), any(), any())
             }
             coVerify(exactly = 0) {
-                realService.executeOrder(any(), any(), any(), any())
+                realService.executeOrder(any(), any(), any(), any(), any())
             }
         }
 
         "delegates to simulated service when simulation and dryRun are both true" {
-            val appConfig = AppConfig(
-                kraken = KrakenCredentials("test-api-key", "test-private-key"),
-                settings = Settings(
-                    loopDelaySeconds = 60,
-                    deviationTriggerPercent = 5.0,
-                    dustThresholdUSD = 5.0,
-                    dryRun = true,
-                    simulation = true,
-                    fiatMaxDrawdown = 30.0,
-                    fiatDeploymentExponent = 1.0,
-                ),
-                allocations = emptyList(),
-            )
-            every { configService.getConfig() } returns appConfig
+            every { configService.getConfig() } returns appConfig(simulation = true, dryRun = true)
 
             val dynamicService = createService()
 
@@ -241,44 +187,30 @@ class DynamicKrakenServiceTest : StringSpec() {
                     OrderSide.BUY.apiValue,
                     OrderType.MARKET.apiValue,
                     BigDecimal.ONE,
+                    null,
                 )
             }
             coVerify(exactly = 0) {
-                realService.executeOrder(any(), any(), any(), any())
+                realService.executeOrder(any(), any(), any(), any(), any())
             }
         }
 
-        "withStableBackend nested pins stay on entry backend until outer block exits" {
-            val appConfig = AppConfig(
-                kraken = KrakenCredentials("test-api-key", "test-private-key"),
-                settings = Settings(
-                    loopDelaySeconds = 60,
-                    deviationTriggerPercent = 5.0,
-                    dustThresholdUSD = 5.0,
-                    dryRun = false,
-                    simulation = true,
-                    fiatMaxDrawdown = 30.0,
-                    fiatDeploymentExponent = 1.0,
-                ),
-                allocations = emptyList(),
-            )
-            every { configService.getConfig() } returns appConfig
+        "nested withStableBackend blocks each pin independently at entry" {
+            every { configService.getConfig() } returns appConfig(simulation = true)
 
             val dynamicService = createService()
-            dynamicService.withStableBackend {
-                dynamicService.executeOrder(
+            dynamicService.withStableBackend { outer ->
+                outer.executeOrder(
                     Asset.BTC_USD_PAIR,
                     OrderSide.SELL.apiValue,
                     OrderType.MARKET.apiValue,
                     BigDecimal.ONE,
                 )
 
-                dynamicService.withStableBackend {
-                    every { configService.getConfig() } returns appConfig.copy(
-                        settings = appConfig.settings.copy(simulation = false),
-                    )
+                every { configService.getConfig() } returns appConfig(simulation = false)
 
-                    dynamicService.executeOrder(
+                dynamicService.withStableBackend { inner ->
+                    inner.executeOrder(
                         Asset.ETH_USD_PAIR,
                         OrderSide.BUY.apiValue,
                         OrderType.MARKET.apiValue,
@@ -286,22 +218,63 @@ class DynamicKrakenServiceTest : StringSpec() {
                     )
                 }
 
-                // Inner exit must not release the outer pin.
-                dynamicService.getBalances()
+                // Outer captured backend stays simulated.
+                outer.getBalances()
             }
 
-            coVerify(exactly = 2) {
-                simulatedService.executeOrder(any(), any(), any(), any())
+            coVerify(exactly = 1) {
+                simulatedService.executeOrder(any(), any(), any(), any(), any())
+            }
+            coVerify(exactly = 1) {
+                realService.executeOrder(any(), any(), any(), any(), any())
             }
             coVerify(exactly = 1) { simulatedService.getBalances() }
-            coVerify(exactly = 0) {
-                realService.executeOrder(any(), any(), any(), any())
-            }
             coVerify(exactly = 0) { realService.getBalances() }
 
-            // After the outer block, the flipped config is observed.
             dynamicService.getBalances()
             coVerify(exactly = 1) { realService.getBalances() }
+        }
+
+        "concurrent withStableBackend blocks do not share pin state" {
+            runTest {
+                every { configService.getConfig() } returns appConfig(simulation = true)
+                val dynamicService = createService()
+
+                coroutineScope {
+                    val first = async {
+                        dynamicService.withStableBackend { backend ->
+                            delay(50)
+                            backend.executeOrder(
+                                Asset.BTC_USD_PAIR,
+                                OrderSide.SELL.apiValue,
+                                OrderType.MARKET.apiValue,
+                                BigDecimal.ONE,
+                            )
+                        }
+                    }
+                    val second = async {
+                        delay(10)
+                        every { configService.getConfig() } returns appConfig(simulation = false)
+                        dynamicService.withStableBackend { backend ->
+                            backend.executeOrder(
+                                Asset.ETH_USD_PAIR,
+                                OrderSide.BUY.apiValue,
+                                OrderType.MARKET.apiValue,
+                                BigDecimal.ONE,
+                            )
+                        }
+                    }
+                    first.await()
+                    second.await()
+                }
+
+                coVerify(exactly = 1) {
+                    simulatedService.executeOrder(any(), any(), any(), any(), any())
+                }
+                coVerify(exactly = 1) {
+                    realService.executeOrder(any(), any(), any(), any(), any())
+                }
+            }
         }
     }
 }

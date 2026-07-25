@@ -47,6 +47,8 @@ object ChartProps {
 
     const val TIME_TYPE = "time"
     const val TIME_FORMAT_DEFAULT = "MMM d, yyyy HH:mm"
+    const val TIME_UNIT_HOUR = "hour"
+    const val TIME_UNIT_DAY = "day"
 
     // Default Layout & Dimension Constants
     const val FONT_SIZE_LEGEND = 12

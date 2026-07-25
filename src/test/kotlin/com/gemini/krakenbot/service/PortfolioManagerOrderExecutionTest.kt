@@ -43,7 +43,7 @@ class PortfolioManagerOrderExecutionTest : StringSpec() {
                 configService = configService,
                 portfolioStatsRepository = portfolioStatsRepository,
             )
-            orderExecutor = OrderExecutorImpl(krakenService, portfolioAnalyzer, tradeHistoryService)
+            orderExecutor = OrderExecutorImpl(krakenService, tradeHistoryService)
             portfolioManager = PortfolioManagerImpl(
                 configService = configService,
                 tradeHistoryService = tradeHistoryService,

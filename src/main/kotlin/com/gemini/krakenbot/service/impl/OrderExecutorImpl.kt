@@ -9,7 +9,6 @@ import com.gemini.krakenbot.service.AssetPrices
 import com.gemini.krakenbot.service.AssetValues
 import com.gemini.krakenbot.service.KrakenService
 import com.gemini.krakenbot.service.OrderExecutor
-import com.gemini.krakenbot.service.PortfolioAnalyzer
 import com.gemini.krakenbot.service.RebalanceOrders
 import com.gemini.krakenbot.service.TradeHistoryService
 import com.gemini.krakenbot.util.ActionLogFormatter
@@ -17,6 +16,7 @@ import com.gemini.krakenbot.util.CASH_RESERVE_FACTOR
 import com.gemini.krakenbot.util.FEE_RATE_ESTIMATE
 import com.gemini.krakenbot.util.PrecisionConstants
 import com.gemini.krakenbot.util.TradeCalculator
+import com.gemini.krakenbot.util.resolveBalance
 import com.gemini.krakenbot.util.toUsdScale
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -25,11 +25,11 @@ import kotlinx.coroutines.flow.last
 import org.slf4j.LoggerFactory
 import java.math.BigDecimal
 import java.math.RoundingMode
+import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Duration.Companion.milliseconds
 
 class OrderExecutorImpl(
     private val krakenService: KrakenService,
-    private val portfolioAnalyzer: PortfolioAnalyzer,
     private val tradeHistoryService: TradeHistoryService,
 ) : OrderExecutor {
     private val log = LoggerFactory.getLogger(OrderExecutorImpl::class.java)
@@ -49,8 +49,9 @@ class OrderExecutorImpl(
         settings: Settings,
         actionLog: MutableList<String>,
     ) {
-        // Pin live vs simulation for the whole sell→buy sequence (CQ-1-10 / #68).
-        krakenService.withStableBackend {
+        // Pin live vs simulation for the whole sell→buy sequence; pass settings.dryRun into
+        // each placement so a mid-cycle config flip cannot change backend or dry-run mode.
+        krakenService.withStableBackend { backend ->
             var projectedCash = currentValuesUSD[Asset.USD] ?: BigDecimal.ZERO
             var executedSells = false
 
@@ -61,7 +62,8 @@ class OrderExecutorImpl(
                     continue
                 }
 
-                val result = executeSingleOrder(symbol, usdToSell, OrderSide.SELL, prices, actionLog)
+                val result =
+                    executeSingleOrder(backend, symbol, usdToSell, OrderSide.SELL, prices, settings, actionLog)
                 if (result?.success == true) {
                     projectedCash = projectedCash.add(usdToSell)
                     executedSells = true
@@ -70,7 +72,7 @@ class OrderExecutorImpl(
 
             var actualCash = projectedCash
             if (executedSells && !settings.dryRun) {
-                actualCash = refreshUsdBalanceAfterSells(projectedCash)
+                actualCash = refreshUsdBalanceAfterSells(backend, projectedCash)
                 if (actualCash <= BigDecimal.ZERO) {
                     log.error("Aborting buys because no positive USD balance was observed after sells")
                     return@withStableBackend
@@ -103,7 +105,7 @@ class OrderExecutorImpl(
                     continue
                 }
 
-                val result = executeSingleOrder(symbol, cost, OrderSide.BUY, prices, actionLog)
+                val result = executeSingleOrder(backend, symbol, cost, OrderSide.BUY, prices, settings, actionLog)
                 if (result?.success == true) {
                     actualCash = actualCash.subtract(cost)
                     remainingBuyBudget = remainingBuyBudget.subtract(cost).toUsdScale()
@@ -113,10 +115,12 @@ class OrderExecutorImpl(
     }
 
     private suspend fun executeSingleOrder(
+        backend: KrakenService,
         symbol: String,
         usdAmount: BigDecimal,
         side: OrderSide,
         prices: AssetPrices,
+        settings: Settings,
         actionLog: MutableList<String>,
     ): OrderResult? {
         val price = prices[symbol] ?: BigDecimal.ZERO
@@ -131,11 +135,12 @@ class OrderExecutorImpl(
         if (volume.signum() <= 0) return null
         val pair = Asset.tradingPair(symbol)
         val result =
-            krakenService.executeOrder(
+            backend.executeOrder(
                 pair = pair,
                 type = OrderType.MARKET.apiValue,
                 side = side.apiValue,
                 volume = volume,
+                dryRun = settings.dryRun,
             )
         logOrderResult(
             result = result,
@@ -149,10 +154,11 @@ class OrderExecutorImpl(
         return result
     }
 
-    private suspend fun refreshUsdBalanceAfterSells(projectedCash: BigDecimal): BigDecimal =
-        pollUsdBalanceAfterSells(projectedCash).last()
+    private suspend fun refreshUsdBalanceAfterSells(backend: KrakenService, projectedCash: BigDecimal): BigDecimal =
+        pollUsdBalanceAfterSells(backend, projectedCash).last()
 
     private fun pollUsdBalanceAfterSells(
+        backend: KrakenService,
         projectedCash: BigDecimal,
         targetThreshold: BigDecimal = projectedCash.multiply(BigDecimal("0.95")),
     ): Flow<BigDecimal> = flow {
@@ -163,9 +169,9 @@ class OrderExecutorImpl(
         repeat(maxAttempts) { attempt ->
             delay(backoffMs.milliseconds)
             try {
-                val updatedBalances = krakenService.getBalances()
+                val updatedBalances = backend.getBalances()
                 if (updatedBalances.isNotEmpty()) {
-                    val usdBalance = portfolioAnalyzer.resolveBalance(Asset.USD, updatedBalances)
+                    val usdBalance = resolveBalance(Asset.USD, updatedBalances)
                     if (usdBalance > BigDecimal.ZERO) {
                         bestObservedBalance = bestObservedBalance.max(usdBalance)
                         log.info("Updated USD balance after sells (attempt {}): $$usdBalance", attempt + 1)
@@ -173,6 +179,8 @@ class OrderExecutorImpl(
                         if (usdBalance >= targetThreshold) return@flow
                     }
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 log.warn("Balance poll failed (attempt {})", attempt + 1, e)
             }

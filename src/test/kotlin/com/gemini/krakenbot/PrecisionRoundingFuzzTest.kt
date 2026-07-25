@@ -131,7 +131,7 @@ class PrecisionRoundingFuzzTest : StringSpec() {
                     )
                 val tradeHistoryService = mockk<TradeHistoryService>(relaxed = true)
                 val orderExecutor =
-                    OrderExecutorImpl(krakenService, portfolioAnalyzer, tradeHistoryService)
+                    OrderExecutorImpl(krakenService, tradeHistoryService)
                 val portfolioManager =
                     PortfolioManagerImpl(
                         configService = mockConfigService,

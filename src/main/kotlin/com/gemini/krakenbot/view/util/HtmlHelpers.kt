@@ -29,3 +29,14 @@ fun HEAD.commonMetadataAndStyles() {
     val stylesheetVersion = CssStyles.stylesheet.toString().hashCode()
     link(rel = "stylesheet", href = "${Routes.STATIC_STYLE_CSS}?v=$stylesheetVersion")
 }
+
+/** Cache-busted `/static/rebalancer.js` URL (content hash when the resource is on the classpath). */
+fun rebalancerJsSrc(): String {
+    val version =
+        object {}
+            .javaClass
+            .getResourceAsStream("/${Routes.STATIC_RESOURCES_DIR}/rebalancer.js")
+            ?.use { it.readBytes().contentHashCode() }
+            ?: System.currentTimeMillis().toInt()
+    return "${Routes.STATIC_REBALANCER_JS}?v=$version"
+}

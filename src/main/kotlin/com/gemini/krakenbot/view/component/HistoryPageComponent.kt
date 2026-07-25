@@ -19,6 +19,7 @@ import com.gemini.krakenbot.view.util.glassPanel
 import com.gemini.krakenbot.view.util.h2
 import com.gemini.krakenbot.view.util.label
 import com.gemini.krakenbot.view.util.primaryNav
+import com.gemini.krakenbot.view.util.rebalancerJsSrc
 import com.gemini.krakenbot.view.util.span
 import com.gemini.krakenbot.view.util.statusCard
 import com.gemini.krakenbot.view.util.td
@@ -48,7 +49,7 @@ class HistoryPageComponent {
                 }
                 renderTradeTable()
             }
-            script(src = "${Routes.STATIC_REBALANCER_JS}?v=${System.currentTimeMillis()}") {}
+            script(src = rebalancerJsSrc()) {}
         }
     }
 

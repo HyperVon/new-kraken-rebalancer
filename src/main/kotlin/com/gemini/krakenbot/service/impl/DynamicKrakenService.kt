@@ -13,10 +13,6 @@ class DynamicKrakenService(
     private val simulatedService: SimulatedKrakenService,
     private val configService: ConfigService,
 ) : KrakenService {
-    private val pinLock = Any()
-    private var pinnedService: KrakenService? = null
-    private var pinDepth = 0
-
     private fun resolveFromConfig(): KrakenService = if (configService.getConfig().settings.simulation) {
         simulatedService
     } else {
@@ -24,33 +20,28 @@ class DynamicKrakenService(
     }
 
     private val activeService: KrakenService
-        get() = synchronized(pinLock) { pinnedService } ?: resolveFromConfig()
+        get() = resolveFromConfig()
 
-    override suspend fun <T> withStableBackend(block: suspend () -> T): T {
-        synchronized(pinLock) {
-            if (pinDepth == 0) {
-                pinnedService = resolveFromConfig()
-            }
-            pinDepth++
-        }
-        try {
-            return block()
-        } finally {
-            synchronized(pinLock) {
-                pinDepth--
-                if (pinDepth == 0) {
-                    pinnedService = null
-                }
-            }
-        }
+    /**
+     * Pins the live vs simulation backend for [block] at entry. Each invocation gets its own
+     * captured backend — concurrent / nested blocks do not share process-global pin state.
+     */
+    override suspend fun <T> withStableBackend(block: suspend (KrakenService) -> T): T {
+        val backend = resolveFromConfig()
+        return block(backend)
     }
 
     override suspend fun getBalances(): RawBalances = activeService.getBalances()
 
     override suspend fun getTickerPrices(pairs: String): RawPrices = activeService.getTickerPrices(pairs)
 
-    override suspend fun executeOrder(pair: String, type: String, side: String, volume: BigDecimal): OrderResult =
-        activeService.executeOrder(pair, type, side, volume)
+    override suspend fun executeOrder(
+        pair: String,
+        type: String,
+        side: String,
+        volume: BigDecimal,
+        dryRun: Boolean?,
+    ): OrderResult = activeService.executeOrder(pair, type, side, volume, dryRun)
 
     override suspend fun getTradeHistory(startSec: Long?, offset: Int?): List<TradeRecord> =
         activeService.getTradeHistory(startSec, offset)

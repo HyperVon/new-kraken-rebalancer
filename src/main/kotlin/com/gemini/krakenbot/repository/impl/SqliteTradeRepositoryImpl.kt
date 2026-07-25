@@ -409,6 +409,12 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
             idsToDelete.size
         }
 
+    override suspend fun pruneTradesOlderThan(cutoff: Instant): Int =
+        database.safeTransactionIO(log, "Failed to prune old trades") {
+            val cutoffMillis = cutoff.toEpochMilli()
+            TradeTable.deleteWhere { timestamp less cutoffMillis }
+        }
+
     override suspend fun cleanupDuplicateTrades() {
         database.safeTransactionIO(log, "Failed to cleanup duplicate trades") {
             val allTradeRows = TradeTable.selectAll().orderBy(TradeTable.timestamp, SortOrder.ASC).toList()

@@ -147,13 +147,13 @@ object PortfolioCalculations {
 
         return PortfolioSnapshot.AssetSnapshot(
             symbol = Asset(symbol),
-            balance = balance.setScale(8, RoundingMode.HALF_UP),
-            price = price.setScale(8, RoundingMode.HALF_UP),
-            valueUSD = valueUSD.setScale(2, RoundingMode.HALF_UP),
-            targetPercent = targetPercent.setScale(2, RoundingMode.HALF_UP),
-            currentPercent = currentPercent.setScale(2, RoundingMode.HALF_UP),
-            deviationPercent = deviationPercent.setScale(2, RoundingMode.HALF_UP),
-            deviationUSD = deviationUSD.setScale(2, RoundingMode.HALF_UP),
+            balance = balance.setScale(SCALE_PRICE, RoundingMode.HALF_UP),
+            price = price.setScale(SCALE_PRICE, RoundingMode.HALF_UP),
+            valueUSD = valueUSD.setScale(SCALE_USD, RoundingMode.HALF_UP),
+            targetPercent = targetPercent.setScale(SCALE_USD, RoundingMode.HALF_UP),
+            currentPercent = currentPercent.setScale(SCALE_USD, RoundingMode.HALF_UP),
+            deviationPercent = deviationPercent.setScale(SCALE_USD, RoundingMode.HALF_UP),
+            deviationUSD = deviationUSD.setScale(SCALE_USD, RoundingMode.HALF_UP),
         )
     }
 }

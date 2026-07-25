@@ -27,10 +27,14 @@ Settings.simulation == false → KrakenServiceImpl
 DI: `AppModule` binds `KrakenService` → `DynamicKrakenService(live, simulated, configService)`.
 
 `OrderExecutor.executeOrders` wraps the sell→buy sequence in
-`KrakenService.withStableBackend { … }`. On `DynamicKrakenService` this **pins**
-the resolved backend for the block so a mid-cycle `simulation` flip cannot send
-sells to one backend and buys to the other. Outside a pin, each call still
-re-reads `settings.simulation` (hot-reload between cycles remains intact).
+`KrakenService.withStableBackend { backend -> … }`. On `DynamicKrakenService` this
+**resolves live vs simulation once at entry** and passes that backend into the
+block so a mid-cycle `simulation` flip cannot send sells to one backend and buys
+to the other. Concurrent / nested blocks each capture their own backend (no
+process-global pin). `OrderExecutor` also passes the cycle’s `settings.dryRun`
+into each `executeOrder` so a mid-cycle dry-run flip cannot change placement
+mode. Outside a stable block, each call still re-reads `settings.simulation`
+(and `dryRun` when the override is omitted).
 
 ## SimulatedKrakenService
 

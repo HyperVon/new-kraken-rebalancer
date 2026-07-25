@@ -807,6 +807,7 @@ class TradeHistoryServiceTest : StringSpec() {
                 tradeHistoryService.addSnapshot(snapshot)
                 coVerify(exactly = 1) { repository.saveSnapshot(snapshot) }
                 coVerify(exactly = 1) { repository.pruneSnapshotsOlderThan(any()) }
+                coVerify(exactly = 1) { repository.pruneTradesOlderThan(any()) }
             }
         }
 
@@ -2128,6 +2129,8 @@ class TradeHistoryServiceTest : StringSpec() {
 
     private companion object {
         /** Mirrors `extraBufferCapacity` of `TradeHistoryServiceImpl.snapshotFlow`. */
-        const val SNAPSHOT_FLOW_BUFFER = 16
+        const val SNAPSHOT_FLOW_REPLAY = 1
+        const val SNAPSHOT_FLOW_EXTRA_BUFFER = 16
+        const val SNAPSHOT_FLOW_BUFFER = SNAPSHOT_FLOW_REPLAY + SNAPSHOT_FLOW_EXTRA_BUFFER
     }
 }

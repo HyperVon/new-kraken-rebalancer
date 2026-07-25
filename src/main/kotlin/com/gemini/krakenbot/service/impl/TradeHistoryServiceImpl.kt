@@ -59,6 +59,7 @@ class TradeHistoryServiceImpl(
      */
     private val snapshotFlow =
         MutableSharedFlow<PortfolioSnapshot>(
+            replay = 1,
             extraBufferCapacity = 16,
             onBufferOverflow = BufferOverflow.DROP_OLDEST,
         )
@@ -255,13 +256,25 @@ class TradeHistoryServiceImpl(
     override suspend fun addSnapshot(snapshot: PortfolioSnapshot) {
         repository.saveSnapshot(snapshot)
         try {
-            val cutoff = Instant.now().minus(90, ChronoUnit.DAYS)
-            val pruned = repository.pruneSnapshotsOlderThan(cutoff)
-            if (pruned > 0) {
-                log.info("Pruned {} snapshots older than 90 days", pruned)
+            val cutoff = Instant.now().minus(PrecisionConstants.HISTORICAL_DAYS_BACK.toLong(), ChronoUnit.DAYS)
+            val prunedSnapshots = repository.pruneSnapshotsOlderThan(cutoff)
+            if (prunedSnapshots > 0) {
+                log.info(
+                    "Pruned {} snapshots older than {} days",
+                    prunedSnapshots,
+                    PrecisionConstants.HISTORICAL_DAYS_BACK,
+                )
+            }
+            val prunedTrades = repository.pruneTradesOlderThan(cutoff)
+            if (prunedTrades > 0) {
+                log.info(
+                    "Pruned {} trades older than {} days",
+                    prunedTrades,
+                    PrecisionConstants.HISTORICAL_DAYS_BACK,
+                )
             }
         } catch (e: Exception) {
-            log.error("Failed to prune old snapshots", e)
+            log.error("Failed to prune old snapshots/trades", e)
         }
         // tryEmit() succeeds instantly and synchronously because of DROP_OLDEST backpressure strategy.
         snapshotFlow.tryEmit(snapshot)

@@ -26,6 +26,7 @@ import org.slf4j.LoggerFactory
 import java.math.BigDecimal
 import java.math.RoundingMode
 import kotlin.math.pow
+import com.gemini.krakenbot.util.resolveBalance as resolveBalanceFromKeys
 
 class PortfolioAnalyzerImpl(
     private val krakenService: KrakenService,
@@ -110,10 +111,8 @@ class PortfolioAnalyzerImpl(
         )
     }
 
-    override fun resolveBalance(symbol: String, balances: RawBalances): BigDecimal = Asset
-        .possibleBalanceKeys(symbol)
-        .firstNotNullOfOrNull { balances[it] }
-        ?: BigDecimal.ZERO
+    override fun resolveBalance(symbol: String, balances: RawBalances): BigDecimal =
+        resolveBalanceFromKeys(symbol, balances)
 
     override suspend fun updateAthAndCalculateDrawdown(totalPortfolioValueUSD: BigDecimal): BigDecimal {
         val stats = portfolioStatsRepository.load()

@@ -49,5 +49,8 @@ interface TradeRepository {
 
     suspend fun pruneSnapshotsOlderThan(cutoff: Instant): Int
 
+    /** Deletes trades with timestamp strictly before [cutoff]. Returns rows deleted. */
+    suspend fun pruneTradesOlderThan(cutoff: Instant): Int
+
     suspend fun cleanupDuplicateTrades()
 }

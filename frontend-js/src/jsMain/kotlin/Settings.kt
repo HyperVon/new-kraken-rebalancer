@@ -34,7 +34,7 @@ fun updateAllocationTotal() {
     }
 
     val totalDisplay = document.getElementById(HtmlIds.TOTAL_ALLOCATED_DISPLAY) ?: return
-    totalDisplay.textContent = "Total: ${total.toFixed(PrecisionConstants.SCALE_USD)}%"
+    totalDisplay.textContent = "${ViewText.TOTAL_PREFIX}${total.toFixed(PrecisionConstants.SCALE_USD)}%"
 
     val saveButton = document.getElementById(HtmlIds.SAVE_BUTTON) as? HTMLButtonElement ?: return
     val isValid =
