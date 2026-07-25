@@ -40,6 +40,11 @@ Product polish discovered during QA belongs in
 | CQ-3-20 | M | gap | open | history/SSE | Real `snapshotFlow`: ≥2 subscribers receive; `DROP_OLDEST` keeps `addSnapshot`/`tryEmit` non-blocking | 3 | — | tests use single collector / mocked `flowOf` |
 | CQ-3-21 | S | gap | open | dedupe | Fee-rate Δ **exactly** `0.001`; local-estimate window `10_000` vs `10_001` ms | 3 | — | outer 300s shipped CQ-3-3; inner thresholds still unasserted |
 | CQ-3-22 | M | gap | open | rate-limit | Public ticker/OHLC never `acquire`; private TradesHistory/Ledgers/ClosedOrders cost **2.0** | 3 | — | throttle test is Balance×8 only; needs injectable limiter like CQ-1-9 |
+| CQ-3-23 | L | bug | deferred | orders | Zero-volume order sent when `dustThresholdUSD=0`: `<` guards + no `signum()<=0` check → `$0` market order + `$0` TradeRecord (sell L58 & buy L100/`executeSingleOrder` L122) | 3 | #74 | **gated** — live order path; fix: skip when `usdAmount.signum()<=0` |
+| CQ-3-24 | S | gap | open | orders | Buy trimmed by remaining budget below dust → skip; budget never negative | 3 | — | CashCapTest remainder always $490 |
+| CQ-3-25 | M | gap | open | manager | Post-trade snapshot fallback: `Result.Failure` + thrown branch fall back to pre-trade values | 3 | — | `PortfolioManagerImpl` L154–176 untested |
+| CQ-3-26 | S | gap | open | fiat | Fiat-correction share rounding to `$0.00` must not enqueue zero orders; shares ≤ `\|usdDev\|` | 3 | — | analyzer companion to CQ-3-23 |
+| CQ-3-27 | M | gap | open | eval | Multi-cycle convergence (Scenario 31): fills fed back, zero orders by cycle 3 | 3 | — | needs docs/EVALUATION row |
 
 ## Done (recent)
 
