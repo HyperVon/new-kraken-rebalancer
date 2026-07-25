@@ -26,8 +26,10 @@ the screens below.
 
 On **Settings**, these appear as two toggle cards — **Simulation Mode** first,
 then **Dry Run Mode** — each with an **ON** / **OFF** state pill and a short line
-of consequence prose (e.g. "No real funds are ever touched"). Keep at least one
-safety on unless you intend to trade live.
+of consequence prose (e.g. "No real funds are ever touched"). Target allocations
+enforce input bounds between **0.0%** and **100.0%** for each asset row, requiring
+a **USD** allocation and an exact total sum of **100.0%** before the **Save**
+button is enabled. Keep at least one safety on unless you intend to trade live.
 
 ![Settings — Safety modes and targets](images/settings.png)
 

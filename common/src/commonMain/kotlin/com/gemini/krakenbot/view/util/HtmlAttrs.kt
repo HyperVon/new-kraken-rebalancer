@@ -15,6 +15,8 @@ object HtmlAttrs {
     const val ARIA_LABEL = "aria-label"
     const val TITLE = "title"
     const val ROLE = "role"
+    const val MIN = "min"
+    const val MAX = "max"
 }
 
 /** Zoom control action values for History chart toolbar buttons. */

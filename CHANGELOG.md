@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.13.2] - 2026-07-25
+
+### Fixed
+
+- **Allocation Target Input Bounds**: Target allocation inputs enforce `min = "0"` and `max = "100"` HTML5 bounds on both server-rendered and dynamically added asset rows on the Settings page, preventing out-of-range value inputs in the step spinner.
+- **HTML Attribute Type Safety**: Centralized `MIN` and `MAX` attribute constants in `:common` module `HtmlAttrs` object for type-safe JVM and JS layout rendering.
+- **RateLimiter Concurrency Hygiene**: Cleaned up redundant `@Volatile` annotations on mutex-guarded internal counter fields in `RateLimiter`.
+- **Settings JS Test Coverage**: Added unit tests in `SettingsTest` verifying HTML5 min/max attribute bounds on dynamically added asset allocation rows.
+- **User Guide Accuracy**: Updated `docs/USER_GUIDE.md` to document the 0–100% target allocation input validation rules.
+
 ## [6.13.1] - 2026-07-25
 
 ### Fixed

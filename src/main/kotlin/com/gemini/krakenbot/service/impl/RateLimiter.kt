@@ -20,10 +20,7 @@ open class RateLimiter(
 ) {
     private val mutex = Mutex()
 
-    @Volatile
     private var callCounter: Double = 0.0
-
-    @Volatile
     private var lastUpdateTimeMs: Long = clock()
 
     open suspend fun acquireWithCost(cost: Double): Double = mutex.withLock {

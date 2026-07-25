@@ -209,6 +209,8 @@ class SettingsFormComponent {
                                 name = FormFields.TARGETS,
                             ) {
                                 step = "0.1"
+                                min = "0"
+                                max = "100"
                                 value = alloc.targetPercent.toString()
                                 attributes[HtmlAttrs.ONINPUT] =
                                     "updateAllocationTotal()"

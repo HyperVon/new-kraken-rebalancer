@@ -121,6 +121,10 @@ class SettingsTest : StringSpec() {
                 val firstRow = rows.item(0) as HTMLElement
                 val hiddenSymInput = firstRow.querySelector(CssClass.Query.SYMBOL_INPUTS) as HTMLInputElement
                 hiddenSymInput.value shouldBe Asset.LTC
+
+                val numInput = firstRow.querySelector(CssClass.Query.TARGET_INPUTS) as HTMLInputElement
+                numInput.min shouldBe "0"
+                numInput.max shouldBe "100"
             } finally {
                 document.body!!.removeChild(container)
             }
