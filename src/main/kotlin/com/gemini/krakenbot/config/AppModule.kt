@@ -74,7 +74,9 @@ val appModule =
                 portfolioAnalyzer = get(),
             )
         }
-        singleOf(::KrakenServiceImpl)
+        // Explicit constructor call (not singleOf) so the default `RateLimiter()` is used:
+        // the limiter is a constructor param only so tests can record acquire costs.
+        single { KrakenServiceImpl(configService = get(), objectMapper = get(), httpClient = get()) }
         singleOf(::SimulatedKrakenService)
         single<KrakenService> {
             DynamicKrakenService(

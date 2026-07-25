@@ -2626,5 +2626,118 @@ class EvaluationScenariosTest : StringSpec() {
                 )
             }
         }
+
+        "Scenario 31: USD Refresh Early-Accept and Fail-Closed Buys" {
+            runTest {
+                val fakeKraken = FakeKrakenService()
+                val mockConfig = mockk<ConfigService>(relaxed = true)
+                val statsRepo = mockk<PortfolioStatsRepository>(relaxed = true)
+                val analyzer =
+                    PortfolioAnalyzerImpl(
+                        fakeKraken,
+                        mockConfig,
+                        statsRepo,
+                    )
+                val executor =
+                    OrderExecutorImpl(
+                        fakeKraken,
+                        analyzer,
+                        tradeHistoryService,
+                    )
+
+                // Opening $100 + sell $100 → projected $200; early-accept threshold = 95% = $190.
+                // Sub-case A: first poll returns exactly $190 → stop polling; buy budget 99% = $188.10.
+                fakeKraken.balanceSupplier = {
+                    mapOf(Asset.USD to BigDecimal("190.00"))
+                }
+                fakeKraken.orderResultFactory = { pair, _, side, volume ->
+                    OrderResult(success = true, pair = pair, side = side, volume = volume)
+                }
+
+                val settings =
+                    Settings(
+                        loopDelaySeconds = 0L,
+                        deviationTriggerPercent = 2.0,
+                        dustThresholdUSD = 1.0,
+                        dryRun = false,
+                        fiatMaxDrawdown = 0.0,
+                        fiatDeploymentExponent = 1.0,
+                    )
+                every { mockConfig.getConfig() } returns
+                    AppConfig(
+                        kraken = KrakenCredentials("k", "s"),
+                        settings = settings,
+                        allocations =
+                        listOf(
+                            Allocation(Asset.BTC, 50.0),
+                            Allocation(Asset.ETH, 50.0),
+                        ),
+                    )
+
+                executor.executeOrders(
+                    buyOrders = mapOf(Asset.ETH to BigDecimal("200.00")),
+                    sellOrders = mapOf(Asset.BTC to BigDecimal("100.00")),
+                    currentValuesUSD = mapOf(Asset.USD to BigDecimal("100.00")),
+                    prices =
+                    mapOf(
+                        Asset.BTC to BigDecimal("1000.00"),
+                        Asset.ETH to BigDecimal("1000.00"),
+                    ),
+                    settings = settings,
+                    actionLog = mutableListOf(),
+                )
+
+                val earlyAcceptPolls = fakeKraken.getBalancesCallCount == 1
+                val earlyAcceptBuy =
+                    fakeKraken.executedOrders.size == 2 &&
+                        fakeKraken.executedOrders[1].side == "buy" &&
+                        fakeKraken.executedOrders[1].volume.compareTo(BigDecimal("0.1881")) == 0
+
+                // Sub-case B: fail-closed — no positive USD observed → sells only, no buys.
+                fakeKraken.executedOrders.clear()
+                fakeKraken.getBalancesCallCount = 0
+                var poll = 0
+                fakeKraken.balanceSupplier = {
+                    poll++
+                    when (poll) {
+                        1 -> error("Temporary balance failure")
+                        2 -> emptyMap()
+                        else -> mapOf(Asset.USD to BigDecimal.ZERO)
+                    }
+                }
+
+                executor.executeOrders(
+                    buyOrders = mapOf(Asset.ETH to BigDecimal("100.00")),
+                    sellOrders = mapOf(Asset.BTC to BigDecimal("100.00")),
+                    currentValuesUSD = mapOf(Asset.USD to BigDecimal("100.00")),
+                    prices =
+                    mapOf(
+                        Asset.BTC to BigDecimal("1000.00"),
+                        Asset.ETH to BigDecimal("1000.00"),
+                    ),
+                    settings = settings,
+                    actionLog = mutableListOf(),
+                )
+
+                val failClosedPolls = fakeKraken.getBalancesCallCount == 3
+                val failClosedNoBuys =
+                    fakeKraken.executedOrders.size == 1 &&
+                        fakeKraken.executedOrders.single().side == "sell"
+
+                val success =
+                    earlyAcceptPolls && earlyAcceptBuy && failClosedPolls && failClosedNoBuys
+                val evidence =
+                    "Sub-case A (early-accept ≥95%): pollsPass=$earlyAcceptPolls buyPass=$earlyAcceptBuy\n" +
+                        "Sub-case B (fail-closed abort buys): pollsPass=$failClosedPolls noBuysPass=$failClosedNoBuys"
+
+                success.shouldBeTrue()
+                recordResult(
+                    "Scenario 31",
+                    "USD Refresh Early-Accept and Fail-Closed Buys",
+                    TestFixtures.PASS,
+                    evidence,
+                )
+            }
+        }
     }
 }

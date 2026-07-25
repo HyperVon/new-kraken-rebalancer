@@ -1,3 +1,5 @@
+@file:OptIn(ExperimentalCoroutinesApi::class)
+
 package com.gemini.krakenbot.service
 
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule
@@ -21,12 +23,15 @@ import com.gemini.krakenbot.util.TradeCalculator
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.booleans.shouldBeTrue
+import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.shouldBe
 import io.mockk.*
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.yield
 import java.io.File
@@ -77,6 +82,16 @@ class TradeHistoryServiceTest : StringSpec() {
             TestFixtures.TEST_TRADE_HISTORY_JSON,
         )
     }
+
+    private fun snapshotWorth(totalValueUSD: BigDecimal) = PortfolioSnapshot(
+        timestamp = Instant.now(),
+        totalValueUSD = totalValueUSD,
+        assets = emptyMap(),
+        actions = emptyList(),
+        drawdownPercent = BigDecimal.ZERO,
+        fiatDeploymentPercent = BigDecimal.ZERO,
+        effectiveUsdTargetPercent = BigDecimal.ZERO,
+    )
 
     init {
         "init_LoadsHistoryFromRepository" {
@@ -1501,5 +1516,113 @@ class TradeHistoryServiceTest : StringSpec() {
                 threw shouldBe true
             }
         }
+
+        "syncTradesFromKraken_ReconstructionFailureStillOpensThrottleWindow" {
+            runTest {
+                val appConfig = AppConfig(
+                    kraken =
+                    KrakenCredentials(
+                        TestFixtures.TRADE_HISTORY_API_KEY,
+                        TestFixtures.TRADE_HISTORY_API_SECRET,
+                    ),
+                    settings = Settings(
+                        loopDelaySeconds = 60,
+                        deviationTriggerPercent = 5.0,
+                        dustThresholdUSD = 5.0,
+                        dryRun = true,
+                        simulation = false,
+                    ),
+                    allocations = listOf(
+                        Allocation(Asset.BTC, 50.0),
+                        Allocation(TestFixtures.USD, 50.0),
+                    ),
+                )
+
+                coEvery { repository.isHistorySeeded() } returns true
+                coEvery { repository.getLatestTradeTime() } returns null
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { krakenService.getTradeHistory(any(), any()) } returns emptyList()
+                coEvery { repository.load() } returns emptyList()
+                coEvery { repository.getTradeSummaryStats() } returns TradeSummaryStats(
+                    totalTradesExecuted = 3L,
+                    totalVolumeTraded = BigDecimal.ZERO,
+                    totalFeesPaid = BigDecimal.ZERO,
+                    latestSnapshotTime = null,
+                )
+                coEvery { krakenService.getBalances() } returns mapOf(Asset.BTC to BigDecimal.ONE)
+                every { portfolioAnalyzer.resolveBalance(any(), any()) } throws
+                    RuntimeException("reconstruction blew up")
+
+                val service = createService()
+                every { configService.getConfig() } returns appConfig
+
+                service.syncTradesFromKraken()
+
+                // Reconstruction started and failed, but the sync itself succeeded and stays silent about it.
+                coVerify(exactly = 1) { krakenService.getBalances() }
+                coVerify(exactly = 0) { repository.save(any()) }
+
+                // A best-effort reconstruction failure must not reopen the Kraken tap on the next cycle.
+                service.syncTradesFromKraken()
+
+                coVerify(exactly = 1) { krakenService.getTradeHistory(any(), any()) }
+                coVerify(exactly = 1) { krakenService.getBalances() }
+            }
+        }
+
+        "getHistoryFlow_BroadcastsEverySnapshotToAllSubscribers" {
+            runTest {
+                val service = createService()
+                val firstSubscriber = mutableListOf<PortfolioSnapshot>()
+                val secondSubscriber = mutableListOf<PortfolioSnapshot>()
+
+                val jobs = listOf(firstSubscriber, secondSubscriber).map { received ->
+                    launch { service.getHistoryFlow().collect { received.add(it) } }
+                }
+                advanceUntilIdle()
+
+                val emitted = List(3) { snapshotWorth(BigDecimal(it)) }
+                emitted.forEach { service.addSnapshot(it) }
+                advanceUntilIdle()
+
+                firstSubscriber.shouldContainExactly(emitted)
+                secondSubscriber.shouldContainExactly(emitted)
+
+                jobs.forEach { it.cancel() }
+            }
+        }
+
+        "getHistoryFlow_OverflowDropsOldestWithoutBlockingProducer" {
+            runTest {
+                val service = createService()
+                val firstSubscriber = mutableListOf<PortfolioSnapshot>()
+                val secondSubscriber = mutableListOf<PortfolioSnapshot>()
+
+                val jobs = listOf(firstSubscriber, secondSubscriber).map { received ->
+                    launch { service.getHistoryFlow().collect { received.add(it) } }
+                }
+                advanceUntilIdle()
+
+                // Both subscribers stay parked while the producer runs past the buffer capacity.
+                val emitted = List(SNAPSHOT_FLOW_BUFFER + 4) { snapshotWorth(BigDecimal(it)) }
+                emitted.forEach { service.addSnapshot(it) }
+
+                // DROP_OLDEST means the producer never suspends: every snapshot still reached the repository.
+                coVerify(exactly = emitted.size) { repository.saveSnapshot(any()) }
+
+                advanceUntilIdle()
+
+                val retained = emitted.takeLast(SNAPSHOT_FLOW_BUFFER)
+                firstSubscriber.shouldContainExactly(retained)
+                secondSubscriber.shouldContainExactly(retained)
+
+                jobs.forEach { it.cancel() }
+            }
+        }
+    }
+
+    private companion object {
+        /** Mirrors `extraBufferCapacity` of `TradeHistoryServiceImpl.snapshotFlow`. */
+        const val SNAPSHOT_FLOW_BUFFER = 16
     }
 }

@@ -22,19 +22,19 @@ Product polish discovered during QA belongs in
 
 | ID | Size | Kind | Status | Area | Summary | Cycle | Issue | Notes |
 | :--- | :---: | :--- | :--- | :--- | :--- | :---: | :--- | :--- |
-| CQ-3-9 | S | gap | open | history | Sync OK but reconstruct throws still sets `lastSyncTime` (throttle starts) | 3 | — | next cycle |
 | CQ-3-14 | M | gap | open | history/repo | Lift `TradeHistoryServiceImpl` + `repository.impl` branch coverage | 3 | — | overall branch ~91%; next cycle |
-| CQ-3-17 | M | gap | open | eval | Eval scenario for USD refresh ≥95% early-accept / fail-closed | 3 | — | unit coverage shipped CQ-3-1/2; eval optional |
-| CQ-3-18 | S | gap | open | drawdown | Aggressive exponent `0.5` ALGORITHM table points (e.g. 7.5% DD → 50%) | 3 | — | exponents 1.0 & 2.0 covered |
-| CQ-3-20 | M | gap | open | history/SSE | Real `snapshotFlow`: ≥2 subscribers receive; `DROP_OLDEST` keeps `addSnapshot`/`tryEmit` non-blocking | 3 | — | tests use single collector / mocked `flowOf` |
-| CQ-3-22 | M | gap | open | rate-limit | Public ticker/OHLC never `acquire`; private TradesHistory/Ledgers/ClosedOrders cost **2.0** | 3 | — | throttle test is Balance×8 only; needs injectable limiter like CQ-1-9 |
-| CQ-3-26 | S | gap | open | fiat | Fiat-correction share rounding to `$0.00` must not enqueue zero orders; shares ≤ `\|usdDev\|` | 3 | — | analyzer companion to CQ-3-23 |
-| CQ-3-27 | M | gap | open | eval | Multi-cycle convergence (Scenario 31): fills fed back, zero orders by cycle 3 | 3 | — | needs docs/EVALUATION row |
+| CQ-3-26 | L | bug | deferred | fiat | Fiat-correction can enqueue `$0.00` shares and overshoot `\|usdDev\|` after HALF_UP | 5 | [#76](https://github.com/HyperVon/new-kraken-rebalancer/issues/76) | **gated** — 3 disabled regression tests in FiatCorrectionTest; CQ-3-23 mitigates `$0` at executor only |
+| CQ-3-28 | M | gap | open | eval | Multi-cycle convergence scenario: fills fed back, zero orders by cycle 3 | 5 | — | was CQ-3-27; renumbered (Scenario 31 taken by CQ-3-17) |
 
 ## Done (recent)
 
 | ID | Size | Kind | Status | Area | Summary | Cycle | PR |
 | :--- | :---: | :--- | :--- | :--- | :---: | :--- | :--- |
+| CQ-3-9 | S | gap | done | history | Reconstruct failure is best-effort: throttle window still opens, no extra Kraken calls | 5 | TBD |
+| CQ-3-17 | M | gap | done | eval | Scenario 31 — USD refresh ≥95% early-accept + fail-closed buys | 5 | TBD |
+| CQ-3-18 | S | gap | done | drawdown | Aggressive exponent `0.5` ALGORITHM table points | 5 | TBD |
+| CQ-3-20 | M | gap | done | history/SSE | Real `snapshotFlow` multi-subscriber + `DROP_OLDEST` non-blocking producer | 5 | TBD |
+| CQ-3-22 | M | gap | done | rate-limit | Public ticker/OHLC never `acquire`; private heavy paths cost `2.0` (injectable limiter) | 5 | TBD |
 | CQ-3-5 | M | gap | done | flows | `collectLatest` config emit mid-`delay` cancels and restarts loop with new settings | 4 | [#75](https://github.com/HyperVon/new-kraken-rebalancer/pull/75) |
 | CQ-3-6 | S | gap | done | lockout | 9 consecutive `Temporary lockout` exhausts `maxLockoutAttempts` and throws | 4 | [#75](https://github.com/HyperVon/new-kraken-rebalancer/pull/75) |
 | CQ-3-7 | S | gap | done | modes | `simulation=true` + `dryRun=true`: DynamicKraken → sim; dry-run does not mutate balances | 4 | [#75](https://github.com/HyperVon/new-kraken-rebalancer/pull/75) |

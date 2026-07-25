@@ -24,6 +24,7 @@ import io.mockk.mockk
 import io.mockk.slot
 import kotlinx.coroutines.test.runTest
 import java.math.BigDecimal
+import java.math.RoundingMode
 
 class PortfolioManagerDrawdownTest : StringSpec() {
 
@@ -216,6 +217,72 @@ class PortfolioManagerDrawdownTest : StringSpec() {
                 )
                 portfolioAnalyzer.calculateFiatDeployment(
                     BigDecimal("75.0"),
+                    settings,
+                ).shouldBeEqualComparingTo(BigDecimal("100.0"))
+            }
+        }
+
+        // CQ-3-18: ALGORITHM.md MaxDD=30% aggressive exponent 0.5 table
+        // | DD 1.5% → 22% | 7.5% → 50% | 15% → 71% | 22.5% → 87% | 30% → 100% |
+        "testCalculateFiatDeployment_AggressiveExponentHalf_AlgorithmTable" {
+            runTest {
+                val settings = Settings(
+                    loopDelaySeconds = 60L,
+                    deviationTriggerPercent = 2.0,
+                    dustThresholdUSD = 1.0,
+                    dryRun = false,
+                    fiatMaxDrawdown = 30.0,
+                    fiatDeploymentExponent = 0.5,
+                )
+                // Documented integer Deploy% (ALGORITHM rounds for display).
+                val algorithmTable =
+                    listOf(
+                        BigDecimal("1.5") to BigDecimal("22"),
+                        BigDecimal("7.5") to BigDecimal("50"),
+                        BigDecimal("15") to BigDecimal("71"),
+                        BigDecimal("22.5") to BigDecimal("87"),
+                        BigDecimal("30") to BigDecimal("100"),
+                    )
+                for ((drawdownPct, tableDeployPct) in algorithmTable) {
+                    val deploy =
+                        portfolioAnalyzer.calculateFiatDeployment(drawdownPct, settings)
+                    deploy
+                        .setScale(0, RoundingMode.HALF_UP)
+                        .shouldBeEqualComparingTo(tableDeployPct)
+                }
+            }
+        }
+
+        "testCalculateFiatDeployment_AggressiveExponentHalf_At25PercentOfMaxIs50" {
+            runTest {
+                // MaxDD 30%, DD 7.5% (25% of max) → (0.25)^0.5 * 100 = 50% exactly
+                val settings = Settings(
+                    loopDelaySeconds = 60L,
+                    deviationTriggerPercent = 2.0,
+                    dustThresholdUSD = 1.0,
+                    dryRun = false,
+                    fiatMaxDrawdown = 30.0,
+                    fiatDeploymentExponent = 0.5,
+                )
+                portfolioAnalyzer.calculateFiatDeployment(
+                    BigDecimal("7.5"),
+                    settings,
+                ).shouldBeEqualComparingTo(BigDecimal("50.0"))
+            }
+        }
+
+        "testCalculateFiatDeployment_AggressiveExponentHalf_AtMaxDrawdownIs100" {
+            runTest {
+                val settings = Settings(
+                    loopDelaySeconds = 60L,
+                    deviationTriggerPercent = 2.0,
+                    dustThresholdUSD = 1.0,
+                    dryRun = false,
+                    fiatMaxDrawdown = 30.0,
+                    fiatDeploymentExponent = 0.5,
+                )
+                portfolioAnalyzer.calculateFiatDeployment(
+                    BigDecimal("30.0"),
                     settings,
                 ).shouldBeEqualComparingTo(BigDecimal("100.0"))
             }

@@ -166,5 +166,101 @@ class PortfolioManagerFiatCorrectionTest : StringSpec() {
             buyOrders.getValue("A").shouldBeEqualComparingTo(BigDecimal("70.00"))
             buyOrders.getValue("B").shouldBeEqualComparingTo(BigDecimal("30.00"))
         }
+
+        // CQ-3-26 / #76 (L): documents current bug — disabled until production fix lands.
+        "testDistributeFiatCorrection_ZeroRoundedShareNotEnqueued_Deposit".config(enabled = false) {
+            val portfolioAnalyzer = makePortfolioAnalyzer(
+                Allocation("TINY", 1.0),
+                Allocation("BIG", 99.0),
+            )
+
+            // TINY ratio = 0.001/100 → share = $1.00 * 0.00001 = $0.00001 → $0.00 at USD scale.
+            val usdDev = BigDecimal("1.00")
+            val allDevs = mapOf(
+                "TINY" to BigDecimal("-0.001"),
+                "BIG" to BigDecimal("-99.999"),
+            )
+            val buyOrders = mutableMapOf<String, BigDecimal>()
+            val sellOrders = mutableMapOf<String, BigDecimal>()
+
+            portfolioAnalyzer.distributeFiatCorrection(
+                usdDev = usdDev,
+                allDevs = allDevs,
+                buyOrders = buyOrders,
+                sellOrders = sellOrders,
+                actionLog = mutableListOf(),
+            )
+
+            buyOrders.containsKey("TINY") shouldBe false
+            buyOrders.values.none { it.signum() == 0 }.shouldBeTrue()
+            sellOrders.isEmpty().shouldBeTrue()
+            (
+                buyOrders.values.fold(BigDecimal.ZERO, BigDecimal::add)
+                    .compareTo(usdDev.abs()) <= 0
+                ).shouldBeTrue()
+        }
+
+        // CQ-3-26 / #76 (L): same zero-share filter on withdrawal sells — disabled until fix.
+        "testDistributeFiatCorrection_ZeroRoundedShareNotEnqueued_Withdrawal".config(enabled = false) {
+            val portfolioAnalyzer = makePortfolioAnalyzer(
+                Allocation("TINY", 1.0),
+                Allocation("BIG", 99.0),
+            )
+
+            val usdDev = BigDecimal("-1.00")
+            val allDevs = mapOf(
+                "TINY" to BigDecimal("0.001"),
+                "BIG" to BigDecimal("99.999"),
+            )
+            val buyOrders = mutableMapOf<String, BigDecimal>()
+            val sellOrders = mutableMapOf<String, BigDecimal>()
+
+            portfolioAnalyzer.distributeFiatCorrection(
+                usdDev = usdDev,
+                allDevs = allDevs,
+                buyOrders = buyOrders,
+                sellOrders = sellOrders,
+                actionLog = mutableListOf(),
+            )
+
+            sellOrders.containsKey("TINY") shouldBe false
+            sellOrders.values.none { it.signum() == 0 }.shouldBeTrue()
+            buyOrders.isEmpty().shouldBeTrue()
+            (
+                sellOrders.values.fold(BigDecimal.ZERO, BigDecimal::add)
+                    .compareTo(usdDev.abs()) <= 0
+                ).shouldBeTrue()
+        }
+
+        // CQ-3-26 / #76 (L): HALF_UP USD rounding must not let shares sum exceed |usdDev| — disabled until fix.
+        "testDistributeFiatCorrection_RoundedSharesDoNotExceedUsdDev".config(enabled = false) {
+            val portfolioAnalyzer = makePortfolioAnalyzer(
+                Allocation("A", 50.0),
+                Allocation("B", 50.0),
+            )
+
+            // Equal ratios: each share = $0.05 * 0.5 = $0.025 → $0.03 after USD scale;
+            // naive enqueue would sum to $0.06 > $0.05.
+            val usdDev = BigDecimal("0.05")
+            val allDevs = mapOf(
+                "A" to BigDecimal("-1.00"),
+                "B" to BigDecimal("-1.00"),
+            )
+            val buyOrders = mutableMapOf<String, BigDecimal>()
+
+            portfolioAnalyzer.distributeFiatCorrection(
+                usdDev = usdDev,
+                allDevs = allDevs,
+                buyOrders = buyOrders,
+                sellOrders = mutableMapOf(),
+                actionLog = mutableListOf(),
+            )
+
+            buyOrders.values.none { it.signum() == 0 }.shouldBeTrue()
+            (
+                buyOrders.values.fold(BigDecimal.ZERO, BigDecimal::add)
+                    .compareTo(usdDev.abs()) <= 0
+                ).shouldBeTrue()
+        }
     }
 }

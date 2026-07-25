@@ -6,6 +6,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.12.27] - 2026-07-24
+
+### Changed
+
+- **Testability**: `KrakenServiceImpl` accepts an injectable `RateLimiter`, and the
+  private-endpoint call cost moved to `krakenPrivateEndpointCost` (`RateLimiter`
+  is now `open` for recording test doubles). Endpoint costs are unchanged —
+  heavy history paths still cost `2.0`, everything else `1.0`.
+
+### Added
+
+- **tests**: Continuous-quality cycle 5 — evaluation Scenario 31 (USD refresh
+  ≥95% early-accept and fail-closed buys), aggressive `0.5` deployment-exponent
+  table points, sync throttle after reconstruct failure, real `snapshotFlow`
+  multi-subscriber and `DROP_OLDEST` overflow, and public-vs-private rate-limit
+  cost assertions.
+
+### Known issues
+
+- **Fiat correction** can still enqueue `$0.00` shares and let rounded shares
+  sum above `|usdDev|`
+  ([#76](https://github.com/HyperVon/new-kraken-rebalancer/issues/76)); three
+  regression tests are committed but disabled pending the gated fix.
+
 ## [6.12.26] - 2026-07-24
 
 ### Fixed

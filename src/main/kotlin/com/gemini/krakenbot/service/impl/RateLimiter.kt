@@ -11,8 +11,9 @@ import kotlin.time.Duration.Companion.milliseconds
  * Implements Kraken's call counter algorithm with configurable costs per endpoint.
  *
  * @param clock Millisecond epoch supplier (injectable for deterministic tests).
+ * Open for test subclasses that record acquire costs without MockK.
  */
-class RateLimiter(
+open class RateLimiter(
     private val safeLimit: Double = 12.0,
     private val decayRate: Double = 0.33,
     private val clock: () -> Long = { System.currentTimeMillis() },
@@ -25,7 +26,7 @@ class RateLimiter(
     @Volatile
     private var lastUpdateTimeMs: Long = clock()
 
-    suspend fun acquireWithCost(cost: Double): Double = mutex.withLock {
+    open suspend fun acquireWithCost(cost: Double): Double = mutex.withLock {
         val now = clock()
         val elapsedSeconds = (now - lastUpdateTimeMs) / 1000.0
 
