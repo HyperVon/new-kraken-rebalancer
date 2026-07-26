@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.flow
 import org.slf4j.LoggerFactory
 import java.time.Duration
 import java.time.Instant
+import kotlin.coroutines.cancellation.CancellationException
 
 class TradeHistorySyncService(
     private val repository: TradeRepository,
@@ -48,9 +49,10 @@ class TradeHistorySyncService(
         val isSeeded = repository.isHistorySeeded()
         val latestTradeTime = repository.getLatestTradeTime()
         val watermarkInstant = readSyncWatermark()
-        // Prefer real/sim fill time; fall back to the last successful sync watermark so a
-        // dry-run-only account does not re-pull full history from EPOCH every 5 minutes (CQ-8-M2).
-        val effectiveLatest = listOfNotNull(latestTradeTime, watermarkInstant).maxOrNull()
+        // Prefer real/sim fill time; only fall back to the last successful sync watermark when
+        // there are no non-dry-run fills (CQ-8-M2). Do not max() with wall-clock watermark — that
+        // would shrink the reconcile window below latestTradeTime and strand unreconciled locals.
+        val effectiveLatest = latestTradeTime ?: watermarkInstant
 
         // Null effective → full history (startSec null). Otherwise overlap by 5 minutes so fills
         // near the previous watermark are re-fetched and reconciled rather than double-inserted.
@@ -137,6 +139,8 @@ class TradeHistorySyncService(
             try {
                 reconstructionService.reconstructHistoricalSnapshots()
                 log.info("Historical snapshot reconstruction completed successfully.")
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 log.error("Failed to reconstruct historical snapshots", e)
             }
