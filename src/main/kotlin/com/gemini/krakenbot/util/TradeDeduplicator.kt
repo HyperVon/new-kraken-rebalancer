@@ -9,7 +9,8 @@ import com.gemini.krakenbot.model.isSettledApiFill
 
 /**
  * Finds DB row IDs to delete when the same fill was stored twice (pair-string aliases, or a
- * local estimate later reconciled by an API fill). Matching is limited to a 5-minute window.
+ * local estimate later reconciled by an API fill). Outer scan spans 5 minutes; estimate↔API
+ * matching also requires [TradeRecord.isLocalEstimateDuplicateOf]'s 10s window.
  */
 object TradeDeduplicator {
     fun findDuplicateTradeIds(records: List<TradeRecord>): List<Int> {
