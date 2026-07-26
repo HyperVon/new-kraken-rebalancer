@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.flow
 import org.slf4j.LoggerFactory
 import java.time.Duration
 import java.time.Instant
+import kotlin.coroutines.cancellation.CancellationException
 
 class TradeHistorySyncService(
     private val repository: TradeRepository,
@@ -47,15 +48,20 @@ class TradeHistorySyncService(
     private suspend fun syncTradesFromKrakenPinned(config: AppConfig) {
         val isSeeded = repository.isHistorySeeded()
         val latestTradeTime = repository.getLatestTradeTime()
+        val watermarkInstant = readSyncWatermark()
+        // Prefer real/sim fill time; only fall back to the last successful sync watermark when
+        // there are no non-dry-run fills (CQ-8-M2). Do not max() with wall-clock watermark — that
+        // would shrink the reconcile window below latestTradeTime and strand unreconciled locals.
+        val effectiveLatest = latestTradeTime ?: watermarkInstant
 
-        // Null latest → full history (startSec null). Otherwise overlap by 5 minutes so fills
+        // Null effective → full history (startSec null). Otherwise overlap by 5 minutes so fills
         // near the previous watermark are re-fetched and reconciled rather than double-inserted.
         // [isHistorySeeded] only gates progress metadata / first-sync completion, not this window.
-        val startSec = latestTradeTime?.minusSeconds(300)?.epochSecond
+        val startSec = effectiveLatest?.minusSeconds(300)?.epochSecond
 
         log.info("Starting trade history synchronization (isSeeded={}, startSec={})...", isSeeded, startSec)
 
-        val queryStart = latestTradeTime?.minusSeconds(300) ?: Instant.EPOCH
+        val queryStart = effectiveLatest?.minusSeconds(300) ?: Instant.EPOCH
 
         val queryEnd = Instant.now().plusSeconds(300)
         val originalLocalTrades = repository.getTradesInRange(queryStart, queryEnd).toMutableList()
@@ -63,10 +69,16 @@ class TradeHistorySyncService(
         val allocations = config.allocations.map { it.symbol.value }
         var totalAdded = 0
         var totalReconciled = 0
+        // Fingerprints of API fills already handled in this sync. Kraken newest-first offset
+        // pagination can re-emit the last row of page N as the first of page N+1 when a fill
+        // lands mid-pagination; without this set that row is double-inserted (CQ-8-M1).
+        val seenApiFillKeys = mutableSetOf<String>()
 
         getTradeHistoryPaginated(startSec = startSec)
             .collect { apiTrades ->
                 for (apiTrade: TradeRecord in apiTrades) {
+                    if (!seenApiFillKeys.add(apiFillIdentityKey(apiTrade))) continue
+
                     // Local row has requested economics; API has the settle. Match within
                     // tolerances so we update the local row instead of inserting a second History trade.
                     val matchingLocalTrade =
@@ -127,6 +139,8 @@ class TradeHistorySyncService(
             try {
                 reconstructionService.reconstructHistoricalSnapshots()
                 log.info("Historical snapshot reconstruction completed successfully.")
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 log.error("Failed to reconstruct historical snapshots", e)
             }
@@ -137,9 +151,38 @@ class TradeHistorySyncService(
             repository.setSyncMetadata(SyncMetadataKeys.SYNC_OFFSET, SyncMetadataKeys.COMPLETED)
             repository.setSyncMetadata(SyncMetadataKeys.SYNC_TOTAL, SyncMetadataKeys.COMPLETED)
         }
+        // Persist watermark even when no real fills exist so the next sync is incremental.
+        writeSyncWatermark(Instant.now())
         lastSyncTime = Instant.now()
         log.info("Trade history synchronization completed. Added: {} new, Reconciled: {}.", totalAdded, totalReconciled)
     }
+
+    private suspend fun readSyncWatermark(): Instant? =
+        repository.getSyncMetadata(SyncMetadataKeys.SYNC_WATERMARK_EPOCH_SEC)
+            ?.toLongOrNull()
+            ?.let { Instant.ofEpochSecond(it) }
+
+    private suspend fun writeSyncWatermark(instant: Instant) {
+        repository.setSyncMetadata(
+            SyncMetadataKeys.SYNC_WATERMARK_EPOCH_SEC,
+            instant.epochSecond.toString(),
+        )
+    }
+
+    /**
+     * Identity for a single API fill within one sync pass. Includes economics + timestamp so
+     * multi-leg fills that share [TradeRecord.orderTxid] stay distinct, while an exact
+     * pagination duplicate is skipped.
+     */
+    private fun apiFillIdentityKey(trade: TradeRecord): String = listOf(
+        trade.timestamp.toEpochMilli().toString(),
+        trade.pair,
+        trade.side.uppercase(),
+        trade.volume.toPlainString(),
+        trade.usdAmount.toPlainString(),
+        trade.fee.toPlainString(),
+        trade.orderTxid.orEmpty(),
+    ).joinToString("|")
 
     /** Cold paginated Kraken history (page size 50); writes sync_offset/total only until first seed completes. */
     private fun getTradeHistoryPaginated(startSec: Long?): Flow<List<TradeRecord>> = flow {

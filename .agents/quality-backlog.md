@@ -22,11 +22,17 @@ Product polish discovered during QA belongs in
 
 | ID | Size | Kind | Status | Area | Summary | Cycle | Issue | Notes |
 | :--- | :---: | :--- | :--- | :--- | :--- | :---: | :--- | :--- |
+| CQ-8-3 | S | gap | open | history | Seam edge tests: multi-match reconcile tie-break (newest chosen), migration `save` failure leaves JSON un-renamed, findClosest equidistant determinism | 8 | — | Backlog only; future cycle |
 
 ## Done (recent)
 
 | ID | Size | Kind | Status | Area | Summary | Cycle | PR |
 | :--- | :---: | :--- | :--- | :--- | :--- | :---: | :--- |
+| CQ-8-L1 | L | bug | done | history/sync | `isMatchingApiTrade` ignores dry-run locals (no promote to live `API_FILL`) | 8 | #100 |
+| CQ-8-M1 | M | bug | done | history/sync | Cross-page duplicate API fill fingerprint skip within one sync | 8 | #100 |
+| CQ-8-M2 | M | perf | done | history/sync | Persist `sync_watermark_epoch_sec` so dry-run-only accounts stay incremental | 8 | #100 |
+| CQ-8-1 | M | gap | done | frontend-js | `HistoryJsonParsingEdgeTest`: missing price/fee→"0", JSON.parse bool + numeric/string id, absent success/dryRun, null/empty inputs, count coercion | 8 | #100 |
+| CQ-8-2 | S | gap | done | api/serialization | `SerializationParityTest`: null-optional `TradeRecord` + null-offset `SyncProgressResponse` round-trips | 8 | #100 |
 | CQ-7-L1 | L | bug | done | rate-limit | RateLimiter holds Mutex across `delay` (HOL blocking) | 7 | #93 |
 | CQ-7-L2 | L | bug | done | modes | DynamicKraken unpinned reads outside `withStableBackend` | 7 | #93 |
 | CQ-7-1 | M | gap | done | algorithm | USD+crypto both trigger → no fiat-correction path | 7 | #90 |

@@ -28,6 +28,27 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   requires an interactive decisions Canvas (Keep / Evolve / Replace / Skip per
   finding) before any implementation.
 
+### Added
+
+- **tests (CQ-8)**: Wire-contract hardening for the typed History APIs —
+  `HistoryJsonParsingEdgeTest` covers defensive parsing (missing `price`/`fee` →
+  `"0"`, absent `success`/`dryRun`, null/empty inputs, count coercion, strict
+  boolean coercion) plus a real `JSON.parse` payload with native boolean and
+  numeric `id`; `SerializationParityTest` adds a null-optional `TradeRecord`
+  round-trip and asserts `buildSyncProgressResponse` maps null offset/total to
+  empty-string wire fields.
+
+### Fixed
+
+- **CQ-8-L1 (#97)**: Sync no longer promotes dry-run local trades into live
+  `API_FILL` rows (`isMatchingApiTrade` returns false when `local.dryRun`); the
+  API fill is inserted as a new trade instead.
+- **CQ-8-M1 (#98)**: Within one sync pass, API fills are fingerprinted so a
+  Kraken pagination window shift cannot double-insert the same fill.
+- **CQ-8-M2 (#99)**: Persist `sync_watermark_epoch_sec` after each successful
+  sync so dry-run-only accounts stay incremental instead of re-pulling full
+  history from EPOCH every 5 minutes.
+
 ## [6.13.7] - 2026-07-25
 
 ### Changed

@@ -90,6 +90,9 @@ fun TradeRecord.hasDifferentTradeProvenanceFrom(other: TradeRecord): Boolean =
 /**
  * Local order row vs Kraken fill for sync reconcile: same side/symbol within [windowMillis],
  * volume within [tolerance], and USD also within tolerance unless volumes are exact.
+ *
+ * Dry-run locals never hit the exchange, so they must not match an API fill — otherwise sync
+ * would rewrite a dry-run estimate into a live [TradeSource.API_FILL] (CQ-8-L1).
  */
 fun TradeRecord.isMatchingApiTrade(
     apiTrade: TradeRecord,
@@ -97,6 +100,7 @@ fun TradeRecord.isMatchingApiTrade(
     windowMillis: Long = 10_000L,
     tolerance: BigDecimal = BigDecimal("0.01"),
 ): Boolean {
+    if (this.dryRun) return false
     val timeDifference = abs(this.timestamp.toEpochMilli() - apiTrade.timestamp.toEpochMilli())
     if (timeDifference > windowMillis || !this.side.equals(apiTrade.side, ignoreCase = true)) {
         return false
