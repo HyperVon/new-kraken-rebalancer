@@ -30,8 +30,8 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
     private val portfolioManager: PortfolioManagerImpl get() = fixture.portfolioManager
 
     /**
-     * Builds an [AppConfig] with the supplied allocations and test settings
-     * (2% deviation trigger, 1 USD dust threshold, and order execution enabled).
+     * Scenario settings: 2% trigger, $1 dust. `dryRun=false` so FakeKraken records non-dry-run
+     * placements (still not a live exchange — see [FakeKrakenService]).
      */
     private fun makeConfig(vararg allocs: Allocation) = AppConfig(
         kraken = KrakenCredentials(apiKey = "k", privateKey = "s"),

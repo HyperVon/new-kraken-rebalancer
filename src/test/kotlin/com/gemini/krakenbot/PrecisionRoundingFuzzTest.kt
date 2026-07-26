@@ -144,11 +144,11 @@ class PrecisionRoundingFuzzTest : StringSpec() {
                     portfolioManager.performRebalanceCycle()
                 }
 
-                // Verify that an order was executed and the volume was rounded cleanly (max 8 decimal places)
-                // It should not contain a huge trailing decimal like 0.3333333333333
+                // The deficit above does not divide evenly by the fuzzed price, so an unclamped volume
+                // would reach the wire with far more precision than Kraken accepts. Matching the
+                // 1-to-8-decimal pattern is the assertion that crypto scale 8 was applied.
                 capturedOrderPayload.shouldNotBeNull()
 
-                // Regex asserts volume is a number with 1 to 8 decimal places
                 val volumeMatch =
                     Regex("volume=(\\d+\\.\\d{1,8})(&|$)").find(
                         capturedOrderPayload,

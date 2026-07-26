@@ -58,6 +58,10 @@ DeviationUSD = CurrentValue - TargetValue
 Deviation%   = DeviationUSD / TargetValue × 100   (signed relative)
 ```
 
+When `TargetValue` is `$0` but `CurrentValue > 0`, `Deviation%` is **100%**
+so a zero-target holding can still clear the percent trigger (paired with the
+dust gate).
+
 - Negative → underweight → **BUY**.
 - Positive → overweight → **SELL**.
 - Order generation requires **both**:

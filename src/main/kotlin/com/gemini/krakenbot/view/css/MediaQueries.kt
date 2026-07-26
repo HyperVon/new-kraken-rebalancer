@@ -47,8 +47,9 @@ object MediaQueries {
             ".${CssClass.Form.Grid2Col}" {
                 gridTemplateColumns = GridTemplateColumns("1fr 1fr")
             }
+            // SafetyToggles is display:grid (FormStyles); flexDirection would be a no-op.
             ".${CssClass.Form.SafetyToggles}" {
-                flexDirection = FlexDirection.row
+                gridTemplateColumns = GridTemplateColumns("1fr 1fr")
                 gap = 1.5.rem
             }
         }

@@ -48,7 +48,6 @@ class SimulatedKrakenServiceTest : StringSpec() {
                     .add(balances[Asset.BTC]!!.multiply(prices[TestFixtures.XXBTZUSD]!!))
                     .add(balances[Asset.ETH]!!.multiply(prices[TestFixtures.XETHZUSD]!!))
 
-            // Total value should be around $100,000
             (totalValue > BigDecimal("70000")) shouldBe true
             (totalValue < BigDecimal("130000")) shouldBe true
         }
@@ -169,16 +168,14 @@ class SimulatedKrakenServiceTest : StringSpec() {
 
             val simulatedService = SimulatedKrakenService(configService)
 
-            // Triggers initialization and seeding of 15 trades
+            // First history call seeds ~15 simulated trades into the in-memory ledger.
             val history = simulatedService.getTradeHistory(null, null)
             history.size shouldBe 15
 
-            // Test filtering by startSec
             val halfTime = history[7].timestamp.epochSecond
             val filteredTime = simulatedService.getTradeHistory(halfTime, null)
             filteredTime.all { it.timestamp.epochSecond >= halfTime } shouldBe true
 
-            // Test offset pagination
             val paginated = simulatedService.getTradeHistory(null, 5)
             paginated.size shouldBe 10
         }

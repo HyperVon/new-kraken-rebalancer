@@ -53,6 +53,8 @@ class DashboardControllerTest : StringSpec() {
     private val objectMapper =
         jacksonObjectMapper().registerModule(JavaTimeModule())
 
+    // Route tests intentionally omit app-wide CORS: the dashboard has no user auth, and the
+    // local/private-origin trust boundary is covered by NetworkUtilsTest.
     private fun Application.configureTestEnv() {
         install(ServerSSE)
         dashboardRouting()
@@ -205,13 +207,10 @@ class DashboardControllerTest : StringSpec() {
                 body shouldContain ViewText.CRYPTO_ASSETS
                 body shouldContain "BUY BTC 0.1"
 
-                // Verify epoch data-attribute exists and matches
                 body shouldContain "data-epoch=\"${nowTime.toEpochMilli()}\""
 
-                // Verify default sort UI indicator
                 body shouldContain "class=\"sortable asc\" onclick=\"sortTable(this, 5)\">Dev %"
 
-                // Verify that default sorting (Dev % ASC) sorts the crypto assets properly (ETH before BTC)
                 val ethIdx = body.indexOf("symbol-col\">ETH")
                 val btcIdx = body.indexOf("symbol-col\">BTC")
                 (ethIdx != -1) shouldBe true
@@ -359,7 +358,7 @@ class DashboardControllerTest : StringSpec() {
                                 FormFields.DEVIATION_TRIGGER_PERCENT to listOf("2.0"),
                                 FormFields.DUST_THRESHOLD_USD to listOf("1.0"),
                                 FormFields.SYMBOLS to listOf(Asset.USD),
-                                FormFields.TARGETS to listOf("90.0"), // sum != 100
+                                FormFields.TARGETS to listOf("90.0"),
                             ).formUrlEncode(),
                         )
                         header(
@@ -691,7 +690,8 @@ class DashboardControllerTest : StringSpec() {
                         incoming.collect {}
                     }
                 } catch (_: Exception) {
-                    // Expect cancellation exception or channel close
+                    // Ktor may surface server cancellation as either cancellation or channel close;
+                    // both outcomes prove that the stream terminates instead of hanging.
                 }
             }
         }
@@ -800,16 +800,12 @@ class DashboardControllerTest : StringSpec() {
                 application {
                     configureTestEnv()
                 }
-                // Test "7d" range
                 client.get(Routes.API_HISTORY_SNAPSHOTS.withRange(TimeRange.SEVEN_DAYS)).status shouldBe
                     HttpStatusCode.OK
-                // Test "30d" range
                 client.get(Routes.API_HISTORY_SNAPSHOTS.withRange(TimeRange.THIRTY_DAYS)).status shouldBe
                     HttpStatusCode.OK
-                // Test "90d" range
                 client.get(Routes.API_HISTORY_SNAPSHOTS.withRange(TimeRange.NINETY_DAYS)).status shouldBe
                     HttpStatusCode.OK
-                // Test fallback else range
                 client.get(Routes.API_HISTORY_SNAPSHOTS.withRange("invalid")).status shouldBe HttpStatusCode.OK
             }
         }
@@ -820,7 +816,6 @@ class DashboardControllerTest : StringSpec() {
                 application {
                     configureTestEnv()
                 }
-                // No range parameter at all — exercises the `?: "30d"` null coalescing
                 val response = client.get(Routes.API_HISTORY_SNAPSHOTS)
                 response.status shouldBe HttpStatusCode.OK
                 response.bodyAsText() shouldBe "[]"

@@ -6,6 +6,10 @@ import com.gemini.krakenbot.service.impl.PortfolioAnalyzerImpl
 import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
 import io.mockk.mockk
 
+/**
+ * Shared PM wiring for unit tests: real analyzer/executor/manager over [FakeKrakenService]
+ * (not SimulatedKrakenService) plus relaxed mocks for config/history/stats.
+ */
 data class PortfolioManagerTestFixture(
     val krakenService: FakeKrakenService,
     val configService: ConfigService,

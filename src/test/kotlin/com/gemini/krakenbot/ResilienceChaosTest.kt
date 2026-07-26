@@ -89,9 +89,8 @@ class ResilienceChaosTest : StringSpec() {
                         orderExecutor = orderExecutor,
                     )
 
-                // Prove that the network failure correctly propagates an exception
-                // This ensures our mock is working, while runLoop() is responsible
-                // for catching it (see PortfolioManagerImpl)
+                // The "does not crash" guarantee lives one level up: performRebalanceCycle is expected
+                // to propagate, and runLoop swallows non-cancellation failures so the loop survives.
                 shouldThrow<Exception> {
                     portfolioManager.performRebalanceCycle()
                 }
@@ -154,9 +153,8 @@ class ResilienceChaosTest : StringSpec() {
                         orderExecutor = orderExecutor,
                     )
 
-                // Prove that the network failure correctly propagates an exception
-                // This ensures our mock is working, while runLoop() is responsible
-                // for catching it (see PortfolioManagerImpl)
+                // Same contract as the 502 case: the cycle propagates and runLoop is what keeps the
+                // application alive.
                 shouldThrow<Exception> {
                     portfolioManager.performRebalanceCycle()
                 }

@@ -150,13 +150,13 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
                 repository.saveTrade(failedTrade)
 
                 val stats = repository.getTradeSummaryStats()
-                stats.totalTradesExecuted shouldBe 1L // successful, executed trades only
+                stats.totalTradesExecuted shouldBe 1L
                 stats.totalVolumeTraded.shouldBeEqualComparingTo(BigDecimal("5000.00"))
                 stats.totalFeesPaid.shouldBeEqualComparingTo(BigDecimal("15.50"))
 
                 val trades = repository.getTradesInRange(now.minusSeconds(20), now.plusSeconds(20))
                 trades.size shouldBe 3
-                trades[0].pair shouldBe TestFixtures.DOGEUSD // sorted desc by timestamp
+                trades[0].pair shouldBe TestFixtures.DOGEUSD
                 trades[0].success shouldBe false
                 trades[0].errorMessage shouldBe "API Error"
                 trades[1].pair shouldBe TestFixtures.ETHUSD
@@ -391,7 +391,6 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
             runTest {
                 val now = Instant.now().truncatedTo(ChronoUnit.MILLIS)
 
-                // Scenario 1: diff > 300_000 milliseconds (should break early)
                 val t1 =
                     TradeRecord(
                         timestamp = now,
@@ -405,6 +404,8 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
                         price = BigDecimal("60000.0"),
                         fee = BigDecimal("100.0"),
                     )
+                // The outer scan spans five minutes even though estimate/API matching has its own
+                // ten-second constraint; this record exercises the sorted-scan cutoff.
                 val t2FarFuture =
                     t1.copy(
                         timestamp = now.plusMillis(300_001),
@@ -413,7 +414,6 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
                 repository.saveTrade(t1)
                 repository.saveTrade(t2FarFuture)
 
-                // Scenario 2: sameSymbolAndSide is false (different symbol)
                 val tDifferentSymbol =
                     t1.copy(
                         timestamp = now.plusMillis(100),
@@ -422,7 +422,6 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
                     )
                 repository.saveTrade(tDifferentSymbol)
 
-                // Scenario 3: sameSymbolAndSide is false (different side)
                 val tDifferentSide =
                     t1.copy(
                         timestamp = now.plusMillis(200),
@@ -430,7 +429,6 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
                     )
                 repository.saveTrade(tDifferentSide)
 
-                // Scenario 4: pairAliasDuplicate (same symbol/side, same volume, different pair name)
                 val tPairAlias1 =
                     t1.copy(
                         timestamp = now.plusMillis(300),
@@ -444,7 +442,6 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
                 repository.saveTrade(tPairAlias1)
                 repository.saveTrade(tPairAlias2)
 
-                // Scenario 5: localEstimateDuplicate but volume differs by > 1% (should not delete)
                 val tVolDiffers =
                     t1.copy(
                         timestamp = now.plusMillis(500),
@@ -453,26 +450,23 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
                     )
                 repository.saveTrade(tVolDiffers)
 
-                // Scenario 6: localEstimateDuplicate but fee does not differ materially (diff < 0.001)
-                // (e.g. both have fee rate = 0.001)
                 val tFeeRate1 =
                     t1.copy(
                         timestamp = now.plusMillis(600),
                         volume = BigDecimal("1.0"),
                         usdAmount = BigDecimal("1000.0"),
-                        fee = BigDecimal("1.0"), // rate 0.001
+                        fee = BigDecimal("1.0"),
                     )
                 val tFeeRate2 =
                     t1.copy(
                         timestamp = now.plusMillis(700),
                         volume = BigDecimal("1.0"),
                         usdAmount = BigDecimal("1000.0"),
-                        fee = BigDecimal("1.0001"), // rate 0.0010001 (diff = 0.0000001 < 0.001)
+                        fee = BigDecimal("1.0001"),
                     )
                 repository.saveTrade(tFeeRate1)
                 repository.saveTrade(tFeeRate2)
 
-                // Scenario 7: isWithinOnePercent and feePercentDiffersMaterially zero checks
                 val tZeroVolume1 =
                     t1.copy(
                         timestamp = now.plusMillis(800),
@@ -608,11 +602,9 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
 
         "save wraps non-IOException as IOException" {
             runTest {
-                // Use a closed database to trigger an exception
                 val closedDb = DatabaseConfig.init(TestFixtures.MEMORY_)
                 val brokenRepo = SqliteTradeRepositoryImpl(closedDb)
 
-                // Drop a required table to trigger a write failure
                 transaction(closedDb) {
                     exec(TestFixtures.DROP_TABLE_IF_EXISTS_PORTFOLIO_SNAPSHOTS)
                 }
@@ -695,7 +687,8 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
 
         "save rethrows IOException directly without wrapping" {
             runTest {
-                // Clear current transaction if it exists
+                // Exposed caches the current transaction per thread; close it so the mocked
+                // database must ask the throwing manager for a new transaction.
                 TransactionManager.currentOrNull()?.close()
 
                 val realTxManager = db.transactionManager
@@ -729,7 +722,8 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
 
         "saveSnapshot rethrows IOException directly without wrapping" {
             runTest {
-                // Clear current transaction if it exists
+                // Exposed caches the current transaction per thread; close it so the mocked
+                // database must ask the throwing manager for a new transaction.
                 TransactionManager.currentOrNull()?.close()
 
                 val realTxManager = db.transactionManager
@@ -763,7 +757,8 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
 
         "saveTrade rethrows IOException directly without wrapping" {
             runTest {
-                // Clear current transaction if it exists
+                // Exposed caches the current transaction per thread; close it so the mocked
+                // database must ask the throwing manager for a new transaction.
                 TransactionManager.currentOrNull()?.close()
 
                 val realTxManager = db.transactionManager
@@ -974,7 +969,6 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
                     )
                 repository.saveTrade(trade2)
 
-                // A failed trade should not be included
                 val tradeFailed =
                     TradeRecord(
                         timestamp = Instant.now(),

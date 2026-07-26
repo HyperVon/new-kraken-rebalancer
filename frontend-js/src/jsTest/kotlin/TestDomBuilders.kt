@@ -12,7 +12,6 @@ import com.gemini.krakenbot.view.util.ZoomActions
 import kotlinx.browser.window
 import kotlin.js.json
 
-/** Reusable HTML template String builder functions for Kotlin/JS tests. */
 object TestDomBuilders {
     fun chartsDom(): String =
         """
@@ -85,6 +84,7 @@ object TestDomBuilders {
         <div id="${HtmlIds.ALLOCATIONS_CONTAINER}"></div>
         """.trimIndent()
 
+    // StatusCard.Live is "status-badge live", so Badge ("status-badge") queries match production chips.
     fun dataAgeDom(epoch: String = ""): String =
         """
         <span class="${CssClass.DataAge.Value}"></span>
@@ -125,6 +125,7 @@ object TestDomBuilders {
           ${HtmlAttrs.DATA_CHART_ID}="$canvasId" ${HtmlAttrs.DATA_ZOOM_ACTION}="${ZoomActions.RESET}"></button>
         """.trimIndent()
 
+    // Defaults disabled like production until syncChartScrubber sees a zoomed x-window.
     fun scrubberDom(
         canvasId: String = HtmlIds.PORTFOLIO_VALUE_CHART,
         disabled: Boolean = true,
@@ -184,6 +185,7 @@ object TestDomBuilders {
         DataProps.ERROR_MESSAGE to errorMessage,
     )
 
+    // Appends each Chart config to window.chartConfigs for CoverageTest callback assertions.
     fun setupMockChart(isDatasetVisible: (Int) -> Boolean = { true }) {
         var callCount = 0
         window.asDynamic().chartCallCount = 0

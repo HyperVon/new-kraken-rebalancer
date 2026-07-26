@@ -19,7 +19,6 @@ class PortfolioManagerFiatCorrectionTest : StringSpec() {
 
     override fun isolationMode() = IsolationMode.InstancePerTest
 
-    /** Creates a [PortfolioAnalyzerImpl] configured with the supplied allocations. */
     private fun makePortfolioAnalyzer(vararg allocs: Allocation): PortfolioAnalyzer {
         val configService = mockk<ConfigService>(relaxed = true)
         val repo = mockk<PortfolioStatsRepository>(relaxed = true)

@@ -64,6 +64,8 @@ import io.ktor.client.plugins.sse.SSE as ClientSSE
 import io.ktor.server.sse.SSE as ServerSSE
 
 class EvaluationScenariosTest : StringSpec() {
+    // SingleInstance: the mocks and mapper below are shared by all 32 scenarios, so a scenario that
+    // captures calls (snapshot actions, order lists) must build its own mock instead of reusing them.
     override fun isolationMode() = IsolationMode.SingleInstance
 
     private val tradeHistoryService = mockk<TradeHistoryService>(relaxed = true)
@@ -85,6 +87,7 @@ class EvaluationScenariosTest : StringSpec() {
             val evidence: String,
         )
 
+        /** Rewrites the whole report after each scenario so an aborted run still leaves the results so far. */
         @Synchronized
         fun recordResult(
             name: String,
@@ -265,12 +268,6 @@ class EvaluationScenariosTest : StringSpec() {
                         secondOrder.startsWith("buy ETHUSD")
 
                 // Sub-case 2: Failed Sell prevents cash inflation and caps buy correctly
-                // Suppose we have USD = $1,000
-                // BTC target = 50% ($10,000), USD target = 50% ($10,000). Total value = $20,000.
-                // Current BTC = 0.38 (Price = $50,000) -> Value = $19,000. Target is $10,000. Overweight by $9,000.
-                // Current USD = $1,000. Target is $10,000. Underweight by $9,000.
-                // Rebalancer should SELL BTC (0.18 BTC / $9,000) first.
-                // Let's also add an underweight ETH target to force a buy.
                 // Config: BTC 40% ($8,000), ETH 50% ($10,000), USD 10% ($2,000). Total value = $20,000.
                 // Current BTC = 0.38 (Price = $50,000) -> BTC Value = $19,000 (Target = $8,000). Overweight by $11,000.
                 // Current ETH = 0 (Target = $10,000). Underweight by $10,000.
@@ -922,6 +919,8 @@ class EvaluationScenariosTest : StringSpec() {
                     )
                 every { mockConfig.getConfig() } returns appConfig
 
+                // Kraken quirk: a DOGE allocation has to be priced and traded as XDGUSD, so the pair
+                // string handed to the ticker call is asserted alongside the resulting orders.
                 fakeKraken.balanceSupplier = {
                     mapOf(
                         "DOGE" to 0.0,
@@ -1026,6 +1025,9 @@ class EvaluationScenariosTest : StringSpec() {
                 }
 
                 val orderExecutionLog = mutableListOf<String>()
+                // Slippage injection: the post-sell balance poll reports $8,000 instead of the $18,200
+                // the sell projected, so the ETH buy is capped at 99% of the cash actually observed
+                // (0.99 * $8,000 / $2,000 = 3.96) rather than at the $15,600 ETH target.
                 fakeKraken.executeOrderAction = { pair, _, side, volume ->
                     orderExecutionLog.add("$side $pair volume=$volume")
                     if (side == TestFixtures.SELL) {
@@ -1128,6 +1130,8 @@ class EvaluationScenariosTest : StringSpec() {
                         pm.runLoop()
                     }
 
+                // Virtual time: this returns immediately but advances the clock past two 1s loop
+                // delays, so the balance call count is what proves the loop actually iterated.
                 delay(2500.milliseconds)
 
                 pm.stopRebalancingLoop()
@@ -1168,7 +1172,8 @@ class EvaluationScenariosTest : StringSpec() {
                     )
                 val stats = PortfolioStats(BigDecimal("1234.56"))
 
-                // Close transaction manager to force write failure
+                // save() only writes SQLite, so the IOException has to be forced by unregistering the
+                // transaction manager; targetStatsFile is read by load(), never written by save().
                 TransactionManager.closeAndUnregister(db)
 
                 shouldThrow<IOException> {
@@ -1363,6 +1368,8 @@ class EvaluationScenariosTest : StringSpec() {
                     )
                 }
 
+                // Severe slippage: a BTC sell credits a flat $250 whatever the notional, so the ETH buy
+                // must size against the $350 actually settled (99% of it), not the projected proceeds.
                 fakeKraken.executeOrderAction = { pair, type, side, volume ->
                     if (pair == TestFixtures.XBTUSD && side == TestFixtures.SELL) {
                         balanceBTC = balanceBTC.subtract(volume)
@@ -1552,6 +1559,7 @@ class EvaluationScenariosTest : StringSpec() {
 
         "Scenario 16: Trade History Storage and JSON Serialization" {
             runTest {
+                // Storage is in-memory SQLite; tempFile only supplies a path for the report evidence.
                 val tempFile = File.createTempFile("scenario16-", ".json").apply { deleteOnExit() }
                 val db = DatabaseConfig.init(TestFixtures.MEMORY_)
                 val repository = SqliteTradeRepositoryImpl(db)
@@ -1785,6 +1793,8 @@ class EvaluationScenariosTest : StringSpec() {
                 val db = DatabaseConfig.init(TestFixtures.MEMORY_)
                 val statsRepo = SqlitePortfolioStatsRepositoryImpl(db, objectMapper, "test-scenario20-stats.json")
 
+                // Nothing writes that stats file: load() takes the missing-file branch and must fall
+                // back to ATH 0 instead of failing, the same outcome as an unreadable file.
                 val stats = statsRepo.load()
                 val loadSuccess = stats.allTimeHigh.compareTo(BigDecimal.ZERO) == 0
 
@@ -2517,6 +2527,9 @@ class EvaluationScenariosTest : StringSpec() {
                         executor,
                     )
 
+                // Cycle 1 sets the ATH at $10,000 (0.2 BTC); cycle 2 drops to $9,000, a 10% drawdown.
+                // With fiatMaxDrawdown 20 and exponent 2 that deploys (10/20)^2 = 25% of the 20% USD
+                // sleeve, leaving an effective USD target of 15% and a scaled BTC target of 85%.
                 fakeKraken.balanceSupplier = {
                     mapOf(
                         Asset.BTC to 0.2,
@@ -2628,6 +2641,8 @@ class EvaluationScenariosTest : StringSpec() {
                         fakeKraken.executedOrders[1].volume.compareTo(BigDecimal("0.1881")) == 0
 
                 // Sub-case B: fail-closed — no positive USD observed → sells only, no buys.
+                // The three polls (throw → empty → zero) exhaust the retry cap without a positive
+                // reading, so the buy phase is abandoned rather than sized off stale cash.
                 fakeKraken.executedOrders.clear()
                 fakeKraken.getBalancesCallCount = 0
                 var poll = 0
@@ -2719,6 +2734,9 @@ class EvaluationScenariosTest : StringSpec() {
                     )
                 }
 
+                // Fill feedback: buys fill only 99% of the requested volume and every fill is written
+                // back into the shared balance map, so each cycle re-analyzes the real post-fill
+                // portfolio. Trading at the quoted price with no fees keeps totalValueUSD constant.
                 val fillRatio = BigDecimal("0.99")
                 fakeKraken.executeOrderAction = { pair, _, side, volume ->
                     val symbol =
@@ -2765,6 +2783,7 @@ class EvaluationScenariosTest : StringSpec() {
                 (maxDeviations[1] < maxDeviations[0]).shouldBeTrue()
                 (maxDeviations[2] <= maxDeviations[1]).shouldBeTrue()
 
+                // Third cycle is silent because the 0.03% residual sits below deviationTriggerPercent.
                 ordersPerCycle shouldBe listOf(2, 1, 0)
                 snapshots[2].actions.none { it.startsWith("Deviation:") }.shouldBeTrue()
                 fakeKraken.executedOrders

@@ -63,7 +63,6 @@ class SqlitePortfolioStatsRepositoryImplTest : StringSpec() {
                 loaded.allTimeHigh.shouldNotBeNull()
                 loaded.allTimeHigh.shouldBeEqualComparingTo(BigDecimal("12345.67"))
 
-                // Update stats
                 val updated = stats.copy(allTimeHigh = BigDecimal("20000.00"))
                 repository.save(updated)
 
@@ -75,7 +74,6 @@ class SqlitePortfolioStatsRepositoryImplTest : StringSpec() {
 
         "load returns default stats when database throws exception" {
             runTest {
-                // Create a db and drop the stats table to trigger an exception on load
                 val brokenDb = DatabaseConfig.init(TestFixtures.MEMORY_)
                 val brokenRepo = SqlitePortfolioStatsRepositoryImpl(brokenDb, objectMapper)
 
@@ -111,7 +109,8 @@ class SqlitePortfolioStatsRepositoryImplTest : StringSpec() {
 
         "save rethrows IOException directly without wrapping" {
             runTest {
-                // Clear current transaction if it exists
+                // Exposed caches the current transaction per thread; close it so the mocked
+                // database must ask the throwing manager for a new transaction.
                 TransactionManager.currentOrNull()?.close()
 
                 val realTxManager = db.transactionManager

@@ -56,8 +56,8 @@ class RateLimiterTest : StringSpec() {
                 limiter.acquireWithCost(1.5)
 
                 // Second call asks for 1.0, total 2.5 > 2.0. Needs delay.
-                // neededDecay = 2.5 - 2.0 = 0.5
-                // waitSeconds = 0.5 / 1.0 = 0.5s = 500ms
+                // neededDecay = 2.5 - 2.0 = 0.5; waitSeconds = 0.5 / 1.0 = 0.5s.
+                // Virtual time: without advanceUntilIdle the delay never completes.
                 limiter.acquireWithCost(1.0)
                 advanceUntilIdle()
                 ((limiter.getCurrentCounter() - safeLimit).absoluteValue < 0.05).shouldBeTrue()
