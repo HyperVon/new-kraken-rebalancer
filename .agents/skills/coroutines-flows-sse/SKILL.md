@@ -2,9 +2,10 @@
 name: coroutines-flows-sse
 description: >-
   Kotlin Flow architecture — hot SharedFlow vs cold Flow, ConfigService config
-  flow, TradeHistoryService snapshotFlow, SSE /api/status/stream, and
-  collectLatest restart of the rebalance loop. Use when changing reactive
-  pipelines, SSE, or PortfolioManager config watching. See docs/FLOWS.md.
+  flow, TradeHistorySnapshotStore snapshotFlow (via TradeHistoryService façade),
+  SSE /api/status/stream, and collectLatest restart of the rebalance loop. Use
+  when changing reactive pipelines, SSE, or PortfolioManager config watching.
+  See docs/FLOWS.md.
 ---
 
 # Coroutines, Flows & SSE
@@ -30,18 +31,22 @@ loop immediately.
 
 ### Snapshots → SSE (hot)
 
-`TradeHistoryServiceImpl.snapshotFlow` — `replay=1`, buffer 16, `DROP_OLDEST`.
+`TradeHistorySnapshotStore.snapshotFlow` — `replay=1`, buffer 16, `DROP_OLDEST`.
+`TradeHistoryServiceImpl` is a thin façade: `addSnapshot` / `getHistoryFlow()`
+delegate to the store.
 
-Path: rebalance cycle → `addSnapshot` → DB + `tryEmit` →
-`DashboardController` / routes → **`GET /api/status/stream`** → browser
-`EventSource`.
+Path: rebalance cycle → façade `addSnapshot` → DB + store `tryEmit` →
+`DashboardController` collects `getHistoryFlow()` → **`GET /api/status/stream`**
+→ browser `EventSource`.
 
 On connect, send latest snapshot from DB, then collect the SharedFlow (replay
 covers a snapshot emitted between the DB read and subscribe).
 
 ### Paginated sync / USD settle (cold)
 
-- `getTradeHistoryPaginated()` — `emit` suspends for backpressure.
+- `TradeHistorySyncService` paginated Kraken history fetch (private cold
+  `getTradeHistoryPaginated()`; invoked from the façade
+  `syncTradesFromKraken()`).
 - `settleUsdAfterSells()` — only when **≥1 sell succeeded** and **not** dry-run:
   - **Primary:** `pollFillConfirmedUsd()` → `sumMatchedSellProceeds()` (history
     matched by sell `ordertxid`, **net of fee**, up to 5×50 pages) → balance peek

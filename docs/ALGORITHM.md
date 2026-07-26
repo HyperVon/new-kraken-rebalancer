@@ -84,7 +84,11 @@ To maintain the Single Responsibility Principle (SRP) and keep domain logic high
   elapsed-time decay of `elapsedSeconds × 0.33`, plus per-endpoint costs) and
   `retryWithFlow` for transient failures, rate limits, and temporary lockouts.
 - **Persistence Impls (`SqliteTradeRepositoryImpl`, `SqlitePortfolioStatsRepositoryImpl`, `ConfigServiceImpl`)**: Config uses atomic write-then-rename file operations and exposes `watchConfigChanges()` as a reactive `Flow<Settings>`. Trade logs and portfolio statistics are persisted to SQLite (using JetBrains Exposed ORM).
-- **`TradeHistoryServiceImpl`**: Maintains a reactive `MutableSharedFlow<PortfolioSnapshot>` that broadcasts snapshots to the Ktor Server-Sent Events (SSE) stream in real-time. Trade history sync uses a flow-based paginated fetch from the Kraken API.
+- **`TradeHistoryServiceImpl`**: Thin façade over Sync / SnapshotStore / Query /
+  Reconstruction. The hot `MutableSharedFlow<PortfolioSnapshot>` lives on
+  `TradeHistorySnapshotStore` and is exposed via `getHistoryFlow()` for the Ktor
+  SSE stream. Trade history sync uses a flow-based paginated fetch from the
+  Kraken API (`TradeHistorySyncService`).
 
 ---
 

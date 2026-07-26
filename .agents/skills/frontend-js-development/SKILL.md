@@ -24,6 +24,10 @@ Compiles via Kotlin JS IR to `/static/rebalancer.js`.
    **all six** summary cards (**All-Time High** / **Period High**, **Total
    Trades**, **Total Volume Traded**, **Total Fees Paid**, **Avg Fee Rate**,
    **Avg Slippage**) plus charts and trade table.
+5. **History JSON parsing** — `HistoryJsonParsing.kt` maps `/api/history/*`
+   payloads onto typed `:common` `api/` DTOs (`PortfolioSnapshot`, `TradeRecord`,
+   `HistoryStats`, `SyncProgressResponse`). Do not reintroduce removed
+   `JsModels.kt` external interfaces.
 
 ## Status chip = stream health, not trading mode
 

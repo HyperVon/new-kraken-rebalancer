@@ -4,7 +4,7 @@ The Kraken Rebalancer includes a production-grade **Scenario Evaluation Suite** 
 
 Implemented in [EvaluationScenariosTest.kt](../src/test/kotlin/com/gemini/krakenbot/EvaluationScenariosTest.kt), this suite is run as part of the standard Gradle test task. It dynamically evaluates the system without making external network calls, using a highly precise in-process fake exchange client ([FakeKrakenService.kt](../src/test/kotlin/com/gemini/krakenbot/service/FakeKrakenService.kt)).
 
-A complementary suite, [SimulationEvaluationScenariosTest.kt](../src/test/kotlin/com/gemini/krakenbot/SimulationEvaluationScenariosTest.kt), exercises the production [SimulatedKrakenService](../src/main/kotlin/com/gemini/krakenbot/service/impl/SimulatedKrakenService.kt) emulator with real TradeHistory + in-memory SQLite (invariant assertions; price drift is random).
+A complementary suite, [SimulationEvaluationScenariosTest.kt](../src/test/kotlin/com/gemini/krakenbot/SimulationEvaluationScenariosTest.kt), exercises the production [SimulatedKrakenService](../src/main/kotlin/com/gemini/krakenbot/service/impl/SimulatedKrakenService.kt) emulator with real TradeHistory + in-memory SQLite (invariant assertions; price drift is random). See the architecture section below for the five named cases.
 
 ---
 
@@ -27,8 +27,21 @@ To guarantee robust, reliable, and side-effect-free testing in a public GitHub r
 
 - **No Hardcoded Absolute Paths**: All file operations write to relative directories (e.g. `build/`) or platform-independent temp paths. System overrides can be set using environment variables (e.g. `SCENARIOS_REPORT_PATH`).
 - **Fake Exchange Mocking**: Leverages `FakeKrakenService` to inject controlled API responses (balances, prices, order execution failures) rather than using brittle or timing-dependent `coEvery` mocks.
-- **Coroutines & Virtual Time**: Uses Kotlin Coroutines' `runTest` to instantly advance delays and test rebalancing loops without blocking thread execution. Flow-based tests for the two hot `SharedFlow` channels — config changes (`ConfigService._configFlow`) and snapshot broadcasts (`TradeHistoryService.snapshotFlow`) — use `advanceUntilIdle()` with `@OptIn(ExperimentalCoroutinesApi::class)`. See [`docs/FLOWS.md`](FLOWS.md).
+- **Coroutines & Virtual Time**: Uses Kotlin Coroutines' `runTest` to instantly advance delays and test rebalancing loops without blocking thread execution. Flow-based tests for the two hot `SharedFlow` channels — config changes (`ConfigService._configFlow`) and snapshot broadcasts (`TradeHistorySnapshotStore.snapshotFlow`, exposed via the `TradeHistoryService` façade `getHistoryFlow()`) — use `advanceUntilIdle()` with `@OptIn(ExperimentalCoroutinesApi::class)`. See [`docs/FLOWS.md`](FLOWS.md).
 - **SSE Stream Broadcast Checks**: Dynamically spins up local Ktor client/server test applications to verify high-concurrency multi-subscriber Server-Sent Events (SSE) streaming.
+
+### SimulationEvaluationScenariosTest cases
+
+These are **invariant** assertions against the production emulator (price drift is
+random), not FakeKraken exact-math cases:
+
+| Case | Intent |
+| :--- | :--- |
+| sim cold start seeds historical snapshots when DB empty | Empty DB → seeded history |
+| sim rebalance cycle persists snapshot and trades with cycleId | Cycle persistence + `cycleId` |
+| sim sync imports emulator trade history | Emulator history import path |
+| sim multi-cycle keeps portfolio value positive | Multi-cycle value stays positive |
+| sim addSnapshot emits on history flow | SnapshotStore / façade flow emit |
 
 ---
 

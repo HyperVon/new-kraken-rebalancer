@@ -78,6 +78,9 @@ first
    while Kotlin 2.4.x is unsupported — triggers only on the placeholder branch
    `disabled-kotlin-2.4-mismatch`, not `main`. Do not expect CodeQL status
    checks on PRs.
+   Agent-assisted PRs should also follow
+   [`.agents/skills/open-pr`](.agents/skills/open-pr/SKILL.md) (including the
+   mandatory adversarial review). Human contributors can treat that as optional.
 4. Open a pull request against `main` with a clear description of what and why
 
 ## AI / coding agents

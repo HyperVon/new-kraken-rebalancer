@@ -40,7 +40,9 @@ flowchart TB
 
     subgraph Services["📦 Services"]
         CS["ConfigServiceImpl\n_configFlow\nMutableSharedFlow&lt;Settings&gt;\nreplay=1, no extraBufferCapacity, DROP_OLDEST"]
-        THS["TradeHistoryServiceImpl\nsnapshotFlow\nMutableSharedFlow&lt;PortfolioSnapshot&gt;\nreplay=1, buffer=16, DROP_OLDEST"]
+        THS["TradeHistoryServiceImpl\n(façade)"]
+        Store["TradeHistorySnapshotStore\nsnapshotFlow\nMutableSharedFlow&lt;PortfolioSnapshot&gt;\nreplay=1, buffer=16, DROP_OLDEST"]
+        Sync["TradeHistorySyncService\n(300s throttle + pagination)"]
     end
 
     subgraph External["🌐 External"]
@@ -63,18 +65,20 @@ flowchart TB
     OE -->|"place buy/sell orders"| Kraken
     OE -->|"COLD poll after successful sell\n(not dry-run); best of 3 / early 95 pct"| Kraken
 
-    %% Snapshot emission
+    %% Snapshot emission (façade delegates to SnapshotStore)
     PM -->|"addSnapshot(snapshot)"| THS
-    THS -->|"saveSnapshot()"| Repo
-    THS -->|"HOT: tryEmit(snapshot)\nalways succeeds synchronously"| THS
-    THS -->|"getHistoryFlow()\ncollect { snapshot → }"| DashCtrl
+    THS -->|"delegate"| Store
+    Store -->|"saveSnapshot()"| Repo
+    Store -->|"HOT: tryEmit(snapshot)\nalways succeeds synchronously"| Store
+    Store -->|"getHistoryFlow()\ncollect { snapshot → }"| DashCtrl
     DashCtrl -->|"send(ServerSentEvent)"| SSE
 
-    %% Paginated sync (attempted every cycle; 300s throttle inside THS)
+    %% Paginated sync (façade → SyncService; 300s throttle inside Sync)
     PM -->|"syncTradesFromKraken()\neach cycle"| THS
-    THS -->|"COLD getTradeHistoryPaginated()\n.collect { page → }\nemit() suspends until collector ready"| Kraken
-    Kraken -->|"pages of TradeRecord"| THS
-    THS -->|"reconcile & save"| Repo
+    THS -->|"delegate"| Sync
+    Sync -->|"COLD getTradeHistoryPaginated()\n.collect { page → }\nemit() suspends until collector ready"| Kraken
+    Kraken -->|"pages of TradeRecord"| Sync
+    Sync -->|"reconcile & save"| Repo
 
     %% Dashboard initial load
     SSE -->|"SSE connect /api/status/stream"| DashCtrl
@@ -85,7 +89,8 @@ flowchart TB
     classDef external fill:#3c2a1a,stroke:#e09a4f,color:#fdf5e8
     classDef infra fill:#2a1a3c,stroke:#9a4fe0,color:#f5e8fd
 
-    class CS,THS hot
+    class CS,Store hot
+    class Sync cold
     class Kraken external
     class Repo,DB infra
 ```
@@ -123,12 +128,14 @@ sequenceDiagram
 
 ## Flow 2 — Live Dashboard Updates (Hot SharedFlow)
 
-**Path:** `PortfolioManager` → `TradeHistoryService.snapshotFlow` → Ktor SSE → Browser
+**Path:** `PortfolioManager` → `TradeHistoryServiceImpl` façade →
+`TradeHistorySnapshotStore.snapshotFlow` → Ktor SSE → Browser
 
 ```mermaid
 sequenceDiagram
     participant PM as PortfolioManagerImpl
     participant THS as TradeHistoryServiceImpl
+    participant Store as TradeHistorySnapshotStore
     participant DB as SQLite
     participant SSE as DashboardController.handleSseStream
     participant Browser as Browser Tab
@@ -142,10 +149,11 @@ sequenceDiagram
 
     loop Every rebalance cycle
         PM->>THS: addSnapshot(snapshot)
-        THS->>DB: saveSnapshot()
-        THS->>THS: tryEmit(snapshot)
-        note over THS: Broadcast to all<br/>connected SSE sessions
-        THS-->>SSE: snapshot emitted
+        THS->>Store: addSnapshot(snapshot)
+        Store->>DB: saveSnapshot()
+        Store->>Store: tryEmit(snapshot)
+        note over Store: Broadcast to all<br/>connected SSE sessions
+        Store-->>SSE: snapshot emitted via getHistoryFlow()
         SSE->>Browser: send(ServerSentEvent)
     end
 
@@ -163,36 +171,40 @@ sequenceDiagram
 
 ## Flow 3 — Paginated Trade Sync (Cold Flow)
 
-**Path:** `syncTradesFromKraken()` → `getTradeHistoryPaginated()` → Kraken API (page by page) → SQLite
+**Path:** `TradeHistoryServiceImpl.syncTradesFromKraken()` →
+`TradeHistorySyncService` → `getTradeHistoryPaginated()` → Kraken API
+(page by page) → SQLite
 
 ```mermaid
 sequenceDiagram
     participant Caller as syncTradesFromKraken()
+    participant Sync as TradeHistorySyncService
     participant Flow as getTradeHistoryPaginated() [cold]
     participant API as Kraken API
     participant DB as SQLite
 
-    Caller->>Flow: .collect { apiTrades → }
+    Caller->>Sync: syncTradesFromKraken()
+    Sync->>Flow: .collect { apiTrades → }
     note over Flow: Cold! Execution starts<br/>NOW because collect() was called.
 
     loop While there are more pages
         Flow->>API: getTradeHistory(offset=0, 50, 100 ...)
         API-->>Flow: List<TradeRecord> (50 records)
-        Flow->>Caller: emit(page)
+        Flow->>Sync: emit(page)
         note over Flow: emit() suspends here.<br/>Waits for collector to finish<br/>processing before fetching next page.<br/>This is automatic backpressure.
-        Caller->>DB: reconcile & save trades
+        Sync->>DB: reconcile & save trades
         note over Flow: Collector done → Flow resumes<br/>and fetches the next page.
     end
 
-    Flow->>Caller: (completes — no more pages)
+    Flow->>Sync: (completes — no more pages)
     note over Caller: collect() returns normally.<br/>Execution continues to next line.
 ```
 
 **Key design choices:**
 
 - `PortfolioManagerImpl` calls `syncTradesFromKraken()` **every** rebalance cycle,
-  but `TradeHistoryServiceImpl` **no-ops** unless ≥ **300 seconds** have elapsed
-  since `lastSyncTime` (5-minute throttle).
+  but `TradeHistorySyncService` (via the façade) **no-ops** unless ≥ **300 seconds**
+  have elapsed since `lastSyncTime` (5-minute throttle).
 - Live sync is skipped when credentials are invalid and `simulation` is false;
   simulation mode never hits Kraken for history.
 - Incremental sync uses a **300-second overlap** window from the **effective**

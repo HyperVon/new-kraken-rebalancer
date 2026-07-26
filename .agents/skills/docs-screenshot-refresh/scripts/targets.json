@@ -8,7 +8,13 @@
     {
       "file": "dashboard.png",
       "path": "/",
-      "await_text": ["Total Portfolio", "Recent Activity"],
+      "await_text": [
+        "Kraken Rebalancer",
+        "Total Portfolio",
+        "Portfolio Allocation (Top Assets)",
+        "Asset Performance",
+        "Recent Activity"
+      ],
       "position": "top"
     },
     {
@@ -20,14 +26,18 @@
     {
       "file": "settings.png",
       "path": "/settings",
-      "await_text": ["Global Parameters", "Target Allocations"],
+      "await_text": ["Global Parameters", "Safety Modes", "Target Allocations"],
       "position": "top"
     },
     {
       "file": "history.png",
       "path": "/history",
       "click_button": "30d",
-      "await_text": ["Total Trades"],
+      "await_text": [
+        "Total Trades",
+        "Portfolio Value Over Time",
+        "Asset Holdings Over Time"
+      ],
       "await_charts": 4,
       "position": "top"
     },
@@ -37,6 +47,7 @@
       "click_button": "30d",
       "await_charts": 4,
       "anchor": "Allocation Deviation from Target",
+      "await_text": ["Cumulative Net Cash Flow"],
       "ensure_visible": "Dry-run rows use estimated fees",
       "viewport": { "height": 1000 }
     },
