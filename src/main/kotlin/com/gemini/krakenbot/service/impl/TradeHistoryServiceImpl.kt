@@ -2,6 +2,7 @@ package com.gemini.krakenbot.service.impl
 
 import com.fasterxml.jackson.core.type.TypeReference
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.HistoryStats
 import com.gemini.krakenbot.model.PortfolioSnapshot
@@ -351,6 +352,13 @@ class TradeHistoryServiceImpl(
             return
         }
 
+        when (val ks = krakenService) {
+            is DynamicKrakenService -> ks.withStableBackend { syncTradesFromKrakenPinned(config) }
+            else -> syncTradesFromKrakenPinned(config)
+        }
+    }
+
+    private suspend fun syncTradesFromKrakenPinned(config: AppConfig) {
         val isSeeded = repository.isHistorySeeded()
         val latestTradeTime = repository.getLatestTradeTime()
 
@@ -366,7 +374,7 @@ class TradeHistoryServiceImpl(
         val queryEnd = Instant.now().plusSeconds(300)
         val originalLocalTrades = repository.getTradesInRange(queryStart, queryEnd).toMutableList()
 
-        val allocations = configService.getConfig().allocations.map { it.symbol.value }
+        val allocations = config.allocations.map { it.symbol.value }
         var totalAdded = 0
         var totalReconciled = 0
 
@@ -419,7 +427,7 @@ class TradeHistoryServiceImpl(
 
         val snapshots = repository.load()
         val totalTrades = repository.getTradeSummaryStats().totalTradesExecuted
-        val isSimulation = configService.getConfig().settings.simulation
+        val isSimulation = config.settings.simulation
 
         if (!isSimulation && totalTrades > 0 && snapshots.size <= 1) {
             log.info(

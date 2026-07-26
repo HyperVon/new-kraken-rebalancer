@@ -38,6 +38,7 @@ fun createPortfolioManagerTestFixture(): PortfolioManagerTestFixture {
             tradeHistoryService = tradeHistoryService,
             portfolioAnalyzer = portfolioAnalyzer,
             orderExecutor = orderExecutor,
+            krakenService = krakenService,
         )
     return PortfolioManagerTestFixture(
         krakenService = krakenService,

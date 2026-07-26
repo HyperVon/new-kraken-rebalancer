@@ -19,6 +19,7 @@ class PortfolioManagerImpl(
     private val tradeHistoryService: TradeHistoryService,
     private val portfolioAnalyzer: PortfolioAnalyzer,
     private val orderExecutor: OrderExecutor,
+    private val krakenService: KrakenService? = null,
 ) : PortfolioManager {
     private val log =
         LoggerFactory.getLogger(PortfolioManagerImpl::class.java)
@@ -90,124 +91,131 @@ class PortfolioManagerImpl(
         val cycleId = UUID.randomUUID().toString()
         MDC.put(CYCLE_ID_MDC_KEY, cycleId)
         try {
-            log.info("--- Starting Snapshot Phase ---")
-            val config = configService.getConfig()
-            val actionLog = mutableListOf<String>()
+            return when (val ks = krakenService) {
+                is DynamicKrakenService -> ks.withStableBackend { performRebalanceCyclePinned() }
+                else -> performRebalanceCyclePinned()
+            }
+        } finally {
+            MDC.remove(CYCLE_ID_MDC_KEY)
+        }
+    }
 
-            val balances = portfolioAnalyzer.fetchBalances()
-            val prices = portfolioAnalyzer.fetchPrices()
-            val calculationResult = portfolioAnalyzer.calculatePortfolioValues(balances, prices)
+    private suspend fun performRebalanceCyclePinned(): PortfolioSnapshot? {
+        log.info("--- Starting Snapshot Phase ---")
+        val config = configService.getConfig()
+        val actionLog = mutableListOf<String>()
 
-            val (totalPortfolioValueUSD, currentValuesUSD) =
-                calculationResult.fold(
-                    onSuccess = { it },
-                    onFailure = {
-                        log.error("Failed to calculate portfolio values: {}", it.message)
-                        return null
-                    },
-                )
+        val balances = portfolioAnalyzer.fetchBalances()
+        val prices = portfolioAnalyzer.fetchPrices()
+        val calculationResult = portfolioAnalyzer.calculatePortfolioValues(balances, prices)
 
-            log.info(
-                "Total Portfolio Value: $${
-                    totalPortfolioValueUSD.setScale(
-                        2,
-                        RoundingMode.HALF_UP,
-                    )
-                }",
+        val (totalPortfolioValueUSD, currentValuesUSD) =
+            calculationResult.fold(
+                onSuccess = { it },
+                onFailure = {
+                    log.error("Failed to calculate portfolio values: {}", it.message)
+                    return null
+                },
             )
 
-            val drawdownPct =
-                portfolioAnalyzer
-                    .updateAthAndCalculateDrawdown(totalPortfolioValueUSD)
-            val fiatDeploymentPct =
-                portfolioAnalyzer
-                    .calculateFiatDeployment(
-                        drawdownPct,
-                        config.settings,
-                    )
-
-            if (fiatDeploymentPct > BigDecimal.ZERO) {
-                log.info(
-                    "Drawdown Detected: {}%. Fiat Deployment: {}%",
-                    drawdownPct.setScale(2, RoundingMode.HALF_UP),
-                    fiatDeploymentPct.setScale(2, RoundingMode.HALF_UP),
+        log.info(
+            "Total Portfolio Value: $${
+                totalPortfolioValueUSD.setScale(
+                    2,
+                    RoundingMode.HALF_UP,
                 )
+            }",
+        )
+
+        val drawdownPct =
+            portfolioAnalyzer
+                .updateAthAndCalculateDrawdown(totalPortfolioValueUSD)
+        val fiatDeploymentPct =
+            portfolioAnalyzer
+                .calculateFiatDeployment(
+                    drawdownPct,
+                    config.settings,
+                )
+
+        if (fiatDeploymentPct > BigDecimal.ZERO) {
+            log.info(
+                "Drawdown Detected: {}%. Fiat Deployment: {}%",
+                drawdownPct.setScale(2, RoundingMode.HALF_UP),
+                fiatDeploymentPct.setScale(2, RoundingMode.HALF_UP),
+            )
+        }
+
+        val effectiveUsdTarget =
+            portfolioAnalyzer.calculateEffectiveUsdTarget(fiatDeploymentPct)
+        val cryptoScaleFactor =
+            portfolioAnalyzer.calculateCryptoScaleFactor(effectiveUsdTarget)
+
+        val (buyOrders, sellOrders, cycleActions) =
+            portfolioAnalyzer.analyzeDeviations(
+                totalPortfolioValueUSD = totalPortfolioValueUSD,
+                currentValuesUSD = currentValuesUSD,
+                effectiveUsdTarget = effectiveUsdTarget,
+                cryptoScaleFactor = cryptoScaleFactor,
+            )
+        actionLog.addAll(cycleActions)
+
+        orderExecutor.executeOrders(
+            buyOrders = buyOrders,
+            sellOrders = sellOrders,
+            currentValuesUSD = currentValuesUSD,
+            prices = prices,
+            settings = config.settings,
+            actionLog = actionLog,
+        )
+
+        val finalState =
+            if (buyOrders.isNotEmpty() || sellOrders.isNotEmpty()) {
+                try {
+                    val postBalances = portfolioAnalyzer.fetchBalances()
+                    val postPrices = portfolioAnalyzer.fetchPrices()
+                    portfolioAnalyzer.calculatePortfolioValues(postBalances, postPrices).fold(
+                        onSuccess = { (total, values) ->
+                            RebalanceState(postBalances, postPrices, values, total)
+                        },
+                        onFailure = {
+                            RebalanceState(balances, prices, currentValuesUSD, totalPortfolioValueUSD)
+                        },
+                    )
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    log.warn(
+                        "Failed to fetch post-trade balances/prices for snapshot, falling back to pre-trade values",
+                        e,
+                    )
+                    RebalanceState(balances, prices, currentValuesUSD, totalPortfolioValueUSD)
+                }
+            } else {
+                RebalanceState(balances, prices, currentValuesUSD, totalPortfolioValueUSD)
             }
 
-            val effectiveUsdTarget =
-                portfolioAnalyzer.calculateEffectiveUsdTarget(fiatDeploymentPct)
-            val cryptoScaleFactor =
-                portfolioAnalyzer.calculateCryptoScaleFactor(effectiveUsdTarget)
-
-            val (buyOrders, sellOrders, cycleActions) =
-                portfolioAnalyzer.analyzeDeviations(
-                    totalPortfolioValueUSD = totalPortfolioValueUSD,
-                    currentValuesUSD = currentValuesUSD,
-                    effectiveUsdTarget = effectiveUsdTarget,
-                    cryptoScaleFactor = cryptoScaleFactor,
-                )
-            actionLog.addAll(cycleActions)
-
-            orderExecutor.executeOrders(
-                buyOrders = buyOrders,
-                sellOrders = sellOrders,
-                currentValuesUSD = currentValuesUSD,
-                prices = prices,
-                settings = config.settings,
+        val snapshot =
+            buildSnapshot(
+                balances = finalState.balances,
+                prices = finalState.prices,
+                currentValuesUSD = finalState.currentValuesUSD,
+                totalPortfolioValueUSD = finalState.totalPortfolioValueUSD,
+                effectiveUsdTarget = effectiveUsdTarget,
+                cryptoScaleFactor = cryptoScaleFactor,
+                drawdownPct = drawdownPct,
+                fiatDeploymentPct = fiatDeploymentPct,
                 actionLog = actionLog,
             )
 
-            val finalState =
-                if (buyOrders.isNotEmpty() || sellOrders.isNotEmpty()) {
-                    try {
-                        val postBalances = portfolioAnalyzer.fetchBalances()
-                        val postPrices = portfolioAnalyzer.fetchPrices()
-                        portfolioAnalyzer.calculatePortfolioValues(postBalances, postPrices).fold(
-                            onSuccess = { (total, values) ->
-                                RebalanceState(postBalances, postPrices, values, total)
-                            },
-                            onFailure = {
-                                RebalanceState(balances, prices, currentValuesUSD, totalPortfolioValueUSD)
-                            },
-                        )
-                    } catch (e: CancellationException) {
-                        throw e
-                    } catch (e: Exception) {
-                        log.warn(
-                            "Failed to fetch post-trade balances/prices for snapshot, falling back to pre-trade values",
-                            e,
-                        )
-                        RebalanceState(balances, prices, currentValuesUSD, totalPortfolioValueUSD)
-                    }
-                } else {
-                    RebalanceState(balances, prices, currentValuesUSD, totalPortfolioValueUSD)
-                }
-
-            val snapshot =
-                buildSnapshot(
-                    balances = finalState.balances,
-                    prices = finalState.prices,
-                    currentValuesUSD = finalState.currentValuesUSD,
-                    totalPortfolioValueUSD = finalState.totalPortfolioValueUSD,
-                    effectiveUsdTarget = effectiveUsdTarget,
-                    cryptoScaleFactor = cryptoScaleFactor,
-                    drawdownPct = drawdownPct,
-                    fiatDeploymentPct = fiatDeploymentPct,
-                    actionLog = actionLog,
-                )
-
-            try {
-                tradeHistoryService.addSnapshot(snapshot)
-            } catch (e: IOException) {
-                log.error("Failed to persist trade history snapshot", e)
-                actionLog.add("ERROR: Failed to persist trade history: ${e.message}")
-            }
-
-            log.info("--- Cycle Complete ---")
-            return snapshot
-        } finally {
-            MDC.remove("cycleId")
+        try {
+            tradeHistoryService.addSnapshot(snapshot)
+        } catch (e: IOException) {
+            log.error("Failed to persist trade history snapshot", e)
+            actionLog.add("ERROR: Failed to persist trade history: ${e.message}")
         }
+
+        log.info("--- Cycle Complete ---")
+        return snapshot
     }
 
     private fun buildSnapshot(

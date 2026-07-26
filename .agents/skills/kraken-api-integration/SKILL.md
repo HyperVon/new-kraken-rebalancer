@@ -39,7 +39,8 @@ DI binds `KrakenService` → `DynamicKrakenService` (live `KrakenServiceImpl` or
 
 - `safeLimit = 12.0`, `decayRate = 0.33`; the counter decays linearly by
   `elapsedSeconds × 0.33`
-- All counter updates under coroutine **`Mutex`**
+- All counter updates under coroutine **`Mutex`** (released **before** throttle
+  `delay` so waiters do not HOL-block other private calls)
 - Waits until `callCounter + cost ≤ safeLimit`
 
 Per-endpoint **cost** (in `KrakenServiceImpl.queryPrivate`):

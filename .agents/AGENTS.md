@@ -61,6 +61,7 @@ same content via committed `.cursor/rules/`:
 | Rule | Purpose |
 | :--- | :--- |
 | `prefer-project-skills.mdc` | Follow `.agents/skills` instead of inventing flows |
+| `pr-verifications-before-open.mdc` | Finish every PR Test plan item before `gh pr create`; never defer to after merge |
 | `parallel-multi-agent.mdc` | Fan out independent workstreams; keep coupled files single-threaded |
 | `no-blocking-long-processes.mdc` | Background servers; don’t hang on `java -jar` / `gradlew run` |
 | `complex-code-comments.mdc` | Comment only non-obvious complexity; keep comments accurate |

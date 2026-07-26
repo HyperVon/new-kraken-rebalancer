@@ -174,7 +174,7 @@ class HistoryPageComponent {
     }
 
     private fun DIV.renderTradeTable() {
-        div(CssClass.Layout.GlassPanel) {
+        div(CssClass.Layout.GlassPanel + CssClass.History.TradeLog) {
             div(CssClass.History.TradeLogHeader) {
                 h2(CssClass.Utility.GlassPanelTitle + CssClass.History.TitleNoMargin) {
                     icon(Icons.CHART)

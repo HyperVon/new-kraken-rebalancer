@@ -28,3 +28,7 @@ process.
 | Continuous quality / QA loop / test hardening | `continuous-quality` (+ `.agents/quality-backlog.md`) |
 
 If no skill fits, proceed normally. Don’t skip quality gates the skill names.
+
+When opening a PR: complete **every** Test plan / Verification item **before**
+`gh pr create` — never defer spot-checks to after merge. See `open-pr` and
+`.agents/OPERATING.md` § Complete PR verifications before opening.

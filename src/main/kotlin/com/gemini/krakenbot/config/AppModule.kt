@@ -86,7 +86,17 @@ val appModule =
         }
         singleOf(::PortfolioAnalyzerImpl) { bind<PortfolioAnalyzer>() }
         singleOf(::OrderExecutorImpl) { bind<OrderExecutor>() }
-        singleOf(::PortfolioManagerImpl) { bind<PortfolioManager>() }
+        // Explicit ctor: nullable `krakenService` defaults to null; singleOf would skip injection
+        // and leave cycle-level DynamicKraken pinning disabled (#89).
+        single<PortfolioManager> {
+            PortfolioManagerImpl(
+                configService = get(),
+                tradeHistoryService = get(),
+                portfolioAnalyzer = get(),
+                orderExecutor = get(),
+                krakenService = get(),
+            )
+        }
         singleOf(::DashboardShellComponent)
         singleOf(::SettingsFormComponent)
         singleOf(::OverviewGridComponent)
