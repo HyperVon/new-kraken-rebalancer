@@ -234,7 +234,7 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
                 val priceMissing =
                     portfolioAnalyzer
                         .resolvePriceFromTicker("LTC", rawPrices)
-                priceMissing.compareTo(BigDecimal.ZERO) shouldBe 0
+                priceMissing.shouldBeEqualComparingTo(BigDecimal.ZERO)
             }
         }
 
@@ -305,7 +305,7 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
                 krakenService.executedOrders.size shouldBe 1
                 krakenService.executedOrders[0].pair shouldBe Asset.BTC_USD_PAIR
                 krakenService.executedOrders[0].side shouldBe OrderSide.SELL.apiValue
-                krakenService.executedOrders[0].volume.compareTo(BigDecimal.TEN) shouldBe 0
+                krakenService.executedOrders[0].volume.shouldBeEqualComparingTo(BigDecimal.TEN)
             }
         }
 
@@ -344,7 +344,7 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
                 krakenService.executedOrders.size shouldBe 1
                 krakenService.executedOrders[0].pair shouldBe Asset.BTC_USD_PAIR
                 krakenService.executedOrders[0].side shouldBe OrderSide.SELL.apiValue
-                krakenService.executedOrders[0].volume.compareTo(BigDecimal.TEN) shouldBe 0
+                krakenService.executedOrders[0].volume.shouldBeEqualComparingTo(BigDecimal.TEN)
             }
         }
 
@@ -356,7 +356,7 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
                 val drawdown = portfolioAnalyzer.updateAthAndCalculateDrawdown(
                     BigDecimal("1500.0"),
                 )
-                drawdown.compareTo(BigDecimal.ZERO) shouldBe 0
+                drawdown.shouldBeEqualComparingTo(BigDecimal.ZERO)
                 coVerify { portfolioStatsRepository.save(any()) }
             }
         }
@@ -397,7 +397,7 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
                 krakenService.executedOrders.size shouldBe 1
                 krakenService.executedOrders[0].pair shouldBe "XBTUSD"
                 krakenService.executedOrders[0].side shouldBe "sell"
-                krakenService.executedOrders[0].volume.compareTo(BigDecimal.TEN) shouldBe 0
+                krakenService.executedOrders[0].volume.shouldBeEqualComparingTo(BigDecimal.TEN)
             }
         }
 
@@ -538,7 +538,7 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
                     symbol = Asset.BTC,
                     rawPrices = rawPricesOnlyEur,
                 )
-                priceEurOnly.compareTo(BigDecimal.ZERO) shouldBe 0
+                priceEurOnly.shouldBeEqualComparingTo(BigDecimal.ZERO)
             }
         }
 
@@ -666,7 +666,7 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
                         .updateAthAndCalculateDrawdown(
                             BigDecimal("1000.0"),
                         )
-                drawdown.compareTo(BigDecimal.ZERO) shouldBe 0
+                drawdown.shouldBeEqualComparingTo(BigDecimal.ZERO)
                 coVerify {
                     portfolioStatsRepository.save(
                         match {
@@ -686,7 +686,7 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
                     portfolioAnalyzer.updateAthAndCalculateDrawdown(
                         BigDecimal("1200.0"),
                     )
-                drawdown.compareTo(BigDecimal.ZERO) shouldBe 0
+                drawdown.shouldBeEqualComparingTo(BigDecimal.ZERO)
                 coVerify {
                     portfolioStatsRepository.save(
                         match {
@@ -1266,22 +1266,8 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
             }
         }
 
-        "testBuildSnapshot_Reflection" {
+        "testBuildSnapshot_assemblesAssetMetrics" {
             runTest {
-                val buildSnapshotMethod =
-                    PortfolioManagerImpl::class.java.getDeclaredMethod(
-                        "buildSnapshot",
-                        Map::class.java,
-                        Map::class.java,
-                        Map::class.java,
-                        BigDecimal::class.java,
-                        BigDecimal::class.java,
-                        BigDecimal::class.java,
-                        BigDecimal::class.java,
-                        BigDecimal::class.java,
-                        List::class.java,
-                    ).apply { isAccessible = true }
-
                 val balances =
                     mapOf(TestFixtures.USD to 500.0, "BTC" to 0.01).toBigDecimalMap()
                 val prices = mapOf("BTC" to BigDecimal("50000.0"))
@@ -1313,41 +1299,41 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
                     allocations = allocs,
                 )
 
-                val snapshot = buildSnapshotMethod.invoke(
-                    portfolioManager,
-                    balances,
-                    prices,
-                    currentValuesUSD,
-                    totalVal,
-                    effUsdTarget,
-                    cryptoScale,
-                    drawdown,
-                    deployment,
-                    actionLog,
-                ) as PortfolioSnapshot
+                val snapshot =
+                    portfolioAnalyzer.buildSnapshot(
+                        balances = balances,
+                        prices = prices,
+                        currentValuesUSD = currentValuesUSD,
+                        totalPortfolioValueUSD = totalVal,
+                        effectiveUsdTarget = effUsdTarget,
+                        cryptoScaleFactor = cryptoScale,
+                        drawdownPct = drawdown,
+                        fiatDeploymentPct = deployment,
+                        actionLog = actionLog,
+                    )
 
-                snapshot.totalValueUSD.compareTo(BigDecimal("1000.0")) shouldBe 0
+                snapshot.totalValueUSD.shouldBeEqualComparingTo(BigDecimal("1000.0"))
 
                 val currentValuesUSDMissing =
                     mapOf(TestFixtures.USD to BigDecimal("500.0"))
                 val pricesMissing = emptyMap<String, BigDecimal>()
 
-                val snapshotFallback = buildSnapshotMethod.invoke(
-                    portfolioManager,
-                    balances,
-                    pricesMissing,
-                    currentValuesUSDMissing,
-                    totalVal,
-                    effUsdTarget,
-                    cryptoScale,
-                    drawdown,
-                    deployment,
-                    actionLog,
-                ) as PortfolioSnapshot
+                val snapshotFallback =
+                    portfolioAnalyzer.buildSnapshot(
+                        balances = balances,
+                        prices = pricesMissing,
+                        currentValuesUSD = currentValuesUSDMissing,
+                        totalPortfolioValueUSD = totalVal,
+                        effectiveUsdTarget = effUsdTarget,
+                        cryptoScaleFactor = cryptoScale,
+                        drawdownPct = drawdown,
+                        fiatDeploymentPct = deployment,
+                        actionLog = actionLog,
+                    )
 
                 val btcSnap = snapshotFallback.assets[Asset.BTC]
-                btcSnap!!.valueUSD.compareTo(BigDecimal.ZERO) shouldBe 0
-                btcSnap.price.compareTo(BigDecimal.ONE) shouldBe 0
+                btcSnap!!.valueUSD.shouldBeEqualComparingTo(BigDecimal.ZERO)
+                btcSnap.price.shouldBeEqualComparingTo(BigDecimal.ONE)
             }
         }
 

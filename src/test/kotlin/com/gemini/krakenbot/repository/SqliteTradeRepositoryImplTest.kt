@@ -1030,8 +1030,8 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
 
                 val stats = repository.getTradeSummaryStats()
                 stats.totalTradesExecuted shouldBe 2L
-                stats.totalVolumeTraded.compareTo(BigDecimal("8000.00")) shouldBe 0
-                stats.totalFeesPaid.compareTo(BigDecimal("16.00")) shouldBe 0
+                stats.totalVolumeTraded.shouldBeEqualComparingTo(BigDecimal("8000.00"))
+                stats.totalFeesPaid.shouldBeEqualComparingTo(BigDecimal("16.00"))
                 stats.latestSnapshotTime shouldBe Instant.ofEpochMilli(12345678L)
             }
         }

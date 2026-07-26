@@ -5,6 +5,7 @@ import com.gemini.krakenbot.repository.TradeRepository
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.KrakenService
 import com.gemini.krakenbot.service.PortfolioAnalyzer
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import org.slf4j.LoggerFactory
 import java.math.BigDecimal
@@ -33,6 +34,8 @@ class TradeHistoryReconstructionService(
         val fetchedLiveBalances =
             try {
                 krakenService.getBalances()
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 log.error("Failed to fetch balances for snapshot reconstruction", e)
                 emptyMap()
@@ -64,6 +67,8 @@ class TradeHistoryReconstructionService(
             val prices =
                 try {
                     krakenService.getTickerPrices(pairsStr)
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (e: Exception) {
                     log.error("Failed to fetch starting prices for snapshot reconstruction", e)
                     emptyMap()
@@ -86,6 +91,8 @@ class TradeHistoryReconstructionService(
                 val prices = krakenService.getOHLC(pair, interval = 1440, since = sinceSec)
                 ohlcData[symbolU] = prices
                 log.info("Fetched {} OHLC close prices for {}", prices.size, symbolU)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 log.error("Failed to fetch OHLC prices for $symbolU ($pair)", e)
             }

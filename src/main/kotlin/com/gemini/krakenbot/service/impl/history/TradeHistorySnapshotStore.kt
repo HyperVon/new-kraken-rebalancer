@@ -12,6 +12,7 @@ import com.gemini.krakenbot.service.impl.SimulationDefaults
 import com.gemini.krakenbot.util.PrecisionConstants
 import com.gemini.krakenbot.util.toCryptoScale
 import com.gemini.krakenbot.util.toUsdScale
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.Flow
@@ -53,6 +54,8 @@ class TradeHistorySnapshotStore(
     suspend fun init() {
         try {
             repository.cleanupDuplicateTrades()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             log.error("Failed to run duplicate trade cleanup on startup", e)
         }
@@ -77,10 +80,14 @@ class TradeHistorySnapshotStore(
                                 Files.move(sourcePath, targetPath, StandardCopyOption.REPLACE_EXISTING)
                             }
                             log.info("Renamed trade history file to backup successfully.")
+                        } catch (ex: CancellationException) {
+                            throw ex
                         } catch (ex: Exception) {
                             log.warn("Failed to rename trade history file to backup", ex)
                         }
                     }
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (e: Exception) {
                     log.error("Failed to migrate trade history file", e)
                 }
@@ -89,6 +96,8 @@ class TradeHistorySnapshotStore(
                 if (config.settings.simulation) {
                     try {
                         seedHistoricalSnapshots()
+                    } catch (e: CancellationException) {
+                        throw e
                     } catch (e: Exception) {
                         log.error("Failed to seed historical snapshots", e)
                     }
@@ -252,6 +261,8 @@ class TradeHistorySnapshotStore(
                     PrecisionConstants.HISTORICAL_DAYS_BACK,
                 )
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             log.error("Failed to prune old snapshots/trades", e)
         }

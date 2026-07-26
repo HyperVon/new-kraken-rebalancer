@@ -69,8 +69,7 @@ class PortfolioManagerFiatCorrectionTest : StringSpec() {
             )
 
             buyOrders.containsKey("B").shouldBeTrue()
-            buyOrders.getOrDefault("A", BigDecimal.ZERO)
-                .compareTo(BigDecimal.ZERO) shouldBe 0
+            buyOrders.getOrDefault("A", BigDecimal.ZERO).shouldBeEqualComparingTo(BigDecimal.ZERO)
             sellOrders.isEmpty().shouldBeTrue()
         }
 
@@ -98,8 +97,7 @@ class PortfolioManagerFiatCorrectionTest : StringSpec() {
             )
 
             sellOrders.containsKey("A").shouldBeTrue()
-            sellOrders.getOrDefault("B", BigDecimal.ZERO)
-                .compareTo(BigDecimal.ZERO) shouldBe 0
+            sellOrders.getOrDefault("B", BigDecimal.ZERO).shouldBeEqualComparingTo(BigDecimal.ZERO)
             buyOrders.isEmpty().shouldBeTrue()
         }
 
@@ -130,12 +128,9 @@ class PortfolioManagerFiatCorrectionTest : StringSpec() {
                 actionLog = mutableListOf(),
             )
 
-            buyOrders.getOrDefault("A", BigDecimal.ZERO)
-                .compareTo(BigDecimal.valueOf(80.0)) shouldBe 0
-            buyOrders.getOrDefault("B", BigDecimal.ZERO)
-                .compareTo(BigDecimal.valueOf(20.0)) shouldBe 0
-            buyOrders.getOrDefault("C", BigDecimal.ZERO)
-                .compareTo(BigDecimal.ZERO) shouldBe 0
+            buyOrders.getOrDefault("A", BigDecimal.ZERO).shouldBeEqualComparingTo(BigDecimal.valueOf(80.0))
+            buyOrders.getOrDefault("B", BigDecimal.ZERO).shouldBeEqualComparingTo(BigDecimal.valueOf(20.0))
+            buyOrders.getOrDefault("C", BigDecimal.ZERO).shouldBeEqualComparingTo(BigDecimal.ZERO)
         }
 
         "testDistributeFiatCorrection_ShareUsesUsdScale" {

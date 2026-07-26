@@ -688,10 +688,10 @@ class TradeHistoryServiceTest : StringSpec() {
                 )
 
                 val stats = tradeHistoryService.getHistoryStats()
-                stats.allTimeHigh.compareTo(BigDecimal.ZERO) shouldBe 0
+                stats.allTimeHigh.shouldBeEqualComparingTo(BigDecimal.ZERO)
                 stats.totalTradesExecuted shouldBe 0L
-                stats.totalVolumeTraded.compareTo(BigDecimal.ZERO) shouldBe 0
-                stats.totalFeesPaid.compareTo(BigDecimal.ZERO) shouldBe 0
+                stats.totalVolumeTraded.shouldBeEqualComparingTo(BigDecimal.ZERO)
+                stats.totalFeesPaid.shouldBeEqualComparingTo(BigDecimal.ZERO)
                 stats.latestSnapshotTime shouldBe null
             }
         }

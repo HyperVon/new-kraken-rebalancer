@@ -15,6 +15,7 @@ import com.gemini.krakenbot.model.TradeSource
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.collections.shouldHaveSize
+import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import java.math.BigDecimal
@@ -38,7 +39,7 @@ class SerializationParityTest : StringSpec() {
                 """.trimIndent()
 
             val parsed: PortfolioStats = mapper.readValue(legacyJson)
-            parsed.allTimeHigh.compareTo(BigDecimal("123456.789101112")) shouldBe 0
+            parsed.allTimeHigh.shouldBeEqualComparingTo(BigDecimal("123456.789101112"))
         }
 
         "should parse legacy Java PortfolioSnapshot JSON accurately" {
@@ -74,22 +75,22 @@ class SerializationParityTest : StringSpec() {
             parsed shouldHaveSize 1
             val snapshot = parsed[0]
 
-            snapshot.totalValueUSD.compareTo(BigDecimal("15000.50")) shouldBe 0
-            snapshot.drawdownPercent.compareTo(BigDecimal("5.0")) shouldBe 0
-            snapshot.fiatDeploymentPercent.compareTo(BigDecimal("10.0")) shouldBe 0
-            snapshot.effectiveUsdTargetPercent.compareTo(BigDecimal("40.0")) shouldBe 0
+            snapshot.totalValueUSD.shouldBeEqualComparingTo(BigDecimal("15000.50"))
+            snapshot.drawdownPercent.shouldBeEqualComparingTo(BigDecimal("5.0"))
+            snapshot.fiatDeploymentPercent.shouldBeEqualComparingTo(BigDecimal("10.0"))
+            snapshot.effectiveUsdTargetPercent.shouldBeEqualComparingTo(BigDecimal("40.0"))
             snapshot.actions shouldHaveSize 1
             snapshot.actions[0] shouldBe "SELL 0.125 XXBTZUSD"
 
             val btcAsset = snapshot.assets[TestFixtures.XXBTZUSD]
             btcAsset?.symbol?.value shouldBe TestFixtures.XXBTZUSD
-            btcAsset?.balance?.compareTo(BigDecimal("0.5")) shouldBe 0
-            btcAsset?.price?.compareTo(BigDecimal("20000.0")) shouldBe 0
-            btcAsset?.valueUSD?.compareTo(BigDecimal("10000.0")) shouldBe 0
-            btcAsset?.targetPercent?.compareTo(BigDecimal("50.0")) shouldBe 0
-            btcAsset?.currentPercent?.compareTo(BigDecimal("66.6666")) shouldBe 0
-            btcAsset?.deviationPercent?.compareTo(BigDecimal("16.6666")) shouldBe 0
-            btcAsset?.deviationUSD?.compareTo(BigDecimal("2500.25")) shouldBe 0
+            btcAsset?.balance?.shouldBeEqualComparingTo(BigDecimal("0.5"))
+            btcAsset?.price?.shouldBeEqualComparingTo(BigDecimal("20000.0"))
+            btcAsset?.valueUSD?.shouldBeEqualComparingTo(BigDecimal("10000.0"))
+            btcAsset?.targetPercent?.shouldBeEqualComparingTo(BigDecimal("50.0"))
+            btcAsset?.currentPercent?.shouldBeEqualComparingTo(BigDecimal("66.6666"))
+            btcAsset?.deviationPercent?.shouldBeEqualComparingTo(BigDecimal("16.6666"))
+            btcAsset?.deviationUSD?.shouldBeEqualComparingTo(BigDecimal("2500.25"))
         }
 
         "history API PortfolioSnapshot DTO serializes string decimals and ISO timestamps" {

@@ -8,8 +8,7 @@ import java.math.BigDecimal
 import java.math.RoundingMode
 
 /**
- * Shared portfolio math used by [RebalancerEngine], [PortfolioManagerImpl], and
- * [PortfolioAnalyzerImpl].
+ * Shared portfolio math used by [RebalancerEngine] and [PortfolioAnalyzerImpl].
  */
 object PortfolioCalculations {
     internal const val SCALE_PERCENT = PrecisionConstants.SCALE_PERCENT
