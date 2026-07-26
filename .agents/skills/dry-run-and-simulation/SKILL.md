@@ -14,7 +14,7 @@ These flags are **independent**. Do not treat them as synonyms.
 | Flag | Shipped template / Kotlin model | Effect |
 | :--- | :--- | :--- |
 | `simulation` | `false` / defaults to `false` | `DynamicKrakenService` delegates to **`SimulatedKrakenService`** (offline emulator). When `false`, uses **`KrakenServiceImpl`** (live API). |
-| `dryRun` | `true` / required constructor value (no Kotlin default) | Within the **active** backend, order placement is suppressed and logged (`[DRY RUN]` live / `[EMULATOR DRY RUN]` sim). Calculations still run. |
+| `dryRun` | `true` / required constructor value (no Kotlin default) | Within the **active** backend, order placement is suppressed. **Server logs:** `[DRY RUN]` (live) / `[EMULATOR DRY RUN]` (sim). **Dashboard activity log** always uses `[DRY RUN]` (`ActionLogFormatter` / `ViewText.DRY_RUN_PREFIX`). Calculations still run. |
 
 ## Routing
 
