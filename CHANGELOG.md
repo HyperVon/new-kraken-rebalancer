@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.14.1] - 2026-07-26
+
+### Changed
+
+- **Health Endpoint String Centralization (`CI-14-1`)**: Replaced raw string literal `"N/A"` in `DashboardController.kt` and `DashboardControllerTest.kt` with `HealthStatusKeys.NOT_AVAILABLE` in `:common`.
+- **Engine KDoc Comments (`CI-14-2`)**: Added explicit KDoc to `RebalancerEngine.resolvePriceFromTicker` and `RebalancerEngine.calculateDrawdown` clarifying pair-alias lookup rules and scale precision.
+- **Health Route Test Assertions (`CI-14-3`)**: Updated unit test assertion in `DashboardControllerTest` to verify health status fallback values.
+
 ## [6.14.0] - 2026-07-26
 
 ### Added

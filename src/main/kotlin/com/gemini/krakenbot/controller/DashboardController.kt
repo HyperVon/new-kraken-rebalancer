@@ -281,7 +281,8 @@ class DashboardController(
                 HealthStatusKeys.UPTIME_SECONDS to ManagementFactory.getRuntimeMXBean().uptime / 1000,
                 HealthStatusKeys.TOTAL_TRADES_EXECUTED to stats.totalTradesExecuted,
                 HealthStatusKeys.TOTAL_VOLUME_TRADED to stats.totalVolumeTraded,
-                HealthStatusKeys.LAST_SNAPSHOT_TIME to (latestSnapshot?.timestamp?.toString() ?: "N/A"),
+                HealthStatusKeys.LAST_SNAPSHOT_TIME to
+                    (latestSnapshot?.timestamp?.toString() ?: HealthStatusKeys.NOT_AVAILABLE),
                 HealthStatusKeys.LAST_SNAPSHOT_TOTAL_VALUE_USD to (latestSnapshot?.totalValueUSD ?: BigDecimal.ZERO),
             )
         respondJson(responseMap)

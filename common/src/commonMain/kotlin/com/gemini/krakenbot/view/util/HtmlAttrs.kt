@@ -135,4 +135,5 @@ object HealthStatusKeys {
     const val TOTAL_VOLUME_TRADED = "totalVolumeTraded"
     const val LAST_SNAPSHOT_TIME = "lastSnapshotTime"
     const val LAST_SNAPSHOT_TOTAL_VALUE_USD = "lastSnapshotTotalValueUSD"
+    const val NOT_AVAILABLE = "N/A"
 }

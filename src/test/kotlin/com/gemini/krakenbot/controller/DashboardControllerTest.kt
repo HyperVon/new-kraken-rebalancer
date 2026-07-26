@@ -13,6 +13,7 @@ import com.gemini.krakenbot.service.TradeHistoryService
 import com.gemini.krakenbot.view.DashboardView
 import com.gemini.krakenbot.view.component.*
 import com.gemini.krakenbot.view.util.FormFields
+import com.gemini.krakenbot.view.util.HealthStatusKeys
 import com.gemini.krakenbot.view.util.HtmxHeaders
 import com.gemini.krakenbot.view.util.Routes
 import com.gemini.krakenbot.view.util.ViewText
@@ -877,7 +878,7 @@ class DashboardControllerTest : StringSpec() {
                 val response = client.get(Routes.API_HEALTH)
                 response.status shouldBe HttpStatusCode.OK
                 val body = response.bodyAsText()
-                body shouldContain "\"lastSnapshotTime\":\"N/A\""
+                body shouldContain "\"lastSnapshotTime\":\"${HealthStatusKeys.NOT_AVAILABLE}\""
                 body shouldContain "\"lastSnapshotTotalValueUSD\":0"
             }
         }

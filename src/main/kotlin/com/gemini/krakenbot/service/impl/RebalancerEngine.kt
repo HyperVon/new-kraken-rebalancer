@@ -33,6 +33,12 @@ import kotlin.math.pow
 object RebalancerEngine {
     private val log = LoggerFactory.getLogger(RebalancerEngine::class.java)
 
+    /**
+     * Resolves the USD market price for a given asset symbol from Kraken raw ticker prices.
+     * Performs an exact pair lookup first (e.g. "XXBTZUSD" or "XETHZUSD"), falling back
+     * to exact pair-alias matching via [Asset.matchesUsdQuotedPair] (e.g. "BTCUSD", "ETHUSD").
+     * Returns [BigDecimal.ZERO] if no valid price ticker is found.
+     */
     fun resolvePriceFromTicker(symbol: String, rawPrices: RawPrices): BigDecimal {
         val expectedPair = Asset.tradingPair(symbol)
         rawPrices[expectedPair]?.let { return it }
@@ -87,6 +93,11 @@ object RebalancerEngine {
         )
     }
 
+    /**
+     * Calculates the portfolio drawdown percentage relative to All-Time High (ATH).
+     * Returns a percentage scaled to [SCALE_PERCENT] using [RoundingMode.HALF_UP],
+     * or [BigDecimal.ZERO] if current value >= ATH or ATH is non-positive.
+     */
     fun calculateDrawdown(totalPortfolioValueUSD: BigDecimal, ath: BigDecimal): BigDecimal =
         if (ath > BigDecimal.ZERO && totalPortfolioValueUSD < ath) {
             val diff = ath.subtract(totalPortfolioValueUSD)
