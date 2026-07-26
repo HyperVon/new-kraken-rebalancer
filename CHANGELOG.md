@@ -8,6 +8,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **Agent PR policy**: Skills/rules require every Test plan / Verification item
+  to be completed **before** `gh pr create` — never deferred to after merge
+  (`open-pr`, OPERATING.md, `pr-verifications-before-open.mdc`).
+- **History trade-log density (#86)**: At max-width 1280px, the 9-col trade
+  table uses tighter padding/typography under `.history-trade-log` only.
+
 ### Fixed
 
 - **RateLimiter HOL blocking (#88)**: Mutex is released before throttle `delay`,
@@ -26,11 +34,6 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Layering**: `SyncMetadataKeys` moved out of `view.util` into `:common`
   model; overview grid uses `PrecisionConstants` instead of
   `service.impl.PortfolioCalculations`.
-
-### Changed
-
-- **History trade-log density (#86)**: At max-width 1280px, the 9-col trade
-  table uses tighter padding/typography under `.history-trade-log` only.
 
 ### Added
 

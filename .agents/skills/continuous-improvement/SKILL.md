@@ -254,6 +254,10 @@ Trading / algorithm touches → evaluation awareness via
 
 Fix failures before commit. Do not open a red PR.
 
+Complete **all** PR Test plan / Verification items **before** `gh pr create`
+(including UI/sim spot-checks). Never defer checks to after merge — see
+[open-pr](../open-pr/SKILL.md).
+
 ### Step 5 — Docs
 
 - `CHANGELOG.md` dated SemVer heading (never `[Unreleased]`) for user-visible or
