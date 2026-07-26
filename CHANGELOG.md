@@ -23,7 +23,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **DynamicKraken cycle/sync pin (#89)**: `withStableBackend` installs a
   coroutine-context pin used by all DynamicKraken reads/writes; rebalance
   cycles and trade-history sync wrap their full bodies so a mid-cycle
-  simulation flip cannot mix live and sim backends.
+  simulation flip cannot mix live and sim backends. Nested wraps reuse the
+  outer pin (OrderExecutor cannot shadow a cycle/sync pin).
 - **Order side normalization**: Canonical `BUY`/`SELL` via `OrderSide.normalize` /
   `isBuy`/`isSell` at trade load and local trade creation; slippage no longer
   treats unknown/lowercase sides as sells (which inverted the sign).

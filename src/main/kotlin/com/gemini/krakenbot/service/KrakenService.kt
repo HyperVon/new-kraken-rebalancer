@@ -29,9 +29,11 @@ interface KrakenService {
     suspend fun getOHLC(pair: String, interval: Int = 1440, since: Long? = null): List<Pair<Long, BigDecimal>>
 
     /**
-     * Runs [block] with a stable backend selection passed as the receiver argument.
-     * Default passes `this`. [DynamicKrakenService] resolves live vs simulation once at entry
-     * so concurrent cycles cannot share a process-global pin.
+     * Runs [block] with a stable backend selection passed as the argument.
+     * Default passes `this`. [DynamicKrakenService] pins live vs simulation in the
+     * coroutine context at top-level entry; nested calls reuse the outer pin so a
+     * mid-cycle `simulation` flip cannot mix backends. Concurrent top-level calls
+     * each capture their own entry-time backend.
      */
     suspend fun <T> withStableBackend(block: suspend (KrakenService) -> T): T = block(this)
 }

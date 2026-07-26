@@ -98,7 +98,7 @@ class PortfolioManagerImpl(
                 else -> performRebalanceCyclePinned()
             }
         } finally {
-            MDC.remove("cycleId")
+            MDC.remove(CYCLE_ID_MDC_KEY)
         }
     }
 
