@@ -99,7 +99,8 @@ view/*      →  :common view utils, wire DTOs/models for display, Settings;
 service/impl → service ports, repository ports, util, :common models/config
 RebalancerEngine / PortfolioCalculations → service domain types (AnalysisResult,
   AssetPrices, …), sibling calculations, :common config/models/util/ViewText,
-  logging — no repository, no KrakenService, no Ktor, no Koin
+  JVM util helpers that are non-I/O (toUsdScale / resolveBalance /
+  ActionLogFormatter), logging — no repository, no KrakenService, no Ktor, no Koin
 repository/impl → Exposed, util (safeTransaction*), models
 :common     →  nothing JVM/JS-specific
 frontend-js →  DOM/Chart.js + :common Ids/text (no JVM services)

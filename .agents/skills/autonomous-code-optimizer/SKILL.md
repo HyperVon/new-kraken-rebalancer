@@ -73,7 +73,9 @@ simplicity.”
    `isLocalOrPrivateOrigin`; never widen to `*` while cleaning config.
 7. **Pure core, impure shell** — Push decisions that need tests without I/O into
    `RebalancerEngine` / `PortfolioCalculations`; keep I/O at analyzer, executor,
-   repositories.
+   repositories. “Pure” here means no network/DB/Koin/Ktor — logging, `:common`
+   `ViewText`, and non-I/O JVM util helpers are allowed (see
+   [architecture-patterns.md](architecture-patterns.md)).
 8. **Prefer delete + extract over abstract** — Remove dead code and extract
    duplication *within a layer*. Do not introduce frameworks, new DI scopes, or
    generic “BaseService” hierarchies.
@@ -124,8 +126,10 @@ layer graph, refactor decision rules, DI shape). Then audit:
    orchestrator/brain/brawn, SSR composition, hot/cold flows still intact.
 2. **Layering** — Run the dependency-direction rg scans; fix violations by
    moving code to the correct layer (not by widening imports).
-3. **SRP do-nots** — Match the code-review table; fix by moving methods, not by
-   renaming only.
+3. **SRP do-nots** — Match the orchestrator/brain/brawn and do-not rules in
+   [architecture-patterns.md](architecture-patterns.md) (and the code-review
+   do-not table for money-path types); fix by moving methods, not by renaming
+   only. Prefer the architecture-patterns layer graph when the two differ.
 4. **Fail-closed & modes** — Settle abort, price abort, `dryRun`≠`simulation`,
    `cl_ord_id` path unchanged by cleanup.
 5. **Persistence** — `safeTransaction` / `safeTransactionIO`; no controller SQL.
