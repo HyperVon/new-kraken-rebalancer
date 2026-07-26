@@ -10,3 +10,6 @@ val PrecisionConstants.FEE_RATE_ESTIMATE: BigDecimal
 
 val PrecisionConstants.HUNDRED: BigDecimal
     get() = BigDecimal.valueOf(HUNDRED_INT.toLong())
+
+val PrecisionConstants.ALLOCATION_TOLERANCE: BigDecimal
+    get() = BigDecimal.valueOf(ALLOCATION_TOLERANCE_DELTA)

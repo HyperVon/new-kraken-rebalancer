@@ -2,7 +2,8 @@ package com.gemini.krakenbot.view.component
 
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.PortfolioSnapshot
-import com.gemini.krakenbot.service.impl.PortfolioCalculations.HUNDRED
+import com.gemini.krakenbot.util.ALLOCATION_TOLERANCE
+import com.gemini.krakenbot.util.HUNDRED
 import com.gemini.krakenbot.util.PrecisionConstants
 import com.gemini.krakenbot.view.util.ChartProps
 import com.gemini.krakenbot.view.util.CssClass
@@ -109,10 +110,7 @@ class OverviewGridComponent {
                 val devSign = Formatter.getDeviationSign(dev)
                 div(CssClass.Hero.TileMeta) {
                     +"${ViewText.TARGET_PREFIX}${Formatter.formatPercent(targetPct)}%"
-                    if (
-                        (targetPct - baseTargetPct).abs() >
-                        BigDecimal.valueOf(PrecisionConstants.ALLOCATION_TOLERANCE_DELTA)
-                    ) {
+                    if ((targetPct - baseTargetPct).abs() > PrecisionConstants.ALLOCATION_TOLERANCE) {
                         +" (${ViewText.BASE_PREFIX}${Formatter.formatPercent(baseTargetPct)}%)"
                     }
                     +" | "
@@ -145,7 +143,7 @@ class OverviewGridComponent {
     }
 
     private fun DIV.renderTileBar(percent: BigDecimal, color: String) {
-        val pct = percent.max(BigDecimal.ZERO).min(HUNDRED).setScale(2, RoundingMode.HALF_UP)
+        val pct = percent.max(BigDecimal.ZERO).min(PrecisionConstants.HUNDRED).setScale(2, RoundingMode.HALF_UP)
         div(CssClass.Hero.TileBarRow) {
             div(CssClass.Hero.TileBarTrack) {
                 div(CssClass.Hero.TileBarFill) {
@@ -175,7 +173,7 @@ class OverviewGridComponent {
             if (base.signum() == 0) return null
             return (latest.totalValueUSD - base)
                 .divide(base, 6, RoundingMode.HALF_UP)
-                .multiply(HUNDRED)
+                .multiply(PrecisionConstants.HUNDRED)
         }
 
         /** Inline SVG sparkline of total portfolio value; empty when too few points. */

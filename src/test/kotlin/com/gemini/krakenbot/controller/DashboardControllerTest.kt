@@ -394,7 +394,7 @@ class DashboardControllerTest : StringSpec() {
             }
         }
 
-        "postSettings_WithMissingOrInvalidParams_UsesDefaultsAndHandlesValidation" {
+        "postSettings_WithInvalidDeviationTrigger_RejectsWithoutUpdatingConfig" {
             val serverConfig =
                 AppConfig(
                     kraken =
@@ -420,13 +420,7 @@ class DashboardControllerTest : StringSpec() {
                     ),
                 )
             every { configService.getConfig() } returns serverConfig
-            val capturedConfig = slot<AppConfig>()
-            every {
-                configService.updateConfig(capture(capturedConfig))
-            } throws
-                InvalidConfigurationException(
-                    "Mocked validation error",
-                )
+            every { configService.updateConfig(any()) } returns Unit
 
             testApplication {
                 application {
@@ -438,10 +432,9 @@ class DashboardControllerTest : StringSpec() {
                             parametersOf(
                                 FormFields.LOOP_DELAY_SECONDS to listOf(TestFixtures.INVALID),
                                 FormFields.DEVIATION_TRIGGER_PERCENT to listOf(TestFixtures.INVALID),
-                                FormFields.DUST_THRESHOLD_USD to listOf(TestFixtures.INVALID),
+                                FormFields.DUST_THRESHOLD_USD to listOf("5.0"),
                                 FormFields.FIAT_MAX_DRAWDOWN to listOf(TestFixtures.INVALID),
                                 FormFields.FIAT_DEPLOYMENT_EXPONENT to listOf(TestFixtures.INVALID),
-                                // "dryRun" is absent, meaning false
                                 FormFields.SYMBOLS to
                                     listOf(
                                         Asset.BTC,
@@ -456,25 +449,117 @@ class DashboardControllerTest : StringSpec() {
                         )
                     }
                 response.status shouldBe HttpStatusCode.OK
-                response.bodyAsText() shouldContain "Mocked validation error"
+                response.bodyAsText() shouldContain ViewText.INVALID_DEVIATION_TRIGGER
             }
 
-            capturedConfig.captured.settings.loopDelaySeconds shouldBe 60L
-            capturedConfig.captured.settings.deviationTriggerPercent shouldBe 5.0
-            capturedConfig.captured.settings.dustThresholdUSD shouldBe 5.0
-            capturedConfig.captured.settings.dryRun shouldBe false
-            capturedConfig.captured.settings.fiatMaxDrawdown shouldBe 0.0
-            capturedConfig.captured.settings.fiatDeploymentExponent shouldBe 1.0
-            capturedConfig.captured.allocations.size shouldBe 2
-            capturedConfig.captured.allocations[0]
-                .symbol.value shouldBe Asset.BTC
-            capturedConfig.captured.allocations[0].targetPercent shouldBe 0.0
-            capturedConfig.captured.allocations[1]
-                .symbol.value shouldBe Asset.ETH
-            capturedConfig.captured.allocations[1].targetPercent shouldBe 30.0
+            verify(exactly = 0) { configService.updateConfig(any()) }
         }
 
-        "postSettings_WithAbsentParamsAndNullErrorMessage_UsesDefaultsAndFallbackMessage" {
+        "postSettings_WithInvalidDustThreshold_RejectsWithoutUpdatingConfig" {
+            val serverConfig =
+                AppConfig(
+                    kraken =
+                    KrakenCredentials(
+                        apiKey = TestFixtures.TEST_SERVER_API_KEY,
+                        privateKey = TestFixtures.TEST_SERVER_API_SECRET,
+                    ),
+                    settings =
+                    Settings(
+                        loopDelaySeconds = 60L,
+                        deviationTriggerPercent = 2.0,
+                        dustThresholdUSD = 1.0,
+                        dryRun = true,
+                        fiatMaxDrawdown = 0.0,
+                        fiatDeploymentExponent = 1.0,
+                    ),
+                    allocations =
+                    listOf(
+                        Allocation(
+                            symbol = Asset.USD,
+                            targetPercent = 100.0,
+                        ),
+                    ),
+                )
+            every { configService.getConfig() } returns serverConfig
+            every { configService.updateConfig(any()) } returns Unit
+
+            testApplication {
+                application {
+                    configureTestEnv()
+                }
+                val response =
+                    client.post(Routes.SETTINGS) {
+                        setBody(
+                            parametersOf(
+                                FormFields.LOOP_DELAY_SECONDS to listOf("60"),
+                                FormFields.DEVIATION_TRIGGER_PERCENT to listOf("5.0"),
+                                FormFields.DUST_THRESHOLD_USD to listOf(TestFixtures.INVALID),
+                                FormFields.SYMBOLS to listOf(Asset.USD),
+                                FormFields.TARGETS to listOf("100.0"),
+                            ).formUrlEncode(),
+                        )
+                        header(
+                            HttpHeaders.ContentType,
+                            ContentType.Application.FormUrlEncoded.toString(),
+                        )
+                    }
+                response.status shouldBe HttpStatusCode.OK
+                response.bodyAsText() shouldContain ViewText.INVALID_DUST_THRESHOLD
+            }
+
+            verify(exactly = 0) { configService.updateConfig(any()) }
+        }
+
+        "postSettings_WithAbsentDeviationAndDust_RejectsWithoutUpdatingConfig" {
+            val serverConfig =
+                AppConfig(
+                    kraken =
+                    KrakenCredentials(
+                        apiKey = TestFixtures.TEST_SERVER_API_KEY,
+                        privateKey = TestFixtures.TEST_SERVER_API_SECRET,
+                    ),
+                    settings =
+                    Settings(
+                        loopDelaySeconds = 60L,
+                        deviationTriggerPercent = 2.0,
+                        dustThresholdUSD = 1.0,
+                        dryRun = true,
+                        fiatMaxDrawdown = 0.0,
+                        fiatDeploymentExponent = 1.0,
+                    ),
+                    allocations =
+                    listOf(
+                        Allocation(
+                            symbol = Asset.USD,
+                            targetPercent = 100.0,
+                        ),
+                    ),
+                )
+            every { configService.getConfig() } returns serverConfig
+            every { configService.updateConfig(any()) } returns Unit
+
+            testApplication {
+                application {
+                    configureTestEnv()
+                }
+                val response =
+                    client.post(Routes.SETTINGS) {
+                        setBody(
+                            parametersOf().formUrlEncode(),
+                        )
+                        header(
+                            HttpHeaders.ContentType,
+                            ContentType.Application.FormUrlEncoded.toString(),
+                        )
+                    }
+                response.status shouldBe HttpStatusCode.OK
+                response.bodyAsText() shouldContain ViewText.INVALID_DEVIATION_TRIGGER
+            }
+
+            verify(exactly = 0) { configService.updateConfig(any()) }
+        }
+
+        "postSettings_WithValidatableConfigError_UsesFallbackMessageWhenNull" {
             val serverConfig =
                 AppConfig(
                     kraken =
@@ -515,7 +600,13 @@ class DashboardControllerTest : StringSpec() {
                 val response =
                     client.post(Routes.SETTINGS) {
                         setBody(
-                            parametersOf().formUrlEncode(),
+                            parametersOf(
+                                FormFields.LOOP_DELAY_SECONDS to listOf("60"),
+                                FormFields.DEVIATION_TRIGGER_PERCENT to listOf("5.0"),
+                                FormFields.DUST_THRESHOLD_USD to listOf("5.0"),
+                                FormFields.SYMBOLS to listOf(Asset.USD),
+                                FormFields.TARGETS to listOf("100.0"),
+                            ).formUrlEncode(),
                         )
                         header(
                             HttpHeaders.ContentType,
@@ -523,16 +614,11 @@ class DashboardControllerTest : StringSpec() {
                         )
                     }
                 response.status shouldBe HttpStatusCode.OK
-                response.bodyAsText() shouldContain "Invalid configuration"
+                response.bodyAsText() shouldContain ViewText.INVALID_CONFIGURATION_FALLBACK
             }
 
-            capturedConfig.captured.settings.loopDelaySeconds shouldBe 60L
             capturedConfig.captured.settings.deviationTriggerPercent shouldBe 5.0
             capturedConfig.captured.settings.dustThresholdUSD shouldBe 5.0
-            capturedConfig.captured.settings.dryRun shouldBe false
-            capturedConfig.captured.settings.fiatMaxDrawdown shouldBe 0.0
-            capturedConfig.captured.settings.fiatDeploymentExponent shouldBe 1.0
-            capturedConfig.captured.allocations shouldBe emptyList()
         }
 
         "sseStatusStream_EmitsInitialAndFlowSnapshots" {

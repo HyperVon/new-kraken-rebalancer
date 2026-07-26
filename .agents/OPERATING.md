@@ -20,7 +20,9 @@ For tasks that match a skill in `.agents/skills/*/SKILL.md` or the index in
 | User intent | Skill |
 | :--- | :--- |
 | Commit / push | `commit-and-push` |
-| Open PR | `open-pr` |
+| Open PR | `open-pr` (+ mandatory `adversarial-pr-review`) |
+| Push updating an open PR | `commit-and-push` → `adversarial-pr-review` |
+| Adversarial / multi-model PR review | `adversarial-pr-review` |
 | UI click-through QA | `ui-manual-qa` |
 | UI visual critique / implement | `ui-visual-review` / `ui-visual-implement` |
 | Docs screenshots | `docs-screenshot-refresh` |

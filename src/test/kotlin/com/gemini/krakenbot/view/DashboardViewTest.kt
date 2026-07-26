@@ -8,6 +8,7 @@ import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.view.component.*
+import com.gemini.krakenbot.view.util.CdnUrls
 import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.FormFields.DEVIATION_TRIGGER_PERCENT
 import com.gemini.krakenbot.view.util.FormFields.DUST_THRESHOLD_USD
@@ -15,6 +16,7 @@ import com.gemini.krakenbot.view.util.FormFields.FIAT_DEPLOYMENT_EXPONENT
 import com.gemini.krakenbot.view.util.FormFields.FIAT_MAX_DRAWDOWN
 import com.gemini.krakenbot.view.util.FormFields.LOOP_DELAY_SECONDS
 import com.gemini.krakenbot.view.util.FormFields.TARGETS
+import com.gemini.krakenbot.view.util.HtmlIds
 import com.gemini.krakenbot.view.util.Icons
 import com.gemini.krakenbot.view.util.Routes.API_STATUS_STREAM
 import com.gemini.krakenbot.view.util.Routes.STATIC_STYLE_CSS
@@ -110,12 +112,12 @@ class DashboardViewTest : StringSpec() {
             val html = createHTML().html { view.renderDashboardShell(baseConfig.settings) }
             html shouldContain "title>${APP_TITLE}"
             html shouldContain "link href=\"${STATIC_STYLE_CSS}?v="
-            html shouldContain "script src=\"https://unpkg.com/htmx.org@2.0.4\""
+            html shouldContain "script src=\"${CdnUrls.HTMX}\""
             html shouldContain "hx-ext=\"sse\""
             html shouldContain "sse-connect=\"${API_STATUS_STREAM}\""
             html shouldContain CONNECTING
             html shouldContain MODE_DRY_RUN
-            html shouldContain "id=\"header-status\""
+            html shouldContain "id=\"${HtmlIds.HEADER_STATUS}\""
             html shouldContain STREAM
         }
 

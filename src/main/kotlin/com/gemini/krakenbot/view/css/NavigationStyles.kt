@@ -383,52 +383,6 @@ object NavigationStyles {
             borderRadius = CssTheme.radiusPill
         }
 
-        // Recent Activity & Deviations
-        ".${CssClass.Activity.EmptyText}" {
-            color = CssTheme.colorTextMuted
-            fontStyle = FontStyle.italic
-            display = Display.flex
-            alignItems = Align.center
-            gap = 0.5.rem
-        }
-
-        ".${CssClass.Activity.DotMarker}" {
-            width = 0.375.rem
-            height = 0.375.rem
-            borderRadius = 50.pct
-            backgroundColor = CssTheme.colorTextMuted
-        }
-
-        ".${CssClass.Activity.RowContainer}" {
-            display = Display.flex
-            alignItems = Align.flexStart
-            gap = 0.75.rem
-        }
-
-        "tr.${CssClass.Activity.RowTrade.value} td" {
-            paddingTop = 0.85.rem
-            paddingBottom = 0.85.rem
-        }
-
-        "tr.${CssClass.Activity.RowInfo.value} td" {
-            paddingTop = 0.55.rem
-            paddingBottom = 0.55.rem
-            opacity = 0.85
-        }
-
-        ".${CssClass.Activity.Message}" {
-            fontWeight = FontWeight.w600
-            color = CssTheme.colorTextPrimary
-            put("line-height", "1.35")
-        }
-
-        ".${CssClass.Activity.MessageMuted}" {
-            fontWeight = FontWeight.w400
-            color = CssTheme.colorTextSecondary
-            fontSize = 0.8125.rem
-            put("line-height", "1.35")
-        }
-
         ".${CssClass.Performance.DevContainer}" {
             display = Display.flex
             flexDirection = FlexDirection.column

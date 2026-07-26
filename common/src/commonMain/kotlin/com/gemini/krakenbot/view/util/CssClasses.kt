@@ -82,7 +82,6 @@ sealed class CssClass(open val value: String) {
         object Badge : StatusCard("status-badge")
         object Live : StatusCard("status-badge live")
         object Delayed : StatusCard("status-badge delayed")
-        object Offline : StatusCard("status-badge offline")
     }
 
     // Table Styling
@@ -167,13 +166,6 @@ sealed class CssClass(open val value: String) {
 
     // Activity & History
     sealed class Activity(override val value: String) : CssClass(value) {
-        object EmptyText : Activity("recent-activity-empty-text")
-        object DotMarker : Activity("recent-activity-dot-marker")
-        object RowContainer : Activity("recent-activity-row-container")
-        object RowTrade : Activity("recent-activity-row-trade")
-        object RowInfo : Activity("recent-activity-row-info")
-        object Message : Activity("recent-activity-message")
-        object MessageMuted : Activity("recent-activity-message-muted")
         object EmptyHistoryBox : Activity("empty-history-box")
 
         // DASH-3: cycle-grouped activity feed
@@ -186,7 +178,6 @@ sealed class CssClass(open val value: String) {
         object Item : Activity("activity-item")
         object ItemTrade : Activity("activity-item trade")
         object ItemText : Activity("activity-item-text")
-        object NoopSummary : Activity("activity-noop-summary")
         object FeedFooter : Activity("activity-feed-footer")
         object ViewAll : Activity("activity-view-all")
     }
@@ -242,8 +233,6 @@ sealed class CssClass(open val value: String) {
         object ChartTools : History("history-chart-tools")
         object ChartHeader : History("history-chart-header")
         object ChartHeaderTitle : History("history-chart-header-title")
-        object ChartLegend : History("history-chart-legend")
-        object ChartLegendItem : History("history-chart-legend-item")
         object ZoomBtn : History("history-zoom-btn")
         object ChartContainer : History("chart-container")
         object ChartCaption : History("history-chart-caption")

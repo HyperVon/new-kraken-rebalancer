@@ -6,6 +6,7 @@ import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.InvalidConfigurationException
 import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.PortfolioSnapshot
+import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.model.TimeRange
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.TradeHistoryService
@@ -17,7 +18,6 @@ import com.gemini.krakenbot.view.util.HealthStatusKeys
 import com.gemini.krakenbot.view.util.HtmxHeaders
 import com.gemini.krakenbot.view.util.QueryParamKeys
 import com.gemini.krakenbot.view.util.Routes
-import com.gemini.krakenbot.view.util.SyncMetadataKeys
 import com.gemini.krakenbot.view.util.ViewText
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
@@ -118,12 +118,22 @@ class DashboardController(
 
     private suspend fun RoutingContext.handlePostSettings() {
         val params = call.receiveParameters()
+        val currentConfig = configService.getConfig()
+
+        val deviationTriggerPercent =
+            params[FormFields.DEVIATION_TRIGGER_PERCENT]?.toDoubleOrNull()
+        if (deviationTriggerPercent == null) {
+            respondSettingsFormError(currentConfig, ViewText.INVALID_DEVIATION_TRIGGER)
+            return
+        }
+        val dustThresholdUSD = params[FormFields.DUST_THRESHOLD_USD]?.toDoubleOrNull()
+        if (dustThresholdUSD == null) {
+            respondSettingsFormError(currentConfig, ViewText.INVALID_DUST_THRESHOLD)
+            return
+        }
+
         val loopDelaySeconds =
             params[FormFields.LOOP_DELAY_SECONDS]?.toLongOrNull() ?: 60L
-        val deviationTriggerPercent =
-            params[FormFields.DEVIATION_TRIGGER_PERCENT]?.toDoubleOrNull() ?: 5.0
-        val dustThresholdUSD =
-            params[FormFields.DUST_THRESHOLD_USD]?.toDoubleOrNull() ?: 5.0
         val dryRun = params[FormFields.DRY_RUN] != null
         val simulation = params[FormFields.SIMULATION] != null
         val fiatMaxDrawdown =
@@ -139,7 +149,6 @@ class DashboardController(
                 Allocation(symbol, targetStr.toDoubleOrNull() ?: 0.0)
             }
 
-        val currentConfig = configService.getConfig()
         val updatedConfig =
             AppConfig(
                 kraken = currentConfig.kraken,
@@ -161,16 +170,19 @@ class DashboardController(
             call.response.header(HtmxHeaders.HX_REDIRECT, Routes.ROOT)
             call.respond(HttpStatusCode.OK)
         } catch (e: InvalidConfigurationException) {
-            val errHtml =
-                createHTML(prettyPrint = false).div {
-                    dashboardView.renderSettingsFormFragment(
-                        this,
-                        updatedConfig,
-                        e.message ?: "Invalid configuration",
-                    )
-                }
-            call.respondText(errHtml, ContentType.Text.Html)
+            respondSettingsFormError(
+                updatedConfig,
+                e.message ?: ViewText.INVALID_CONFIGURATION_FALLBACK,
+            )
         }
+    }
+
+    private suspend fun RoutingContext.respondSettingsFormError(config: AppConfig, message: String) {
+        val errHtml =
+            createHTML(prettyPrint = false).div {
+                dashboardView.renderSettingsFormFragment(this, config, message)
+            }
+        call.respondText(errHtml, ContentType.Text.Html)
     }
 
     private suspend fun RoutingContext.handleGetDashboardFragment() {

@@ -3,6 +3,7 @@ package com.gemini.krakenbot.frontend
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.TimeRange
+import com.gemini.krakenbot.model.TradeSourceKeys
 import com.gemini.krakenbot.util.PrecisionConstants
 import com.gemini.krakenbot.view.util.ChartProps
 import com.gemini.krakenbot.view.util.CssClass
@@ -184,7 +185,7 @@ class HistoryTest : StringSpec() {
                             price = 50000.0,
                             fee = 13.0,
                             slippagePercent = 0.5,
-                            source = "LOCAL_ESTIMATE",
+                            source = TradeSourceKeys.LOCAL_ESTIMATE,
                         ),
                         TestDomBuilders.tradeJson(
                             side = OrderSide.SELL.name,
@@ -202,6 +203,24 @@ class HistoryTest : StringSpec() {
                 tbody.innerHTML shouldContain "badge-slippage-adverse"
                 tbody.innerHTML shouldContain ViewText.EM_DASH
                 tbody.innerHTML shouldContain ViewText.TRADE_FAILED_TITLE_PREFIX + "Insufficient funds"
+            } finally {
+                document.body!!.removeChild(container)
+            }
+        }
+
+        "renderTradeTable maps lowercase buy side to buy badge" {
+            val container = document.createElement(HtmlTags.DIV)
+            container.innerHTML = TestDomBuilders.tradeTableDom()
+            document.body!!.appendChild(container)
+
+            try {
+                renderTradeTable(
+                    arrayOf(
+                        TestDomBuilders.tradeJson(side = OrderSide.BUY.apiValue),
+                    ),
+                )
+                val tbody = document.getElementById(HtmlIds.TRADE_TABLE_BODY) as HTMLTableSectionElement
+                tbody.innerHTML shouldContain "badge-buy"
             } finally {
                 document.body!!.removeChild(container)
             }

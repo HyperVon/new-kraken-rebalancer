@@ -33,14 +33,6 @@ object ComponentStyles {
             borderColor = CssTheme.colorWarningBorder
         }
 
-        ".${CssClass.StatusCard.Badge}.offline" {
-            backgroundColor = CssTheme.colorSlateMuted
-            color = CssTheme.colorTextSecondary
-            borderWidth = 1.px
-            borderStyle = BorderStyle.solid
-            borderColor = CssTheme.colorSlateBorder
-        }
-
         ".${CssClass.Form.AllocationTotal}" {
             display = Display.inlineFlex
             alignItems = Align.center
@@ -543,7 +535,7 @@ object ComponentStyles {
             borderTopColor = CssTheme.colorBorderFaint
         }
 
-        ".activity-item.trade" {
+        "${CssClass.Activity.ItemTrade.querySelector}" {
             paddingLeft = 0.625.rem
             borderLeftWidth = 3.px
             borderLeftStyle = BorderStyle.solid
@@ -557,20 +549,13 @@ object ComponentStyles {
             put("line-height", "1.35")
         }
 
-        ".activity-item .${CssClass.Activity.ItemText.value}" {
+        "${CssClass.Activity.Item.querySelector} .${CssClass.Activity.ItemText.value}" {
             color = CssTheme.colorTextSecondary
         }
 
-        ".activity-item.trade .${CssClass.Activity.ItemText.value}" {
+        "${CssClass.Activity.ItemTrade.querySelector} .${CssClass.Activity.ItemText.value}" {
             color = CssTheme.colorTextPrimary
             fontWeight = FontWeight.w600
-        }
-
-        ".${CssClass.Activity.NoopSummary.value}" {
-            fontSize = 0.8125.rem
-            color = CssTheme.colorTextMuted
-            fontStyle = FontStyle.italic
-            padding = Padding(0.375.rem, 0.px)
         }
 
         ".${CssClass.Activity.FeedFooter.value}" {

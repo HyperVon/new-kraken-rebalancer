@@ -2,6 +2,7 @@ package com.gemini.krakenbot.repository.impl
 
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.PortfolioSnapshot
+import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.model.TradeSource
 import com.gemini.krakenbot.repository.TradeRepository
@@ -39,8 +40,6 @@ import org.slf4j.LoggerFactory
 import java.math.BigDecimal
 import java.math.RoundingMode
 import java.time.Instant
-
-private const val HISTORY_SEEDED = "history_seeded"
 
 class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepository {
     private val log =
@@ -369,10 +368,10 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
             }
     }
 
-    override suspend fun isHistorySeeded(): Boolean = getSyncMetadata(HISTORY_SEEDED) == "true"
+    override suspend fun isHistorySeeded(): Boolean = getSyncMetadata(SyncMetadataKeys.HISTORY_SEEDED) == "true"
 
     override suspend fun setHistorySeeded(seeded: Boolean) {
-        setSyncMetadata(HISTORY_SEEDED, seeded.toString())
+        setSyncMetadata(SyncMetadataKeys.HISTORY_SEEDED, seeded.toString())
     }
 
     override suspend fun getSyncMetadata(key: String): String? = database.readTransactionIO {

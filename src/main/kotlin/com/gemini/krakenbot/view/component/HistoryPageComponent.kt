@@ -4,6 +4,7 @@ import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.TimeRange
 import com.gemini.krakenbot.util.PrecisionConstants
 import com.gemini.krakenbot.view.util.ActiveNav
+import com.gemini.krakenbot.view.util.CdnUrls
 import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.HtmlAttrs
 import com.gemini.krakenbot.view.util.HtmlIds
@@ -34,10 +35,10 @@ class HistoryPageComponent {
         html.head {
             commonMetadataAndStyles()
             title("${ViewText.HISTORY_TITLE} - ${ViewText.APP_TITLE}")
-            script(src = CDN_CHART_JS) {}
-            script(src = CDN_CHART_JS_DATE_FNS) {}
-            script(src = CDN_HAMMER_JS) {}
-            script(src = CDN_CHART_JS_ZOOM) {}
+            script(src = CdnUrls.CHART_JS) {}
+            script(src = CdnUrls.CHART_JS_DATE_FNS) {}
+            script(src = CdnUrls.HAMMER_JS) {}
+            script(src = CdnUrls.CHART_JS_ZOOM) {}
         }
         html.body {
             div(CssClass.Layout.Container) {
@@ -238,15 +239,6 @@ class HistoryPageComponent {
                 }
             }
         }
-    }
-
-    private companion object {
-        const val CDN_CHART_JS = "https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"
-        const val CDN_CHART_JS_DATE_FNS =
-            "https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"
-        const val CDN_HAMMER_JS = "https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js"
-        const val CDN_CHART_JS_ZOOM =
-            "https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.2.0/dist/chartjs-plugin-zoom.min.js"
     }
 }
 

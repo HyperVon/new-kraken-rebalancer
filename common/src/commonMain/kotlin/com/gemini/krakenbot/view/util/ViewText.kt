@@ -164,6 +164,11 @@ object ViewText {
     const val NO_TRADES_FOUND_PERIOD = "No trades found for this period."
     const val INVALID_SYMBOL_ALERT = "Invalid symbol. Symbols must be alphanumeric and up to 16 characters."
     const val SYMBOL_EXISTS_ALERT = "Symbol already exists"
+    const val INVALID_DEVIATION_TRIGGER =
+        "Deviation trigger percent is required and must be a valid number."
+    const val INVALID_DUST_THRESHOLD =
+        "Dust threshold USD is required and must be a valid number."
+    const val INVALID_CONFIGURATION_FALLBACK = "Invalid configuration"
 }
 
 /** Built-in History view preset identifiers (localStorage). */
