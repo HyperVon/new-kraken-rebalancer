@@ -44,8 +44,9 @@ covers a snapshot emitted between the DB read and subscribe).
 
 ### Paginated sync / USD settle (cold)
 
-- `TradeHistorySyncService.getTradeHistoryPaginated()` — `emit` suspends for
-  backpressure (invoked from the façade `syncTradesFromKraken()`).
+- `TradeHistorySyncService` paginated Kraken history fetch (private cold
+  `getTradeHistoryPaginated()`; invoked from the façade
+  `syncTradesFromKraken()`).
 - `settleUsdAfterSells()` — only when **≥1 sell succeeded** and **not** dry-run:
   - **Primary:** `pollFillConfirmedUsd()` → `sumMatchedSellProceeds()` (history
     matched by sell `ordertxid`, **net of fee**, up to 5×50 pages) → balance peek

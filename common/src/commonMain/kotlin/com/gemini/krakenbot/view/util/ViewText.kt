@@ -66,7 +66,8 @@ object ViewText {
     const val MODE_DRY_RUN = "DRY RUN"
     const val MODE_LIVE = "LIVE TRADING"
     const val MODE_SIMULATION_TITLE = "Simulation mode — no real orders are placed"
-    const val MODE_DRY_RUN_TITLE = "Dry run — real orders are validated but not submitted"
+    const val MODE_DRY_RUN_TITLE =
+        "Dry run — intended orders calculated but not placed (live or emulator)"
     const val MODE_LIVE_TITLE = "Live trading — real orders execute with real funds"
     const val NO_USD_DATA = "No USD Data"
     const val TARGET_PREFIX = "Target: "

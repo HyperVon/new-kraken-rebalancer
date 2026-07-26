@@ -377,7 +377,7 @@ two complementary `SharedFlow` channels:
 #### Config Hot-Reload Loop Restart (not SSE)
 
 This path is internal orchestration — not a second browser-facing SSE stream like
-`snapshotFlow` above.
+`TradeHistorySnapshotStore.snapshotFlow` above.
 
 1. **Config `SharedFlow`**: `ConfigServiceImpl` maintains a hot
    `MutableSharedFlow<Settings>` (`replay=1`) that emits when settings are saved
