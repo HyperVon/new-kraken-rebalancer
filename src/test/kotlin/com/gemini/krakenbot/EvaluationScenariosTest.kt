@@ -1419,7 +1419,7 @@ class EvaluationScenariosTest : StringSpec() {
             }
         }
 
-        "Scenario 14: Config File Hot-Reload and Watcher Integration" {
+        "Scenario 14: Config File Hot-Reload via loadConfig()" {
             runTest {
                 val mapper = jacksonObjectMapper()
                 val tempFile = File.createTempFile("scenario14-", ".json").apply { deleteOnExit() }

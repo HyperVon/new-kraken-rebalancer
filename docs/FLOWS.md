@@ -29,13 +29,13 @@ flowchart TB
     end
 
     subgraph Ktor["⚡ Ktor HTTP Server"]
-        DashRoute["DashboardRoutes\nhandleSseStream()"]
-        ConfigRoute["Config Endpoint\nupdateConfig()"]
+        DashCtrl["DashboardController\nhandleSseStream()"]
+        SettingsPost["DashboardController\nhandlePostSettings()"]
     end
 
     subgraph Core["🔄 Core Application Logic"]
         PM["PortfolioManagerImpl\nrunLoop()"]
-        OE["OrderExecutorImpl\nrefreshUsdBalanceAfterSells()"]
+        OE["OrderExecutorImpl\npollUsdBalanceAfterSells()"]
     end
 
     subgraph Services["📦 Services"]
@@ -52,8 +52,8 @@ flowchart TB
     end
 
     %% Config flow path
-    Settings -->|"HTTP POST /settings"| ConfigRoute
-    ConfigRoute -->|"updateConfig()"| CS
+    Settings -->|"HTTP POST /settings"| SettingsPost
+    SettingsPost -->|"updateConfig()"| CS
     CS -->|"HOT: tryEmit(settings)\nalways succeeds synchronously"| CS
     CS -->|"watchConfigChanges()\ncollectLatest { settings → }"| PM
 
@@ -61,24 +61,24 @@ flowchart TB
     PM -->|"loop delay\nsettings.loopDelaySeconds"| PM
     PM -->|"performRebalanceCycle()"| OE
     OE -->|"place buy/sell orders"| Kraken
-    OE -->|"COLD pollUsdBalanceAfterSells()\n.last() — best of ≤3 / early ≥95%"| Kraken
+    OE -->|"COLD pollUsdBalanceAfterSells()\n.last() — best of 3 polls / early at 95 pct"| Kraken
 
     %% Snapshot emission
     PM -->|"addSnapshot(snapshot)"| THS
     THS -->|"saveSnapshot()"| Repo
     THS -->|"HOT: tryEmit(snapshot)\nalways succeeds synchronously"| THS
-    THS -->|"getHistoryFlow()\ncollect { snapshot → }"| DashRoute
-    DashRoute -->|"send(ServerSentEvent)"| SSE
+    THS -->|"getHistoryFlow()\ncollect { snapshot → }"| DashCtrl
+    DashCtrl -->|"send(ServerSentEvent)"| SSE
 
-    %% Paginated sync
-    PM -->|"syncTradesFromKraken()"| THS
+    %% Paginated sync (attempted every cycle; 300s throttle inside THS)
+    PM -->|"syncTradesFromKraken()\neach cycle"| THS
     THS -->|"COLD getTradeHistoryPaginated()\n.collect { page → }\nemit() suspends until collector ready"| Kraken
     Kraken -->|"pages of TradeRecord"| THS
     THS -->|"reconcile & save"| Repo
 
     %% Dashboard initial load
-    SSE -->|"SSE connect /api/status/stream"| DashRoute
-    DashRoute -->|"getLatestSnapshot()"| Repo
+    SSE -->|"SSE connect /api/status/stream"| DashCtrl
+    DashCtrl -->|"getLatestSnapshot()"| Repo
 
     classDef hot fill:#1a3a5c,stroke:#4fa3e0,color:#e8f4fd
     classDef cold fill:#1a3c2a,stroke:#4caf7d,color:#e8f5e9
@@ -99,7 +99,7 @@ flowchart TB
 ```mermaid
 sequenceDiagram
     participant User as User (Browser)
-    participant API as Config Endpoint
+    participant API as DashboardController.handlePostSettings
     participant CS as ConfigServiceImpl
     participant PM as PortfolioManagerImpl
 
@@ -130,7 +130,7 @@ sequenceDiagram
     participant PM as PortfolioManagerImpl
     participant THS as TradeHistoryServiceImpl
     participant DB as SQLite
-    participant SSE as DashboardRoutes (SSE)
+    participant SSE as DashboardController.handleSseStream
     participant Browser as Browser Tab
 
     Browser->>SSE: GET /api/status/stream (SSE connect)
@@ -190,9 +190,20 @@ sequenceDiagram
 
 **Key design choices:**
 
-- Processing happens page-by-page, keeping memory constant regardless of how many total trades exist.
-- `emit()` naturally suspends until the collector finishes, meaning Kraken's API is never hit faster than the database can process the last batch — automatic rate-limiting.
-- Being cold means this is only ever triggered by `syncTradesFromKraken()` — nothing happens in the background.
+- `PortfolioManagerImpl` calls `syncTradesFromKraken()` **every** rebalance cycle,
+  but `TradeHistoryServiceImpl` **no-ops** unless ≥ **300 seconds** have elapsed
+  since `lastSyncTime` (5-minute throttle).
+- Live sync is skipped when credentials are invalid and `simulation` is false;
+  simulation mode never hits Kraken for history.
+- Incremental sync uses a **300-second overlap** window
+  (`latestTradeTime.minusSeconds(300)`) so fills near the cutoff are not missed.
+- Processing happens page-by-page (page size **50**), keeping memory constant
+  regardless of how many total trades exist.
+- `emit()` naturally suspends until the collector finishes, meaning Kraken's API
+  is never hit faster than the database can process the last batch — automatic
+  backpressure.
+- Being cold means pagination only runs when `syncTradesFromKraken()` collects —
+  nothing polls Kraken for trades in the background.
 
 ---
 

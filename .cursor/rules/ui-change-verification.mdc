@@ -21,6 +21,8 @@ Complete these **before** `gh pr create` — never defer to “after merge”. S
 4. **Visuals** — If appearance changed for README/User Guide, run docs-screenshot-refresh when shipping docs. If canonical shots are unaffected, still verify with a temp capture when claiming a visual fix.
 5. **Safety chrome** — Keep the settings-backed mode plate visible on every page (`SIMULATION` > `DRY RUN` > `LIVE TRADING`). Keep stream health separate as `STREAM` / `STALE`.
 
+After a deploy or LAN UI check, run `post-deploy-ui-smoke` (hard-refresh first).
+
 ## Common misses (regression smells)
 
 - Missing/misleading mode plate, or stream health labeled as live trading

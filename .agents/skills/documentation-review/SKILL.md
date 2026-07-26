@@ -233,7 +233,7 @@ Do not declare complete until markdown lint is clean on touched files.
 | Topic | Code anchors | Doc anchors |
 | :--- | :--- | :--- |
 | Rebalance math | `PortfolioCalculations`, `PortfolioAnalyzerImpl`, `OrderExecutorImpl` | `docs/ALGORITHM.md` |
-| Flows / SSE | `ConfigServiceImpl`, `TradeHistoryServiceImpl`, `DashboardRoutes` | `docs/FLOWS.md` |
+| Flows / SSE | `ConfigServiceImpl`, `TradeHistoryServiceImpl`, `DashboardController` | `docs/FLOWS.md` |
 | Evaluation | `EvaluationScenariosTest`, `FakeKrakenService` | `docs/EVALUATION.md` |
 | Config flags | `Settings`, `DynamicKrakenService` | README, template, dry-run skill |
 | Coverage | `build.gradle.kts` JaCoCo, `karma.config.d/coverage.js` | README, AGENTS, gradle-quality-gates |

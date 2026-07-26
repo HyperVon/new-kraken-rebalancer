@@ -45,7 +45,7 @@ flowchart TD
         E1R -- No --> E1F["Log failure, skip cash update"]
         E1C --> E2
         E1F --> E2
-        E2["Refresh USD balance\n(best of 3× backoff from 250ms;\nabort buys if none positive)"] --> E3["Execute BUY orders second\n(99% cycle cash budget)"]
+        E2["Refresh USD if sell succeeded\nand not dry-run\n(best of 3x backoff from 250ms;\nabort buys if none positive)"] --> E3["Execute BUY orders second\n(99% cycle cash budget)"]
         E3 --> E4["Record Snapshot\n& Trade History\nto SQLite database"]
     end
 
@@ -197,16 +197,19 @@ failure.
 1. **Sell Orders First**: All SELL orders are executed immediately to generate
    USD.
     - Only successful sells update the projected cash balance. Failed sells are
-      logged but do not inflate the available cash.
-2. **USD Balance Refresh**: After sells complete (if not in dry-run mode), the
-   system polls the Kraken API up to **3** times with exponential backoff
-   starting at **250ms** (doubling each attempt: 250ms → 500ms → 1000ms) to fetch the
-   settled USD balance. It tracks the **best (maximum) positive** observation and
-   accepts early once the balance reaches **≥95%** of the projected amount. If no
-   positive USD balance is observed after all attempts, **buys are aborted**
-   (fail-closed — projected proceeds are never treated as confirmed cash).
-   In **dry-run** mode the poll is skipped and buys use the **projected** cash
-   balance instead.
+      logged but do not inflate the available cash. If every sell fails (or none
+      run), buys continue against the **pre-sell** projected cash and the 99%
+      cycle budget — no invented sell liquidity.
+2. **USD Balance Refresh**: After **≥1 successful sell** and when **not** in
+   dry-run mode, the system polls the exchange up to **3** times with exponential
+   backoff starting at **250ms** (doubling each attempt: 250ms → 500ms → 1000ms)
+   to fetch the settled USD balance. It tracks the **best (maximum) positive**
+   observation and accepts early once the balance reaches **≥95%** of the
+   projected amount. If no positive USD balance is observed after all attempts,
+   **buys are aborted** (fail-closed — projected proceeds are never treated as
+   confirmed cash). The poll is skipped when no sell succeeded or when
+   `dryRun` is true; in those cases buys use the **projected** cash balance
+   (pre-sell cash when sells did not succeed).
 3. **Buy Orders Second**:
     - The whole sell→buy sequence runs inside `KrakenService.withStableBackend`
       so a mid-cycle `simulation` flip cannot split sells and buys across backends.
@@ -220,8 +223,9 @@ failure.
     - "Dust" orders (below the configured `dustThresholdUSD`) are skipped to
       avoid API errors.
     - Order volumes use `BigDecimal` with 8 decimal places of precision.
-    - In dry-run mode, orders are logged with a `[DRY RUN]` prefix but not sent
-      to Kraken.
+    - `dryRun` suppresses placement on the **active** backend: live logs
+      `[DRY RUN]`; simulation logs `[EMULATOR DRY RUN]`. It is independent of
+      `simulation` (which only selects live Kraken vs the offline emulator).
 5. **Persistence**: The cycle snapshot (including all trade actions and their outcomes) is saved directly to the SQLite database (under the trade and snapshot tables).
 
 ### Trade economics & slippage lifecycle
@@ -244,8 +248,8 @@ The behavior is controlled by `rebalancer-config.json`:
 | `loopDelaySeconds` | Time to wait between cycles. |
 | `deviationTriggerPercent` | Sensitivity of the rebalancer. Lower values track targets closer but trade more frequently (higher fees). |
 | `dustThresholdUSD` | Minimum significant USD deviation **and** minimum order notional. Assets below this USD deviation do not trigger; smaller orders are also skipped at execution. |
-| `dryRun` | If set to `true`, the system performs all calculations and logs intended trades but **does not** send orders to Kraken. |
-| `simulation` | If set to `true`, runs completely offline with a random-walk emulator. Empty DB pre-seeds ~**15 days** of snapshots at 6-hour steps. Snapshots/trades older than **90 days** are pruned on each `addSnapshot`. |
+| `dryRun` | Suppresses order placement on the **active** backend (`[DRY RUN]` live / `[EMULATOR DRY RUN]` simulation). Orthogonal to `simulation`. |
+| `simulation` | If set to `true`, `DynamicKrakenService` routes to `SimulatedKrakenService` (offline emulator). Empty DB pre-seeds ~**15 days** of snapshots at 6-hour steps. Snapshots/trades older than **90 days** are pruned on each `addSnapshot`. |
 | `fiatMaxDrawdown` | The portfolio drawdown percentage at which 100% of the USD allocation should be deployed into assets. Set to `0` to disable. |
 | `fiatDeploymentExponent` | Controls the aggressiveness of deployment. `1.0` is linear. Values `< 1.0` deploy more cash earlier (aggressive). Values `> 1.0` save cash for deeper dips (conservative). |
 
@@ -256,6 +260,9 @@ Monetary and ratio math uses `BigDecimal` with these scales (`PrecisionConstants
 | Constant | Scale | Use |
 | :--- | ---: | :--- |
 | `SCALE_CRYPTO` | **8** | Balances, prices, order volumes |
-| `SCALE_USD` | **2** | USD notionals and snapshot USD fields |
-| `SCALE_PERCENT` | **4** | Analysis percents (drawdown, deploy, deviation) |
+| `SCALE_USD` | **2** | USD notionals and **persisted snapshot** percent/USD display fields |
+| `SCALE_PERCENT` | **4** | Internal analysis percents (drawdown, deploy, deviation triggers) |
 | `SCALE_FEE` | **4** | Fee amounts |
+
+Snapshot/UI asset percents are rounded to `SCALE_USD` (2 dp) when persisted;
+trigger math keeps `SCALE_PERCENT` (4 dp).

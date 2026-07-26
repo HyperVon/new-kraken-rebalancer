@@ -112,12 +112,13 @@ Full detail: [`docs/ALGORITHM.md`](../docs/ALGORITHM.md) and skill [portfolio-re
 - **Price safety**: missing/zero non-USD ticker aborts the cycle before orders.
 - **Fiat correction**: if *only* USD triggers (deposit/withdrawal), redistribute among counter-balanced assets.
 - **Dust**: also skips execution of orders below `dustThresholdUSD`.
-- **Sell then buy**: sell overweight first; poll USD up to **3** attempts with
-  exponential backoff starting at **250ms** (doubling: 250ms → 500ms → 1000ms);
-  use the **best positive** observation; accept early at **≥95%** of projected;
-  **abort buys** if no positive USD is observed; cycle buy budget **99%** of
-  settled USD (`withStableBackend` captures live vs simulation per invocation;
-  cycle `dryRun` is passed into each `executeOrder`).
+- **Sell then buy**: sell overweight first; after **≥1 successful sell** (and not
+  dry-run), poll USD up to **3** attempts with exponential backoff starting at
+  **250ms** (doubling: 250ms → 500ms → 1000ms); use the **best positive**
+  observation; accept early at **≥95%** of projected; **abort buys** if no
+  positive USD is observed; cycle buy budget **99%** of settled USD
+  (`withStableBackend` captures live vs simulation per invocation; cycle
+  `dryRun` is passed into each `executeOrder`).
 - **Precision**: `BigDecimal` only — crypto scale **8**, USD scale **2**. Tests: `shouldBeEqualComparingTo` (never `shouldBeEqualByComparingTo` / `.equals()`).
 
 ---

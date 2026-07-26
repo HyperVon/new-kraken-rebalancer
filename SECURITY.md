@@ -50,6 +50,11 @@ trades. When deploying:
 
 - **Never commit your `rebalancer-config.json`** — it contains your API keys and
   is listed in `.gitignore` for this reason
+- **Prefer env placeholders for secrets** — `ConfigServiceImpl` resolves
+  `${ENV_VAR}` / `${ENV_VAR:default}` in the config JSON at load time and writes
+  the **raw** placeholders back on save so resolved secrets are not persisted.
+  Example: `"apiKey": "${KRAKEN_API_KEY:}"`,
+  `"privateKey": "${KRAKEN_PRIVATE_KEY:}"`
 - Run with the **minimum required API permissions** on Kraken (Query Funds,
   Query Closed Orders & Trades, Create & Modify Orders). Query Open Orders is
   not required by the endpoints this application uses.

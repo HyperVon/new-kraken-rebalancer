@@ -22,7 +22,7 @@ process.
 | Docs screenshots | `docs-screenshot-refresh` |
 | Docs audit | `documentation-review` |
 | Complex-code comments (audit / hygiene) | `complex-code-comments` |
-| Fan-out parallel work | `parallel-multi-agent` (+ always-on rule) |
+| Fan-out parallel work | `parallel-multi-agent` |
 | Post-deploy UI smoke | `post-deploy-ui-smoke` |
 | Continuous improvement / “whole shebang” | `continuous-improvement` (+ `.agents/improvement-backlog.md`) |
 | Continuous quality / QA loop / test hardening | `continuous-quality` (+ `.agents/quality-backlog.md`) |
