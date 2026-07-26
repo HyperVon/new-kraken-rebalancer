@@ -38,11 +38,16 @@ Ensure you are on the intended branch (not detached HEAD).
 Or manually:
 
 ```bash
+! grep -nE '^##[[:space:]]*\[[Uu]nreleased\]' CHANGELOG.md   # must not match
 npx markdownlint-cli .agents/AGENTS.md CHANGELOG.md CONTRIBUTING.md README.md SECURITY.md docs/*.md .agents/skills/**/SKILL.md
 ./gradlew spotlessCheck
 ./gradlew build jacocoTestCoverageVerification
 ./gradlew :frontend-js:jsBrowserTest
 ```
+
+The script fails fast if `CHANGELOG.md` still has an `## [Unreleased]` heading —
+convert it to a dated SemVer heading (`## [X.Y.Z] - YYYY-MM-DD`) first (see
+[changelog-and-docs-sync](../changelog-and-docs-sync/SKILL.md)).
 
 Include `CONTRIBUTING.md` and `SECURITY.md` in markdownlint when present.
 Fix Spotless with `./gradlew spotlessApply`. Do not proceed on failures.
