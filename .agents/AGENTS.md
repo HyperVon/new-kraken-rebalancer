@@ -22,7 +22,7 @@ Canonical deep docs:
 | Task | Skill |
 | :--- | :--- |
 | Portfolio math, ATH/drawdown, orders | [portfolio-rebalancing-math](skills/portfolio-rebalancing-math/SKILL.md) |
-| Kraken REST, signing, rate limits | [kraken-api-integration](skills/kraken-api-integration/SKILL.md) |
+| Kraken REST, signing, rate limits, `cl_ord_id` | [kraken-api-integration](skills/kraken-api-integration/SKILL.md) |
 | dryRun vs simulation flags | [dry-run-and-simulation](skills/dry-run-and-simulation/SKILL.md) |
 | Koin DI & `rebalancer-config.json` | [koin-di-and-config](skills/koin-di-and-config/SKILL.md) |
 | `:common` KMP shared module | [common-kmp-module](skills/common-kmp-module/SKILL.md) |

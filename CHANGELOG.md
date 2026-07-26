@@ -19,7 +19,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Kraken AddOrder `cl_ord_id`**: `KrakenService.executeOrder` and
   `OrderExecutorImpl` send a deterministic UUID-form client order id derived from
   `cycleId|symbol|side` so `retryWithFlow` re-POSTs reuse the same id. Kraken
-  enforces uniqueness among *open* orders (`userref` is not an idempotency key).
+  enforces uniqueness among *open* orders (`userref` is not a uniqueness key).
 
 ### Changed
 
