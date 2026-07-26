@@ -27,8 +27,8 @@ Product polish discovered during QA belongs in
 
 | ID | Size | Kind | Status | Area | Summary | Cycle | PR |
 | :--- | :---: | :--- | :--- | :--- | :--- | :---: | :--- |
-| CQ-7-L1 | L | bug | done | rate-limit | RateLimiter holds Mutex across `delay` (HOL blocking) | 7 | (this PR) |
-| CQ-7-L2 | L | bug | done | modes | DynamicKraken unpinned reads outside `withStableBackend` | 7 | (this PR) |
+| CQ-7-L1 | L | bug | done | rate-limit | RateLimiter holds Mutex across `delay` (HOL blocking) | 7 | #93 |
+| CQ-7-L2 | L | bug | done | modes | DynamicKraken unpinned reads outside `withStableBackend` | 7 | #93 |
 | CQ-7-1 | M | gap | done | algorithm | USD+crypto both trigger → no fiat-correction path | 7 | #90 |
 | CQ-7-2 | S | gap | done | algorithm | Pct at trigger + USD below dust → no orders | 7 | #90 |
 | CQ-7-3 | S | gap | done | modes | simulation=true + placeholder keys still syncs | 7 | #90 |
