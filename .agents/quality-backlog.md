@@ -22,16 +22,16 @@ Product polish discovered during QA belongs in
 
 | ID | Size | Kind | Status | Area | Summary | Cycle | Issue | Notes |
 | :--- | :---: | :--- | :--- | :--- | :--- | :---: | :--- | :--- |
-| CQ-9-6 | M | gap | open | eval | Scenario 33 — E2E drawdown deployment changes order sizes (not math-only) | 9 | — | Defer; Scenario 2 is analyzer-only |
-| CQ-9-7 | S | gap | open | history | `getLatestTradeTime()` ignores newer dry-run rows | 9 | — | Backlog only |
-| CQ-9-8 | S | gap | open | model | `isMatchingApiTrade`: volume within 1% but USD >1% → no match | 9 | — | Backlog only |
-| CQ-9-9 | S | gap | open | frontend-js | `HistoryViewPrefs` legacy localStorage migration | 9 | — | Backlog only |
-| CQ-9-10 | S | gap | open | orders | Partial multi-sell: failed sell must not bump `projectedCash` | 9 | — | Backlog only |
 
 ## Done (recent)
 
 | ID | Size | Kind | Status | Area | Summary | Cycle | PR |
 | :--- | :---: | :--- | :--- | :--- | :--- | :---: | :--- |
+| CQ-9-6 | M | gap | done | eval | Scenario 33 — E2E drawdown deployment changes order sizes (not math-only) | 9 | #104 |
+| CQ-9-7 | S | gap | done | history | `getLatestTradeTime()` ignores newer dry-run rows | 9 | #104 |
+| CQ-9-8 | S | gap | done | model | `isMatchingApiTrade`: volume within 1% but USD >1% → no match | 9 | #104 |
+| CQ-9-9 | S | gap | done | frontend-js | `HistoryViewPrefs` legacy localStorage migration | 9 | #104 |
+| CQ-9-10 | S | gap | done | orders | Partial multi-sell: failed sell must not bump `projectedCash` | 9 | #104 |
 | CQ-8-3 | S | gap | done | history | Seam edges: multi-match reconcile first-in-range (DESC=newest), migration save failure leaves JSON, findClosest equidistant | 9 | #104 |
 | CQ-9-1 | S | gap | done | drawdown | Conservative exponent `2.0` ALGORITHM MaxDD=30% table | 9 | #104 |
 | CQ-9-2 | M | gap | done | orders | Multi-leg fills same `orderTxid` summed for buy budget (+ filter legs) | 9 | #104 |

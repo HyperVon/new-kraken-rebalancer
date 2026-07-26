@@ -944,6 +944,63 @@ class OrderExecutorCashCapTest : StringSpec() {
             }
         }
 
+        "failed sell among multiple sells must not inflate projected cash for buys" {
+            runTest {
+                krakenService.orderResultFactory = { pair, _, side, volume ->
+                    when {
+                        side == "sell" && pair == Asset.BTC_USD_PAIR ->
+                            OrderResult(
+                                success = false,
+                                pair = pair,
+                                side = side,
+                                volume = volume,
+                                errorMessage = "simulated BTC sell failure",
+                            )
+                        else ->
+                            OrderResult(success = true, pair = pair, side = side, volume = volume)
+                    }
+                }
+
+                orderExecutor.executeOrders(
+                    buyOrders = mapOf(Asset.SOL to BigDecimal("500.00")),
+                    sellOrders =
+                    linkedMapOf(
+                        Asset.BTC to BigDecimal("100.00"),
+                        Asset.ETH to BigDecimal("100.00"),
+                    ),
+                    currentValuesUSD = mapOf(Asset.USD to BigDecimal("100.00")),
+                    prices =
+                    mapOf(
+                        Asset.BTC to BigDecimal("1000.00"),
+                        Asset.ETH to BigDecimal("1000.00"),
+                        Asset.SOL to BigDecimal("1000.00"),
+                    ),
+                    settings =
+                    Settings(
+                        loopDelaySeconds = 0L,
+                        deviationTriggerPercent = 2.0,
+                        dustThresholdUSD = 1.0,
+                        dryRun = true,
+                        fiatMaxDrawdown = 0.0,
+                        fiatDeploymentExponent = 1.0,
+                    ),
+                    actionLog = mutableListOf(),
+                )
+
+                // Opening $100 + successful ETH sell $100 → $200 projected; 99% → $198 buy budget → 0.198 SOL.
+                // If failed BTC sell were wrongly counted, budget would be $297 → 0.297.
+                krakenService.executedOrders.size shouldBe 3
+                krakenService.executedOrders[0].side shouldBe "sell"
+                krakenService.executedOrders[0].pair shouldBe Asset.BTC_USD_PAIR
+                krakenService.executedOrders[1].side shouldBe "sell"
+                krakenService.executedOrders[1].pair shouldBe Asset.ETH_USD_PAIR
+                krakenService.executedOrders[2].side shouldBe "buy"
+                krakenService.executedOrders[2].volume.shouldBeEqualComparingTo(BigDecimal("0.198"))
+                krakenService.getTradeHistoryCallCount shouldBe 0
+                krakenService.getBalancesCallCount shouldBe 0
+            }
+        }
+
         "caps fill-confirmed cash to lower observed balance when history leads spendable USD" {
             runTest {
                 val sellTxid = "OID-FILL-CAP"

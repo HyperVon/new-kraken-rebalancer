@@ -16,6 +16,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `simulation=false`+`dryRun=true` DynamicKraken routing; history seam edges
   (multi-match reconcile uses first `getTradesInRange` row / DESC newest-first,
   migration save-failure leaves JSON, equidistant OHLC first-wins).
+- **tests (CQ-9-6..10)**: Scenario 33 E2E drawdown changes order sizes;
+  `getLatestTradeTime` ignores dry-run; `isMatchingApiTrade` USD>1% reject when
+  volumes not exact; HistoryViewPrefs legacy `month-pnl` /
+  `cumulative-pl-chart` migration; partial multi-sell failed sell does not
+  inflate projected cash.
 
 ## [6.14.0] - 2026-07-26
 
