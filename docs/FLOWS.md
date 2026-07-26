@@ -24,7 +24,7 @@ This diagram shows every place flows are used and how data moves between compone
 ```mermaid
 flowchart TB
     subgraph UI["🖥️  Browser / Dashboard"]
-        SSE["SSE Client\n(EventSource)"]
+        SSE["SSE Client\n(HTMX sse-connect)"]
         Settings["Settings UI\n(Save Config)"]
     end
 
@@ -140,7 +140,7 @@ sequenceDiagram
     participant SSE as DashboardController.handleSseStream
     participant Browser as Browser Tab
 
-    Browser->>SSE: GET /api/status/stream (SSE connect)
+    Browser->>SSE: GET /api/status/stream (HTMX SSE extension)
     SSE->>DB: getLatestSnapshot()
     DB-->>SSE: last snapshot
     SSE->>Browser: send initial snapshot

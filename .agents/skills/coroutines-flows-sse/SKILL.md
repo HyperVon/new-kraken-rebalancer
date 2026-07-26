@@ -19,7 +19,7 @@ Canonical doc: [`docs/FLOWS.md`](../../../docs/FLOWS.md).
 | **coroutines-flows-sse** (this) | Hot vs cold Flow, SSE path, config `collectLatest`, USD-settle **poll mechanics** |
 | [portfolio-rebalancing-math](../portfolio-rebalancing-math/SKILL.md) | Rebalance math + execution **safety invariants** (sell-first, settle policy, 99% budget) |
 | [trade-history-sync](../trade-history-sync/SKILL.md) | Sync/dedupe/seeding that feeds history used by fill-confirm |
-| [frontend-js-development](../frontend-js-development/SKILL.md) | Browser `EventSource` consumer of `/api/status/stream` |
+| [frontend-js-development](../frontend-js-development/SKILL.md) | Stream-chip age / chart rebind after HTMX SSE fragment swaps — **not** `EventSource` |
 | [koin-di-and-config](../koin-di-and-config/SKILL.md) | ConfigService / Settings persistence (not Flow restart semantics) |
 
 ## Hot vs cold
@@ -47,7 +47,8 @@ delegate to the store.
 
 Path: rebalance cycle → façade `addSnapshot` → DB + store `tryEmit` →
 `DashboardController` collects `getHistoryFlow()` → **`GET /api/status/stream`**
-→ browser `EventSource`.
+→ browser via **HTMX SSE** (`sse-connect` / `sse:message` fragment refresh).
+`:frontend-js` does **not** open `EventSource`.
 
 `handleSseStream` sends the DB latest snapshot, then collects the hot flow
 (`replay = 1` covers the subscribe race; a duplicate first event is acceptable).
@@ -82,7 +83,9 @@ Fill-confirm poll constants (`pollFillConfirmedUsd` / `sumMatchedSellProceeds`):
   early accept vs `projectedCash`, `startSec = now − 600s`.
 - `sumMatchedSellProceeds`: up to 5 pages × 50 rows; match sell `orderTxid`;
   net `usdAmount − fee`; keep scanning after the first sighting (multi-leg fills).
-- Cap fill-confirmed USD with `min(balancePeek, projectedCash)` when balance is visible.
+- Cap fill-confirmed USD with `min(fill, balancePeek)` when spendable balance is
+  visible; otherwise `min(fill, projectedCash)` (same as the primary bullets
+  above — never both caps at once).
 
 ## Concurrency rules
 

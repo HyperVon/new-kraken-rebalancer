@@ -58,7 +58,9 @@ cannot change placement mode. Outside a stable block, each call still re-reads
 - Anti-patterns: assuming a mid-cycle config flip affects an already-pinned
   cycle (it does not); assuming a multi-step unpinned handler sees one stable
   backend (it does not).
-- Tests asserting mode routing should wrap the scenario in `withStableBackend`.
+- Tests that assert **mid-sequence** backend stability should wrap the scenario
+  in `withStableBackend`. Mode-routing probes that intentionally call
+  `executeOrder` outside a pin may omit it.
 
 ## dryRun order semantics
 
