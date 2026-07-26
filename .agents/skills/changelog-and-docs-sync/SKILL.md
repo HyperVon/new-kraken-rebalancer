@@ -58,7 +58,7 @@ Agent rules path is **`.agents/AGENTS.md`** — never assume a root `AGENTS.md`.
 ## Markdown hygiene
 
 ```bash
-npx markdownlint-cli .agents/AGENTS.md CHANGELOG.md CONTRIBUTING.md README.md SECURITY.md docs/*.md .agents/skills/**/SKILL.md
+npx markdownlint-cli .agents/AGENTS.md .agents/OPERATING.md CLAUDE.md .github/copilot-instructions.md CHANGELOG.md CONTRIBUTING.md README.md SECURITY.md docs/*.md .agents/skills/**/SKILL.md .agents/skills/**/*.md
 ```
 
 Blank lines around lists; consistent heading hierarchy; no trailing whitespace.

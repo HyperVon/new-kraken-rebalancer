@@ -1,7 +1,7 @@
 ---
 name: dry-run-and-simulation
 description: >-
-  Explains that Settings.dryRun and Settings.simulation are DISTINCT flags —
+  Documents that Settings.dryRun and Settings.simulation are DISTINCT flags —
   DynamicKrakenService routing, SimulatedKrakenService seeding, and live-trading
   caution. Use when changing trading modes, examples, tests, or Kraken service
   selection.
@@ -10,6 +10,16 @@ description: >-
 # Dry Run vs Simulation
 
 These flags are **independent**. Do not treat them as synonyms.
+
+## How this differs from nearby skills
+
+| Skill | Role |
+| :--- | :--- |
+| **dry-run-and-simulation** (this) | Flag semantics + DynamicKrakenService routing + live caution |
+| [koin-di-and-config](../koin-di-and-config/SKILL.md) | Persisting `Settings` / `rebalancer-config.json` |
+| [kraken-api-integration](../kraken-api-integration/SKILL.md) | Live REST signing / rate limits (not mode routing) |
+| [portfolio-rebalancing-math](../portfolio-rebalancing-math/SKILL.md) | How `dryRun` affects order placement / settle skips |
+| [ktor-html-views](../ktor-html-views/SKILL.md) | Mode plate UI reflecting these flags |
 
 | Flag | Shipped template / Kotlin model | Effect |
 | :--- | :--- | :--- |
@@ -39,12 +49,38 @@ cycle’s `settings.dryRun` into each `executeOrder` so a mid-cycle dry-run flip
 cannot change placement mode. Outside a stable block, each call still re-reads
 `settings.simulation` (and `dryRun` when the override is omitted).
 
+### When the backend is (not) pinned
+
+- **Pinned:** `performRebalanceCycle`, `syncTradesFromKraken`,
+  `OrderExecutor.executeOrders` (nested pins reuse the outer pin).
+- **Unpinned:** dashboard balance/price reads, health checks — each call
+  re-resolves from config at invocation time.
+- Anti-patterns: assuming a mid-cycle config flip affects an already-pinned
+  cycle (it does not); assuming a multi-step unpinned handler sees one stable
+  backend (it does not).
+- Tests that assert **mid-sequence** backend stability should wrap the scenario
+  in `withStableBackend`. Mode-routing probes that intentionally call
+  `executeOrder` outside a pin may omit it.
+
+## dryRun order semantics
+
+- Live backend dry-run: log `[DRY RUN]`, return
+  `OrderResult(success = true, dryRun = true)` — no AddOrder POST.
+- Emulator dry-run: `[EMULATOR DRY RUN]`, same success semantics, no balance
+  mutation, usually no `orderTxid`.
+- The activity log always prefixes `[DRY RUN]` regardless of backend.
+- Cycle math and snapshots still run; only placement/settle differ.
+
 ## SimulatedKrakenService
 
-- Random-walk prices/balances for offline demos.
+- `SimulatedKrakenService`: MARKET orders only; synchronized lazy balance/price
+  init; random-walk prices per ticker fetch.
 - Seeding: historical snapshots (~15 days) and simulated trades when DB empty +
   simulation enabled (see trade-history-sync).
 - Still honors `dryRun` (no balance mutation on orders).
+- Dry-run emulator orders omit `orderTxid`. That only matters when settle runs
+  (`dryRun=false` with successful sells); when `settings.dryRun` is true, the
+  executor **skips settle** and budgets buys from projected cash.
 
 ## Safety rules
 

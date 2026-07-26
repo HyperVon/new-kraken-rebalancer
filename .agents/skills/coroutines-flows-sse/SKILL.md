@@ -12,6 +12,16 @@ description: >-
 
 Canonical doc: [`docs/FLOWS.md`](../../../docs/FLOWS.md).
 
+## How this differs from nearby skills
+
+| Skill | Role |
+| :--- | :--- |
+| **coroutines-flows-sse** (this) | Hot vs cold Flow, SSE path, config `collectLatest`, USD-settle **poll mechanics** |
+| [portfolio-rebalancing-math](../portfolio-rebalancing-math/SKILL.md) | Rebalance math + execution **safety invariants** (sell-first, settle policy, 99% budget) |
+| [trade-history-sync](../trade-history-sync/SKILL.md) | Sync/dedupe/seeding that feeds history used by fill-confirm |
+| [frontend-js-development](../frontend-js-development/SKILL.md) | Stream-chip age / chart rebind after HTMX SSE fragment swaps — **not** `EventSource` |
+| [koin-di-and-config](../koin-di-and-config/SKILL.md) | ConfigService / Settings persistence (not Flow restart semantics) |
+
 ## Hot vs cold
 
 | | Cold `Flow` | Hot `SharedFlow` |
@@ -37,19 +47,28 @@ delegate to the store.
 
 Path: rebalance cycle → façade `addSnapshot` → DB + store `tryEmit` →
 `DashboardController` collects `getHistoryFlow()` → **`GET /api/status/stream`**
-→ browser `EventSource`.
+→ browser via **HTMX SSE** (`sse-connect` / `sse:message` fragment refresh).
+`:frontend-js` does **not** open `EventSource`.
 
-On connect, send latest snapshot from DB, then collect the SharedFlow (replay
-covers a snapshot emitted between the DB read and subscribe).
+`handleSseStream` sends the DB latest snapshot, then collects the hot flow
+(`replay = 1` covers the subscribe race; a duplicate first event is acceptable).
+
+- `snapshotFlow`: `extraBufferCapacity = 16`, `DROP_OLDEST`, `tryEmit` — slow
+  clients must not block rebalance producers.
+- Per-session SSE errors are swallowed (non-cancellation); other subscribers continue.
 
 ### Paginated sync / USD settle (cold)
+
+Owner of **settle policy** (when to settle, fail-closed buys, 99% budget):
+[portfolio-rebalancing-math](../portfolio-rebalancing-math/SKILL.md). This
+section owns the **cold Flow poll implementation**.
 
 - `TradeHistorySyncService` paginated Kraken history fetch (private cold
   `getTradeHistoryPaginated()`; invoked from the façade
   `syncTradesFromKraken()`).
 - `settleUsdAfterSells()` — only when **≥1 sell succeeded** and **not** dry-run:
   - **Primary:** `pollFillConfirmedUsd()` → `sumMatchedSellProceeds()` (history
-    matched by sell `ordertxid`, **net of fee**, up to 5×50 pages) → balance peek
+    matched by sell `orderTxid`, **net of fee**, up to 5×50 pages) → balance peek
     `min(fill, balance)` when spendable USD is visible, else
     `min(fill, projectedCash)`.
   - **Fallback:** `refreshUsdBalanceAfterSells()` →
@@ -58,11 +77,30 @@ covers a snapshot emitted between the DB read and subscribe).
   `coerceAtMost(32s)`); emit best positive observation (or `0`); executor aborts
   buys when none. Skipped poll → buys use projected cash.
 
+Fill-confirm poll constants (`pollFillConfirmedUsd` / `sumMatchedSellProceeds`):
+
+- `pollFillConfirmedUsd`: 3 attempts, 250ms doubling backoff (cap 32s), 95%
+  early accept vs `projectedCash`, `startSec = now − 600s`.
+- `sumMatchedSellProceeds`: up to 5 pages × 50 rows; match sell `orderTxid`;
+  net `usdAmount − fee`; keep scanning after the first sighting (multi-leg fills).
+- Cap fill-confirmed USD with `min(fill, balancePeek)` when spendable balance is
+  visible; otherwise `min(fill, projectedCash)` (same as the primary bullets
+  above — never both caps at once).
+
 ## Concurrency rules
 
 - DB/network: `withContext(Dispatchers.IO)`.
 - No `GlobalScope` — use component-bound scopes.
 - Prefer `tryEmit` on DROP_OLDEST SharedFlows (non-suspending broadcast).
+
+### Cancellation is control flow (not a cycle error)
+
+- In `PortfolioManagerImpl.runLoop`, rethrow `CancellationException` from the
+  outer `collectLatest`, the inner cycle, and `delay()` — never log-and-continue.
+- Catching cancellation inside `while (isRunning)` prevents `collectLatest` from
+  cancelling the sleeping delay on a settings change.
+- Same rule for SSE handlers and USD-settle polls: catch `Exception`, but always
+  rethrow cancellation.
 
 ## Checklist
 

@@ -45,10 +45,12 @@ Canonical deep docs:
 | Refactor / cleanup | [kotlin-refactoring-and-cleanup](skills/kotlin-refactoring-and-cleanup/SKILL.md) |
 | Code review | [code-review](skills/code-review/SKILL.md) |
 | Architecture review (third-party / redesign) | [architecture-review](skills/architecture-review/SKILL.md) |
+| Skill / agent-files review (skills, rules, AGENTS) | [skill-reviewer](skills/skill-reviewer/SKILL.md) |
 | Adversarial PR review (dual-model loop) | [adversarial-pr-review](skills/adversarial-pr-review/SKILL.md) |
 | Dependency upgrades | [dependency-upgrade](skills/dependency-upgrade/SKILL.md) |
 | Commit & push | [commit-and-push](skills/commit-and-push/SKILL.md) |
 | Open PR | [open-pr](skills/open-pr/SKILL.md) |
+| Update open PR (push to existing) | [commit-and-push](skills/commit-and-push/SKILL.md) → [adversarial-pr-review](skills/adversarial-pr-review/SKILL.md) |
 | Autonomous multi-pass audit | [autonomous-code-optimizer](skills/autonomous-code-optimizer/SKILL.md) |
 | Parallel multi-agent splits | [parallel-multi-agent](skills/parallel-multi-agent/SKILL.md) |
 | Continuous improvement (whole shebang) | [continuous-improvement](skills/continuous-improvement/SKILL.md) |
@@ -66,7 +68,7 @@ same content via committed `.cursor/rules/`:
 | `parallel-multi-agent.mdc` | Fan out independent workstreams; keep coupled files single-threaded |
 | `no-blocking-long-processes.mdc` | Background servers; don’t hang on `java -jar` / `gradlew run` |
 | `complex-code-comments.mdc` | Comment only non-obvious complexity; keep comments accurate |
-| `ui-change-verification.mdc` | Path-triggered: laptop viewport, CSS `?v=`, QA smells (`view/**`, `frontend-js/**`) |
+| `ui-change-verification.mdc` | Path-triggered: laptop viewport, CSS `?v=`, QA smells — see rule file globs (`view/**`, `DashboardController` / `DashboardRoutes`, `frontend-js/**`, `:common` view util) |
 
 Do **not** gitignore `.cursor/`. Other frameworks should read OPERATING.md (or
 the CLAUDE.md / Copilot stubs) so they get the same norms without Cursor.
@@ -115,13 +117,12 @@ Full detail: [`docs/ALGORITHM.md`](../docs/ALGORITHM.md) and skill [portfolio-re
 - **Fiat correction**: if *only* USD triggers (deposit/withdrawal), redistribute among counter-balanced assets.
 - **Dust**: also skips execution of orders below `dustThresholdUSD`.
 - **Sell then buy**: sell overweight first; after **≥1 successful sell** (and not
-  dry-run), prefer fill-confirmed sell proceeds (trade history matched by order
-  txid) with the same **3** attempts / **250ms** doubling backoff / **≥95%**
-  early-accept / fail-closed abort; fall back to USD balance poll when no txids
-  exist; cycle buy budget **99%** of settled USD (`withStableBackend` pins live
-  vs simulation; cycle `dryRun` is passed into each `executeOrder`). Live AddOrder
-  includes deterministic `cl_ord_id` (open-order uniqueness on retry). Trades
-  persist `cycleId` + `orderTxid`.
+  dry-run), settle USD (fill-confirmed proceeds preferred; balance-poll
+  fallback), fail-closed abort if unsettleable, then buys under a **99%** cycle
+  cash budget; live AddOrder uses deterministic `cl_ord_id`. Settle attempt
+  counts / backoff and cold-Flow poll details:
+  [portfolio-rebalancing-math](skills/portfolio-rebalancing-math/SKILL.md) +
+  [coroutines-flows-sse](skills/coroutines-flows-sse/SKILL.md).
 - **Precision**: `BigDecimal` only — crypto scale **8**, USD scale **2**. Tests: `shouldBeEqualComparingTo` (never `shouldBeEqualByComparingTo` / `.equals()`).
 
 ---
@@ -161,14 +162,10 @@ See [gradle-quality-gates](skills/gradle-quality-gates/SKILL.md).
 | JVM JaCoCo | Line / method / instruction **95%**; branch **90%** |
 | JS Istanbul (Karma) | Statements / functions / lines **90%**; branches **75%** |
 
-Mandatory verify before declaring work done:
-
-```bash
-./gradlew build jacocoTestCoverageVerification
-./gradlew :frontend-js:jsBrowserTest
-npx markdownlint-cli .agents/AGENTS.md CHANGELOG.md CONTRIBUTING.md README.md SECURITY.md docs/*.md .agents/skills/**/SKILL.md
-./gradlew spotlessCheck
-```
+Before declaring work done, run the verify commands in
+[gradle-quality-gates](skills/gradle-quality-gates/SKILL.md) (build + JaCoCo,
+frontend browser tests, Spotless, markdownlint including `.agents/OPERATING.md`
+and harness stubs).
 
 **CodeQL**: currently **disabled** (Kotlin 2.4.x unsupported) — workflow triggers
 only on placeholder branch `disabled-kotlin-2.4-mismatch`, not `main`. Do not
@@ -189,9 +186,8 @@ claim CodeQL is active CI until re-enabled.
 
 - **No FQNs** unless resolving a name collision — use imports.
 - **No absolute user paths** or machine-specific hostnames in source/tests.
-- Markdown: lint `.agents/AGENTS.md`, skills, `README.md`, `CHANGELOG.md`,
-  `CONTRIBUTING.md` / `SECURITY.md` when present, and `docs/*.md` — clean
-  heading hierarchy and blank lines around lists.
+- Markdown: lint per [gradle-quality-gates](skills/gradle-quality-gates/SKILL.md)
+  (`.agents/AGENTS.md`, `OPERATING.md`, skills, product docs, harness stubs).
 - Offload blocking IO with `withContext(Dispatchers.IO)`.
 - GitHub auth via `gh` CLI (`gh auth setup-git`); do not ask the user to authenticate manually.
 - Keep a Changelog; sync README tree + JaCoCo exclusions when packages move — see [changelog-and-docs-sync](skills/changelog-and-docs-sync/SKILL.md).

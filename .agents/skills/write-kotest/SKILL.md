@@ -63,8 +63,11 @@ Never touch `kraken-rebalancer.db` from tests.
 | **`FakeKrakenService`** | Test-only controllable fake (suppliers, `executedOrders`) — prefer in unit/evaluation tests |
 | **`SimulatedKrakenService`** | Production emulator used when `settings.simulation=true` |
 
-Do not confuse the two. Evaluation suite uses `FakeKrakenService` — see
-`EvaluationScenariosTest`.
+Do not confuse the two:
+
+- `EvaluationScenariosTest` → `FakeKrakenService` (controlled behavior).
+- `SimulationEvaluationScenariosTest` → production `SimulatedKrakenService`
+  stack; use it when validating emulator integration, not unit order math.
 
 ```kotlin
 val fakeKraken = FakeKrakenService().apply {
@@ -73,6 +76,16 @@ val fakeKraken = FakeKrakenService().apply {
     }
 }
 ```
+
+### MockK + Exposed static mocks
+
+- Use the constant
+  `TestFixtures.ORG_JETBRAINS_EXPOSED_SQL_TRANSACTIONS_TRANSACTION_API_KT`.
+- Always `unmockkStatic(...)` in `finally` or test teardown.
+- Prefer real `:memory:` SQLite via `DatabaseConfig.init(":memory:")` unless the
+  test targets failure mapping.
+- For services:
+  `coEvery { kraken.withStableBackend(any()) } coAnswers { firstArg<suspend (KrakenService) -> Any>().invoke(fakeKraken) }`
 
 ## Coroutines & Flows
 
@@ -85,14 +98,42 @@ runTest {
 
 Opt in `ExperimentalCoroutinesApi` when using `advanceUntilIdle`.
 
+### Loop & config-change tests
+
+- Emit settings while the loop sits in `delay(loopDelaySeconds)` — expect
+  `collectLatest` to cancel and restart with the new settings.
+- Assert `CancellationException` is not logged as a cycle failure.
+- Use `runTest` + `advanceUntilIdle()` after emissions.
+- For SSE: assert the initial snapshot send, then subsequent flow events.
+
 ## Evaluation / E2E / chaos
+
+### When EvaluationScenariosTest is mandatory
+
+Add or update a scenario when the diff touches:
+
+- `RebalancerEngine`, `PortfolioCalculations`, `OrderExecutorImpl`, or
+  sell/settle/buy ordering
+- `DynamicKrakenService` routing, `dryRun` / `simulation`, or `cl_ord_id` mapping
+- Fiat correction, dust threshold, ATH/drawdown deployment, 99% buy cap,
+  95% settle
+
+Workflow:
+
+1. Run the suite:
+
+   ```bash
+   ./gradlew test --tests "com.gemini.krakenbot.EvaluationScenariosTest" \
+     -x jacocoTestCoverageVerification
+   ```
+
+2. Refresh the outcomes table in `docs/EVALUATION.md` from
+   `build/reports/scenarios_evaluation_report.md`.
+3. Prefer `FakeKrakenService` + `TestFixtures.DEFAULT_TEST_SETTINGS`; never a
+   file-backed DB in unit tests.
 
 - Suite: `EvaluationScenariosTest` (33 scenarios)
 - Report: `build/reports/scenarios_evaluation_report.md` (absolute paths redacted)
-- Run: `./gradlew test --tests "com.gemini.krakenbot.EvaluationScenariosTest"`
-  (use `-x jacocoTestCoverageVerification` when running the suite alone)
-- After scenario/evidence changes, refresh the outcomes table in
-  [`docs/EVALUATION.md`](../../../docs/EVALUATION.md) from that report
 - Principles: no absolute paths, FakeKraken, virtual time, SSE multi-subscriber checks
 
 ## Kotlin/JS tests

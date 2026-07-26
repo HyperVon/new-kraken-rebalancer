@@ -23,6 +23,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   inflate projected cash.
 - **Docs**: evaluation suite count updated to **33** scenarios (README,
   write-kotest skill, EVALUATION.md).
+- **Agent guidance**: new `skill-reviewer` skill (content-first reviews);
+  deepened domain/process skills with project-specific coding, architecture,
+  and safety checklists; synced `AGENTS.md` / `OPERATING.md` / Cursor prefer
+  and UI-verification rules; archived applied drafts in
+  `.agents/skill-content-backlog.md`. Corrected HTMX SSE ownership (not
+  browser `EventSource`) in Flow/UI skills and `docs/FLOWS.md`.
 
 ## [6.14.0] - 2026-07-26
 

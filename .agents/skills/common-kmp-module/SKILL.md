@@ -12,6 +12,15 @@ description: >-
 
 Path: `common/src/commonMain/kotlin/com/gemini/krakenbot/`.
 
+## How this differs from nearby skills
+
+| Skill | Role |
+| :--- | :--- |
+| **common-kmp-module** (this) | What belongs in `:common` + purity rules |
+| [koin-di-and-config](../koin-di-and-config/SKILL.md) | Loading/validating/persisting `Settings` on the JVM |
+| [ktor-html-views](../ktor-html-views/SKILL.md) | SSR that **consumes** `CssClass` / `ViewText` / `Routes` |
+| [frontend-js-development](../frontend-js-development/SKILL.md) | JS that **consumes** the same shared symbols / `api/` DTOs |
+
 ## What belongs here
 
 | Area | Types / files |
@@ -21,6 +30,35 @@ Path: `common/src/commonMain/kotlin/com/gemini/krakenbot/`.
 | Wire DTOs (`api/`) | `PortfolioSnapshot`, `TradeRecord`, `HistoryStats`, `SyncProgressResponse` |
 | Precision | `PrecisionConstants` |
 | View util | `CssClass`, `HtmlIds`, `HtmlAttrs`, `HtmxAttrs`, `ViewText`, `Routes`, `FormFields`, `QueryParamKeys`, `DataProps`, `ChartProps` |
+
+### Two TradeRecord types (do not merge)
+
+| Layer | Path | Fields |
+| :--- | :--- | :--- |
+| `:common` wire DTO | `api/TradeRecord.kt` | `timestamp`, `volume`, `usdAmount` … as **strings** for History JSON |
+| JVM domain | `model/TradeRecord.kt` | `Instant`, `BigDecimal`, `TradeSource`, `cycleId`, `orderTxid` |
+
+- Reconcile/dedupe extensions (`isMatchingApiTrade`, `isPairAliasDuplicateOf`)
+  live on the **JVM model**, not in `:common`.
+- Map explicitly at HTTP boundaries; never put `java.time.Instant` or JVM
+  `BigDecimal` in `commonMain`.
+
+### Kraken aliases live in `Asset` (`:common`)
+
+- Ticker remap: `BTC→XBT`, `DOGE→XDG` via `toKrakenTicker()` / `tradingPair()`.
+- Price lookup: the **exact set** `acceptedUsdQuotedPairs(symbol)` — never
+  `pair.contains(symbol)` (prevents `XBTUSDT` → BTC mis-mapping).
+- Balance keys: `possibleBalanceKeys()` + JVM `resolveBalance()` (`XXBT`, `ZUSD`, …).
+- API → allocation symbol: `Asset.fromTradingPair(pair, allocations)` before
+  persisting trades.
+- New asset support: extend the `Asset` companion helpers first; do not hardcode
+  pair strings in services.
+
+### `OrderSide`: `apiValue` vs stored `name`
+
+- REST / Kraken: lowercase `apiValue` (`buy` / `sell`); DB and UI: uppercase
+  `name` via `OrderSide.normalize()`.
+- `OrderType.MARKET` is the only wired order type in live and emulator paths.
 
 ## Purity (non-negotiable)
 

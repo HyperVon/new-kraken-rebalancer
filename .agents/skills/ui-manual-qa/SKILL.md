@@ -4,11 +4,12 @@ description: >-
   Agent-driven manual QA of live Dashboard / Settings / History interactions in
   simulation mode — click every control, verify charts/forms/nav/SSE behavior,
   and report pass/fail. Use when the user asks for UI QA, manual testing,
-  interaction smoke test, click-through testing, post-deploy UI verification,
-  or to verify the UI still works after frontend/SSR/CSS/deploy changes. Run the
-  **full** checklist (including STYLE-* and REGRESSION-*) after UI work — not
-  only mobile viewport. Report only; do not redesign (ui-visual-review) or
-  implement visual polish (ui-visual-implement) unless asked to fix a found bug.
+  interaction smoke test, click-through testing, or to verify the UI still works
+  after frontend/SSR/CSS changes. For post-deploy hard-refresh smoke only, use
+  post-deploy-ui-smoke. Run the **full** checklist (including STYLE-* and
+  REGRESSION-*) after UI work — not only mobile viewport. Report only; do not
+  redesign (ui-visual-review) or implement visual polish (ui-visual-implement)
+  unless asked to fix a found bug.
 ---
 
 # UI Manual QA (agent click-through)

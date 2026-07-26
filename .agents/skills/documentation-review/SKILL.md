@@ -20,7 +20,9 @@ For regenerating README screenshots from a running simulation UI, use
 [docs-screenshot-refresh](../docs-screenshot-refresh/SKILL.md) (do not try to
 “fix” PNGs by editing markdown alone). For the end-user walkthrough, maintain
 [docs/USER_GUIDE.md](../../../docs/USER_GUIDE.md) via
-[user-guide](../user-guide/SKILL.md).
+[user-guide](../user-guide/SKILL.md). For a **meta-review** of skill structure,
+coverage, and agent routing (recommend-only), use
+[skill-reviewer](../skill-reviewer/SKILL.md).
 
 ---
 
@@ -201,7 +203,7 @@ After product docs are fixed:
 ### Step 5: Verify
 
 ```bash
-npx markdownlint-cli .agents/AGENTS.md CHANGELOG.md README.md CONTRIBUTING.md SECURITY.md docs/*.md .agents/skills/**/SKILL.md
+npx markdownlint-cli .agents/AGENTS.md .agents/OPERATING.md CLAUDE.md .github/copilot-instructions.md CHANGELOG.md README.md CONTRIBUTING.md SECURITY.md docs/*.md .agents/skills/**/SKILL.md .agents/skills/**/*.md
 ```
 
 When any Mermaid fence was added or changed (or as part of a full audit):

@@ -64,16 +64,16 @@ class DynamicKrakenServiceTest : StringSpec() {
             coVerify(exactly = 0) { realService.getTickerPrices(any()) }
 
             dynamicService.executeOrder(
-                Asset.BTC_USD_PAIR,
-                OrderSide.SELL.apiValue,
-                OrderType.MARKET.apiValue,
-                BigDecimal.ONE,
+                pair = Asset.BTC_USD_PAIR,
+                type = OrderType.MARKET.apiValue,
+                side = OrderSide.SELL.apiValue,
+                volume = BigDecimal.ONE,
             )
             coVerify(exactly = 1) {
                 simulatedService.executeOrder(
                     Asset.BTC_USD_PAIR,
-                    OrderSide.SELL.apiValue,
                     OrderType.MARKET.apiValue,
+                    OrderSide.SELL.apiValue,
                     BigDecimal.ONE,
                     null,
                 )
@@ -163,16 +163,16 @@ class DynamicKrakenServiceTest : StringSpec() {
             coVerify(exactly = 0) { simulatedService.getTickerPrices(any()) }
 
             dynamicService.executeOrder(
-                Asset.BTC_USD_PAIR,
-                OrderSide.BUY.apiValue,
-                OrderType.MARKET.apiValue,
-                BigDecimal.ONE,
+                pair = Asset.BTC_USD_PAIR,
+                type = OrderType.MARKET.apiValue,
+                side = OrderSide.BUY.apiValue,
+                volume = BigDecimal.ONE,
             )
             coVerify(exactly = 1) {
                 realService.executeOrder(
                     Asset.BTC_USD_PAIR,
-                    OrderSide.BUY.apiValue,
                     OrderType.MARKET.apiValue,
+                    OrderSide.BUY.apiValue,
                     BigDecimal.ONE,
                     null,
                 )
@@ -196,19 +196,19 @@ class DynamicKrakenServiceTest : StringSpec() {
             val dynamicService = createService()
             dynamicService.withStableBackend { backend ->
                 backend.executeOrder(
-                    Asset.BTC_USD_PAIR,
-                    OrderSide.SELL.apiValue,
-                    OrderType.MARKET.apiValue,
-                    BigDecimal.ONE,
+                    pair = Asset.BTC_USD_PAIR,
+                    type = OrderType.MARKET.apiValue,
+                    side = OrderSide.SELL.apiValue,
+                    volume = BigDecimal.ONE,
                 )
 
                 every { configService.getConfig() } returns appConfig(simulation = false)
 
                 backend.executeOrder(
-                    Asset.ETH_USD_PAIR,
-                    OrderSide.BUY.apiValue,
-                    OrderType.MARKET.apiValue,
-                    BigDecimal.ONE,
+                    pair = Asset.ETH_USD_PAIR,
+                    type = OrderType.MARKET.apiValue,
+                    side = OrderSide.BUY.apiValue,
+                    volume = BigDecimal.ONE,
                 )
             }
 
@@ -230,16 +230,16 @@ class DynamicKrakenServiceTest : StringSpec() {
             coVerify(exactly = 0) { realService.getBalances() }
 
             dynamicService.executeOrder(
-                Asset.BTC_USD_PAIR,
-                OrderSide.BUY.apiValue,
-                OrderType.MARKET.apiValue,
-                BigDecimal.ONE,
+                pair = Asset.BTC_USD_PAIR,
+                type = OrderType.MARKET.apiValue,
+                side = OrderSide.BUY.apiValue,
+                volume = BigDecimal.ONE,
             )
             coVerify(exactly = 1) {
                 simulatedService.executeOrder(
                     Asset.BTC_USD_PAIR,
-                    OrderSide.BUY.apiValue,
                     OrderType.MARKET.apiValue,
+                    OrderSide.BUY.apiValue,
                     BigDecimal.ONE,
                     null,
                 )
@@ -259,17 +259,17 @@ class DynamicKrakenServiceTest : StringSpec() {
             coVerify(exactly = 0) { simulatedService.getBalances() }
 
             dynamicService.executeOrder(
-                Asset.BTC_USD_PAIR,
-                OrderSide.BUY.apiValue,
-                OrderType.MARKET.apiValue,
-                BigDecimal.ONE,
+                pair = Asset.BTC_USD_PAIR,
+                type = OrderType.MARKET.apiValue,
+                side = OrderSide.BUY.apiValue,
+                volume = BigDecimal.ONE,
                 dryRun = true,
             )
             coVerify(exactly = 1) {
                 realService.executeOrder(
                     Asset.BTC_USD_PAIR,
-                    OrderSide.BUY.apiValue,
                     OrderType.MARKET.apiValue,
+                    OrderSide.BUY.apiValue,
                     BigDecimal.ONE,
                     true,
                     null,
@@ -286,10 +286,10 @@ class DynamicKrakenServiceTest : StringSpec() {
             val dynamicService = createService()
             dynamicService.withStableBackend { outer ->
                 outer.executeOrder(
-                    Asset.BTC_USD_PAIR,
-                    OrderSide.SELL.apiValue,
-                    OrderType.MARKET.apiValue,
-                    BigDecimal.ONE,
+                    pair = Asset.BTC_USD_PAIR,
+                    type = OrderType.MARKET.apiValue,
+                    side = OrderSide.SELL.apiValue,
+                    volume = BigDecimal.ONE,
                 )
 
                 every { configService.getConfig() } returns appConfig(simulation = false)
@@ -297,10 +297,10 @@ class DynamicKrakenServiceTest : StringSpec() {
                 dynamicService.withStableBackend { inner ->
                     // Nested wrap must keep the outer pin (sim), not flip to live.
                     inner.executeOrder(
-                        Asset.ETH_USD_PAIR,
-                        OrderSide.BUY.apiValue,
-                        OrderType.MARKET.apiValue,
-                        BigDecimal.ONE,
+                        pair = Asset.ETH_USD_PAIR,
+                        type = OrderType.MARKET.apiValue,
+                        side = OrderSide.BUY.apiValue,
+                        volume = BigDecimal.ONE,
                     )
                 }
 
@@ -333,10 +333,10 @@ class DynamicKrakenServiceTest : StringSpec() {
                         dynamicService.withStableBackend { backend ->
                             delay(50)
                             backend.executeOrder(
-                                Asset.BTC_USD_PAIR,
-                                OrderSide.SELL.apiValue,
-                                OrderType.MARKET.apiValue,
-                                BigDecimal.ONE,
+                                pair = Asset.BTC_USD_PAIR,
+                                type = OrderType.MARKET.apiValue,
+                                side = OrderSide.SELL.apiValue,
+                                volume = BigDecimal.ONE,
                             )
                         }
                     }
@@ -345,10 +345,10 @@ class DynamicKrakenServiceTest : StringSpec() {
                         every { configService.getConfig() } returns appConfig(simulation = false)
                         dynamicService.withStableBackend { backend ->
                             backend.executeOrder(
-                                Asset.ETH_USD_PAIR,
-                                OrderSide.BUY.apiValue,
-                                OrderType.MARKET.apiValue,
-                                BigDecimal.ONE,
+                                pair = Asset.ETH_USD_PAIR,
+                                type = OrderType.MARKET.apiValue,
+                                side = OrderSide.BUY.apiValue,
+                                volume = BigDecimal.ONE,
                             )
                         }
                     }

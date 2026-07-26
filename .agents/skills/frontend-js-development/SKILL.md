@@ -1,11 +1,10 @@
 ---
 name: frontend-js-development
 description: >-
-  Client Kotlin/JS — EventSource SSE, SharedFlow payload consumption, HTMX
-  hooks, STREAM/STALE status chip semantics, Chart.js deep-clone, History
-  timeframe updating all 6 summary cards, trade-table formatting, zoom/scrubber
-  via chart.zoomScale, and Karma coverage thresholds. Use when editing
-  frontend-js/src.
+  Client Kotlin/JS — HTMX hook lifecycle, stream-chip STREAM/STALE timing,
+  Chart.js deep-clone, History timeframe updating all 6 summary cards,
+  trade-table formatting, zoom/scrubber via chart.zoomScale, and Karma
+  coverage thresholds. Use when editing frontend-js/src.
 ---
 
 # Kotlin/JS Client Development (`:frontend-js`)
@@ -14,8 +13,9 @@ Compiles via Kotlin JS IR to `/static/rebalancer.js`.
 
 ## Responsibilities
 
-1. **SSE** — `EventSource` on `Routes` status stream (`/api/status/stream`);
-   parse JSON snapshot payloads broadcast from server `SharedFlow`.
+1. **SSE timing (not transport)** — HTMX SSE extension owns
+   `/api/status/stream`; `:frontend-js` updates stream-chip age after fragment
+   swaps, not EventSource parsing.
 2. **HTMX hooks** — `htmx:afterSwap` / `htmx:configRequest` to rebind charts after
    fragment swaps.
 3. **Chart.js** — deep-clone options before each render; re-attach functions after
@@ -29,12 +29,25 @@ Compiles via Kotlin JS IR to `/static/rebalancer.js`.
    `HistoryStats`, `SyncProgressResponse`). Do not reintroduce removed
    `JsModels.kt` external interfaces.
 
+## SSE (correct ownership)
+
+**Server → browser:** the HTMX SSE extension connects to `/api/status/stream`
+and triggers a dashboard fragment refresh on `sse:message`
+(`DashboardShellComponent`: `hx-ext="sse"`, `sse-connect`, `hx-trigger="load, sse:message"`).
+
+**`:frontend-js` does not use `EventSource`.** Client responsibilities after a swap:
+
+- `htmx:afterSwap` → `updateAge()` + `reapplySort()`
+- `setInterval(updateAge, 1000)` so STREAM → STALE flips without new SSE events
+- Chart re-init via HTMX hooks / page detectors in `initOnLoad()` — not SSE parsing
+
 ## Status chip = stream health, not trading mode
 
 `updateAge()` owns the dashboard header chip. It toggles
 `CssClass.Utility.Live` / `CssClass.Utility.Delayed` (styling only) and writes
 **`ViewText.STREAM`** when fresh, **`ViewText.STREAM_STALE`** when past
-`STALE_THRESHOLD_SECONDS`.
+`PrecisionConstants.STALE_THRESHOLD_SECONDS` from `:common` — never duplicate
+magic seconds in frontend-only constants.
 
 Settings allocation total uses **`CssClass.Form.AllocationTotalOk`** /
 **`AllocationTotalBad`** (not the stream Live/Delayed utilities).
@@ -83,6 +96,15 @@ Never pass a shared options object by reference.
 
 ## DOM lifecycle
 
+### Lifecycle (main.kt contract)
+
+1. `main()` registers globals once (dashboard, settings, history).
+2. A single `htmx:afterSwap` listener rebinds age display + table sort.
+3. `initOnLoad()` gates page-specific init on `HtmlIds` presence.
+4. On History chart rebuild: deep-clone Chart.js options, re-attach
+   `onZoomComplete`, enable the scrubber after any zoom path.
+5. Clear intervals/listeners when adding History-only timers.
+
 - Clear intervals/timeouts and `removeEventListener` on detach.
 - Null-guard: `document.getElementById(...) ?: return`.
 
@@ -126,7 +148,7 @@ views, zoom, scrubber pan, dry-run filter, legend toggles).
 
 ## Checklist
 
-- [ ] SSE consumes `/api/status/stream` payloads correctly
+- [ ] HTMX owns SSE transport; client only runs `updateAge` / chart re-init after swap
 - [ ] Status chip reads `STREAM` / `STALE` and never implies live trading
 - [ ] Timeframe change updates **all 6** summary cards
 - [ ] Trade rows: 2dp USD, em-dash for zero, dot for plain success, badge for

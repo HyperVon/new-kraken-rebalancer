@@ -24,7 +24,7 @@ This diagram shows every place flows are used and how data moves between compone
 ```mermaid
 flowchart TB
     subgraph UI["🖥️  Browser / Dashboard"]
-        SSE["SSE Client\n(EventSource)"]
+        SSE["SSE Client\n(HTMX sse-connect)"]
         Settings["Settings UI\n(Save Config)"]
     end
 
@@ -140,7 +140,7 @@ sequenceDiagram
     participant SSE as DashboardController.handleSseStream
     participant Browser as Browser Tab
 
-    Browser->>SSE: GET /api/status/stream (SSE connect)
+    Browser->>SSE: GET /api/status/stream (HTMX SSE extension)
     SSE->>DB: getLatestSnapshot()
     DB-->>SSE: last snapshot
     SSE->>Browser: send initial snapshot
@@ -230,7 +230,7 @@ sequenceDiagram
 `settleUsdAfterSells()`:
 
 1. **Primary (when sell AddOrder txids exist):** `pollFillConfirmedUsd()` →
-   `sumMatchedSellProceeds()` (trade history matched by `ordertxid`, net of fee,
+   `sumMatchedSellProceeds()` (trade history matched by `orderTxid`, net of fee,
    paginate up to 5×50) → optional balance peek
    `min(fillConfirmed, balance)` when spendable USD is visible → else cap to
    `projectedCash`.

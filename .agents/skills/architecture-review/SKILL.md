@@ -117,6 +117,18 @@ and the **largest coupling clusters**.
 Do **not** treat the current SRP names as the only correct split — evaluate
 whether the split earns its keep.
 
+#### Flow ownership (record before recommending messaging/SPA rewrites)
+
+| Flow | Type | Owner | Invariant |
+| :--- | :--- | :--- | :--- |
+| `watchConfigChanges()` | Hot SharedFlow | ConfigServiceImpl | Settings change restarts the loop |
+| `snapshotFlow` | Hot SharedFlow | TradeHistorySnapshotStore | `tryEmit`; replay 1, buffer 16 |
+| Paginated Kraken fetch | Cold Flow | TradeHistorySyncService | Suspending emit; 300s throttle |
+| USD settle poll | Cold Flow | OrderExecutorImpl | Never broadcast to UI |
+
+**Redesign smell:** adding an EventSource/WebSocket client when HTMX SSE +
+fragment swap already delivers snapshots.
+
 ### Step 3: Review dimensions
 
 Cover each dimension. Skip empty sections in the report; do not invent issues.
@@ -149,6 +161,68 @@ Cover each dimension. Skip empty sections in the report; do not invent issues.
     with a sober migration cost and benefit — see filter below.
 11. **Team/change velocity** — What makes the next feature expensive? What
     accidental complexity taxes every change?
+
+#### Money-path stress (mandatory before executor/manager/exchange redesign)
+
+Trace in code, then answer:
+
+1. **Trigger gate** — both `isSignificant` gates (deviation % + USD dust) required?
+2. **Price safety** — missing/zero non-USD ticker aborts before any AddOrder?
+3. **Sell-first** — sell phase runs before buys; USD settle runs only after
+   **≥1 successful** sell (and not dry-run)? (All planned sells failing still
+   allows buys from opening USD — do not invent “planned sells block buys”.)
+4. **Settle fail-closed** — after settle polls, buys abort only when confirmed
+   USD is **≤ 0**? (≥95% of projected is **early-accept**, not the abort
+   threshold; best positive below 95% still proceeds.)
+5. **Cycle cash cap** — multi-buy batch respects 99% of settled USD?
+6. **Open-order uniqueness** — retries reuse deterministic `cl_ord_id` (not
+   `userref`)? (`cl_ord_id` is **not** full request idempotency across
+   filled/canceled orders — see kraken-api-integration.)
+7. **Audit trail** — trades persist `cycleId` + `orderTxid`?
+8. **Mode clarity** — operator distinguishes SIMULATION / DRY RUN / LIVE
+   without reading logs?
+
+If an Evolve/Replace option weakens a yes above, severity is ≥ P0 unless the
+compensating control is explicit.
+
+#### Evaluate `withStableBackend` on every exchange redesign
+
+**Current contract:** a CoroutineContext pin is set at cycle/sync entry; nested
+calls reuse it; unpinned calls re-read `settings.simulation`.
+
+Ask:
+
+- Does the proposal preserve the **entry-time backend** for the whole
+  sell/settle/buy sequence?
+- Can a settings save mid-cycle change which Kraken implementation serves an
+  in-flight order?
+- If services are split, where does the pin live (manager vs executor vs sync)?
+  Exactly one owner.
+
+**Keep current** when the pin prevents sim/live flapping. **Replace** only with
+an equally explicit session-scoped exchange port (e.g. `ExchangeSession` passed
+through the executor) — not ad-hoc `getConfig()` in hot paths.
+
+#### Local-trust dashboard — blast radius
+
+For each recommendation affecting HTTP / CORS / bind / deploy:
+
+1. Who can reach the process (localhost, LAN, tunnel)?
+2. Does CORS still require `isLocalOrPrivateOrigin` — any new public origin?
+3. Which mutating routes (`POST /settings`, rebalance triggers) stay unauthenticated?
+4. What can an attacker on the same network do with SSE + settings?
+5. Are secrets env-only and never logged (including HMAC)?
+
+Default stance: no auth is acceptable **only** for a single operator on a
+private network. If exposure grows, recommend reverse-proxy auth or
+bind-to-localhost — not "add JWT later".
+
+#### Evaluation suite as an architectural asset
+
+Any proposal replacing manager / executor / analyzer must either port
+`EvaluationScenariosTest` + `SimulationEvaluationScenariosTest`, or document
+kill criteria plus a new proof harness. "Unit tests are sufficient" fails the
+filter.
 
 ### Step 4: Brainstorm alternatives
 

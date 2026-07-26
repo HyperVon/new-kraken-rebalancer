@@ -4,10 +4,28 @@ description: >-
   Structured code review covering SRP architecture, BigDecimal safety, dryRun vs
   simulation, Kraken rate limits, exchange-claim verification (cl_ord_id vs
   userref), :common purity, coverage gates, and project conventions. Use when
-  reviewing PRs, diffs, or auditing code quality.
+  reviewing diffs, auditing code quality, or as a pre-pass before opening a PR.
+  Opening or updating a GitHub PR still requires open-pr / commit-and-push with
+  mandatory adversarial-pr-review — this skill alone is not enough for PR
+  merge readiness.
 ---
 
 # Code Review Skill
+
+## How this differs from nearby skills
+
+| Skill | Role |
+| :--- | :--- |
+| **code-review** (this) | Convention hunt-list on a diff / audit |
+| [adversarial-pr-review](../adversarial-pr-review/SKILL.md) | Mandatory dual-model loop before `gh pr create` or push to an open PR |
+| [open-pr](../open-pr/SKILL.md) | Create the PR (runs adversarial first) |
+| [commit-and-push](../commit-and-push/SKILL.md) | Commit/push; adversarial when updating an open PR |
+| [architecture-review](../architecture-review/SKILL.md) | Fresh-eyes redesign brainstorm (not PR gates) |
+
+**PR handoff:** If the user is opening or updating a pull request, follow
+[open-pr](../open-pr/SKILL.md) or [commit-and-push](../commit-and-push/SKILL.md)
+— both require [adversarial-pr-review](../adversarial-pr-review/SKILL.md). Do
+not treat this skill’s checklist as a substitute.
 
 ## Review dimensions
 
@@ -21,12 +39,27 @@ description: >-
 - Comments: only non-obvious complexity; flag wrong/stale/noisy comments (see
   [complex-code-comments](../complex-code-comments/SKILL.md)).
 
+#### SRP do-nots (flag any violation)
+
+| Type | Must NOT | May call |
+| :--- | :--- | :--- |
+| `RebalancerEngine` / `PortfolioCalculations` | Network, SQLite, Koin, Ktor, kotlinx.html | Pure `BigDecimal` + `Settings` / `Allocation` inputs |
+| `PortfolioAnalyzerImpl` | Place orders; write trades | Kraken reads, ATH I/O, `RebalancerEngine`, emit analysis |
+| `OrderExecutorImpl` | Target math, allocation %, ATH | `executeOrder`, USD settle polls, `withStableBackend` |
+| `PortfolioManagerImpl` | Inline rebalance math or raw AddOrder | Orchestrate analyzer → executor → `addSnapshot` |
+| `TradeHistoryServiceImpl` façade | Reimplement sync/query in controllers | Delegate to Sync / SnapshotStore / Query / Reconstruction |
+| `view/component/*` | Business rules, Kraken calls | Render DTOs + `:common` constants; receive `Settings` |
+| `:common` `commonMain` | JVM/JS-only imports, SLF4J, `java.math.*` | Routes, IDs, CSS tokens, wire DTOs, KMP-safe models |
+
 ### 2. Financial math & execution
 
 - BigDecimal scales 8/2; tests use **`shouldBeEqualComparingTo`**.
+- Flag raw `setScale(2)` / `doubleValue()` in money paths; prefer
+  `toUsdScale()` / `toCryptoScale()`.
 - ATH → drawdown deployment, fiat correction, dust threshold.
-- Sell-first; USD poll up to 3× with 250ms exponential backoff; best positive /
-  95% settle; abort buys if none; cycle 99% buy budget (`withStableBackend`).
+- Sell-first; prefer fill-confirmed sell proceeds, else USD poll; 3× / 250ms
+  backoff; best positive / 95% settle; abort buys if none; cycle 99% buy budget
+  (`withStableBackend`).
 - See portfolio-rebalancing-math + `docs/ALGORITHM.md`.
 
 ### 3. Kraken & modes
@@ -45,6 +78,20 @@ description: >-
   high-risk; ask “does this field do what the PR says?” and verify before
   approving.
 
+#### Backend pinning & modes (money path)
+
+- [ ] Full rebalance cycle wrapped in `krakenService.withStableBackend { … }`
+- [ ] Trade sync during a cycle uses the same pin
+- [ ] Nested `withStableBackend` reuses the outer pin — never re-resolves
+- [ ] `simulation` selects the backend in `DynamicKrakenService`; `dryRun` is
+      enforced inside the active backend's `executeOrder` — not in routing
+- [ ] Unpinned reads (dashboard ticker/OHLC) are fine outside cycles; never mix
+      pinned and unpinned Kraken calls inside one settle/placement sequence
+- [ ] Live AddOrder includes deterministic `cl_ord_id` when `cycleId` is
+      non-blank; blank `cycleId` omits it
+- [ ] Flag any PR setting `dryRun = false` in templates, examples, or tests
+      without explicit live-trading justification
+
 ### 4. Security
 
 - Dashboard is **no-auth**; CORS via `isLocalOrPrivateOrigin` must not widen to
@@ -60,6 +107,25 @@ description: >-
   zoom as well as toolbar Zoom buttons.
 - History timeframe updates **all 6** summary cards.
 - Hot SharedFlow vs cold Flow usage matches `docs/FLOWS.md`.
+
+#### Flow / SSE diff checks
+
+- [ ] Config watch uses `collectLatest` — settings changes cancel the delay and restart
+- [ ] `CancellationException` always rethrown in loop/SSE handlers
+- [ ] Hot SharedFlow producers use `tryEmit` with documented overflow
+      (config replay=1 DROP_OLDEST; snapshots buffer 16)
+- [ ] SSE handler sends `getLatestSnapshot()` before collecting the flow
+- [ ] Non-cancellation SSE errors stay isolated per client session
+- [ ] Cold flows (paginated sync, balance poll) are not broadcast as hot flows
+
+#### UI safety chrome (SSR + JS)
+
+- [ ] Every page header uses `brandWithMode(settings)`; `Settings` threaded through
+- [ ] Mode precedence `simulation` > `dryRun` > live — never inferred in client JS
+- [ ] Stream chip uses `ViewText.STREAM` / `STREAM_STALE` only — never "LIVE"
+- [ ] Dashboard fragment updates `#header-status` via `hx-swap-oob`
+- [ ] Static assets cache-busted via `commonMetadataAndStyles()` / `rebalancerJsSrc()`
+- [ ] History timeframe changes update all 6 summary cards
 
 ### 6. Persistence & tests
 
