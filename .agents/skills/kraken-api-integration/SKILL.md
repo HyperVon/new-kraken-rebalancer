@@ -3,8 +3,9 @@ name: kraken-api-integration
 description: >-
   Kraken REST integration — symbol mapping, HMAC-SHA512 signing, RateLimiter
   call-counter (safeLimit 12, decay 0.33), Mutex, retryWithFlow lockout backoff,
-  and public vs private paths. Use when changing KrakenServiceImpl, RateLimiter,
-  DynamicKrakenService, or exchange credentials handling.
+  AddOrder cl_ord_id open-order uniqueness (not userref), and public vs private
+  paths. Use when changing KrakenServiceImpl, RateLimiter, DynamicKrakenService,
+  OrderExecutorImpl client order ids, or exchange credentials handling.
 ---
 
 # Kraken API & Exchange Integration
@@ -82,6 +83,28 @@ Retry on `IOException`, `ResponseException`, and messages containing
 
 ---
 
+## Open-order uniqueness (`cl_ord_id`)
+
+Kraken enforces uniqueness of `cl_ord_id` among the client's **open** orders
+only — not full request idempotency across filled/canceled orders. Verify any
+stronger claim against current Kraken docs before shipping:
+
+- [REST AddOrder](https://docs.kraken.com/api/docs/rest-api/add-order)
+- [Client order id guide](https://docs.kraken.com/exchange/guides/general/clordid)
+
+- **`cl_ord_id`**: Client-assigned UUID string. Canonical seed is
+  `OrderExecutorImpl.clientOrderId`:
+  `UUID.nameUUIDFromBytes("$cycleId|$symbol|$side")` (pipe-separated; blank
+  `cycleId` → omit the param). `side` must be `OrderSide.apiValue` (lowercase
+  `"buy"` / `"sell"`), not display casing. Do not invent a different seed
+  format in docs or callers.
+- **`userref`**: 32-bit integer user reference tag. **Do NOT use `userref` for
+  uniqueness or idempotency** — Kraken permits duplicate open orders with
+  identical `userref` values. `cl_ord_id` and `userref` are mutually exclusive
+  on AddOrder.
+
+---
+
 ## Checklist
 
 - [ ] Symbols mapped (`BTC` → `XBTUSD`/`XXBT`, etc.)
@@ -89,3 +112,4 @@ Retry on `IOException`, `ResponseException`, and messages containing
 - [ ] Signing and secrets never logged
 - [ ] Lockout backoff 10s → 15m via `retryWithFlow`
 - [ ] Cross-check dryRun/simulation via DynamicKrakenService
+- [ ] AddOrder uses `cl_ord_id` for open-order uniqueness (not `userref`)

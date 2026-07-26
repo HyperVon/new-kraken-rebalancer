@@ -79,7 +79,7 @@ class DynamicKrakenServiceTest : StringSpec() {
                 )
             }
             coVerify(exactly = 0) {
-                realService.executeOrder(any(), any(), any(), any(), any())
+                realService.executeOrder(any(), any(), any(), any(), any(), any())
             }
 
             dynamicService.getTradeHistory(12345L, 10)
@@ -89,6 +89,64 @@ class DynamicKrakenServiceTest : StringSpec() {
             dynamicService.getOHLC(TestFixtures.BTCUSD, 1440, null)
             coVerify(exactly = 1) { simulatedService.getOHLC(TestFixtures.BTCUSD, 1440, null) }
             coVerify(exactly = 0) { realService.getOHLC(any(), any(), any()) }
+        }
+
+        "forwards clOrdId to the real backend when simulation is false" {
+            every { configService.getConfig() } returns appConfig(simulation = false)
+            val dynamicService = createService()
+            val clOrdId = "6d1b345e-2821-40e2-ad83-4ecb18a06876"
+
+            dynamicService.executeOrder(
+                pair = Asset.BTC_USD_PAIR,
+                type = OrderType.MARKET.apiValue,
+                side = OrderSide.BUY.apiValue,
+                volume = BigDecimal.ONE,
+                dryRun = false,
+                clOrdId = clOrdId,
+            )
+
+            coVerify(exactly = 1) {
+                realService.executeOrder(
+                    Asset.BTC_USD_PAIR,
+                    OrderType.MARKET.apiValue,
+                    OrderSide.BUY.apiValue,
+                    BigDecimal.ONE,
+                    false,
+                    clOrdId,
+                )
+            }
+            coVerify(exactly = 0) {
+                simulatedService.executeOrder(any(), any(), any(), any(), any(), any())
+            }
+        }
+
+        "forwards clOrdId to the simulated backend when simulation is true" {
+            every { configService.getConfig() } returns appConfig(simulation = true)
+            val dynamicService = createService()
+            val clOrdId = "da8e4ad5-9b78-481c-93e5-89746b0cf91f"
+
+            dynamicService.executeOrder(
+                pair = Asset.BTC_USD_PAIR,
+                type = OrderType.MARKET.apiValue,
+                side = OrderSide.SELL.apiValue,
+                volume = BigDecimal.ONE,
+                dryRun = false,
+                clOrdId = clOrdId,
+            )
+
+            coVerify(exactly = 1) {
+                simulatedService.executeOrder(
+                    Asset.BTC_USD_PAIR,
+                    OrderType.MARKET.apiValue,
+                    OrderSide.SELL.apiValue,
+                    BigDecimal.ONE,
+                    false,
+                    clOrdId,
+                )
+            }
+            coVerify(exactly = 0) {
+                realService.executeOrder(any(), any(), any(), any(), any(), any())
+            }
         }
 
         "delegates to real service when simulation is false" {
@@ -120,7 +178,7 @@ class DynamicKrakenServiceTest : StringSpec() {
                 )
             }
             coVerify(exactly = 0) {
-                simulatedService.executeOrder(any(), any(), any(), any(), any())
+                simulatedService.executeOrder(any(), any(), any(), any(), any(), any())
             }
 
             dynamicService.getTradeHistory(null, null)
@@ -155,10 +213,10 @@ class DynamicKrakenServiceTest : StringSpec() {
             }
 
             coVerify(exactly = 2) {
-                simulatedService.executeOrder(any(), any(), any(), any(), any())
+                simulatedService.executeOrder(any(), any(), any(), any(), any(), any())
             }
             coVerify(exactly = 0) {
-                realService.executeOrder(any(), any(), any(), any(), any())
+                realService.executeOrder(any(), any(), any(), any(), any(), any())
             }
         }
 
@@ -187,7 +245,7 @@ class DynamicKrakenServiceTest : StringSpec() {
                 )
             }
             coVerify(exactly = 0) {
-                realService.executeOrder(any(), any(), any(), any(), any())
+                realService.executeOrder(any(), any(), any(), any(), any(), any())
             }
         }
 
@@ -220,10 +278,10 @@ class DynamicKrakenServiceTest : StringSpec() {
             }
 
             coVerify(exactly = 2) {
-                simulatedService.executeOrder(any(), any(), any(), any(), any())
+                simulatedService.executeOrder(any(), any(), any(), any(), any(), any())
             }
             coVerify(exactly = 0) {
-                realService.executeOrder(any(), any(), any(), any(), any())
+                realService.executeOrder(any(), any(), any(), any(), any(), any())
             }
             coVerify(exactly = 1) { simulatedService.getBalances() }
             coVerify(exactly = 0) { realService.getBalances() }
@@ -268,10 +326,10 @@ class DynamicKrakenServiceTest : StringSpec() {
                 }
 
                 coVerify(exactly = 1) {
-                    simulatedService.executeOrder(any(), any(), any(), any(), any())
+                    simulatedService.executeOrder(any(), any(), any(), any(), any(), any())
                 }
                 coVerify(exactly = 1) {
-                    realService.executeOrder(any(), any(), any(), any(), any())
+                    realService.executeOrder(any(), any(), any(), any(), any(), any())
                 }
             }
         }

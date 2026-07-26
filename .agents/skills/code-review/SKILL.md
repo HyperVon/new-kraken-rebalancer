@@ -2,8 +2,9 @@
 name: code-review
 description: >-
   Structured code review covering SRP architecture, BigDecimal safety, dryRun vs
-  simulation, Kraken rate limits, :common purity, coverage gates, and project
-  conventions. Use when reviewing PRs, diffs, or auditing code quality.
+  simulation, Kraken rate limits, exchange-claim verification (cl_ord_id vs
+  userref), :common purity, coverage gates, and project conventions. Use when
+  reviewing PRs, diffs, or auditing code quality.
 ---
 
 # Code Review Skill
@@ -34,6 +35,15 @@ description: >-
 - Lockout backoff 10s→15m via `retryWithFlow`.
 - **`dryRun` ≠ `simulation`** — `DynamicKrakenService` routing correct.
 - No secret logging.
+- AddOrder order identity: live path uses deterministic `cl_ord_id`
+  (`OrderExecutorImpl.clientOrderId`); **`userref` is not uniqueness**.
+- **Exchange-claim gate:** any PR claim about exchange semantics (idempotency,
+  uniqueness, retries, fee fields, order identity) must match current official
+  Kraken docs — not memory, changelog prose, or skill text alone. Canonical
+  refs live in [kraken-api-integration](../kraken-api-integration/SKILL.md)
+  (AddOrder + `cl_ord_id` guide). Diffs that change AddOrder params are
+  high-risk; ask “does this field do what the PR says?” and verify before
+  approving.
 
 ### 4. Security
 
@@ -85,5 +95,8 @@ description: >-
 
 - [ ] Matcher name `shouldBeEqualComparingTo`; coverage gates precise
 - [ ] dryRun/simulation distinct; sell-then-buy + fail-closed settle + cycle 99% budget
+- [ ] Exchange semantic claims verified against official docs when AddOrder /
+      order-identity / retry behavior changes **or** those claims appear in the
+      diff (including skill/docs-only PRs) — see kraken-api-integration links
 - [ ] `:common` purity; no-auth/CORS local-trust noted if relevant
 - [ ] Docs/JaCoCo/markdown paths correct

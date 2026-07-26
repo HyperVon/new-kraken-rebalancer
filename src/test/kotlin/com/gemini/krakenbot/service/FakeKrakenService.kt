@@ -65,8 +65,9 @@ class FakeKrakenService : KrakenService {
         side: String,
         volume: BigDecimal,
         dryRun: Boolean?,
+        clOrdId: String?,
     ): OrderResult {
-        executedOrders.add(OrderCall(pair, type, side, volume, dryRun))
+        executedOrders.add(OrderCall(pair, type, side, volume, dryRun, clOrdId))
         executeOrderAction?.invoke(pair, type, side, volume)
         return orderResultFactory?.invoke(pair, type, side, volume)
             ?: OrderResult(
@@ -87,4 +88,5 @@ data class OrderCall(
     val side: String,
     val volume: BigDecimal,
     val dryRun: Boolean? = null,
+    val clOrdId: String? = null,
 )

@@ -22,7 +22,7 @@ Canonical deep docs:
 | Task | Skill |
 | :--- | :--- |
 | Portfolio math, ATH/drawdown, orders | [portfolio-rebalancing-math](skills/portfolio-rebalancing-math/SKILL.md) |
-| Kraken REST, signing, rate limits | [kraken-api-integration](skills/kraken-api-integration/SKILL.md) |
+| Kraken REST, signing, rate limits, `cl_ord_id` | [kraken-api-integration](skills/kraken-api-integration/SKILL.md) |
 | dryRun vs simulation flags | [dry-run-and-simulation](skills/dry-run-and-simulation/SKILL.md) |
 | Koin DI & `rebalancer-config.json` | [koin-di-and-config](skills/koin-di-and-config/SKILL.md) |
 | `:common` KMP shared module | [common-kmp-module](skills/common-kmp-module/SKILL.md) |
@@ -88,11 +88,12 @@ the CLAUDE.md / Copilot stubs) so they get the same norms without Cursor.
 
 | Role | Type |
 | :--- | :--- |
-| Entry / DI / lifecycle | `KrakenRebalancerApplication`, `AppModule` |
+| Entry / DI / lifecycle | `KrakenRebalancerApplication`, `AppModule` (`coreModule` + `webModule`) |
 | Orchestrator | `PortfolioManagerImpl` |
-| Brain (snapshot + analysis) | `PortfolioAnalyzerImpl` |
+| Brain (snapshot + analysis) | `PortfolioAnalyzerImpl` (REST + ATH I/O) |
+| Domain rebalance math | `RebalancerEngine` (no network/DB) |
 | Shared math | `PortfolioCalculations` |
-| Brawn (execution) | `OrderExecutorImpl` |
+| Brawn (execution) | `OrderExecutorImpl` (`cl_ord_id` on AddOrder) |
 | Exchange gateway | `DynamicKrakenService` → `KrakenServiceImpl` or `SimulatedKrakenService` |
 | Rate limit | `RateLimiter` (safeLimit **12**, decay **0.33**, `Mutex`) |
 | History reconstruction | `SnapshotHistoryCalculator` (`service/impl/history/`) |
@@ -107,7 +108,7 @@ the CLAUDE.md / Copilot stubs) so they get the same norms without Cursor.
 
 Full detail: [`docs/ALGORITHM.md`](../docs/ALGORITHM.md) and skill [portfolio-rebalancing-math](skills/portfolio-rebalancing-math/SKILL.md).
 
-- **ATH → drawdown → fiat deployment**: `Deploy% = (DD / MaxDD)^exponent` (capped 100%); effective USD target reduced and redistributed to crypto.
+- **ATH → drawdown → fiat deployment**: `Deploy% = (DD / MaxDD)^exponent` (capped 100%); effective USD target reduced and redistributed to crypto. Math lives in `RebalancerEngine` (via `PortfolioAnalyzerImpl`).
 - **Trigger**: absolute signed relative deviation ≥ `deviationTriggerPercent`
   **and** `|DeviationUSD| ≥ dustThresholdUSD` (`isSignificant`).
 - **Price safety**: missing/zero non-USD ticker aborts the cycle before orders.
@@ -118,7 +119,8 @@ Full detail: [`docs/ALGORITHM.md`](../docs/ALGORITHM.md) and skill [portfolio-re
   txid) with the same **3** attempts / **250ms** doubling backoff / **≥95%**
   early-accept / fail-closed abort; fall back to USD balance poll when no txids
   exist; cycle buy budget **99%** of settled USD (`withStableBackend` pins live
-  vs simulation; cycle `dryRun` is passed into each `executeOrder`). Trades
+  vs simulation; cycle `dryRun` is passed into each `executeOrder`). Live AddOrder
+  includes deterministic `cl_ord_id` (open-order uniqueness on retry). Trades
   persist `cycleId` + `orderTxid`.
 - **Precision**: `BigDecimal` only — crypto scale **8**, USD scale **2**. Tests: `shouldBeEqualComparingTo` (never `shouldBeEqualByComparingTo` / `.equals()`).
 

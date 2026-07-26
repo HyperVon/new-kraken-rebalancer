@@ -161,6 +161,7 @@ class KrakenServiceImpl(
         side: String,
         volume: BigDecimal,
         dryRun: Boolean?,
+        clOrdId: String?,
     ): OrderResult {
         val normalizedVolume =
             volume
@@ -172,11 +173,12 @@ class KrakenServiceImpl(
         val isDryRun = dryRun ?: configService.getConfig().settings.dryRun
         if (isDryRun) {
             log.info(
-                "[DRY RUN] Would execute order: {} {} {} volume={}",
+                "[DRY RUN] Would execute order: {} {} {} volume={} cl_ord_id={}",
                 type,
                 side,
                 pair,
                 normalizedVolume.toPlainString(),
+                clOrdId,
             )
             return OrderResult(
                 success = true,
@@ -189,12 +191,15 @@ class KrakenServiceImpl(
 
         val path = KrakenApiConstants.PATH_ADD_ORDER
         val params =
-            mapOf(
+            mutableMapOf(
                 KrakenApiConstants.PARAM_PAIR to pair,
                 KrakenApiConstants.PARAM_TYPE to side,
                 KrakenApiConstants.PARAM_ORDERTYPE to type,
                 KrakenApiConstants.PARAM_VOLUME to normalizedVolume.toPlainString(),
             )
+        if (clOrdId != null) {
+            params[KrakenApiConstants.PARAM_CL_ORD_ID] = clOrdId
+        }
 
         return try {
             val resp = queryPrivate(path, params)

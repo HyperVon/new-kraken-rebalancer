@@ -25,7 +25,9 @@ import kotlinx.coroutines.flow.last
 import org.slf4j.LoggerFactory
 import java.math.BigDecimal
 import java.math.RoundingMode
+import java.nio.charset.StandardCharsets
 import java.time.Instant
+import java.util.UUID
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Duration.Companion.milliseconds
 
@@ -44,6 +46,18 @@ class OrderExecutorImpl(
         const val TRADE_HISTORY_PAGE_SIZE = 50
         const val MAX_FILL_HISTORY_PAGES = 5
         val FEE_RATE_ESTIMATE: BigDecimal = PrecisionConstants.FEE_RATE_ESTIMATE
+
+        /**
+         * Deterministic Kraken `cl_ord_id` (UUID form) for a cycle/symbol/side so
+         * `retryWithFlow` re-POSTs of AddOrder reuse the same client order id.
+         * Uniqueness is enforced by Kraken among *open* orders only.
+         */
+        fun clientOrderId(cycleId: String, symbol: String, side: String): String? {
+            if (cycleId.isBlank()) return null
+            return UUID.nameUUIDFromBytes(
+                "$cycleId|$symbol|$side".toByteArray(StandardCharsets.UTF_8),
+            ).toString()
+        }
     }
 
     override suspend fun executeOrders(
@@ -183,6 +197,7 @@ class OrderExecutorImpl(
         val volume = usdAmount.divide(price, PrecisionConstants.SCALE_CRYPTO, RoundingMode.HALF_UP)
         if (volume.signum() <= 0) return null
         val pair = Asset.tradingPair(symbol)
+        val clOrdId = clientOrderId(cycleId, symbol, side.apiValue)
         val result =
             backend.executeOrder(
                 pair = pair,
@@ -190,6 +205,7 @@ class OrderExecutorImpl(
                 side = side.apiValue,
                 volume = volume,
                 dryRun = settings.dryRun,
+                clOrdId = clOrdId,
             )
         logOrderResult(
             result = result,
