@@ -107,8 +107,11 @@ Retry on `IOException`, `ResponseException`, and messages containing
 
 ## AddOrder field names (Kraken REST)
 
-- `KrakenServiceImpl.executeOrder` maps `type` ← **order side**
-  (`buy` / `sell` via `OrderSide.apiValue`) and `ordertype` ← `market`.
+Kotlin `KrakenService.executeOrder(pair, type, side, …)` maps to Kraken POST
+fields as follows (do **not** confuse Kotlin param names with Kraken keys):
+
+- Kraken **`type`** ← Kotlin **`side`** (`buy` / `sell` via `OrderSide.apiValue`)
+- Kraken **`ordertype`** ← Kotlin **`type`** (`market`)
 - `cl_ord_id` seed uses lowercase `side.apiValue` in
   `OrderExecutorImpl.clientOrderId(cycleId, symbol, side)`.
 - Volume: scale 8, `stripTrailingZeros()`, `toPlainString()` before POST.

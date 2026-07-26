@@ -104,6 +104,9 @@ Severity: **P0** money/safety teaching gap · **P1** high-leverage pattern ·
 - Skill: `.agents/skills/architecture-review/SKILL.md` Step 3
 - Gap: Review stays abstract; never forces a walk of sell → settle → buy.
 - Why: Architecture changes here have direct fund-loss blast radius.
+- **Superseded:** live skill text was corrected in adversarial PR review
+  (`ca3355d`+). Use the draft below (not the original ≥95%-abort /
+  “planned sells block buys” / bare “Idempotency” wording).
 
 ````markdown
 ### Money-path stress (mandatory before executor/manager/exchange redesign)
@@ -112,11 +115,16 @@ Trace in code, then answer:
 
 1. **Trigger gate** — both `isSignificant` gates (deviation % + USD dust) required?
 2. **Price safety** — missing/zero non-USD ticker aborts before any AddOrder?
-3. **Sell-first** — buys blocked until ≥1 sell settles when sells were planned?
-4. **Settle fail-closed** — if post-sell USD cannot reach ≥95% of projected
-   after 3 × 250ms polls, the cycle aborts buys (no "best effort")?
+3. **Sell-first** — sell phase runs before buys; USD settle runs only after
+   **≥1 successful** sell (and not dry-run)? (All planned sells failing still
+   allows buys from opening USD — do not invent “planned sells block buys”.)
+4. **Settle fail-closed** — after settle polls, buys abort only when confirmed
+   USD is **≤ 0**? (≥95% of projected is **early-accept**, not the abort
+   threshold; best positive below 95% still proceeds.)
 5. **Cycle cash cap** — multi-buy batch respects 99% of settled USD?
-6. **Idempotency** — retries reuse deterministic `cl_ord_id` (not `userref`)?
+6. **Open-order uniqueness** — retries reuse deterministic `cl_ord_id` (not
+   `userref`)? (`cl_ord_id` is **not** full request idempotency across
+   filled/canceled orders — see kraken-api-integration.)
 7. **Audit trail** — trades persist `cycleId` + `orderTxid`?
 8. **Mode clarity** — operator distinguishes SIMULATION / DRY RUN / LIVE
    without reading logs?

@@ -78,8 +78,9 @@ cannot change placement mode. Outside a stable block, each call still re-reads
 - Seeding: historical snapshots (~15 days) and simulated trades when DB empty +
   simulation enabled (see trade-history-sync).
 - Still honors `dryRun` (no balance mutation on orders).
-- Dry-run emulator orders omit `orderTxid`, so sell settle uses the balance-poll
-  fallback by design.
+- Dry-run emulator orders omit `orderTxid`. That only matters when settle runs
+  (`dryRun=false` with successful sells); when `settings.dryRun` is true, the
+  executor **skips settle** and budgets buys from projected cash.
 
 ## Safety rules
 
