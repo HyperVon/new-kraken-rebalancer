@@ -202,15 +202,17 @@ failure.
       cycle budget — no invented sell liquidity.
 2. **USD Settle (fill-confirmed, balance fallback)**: After **≥1 successful
    sell** and when **not** in dry-run mode, the system prefers **fill-confirmed**
-   sell proceeds: poll trade history (same 3× backoff from **250ms**) for API
-   fills whose `ordertxid` matches the sell AddOrder txids, sum proceeds, and
-   set cash = opening USD + confirmed proceeds. Early-accept at **≥95%** of
-   projected; **abort buys** if nothing positive is confirmed (fail-closed).
-   When no sell txids are available (e.g. some test doubles), fall back to the
-   legacy USD **balance poll** with the same attempt/backoff/≥95%/fail-closed
-   rules. Skipped entirely when no sell succeeded or `dryRun` is true (buys
-   use projected cash). Successful sells record `cycleId` and `orderTxid` on
-   persisted trade rows.
+   sell proceeds: poll trade history (same 3× backoff from **250ms**, paginating
+   up to 5×50 rows) for API fills whose `ordertxid` matches the sell AddOrder
+   txids, sum **net** proceeds (`cost − fee`), and set cash = opening USD +
+   confirmed proceeds. When spendable USD is already visible on a balance peek,
+   cash is capped to `min(fill-confirmed, balance)`. Early-accept at **≥95%** of
+   projected. If txids exist but no positive fills appear, **fall back** to the
+   legacy USD **balance poll** (same attempt/backoff/≥95% rules). **Abort buys**
+   if neither path confirms positive USD (fail-closed). When no sell txids are
+   available (e.g. some test doubles), go straight to the balance poll. Skipped
+   entirely when no sell succeeded or `dryRun` is true (buys use projected cash).
+   Successful sells record `cycleId` and `orderTxid` on persisted trade rows.
 3. **Buy Orders Second**:
     - The whole sell→buy sequence runs inside `KrakenService.withStableBackend`
       so a mid-cycle `simulation` flip cannot split sells and buys across backends.

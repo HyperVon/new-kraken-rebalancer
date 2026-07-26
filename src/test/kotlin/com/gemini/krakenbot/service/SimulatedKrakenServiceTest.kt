@@ -199,7 +199,9 @@ class SimulatedKrakenServiceTest : StringSpec() {
 
             firstPage.size shouldBe 50
             secondPage.size shouldBe 5
-            (secondPage.first().timestamp >= firstPage.last().timestamp) shouldBe true
+            // Newest-first (Kraken-like): page 0 ends at or after the start of page 1.
+            (firstPage.last().timestamp >= secondPage.first().timestamp) shouldBe true
+            (firstPage.first().timestamp >= firstPage.last().timestamp) shouldBe true
         }
 
         "should initialize assets added after the simulation portfolio already exists" {

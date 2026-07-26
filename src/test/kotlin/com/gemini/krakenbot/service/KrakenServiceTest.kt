@@ -144,6 +144,7 @@ class KrakenServiceTest : StringSpec() {
                     volume = BigDecimal("0.1"),
                 )
                 result.success.shouldBeTrue()
+                result.orderTxid shouldBe "THVR-...-TC"
             }
         }
 
@@ -516,6 +517,7 @@ class KrakenServiceTest : StringSpec() {
                 first.volume.compareTo(BigDecimal("0.1")) shouldBe 0
                 first.usdAmount.compareTo(BigDecimal("5000.00")) shouldBe 0
                 first.timestamp.toEpochMilli() shouldBe 1700000000123L
+                first.orderTxid shouldBe "O1"
             }
         }
 

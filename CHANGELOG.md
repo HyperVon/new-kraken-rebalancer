@@ -18,7 +18,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **UI-1**: History JSON APIs use shared `:common` DTOs + typed JS parsing;
   HTMX dashboard SSE/fragments unchanged.
 - **EXEC-1**: Rebalance cycles record `cycleId`/`orderTxid` on trades; buy
-  budget prefers fill-confirmed sell proceeds (balance-poll fallback).
+  budget prefers fill-confirmed sell proceeds (net of fee, capped by a
+  balance peek when spendable USD is visible; balance-poll fallback). Sync
+  reconcile preserves local `cycleId` and prefers API `orderTxid`.
 - **TEST-1**: Added `SimulationEvaluationScenariosTest` against
   `SimulatedKrakenService` + real TradeHistory / in-memory SQLite.
 - **architecture-review skill**: Third-party redesign brainstorm skill; Step 6

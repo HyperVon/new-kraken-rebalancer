@@ -39,6 +39,10 @@ class OrderExecutorImpl(
         val CASH_RESERVE_FACTOR: BigDecimal = PrecisionConstants.CASH_RESERVE_FACTOR
         const val MAX_REFRESH_ATTEMPTS = 3
         const val REFRESH_DELAY_MS = 250L
+
+        /** Kraken TradesHistory page size; used to decide when to stop paginating fill polls. */
+        const val TRADE_HISTORY_PAGE_SIZE = 50
+        const val MAX_FILL_HISTORY_PAGES = 5
         val FEE_RATE_ESTIMATE: BigDecimal = PrecisionConstants.FEE_RATE_ESTIMATE
     }
 
@@ -202,6 +206,8 @@ class OrderExecutorImpl(
     /**
      * Prefer fill-confirmed sell proceeds (trade history matched by order txid). When no txids
      * are available (tests / backends that omit them), fall back to the balance-poll heuristic.
+     * When fill confirmation succeeds and a positive balance is already visible, take the min so
+     * history that leads spendable cash cannot inflate the buy budget.
      */
     private suspend fun settleUsdAfterSells(
         backend: KrakenService,
@@ -212,6 +218,18 @@ class OrderExecutorImpl(
         if (sellOrderTxids.isNotEmpty()) {
             val fillConfirmed = pollFillConfirmedUsd(backend, openingUsd, projectedCash, sellOrderTxids).last()
             if (fillConfirmed > BigDecimal.ZERO) {
+                val balancePeek = peekUsdBalance(backend)
+                if (balancePeek > BigDecimal.ZERO) {
+                    val capped = fillConfirmed.min(balancePeek)
+                    if (capped < fillConfirmed) {
+                        log.info(
+                            "Capping fill-confirmed USD {} to observed balance {}",
+                            fillConfirmed,
+                            balancePeek,
+                        )
+                    }
+                    return capped
+                }
                 return fillConfirmed
             }
             log.warn("Fill confirmation returned no positive USD; falling back to balance poll")
@@ -221,6 +239,20 @@ class OrderExecutorImpl(
 
     private suspend fun refreshUsdBalanceAfterSells(backend: KrakenService, projectedCash: BigDecimal): BigDecimal =
         pollUsdBalanceAfterSells(backend, projectedCash).last()
+
+    private suspend fun peekUsdBalance(backend: KrakenService): BigDecimal = try {
+        val balances = backend.getBalances()
+        if (balances.isEmpty()) {
+            BigDecimal.ZERO
+        } else {
+            resolveBalance(Asset.USD, balances)
+        }
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        log.warn("USD balance peek after fill confirmation failed", e)
+        BigDecimal.ZERO
+    }
 
     private fun pollFillConfirmedUsd(
         backend: KrakenService,
@@ -237,15 +269,7 @@ class OrderExecutorImpl(
         repeat(MAX_REFRESH_ATTEMPTS) { attempt ->
             delay(backoffMs.milliseconds)
             try {
-                val fills = backend.getTradeHistory(startSec = startSec, offset = 0)
-                val matchedProceeds =
-                    fills
-                        .filter { fill ->
-                            fill.success &&
-                                OrderSide.isSell(fill.side) &&
-                                fill.orderTxid != null &&
-                                fill.orderTxid in txidSet
-                        }.fold(BigDecimal.ZERO) { acc, fill -> acc.add(fill.usdAmount) }
+                val matchedProceeds = sumMatchedSellProceeds(backend, startSec, txidSet)
                 if (matchedProceeds > BigDecimal.ZERO) {
                     val cash = openingUsd.add(matchedProceeds).toUsdScale()
                     bestCash = bestCash.max(cash)
@@ -271,6 +295,36 @@ class OrderExecutorImpl(
         } else {
             log.error("No fill-confirmed USD observed after sell refresh")
         }
+    }
+
+    /**
+     * Sum net-of-fee USD proceeds for sells whose [TradeRecord.orderTxid] is in [txidSet],
+     * paginating through recent history until every txid has been seen or pages are exhausted.
+     */
+    private suspend fun sumMatchedSellProceeds(
+        backend: KrakenService,
+        startSec: Long,
+        txidSet: Set<String>,
+    ): BigDecimal {
+        var offset = 0
+        var matchedProceeds = BigDecimal.ZERO
+        val seenTxids = mutableSetOf<String>()
+        for (page in 0 until MAX_FILL_HISTORY_PAGES) {
+            val fills = backend.getTradeHistory(startSec = startSec, offset = offset)
+            if (fills.isEmpty()) break
+            for (fill in fills) {
+                val txid = fill.orderTxid ?: continue
+                if (!fill.success || !OrderSide.isSell(fill.side) || txid !in txidSet) continue
+                seenTxids.add(txid)
+                val netProceeds = fill.usdAmount.subtract(fill.fee).max(BigDecimal.ZERO)
+                matchedProceeds = matchedProceeds.add(netProceeds)
+            }
+            offset += fills.size
+            if (seenTxids.containsAll(txidSet) || fills.size < TRADE_HISTORY_PAGE_SIZE) {
+                break
+            }
+        }
+        return matchedProceeds
     }
 
     /**

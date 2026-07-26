@@ -149,8 +149,9 @@ class SimulationEvaluationScenariosTest : StringSpec() {
                         Instant.EPOCH,
                         Instant.now().plusSeconds(60),
                     )
-                // At least one cycle typically trades; tolerate empty if already near target.
-                (trades.size >= 0) shouldBe true
+                trades.filter { it.cycleId != null }.forEach { trade ->
+                    trade.cycleId!!.isNotBlank() shouldBe true
+                }
             }
         }
 

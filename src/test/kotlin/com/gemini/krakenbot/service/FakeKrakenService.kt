@@ -28,6 +28,7 @@ class FakeKrakenService : KrakenService {
 
     var executedOrders = mutableListOf<OrderCall>()
     var getBalancesCallCount = 0
+    var getTradeHistoryCallCount = 0
     var tradeHistoryTotalCountOverride = 0
 
     override suspend fun getBalances(): RawBalances {
@@ -51,8 +52,10 @@ class FakeKrakenService : KrakenService {
         }
     }
 
-    override suspend fun getTradeHistory(startSec: Long?, offset: Int?): List<TradeRecord> =
-        tradeHistorySupplier(startSec, offset)
+    override suspend fun getTradeHistory(startSec: Long?, offset: Int?): List<TradeRecord> {
+        getTradeHistoryCallCount++
+        return tradeHistorySupplier(startSec, offset)
+    }
 
     override fun getLastTradeHistoryTotalCount(): Int = tradeHistoryTotalCountOverride
 

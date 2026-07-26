@@ -446,6 +446,8 @@ class TradeHistoryServiceTest : StringSpec() {
                     price = BigDecimal.TEN,
                     expectedPrice = BigDecimal("10.05"),
                     source = TradeSource.LOCAL_ESTIMATE,
+                    cycleId = "cycle-keep-me",
+                    orderTxid = "LOCAL-OID",
                 )
                 coEvery { repository.getTradesInRange(any(), any()) } returns listOf(localTrade)
 
@@ -461,6 +463,7 @@ class TradeHistoryServiceTest : StringSpec() {
                     price = BigDecimal("9.95"),
                     fee = BigDecimal("0.0259"),
                     source = TradeSource.API_FILL,
+                    orderTxid = "API-OID",
                 )
 
                 coEvery { krakenService.getTradeHistory(1700000000 - 300, 0) } returns listOf(apiTrade)
@@ -474,6 +477,8 @@ class TradeHistoryServiceTest : StringSpec() {
 
                 coVerify(exactly = 1) { repository.updateTrade(localTrade, any()) }
                 reconciledSlot.captured.source shouldBe TradeSource.API_FILL
+                reconciledSlot.captured.cycleId shouldBe "cycle-keep-me"
+                reconciledSlot.captured.orderTxid shouldBe "API-OID"
                 reconciledSlot.captured.expectedPrice!!.shouldBeEqualComparingTo(BigDecimal("10.05"))
                 reconciledSlot.captured.slippagePercent!!.shouldBeEqualComparingTo(
                     TradeCalculator.calculateSlippage(

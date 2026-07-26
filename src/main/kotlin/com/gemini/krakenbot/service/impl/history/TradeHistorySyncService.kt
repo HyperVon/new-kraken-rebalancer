@@ -90,6 +90,9 @@ class TradeHistorySyncService(
                                     expectedPrice = expectedPrice,
                                     slippagePercent = reconciledSlippage,
                                     source = TradeSource.API_FILL,
+                                    // Keep local cycle linkage; prefer API ordertxid when present.
+                                    cycleId = matchingLocalTrade.cycleId,
+                                    orderTxid = apiTrade.orderTxid ?: matchingLocalTrade.orderTxid,
                                 )
                             log.info(
                                 "Reconciling trade record: local (timestamp={}, usdAmount={}) with API (timestamp={}, usdAmount={})",

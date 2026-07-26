@@ -286,11 +286,11 @@ class SimulatedKrakenService(private val configService: ConfigService) : KrakenS
                 simulatedTrades
             }
 
-        filtered = filtered.sortedBy { it.timestamp }
+        filtered = filtered.sortedByDescending { it.timestamp }
         lastTradeHistoryTotalCount = filtered.size
 
-        // Kraken returns at most 50 records per page. An offset at/beyond the
-        // result size therefore yields an empty page, not the whole history.
+        // Kraken returns at most 50 records per page (newest first). An offset
+        // at/beyond the result size therefore yields an empty page, not the whole history.
         return filtered.drop(offset?.coerceAtLeast(0) ?: 0).take(TRADE_HISTORY_PAGE_SIZE)
     }
 
