@@ -61,6 +61,8 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
         this[TradeTable.slippagePercent] = trade.slippagePercent
         this[TradeTable.expectedPrice] = trade.expectedPrice
         this[TradeTable.tradeSource] = trade.source?.name
+        this[TradeTable.cycleId] = trade.cycleId
+        this[TradeTable.orderTxid] = trade.orderTxid
     }
 
     override suspend fun save(history: List<PortfolioSnapshot>) {
@@ -88,13 +90,12 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
         }
     }
 
-    override suspend fun saveTrade(trade: TradeRecord) {
+    override suspend fun saveTrade(trade: TradeRecord): Int =
         database.safeTransactionIO(log, "Failed to save trade to database") {
             TradeTable.insert {
                 it.applyTradeFields(trade)
-            }
+            }[TradeTable.id]
         }
-    }
 
     override suspend fun updateTrade(oldTrade: TradeRecord, newTrade: TradeRecord) {
         database.safeTransactionIO(log, "Failed to update trade in database", "Database update failed") {
@@ -357,6 +358,8 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
         expectedPrice = row[TradeTable.expectedPrice],
         source = TradeSource.fromDbValue(row[TradeTable.tradeSource]),
         id = row[TradeTable.id],
+        cycleId = row[TradeTable.cycleId],
+        orderTxid = row[TradeTable.orderTxid],
     )
 
     override suspend fun getLatestTradeTime(): Instant? = database.readTransactionIO {

@@ -1,10 +1,11 @@
-package com.gemini.krakenbot.service.impl
+package com.gemini.krakenbot.service.impl.history
 
 import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.TradeRecord
+import com.gemini.krakenbot.service.impl.PortfolioCalculations
 import com.gemini.krakenbot.util.PrecisionConstants
 import com.gemini.krakenbot.util.isNegative
 import java.math.BigDecimal

@@ -10,5 +10,6 @@ interface OrderExecutor {
         prices: AssetPrices,
         settings: Settings,
         actionLog: MutableList<String>,
+        cycleId: String = "",
     )
 }

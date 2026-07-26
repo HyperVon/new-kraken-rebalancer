@@ -22,7 +22,11 @@ import com.gemini.krakenbot.service.impl.OrderExecutorImpl
 import com.gemini.krakenbot.service.impl.PortfolioAnalyzerImpl
 import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
 import com.gemini.krakenbot.service.impl.SimulatedKrakenService
-import com.gemini.krakenbot.service.impl.TradeHistoryServiceImpl
+import com.gemini.krakenbot.service.impl.history.TradeHistoryQueryService
+import com.gemini.krakenbot.service.impl.history.TradeHistoryReconstructionService
+import com.gemini.krakenbot.service.impl.history.TradeHistoryServiceImpl
+import com.gemini.krakenbot.service.impl.history.TradeHistorySnapshotStore
+import com.gemini.krakenbot.service.impl.history.TradeHistorySyncService
 import com.gemini.krakenbot.view.DashboardView
 import com.gemini.krakenbot.view.component.AllocationChartComponent
 import com.gemini.krakenbot.view.component.DashboardFragmentComponent
@@ -63,14 +67,29 @@ val appModule =
         single<ConfigService> { ConfigServiceImpl(objectMapper = get()) }
         singleOf(::SqliteTradeRepositoryImpl) { bind<TradeRepository>() }
         single<PortfolioStatsRepository> { SqlitePortfolioStatsRepositoryImpl(database = get(), objectMapper = get()) }
-        single<TradeHistoryService> {
-            TradeHistoryServiceImpl(
+        single { TradeHistorySnapshotStore(repository = get(), configService = get(), objectMapper = get()) }
+        single { TradeHistoryQueryService(repository = get(), portfolioStatsRepository = get()) }
+        single {
+            TradeHistoryReconstructionService(
                 repository = get(),
-                portfolioStatsRepository = get(),
                 krakenService = get(),
                 configService = get(),
-                objectMapper = get(),
                 portfolioAnalyzer = get(),
+            )
+        }
+        single {
+            TradeHistorySyncService(
+                repository = get(),
+                krakenService = get(),
+                configService = get(),
+                reconstructionService = get(),
+            )
+        }
+        single<TradeHistoryService> {
+            TradeHistoryServiceImpl(
+                snapshotStore = get(),
+                queryService = get(),
+                syncService = get(),
             )
         }
         // Explicit constructor call (not singleOf) so the default `RateLimiter()` is used:

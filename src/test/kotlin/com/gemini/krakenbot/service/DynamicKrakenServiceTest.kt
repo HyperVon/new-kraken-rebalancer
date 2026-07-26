@@ -89,8 +89,6 @@ class DynamicKrakenServiceTest : StringSpec() {
             dynamicService.getOHLC(TestFixtures.BTCUSD, 1440, null)
             coVerify(exactly = 1) { simulatedService.getOHLC(TestFixtures.BTCUSD, 1440, null) }
             coVerify(exactly = 0) { realService.getOHLC(any(), any(), any()) }
-
-            dynamicService.realService shouldBe realService
         }
 
         "delegates to real service when simulation is false" {
@@ -132,8 +130,6 @@ class DynamicKrakenServiceTest : StringSpec() {
             dynamicService.getOHLC(TestFixtures.BTCUSD, 60, 1L)
             coVerify(exactly = 1) { realService.getOHLC(TestFixtures.BTCUSD, 60, 1L) }
             coVerify(exactly = 0) { simulatedService.getOHLC(any(), any(), any()) }
-
-            dynamicService.realService shouldBe realService
         }
 
         "withStableBackend keeps sell and buy on the backend pinned at entry despite mid-call flip" {

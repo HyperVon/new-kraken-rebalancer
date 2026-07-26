@@ -439,8 +439,13 @@ This path is internal orchestration — not a second browser-facing SSE stream l
 │   │       ├── RateLimiter.kt            # Kraken call-counter rate limiter
 │   │       ├── ConfigServiceImpl.kt      # Config persistence + watchConfigChanges flow
 │   │       ├── SimulationDefaults.kt     # Shared simulation default prices
-│   │       ├── SnapshotHistoryCalculator.kt # History reconstruction helpers
-│   │       └── TradeHistoryServiceImpl.kt # Snapshot storage, trade sync, history flow
+│   │       └── history/                  # Trade history façade + collaborators
+│   │           ├── TradeHistoryServiceImpl.kt # Thin façade (Sync / SnapshotStore / Query / Reconstruction)
+│   │           ├── TradeHistorySyncService.kt
+│   │           ├── TradeHistorySnapshotStore.kt
+│   │           ├── TradeHistoryQueryService.kt
+│   │           ├── TradeHistoryReconstructionService.kt
+│   │           └── SnapshotHistoryCalculator.kt # History reconstruction helpers
 │   ├── util/                              # NetworkUtils, TradeDeduplicator, TradeCalculator, ActionLogFormatter, BigDecimalExtensions, BalanceKeys, PrecisionConstantsJvm
 │   ├── view/                              # HTML templates & components (kotlinx.html DSL)
 │   │   ├── DashboardView.kt              # Facade class delegating to components

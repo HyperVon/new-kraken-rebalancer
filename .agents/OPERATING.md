@@ -27,6 +27,7 @@ For tasks that match a skill in `.agents/skills/*/SKILL.md` or the index in
 | UI visual critique / implement | `ui-visual-review` / `ui-visual-implement` |
 | Docs screenshots | `docs-screenshot-refresh` |
 | Docs audit | `documentation-review` |
+| Architecture review / redesign brainstorm | `architecture-review` |
 | Complex-code comments (audit / hygiene) | `complex-code-comments` |
 | Fan-out parallel work | `parallel-multi-agent` |
 | Post-deploy UI smoke | `post-deploy-ui-smoke` |

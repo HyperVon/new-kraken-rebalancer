@@ -25,6 +25,7 @@ import kotlinx.coroutines.flow.last
 import org.slf4j.LoggerFactory
 import java.math.BigDecimal
 import java.math.RoundingMode
+import java.time.Instant
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Duration.Companion.milliseconds
 
@@ -38,6 +39,10 @@ class OrderExecutorImpl(
         val CASH_RESERVE_FACTOR: BigDecimal = PrecisionConstants.CASH_RESERVE_FACTOR
         const val MAX_REFRESH_ATTEMPTS = 3
         const val REFRESH_DELAY_MS = 250L
+
+        /** Kraken TradesHistory page size; used to decide when to stop paginating fill polls. */
+        const val TRADE_HISTORY_PAGE_SIZE = 50
+        const val MAX_FILL_HISTORY_PAGES = 5
         val FEE_RATE_ESTIMATE: BigDecimal = PrecisionConstants.FEE_RATE_ESTIMATE
     }
 
@@ -48,12 +53,16 @@ class OrderExecutorImpl(
         prices: AssetPrices,
         settings: Settings,
         actionLog: MutableList<String>,
+        cycleId: String,
     ) {
         // Pin live vs simulation for the whole sell→buy sequence; pass settings.dryRun into
         // each placement so a mid-cycle config flip cannot change backend or dry-run mode.
         krakenService.withStableBackend { backend ->
-            var projectedCash = currentValuesUSD[Asset.USD] ?: BigDecimal.ZERO
+            val openingUsd = currentValuesUSD[Asset.USD] ?: BigDecimal.ZERO
+            var projectedCash = openingUsd
             var executedSells = false
+            val sellOrderTxids = mutableListOf<String>()
+            val cycleTradeIds = mutableListOf<Int>()
 
             for ((symbol, usdToSell) in sellOrders) {
                 if (usdToSell < BigDecimal.valueOf(settings.dustThresholdUSD)) {
@@ -63,22 +72,47 @@ class OrderExecutorImpl(
                 }
 
                 val result =
-                    executeSingleOrder(backend, symbol, usdToSell, OrderSide.SELL, prices, settings, actionLog)
+                    executeSingleOrder(
+                        backend,
+                        symbol,
+                        usdToSell,
+                        OrderSide.SELL,
+                        prices,
+                        settings,
+                        actionLog,
+                        cycleId,
+                        cycleTradeIds,
+                    )
                 if (result?.success == true) {
                     projectedCash = projectedCash.add(usdToSell)
                     executedSells = true
+                    result.orderTxid?.let { sellOrderTxids.add(it) }
                 }
             }
 
             var actualCash = projectedCash
-            // Live/sim only: poll for settled USD; dry-run keeps projected cash (no exchange settle).
+            // Live/sim only: confirm sell fills (or balance poll fallback); dry-run keeps projected.
             if (executedSells && !settings.dryRun) {
-                actualCash = refreshUsdBalanceAfterSells(backend, projectedCash)
+                actualCash =
+                    settleUsdAfterSells(
+                        backend = backend,
+                        openingUsd = openingUsd,
+                        projectedCash = projectedCash,
+                        sellOrderTxids = sellOrderTxids,
+                    )
                 // Fail-closed: abort the buy phase if no positive USD was observed after sells.
                 if (actualCash <= BigDecimal.ZERO) {
-                    log.error("Aborting buys because no positive USD balance was observed after sells")
+                    log.error("Aborting buys because no positive USD was confirmed after sells")
                     return@withStableBackend
                 }
+            }
+
+            if (cycleId.isNotBlank() && cycleTradeIds.isNotEmpty()) {
+                log.info(
+                    "Cycle {} recorded trade ids: {}",
+                    cycleId,
+                    cycleTradeIds.joinToString(","),
+                )
             }
 
             // Cycle-level budget: 99% of post-sell settled USD so multi-buy batches cannot erode the reserve.
@@ -107,7 +141,18 @@ class OrderExecutorImpl(
                     continue
                 }
 
-                val result = executeSingleOrder(backend, symbol, cost, OrderSide.BUY, prices, settings, actionLog)
+                val result =
+                    executeSingleOrder(
+                        backend,
+                        symbol,
+                        cost,
+                        OrderSide.BUY,
+                        prices,
+                        settings,
+                        actionLog,
+                        cycleId,
+                        cycleTradeIds,
+                    )
                 if (result?.success == true) {
                     actualCash = actualCash.subtract(cost)
                     remainingBuyBudget = remainingBuyBudget.subtract(cost).toUsdScale()
@@ -124,6 +169,8 @@ class OrderExecutorImpl(
         prices: AssetPrices,
         settings: Settings,
         actionLog: MutableList<String>,
+        cycleId: String,
+        cycleTradeIds: MutableList<Int>,
     ): OrderResult? {
         val price = prices[symbol] ?: BigDecimal.ZERO
         if (price.signum() == 0) return null
@@ -152,12 +199,140 @@ class OrderExecutorImpl(
             usdAmount = usdAmount,
             side = side,
         )
-        recordTrade(result, symbol, pair, side, volume, usdAmount, prices)
+        recordTrade(result, symbol, pair, side, volume, usdAmount, prices, cycleId, cycleTradeIds)
         return result
+    }
+
+    /**
+     * Prefer fill-confirmed sell proceeds (trade history matched by order txid). When no txids
+     * are available (tests / backends that omit them), fall back to the balance-poll heuristic.
+     * When fill confirmation succeeds and a positive balance is already visible, take the min so
+     * history that leads spendable cash cannot inflate the buy budget.
+     */
+    private suspend fun settleUsdAfterSells(
+        backend: KrakenService,
+        openingUsd: BigDecimal,
+        projectedCash: BigDecimal,
+        sellOrderTxids: List<String>,
+    ): BigDecimal {
+        if (sellOrderTxids.isNotEmpty()) {
+            val fillConfirmed = pollFillConfirmedUsd(backend, openingUsd, projectedCash, sellOrderTxids).last()
+            if (fillConfirmed > BigDecimal.ZERO) {
+                val balancePeek = peekUsdBalance(backend)
+                if (balancePeek > BigDecimal.ZERO) {
+                    val capped = fillConfirmed.min(balancePeek)
+                    if (capped < fillConfirmed) {
+                        log.info(
+                            "Capping fill-confirmed USD {} to observed balance {}",
+                            fillConfirmed,
+                            balancePeek,
+                        )
+                    }
+                    return capped
+                }
+                // No spendable balance yet: never invent cash beyond this cycle's projected sells.
+                val cappedToProjected = fillConfirmed.min(projectedCash)
+                if (cappedToProjected < fillConfirmed) {
+                    log.info(
+                        "Capping fill-confirmed USD {} to projected cash {}",
+                        fillConfirmed,
+                        projectedCash,
+                    )
+                }
+                return cappedToProjected
+            }
+            log.warn("Fill confirmation returned no positive USD; falling back to balance poll")
+        }
+        return refreshUsdBalanceAfterSells(backend, projectedCash)
     }
 
     private suspend fun refreshUsdBalanceAfterSells(backend: KrakenService, projectedCash: BigDecimal): BigDecimal =
         pollUsdBalanceAfterSells(backend, projectedCash).last()
+
+    private suspend fun peekUsdBalance(backend: KrakenService): BigDecimal = try {
+        val balances = backend.getBalances()
+        if (balances.isEmpty()) {
+            BigDecimal.ZERO
+        } else {
+            resolveBalance(Asset.USD, balances)
+        }
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        log.warn("USD balance peek after fill confirmation failed", e)
+        BigDecimal.ZERO
+    }
+
+    private fun pollFillConfirmedUsd(
+        backend: KrakenService,
+        openingUsd: BigDecimal,
+        projectedCash: BigDecimal,
+        sellOrderTxids: List<String>,
+        targetThreshold: BigDecimal = projectedCash.multiply(BigDecimal("0.95")),
+    ): Flow<BigDecimal> = flow {
+        var bestCash = BigDecimal.ZERO
+        var backoffMs = REFRESH_DELAY_MS
+        val startSec = Instant.now().minusSeconds(600).epochSecond
+        val txidSet = sellOrderTxids.toSet()
+
+        repeat(MAX_REFRESH_ATTEMPTS) { attempt ->
+            delay(backoffMs.milliseconds)
+            try {
+                val matchedProceeds = sumMatchedSellProceeds(backend, startSec, txidSet)
+                if (matchedProceeds > BigDecimal.ZERO) {
+                    val cash = openingUsd.add(matchedProceeds).toUsdScale()
+                    bestCash = bestCash.max(cash)
+                    log.info(
+                        "Fill-confirmed USD after sells (attempt {}): {} (proceeds {})",
+                        attempt + 1,
+                        cash,
+                        matchedProceeds,
+                    )
+                    emit(bestCash)
+                    if (cash >= targetThreshold) return@flow
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                log.warn("Fill confirmation poll failed (attempt {})", attempt + 1, e)
+            }
+            backoffMs = (backoffMs * 2).coerceAtMost(32000L)
+        }
+        emit(bestCash)
+        if (bestCash > BigDecimal.ZERO) {
+            log.warn("Using best fill-confirmed USD after sell refresh: $$bestCash")
+        } else {
+            log.error("No fill-confirmed USD observed after sell refresh")
+        }
+    }
+
+    /**
+     * Sum net-of-fee USD proceeds for sells whose [TradeRecord.orderTxid] is in [txidSet],
+     * paginating newest-first until a short/empty page or [MAX_FILL_HISTORY_PAGES].
+     * Does not stop early when every txid has been seen once — one AddOrder can
+     * produce multiple fill legs across page boundaries.
+     */
+    private suspend fun sumMatchedSellProceeds(
+        backend: KrakenService,
+        startSec: Long,
+        txidSet: Set<String>,
+    ): BigDecimal {
+        var offset = 0
+        var matchedProceeds = BigDecimal.ZERO
+        for (page in 0 until MAX_FILL_HISTORY_PAGES) {
+            val fills = backend.getTradeHistory(startSec = startSec, offset = offset)
+            if (fills.isEmpty()) break
+            for (fill in fills) {
+                val txid = fill.orderTxid ?: continue
+                if (!fill.success || !OrderSide.isSell(fill.side) || txid !in txidSet) continue
+                val netProceeds = fill.usdAmount.subtract(fill.fee).max(BigDecimal.ZERO)
+                matchedProceeds = matchedProceeds.add(netProceeds)
+            }
+            offset += fills.size
+            if (fills.size < TRADE_HISTORY_PAGE_SIZE) break
+        }
+        return matchedProceeds
+    }
 
     /**
      * Post-sell USD settle: up to [MAX_REFRESH_ATTEMPTS] polls, each waiting first and doubling the
@@ -238,6 +413,8 @@ class OrderExecutorImpl(
         volume: BigDecimal,
         usdAmount: BigDecimal,
         prices: AssetPrices,
+        cycleId: String = "",
+        cycleTradeIds: MutableList<Int>? = null,
     ) {
         val trade =
             TradeCalculator.createTradeRecord(
@@ -248,7 +425,9 @@ class OrderExecutorImpl(
                 volume = volume,
                 usdAmount = usdAmount,
                 prices = prices,
+                cycleId = cycleId.ifBlank { null },
             )
-        tradeHistoryService.saveTrade(trade)
+        val tradeId = tradeHistoryService.saveTrade(trade)
+        cycleTradeIds?.add(tradeId)
     }
 }

@@ -1,5 +1,8 @@
 package com.gemini.krakenbot.frontend
 
+import com.gemini.krakenbot.api.HistoryStats
+import com.gemini.krakenbot.api.PortfolioSnapshot
+import com.gemini.krakenbot.api.TradeRecord
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.TimeRange
@@ -150,7 +153,7 @@ private val chartDefaults: dynamic = buildDefaultChartOptions()
 
 private val charts = mutableMapOf<String, dynamic>()
 internal var currentRange = TimeRange.THIRTY_DAYS.key
-private var allTrades: Array<dynamic> = emptyArray()
+private var allTrades: List<TradeRecord> = emptyList()
 internal val visibilityStates = mutableMapOf<String, MutableMap<String, Boolean>>()
 private val pendingPresetVisibility = mutableSetOf<String>()
 private val originalChartRanges = mutableMapOf<String, ChartRange>()
@@ -222,7 +225,7 @@ internal fun resetHistoryUiState() {
     pendingPresetVisibility.clear()
     originalChartRanges.clear()
     currentRange = TimeRange.THIRTY_DAYS.key
-    allTrades = emptyArray()
+    allTrades = emptyList()
     HistoryViewPrefs.resetInteractionState()
 }
 
@@ -465,14 +468,10 @@ fun formatPctTick(v: Double, includePlus: Boolean = true): String {
     return sign + d.asDynamic().toLocaleString(EN_US, options) + "%"
 }
 
-internal fun getUniqueSymbols(snapshots: Array<dynamic>, excludeUsd: Boolean = true): List<String> {
+internal fun getUniqueSymbols(snapshots: List<PortfolioSnapshot>, excludeUsd: Boolean = true): List<String> {
     val symbolsSet = mutableSetOf<String>()
-    snapshots.forEach { s: dynamic ->
-        val assets = s.assets
-        if (assets != null) {
-            val keys = JSObject.keys(assets)
-            keys.forEach { symbolsSet.add(it) }
-        }
+    snapshots.forEach { snapshot ->
+        snapshot.assets.keys.forEach { symbolsSet.add(it) }
     }
     return if (excludeUsd) {
         symbolsSet.filter { it != Asset.USD }.sorted()
@@ -481,11 +480,13 @@ internal fun getUniqueSymbols(snapshots: Array<dynamic>, excludeUsd: Boolean = t
     }
 }
 
-internal fun mapSnapshotsToPoints(snapshots: Array<dynamic>, valueSelector: (dynamic) -> Double): Array<dynamic> =
-    snapshots
-        .map { s: dynamic ->
-            json("x" to s.timestamp, "y" to valueSelector(s))
-        }.toTypedArray()
+internal fun mapSnapshotsToPoints(
+    snapshots: List<PortfolioSnapshot>,
+    valueSelector: (PortfolioSnapshot) -> Double,
+): Array<dynamic> = snapshots
+    .map { snapshot ->
+        json("x" to snapshot.timestamp, "y" to valueSelector(snapshot))
+    }.toTypedArray()
 
 internal fun getClonedChartOptions(): dynamic {
     val options: dynamic = JSON.parse(JSON.stringify(window.asDynamic().chartDefaults))
@@ -570,15 +571,15 @@ internal fun createOrUpdate(canvasId: String, config: dynamic) {
     syncChartScrubber(canvasId)
 }
 
-internal fun buildPortfolioValueChart(snapshots: Array<dynamic>) {
-    if (snapshots.asDynamic().length == 0) return
+internal fun buildPortfolioValueChart(snapshots: List<PortfolioSnapshot>) {
+    if (snapshots.isEmpty()) return
 
-    val pointCount = (snapshots.asDynamic().length as Int)
+    val pointCount = snapshots.size
     val symbolList = getUniqueSymbols(snapshots)
 
     val totalPortfolioData =
-        mapSnapshotsToPoints(snapshots) { s ->
-            dynamicNumber(s.totalValueUSD) ?: 0.0
+        mapSnapshotsToPoints(snapshots) { snapshot ->
+            dynamicNumber(snapshot.totalValueUSD) ?: 0.0
         }
 
     val datasets = mutableListOf<dynamic>()
@@ -600,12 +601,8 @@ internal fun buildPortfolioValueChart(snapshots: Array<dynamic>) {
     symbolList.forEachIndexed { i, sym ->
         val color = ChartProps.borderColorForSymbol(sym, i)
         val symbolData =
-            mapSnapshotsToPoints(snapshots) { s ->
-                if (s.assets != null && s.assets[sym] != null) {
-                    dynamicNumber(s.assets[sym].valueUSD) ?: 0.0
-                } else {
-                    0.0
-                }
+            mapSnapshotsToPoints(snapshots) { snapshot ->
+                dynamicNumber(snapshot.assets[sym]?.valueUSD) ?: 0.0
             }
 
         datasets.add(
@@ -641,22 +638,16 @@ internal fun buildPortfolioValueChart(snapshots: Array<dynamic>) {
     )
 }
 
-internal fun buildAssetHoldingsChart(snapshots: Array<dynamic>) {
-    if (snapshots.asDynamic().length == 0) return
+internal fun buildAssetHoldingsChart(snapshots: List<PortfolioSnapshot>) {
+    if (snapshots.isEmpty()) return
 
-    val pointCount = (snapshots.asDynamic().length as Int)
+    val pointCount = snapshots.size
     val symbolList = getUniqueSymbols(snapshots)
 
     val baseline = snapshots[0]
     val baselines = mutableMapOf<String, Double>()
     symbolList.forEach { sym ->
-        val baseVal =
-            if (baseline.assets != null && baseline.assets[sym] != null) {
-                dynamicNumber(baseline.assets[sym].balance) ?: 0.0
-            } else {
-                0.0
-            }
-        baselines[sym] = baseVal
+        baselines[sym] = dynamicNumber(baseline.assets[sym]?.balance) ?: 0.0
     }
 
     val datasets =
@@ -664,13 +655,8 @@ internal fun buildAssetHoldingsChart(snapshots: Array<dynamic>) {
             .mapIndexed { i, sym ->
                 val color = ChartProps.borderColorForSymbol(sym, i)
                 val symbolData =
-                    mapSnapshotsToPoints(snapshots) { s ->
-                        val current =
-                            if (s.assets != null && s.assets[sym] != null) {
-                                dynamicNumber(s.assets[sym].balance) ?: 0.0
-                            } else {
-                                0.0
-                            }
+                    mapSnapshotsToPoints(snapshots) { snapshot ->
+                        val current = dynamicNumber(snapshot.assets[sym]?.balance) ?: 0.0
                         val base = baselines[sym] ?: 0.0
                         if (base > 0.0) {
                             ((current - base) / base) * PrecisionConstants.TOTAL_ALLOCATION_PERCENTAGE
@@ -698,12 +684,7 @@ internal fun buildAssetHoldingsChart(snapshots: Array<dynamic>) {
         val sym = ctx.dataset.label.toString()
         val pctChange = dynamicNumber(ctx.parsed.y) ?: 0.0
         val snapshot = snapshots[ctx.dataIndex as Int]
-        val balance =
-            if (snapshot.assets != null && snapshot.assets[sym] != null) {
-                dynamicNumber(snapshot.assets[sym].balance) ?: 0.0
-            } else {
-                0.0
-            }
+        val balance = dynamicNumber(snapshot.assets[sym]?.balance) ?: 0.0
         val pctSign = if (pctChange >= 0.0) "+" else ""
         val balOpts: dynamic = json()
         balOpts.minimumFractionDigits = PrecisionConstants.MIN_CRYPTO_DECIMAL_PLACES
@@ -719,10 +700,10 @@ internal fun buildAssetHoldingsChart(snapshots: Array<dynamic>) {
     createOrUpdate(HtmlIds.ASSET_HOLDINGS_CHART, createLineChartConfig(datasets, options))
 }
 
-internal fun buildAllocationDriftChart(snapshots: Array<dynamic>) {
-    if (snapshots.asDynamic().length == 0) return
+internal fun buildAllocationDriftChart(snapshots: List<PortfolioSnapshot>) {
+    if (snapshots.isEmpty()) return
 
-    val pointCount = (snapshots.asDynamic().length as Int)
+    val pointCount = snapshots.size
     val symbolList = getUniqueSymbols(snapshots, excludeUsd = false)
 
     val datasets =
@@ -731,12 +712,8 @@ internal fun buildAllocationDriftChart(snapshots: Array<dynamic>) {
                 val color = ChartProps.borderColorForSymbol(sym, i)
                 val bg = ChartProps.backgroundColorForSymbol(sym, i)
                 val symbolData =
-                    mapSnapshotsToPoints(snapshots) { s ->
-                        if (s.assets != null && s.assets[sym] != null) {
-                            dynamicNumber(s.assets[sym].deviationPercent) ?: 0.0
-                        } else {
-                            0.0
-                        }
+                    mapSnapshotsToPoints(snapshots) { snapshot ->
+                        dynamicNumber(snapshot.assets[sym]?.deviationPercent) ?: 0.0
                     }
 
                 json(
@@ -774,62 +751,59 @@ internal fun buildAllocationDriftChart(snapshots: Array<dynamic>) {
     createOrUpdate(HtmlIds.ALLOCATION_DRIFT_CHART, createLineChartConfig(datasets, options))
 }
 
-internal fun calculateCumulativeNetCashFlow(trades: Array<dynamic>, includeDryRun: Boolean = false): Array<dynamic> =
-    calculateSignedCashFlowSeries(trades, includeDryRun) {
-            trade,
-            delta,
-        ->
+internal fun calculateCumulativeNetCashFlow(trades: List<TradeRecord>, includeDryRun: Boolean = false): Array<dynamic> =
+    calculateSignedCashFlowSeries(trades, includeDryRun) { _, delta ->
         delta
     }
 
-internal fun calculateCumulativeNetAfterFees(trades: Array<dynamic>, includeDryRun: Boolean = false): Array<dynamic> =
-    calculateSignedCashFlowSeries(trades, includeDryRun) { trade, delta ->
-        val fee = dynamicNumber(trade.fee) ?: 0.0
-        delta - fee
-    }
+internal fun calculateCumulativeNetAfterFees(
+    trades: List<TradeRecord>,
+    includeDryRun: Boolean = false,
+): Array<dynamic> = calculateSignedCashFlowSeries(trades, includeDryRun) { trade, delta ->
+    val fee = dynamicNumber(trade.fee) ?: 0.0
+    delta - fee
+}
 
 private inline fun calculateSignedCashFlowSeries(
-    trades: Array<dynamic>,
+    trades: List<TradeRecord>,
     includeDryRun: Boolean,
-    crossinline adjustDelta: (dynamic, Double) -> Double,
+    crossinline adjustDelta: (TradeRecord, Double) -> Double,
 ): Array<dynamic> {
-    if (trades.asDynamic().length == 0) return emptyArray()
+    if (trades.isEmpty()) return emptyArray()
 
     val sorted =
-        trades.sortedWith { a: dynamic, b: dynamic ->
-            val aTime = Date(a.timestamp.toString()).getTime()
-            val bTime = Date(b.timestamp.toString()).getTime()
+        trades.sortedWith { a, b ->
+            val aTime = Date(a.timestamp).getTime()
+            val bTime = Date(b.timestamp).getTime()
             aTime.compareTo(bTime)
         }
 
     val filtered =
-        sorted.filter { t: dynamic ->
-            val isSuccess = isTrue(t.success)
-            val isDryRun = isTrue(t.dryRun)
-            isSuccess && (includeDryRun || !isDryRun)
+        sorted.filter { trade ->
+            trade.success && (includeDryRun || !trade.dryRun)
         }
 
     if (filtered.isEmpty()) return emptyArray()
 
     val points = mutableListOf<dynamic>()
     var cumulative = 0.0
-    for (t in filtered) {
-        val amt = dynamicNumber(t.usdAmount) ?: 0.0
-        val side = t.side.toString().uppercase()
+    for (trade in filtered) {
+        val amt = dynamicNumber(trade.usdAmount) ?: 0.0
+        val side = trade.side.uppercase()
         val delta =
             when (side) {
                 OrderSide.SELL.name -> amt
                 OrderSide.BUY.name -> -amt
                 else -> continue
             }
-        cumulative += adjustDelta(t, delta)
-        points.add(json("x" to t.timestamp, "y" to cumulative))
+        cumulative += adjustDelta(trade, delta)
+        points.add(json("x" to trade.timestamp, "y" to cumulative))
     }
 
     return points.toTypedArray()
 }
 
-internal fun buildCumulativeNetCashFlowChart(trades: Array<dynamic>, includeDryRun: Boolean = false) {
+internal fun buildCumulativeNetCashFlowChart(trades: List<TradeRecord>, includeDryRun: Boolean = false) {
     val grossData = calculateCumulativeNetCashFlow(trades, includeDryRun)
     val netAfterFeesData = calculateCumulativeNetAfterFees(trades, includeDryRun)
     if (grossData.asDynamic().length == 0) return
@@ -897,17 +871,17 @@ private fun padSinglePointSeries(rawData: Array<dynamic>): Array<dynamic> = if (
     rawData
 }
 
-fun formatPair(trade: JsTradeRecord?): String {
-    if (trade?.symbol == null) return ""
+fun formatPair(trade: TradeRecord?): String {
+    if (trade?.symbol.isNullOrBlank()) return ""
     return "${trade.symbol}/USD"
 }
 
-internal fun renderTradeTable(trades: Array<JsTradeRecord>) {
+internal fun renderTradeTable(trades: List<TradeRecord>) {
     val tbody = document.getElementById(HtmlIds.TRADE_TABLE_BODY) ?: return
     tbody.innerHTML = ""
 
     val showDryRun = (document.getElementById(HtmlIds.SHOW_DRY_RUN_CHECKBOX) as? HTMLInputElement)?.checked ?: true
-    val filteredTrades = if (showDryRun) trades else trades.filter { t -> !isTrue(t.dryRun) }.toTypedArray()
+    val filteredTrades = if (showDryRun) trades else trades.filter { trade -> !trade.dryRun }
 
     if (filteredTrades.isEmpty()) {
         val tr = document.createElement(HtmlTags.TR)
@@ -925,20 +899,20 @@ internal fun renderTradeTable(trades: Array<JsTradeRecord>) {
     }
 }
 
-private fun renderTradeRow(t: JsTradeRecord): HTMLTableRowElement {
+private fun renderTradeRow(t: TradeRecord): HTMLTableRowElement {
     val tr = document.createElement(HtmlTags.TR) as HTMLTableRowElement
     tr.className = CssClass.Table.Hoverable.toString()
 
-    val time = Date(t.timestamp.toString()).asDynamic().toLocaleString()
-    val side = t.side.toString().uppercase()
+    val time = Date(t.timestamp).asDynamic().toLocaleString()
+    val side = t.side.uppercase()
     val sideClass =
         when (side) {
             OrderSide.BUY.name -> CssClass.Badge.Buy
             OrderSide.SELL.name -> CssClass.Badge.Sell
             else -> CssClass.Badge.Info
         }
-    val success = isTrue(t.success)
-    val dryRun = isTrue(t.dryRun)
+    val success = t.success
+    val dryRun = t.dryRun
     val statusText =
         when {
             !success -> ViewText.STATUS_FAILED
@@ -1072,7 +1046,7 @@ private fun createBadgeCell(text: String, badgeClass: CssClass): HTMLTableCellEl
     return td
 }
 
-internal fun updateStats(stats: JsHistoryStats) {
+internal fun updateStats(stats: HistoryStats) {
     val athTitle = document.getElementById(HtmlIds.STAT_ATH_TITLE)
     val ath = document.getElementById(HtmlIds.STAT_ATH)
     val totalTrades = document.getElementById(HtmlIds.STAT_TOTAL_TRADES)
@@ -1091,7 +1065,7 @@ internal fun updateStats(stats: JsHistoryStats) {
     }
     if (ath != null) ath.textContent = formatUSD(dynamicNumber(stats.allTimeHigh) ?: 0.0)
     if (totalTrades != null) {
-        val count = dynamicNumber(stats.totalTradesExecuted) ?: 0.0
+        val count = stats.totalTradesExecuted.toDouble()
         totalTrades.textContent = count.asDynamic().toLocaleString()
     }
     if (totalVolume != null) {
@@ -1135,15 +1109,15 @@ internal fun loadAll(range: String): Promise<Unit> {
         )
 
     return Promise.all(promises).then { results ->
-        val snapshots = results[0].unsafeCast<Array<JsPortfolioSnapshot>>()
-        val trades = results[1].unsafeCast<Array<JsTradeRecord>>()
-        val stats = results[2].unsafeCast<JsHistoryStats>()
-        allTrades = trades.asDynamic()
-        buildPortfolioValueChart(snapshots.asDynamic())
-        buildAssetHoldingsChart(snapshots.asDynamic())
-        buildAllocationDriftChart(snapshots.asDynamic())
+        val snapshots = parsePortfolioSnapshots(results[0])
+        val trades = parseTradeRecords(results[1])
+        val stats = parseHistoryStats(results[2])
+        allTrades = trades
+        buildPortfolioValueChart(snapshots)
+        buildAssetHoldingsChart(snapshots)
+        buildAllocationDriftChart(snapshots)
         val showDryRun = (document.getElementById(HtmlIds.SHOW_DRY_RUN_CHECKBOX) as? HTMLInputElement)?.checked ?: true
-        buildCumulativeNetCashFlowChart(trades.asDynamic(), showDryRun)
+        buildCumulativeNetCashFlowChart(trades, showDryRun)
         renderTradeTable(trades)
         updateStats(stats)
     }
@@ -1151,13 +1125,12 @@ internal fun loadAll(range: String): Promise<Unit> {
 
 internal fun checkSyncProgress(): Promise<Boolean> = fetchJSON(Routes.API_HISTORY_SYNC_PROGRESS)
     .then { rawStatus: dynamic ->
-        val status = rawStatus.unsafeCast<JsSyncProgress>()
+        val status = parseSyncProgressResponse(rawStatus)
         val banner = document.getElementById(HtmlIds.SYNC_PROGRESS_BANNER) as? HTMLElement
         if (banner == null) {
             true
         } else {
-            val seeded = status.seeded ?: false
-            if (seeded) {
+            if (status.seeded) {
                 banner.style.display = "none"
                 true
             } else {

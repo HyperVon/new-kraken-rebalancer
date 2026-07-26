@@ -18,11 +18,14 @@ object TradeTable : Table("trades") {
     val slippagePercent = decimal("slippage_percent", 10, 4).nullable()
     val expectedPrice = decimal("expected_price", 24, 8).nullable()
     val tradeSource = varchar("source", 16).nullable()
+    val cycleId = varchar("cycle_id", 36).nullable()
+    val orderTxid = varchar("order_txid", 64).nullable()
 
     init {
         index("idx_trades_timestamp", false, timestamp)
         index("idx_trades_pair_side_timestamp", false, pair, side, timestamp)
         index("idx_trades_success", false, success)
+        index("idx_trades_cycle_id", false, cycleId)
     }
 
     override val primaryKey = PrimaryKey(id)

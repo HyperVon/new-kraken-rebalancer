@@ -38,6 +38,8 @@ object KrakenApiConstants {
     const val FIELD_VOL = "vol"
     const val FIELD_FEE = "fee"
     const val FIELD_LAST = "last"
+    const val FIELD_TXID = "txid"
+    const val FIELD_ORDER_TXID = "ordertxid"
 
     const val HMAC_SHA512 = "HmacSHA512"
     const val SHA_256 = "SHA-256"

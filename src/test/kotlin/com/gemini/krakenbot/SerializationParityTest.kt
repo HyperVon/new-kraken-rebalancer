@@ -2,13 +2,26 @@ package com.gemini.krakenbot
 
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.fasterxml.jackson.module.kotlin.readValue
+import com.gemini.krakenbot.api.SyncProgressResponse
+import com.gemini.krakenbot.api.buildSyncProgressResponse
+import com.gemini.krakenbot.api.toApiDto
+import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.HistoryStats
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.PortfolioStats
+import com.gemini.krakenbot.model.SyncMetadataKeys
+import com.gemini.krakenbot.model.TradeRecord
+import com.gemini.krakenbot.model.TradeSource
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.string.shouldContain
 import java.math.BigDecimal
+import java.time.Instant
+import com.gemini.krakenbot.api.HistoryStats as ApiHistoryStats
+import com.gemini.krakenbot.api.PortfolioSnapshot as ApiPortfolioSnapshot
+import com.gemini.krakenbot.api.TradeRecord as ApiTradeRecord
 
 class SerializationParityTest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
@@ -77,6 +90,105 @@ class SerializationParityTest : StringSpec() {
             btcAsset?.currentPercent?.compareTo(BigDecimal("66.6666")) shouldBe 0
             btcAsset?.deviationPercent?.compareTo(BigDecimal("16.6666")) shouldBe 0
             btcAsset?.deviationUSD?.compareTo(BigDecimal("2500.25")) shouldBe 0
+        }
+
+        "history API PortfolioSnapshot DTO serializes string decimals and ISO timestamps" {
+            val domain =
+                PortfolioSnapshot(
+                    timestamp = Instant.parse("2023-01-01T12:00:00Z"),
+                    totalValueUSD = BigDecimal("15000.50"),
+                    assets =
+                    mapOf(
+                        TestFixtures.XXBTZUSD to
+                            PortfolioSnapshot.AssetSnapshot(
+                                symbol = Asset(TestFixtures.XXBTZUSD),
+                                balance = BigDecimal("0.5"),
+                                price = BigDecimal("20000.0"),
+                                valueUSD = BigDecimal("10000.0"),
+                                targetPercent = BigDecimal("50.0"),
+                                currentPercent = BigDecimal("66.6666"),
+                                deviationPercent = BigDecimal("16.6666"),
+                                deviationUSD = BigDecimal("2500.25"),
+                            ),
+                    ),
+                    actions = listOf("SELL 0.125 XXBTZUSD"),
+                    drawdownPercent = BigDecimal("5.0"),
+                    fiatDeploymentPercent = BigDecimal("10.0"),
+                    effectiveUsdTargetPercent = BigDecimal("40.0"),
+                )
+
+            val json = mapper.writeValueAsString(listOf(domain.toApiDto()))
+            json shouldContain "\"timestamp\":\"2023-01-01T12:00:00Z\""
+            json shouldContain "\"totalValueUSD\":\"15000.50\""
+            json shouldContain "\"deviationUSD\":\"2500.25\""
+
+            val roundTrip: List<ApiPortfolioSnapshot> = mapper.readValue(json)
+            roundTrip shouldHaveSize 1
+            roundTrip[0].assets[TestFixtures.XXBTZUSD]?.symbol shouldBe TestFixtures.XXBTZUSD
+        }
+
+        "history API TradeRecord DTO serializes string economics" {
+            val domain =
+                TradeRecord(
+                    timestamp = Instant.parse("2023-01-01T10:00:00Z"),
+                    pair = TestFixtures.BTCUSD,
+                    side = TestFixtures.BUY,
+                    symbol = Asset.BTC,
+                    volume = BigDecimal("0.125"),
+                    usdAmount = BigDecimal("2500.00"),
+                    success = true,
+                    dryRun = false,
+                    price = BigDecimal("20000.0"),
+                    fee = BigDecimal("6.50"),
+                    slippagePercent = BigDecimal("0.15"),
+                    expectedPrice = BigDecimal("19970.0"),
+                    source = TradeSource.LOCAL_ESTIMATE,
+                    id = 42,
+                )
+
+            val json = mapper.writeValueAsString(domain.toApiDto())
+            json shouldContain "\"usdAmount\":\"2500.00\""
+            json shouldContain "\"source\":\"LOCAL_ESTIMATE\""
+            json shouldContain "\"id\":42"
+
+            val roundTrip: ApiTradeRecord = mapper.readValue(json)
+            roundTrip.symbol shouldBe Asset.BTC
+            roundTrip.slippagePercent shouldBe "0.15"
+        }
+
+        "history API HistoryStats DTO serializes string decimals and counts" {
+            val domain =
+                HistoryStats(
+                    allTimeHigh = BigDecimal("15000.00"),
+                    totalTradesExecuted = 12L,
+                    totalVolumeTraded = BigDecimal("50000.00"),
+                    totalFeesPaid = BigDecimal("25.50"),
+                    latestSnapshotTime = Instant.parse("2023-01-01T12:00:00Z"),
+                    avgFeeRatePercent = BigDecimal("0.26"),
+                    avgSlippagePercent = BigDecimal("0.15"),
+                    failedTradeCount = 1L,
+                    dryRunTradeCount = 2L,
+                )
+
+            val json = mapper.writeValueAsString(domain.toApiDto())
+            json shouldContain "\"allTimeHigh\":\"15000.00\""
+            json shouldContain "\"totalTradesExecuted\":12"
+            json shouldContain "\"avgSlippagePercent\":\"0.15\""
+
+            val roundTrip: ApiHistoryStats = mapper.readValue(json)
+            roundTrip.totalVolumeTraded shouldBe "50000.00"
+        }
+
+        "history API SyncProgressResponse uses SyncMetadataKeys JSON names" {
+            val response = buildSyncProgressResponse(seeded = false, offset = "123", total = "456")
+            val json = mapper.writeValueAsString(response)
+            json shouldContain "\"${SyncMetadataKeys.IS_SEEDED}\":false"
+            json shouldContain "\"${SyncMetadataKeys.OFFSET}\":\"123\""
+            json shouldContain "\"${SyncMetadataKeys.TOTAL}\":\"456\""
+
+            val roundTrip: SyncProgressResponse = mapper.readValue(json)
+            roundTrip.seeded shouldBe false
+            roundTrip.offset shouldBe "123"
         }
     }
 }

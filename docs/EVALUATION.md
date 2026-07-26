@@ -4,6 +4,8 @@ The Kraken Rebalancer includes a production-grade **Scenario Evaluation Suite** 
 
 Implemented in [EvaluationScenariosTest.kt](../src/test/kotlin/com/gemini/krakenbot/EvaluationScenariosTest.kt), this suite is run as part of the standard Gradle test task. It dynamically evaluates the system without making external network calls, using a highly precise in-process fake exchange client ([FakeKrakenService.kt](../src/test/kotlin/com/gemini/krakenbot/service/FakeKrakenService.kt)).
 
+A complementary suite, [SimulationEvaluationScenariosTest.kt](../src/test/kotlin/com/gemini/krakenbot/SimulationEvaluationScenariosTest.kt), exercises the production [SimulatedKrakenService](../src/main/kotlin/com/gemini/krakenbot/service/impl/SimulatedKrakenService.kt) emulator with real TradeHistory + in-memory SQLite (invariant assertions; price drift is random).
+
 ---
 
 ## Running the Suite
@@ -12,6 +14,7 @@ You can run the full evaluation suite locally with Gradle:
 
 ```bash
 ./gradlew test --tests "com.gemini.krakenbot.EvaluationScenariosTest"
+./gradlew test --tests "com.gemini.krakenbot.SimulationEvaluationScenariosTest"
 ```
 
 Upon completion, the suite automatically compiles and updates a detailed report showing status and evidence at `build/reports/scenarios_evaluation_report.md`.

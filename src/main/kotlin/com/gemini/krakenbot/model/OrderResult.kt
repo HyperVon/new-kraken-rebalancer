@@ -9,6 +9,7 @@ sealed interface OrderResult {
     val dryRun: Boolean
     val success: Boolean
     val errorMessage: String?
+    val orderTxid: String?
 
     companion object {
         operator fun invoke(
@@ -18,8 +19,9 @@ sealed interface OrderResult {
             volume: BigDecimal,
             dryRun: Boolean = false,
             errorMessage: String? = null,
+            orderTxid: String? = null,
         ): OrderResult = if (success) {
-            Success(pair, side, volume, dryRun)
+            Success(pair, side, volume, dryRun, orderTxid)
         } else {
             Failure(
                 pair,
@@ -27,6 +29,7 @@ sealed interface OrderResult {
                 volume,
                 dryRun,
                 errorMessage ?: "Unknown error",
+                orderTxid,
             )
         }
     }
@@ -36,6 +39,7 @@ sealed interface OrderResult {
         override val side: String,
         override val volume: BigDecimal,
         override val dryRun: Boolean = false,
+        override val orderTxid: String? = null,
     ) : OrderResult {
         override val success: Boolean get() = true
         override val errorMessage: String? get() = null
@@ -47,6 +51,7 @@ sealed interface OrderResult {
         override val volume: BigDecimal,
         override val dryRun: Boolean = false,
         override val errorMessage: String,
+        override val orderTxid: String? = null,
     ) : OrderResult {
         override val success: Boolean get() = false
     }

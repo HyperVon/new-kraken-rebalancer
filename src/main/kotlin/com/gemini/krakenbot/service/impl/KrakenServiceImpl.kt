@@ -53,7 +53,11 @@ class KrakenServiceImpl(
     private val nonceGenerator = AtomicLong(System.currentTimeMillis() * 1_000_000L)
 
     /** Total trade count from the last TradesHistory response (Kraken `count`); used for pagination. */
-    val lastFetchedCount = AtomicInteger(0)
+    private val lastFetchedCount = AtomicInteger(0)
+
+    override fun getLastTradeHistoryTotalCount(): Int = lastFetchedCount.get()
+
+    override suspend fun getApiCallCounter(): Double = rateLimiter.getCurrentCounter()
 
     private suspend fun <T> retryWithFlow(
         actionName: String,
@@ -195,11 +199,19 @@ class KrakenServiceImpl(
         return try {
             val resp = queryPrivate(path, params)
             log.info("Order Executed: {}", resp.toString())
+            val txidNode = resp.path(KrakenApiConstants.FIELD_TXID)
+            val orderTxid =
+                if (txidNode.isArray && txidNode.size() > 0) {
+                    txidNode[0].asText().ifBlank { null }
+                } else {
+                    null
+                }
             OrderResult(
                 success = true,
                 pair = pair,
                 side = side,
                 volume = normalizedVolume,
+                orderTxid = orderTxid,
             )
         } catch (e: Exception) {
             val message = e.message.orEmpty().ifEmpty { e.javaClass.simpleName }
@@ -254,7 +266,7 @@ class KrakenServiceImpl(
         val allocations = configService.getConfig().allocations.map { it.symbol.value }
         val tradesList = mutableListOf<TradeRecord>()
 
-        tradesNode.properties().forEach { (_, tradeNode) ->
+        tradesNode.properties().forEach { (tradeId, tradeNode) ->
             val pair = tradeNode.path(KrakenApiConstants.FIELD_PAIR).asText()
             val type = tradeNode.path(KrakenApiConstants.FIELD_TYPE).asText()
             val time = tradeNode.path(KrakenApiConstants.FIELD_TIME).asDouble()
@@ -262,6 +274,13 @@ class KrakenServiceImpl(
             val costStr = tradeNode.path(KrakenApiConstants.FIELD_COST).asText()
             val volStr = tradeNode.path(KrakenApiConstants.FIELD_VOL).asText()
             val feeStr = tradeNode.path(KrakenApiConstants.FIELD_FEE).asText()
+            val orderTxidNode = tradeNode.path(KrakenApiConstants.FIELD_ORDER_TXID)
+            val orderTxid =
+                if (orderTxidNode.isMissingNode || orderTxidNode.isNull) {
+                    null
+                } else {
+                    orderTxidNode.asText().ifBlank { null }
+                }
 
             val symbol = Asset.fromTradingPair(pair, allocations) ?: return@forEach
 
@@ -287,6 +306,7 @@ class KrakenServiceImpl(
                     price = rawPrice.setScale(PrecisionConstants.SCALE_CRYPTO, RoundingMode.HALF_UP),
                     fee = rawFee.setScale(PrecisionConstants.SCALE_FEE, RoundingMode.HALF_UP),
                     source = TradeSource.API_FILL,
+                    orderTxid = orderTxid ?: tradeId.ifBlank { null },
                 ),
             )
         }

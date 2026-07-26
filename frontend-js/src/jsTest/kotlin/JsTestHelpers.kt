@@ -1,5 +1,8 @@
 package com.gemini.krakenbot.frontend
 
+import com.gemini.krakenbot.api.HistoryStats
+import com.gemini.krakenbot.api.PortfolioSnapshot
+import com.gemini.krakenbot.api.TradeRecord
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderSide
 import kotlin.js.Promise
@@ -11,65 +14,90 @@ inline fun jsObject(builder: dynamic.() -> Unit = {}): dynamic = json().apply(bu
 fun mockTradeRecord(
     symbol: String? = Asset.BTC,
     side: String = OrderSide.BUY.name,
-    usdAmount: Number = 100.0,
+    usdAmount: String = "100.0",
     success: Boolean = true,
     dryRun: Boolean = false,
     timestamp: String = "2023-01-01",
-    volume: Number = 1.0,
-    price: Number = 50000.0,
-    fee: Number = 2.6,
-    slippagePercent: Number? = null,
+    volume: String = "1.0",
+    price: String = "50000.0",
+    fee: String = "2.6",
+    slippagePercent: String? = null,
     source: String? = null,
     errorMessage: String? = null,
-): dynamic = json(
-    "symbol" to symbol,
-    "side" to side,
-    "usdAmount" to usdAmount,
-    "success" to success,
-    "dryRun" to dryRun,
-    "timestamp" to timestamp,
-    "volume" to volume,
-    "price" to price,
-    "fee" to fee,
-    "slippagePercent" to slippagePercent,
-    "source" to source,
-    "errorMessage" to errorMessage,
+    pair: String = "${symbol ?: Asset.BTC}/USD",
+): TradeRecord = TradeRecord(
+    timestamp = timestamp,
+    pair = pair,
+    side = side,
+    symbol = symbol.orEmpty(),
+    volume = volume,
+    usdAmount = usdAmount,
+    success = success,
+    dryRun = dryRun,
+    errorMessage = errorMessage,
+    price = price,
+    fee = fee,
+    slippagePercent = slippagePercent,
+    source = source,
 )
 
 fun mockSnapshotRecord(
     timestamp: String = "2023-01-01",
-    totalValueUSD: Any? = 100.0,
-    assets: Any? =
-        json(
+    totalValueUSD: String = "100.0",
+    assets: Map<String, PortfolioSnapshot.AssetSnapshot> =
+        mapOf(
             Asset.BTC to
-                json(
-                    "valueUSD" to 100,
-                    "balance" to 1,
-                    "currentPercent" to 100,
-                    "deviationPercent" to 0,
+                PortfolioSnapshot.AssetSnapshot(
+                    symbol = Asset.BTC,
+                    balance = "1",
+                    price = "100",
+                    valueUSD = "100",
+                    targetPercent = "50",
+                    currentPercent = "100",
+                    deviationPercent = "0",
+                    deviationUSD = "0",
                 ),
         ),
-): dynamic = json(
-    "timestamp" to timestamp,
-    "totalValueUSD" to totalValueUSD,
-    "assets" to assets,
+): PortfolioSnapshot = PortfolioSnapshot(
+    timestamp = timestamp,
+    totalValueUSD = totalValueUSD,
+    assets = assets,
+    actions = emptyList(),
+    drawdownPercent = "0",
+    fiatDeploymentPercent = "0",
+    effectiveUsdTargetPercent = "0",
 )
 
 fun mockPortfolioStatsRecord(
-    allTimeHigh: Number = 15000.5,
-    totalTradesExecuted: Number = 42,
-    totalVolumeTraded: Number = 1000000.0,
-    totalFeesPaid: Number = 250.75,
-    avgFeeRatePercent: Number? = 0.26,
-    avgSlippagePercent: Number? = 0.15,
-): dynamic = json(
-    "allTimeHigh" to allTimeHigh,
-    "totalTradesExecuted" to totalTradesExecuted,
-    "totalVolumeTraded" to totalVolumeTraded,
-    "totalFeesPaid" to totalFeesPaid,
-    "avgFeeRatePercent" to avgFeeRatePercent,
-    "avgSlippagePercent" to avgSlippagePercent,
+    allTimeHigh: String = "15000.5",
+    totalTradesExecuted: Long = 42L,
+    totalVolumeTraded: String = "1000000.0",
+    totalFeesPaid: String = "250.75",
+    avgFeeRatePercent: String? = "0.26",
+    avgSlippagePercent: String? = "0.15",
+): HistoryStats = HistoryStats(
+    allTimeHigh = allTimeHigh,
+    totalTradesExecuted = totalTradesExecuted,
+    totalVolumeTraded = totalVolumeTraded,
+    totalFeesPaid = totalFeesPaid,
+    latestSnapshotTime = null,
+    avgFeeRatePercent = avgFeeRatePercent ?: "0",
+    avgSlippagePercent = avgSlippagePercent,
 )
+
+fun mockHistoryFetchHandler(
+    snapshots: List<PortfolioSnapshot> = listOf(mockSnapshotRecord()),
+    trades: List<TradeRecord> = listOf(mockTradeRecord()),
+    stats: HistoryStats = mockPortfolioStatsRecord(),
+    syncProgress: dynamic = json("seeded" to true),
+): (String) -> Any? = { url ->
+    when {
+        url.contains("snapshots") -> snapshots.map { portfolioSnapshotToDynamic(it) }.toTypedArray()
+        url.contains("trades") -> trades.map { tradeRecordToDynamic(it) }.toTypedArray()
+        url.contains("sync-progress") -> syncProgress
+        else -> historyStatsToDynamic(stats)
+    }
+}
 
 fun mockFetch(handler: (String) -> Any?): dynamic = { url: String ->
     val responseData = handler(url)

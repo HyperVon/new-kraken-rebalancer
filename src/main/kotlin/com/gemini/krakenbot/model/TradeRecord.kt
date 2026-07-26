@@ -22,6 +22,8 @@ data class TradeRecord(
     val expectedPrice: BigDecimal? = null,
     val source: TradeSource? = null,
     val id: Int? = null,
+    val cycleId: String? = null,
+    val orderTxid: String? = null,
 )
 
 /**

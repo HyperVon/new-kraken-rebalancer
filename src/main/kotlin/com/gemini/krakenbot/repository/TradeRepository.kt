@@ -28,7 +28,7 @@ interface TradeRepository {
 
     suspend fun saveSnapshot(snapshot: PortfolioSnapshot)
 
-    suspend fun saveTrade(trade: TradeRecord)
+    suspend fun saveTrade(trade: TradeRecord): Int
 
     suspend fun updateTrade(oldTrade: TradeRecord, newTrade: TradeRecord)
 
