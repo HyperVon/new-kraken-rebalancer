@@ -68,7 +68,8 @@ Deviation%   = DeviationUSD / TargetValue × 100   (signed relative)
 
 ### Fiat correction (USD-only trigger)
 
-When **only** USD exceeds the trigger (deposit/withdrawal):
+When **only** USD passes both gates (`|Deviation%| ≥ deviationTriggerPercent`
+and `|DeviationUSD| ≥ dustThresholdUSD`; deposit/withdrawal):
 
 - **Surplus**: buy underweight crypto proportional to USD deficits.
 - **Shortage**: sell overweight crypto proportional to USD surpluses.
@@ -113,7 +114,7 @@ effectively than spreading across all pairs.
 - [ ] ATH/drawdown deployment and crypto redistribution correct
 - [ ] Signed deviations retained; trigger uses absolute value **and** dust USD significance
 - [ ] Missing/zero non-USD price aborts cycle before orders
-- [ ] Fiat correction only when USD alone triggers
+- [ ] Fiat correction only when USD alone passes both gates (≥ trigger and ≥ dust)
 - [ ] Sell → 3× poll (250ms exponential backoff) → best observed / 95% settle → fail-closed abort → cycle 99% buy budget → dust skip
 - [ ] Changes reflected in `docs/ALGORITHM.md` when behavior changes
 - [ ] If ALGORITHM Mermaid changed → run

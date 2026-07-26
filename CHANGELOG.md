@@ -6,15 +6,49 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [6.13.4] - 2026-07-25
+
+### Added
+
+- **Tests (CQ-7)**: Analyzer path when USD+crypto both trigger (no fiat-only
+  correction); exact trigger% with dust-below skip; simulation sync with
+  placeholder credentials; reconstruction timeline excludes dry-run trades;
+  pair-alias volume &gt;1% non-dedupe; History `dynamicNumber` ISO parse;
+  Settings allocation tolerance edges and invalid-symbol alert.
+
+### Fixed
+
+- **History reconstruction side match**: Reverse-apply trades now compares order
+  side case-insensitively so Kraken/`buy` records are applied (previously only
+  uppercase `BUY` matched `OrderSide.BUY.name`).
+
+## [6.13.3] - 2026-07-25
 
 ### Changed
 
 - **Dashboard stream chip placement**: STREAM/STALE + age/time sit in the header
   beside the mode plate (Brand · Mode · Stream · Nav) instead of a separate
-  right-aligned row above the hero. The shell owns a placeholder; the HTMX/SSE
-  fragment refreshes it via `hx-swap-oob`. Updated `docs/images/dashboard*.png`
-  and `docs/USER_GUIDE.md` to match.
+  right-aligned row above the hero. The shell owns a placeholder (badge + age +
+  time slots); the HTMX/SSE fragment refreshes it via `hx-swap-oob`. Updated
+  `docs/images/dashboard*.png` and `docs/USER_GUIDE.md` to match.
+- **Settings allocation total pill**: Valid/invalid sum uses a dedicated
+  `allocation-total` pill (no STREAM pulse animation).
+- **Settings POST fallbacks**: Missing deviation/dust form fields default to
+  `5.0` / `5.0`, matching the config template and `Settings.dustThresholdUSD`.
+- **Docs accuracy**: EVALUATION hot streams, README Recent Activity vs History,
+  config hot-reload wording, `@Suppress("unused")` guidance, and
+  portfolio-rebalancing-math inclusive `>=` trigger language.
+
+### Fixed
+
+- **Stream placeholder layout**: Placeholder includes a time span so the header
+  does not jump when the OOB fragment fills age + clock.
+- **Dead CSS cleanup**: Removed unused `StatusCluster` and
+  `custom-scrollbar` / `max-h-100` rules left after earlier layout work.
+
+### Removed
+
+- Nothing user-facing beyond unused CSS class tokens above.
 
 ## [6.13.2] - 2026-07-25
 

@@ -192,7 +192,7 @@ class SettingsFormComponent {
                 h3 {
                     +ViewText.TARGET_ALLOCATIONS
                 }
-                div(CssClass.StatusCard.Live) {
+                div(CssClass.Form.AllocationTotal + CssClass.Form.AllocationTotalOk) {
                     id = HtmlIds.TOTAL_ALLOCATED_DISPLAY
                     +ViewText.TOTAL_INITIAL
                 }
@@ -227,7 +227,7 @@ class SettingsFormComponent {
                             type = button,
                         ) {
                             attributes[HtmlAttrs.ONCLICK] =
-                                "this.closest('.allocation-edit-row').remove(); updateAllocationTotal();"
+                                "this.closest('.${CssClass.Form.AllocationEditRow}').remove(); updateAllocationTotal();"
                             +ViewText.REMOVE
                         }
                     }

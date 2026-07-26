@@ -460,8 +460,8 @@ class DashboardControllerTest : StringSpec() {
             }
 
             capturedConfig.captured.settings.loopDelaySeconds shouldBe 60L
-            capturedConfig.captured.settings.deviationTriggerPercent shouldBe 2.0
-            capturedConfig.captured.settings.dustThresholdUSD shouldBe 1.0
+            capturedConfig.captured.settings.deviationTriggerPercent shouldBe 5.0
+            capturedConfig.captured.settings.dustThresholdUSD shouldBe 5.0
             capturedConfig.captured.settings.dryRun shouldBe false
             capturedConfig.captured.settings.fiatMaxDrawdown shouldBe 0.0
             capturedConfig.captured.settings.fiatDeploymentExponent shouldBe 1.0
@@ -527,8 +527,8 @@ class DashboardControllerTest : StringSpec() {
             }
 
             capturedConfig.captured.settings.loopDelaySeconds shouldBe 60L
-            capturedConfig.captured.settings.deviationTriggerPercent shouldBe 2.0
-            capturedConfig.captured.settings.dustThresholdUSD shouldBe 1.0
+            capturedConfig.captured.settings.deviationTriggerPercent shouldBe 5.0
+            capturedConfig.captured.settings.dustThresholdUSD shouldBe 5.0
             capturedConfig.captured.settings.dryRun shouldBe false
             capturedConfig.captured.settings.fiatMaxDrawdown shouldBe 0.0
             capturedConfig.captured.settings.fiatDeploymentExponent shouldBe 1.0
@@ -767,7 +767,7 @@ class DashboardControllerTest : StringSpec() {
                 application {
                     configureTestEnv()
                 }
-                val response = client.get("/api/health")
+                val response = client.get(Routes.API_HEALTH)
                 response.status shouldBe HttpStatusCode.OK
                 response.headers[HttpHeaders.ContentType] shouldContain TestFixtures.APPLICATION_JSON
                 val body = response.bodyAsText()
@@ -793,7 +793,7 @@ class DashboardControllerTest : StringSpec() {
                 application {
                     configureTestEnv()
                 }
-                val response = client.get("/api/health")
+                val response = client.get(Routes.API_HEALTH)
                 response.status shouldBe HttpStatusCode.OK
                 val body = response.bodyAsText()
                 body shouldContain "\"lastSnapshotTime\":\"N/A\""
@@ -810,7 +810,7 @@ class DashboardControllerTest : StringSpec() {
                 application {
                     configureTestEnv()
                 }
-                val response = client.get("/api/history/sync-progress")
+                val response = client.get(Routes.API_HISTORY_SYNC_PROGRESS)
                 response.status shouldBe HttpStatusCode.OK
                 response.headers[HttpHeaders.ContentType] shouldContain TestFixtures.APPLICATION_JSON
                 val body = response.bodyAsText()

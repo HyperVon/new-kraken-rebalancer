@@ -22,12 +22,21 @@ Product polish discovered during QA belongs in
 
 | ID | Size | Kind | Status | Area | Summary | Cycle | Issue | Notes |
 | :--- | :---: | :--- | :--- | :--- | :--- | :---: | :--- | :--- |
-| — | — | — | — | — | *(empty — backlog clear)* | — | — | — |
+| CQ-7-L1 | L | bug | deferred | rate-limit | RateLimiter holds Mutex across `delay` (HOL blocking) | 7 | [#88](https://github.com/HyperVon/new-kraken-rebalancer/issues/88) | Needs approval |
+| CQ-7-L2 | L | bug | deferred | modes | DynamicKraken unpinned reads outside `withStableBackend` | 7 | [#89](https://github.com/HyperVon/new-kraken-rebalancer/issues/89) | Needs approval; extends CQ-1-10 |
 
 ## Done (recent)
 
 | ID | Size | Kind | Status | Area | Summary | Cycle | PR |
 | :--- | :---: | :--- | :--- | :--- | :--- | :---: | :--- | :--- |
+| CQ-7-1 | M | gap | done | algorithm | USD+crypto both trigger → no fiat-correction path | 7 | (this PR) |
+| CQ-7-2 | S | gap | done | algorithm | Pct at trigger + USD below dust → no orders | 7 | (this PR) |
+| CQ-7-3 | S | gap | done | modes | simulation=true + placeholder keys still syncs | 7 | (this PR) |
+| CQ-7-4 | M | bug | done | history | Dry-run excluded from reconstruction; case-insensitive reverse-apply side | 7 | (this PR) |
+| CQ-7-5 | S | gap | done | dedupe | Pair-alias volume Δ >1% must not dedupe | 7 | (this PR) |
+| CQ-7-6 | S | gap | done | frontend-js | `dynamicNumber` ISO/`Date` parse branch | 7 | (this PR) |
+| CQ-7-7 | S | gap | done | frontend-js | Allocation total tolerance edges + invalid symbol alert | 7 | (this PR) |
+
 | CQ-5-1 | M | harness | done | build | Filtered `--tests` runs no longer fail project-wide JaCoCo gates; full runs still verify | 6 | [#79](https://github.com/HyperVon/new-kraken-rebalancer/pull/79) |
 | CQ-5-2 | S | harness | done | skills | One Gradle build per clone (worktree or parent-owns-build); concurrent builds cause `EOFException` / false `UP-TO-DATE` | 6 | [#79](https://github.com/HyperVon/new-kraken-rebalancer/pull/79) |
 | CQ-5-3 | S | harness | done | skills | Final verification must force re-execution (`--rerun-tasks`) and check JUnit XML counts | 6 | [#79](https://github.com/HyperVon/new-kraken-rebalancer/pull/79) |

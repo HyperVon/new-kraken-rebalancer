@@ -6,6 +6,7 @@ import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.test.TestConstants
+import com.gemini.krakenbot.view.util.SyncMetadataKeys
 import java.math.BigDecimal
 
 fun Map<String, Double>.toBigDecimalMap(): Map<String, BigDecimal> = this.mapValues { BigDecimal.valueOf(it.value) }
@@ -74,8 +75,8 @@ object TestFixtures {
     const val SYNC_KEY = "sync_key"
     const val SYNC_VAL = "sync_val"
     const val SYNC_VAL_UPDATED = "sync_val_updated"
-    const val SYNC_OFFSET = "sync_offset"
-    const val SYNC_TOTAL = "sync_total"
+    const val SYNC_OFFSET = SyncMetadataKeys.SYNC_OFFSET
+    const val SYNC_TOTAL = SyncMetadataKeys.SYNC_TOTAL
 
     /** Generic test key/value constants. */
     const val TEST_KEY = "test_key"

@@ -7,7 +7,7 @@ import kotlin.math.roundToLong
 import kotlin.time.Duration.Companion.milliseconds
 
 /**
- * Thread-safe rate limiter for API calls using exponential decay.
+ * Thread-safe rate limiter for API calls using linear decay.
  * Implements Kraken's call counter algorithm with configurable costs per endpoint.
  *
  * @param clock Millisecond epoch supplier (injectable for deterministic tests).

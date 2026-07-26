@@ -87,23 +87,7 @@ object LayoutStyles {
             gap = 1.rem
             flexWrap = FlexWrap.wrap
             put("justify-content", "flex-end")
-            marginBottom = 0.75.rem
-        }
-
-        ".${CssClass.Layout.StatusCluster}" {
-            display = Display.flex
-            alignItems = Align.center
-            gap = 1.25.rem
-            padding = Padding(0.625.rem, 1.rem)
-            borderRadius = 0.75.rem
-            background = CssTheme.colorWhiteSubtle.value
-            borderWidth = 1.px
-            borderStyle = BorderStyle.solid
-            borderColor = CssTheme.colorWhiteFaint
-        }
-
-        ".${CssClass.Layout.StatusCluster} .${CssClass.StatusCard.Badge}" {
-            flexShrink = 0.0
+            marginBottom = 0.rem
         }
 
         ".${CssClass.DataAge.Value}" {

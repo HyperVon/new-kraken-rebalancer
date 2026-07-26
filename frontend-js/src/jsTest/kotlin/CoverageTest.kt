@@ -349,7 +349,7 @@ class CoverageTest : StringSpec() {
                 val saveButton = document.getElementById(HtmlIds.SAVE_BUTTON) as HTMLButtonElement
                 totalDisplay.textContent shouldBe "Total: 100.00%"
                 saveButton.disabled.shouldBeFalse()
-                totalDisplay.classList.contains(CssClass.Utility.Live).shouldBeTrue()
+                totalDisplay.classList.contains(CssClass.Form.AllocationTotalOk).shouldBeTrue()
 
                 // Cleanup for next test
                 container.innerHTML = TestDomBuilders.settingsDom()
@@ -378,7 +378,7 @@ class CoverageTest : StringSpec() {
                 val saveButton2 = document.getElementById(HtmlIds.SAVE_BUTTON) as HTMLButtonElement
                 totalDisplay2.textContent shouldBe "Total: 60.00%"
                 saveButton2.disabled.shouldBeTrue()
-                totalDisplay2.classList.contains(CssClass.Utility.Delayed).shouldBeTrue()
+                totalDisplay2.classList.contains(CssClass.Form.AllocationTotalBad).shouldBeTrue()
 
                 // Case 3: missing USD symbol -> disabled even if sum 100
                 container.innerHTML = TestDomBuilders.settingsDom()
@@ -405,7 +405,7 @@ class CoverageTest : StringSpec() {
                 val saveButton3 = document.getElementById(HtmlIds.SAVE_BUTTON) as HTMLButtonElement
                 totalDisplay3.textContent shouldBe "Total: 100.00%"
                 saveButton3.disabled.shouldBeTrue() // missing USD
-                totalDisplay3.classList.contains(CssClass.Utility.Delayed).shouldBeTrue()
+                totalDisplay3.classList.contains(CssClass.Form.AllocationTotalBad).shouldBeTrue()
 
                 // Case 4: missing elements -> should not throw
                 container.innerHTML = ""

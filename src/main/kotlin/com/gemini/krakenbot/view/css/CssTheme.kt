@@ -90,8 +90,6 @@ object CssTheme {
     val colorWhiteMuted = Color("rgba(255, 255, 255, 0.05)")
     val colorWhiteBorder = Color("rgba(255, 255, 255, 0.1)")
     val colorWhiteFaint = Color("rgba(255, 255, 255, 0.06)")
-    val colorScrollbarThumb = Color("rgba(148, 163, 184, 0.15)")
-    val colorScrollbarThumbHover = Color("rgba(148, 163, 184, 0.3)")
     val colorIconFaint = Color("rgba(255, 255, 255, 0.1)")
     val colorBgGlowBlue = Color("rgba(56, 189, 248, 0.1)")
     val colorBgGlowGreen = Color("rgba(16, 185, 129, 0.055)")

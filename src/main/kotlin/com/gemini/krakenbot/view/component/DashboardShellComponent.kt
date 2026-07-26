@@ -2,6 +2,7 @@ package com.gemini.krakenbot.view.component
 
 import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.view.util.ActiveNav
+import com.gemini.krakenbot.view.util.CdnUrls
 import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.HtmxAttrs
 import com.gemini.krakenbot.view.util.HtmxValues
@@ -21,8 +22,8 @@ class DashboardShellComponent {
         html.head {
             commonMetadataAndStyles()
             title(ViewText.APP_TITLE)
-            script(src = "https://unpkg.com/htmx.org@2.0.4") {}
-            script(src = "https://unpkg.com/htmx-ext-sse@2.2.2/sse.js") {}
+            script(src = CdnUrls.HTMX) {}
+            script(src = CdnUrls.HTMX_SSE) {}
         }
         html.body {
             div(CssClass.Layout.Container) {

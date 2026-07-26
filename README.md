@@ -189,7 +189,7 @@ with a wide range of tools and paradigms:
 - Real-time portfolio overview with push updates (via Ktor Server-Sent Events)
 - Horizontal bar chart showing asset allocation by value
 - Sortable asset performance table with deviation indicators
-- Trade history log with BUY/SELL badges
+- **Recent Activity** — per-cycle action feed (deviations, trades, dry-run intents) with BUY/SELL badges; not the full trade log on the [History](/history) page
 - STREAM/STALE SSE stream-health indicator with relative age/time (separate from trading mode)
 - Persistent mode plate (SIMULATION / DRY RUN / LIVE TRADING)
 - **Range-Filtered History Metrics** — Time frame selector controls all six top metric summary cards (All-Time High / Period High, Total Trades, Total Volume Traded, Total Fees Paid, Avg Fee Rate, Avg Slippage) dynamically alongside interactive Chart.js timelines and trade history logs with price, fee, and slippage columns.
@@ -367,11 +367,18 @@ two complementary `SharedFlow` channels:
    `hx-trigger="sse:message"` automatically fetches updated dashboard fragments
    from `/fragments/dashboard` whenever a new snapshot arrives.
 
-#### Rebalance Cycle Event Stream (Monitoring)
+#### Config Hot-Reload Loop Restart (not SSE)
 
-1. **Reactive config loop**: `ConfigService.watchConfigChanges()` provides a
-   `Flow<Settings>`. `PortfolioManagerImpl` wraps its run loop with `collectLatest`
-   to immediately restart the loop on config changes.
+This path is internal orchestration — not a second browser-facing SSE stream like
+`snapshotFlow` above.
+
+1. **Config `SharedFlow`**: `ConfigServiceImpl` maintains a hot
+   `MutableSharedFlow<Settings>` (`replay=1`) that emits when settings are saved
+   via the UI or reloaded from disk.
+2. **Reactive loop restart**: `PortfolioManagerImpl` collects
+   `ConfigService.watchConfigChanges()` with `collectLatest`, cancelling an
+   in-flight `delay()` and restarting the rebalancing loop immediately when
+   settings change.
 
 ---
 
@@ -639,7 +646,7 @@ Tests cover:
 
 ### Test Design Principles
 
-- **Class Initializers**: All test suites are structured using standard class body `init { ... }` blocks (e.g., `class ExampleTest : StringSpec() { init { ... } }`) instead of constructor lambdas, making them fully compatible with build runners and IDE test discovery tools. `@Suppress("unused")` is applied where IDE static analysis triggers warnings because Kotest loads specs dynamically via reflection.
+- **Class Initializers**: All test suites are structured using standard class body `init { ... }` blocks (e.g., `class ExampleTest : StringSpec() { init { ... } }`) instead of constructor lambdas, making them fully compatible with build runners and IDE test discovery tools. Add `@Suppress("unused")` only when the compiler or IDE reports a real warning; Kotest discovers specs via reflection and does not require blanket suppression on every spec.
 - **Database Test Isolation**: All tests run against a clean in-memory SQLite database (`:memory:`) configured via a JVM system property (`kraken.db.path`). This ensures total test isolation and prevents modification of the local physical database file.
 - **`FakeKrakenService`** — an in-process test double for `KrakenService` used
   by all `PortfolioManager` tests. Avoids fragile `coEvery` stubbing of
