@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **`RebalancerEngine`**: Pure side-effect-free domain calculator (`RebalancerEngine.kt`) containing all portfolio valuation, ATH drawdown percentage calculations, fiat deployment scaling, effective USD target math, deviation analysis, and fiat correction distribution.
+- **`RebalancerEngineTest`**: Dedicated Kotest suite verifying pure domain calculations without network/database dependencies.
+- **Kraken AddOrder Idempotency**: Added client-side order reference tracking (`userref`) to `KrakenService.executeOrder` and `OrderExecutorImpl` using deterministic 32-bit tokens to protect against duplicate orders during network timeouts.
+
+### Changed
+
+- **`PortfolioAnalyzerImpl`**: Converted portfolio math and deviation analysis into pure delegates to `RebalancerEngine`, isolating `PortfolioAnalyzerImpl` strictly to network REST fetching and ATH database persistence.
+- **DI Modularization**: Split Koin `AppModule.kt` into `coreModule` (domain, exchange, repositories, HTTP client, DB) and `webModule` (controllers, HTML views, UI components).
+
 ## [6.13.8] - 2026-07-25
 
 ### Changed

@@ -65,6 +65,7 @@ class FakeKrakenService : KrakenService {
         side: String,
         volume: BigDecimal,
         dryRun: Boolean?,
+        userref: Int?,
     ): OrderResult {
         executedOrders.add(OrderCall(pair, type, side, volume, dryRun))
         executeOrderAction?.invoke(pair, type, side, volume)

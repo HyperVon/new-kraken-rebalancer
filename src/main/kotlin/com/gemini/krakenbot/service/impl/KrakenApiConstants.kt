@@ -23,6 +23,7 @@ object KrakenApiConstants {
     const val PARAM_NONCE = "nonce"
     const val PARAM_START = "start"
     const val PARAM_OFS = "ofs"
+    const val PARAM_USERREF = "userref"
     const val PARAM_INTERVAL = "interval"
     const val PARAM_SINCE = "since"
 

@@ -44,7 +44,7 @@ import org.koin.core.module.dsl.bind
 import org.koin.core.module.dsl.singleOf
 import org.koin.dsl.module
 
-val appModule =
+val coreModule =
     module {
         single<HttpClient> {
             HttpClient(CIO) {
@@ -116,6 +116,10 @@ val appModule =
                 krakenService = get(),
             )
         }
+    }
+
+val webModule =
+    module {
         singleOf(::DashboardShellComponent)
         singleOf(::SettingsFormComponent)
         singleOf(::OverviewGridComponent)
@@ -126,4 +130,9 @@ val appModule =
         singleOf(::HistoryPageComponent)
         singleOf(::DashboardView)
         singleOf(::DashboardController)
+    }
+
+val appModule =
+    module {
+        includes(coreModule, webModule)
     }

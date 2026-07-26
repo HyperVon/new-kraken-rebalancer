@@ -163,6 +163,7 @@ class SimulatedKrakenService(private val configService: ConfigService) : KrakenS
         side: String,
         volume: BigDecimal,
         dryRun: Boolean?,
+        userref: Int?,
     ): OrderResult {
         initializeMissingBalancesAndPrices()
 

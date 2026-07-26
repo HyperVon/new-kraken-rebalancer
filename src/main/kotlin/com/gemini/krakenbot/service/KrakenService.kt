@@ -22,6 +22,7 @@ interface KrakenService {
         side: String,
         volume: BigDecimal,
         dryRun: Boolean? = null,
+        userref: Int? = null,
     ): OrderResult
 
     suspend fun getTradeHistory(startSec: Long? = null, offset: Int? = null): List<TradeRecord>

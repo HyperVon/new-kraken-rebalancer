@@ -183,6 +183,11 @@ class OrderExecutorImpl(
         val volume = usdAmount.divide(price, PrecisionConstants.SCALE_CRYPTO, RoundingMode.HALF_UP)
         if (volume.signum() <= 0) return null
         val pair = Asset.tradingPair(symbol)
+        val userref = if (cycleId.isNotBlank()) {
+            (cycleId.hashCode() xor symbol.hashCode() xor side.apiValue.hashCode()) and 0x7FFFFFFF
+        } else {
+            null
+        }
         val result =
             backend.executeOrder(
                 pair = pair,
@@ -190,6 +195,7 @@ class OrderExecutorImpl(
                 side = side.apiValue,
                 volume = volume,
                 dryRun = settings.dryRun,
+                userref = userref,
             )
         logOrderResult(
             result = result,
