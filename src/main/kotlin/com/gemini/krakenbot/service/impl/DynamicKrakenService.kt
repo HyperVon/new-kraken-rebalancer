@@ -66,8 +66,8 @@ class DynamicKrakenService(
         side: String,
         volume: BigDecimal,
         dryRun: Boolean?,
-        userref: Int?,
-    ): OrderResult = currentBackend().executeOrder(pair, type, side, volume, dryRun, userref)
+        clOrdId: String?,
+    ): OrderResult = currentBackend().executeOrder(pair, type, side, volume, dryRun, clOrdId)
 
     override suspend fun getTradeHistory(startSec: Long?, offset: Int?): List<TradeRecord> {
         val backend = currentBackend()

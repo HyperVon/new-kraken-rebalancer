@@ -434,9 +434,10 @@ This path is internal orchestration — not a second browser-facing SSE stream l
 │   ├── service/                           # Interfaces + ServiceUtils
 │   │   └── impl/                          # Service implementations (coroutine-aware)
 │   │       ├── PortfolioManagerImpl.kt   # Loop orchestrator
-│   │       ├── PortfolioAnalyzerImpl.kt  # Snapshot/analysis logic
+│   │       ├── PortfolioAnalyzerImpl.kt  # Snapshot/analysis + ATH I/O
+│   │       ├── RebalancerEngine.kt       # Domain rebalance math (no network/DB)
 │   │       ├── PortfolioCalculations.kt  # Shared target/deviation math
-│   │       ├── OrderExecutorImpl.kt      # Sell-first/buy-second execution
+│   │       ├── OrderExecutorImpl.kt      # Sell-first/buy-second + cl_ord_id
 │   │       ├── DynamicKrakenService.kt   # Routes live vs SimulatedKrakenService by settings.simulation
 │   │       ├── KrakenServiceImpl.kt      # Kraken API client + RateLimiter + retryWithFlow
 │   │       ├── KrakenApiConstants.kt     # Kraken REST path/cost constants

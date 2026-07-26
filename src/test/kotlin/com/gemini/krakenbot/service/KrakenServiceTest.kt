@@ -148,6 +148,56 @@ class KrakenServiceTest : StringSpec() {
             }
         }
 
+        "executeOrder_IncludesClOrdIdInAddOrderBody" {
+            runTest {
+                val responseJson =
+                    "{\"error\":[],\"result\":{\"descr\":{\"order\":\"buy 0.1 XBTUSD @ market\"},\"txid\":[\"TX-CLORD\"]}}"
+                var capturedBody = ""
+                val objectMapper = jacksonObjectMapper()
+                configService = mockk(relaxed = true)
+                val credentials = KrakenCredentials(
+                    apiKey = TestConstants.API_KEY,
+                    privateKey = Base64.getEncoder()
+                        .encodeToString(TestConstants.API_SECRET.toByteArray()),
+                )
+                val settings = Settings(
+                    loopDelaySeconds = 60L,
+                    deviationTriggerPercent = 2.0,
+                    dustThresholdUSD = 1.0,
+                    dryRun = false,
+                    fiatMaxDrawdown = 0.0,
+                    fiatDeploymentExponent = 1.0,
+                )
+                every { configService.getConfig() } returns AppConfig(
+                    kraken = credentials,
+                    settings = settings,
+                    allocations = emptyList(),
+                )
+                val mockEngine = MockEngine { request ->
+                    capturedBody = (request.body as TextContent).text
+                    respond(
+                        content = responseJson,
+                        status = HttpStatusCode.OK,
+                        headers = headersOf(HttpHeaders.ContentType, TestFixtures.APPLICATION_JSON),
+                    )
+                }
+                val service = KrakenServiceImpl(configService, objectMapper, HttpClient(mockEngine))
+                val clOrdId = "6d1b345e-2821-40e2-ad83-4ecb18a06876"
+
+                val result = service.executeOrder(
+                    pair = Asset.BTC_USD_PAIR,
+                    type = OrderType.MARKET.apiValue,
+                    side = OrderSide.BUY.apiValue,
+                    volume = BigDecimal("0.1"),
+                    clOrdId = clOrdId,
+                )
+
+                result.success.shouldBeTrue()
+                capturedBody.contains("${KrakenApiConstants.PARAM_CL_ORD_ID}=$clOrdId").shouldBeTrue()
+                capturedBody.contains("userref=").shouldBeFalse()
+            }
+        }
+
         "executeOrder_DryRun" {
             runTest {
                 val service = createService("")

@@ -1,7 +1,6 @@
 package com.gemini.krakenbot.service.impl
 
 import com.gemini.krakenbot.config.Settings
-import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.Result
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.service.AnalysisResult
@@ -15,17 +14,10 @@ import com.gemini.krakenbot.service.PortfolioAnalyzer
 import com.gemini.krakenbot.service.PortfolioValues
 import com.gemini.krakenbot.service.RawBalances
 import com.gemini.krakenbot.service.RawPrices
-import com.gemini.krakenbot.service.impl.PortfolioCalculations.HUNDRED
-import com.gemini.krakenbot.service.impl.PortfolioCalculations.SCALE_PERCENT
-import com.gemini.krakenbot.service.impl.PortfolioCalculations.SCALE_PRICE
 import com.gemini.krakenbot.service.impl.PortfolioCalculations.SCALE_USD
-import com.gemini.krakenbot.util.ActionLogFormatter
-import com.gemini.krakenbot.util.toUsdScale
-import com.gemini.krakenbot.view.util.ViewText
 import org.slf4j.LoggerFactory
 import java.math.BigDecimal
 import java.math.RoundingMode
-import kotlin.math.pow
 import com.gemini.krakenbot.util.resolveBalance as resolveBalanceFromKeys
 
 class PortfolioAnalyzerImpl(

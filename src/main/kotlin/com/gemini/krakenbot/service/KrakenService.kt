@@ -15,6 +15,8 @@ interface KrakenService {
     /**
      * @param dryRun when non-null, overrides the current config so a mid-cycle settings flip
      * cannot change dry-run vs live placement for this order.
+     * @param clOrdId optional Kraken `cl_ord_id` (client order id). When set, Kraken enforces
+     * uniqueness among the client's *open* orders — mutually exclusive with `userref`.
      */
     suspend fun executeOrder(
         pair: String,
@@ -22,7 +24,7 @@ interface KrakenService {
         side: String,
         volume: BigDecimal,
         dryRun: Boolean? = null,
-        userref: Int? = null,
+        clOrdId: String? = null,
     ): OrderResult
 
     suspend fun getTradeHistory(startSec: Long? = null, offset: Int? = null): List<TradeRecord>

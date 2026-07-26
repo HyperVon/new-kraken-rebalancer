@@ -618,6 +618,33 @@ class OrderExecutorCashCapTest : StringSpec() {
             }
         }
 
+        "passes deterministic cl_ord_id derived from cycleId symbol and side" {
+            runTest {
+                val cycleId = "11111111-2222-3333-4444-555555555555"
+                orderExecutor.executeOrders(
+                    buyOrders = mapOf(Asset.ETH to BigDecimal("100.00")),
+                    sellOrders = emptyMap(),
+                    currentValuesUSD = mapOf(Asset.USD to BigDecimal("1000.00")),
+                    prices = mapOf(Asset.ETH to BigDecimal("2000.00")),
+                    settings =
+                    Settings(
+                        loopDelaySeconds = 0L,
+                        deviationTriggerPercent = 2.0,
+                        dustThresholdUSD = 1.0,
+                        dryRun = true,
+                        fiatMaxDrawdown = 0.0,
+                        fiatDeploymentExponent = 1.0,
+                    ),
+                    actionLog = mutableListOf(),
+                    cycleId = cycleId,
+                )
+
+                val expected = OrderExecutorImpl.clientOrderId(cycleId, Asset.ETH, "buy")
+                krakenService.executedOrders.single().clOrdId shouldBe expected
+                OrderExecutorImpl.clientOrderId(cycleId, Asset.ETH, "buy") shouldBe expected
+            }
+        }
+
         "sizes live buys from fill-confirmed net proceeds matched by order txid" {
             runTest {
                 val sellTxid = "OID-FILL-1"

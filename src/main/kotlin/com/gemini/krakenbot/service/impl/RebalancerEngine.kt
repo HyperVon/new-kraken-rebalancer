@@ -19,18 +19,20 @@ import com.gemini.krakenbot.service.impl.PortfolioCalculations.SCALE_USD
 import com.gemini.krakenbot.util.ActionLogFormatter
 import com.gemini.krakenbot.util.resolveBalance
 import com.gemini.krakenbot.util.toUsdScale
-import com.gemini.krakenbot.view.util.ViewText
 import org.slf4j.LoggerFactory
 import java.math.BigDecimal
 import java.math.RoundingMode
 import kotlin.math.pow
 
 /**
- * Pure, side-effect-free domain engine for portfolio rebalancing math.
- * Contains zero network, I/O, or database dependencies.
+ * Domain calculator for portfolio rebalancing math with no network or database
+ * dependencies. Logging is retained for cycle diagnostics; treat as calculation
+ * logic rather than a pure functional core.
  */
 object RebalancerEngine {
     private val log = LoggerFactory.getLogger(RebalancerEngine::class.java)
+
+    private const val PRICE_NOT_FOUND_PREFIX = "Price not found for "
 
     fun resolvePriceFromTicker(symbol: String, rawPrices: RawPrices): BigDecimal {
         val expectedPair = Asset.tradingPair(symbol)
@@ -65,7 +67,7 @@ object RebalancerEngine {
                         symbol,
                     )
                     return Result.Failure(
-                        IllegalStateException("${ViewText.PRICE_NOT_FOUND_PREFIX}$symbol"),
+                        IllegalStateException("$PRICE_NOT_FOUND_PREFIX$symbol"),
                     )
                 }
                 price = p
@@ -188,6 +190,7 @@ object RebalancerEngine {
                 settings.deviationTriggerPercent,
             )
 
+            // Both gates required: |Dev%| ≥ trigger and |DevUSD| ≥ dust (isSignificant).
             val triggerThreshold = BigDecimal.valueOf(settings.deviationTriggerPercent)
             val isTriggered =
                 metrics.deviationPercent.abs() >= triggerThreshold && metrics.isSignificant
@@ -199,6 +202,7 @@ object RebalancerEngine {
             }
 
             if (symbol.isUsd) {
+                // USD never becomes a buy/sell row; only flags a fiat-correction candidate.
                 if (isTriggered) {
                     log.info(
                         "Asset USD Deviation: {}% (Trigger: {}%). USD Dev: {}",
@@ -219,6 +223,7 @@ object RebalancerEngine {
                         metrics.deviationUSD,
                     )
 
+                    // Overweight (positive DevUSD) → sell excess; underweight → buy deficit.
                     if (metrics.deviationUSD > BigDecimal.ZERO) {
                         sellOrders[symbolVal] = metrics.deviationUSD
                     } else {
@@ -228,6 +233,8 @@ object RebalancerEngine {
             }
         }
 
+        // Fiat correction only when USD alone triggered (deposit/withdrawal); skip if crypto
+        // already produced orders so we do not double-spend the same cash move.
         if (buyOrders.isEmpty() && sellOrders.isEmpty() && usdTriggered) {
             log.info(
                 "USD Deviation triggered but no individual asset triggers. " +

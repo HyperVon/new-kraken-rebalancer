@@ -79,7 +79,7 @@ class DynamicKrakenServiceTest : StringSpec() {
                 )
             }
             coVerify(exactly = 0) {
-                realService.executeOrder(any(), any(), any(), any(), any())
+                realService.executeOrder(any(), any(), any(), any(), any(), any())
             }
 
             dynamicService.getTradeHistory(12345L, 10)
@@ -120,7 +120,7 @@ class DynamicKrakenServiceTest : StringSpec() {
                 )
             }
             coVerify(exactly = 0) {
-                simulatedService.executeOrder(any(), any(), any(), any(), any())
+                simulatedService.executeOrder(any(), any(), any(), any(), any(), any())
             }
 
             dynamicService.getTradeHistory(null, null)
@@ -155,10 +155,10 @@ class DynamicKrakenServiceTest : StringSpec() {
             }
 
             coVerify(exactly = 2) {
-                simulatedService.executeOrder(any(), any(), any(), any(), any())
+                simulatedService.executeOrder(any(), any(), any(), any(), any(), any())
             }
             coVerify(exactly = 0) {
-                realService.executeOrder(any(), any(), any(), any(), any())
+                realService.executeOrder(any(), any(), any(), any(), any(), any())
             }
         }
 
@@ -187,7 +187,7 @@ class DynamicKrakenServiceTest : StringSpec() {
                 )
             }
             coVerify(exactly = 0) {
-                realService.executeOrder(any(), any(), any(), any(), any())
+                realService.executeOrder(any(), any(), any(), any(), any(), any())
             }
         }
 
@@ -220,10 +220,10 @@ class DynamicKrakenServiceTest : StringSpec() {
             }
 
             coVerify(exactly = 2) {
-                simulatedService.executeOrder(any(), any(), any(), any(), any())
+                simulatedService.executeOrder(any(), any(), any(), any(), any(), any())
             }
             coVerify(exactly = 0) {
-                realService.executeOrder(any(), any(), any(), any(), any())
+                realService.executeOrder(any(), any(), any(), any(), any(), any())
             }
             coVerify(exactly = 1) { simulatedService.getBalances() }
             coVerify(exactly = 0) { realService.getBalances() }
@@ -268,10 +268,10 @@ class DynamicKrakenServiceTest : StringSpec() {
                 }
 
                 coVerify(exactly = 1) {
-                    simulatedService.executeOrder(any(), any(), any(), any(), any())
+                    simulatedService.executeOrder(any(), any(), any(), any(), any(), any())
                 }
                 coVerify(exactly = 1) {
-                    realService.executeOrder(any(), any(), any(), any(), any())
+                    realService.executeOrder(any(), any(), any(), any(), any(), any())
                 }
             }
         }

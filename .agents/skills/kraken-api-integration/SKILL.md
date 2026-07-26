@@ -89,3 +89,4 @@ Retry on `IOException`, `ResponseException`, and messages containing
 - [ ] Signing and secrets never logged
 - [ ] Lockout backoff 10s → 15m via `retryWithFlow`
 - [ ] Cross-check dryRun/simulation via DynamicKrakenService
+- [ ] AddOrder uses `cl_ord_id` for open-order uniqueness (not `userref`)
