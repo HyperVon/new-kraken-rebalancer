@@ -40,7 +40,9 @@ flowchart TB
 
     subgraph Services["📦 Services"]
         CS["ConfigServiceImpl\n_configFlow\nMutableSharedFlow&lt;Settings&gt;\nreplay=1, no extraBufferCapacity, DROP_OLDEST"]
-        THS["TradeHistoryServiceImpl façade\n→ SnapshotStore.snapshotFlow\nMutableSharedFlow&lt;PortfolioSnapshot&gt;\nreplay=1, buffer=16, DROP_OLDEST"]
+        THS["TradeHistoryServiceImpl\n(façade)"]
+        Store["TradeHistorySnapshotStore\nsnapshotFlow\nMutableSharedFlow&lt;PortfolioSnapshot&gt;\nreplay=1, buffer=16, DROP_OLDEST"]
+        Sync["TradeHistorySyncService\n(300s throttle + pagination)"]
     end
 
     subgraph External["🌐 External"]
@@ -63,18 +65,20 @@ flowchart TB
     OE -->|"place buy/sell orders"| Kraken
     OE -->|"COLD poll after successful sell\n(not dry-run); best of 3 / early 95 pct"| Kraken
 
-    %% Snapshot emission
+    %% Snapshot emission (façade delegates to SnapshotStore)
     PM -->|"addSnapshot(snapshot)"| THS
-    THS -->|"saveSnapshot()"| Repo
-    THS -->|"HOT: tryEmit(snapshot)\nalways succeeds synchronously"| THS
-    THS -->|"getHistoryFlow()\ncollect { snapshot → }"| DashCtrl
+    THS -->|"delegate"| Store
+    Store -->|"saveSnapshot()"| Repo
+    Store -->|"HOT: tryEmit(snapshot)\nalways succeeds synchronously"| Store
+    Store -->|"getHistoryFlow()\ncollect { snapshot → }"| DashCtrl
     DashCtrl -->|"send(ServerSentEvent)"| SSE
 
-    %% Paginated sync (attempted every cycle; 300s throttle inside THS)
+    %% Paginated sync (façade → SyncService; 300s throttle inside Sync)
     PM -->|"syncTradesFromKraken()\neach cycle"| THS
-    THS -->|"COLD getTradeHistoryPaginated()\n.collect { page → }\nemit() suspends until collector ready"| Kraken
-    Kraken -->|"pages of TradeRecord"| THS
-    THS -->|"reconcile & save"| Repo
+    THS -->|"delegate"| Sync
+    Sync -->|"COLD getTradeHistoryPaginated()\n.collect { page → }\nemit() suspends until collector ready"| Kraken
+    Kraken -->|"pages of TradeRecord"| Sync
+    Sync -->|"reconcile & save"| Repo
 
     %% Dashboard initial load
     SSE -->|"SSE connect /api/status/stream"| DashCtrl
@@ -85,7 +89,8 @@ flowchart TB
     classDef external fill:#3c2a1a,stroke:#e09a4f,color:#fdf5e8
     classDef infra fill:#2a1a3c,stroke:#9a4fe0,color:#f5e8fd
 
-    class CS,THS hot
+    class CS,Store hot
+    class Sync cold
     class Kraken external
     class Repo,DB infra
 ```

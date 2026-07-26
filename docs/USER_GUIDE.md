@@ -18,7 +18,7 @@ Two independent settings control how “real” trading is. Change them from
 | Mode | What it does | When to use |
 | :--- | :--- | :--- |
 | **Simulation Mode** | Routes all exchange calls to an offline Kraken emulator (random-walk prices, seeded history). No API keys required. | Learning the UI, demos, documentation screenshots |
-| **Dry Run Mode** | Calculates intended orders but does not place them. Server logs may show `[DRY RUN]` or `[EMULATOR DRY RUN]`; Recent Activity always prefixes `[DRY RUN]`. | Rehearsing strategies against live or simulated markets |
+| **Dry Run Mode** | Calculates intended orders on the active backend (live Kraken or the emulator) but never places them. Server logs may show `[DRY RUN]` or `[EMULATOR DRY RUN]`; Recent Activity always prefixes `[DRY RUN]`. | Rehearsing strategies against live or simulated markets |
 
 **Live trading** is `simulation` off **and** `dryRun` off with real API keys —
 that moves real funds. Prefer simulation (and/or dry run) until you understand

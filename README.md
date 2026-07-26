@@ -217,7 +217,8 @@ with a wide range of tools and paradigms:
 
 ### Safety & Reliability
 
-- **Dry Run Mode** — test your strategy without executing real trades
+- **Dry Run Mode** — calculates intended orders on the active backend (live
+  Kraken or the emulator) but never places them
 - **Structured Order Results** — each order returns success/failure status;
   failed orders don't corrupt cash projections
 - **Atomic File Writes** — config updates use write-then-atomic-rename (NIO Files.move with StandardCopyOption.ATOMIC_MOVE) to prevent file system corruption
@@ -404,7 +405,7 @@ This path is internal orchestration — not a second browser-facing SSE stream l
 │       ├── config/                        # AppConfig, Settings, Allocation, KrakenCredentials, InvalidConfigurationException
 │       ├── model/                         # Asset, OrderSide, OrderType, Result, TimeRange, SyncMetadataKeys, TradeSourceKeys
 │       ├── util/                          # PrecisionConstants
-│       └── view/util/                     # Routes, ViewText, CssClass, HtmlIds, HtmlAttrs, DataProps, ChartProps
+│       └── view/util/                     # Routes, FormFields, ViewText, CssClass, HtmlIds, HtmlAttrs, HtmxAttrs, DataProps, ChartProps
 ├── frontend-js/                            # Kotlin/JS client-side subproject compiling to rebalancer.js
 │   ├── src/jsMain/kotlin/                 # Kotlin/JS frontend source files
 │   │   ├── main.kt                        # Client-side routing entry point
@@ -572,7 +573,7 @@ If you are modifying the client-side code in `frontend-js/` and want to compile 
 | `loopDelaySeconds`        | `Long`    | — (template `60`)       | Seconds between rebalance cycles; required in JSON                                    |
 | `deviationTriggerPercent` | `Double`  | — (template `5.0`)      | Minimum absolute deviation % to trigger a trade; required in JSON                     |
 | `dustThresholdUSD`        | `Double`  | `5.0`                   | Min significant USD deviation (order generation) and min order notional (execution)   |
-| `dryRun`                  | `Boolean` | — (template `true`)     | Required in JSON; if true, logs intended trades without executing them                |
+| `dryRun`                  | `Boolean` | — (template `true`)     | Required in JSON; suppresses order placement on the active backend (live or emulator) |
 | `simulation`              | `Boolean` | `false`                 | If true, runs offline in exchange simulation mode (seeds history if DB is empty)      |
 | `fiatMaxDrawdown`         | `Double`  | `0.0`                   | Portfolio drawdown % at which 100% of USD is deployed (0 = disabled)                  |
 | `fiatDeploymentExponent`  | `Double`  | `1.0`                   | Controls deployment curve: `1.0` = linear, `<1.0` = aggressive, `>1.0` = conservative |

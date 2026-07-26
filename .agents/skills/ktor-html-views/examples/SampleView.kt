@@ -10,8 +10,8 @@ import kotlinx.html.BODY
 import kotlinx.html.p
 
 /**
- * Minimal kotlinx.html example using real `:common` symbols and the project's
- * `div(CssClass)` helper — not production dashboard markup.
+ * Minimal kotlinx.html example using real `:common` view-util symbols plus the
+ * JVM `HtmlExtensions.div(CssClass)` helper — not production dashboard markup.
  */
 fun BODY.renderConnectingPlaceholder() {
     div {

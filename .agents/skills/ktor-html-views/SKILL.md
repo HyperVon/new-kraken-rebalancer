@@ -30,7 +30,7 @@ Path constants (`Routes`): `/`, `/settings`, `/history`, `/fragments/dashboard`,
 
 ---
 
-## Type-safe `:common` usage
+## Type-safe view helpers (`:common` + JVM `HtmlExtensions`)
 
 ```kotlin
 import com.gemini.krakenbot.view.util.CssClass
@@ -38,7 +38,7 @@ import com.gemini.krakenbot.view.util.HtmxAttrs
 import com.gemini.krakenbot.view.util.HtmxValues
 import com.gemini.krakenbot.view.util.Routes
 import com.gemini.krakenbot.view.util.ViewText
-import com.gemini.krakenbot.view.util.div
+import com.gemini.krakenbot.view.util.div // JVM HtmlExtensions, not :common
 
 div {
     attributes[HtmxAttrs.HX_GET] = Routes.FRAGMENT_DASHBOARD
@@ -50,7 +50,8 @@ div {
 }
 ```
 
-No duplicated magic strings for IDs, CSS classes, routes, or user-visible labels.
+Use `:common` for IDs, CSS class names, routes, and user-visible labels. The
+`div(CssClass)` helper lives in JVM `view/util/HtmlExtensions.kt`.
 
 ## Page headers: `brandWithMode(settings)`
 

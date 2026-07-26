@@ -12,13 +12,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - **Dependencies**: `kotlin-css-jvm` `2026.7.5` → `2026.7.6`.
 - **Documentation review**: README package tree (`HistoryJsonParsing`,
-  `:common`/`JVM` `api/`); FLOWS/EVALUATION/coroutines-flows-sse attribute
-  snapshot SharedFlow to `TradeHistorySnapshotStore` (façade
+  `:common`/`JVM` `api/`) + dry-run wording; FLOWS system map + sequence
+  diagrams attribute SnapshotStore/SyncService ownership (façade
   `getHistoryFlow()`); USER_GUIDE + Settings `ViewText` dry-run wording;
-  AGENTS + common-kmp `api` DTOs; ktor-html-views sample/skill snippet use
-  real `:common` symbols; SimulationEvaluation case inventory; CONTRIBUTING
-  points at open-pr / adversarial review; CI drops stale `kotlin-migration`
-  push trigger.
+  AGENTS + common-kmp `api` DTOs; frontend-js skill documents
+  `HistoryJsonParsing`; ktor-html-views sample/skill use real `:common`
+  symbols + JVM `HtmlExtensions`; SimulationEvaluation case inventory;
+  CONTRIBUTING points at open-pr / adversarial review; CI drops stale
+  `kotlin-migration` push trigger.
 - **Documentation screenshots**: Refreshed all six canonical Dashboard,
   Settings, and History PNGs at their configured 1440×900 @2× viewports (with
   the taller History charts target), and taught target discovery about every
