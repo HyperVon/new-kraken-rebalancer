@@ -39,7 +39,7 @@ open class RateLimiter(
 
                 if (callCounter + cost > safeLimit) {
                     val neededDecay = (callCounter + cost) - safeLimit
-                    waitMs = (neededDecay / decayRate * 1000).roundToLong()
+                    waitMs = (neededDecay / decayRate * 1000).roundToLong().coerceAtLeast(1L)
                 } else {
                     callCounter += cost
                     acquired = callCounter

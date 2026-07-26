@@ -195,7 +195,7 @@ class DynamicKrakenServiceTest : StringSpec() {
             }
         }
 
-        "nested withStableBackend blocks each pin independently at entry" {
+        "nested withStableBackend reuses outer pin instead of re-resolving" {
             every { configService.getConfig() } returns appConfig(simulation = true)
 
             val dynamicService = createService()
@@ -210,6 +210,7 @@ class DynamicKrakenServiceTest : StringSpec() {
                 every { configService.getConfig() } returns appConfig(simulation = false)
 
                 dynamicService.withStableBackend { inner ->
+                    // Nested wrap must keep the outer pin (sim), not flip to live.
                     inner.executeOrder(
                         Asset.ETH_USD_PAIR,
                         OrderSide.BUY.apiValue,
@@ -218,14 +219,13 @@ class DynamicKrakenServiceTest : StringSpec() {
                     )
                 }
 
-                // Outer captured backend stays simulated.
                 outer.getBalances()
             }
 
-            coVerify(exactly = 1) {
+            coVerify(exactly = 2) {
                 simulatedService.executeOrder(any(), any(), any(), any(), any())
             }
-            coVerify(exactly = 1) {
+            coVerify(exactly = 0) {
                 realService.executeOrder(any(), any(), any(), any(), any())
             }
             coVerify(exactly = 1) { simulatedService.getBalances() }

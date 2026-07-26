@@ -35,11 +35,16 @@ class DynamicKrakenService(
         coroutineContext[PinnedBackend]?.service ?: resolveFromConfig()
 
     /**
-     * Pins the live vs simulation backend for [block] at entry. Nested invocations
-     * each capture their own entry-time backend; [currentBackend] follows the
-     * innermost pin so Dynamic method calls stay stable for a full cycle/sync.
+     * Pins the live vs simulation backend for [block] at entry. If a pin is already
+     * active on this coroutine, it is reused (so nested [OrderExecutor] wraps cannot
+     * shadow a full rebalance/sync pin). Concurrent top-level invocations each capture
+     * their own entry-time backend.
      */
     override suspend fun <T> withStableBackend(block: suspend (KrakenService) -> T): T {
+        val existing = coroutineContext[PinnedBackend]?.service
+        if (existing != null) {
+            return block(existing)
+        }
         val backend = resolveFromConfig()
         return withContext(PinnedBackend(backend)) {
             block(backend)
