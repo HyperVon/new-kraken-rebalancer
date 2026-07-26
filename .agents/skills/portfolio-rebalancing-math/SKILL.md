@@ -4,7 +4,7 @@ description: >-
   Portfolio rebalancing engine math — BigDecimal scales, ATH/drawdown fiat
   deployment, deviation triggers, fiat correction, dust thresholds, sell-first
   execution, and 99% cash caps. Use when changing PortfolioCalculations,
-  PortfolioAnalyzerImpl, OrderExecutorImpl, or docs/ALGORITHM.md.
+  PortfolioAnalyzerImpl, RebalancerEngine, OrderExecutorImpl, or docs/ALGORITHM.md.
 ---
 
 # Portfolio Rebalancing Engine Math
@@ -13,9 +13,11 @@ Canonical deep doc: [`docs/ALGORITHM.md`](../../../docs/ALGORITHM.md).
 
 Primary code:
 
+- `RebalancerEngine` — domain calculator (valuation, drawdown, targets, deviations,
+  fiat correction); no network/DB
 - `PortfolioCalculations` — shared % / target / deviation math
-- `PortfolioAnalyzerImpl` — snapshot, ATH, drawdown, order generation
-- `OrderExecutorImpl` — sell-first execution, USD poll, buy cap
+- `PortfolioAnalyzerImpl` — snapshot/ATH I/O; delegates math to `RebalancerEngine`
+- `OrderExecutorImpl` — sell-first execution, USD settle, buy cap, `cl_ord_id` on AddOrder
 
 ## Financial precision (CRITICAL)
 
@@ -97,7 +99,10 @@ effectively than spreading across all pairs.
    (`PrecisionConstants.CASH_RESERVE_FACTOR` / `CASH_RESERVE_FACTOR_DOUBLE`), then
    cap each buy by remaining budget.
 4. **Dust** — skip orders with USD notional `< dustThresholdUSD`.
-5. Market orders; volumes at crypto scale 8.
+5. Market orders; volumes at crypto scale 8. Live AddOrder includes deterministic
+   `cl_ord_id` (`cycleId|symbol|side` → UUID) so `retryWithFlow` reuses the same
+   client id while the order is still open (Kraken does not treat `userref` as
+   idempotent).
 6. **dryRun**: suppress placement on the active backend — SLF4J uses
    `[DRY RUN]` (live) / `[EMULATOR DRY RUN]` (simulation); dashboard activity
    always uses `[DRY RUN]` (see dry-run-and-simulation skill).

@@ -639,9 +639,34 @@ class OrderExecutorCashCapTest : StringSpec() {
                     cycleId = cycleId,
                 )
 
-                val expected = OrderExecutorImpl.clientOrderId(cycleId, Asset.ETH, "buy")
+                val expected = checkNotNull(OrderExecutorImpl.clientOrderId(cycleId, Asset.ETH, "buy"))
+                expected.matches(Regex("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")) shouldBe true
                 krakenService.executedOrders.single().clOrdId shouldBe expected
-                OrderExecutorImpl.clientOrderId(cycleId, Asset.ETH, "buy") shouldBe expected
+                OrderExecutorImpl.clientOrderId("", Asset.ETH, "buy") shouldBe null
+            }
+        }
+
+        "omits cl_ord_id when cycleId is blank" {
+            runTest {
+                orderExecutor.executeOrders(
+                    buyOrders = mapOf(Asset.ETH to BigDecimal("100.00")),
+                    sellOrders = emptyMap(),
+                    currentValuesUSD = mapOf(Asset.USD to BigDecimal("1000.00")),
+                    prices = mapOf(Asset.ETH to BigDecimal("2000.00")),
+                    settings =
+                    Settings(
+                        loopDelaySeconds = 0L,
+                        deviationTriggerPercent = 2.0,
+                        dustThresholdUSD = 1.0,
+                        dryRun = true,
+                        fiatMaxDrawdown = 0.0,
+                        fiatDeploymentExponent = 1.0,
+                    ),
+                    actionLog = mutableListOf(),
+                    cycleId = "",
+                )
+
+                krakenService.executedOrders.single().clOrdId shouldBe null
             }
         }
 

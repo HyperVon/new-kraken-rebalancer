@@ -38,6 +38,7 @@ object RebalancerEngine {
         val expectedPair = Asset.tradingPair(symbol)
         rawPrices[expectedPair]?.let { return it }
 
+        // Exact pair-alias match only (CQ-1-11 / #69) — never substring contains().
         for ((key, value) in rawPrices) {
             if (Asset.matchesUsdQuotedPair(key, symbol)) {
                 return value
@@ -74,6 +75,7 @@ object RebalancerEngine {
             }
 
             val rawValUSD = balance.multiply(price)
+            // Per-asset values stay USD-scaled for order sizing; accumulate raw then round once.
             currentValuesUSD[symbol] = rawValUSD.setScale(SCALE_USD, RoundingMode.HALF_UP)
             totalPortfolioValueUSD = totalPortfolioValueUSD.add(rawValUSD)
         }
@@ -111,6 +113,8 @@ object RebalancerEngine {
             )
         ratio = ratio.coerceAtMost(BigDecimal.ONE)
 
+        // Deploy% = (DD / MaxDD)^exponent × 100; ratio already capped at 1 so Deploy% ≤ 100.
+        // Fractional exponents require Double.pow; re-enter BigDecimal immediately and scale.
         val deployDouble = ratio.toDouble().pow(settings.fiatDeploymentExponent) * 100.0
         return BigDecimal
             .valueOf(deployDouble)
@@ -122,6 +126,7 @@ object RebalancerEngine {
             .filter { it.symbol.isUsd }
             .sumOf { it.targetPercent.toBigDecimal() }
 
+        // Shrink configured USD target by Deploy% so cash is freed for crypto on drawdowns.
         return if (fiatDeploymentPct > BigDecimal.ZERO) {
             val factor =
                 BigDecimal.ONE.subtract(
@@ -138,6 +143,7 @@ object RebalancerEngine {
             .filter { !it.symbol.isUsd }
             .sumOf { it.targetPercent.toBigDecimal() }
 
+        // Scale every crypto base target so (100 − effectiveUsd) is split in the same proportions.
         val remainingForCrypto = HUNDRED.subtract(effectiveUsdTarget)
         return if (totalNonUsdTarget > BigDecimal.ZERO) {
             remainingForCrypto.divide(
@@ -260,6 +266,7 @@ object RebalancerEngine {
         sellOrders: MutableRebalanceOrders,
         actionLog: MutableList<String>,
     ) {
+        // Positive USD DevUSD = surplus cash (deposit) → buy underweights; negative = shortage → sell overweights.
         val deviationAbs = usdDev.abs()
         val isDeposit = usdDev > BigDecimal.ZERO
         var totalCounterDev = BigDecimal.ZERO
@@ -300,6 +307,8 @@ object RebalancerEngine {
         )
         actionLog.add(ActionLogFormatter.formatFiatCorrectionDistribution(deviationAbs, candidates.size))
 
+        // Truncate rather than round the budget so the shares can never sum above the
+        // deviation we are actually correcting (CQ-3-26 / #76).
         var remaining = deviationAbs.setScale(SCALE_USD, RoundingMode.DOWN)
 
         for (symbol in candidates) {
@@ -312,6 +321,8 @@ object RebalancerEngine {
                 )
             val share = deviationAbs.multiply(ratio).toUsdScale().min(remaining)
 
+            // A tiny counter-deviation rounds to $0.00, and HALF_UP shares can collectively
+            // exceed the budget; either way there is nothing left to trade for this symbol.
             if (share.signum() <= 0) continue
             remaining = remaining.subtract(share)
 
