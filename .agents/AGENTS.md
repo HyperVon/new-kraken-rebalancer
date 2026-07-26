@@ -203,3 +203,26 @@ See [write-kotest](skills/write-kotest/SKILL.md).
 - In-memory SQLite only (`:memory:`).
 - Prefer `FakeKrakenService` for deterministic tests; `SimulatedKrakenService` is the production emulator (not the same).
 - Evaluation/E2E/chaos: `EvaluationScenariosTest`, `docs/EVALUATION.md`; Flow tests use `advanceUntilIdle()`.
+
+---
+
+## 9. Cursor Cloud environment
+
+Cloud VM deltas only. Canonical setup: [README Getting Started](../README.md#getting-started);
+flags: [dry-run-and-simulation](skills/dry-run-and-simulation/SKILL.md).
+
+- **JDK:** Temurin 25 at `/usr/lib/jvm/temurin-25` (default `java`); no `JAVA_HOME` for
+  `./gradlew`. Matches §1 toolchain (ignore JDK 21 if present).
+- **Run (sim):** `cp rebalancer-config-template.json rebalancer-config.json`, set
+  `"simulation": true`, `./gradlew run` (background per [OPERATING.md](OPERATING.md) §4 —
+  poll `/api/health` until 200; first boot may block on seeding) →
+  <http://localhost:8080>. UI QA / screenshots: prefer isolated `RUN_DIR` + `fatJar` in
+  [ui-manual-qa](skills/ui-manual-qa/SKILL.md) / [docs-screenshot-refresh](skills/docs-screenshot-refresh/SKILL.md).
+- **Build/test:** [§5 Quality gates](#5-quality-gates) and [README Testing](../README.md#testing).
+  `./gradlew build` covers Gradle gates (Spotless, JVM tests, JaCoCo, Karma); still run
+  `npx markdownlint-cli` when editing docs.
+- **Hot-reload:** Settings UI saves restart the rebalance loop only
+  ([koin-di-and-config](skills/koin-di-and-config/SKILL.md),
+  [coroutines-flows-sse](skills/coroutines-flows-sse/SKILL.md)); manual
+  `rebalancer-config.json` edits on disk require restart. **Kotlin / SSR / frontend
+  changes require `./gradlew run` restart** (Ktor Autoreload off).
