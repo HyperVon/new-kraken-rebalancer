@@ -852,5 +852,143 @@ class OrderExecutorCashCapTest : StringSpec() {
                 krakenService.executedOrders.single().side shouldBe "sell"
             }
         }
+
+        "sums fill proceeds across history pages when matching sell is on page 2" {
+            runTest {
+                val sellTxid = "OID-PAGE-2"
+                val pageSize = OrderExecutorImpl.TRADE_HISTORY_PAGE_SIZE
+                krakenService.orderResultFactory = { pair, _, side, volume ->
+                    OrderResult(
+                        success = true,
+                        pair = pair,
+                        side = side,
+                        volume = volume,
+                        orderTxid = if (side == "sell") sellTxid else null,
+                    )
+                }
+                val padding =
+                    List(pageSize) { idx ->
+                        TradeRecord(
+                            timestamp = Instant.now().minusSeconds(idx.toLong()),
+                            pair = Asset.ETH_USD_PAIR,
+                            side = "BUY",
+                            symbol = Asset.ETH,
+                            volume = BigDecimal("0.01"),
+                            usdAmount = BigDecimal("10.00"),
+                            success = true,
+                            dryRun = false,
+                            price = BigDecimal("1000.00"),
+                            orderTxid = "OID-PAD-$idx",
+                        )
+                    }
+                val matchingFill =
+                    TradeRecord(
+                        timestamp = Instant.now(),
+                        pair = Asset.BTC_USD_PAIR,
+                        side = "SELL",
+                        symbol = Asset.BTC,
+                        volume = BigDecimal("0.1"),
+                        usdAmount = BigDecimal("100.00"),
+                        success = true,
+                        dryRun = false,
+                        price = BigDecimal("1000.00"),
+                        fee = BigDecimal("1.00"),
+                        orderTxid = sellTxid,
+                    )
+                krakenService.tradeHistorySupplier = { _, offset ->
+                    val all = padding + matchingFill
+                    val start = offset ?: 0
+                    all.drop(start).take(pageSize)
+                }
+                // Peek empty → cap to projected ($200); net fill would be $199.
+                krakenService.balanceSupplier = { emptyMap() }
+
+                orderExecutor.executeOrders(
+                    buyOrders = mapOf(Asset.ETH to BigDecimal("500.00")),
+                    sellOrders = mapOf(Asset.BTC to BigDecimal("100.00")),
+                    currentValuesUSD = mapOf(Asset.USD to BigDecimal("100.00")),
+                    prices =
+                    mapOf(
+                        Asset.BTC to BigDecimal("1000.00"),
+                        Asset.ETH to BigDecimal("1000.00"),
+                    ),
+                    settings =
+                    Settings(
+                        loopDelaySeconds = 0L,
+                        deviationTriggerPercent = 2.0,
+                        dustThresholdUSD = 1.0,
+                        dryRun = false,
+                        fiatMaxDrawdown = 0.0,
+                        fiatDeploymentExponent = 1.0,
+                    ),
+                    actionLog = mutableListOf(),
+                )
+
+                // Two history pages fetched on the first fill-poll attempt.
+                (krakenService.getTradeHistoryCallCount >= 2) shouldBe true
+                krakenService.executedOrders.size shouldBe 2
+                // Net fill $99 + opening $100 = $199 → 99% budget → vol 0.19701
+                krakenService.executedOrders[1].volume.shouldBeEqualComparingTo(BigDecimal("0.19701"))
+            }
+        }
+
+        "caps fill-confirmed cash to projected when balance peek is unavailable" {
+            runTest {
+                val sellTxid = "OID-OVERSTATED"
+                krakenService.orderResultFactory = { pair, _, side, volume ->
+                    OrderResult(
+                        success = true,
+                        pair = pair,
+                        side = side,
+                        volume = volume,
+                        orderTxid = if (side == "sell") sellTxid else null,
+                    )
+                }
+                // History overstates proceeds vs the $100 sell intent.
+                krakenService.tradeHistorySupplier = { _, _ ->
+                    listOf(
+                        TradeRecord(
+                            timestamp = Instant.now(),
+                            pair = Asset.BTC_USD_PAIR,
+                            side = "SELL",
+                            symbol = Asset.BTC,
+                            volume = BigDecimal("0.5"),
+                            usdAmount = BigDecimal("500.00"),
+                            success = true,
+                            dryRun = false,
+                            price = BigDecimal("1000.00"),
+                            fee = BigDecimal.ZERO,
+                            orderTxid = sellTxid,
+                        ),
+                    )
+                }
+                krakenService.balanceSupplier = { emptyMap() }
+
+                orderExecutor.executeOrders(
+                    buyOrders = mapOf(Asset.ETH to BigDecimal("500.00")),
+                    sellOrders = mapOf(Asset.BTC to BigDecimal("100.00")),
+                    currentValuesUSD = mapOf(Asset.USD to BigDecimal("100.00")),
+                    prices =
+                    mapOf(
+                        Asset.BTC to BigDecimal("1000.00"),
+                        Asset.ETH to BigDecimal("1000.00"),
+                    ),
+                    settings =
+                    Settings(
+                        loopDelaySeconds = 0L,
+                        deviationTriggerPercent = 2.0,
+                        dustThresholdUSD = 1.0,
+                        dryRun = false,
+                        fiatMaxDrawdown = 0.0,
+                        fiatDeploymentExponent = 1.0,
+                    ),
+                    actionLog = mutableListOf(),
+                )
+
+                // Uncapped fill would be $600; projected cap $200 → buy vol 0.198
+                krakenService.executedOrders.size shouldBe 2
+                krakenService.executedOrders[1].volume.shouldBeEqualComparingTo(BigDecimal("0.198"))
+            }
+        }
     }
 }

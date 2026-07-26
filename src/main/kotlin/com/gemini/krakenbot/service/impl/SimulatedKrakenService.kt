@@ -281,7 +281,7 @@ class SimulatedKrakenService(private val configService: ConfigService) : KrakenS
         var filtered =
             if (startSec != null) {
                 val startInstant = Instant.ofEpochSecond(startSec)
-                simulatedTrades.filter { it.timestamp.isAfter(startInstant) }
+                simulatedTrades.filter { !it.timestamp.isBefore(startInstant) }
             } else {
                 simulatedTrades
             }

@@ -230,7 +230,16 @@ class OrderExecutorImpl(
                     }
                     return capped
                 }
-                return fillConfirmed
+                // No spendable balance yet: never invent cash beyond this cycle's projected sells.
+                val cappedToProjected = fillConfirmed.min(projectedCash)
+                if (cappedToProjected < fillConfirmed) {
+                    log.info(
+                        "Capping fill-confirmed USD {} to projected cash {}",
+                        fillConfirmed,
+                        projectedCash,
+                    )
+                }
+                return cappedToProjected
             }
             log.warn("Fill confirmation returned no positive USD; falling back to balance poll")
         }
@@ -299,7 +308,9 @@ class OrderExecutorImpl(
 
     /**
      * Sum net-of-fee USD proceeds for sells whose [TradeRecord.orderTxid] is in [txidSet],
-     * paginating through recent history until every txid has been seen or pages are exhausted.
+     * paginating newest-first until a short/empty page or [MAX_FILL_HISTORY_PAGES].
+     * Does not stop early when every txid has been seen once — one AddOrder can
+     * produce multiple fill legs across page boundaries.
      */
     private suspend fun sumMatchedSellProceeds(
         backend: KrakenService,
@@ -308,21 +319,17 @@ class OrderExecutorImpl(
     ): BigDecimal {
         var offset = 0
         var matchedProceeds = BigDecimal.ZERO
-        val seenTxids = mutableSetOf<String>()
         for (page in 0 until MAX_FILL_HISTORY_PAGES) {
             val fills = backend.getTradeHistory(startSec = startSec, offset = offset)
             if (fills.isEmpty()) break
             for (fill in fills) {
                 val txid = fill.orderTxid ?: continue
                 if (!fill.success || !OrderSide.isSell(fill.side) || txid !in txidSet) continue
-                seenTxids.add(txid)
                 val netProceeds = fill.usdAmount.subtract(fill.fee).max(BigDecimal.ZERO)
                 matchedProceeds = matchedProceeds.add(netProceeds)
             }
             offset += fills.size
-            if (seenTxids.containsAll(txidSet) || fills.size < TRADE_HISTORY_PAGE_SIZE) {
-                break
-            }
+            if (fills.size < TRADE_HISTORY_PAGE_SIZE) break
         }
         return matchedProceeds
     }

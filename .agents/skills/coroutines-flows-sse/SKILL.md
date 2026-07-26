@@ -39,14 +39,19 @@ Path: rebalance cycle → `addSnapshot` → DB + `tryEmit` →
 On connect, send latest snapshot from DB, then collect the SharedFlow (replay
 covers a snapshot emitted between the DB read and subscribe).
 
-### Paginated sync / USD poll (cold)
+### Paginated sync / USD settle (cold)
 
 - `getTradeHistoryPaginated()` — `emit` suspends for backpressure.
-- `refreshUsdBalanceAfterSells()` → `pollUsdBalanceAfterSells().last()` — only
-  when **≥1 sell succeeded** and **not** dry-run. Cold poll: **3** attempts from
-  **250ms** (doubling → 500ms → 1000ms; defensive `coerceAtMost(32s)`); emits the
-  best positive USD observation (or `0`); executor aborts buys when none. Skipped
-  poll → buys use projected cash.
+- `settleUsdAfterSells()` — only when **≥1 sell succeeded** and **not** dry-run:
+  - **Primary:** `pollFillConfirmedUsd()` → `sumMatchedSellProceeds()` (history
+    matched by sell `ordertxid`, **net of fee**, up to 5×50 pages) → balance peek
+    `min(fill, balance)` when spendable USD is visible, else
+    `min(fill, projectedCash)`.
+  - **Fallback:** `refreshUsdBalanceAfterSells()` →
+    `pollUsdBalanceAfterSells().last()` when no txids or fill confirm is empty.
+  Both cold polls: **3** attempts from **250ms** (doubling; defensive
+  `coerceAtMost(32s)`); emit best positive observation (or `0`); executor aborts
+  buys when none. Skipped poll → buys use projected cash.
 
 ## Concurrency rules
 

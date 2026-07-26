@@ -70,3 +70,4 @@ for SSE
 - [ ] Sync metadata keys consistent with `:common` `SyncMetadataKeys`
 - [ ] Simulation seed durations documented if changed
 - [ ] dryRun/live reconcile does not drop legitimate distinct fills
+- [ ] Reconcile preserves local `cycleId` and prefers API `orderTxid` when present

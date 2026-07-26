@@ -206,7 +206,9 @@ failure.
    up to 5×50 rows) for API fills whose `ordertxid` matches the sell AddOrder
    txids, sum **net** proceeds (`cost − fee`), and set cash = opening USD +
    confirmed proceeds. When spendable USD is already visible on a balance peek,
-   cash is capped to `min(fill-confirmed, balance)`. Early-accept at **≥95%** of
+   cash is capped to `min(fill-confirmed, balance)`. When the peek is empty or
+   fails, cash is capped to **projected cash** so history cannot invent liquidity
+   beyond this cycle's sell intents. Early-accept at **≥95%** of
    projected. If txids exist but no positive fills appear, **fall back** to the
    legacy USD **balance poll** (same attempt/backoff/≥95% rules). **Abort buys**
    if neither path confirms positive USD (fail-closed). When no sell txids are

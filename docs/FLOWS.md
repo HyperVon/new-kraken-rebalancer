@@ -207,12 +207,55 @@ sequenceDiagram
 
 ---
 
-## Flow 4 — USD Balance Polling (Cold Flow)
+## Flow 4 — USD Settle after sells (Cold Flow)
 
 **Path:** After **≥1 successful sell** and when **not** dry-run →
-`refreshUsdBalanceAfterSells()` → `pollUsdBalanceAfterSells().last()` → Kraken
-API (with backoff) → caller. Skipped when dry-run or no sell succeeded (buys use
-projected cash).
+`settleUsdAfterSells()`:
+
+1. **Primary (when sell AddOrder txids exist):** `pollFillConfirmedUsd()` →
+   `sumMatchedSellProceeds()` (trade history matched by `ordertxid`, net of fee,
+   paginate up to 5×50) → optional balance peek
+   `min(fillConfirmed, balance)` when spendable USD is visible → else cap to
+   `projectedCash`.
+2. **Fallback:** when no txids, or fill confirmation returns no positive USD →
+   `refreshUsdBalanceAfterSells()` → `pollUsdBalanceAfterSells().last()` (below).
+
+Skipped when dry-run or no sell succeeded (buys use projected cash). Fail-closed:
+abort buys if neither path confirms positive USD.
+
+```mermaid
+sequenceDiagram
+    participant OE as OrderExecutorImpl
+    participant Fill as pollFillConfirmedUsd() [cold]
+    participant Hist as getTradeHistory
+    participant Bal as getBalances
+
+    note over OE: Only when executedSells and not dryRun
+    alt "sell orderTxids present"
+        OE->>Fill: settleUsdAfterSells → pollFillConfirmedUsd → .last()
+        loop "Up to 3 attempts (250ms doubling)"
+            Fill->>Fill: delay(backoffMs)
+            Fill->>Hist: pages until short or max 5
+            Hist-->>Fill: matched fills (cost - fee)
+            alt "cash >= 95% of projected"
+                Fill->>OE: emit(bestCash)
+                Fill->>OE: (flow completes early)
+            else "positive but below 95%"
+                Fill->>OE: emit(bestCash)
+            end
+        end
+        OE->>Bal: peekUsdBalance (once)
+        note over OE: min(fillConfirmed, balance) when balance > 0<br/>else min(fillConfirmed, projectedCash)
+    else "no txids or fillConfirmed = 0"
+        OE->>OE: refreshUsdBalanceAfterSells (Flow 4b)
+    end
+```
+
+### Flow 4b — USD Balance Polling fallback (Cold Flow)
+
+**Path:** `refreshUsdBalanceAfterSells()` → `pollUsdBalanceAfterSells().last()` →
+Kraken balances API (with backoff). Used when sell txids are missing (e.g. some
+test doubles) or fill confirmation found no matching positive proceeds.
 
 ```mermaid
 sequenceDiagram
@@ -220,7 +263,7 @@ sequenceDiagram
     participant Flow as pollUsdBalanceAfterSells() [cold]
     participant API as Kraken API
 
-    note over OE: Only when executedSells and not dryRun
+    note over OE: Fallback when no txids or empty fill confirm
     OE->>Flow: refreshUsdBalanceAfterSells → .last()
     note over Flow: .last() is a terminal operator.<br/>It collects the entire flow and<br/>returns only the final emitted value.
 
@@ -244,16 +287,20 @@ sequenceDiagram
 
 **Key design choices:**
 
-- Using `.last()` instead of `.collect()` is intentional — the flow tracks the
-  **best (maximum) positive** USD observation across attempts and emits that
-  running max. If no positive balance is observed, `.last()` yields `0` and
-  `OrderExecutorImpl` **aborts buys** (fail-closed; projected proceeds are not
-  confirmed cash).
+- Fill confirmation is preferred when AddOrder returns txids — buy budget is
+  sized from **opening USD + net fill proceeds**, capped by a balance peek when
+  spendable cash is already visible, otherwise by **projected cash** so history
+  cannot invent liquidity beyond the cycle's sell intents.
+- Balance polling remains the fail-safe path (and the only path for backends
+  that omit txids).
+- Using `.last()` instead of `.collect()` is intentional — both cold polls track
+  the **best (maximum) positive** observation across attempts. If nothing
+  positive is observed, `.last()` yields `0` and `OrderExecutorImpl` **aborts
+  buys** (fail-closed).
 - Backoff starts at **250ms** and doubles per attempt
   (**250ms → 500ms → 1000ms** with `MAX_REFRESH_ATTEMPTS = 3`). Code also
   `coerceAtMost(32000)` as a defensive ceiling; that cap is unreachable under
   current constants.
-- Exponential backoff is managed entirely inside the cold flow, keeping `OrderExecutorImpl`'s orchestration logic clean.
 - Being cold means this only runs when explicitly triggered after a successful
   sell outside dry-run — it never polls in the background.
 
@@ -268,4 +315,4 @@ The choice between hot and cold flows in this application is deliberate and maps
 | Config changes | **Hot** | Config exists before anyone listens. New subscribers must get the current value immediately (`replay=1`). Multiple components could theoretically watch it. |
 | Dashboard streaming | **Hot** | Snapshots are produced by the rebalancer loop independently of how many browsers are connected. Each connected browser should see the same live broadcast. |
 | Paginated API sync | **Cold** | Fetching is always triggered on-demand for a specific reason. The caller owns the full lifecycle. Backpressure is critical for memory safety with large histories. |
-| Balance polling | **Cold** | A one-shot operation triggered after sells. The polling only makes sense in that specific context, and the caller only needs the final result. |
+| USD settle (fill / balance) | **Cold** | One-shot after sells. Fill-confirm or balance poll only makes sense in that context; the caller only needs the final settled cash. |
