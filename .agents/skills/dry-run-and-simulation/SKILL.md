@@ -26,15 +26,18 @@ Settings.simulation == false → KrakenServiceImpl
 
 DI: `AppModule` binds `KrakenService` → `DynamicKrakenService(live, simulated, configService)`.
 
-`OrderExecutor.executeOrders` wraps the sell→buy sequence in
-`KrakenService.withStableBackend { backend -> … }`. On `DynamicKrakenService` this
-**resolves live vs simulation once at entry** and passes that backend into the
-block so a mid-cycle `simulation` flip cannot send sells to one backend and buys
-to the other. Concurrent / nested blocks each capture their own backend (no
-process-global pin). `OrderExecutor` also passes the cycle’s `settings.dryRun`
-into each `executeOrder` so a mid-cycle dry-run flip cannot change placement
-mode. Outside a stable block, each call still re-reads `settings.simulation`
-(and `dryRun` when the override is omitted).
+`PortfolioManagerImpl.performRebalanceCycle` and `TradeHistoryServiceImpl.syncTradesFromKraken`
+wrap their full bodies in `DynamicKrakenService.withStableBackend` when the injected
+`KrakenService` is Dynamic. That installs a **coroutine-context pin** so all reads
+and writes in the cycle/sync use one backend.
+
+`OrderExecutor.executeOrders` also wraps sell→buy in `withStableBackend`. Nested
+calls **reuse the outer pin** (they do not re-resolve), so OrderExecutor cannot
+shadow a full cycle/sync pin. Concurrent top-level invocations each capture their
+own entry-time backend (no process-global pin). `OrderExecutor` also passes the
+cycle’s `settings.dryRun` into each `executeOrder` so a mid-cycle dry-run flip
+cannot change placement mode. Outside a stable block, each call still re-reads
+`settings.simulation` (and `dryRun` when the override is omitted).
 
 ## SimulatedKrakenService
 

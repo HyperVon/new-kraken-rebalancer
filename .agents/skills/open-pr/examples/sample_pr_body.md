@@ -12,7 +12,17 @@ Brief 2-3 sentence overview explaining what this pull request introduces or refa
 
 ## Verification Results
 
+Only list checks that were already run before opening this PR. Do not leave
+unchecked boxes for “after merge”.
+
 - **Markdown Linting**: PASSED (0 errors)
 - **JVM Backend Tests**: PASSED (340/340 tests)
 - **JaCoCo Coverage**: PASSED (Instruction 96%, Branch 90%, Method 96%, Line 96%)
 - **Kotlin/JS Client Tests**: PASSED
+
+## Test plan
+
+- [x] `./.agents/skills/commit-and-push/scripts/pre_commit_check.sh`
+- [x] Dual-model adversarial review converged
+- [x] _(Only if needed)_ Manual/UI/sim spot-checks already performed — e.g. History
+  table at ~1280px — never “after merge”

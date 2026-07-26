@@ -10,12 +10,15 @@ alwaysApply: false
 
 When editing dashboard HTML/CSS/HTMX or `:frontend-js` charts/DOM:
 
-## Before calling done
+## Before calling done (and before opening a PR)
+
+Complete these **before** `gh pr create` — never defer to “after merge”. See
+`.agents/OPERATING.md` § Complete PR verifications before opening / `open-pr`.
 
 1. **Viewport** — Judge layout at **laptop ~1280–1440px**, not only mobile. Cropped screenshots are not “mobile” unless the user says so.
 2. **Cache** — Stylesheet must stay cache-busted (`/static/style.css?v=…`). New controls that look like native white buttons usually mean stale CSS.
 3. **Interactions** — Prefer running `.agents/skills/ui-manual-qa` (or its STYLE/REGRESSION/HIST-ZOOM cases) after meaningful UI work; don’t rely on unit tests alone for click/zoom/view presets/scrubber pan.
-4. **Visuals** — If appearance changed for README/User Guide, run docs-screenshot-refresh when shipping docs.
+4. **Visuals** — If appearance changed for README/User Guide, run docs-screenshot-refresh when shipping docs. If canonical shots are unaffected, still verify with a temp capture when claiming a visual fix.
 5. **Safety chrome** — Keep the settings-backed mode plate visible on every page (`SIMULATION` > `DRY RUN` > `LIVE TRADING`). Keep stream health separate as `STREAM` / `STALE`.
 
 ## Common misses (regression smells)

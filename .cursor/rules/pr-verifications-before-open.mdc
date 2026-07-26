@@ -1,0 +1,27 @@
+---
+description: Complete every PR test-plan verification before gh pr create; never defer checks to after merge
+alwaysApply: true
+---
+
+<!-- Canonical portable copy: .agents/OPERATING.md § Complete PR verifications before opening -->
+
+# Complete PR verifications before opening
+
+**Always do all verifications for a PR prior to creating the PR.** Prefer certainty
+that the change works over shipping faster with incomplete checks.
+
+- Every item in the PR **Test plan** / **Verification Results** must be
+  **executed and checked `[x]` before** `gh pr create` (see `open-pr` skill).
+- Do **not** defer spot-checks, UI/viewport verification, sim boots, or other
+  manual steps to “after merge” or “the user can confirm later”.
+- Do **not** open a PR with unchecked boxes that you intend to finish later.
+- If a check does not apply, omit it (or mark N/A with reason) — never leave a
+  fake unfinished TODO in the PR body.
+- Automated gates alone are not enough when the change needs UI/sim verification;
+  run those first, then open.
+
+## Anti-patterns
+
+- Listing “Spot-check at ~1280 after merge”
+- Opening incomplete PRs to move faster
+- Checking a box without having run the step

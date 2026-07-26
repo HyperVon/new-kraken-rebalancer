@@ -75,6 +75,12 @@ vs base **before** pushing. Fix legitimate findings (new commits as needed),
 re-run Step 2 quality gates, and re-review until that skill converges. Skip
 this step when there is no open PR (WIP commit/push only).
 
+When this push will **create** a PR (or you will open one next), also finish
+every change-specific verification **before** `gh pr create` — see
+[open-pr](../open-pr/SKILL.md) and OPERATING.md § Complete PR verifications
+before opening. Do not push-then-open with unchecked “after merge” test-plan
+items.
+
 ## Step 5: Push current branch
 
 Push **the current branch**, not always `main`:
@@ -97,4 +103,5 @@ authenticate manually.
 - [ ] Docs/CHANGELOG/JaCoCo synced as needed
 - [ ] Lint paths include `.agents/AGENTS.md`, skills, and present top-level docs
 - [ ] If an open PR exists: [adversarial-pr-review](../adversarial-pr-review/SKILL.md) converged
+- [ ] If opening a PR next: all Test plan verifications done first ([open-pr](../open-pr/SKILL.md))
 - [ ] Tests green; pushed **current** branch via `gh`

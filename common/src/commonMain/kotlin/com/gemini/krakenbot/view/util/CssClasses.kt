@@ -239,6 +239,7 @@ sealed class CssClass(open val value: String) {
         object ChartScrubber : History("history-chart-scrubber")
         object ChartScrubberInput : History("history-chart-scrubber-input")
         object TradeLogHeader : History("history-trade-log-header")
+        object TradeLog : History("history-trade-log")
         object MutedSmallText : History("history-muted-small-text")
         object EmptyTableCell : History("history-empty-table-cell")
         object SyncBanner : History("history-sync-banner")

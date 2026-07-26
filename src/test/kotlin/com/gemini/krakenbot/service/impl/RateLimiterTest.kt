@@ -4,10 +4,13 @@ package com.gemini.krakenbot.service.impl
 
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
+import io.kotest.matchers.booleans.shouldBeFalse
 import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.shouldBe
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.async
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlin.math.absoluteValue
 
@@ -111,6 +114,37 @@ class RateLimiterTest : StringSpec() {
 
                 nowMs += 10_000L // fully decayed
                 limiter.getCurrentCounter() shouldBe 0.0
+            }
+        }
+
+        "acquireWithCost does not hold mutex across delay (no HOL blocking)" {
+            runTest {
+                val safeLimit = 2.0
+                val limiter = RateLimiter(safeLimit = safeLimit, decayRate = 1.0)
+                // Fill so next cost=1.0 needs ~0.5s wait (same math as limit-exceeded test).
+                limiter.acquireWithCost(1.5)
+
+                val waiter = async {
+                    limiter.acquireWithCost(1.0)
+                }
+                // Run until waiter is suspended in delay (mutex must already be released).
+                runCurrent()
+                waiter.isCompleted.shouldBeFalse()
+
+                // A second acquire that fits under the limit must complete without waiting
+                // for the waiter's ~500ms delay. If the mutex were held across delay, this
+                // would still be incomplete after runCurrent().
+                val concurrent = async {
+                    limiter.acquireWithCost(0.4)
+                }
+                runCurrent()
+                concurrent.isCompleted.shouldBeTrue()
+                waiter.isCompleted.shouldBeFalse()
+                (limiter.getCurrentCounter() >= 1.8).shouldBeTrue()
+
+                // Do not drain the waiter: proving HOL only needs concurrent progress during
+                // the delay. Cancel so runTest is not left with an unfinished coroutine.
+                waiter.cancel()
             }
         }
     }

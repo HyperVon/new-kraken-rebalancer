@@ -74,5 +74,19 @@ object MediaQueries {
                 fontSize = 0.75.rem
             }
         }
+
+        // CI-11-UI6: tighten History 9-col trade log at laptop widths (~1280).
+        "@media (max-width: 1280px)" {
+            ".${CssClass.History.TradeLog} table" {
+                fontSize = 0.8125.rem
+            }
+            ".${CssClass.History.TradeLog} th" {
+                padding = Padding(0.45.rem, 0.3.rem)
+                fontSize = 0.6875.rem
+            }
+            ".${CssClass.History.TradeLog} td" {
+                padding = Padding(0.45.rem, 0.3.rem)
+            }
+        }
     }
 }
