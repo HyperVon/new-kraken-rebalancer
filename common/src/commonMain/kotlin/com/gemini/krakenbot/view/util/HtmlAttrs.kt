@@ -125,17 +125,6 @@ object HtmlIds {
     const val CUMULATIVE_NET_CASH_FLOW_CHART = "cumulative-net-cash-flow-chart"
 }
 
-/** Centralized sync metadata keys. */
-object SyncMetadataKeys {
-    const val SYNC_OFFSET = "sync_offset"
-    const val SYNC_TOTAL = "sync_total"
-    const val HISTORY_SEEDED = "history_seeded"
-    const val COMPLETED = "completed"
-    const val IS_SEEDED = "seeded"
-    const val OFFSET = "offset"
-    const val TOTAL = "total"
-}
-
 /** Centralized health check response keys. */
 object HealthStatusKeys {
     const val STATUS = "status"

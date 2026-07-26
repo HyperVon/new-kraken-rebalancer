@@ -6,6 +6,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **Settings POST numeric fields**: Reject missing or unparseable deviation
+  trigger and dust threshold values instead of silently coercing to `5.0`.
+- **History trade badges**: Buy/Sell badge matching uppercases side (aligned
+  with cash-flow series), so lowercase legacy rows get the correct badge.
+- **Layering**: `SyncMetadataKeys` moved out of `view.util` into `:common`
+  model; overview grid uses `PrecisionConstants` instead of
+  `service.impl.PortfolioCalculations`.
+
+### Added
+
+- **Adversarial PR review skill**: Local dual-model (Composer + Grok) review
+  loop wired into open-PR and push-to-open-PR flows.
+- SnapshotHistoryCalculator unit coverage for lowercase `buy` reverse-apply;
+  JVM assert that `TradeSourceKeys.LOCAL_ESTIMATE` matches
+  `TradeSource.LOCAL_ESTIMATE.name`.
+
 ## [6.13.6] - 2026-07-25
 
 ### Changed
@@ -42,8 +62,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Fixed
 
 - **History reconstruction side match**: Reverse-apply trades now compares order
-  side case-insensitively so Kraken/`buy` records are applied (previously only
-  uppercase `BUY` matched `OrderSide.BUY.name`).
+  side case-insensitively so legacy rows stored with lowercase `buy`/`sell` are
+  applied (current Kraken ingest already uppercases before persist; previously
+  only uppercase `BUY` matched `OrderSide.BUY.name`).
 
 ## [6.13.3] - 2026-07-25
 
@@ -57,7 +78,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Settings allocation total pill**: Valid/invalid sum uses a dedicated
   `allocation-total` pill (no STREAM pulse animation).
 - **Settings POST fallbacks**: Missing deviation/dust form fields default to
-  `5.0` / `5.0`, matching the config template and `Settings.dustThresholdUSD`.
+  `5.0` / `5.0`, matching the config template (dust also matches
+  `Settings.dustThresholdUSD`; deviation has no data-class default).
 - **Docs accuracy**: EVALUATION hot streams, README Recent Activity vs History,
   config hot-reload wording, `@Suppress("unused")` guidance, and
   portfolio-rebalancing-math inclusive `>=` trigger language.

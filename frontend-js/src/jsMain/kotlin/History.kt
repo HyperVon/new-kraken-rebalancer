@@ -921,7 +921,7 @@ private fun renderTradeRow(t: JsTradeRecord): HTMLTableRowElement {
     tr.className = CssClass.Table.Hoverable.toString()
 
     val time = Date(t.timestamp.toString()).asDynamic().toLocaleString()
-    val side = t.side ?: ""
+    val side = t.side.toString().uppercase()
     val sideClass =
         when (side) {
             OrderSide.BUY.name -> CssClass.Badge.Buy

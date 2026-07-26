@@ -3,6 +3,7 @@ package com.gemini.krakenbot.frontend
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.TimeRange
+import com.gemini.krakenbot.model.TradeSourceKeys
 import com.gemini.krakenbot.util.PrecisionConstants
 import com.gemini.krakenbot.view.util.ChartProps
 import com.gemini.krakenbot.view.util.CssClass
@@ -184,7 +185,7 @@ class HistoryTest : StringSpec() {
                             price = 50000.0,
                             fee = 13.0,
                             slippagePercent = 0.5,
-                            source = "LOCAL_ESTIMATE",
+                            source = TradeSourceKeys.LOCAL_ESTIMATE,
                         ),
                         TestDomBuilders.tradeJson(
                             side = OrderSide.SELL.name,

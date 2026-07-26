@@ -2,8 +2,9 @@
 name: open-pr
 description: >-
   Open a GitHub PR with gh — pre-PR quality gates (Spotless, tests, coverage,
-  markdown lint on .agents/AGENTS.md), conventional title, and structured body.
-  Use when the user asks to open or create a pull request.
+  markdown lint on .agents/AGENTS.md), mandatory dual-model adversarial review,
+  conventional title, and structured body. Use when the user asks to open or
+  create a pull request.
 ---
 
 # Open Pull Request Skill
@@ -36,13 +37,19 @@ Must pass: markdown lint (`.agents/AGENTS.md` + skills), Spotless 120,
 `./gradlew test`, `:frontend-js:jsBrowserTest`, and coverage expectations (JaCoCo
 95%/90%, Karma 90%/75%).
 
-## Step 3: Title & body
+## Step 3: Adversarial review (mandatory)
+
+Follow [adversarial-pr-review](../adversarial-pr-review/SKILL.md) on the full
+branch diff vs base **before** creating the PR. Fix legitimate findings and
+re-review until that skill converges.
+
+## Step 4: Title & body
 
 Conventional title (`feat:`, `fix:`, `docs:`, …). Body template:
 `examples/sample_pr_body.md` (overview, changes, verification including
 coverage/lint).
 
-## Step 4: Create via `gh`
+## Step 5: Create via `gh`
 
 ```bash
 BRANCH=$(git branch --show-current)
@@ -56,7 +63,7 @@ Or:
 ./.agents/skills/open-pr/scripts/create_pr.sh
 ```
 
-## Step 5: Return URL
+## Step 6: Return URL
 
 Give the user the clickable PR link.
 
@@ -64,4 +71,5 @@ Give the user the clickable PR link.
 
 - [ ] Not on `main`; current branch pushed
 - [ ] `pre_commit_check.sh` green with accurate AGENTS lint path
+- [ ] [adversarial-pr-review](../adversarial-pr-review/SKILL.md) converged
 - [ ] Conventional title + structured body; `gh pr create` succeeded

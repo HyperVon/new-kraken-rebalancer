@@ -32,6 +32,9 @@ Compiles via Kotlin JS IR to `/static/rebalancer.js`.
 **`ViewText.STREAM`** when fresh, **`ViewText.STREAM_STALE`** when past
 `STALE_THRESHOLD_SECONDS`.
 
+Settings allocation total uses **`CssClass.Form.AllocationTotalOk`** /
+**`AllocationTotalBad`** (not the stream Live/Delayed utilities).
+
 - The chip reports **SSE freshness**. It must never read `LIVE` / `DELAYED` or
   otherwise imply that real orders are executing.
 - Trading mode is server-rendered in the settings-backed mode plate

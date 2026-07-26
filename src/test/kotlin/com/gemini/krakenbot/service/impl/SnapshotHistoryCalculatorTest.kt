@@ -92,6 +92,56 @@ class SnapshotHistoryCalculatorTest : StringSpec() {
             runningBalances["USD"]!!.shouldBeEqualComparingTo(BigDecimal("15013.00"))
         }
 
+        "calculateHistoricalSnapshots should reverse-apply lowercase buy side like API-shaped rows" {
+            val now = Instant.now()
+            val cutoff = now.minus(5, ChronoUnit.DAYS)
+            val trade =
+                TradeRecord(
+                    timestamp = now.minus(2, ChronoUnit.DAYS),
+                    pair = "XBTUSD",
+                    side = OrderSide.BUY.apiValue,
+                    symbol = "BTC",
+                    volume = BigDecimal("0.1"),
+                    usdAmount = BigDecimal("5000.00"),
+                    fee = BigDecimal("13.00"),
+                    success = true,
+                    dryRun = false,
+                )
+
+            val events =
+                SnapshotHistoryCalculator.buildTimelineEvents(
+                    historicalTrades = listOf(trade),
+                    cutoffTime = cutoff,
+                    now = now,
+                )
+
+            val allocations =
+                listOf(
+                    Allocation(Asset(Asset.BTC), 50.0),
+                    Allocation(Asset.USD, 50.0),
+                )
+
+            val runningBalances =
+                mutableMapOf(
+                    "BTC" to BigDecimal("0.5"),
+                    "USD" to BigDecimal("10000.00"),
+                )
+
+            val currentPrices = mapOf("BTC" to BigDecimal("50000.00"), "USD" to BigDecimal.ONE)
+
+            SnapshotHistoryCalculator.calculateHistoricalSnapshots(
+                events = events,
+                allocations = allocations,
+                runningBalances = runningBalances,
+                currentPrices = currentPrices,
+                ohlcData = emptyMap(),
+                tradePrices = emptyMap(),
+            )
+
+            runningBalances["BTC"]!!.shouldBeEqualComparingTo(BigDecimal("0.4"))
+            runningBalances["USD"]!!.shouldBeEqualComparingTo(BigDecimal("15013.00"))
+        }
+
         "calculateHistoricalSnapshots should reverse-apply SELL trades to running balances" {
             val now = Instant.now()
             val cutoff = now.minus(5, ChronoUnit.DAYS)

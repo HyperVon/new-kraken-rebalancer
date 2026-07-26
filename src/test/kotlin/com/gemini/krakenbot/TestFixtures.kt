@@ -5,8 +5,8 @@ import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.test.TestConstants
-import com.gemini.krakenbot.view.util.SyncMetadataKeys
 import java.math.BigDecimal
 
 fun Map<String, Double>.toBigDecimalMap(): Map<String, BigDecimal> = this.mapValues { BigDecimal.valueOf(it.value) }

@@ -1,9 +1,10 @@
 ---
 name: commit-and-push
 description: >-
-  Finalize changes — update CHANGELOG/README/docs, run quality gates, commit,
-  and push the current branch with gh auth. Use when the user asks to commit
-  and/or push (not for casual WIP).
+  Finalize changes — update CHANGELOG/README/docs, run quality gates, run
+  adversarial PR review when updating an open PR, commit, and push the current
+  branch with gh auth. Use when the user asks to commit and/or push (not for
+  casual WIP).
 ---
 
 # Commit and Push Workflow
@@ -62,7 +63,19 @@ EOF
 
 Types: `feat`, `fix`, `refactor`, `docs`, `style`, `test`, `build`, `chore`.
 
-## Step 4: Push current branch
+## Step 4: Adversarial review when updating an open PR
+
+```bash
+gh pr list --head "$(git branch --show-current)" --state open
+```
+
+If an open PR exists for this branch, follow
+[adversarial-pr-review](../adversarial-pr-review/SKILL.md) on the full PR diff
+vs base **before** pushing. Fix legitimate findings (new commits as needed),
+re-run Step 2 quality gates, and re-review until that skill converges. Skip
+this step when there is no open PR (WIP commit/push only).
+
+## Step 5: Push current branch
 
 Push **the current branch**, not always `main`:
 
@@ -75,7 +88,7 @@ env -u GITHUB_TOKEN git push -u origin "$BRANCH"
 If auth fails, `gh auth status` / `gh auth login`. Do not ask the user to
 authenticate manually.
 
-## Step 5: Verify
+## Step 6: Verify
 
 `git status` should show the branch up to date with `origin/<branch>`.
 
@@ -83,4 +96,5 @@ authenticate manually.
 
 - [ ] Docs/CHANGELOG/JaCoCo synced as needed
 - [ ] Lint paths include `.agents/AGENTS.md`, skills, and present top-level docs
+- [ ] If an open PR exists: [adversarial-pr-review](../adversarial-pr-review/SKILL.md) converged
 - [ ] Tests green; pushed **current** branch via `gh`
