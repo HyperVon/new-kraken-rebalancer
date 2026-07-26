@@ -5,6 +5,7 @@ import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.Result
 import com.gemini.krakenbot.util.ActionLogFormatter
+import com.gemini.krakenbot.view.util.ViewText
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.collections.shouldContain
@@ -79,7 +80,8 @@ class RebalancerEngineTest : StringSpec() {
             )
             val prices = mapOf(Asset.BTC to BigDecimal("60000"), Asset.ETH to BigDecimal.ZERO)
             val result = RebalancerEngine.calculatePortfolioValues(balances, prices, allocations)
-            result.shouldBeInstanceOf<Result.Failure<*>>()
+            val failure = result.shouldBeInstanceOf<Result.Failure<*>>()
+            failure.exception.message shouldBe "${ViewText.PRICE_NOT_FOUND_PREFIX}${Asset.ETH}"
         }
 
         "analyzeDeviations sells overweight crypto when both gates fire" {

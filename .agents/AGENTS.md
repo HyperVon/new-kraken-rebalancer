@@ -90,8 +90,9 @@ the CLAUDE.md / Copilot stubs) so they get the same norms without Cursor.
 | :--- | :--- |
 | Entry / DI / lifecycle | `KrakenRebalancerApplication`, `AppModule` (`coreModule` + `webModule`) |
 | Orchestrator | `PortfolioManagerImpl` |
-| Brain (snapshot + analysis) | `PortfolioAnalyzerImpl` → `RebalancerEngine` |
-| Shared math | `PortfolioCalculations`, `RebalancerEngine` |
+| Brain (snapshot + analysis) | `PortfolioAnalyzerImpl` (REST + ATH I/O) |
+| Domain rebalance math | `RebalancerEngine` (no network/DB) |
+| Shared math | `PortfolioCalculations` |
 | Brawn (execution) | `OrderExecutorImpl` (`cl_ord_id` on AddOrder) |
 | Exchange gateway | `DynamicKrakenService` → `KrakenServiceImpl` or `SimulatedKrakenService` |
 | Rate limit | `RateLimiter` (safeLimit **12**, decay **0.33**, `Mutex`) |
