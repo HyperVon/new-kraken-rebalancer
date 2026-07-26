@@ -31,6 +31,13 @@ Primary code:
 Shared scales also live in `:common` `PrecisionConstants` (`SCALE_CRYPTO=8`,
 `SCALE_USD=2`, `CASH_RESERVE_FACTOR_DOUBLE=0.99`).
 
+### Analysis vs snapshot percent scales
+
+- Deviation math uses `SCALE_PERCENT = 4`; USD values `SCALE_USD = 2`.
+- `createAssetSnapshot` rounds displayed percents to 2dp — do not reuse snapshot
+  percents as trigger inputs.
+- Accumulate raw per-asset USD and round the portfolio total once.
+
 ---
 
 ## Phase overview
@@ -72,6 +79,15 @@ dust gate).
 - Missing or zero non-USD ticker price aborts the cycle before orders
   (`calculatePortfolioValues` → `Result.Failure`).
 
+### Price lookup (`RebalancerEngine.resolvePriceFromTicker`)
+
+- Try the exact ticker key `Asset.tradingPair(symbol)` first.
+- Fallback: iterate `rawPrices` using `Asset.matchesUsdQuotedPair(key, symbol)`
+  only — **never** `key.contains(symbol)`.
+- Zero/missing non-USD price → `Result.Failure` with
+  `ViewText.PRICE_NOT_FOUND_PREFIX` before any orders.
+- Preserve this invariant when extracting helpers.
+
 ### Fiat correction (USD-only trigger)
 
 When **only** USD passes both gates (`|Deviation%| ≥ deviationTriggerPercent`
@@ -83,22 +99,43 @@ and `|DeviationUSD| ≥ dustThresholdUSD`; deposit/withdrawal):
 This concentrates trades on assets furthest from target and clears dust more
 effectively than spreading across all pairs.
 
+- In `distributeFiatCorrection`:
+  `remaining = deviationAbs.setScale(SCALE_USD, RoundingMode.DOWN)`; each
+  `share = min(remaining, computedShare)`.
+- Skip symbols whose proportional share rounds to `$0.00`.
+- Fiat correction runs only when USD alone triggered **and** crypto order maps
+  are empty.
+
 ---
 
 ## Execution safety (`OrderExecutorImpl`)
 
 1. **Sell first** — only successful sells update projected cash.
-2. **USD poll** — only when **≥1 sell succeeded** and **not** dry-run: up to
-   **3** attempts with exponential backoff starting at **250ms** (doubling:
-   250ms → 500ms → 1000ms); track the **best (maximum) positive** observation and
-   accept early when balance ≥ **95%** of projected. If no positive balance is
-   observed, **abort buys** (fail-closed). Skip the poll (use projected cash)
-   when dry-run or no sell succeeded.
+   - After each successful sell, `projectedCash += usdToSell` (order **notional**, pre-fee).
+   - Live settle replaces this with fill-confirmed proceeds: sum
+     `(usdAmount − fee)` for matching sell `orderTxid`s, capped by balance peek /
+     projected cash.
+   - Dry-run or no sells: skip settle; buys budget off projected cash only.
+2. **USD settle** — only when **≥1 sell succeeded** and **not** dry-run:
+   prefer **fill-confirmed** sell proceeds (trade history matched by order
+   txid, net of fee); fall back to USD **balance poll** when no txids or fill
+   confirm is empty. Both cold polls: up to **3** attempts from **250ms**
+   doubling backoff; track best positive; accept early at **≥95%** of
+   projected; **abort buys** (fail-closed) if none. Skip settle (use projected
+   cash) when dry-run or no sell succeeded. Poll/Flow mechanics:
+   [coroutines-flows-sse](../coroutines-flows-sse/SKILL.md).
 3. **Buy second** — wrap the sell→buy sequence in `withStableBackend`; apply a
    **cycle-level 99%** budget of settled USD
    (`PrecisionConstants.CASH_RESERVE_FACTOR` / `CASH_RESERVE_FACTOR_DOUBLE`), then
    cap each buy by remaining budget.
 4. **Dust** — skip orders with USD notional `< dustThresholdUSD`.
+   - **Pre-flight order guards** (`OrderExecutorImpl.executeSingleOrder`): after
+     the dust check, abort when `usdAmount.signum() <= 0` or the computed
+     `volume.signum() <= 0` — return `null`; do not call `executeOrder`.
+   - Applies when `dustThresholdUSD = 0`, or when a buy is trimmed to $0 by the
+     99% cycle budget.
+   - Anti-pattern: relying on Kraken to reject zero volume — the app would still
+     persist a `TradeRecord`.
 5. Market orders; volumes at crypto scale 8. Live AddOrder includes deterministic
    `cl_ord_id` (`cycleId|symbol|side` → UUID) so `retryWithFlow` reuses the same
    client id while the order is still open (Kraken does not treat `userref` as a
@@ -135,7 +172,9 @@ effectively than spreading across all pairs.
 - [ ] Signed deviations retained; trigger uses absolute value **and** dust USD significance
 - [ ] Missing/zero non-USD price aborts cycle before orders
 - [ ] Fiat correction only when USD alone passes both gates (≥ trigger and ≥ dust)
-- [ ] Sell → (if sell succeeded and not dry-run) 3× poll (250ms exponential backoff) → best observed / 95% settle → fail-closed abort → cycle 99% buy budget → dust skip
+- [ ] Sell → (if sell succeeded and not dry-run) fill-confirm then poll fallback
+      (3× / 250ms backoff) → best observed / 95% settle → fail-closed abort →
+      cycle 99% buy budget → dust skip
 - [ ] Changes reflected in `docs/ALGORITHM.md` when behavior changes
 - [ ] If ALGORITHM Mermaid changed → run
       [validate_mermaid.py](../documentation-review/scripts/validate_mermaid.py)

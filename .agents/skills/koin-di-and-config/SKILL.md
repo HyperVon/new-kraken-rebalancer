@@ -32,6 +32,16 @@ single<ConfigService> { ConfigServiceImpl(objectMapper = get()) }
 - Prefer **`single` / `singleOf`** for services, repositories, and the exchange facade.
 - Use **`factory`** only for short-lived workers.
 
+### DI traps (AppModule)
+
+- `PortfolioManagerImpl`: use explicit
+  `single { PortfolioManagerImpl(..., krakenService = get()) }` — `singleOf`
+  skips the nullable `krakenService` and disables cycle-level pinning.
+- `KrakenServiceImpl`: explicit `single { KrakenServiceImpl(...) }` so the
+  default `RateLimiter()` is used; tests inject a recording subclass.
+- The `KrakenService` port is always `DynamicKrakenService`; code needing
+  stability calls `withStableBackend`.
+
 Koin version in `build.gradle.kts`: **4.2.2** — keep `.agents/AGENTS.md` in sync.
 
 ---
@@ -62,12 +72,34 @@ Pure KMP types under `common/.../config/`:
 
 File is gitignored — never commit secrets.
 
+### Credential persistence (never write resolved secrets)
+
+- `ConfigServiceImpl.updateConfig` calls `configForPersistence`: when posted
+  `KrakenCredentials` equals the **previous resolved** pair, persist
+  `persistedKrakenCredentials` (raw `${ENV:default}` placeholders from disk),
+  not the resolved runtime values.
+- The settings form posts resolved credentials back unchanged — saving loop
+  delay / allocations must **not** materialize env vars into JSON.
+- Anti-pattern: `updateConfig` → `writeConfigAtomically(full resolved config)`
+  without the placeholder-preservation branch.
+- Checklist: [ ] saving non-credential fields leaves `${KRAKEN_*}` intact;
+  [ ] real rotation still writes new values when the user changes keys.
+
 ## Watching & env
 
 - `_configFlow`: `MutableSharedFlow<Settings>(replay=1, DROP_OLDEST)`
 - `watchConfigChanges()` collected with **`collectLatest`** in `PortfolioManagerImpl`
   so loop restarts immediately on change
 - Support environment variable overrides for credentials / paths where already wired
+
+### `${ENV:default}` substitution + JSON escaping
+
+- Pattern `"${KRAKEN_API_KEY:YOUR_KRAKEN_API_KEY}"` — regex `\$\{([^}]+)}`,
+  key/default split on the first `:`.
+- Resolution order: non-blank `System.getenv(key)` → placeholder default → `""`;
+  then JSON-escape `\` and `"` before splicing into raw file text.
+- Validation throws `InvalidConfigurationException` wrapping the
+  `IllegalArgumentException` message for UI display.
 
 ## Checklist
 

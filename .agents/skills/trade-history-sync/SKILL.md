@@ -20,16 +20,22 @@ Primary types: `TradeHistoryService` façade → `TradeHistorySyncService` /
 - Throttle: minimum **300s** between Kraken sync runs.
 - Full vs incremental is driven by the **effective watermark** (not
   `isHistorySeeded`):
-  - Prefer `latestTradeTime` (excludes dry-run rows) so real/sim fills bound the
-    window.
-  - Fall back to persisted `sync_watermark_epoch_sec` (written after every
-    successful sync) so a dry-run-only account does not re-pull from EPOCH.
+  - `effectiveLatest = latestTradeTime ?: watermarkInstant` — **only**
+    null-coalesce, never `max()` the two.
+  - `latestTradeTime` excludes `dryRun = true` rows (`getLatestTradeTime` filter).
+  - `sync_watermark_epoch_sec` is written after every successful sync so
+    dry-run-only accounts still advance.
   - Both null → full history (`startSec` null).
   - otherwise → incremental from effective latest minus **300s** overlap so
     fills near the previous watermark are re-fetched and reconciled.
-- Within one sync pass, API fills are fingerprinted (timestamp/pair/side/
-  volume/USD/fee/`orderTxid`) so a pagination window shift cannot
-  double-insert the same fill.
+  - Anti-pattern: `max(latestTradeTime, watermark)` — shrinks overlap below the
+    latest fill and skips unreconciled local estimates.
+- Within one sync pass, dedupe API rows with `apiFillIdentityKey`:
+  `timestamp|pair|side|volume|usdAmount|fee|orderTxid`.
+  Include economics **and** timestamp — one AddOrder can produce multiple fill
+  legs sharing an `orderTxid`.
+  Skip rows whose key is already in `seenApiFillKeys` (newest-first pagination
+  overlap).
 - `isHistorySeeded` / `history_seeded` only gates progress metadata writes
   (`sync_offset` / `sync_total`) and first-sync completion marking.
 - Paginated cold Flow, page size **50**.
@@ -68,6 +74,16 @@ When DB empty and `settings.simulation`:
 Pruning / daily-close span uses `HISTORICAL_DAYS_BACK` (**90**); the OHLC
 fetch in `TradeHistoryReconstructionService.reconstructHistoricalSnapshots`
 uses **95** days so daily closes cover the full reconstruction window.
+
+## Auto snapshot reconstruction
+
+- After sync, when `!simulation && totalTrades > 0 && snapshots.size <= 1`, call
+  `TradeHistoryReconstructionService.reconstructHistoricalSnapshots()`
+  (OHLC ~95 days; prune span 90 days).
+- Simulation seeding is separate (~15 days of snapshots / ~15 fills) and only
+  when the DB is empty with `simulation = true`.
+- Reconcile updates preserve local `cycleId`, prefer API `orderTxid`, and retain
+  `expectedPrice` for slippage recompute.
 
 ## Live stream
 

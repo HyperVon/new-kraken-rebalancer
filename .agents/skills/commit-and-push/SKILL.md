@@ -39,7 +39,7 @@ Or manually:
 
 ```bash
 ! grep -nE '^##[[:space:]]*\[[Uu]nreleased\]' CHANGELOG.md   # must not match
-npx markdownlint-cli .agents/AGENTS.md CHANGELOG.md CONTRIBUTING.md README.md SECURITY.md docs/*.md .agents/skills/**/SKILL.md
+npx markdownlint-cli .agents/AGENTS.md .agents/OPERATING.md CLAUDE.md .github/copilot-instructions.md CHANGELOG.md CONTRIBUTING.md README.md SECURITY.md docs/*.md .agents/skills/**/SKILL.md .agents/skills/**/*.md
 ./gradlew spotlessCheck
 ./gradlew build jacocoTestCoverageVerification
 ./gradlew :frontend-js:jsBrowserTest
@@ -47,7 +47,8 @@ npx markdownlint-cli .agents/AGENTS.md CHANGELOG.md CONTRIBUTING.md README.md SE
 
 The script fails fast if `CHANGELOG.md` still has an `## [Unreleased]` heading —
 convert it to a dated SemVer heading (`## [X.Y.Z] - YYYY-MM-DD`) first (see
-[changelog-and-docs-sync](../changelog-and-docs-sync/SKILL.md)).
+[changelog-and-docs-sync](../changelog-and-docs-sync/SKILL.md)). Canonical lint
+paths live in [gradle-quality-gates](../gradle-quality-gates/SKILL.md).
 
 Include `CONTRIBUTING.md` and `SECURITY.md` in markdownlint when present.
 Fix Spotless with `./gradlew spotlessApply`. Do not proceed on failures.

@@ -65,6 +65,21 @@ gitignored config.
 
 ---
 
+## Nonce (private calls only)
+
+- `KrakenServiceImpl` seeds an `AtomicLong` from
+  `System.currentTimeMillis() * 1_000_000L` and uses `incrementAndGet()` per
+  private request — nonces must stay **strictly increasing**.
+- On Kraken `Invalid nonce` inside `queryPrivate`, bump the generator by
+  `100_000_000L * (1 shl retryCount)` (up to 5 inner retries) before
+  re-signing — never reuse the failed nonce.
+- Anti-patterns: random or time-only nonces; sharing one nonce across
+  concurrent private posts; logging nonce + postData beside signatures.
+- NTP rollback can still seed lower — the bump-and-retry path is the intended
+  mitigation.
+
+---
+
 ## retryWithFlow & lockout backoff
 
 Defaults in `KrakenServiceImpl`:
@@ -80,6 +95,25 @@ Defaults in `KrakenServiceImpl`:
 
 Retry on `IOException`, `ResponseException`, and messages containing
 `Rate limit exceeded` or `Temporary lockout`.
+
+- `retryWithFlow` tracks `attempt` (network / rate limit) and `lockoutAttempt`
+  separately — lockout doubles 10s → 15m without consuming the 5 network attempts.
+- `queryPublic` uses `retryWithFlow` but no RateLimiter; private calls always
+  `acquireWithCost` first.
+- `getTradeHistory` returns `emptyList()` when credentials are missing — do not
+  treat that as "no trades on the exchange".
+
+---
+
+## AddOrder field names (Kraken REST)
+
+- `KrakenServiceImpl.executeOrder` maps `type` ← **order side**
+  (`buy` / `sell` via `OrderSide.apiValue`) and `ordertype` ← `market`.
+- `cl_ord_id` seed uses lowercase `side.apiValue` in
+  `OrderExecutorImpl.clientOrderId(cycleId, symbol, side)`.
+- Volume: scale 8, `stripTrailingZeros()`, `toPlainString()` before POST.
+- A non-null `dryRun` argument overrides config; `OrderExecutor` always passes
+  `settings.dryRun` explicitly.
 
 ---
 

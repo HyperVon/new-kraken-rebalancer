@@ -9,6 +9,15 @@ description: >-
 
 # Gradle Quality Gates
 
+## How this differs from nearby skills
+
+| Skill | Role |
+| :--- | :--- |
+| **gradle-quality-gates** (this) | Canonical thresholds + verify commands (Spotless, JaCoCo, Karma, markdownlint) |
+| [write-kotest](../write-kotest/SKILL.md) | How to write tests that feed those gates |
+| [commit-and-push](../commit-and-push/SKILL.md) / [open-pr](../open-pr/SKILL.md) | When to run gates in ship/PR workflows |
+| [frontend-js-development](../frontend-js-development/SKILL.md) | JS behavior; defers coverage numbers here |
+
 ## Formatting & compiler
 
 - **Spotless** + **ktlint 1.7.1**, `max_line_length = 120`
@@ -28,6 +37,19 @@ description: >-
   test caches.
 - When CI is already green and only packaging is needed: `./gradlew fatJar`.
 
+### Multi-agent / CI verification
+
+- One `./gradlew` per clone at a time — concurrent workers cause `EOFException`
+  and flaky `UP-TO-DATE`.
+- After parallel Task agents merge:
+
+  ```bash
+  ./gradlew build jacocoTestCoverageVerification --rerun-tasks
+  ```
+
+- Fast evaluation iteration is fine
+  (`-x jacocoTestCoverageVerification`), but run full gates before shipping.
+
 ## JVM coverage (JaCoCo)
 
 Minimums in `build.gradle.kts` `jacocoTestCoverageVerification`:
@@ -39,7 +61,14 @@ Minimums in `build.gradle.kts` `jacocoTestCoverageVerification`:
 | Method | 95% |
 | Branch | 90% |
 
-Exclusions (keep report + verification filters in sync):
+### JaCoCo exclusion sync rule
+
+Exclusions live in the shared `coverageExcludes` list in root
+`build.gradle.kts`. **Both** `jacocoTestReport` and
+`jacocoTestCoverageVerification` must use the same
+`fileTree { exclude(coverageExcludes) }`.
+
+Current exclusions:
 
 - `**/config/DatabaseConfig*`, `**/config/ErrorHandlingConfig*`,
   `**/config/KtorConfigKt*`
@@ -48,8 +77,17 @@ Exclusions (keep report + verification filters in sync):
 - `**/view/util/HtmlExtensionsKt*`, `**/view/css/**`
 - `**/KrakenRebalancerApplication*`
 
-When adding non-tested packages (views/DSL), update **both**
-`jacocoTestReport` and `jacocoTestCoverageVerification` exclusions plus README.
+When moving packages:
+
+1. Add tests, or add to `coverageExcludes` with a comment (views / DSL /
+   Ktor bootstrap only).
+2. Update the README package tree.
+3. Never exclude money-path packages (`OrderExecutor*`, `RebalancerEngine`,
+   trade repositories).
+
+Acceptable exclusions: Ktor bootstrap, HTML DSL / CSS, thin Kraken interface.
+Never exclude trade persistence, executor, engine, or config validation — add
+tests instead.
 
 ## JS coverage (Karma / Istanbul)
 
@@ -66,11 +104,13 @@ When adding non-tested packages (views/DSL), update **both**
 ./gradlew build jacocoTestCoverageVerification
 ./gradlew :frontend-js:jsBrowserTest
 ./gradlew spotlessCheck
-npx markdownlint-cli .agents/AGENTS.md CHANGELOG.md CONTRIBUTING.md README.md SECURITY.md docs/*.md .agents/skills/**/SKILL.md
+npx markdownlint-cli .agents/AGENTS.md .agents/OPERATING.md CLAUDE.md .github/copilot-instructions.md CHANGELOG.md CONTRIBUTING.md README.md SECURITY.md docs/*.md .agents/skills/**/SKILL.md .agents/skills/**/*.md
 ```
 
 `check` depends on JaCoCo verification and frontend browser tests.
 Include `CONTRIBUTING.md` and `SECURITY.md` in markdownlint when present.
+Also lint `.agents/OPERATING.md` and thin harness stubs (`CLAUDE.md`,
+`.github/copilot-instructions.md`) whenever agent OS files change.
 
 ## CodeQL
 

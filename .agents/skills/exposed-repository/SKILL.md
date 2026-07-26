@@ -1,6 +1,11 @@
 ---
 name: exposed-repository
-description: Create or modify JetBrains Exposed ORM repository implementations following the project's established patterns — safeTransaction, cascade deletes, primary key targeting, and upsert operations.
+description: >-
+  Create or modify JetBrains Exposed ORM repository implementations and table
+  schemas following project patterns — safeTransaction, cascade deletes,
+  primary-key targeting, and upserts. Use when adding or changing Exposed
+  tables, repository impls under repository/, SQLite persistence, or
+  transaction helpers.
 ---
 
 # Exposed Repository Patterns
@@ -58,11 +63,19 @@ class SqliteTradeRepositoryImpl(
 
 ## Safe Transactions & Coroutine Concurrency
 
-Use `Database.safeTransaction` for all write operations, wrapped in `withContext(Dispatchers.IO)` when executing inside coroutines:
+### Transaction helpers (`repository/impl/RepositoryUtils.kt`)
+
+- **Writes:** `database.safeTransactionIO(log, message) { … }` — combines
+  `withContext(Dispatchers.IO)` with `safeTransaction`.
+- **Reads:** `database.readTransactionIO { … }` — plain `transaction(database)` on IO.
+- `safeTransaction` wraps non-`IOException` failures as `IOException`; raw
+  `IOException` is rethrown.
+- Anti-pattern: `transaction { }` on `Dispatchers.Default` inside a suspend
+  repository method.
 
 ```kotlin
-override suspend fun save(trade: TradeRecord) = withContext(Dispatchers.IO) {
-    database.safeTransaction(log, "Failed to save trade to database") {
+override suspend fun save(trade: TradeRecord) =
+    database.safeTransactionIO(log, "Failed to save trade to database") {
         TradeTable.insert {
             it[timestamp] = trade.timestamp.toEpochMilli()
             it[pair] = trade.pair
@@ -71,20 +84,24 @@ override suspend fun save(trade: TradeRecord) = withContext(Dispatchers.IO) {
             it[usdAmount] = trade.usdAmount
         }
     }
-}
-```
 
-For read-only operations, use `transaction(database)` directly:
-
-```kotlin
-override suspend fun loadAll(): List<TradeRecord> = withContext(Dispatchers.IO) {
-    transaction(database) {
+override suspend fun loadAll(): List<TradeRecord> =
+    database.readTransactionIO {
         TradeTable.selectAll()
             .orderBy(TradeTable.timestamp, SortOrder.DESC)
             .map { row -> buildTradeFromRow(row) }
     }
-}
 ```
+
+### In-memory SQLite keepalive
+
+- `DatabaseConfig`: `:memory:` becomes
+  `jdbc:sqlite:file:<uuid>?mode=memory&cache=shared&foreign_keys=true`, plus a
+  shutdown-hook keepalive `Connection` per URL.
+- Tests must use `:memory:` (or that shared URL) — never a file DB.
+- Schema boot: `createStatements` + `addMissingColumnsStatements` +
+  `checkMappingConsistence` in one transaction (Exposed 1.x — no deprecated
+  `createMissingTablesAndColumns`).
 
 ## Primary Key Targeting
 
@@ -100,7 +117,14 @@ TradeTable.update({ TradeTable.id eq oldTrade.id }) {
 TradeTable.update({ (TradeTable.timestamp eq ts) and (TradeTable.pair eq pair) }) { ... }
 ```
 
-Only fall back to multi-column matching when the primary key ID is unavailable (e.g. records loaded from external APIs without IDs).
+`updateTrade` specifics:
+
+- Default: `TradeTable.update({ TradeTable.id eq oldTrade.id })`.
+- Fallback **only** when `oldTrade.id == null`: match timestamp + pair +
+  normalized side + volume.
+- Persist sides via `OrderSide.normalize()`.
+- `getLatestTradeTime()` filters `dryRun = false` — coordinates with the sync
+  watermark.
 
 ## Cascade Deletes
 
@@ -210,7 +234,7 @@ val downsampledIds = if (allIds.size <= 300) allIds
 
 Before submitting repository code, verify:
 
-- [ ] Write operations use `database.safeTransaction` and `withContext(Dispatchers.IO)`
+- [ ] Write/read operations use `safeTransactionIO` / `readTransactionIO`
 - [ ] Deletes cascade children before parents
 - [ ] Updates target by primary key ID
 - [ ] `BigDecimal` columns use proper scale (18, 8 for crypto, 12, 2 for USD)

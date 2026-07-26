@@ -12,6 +12,16 @@ description: >-
 
 Canonical doc: [`docs/FLOWS.md`](../../../docs/FLOWS.md).
 
+## How this differs from nearby skills
+
+| Skill | Role |
+| :--- | :--- |
+| **coroutines-flows-sse** (this) | Hot vs cold Flow, SSE path, config `collectLatest`, USD-settle **poll mechanics** |
+| [portfolio-rebalancing-math](../portfolio-rebalancing-math/SKILL.md) | Rebalance math + execution **safety invariants** (sell-first, settle policy, 99% budget) |
+| [trade-history-sync](../trade-history-sync/SKILL.md) | Sync/dedupe/seeding that feeds history used by fill-confirm |
+| [frontend-js-development](../frontend-js-development/SKILL.md) | Browser `EventSource` consumer of `/api/status/stream` |
+| [koin-di-and-config](../koin-di-and-config/SKILL.md) | ConfigService / Settings persistence (not Flow restart semantics) |
+
 ## Hot vs cold
 
 | | Cold `Flow` | Hot `SharedFlow` |
@@ -39,10 +49,18 @@ Path: rebalance cycle → façade `addSnapshot` → DB + store `tryEmit` →
 `DashboardController` collects `getHistoryFlow()` → **`GET /api/status/stream`**
 → browser `EventSource`.
 
-On connect, send latest snapshot from DB, then collect the SharedFlow (replay
-covers a snapshot emitted between the DB read and subscribe).
+`handleSseStream` sends the DB latest snapshot, then collects the hot flow
+(`replay = 1` covers the subscribe race; a duplicate first event is acceptable).
+
+- `snapshotFlow`: `extraBufferCapacity = 16`, `DROP_OLDEST`, `tryEmit` — slow
+  clients must not block rebalance producers.
+- Per-session SSE errors are swallowed (non-cancellation); other subscribers continue.
 
 ### Paginated sync / USD settle (cold)
+
+Owner of **settle policy** (when to settle, fail-closed buys, 99% budget):
+[portfolio-rebalancing-math](../portfolio-rebalancing-math/SKILL.md). This
+section owns the **cold Flow poll implementation**.
 
 - `TradeHistorySyncService` paginated Kraken history fetch (private cold
   `getTradeHistoryPaginated()`; invoked from the façade
@@ -58,11 +76,28 @@ covers a snapshot emitted between the DB read and subscribe).
   `coerceAtMost(32s)`); emit best positive observation (or `0`); executor aborts
   buys when none. Skipped poll → buys use projected cash.
 
+Fill-confirm poll constants (`pollFillConfirmedUsd` / `sumMatchedSellProceeds`):
+
+- `pollFillConfirmedUsd`: 3 attempts, 250ms doubling backoff (cap 32s), 95%
+  early accept vs `projectedCash`, `startSec = now − 600s`.
+- `sumMatchedSellProceeds`: up to 5 pages × 50 rows; match sell `orderTxid`;
+  net `usdAmount − fee`; keep scanning after the first sighting (multi-leg fills).
+- Cap fill-confirmed USD with `min(balancePeek, projectedCash)` when balance is visible.
+
 ## Concurrency rules
 
 - DB/network: `withContext(Dispatchers.IO)`.
 - No `GlobalScope` — use component-bound scopes.
 - Prefer `tryEmit` on DROP_OLDEST SharedFlows (non-suspending broadcast).
+
+### Cancellation is control flow (not a cycle error)
+
+- In `PortfolioManagerImpl.runLoop`, rethrow `CancellationException` from the
+  outer `collectLatest`, the inner cycle, and `delay()` — never log-and-continue.
+- Catching cancellation inside `while (isRunning)` prevents `collectLatest` from
+  cancelling the sleeping delay on a settings change.
+- Same rule for SSE handlers and USD-settle polls: catch `Exception`, but always
+  rethrow cancellation.
 
 ## Checklist
 

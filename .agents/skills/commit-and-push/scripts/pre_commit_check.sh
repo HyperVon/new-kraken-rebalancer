@@ -10,9 +10,10 @@ if grep -nE '^##[[:space:]]*\[[Uu]nreleased\]' CHANGELOG.md; then
 fi
 
 echo "=== Step 1: Running Markdown Linting ==="
-markdown_files=(.agents/AGENTS.md CHANGELOG.md README.md docs/*.md .agents/skills/**/SKILL.md)
+markdown_files=(.agents/AGENTS.md .agents/OPERATING.md CLAUDE.md CHANGELOG.md README.md docs/*.md .agents/skills/**/SKILL.md .agents/skills/**/*.md)
 [[ -f CONTRIBUTING.md ]] && markdown_files+=(CONTRIBUTING.md)
 [[ -f SECURITY.md ]] && markdown_files+=(SECURITY.md)
+[[ -f .github/copilot-instructions.md ]] && markdown_files+=(.github/copilot-instructions.md)
 npx markdownlint-cli "${markdown_files[@]}"
 
 echo "=== Step 1.5: Running Kotlin Code Formatting & Line-Length Check (Spotless / ktlint) ==="

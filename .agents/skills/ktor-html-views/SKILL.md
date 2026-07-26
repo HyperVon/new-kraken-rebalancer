@@ -100,12 +100,32 @@ parameter — otherwise a swapped fragment silently loses the mode plate.
 Use `HtmxAttrs` / `Routes` for partial swaps (e.g. dashboard fragment refresh).
 Prefer type-safe attribute keys over raw `"hx-*"`.
 
-## SSE
+## SSE delivery = HTMX + server push (not `:frontend-js` EventSource)
 
-Live updates: `GET /api/status/stream` — controller collects the
-`TradeHistoryService` façade `getHistoryFlow()` (backed by
-`TradeHistorySnapshotStore.snapshotFlow`) and sends `ServerSentEvent` payloads.
-See [coroutines-flows-sse](../coroutines-flows-sse/SKILL.md).
+`DashboardShellComponent`:
+
+- loads the `CdnUrls.HTMX_SSE` script
+- wrapper sets `HtmxAttrs.HX_EXT` = `sse` and `SSE_CONNECT` = `Routes.API_STATUS_STREAM`
+- inner fragment uses `hx-get="/fragments/dashboard"` with
+  `hx-trigger="load, sse:message"`
+
+Server: `DashboardController.handleSseStream` JSON-encodes snapshots. Client JS
+only updates stream-chip timing; it never opens an EventSource.
+
+See [coroutines-flows-sse](../coroutines-flows-sse/SKILL.md) for flow ownership.
+
+### Stream status OOB swap
+
+`DashboardFragmentComponent.renderStreamStatus` sets `hx-swap-oob="true"` on
+`#header-status` only; the mode plate stays in the shell. `StatusCard.Live`
+means a healthy **stream**, not live trading.
+
+### Static asset cache-bust (required on every layout change)
+
+- CSS via `commonMetadataAndStyles()` → `/static/style.css?v=<hash>`
+- JS via `rebalancerJsSrc()` → `/static/rebalancer.js?v=<hash>`
+- Never hand-roll `/static/...` hrefs in new pages
+- `DashboardViewTest` asserts `link href="/static/style.css?v="`
 
 ## Design notes
 
@@ -144,6 +164,8 @@ pass, use [ui-visual-review](../ui-visual-review/SKILL.md) then
 - [ ] Header uses `brandWithMode(settings)`; `Settings` threaded to every page
       and fragment renderer
 - [ ] Mode plate precedence simulation > dryRun > live is intact
-- [ ] SSE path remains `/api/status/stream`
+- [ ] SSE path remains `/api/status/stream`; HTMX shell wiring intact
+- [ ] Static assets cache-busted via `commonMetadataAndStyles()` / `rebalancerJsSrc()`
+- [ ] `#header-status` refreshed via `hx-swap-oob`; mode plate stays in shell
 - [ ] No FQNs; markdown/docs updated if route tree changes
 - [ ] Visual changes → run docs-screenshot-refresh when shipping docs

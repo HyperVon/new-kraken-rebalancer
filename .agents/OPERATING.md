@@ -23,11 +23,18 @@ For tasks that match a skill in `.agents/skills/*/SKILL.md` or the index in
 | Open PR | `open-pr` (+ mandatory `adversarial-pr-review`) |
 | Push updating an open PR | `commit-and-push` → `adversarial-pr-review` |
 | Adversarial / multi-model PR review | `adversarial-pr-review` |
+| Pre-PR / diff code review (conventions) | `code-review` |
+| Changelog / README / docs sync after a change | `changelog-and-docs-sync` |
+| Quality gates (Spotless, JaCoCo, Karma) | `gradle-quality-gates` |
+| Dependency upgrades | `dependency-upgrade` |
+| Kotlin refactor / cleanup | `kotlin-refactoring-and-cleanup` |
 | UI click-through QA | `ui-manual-qa` |
 | UI visual critique / implement | `ui-visual-review` / `ui-visual-implement` |
 | Docs screenshots | `docs-screenshot-refresh` |
+| End-user User Guide | `user-guide` |
 | Docs audit | `documentation-review` |
 | Architecture review / redesign brainstorm | `architecture-review` |
+| Skill / agent-files review (skills, rules, AGENTS) | `skill-reviewer` |
 | Complex-code comments (audit / hygiene) | `complex-code-comments` |
 | Fan-out parallel work | `parallel-multi-agent` |
 | Post-deploy UI smoke | `post-deploy-ui-smoke` |
@@ -123,7 +130,8 @@ Do **not** leave the user waiting on a foreground command that never exits
 
 ## 5. UI change verification
 
-When editing dashboard HTML/CSS/HTMX (`view/**`) or `:frontend-js`:
+When editing dashboard HTML/CSS/HTMX (`view/**`), dashboard HTTP/static serving
+(`DashboardController` / `DashboardRoutes`), or `:frontend-js`:
 
 Complete these checks **before** opening a PR (see §2) — not after merge.
 
