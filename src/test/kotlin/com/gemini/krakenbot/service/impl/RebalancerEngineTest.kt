@@ -4,7 +4,10 @@ import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.Result
+import com.gemini.krakenbot.util.ActionLogFormatter
+import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
+import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.maps.shouldBeEmpty
 import io.kotest.matchers.maps.shouldContainKey
@@ -12,8 +15,11 @@ import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
 import java.math.BigDecimal
 
-class RebalancerEngineTest :
-    StringSpec({
+class RebalancerEngineTest : StringSpec() {
+
+    override fun isolationMode() = IsolationMode.InstancePerTest
+
+    init {
         val allocations = listOf(
             Allocation(Asset.BTC, 50.0),
             Allocation(Asset.ETH, 30.0),
@@ -78,7 +84,7 @@ class RebalancerEngineTest :
 
         "analyzeDeviations sells overweight crypto when both gates fire" {
             val total = BigDecimal("10000.00")
-            // BTC 60% vs 50% target with large USD deviation → sell trigger
+            // BTC 60% vs 50% target → DevUSD +1000; |Dev%| = 20 ≥ 5 and significant
             val values = mapOf(
                 Asset.BTC to BigDecimal("6000.00"),
                 Asset.ETH to BigDecimal("3000.00"),
@@ -93,7 +99,11 @@ class RebalancerEngineTest :
                 settings = settings.copy(deviationTriggerPercent = 5.0, dustThresholdUSD = 10.0),
             )
             result.sellOrders.shouldContainKey(Asset.BTC)
+            result.sellOrders.getValue(Asset.BTC).shouldBeEqualComparingTo(BigDecimal("1000.00"))
             result.buyOrders.shouldBeEmpty()
+            result.actionLog.shouldContain(
+                ActionLogFormatter.formatDeviationTrigger(Asset.BTC, BigDecimal("20")),
+            )
         }
 
         "distributeFiatCorrection buys underweights on USD deposit" {
@@ -114,6 +124,9 @@ class RebalancerEngineTest :
             buyOrders[Asset.BTC]!!.shouldBeEqualComparingTo(BigDecimal("60.00"))
             buyOrders[Asset.ETH]!!.shouldBeEqualComparingTo(BigDecimal("40.00"))
             sellOrders.shouldBeEmpty()
-            actionLog.isNotEmpty() shouldBe true
+            actionLog.shouldContain(
+                ActionLogFormatter.formatFiatCorrectionDistribution(BigDecimal("100.00"), 2),
+            )
         }
-    })
+    }
+}

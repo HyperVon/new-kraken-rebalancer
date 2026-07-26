@@ -91,6 +91,35 @@ class DynamicKrakenServiceTest : StringSpec() {
             coVerify(exactly = 0) { realService.getOHLC(any(), any(), any()) }
         }
 
+        "forwards clOrdId to the selected backend" {
+            every { configService.getConfig() } returns appConfig(simulation = false)
+            val dynamicService = createService()
+            val clOrdId = "6d1b345e-2821-40e2-ad83-4ecb18a06876"
+
+            dynamicService.executeOrder(
+                pair = Asset.BTC_USD_PAIR,
+                type = OrderType.MARKET.apiValue,
+                side = OrderSide.BUY.apiValue,
+                volume = BigDecimal.ONE,
+                dryRun = false,
+                clOrdId = clOrdId,
+            )
+
+            coVerify(exactly = 1) {
+                realService.executeOrder(
+                    Asset.BTC_USD_PAIR,
+                    OrderType.MARKET.apiValue,
+                    OrderSide.BUY.apiValue,
+                    BigDecimal.ONE,
+                    false,
+                    clOrdId,
+                )
+            }
+            coVerify(exactly = 0) {
+                simulatedService.executeOrder(any(), any(), any(), any(), any(), any())
+            }
+        }
+
         "delegates to real service when simulation is false" {
             every { configService.getConfig() } returns appConfig(simulation = false)
 

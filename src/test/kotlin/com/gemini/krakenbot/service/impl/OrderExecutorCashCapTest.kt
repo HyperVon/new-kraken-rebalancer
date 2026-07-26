@@ -621,6 +621,8 @@ class OrderExecutorCashCapTest : StringSpec() {
         "passes deterministic cl_ord_id derived from cycleId symbol and side" {
             runTest {
                 val cycleId = "11111111-2222-3333-4444-555555555555"
+                // Golden UUID.nameUUIDFromBytes("$cycleId|ETH|buy") — pins mapping, not just wiring.
+                val expectedBuyClOrdId = "81d59c12-6abc-354a-87ac-c333585a6093"
                 orderExecutor.executeOrders(
                     buyOrders = mapOf(Asset.ETH to BigDecimal("100.00")),
                     sellOrders = emptyMap(),
@@ -639,10 +641,35 @@ class OrderExecutorCashCapTest : StringSpec() {
                     cycleId = cycleId,
                 )
 
-                val expected = checkNotNull(OrderExecutorImpl.clientOrderId(cycleId, Asset.ETH, "buy"))
-                expected.matches(Regex("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")) shouldBe true
-                krakenService.executedOrders.single().clOrdId shouldBe expected
+                krakenService.executedOrders.single().clOrdId shouldBe expectedBuyClOrdId
                 OrderExecutorImpl.clientOrderId("", Asset.ETH, "buy") shouldBe null
+            }
+        }
+
+        "passes deterministic cl_ord_id on sell path" {
+            runTest {
+                val cycleId = "11111111-2222-3333-4444-555555555555"
+                val expectedSellClOrdId = "b7abd004-d57a-3c4a-a7a3-dbb08a450589"
+                orderExecutor.executeOrders(
+                    buyOrders = emptyMap(),
+                    sellOrders = mapOf(Asset.BTC to BigDecimal("100.00")),
+                    currentValuesUSD = mapOf(Asset.USD to BigDecimal("1000.00")),
+                    prices = mapOf(Asset.BTC to BigDecimal("50000.00")),
+                    settings =
+                    Settings(
+                        loopDelaySeconds = 0L,
+                        deviationTriggerPercent = 2.0,
+                        dustThresholdUSD = 1.0,
+                        dryRun = true,
+                        fiatMaxDrawdown = 0.0,
+                        fiatDeploymentExponent = 1.0,
+                    ),
+                    actionLog = mutableListOf(),
+                    cycleId = cycleId,
+                )
+
+                krakenService.executedOrders.single().side shouldBe "sell"
+                krakenService.executedOrders.single().clOrdId shouldBe expectedSellClOrdId
             }
         }
 

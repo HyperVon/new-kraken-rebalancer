@@ -107,7 +107,7 @@ the CLAUDE.md / Copilot stubs) so they get the same norms without Cursor.
 
 Full detail: [`docs/ALGORITHM.md`](../docs/ALGORITHM.md) and skill [portfolio-rebalancing-math](skills/portfolio-rebalancing-math/SKILL.md).
 
-- **ATH → drawdown → fiat deployment**: `Deploy% = (DD / MaxDD)^exponent` (capped 100%); effective USD target reduced and redistributed to crypto.
+- **ATH → drawdown → fiat deployment**: `Deploy% = (DD / MaxDD)^exponent` (capped 100%); effective USD target reduced and redistributed to crypto. Math lives in `RebalancerEngine` (via `PortfolioAnalyzerImpl`).
 - **Trigger**: absolute signed relative deviation ≥ `deviationTriggerPercent`
   **and** `|DeviationUSD| ≥ dustThresholdUSD` (`isSignificant`).
 - **Price safety**: missing/zero non-USD ticker aborts the cycle before orders.
@@ -118,7 +118,8 @@ Full detail: [`docs/ALGORITHM.md`](../docs/ALGORITHM.md) and skill [portfolio-re
   txid) with the same **3** attempts / **250ms** doubling backoff / **≥95%**
   early-accept / fail-closed abort; fall back to USD balance poll when no txids
   exist; cycle buy budget **99%** of settled USD (`withStableBackend` pins live
-  vs simulation; cycle `dryRun` is passed into each `executeOrder`). Trades
+  vs simulation; cycle `dryRun` is passed into each `executeOrder`). Live AddOrder
+  includes deterministic `cl_ord_id` (open-order uniqueness on retry). Trades
   persist `cycleId` + `orderTxid`.
 - **Precision**: `BigDecimal` only — crypto scale **8**, USD scale **2**. Tests: `shouldBeEqualComparingTo` (never `shouldBeEqualByComparingTo` / `.equals()`).
 

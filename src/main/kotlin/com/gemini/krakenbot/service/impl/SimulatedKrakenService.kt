@@ -200,11 +200,11 @@ class SimulatedKrakenService(private val configService: ConfigService) : KrakenS
 
         log.info(
             "[EMULATOR] Executing $side order on $pair, volume: $normalizedVolume, " +
-                "calculated price: $price ($$usdAmount)",
+                "calculated price: $price ($$usdAmount) cl_ord_id=$clOrdId",
         )
 
         if ((dryRun ?: configService.getConfig().settings.dryRun)) {
-            log.info("[EMULATOR DRY RUN] Order would execute successfully")
+            log.info("[EMULATOR DRY RUN] Order would execute successfully cl_ord_id={}", clOrdId)
             return OrderResult(
                 success = true,
                 pair = pair,

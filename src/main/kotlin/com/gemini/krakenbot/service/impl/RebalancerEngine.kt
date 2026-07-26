@@ -19,6 +19,7 @@ import com.gemini.krakenbot.service.impl.PortfolioCalculations.SCALE_USD
 import com.gemini.krakenbot.util.ActionLogFormatter
 import com.gemini.krakenbot.util.resolveBalance
 import com.gemini.krakenbot.util.toUsdScale
+import com.gemini.krakenbot.view.util.ViewText
 import org.slf4j.LoggerFactory
 import java.math.BigDecimal
 import java.math.RoundingMode
@@ -31,8 +32,6 @@ import kotlin.math.pow
  */
 object RebalancerEngine {
     private val log = LoggerFactory.getLogger(RebalancerEngine::class.java)
-
-    private const val PRICE_NOT_FOUND_PREFIX = "Price not found for "
 
     fun resolvePriceFromTicker(symbol: String, rawPrices: RawPrices): BigDecimal {
         val expectedPair = Asset.tradingPair(symbol)
@@ -68,7 +67,7 @@ object RebalancerEngine {
                         symbol,
                     )
                     return Result.Failure(
-                        IllegalStateException("$PRICE_NOT_FOUND_PREFIX$symbol"),
+                        IllegalStateException("${ViewText.PRICE_NOT_FOUND_PREFIX}$symbol"),
                     )
                 }
                 price = p
