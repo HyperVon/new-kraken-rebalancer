@@ -29,6 +29,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and UI-verification rules; archived applied drafts in
   `.agents/skill-content-backlog.md`. Corrected HTMX SSE ownership (not
   browser `EventSource`) in Flow/UI skills and `docs/FLOWS.md`.
+- **autonomous-code-optimizer**: Stance (optimize in place, not redesign),
+  money-path design principles, pattern-driven Pass 3, and architecture
+  anti-patterns in `SKILL.md`; sibling `architecture-patterns.md` documents
+  ports/adapters, backend pin, history façade, pure engine, layer graph,
+  extract/YAGNI rules, DI shape, and Kotlin craft standards.
 
 ## [6.14.0] - 2026-07-26
 
