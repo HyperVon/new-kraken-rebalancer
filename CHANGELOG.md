@@ -28,6 +28,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   requires an interactive decisions Canvas (Keep / Evolve / Replace / Skip per
   finding) before any implementation.
 
+### Added
+
+- **tests (CQ-8)**: Wire-contract hardening for the typed History APIs —
+  `HistoryJsonParsingEdgeTest` covers missing `price`/`fee` → `"0"`, native
+  `JSON.parse` booleans and numeric/string `id`, absent `success`/`dryRun`,
+  null/empty inputs, and count coercion; `SerializationParityTest` adds
+  null-optional `TradeRecord` and null-offset `SyncProgressResponse` round-trips.
+
 ## [6.13.7] - 2026-07-25
 
 ### Changed

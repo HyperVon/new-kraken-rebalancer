@@ -179,6 +179,46 @@ class SerializationParityTest : StringSpec() {
             roundTrip.totalVolumeTraded shouldBe "50000.00"
         }
 
+        "history API TradeRecord DTO round-trips null optionals and zero economics" {
+            val domain =
+                TradeRecord(
+                    timestamp = Instant.parse("2023-01-01T10:00:00Z"),
+                    pair = TestFixtures.BTCUSD,
+                    side = TestFixtures.BUY,
+                    symbol = Asset.BTC,
+                    volume = BigDecimal("0.1"),
+                    usdAmount = BigDecimal("100.00"),
+                    success = true,
+                    dryRun = false,
+                    // price/fee default to ZERO; all optionals null.
+                )
+
+            val json = mapper.writeValueAsString(domain.toApiDto())
+            // ZERO BigDecimal serializes as the plain string "0" the JS parser also defaults to.
+            json shouldContain "\"price\":\"0\""
+            json shouldContain "\"fee\":\"0\""
+
+            val roundTrip: ApiTradeRecord = mapper.readValue(json)
+            roundTrip.price shouldBe "0"
+            roundTrip.fee shouldBe "0"
+            roundTrip.slippagePercent shouldBe null
+            roundTrip.expectedPrice shouldBe null
+            roundTrip.source shouldBe null
+            roundTrip.errorMessage shouldBe null
+            roundTrip.id shouldBe null
+        }
+
+        "history API SyncProgressResponse defaults null offset and total to empty strings" {
+            val response = buildSyncProgressResponse(seeded = false, offset = null, total = null)
+            response.offset shouldBe ""
+            response.total shouldBe ""
+
+            val json = mapper.writeValueAsString(response)
+            val roundTrip: SyncProgressResponse = mapper.readValue(json)
+            roundTrip.offset shouldBe ""
+            roundTrip.total shouldBe ""
+        }
+
         "history API SyncProgressResponse uses SyncMetadataKeys JSON names" {
             val response = buildSyncProgressResponse(seeded = false, offset = "123", total = "456")
             val json = mapper.writeValueAsString(response)
