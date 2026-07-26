@@ -25,6 +25,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - **Adversarial PR review skill**: Local dual-model (Composer + Grok) review
   loop wired into open-PR and push-to-open-PR flows.
+- **Complex-code comment norms**: Always-on rule
+  (`.cursor/rules/complex-code-comments.mdc` +
+  [`.agents/OPERATING.md`](.agents/OPERATING.md) § Complex-code comments) keeps
+  code readable by default and comments reserved for non-obvious logic, plus a
+  [`complex-code-comments`](.agents/skills/complex-code-comments/SKILL.md) skill
+  for auditing missing / wrong / stale / noisy comments; referenced from
+  `code-review` and `continuous-improvement`.
 - SnapshotHistoryCalculator unit coverage for lowercase `buy` reverse-apply;
   JVM assert that `TradeSourceKeys.LOCAL_ESTIMATE` matches
   `TradeSource.LOCAL_ESTIMATE.name`.

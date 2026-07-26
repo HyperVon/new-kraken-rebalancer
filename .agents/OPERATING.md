@@ -27,6 +27,7 @@ For tasks that match a skill in `.agents/skills/*/SKILL.md` or the index in
 | UI visual critique / implement | `ui-visual-review` / `ui-visual-implement` |
 | Docs screenshots | `docs-screenshot-refresh` |
 | Docs audit | `documentation-review` |
+| Complex-code comments (audit / hygiene) | `complex-code-comments` |
 | Fan-out parallel work | `parallel-multi-agent` |
 | Post-deploy UI smoke | `post-deploy-ui-smoke` |
 | Continuous improvement / “whole shebang” | `continuous-improvement` (+ `.agents/improvement-backlog.md`) |
@@ -131,6 +132,24 @@ After a deploy or LAN UI check, run
 
 ---
 
+## 5. Complex-code comments
+
+Prefer **readable code without comments**. Add comments only where the logic is
+non-obvious or complex (intent, invariants, traps, non-local consequences) —
+not to narrate what the next line does.
+
+When editing code:
+
+1. Prefer rename/extract/simplify over a comment when that makes it clear.
+2. If you change behavior, **update or delete** nearby comments so they stay
+   true — stale comments are worse than none.
+3. Do not add wallpaper KDoc (“Calculate X”) on trivial helpers.
+4. For a repo-wide or targeted **comment audit** (missing / wrong / stale /
+   noisy), use
+   [skills/complex-code-comments/SKILL.md](skills/complex-code-comments/SKILL.md).
+
+---
+
 ## Cursor-specific projection
 
 | Portable section above | Cursor rule file |
@@ -138,6 +157,7 @@ After a deploy or LAN UI check, run
 | Prefer project skills | `.cursor/rules/prefer-project-skills.mdc` (`alwaysApply`) |
 | Parallel multi-agent | `.cursor/rules/parallel-multi-agent.mdc` (`alwaysApply`) |
 | No blocking long processes | `.cursor/rules/no-blocking-long-processes.mdc` (`alwaysApply`) |
+| Complex-code comments | `.cursor/rules/complex-code-comments.mdc` (`alwaysApply`) |
 | UI change verification | `.cursor/rules/ui-change-verification.mdc` (path globs) |
 
 Commit both this file and `.cursor/rules/` so Cursor clones pick up rules
