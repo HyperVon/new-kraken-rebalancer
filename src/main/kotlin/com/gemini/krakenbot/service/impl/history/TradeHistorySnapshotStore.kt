@@ -80,6 +80,8 @@ class TradeHistorySnapshotStore(
                                 Files.move(sourcePath, targetPath, StandardCopyOption.REPLACE_EXISTING)
                             }
                             log.info("Renamed trade history file to backup successfully.")
+                        } catch (ex: CancellationException) {
+                            throw ex
                         } catch (ex: Exception) {
                             log.warn("Failed to rename trade history file to backup", ex)
                         }

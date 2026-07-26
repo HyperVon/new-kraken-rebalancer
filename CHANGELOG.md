@@ -13,13 +13,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **`PortfolioAnalyzer.buildSnapshot`**: Snapshot assembly (asset metrics +
   `PortfolioSnapshot` construction) moved out of `PortfolioManagerImpl` so the
   manager only orchestrates analyzer → executor → history persistence.
-- **Cancellation hardening**: `TradeHistorySnapshotStore` and
+- **Cancellation catch style**: `TradeHistorySnapshotStore` and
   `TradeHistoryReconstructionService` rethrow `CancellationException` before
-  broad `Exception` catches.
+  broad `Exception` catches (including the trade-history rename path).
 - **Activity badge**: INFO label lives in `:common` `ViewText.ACTIVITY_INFO`.
-
-### Fixed
-
 - **Tests**: BigDecimal equality assertions use `shouldBeEqualComparingTo`
   instead of `compareTo(...) shouldBe 0`.
 
