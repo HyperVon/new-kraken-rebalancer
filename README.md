@@ -307,7 +307,7 @@ graph LR
     end
 
     subgraph Backend["Backend (Ktor + Koin)"]
-        DC[DashboardRoutes] --> THS[TradeHistoryService]
+        DC[DashboardController] --> THS[TradeHistoryService]
         DC --> CS[ConfigService]
         DC --> DV[DashboardView]
         PM[PortfolioManager] --> PA[PortfolioAnalyzer]

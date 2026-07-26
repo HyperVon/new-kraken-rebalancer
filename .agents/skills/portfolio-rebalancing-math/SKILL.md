@@ -86,17 +86,21 @@ effectively than spreading across all pairs.
 ## Execution safety (`OrderExecutorImpl`)
 
 1. **Sell first** — only successful sells update projected cash.
-2. **USD poll** (non–dry-run): up to **3** attempts with exponential backoff
-   starting at **250ms** (doubling each attempt: 250ms → 500ms → 1000ms); track the
-   **best (maximum) positive** observation and accept early when balance ≥ **95%**
-   of projected. If no positive balance is observed, **abort buys** (fail-closed).
+2. **USD poll** — only when **≥1 sell succeeded** and **not** dry-run: up to
+   **3** attempts with exponential backoff starting at **250ms** (doubling:
+   250ms → 500ms → 1000ms); track the **best (maximum) positive** observation and
+   accept early when balance ≥ **95%** of projected. If no positive balance is
+   observed, **abort buys** (fail-closed). Skip the poll (use projected cash)
+   when dry-run or no sell succeeded.
 3. **Buy second** — wrap the sell→buy sequence in `withStableBackend`; apply a
    **cycle-level 99%** budget of settled USD
    (`PrecisionConstants.CASH_RESERVE_FACTOR` / `CASH_RESERVE_FACTOR_DOUBLE`), then
    cap each buy by remaining budget.
 4. **Dust** — skip orders with USD notional `< dustThresholdUSD`.
 5. Market orders; volumes at crypto scale 8.
-6. **dryRun**: log `[DRY RUN]` intents; do not place (see dry-run-and-simulation skill).
+6. **dryRun**: suppress placement on the active backend — SLF4J uses
+   `[DRY RUN]` (live) / `[EMULATOR DRY RUN]` (simulation); dashboard activity
+   always uses `[DRY RUN]` (see dry-run-and-simulation skill).
 
 ---
 

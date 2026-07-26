@@ -35,7 +35,7 @@ flowchart TB
 
     subgraph Core["🔄 Core Application Logic"]
         PM["PortfolioManagerImpl\nrunLoop()"]
-        OE["OrderExecutorImpl\npollUsdBalanceAfterSells()"]
+        OE["OrderExecutorImpl\nrefreshUsdBalanceAfterSells()"]
     end
 
     subgraph Services["📦 Services"]
@@ -61,7 +61,7 @@ flowchart TB
     PM -->|"loop delay\nsettings.loopDelaySeconds"| PM
     PM -->|"performRebalanceCycle()"| OE
     OE -->|"place buy/sell orders"| Kraken
-    OE -->|"COLD pollUsdBalanceAfterSells()\n.last() — best of 3 polls / early at 95 pct"| Kraken
+    OE -->|"COLD poll after successful sell\n(not dry-run); best of 3 / early 95 pct"| Kraken
 
     %% Snapshot emission
     PM -->|"addSnapshot(snapshot)"| THS
@@ -209,7 +209,10 @@ sequenceDiagram
 
 ## Flow 4 — USD Balance Polling (Cold Flow)
 
-**Path:** After sell orders → `pollUsdBalanceAfterSells()` → Kraken API (with backoff) → caller
+**Path:** After **≥1 successful sell** and when **not** dry-run →
+`refreshUsdBalanceAfterSells()` → `pollUsdBalanceAfterSells().last()` → Kraken
+API (with backoff) → caller. Skipped when dry-run or no sell succeeded (buys use
+projected cash).
 
 ```mermaid
 sequenceDiagram
@@ -217,7 +220,8 @@ sequenceDiagram
     participant Flow as pollUsdBalanceAfterSells() [cold]
     participant API as Kraken API
 
-    OE->>Flow: .last()
+    note over OE: Only when executedSells and not dryRun
+    OE->>Flow: refreshUsdBalanceAfterSells → .last()
     note over Flow: .last() is a terminal operator.<br/>It collects the entire flow and<br/>returns only the final emitted value.
 
     loop "Up to 3 attempts (250ms → 500ms → 1000ms)"
@@ -250,7 +254,8 @@ sequenceDiagram
   `coerceAtMost(32000)` as a defensive ceiling; that cap is unreachable under
   current constants.
 - Exponential backoff is managed entirely inside the cold flow, keeping `OrderExecutorImpl`'s orchestration logic clean.
-- Being cold means this only runs when explicitly triggered after sells — it never polls in the background.
+- Being cold means this only runs when explicitly triggered after a successful
+  sell outside dry-run — it never polls in the background.
 
 ---
 

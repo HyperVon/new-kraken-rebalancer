@@ -35,10 +35,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   so full vs incremental sync follows `latestTradeTime` nullity (not
   `isHistorySeeded`) and OHLC fetch is 95 days vs `HISTORICAL_DAYS_BACK` 90.
 - **Documentation review**: Corrected README Exposed migration API and package
-  trees; SECURITY env-placeholder secrets; CONTRIBUTING CodeQL branch name;
-  FLOWS SSE/settings handlers + Mermaid 8.x labels + sync throttle/overlap;
-  ALGORITHM USD-poll preconditions, dryRun≠simulation, snapshot percent scales;
-  EVALUATION Scenario 14 title; OPERATING §6 renumber + `.cursor/rules` sync.
+  trees; SECURITY env-placeholder secrets (preserve raw placeholders only when
+  credentials unchanged); CONTRIBUTING/AGENTS CodeQL branch name; FLOWS SSE/
+  settings handlers + USD-poll gate + Mermaid 8.x labels + sync throttle/overlap;
+  ALGORITHM USD-poll preconditions, dryRun≠simulation (server vs activity log
+  prefixes), snapshot percent scales; EVALUATION/Scenario 14 `loadConfig()` title;
+  portfolio-rebalancing-math skill poll gate; OPERATING §6 renumber +
+  `.cursor/rules` sync.
 - **Settings POST numeric fields**: Reject missing or unparseable deviation
   trigger and dust threshold values instead of silently coercing to `5.0`
   (supersedes the `5.0` fallbacks noted in [6.13.3]).

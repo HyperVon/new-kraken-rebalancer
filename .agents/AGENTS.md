@@ -128,7 +128,9 @@ Full detail: [`docs/ALGORITHM.md`](../docs/ALGORITHM.md) and skill [portfolio-re
 See [dry-run-and-simulation](skills/dry-run-and-simulation/SKILL.md).
 
 - **`simulation`**: `DynamicKrakenService` routes to `SimulatedKrakenService` (offline emulator).
-- **`dryRun`**: suppresses real order placement inside the active backend (`[DRY RUN]` / `[EMULATOR DRY RUN]`).
+- **`dryRun`**: suppresses real order placement inside the active backend
+  (server logs `[DRY RUN]` / `[EMULATOR DRY RUN]`; activity log always
+  `[DRY RUN]`).
 - The shipped template and README default `dryRun` to `true`; `Settings.dryRun`
   has no Kotlin default and must be supplied. `simulation` defaults to `false`.
   **Never** flip `dryRun = false` casually in examples/tests aimed at live
@@ -165,7 +167,9 @@ npx markdownlint-cli .agents/AGENTS.md CHANGELOG.md CONTRIBUTING.md README.md SE
 ./gradlew spotlessCheck
 ```
 
-**CodeQL**: currently **disabled** (Kotlin 2.4.x unsupported) — workflow triggers on a non-`main` branch. Do not claim CodeQL is active CI until re-enabled.
+**CodeQL**: currently **disabled** (Kotlin 2.4.x unsupported) — workflow triggers
+only on placeholder branch `disabled-kotlin-2.4-mismatch`, not `main`. Do not
+claim CodeQL is active CI until re-enabled.
 
 ---
 
