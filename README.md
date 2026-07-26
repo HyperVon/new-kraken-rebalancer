@@ -230,7 +230,11 @@ with a wide range of tools and paradigms:
   start at 10s and scale up to a 15-minute ceiling)
 - **CORS Restrictions** — locks down server allowed origins to local machine addresses (`localhost`, `127.0.0.1`), Bonjour multicast DNS domains (`*.local`), and private local subnets (`192.168.x.x`, `10.x.x.x`, `172.16–31.x.x`, link-local `169.254.x.x`) to permit local Wi-Fi access from other devices while blocking public web threats
 - **No dashboard user auth** — trust model is local/private network; see [SECURITY.md](SECURITY.md)
-- **Database Indexing & Auto Migrations** — database schemas utilize index optimizations for timestamps, and run dynamic `SchemaUtils.createMissingTablesAndColumns` auto-migrations on startup
+- **Database Indexing & Auto Migrations** — schemas index timestamp columns; on startup
+  `DatabaseConfig` runs non-deprecated Exposed builders in one transaction
+  (`SchemaUtils.createStatements`, `addMissingColumnsStatements`, then
+  `checkMappingConsistence`) instead of the deprecated
+  `createMissingTablesAndColumns`
 - Dust threshold filtering to avoid minimum order size errors
 - Automatic error recovery — API failures don't crash the rebalancing loop
 - Price validation — aborts cycle if any asset price is unavailable
@@ -303,7 +307,7 @@ graph LR
     end
 
     subgraph Backend["Backend (Ktor + Koin)"]
-        DC[DashboardRoutes] --> THS[TradeHistoryService]
+        DC[DashboardController] --> THS[TradeHistoryService]
         DC --> CS[ConfigService]
         DC --> DV[DashboardView]
         PM[PortfolioManager] --> PA[PortfolioAnalyzer]
@@ -393,7 +397,11 @@ This path is internal orchestration — not a second browser-facing SSE stream l
 ├── CLAUDE.md                               # Claude Code entrypoint → .agents/
 ├── .github/copilot-instructions.md         # GitHub Copilot entrypoint → .agents/
 ├── common/                                 # Kotlin Multiplatform shared module (JVM + JS)
-│   └── src/commonMain/kotlin/.../         # AppConfig, Settings, Routes, HtmlIds, CssClass, ViewText, …
+│   └── src/commonMain/kotlin/com/gemini/krakenbot/
+│       ├── config/                        # AppConfig, Settings, Allocation, KrakenCredentials, InvalidConfigurationException
+│       ├── model/                         # Asset, OrderSide, Result, TimeRange, SyncMetadataKeys, TradeSourceKeys
+│       ├── util/                          # PrecisionConstants
+│       └── view/util/                     # Routes, ViewText, CssClasses, HtmlAttrs, DataProps, ChartProps
 ├── frontend-js/                            # Kotlin/JS client-side subproject compiling to rebalancer.js
 │   ├── src/jsMain/kotlin/                 # Kotlin/JS frontend source files
 │   │   ├── main.kt                        # Client-side routing entry point
@@ -406,16 +414,19 @@ This path is internal orchestration — not a second browser-facing SSE stream l
 │   └── build.gradle.kts                   # Kotlin Multiplatform JS compilation configuration
 ├── src/main/kotlin/com/gemini/krakenbot/
 │   ├── KrakenRebalancerApplication.kt    # Entry point, Ktor server & Koin DI bootstrap
-│   ├── config/                            # JVM: AppModule, DatabaseConfig, KtorConfig, ErrorHandlingConfig
-│   │   └── AppModule.kt                  # Koin dependency injection module
-│   ├── controller/                        # Ktor routes: DashboardRoutes / DashboardController
-│   ├── model/                             # Domain: PortfolioSnapshot, OrderResult, TradeRecord, TradeSource, HistoryStats, PortfolioStats
-│   ├── repository/                        # Persistence interfaces: TradeRepository, PortfolioStatsRepository
-│   │   ├── impl/                          # SQLite-backed implementations (via Exposed ORM)
-│   │   │   └── RepositoryUtils.kt         # safeTransaction + Dispatchers.IO helpers
-│   │   └── table/                         # Exposed tables: Trade, PortfolioSnapshot, AssetSnapshot, PortfolioStats, HistorySyncMetadata, ActionLog
-│   ├── service/                           # Core logic interfaces and shared utilities
-│   │   ├── ServiceUtils.kt               # BigDecimal parsing and relative-tolerance helpers
+│   ├── config/
+│   │   ├── AppModule.kt                  # Koin dependency injection module
+│   │   ├── DatabaseConfig.kt             # SQLite connect + Exposed schema migrate
+│   │   ├── ErrorHandlingConfig.kt        # Ktor status pages
+│   │   └── KtorConfig.kt                 # CORS, compression, content negotiation
+│   ├── controller/
+│   │   ├── DashboardController.kt        # HTTP handlers (pages, settings POST, SSE, history APIs)
+│   │   └── DashboardRoutes.kt            # Koin wiring → registerRoutes()
+│   ├── model/                             # PortfolioSnapshot, OrderResult, TradeRecord, TradeSource, HistoryStats, PortfolioStats
+│   ├── repository/                        # TradeRepository, PortfolioStatsRepository
+│   │   ├── impl/                          # Sqlite*Impl + RepositoryUtils (safeTransaction)
+│   │   └── table/                         # TradeTable, PortfolioSnapshotTable, AssetSnapshotTable, PortfolioStatsTable, HistorySyncMetadataTable, ActionLogTable
+│   ├── service/                           # Interfaces + ServiceUtils
 │   │   └── impl/                          # Service implementations (coroutine-aware)
 │   │       ├── PortfolioManagerImpl.kt   # Loop orchestrator
 │   │       ├── PortfolioAnalyzerImpl.kt  # Snapshot/analysis logic
@@ -433,7 +444,7 @@ This path is internal orchestration — not a second browser-facing SSE stream l
 │   ├── util/                              # NetworkUtils, TradeDeduplicator, TradeCalculator, ActionLogFormatter, BigDecimalExtensions, BalanceKeys, PrecisionConstantsJvm
 │   ├── view/                              # HTML templates & components (kotlinx.html DSL)
 │   │   ├── DashboardView.kt              # Facade class delegating to components
-│   │   ├── component/                    # Modular components (Shell, Grid, Form, History, etc.)
+│   │   ├── component/                    # Shell, Grid, Form, History, charts, activity, performance
 │   │   ├── css/                          # CssTheme, CssStyles, ComponentStyles, LayoutStyles, TableStyles, FormStyles, NavigationStyles, MediaQueries
 │   │   └── util/                         # Formatter, HtmlExtensions, HtmlHelpers, Icons, Layouts (shared IDs/Routes live in :common)
 ├── src/test/kotlin/                       # JVM unit / E2E / evaluation tests (JaCoCo gates)
@@ -459,8 +470,11 @@ This path is internal orchestration — not a second browser-facing SSE stream l
 
 - JDK 25 or higher
 - Gradle (or use the included `./gradlew` wrapper — no installation required)
-- A Kraken account with API Keys (Permissions: **Query Funds**, **Query Closed
-  Orders & Trades**, **Create & Modify Orders**)
+- For **live** or **dry-run-against-Kraken** modes: a Kraken account with API
+  keys (Permissions: **Query Funds**, **Query Closed Orders & Trades**,
+  **Create & Modify Orders**)
+- For **`simulation: true`**: no real keys required — template placeholders are
+  enough; the emulator never calls Kraken
 
 ### 1. Clone & Configure
 

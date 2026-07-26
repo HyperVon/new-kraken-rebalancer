@@ -112,12 +112,13 @@ Full detail: [`docs/ALGORITHM.md`](../docs/ALGORITHM.md) and skill [portfolio-re
 - **Price safety**: missing/zero non-USD ticker aborts the cycle before orders.
 - **Fiat correction**: if *only* USD triggers (deposit/withdrawal), redistribute among counter-balanced assets.
 - **Dust**: also skips execution of orders below `dustThresholdUSD`.
-- **Sell then buy**: sell overweight first; poll USD up to **3** attempts with
-  exponential backoff starting at **250ms** (doubling: 250ms → 500ms → 1000ms);
-  use the **best positive** observation; accept early at **≥95%** of projected;
-  **abort buys** if no positive USD is observed; cycle buy budget **99%** of
-  settled USD (`withStableBackend` captures live vs simulation per invocation;
-  cycle `dryRun` is passed into each `executeOrder`).
+- **Sell then buy**: sell overweight first; after **≥1 successful sell** (and not
+  dry-run), poll USD up to **3** attempts with exponential backoff starting at
+  **250ms** (doubling: 250ms → 500ms → 1000ms); use the **best positive**
+  observation; accept early at **≥95%** of projected; **abort buys** if no
+  positive USD is observed; cycle buy budget **99%** of settled USD
+  (`withStableBackend` captures live vs simulation per invocation; cycle
+  `dryRun` is passed into each `executeOrder`).
 - **Precision**: `BigDecimal` only — crypto scale **8**, USD scale **2**. Tests: `shouldBeEqualComparingTo` (never `shouldBeEqualByComparingTo` / `.equals()`).
 
 ---
@@ -127,7 +128,9 @@ Full detail: [`docs/ALGORITHM.md`](../docs/ALGORITHM.md) and skill [portfolio-re
 See [dry-run-and-simulation](skills/dry-run-and-simulation/SKILL.md).
 
 - **`simulation`**: `DynamicKrakenService` routes to `SimulatedKrakenService` (offline emulator).
-- **`dryRun`**: suppresses real order placement inside the active backend (`[DRY RUN]` / `[EMULATOR DRY RUN]`).
+- **`dryRun`**: suppresses real order placement inside the active backend
+  (server logs `[DRY RUN]` / `[EMULATOR DRY RUN]`; activity log always
+  `[DRY RUN]`).
 - The shipped template and README default `dryRun` to `true`; `Settings.dryRun`
   has no Kotlin default and must be supplied. `simulation` defaults to `false`.
   **Never** flip `dryRun = false` casually in examples/tests aimed at live
@@ -164,7 +167,9 @@ npx markdownlint-cli .agents/AGENTS.md CHANGELOG.md CONTRIBUTING.md README.md SE
 ./gradlew spotlessCheck
 ```
 
-**CodeQL**: currently **disabled** (Kotlin 2.4.x unsupported) — workflow triggers on a non-`main` branch. Do not claim CodeQL is active CI until re-enabled.
+**CodeQL**: currently **disabled** (Kotlin 2.4.x unsupported) — workflow triggers
+only on placeholder branch `disabled-kotlin-2.4-mismatch`, not `main`. Do not
+claim CodeQL is active CI until re-enabled.
 
 ---
 

@@ -159,7 +159,7 @@ After a deploy or LAN UI check, run
 
 ---
 
-## 5. Complex-code comments
+## 6. Complex-code comments
 
 Prefer **readable code without comments**. Add comments only where the logic is
 non-obvious or complex (intent, invariants, traps, non-local consequences) —
@@ -187,6 +187,10 @@ When editing code:
 | No blocking long processes | `.cursor/rules/no-blocking-long-processes.mdc` (`alwaysApply`) |
 | Complex-code comments | `.cursor/rules/complex-code-comments.mdc` (`alwaysApply`) |
 | UI change verification | `.cursor/rules/ui-change-verification.mdc` (path globs) |
+
+Cursor projections may add harness-only details (e.g. `block_until_ms: 0`,
+`AwaitShell`) that are absent from the portable bullets above — keep the
+portable meaning aligned when editing either side.
 
 Commit both this file and `.cursor/rules/` so Cursor clones pick up rules
 automatically and other harnesses still have a single portable source.

@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [6.13.7] - 2026-07-25
 
 ### Changed
 
@@ -15,6 +15,36 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   (`open-pr`, OPERATING.md, `pr-verifications-before-open.mdc`).
 - **History trade-log density (#86)**: At max-width 1280px, the 9-col trade
   table uses tighter padding/typography under `.history-trade-log` only.
+- **Comment sweep (first full pass)**: Applied
+  [`complex-code-comments`](.agents/skills/complex-code-comments/SKILL.md) across
+  JVM, `:common`, and `:frontend-js` production sources — added why-comments on
+  ATH/drawdown deployment, dual deviation gates, fiat correction, post-sell USD
+  settle polling, HMAC signing and nonce seeding, RateLimiter counter math, trade
+  dedupe windows, snapshot reverse-apply, atomic config writes, SSE replay, and
+  Chart.js/`dynamic` payload traps; corrected stale claims (startup ordering,
+  CSS cache rationale, incremental-sync window, chart header legend); removed
+  wallpaper KDoc and comments that restated the code.
+- **Comment sweep (tests)**: Same skill across JVM and Kotlin/JS test sources —
+  scenario/fixture why-comments (evaluation cash-cap/drawdown, FakeKraken vs
+  SimulatedKraken, Chart.js zoomScale/clone traps); stripped CoverageTest and
+  other restating noise.
+- **Docs / skill drift**: Documented zero-target → 100% `Deviation%` in
+  [`docs/ALGORITHM.md`](docs/ALGORITHM.md) and
+  [`portfolio-rebalancing-math`](.agents/skills/portfolio-rebalancing-math/SKILL.md);
+  corrected [`trade-history-sync`](.agents/skills/trade-history-sync/SKILL.md)
+  so full vs incremental sync follows `latestTradeTime` nullity (not
+  `isHistorySeeded`) and OHLC fetch is 95 days vs `HISTORICAL_DAYS_BACK` 90.
+- **Documentation review**: Corrected README Exposed migration API and package
+  trees; SECURITY env-placeholder secrets (preserve raw placeholders only when
+  credentials unchanged); CONTRIBUTING/AGENTS CodeQL branch name; FLOWS SSE/
+  settings handlers + USD-poll gate + Mermaid 8.x labels + sync throttle/overlap;
+  ALGORITHM USD-poll preconditions, dryRun≠simulation (server vs activity log
+  prefixes), snapshot percent scales; EVALUATION/Scenario 14 `loadConfig()` title;
+  portfolio-rebalancing-math skill poll gate; OPERATING §6 renumber +
+  `.cursor/rules` sync.
+- **Settings POST numeric fields**: Reject missing or unparseable deviation
+  trigger and dust threshold values instead of silently coercing to `5.0`
+  (supersedes the `5.0` fallbacks noted in [6.13.3]).
 
 ### Fixed
 
@@ -28,8 +58,6 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Order side normalization**: Canonical `BUY`/`SELL` via `OrderSide.normalize` /
   `isBuy`/`isSell` at trade load and local trade creation; slippage no longer
   treats unknown/lowercase sides as sells (which inverted the sign).
-- **Settings POST numeric fields**: Reject missing or unparseable deviation
-  trigger and dust threshold values instead of silently coercing to `5.0`.
 - **History trade badges**: Buy/Sell badge matching uppercases side (aligned
   with cash-flow series), so lowercase legacy rows get the correct badge.
 - **Layering**: `SyncMetadataKeys` moved out of `view.util` into `:common`
@@ -53,28 +81,6 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - SnapshotHistoryCalculator unit coverage for lowercase `buy` reverse-apply;
   JVM assert that `TradeSourceKeys.LOCAL_ESTIMATE` matches
   `TradeSource.LOCAL_ESTIMATE.name`.
-
-### Changed
-
-- **Comment sweep (first full pass)**: Applied
-  [`complex-code-comments`](.agents/skills/complex-code-comments/SKILL.md) across
-  JVM, `:common`, and `:frontend-js` production sources — added why-comments on
-  ATH/drawdown deployment, dual deviation gates, fiat correction, post-sell USD
-  settle polling, HMAC signing and nonce seeding, RateLimiter counter math, trade
-  dedupe windows, snapshot reverse-apply, atomic config writes, SSE replay, and
-  Chart.js/`dynamic` payload traps; corrected stale claims (startup ordering,
-  CSS cache rationale, incremental-sync window, chart header legend); removed
-  wallpaper KDoc and comments that restated the code.
-- **Comment sweep (tests)**: Same skill across JVM and Kotlin/JS test sources —
-  scenario/fixture why-comments (evaluation cash-cap/drawdown, FakeKraken vs
-  SimulatedKraken, Chart.js zoomScale/clone traps); stripped CoverageTest and
-  other restating noise.
-- **Docs / skill drift**: Documented zero-target → 100% `Deviation%` in
-  [`docs/ALGORITHM.md`](docs/ALGORITHM.md) and
-  [`portfolio-rebalancing-math`](.agents/skills/portfolio-rebalancing-math/SKILL.md);
-  corrected [`trade-history-sync`](.agents/skills/trade-history-sync/SKILL.md)
-  so full vs incremental sync follows `latestTradeTime` nullity (not
-  `isHistorySeeded`) and OHLC fetch is 95 days vs `HISTORICAL_DAYS_BACK` 90.
 
 ## [6.13.6] - 2026-07-25
 

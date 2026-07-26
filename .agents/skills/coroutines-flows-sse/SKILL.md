@@ -42,9 +42,11 @@ covers a snapshot emitted between the DB read and subscribe).
 ### Paginated sync / USD poll (cold)
 
 - `getTradeHistoryPaginated()` — `emit` suspends for backpressure.
-- `pollUsdBalanceAfterSells()` — cold poll; **3** attempts from **250ms**
-  (doubling → 500ms → 1000ms; defensive `coerceAtMost(32s)`); emits the best
-  positive USD observation (or `0`); executor aborts buys when none.
+- `refreshUsdBalanceAfterSells()` → `pollUsdBalanceAfterSells().last()` — only
+  when **≥1 sell succeeded** and **not** dry-run. Cold poll: **3** attempts from
+  **250ms** (doubling → 500ms → 1000ms; defensive `coerceAtMost(32s)`); emits the
+  best positive USD observation (or `0`); executor aborts buys when none. Skipped
+  poll → buys use projected cash.
 
 ## Concurrency rules
 

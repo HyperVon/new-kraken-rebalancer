@@ -1419,7 +1419,7 @@ class EvaluationScenariosTest : StringSpec() {
             }
         }
 
-        "Scenario 14: Config File Hot-Reload and Watcher Integration" {
+        "Scenario 14: Config File Hot-Reload via loadConfig()" {
             runTest {
                 val mapper = jacksonObjectMapper()
                 val tempFile = File.createTempFile("scenario14-", ".json").apply { deleteOnExit() }
@@ -1472,12 +1472,12 @@ class EvaluationScenariosTest : StringSpec() {
                 val evidence =
                     "Initial loop delay: 60s\n" +
                         "Modified config loop delay on disk: 120s\n" +
-                        "Config service dynamically hot-reloaded: $reloaded"
+                        "Config service reloaded via loadConfig() (no filesystem watcher): $reloaded"
 
                 reloaded.shouldBeTrue()
                 recordResult(
                     "Scenario 14",
-                    "Config File Hot-Reload and Watcher Integration",
+                    "Config File Hot-Reload via loadConfig()",
                     TestFixtures.PASS,
                     evidence,
                 )
