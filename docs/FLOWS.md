@@ -35,7 +35,7 @@ flowchart TB
 
     subgraph Core["🔄 Core Application Logic"]
         PM["PortfolioManagerImpl\nrunLoop()"]
-        OE["OrderExecutorImpl\nrefreshUsdBalanceAfterSells()"]
+        OE["OrderExecutorImpl\nsettleUsdAfterSells()"]
     end
 
     subgraph Services["📦 Services"]
