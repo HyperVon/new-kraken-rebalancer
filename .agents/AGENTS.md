@@ -210,25 +210,23 @@ See [write-kotest](skills/write-kotest/SKILL.md).
 
 ---
 
-## Cursor Cloud specific instructions
+## 9. Cursor Cloud environment
 
-- **JDK 25 is required** and is pre-installed at `/usr/lib/jvm/temurin-25` and set
-  as the default `java`/`javac` (via `update-alternatives`). Gradle's launcher and
-  the JDK 25 toolchain both resolve automatically — no `JAVA_HOME` export is needed
-  for `./gradlew`. (JDK 21 is also present but is not used.)
-- **Run the app (simulation mode, no Kraken keys):** the app needs
-  `rebalancer-config.json` (gitignored) at the repo root. Copy
-  `rebalancer-config-template.json` to it and set `"simulation": true` (keep
-  `"dryRun": true`), then `./gradlew run` — dashboard serves on
-  <http://localhost:8080>. In simulation mode the offline emulator seeds ~15 days of
-  snapshots/trades into an empty SQLite DB, so charts/tables are populated on first
-  boot. No real credentials touch Kraken. `./gradlew run` is long-lived; background it.
-- **Standard commands** (build/lint/test/coverage/JS tests) are already documented —
-  see README `## Testing` / `## Getting Started` and `## 5. Quality gates` above.
-  `./gradlew build` runs Spotless (lint), JVM tests + JaCoCo verification, and the
-  Kotlin/JS Karma tests in one shot. The Kotlin/JS build downloads an isolated
-  Node/Yarn into `.gradle/` — no host Node install required.
-- **Config hot-reload:** saving settings via the Settings UI (or editing
-  `rebalancer-config.json`) restarts the rebalance loop with the new settings without
-  a server restart (`watchConfigChanges().collectLatest`). Ktor `Autoreload` is off
-  (dev mode disabled), so **Kotlin code changes still require restarting `./gradlew run`**.
+Cloud VM deltas only. Canonical setup: [README Getting Started](../README.md#getting-started);
+flags: [dry-run-and-simulation](skills/dry-run-and-simulation/SKILL.md).
+
+- **JDK:** Temurin 25 at `/usr/lib/jvm/temurin-25` (default `java`); no `JAVA_HOME` for
+  `./gradlew`. Matches §1 toolchain (ignore JDK 21 if present).
+- **Run (sim):** `cp rebalancer-config-template.json rebalancer-config.json`, set
+  `"simulation": true`, `./gradlew run` (background per [OPERATING.md](OPERATING.md) §4 —
+  poll `/api/health` until 200; first boot may block on seeding) →
+  <http://localhost:8080>. UI QA / screenshots: prefer isolated `RUN_DIR` + `fatJar` in
+  [ui-manual-qa](skills/ui-manual-qa/SKILL.md) / [docs-screenshot-refresh](skills/docs-screenshot-refresh/SKILL.md).
+- **Build/test:** [§5 Quality gates](#5-quality-gates) and [README Testing](../README.md#testing).
+  `./gradlew build` covers Gradle gates (Spotless, JVM tests, JaCoCo, Karma); still run
+  `npx markdownlint-cli` when editing docs.
+- **Hot-reload:** Settings UI saves restart the rebalance loop only
+  ([koin-di-and-config](skills/koin-di-and-config/SKILL.md),
+  [coroutines-flows-sse](skills/coroutines-flows-sse/SKILL.md)); manual
+  `rebalancer-config.json` edits on disk require restart. **Kotlin / SSR / frontend
+  changes require `./gradlew run` restart** (Ktor Autoreload off).
