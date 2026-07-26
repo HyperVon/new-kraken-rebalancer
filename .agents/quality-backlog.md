@@ -32,7 +32,7 @@ Product polish discovered during QA belongs in
 
 | ID | Size | Kind | Status | Area | Summary | Cycle | PR |
 | :--- | :---: | :--- | :--- | :--- | :--- | :---: | :--- |
-| CQ-8-3 | S | gap | done | history | Seam edges: multi-match reconcile newest-first, migration save failure leaves JSON, findClosest equidistant | 9 | TBD |
+| CQ-8-3 | S | gap | done | history | Seam edges: multi-match reconcile first-in-range (DESC=newest), migration save failure leaves JSON, findClosest equidistant | 9 | TBD |
 | CQ-9-1 | S | gap | done | drawdown | Conservative exponent `2.0` ALGORITHM MaxDD=30% table | 9 | TBD |
 | CQ-9-2 | M | gap | done | orders | Multi-leg fills same `orderTxid` summed for buy budget (+ filter legs) | 9 | TBD |
 | CQ-9-3 | S | gap | done | algorithm | Underweight exact `−trigger%` enqueues BUY | 9 | TBD |

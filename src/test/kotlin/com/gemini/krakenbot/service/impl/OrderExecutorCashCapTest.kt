@@ -827,7 +827,7 @@ class OrderExecutorCashCapTest : StringSpec() {
                     cycleId = "cycle-multi-leg",
                 )
 
-                (krakenService.getTradeHistoryCallCount >= 1) shouldBe true
+                krakenService.getTradeHistoryCallCount shouldBe 1
                 krakenService.getBalancesCallCount shouldBe 1
                 krakenService.executedOrders.size shouldBe 2
                 krakenService.executedOrders[1].side shouldBe "buy"
@@ -847,7 +847,8 @@ class OrderExecutorCashCapTest : StringSpec() {
                         orderTxid = if (side == "sell") sellTxid else null,
                     )
                 }
-                // One matching leg (net $99); null txid, failed, BUY, and wrong txid must not inflate.
+                // Matching leg net $99 → fill-confirmed $199. Decoys would inflate well above that
+                // if filters fail; peek is deliberately high so the min(fill, peek) cap cannot hide it.
                 krakenService.tradeHistorySupplier = { _, _ ->
                     listOf(
                         TradeRecord(
@@ -913,7 +914,7 @@ class OrderExecutorCashCapTest : StringSpec() {
                         ),
                     )
                 }
-                krakenService.balanceSupplier = { mapOf(Asset.USD to BigDecimal("199.00")) }
+                krakenService.balanceSupplier = { mapOf(Asset.USD to BigDecimal("10000.00")) }
 
                 orderExecutor.executeOrders(
                     buyOrders = mapOf(Asset.ETH to BigDecimal("500.00")),
@@ -936,6 +937,8 @@ class OrderExecutorCashCapTest : StringSpec() {
                     actionLog = mutableListOf(),
                 )
 
+                krakenService.getTradeHistoryCallCount shouldBe 1
+                krakenService.getBalancesCallCount shouldBe 1
                 krakenService.executedOrders.size shouldBe 2
                 krakenService.executedOrders[1].volume.shouldBeEqualComparingTo(BigDecimal("0.19701"))
             }

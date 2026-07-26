@@ -492,7 +492,8 @@ class TradeHistoryServiceTest : StringSpec() {
             }
         }
 
-        "syncTradesFromKraken_ReconciliationPrefersNewestWhenMultipleLocalsMatch" {
+        // Sync uses Iterable.find (first match). SqliteTradeRepositoryImpl returns DESC so first=newest.
+        "syncTradesFromKraken_ReconciliationUsesFirstMatchingLocalInRangeOrder" {
             runTest {
                 coEvery { repository.isHistorySeeded() } returns true
                 val latestTime = Instant.ofEpochSecond(1700000000)
@@ -528,6 +529,7 @@ class TradeHistoryServiceTest : StringSpec() {
                     cycleId = "cycle-new",
                     orderTxid = "LOCAL-OID-NEW",
                 )
+                // Newest-first as getTradesInRange (DESC) provides in production.
                 coEvery { repository.getTradesInRange(any(), any()) } returns listOf(newerLocal, olderLocal)
 
                 val apiTrade = TradeRecord(
@@ -912,6 +914,7 @@ class TradeHistoryServiceTest : StringSpec() {
 
                     tradeHistoryService.init()
 
+                    coVerify(exactly = 1) { repository.save(any()) }
                     file.exists() shouldBe true
                     bakFile.exists() shouldBe false
                 } finally {

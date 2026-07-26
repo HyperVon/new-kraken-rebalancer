@@ -801,6 +801,13 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
                 krakenService.executedOrders.any {
                     it.pair == Asset.BTC_USD_PAIR && it.side == TestFixtures.BUY
                 } shouldBe true
+
+                val captor = slot<PortfolioSnapshot>()
+                coVerify { tradeHistoryService.addSnapshot(capture(captor)) }
+                captor.captured.actions.any { it.contains("Deviation: BTC") } shouldBe true
+                captor.captured.actions.none {
+                    it.contains("fiat correction", ignoreCase = true)
+                } shouldBe true
             }
         }
 

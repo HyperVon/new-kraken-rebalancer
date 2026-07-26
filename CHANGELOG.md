@@ -14,8 +14,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   table; underweight exact-trigger BUY; zero-target dust insignificance;
   multi-leg fill proceeds sum + non-matching filter legs; live
   `simulation=false`+`dryRun=true` DynamicKraken routing; history seam edges
-  (newest-first multi-match reconcile, migration save-failure leaves JSON,
-  equidistant OHLC first-wins).
+  (multi-match reconcile uses first `getTradesInRange` row / DESC newest-first,
+  migration save-failure leaves JSON, equidistant OHLC first-wins).
 
 ## [6.14.0] - 2026-07-26
 

@@ -269,23 +269,16 @@ class PortfolioManagerDrawdownTest : StringSpec() {
                     BigDecimal("1.5") to BigDecimal("0.2500"),
                     BigDecimal("7.5") to BigDecimal("6.2500"),
                     BigDecimal("15") to BigDecimal("25.0000"),
+                    BigDecimal("22.5") to BigDecimal("56.2500"),
+                    BigDecimal("30") to BigDecimal("100.0000"),
                 ).forEach { (drawdownPct, expectedDeployPct) ->
                     portfolioAnalyzer.calculateFiatDeployment(drawdownPct, settings)
                         .shouldBeEqualComparingTo(expectedDeployPct)
                 }
                 // Documented integer Deploy% (ALGORITHM rounds 56.25% → 56 for display).
-                val algorithmTable =
-                    listOf(
-                        BigDecimal("22.5") to BigDecimal("56"),
-                        BigDecimal("30") to BigDecimal("100"),
-                    )
-                for ((drawdownPct, tableDeployPct) in algorithmTable) {
-                    val deploy =
-                        portfolioAnalyzer.calculateFiatDeployment(drawdownPct, settings)
-                    deploy
-                        .setScale(0, RoundingMode.HALF_UP)
-                        .shouldBeEqualComparingTo(tableDeployPct)
-                }
+                portfolioAnalyzer.calculateFiatDeployment(BigDecimal("22.5"), settings)
+                    .setScale(0, RoundingMode.HALF_UP)
+                    .shouldBeEqualComparingTo(BigDecimal("56"))
             }
         }
 
