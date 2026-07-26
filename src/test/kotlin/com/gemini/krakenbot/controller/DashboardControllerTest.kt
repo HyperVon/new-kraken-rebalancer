@@ -455,6 +455,61 @@ class DashboardControllerTest : StringSpec() {
             verify(exactly = 0) { configService.updateConfig(any()) }
         }
 
+        "postSettings_WithInvalidDustThreshold_RejectsWithoutUpdatingConfig" {
+            val serverConfig =
+                AppConfig(
+                    kraken =
+                    KrakenCredentials(
+                        apiKey = TestFixtures.TEST_SERVER_API_KEY,
+                        privateKey = TestFixtures.TEST_SERVER_API_SECRET,
+                    ),
+                    settings =
+                    Settings(
+                        loopDelaySeconds = 60L,
+                        deviationTriggerPercent = 2.0,
+                        dustThresholdUSD = 1.0,
+                        dryRun = true,
+                        fiatMaxDrawdown = 0.0,
+                        fiatDeploymentExponent = 1.0,
+                    ),
+                    allocations =
+                    listOf(
+                        Allocation(
+                            symbol = Asset.USD,
+                            targetPercent = 100.0,
+                        ),
+                    ),
+                )
+            every { configService.getConfig() } returns serverConfig
+            every { configService.updateConfig(any()) } returns Unit
+
+            testApplication {
+                application {
+                    configureTestEnv()
+                }
+                val response =
+                    client.post(Routes.SETTINGS) {
+                        setBody(
+                            parametersOf(
+                                FormFields.LOOP_DELAY_SECONDS to listOf("60"),
+                                FormFields.DEVIATION_TRIGGER_PERCENT to listOf("5.0"),
+                                FormFields.DUST_THRESHOLD_USD to listOf(TestFixtures.INVALID),
+                                FormFields.SYMBOLS to listOf(Asset.USD),
+                                FormFields.TARGETS to listOf("100.0"),
+                            ).formUrlEncode(),
+                        )
+                        header(
+                            HttpHeaders.ContentType,
+                            ContentType.Application.FormUrlEncoded.toString(),
+                        )
+                    }
+                response.status shouldBe HttpStatusCode.OK
+                response.bodyAsText() shouldContain ViewText.INVALID_DUST_THRESHOLD
+            }
+
+            verify(exactly = 0) { configService.updateConfig(any()) }
+        }
+
         "postSettings_WithAbsentDeviationAndDust_RejectsWithoutUpdatingConfig" {
             val serverConfig =
                 AppConfig(

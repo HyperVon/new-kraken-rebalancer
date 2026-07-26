@@ -208,6 +208,24 @@ class HistoryTest : StringSpec() {
             }
         }
 
+        "renderTradeTable maps lowercase buy side to buy badge" {
+            val container = document.createElement(HtmlTags.DIV)
+            container.innerHTML = TestDomBuilders.tradeTableDom()
+            document.body!!.appendChild(container)
+
+            try {
+                renderTradeTable(
+                    arrayOf(
+                        TestDomBuilders.tradeJson(side = OrderSide.BUY.apiValue),
+                    ),
+                )
+                val tbody = document.getElementById(HtmlIds.TRADE_TABLE_BODY) as HTMLTableSectionElement
+                tbody.innerHTML shouldContain "badge-buy"
+            } finally {
+                document.body!!.removeChild(container)
+            }
+        }
+
         "renderTradeTable keeps sub-cent price and fee precision instead of rounding to zero" {
             val container = document.createElement(HtmlTags.DIV)
             container.innerHTML = TestDomBuilders.tradeTableDom()
