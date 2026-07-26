@@ -230,7 +230,7 @@ sequenceDiagram
 `settleUsdAfterSells()`:
 
 1. **Primary (when sell AddOrder txids exist):** `pollFillConfirmedUsd()` →
-   `sumMatchedSellProceeds()` (trade history matched by `ordertxid`, net of fee,
+   `sumMatchedSellProceeds()` (trade history matched by `orderTxid`, net of fee,
    paginate up to 5×50) → optional balance peek
    `min(fillConfirmed, balance)` when spendable USD is visible → else cap to
    `projectedCash`.
