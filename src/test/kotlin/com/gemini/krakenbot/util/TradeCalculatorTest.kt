@@ -45,6 +45,24 @@ class TradeCalculatorTest : StringSpec() {
             slippage.shouldBeEqualComparingTo(BigDecimal("5.0000"))
         }
 
+        "calculateSlippage should treat lowercase buy like BUY" {
+            val slippage = TradeCalculator.calculateSlippage(
+                OrderSide.BUY.apiValue,
+                BigDecimal("105.0"),
+                BigDecimal("100.0"),
+            )
+            slippage.shouldBeEqualComparingTo(BigDecimal("5.0000"))
+        }
+
+        "calculateSlippage should return zero for unknown side instead of sell formula" {
+            val slippage = TradeCalculator.calculateSlippage(
+                "hold",
+                BigDecimal("105.0"),
+                BigDecimal("100.0"),
+            )
+            slippage.shouldBeEqualComparingTo(BigDecimal.ZERO)
+        }
+
         "calculateSlippage should compute sell slippage correctly" {
             val slippage = TradeCalculator.calculateSlippage(
                 OrderSide.SELL.uppercaseName,
@@ -89,6 +107,26 @@ class TradeCalculatorTest : StringSpec() {
             trade.expectedPrice!!.shouldBeEqualComparingTo(BigDecimal("50000.00"))
             trade.source shouldBe TradeSource.LOCAL_ESTIMATE
             trade.slippagePercent!!.shouldBeEqualComparingTo(BigDecimal.ZERO)
+        }
+
+        "createTradeRecord should normalize lowercase side to BUY" {
+            val orderResult = OrderResult(
+                success = true,
+                dryRun = true,
+                pair = "XBTUSD",
+                side = OrderSide.BUY.apiValue,
+                volume = BigDecimal("0.1"),
+            )
+            val trade = TradeCalculator.createTradeRecord(
+                result = orderResult,
+                symbol = "BTC",
+                pair = "XBTUSD",
+                side = OrderSide.BUY.apiValue,
+                volume = BigDecimal("0.1"),
+                usdAmount = BigDecimal("5000.00"),
+                prices = mapOf("BTC" to BigDecimal("50000.00")),
+            )
+            trade.side shouldBe OrderSide.BUY.uppercaseName
         }
     }
 }
