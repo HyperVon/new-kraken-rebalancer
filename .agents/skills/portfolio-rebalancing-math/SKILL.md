@@ -121,6 +121,13 @@ effectively than spreading across all pairs.
 
 ---
 
+## Domain Engine Refactoring Invariants
+
+- **Comment Preservation**: Retain deep inline why-comments (pair-alias matching, `fiatDeploymentExponent` Double.pow scaling, USD reserve truncation) when extracting or moving calculation methods into helper objects like `RebalancerEngine`.
+- **Error Constants**: Missing ticker price abort paths must return `Result.Failure` matching `ViewText.PRICE_NOT_FOUND_PREFIX`.
+
+---
+
 ## Checklist
 
 - [ ] BigDecimal only; scales 8/2; matcher `shouldBeEqualComparingTo`

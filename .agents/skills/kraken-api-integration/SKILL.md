@@ -82,6 +82,13 @@ Retry on `IOException`, `ResponseException`, and messages containing
 
 ---
 
+## Order Idempotency (`cl_ord_id`)
+
+- **`cl_ord_id`**: Client-assigned UUID string (e.g., deterministic `UUID.nameUUIDFromBytes("cl_ord_id:$cycleId:$symbol:$side")`). Kraken enforces open-order uniqueness on `cl_ord_id` to reject duplicate order placement on network retries.
+- **`userref`**: 32-bit integer user reference tag. **Do NOT use `userref` for idempotency**—Kraken permits duplicate open orders with identical `userref` values.
+
+---
+
 ## Checklist
 
 - [ ] Symbols mapped (`BTC` → `XBTUSD`/`XXBT`, etc.)
