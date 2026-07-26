@@ -6,7 +6,6 @@ import kotlinx.css.properties.*
 
 object FormStyles {
     fun CssBuilder.applyFormStyles() {
-        // Buttons
         ".btn" {
             display = Display.inlineFlex
             alignItems = Align.center
@@ -101,7 +100,6 @@ object FormStyles {
             padding = Padding(0.5.rem)
         }
 
-        // Form Sections & Fields
         ".${CssClass.Form.Section}" {
             borderBottomWidth = 1.px
             borderBottomStyle = BorderStyle.solid

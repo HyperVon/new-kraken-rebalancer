@@ -2,6 +2,7 @@ package com.gemini.krakenbot.model
 
 import kotlin.jvm.JvmInline
 
+/** Portfolio symbol wrapper; Kraken ticker/pair/balance-key aliases live here for JVM + JS. */
 @JvmInline
 value class Asset(val value: String) {
     override fun toString(): String = value
@@ -38,6 +39,7 @@ value class Asset(val value: String) {
         val ASSET_DOGE = Asset(DOGE)
         val ASSET_SOL = Asset(SOL)
 
+        // Kraken's own ticker codes differ from common symbols for these two.
         private val KRAKEN_TICKER_BY_SYMBOL = mapOf(
             BTC to XBT,
             DOGE to XDG,
@@ -47,6 +49,7 @@ value class Asset(val value: String) {
 
         operator fun invoke(value: String): Asset = Asset(value)
 
+        /** BTC→XBT, DOGE→XDG; other symbols pass through uppercased. */
         fun toKrakenTicker(symbol: String): String {
             val normalizedSymbol = normalizedSymbol(symbol)
             return KRAKEN_TICKER_BY_SYMBOL[normalizedSymbol] ?: normalizedSymbol
@@ -57,6 +60,10 @@ value class Asset(val value: String) {
         val BTC_USD_PAIR: String = tradingPair(BTC)
         val ETH_USD_PAIR: String = tradingPair(ETH)
 
+        /**
+         * Map an exchange pair string to an allocation symbol.
+         * Tries non-USD allocations, then USD, then [FALLBACK_SYMBOLS]; null if nothing matches.
+         */
         fun fromTradingPair(pair: String, allocations: List<String>): String? {
             val normalizedPair = pair.uppercase()
 
@@ -97,6 +104,7 @@ value class Asset(val value: String) {
 
         private fun acceptedKrakenPairs(symbol: String): Set<String> = acceptedUsdQuotedPairs(symbol)
 
+        /** Balance-map key candidates, including Kraken X/Z asset prefixes (e.g. XXBT, ZUSD). */
         fun possibleBalanceKeys(symbol: String): List<String> {
             val normalized = normalizedSymbol(symbol)
             val krakenTicker = toKrakenTicker(normalized)

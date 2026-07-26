@@ -3,10 +3,7 @@ package com.gemini.krakenbot.service
 import java.math.BigDecimal
 import java.math.RoundingMode
 
-/**
- * Safe BigDecimal parsing that returns ZERO on failure instead of throwing.
- * Centralizes fallback handling for service response parsing.
- */
+/** Parses a decimal string; returns [default] (ZERO) on null/blank/NumberFormatException — never throws. */
 fun safeParseBigDecimal(value: String?, default: BigDecimal = BigDecimal.ZERO): BigDecimal = value?.let {
     try {
         BigDecimal(it)
@@ -15,9 +12,6 @@ fun safeParseBigDecimal(value: String?, default: BigDecimal = BigDecimal.ZERO): 
     }
 } ?: default
 
-/**
- * Safe BigDecimal parsing with scale and rounding.
- */
 fun safeParseBigDecimal(
     value: String?,
     scale: Int,
@@ -25,9 +19,7 @@ fun safeParseBigDecimal(
     default: BigDecimal = BigDecimal.ZERO,
 ): BigDecimal = safeParseBigDecimal(value, default).setScale(scale, mode)
 
-/**
- * Checks if two BigDecimal values are within a relative tolerance of each other.
- */
+/** True when |a−b| / max(|a|,|b|) ≤ [tolerance] (default 0.01 = 1% relative); equals always pass. */
 fun isWithinRelativeTolerance(
     first: BigDecimal,
     second: BigDecimal,

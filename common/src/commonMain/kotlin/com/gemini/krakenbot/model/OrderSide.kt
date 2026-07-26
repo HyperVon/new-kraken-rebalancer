@@ -1,6 +1,6 @@
 package com.gemini.krakenbot.model
 
-/** Represents the trading direction for order executions. */
+/** Order direction; [apiValue] is lowercase Kraken REST, [name] is the stored/UI form. */
 enum class OrderSide(val apiValue: String) {
     BUY("buy"),
     SELL("sell"),
@@ -18,7 +18,7 @@ enum class OrderSide(val apiValue: String) {
     }
 }
 
-/** Represents the order execution type for Kraken API. */
+/** Only MARKET is wired through live and emulator executeOrder paths. */
 enum class OrderType(val apiValue: String) {
     MARKET("market"),
 }

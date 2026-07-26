@@ -46,7 +46,12 @@ class KrakenServiceImpl(
 ) : KrakenService {
     private val log = LoggerFactory.getLogger(KrakenServiceImpl::class.java)
     private val apiUrl = KrakenApiConstants.API_URL
+
+    // Kraken rejects any nonce that is not strictly increasing. Seeding from millis×1e6 leaves room
+    // for many nonces inside one millisecond while staying time-derived, so a restart never rewinds.
     private val nonceGenerator = AtomicLong(System.currentTimeMillis() * 1_000_000L)
+
+    /** Total trade count from the last TradesHistory response (Kraken `count`); used for pagination. */
     val lastFetchedCount = AtomicInteger(0)
 
     private suspend fun <T> retryWithFlow(
@@ -63,6 +68,7 @@ class KrakenServiceImpl(
         var currentBackoff = initialBackoffMs
         var currentRateLimitBackoff = rateLimitBackoffMs
         var currentLockoutBackoff = initialLockoutBackoffMs
+        // Lockouts use a separate attempt budget so a long lockout ladder does not burn network retries.
         var attempt = 0
         var lockoutAttempt = 0
 
@@ -308,6 +314,7 @@ class KrakenServiceImpl(
             return emptyList()
         }
 
+        // Kraken puts a `last` cursor alongside the candle arrays under `result`; skip that key.
         val ohlcNode = resultNode.properties().firstOrNull { it.key != KrakenApiConstants.FIELD_LAST }?.value
 
         if (ohlcNode == null || !ohlcNode.isArray) {
@@ -330,6 +337,7 @@ class KrakenServiceImpl(
         return priceList
     }
 
+    // Public paths: no RateLimiter and no HMAC — only private calls acquire cost / sign.
     private suspend fun queryPublic(path: String): JsonNode = retryWithFlow("queryPublic($path)") {
         val responseBody = httpClient.get(apiUrl + path).bodyAsText()
         try {
@@ -376,6 +384,7 @@ class KrakenServiceImpl(
                     payload.entries.joinToString("&") {
                         "${it.key}=${it.value}"
                     }
+                // Signature / private key must never be logged — only API-Sign header below.
                 val signature = signRequest(path, nonce, postData)
 
                 val responseBody =
@@ -395,6 +404,7 @@ class KrakenServiceImpl(
                     if (!root.path(KrakenApiConstants.FIELD_ERROR).isEmpty) {
                         val errorMsg = root.path(KrakenApiConstants.FIELD_ERROR).toString()
                         if (errorMsg.contains(KrakenApiConstants.ERROR_INVALID_NONCE) && retryCount < maxRetries) {
+                            // Exponential bump (1e8, 2e8, 4e8, …) to leap past a stale/server-ahead nonce.
                             val bumpAmount = 100_000_000L * (1L shl retryCount)
                             log.warn(
                                 "Invalid nonce detected. Adjusting nonce generator by {} and retrying (Attempt {}/{})",
@@ -420,6 +430,7 @@ class KrakenServiceImpl(
         }
     }
 
+    // Kraken: HMAC-SHA512(base64-decoded secret, URI path || SHA256(nonce + postData)), then Base64.
     private fun signRequest(path: String, nonce: String, postData: String): String {
         try {
             val sha2 =

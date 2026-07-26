@@ -364,6 +364,8 @@ private fun configDataRange(config: dynamic): ChartRange? {
     return if (points.isEmpty()) null else ChartRange(points.min(), points.max())
 }
 
+// Payload numbers may arrive as JS numbers OR strings (BigDecimal serializes as text).
+// Try a numeric parse first; otherwise treat the value as an ISO timestamp → epoch ms.
 internal fun dynamicNumber(value: dynamic): Double? {
     if (value == null || value == undefined) return null
     value.toString().toDoubleOrNull()?.let { return it }
@@ -448,6 +450,7 @@ fun formatUSD(valDouble: Double): String {
     val options: dynamic = json()
     options.minimumFractionDigits = PrecisionConstants.SCALE_USD
     options.maximumFractionDigits = PrecisionConstants.SCALE_USD
+    // Format the magnitude, then place the sign before the $ ("-$1.23", not "$-1.23").
     val absVal = if (valDouble < 0) -valDouble else valDouble
     val formatted = absVal.asDynamic().toLocaleString(EN_US, options) as String
     return if (valDouble < 0) "-$$formatted" else "$$formatted"
@@ -521,6 +524,8 @@ internal fun createOrUpdate(canvasId: String, config: dynamic) {
     val existingChart: dynamic = charts[canvasId]
     val applyingPresetVisibility = canvasId in pendingPresetVisibility
     if (existingChart != null && existingChart != undefined) {
+        // When applying a saved preset, skip snapshotting on-screen visibility — otherwise the
+        // previous view's series toggles would overwrite the preset we are about to apply.
         if (!applyingPresetVisibility) {
             val states = mutableMapOf<String, Boolean>()
             val datasets = existingChart.data.datasets
@@ -545,6 +550,8 @@ internal fun createOrUpdate(canvasId: String, config: dynamic) {
     if (savedStates != null && config.data != null && config.data.datasets != null) {
         val configDatasets = config.data.datasets
         val length: Int = (configDatasets.length).unsafeCast<Int>()
+        // DATASET_VISIBILITY_DEFAULT is the fallback for unlisted series: a preset can store
+        // default=false plus a few label=true entries to express "hide everything except these".
         val defaultVisible = savedStates[ChartProps.DATASET_VISIBILITY_DEFAULT] ?: true
         for (i in 0 until length) {
             val ds = configDatasets[i]
@@ -880,6 +887,8 @@ internal fun buildCumulativeNetCashFlowChart(trades: Array<dynamic>, includeDryR
     createOrUpdate(HtmlIds.CUMULATIVE_NET_CASH_FLOW_CHART, createLineChartConfig(datasets, options))
 }
 
+// A single point renders as a lone dot; prepend a synthetic zero one hour earlier so the
+// cumulative series draws as a line from the baseline.
 private fun padSinglePointSeries(rawData: Array<dynamic>): Array<dynamic> = if (rawData.size == 1) {
     val firstTradeTime = Date(rawData[0].x.toString()).getTime()
     val startTime = Date(firstTradeTime - PrecisionConstants.ONE_HOUR_MS).toISOString()

@@ -3,9 +3,6 @@ package com.gemini.krakenbot.util
 import java.math.BigDecimal
 import java.math.RoundingMode
 
-/**
- * Idiomatic Kotlin extension properties and functions for [BigDecimal] financial math operations.
- */
 val BigDecimal.isZero: Boolean
     get() = signum() == 0
 

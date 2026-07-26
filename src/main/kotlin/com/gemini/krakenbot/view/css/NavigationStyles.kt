@@ -193,7 +193,7 @@ object NavigationStyles {
             cursor = Cursor.notAllowed
         }
 
-        // HIST-2: single ~44px chart header row (title · inline legend · compact zoom).
+        // HIST-2: single ~44px chart header row (title + compact zoom; caveats go in caption).
         ".${CssClass.History.ChartHeader.value}" {
             display = Display.flex
             alignItems = Align.center

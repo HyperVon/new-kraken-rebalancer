@@ -240,6 +240,8 @@ class DashboardController(
 
     private suspend fun ServerSSESession.handleSseStream() {
         try {
+            // Send persisted state first; replay on the subsequent hot-flow collection closes the
+            // read/subscribe race, with a harmless duplicate event possible at connection time.
             val latest = tradeHistoryService.getLatestSnapshot()
             if (latest != null) {
                 sendSnapshot(latest)
@@ -251,7 +253,7 @@ class DashboardController(
         } catch (e: CancellationException) {
             throw e
         } catch (_: Exception) {
-            // Handle client disconnect / closed channel gracefully without logging annoying stack traces
+            // Keep non-cancellation failures local to this client session so other collectors continue.
         }
     }
 

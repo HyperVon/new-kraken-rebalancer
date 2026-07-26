@@ -99,6 +99,7 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
     override suspend fun updateTrade(oldTrade: TradeRecord, newTrade: TradeRecord) {
         database.safeTransactionIO(log, "Failed to update trade in database", "Database update failed") {
             TradeTable.update({
+                // Prefer primary key; multi-column fallback only when the in-memory row has no id.
                 if (oldTrade.id != null) {
                     TradeTable.id eq oldTrade.id
                 } else {
@@ -127,6 +128,7 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
 
             if (allIds.isEmpty()) return@readTransactionIO emptyList()
 
+            // Cap chart payloads ~300 points so large ranges do not overwhelm the browser.
             val downsampledIds =
                 if (allIds.size <= 300) {
                     allIds
@@ -358,6 +360,7 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
     )
 
     override suspend fun getLatestTradeTime(): Instant? = database.readTransactionIO {
+        // Exclude dry-run rows so incremental sync watermarks track real (or sim) exchange fills.
         TradeTable
             .selectAll()
             .where { TradeTable.dryRun eq false }
@@ -402,6 +405,7 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
                     .map { it[PortfolioSnapshotTable.id] }
 
             if (idsToDelete.isNotEmpty()) {
+                // Children first even with ON DELETE CASCADE — keeps SQLite FK order explicit.
                 AssetSnapshotTable.deleteWhere { snapshotId inList idsToDelete }
                 ActionLogTable.deleteWhere { snapshotId inList idsToDelete }
                 PortfolioSnapshotTable.deleteWhere { id inList idsToDelete }

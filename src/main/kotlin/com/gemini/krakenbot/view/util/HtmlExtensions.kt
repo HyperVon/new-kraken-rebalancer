@@ -2,7 +2,6 @@ package com.gemini.krakenbot.view.util
 
 import kotlinx.html.*
 
-/** Type-safe kotlinx.html DSL extension functions accepting CssClass instances directly. */
 inline fun FlowContent.div(cssClass: CssClass? = null, crossinline block: DIV.() -> Unit = {}): Unit =
     div(classes = cssClass?.value, block = block)
 

@@ -33,8 +33,8 @@ class DashboardFragmentComponent(
             )
         val isStale = timeSinceUpdate > PrecisionConstants.STALE_THRESHOLD_SECONDS
 
-        // Brand + mode plate + nav + stream slot live in DashboardShell. Stream health
-        // is refreshed out-of-band so SSE swaps keep STREAM/STALE in the header cluster.
+        // Mode plate stays in the shell; this OOB swap only refreshes STREAM/STALE
+        // (SSE freshness — StatusCard.Live here means healthy stream, not live trading).
         renderStreamStatus(latest, timeSinceUpdate, isStale)
         overviewGridComponent.render(latest, history)
 

@@ -19,6 +19,8 @@ import java.util.concurrent.ConcurrentHashMap
 object DatabaseConfig {
     private val log = LoggerFactory.getLogger(DatabaseConfig::class.java)
 
+    // A shared in-memory SQLite database disappears when its last connection closes.
+    // Retain one connection per URL until JVM shutdown so pooled test connections share stable state.
     private val keepAliveConnections = ConcurrentHashMap<String, Connection>()
 
     init {

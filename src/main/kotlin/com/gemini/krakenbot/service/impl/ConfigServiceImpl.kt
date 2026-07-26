@@ -27,13 +27,8 @@ class ConfigServiceImpl(
     @Volatile
     private lateinit var persistedKrakenCredentials: KrakenCredentials
 
-    /**
-     * A hot SharedFlow that broadcasts configuration settings updates to all active collectors.
-     *
-     * - replay = 1: Acts like a BehaviorSubject; any new collector immediately receives the latest configuration.
-     * - onBufferOverflow = BufferOverflow.DROP_OLDEST: Since we drop oldest values on overflow, tryEmit() is
-     *   guaranteed to succeed without suspending, preventing configuration emissions from blocking caller threads.
-     */
+    // Replay gives new collectors the current settings; dropping the superseded value keeps
+    // configuration updates synchronous and non-blocking.
     private val _configFlow =
         MutableSharedFlow<Settings>(
             replay = 1,
@@ -67,9 +62,6 @@ class ConfigServiceImpl(
         _configFlow.tryEmit(validatedConfig.settings)
     }
 
-    /**
-     * Exposes the internal mutable shared flow as a read-only Flow for external subscribers.
-     */
     override fun watchConfigChanges(): Flow<Settings> = _configFlow.asSharedFlow()
 
     private fun readRawConfigContent(): String {
@@ -83,6 +75,8 @@ class ConfigServiceImpl(
     }
 
     private fun configForPersistence(config: AppConfig, previousKraken: KrakenCredentials): AppConfig {
+        // The settings form posts resolved credentials back unchanged. Preserve the raw placeholders
+        // in that case so saving unrelated settings does not write environment secrets to disk.
         val krakenToPersist =
             if (krakenCredentialsEqual(config.kraken, previousKraken)) {
                 persistedKrakenCredentials
@@ -98,6 +92,8 @@ class ConfigServiceImpl(
     private fun parseConfig(content: String): AppConfig = objectMapper.readValue(content, AppConfig::class.java)
 
     private fun resolveEnvVars(content: String): String = ENV_VAR_PATTERN.replace(content) { matchResult ->
+        // A non-blank environment value wins, then the placeholder default, then an empty string.
+        // Escape after substitution because replacement occurs in raw JSON rather than the parsed model.
         val placeholder = matchResult.groupValues[1]
         val parts = placeholder.split(ENV_VAR_DEFAULT_SEPARATOR, limit = 2)
         val key = parts[0]
@@ -129,6 +125,8 @@ class ConfigServiceImpl(
             val tempFile = File("$configFilePath.tmp")
             val targetPath = File(configFilePath).toPath()
 
+            // Serialize completely before the atomic replacement so readers never observe a truncated
+            // configuration if writing fails or the process exits mid-write.
             objectMapper
                 .writerWithDefaultPrettyPrinter()
                 .writeValue(tempFile, config)

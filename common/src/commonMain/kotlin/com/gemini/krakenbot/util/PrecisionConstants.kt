@@ -1,29 +1,39 @@
 package com.gemini.krakenbot.util
 
-/** Centralized financial math precision scales and constants. */
+/**
+ * Shared scale/threshold numbers for JVM BigDecimal math and Kotlin/JS UI checks.
+ * Doubles/Ints only in commonMain so JS can share values without java.math.BigDecimal;
+ * JVM wraps the monetary ones in PrecisionConstantsJvm.
+ */
 object PrecisionConstants {
+    /** Crypto quantity/price decimal places. */
     const val SCALE_CRYPTO = 8
+
+    /** Fiat USD decimal places. */
     const val SCALE_USD = 2
+
     const val SCALE_PERCENT = 4
     const val SCALE_FEE = 4
     const val HUNDRED_INT = 100
+
+    /** Post-sell buy budget: spend at most 99% of settled USD. */
     const val CASH_RESERVE_FACTOR_DOUBLE = 0.99
+
     const val FEE_RATE_ESTIMATE_DOUBLE = 0.0026
+
+    /** Seconds after which dashboard/JS treat snapshot age as STALE (not "live trading"). */
     const val STALE_THRESHOLD_SECONDS = 90L
 
-    // Time & Interval Constants
     const val MILLIS_PER_SECOND = 1000
     const val ONE_HOUR_MS = 3600000.0
     const val SYNC_POLL_INTERVAL_MS = 3000
     const val HOURS_PER_HALF_DAY = 12
 
-    // UI & Table Layout Constants
     const val TRADE_TABLE_COLSPAN = 9
     const val DEFAULT_SORT_COL_INDEX = 5
     const val TOTAL_ALLOCATION_PERCENTAGE = 100.0
     const val ALLOCATION_TOLERANCE_DELTA = 0.01
 
-    // Historical Reconstruction Constants
     const val HISTORICAL_DAYS_BACK = 90
     const val LAST_HOUR_OF_DAY = 23
     const val LAST_MINUTE_OF_HOUR = 59

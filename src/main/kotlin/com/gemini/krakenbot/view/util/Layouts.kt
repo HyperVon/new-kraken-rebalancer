@@ -31,9 +31,10 @@ fun FlowContent.brandMark() {
 }
 
 /**
- * GLOB-1/DASH-2: persistent trading-mode plate shown next to the brand on every
- * page. Simulation and dry-run read as safe (blue/amber); live trading reads as
- * high-consequence (red) so the current mode is identifiable within ~1s.
+ * GLOB-1/DASH-2: authoritative trading-mode plate on every page.
+ * Precedence is SIMULATION > DRY RUN > LIVE TRADING (simulation wins even when
+ * dryRun is also true). Distinct from the STREAM/STALE SSE chip — do not hide
+ * or downgrade this plate.
  */
 fun FlowContent.modePlate(settings: Settings) {
     val cssClass: CssClass
@@ -68,9 +69,10 @@ fun FlowContent.modePlate(settings: Settings) {
 }
 
 /**
- * Dashboard-only placeholder for the STREAM/STALE chip. Lives in the shell so
- * the header cluster is complete before the HTMX fragment arrives; the fragment
- * refreshes this node via `hx-swap-oob`.
+ * Dashboard STREAM/STALE placeholder — SSE freshness only, not trading mode
+ * (StatusCard.Live/Delayed colors mean healthy/stale stream). Shell renders it
+ * so the header cluster is complete before HTMX; the fragment replaces
+ * `#header-status` via `hx-swap-oob`.
  */
 fun FlowContent.streamStatusPlaceholder() {
     div(CssClass.Layout.HeaderStatus) {

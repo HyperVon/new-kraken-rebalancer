@@ -6,7 +6,6 @@ import kotlinx.css.properties.*
 
 object ComponentStyles {
     fun CssBuilder.applyComponentStyles() {
-        // Status Badges & Cards
         ".${CssClass.StatusCard.Badge}" {
             padding = Padding(0.125.rem, 0.625.rem)
             borderRadius = CssTheme.radiusPill
@@ -341,7 +340,6 @@ object ComponentStyles {
             put("font-variant-numeric", "tabular-nums")
         }
 
-        // Allocation Charts
         ".${CssClass.AllocationChart.Container}" {
             display = Display.flex
             flexDirection = FlexDirection.column
@@ -412,7 +410,6 @@ object ComponentStyles {
             color = CssTheme.colorTextSecondary
         }
 
-        // Spinners & Toasts
         ".${CssClass.Loading.SpinnerContainer}" {
             display = Display.flex
             flexDirection = FlexDirection.column

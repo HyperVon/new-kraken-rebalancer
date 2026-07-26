@@ -36,6 +36,18 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   JVM assert that `TradeSourceKeys.LOCAL_ESTIMATE` matches
   `TradeSource.LOCAL_ESTIMATE.name`.
 
+### Changed
+
+- **Comment sweep (first full pass)**: Applied
+  [`complex-code-comments`](.agents/skills/complex-code-comments/SKILL.md) across
+  JVM, `:common`, and `:frontend-js` production sources — added why-comments on
+  ATH/drawdown deployment, dual deviation gates, fiat correction, post-sell USD
+  settle polling, HMAC signing and nonce seeding, RateLimiter counter math, trade
+  dedupe windows, snapshot reverse-apply, atomic config writes, SSE replay, and
+  Chart.js/`dynamic` payload traps; corrected stale claims (startup ordering,
+  CSS cache rationale, incremental-sync window, chart header legend); removed
+  wallpaper KDoc and comments that restated the code.
+
 ## [6.13.6] - 2026-07-25
 
 ### Changed

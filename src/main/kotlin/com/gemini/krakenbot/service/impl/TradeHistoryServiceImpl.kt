@@ -138,7 +138,6 @@ class TradeHistoryServiceImpl(
                     BigDecimal.valueOf(targetPercent),
                     totalPortfolioValue,
                 )
-            // Slightly drifted initial balance (+/- 15%)
             val driftFactor = BigDecimal.valueOf(0.85 + random.nextDouble() * 0.30)
             val driftedUSD = targetUSD.multiply(driftFactor).toUsdScale()
             val price = currentPrices.getValue(symbolU)
@@ -147,6 +146,7 @@ class TradeHistoryServiceImpl(
         }
 
         val now = Instant.now()
+        // Empty-DB simulation seed: ~15 days of snapshots at 6-hour steps.
         val startInstant = now.minus(15, ChronoUnit.DAYS)
         val stepHours = 6L
         val steps = (15 * 24) / stepHours
@@ -164,7 +164,6 @@ class TradeHistoryServiceImpl(
         while (step <= steps) {
             val timestamp = startInstant.plus(step * stepHours, ChronoUnit.HOURS)
 
-            // 1. Fluctuate prices (+/- 1.5%)
             for (symbol in currentPrices.keys) {
                 if (symbol == Asset.USD) continue
                 val price = currentPrices.getValue(symbol)
@@ -172,7 +171,6 @@ class TradeHistoryServiceImpl(
                 currentPrices[symbol] = price.multiply(changeFactor).toCryptoScale()
             }
 
-            // 2. Portfolio mark-to-market before rebalance
             var portfolioValue = BigDecimal.ZERO
             for (symbol in currentBalances.keys) {
                 portfolioValue =
@@ -182,7 +180,6 @@ class TradeHistoryServiceImpl(
             }
             portfolioValue = portfolioValue.toUsdScale()
 
-            // 3. Rebalance balances toward targets with slight drift (+/- 3%)
             for ((symbol, targetPercent) in allocations) {
                 val symbolU = symbol.value.uppercase()
                 val targetUSD =
@@ -197,7 +194,6 @@ class TradeHistoryServiceImpl(
                     driftedUSD.divide(price, PrecisionConstants.SCALE_CRYPTO, RoundingMode.HALF_UP)
             }
 
-            // 4. One valuation pass, then build snapshots against the total
             val valuedAssets =
                 allocations.map { (symbol, targetPercent) ->
                     val symbolU = symbol.value.uppercase()
@@ -276,7 +272,6 @@ class TradeHistoryServiceImpl(
         } catch (e: Exception) {
             log.error("Failed to prune old snapshots/trades", e)
         }
-        // tryEmit() succeeds instantly and synchronously because of DROP_OLDEST backpressure strategy.
         snapshotFlow.tryEmit(snapshot)
     }
 
@@ -284,9 +279,6 @@ class TradeHistoryServiceImpl(
 
     override suspend fun getLatestSnapshot(): PortfolioSnapshot? = repository.load().firstOrNull()
 
-    /**
-     * Exposes the internal mutable shared flow as a read-only Flow for streaming updates.
-     */
     override fun getHistoryFlow(): Flow<PortfolioSnapshot> = snapshotFlow.asSharedFlow()
 
     override suspend fun saveTrade(trade: TradeRecord) {
@@ -347,6 +339,7 @@ class TradeHistoryServiceImpl(
     override suspend fun syncTradesFromKraken() {
         val now = Instant.now()
         val elapsedSeconds = Duration.between(lastSyncTime, now).seconds
+        // Throttle Kraken history pulls to at most once per 5 minutes.
         if (elapsedSeconds < 300) {
             log.info("Skipping trade history synchronization; last run was only {} seconds ago.", elapsedSeconds)
             return
@@ -361,13 +354,13 @@ class TradeHistoryServiceImpl(
         val isSeeded = repository.isHistorySeeded()
         val latestTradeTime = repository.getLatestTradeTime()
 
-        // If history is not yet seeded, do a full sync.
-        // If history is seeded, do an incremental sync starting from the latest trade minus a 5-minute safety window.
+        // Null latest → full history (startSec null). Otherwise overlap by 5 minutes so fills
+        // near the previous watermark are re-fetched and reconciled rather than double-inserted.
+        // [isHistorySeeded] only gates progress metadata / first-sync completion, not this window.
         val startSec = latestTradeTime?.minusSeconds(300)?.epochSecond
 
         log.info("Starting trade history synchronization (isSeeded={}, startSec={})...", isSeeded, startSec)
 
-        // Load existing trades in the query window to perform reconciliation and deduplication.
         val queryStart = latestTradeTime?.minusSeconds(300) ?: Instant.EPOCH
 
         val queryEnd = Instant.now().plusSeconds(300)
@@ -380,9 +373,8 @@ class TradeHistoryServiceImpl(
         getTradeHistoryPaginated(startSec = startSec)
             .collect { apiTrades ->
                 for (apiTrade: TradeRecord in apiTrades) {
-                    // The local order record has requested values; the API record has actual
-                    // fills. Match their small expected variances so the API record reconciles
-                    // the local one instead of appearing as a second trade in History.
+                    // Local row has requested economics; API has the settle. Match within
+                    // tolerances so we update the local row instead of inserting a second History trade.
                     val matchingLocalTrade =
                         originalLocalTrades.find { local ->
                             local.isMatchingApiTrade(apiTrade, allocations)
@@ -416,10 +408,9 @@ class TradeHistoryServiceImpl(
                             repository.updateTrade(matchingLocalTrade, reconciledTrade)
                             totalReconciled++
                         }
-                        // Remove matched trade so it cannot be matched again in this sync run
+                        // One local row per API fill in this sync pass.
                         originalLocalTrades.remove(matchingLocalTrade)
                     } else {
-                        // No matching local trade found -> Save it as a new trade record
                         repository.saveTrade(apiTrade)
                         totalAdded++
                     }
@@ -453,16 +444,7 @@ class TradeHistoryServiceImpl(
         log.info("Trade history synchronization completed. Added: {} new, Reconciled: {}.", totalAdded, totalReconciled)
     }
 
-    /**
-     * A cold Flow that fetches trade history from Kraken paginated by 50.
-     *
-     * Because it is a cold Flow:
-     * 1. No network calls are made until the caller collects from it.
-     * 2. It fetches page-by-page lazily; emitting each page using emit().
-     * 3. The emitting suspends until the collector finishes processing the current batch, providing
-     *    automatic backpressure to prevent overloading the system or API rate limits.
-     * 4. Once all batches are fetched, the Flow completes and the collector's loop naturally finishes.
-     */
+    /** Cold paginated Kraken history (page size 50); writes sync_offset/total only until first seed completes. */
     private fun getTradeHistoryPaginated(startSec: Long?): Flow<List<TradeRecord>> = flow {
         val pageSize = 50
         var offset = 0
@@ -498,8 +480,7 @@ class TradeHistoryServiceImpl(
         log.info("Starting historical snapshots reconstruction...")
         val allocations = configService.getConfig().allocations
 
-        // 1. Load current snapshots
-        val currentSnapshots = repository.load() // DESC
+        val currentSnapshots = repository.load()
         val oldestSnapshot = currentSnapshots.lastOrNull()
 
         val cutoffTime = oldestSnapshot?.timestamp ?: Instant.now()
@@ -531,7 +512,6 @@ class TradeHistoryServiceImpl(
                 val bal = portfolioAnalyzer.resolveBalance(symbolU, fetchedLiveBalances)
                 runningBalances[symbolU] = bal
             }
-            // Fetch active prices to initialize current prices
             val pairsStr =
                 allocations.filter { !it.symbol.isUsd }.joinToString(",") {
                     Asset.tradingPair(it.symbol.value)
@@ -550,7 +530,7 @@ class TradeHistoryServiceImpl(
             currentPrices[Asset.USD] = BigDecimal.ONE
         }
 
-        // 3. Fetch OHLC daily close prices for the last 90 days
+        // Slightly wider than HISTORICAL_DAYS_BACK so daily closes cover the full reconstruction window.
         val ohlcData = mutableMapOf<String, List<Pair<Long, BigDecimal>>>()
         val sinceSec = Instant.now().minus(95, ChronoUnit.DAYS).epochSecond
         for ((symbol) in allocations) {
@@ -567,7 +547,6 @@ class TradeHistoryServiceImpl(
             delay(200.milliseconds)
         }
 
-        // 4. Fetch all trades from database
         val trades =
             repository
                 .getTradesInRange(Instant.now().minus(95, ChronoUnit.DAYS), Instant.now())

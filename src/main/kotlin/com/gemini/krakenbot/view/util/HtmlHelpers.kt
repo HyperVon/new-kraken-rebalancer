@@ -5,10 +5,6 @@ import kotlinx.html.HEAD
 import kotlinx.html.link
 import kotlinx.html.meta
 
-/**
- * Renders the common viewport, charset, fonts, and stylesheet link tags
- * used across all pages of the application.
- */
 fun HEAD.commonMetadataAndStyles() {
     meta(charset = "utf-8")
     meta(
@@ -20,8 +16,8 @@ fun HEAD.commonMetadataAndStyles() {
         attributes[HtmlAttrs.CROSSORIGIN] = ""
     }
     link(rel = "stylesheet", href = CdnUrls.GOOGLE_FONTS_STYLESHEET)
-    // CSS responses are cached for 24 hours. A content-derived version keeps
-    // that cache useful while forcing clients to fetch changed rules on deploy.
+    // CSS is served with a 24h max-age (see configureCaching). The content-derived ?v= keeps that
+    // cache useful yet forces a refetch when rules change — stale CSS shows as native white controls.
     val stylesheetVersion = CssStyles.stylesheet.toString().hashCode()
     link(rel = "stylesheet", href = "${Routes.STATIC_STYLE_CSS}?v=$stylesheetVersion")
 }
@@ -33,6 +29,7 @@ fun rebalancerJsSrc(): String {
             .javaClass
             .getResourceAsStream("/${Routes.STATIC_RESOURCES_DIR}/rebalancer.js")
             ?.use { it.readBytes().contentHashCode() }
+            // Missing classpath resource: wall-clock still forces a unique URL.
             ?: System.currentTimeMillis().toInt()
     return "${Routes.STATIC_REBALANCER_JS}?v=$version"
 }

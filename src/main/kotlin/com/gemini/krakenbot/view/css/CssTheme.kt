@@ -5,15 +5,12 @@ import kotlinx.css.CssBuilder
 import kotlinx.css.px
 
 object CssTheme {
-    // Font Stacks
     const val fontSans = "'Inter', system-ui, -apple-system, sans-serif"
     const val fontHeading = "'Outfit', 'Inter', system-ui, -apple-system, sans-serif"
     const val fontMono = "'Roboto Mono', monospace"
 
-    // Radii
     val radiusPill = 9999.px
 
-    // Color Tokens
     val colorBg = Color("#030712")
     val colorTextPrimary = Color("#f8fafc")
 

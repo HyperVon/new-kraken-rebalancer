@@ -71,8 +71,10 @@ class OrderExecutorImpl(
             }
 
             var actualCash = projectedCash
+            // Live/sim only: poll for settled USD; dry-run keeps projected cash (no exchange settle).
             if (executedSells && !settings.dryRun) {
                 actualCash = refreshUsdBalanceAfterSells(backend, projectedCash)
+                // Fail-closed: never spend projected sell proceeds if no positive USD was seen.
                 if (actualCash <= BigDecimal.ZERO) {
                     log.error("Aborting buys because no positive USD balance was observed after sells")
                     return@withStableBackend
@@ -157,6 +159,11 @@ class OrderExecutorImpl(
     private suspend fun refreshUsdBalanceAfterSells(backend: KrakenService, projectedCash: BigDecimal): BigDecimal =
         pollUsdBalanceAfterSells(backend, projectedCash).last()
 
+    /**
+     * Post-sell USD settle: up to [MAX_REFRESH_ATTEMPTS] polls, each waiting first and doubling the
+     * [REFRESH_DELAY_MS] backoff. Keeps the best positive observation; early-exits once balance is
+     * ≥95% of [projectedCash]. Emits ZERO if nothing positive was seen.
+     */
     private fun pollUsdBalanceAfterSells(
         backend: KrakenService,
         projectedCash: BigDecimal,

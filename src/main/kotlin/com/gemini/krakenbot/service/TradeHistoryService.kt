@@ -17,7 +17,6 @@ interface TradeHistoryService {
 
     fun getHistoryFlow(): Flow<PortfolioSnapshot>
 
-    // History page methods
     suspend fun saveTrade(trade: TradeRecord)
 
     suspend fun getSnapshotsInRange(from: Instant, to: Instant): List<PortfolioSnapshot>

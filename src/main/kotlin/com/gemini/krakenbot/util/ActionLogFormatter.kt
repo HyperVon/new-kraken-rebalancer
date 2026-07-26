@@ -4,9 +4,6 @@ import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.view.util.ViewText
 import java.math.BigDecimal
 
-/**
- * Standardized human-readable audit log message generator for portfolio rebalancing events.
- */
 object ActionLogFormatter {
     fun formatDeviationTrigger(symbol: String, deviationPercent: BigDecimal): String {
         val formatted = deviationPercent.toPercentScale().stripTrailingZeros().toPlainString()

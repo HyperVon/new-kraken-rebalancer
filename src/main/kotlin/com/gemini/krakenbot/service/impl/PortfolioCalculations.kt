@@ -8,8 +8,7 @@ import java.math.BigDecimal
 import java.math.RoundingMode
 
 /**
- * Consolidated portfolio calculation logic shared between PortfolioManagerImpl and PortfolioAnalyzerImpl.
- * Eliminates duplicate calculation code across the codebase.
+ * Shared portfolio math used by [PortfolioManagerImpl] and [PortfolioAnalyzerImpl].
  */
 object PortfolioCalculations {
     internal const val SCALE_PERCENT = PrecisionConstants.SCALE_PERCENT
@@ -18,7 +17,9 @@ object PortfolioCalculations {
     internal val HUNDRED = PrecisionConstants.HUNDRED
 
     /**
-     * Calculate target percentage for an asset based on allocation type.
+     * Effective target % after ATH/drawdown fiat deployment: USD uses [effectiveUsdTarget]
+     * directly; crypto is [baseTargetPercent] × [cryptoScaleFactor] so reduced USD redistributes
+     * across crypto and totals still sum to 100%.
      */
     fun calculateTargetPercent(
         symbol: Asset,
@@ -31,9 +32,6 @@ object PortfolioCalculations {
         baseTargetPercent.multiply(cryptoScaleFactor)
     }
 
-    /**
-     * Calculate current percentage for an asset.
-     */
     fun calculateCurrentPercent(valueUSD: BigDecimal, totalPortfolioValueUSD: BigDecimal): BigDecimal =
         if (totalPortfolioValueUSD >
             BigDecimal.ZERO
@@ -45,22 +43,18 @@ object PortfolioCalculations {
             BigDecimal.ZERO
         }
 
-    /**
-     * Calculate target value in USD based on target percentage.
-     */
     fun calculateTargetValue(targetPct: BigDecimal, totalPortfolioValueUSD: BigDecimal): BigDecimal =
         totalPortfolioValueUSD
             .multiply(targetPct)
             .divide(HUNDRED, SCALE_USD, RoundingMode.HALF_UP)
 
-    /**
-     * Calculate deviation in USD.
-     */
     fun calculateDeviationUSD(currentValueUSD: BigDecimal, targetValueUSD: BigDecimal): BigDecimal =
         currentValueUSD.subtract(targetValueUSD)
 
     /**
-     * Calculate deviation percentage (signed relative deviation).
+     * Signed relative deviation: `(current − target) / target × 100`.
+     * When target is $0 but the position still has value, returns 100% so a zero-target holding
+     * can still clear the percent trigger (paired with the dust gate in [calculateAssetMetrics]).
      */
     fun calculateDeviationPercent(
         deviationUSD: BigDecimal,
@@ -76,9 +70,6 @@ object PortfolioCalculations {
         else -> BigDecimal.ZERO
     }
 
-    /**
-     * Data class for holding calculated asset metrics.
-     */
     data class AssetMetrics(
         val symbol: Asset,
         val baseTargetPercent: BigDecimal,
@@ -87,12 +78,10 @@ object PortfolioCalculations {
         val deviationUSD: BigDecimal,
         val deviationPercent: BigDecimal,
         val targetValueUSD: BigDecimal,
+        /** Dust gate only (`|deviationUSD| ≥ dustThresholdUSD`); percent trigger is applied by callers. */
         val isSignificant: Boolean,
     )
 
-    /**
-     * Calculate all metrics for a single asset in one operation.
-     */
     fun calculateAssetMetrics(
         symbol: Asset,
         baseTargetPercent: BigDecimal,
@@ -129,9 +118,6 @@ object PortfolioCalculations {
         )
     }
 
-    /**
-     * Create an AssetSnapshot using consolidated calculations.
-     */
     fun createAssetSnapshot(
         symbol: String,
         balance: BigDecimal,
@@ -145,6 +131,7 @@ object PortfolioCalculations {
         val deviationUSD = calculateDeviationUSD(valueUSD, targetValueUSD)
         val deviationPercent = calculateDeviationPercent(deviationUSD, targetValueUSD, valueUSD)
 
+        // Snapshot percents use SCALE_USD (2) for display; analysis math keeps SCALE_PERCENT (4).
         return PortfolioSnapshot.AssetSnapshot(
             symbol = Asset(symbol),
             balance = balance.setScale(SCALE_PRICE, RoundingMode.HALF_UP),

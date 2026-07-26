@@ -3,6 +3,9 @@ package com.gemini.krakenbot.frontend
 /**
  * Type-safe external interface definitions for dynamic JSON payloads received over REST APIs
  * and SSE streams in the client Kotlin/JS environment.
+ *
+ * Numeric fields are `dynamic` because BigDecimal values are serialized as JSON strings (and
+ * timestamps as ISO text); read them through [dynamicNumber], never as raw [Double].
  */
 external interface JsPortfolioSnapshot {
     val timestamp: dynamic

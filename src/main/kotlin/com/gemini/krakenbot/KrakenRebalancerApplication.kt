@@ -32,7 +32,8 @@ fun main() {
     val httpClient = koin.get<HttpClient>()
 
     portfolioManager.startRebalancingLoop()
-    // Finish history cleanup/migration/simulation seeding before accepting HTTP traffic.
+    // Blocking: history cleanup/migration/simulation seeding must finish before runLoop is launched
+    // below and before the server accepts traffic, so cycle one and the dashboard see seeded state.
     runBlocking { tradeHistoryService.init() }
 
     val applicationScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
@@ -42,6 +43,7 @@ fun main() {
 
     Runtime.getRuntime().addShutdownHook(
         Thread {
+            // Stop and cancel the worker before closing its Koin-managed client and dependency graph.
             portfolioManager.stopRebalancingLoop()
             applicationScope.cancel()
             httpClient.close()

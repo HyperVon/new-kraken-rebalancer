@@ -33,6 +33,7 @@ class SimulatedKrakenService(private val configService: ConfigService) : KrakenS
         log.info("Initialized SimulatedKrakenService")
     }
 
+    // Serializes first-touch init and one-shot trade seeding across concurrent emulator calls.
     @Synchronized
     private fun initializeMissingBalancesAndPrices() {
         val allocations = configService.getConfig().allocations
@@ -45,7 +46,6 @@ class SimulatedKrakenService(private val configService: ConfigService) : KrakenS
             )
         }
 
-        // 1. Initialize prices for newly configured assets.
         for ((symbol) in allocations) {
             val symbolU = symbol.value.uppercase()
             val basePrice = SimulationDefaults.INITIAL_PRICES[symbolU] ?: SimulationDefaults.DEFAULT_PRICE
@@ -53,7 +53,7 @@ class SimulatedKrakenService(private val configService: ConfigService) : KrakenS
         }
         simulatedPrices.putIfAbsent(Asset.USD, BigDecimal.ONE)
 
-        // 2. Initialize missing balances with random drift (+/- 25%) so they need rebalancing.
+        // Drift new balances ±25% off target so the emulator starts needing rebalances.
         val totalSimulatedValueUSD = SimulationDefaults.TOTAL_PORTFOLIO_VALUE_USD
         val random = ThreadLocalRandom.current()
 
@@ -65,7 +65,6 @@ class SimulatedKrakenService(private val configService: ConfigService) : KrakenS
                     totalSimulatedValueUSD,
                 )
 
-            // Apply a drift factor between 0.75 and 1.25
             val driftFactor = BigDecimal.valueOf(0.75 + random.nextDouble() * 0.50)
             val driftedUSDValue = targetUSDValue.multiply(driftFactor).toUsdScale()
 
@@ -78,7 +77,7 @@ class SimulatedKrakenService(private val configService: ConfigService) : KrakenS
             }
         }
 
-        // 3. Seed historical trades once a non-USD allocation exists.
+        // Seed demo history once, only when at least one non-USD allocation exists.
         if (!historicalTradesSeeded && allocations.any { !it.symbol.isUsd }) {
             seedSimulatedTrades()
             historicalTradesSeeded = true
@@ -92,7 +91,7 @@ class SimulatedKrakenService(private val configService: ConfigService) : KrakenS
         if (nonUsd.isEmpty()) return
 
         val random = ThreadLocalRandom.current()
-        // Create 15 fake trades spanning the last 5 days
+        // 15 fake fills over the last ~5 days (hoursAgo in 1..119).
         (1..15).forEach { _ ->
             val hoursAgo = random.nextLong(1, 120)
             val timestamp = now.minus(hoursAgo, ChronoUnit.HOURS)
@@ -101,7 +100,6 @@ class SimulatedKrakenService(private val configService: ConfigService) : KrakenS
             val pair = Asset.tradingPair(symbol)
             val side = if (random.nextBoolean()) OrderSide.BUY.name else OrderSide.SELL.name
             val price = simulatedPrices.getValue(symbol)
-            // Slight noise on the trade price compared to current price
             val tradePrice =
                 price
                     .multiply(BigDecimal.valueOf(0.95 + random.nextDouble() * 0.10))

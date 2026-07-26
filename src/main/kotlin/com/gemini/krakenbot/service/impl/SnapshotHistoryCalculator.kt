@@ -14,8 +14,8 @@ import java.time.temporal.ChronoUnit
 import kotlin.math.abs
 
 /**
- * Pure calculation engine for historical snapshot reconstruction, price interpolation,
- * timeline event aggregation, and historical balance reverse-tracking.
+ * Reconstructs historical portfolio snapshots by walking a newest→oldest timeline and
+ * reverse-applying trades so balances at each point match pre-trade state for older events.
  */
 object SnapshotHistoryCalculator {
     private data class CalculatedAsset(
@@ -33,6 +33,7 @@ object SnapshotHistoryCalculator {
 
         data class DailyCloseEvent(override val timestamp: Instant) : TimelineEvent()
 
+        // Newest first — [calculateHistoricalSnapshots] undoes trades after each snapshot.
         override fun compareTo(other: TimelineEvent): Int = other.timestamp.compareTo(this.timestamp)
     }
 
@@ -59,7 +60,7 @@ object SnapshotHistoryCalculator {
             }
         }
 
-        events.sort() // Descending order (newest first)
+        events.sort()
         return events
     }
 
@@ -73,6 +74,8 @@ object SnapshotHistoryCalculator {
     ): List<PortfolioSnapshot> {
         val snapshotsToSave = mutableListOf<PortfolioSnapshot>()
 
+        // [runningBalances] starts at "now"; after each trade snapshot, undo that fill so older
+        // points see pre-trade balances. [OrderSide.isBuy]/[isSell] accept any casing.
         for (ev in events) {
             val snapshotTimestamp = ev.timestamp
             var exactPortfolioValue = BigDecimal.ZERO
@@ -129,6 +132,7 @@ object SnapshotHistoryCalculator {
         return snapshotsToSave
     }
 
+    /** Undo one fill: buy spent usd+fee for volume; sell received usd−fee for volume. */
     private fun reverseApplyTrade(trade: TradeRecord, runningBalances: MutableMap<String, BigDecimal>) {
         val volume = trade.volume
         val usdAmount = trade.usdAmount
@@ -155,6 +159,7 @@ object SnapshotHistoryCalculator {
 
         val prices = ohlcData[symbol.uppercase()]
         if (!prices.isNullOrEmpty()) {
+            // OHLC keys are epoch seconds; trade-price keys below are epoch millis.
             return findClosest(
                 prices,
                 timestamp.epochSecond,
