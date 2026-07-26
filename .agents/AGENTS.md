@@ -223,9 +223,10 @@ flags: [dry-run-and-simulation](skills/dry-run-and-simulation/SKILL.md).
   <http://localhost:8080>. UI QA / screenshots: prefer isolated `RUN_DIR` + `fatJar` in
   [ui-manual-qa](skills/ui-manual-qa/SKILL.md) / [docs-screenshot-refresh](skills/docs-screenshot-refresh/SKILL.md).
 - **Build/test:** [§5 Quality gates](#5-quality-gates) and [README Testing](../README.md#testing).
-  `./gradlew build` is sufficient for Gradle gates — do not re-run the separate §5 commands
-  after a green `build`.
-- **Hot-reload:** config/json/UI changes restart the rebalance loop only
+  `./gradlew build` covers Gradle gates (Spotless, JVM tests, JaCoCo, Karma); still run
+  `npx markdownlint-cli` when editing docs.
+- **Hot-reload:** Settings UI saves restart the rebalance loop only
   ([koin-di-and-config](skills/koin-di-and-config/SKILL.md),
-  [coroutines-flows-sse](skills/coroutines-flows-sse/SKILL.md)). **Kotlin code changes require
-  `./gradlew run` restart** (Ktor Autoreload off).
+  [coroutines-flows-sse](skills/coroutines-flows-sse/SKILL.md)); manual
+  `rebalancer-config.json` edits on disk require restart. **Kotlin / SSR / frontend
+  changes require `./gradlew run` restart** (Ktor Autoreload off).
