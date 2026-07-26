@@ -21,6 +21,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   budget prefers fill-confirmed sell proceeds (balance-poll fallback).
 - **TEST-1**: Added `SimulationEvaluationScenariosTest` against
   `SimulatedKrakenService` + real TradeHistory / in-memory SQLite.
+- **architecture-review skill**: Third-party redesign brainstorm skill; Step 6
+  requires an interactive decisions Canvas (Keep / Evolve / Replace / Skip per
+  finding) before any implementation.
 
 ## [6.13.7] - 2026-07-25
 
