@@ -359,9 +359,11 @@ two complementary `SharedFlow` channels:
 
 #### Portfolio Snapshot Stream (Dashboard SSE)
 
-1. **Kotlin SharedFlow**: `TradeHistoryServiceImpl` maintains a
-   `MutableSharedFlow<PortfolioSnapshot>` as a hot event broadcaster. Whenever a
-   rebalance cycle records a new snapshot, it is emitted via `tryEmit()`.
+1. **Kotlin SharedFlow**: `TradeHistorySnapshotStore` owns a
+   `MutableSharedFlow<PortfolioSnapshot>` as a hot event broadcaster (exposed
+   through the `TradeHistoryServiceImpl` façade via `getHistoryFlow()` /
+   `addSnapshot`). Whenever a rebalance cycle records a new snapshot, it is
+   emitted via `tryEmit()`.
 2. **Ktor Server-Sent Events (SSE)**: The `/api/status/stream` route installs
    Ktor 3's native `SSE` plugin. When a client connects, Ktor pushes the latest
    cached snapshot and then collects subsequent snapshots from the
@@ -398,19 +400,20 @@ This path is internal orchestration — not a second browser-facing SSE stream l
 ├── .github/copilot-instructions.md         # GitHub Copilot entrypoint → .agents/
 ├── common/                                 # Kotlin Multiplatform shared module (JVM + JS)
 │   └── src/commonMain/kotlin/com/gemini/krakenbot/
+│       ├── api/                           # Wire DTOs: PortfolioSnapshot, TradeRecord, HistoryStats, SyncProgressResponse
 │       ├── config/                        # AppConfig, Settings, Allocation, KrakenCredentials, InvalidConfigurationException
-│       ├── model/                         # Asset, OrderSide, Result, TimeRange, SyncMetadataKeys, TradeSourceKeys
+│       ├── model/                         # Asset, OrderSide, OrderType, Result, TimeRange, SyncMetadataKeys, TradeSourceKeys
 │       ├── util/                          # PrecisionConstants
-│       └── view/util/                     # Routes, ViewText, CssClasses, HtmlAttrs, DataProps, ChartProps
+│       └── view/util/                     # Routes, ViewText, CssClass, HtmlIds, HtmlAttrs, DataProps, ChartProps
 ├── frontend-js/                            # Kotlin/JS client-side subproject compiling to rebalancer.js
 │   ├── src/jsMain/kotlin/                 # Kotlin/JS frontend source files
 │   │   ├── main.kt                        # Client-side routing entry point
 │   │   ├── Dashboard.kt                   # Stats card age calculation & table sorting
 │   │   ├── Settings.kt                    # Targets validation & dynamic row actions
 │   │   ├── History.kt                     # Chart.js timelines, zoom, and pan scrubbers
+│   │   ├── HistoryJsonParsing.kt          # Typed History JSON parsing over :common api DTOs
 │   │   ├── HistoryViewPrefs.kt            # Browser-local History view presets
-│   │   ├── DomExtensions.kt               # Shared DOM helpers for Kotlin/JS
-│   │   └── JsModels.kt                    # JS-facing model/helpers shared by pages
+│   │   └── DomExtensions.kt               # Shared DOM helpers for Kotlin/JS
 │   └── build.gradle.kts                   # Kotlin Multiplatform JS compilation configuration
 ├── src/main/kotlin/com/gemini/krakenbot/
 │   ├── KrakenRebalancerApplication.kt    # Entry point, Ktor server & Koin DI bootstrap
@@ -422,6 +425,7 @@ This path is internal orchestration — not a second browser-facing SSE stream l
 │   ├── controller/
 │   │   ├── DashboardController.kt        # HTTP handlers (pages, settings POST, SSE, history APIs)
 │   │   └── DashboardRoutes.kt            # Koin wiring → registerRoutes()
+│   ├── api/                               # HistoryApiMapper — JVM models ↔ :common wire DTOs
 │   ├── model/                             # PortfolioSnapshot, OrderResult, TradeRecord, TradeSource, HistoryStats, PortfolioStats
 │   ├── repository/                        # TradeRepository, PortfolioStatsRepository
 │   │   ├── impl/                          # Sqlite*Impl + RepositoryUtils (safeTransaction)

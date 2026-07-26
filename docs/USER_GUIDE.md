@@ -127,7 +127,7 @@ state pill:
 | Card | Purpose |
 | :--- | :--- |
 | **Simulation Mode** | Runs the whole strategy against an offline Kraken emulator — no real funds are ever touched. |
-| **Dry Run Mode** | Validates conditions and builds real Kraken orders but never submits them. |
+| **Dry Run Mode** | Calculates intended orders on the active backend (live Kraken or the emulator) but never places them. |
 
 **Simulation Mode** is listed first. **Save Configuration** lives in the page
 header next to the nav (not at the bottom of the form). Saving hot-reloads the

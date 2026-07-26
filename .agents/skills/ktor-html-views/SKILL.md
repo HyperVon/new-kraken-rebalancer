@@ -34,16 +34,23 @@ Path constants (`Routes`): `/`, `/settings`, `/history`, `/fragments/dashboard`,
 
 ```kotlin
 import com.gemini.krakenbot.view.util.CssClass
-import com.gemini.krakenbot.view.util.HtmlIds
+import com.gemini.krakenbot.view.util.HtmxAttrs
+import com.gemini.krakenbot.view.util.HtmxValues
+import com.gemini.krakenbot.view.util.Routes
 import com.gemini.krakenbot.view.util.ViewText
+import com.gemini.krakenbot.view.util.div
 
-div(classes = CssClass.GlassCard.name) {
-    id = HtmlIds.STATUS_CARD
-    h2 { +ViewText.PORTFOLIO_SUMMARY }
+div {
+    attributes[HtmxAttrs.HX_GET] = Routes.FRAGMENT_DASHBOARD
+    attributes[HtmxAttrs.HX_TRIGGER] = HtmxValues.TRIGGER_LOAD_SSE_MESSAGE
+    div(CssClass.Loading.SpinnerContainer) {
+        div(CssClass.Loading.Spinner) {}
+        p { +ViewText.CONNECTING }
+    }
 }
 ```
 
-No duplicated magic strings for IDs, CSS classes, or user-visible labels.
+No duplicated magic strings for IDs, CSS classes, routes, or user-visible labels.
 
 ## Page headers: `brandWithMode(settings)`
 
@@ -94,8 +101,9 @@ Prefer type-safe attribute keys over raw `"hx-*"`.
 
 ## SSE
 
-Live updates: `GET /api/status/stream` — controller collects
-`TradeHistoryService` snapshot flow and sends `ServerSentEvent` payloads.
+Live updates: `GET /api/status/stream` — controller collects the
+`TradeHistoryService` façade `getHistoryFlow()` (backed by
+`TradeHistorySnapshotStore.snapshotFlow`) and sends `ServerSentEvent` payloads.
 See [coroutines-flows-sse](../coroutines-flows-sse/SKILL.md).
 
 ## Design notes

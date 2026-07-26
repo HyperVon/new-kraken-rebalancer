@@ -44,7 +44,7 @@ object ViewText {
     const val DRY_RUN_MODE_TITLE = "Dry Run Mode"
     const val SIMULATION_MODE_TITLE = "Simulation Mode"
     const val DRY_RUN_MODE_DESC =
-        "Validates conditions and builds real Kraken orders, but never submits them. A safe way to verify config before going live."
+        "Calculates intended orders on the active backend (live or emulator) but never places them. A safe way to verify config before going live."
     const val SIMULATION_MODE_DESC =
         "Runs the whole strategy against an offline Kraken emulator. No real funds are ever touched — ideal for testing."
     const val SAFETY_ON = "ON"
