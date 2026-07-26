@@ -173,8 +173,9 @@ effectively than spreading across all pairs.
 - [ ] Missing/zero non-USD price aborts cycle before orders
 - [ ] Fiat correction only when USD alone passes both gates (≥ trigger and ≥ dust)
 - [ ] Sell → (if sell succeeded and not dry-run) fill-confirm then poll fallback
-      (3× / 250ms backoff) → best observed / 95% settle → fail-closed abort →
-      cycle 99% buy budget → dust skip
+      (3× / 250ms doubling backoff, keep best positive, early-accept at **≥95%**
+      of projected) → abort buys only when confirmed USD **≤ 0** → cycle 99% buy
+      budget → dust skip
 - [ ] Changes reflected in `docs/ALGORITHM.md` when behavior changes
 - [ ] If ALGORITHM Mermaid changed → run
       [validate_mermaid.py](../documentation-review/scripts/validate_mermaid.py)

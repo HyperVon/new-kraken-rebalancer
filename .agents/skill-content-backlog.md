@@ -5,8 +5,9 @@ skills. Keep this file as an archive / audit trail; do not re-apply blindly.
 Future content-mode reviews should append new IDs (or open a dated section)
 rather than re-pasting these.
 
-Output of `skill-reviewer` in **content mode**. Companion canvas:
-`skill-content-enhancements.canvas.tsx`.
+Output of `skill-reviewer` in **content mode**. The companion triage canvas
+(`skill-content-enhancements.canvas.tsx`) was a local Cursor artifact and is not
+committed to this repo.
 
 Severity: **P0** money/safety teaching gap · **P1** high-leverage pattern ·
 **P2** valuable checklist · **P3** optional depth.

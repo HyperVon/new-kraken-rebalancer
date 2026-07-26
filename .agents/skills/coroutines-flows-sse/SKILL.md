@@ -68,7 +68,7 @@ section owns the **cold Flow poll implementation**.
   `syncTradesFromKraken()`).
 - `settleUsdAfterSells()` — only when **≥1 sell succeeded** and **not** dry-run:
   - **Primary:** `pollFillConfirmedUsd()` → `sumMatchedSellProceeds()` (history
-    matched by sell `ordertxid`, **net of fee**, up to 5×50 pages) → balance peek
+    matched by sell `orderTxid`, **net of fee**, up to 5×50 pages) → balance peek
     `min(fill, balance)` when spendable USD is visible, else
     `min(fill, projectedCash)`.
   - **Fallback:** `refreshUsdBalanceAfterSells()` →
