@@ -16,8 +16,8 @@ fun HEAD.commonMetadataAndStyles() {
         attributes[HtmlAttrs.CROSSORIGIN] = ""
     }
     link(rel = "stylesheet", href = CdnUrls.GOOGLE_FONTS_STYLESHEET)
-    // CSS is served with a 24h max-age (see configureCaching). The content-derived ?v= keeps that
-    // cache useful yet forces a refetch when rules change — stale CSS shows as native white controls.
+    // CSS is served with a 24h max-age (see configureCachingAndConditionalHeaders). The content-derived
+    // ?v= keeps that cache useful yet forces a refetch when rules change — stale CSS shows as native white controls.
     val stylesheetVersion = CssStyles.stylesheet.toString().hashCode()
     link(rel = "stylesheet", href = "${Routes.STATIC_STYLE_CSS}?v=$stylesheetVersion")
 }

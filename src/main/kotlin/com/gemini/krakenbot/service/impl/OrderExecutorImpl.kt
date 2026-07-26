@@ -74,7 +74,7 @@ class OrderExecutorImpl(
             // Live/sim only: poll for settled USD; dry-run keeps projected cash (no exchange settle).
             if (executedSells && !settings.dryRun) {
                 actualCash = refreshUsdBalanceAfterSells(backend, projectedCash)
-                // Fail-closed: never spend projected sell proceeds if no positive USD was seen.
+                // Fail-closed: abort the buy phase if no positive USD was observed after sells.
                 if (actualCash <= BigDecimal.ZERO) {
                     log.error("Aborting buys because no positive USD balance was observed after sells")
                     return@withStableBackend

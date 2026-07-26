@@ -48,7 +48,8 @@ class KrakenServiceImpl(
     private val apiUrl = KrakenApiConstants.API_URL
 
     // Kraken rejects any nonce that is not strictly increasing. Seeding from millis×1e6 leaves room
-    // for many nonces inside one millisecond while staying time-derived, so a restart never rewinds.
+    // for many nonces inside one millisecond while staying time-derived, so a normal restart does not
+    // rewind (NTP/clock rollback could still seed lower).
     private val nonceGenerator = AtomicLong(System.currentTimeMillis() * 1_000_000L)
 
     /** Total trade count from the last TradesHistory response (Kraken `count`); used for pagination. */

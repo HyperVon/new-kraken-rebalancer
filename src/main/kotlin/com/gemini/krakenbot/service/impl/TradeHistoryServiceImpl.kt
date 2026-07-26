@@ -480,6 +480,7 @@ class TradeHistoryServiceImpl(
         log.info("Starting historical snapshots reconstruction...")
         val allocations = configService.getConfig().allocations
 
+        // load() is newest-first (DESC); lastOrNull() is the oldest retained snapshot.
         val currentSnapshots = repository.load()
         val oldestSnapshot = currentSnapshots.lastOrNull()
 

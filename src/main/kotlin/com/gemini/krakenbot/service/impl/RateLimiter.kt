@@ -38,7 +38,7 @@ open class RateLimiter(
             val waitMs = (waitSeconds * 1000).roundToLong()
             if (waitMs > 0) {
                 delay(waitMs.milliseconds)
-                // Wait fully decays room for this call; += cost below lands exactly at safeLimit.
+                // Wait fully decays room for this call when waitMs > 0; += cost then lands at safeLimit.
                 callCounter = safeLimit - cost
                 lastUpdateTimeMs = clock()
             }

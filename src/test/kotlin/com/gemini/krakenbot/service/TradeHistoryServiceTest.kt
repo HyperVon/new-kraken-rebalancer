@@ -913,7 +913,8 @@ class TradeHistoryServiceTest : StringSpec() {
                 val diffPair = baseLocal.copy(pair = "ETHUSD")
                 val diffSide = baseLocal.copy(side = TestFixtures.SELL)
                 val diffVol = baseLocal.copy(volume = BigDecimal.TEN)
-                val diffTime = baseLocal.copy(timestamp = latestTime.minusSeconds(600)) // outside 5min window
+                // 600s apart — outside isMatchingApiTrade's default 10s window
+                val diffTime = baseLocal.copy(timestamp = latestTime.minusSeconds(600))
 
                 coEvery { repository.getTradesInRange(any(), any()) } returns
                     listOf(diffPair, diffSide, diffVol, diffTime)
