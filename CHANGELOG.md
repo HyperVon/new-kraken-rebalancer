@@ -21,6 +21,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   volumes not exact; HistoryViewPrefs legacy `month-pnl` /
   `cumulative-pl-chart` migration; partial multi-sell failed sell does not
   inflate projected cash.
+- **Docs**: evaluation suite count updated to **33** scenarios (README,
+  write-kotest skill, EVALUATION.md).
 
 ## [6.14.0] - 2026-07-26
 
