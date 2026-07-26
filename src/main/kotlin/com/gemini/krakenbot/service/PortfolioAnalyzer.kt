@@ -1,6 +1,7 @@
 package com.gemini.krakenbot.service
 
 import com.gemini.krakenbot.config.Settings
+import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.Result
 import java.math.BigDecimal
 
@@ -47,4 +48,16 @@ interface PortfolioAnalyzer {
         sellOrders: MutableRebalanceOrders,
         actionLog: MutableList<String>,
     )
+
+    fun buildSnapshot(
+        balances: RawBalances,
+        prices: AssetPrices,
+        currentValuesUSD: AssetValues,
+        totalPortfolioValueUSD: BigDecimal,
+        effectiveUsdTarget: BigDecimal,
+        cryptoScaleFactor: BigDecimal,
+        drawdownPct: BigDecimal,
+        fiatDeploymentPct: BigDecimal,
+        actionLog: List<String>,
+    ): PortfolioSnapshot
 }

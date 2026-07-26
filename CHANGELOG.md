@@ -6,6 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.14.2] - 2026-07-26
+
+### Changed
+
+- **`PortfolioAnalyzer.buildSnapshot`**: Snapshot assembly (asset metrics +
+  `PortfolioSnapshot` construction) moved out of `PortfolioManagerImpl` so the
+  manager only orchestrates analyzer → executor → history persistence.
+- **Cancellation hardening**: `TradeHistorySnapshotStore` and
+  `TradeHistoryReconstructionService` rethrow `CancellationException` before
+  broad `Exception` catches.
+- **Activity badge**: INFO label lives in `:common` `ViewText.ACTIVITY_INFO`.
+
+### Fixed
+
+- **Tests**: BigDecimal equality assertions use `shouldBeEqualComparingTo`
+  instead of `compareTo(...) shouldBe 0`.
+
 ## [6.14.1] - 2026-07-26
 
 ### Added

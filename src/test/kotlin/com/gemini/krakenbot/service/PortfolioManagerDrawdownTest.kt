@@ -126,9 +126,9 @@ class PortfolioManagerDrawdownTest : StringSpec() {
                 coVerify { tradeHistoryService.addSnapshot(capture(captor)) }
                 val s = captor.captured
 
-                s.drawdownPercent.compareTo(BigDecimal("25.0")) shouldBe 0
-                s.fiatDeploymentPercent.compareTo(BigDecimal("50.0")) shouldBe 0
-                s.effectiveUsdTargetPercent.compareTo(BigDecimal("25.0")) shouldBe 0
+                s.drawdownPercent.shouldBeEqualComparingTo(BigDecimal("25.0"))
+                s.fiatDeploymentPercent.shouldBeEqualComparingTo(BigDecimal("50.0"))
+                s.effectiveUsdTargetPercent.shouldBeEqualComparingTo(BigDecimal("25.0"))
             }
         }
 
@@ -167,7 +167,7 @@ class PortfolioManagerDrawdownTest : StringSpec() {
                 val captor = slot<PortfolioStats>()
                 coVerify { portfolioStatsRepository.save(capture(captor)) }
                 captor.captured.allTimeHigh.shouldNotBeNull()
-                BigDecimal("1500.0").compareTo(captor.captured.allTimeHigh) shouldBe 0
+                captor.captured.allTimeHigh.shouldBeEqualComparingTo(BigDecimal("1500.0"))
             }
         }
 

@@ -39,6 +39,7 @@ import com.gemini.krakenbot.view.util.ViewText.TARGET_PREFIX
 import com.gemini.krakenbot.view.util.ViewText.TOTAL_PORTFOLIO
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
+import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
@@ -379,7 +380,7 @@ class DashboardViewTest : StringSpec() {
             val latestUp = snap(0, "11000")
             val olderBase = snap(90_000, "10000")
             OverviewGridComponent.compute24hDelta(latestUp, listOf(latestUp, olderBase))!!
-                .compareTo(BigDecimal("10.000000")) shouldBe 0
+                .shouldBeEqualComparingTo(BigDecimal("10.000000"))
 
             // A shorter history must not be mislabeled as a 24-hour delta.
             val latestDown = snap(0, "9000")

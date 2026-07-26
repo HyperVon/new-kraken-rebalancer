@@ -28,6 +28,7 @@ object ViewText {
     const val ACTIVITY_MINUTES_AGO_SUFFIX = "m ago"
     const val ACTIVITY_HOURS_AGO_SUFFIX = "h ago"
     const val ACTIVITY_DAYS_AGO_SUFFIX = "d ago"
+    const val ACTIVITY_INFO = "INFO"
     const val CONNECTING = "Connecting to KrakenRebalancer..."
     const val WAITING_FIRST_CYCLE = "Waiting for first rebalance cycle"
     const val REBALANCER_RUNNING =

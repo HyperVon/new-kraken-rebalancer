@@ -564,8 +564,8 @@ class KrakenServiceTest : StringSpec() {
                 first.pair shouldBe TestFixtures.XXBTZUSD
                 first.side shouldBe "BUY"
                 first.symbol shouldBe "BTC"
-                first.volume.compareTo(BigDecimal("0.1")) shouldBe 0
-                first.usdAmount.compareTo(BigDecimal("5000.00")) shouldBe 0
+                first.volume.shouldBeEqualComparingTo(BigDecimal("0.1"))
+                first.usdAmount.shouldBeEqualComparingTo(BigDecimal("5000.00"))
                 first.timestamp.toEpochMilli() shouldBe 1700000000123L
                 first.orderTxid shouldBe "O1"
             }
@@ -719,13 +719,13 @@ class KrakenServiceTest : StringSpec() {
 
                 val ethTrade = trades.first { it.pair == "XETHZUSD" }
                 ethTrade.symbol shouldBe "ETH"
-                ethTrade.volume.compareTo(BigDecimal("0.1")) shouldBe 0
-                ethTrade.usdAmount.compareTo(BigDecimal("200.00")) shouldBe 0
+                ethTrade.volume.shouldBeEqualComparingTo(BigDecimal("0.1"))
+                ethTrade.usdAmount.shouldBeEqualComparingTo(BigDecimal("200.00"))
 
                 val dogeTrade = trades.first { it.pair == "XXDGZUSD" }
                 dogeTrade.symbol shouldBe "DOGE"
-                dogeTrade.volume.compareTo(BigDecimal("100")) shouldBe 0
-                dogeTrade.usdAmount.compareTo(BigDecimal("10.00")) shouldBe 0
+                dogeTrade.volume.shouldBeEqualComparingTo(BigDecimal("100"))
+                dogeTrade.usdAmount.shouldBeEqualComparingTo(BigDecimal("10.00"))
             }
         }
 
@@ -863,8 +863,8 @@ class KrakenServiceTest : StringSpec() {
 
                 trades.size shouldBe 1
                 val first = trades.first()
-                first.volume.compareTo(BigDecimal.ZERO) shouldBe 0
-                first.usdAmount.compareTo(BigDecimal.ZERO) shouldBe 0
+                first.volume.shouldBeEqualComparingTo(BigDecimal.ZERO)
+                first.usdAmount.shouldBeEqualComparingTo(BigDecimal.ZERO)
             }
         }
 

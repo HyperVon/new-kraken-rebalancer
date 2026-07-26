@@ -1,6 +1,7 @@
 package com.gemini.krakenbot.service.impl
 
 import com.gemini.krakenbot.config.Settings
+import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.Result
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.service.AnalysisResult
@@ -18,6 +19,7 @@ import com.gemini.krakenbot.service.impl.PortfolioCalculations.SCALE_USD
 import org.slf4j.LoggerFactory
 import java.math.BigDecimal
 import java.math.RoundingMode
+import java.time.Instant
 import com.gemini.krakenbot.util.resolveBalance as resolveBalanceFromKeys
 
 class PortfolioAnalyzerImpl(
@@ -124,5 +126,63 @@ class PortfolioAnalyzerImpl(
         actionLog: MutableList<String>,
     ) {
         RebalancerEngine.distributeFiatCorrection(usdDev, allDevs, buyOrders, sellOrders, actionLog)
+    }
+
+    override fun buildSnapshot(
+        balances: RawBalances,
+        prices: AssetPrices,
+        currentValuesUSD: AssetValues,
+        totalPortfolioValueUSD: BigDecimal,
+        effectiveUsdTarget: BigDecimal,
+        cryptoScaleFactor: BigDecimal,
+        drawdownPct: BigDecimal,
+        fiatDeploymentPct: BigDecimal,
+        actionLog: List<String>,
+    ): PortfolioSnapshot {
+        val assetSnapshots = mutableMapOf<String, PortfolioSnapshot.AssetSnapshot>()
+        val config = configService.getConfig()
+        val settings = config.settings
+
+        for ((symbol, targetPercent) in config.allocations) {
+            val balance = resolveBalance(symbol = symbol.value, balances = balances)
+            val valUSD = currentValuesUSD[symbol.value] ?: BigDecimal.ZERO
+            val price =
+                if (!symbol.isUsd) {
+                    prices[symbol.value] ?: BigDecimal.ONE
+                } else {
+                    BigDecimal.ONE
+                }
+
+            val metrics =
+                PortfolioCalculations.calculateAssetMetrics(
+                    symbol = symbol,
+                    baseTargetPercent = BigDecimal.valueOf(targetPercent),
+                    currentValueUSD = valUSD,
+                    totalPortfolioValueUSD = totalPortfolioValueUSD,
+                    effectiveUsdTarget = effectiveUsdTarget,
+                    cryptoScaleFactor = cryptoScaleFactor,
+                    dustThresholdUSD = settings.dustThresholdUSD,
+                )
+
+            assetSnapshots[symbol.value] =
+                PortfolioCalculations.createAssetSnapshot(
+                    symbol = symbol.value,
+                    balance = balance,
+                    price = price,
+                    valueUSD = valUSD,
+                    targetPercent = metrics.calcTargetPercent,
+                    totalPortfolioValueUSD = totalPortfolioValueUSD,
+                )
+        }
+
+        return PortfolioSnapshot(
+            timestamp = Instant.now(),
+            totalValueUSD = totalPortfolioValueUSD,
+            assets = assetSnapshots,
+            actions = actionLog,
+            drawdownPercent = drawdownPct,
+            fiatDeploymentPercent = fiatDeploymentPct,
+            effectiveUsdTargetPercent = effectiveUsdTarget,
+        )
     }
 }

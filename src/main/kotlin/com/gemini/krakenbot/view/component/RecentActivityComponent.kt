@@ -25,7 +25,7 @@ class RecentActivityComponent {
     private enum class TradeAction(val badgeClass: CssClass, val label: String) {
         BUY(CssClass.Badge.Buy, OrderSide.BUY.uppercaseName),
         SELL(CssClass.Badge.Sell, OrderSide.SELL.uppercaseName),
-        INFO(CssClass.Badge.Info, "INFO"),
+        INFO(CssClass.Badge.Info, ViewText.ACTIVITY_INFO),
         ;
 
         companion object {
