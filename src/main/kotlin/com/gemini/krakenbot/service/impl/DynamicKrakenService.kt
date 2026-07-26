@@ -6,7 +6,11 @@ import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.KrakenService
 import com.gemini.krakenbot.service.RawBalances
 import com.gemini.krakenbot.service.RawPrices
+import kotlinx.coroutines.withContext
 import java.math.BigDecimal
+import kotlin.coroutines.AbstractCoroutineContextElement
+import kotlin.coroutines.CoroutineContext
+import kotlin.coroutines.coroutineContext
 
 class DynamicKrakenService(
     val realService: KrakenServiceImpl,
@@ -19,21 +23,32 @@ class DynamicKrakenService(
         realService
     }
 
-    private val activeService: KrakenService
-        get() = resolveFromConfig()
+    /**
+     * Backend pinned for the current coroutine via [withStableBackend]. Absent when
+     * callers use unpinned entry points (dashboard reads outside a cycle/sync).
+     */
+    private data class PinnedBackend(val service: KrakenService) : AbstractCoroutineContextElement(Key) {
+        companion object Key : CoroutineContext.Key<PinnedBackend>
+    }
+
+    private suspend fun currentBackend(): KrakenService =
+        coroutineContext[PinnedBackend]?.service ?: resolveFromConfig()
 
     /**
-     * Pins the live vs simulation backend for [block] at entry. Each invocation gets its own
-     * captured backend — concurrent / nested blocks do not share process-global pin state.
+     * Pins the live vs simulation backend for [block] at entry. Nested invocations
+     * each capture their own entry-time backend; [currentBackend] follows the
+     * innermost pin so Dynamic method calls stay stable for a full cycle/sync.
      */
     override suspend fun <T> withStableBackend(block: suspend (KrakenService) -> T): T {
         val backend = resolveFromConfig()
-        return block(backend)
+        return withContext(PinnedBackend(backend)) {
+            block(backend)
+        }
     }
 
-    override suspend fun getBalances(): RawBalances = activeService.getBalances()
+    override suspend fun getBalances(): RawBalances = currentBackend().getBalances()
 
-    override suspend fun getTickerPrices(pairs: String): RawPrices = activeService.getTickerPrices(pairs)
+    override suspend fun getTickerPrices(pairs: String): RawPrices = currentBackend().getTickerPrices(pairs)
 
     override suspend fun executeOrder(
         pair: String,
@@ -41,11 +56,11 @@ class DynamicKrakenService(
         side: String,
         volume: BigDecimal,
         dryRun: Boolean?,
-    ): OrderResult = activeService.executeOrder(pair, type, side, volume, dryRun)
+    ): OrderResult = currentBackend().executeOrder(pair, type, side, volume, dryRun)
 
     override suspend fun getTradeHistory(startSec: Long?, offset: Int?): List<TradeRecord> =
-        activeService.getTradeHistory(startSec, offset)
+        currentBackend().getTradeHistory(startSec, offset)
 
     override suspend fun getOHLC(pair: String, interval: Int, since: Long?): List<Pair<Long, BigDecimal>> =
-        activeService.getOHLC(pair, interval, since)
+        currentBackend().getOHLC(pair, interval, since)
 }

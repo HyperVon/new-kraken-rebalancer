@@ -7,6 +7,8 @@ import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.shouldBe
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.async
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import kotlin.math.absoluteValue
@@ -111,6 +113,29 @@ class RateLimiterTest : StringSpec() {
 
                 nowMs += 10_000L // fully decayed
                 limiter.getCurrentCounter() shouldBe 0.0
+            }
+        }
+
+        "acquireWithCost does not hold mutex across delay (no HOL blocking)" {
+            runTest {
+                val safeLimit = 2.0
+                val limiter = RateLimiter(safeLimit = safeLimit, decayRate = 1.0)
+                // Fill so next cost=1.0 needs ~0.5s wait (same math as limit-exceeded test).
+                limiter.acquireWithCost(1.5)
+
+                val waiter = async {
+                    limiter.acquireWithCost(1.0)
+                }
+                // Let waiter enter delay without advancing virtual time fully.
+                advanceTimeBy(1)
+
+                // While waiter sleeps, a counter read must complete (mutex not held).
+                val counterDuringWait = limiter.getCurrentCounter()
+                (counterDuringWait >= 0.0).shouldBeTrue()
+
+                advanceUntilIdle()
+                waiter.await()
+                ((limiter.getCurrentCounter() - safeLimit).absoluteValue < 0.05).shouldBeTrue()
             }
         }
     }

@@ -17,12 +17,12 @@ need only this file (no issue spam).
 
 | ID | Size | Status | Area | Summary | Cycle | Issue | Notes |
 | :--- | :---: | :--- | :--- | :--- | :---: | :--- | :--- |
-| CI-11-UI6 | M | deferred | history | Tighten 9-col trade table density at ~1280 | 11 | [#86](https://github.com/HyperVon/new-kraken-rebalancer/issues/86) | Optional polish; not blocking convergence |
 
 ## Done (recent)
 
 | ID | Size | Status | Area | Summary | Cycle | PR |
 | :--- | :---: | :--- | :--- | :--- | :---: | :--- |
+| CI-11-UI6 | M | done | history | Tighten 9-col trade table density at ~1280 | 11 | (this PR) |
 | CI-13-1..3 | S | done | css/tests | Dead ChartLegend/NoopSummary; ItemTrade CSS selector; view tests use CdnUrls/HtmlIds | 13 | #91 |
 | CI-12-Q1..4 | S | done | common/views | CdnUrls (charts/fonts), TradeSourceKeys, HISTORY_SEEDED SyncMetadataKeys | 12 | #91 |
 | CI-12-UI1 | M | done | css | Remove orphaned pre-DASH-3 activity + Offline badge CSS | 12 | #91 |

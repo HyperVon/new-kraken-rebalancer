@@ -10,6 +10,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **RateLimiter HOL blocking (#88)**: Mutex is released before throttle `delay`,
+  so other private-API callers are not blocked for the full wait.
+- **DynamicKraken cycle/sync pin (#89)**: `withStableBackend` installs a
+  coroutine-context pin used by all DynamicKraken reads/writes; rebalance
+  cycles and trade-history sync wrap their full bodies so a mid-cycle
+  simulation flip cannot mix live and sim backends.
 - **Order side normalization**: Canonical `BUY`/`SELL` via `OrderSide.normalize` /
   `isBuy`/`isSell` at trade load and local trade creation; slippage no longer
   treats unknown/lowercase sides as sells (which inverted the sign).
@@ -20,6 +26,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Layering**: `SyncMetadataKeys` moved out of `view.util` into `:common`
   model; overview grid uses `PrecisionConstants` instead of
   `service.impl.PortfolioCalculations`.
+
+### Changed
+
+- **History trade-log density (#86)**: At max-width 1280px, the 9-col trade
+  table uses tighter padding/typography under `.history-trade-log` only.
 
 ### Added
 

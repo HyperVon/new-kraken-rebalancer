@@ -276,5 +276,25 @@ class DynamicKrakenServiceTest : StringSpec() {
                 }
             }
         }
+
+        "withStableBackend pins DynamicKrakenService reads after mid-block simulation flip" {
+            every { configService.getConfig() } returns appConfig(simulation = true)
+            val dynamicService = createService()
+
+            dynamicService.withStableBackend {
+                every { configService.getConfig() } returns appConfig(simulation = false)
+                // Call via DynamicKrakenService (not the captured backend) — must stay sim.
+                dynamicService.getBalances()
+                dynamicService.getTickerPrices(TestFixtures.BTCUSD)
+            }
+
+            coVerify(exactly = 1) { simulatedService.getBalances() }
+            coVerify(exactly = 0) { realService.getBalances() }
+            coVerify(exactly = 1) { simulatedService.getTickerPrices(TestFixtures.BTCUSD) }
+            coVerify(exactly = 0) { realService.getTickerPrices(any()) }
+
+            dynamicService.getBalances()
+            coVerify(exactly = 1) { realService.getBalances() }
+        }
     }
 }
