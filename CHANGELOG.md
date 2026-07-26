@@ -10,6 +10,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Order side normalization**: Canonical `BUY`/`SELL` via `OrderSide.normalize` /
+  `isBuy`/`isSell` at trade load and local trade creation; slippage no longer
+  treats unknown/lowercase sides as sells (which inverted the sign).
 - **Settings POST numeric fields**: Reject missing or unparseable deviation
   trigger and dust threshold values instead of silently coercing to `5.0`.
 - **History trade badges**: Buy/Sell badge matching uppercases side (aligned

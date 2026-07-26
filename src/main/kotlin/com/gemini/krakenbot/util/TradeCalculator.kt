@@ -23,10 +23,10 @@ object TradeCalculator {
         if (expectedPrice.isZero) return BigDecimal.ZERO
 
         val diff =
-            if (side == OrderSide.BUY.uppercaseName) {
-                executedPrice.subtract(expectedPrice)
-            } else {
-                expectedPrice.subtract(executedPrice)
+            when {
+                OrderSide.isBuy(side) -> executedPrice.subtract(expectedPrice)
+                OrderSide.isSell(side) -> expectedPrice.subtract(executedPrice)
+                else -> return BigDecimal.ZERO
             }
 
         return diff
@@ -56,7 +56,7 @@ object TradeCalculator {
         return TradeRecord(
             timestamp = timestamp,
             pair = pair,
-            side = side,
+            side = OrderSide.normalize(side),
             symbol = symbol,
             volume = volume,
             usdAmount = usdAmount,

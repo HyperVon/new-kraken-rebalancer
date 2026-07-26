@@ -1,6 +1,7 @@
 package com.gemini.krakenbot.repository.impl
 
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.model.TradeRecord
@@ -48,7 +49,7 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
     private fun UpdateBuilder<*>.applyTradeFields(trade: TradeRecord) {
         this[TradeTable.timestamp] = trade.timestamp.toEpochMilli()
         this[TradeTable.pair] = trade.pair
-        this[TradeTable.side] = trade.side
+        this[TradeTable.side] = OrderSide.normalize(trade.side)
         this[TradeTable.symbol] = trade.symbol
         this[TradeTable.volume] = trade.volume
         this[TradeTable.usdAmount] = trade.usdAmount
@@ -103,7 +104,7 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
                 } else {
                     (TradeTable.timestamp eq oldTrade.timestamp.toEpochMilli()) and
                         (TradeTable.pair eq oldTrade.pair) and
-                        (TradeTable.side eq oldTrade.side) and
+                        (TradeTable.side eq OrderSide.normalize(oldTrade.side)) and
                         (TradeTable.volume eq oldTrade.volume)
                 }
             }) {
@@ -341,7 +342,7 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
     private fun buildTradeFromRow(row: ResultRow): TradeRecord = TradeRecord(
         timestamp = Instant.ofEpochMilli(row[TradeTable.timestamp]),
         pair = row[TradeTable.pair],
-        side = row[TradeTable.side],
+        side = OrderSide.normalize(row[TradeTable.side]),
         symbol = row[TradeTable.symbol],
         volume = row[TradeTable.volume],
         usdAmount = row[TradeTable.usdAmount],

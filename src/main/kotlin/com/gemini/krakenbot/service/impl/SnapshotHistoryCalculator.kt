@@ -134,12 +134,11 @@ object SnapshotHistoryCalculator {
         val usdAmount = trade.usdAmount
         val fee = trade.fee
         val symbol = trade.symbol.uppercase()
-        val side = trade.side.uppercase()
 
-        if (side == OrderSide.BUY.name) {
+        if (OrderSide.isBuy(trade.side)) {
             runningBalances[symbol] = (runningBalances[symbol] ?: BigDecimal.ZERO).subtract(volume)
             runningBalances[Asset.USD] = (runningBalances[Asset.USD] ?: BigDecimal.ZERO).add(usdAmount).add(fee)
-        } else if (side == OrderSide.SELL.name) {
+        } else if (OrderSide.isSell(trade.side)) {
             runningBalances[symbol] = (runningBalances[symbol] ?: BigDecimal.ZERO).add(volume)
             runningBalances[Asset.USD] = (runningBalances[Asset.USD] ?: BigDecimal.ZERO).subtract(usdAmount).add(fee)
         }
