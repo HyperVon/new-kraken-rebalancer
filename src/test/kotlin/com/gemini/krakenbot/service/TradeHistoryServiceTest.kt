@@ -492,6 +492,75 @@ class TradeHistoryServiceTest : StringSpec() {
             }
         }
 
+        "syncTradesFromKraken_ReconciliationPrefersNewestWhenMultipleLocalsMatch" {
+            runTest {
+                coEvery { repository.isHistorySeeded() } returns true
+                val latestTime = Instant.ofEpochSecond(1700000000)
+                coEvery { repository.getLatestTradeTime() } returns latestTime
+
+                val olderLocal = TradeRecord(
+                    timestamp = latestTime,
+                    pair = TestFixtures.XBTUSD,
+                    side = TestFixtures.BUY,
+                    symbol = Asset.BTC,
+                    volume = BigDecimal.ONE,
+                    usdAmount = BigDecimal.TEN,
+                    success = true,
+                    dryRun = false,
+                    price = BigDecimal.TEN,
+                    expectedPrice = BigDecimal("10.05"),
+                    source = TradeSource.LOCAL_ESTIMATE,
+                    cycleId = "cycle-old",
+                    orderTxid = "LOCAL-OID-OLD",
+                )
+                val newerLocal = TradeRecord(
+                    timestamp = latestTime.plusSeconds(1),
+                    pair = TestFixtures.XBTUSD,
+                    side = TestFixtures.BUY,
+                    symbol = Asset.BTC,
+                    volume = BigDecimal.ONE,
+                    usdAmount = BigDecimal.TEN,
+                    success = true,
+                    dryRun = false,
+                    price = BigDecimal.TEN,
+                    expectedPrice = BigDecimal("10.05"),
+                    source = TradeSource.LOCAL_ESTIMATE,
+                    cycleId = "cycle-new",
+                    orderTxid = "LOCAL-OID-NEW",
+                )
+                coEvery { repository.getTradesInRange(any(), any()) } returns listOf(newerLocal, olderLocal)
+
+                val apiTrade = TradeRecord(
+                    timestamp = latestTime.plusSeconds(5),
+                    pair = TestFixtures.XBTUSD,
+                    side = TestFixtures.BUY,
+                    symbol = Asset.BTC,
+                    volume = BigDecimal.ONE,
+                    usdAmount = BigDecimal.valueOf(9.95),
+                    success = true,
+                    dryRun = false,
+                    price = BigDecimal("9.95"),
+                    fee = BigDecimal("0.0259"),
+                    source = TradeSource.API_FILL,
+                    orderTxid = "API-OID",
+                )
+
+                coEvery { krakenService.getTradeHistory(1700000000 - 300, 0) } returns listOf(apiTrade)
+                coEvery { krakenService.getTradeHistory(1700000000 - 300, 50) } returns emptyList()
+
+                val reconciledSlot = slot<TradeRecord>()
+                coEvery { repository.updateTrade(newerLocal, capture(reconciledSlot)) } just Runs
+
+                val tradeHistoryService = createService()
+                tradeHistoryService.syncTradesFromKraken()
+
+                coVerify(exactly = 1) { repository.updateTrade(newerLocal, any()) }
+                coVerify(exactly = 0) { repository.updateTrade(olderLocal, any()) }
+                reconciledSlot.captured.cycleId shouldBe "cycle-new"
+                coVerify(exactly = 0) { repository.saveTrade(any()) }
+            }
+        }
+
         "syncTradesFromKraken_ReconcilesSlightlyDifferentMarketFill" {
             runTest {
                 coEvery { repository.isHistorySeeded() } returns true
@@ -810,6 +879,41 @@ class TradeHistoryServiceTest : StringSpec() {
 
                     file.exists() shouldBe false
                     bakFile.exists() shouldBe true
+                } finally {
+                    file.delete()
+                    bakFile.delete()
+                }
+            }
+        }
+
+        "init_MigrationSaveFailureLeavesJsonUnrenamed" {
+            runTest {
+                val file = File(TestFixtures.TEST_TRADE_HISTORY_JSON)
+                val bakFile = File("test-trade-history.json.bak")
+                try {
+                    file.delete()
+                    bakFile.delete()
+
+                    val snapshot = PortfolioSnapshot(
+                        timestamp = Instant.now(),
+                        totalValueUSD = BigDecimal("15000.00"),
+                        assets = emptyMap(),
+                        actions = emptyList(),
+                        drawdownPercent = BigDecimal.ZERO,
+                        fiatDeploymentPercent = BigDecimal.ZERO,
+                        effectiveUsdTargetPercent = BigDecimal.ZERO,
+                    )
+
+                    file.writeText(objectMapper.writeValueAsString(listOf(snapshot)))
+
+                    val tradeHistoryService = createService()
+                    coEvery { repository.load() } returns emptyList()
+                    coEvery { repository.save(any()) } throws RuntimeException("migrate save failed")
+
+                    tradeHistoryService.init()
+
+                    file.exists() shouldBe true
+                    bakFile.exists() shouldBe false
                 } finally {
                     file.delete()
                     bakFile.delete()

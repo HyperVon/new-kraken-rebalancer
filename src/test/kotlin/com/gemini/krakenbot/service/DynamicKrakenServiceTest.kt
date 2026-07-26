@@ -249,6 +249,37 @@ class DynamicKrakenServiceTest : StringSpec() {
             }
         }
 
+        "delegates to live service when simulation is false even if dryRun is true" {
+            every { configService.getConfig() } returns appConfig(simulation = false, dryRun = true)
+
+            val dynamicService = createService()
+
+            dynamicService.getBalances()
+            coVerify(exactly = 1) { realService.getBalances() }
+            coVerify(exactly = 0) { simulatedService.getBalances() }
+
+            dynamicService.executeOrder(
+                Asset.BTC_USD_PAIR,
+                OrderSide.BUY.apiValue,
+                OrderType.MARKET.apiValue,
+                BigDecimal.ONE,
+                dryRun = true,
+            )
+            coVerify(exactly = 1) {
+                realService.executeOrder(
+                    Asset.BTC_USD_PAIR,
+                    OrderSide.BUY.apiValue,
+                    OrderType.MARKET.apiValue,
+                    BigDecimal.ONE,
+                    true,
+                    null,
+                )
+            }
+            coVerify(exactly = 0) {
+                simulatedService.executeOrder(any(), any(), any(), any(), any(), any())
+            }
+        }
+
         "nested withStableBackend reuses outer pin instead of re-resolving" {
             every { configService.getConfig() } returns appConfig(simulation = true)
 

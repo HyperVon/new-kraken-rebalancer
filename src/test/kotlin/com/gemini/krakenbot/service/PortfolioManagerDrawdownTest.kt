@@ -253,6 +253,42 @@ class PortfolioManagerDrawdownTest : StringSpec() {
             }
         }
 
+        // CQ-9-1: ALGORITHM.md MaxDD=30% conservative exponent 2.0 table
+        // | DD 1.5% → 0.25% | 7.5% → 6.25% | 15% → 25% | 22.5% → 56% | 30% → 100% |
+        "testCalculateFiatDeployment_ConservativeExponentTwo_AlgorithmTable" {
+            runTest {
+                val settings = Settings(
+                    loopDelaySeconds = 60L,
+                    deviationTriggerPercent = 2.0,
+                    dustThresholdUSD = 1.0,
+                    dryRun = false,
+                    fiatMaxDrawdown = 30.0,
+                    fiatDeploymentExponent = 2.0,
+                )
+                listOf(
+                    BigDecimal("1.5") to BigDecimal("0.2500"),
+                    BigDecimal("7.5") to BigDecimal("6.2500"),
+                    BigDecimal("15") to BigDecimal("25.0000"),
+                ).forEach { (drawdownPct, expectedDeployPct) ->
+                    portfolioAnalyzer.calculateFiatDeployment(drawdownPct, settings)
+                        .shouldBeEqualComparingTo(expectedDeployPct)
+                }
+                // Documented integer Deploy% (ALGORITHM rounds 56.25% → 56 for display).
+                val algorithmTable =
+                    listOf(
+                        BigDecimal("22.5") to BigDecimal("56"),
+                        BigDecimal("30") to BigDecimal("100"),
+                    )
+                for ((drawdownPct, tableDeployPct) in algorithmTable) {
+                    val deploy =
+                        portfolioAnalyzer.calculateFiatDeployment(drawdownPct, settings)
+                    deploy
+                        .setScale(0, RoundingMode.HALF_UP)
+                        .shouldBeEqualComparingTo(tableDeployPct)
+                }
+            }
+        }
+
         "testCalculateFiatDeployment_AggressiveExponentHalf_At25PercentOfMaxIs50" {
             runTest {
                 // MaxDD 30%, DD 7.5% (25% of max) → (0.25)^0.5 * 100 = 50% exactly

@@ -760,6 +760,187 @@ class OrderExecutorCashCapTest : StringSpec() {
             }
         }
 
+        "sums multiple fill legs sharing the same sell orderTxid for buy budget" {
+            runTest {
+                val sellTxid = "OID-MULTI-LEG"
+                krakenService.orderResultFactory = { pair, _, side, volume ->
+                    OrderResult(
+                        success = true,
+                        pair = pair,
+                        side = side,
+                        volume = volume,
+                        orderTxid = if (side == "sell") sellTxid else null,
+                    )
+                }
+                // Two legs: $50 − $0.50 fee each → net $49.50 × 2 = $99; opening $100 → $199.
+                krakenService.tradeHistorySupplier = { _, _ ->
+                    listOf(
+                        TradeRecord(
+                            timestamp = Instant.now(),
+                            pair = Asset.BTC_USD_PAIR,
+                            side = "SELL",
+                            symbol = Asset.BTC,
+                            volume = BigDecimal("0.05"),
+                            usdAmount = BigDecimal("50.00"),
+                            success = true,
+                            dryRun = false,
+                            price = BigDecimal("1000.00"),
+                            fee = BigDecimal("0.50"),
+                            orderTxid = sellTxid,
+                        ),
+                        TradeRecord(
+                            timestamp = Instant.now(),
+                            pair = Asset.BTC_USD_PAIR,
+                            side = "SELL",
+                            symbol = Asset.BTC,
+                            volume = BigDecimal("0.05"),
+                            usdAmount = BigDecimal("50.00"),
+                            success = true,
+                            dryRun = false,
+                            price = BigDecimal("1000.00"),
+                            fee = BigDecimal("0.50"),
+                            orderTxid = sellTxid,
+                        ),
+                    )
+                }
+                krakenService.balanceSupplier = { mapOf(Asset.USD to BigDecimal("199.00")) }
+
+                orderExecutor.executeOrders(
+                    buyOrders = mapOf(Asset.ETH to BigDecimal("500.00")),
+                    sellOrders = mapOf(Asset.BTC to BigDecimal("100.00")),
+                    currentValuesUSD = mapOf(Asset.USD to BigDecimal("100.00")),
+                    prices =
+                    mapOf(
+                        Asset.BTC to BigDecimal("1000.00"),
+                        Asset.ETH to BigDecimal("1000.00"),
+                    ),
+                    settings =
+                    Settings(
+                        loopDelaySeconds = 0L,
+                        deviationTriggerPercent = 2.0,
+                        dustThresholdUSD = 1.0,
+                        dryRun = false,
+                        fiatMaxDrawdown = 0.0,
+                        fiatDeploymentExponent = 1.0,
+                    ),
+                    actionLog = mutableListOf(),
+                    cycleId = "cycle-multi-leg",
+                )
+
+                (krakenService.getTradeHistoryCallCount >= 1) shouldBe true
+                krakenService.getBalancesCallCount shouldBe 1
+                krakenService.executedOrders.size shouldBe 2
+                krakenService.executedOrders[1].side shouldBe "buy"
+                krakenService.executedOrders[1].volume.shouldBeEqualComparingTo(BigDecimal("0.19701"))
+            }
+        }
+
+        "ignores non-matching trade history legs when summing fill proceeds" {
+            runTest {
+                val sellTxid = "OID-FILTER"
+                krakenService.orderResultFactory = { pair, _, side, volume ->
+                    OrderResult(
+                        success = true,
+                        pair = pair,
+                        side = side,
+                        volume = volume,
+                        orderTxid = if (side == "sell") sellTxid else null,
+                    )
+                }
+                // One matching leg (net $99); null txid, failed, BUY, and wrong txid must not inflate.
+                krakenService.tradeHistorySupplier = { _, _ ->
+                    listOf(
+                        TradeRecord(
+                            timestamp = Instant.now(),
+                            pair = Asset.BTC_USD_PAIR,
+                            side = "SELL",
+                            symbol = Asset.BTC,
+                            volume = BigDecimal("0.1"),
+                            usdAmount = BigDecimal("100.00"),
+                            success = true,
+                            dryRun = false,
+                            price = BigDecimal("1000.00"),
+                            fee = BigDecimal("1.00"),
+                            orderTxid = sellTxid,
+                        ),
+                        TradeRecord(
+                            timestamp = Instant.now(),
+                            pair = Asset.BTC_USD_PAIR,
+                            side = "SELL",
+                            symbol = Asset.BTC,
+                            volume = BigDecimal("1.0"),
+                            usdAmount = BigDecimal("5000.00"),
+                            success = true,
+                            dryRun = false,
+                            price = BigDecimal("5000.00"),
+                            orderTxid = null,
+                        ),
+                        TradeRecord(
+                            timestamp = Instant.now(),
+                            pair = Asset.BTC_USD_PAIR,
+                            side = "SELL",
+                            symbol = Asset.BTC,
+                            volume = BigDecimal("1.0"),
+                            usdAmount = BigDecimal("5000.00"),
+                            success = false,
+                            dryRun = false,
+                            price = BigDecimal("5000.00"),
+                            orderTxid = sellTxid,
+                        ),
+                        TradeRecord(
+                            timestamp = Instant.now(),
+                            pair = Asset.ETH_USD_PAIR,
+                            side = "BUY",
+                            symbol = Asset.ETH,
+                            volume = BigDecimal("1.0"),
+                            usdAmount = BigDecimal("5000.00"),
+                            success = true,
+                            dryRun = false,
+                            price = BigDecimal("5000.00"),
+                            orderTxid = sellTxid,
+                        ),
+                        TradeRecord(
+                            timestamp = Instant.now(),
+                            pair = Asset.BTC_USD_PAIR,
+                            side = "SELL",
+                            symbol = Asset.BTC,
+                            volume = BigDecimal("1.0"),
+                            usdAmount = BigDecimal("5000.00"),
+                            success = true,
+                            dryRun = false,
+                            price = BigDecimal("5000.00"),
+                            orderTxid = "OID-WRONG",
+                        ),
+                    )
+                }
+                krakenService.balanceSupplier = { mapOf(Asset.USD to BigDecimal("199.00")) }
+
+                orderExecutor.executeOrders(
+                    buyOrders = mapOf(Asset.ETH to BigDecimal("500.00")),
+                    sellOrders = mapOf(Asset.BTC to BigDecimal("100.00")),
+                    currentValuesUSD = mapOf(Asset.USD to BigDecimal("100.00")),
+                    prices =
+                    mapOf(
+                        Asset.BTC to BigDecimal("1000.00"),
+                        Asset.ETH to BigDecimal("1000.00"),
+                    ),
+                    settings =
+                    Settings(
+                        loopDelaySeconds = 0L,
+                        deviationTriggerPercent = 2.0,
+                        dustThresholdUSD = 1.0,
+                        dryRun = false,
+                        fiatMaxDrawdown = 0.0,
+                        fiatDeploymentExponent = 1.0,
+                    ),
+                    actionLog = mutableListOf(),
+                )
+
+                krakenService.executedOrders.size shouldBe 2
+                krakenService.executedOrders[1].volume.shouldBeEqualComparingTo(BigDecimal("0.19701"))
+            }
+        }
+
         "caps fill-confirmed cash to lower observed balance when history leads spendable USD" {
             runTest {
                 val sellTxid = "OID-FILL-CAP"

@@ -255,6 +255,67 @@ class SnapshotHistoryCalculatorTest : StringSpec() {
             tradeSnapshot.assets["BTC"]!!.price.shouldBeEqualComparingTo(ohlcPrice)
         }
 
+        "calculateHistoricalSnapshots should pick first OHLC point when equidistant (strict less-than)" {
+            val now = Instant.now()
+            val cutoff = now.minus(5, ChronoUnit.DAYS)
+            val tradeTime = now.minus(2, ChronoUnit.DAYS)
+            val trade =
+                TradeRecord(
+                    timestamp = tradeTime,
+                    pair = "XBTUSD",
+                    side = OrderSide.BUY.uppercaseName,
+                    symbol = "BTC",
+                    volume = BigDecimal("0.1"),
+                    usdAmount = BigDecimal("5000.00"),
+                    success = true,
+                    dryRun = false,
+                )
+
+            val events =
+                SnapshotHistoryCalculator.buildTimelineEvents(
+                    historicalTrades = listOf(trade),
+                    cutoffTime = cutoff,
+                    now = now,
+                )
+
+            val allocations =
+                listOf(
+                    Allocation(Asset(Asset.BTC), 50.0),
+                    Allocation(Asset.USD, 50.0),
+                )
+
+            val runningBalances =
+                mutableMapOf(
+                    "BTC" to BigDecimal("0.5"),
+                    "USD" to BigDecimal("10000.00"),
+                )
+
+            val currentPrices = mapOf("BTC" to BigDecimal("50000.00"), "USD" to BigDecimal.ONE)
+            val equidistantPriceA = BigDecimal("47000.00")
+            val equidistantPriceB = BigDecimal("49000.00")
+            val ohlcData =
+                mapOf(
+                    "BTC" to
+                        listOf(
+                            tradeTime.epochSecond - 3600 to equidistantPriceA,
+                            tradeTime.epochSecond + 3600 to equidistantPriceB,
+                        ),
+                )
+
+            val snapshots =
+                SnapshotHistoryCalculator.calculateHistoricalSnapshots(
+                    events = events,
+                    allocations = allocations,
+                    runningBalances = runningBalances,
+                    currentPrices = currentPrices,
+                    ohlcData = ohlcData,
+                    tradePrices = emptyMap(),
+                )
+
+            val tradeSnapshot = snapshots.first { it.timestamp == tradeTime }
+            tradeSnapshot.assets["BTC"]!!.price.shouldBeEqualComparingTo(equidistantPriceA)
+        }
+
         "calculateHistoricalSnapshots should clamp negative balances and handle missing USD key" {
             val now = Instant.now()
             val cutoff = now.minus(5, ChronoUnit.DAYS)
