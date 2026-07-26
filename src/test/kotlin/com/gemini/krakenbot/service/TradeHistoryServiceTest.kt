@@ -13,6 +13,7 @@ import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.PortfolioStats
+import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.model.TradeSource
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
@@ -940,7 +941,8 @@ class TradeHistoryServiceTest : StringSpec() {
             }
         }
 
-        "syncTradesFromKraken_ReconcilesDryRunDifference" {
+        // CQ-8-L1 / #97: dry-run locals never hit the exchange — must not be rewritten into API_FILL.
+        "syncTradesFromKraken_DoesNotPromoteDryRunLocalToApiFill" {
             runTest {
                 coEvery { repository.isHistorySeeded() } returns true
                 val latestTime = Instant.ofEpochSecond(1700000000)
@@ -958,7 +960,7 @@ class TradeHistoryServiceTest : StringSpec() {
                 )
                 coEvery { repository.getTradesInRange(any(), any()) } returns listOf(localTrade)
 
-                val apiTrade = localTrade.copy(dryRun = false)
+                val apiTrade = localTrade.copy(dryRun = false, source = TradeSource.API_FILL)
 
                 coEvery { krakenService.getTradeHistory(any(), 0) } returns listOf(apiTrade)
                 coEvery { krakenService.getTradeHistory(any(), 50) } returns emptyList()
@@ -966,14 +968,106 @@ class TradeHistoryServiceTest : StringSpec() {
                 val tradeHistoryService = createService()
                 tradeHistoryService.syncTradesFromKraken()
 
-                coVerify(exactly = 1) {
-                    repository.updateTrade(
-                        localTrade,
-                        match {
-                            it.dryRun == false &&
-                                it.source == TradeSource.API_FILL
-                        },
+                coVerify(exactly = 0) { repository.updateTrade(any(), any()) }
+                coVerify(exactly = 1) { repository.saveTrade(apiTrade) }
+            }
+        }
+
+        // CQ-8-M1 / #98: pagination window shift re-emits fill X on page 1 — save once.
+        "syncTradesFromKraken_SkipsCrossPageDuplicateApiFill" {
+            runTest {
+                coEvery { repository.isHistorySeeded() } returns true
+                coEvery { repository.getLatestTradeTime() } returns null
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+
+                val fillX =
+                    TradeRecord(
+                        timestamp = Instant.ofEpochSecond(1700000000),
+                        pair = TestFixtures.XBTUSD,
+                        side = TestFixtures.SELL,
+                        symbol = Asset.BTC,
+                        volume = BigDecimal("0.1"),
+                        usdAmount = BigDecimal("100.00"),
+                        success = true,
+                        dryRun = false,
+                        fee = BigDecimal("0.25"),
+                        source = TradeSource.API_FILL,
+                        orderTxid = "OID-X",
                     )
+                val fillY =
+                    fillX.copy(
+                        timestamp = Instant.ofEpochSecond(1700000001),
+                        volume = BigDecimal("0.2"),
+                        usdAmount = BigDecimal("200.00"),
+                        orderTxid = "OID-Y",
+                    )
+                // Page 0 ends with X; page 1 starts with the same X then Y (shifted window).
+                val page0 =
+                    List(49) { idx ->
+                        fillX.copy(
+                            timestamp = Instant.ofEpochSecond(1700000100L + idx),
+                            volume = BigDecimal("0.01"),
+                            usdAmount = BigDecimal("10.00"),
+                            orderTxid = "OID-PAD-$idx",
+                        )
+                    } + fillX
+                val page1 = listOf(fillX, fillY)
+
+                coEvery { krakenService.getTradeHistory(startSec = null, offset = 0) } returns page0
+                coEvery { krakenService.getTradeHistory(startSec = null, offset = 50) } returns page1
+                coEvery { krakenService.getTradeHistory(startSec = null, offset = 100) } returns emptyList()
+
+                val tradeHistoryService = createService()
+                tradeHistoryService.syncTradesFromKraken()
+
+                coVerify(exactly = 1) { repository.saveTrade(fillX) }
+                coVerify(exactly = 1) { repository.saveTrade(fillY) }
+            }
+        }
+
+        // CQ-8-M2 / #99: first sync with no real fills writes a watermark.
+        "syncTradesFromKraken_WritesWatermarkWhenLatestTradeTimeIsNull" {
+            runTest {
+                val service = createService()
+                coEvery { repository.isHistorySeeded() } returns true
+                coEvery { repository.getLatestTradeTime() } returns null
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery { repository.getSyncMetadata(SyncMetadataKeys.SYNC_WATERMARK_EPOCH_SEC) } returns null
+                coEvery { krakenService.getTradeHistory(startSec = null, offset = 0) } returns emptyList()
+
+                service.syncTradesFromKraken()
+
+                coVerify(exactly = 1) { krakenService.getTradeHistory(startSec = null, offset = 0) }
+                coVerify(exactly = 1) {
+                    repository.setSyncMetadata(
+                        SyncMetadataKeys.SYNC_WATERMARK_EPOCH_SEC,
+                        match { it.toLongOrNull() != null },
+                    )
+                }
+            }
+        }
+
+        // CQ-8-M2 / #99: watermark alone (no real fills) drives incremental startSec, not EPOCH.
+        "syncTradesFromKraken_UsesWatermarkWhenOnlyDryRunLocalsExist" {
+            runTest {
+                val watermarkSec = 1_700_000_000L
+                val service = createService()
+                coEvery { repository.isHistorySeeded() } returns true
+                coEvery { repository.getLatestTradeTime() } returns null
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.SYNC_WATERMARK_EPOCH_SEC)
+                } returns watermarkSec.toString()
+                coEvery { krakenService.getTradeHistory(any(), any()) } returns emptyList()
+
+                service.syncTradesFromKraken()
+
+                val expectedStart = watermarkSec - 300
+                coVerify(exactly = 1) {
+                    krakenService.getTradeHistory(startSec = expectedStart, offset = 0)
+                }
+                coVerify(exactly = 0) {
+                    krakenService.getTradeHistory(startSec = null, offset = any())
                 }
             }
         }

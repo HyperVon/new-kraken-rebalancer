@@ -233,6 +233,9 @@ class ModelTest : StringSpec() {
             zeroAmount.feePercentDiffersMateriallyFrom(t2) shouldBe false
 
             t1.isMatchingApiTrade(t2, listOf("BTC", "DOGE")) shouldBe true
+
+            // CQ-8-L1: dry-run locals must not match API fills (would promote to live API_FILL).
+            t1.copy(dryRun = true).isMatchingApiTrade(t2, listOf("BTC", "DOGE")) shouldBe false
         }
     }
 }

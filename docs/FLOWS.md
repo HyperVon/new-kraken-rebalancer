@@ -195,8 +195,13 @@ sequenceDiagram
   since `lastSyncTime` (5-minute throttle).
 - Live sync is skipped when credentials are invalid and `simulation` is false;
   simulation mode never hits Kraken for history.
-- Incremental sync uses a **300-second overlap** window
-  (`latestTradeTime.minusSeconds(300)`) so fills near the cutoff are not missed.
+- Incremental sync uses a **300-second overlap** window from the **effective**
+  watermark (`max(latestTradeTime, sync_watermark_epoch_sec)`, preferring real/
+  sim fills and falling back to the last successful sync time) so fills near the
+  cutoff are not missed and dry-run-only accounts do not re-pull from EPOCH.
+- Within one sync pass, API fills are fingerprinted so a pagination window shift
+  cannot double-insert the same fill; dry-run locals never match API fills
+  (`isMatchingApiTrade` returns false when `local.dryRun`).
 - Processing happens page-by-page (page size **50**), keeping memory constant
   regardless of how many total trades exist.
 - `emit()` naturally suspends until the collector finishes, meaning Kraken's API
