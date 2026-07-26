@@ -101,8 +101,8 @@ effectively than spreading across all pairs.
 4. **Dust** — skip orders with USD notional `< dustThresholdUSD`.
 5. Market orders; volumes at crypto scale 8. Live AddOrder includes deterministic
    `cl_ord_id` (`cycleId|symbol|side` → UUID) so `retryWithFlow` reuses the same
-   client id while the order is still open (Kraken does not treat `userref` as
-   idempotent).
+   client id while the order is still open (Kraken does not treat `userref` as a
+   uniqueness key among open orders).
 6. **dryRun**: suppress placement on the active backend — SLF4J uses
    `[DRY RUN]` (live) / `[EMULATOR DRY RUN]` (simulation); dashboard activity
    always uses `[DRY RUN]` (see dry-run-and-simulation skill).

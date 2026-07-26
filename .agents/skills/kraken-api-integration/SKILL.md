@@ -87,13 +87,17 @@ Retry on `IOException`, `ResponseException`, and messages containing
 
 Kraken enforces uniqueness of `cl_ord_id` among the client's **open** orders
 only — not full request idempotency across filled/canceled orders. Verify any
-stronger claim against current Kraken docs before shipping.
+stronger claim against current Kraken docs before shipping:
+
+- REST AddOrder: https://docs.kraken.com/api/docs/rest-api/add-order
+- Client order id guide: https://docs.kraken.com/exchange/guides/general/clordid
 
 - **`cl_ord_id`**: Client-assigned UUID string. Canonical seed is
   `OrderExecutorImpl.clientOrderId`:
   `UUID.nameUUIDFromBytes("$cycleId|$symbol|$side")` (pipe-separated; blank
-  `cycleId` → omit the param). Do not invent a different seed format in docs or
-  callers.
+  `cycleId` → omit the param). `side` must be `OrderSide.apiValue` (lowercase
+  `"buy"` / `"sell"`), not display casing. Do not invent a different seed
+  format in docs or callers.
 - **`userref`**: 32-bit integer user reference tag. **Do NOT use `userref` for
   uniqueness or idempotency** — Kraken permits duplicate open orders with
   identical `userref` values. `cl_ord_id` and `userref` are mutually exclusive

@@ -87,8 +87,9 @@ Give each Task agent:
   trading-safety / silent defaults, reconstruction / side casing, layering
   inversions, dead-code removal that isn’t dead, tautological tests, docs that
   contradict code, **exchange semantic overclaims** (idempotency / uniqueness /
-  retries / AddOrder fields — verify against official Kraken docs, not PR
-  prose; `userref` ≠ uniqueness, `cl_ord_id` is open-order uniqueness only).
+  retries / AddOrder fields — verify against official Kraken docs linked from
+  [kraken-api-integration](../kraken-api-integration/SKILL.md), not PR prose;
+  `userref` ≠ uniqueness, `cl_ord_id` is open-order uniqueness only).
 - Output: markdown findings grouped `critical` → `warning` → `nit`, each with
   location, evidence quote, why it matters, optional one-line suggestion.
   **No edits. No builds.**
@@ -106,6 +107,7 @@ Give each Task agent:
 - [ ] Both models used in parallel (`composer-2.5-fast`, `cursor-grok-4.5-high`)
 - [ ] Full PR diff vs base reviewed each round
 - [ ] Exchange / AddOrder semantic claims checked against official docs when
-      present in the diff
+      present in the diff (code or docs/skills) — use links in
+      kraken-api-integration
 - [ ] Legitimate critical/warning findings fixed and re-reviewed
 - [ ] Converged or deferred with an explicit note — no infinite loop

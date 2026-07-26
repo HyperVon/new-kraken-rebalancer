@@ -39,9 +39,11 @@ description: >-
   (`OrderExecutorImpl.clientOrderId`); **`userref` is not uniqueness**.
 - **Exchange-claim gate:** any PR claim about exchange semantics (idempotency,
   uniqueness, retries, fee fields, order identity) must match current official
-  Kraken docs — not memory, changelog prose, or skill text alone. Diffs that
-  change AddOrder params are high-risk; ask “does this field do what the PR
-  says?” and verify before approving.
+  Kraken docs — not memory, changelog prose, or skill text alone. Canonical
+  refs live in [kraken-api-integration](../kraken-api-integration/SKILL.md)
+  (AddOrder + `cl_ord_id` guide). Diffs that change AddOrder params are
+  high-risk; ask “does this field do what the PR says?” and verify before
+  approving.
 
 ### 4. Security
 
@@ -94,6 +96,7 @@ description: >-
 - [ ] Matcher name `shouldBeEqualComparingTo`; coverage gates precise
 - [ ] dryRun/simulation distinct; sell-then-buy + fail-closed settle + cycle 99% budget
 - [ ] Exchange semantic claims verified against official docs when AddOrder /
-      order-identity / retry behavior changes
+      order-identity / retry behavior changes **or** those claims appear in the
+      diff (including skill/docs-only PRs) — see kraken-api-integration links
 - [ ] `:common` purity; no-auth/CORS local-trust noted if relevant
 - [ ] Docs/JaCoCo/markdown paths correct

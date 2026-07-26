@@ -132,7 +132,8 @@ Cover each dimension. Skip empty sections in the report; do not invent issues.
 4. **Exchange integration** — Open-order uniqueness (`cl_ord_id`, not
    `userref`), rate limits, retries, dry-run vs simulation clarity, failure
    modes when Kraken is wrong/slow. Treat exchange-doc claims as hypotheses
-   until verified against current official Kraken docs.
+   until verified against current official Kraken docs (canonical links in
+   [kraken-api-integration](../kraken-api-integration/SKILL.md)).
 5. **Persistence & history** — SQLite/Exposed fit; reconstruction vs ledger;
    migration story; corruption/recovery.
 6. **API & UI architecture** — SSR + HTMX + Kotlin/JS vs SPA vs thinner
