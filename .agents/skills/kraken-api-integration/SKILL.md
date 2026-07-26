@@ -89,8 +89,8 @@ Kraken enforces uniqueness of `cl_ord_id` among the client's **open** orders
 only — not full request idempotency across filled/canceled orders. Verify any
 stronger claim against current Kraken docs before shipping:
 
-- REST AddOrder: https://docs.kraken.com/api/docs/rest-api/add-order
-- Client order id guide: https://docs.kraken.com/exchange/guides/general/clordid
+- [REST AddOrder](https://docs.kraken.com/api/docs/rest-api/add-order)
+- [Client order id guide](https://docs.kraken.com/exchange/guides/general/clordid)
 
 - **`cl_ord_id`**: Client-assigned UUID string. Canonical seed is
   `OrderExecutorImpl.clientOrderId`:
