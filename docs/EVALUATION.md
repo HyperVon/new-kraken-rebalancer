@@ -1,6 +1,6 @@
 # Scenario Evaluation Suite
 
-The Kraken Rebalancer includes a production-grade **Scenario Evaluation Suite** designed to verify the correctness, performance, safety, and resilience of the rebalancer under 32 highly realistic market scenarios and operational conditions.
+The Kraken Rebalancer includes a production-grade **Scenario Evaluation Suite** designed to verify the correctness, performance, safety, and resilience of the rebalancer under 33 highly realistic market scenarios and operational conditions.
 
 Implemented in [EvaluationScenariosTest.kt](../src/test/kotlin/com/gemini/krakenbot/EvaluationScenariosTest.kt), this suite is run as part of the standard Gradle test task. It dynamically evaluates the system without making external network calls, using a highly precise in-process fake exchange client ([FakeKrakenService.kt](../src/test/kotlin/com/gemini/krakenbot/service/FakeKrakenService.kt)).
 
@@ -47,7 +47,7 @@ random), not FakeKraken exact-math cases:
 
 ## Scenarios & Outcomes
 
-Below is the report of the current 32 scenarios run by the suite and their results.
+Below is the report of the current 33 scenarios run by the suite and their results.
 Refresh this table from `build/reports/scenarios_evaluation_report.md` after
 suite changes (redact absolute paths to `.../` and temp ids to `scenarioN-*.json`).
 
@@ -85,3 +85,4 @@ suite changes (redact absolute paths to `.../` and temp ids to `scenarioN-*.json
 | Scenario 30 | Exponent Curve Calibration for Fiat Deployment | 🟢 **PASS** | Drawdown: 10.0000% (Pass: true)<br>Deployment Pct: 25.0% (Expected: 25.0%, Pass: true)<br>Effective USD Target: 15.00000% (Expected: 15.0%, Pass: true)<br>Adjusted BTC Target: 85.000000000% (Expected: 85.0%, Pass: true) |
 | Scenario 31 | USD Refresh Early-Accept and Fail-Closed Buys | 🟢 **PASS** | Sub-case A (early-accept ≥95%): pollsPass=true buyPass=true<br>Sub-case B (fail-closed abort buys): pollsPass=true noBuysPass=true |
 | Scenario 32 | Multi-Cycle Convergence with Fill Feedback | 🟢 **PASS** | Start: BTC=0.18 @ $50000, ETH=0.50 @ $2000, USD=$0; targets=50%/40%/10%<br>99% partial-buy fills fed back into balances<br>Post-cycle max \|deviation\|: [3.00, 0.03, 0.03]<br>Executed orders per cycle: [2, 1, 0]<br>Total value per cycle: [10000.00, 10000.00, 10000.00] |
+| Scenario 33 | Drawdown Deployment Changes Order Sizes | 🟢 **PASS** | Portfolio: all-cash USD=$8000, BTC=0, ETH=0; targets 40/40/20<br>Control (fiatMaxDrawdown=0): BTC buy=0.064, ETH buy=1.6 (crypto notional=$6400)<br>Drawdown (ATH=$10000, 20% DD, deploy 100%): BTC buy=0.08, ETH buy=1.96 (crypto notional=$7920)<br>Snapshot: drawdown=20%, fiatDeployment=100%, effectiveUsdTarget=0% |

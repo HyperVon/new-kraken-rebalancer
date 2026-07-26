@@ -64,7 +64,7 @@ import io.ktor.client.plugins.sse.SSE as ClientSSE
 import io.ktor.server.sse.SSE as ServerSSE
 
 class EvaluationScenariosTest : StringSpec() {
-    // SingleInstance: the mocks and mapper below are shared by all 32 scenarios, so a scenario that
+    // SingleInstance: the mocks and mapper below are shared by all 33 scenarios, so a scenario that
     // captures calls (snapshot actions, order lists) must build its own mock instead of reusing them.
     override fun isolationMode() = IsolationMode.SingleInstance
 
@@ -109,7 +109,7 @@ class EvaluationScenariosTest : StringSpec() {
             val sb = StringBuilder()
             sb.append("# Scenarios Evaluation Report\n\n")
             sb.append(
-                "This report lists the outcomes of the 32 realistic scenarios designed to evaluate the major capabilities of the Kraken Rebalancer.\n\n",
+                "This report lists the outcomes of the 33 realistic scenarios designed to evaluate the major capabilities of the Kraken Rebalancer.\n\n",
             )
             sb.append("## Evaluation Rubric & Status\n\n")
             sb.append("| Scenario | Description | Status | Details / Evidence |\n")
@@ -2805,6 +2805,128 @@ class EvaluationScenariosTest : StringSpec() {
                 recordResult(
                     "Scenario 32",
                     "Multi-Cycle Convergence with Fill Feedback",
+                    TestFixtures.PASS,
+                    evidence,
+                )
+            }
+        }
+
+        "Scenario 33: Drawdown Deployment Changes Order Sizes" {
+            runTest {
+                val prices =
+                    mapOf(
+                        Asset.BTC to BigDecimal("50000.00"),
+                        Asset.ETH to BigDecimal("2000.00"),
+                    )
+                val balances =
+                    mapOf(
+                        Asset.BTC to BigDecimal.ZERO,
+                        Asset.ETH to BigDecimal.ZERO,
+                        Asset.USD to BigDecimal("8000.00"),
+                    )
+
+                suspend fun runCycle(
+                    fiatMaxDrawdown: Double,
+                    ath: BigDecimal,
+                ): Pair<PortfolioSnapshot?, FakeKrakenService> {
+                    val fakeKraken = FakeKrakenService()
+                    val mockConfig = mockk<ConfigService>(relaxed = true)
+                    val statsRepo = mockk<PortfolioStatsRepository>(relaxed = true)
+                    val mockHistory = mockk<TradeHistoryService>(relaxed = true)
+                    val capturedSnapshots = mutableListOf<PortfolioSnapshot>()
+                    coEvery { mockHistory.addSnapshot(any()) } answers {
+                        capturedSnapshots.add(firstArg())
+                    }
+                    coEvery { statsRepo.load() } returns PortfolioStats(allTimeHigh = ath)
+                    coEvery { statsRepo.save(any()) } returns Unit
+
+                    val appConfig =
+                        AppConfig(
+                            kraken = KrakenCredentials("k", "s"),
+                            settings =
+                            Settings(
+                                loopDelaySeconds = 60L,
+                                deviationTriggerPercent = 2.0,
+                                dustThresholdUSD = 1.0,
+                                dryRun = false,
+                                fiatMaxDrawdown = fiatMaxDrawdown,
+                                fiatDeploymentExponent = 2.0,
+                            ),
+                            allocations =
+                            listOf(
+                                Allocation(Asset.BTC, 40.0),
+                                Allocation(Asset.ETH, 40.0),
+                                Allocation(Asset.USD, 20.0),
+                            ),
+                        )
+                    every { mockConfig.getConfig() } returns appConfig
+                    fakeKraken.balanceSupplier = { balances }
+                    fakeKraken.pricesSupplier = {
+                        mapOf(
+                            TestFixtures.XBTUSD to prices.getValue(Asset.BTC),
+                            TestFixtures.ETHUSD to prices.getValue(Asset.ETH),
+                        )
+                    }
+
+                    val analyzer = PortfolioAnalyzerImpl(fakeKraken, mockConfig, statsRepo)
+                    val executor = OrderExecutorImpl(fakeKraken, mockHistory)
+                    val manager = PortfolioManagerImpl(mockConfig, mockHistory, analyzer, executor)
+                    val snapshot = manager.performRebalanceCycle()
+                    return Pair(snapshot ?: capturedSnapshots.lastOrNull(), fakeKraken)
+                }
+
+                val (_, controlKraken) = runCycle(fiatMaxDrawdown = 0.0, ath = BigDecimal("10000.00"))
+                val (drawdownSnapshotRaw, drawdownKraken) =
+                    runCycle(fiatMaxDrawdown = 20.0, ath = BigDecimal("10000.00"))
+                val drawdownSnapshot = requireNotNull(drawdownSnapshotRaw)
+
+                val controlBtcBuy =
+                    controlKraken.executedOrders.single { it.pair == TestFixtures.XBTUSD && it.side == TestFixtures.BUY }
+                val controlEthBuy =
+                    controlKraken.executedOrders.single { it.pair == TestFixtures.ETHUSD && it.side == TestFixtures.BUY }
+                val drawdownBtcBuy =
+                    drawdownKraken.executedOrders.single { it.pair == TestFixtures.XBTUSD && it.side == TestFixtures.BUY }
+                val drawdownEthBuy =
+                    drawdownKraken.executedOrders.single { it.pair == TestFixtures.ETHUSD && it.side == TestFixtures.BUY }
+
+                val expectedControlBtc = BigDecimal("0.06400000")
+                val expectedControlEth = BigDecimal("1.60000000")
+                val expectedDrawdownBtc = BigDecimal("0.08000000")
+                val expectedDrawdownEth = BigDecimal("1.96000000")
+
+                controlBtcBuy.volume.shouldBeEqualComparingTo(expectedControlBtc)
+                controlEthBuy.volume.shouldBeEqualComparingTo(expectedControlEth)
+                drawdownBtcBuy.volume.shouldBeEqualComparingTo(expectedDrawdownBtc)
+                drawdownEthBuy.volume.shouldBeEqualComparingTo(expectedDrawdownEth)
+
+                (drawdownBtcBuy.volume > controlBtcBuy.volume).shouldBeTrue()
+                (drawdownEthBuy.volume > controlEthBuy.volume).shouldBeTrue()
+
+                drawdownSnapshot.drawdownPercent.shouldBeEqualComparingTo(BigDecimal("20.0"))
+                drawdownSnapshot.fiatDeploymentPercent.shouldBeEqualComparingTo(BigDecimal("100.0"))
+                drawdownSnapshot.effectiveUsdTargetPercent.shouldBeEqualComparingTo(BigDecimal("0.0"))
+
+                val controlCryptoNotional =
+                    controlBtcBuy.volume.multiply(prices.getValue(Asset.BTC))
+                        .add(controlEthBuy.volume.multiply(prices.getValue(Asset.ETH)))
+                val drawdownCryptoNotional =
+                    drawdownBtcBuy.volume.multiply(prices.getValue(Asset.BTC))
+                        .add(drawdownEthBuy.volume.multiply(prices.getValue(Asset.ETH)))
+                (drawdownCryptoNotional > controlCryptoNotional).shouldBeTrue()
+
+                val evidence =
+                    "Portfolio: all-cash USD=$8000, BTC=0, ETH=0; prices BTC=$50000, ETH=$2000; targets 40/40/20\n" +
+                        "Control (fiatMaxDrawdown=0): BTC buy=${controlBtcBuy.volume}, ETH buy=${controlEthBuy.volume} " +
+                        "(crypto notional=$controlCryptoNotional)\n" +
+                        "Drawdown (ATH=$10000, 20% DD, deploy 100%): BTC buy=${drawdownBtcBuy.volume}, " +
+                        "ETH buy=${drawdownEthBuy.volume} (crypto notional=$drawdownCryptoNotional)\n" +
+                        "Snapshot: drawdown=${drawdownSnapshot.drawdownPercent}%, " +
+                        "fiatDeployment=${drawdownSnapshot.fiatDeploymentPercent}%, " +
+                        "effectiveUsdTarget=${drawdownSnapshot.effectiveUsdTargetPercent}%"
+
+                recordResult(
+                    "Scenario 33",
+                    "Drawdown Deployment Changes Order Sizes",
                     TestFixtures.PASS,
                     evidence,
                 )

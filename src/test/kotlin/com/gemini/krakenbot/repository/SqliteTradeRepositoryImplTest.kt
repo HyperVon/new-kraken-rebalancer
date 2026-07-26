@@ -302,6 +302,38 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
             }
         }
 
+        "getLatestTradeTime ignores newer dry-run rows" {
+            runTest {
+                val now = Instant.now().truncatedTo(ChronoUnit.MILLIS)
+                val liveTrade =
+                    TradeRecord(
+                        timestamp = now,
+                        pair = TestFixtures.XBTUSD,
+                        side = TestFixtures.BUY,
+                        symbol = Asset.BTC,
+                        volume = BigDecimal("0.1"),
+                        usdAmount = BigDecimal("5000.00"),
+                        success = true,
+                        dryRun = false,
+                    )
+                val dryRunTrade =
+                    TradeRecord(
+                        timestamp = now.plusSeconds(60),
+                        pair = TestFixtures.ETHUSD,
+                        side = TestFixtures.SELL,
+                        symbol = TestFixtures.ETH,
+                        volume = BigDecimal("1.0"),
+                        usdAmount = BigDecimal("2000.00"),
+                        success = true,
+                        dryRun = true,
+                    )
+                repository.saveTrade(liveTrade)
+                repository.saveTrade(dryRunTrade)
+
+                repository.getLatestTradeTime() shouldBe now
+            }
+        }
+
         "update trade updates record" {
             runTest {
                 val now = Instant.now().truncatedTo(ChronoUnit.MILLIS)

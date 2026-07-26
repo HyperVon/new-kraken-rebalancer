@@ -769,6 +769,48 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
             }
         }
 
+        "testPerformRebalanceCycle_DeviationExactUnderweightTriggerGeneratesBuy" {
+            runTest {
+                val allocs = listOf(
+                    Allocation(Asset.BTC, 50.0),
+                    Allocation(Asset.USD, 50.0),
+                )
+                every { configService.getConfig() } returns AppConfig(
+                    kraken = KrakenCredentials(apiKey = "k", privateKey = "s"),
+                    settings = Settings(
+                        loopDelaySeconds = 0L,
+                        deviationTriggerPercent = 2.0,
+                        dustThresholdUSD = 1.0,
+                        dryRun = false,
+                        fiatMaxDrawdown = 0.0,
+                        fiatDeploymentExponent = 1.0,
+                    ),
+                    allocations = allocs,
+                )
+
+                krakenService.pricesSupplier = { mapOf(Asset.BTC_USD_PAIR to 50000.0) }
+                // Total $10,000: BTC $4,900 (−2.0% vs $5,000 target), USD $5,100
+                krakenService.balanceSupplier = {
+                    mapOf(Asset.BTC to 0.098, Asset.USD to 5100.0)
+                }
+
+                portfolioManager.startRebalancingLoop()
+                portfolioManager.performRebalanceCycle()
+
+                krakenService.executedOrders.isNotEmpty() shouldBe true
+                krakenService.executedOrders.any {
+                    it.pair == Asset.BTC_USD_PAIR && it.side == TestFixtures.BUY
+                } shouldBe true
+
+                val captor = slot<PortfolioSnapshot>()
+                coVerify { tradeHistoryService.addSnapshot(capture(captor)) }
+                captor.captured.actions.any { it.contains("Deviation: BTC") } shouldBe true
+                captor.captured.actions.none {
+                    it.contains("fiat correction", ignoreCase = true)
+                } shouldBe true
+            }
+        }
+
         "testPerformRebalanceCycle_DeviationJustBelowTriggerNoCryptoOrders" {
             runTest {
                 val allocs = listOf(

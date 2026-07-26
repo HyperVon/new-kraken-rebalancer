@@ -237,5 +237,33 @@ class ModelTest : StringSpec() {
             // CQ-8-L1: dry-run locals must not match API fills (would promote to live API_FILL).
             t1.copy(dryRun = true).isMatchingApiTrade(t2, listOf("BTC", "DOGE")) shouldBe false
         }
+
+        "isMatchingApiTrade rejects when volume within tolerance but USD differs by more than 1 percent" {
+            val now = Instant.now()
+            val local =
+                TradeRecord(
+                    now,
+                    "XBTUSD",
+                    "BUY",
+                    "BTC",
+                    BigDecimal("1.0"),
+                    BigDecimal("100.00"),
+                    success = true,
+                    dryRun = false,
+                )
+            val api =
+                TradeRecord(
+                    now,
+                    "XXBTZUSD",
+                    "BUY",
+                    "BTC",
+                    BigDecimal("1.005"),
+                    BigDecimal("110.00"),
+                    success = true,
+                    dryRun = false,
+                )
+            local.isMatchingApiTrade(api, listOf("BTC", "DOGE")) shouldBe false
+            local.isMatchingApiTrade(api.copy(volume = BigDecimal("1.0")), listOf("BTC", "DOGE")) shouldBe true
+        }
     }
 }

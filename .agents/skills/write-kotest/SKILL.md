@@ -87,7 +87,7 @@ Opt in `ExperimentalCoroutinesApi` when using `advanceUntilIdle`.
 
 ## Evaluation / E2E / chaos
 
-- Suite: `EvaluationScenariosTest` (32 scenarios)
+- Suite: `EvaluationScenariosTest` (33 scenarios)
 - Report: `build/reports/scenarios_evaluation_report.md` (absolute paths redacted)
 - Run: `./gradlew test --tests "com.gemini.krakenbot.EvaluationScenariosTest"`
   (use `-x jacocoTestCoverageVerification` when running the suite alone)

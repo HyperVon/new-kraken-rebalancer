@@ -562,6 +562,73 @@ class HistoryTest : StringSpec() {
             localStorage.removeItem(ViewText.HISTORY_VIEWS_STORAGE_KEY)
         }
 
+        "HistoryViewPrefs migrates legacy month-pnl defaultId" {
+            localStorage.removeItem(ViewText.HISTORY_VIEWS_STORAGE_KEY)
+            HistoryViewPrefs.mergeBuiltIns(
+                HistoryViewsStore(defaultId = "month-pnl", views = emptyList()),
+            ).defaultId shouldBe HistoryViewIds.MONTH_NET_CASH_FLOW
+            HistoryViewPrefs.mergeBuiltIns(
+                HistoryViewsStore(
+                    defaultId = "month-pnl",
+                    views =
+                    listOf(
+                        HistoryViewDef(
+                            id = "user-1",
+                            name = "Custom",
+                            builtIn = false,
+                            range = TimeRange.SEVEN_DAYS.key,
+                            showDryRun = true,
+                            visibility = emptyMap(),
+                        ),
+                    ),
+                ),
+            ).defaultId shouldBe HistoryViewIds.MONTH_NET_CASH_FLOW
+            localStorage.setItem(
+                ViewText.HISTORY_VIEWS_STORAGE_KEY,
+                """{"defaultId":"month-pnl","views":[]}""",
+            )
+            HistoryViewPrefs.loadStore().defaultId shouldBe HistoryViewIds.MONTH_NET_CASH_FLOW
+            localStorage.removeItem(ViewText.HISTORY_VIEWS_STORAGE_KEY)
+        }
+
+        "HistoryViewPrefs migrates legacy cumulative-pl-chart visibility key" {
+            localStorage.removeItem(ViewText.HISTORY_VIEWS_STORAGE_KEY)
+            val parsed = HistoryViewPrefs.parseStore(
+                json(
+                    "defaultId" to HistoryViewIds.OVERVIEW,
+                    "views" to
+                        arrayOf(
+                            json(
+                                "id" to "user-legacy",
+                                "name" to "Legacy chart",
+                                "builtIn" to false,
+                                "range" to TimeRange.THIRTY_DAYS.key,
+                                "showDryRun" to true,
+                                "visibility" to
+                                    json(
+                                        "cumulative-pl-chart" to
+                                            json(ViewText.TOTAL_PORTFOLIO to true),
+                                    ),
+                            ),
+                        ),
+                ),
+            )
+            val parsedView = parsed.views.first { it.id == "user-legacy" }
+            parsedView.visibility.containsKey(HtmlIds.CUMULATIVE_NET_CASH_FLOW_CHART) shouldBe true
+            parsedView.visibility[HtmlIds.CUMULATIVE_NET_CASH_FLOW_CHART]?.get(ViewText.TOTAL_PORTFOLIO) shouldBe true
+            parsedView.visibility.containsKey("cumulative-pl-chart") shouldBe false
+
+            localStorage.setItem(
+                ViewText.HISTORY_VIEWS_STORAGE_KEY,
+                """{"defaultId":"overview","views":[{"id":"user-legacy","name":"Legacy chart","builtIn":false,"range":"30d","showDryRun":true,"visibility":{"cumulative-pl-chart":{"Total Portfolio":true}}}]}""",
+            )
+            val loadedView = HistoryViewPrefs.loadStore().views.first { it.id == "user-legacy" }
+            loadedView.visibility.containsKey(HtmlIds.CUMULATIVE_NET_CASH_FLOW_CHART) shouldBe true
+            loadedView.visibility[HtmlIds.CUMULATIVE_NET_CASH_FLOW_CHART]?.get(ViewText.TOTAL_PORTFOLIO) shouldBe true
+            loadedView.visibility.containsKey("cumulative-pl-chart") shouldBe false
+            localStorage.removeItem(ViewText.HISTORY_VIEWS_STORAGE_KEY)
+        }
+
         "applyView seeds visibilityStates before loadAll" {
             localStorage.removeItem(ViewText.HISTORY_VIEWS_STORAGE_KEY)
             resetHistoryUiState()

@@ -22,12 +22,22 @@ Product polish discovered during QA belongs in
 
 | ID | Size | Kind | Status | Area | Summary | Cycle | Issue | Notes |
 | :--- | :---: | :--- | :--- | :--- | :--- | :---: | :--- | :--- |
-| CQ-8-3 | S | gap | open | history | Seam edge tests: multi-match reconcile tie-break (newest chosen), migration `save` failure leaves JSON un-renamed, findClosest equidistant determinism | 8 | — | Backlog only; future cycle |
 
 ## Done (recent)
 
 | ID | Size | Kind | Status | Area | Summary | Cycle | PR |
 | :--- | :---: | :--- | :--- | :--- | :--- | :---: | :--- |
+| CQ-9-6 | M | gap | done | eval | Scenario 33 — E2E drawdown deployment changes order sizes (not math-only) | 9 | #104 |
+| CQ-9-7 | S | gap | done | history | `getLatestTradeTime()` ignores newer dry-run rows | 9 | #104 |
+| CQ-9-8 | S | gap | done | model | `isMatchingApiTrade`: volume within 1% but USD >1% → no match | 9 | #104 |
+| CQ-9-9 | S | gap | done | frontend-js | `HistoryViewPrefs` legacy localStorage migration | 9 | #104 |
+| CQ-9-10 | S | gap | done | orders | Partial multi-sell: failed sell must not bump `projectedCash` | 9 | #104 |
+| CQ-8-3 | S | gap | done | history | Seam edges: multi-match reconcile first-in-range (DESC=newest), migration save failure leaves JSON, findClosest equidistant | 9 | #104 |
+| CQ-9-1 | S | gap | done | drawdown | Conservative exponent `2.0` ALGORITHM MaxDD=30% table | 9 | #104 |
+| CQ-9-2 | M | gap | done | orders | Multi-leg fills same `orderTxid` summed for buy budget (+ filter legs) | 9 | #104 |
+| CQ-9-3 | S | gap | done | algorithm | Underweight exact `−trigger%` enqueues BUY | 9 | #104 |
+| CQ-9-4 | S | gap | done | algorithm | Zero-target 100% deviation but `\|devUSD\| < dust` not significant | 9 | #104 |
+| CQ-9-5 | S | gap | done | modes | Live `simulation=false` + `dryRun=true` routes to live + forwards dryRun | 9 | #104 |
 | CQ-8-L1 | L | bug | done | history/sync | `isMatchingApiTrade` ignores dry-run locals (no promote to live `API_FILL`) | 8 | #100 |
 | CQ-8-M1 | M | bug | done | history/sync | Cross-page duplicate API fill fingerprint skip within one sync | 8 | #100 |
 | CQ-8-M2 | M | perf | done | history/sync | Persist `sync_watermark_epoch_sec` so dry-run-only accounts stay incremental | 8 | #100 |

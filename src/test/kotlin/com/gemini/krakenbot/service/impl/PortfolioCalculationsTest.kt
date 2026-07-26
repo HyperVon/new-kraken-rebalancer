@@ -53,6 +53,22 @@ class PortfolioCalculationsTest : StringSpec() {
             deviationPct.shouldBeEqualComparingTo(BigDecimal("100"))
         }
 
+        // CQ-9-4: zero-target dust — 100% deviationPercent but below dust gate
+        "should report 100 percent deviation but insignificant for zero-target dust holding" {
+            val metrics = PortfolioCalculations.calculateAssetMetrics(
+                symbol = Asset(Asset.BTC),
+                baseTargetPercent = BigDecimal.ZERO,
+                currentValueUSD = BigDecimal("0.50"),
+                totalPortfolioValueUSD = BigDecimal("1000.00"),
+                effectiveUsdTarget = BigDecimal("100.00"),
+                cryptoScaleFactor = BigDecimal.ONE,
+                dustThresholdUSD = 1.0,
+            )
+            metrics.deviationPercent.shouldBeEqualComparingTo(BigDecimal("100"))
+            metrics.isSignificant.shouldBeFalse()
+            metrics.deviationUSD.shouldBeEqualComparingTo(BigDecimal("0.50"))
+        }
+
         "should return zero deviation percent for empty zero-target assets" {
             val deviationPct = PortfolioCalculations.calculateDeviationPercent(
                 deviationUSD = BigDecimal.ZERO,
