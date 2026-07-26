@@ -8,10 +8,10 @@ import kotlin.js.JSON
 import kotlin.js.json
 
 /**
- * Edge/wire-contract coverage for [HistoryJsonParsing] against the shape [HistoryApiMapper] emits.
- * Uses real `JSON.parse` (not hand-built `json()`) where the parser branches on runtime JS types
- * (native booleans, numeric `id`) so the Jackson→JS wire is exercised, plus the missing/null/blank
- * field defaults that hand-built round-trips never hit.
+ * Defensive-parsing and wire-type coverage for [HistoryJsonParsing]. Hand-built `json()` objects
+ * exercise the missing/null/garbage field defaults that populated round-trips never reach; one case
+ * feeds real `JSON.parse` output (native JS boolean + numeric `id`, string decimals) so the parser
+ * is proven against the runtime types the API DTO wire produces, not only Kotlin-built objects.
  */
 class HistoryJsonParsingEdgeTest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
@@ -55,9 +55,9 @@ class HistoryJsonParsingEdgeTest : StringSpec() {
             parsed.dryRun shouldBe false
         }
 
-        "parseTradeRecord reads native JSON booleans and a numeric id (Jackson wire)" {
-            // Jackson emits real JSON booleans and a numeric id; JSON.parse yields JS boolean/number,
-            // exercising the `is Boolean` and numeric dynamicInt arms.
+        "parseTradeRecord reads a JSON.parse payload with native boolean and numeric id" {
+            // Real JSON.parse yields a native JS boolean (hits dynamicBoolean's `is Boolean` arm) and
+            // a JS number id; string economics stay strings. Assert every field the DTO wire carries.
             val wire =
                 """
                 {
@@ -73,9 +73,21 @@ class HistoryJsonParsingEdgeTest : StringSpec() {
             parsed.id shouldBe 42
             parsed.source shouldBe "API_FILL"
             parsed.price shouldBe "20000.0"
+            parsed.fee shouldBe "6.50"
+            parsed.volume shouldBe "0.125"
+            parsed.usdAmount shouldBe "2500.00"
+            parsed.slippagePercent shouldBe "0.15"
         }
 
-        "parseTradeRecord parses a string id and rejects a non-numeric id" {
+        "dynamicBoolean coerces a non-boolean truthy string to false via the toString arm" {
+            // A non-"true" string (not a native boolean) takes the `toString().toBoolean()` arm, which
+            // is strict: only "true" is true. Locks that "yes"/"1" do NOT read as true.
+            val yes: dynamic = baseTrade()
+            yes["success"] = "yes"
+            parseTradeRecord(yes).success shouldBe false
+        }
+
+        "parseTradeRecord accepts a string id and rejects a non-numeric id" {
             val stringId: dynamic = baseTrade()
             stringId["id"] = "42"
             parseTradeRecord(stringId).id shouldBe 42
@@ -114,6 +126,8 @@ class HistoryJsonParsingEdgeTest : StringSpec() {
                         "totalTradesExecuted" to "abc",
                     ),
                 )
+            parsed.allTimeHigh shouldBe "1000"
+            parsed.totalVolumeTraded shouldBe "5"
             parsed.totalTradesExecuted shouldBe 0L
             parsed.failedTradeCount shouldBe 0L
             parsed.dryRunTradeCount shouldBe 0L

@@ -31,10 +31,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 
 - **tests (CQ-8)**: Wire-contract hardening for the typed History APIs —
-  `HistoryJsonParsingEdgeTest` covers missing `price`/`fee` → `"0"`, native
-  `JSON.parse` booleans and numeric/string `id`, absent `success`/`dryRun`,
-  null/empty inputs, and count coercion; `SerializationParityTest` adds
-  null-optional `TradeRecord` and null-offset `SyncProgressResponse` round-trips.
+  `HistoryJsonParsingEdgeTest` covers defensive parsing (missing `price`/`fee` →
+  `"0"`, absent `success`/`dryRun`, null/empty inputs, count coercion, strict
+  boolean coercion) plus a real `JSON.parse` payload with native boolean and
+  numeric `id`; `SerializationParityTest` adds a null-optional `TradeRecord`
+  round-trip and asserts `buildSyncProgressResponse` maps null offset/total to
+  empty-string wire fields.
 
 ## [6.13.7] - 2026-07-25
 

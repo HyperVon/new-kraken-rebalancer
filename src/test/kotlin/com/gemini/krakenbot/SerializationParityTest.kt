@@ -208,15 +208,12 @@ class SerializationParityTest : StringSpec() {
             roundTrip.id shouldBe null
         }
 
-        "history API SyncProgressResponse defaults null offset and total to empty strings" {
-            val response = buildSyncProgressResponse(seeded = false, offset = null, total = null)
-            response.offset shouldBe ""
-            response.total shouldBe ""
-
-            val json = mapper.writeValueAsString(response)
-            val roundTrip: SyncProgressResponse = mapper.readValue(json)
-            roundTrip.offset shouldBe ""
-            roundTrip.total shouldBe ""
+        "buildSyncProgressResponse maps null offset and total to empty-string wire fields" {
+            // buildSyncProgressResponse (production) applies orEmpty(); the emitted JSON must carry
+            // empty strings (not null) so the JS parser's dynamicString(...).orEmpty() agrees.
+            val json = mapper.writeValueAsString(buildSyncProgressResponse(seeded = false, offset = null, total = null))
+            json shouldContain "\"${SyncMetadataKeys.OFFSET}\":\"\""
+            json shouldContain "\"${SyncMetadataKeys.TOTAL}\":\"\""
         }
 
         "history API SyncProgressResponse uses SyncMetadataKeys JSON names" {
