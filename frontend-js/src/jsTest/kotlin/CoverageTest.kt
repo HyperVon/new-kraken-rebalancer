@@ -26,7 +26,6 @@ class CoverageTest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
 
     init {
-        // Test, createOrUpdate branches
         "createOrUpdate handles existing chart and visibility states" {
             val container = document.createElement(HtmlTags.DIV)
             container.innerHTML =
@@ -38,13 +37,11 @@ class CoverageTest : StringSpec() {
             try {
                 registerHistoryGlobals()
 
-                // First call - no existing chart
                 createOrUpdate(
                     TEST_CHART,
                     TestDomBuilders.chartConfig(),
                 )
 
-                // Second call - existing chart, visibility states stored
                 createOrUpdate(
                     TEST_CHART,
                     TestDomBuilders.chartConfig(
@@ -53,7 +50,6 @@ class CoverageTest : StringSpec() {
                     ),
                 )
 
-                // Third call with same config - should preserve visibility
                 createOrUpdate(
                     TEST_CHART,
                     TestDomBuilders.chartConfig(
@@ -72,11 +68,9 @@ class CoverageTest : StringSpec() {
         }
 
         "createOrUpdate does nothing when canvas missing" {
-            // Should not throw
             createOrUpdate("non-existent-canvas", json())
         }
 
-        // Test chart builder early return
         "chart builders return early for empty snapshots" {
             val container = document.createElement(HtmlTags.DIV)
             container.innerHTML = TestDomBuilders.chartsDom()
@@ -86,26 +80,19 @@ class CoverageTest : StringSpec() {
             try {
                 registerHistoryGlobals()
 
-                // These should return early without throwing
                 buildPortfolioValueChart(emptyArray())
                 buildAssetHoldingsChart(emptyArray())
                 buildAllocationDriftChart(emptyArray())
                 buildCumulativeNetCashFlowChart(emptyArray())
-
-                // Verify no charts were created (since early return)
-                // We can't easily check, but at least no exception
             } finally {
                 document.body!!.removeChild(container)
             }
         }
 
-        // Test calculateCumulativeNetCashFlow edge cases
         "calculateCumulativeNetCashFlow handles various trade scenarios" {
-            // Empty trades
             val empty = calculateCumulativeNetCashFlow(emptyArray())
             empty.size shouldBe 0
 
-            // Single successful buy
             val buy =
                 TestDomBuilders.tradeJson(
                     timestamp = "2023-01-01",
@@ -115,9 +102,8 @@ class CoverageTest : StringSpec() {
             val resultBuy = calculateCumulativeNetCashFlow(arrayOf(buy))
             resultBuy.size shouldBe 1
             val r0 = resultBuy[0]
-            r0.y.toString().toDouble() shouldBe -100.0 // BUY subtracts
+            r0.y.toString().toDouble() shouldBe -100.0
 
-            // Single successful sell
             val sell =
                 TestDomBuilders.tradeJson(
                     timestamp = "2023-01-01",
@@ -127,9 +113,8 @@ class CoverageTest : StringSpec() {
             val resultSell = calculateCumulativeNetCashFlow(arrayOf(sell))
             resultSell.size shouldBe 1
             val s0 = resultSell[0]
-            s0.y.toString().toDouble() shouldBe 50.0 // SELL adds
+            s0.y.toString().toDouble() shouldBe 50.0
 
-            // Mixed with failed and dryRun (should be filtered out)
             val mixed =
                 arrayOf(
                     TestDomBuilders.tradeJson(
@@ -156,19 +141,16 @@ class CoverageTest : StringSpec() {
                     ),
                 )
             val resultMixed = calculateCumulativeNetCashFlow(mixed)
-            resultMixed.size shouldBe 2 // Only the buy and sell (first and last)
+            resultMixed.size shouldBe 2
             val m0 = resultMixed[0]
             val m1 = resultMixed[1]
             (m0.y.toString().toDouble()) shouldBe -100.0
-            (m1.y.toString().toDouble()) shouldBe (-100.0 + 30.0) // -70
+            (m1.y.toString().toDouble()) shouldBe (-100.0 + 30.0)
         }
 
-        // Test renderTradeTable edge cases
         "renderTradeTable handles missing tbody and empty trades" {
-            // Missing tbody should return early
-            renderTradeTable(arrayOf()) // Should not throw
+            renderTradeTable(arrayOf())
 
-            // Empty tbody with checkbox
             val container = document.createElement(HtmlTags.DIV)
             container.innerHTML = TestDomBuilders.tradeTableDom()
             document.body!!.appendChild(container)
@@ -182,22 +164,19 @@ class CoverageTest : StringSpec() {
             }
         }
 
-        // Test updateStats with missing elements
         "updateStats handles missing elements gracefully" {
             val container = document.createElement(HtmlTags.DIV)
             container.innerHTML = TestDomBuilders.statsDom()
             document.body!!.appendChild(container)
             try {
                 val stats = mockPortfolioStatsRecord()
-                updateStats(stats) // Should not throw
+                updateStats(stats)
                 document.getElementById(HtmlIds.STAT_ATH)?.textContent shouldBe "$15,000.50"
-                // Other elements missing, so no exception
             } finally {
                 document.body!!.removeChild(container)
             }
         }
 
-        // Test loadAll when branches
         "loadAll sets chartDefaults time unit based on range" {
             val container = document.createElement(HtmlTags.DIV)
             container.innerHTML = TestDomBuilders.historyDom()
@@ -241,17 +220,15 @@ class CoverageTest : StringSpec() {
             try {
                 registerHistoryGlobals()
 
-                // Test 24h range — mutate clone only, leave shared defaults untouched
+                // loadAll mutates a deep clone only — shared chartDefaults.time.unit must stay null.
                 loadAll(TimeRange.TWENTY_FOUR_HOURS.key).await()
                 (getClonedChartOptions().scales.x.time.unit as String) shouldBe "hour"
                 (window.asDynamic().chartDefaults.scales.x.time.unit == null) shouldBe true
 
-                // Test 'all' range (should delete unit on clone)
                 loadAll(TimeRange.ALL.key).await()
                 (getClonedChartOptions().scales.x.time.unit == null) shouldBe true
                 (window.asDynamic().chartDefaults.scales.x.time.unit == null) shouldBe true
 
-                // Test default (day) range
                 loadAll(TimeRange.THIRTY_DAYS.key).await()
                 (getClonedChartOptions().scales.x.time.unit as String) shouldBe "day"
                 (window.asDynamic().chartDefaults.scales.x.time.unit == null) shouldBe true
@@ -260,25 +237,20 @@ class CoverageTest : StringSpec() {
             }
         }
 
-        // Test checkSyncProgress branches
         "checkSyncProgress handles banner missing, seeded true/false, and offset/total" {
             val container = document.createElement(HtmlTags.DIV)
             container.innerHTML = TestDomBuilders.syncProgressDom()
             document.body!!.appendChild(container)
 
-            // Case 1: banner missing -> should resolve to true
             window.asDynamic().fetch = mockFetch { json("seeded" to true) }
             try {
-                // Remove banner to test missing case
                 document.getElementById(HtmlIds.SYNC_PROGRESS_BANNER)?.remove()
                 checkSyncProgress().await() shouldBe true
             } finally {
-                // Restore banner for next test
                 container.innerHTML = TestDomBuilders.syncProgressDom()
                 document.body!!.appendChild(container)
             }
 
-            // Case 2: seeded true -> hide banner, resolve true
             window.asDynamic().fetch = mockFetch { json("seeded" to true) }
             try {
                 checkSyncProgress().await() shouldBe true
@@ -287,31 +259,28 @@ class CoverageTest : StringSpec() {
             } finally {
             }
 
-            // Case 3: seeded false -> show banner, calculate progress
             window.asDynamic().fetch = mockFetch { json("seeded" to false, "offset" to 0, "total" to 100) }
             try {
                 checkSyncProgress().await() shouldBe false
                 val banner = document.getElementById(HtmlIds.SYNC_PROGRESS_BANNER) as HTMLElement
                 banner.style.display shouldBe "block"
                 val bar = document.getElementById(HtmlIds.SYNC_PROGRESS_BAR) as HTMLElement
-                bar.style.width shouldBe "0%" // 0/100*100
+                bar.style.width shouldBe "0%"
                 val text = document.getElementById(HtmlIds.SYNC_PROGRESS_TEXT) as HTMLElement
                 text.textContent shouldBe "0 / 100 (0%)"
             } finally {
             }
 
-            // Case 4: offset > 0
             window.asDynamic().fetch = mockFetch { json("seeded" to false, "offset" to 50, "total" to 100) }
             try {
                 checkSyncProgress().await() shouldBe false
                 val bar = document.getElementById(HtmlIds.SYNC_PROGRESS_BAR) as HTMLElement
-                bar.style.width shouldBe "50%" // 50/100*100
+                bar.style.width shouldBe "50%"
                 val text = document.getElementById(HtmlIds.SYNC_PROGRESS_TEXT) as HTMLElement
                 text.textContent shouldBe "50 / 100 (50%)"
             } finally {
             }
 
-            // Case 5: error in fetch -> catch returns false
             window.asDynamic().fetch = { _: String -> Promise.reject(Throwable("Network error")) }
             try {
                 checkSyncProgress().await() shouldBe false
@@ -320,13 +289,11 @@ class CoverageTest : StringSpec() {
             }
         }
 
-        // Settings coverage
         "updateAllocationTotal handles various input scenarios" {
             val container = document.createElement(HtmlTags.DIV)
             container.innerHTML = TestDomBuilders.settingsDom()
             document.body!!.appendChild(container)
             try {
-                // Case 1: valid inputs summing to 100 with USD
                 val input1 = document.createElement(HtmlTags.INPUT) as HTMLInputElement
                 input1.name = FormFields.TARGETS
                 input1.value = "40.0"
@@ -351,11 +318,9 @@ class CoverageTest : StringSpec() {
                 saveButton.disabled.shouldBeFalse()
                 totalDisplay.classList.contains(CssClass.Form.AllocationTotalOk).shouldBeTrue()
 
-                // Cleanup for next test
                 container.innerHTML = TestDomBuilders.settingsDom()
                 document.body!!.appendChild(container)
 
-                // Case 2: sum not 100 -> disabled, delayed
                 val input3 = document.createElement(HtmlTags.INPUT) as HTMLInputElement
                 input3.name = FormFields.TARGETS
                 input3.value = "30.0"
@@ -380,7 +345,6 @@ class CoverageTest : StringSpec() {
                 saveButton2.disabled.shouldBeTrue()
                 totalDisplay2.classList.contains(CssClass.Form.AllocationTotalBad).shouldBeTrue()
 
-                // Case 3: missing USD symbol -> disabled even if sum 100
                 container.innerHTML = TestDomBuilders.settingsDom()
                 document.body!!.appendChild(container)
                 val input5 = document.createElement(HtmlTags.INPUT) as HTMLInputElement
@@ -394,7 +358,7 @@ class CoverageTest : StringSpec() {
                 input6.value = "50.0"
                 val sym6 = document.createElement(HtmlTags.INPUT) as HTMLInputElement
                 sym6.name = FormFields.SYMBOLS
-                sym6.value = "EETH" // not USD
+                sym6.value = "EETH"
                 container.appendChild(input5)
                 container.appendChild(sym5)
                 container.appendChild(input6)
@@ -404,12 +368,11 @@ class CoverageTest : StringSpec() {
                 val totalDisplay3 = document.getElementById(HtmlIds.TOTAL_ALLOCATED_DISPLAY) as HTMLSpanElement
                 val saveButton3 = document.getElementById(HtmlIds.SAVE_BUTTON) as HTMLButtonElement
                 totalDisplay3.textContent shouldBe "Total: 100.00%"
-                saveButton3.disabled.shouldBeTrue() // missing USD
+                saveButton3.disabled.shouldBeTrue()
                 totalDisplay3.classList.contains(CssClass.Form.AllocationTotalBad).shouldBeTrue()
 
-                // Case 4: missing elements -> should not throw
                 container.innerHTML = ""
-                updateAllocationTotal() // Should not throw
+                updateAllocationTotal()
             } finally {
                 document.body!!.removeChild(container)
             }
@@ -420,16 +383,13 @@ class CoverageTest : StringSpec() {
             container.innerHTML = TestDomBuilders.assetEditDom(Asset.BTC)
             document.body!!.appendChild(container)
             try {
-                // Case 1: empty symbol -> should return early
                 val symbolInput = document.getElementById(HtmlIds.NEW_SYMBOL_INPUT) as HTMLInputElement
                 symbolInput.value = ""
                 addAssetRow()
                 val allocContainer = document.getElementById(HtmlIds.ALLOCATIONS_CONTAINER) as HTMLElement
                 allocContainer.childElementCount.shouldBe(0)
 
-                // Case 2: symbol already exists -> should show alert and return
                 symbolInput.value = Asset.BTC
-                // Pre-populate container with existing BTC
                 val existingRow = document.createElement(HtmlTags.DIV)
                 existingRow.className = CssClass.Form.AllocationEditRow.toString()
                 existingRow.innerHTML =
@@ -438,21 +398,19 @@ class CoverageTest : StringSpec() {
                     """.trimIndent()
                 allocContainer.appendChild(existingRow)
 
-                // Mock window.alert to verify it's called
                 window.asDynamic().alertCalled = false
                 window.asDynamic().alert = { _: String -> window.asDynamic().alertCalled = true }
                 try {
                     addAssetRow()
                     (window.asDynamic().alertCalled as Boolean) shouldBe true
-                    allocContainer.childElementCount.shouldBe(1) // No new row added
+                    allocContainer.childElementCount.shouldBe(1)
                 } finally {
                     window.asDynamic().alert = null
                 }
 
-                // Case 3: missing container -> should return early
                 symbolInput.value = "NEW"
-                allocContainer.remove() // Remove container
-                addAssetRow() // Should not throw
+                allocContainer.remove()
+                addAssetRow()
             } finally {
                 if (container.parentNode != null) {
                     document.body!!.removeChild(container)
@@ -460,19 +418,16 @@ class CoverageTest : StringSpec() {
             }
         }
 
-        // Dashboard coverage
         "updateAge handles missing elements and stale/fresh states" {
             val container = document.createElement(HtmlTags.DIV)
             container.innerHTML = TestDomBuilders.dataAgeDom()
             document.body!!.appendChild(container)
             try {
-                // Missing epoch attribute -> should return early
                 updateAge()
                 val ageVal = document.getElementsByClassName(CssClass.DataAge.Value.toString())[0] as HTMLSpanElement
-                ageVal.textContent shouldBe "" // unchanged
+                ageVal.textContent shouldBe ""
 
-                // Valid recent epoch -> fresh
-                val recentTime = Date.now() - 5000 // 5 seconds ago
+                val recentTime = Date.now() - 5000
                 val timeEl = document.getElementsByClassName(CssClass.DataAge.Time.toString())[0] as HTMLSpanElement
                 timeEl.setAttribute(HtmlAttrs.DATA_EPOCH, recentTime.toString())
                 updateAge()
@@ -481,39 +436,34 @@ class CoverageTest : StringSpec() {
                 badge.classList.contains(CssClass.Utility.Live).shouldBeTrue()
                 badge.classList.contains(CssClass.Utility.Delayed).shouldBeFalse()
 
-                // Stale epoch (>90s)
-                val staleTime = Date.now() - 95000 // 95 seconds ago
+                // Past STALE_THRESHOLD_SECONDS (90): Utility.Live/Delayed CSS only — chip text is STREAM/STALE.
+                val staleTime = Date.now() - 95000
                 timeEl.setAttribute(HtmlAttrs.DATA_EPOCH, staleTime.toString())
                 updateAge()
                 ageVal.textContent shouldBe "95s ago"
                 badge.classList.contains(CssClass.Utility.Delayed).shouldBeTrue()
                 badge.classList.contains(CssClass.Utility.Live).shouldBeFalse()
 
-                // Test AM/PM branches and hour % 12 == 0 branches
-                // 9:30 AM (9:30)
                 val amTime = Date(2023, 0, 1, 9, 30, 0).getTime()
                 timeEl.setAttribute(HtmlAttrs.DATA_EPOCH, amTime.toString())
                 updateAge()
                 timeEl.textContent shouldBe "09:30:00 AM"
 
-                // 3:30 PM (15:30)
                 val pmTime = Date(2023, 0, 1, 15, 30, 0).getTime()
                 timeEl.setAttribute(HtmlAttrs.DATA_EPOCH, pmTime.toString())
                 updateAge()
                 timeEl.textContent shouldBe "03:30:00 PM"
 
-                // 12:30 PM
                 val noonTime = Date(2023, 0, 1, 12, 30, 0).getTime()
                 timeEl.setAttribute(HtmlAttrs.DATA_EPOCH, noonTime.toString())
                 updateAge()
                 timeEl.textContent shouldBe "12:30:00 PM"
 
-                // Missing badge element -> should not crash when toggling classes
                 val badgeContainer = document.createElement(HtmlTags.DIV)
                 badgeContainer.innerHTML = TestDomBuilders.dataAgeDom("0")
                 document.body!!.appendChild(badgeContainer)
                 try {
-                    updateAge() // Should not throw
+                    updateAge()
                 } finally {
                     document.body!!.removeChild(badgeContainer)
                 }
@@ -527,52 +477,43 @@ class CoverageTest : StringSpec() {
             container.innerHTML = TestDomBuilders.sortableTableDom()
             document.body!!.appendChild(container)
             try {
-                // Case: no sortable headers -> reapplySort should not throw
                 val noHeadersContainer = document.createElement(HtmlTags.DIV)
                 noHeadersContainer.innerHTML = TestDomBuilders.emptyTableDom()
                 document.body!!.appendChild(noHeadersContainer)
                 try {
-                    reapplySort() // Should not throw
+                    reapplySort()
                 } finally {
                     document.body!!.removeChild(noHeadersContainer)
                 }
 
-                // Case: header missing -> sortTable should return early
                 val fakeHeader = document.createElement(HtmlTags.TH) as HTMLElement
                 fakeHeader.className = CssClass.Table.Sortable.toString()
-                // Not attached to document
-                sortTable(fakeHeader, 0) // Should not throw
+                sortTable(fakeHeader, 0)
 
-                // Normal sorting
                 val sortableClass = CssClass.Table.Sortable.toString()
                 val header0 =
                     document.getElementsByClassName(sortableClass)[0] as HTMLTableCellElement
                 val header1 =
                     document.getElementsByClassName(sortableClass)[1] as HTMLTableCellElement
 
-                // Sort by col0 ascending (default)
                 sortTable(header0, 0)
                 var rows = container.querySelectorAll("${HtmlTags.TBODY} ${HtmlTags.TR}")
                 // "10" < "5" lexicographically
                 (rows.item(0) as HTMLTableRowElement).cells.item(0)?.textContent shouldBe "A"
 
-                // Sort by col0 descending
                 sortTable(header0, 0, CssClass.Utility.Desc.toString())
                 rows = container.querySelectorAll("${HtmlTags.TBODY} ${HtmlTags.TR}")
                 // "5" > "10" lexicographically
                 (rows.item(0) as HTMLTableRowElement).cells.item(0)?.textContent shouldBe "C"
 
-                // Sort by col1 ascending
                 sortTable(header1, 1)
                 rows = container.querySelectorAll("${HtmlTags.TBODY} ${HtmlTags.TR}")
-                (rows.item(0) as HTMLTableRowElement).cells.item(1)?.textContent shouldBe "D" // 15 < 20
+                (rows.item(0) as HTMLTableRowElement).cells.item(1)?.textContent shouldBe "D"
 
-                // Sort by col1 descending
                 sortTable(header1, 1, CssClass.Utility.Desc.toString())
                 rows = container.querySelectorAll("${HtmlTags.TBODY} ${HtmlTags.TR}")
-                (rows.item(0) as HTMLTableRowElement).cells.item(1)?.textContent shouldBe "B" // 20 > 15
+                (rows.item(0) as HTMLTableRowElement).cells.item(1)?.textContent shouldBe "B"
 
-                // Test with missing data-sort-value (falls back to textContent)
                 val row2 = document.createElement(HtmlTags.TR)
                 row2.className = CssClass.Table.Hoverable.toString()
                 val td2a = document.createElement(HtmlTags.TD)
@@ -583,10 +524,8 @@ class CoverageTest : StringSpec() {
                 row2.appendChild(td2b)
                 container.querySelector(HtmlTags.TBODY)!!.appendChild(row2)
 
-                // Covers textContent fallback when data-sort-value is missing.
-                sortTable(header0, 0) // Sort by first column text
+                sortTable(header0, 0)
                 rows = container.querySelectorAll("${HtmlTags.TBODY} ${HtmlTags.TR}")
-                // Ensures no exception when mixing sort-value and textContent rows.
             } finally {
                 document.body!!.removeChild(container)
             }
@@ -598,20 +537,14 @@ class CoverageTest : StringSpec() {
         }
 
         "main and initOnLoad handle body presence/absence" {
-            // Test initOnLoad when body exists
             val body = document.body!!
             val originalInner = body.innerHTML
             body.innerHTML = "<div id='test'></div>"
             try {
-                initOnLoad() // Should not throw
-                // We can't easily test which init function ran without spying, but at least no exception
+                initOnLoad()
             } finally {
                 body.innerHTML = originalInner
             }
-
-            // Test initOnLoad when body is null (simulate by removing body temporarily)
-            // Note: We can't actually remove document.body, but we can test the condition logic
-            // The function checks `if (document.body != null)` - we trust it works
         }
 
         "chart builders config callbacks cover tooltip and ticks formatting" {
@@ -675,7 +608,6 @@ class CoverageTest : StringSpec() {
                 buildAllocationDriftChart(snapshots)
                 buildCumulativeNetCashFlowChart(trades)
 
-                // 1. Portfolio chart callbacks
                 val portConfig = window.asDynamic().chartConfigs[0]
                 val label1 = portConfig.options.plugins.tooltip.callbacks.label
                 val mockCtx1 =
@@ -687,7 +619,6 @@ class CoverageTest : StringSpec() {
                 val tick1 = portConfig.options.scales.y.ticks.callback
                 tick1(12.34, 0, null).toString() shouldContain "$12.34"
 
-                // 2. Asset holdings chart callbacks
                 val holdingsConfig = window.asDynamic().chartConfigs[1]
                 val label2 = holdingsConfig.options.plugins.tooltip.callbacks.label
                 val mockCtx2 =
@@ -708,7 +639,6 @@ class CoverageTest : StringSpec() {
                 tick2(12.34, 0, null).toString() shouldBe "+12.34%"
                 tick2(-5.6, 0, null).toString() shouldBe "-5.6%"
 
-                // 3. Allocation deviation chart callbacks
                 val driftConfig = window.asDynamic().chartConfigs[2]
                 val label3 = driftConfig.options.plugins.tooltip.callbacks.label
                 val mockCtx3 =
@@ -725,7 +655,6 @@ class CoverageTest : StringSpec() {
                 gridColor3(json("tick" to json("value" to 0))).toString() shouldBe ChartProps.COLOR_ZERO_LINE
                 gridColor3(json("tick" to json("value" to 1))).toString() shouldBe ChartProps.COLOR_GRID_LINE
 
-                // 4. Cumulative net cash flow chart callbacks
                 val plConfig = window.asDynamic().chartConfigs[3]
                 val tick4 = plConfig.options.scales.y.ticks.callback
                 tick4(12.34, 0, null).toString() shouldContain "$12.34"
@@ -781,28 +710,23 @@ class CoverageTest : StringSpec() {
             try {
                 initHistory()
 
-                // Let the first checkSyncProgress promise resolve
+                // initHistory polls sync via Promises; short delay lets the first resolve before assert/interval.
                 delay(10.milliseconds)
 
-                // Now the interval should be set up
                 (intervalCb != null).shouldBeTrue()
 
-                // Trigger interval callback to check sync progress again
                 intervalCb?.invoke()
 
-                // Let the promise resolve
                 delay(10.milliseconds)
 
                 clearIntervalCalled.shouldBeTrue()
 
-                // Trigger button click
                 val button24h =
                     document.querySelector(
                         "${HtmlTags.BUTTON}[${HtmlAttrs.DATA_RANGE}='${TimeRange.TWENTY_FOUR_HOURS.key}']",
                     ) as HTMLElement
                 button24h.click()
 
-                // Trigger checkbox change
                 val checkbox = document.getElementById(HtmlIds.SHOW_DRY_RUN_CHECKBOX) as HTMLInputElement
                 checkbox.checked = false
                 val event = document.createEvent("Event")
@@ -820,13 +744,11 @@ class CoverageTest : StringSpec() {
         "registerSettingsGlobals and registerDashboardGlobals wrappers can be called" {
             registerSettingsGlobals()
             registerDashboardGlobals()
-            // Exercise internal variables getters and setters
             currentSortCol = 4
             currentSortCol shouldBe 4
             currentSortDir = CssClass.Utility.Desc.toString()
             currentSortDir shouldBe CssClass.Utility.Desc.toString()
 
-            // We can invoke the wrappers
             val container = document.createElement(HtmlTags.DIV)
             container.innerHTML =
                 """
@@ -850,7 +772,6 @@ class CoverageTest : StringSpec() {
         }
 
         "helpers tolerate null, invalid, and edge cases to maximize branch coverage" {
-            // 1. checkSyncProgress with total == 0
             val container = document.createElement(HtmlTags.DIV)
             container.innerHTML = TestDomBuilders.settingsAndSyncDom()
             document.body!!.appendChild(container)
@@ -859,7 +780,6 @@ class CoverageTest : StringSpec() {
             try {
                 checkSyncProgress().await() shouldBe false
 
-                // 2. updateAllocationTotal with non-input targets, invalid double targets
                 val nonInputTarget = document.createElement(HtmlTags.DIV)
                 nonInputTarget.setAttribute("name", FormFields.TARGETS)
                 container.appendChild(nonInputTarget)
@@ -875,7 +795,6 @@ class CoverageTest : StringSpec() {
 
                 updateAllocationTotal()
 
-                // 3. renderTradeTable with null/missing values and success = false
                 val tableContainer = document.createElement(HtmlTags.DIV)
                 tableContainer.innerHTML = TestDomBuilders.emptyTradeTableDom()
                 container.appendChild(tableContainer)
@@ -896,13 +815,11 @@ class CoverageTest : StringSpec() {
                 val tbody = document.getElementById(HtmlIds.TRADE_TABLE_BODY) as HTMLTableSectionElement
                 tbody.rows.length shouldBe 1
 
-                // 4. updateStats with missing values
                 val statsContainer = document.createElement(HtmlTags.DIV)
                 statsContainer.innerHTML = TestDomBuilders.statsDom()
                 container.appendChild(statsContainer)
                 updateStats(json().unsafeCast<JsHistoryStats>())
 
-                // 5. sortTable with out-of-bounds index, empty cells, missing sort-value
                 val sortContainer = document.createElement(HtmlTags.DIV)
                 sortContainer.innerHTML =
                     """
@@ -918,8 +835,8 @@ class CoverageTest : StringSpec() {
                     """.trimIndent()
                 container.appendChild(sortContainer)
                 val header = sortContainer.querySelector(CssClass.Query.SORTABLE_TH) as HTMLElement
-                sortTable(header, 0) // Should fall back to textContent
-                sortTable(header, 5) // Should handle out of bounds (aCell = null)
+                sortTable(header, 0)
+                sortTable(header, 5)
             } finally {
                 document.body!!.removeChild(container)
             }

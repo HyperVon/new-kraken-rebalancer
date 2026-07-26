@@ -1,0 +1,21 @@
+---
+description: Prefer readable code; comment only non-obvious complexity; keep comments true
+alwaysApply: true
+---
+
+<!-- Canonical portable copy: .agents/OPERATING.md § Complex-code comments -->
+
+# Complex-code comments
+
+Prefer **readable code without comments**. Add comments only where the logic is
+non-obvious or complex (intent, invariants, traps, non-local consequences) —
+not to narrate what the next line does.
+
+When editing code:
+
+1. Prefer rename/extract/simplify over a comment when that makes it clear.
+2. If you change behavior, **update or delete** nearby comments so they stay
+   true — stale comments are worse than none.
+3. Do not add wallpaper KDoc (“Calculate X”) on trivial helpers.
+4. For a repo-wide or targeted **comment audit** (missing / wrong / stale /
+   noisy), follow `.agents/skills/complex-code-comments/SKILL.md`.

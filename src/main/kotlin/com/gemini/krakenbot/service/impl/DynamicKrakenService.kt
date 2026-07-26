@@ -17,6 +17,7 @@ class DynamicKrakenService(
     private val simulatedService: SimulatedKrakenService,
     private val configService: ConfigService,
 ) : KrakenService {
+    // `simulation` picks the backend; `dryRun` is enforced inside that backend's executeOrder, not here.
     private fun resolveFromConfig(): KrakenService = if (configService.getConfig().settings.simulation) {
         simulatedService
     } else {

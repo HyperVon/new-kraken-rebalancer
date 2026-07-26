@@ -35,14 +35,46 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Layering**: `SyncMetadataKeys` moved out of `view.util` into `:common`
   model; overview grid uses `PrecisionConstants` instead of
   `service.impl.PortfolioCalculations`.
+- **Settings safety toggles layout**: At `min-width: 768px`,
+  `SafetyToggles` now uses a two-column grid (`gridTemplateColumns`) instead of
+  `flexDirection: row`, which was a no-op on the existing `display: grid` rule.
 
 ### Added
 
 - **Adversarial PR review skill**: Local dual-model (Composer + Grok) review
   loop wired into open-PR and push-to-open-PR flows.
+- **Complex-code comment norms**: Always-on rule
+  (`.cursor/rules/complex-code-comments.mdc` +
+  [`.agents/OPERATING.md`](.agents/OPERATING.md) § Complex-code comments) keeps
+  code readable by default and comments reserved for non-obvious logic, plus a
+  [`complex-code-comments`](.agents/skills/complex-code-comments/SKILL.md) skill
+  for auditing missing / wrong / stale / noisy comments; referenced from
+  `code-review` and `continuous-improvement`.
 - SnapshotHistoryCalculator unit coverage for lowercase `buy` reverse-apply;
   JVM assert that `TradeSourceKeys.LOCAL_ESTIMATE` matches
   `TradeSource.LOCAL_ESTIMATE.name`.
+
+### Changed
+
+- **Comment sweep (first full pass)**: Applied
+  [`complex-code-comments`](.agents/skills/complex-code-comments/SKILL.md) across
+  JVM, `:common`, and `:frontend-js` production sources — added why-comments on
+  ATH/drawdown deployment, dual deviation gates, fiat correction, post-sell USD
+  settle polling, HMAC signing and nonce seeding, RateLimiter counter math, trade
+  dedupe windows, snapshot reverse-apply, atomic config writes, SSE replay, and
+  Chart.js/`dynamic` payload traps; corrected stale claims (startup ordering,
+  CSS cache rationale, incremental-sync window, chart header legend); removed
+  wallpaper KDoc and comments that restated the code.
+- **Comment sweep (tests)**: Same skill across JVM and Kotlin/JS test sources —
+  scenario/fixture why-comments (evaluation cash-cap/drawdown, FakeKraken vs
+  SimulatedKraken, Chart.js zoomScale/clone traps); stripped CoverageTest and
+  other restating noise.
+- **Docs / skill drift**: Documented zero-target → 100% `Deviation%` in
+  [`docs/ALGORITHM.md`](docs/ALGORITHM.md) and
+  [`portfolio-rebalancing-math`](.agents/skills/portfolio-rebalancing-math/SKILL.md);
+  corrected [`trade-history-sync`](.agents/skills/trade-history-sync/SKILL.md)
+  so full vs incremental sync follows `latestTradeTime` nullity (not
+  `isHistorySeeded`) and OHLC fetch is 95 days vs `HISTORICAL_DAYS_BACK` 90.
 
 ## [6.13.6] - 2026-07-25
 

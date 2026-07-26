@@ -7,6 +7,7 @@ private const val REDACTED_ = "***REDACTED***"
 
 @JvmInline
 value class ApiKey(val value: String) {
+    // Redact so logs/string interpolation never print raw credentials.
     override fun toString(): String = REDACTED_
 }
 

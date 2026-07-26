@@ -644,7 +644,7 @@ class TradeHistoryServiceTest : StringSpec() {
 
                 tradeHistoryService.syncTradesFromKraken()
 
-                // Should skip synchronization — no trade history calls, no seeding
+                // Placeholder credentials + simulation=false: skip Kraken (see CQ-7-3 for simulation=true).
                 coVerify(exactly = 0) { krakenService.getTradeHistory(any(), any()) }
                 coVerify(exactly = 0) { repository.setHistorySeeded(any()) }
             }
@@ -701,7 +701,7 @@ class TradeHistoryServiceTest : StringSpec() {
                         deviationTriggerPercent = 5.0,
                         dustThresholdUSD = 5.0,
                         dryRun = false,
-                        simulation = true, // Enable simulation mode!
+                        simulation = true,
                         fiatMaxDrawdown = 30.0,
                         fiatDeploymentExponent = 1.0,
                     ),
@@ -711,7 +711,7 @@ class TradeHistoryServiceTest : StringSpec() {
                     ),
                 )
                 every { configService.getConfig() } returns appConfig
-                coEvery { repository.load() } returns emptyList() // DB is empty!
+                coEvery { repository.load() } returns emptyList()
 
                 val tradeHistoryService = TradeHistoryServiceImpl(
                     repository,
@@ -724,7 +724,7 @@ class TradeHistoryServiceTest : StringSpec() {
                 )
                 tradeHistoryService.init()
 
-                // Seed 15 days of 6-hour interval snapshots in one batch write
+                // Simulation seed: ~15 days of 6h snapshots written as one batch.
                 coVerify(exactly = 1) { repository.save(match { it.isNotEmpty() }) }
             }
         }
@@ -765,7 +765,6 @@ class TradeHistoryServiceTest : StringSpec() {
                     TestFixtures.TEST_TRADE_HISTORY_JSON,
                 )
 
-                // Should catch exception and not propagate it
                 tradeHistoryService.init()
             }
         }
@@ -821,7 +820,6 @@ class TradeHistoryServiceTest : StringSpec() {
                     effectiveUsdTargetPercent = BigDecimal.ZERO,
                 )
 
-                // Should catch the exception and complete successfully
                 tradeHistoryService.addSnapshot(snapshot)
                 coVerify(exactly = 1) { repository.saveSnapshot(snapshot) }
             }
@@ -852,9 +850,8 @@ class TradeHistoryServiceTest : StringSpec() {
         "syncTradesFromKraken_ThrottlingWithin300Seconds" {
             runTest {
                 val service = createService()
-                service.syncTradesFromKraken() // First run sets lastSyncTime
+                service.syncTradesFromKraken()
 
-                // Second run should be skipped due to throttle
                 service.syncTradesFromKraken()
                 coVerify(exactly = 1) { krakenService.getTradeHistory(any(), any()) }
             }
@@ -912,11 +909,12 @@ class TradeHistoryServiceTest : StringSpec() {
                     dryRun = false,
                 )
 
-                // Define local trades that fail matching on exactly one attribute
+                // Locals differ from the API twin on exactly one attribute each → no dedupe match.
                 val diffPair = baseLocal.copy(pair = "ETHUSD")
                 val diffSide = baseLocal.copy(side = TestFixtures.SELL)
                 val diffVol = baseLocal.copy(volume = BigDecimal.TEN)
-                val diffTime = baseLocal.copy(timestamp = latestTime.minusSeconds(600)) // 10 mins diff
+                // 600s apart — outside isMatchingApiTrade's default 10s window
+                val diffTime = baseLocal.copy(timestamp = latestTime.minusSeconds(600))
 
                 coEvery { repository.getTradesInRange(any(), any()) } returns
                     listOf(diffPair, diffSide, diffVol, diffTime)
@@ -927,7 +925,6 @@ class TradeHistoryServiceTest : StringSpec() {
                 val tradeHistoryService = createService()
                 tradeHistoryService.syncTradesFromKraken()
 
-                // Since it matched none of the local trades, it should be saved as new
                 coVerify(exactly = 1) { repository.saveTrade(apiTrade) }
             }
         }

@@ -28,6 +28,8 @@ class HistoryPageComponentTest : StringSpec() {
                 component.render(settings)
             }
 
+            // Shared IDs/classes are the contract between server-rendered markup and Kotlin/JS;
+            // using :common constants here makes either side's drift fail this test.
             htmlString shouldContain "History - Kraken Rebalancer"
             htmlString shouldContain "id=\"${HtmlIds.PORTFOLIO_VALUE_CHART}\""
             htmlString shouldContain "id=\"${HtmlIds.ASSET_HOLDINGS_CHART}\""

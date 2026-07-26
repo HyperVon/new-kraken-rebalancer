@@ -219,6 +219,7 @@ class DynamicKrakenServiceTest : StringSpec() {
                     )
                 }
 
+                // Outer withStableBackend pin stays on simulated even after config flips to live.
                 outer.getBalances()
             }
 
@@ -240,6 +241,8 @@ class DynamicKrakenServiceTest : StringSpec() {
                 every { configService.getConfig() } returns appConfig(simulation = true)
                 val dynamicService = createService()
 
+                // Overlapping pins: each block keeps its own backend; a mid-flight config flip
+                // must not retarget the other caller's captured service.
                 coroutineScope {
                     val first = async {
                         dynamicService.withStableBackend { backend ->

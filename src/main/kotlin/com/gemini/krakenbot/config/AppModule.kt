@@ -58,7 +58,6 @@ val appModule =
             }
         }
 
-        // Database
         single<Database> { DatabaseConfig.init() }
 
         single<ConfigService> { ConfigServiceImpl(objectMapper = get()) }

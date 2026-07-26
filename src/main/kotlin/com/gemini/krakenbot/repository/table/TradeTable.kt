@@ -2,7 +2,6 @@ package com.gemini.krakenbot.repository.table
 
 import org.jetbrains.exposed.v1.core.Table
 
-/** Exposed table definition for trades — one row per executed order. */
 object TradeTable : Table("trades") {
     val id = integer("id").autoIncrement()
     val timestamp = long("timestamp")

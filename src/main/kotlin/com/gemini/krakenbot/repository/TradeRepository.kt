@@ -26,7 +26,6 @@ interface TradeRepository {
 
     suspend fun getTradeSummaryStats(from: Instant, to: Instant): TradeSummaryStats
 
-    // History page query methods
     suspend fun saveSnapshot(snapshot: PortfolioSnapshot)
 
     suspend fun saveTrade(trade: TradeRecord)

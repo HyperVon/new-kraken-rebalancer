@@ -21,7 +21,6 @@ class MainTest : StringSpec() {
             document.body!!.appendChild(container)
 
             try {
-                // This should call updateAge and reapplySort
                 initOnLoad()
 
                 val ageVal = document.querySelector(DATA_AGE_VALUE_QUERY) as HTMLElement
@@ -38,7 +37,6 @@ class MainTest : StringSpec() {
 
             try {
                 initOnLoad()
-                // Check if settings globals are registered
                 (window.asDynamic().addAssetRow != null) shouldBe true
             } finally {
                 document.body!!.removeChild(container)
@@ -51,7 +49,6 @@ class MainTest : StringSpec() {
             document.body!!.appendChild(container)
 
             try {
-                // initHistory sets up time range buttons. We can just check if globals are there
                 initOnLoad()
                 (window.asDynamic().chartDefaults != null) shouldBe true
             } finally {
@@ -74,12 +71,10 @@ class MainTest : StringSpec() {
             try {
                 main()
 
-                // 1. Verify interval callback is set and can be invoked
                 intervalCb?.invoke()
                 val ageVal = document.querySelector(DATA_AGE_VALUE_QUERY) as HTMLElement
                 ageVal.textContent!!.shouldBe("0s ago")
 
-                // 2. Dispatch htmx:afterSwap event to verify it triggers updateAge and reapplySort
                 val event = document.createEvent(HtmlEvents.EVENT)
                 event.initEvent(type = HtmlEvents.HTMX_AFTER_SWAP, bubbles = true, cancelable = true)
                 document.dispatchEvent(event)
@@ -103,7 +98,6 @@ class MainTest : StringSpec() {
             try {
                 main()
 
-                // Dispatch DOMContentLoaded
                 val event = document.createEvent(HtmlEvents.EVENT)
                 event.initEvent(type = HtmlEvents.DOM_CONTENT_LOADED, bubbles = true, cancelable = true)
                 document.dispatchEvent(event)

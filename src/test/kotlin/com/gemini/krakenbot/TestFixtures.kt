@@ -93,10 +93,17 @@ object TestFixtures {
     const val TEST = "test"
     const val HELLO = "hello"
 
-    /** Fully-qualified class name used in mockk verification. */
+    /**
+     * File facade that carries Exposed's `Database.transactionManager` extension. `mockkStatic` has to
+     * be given this class name because an extension property cannot be stubbed through its receiver.
+     */
     const val ORG_JETBRAINS_EXPOSED_SQL_TRANSACTIONS_TRANSACTION_API_KT =
         "org.jetbrains.exposed.v1.jdbc.transactions.JdbcTransactionInterfaceKt"
 
+    /**
+     * Note the flag pair: `simulation = true` picks the offline emulator backend while `dryRun = false`
+     * still lets that backend "place" orders. Specs asserting `[DRY RUN]` behavior must override it.
+     */
     val DEFAULT_TEST_SETTINGS = Settings(
         loopDelaySeconds = 60,
         deviationTriggerPercent = 2.0,

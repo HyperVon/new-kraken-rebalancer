@@ -2,6 +2,7 @@ package com.gemini.krakenbot.view.util
 
 import com.gemini.krakenbot.model.TimeRange
 
+/** HTTP paths shared by Ktor, HTMX, and Kotlin/JS — renaming one side alone breaks the pair silently. */
 object Routes {
     const val ROOT = "/"
     const val SETTINGS = "/settings"

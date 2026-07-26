@@ -23,6 +23,8 @@ fun Application.configureSerialization() {
 
 fun Application.configureCORS() {
     install(CORS) {
+        // The unauthenticated dashboard assumes local/private-network trust. CORS limits browser
+        // cross-origin access accordingly; deployment still controls direct network reachability.
         allowOrigins { origin ->
             isLocalOrPrivateOrigin(origin)
         }

@@ -5,6 +5,7 @@ import com.gemini.krakenbot.model.OrderSide
 import kotlin.js.Promise
 import kotlin.js.json
 
+/** Plain JS object via `json().apply` — property writes in [builder] land on the object, not a typed map. */
 inline fun jsObject(builder: dynamic.() -> Unit = {}): dynamic = json().apply(builder)
 
 fun mockTradeRecord(
@@ -75,6 +76,7 @@ fun mockFetch(handler: (String) -> Any?): dynamic = { url: String ->
     Promise.resolve(json("json" to { Promise.resolve(responseData) }))
 }
 
+/** Chart.js stand-in; default `isDatasetVisible` is true only for index 0 (feeds createOrUpdate snapshots). */
 fun mockChartConstructor(onConfig: (dynamic) -> Unit = {}): dynamic = { _: dynamic, config: dynamic ->
     onConfig(config)
     jsObject {
@@ -84,6 +86,7 @@ fun mockChartConstructor(onConfig: (dynamic) -> Unit = {}): dynamic = { _: dynam
     }
 }
 
+/** `Object.defineProperty` getter (e.g. stub `document.body` to null in MainTest). */
 fun defineGetter(obj: Any, prop: String, getter: () -> Any?, configurable: Boolean = true) {
     js("Object").defineProperty(
         obj,

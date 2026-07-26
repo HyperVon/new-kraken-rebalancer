@@ -118,7 +118,6 @@ class KrakenE2ETest : StringSpec() {
                 val statsRepo = SqlitePortfolioStatsRepositoryImpl(db, objectMapper)
                 val tradesRepo = SqliteTradeRepositoryImpl(db)
 
-                // Services
                 val krakenService =
                     KrakenServiceImpl(
                         configService = mockConfigService,
@@ -151,10 +150,10 @@ class KrakenE2ETest : StringSpec() {
                         orderExecutor = orderExecutor,
                     )
 
-                // Execute E2E Rebalance
                 portfolioManager.performRebalanceCycle()
 
-                // Verify no order was executed because the portfolio is perfectly balanced!
+                // 0.5 BTC @ $50,000 is $25,000 against $25,000 of cash — exactly the 50/50 target,
+                // so the cycle must never reach AddOrder.
                 capturedOrderPayload.shouldBeNull()
             }
         }
@@ -283,7 +282,8 @@ class KrakenE2ETest : StringSpec() {
 
                 portfolioManager.performRebalanceCycle()
 
-                // Verify
+                // 0.4 BTC @ $50,000 is $20,000 of a $50,000 portfolio (40%); restoring the 50/50 split
+                // buys $5,000 of BTC, hence volume 0.1 on the XBTUSD pair alias.
                 capturedOrderPayload.shouldNotBeNull()
                 capturedOrderPayload.contains("pair=XBTUSD").shouldBeTrue()
                 capturedOrderPayload.contains("type=buy").shouldBeTrue()

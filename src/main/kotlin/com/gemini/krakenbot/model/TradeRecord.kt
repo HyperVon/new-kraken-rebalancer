@@ -6,10 +6,6 @@ import java.math.RoundingMode
 import java.time.Instant
 import kotlin.math.abs
 
-/**
- * Represents a single executed trade/order event.
- * Provides structured data instead of relying on string-based action logs.
- */
 data class TradeRecord(
     val timestamp: Instant,
     val pair: String,
@@ -28,7 +24,10 @@ data class TradeRecord(
     val id: Int? = null,
 )
 
-/** Explicit [source] when present; otherwise infer legacy rows before the source column existed. */
+/**
+ * Explicit [source] when set; otherwise infer from row shape for DB rows written before the
+ * `source` column existed (settled fill vs local estimate heuristics).
+ */
 fun TradeRecord.effectiveSource(): TradeSource? = source ?: when {
     success && !dryRun && errorMessage == null && slippagePercent == null -> TradeSource.API_FILL
     slippagePercent != null -> TradeSource.LOCAL_ESTIMATE
@@ -39,6 +38,7 @@ fun TradeRecord.isSameSymbolAndSide(other: TradeRecord): Boolean =
     this.symbol.equals(other.symbol, ignoreCase = true) &&
         this.side.equals(other.side, ignoreCase = true)
 
+/** Same fill under different Kraken pair strings (e.g. XBTUSD vs XXBTZUSD), within [tolerance]. */
 fun TradeRecord.isPairAliasDuplicateOf(other: TradeRecord, tolerance: BigDecimal = BigDecimal("0.01")): Boolean =
     this.isSameSymbolAndSide(other) &&
         !this.pair.equals(other.pair, ignoreCase = true) &&
@@ -55,6 +55,7 @@ fun TradeRecord.isPairAliasDuplicateOf(other: TradeRecord, tolerance: BigDecimal
                     )
             )
 
+/** Same pair/side within [windowMillis]; volume and USD within [tolerance] (defaults: 10s, 1%). */
 fun TradeRecord.isLocalEstimateDuplicateOf(
     other: TradeRecord,
     windowMillis: Long = 10_000L,
@@ -68,6 +69,7 @@ fun TradeRecord.isLocalEstimateDuplicateOf(
         isWithinRelativeTolerance(this.usdAmount, other.usdAmount, tolerance)
 }
 
+/** True when |fee/usd| rates differ by ≥ 0.001 (0.1 percentage points). */
 fun TradeRecord.feePercentDiffersMateriallyFrom(other: TradeRecord): Boolean {
     if (this.usdAmount.signum() == 0 || other.usdAmount.signum() == 0) return false
     val thisFeeRate = this.fee.divide(this.usdAmount, 8, RoundingMode.HALF_UP)
@@ -83,6 +85,10 @@ fun TradeRecord.hasDifferentTradeProvenanceFrom(other: TradeRecord): Boolean =
     (this.isLocalEstimate() && other.isSettledApiFill()) ||
         (other.isLocalEstimate() && this.isSettledApiFill())
 
+/**
+ * Local order row vs Kraken fill for sync reconcile: same side/symbol within [windowMillis],
+ * volume within [tolerance], and USD also within tolerance unless volumes are exact.
+ */
 fun TradeRecord.isMatchingApiTrade(
     apiTrade: TradeRecord,
     allocations: List<String>,

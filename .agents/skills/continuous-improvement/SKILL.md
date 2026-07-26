@@ -178,6 +178,7 @@ when tracks are disjoint. Suggested discovery tracks (pick what fits timebox):
 | Code quality | [kotlin-refactoring-and-cleanup](../kotlin-refactoring-and-cleanup/SKILL.md), light [autonomous-code-optimizer](../autonomous-code-optimizer/SKILL.md) Pass 1–3 **survey** (don’t full-converge unless user asked) |
 | UI polish | [ui-visual-review](../ui-visual-review/SKILL.md) — recommend only; size each finding |
 | Docs | [documentation-review](../documentation-review/SKILL.md) or [changelog-and-docs-sync](../changelog-and-docs-sync/SKILL.md) gap scan |
+| Comments | [complex-code-comments](../complex-code-comments/SKILL.md) — missing / wrong / stale / noisy |
 | Deps (optional) | [dependency-upgrade](../dependency-upgrade/SKILL.md) — list only unless user wants bumps this cycle |
 | Security alerts (always) | Check `gh api repos/{owner}/{repo}/dependabot/alerts` (see [dependency-upgrade](../dependency-upgrade/SKILL.md) § Security alerts). Every cycle — surface open alerts even when skipping routine bumps |
 | Known smells | [OPERATING.md](../../OPERATING.md) UI misses; open TODOs/FIXMEs; failing or flaky tests |

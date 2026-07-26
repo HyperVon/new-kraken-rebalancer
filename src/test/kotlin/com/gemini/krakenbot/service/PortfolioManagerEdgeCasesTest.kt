@@ -1358,7 +1358,6 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
                 )
                 every { configService.getConfig() } returns config
 
-                // Throw exception during sync to cover catch blocks
                 coEvery { tradeHistoryService.syncTradesFromKraken() } throws RuntimeException("Sync exception")
 
                 portfolioManager.startRebalancingLoop()
@@ -1380,7 +1379,6 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
                     volume = BigDecimal.ZERO,
                     dryRun = false,
                 )
-                // Test zero volume and zero price to hit the else branches
                 (orderExecutor as OrderExecutorImpl).recordTrade(
                     result = result,
                     symbol = "BTC",
@@ -1411,7 +1409,6 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
                 )
                 every { configService.getConfig() } returns config
 
-                // Make kraken service throw to trigger the cycle exception in runLoop
                 krakenService.balanceSupplier = { throw RuntimeException("Balances fetch error") }
 
                 portfolioManager.startRebalancingLoop()

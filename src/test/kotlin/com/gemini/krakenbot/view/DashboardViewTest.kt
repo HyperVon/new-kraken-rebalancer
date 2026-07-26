@@ -246,11 +246,9 @@ class DashboardViewTest : StringSpec() {
             html shouldContain "$9,000.00"
             html shouldContain "${TARGET_PREFIX}90.00% | 2${ASSETS_SUFFIX}"
 
-            // Allocation bars
             html shouldContain "${ALLOCATION_BAR_LABEL}\">BTC"
             html shouldContain "${ALLOCATION_BAR_LABEL}\">ETH"
 
-            // Recent activity badges
             html shouldContain "${BADGE_BUY}\">BUY"
             html shouldContain "${BADGE_SELL}\">SELL"
         }
@@ -291,7 +289,7 @@ class DashboardViewTest : StringSpec() {
             val emptyAssetsLatest = PortfolioSnapshot(
                 timestamp = now,
                 totalValueUSD = BigDecimal.ZERO,
-                assets = emptyMap(), // covers empty assets / maxVal default path
+                assets = emptyMap(),
                 actions = listOf("INFO Rebalancer initialized"),
                 drawdownPercent = BigDecimal.ZERO,
                 fiatDeploymentPercent = BigDecimal.ZERO,
@@ -315,9 +313,9 @@ class DashboardViewTest : StringSpec() {
                         deviationPercent = BigDecimal.ZERO,
                         deviationUSD = BigDecimal.ZERO,
                     ),
-                ), // covers maxVal <= 0 in renderAllocationChart
-                actions = listOf("INFO Rebalancer initialized"), // neither BUY nor SELL
-                drawdownPercent = BigDecimal.ZERO, // drawdown is 0
+                ),
+                actions = listOf("INFO Rebalancer initialized"),
+                drawdownPercent = BigDecimal.ZERO,
                 fiatDeploymentPercent = BigDecimal.ZERO,
                 effectiveUsdTargetPercent = BigDecimal("10.0"),
             )
@@ -326,7 +324,7 @@ class DashboardViewTest : StringSpec() {
                 timestamp = now.minusSeconds(60),
                 totalValueUSD = BigDecimal.ZERO,
                 assets = emptyMap(),
-                actions = emptyList(), // covers empty actions inside the recent activity table
+                actions = emptyList(),
                 drawdownPercent = BigDecimal.ZERO,
                 fiatDeploymentPercent = BigDecimal.ZERO,
                 effectiveUsdTargetPercent = BigDecimal("10.0"),
@@ -364,7 +362,7 @@ class DashboardViewTest : StringSpec() {
                 actions = emptyList(),
                 drawdownPercent = BigDecimal.ZERO,
                 fiatDeploymentPercent = BigDecimal.ZERO,
-                effectiveUsdTargetPercent = BigDecimal("10.0"), // Equal to targetPercent
+                effectiveUsdTargetPercent = BigDecimal("10.0"),
             )
 
             val html = createHTML().div {
@@ -376,21 +374,18 @@ class DashboardViewTest : StringSpec() {
         }
 
         "compute24hDelta_coversAllBranches" {
-            // Too few points -> null
             OverviewGridComponent.compute24hDelta(snap(0, "100"), emptyList()) shouldBe null
 
-            // A snapshot older than 24h exists -> uses it as base (+10%)
             val latestUp = snap(0, "11000")
             val olderBase = snap(90_000, "10000")
             OverviewGridComponent.compute24hDelta(latestUp, listOf(latestUp, olderBase))!!
                 .compareTo(BigDecimal("10.000000")) shouldBe 0
 
-            // No snapshot older than 24h -> null (do not invent a shorter window)
+            // A shorter history must not be mislabeled as a 24-hour delta.
             val latestDown = snap(0, "9000")
             val recent = snap(3_600, "10000")
             OverviewGridComponent.compute24hDelta(latestDown, listOf(latestDown, recent)) shouldBe null
 
-            // Base value is zero -> null
             val latestZeroBase = snap(0, "5000")
             val zeroBase = snap(90_000, "0")
             OverviewGridComponent.compute24hDelta(latestZeroBase, listOf(latestZeroBase, zeroBase)) shouldBe null
@@ -399,11 +394,9 @@ class DashboardViewTest : StringSpec() {
         "sparklineSvg_coversRangeBranches" {
             OverviewGridComponent.sparklineSvg(emptyList()) shouldBe ""
 
-            // Flat series (range == 0) still renders an svg
             val flat = OverviewGridComponent.sparklineSvg(listOf(snap(0, "1000"), snap(3_600, "1000")))
             flat shouldContain "<svg"
 
-            // Varied series renders a polyline
             val varied = OverviewGridComponent.sparklineSvg(listOf(snap(0, "1200"), snap(3_600, "1000")))
             varied shouldContain "polyline"
         }
@@ -412,14 +405,13 @@ class DashboardViewTest : StringSpec() {
             val deltaUp = CssClass.Hero.DeltaUp.toString()
             val deltaDown = CssClass.Hero.DeltaDown.toString()
 
-            // Up delta + relative-time variants (minutes/hours/days) across cycles
             val latestUp = snap(0, "11000")
             val historyUp =
                 listOf(
                     latestUp,
-                    snap(120, "10900"), // "m ago"
-                    snap(7_200, "10500"), // "h ago"
-                    snap(90_000, "10000"), // "d ago" and 24h base
+                    snap(120, "10900"),
+                    snap(7_200, "10500"),
+                    snap(90_000, "10000"),
                 )
             val htmlUp = createHTML().div {
                 view.renderDashboardFragment(latestUp, historyUp)
@@ -429,7 +421,6 @@ class DashboardViewTest : StringSpec() {
             htmlUp shouldContain "h ago"
             htmlUp shouldContain "d ago"
 
-            // Down delta requires a true ≥24h baseline
             val latestDown = snap(0, "9000")
             val historyDown = listOf(latestDown, snap(90_000, "10000"))
             val htmlDown = createHTML().div {

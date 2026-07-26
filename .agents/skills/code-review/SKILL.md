@@ -17,6 +17,8 @@ description: >-
 - No FQNs; magic UI/domain strings live in `:common`.
 - `commonMain` stays pure KMP (no JVM/JS-only imports).
 - No absolute user paths or machine hostnames.
+- Comments: only non-obvious complexity; flag wrong/stale/noisy comments (see
+  [complex-code-comments](../complex-code-comments/SKILL.md)).
 
 ### 2. Financial math & execution
 

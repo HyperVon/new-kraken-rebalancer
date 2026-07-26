@@ -1,8 +1,8 @@
 package com.gemini.krakenbot.model
 
 /**
- * Represents the outcome of an operation that may succeed or fail.
- * Provides type-safe error handling without using nulls or exceptions for control flow.
+ * Analyzer-style success/failure without null or thrown control flow.
+ * [Failure] carries [Exception] only (not Throwable); distinct from kotlin.Result and OrderResult.
  */
 sealed class Result<out T> {
     data class Success<T>(val value: T) : Result<T>()

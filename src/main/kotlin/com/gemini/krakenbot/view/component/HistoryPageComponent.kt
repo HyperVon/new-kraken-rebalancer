@@ -155,6 +155,7 @@ class HistoryPageComponent {
                     max = "100"
                     step = "0.1"
                     value = "0"
+                    // Starts disabled; :frontend-js enables once the chart has a zoomable range.
                     disabled = true
                     attributes[HtmlAttrs.DATA_CHART_ID] = chart.canvasId
                     attributes[HtmlAttrs.ARIA_LABEL] = "${ViewText.HISTORY_PAN_CHART}: ${chart.title}"

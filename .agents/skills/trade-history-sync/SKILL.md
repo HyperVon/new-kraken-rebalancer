@@ -2,9 +2,9 @@
 name: trade-history-sync
 description: >-
   Trade history sync — TradeHistoryServiceImpl, TradeDeduplicator (pair aliases,
-  local-estimate vs API, fee diffs, 5min window), sync metadata offsets,
-  dry-run vs live reconcile, and simulation seed ~15 days. Use when changing
-  history sync, dedupe, or snapshot seeding.
+  local-estimate vs API, fee diffs; 5min scan / 10s reconcile / 300s sync
+  overlap), sync metadata offsets, dry-run vs live reconcile, and simulation
+  seed ~15 days. Use when changing history sync, dedupe, or snapshot seeding.
 ---
 
 # Trade History Sync
@@ -15,7 +15,13 @@ Primary types: `TradeHistoryServiceImpl`, `TradeDeduplicator`,
 ## Sync behavior
 
 - Throttle: minimum **300s** between Kraken sync runs.
-- Incremental window: from latest trade minus **300s** safety margin.
+- Full vs incremental is driven by **`latestTradeTime` nullity** (not
+  `isHistorySeeded`):
+  - `null` → full history (`startSec` null).
+  - otherwise → incremental from latest trade minus **300s** overlap so
+    fills near the previous watermark are re-fetched and reconciled.
+- `isHistorySeeded` / `history_seeded` only gates progress metadata writes
+  (`sync_offset` / `sync_total`) and first-sync completion marking.
 - Paginated cold Flow, page size **50**.
 - Skip live Kraken sync when `!simulation && !hasValidCredentials()`.
 - Progress keys (`SyncMetadataKeys`): `sync_offset`, `sync_total`,
@@ -44,8 +50,10 @@ When DB empty and `settings.simulation`:
 - `seedHistoricalSnapshots()` — ~**15 days** back, step every **6 hours**.
 - `SimulatedKrakenService.seedSimulatedTrades()` — ~**15** trades over ~**5** days.
 
-`SnapshotHistoryCalculator` reconstructs timelines (trades + daily closes,
-`HISTORICAL_DAYS_BACK = 90`).
+`SnapshotHistoryCalculator` reconstructs timelines (trades + daily closes).
+Pruning / daily-close span uses `HISTORICAL_DAYS_BACK` (**90**); the OHLC
+fetch in `TradeHistoryServiceImpl.reconstructHistoricalSnapshots` uses
+**95** days so daily closes cover the full reconstruction window.
 
 ## Live stream
 

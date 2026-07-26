@@ -3,7 +3,6 @@ package com.gemini.krakenbot.repository.table
 import org.jetbrains.exposed.v1.core.ReferenceOption
 import org.jetbrains.exposed.v1.core.Table
 
-/** Exposed table definition for action logs — normalizes the List<String> actions from snapshots. */
 object ActionLogTable : Table("action_logs") {
     val id = integer("id").autoIncrement()
     val snapshotId =

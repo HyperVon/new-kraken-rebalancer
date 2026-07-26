@@ -11,6 +11,10 @@ interface ConfigService {
 
     fun getConfig(): AppConfig
 
+    /**
+     * Rejects invalid numeric bounds and portfolio allocations before persistence or publication.
+     * Allocations must use unique valid symbols, include USD, and total 100% within the implementation tolerance.
+     */
     fun updateConfig(newConfig: AppConfig)
 
     fun watchConfigChanges(): Flow<Settings>

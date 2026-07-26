@@ -22,6 +22,9 @@ class KrakenRebalancerApplicationTest :
 
     init {
         "verify koin modules" {
+            // appModule builds ConfigServiceImpl against this relative path, so the graph only
+            // resolves if a config exists in the working directory. Synthesize a throwaway one when
+            // the developer has none, and never delete a real config that was already there.
             val configFile = File("rebalancer-config.json")
             val existed = configFile.exists()
             if (!existed) {
@@ -37,7 +40,8 @@ class KrakenRebalancerApplicationTest :
             }
 
             try {
-                stopKoin() // Ensure clean state
+                // Koin's context is global: another spec may have left one running.
+                stopKoin()
                 startKoin {
                     modules(appModule)
                 }

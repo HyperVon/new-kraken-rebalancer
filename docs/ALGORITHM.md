@@ -146,7 +146,10 @@ Using these effective targets, the **Ideal Value** for each asset is calculated.
 
 The difference between current and target value is calculated:
 `Deviation (USD) = Current Value - Target Value`
-`Deviation (%) = Deviation (USD) / Target Value * 100` (representing signed relative deviation)
+`Deviation (%) = Deviation (USD) / Target Value * 100` (signed relative
+deviation). When the target value is `$0` but the holding still has a
+positive value, `Deviation (%)` is treated as **100%** so a zero-target
+position can still clear the percent trigger (paired with the dust gate).
 
 ### 3. Trigger Logic
 

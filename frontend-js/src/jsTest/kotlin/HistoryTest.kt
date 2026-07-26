@@ -410,6 +410,7 @@ class HistoryTest : StringSpec() {
                 buildCumulativeNetCashFlowChart(trades)
                 buildPortfolioValueChart(snapshots)
 
+                // mockChartConstructor defaults isDatasetVisible to index==0 only, so rebuild hides dataset 1.
                 (window.asDynamic().chartConfigs.length as Int) shouldBe 5
                 val cashFlowConfig = window.asDynamic().chartConfigs[3]
                 cashFlowConfig.data.datasets.length as Int shouldBe 2
@@ -682,7 +683,7 @@ class HistoryTest : StringSpec() {
                 localStorage.setItem(ViewText.HISTORY_VIEWS_STORAGE_KEY, "{not-json")
                 HistoryViewPrefs.loadStore().defaultId shouldBe HistoryViewIds.OVERVIEW
 
-                // Empty prompt cancels save
+                // Whitespace-only prompt is treated as cancel (no new view option added).
                 window.asDynamic().prompt = { _: String -> "  " }
                 val beforeCancel = (
                     document.getElementById(
@@ -757,6 +758,7 @@ class HistoryTest : StringSpec() {
                 )
 
                 val dayTotal = HistoryViewPrefs.builtInViews().first { it.id == HistoryViewIds.DAY_TOTAL }
+                // pendingPresetVisibility skips snapshotting on-screen toggles so the preset wins on rebuild.
                 historyApplyVisibility(dayTotal.visibility)
                 createOrUpdate(
                     HtmlIds.PORTFOLIO_VALUE_CHART,
@@ -819,6 +821,7 @@ class HistoryTest : StringSpec() {
                 }
             val state = chartScrubberState(zoomed, null)
             state?.enabled shouldBe true
+            // Zoomed window [20,40] inside full [0,100] → scrubber thumb at 25% of panable range.
             state?.position shouldBe 25.0
         }
 
@@ -873,6 +876,7 @@ class HistoryTest : StringSpec() {
                 scrubber.disabled shouldBe false
                 scrubber.value = "50"
                 scrubber.dispatchEvent(Event(HtmlEvents.INPUT))
+                // Prefer chart.zoomScale; writing options.scales.x + update() is ignored once zoom owns the axis.
                 zoomScaleCalls shouldBe 1
                 lastMin shouldBe 40.0
                 lastMax shouldBe 60.0
@@ -892,6 +896,7 @@ class HistoryTest : StringSpec() {
                 """.trimIndent()
             document.body!!.appendChild(container)
             var updateCalls = 0
+            // No zoomScale on the mock — covers the options.scales.min/max + update() fallback path.
             window.asDynamic().Chart = { _: dynamic, config: dynamic ->
                 jsObject {
                     data = config.data
@@ -934,6 +939,7 @@ class HistoryTest : StringSpec() {
         "getClonedChartOptions attaches onZoomComplete to re-sync scrubber" {
             resetHistoryUiState()
             registerHistoryGlobals()
+            // JSON.stringify clone strips functions; production re-attaches onZoomComplete after clone.
             val options = getClonedChartOptions()
             val callback = options.plugins.zoom.zoom[ChartProps.ON_ZOOM_COMPLETE]
             (callback != null && callback != undefined) shouldBe true
@@ -1032,6 +1038,7 @@ class HistoryTest : StringSpec() {
                     document.querySelector(CssClass.Query.CHART_SCRUBBERS) as HTMLInputElement
                 scrubber.value = "50"
                 scrubber.dispatchEvent(Event(HtmlEvents.INPUT))
+                // Full-range x window → not zoomed; pan must no-op even though scrubber is enabled in DOM.
                 zoomScaleCalls shouldBe 0
             } finally {
                 document.body!!.removeChild(container)

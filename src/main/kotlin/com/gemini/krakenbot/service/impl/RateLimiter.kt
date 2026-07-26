@@ -7,8 +7,8 @@ import kotlin.math.roundToLong
 import kotlin.time.Duration.Companion.milliseconds
 
 /**
- * Thread-safe rate limiter for API calls using linear decay.
- * Implements Kraken's call counter algorithm with configurable costs per endpoint.
+ * Coroutine-safe Kraken call-counter limiter: counter decays linearly at [decayRate]/sec
+ * (default 0.33) and blocks until `counter + cost ≤ [safeLimit]` (default 12, Intermediate tier).
  *
  * The mutex is **not** held across [delay] so other callers are not head-of-line
  * blocked while one waiter sleeps (CQ-7-L1).
@@ -39,6 +39,7 @@ open class RateLimiter(
 
                 if (callCounter + cost > safeLimit) {
                     val neededDecay = (callCounter + cost) - safeLimit
+                    // At least 1ms so a rounded-down wait cannot busy-spin under the lock.
                     waitMs = (neededDecay / decayRate * 1000).roundToLong().coerceAtLeast(1L)
                 } else {
                     callCounter += cost
@@ -48,6 +49,7 @@ open class RateLimiter(
             if (acquired != null) {
                 return acquired
             }
+            // Delay outside the lock so other acquires can progress (CQ-7-L1).
             if (waitMs > 0) {
                 delay(waitMs.milliseconds)
             }

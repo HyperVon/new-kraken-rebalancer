@@ -42,6 +42,8 @@ data class HistoryViewsStore(val defaultId: String, val views: List<HistoryViewD
  * Persistence key: [ViewText.HISTORY_VIEWS_STORAGE_KEY].
  */
 object HistoryViewPrefs {
+    // Old ids persisted in localStorage by earlier builds; migrated on load so saved presets
+    // and default selections survive the rename to the net-cash-flow chart.
     private const val LEGACY_MONTH_PNL_ID = "month-pnl"
     private const val LEGACY_CUMULATIVE_PL_CHART = "cumulative-pl-chart"
 

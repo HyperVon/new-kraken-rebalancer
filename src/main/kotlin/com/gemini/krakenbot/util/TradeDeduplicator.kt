@@ -8,13 +8,11 @@ import com.gemini.krakenbot.model.isPairAliasDuplicateOf
 import com.gemini.krakenbot.model.isSettledApiFill
 
 /**
- * Pure domain utility for identifying duplicate local trade records that should be cleaned up.
+ * Finds DB row IDs to delete when the same fill was stored twice (pair-string aliases, or a
+ * local estimate later reconciled by an API fill). Outer scan spans 5 minutes; estimate↔API
+ * matching also requires [TradeRecord.isLocalEstimateDuplicateOf]'s 10s window.
  */
 object TradeDeduplicator {
-    /**
-     * Given a list of trade records sorted chronologically, identifies duplicate trade record IDs
-     * created by pair alias mismatches or local estimated trades vs settled API fills.
-     */
     fun findDuplicateTradeIds(records: List<TradeRecord>): List<Int> {
         val toDelete = mutableListOf<Int>()
         val sorted = records.sortedBy { it.timestamp }
@@ -25,15 +23,19 @@ object TradeDeduplicator {
                 val record2 = sorted[j]
                 val id2 = record2.id ?: continue
                 val diff = record2.timestamp.toEpochMilli() - record1.timestamp.toEpochMilli()
+                // Sorted ascending: once the gap exceeds 5 minutes, later j cannot match record1.
                 if (diff > 300_000) break
 
                 val pairAliasDuplicate = record1.isPairAliasDuplicateOf(record2)
+                // Estimate↔API only when fee rates diverge (≥0.1 pp) — identical fees look like
+                // two real fills, not an estimate replaced by a settle.
                 val localEstimateDuplicate =
                     record1.isLocalEstimateDuplicateOf(record2) &&
                         record1.feePercentDiffersMateriallyFrom(record2) &&
                         record1.hasDifferentTradeProvenanceFrom(record2)
 
                 if (pairAliasDuplicate || localEstimateDuplicate) {
+                    // Prefer keeping API_FILL; if both (or neither) are settled, drop the later row.
                     val idToDelete =
                         when {
                             record1.isSettledApiFill() && !record2.isSettledApiFill() -> id2

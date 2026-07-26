@@ -101,7 +101,7 @@ class TradeDeduplicatorTest : StringSpec() {
                 usdAmount = BigDecimal("50000.00"),
                 success = true,
                 dryRun = false,
-                fee = BigDecimal("10.00"), // 0.02% fee rate
+                fee = BigDecimal("10.00"),
                 slippagePercent = BigDecimal.ZERO,
                 source = TradeSource.LOCAL_ESTIMATE,
                 id = 10,
@@ -115,7 +115,7 @@ class TradeDeduplicatorTest : StringSpec() {
                 usdAmount = BigDecimal("50000.00"),
                 success = true,
                 dryRun = false,
-                fee = BigDecimal("100.00"), // 0.20% fee rate (materially different)
+                fee = BigDecimal("100.00"),
                 source = TradeSource.API_FILL,
                 id = 11,
             )
@@ -361,7 +361,7 @@ class TradeDeduplicatorTest : StringSpec() {
                     usdAmount = BigDecimal("100000.00"),
                     success = true,
                     dryRun = false,
-                    fee = BigDecimal("100.00"), // 0.001 fee rate
+                    fee = BigDecimal("100.00"),
                     source = TradeSource.API_FILL,
                     id = 100,
                 )
@@ -375,7 +375,7 @@ class TradeDeduplicatorTest : StringSpec() {
                     usdAmount = BigDecimal("100000.00"),
                     success = true,
                     dryRun = false,
-                    fee = BigDecimal("300.00"), // 0.003 fee rate (materially different)
+                    fee = BigDecimal("300.00"),
                     slippagePercent = BigDecimal.ZERO,
                     source = TradeSource.LOCAL_ESTIMATE,
                     id = 101,
@@ -396,7 +396,7 @@ class TradeDeduplicatorTest : StringSpec() {
                     usdAmount = BigDecimal("100000.00"),
                     success = true,
                     dryRun = false,
-                    fee = BigDecimal("100.00"), // 0.001 fee rate
+                    fee = BigDecimal("100.00"),
                     source = TradeSource.API_FILL,
                     id = 102,
                 )
@@ -410,7 +410,7 @@ class TradeDeduplicatorTest : StringSpec() {
                     usdAmount = BigDecimal("100000.00"),
                     success = true,
                     dryRun = false,
-                    fee = BigDecimal("100.00"), // 0.001 fee rate (identical, not material)
+                    fee = BigDecimal("100.00"),
                     slippagePercent = BigDecimal.ZERO,
                     source = TradeSource.LOCAL_ESTIMATE,
                     id = 103,
@@ -431,7 +431,7 @@ class TradeDeduplicatorTest : StringSpec() {
                     usdAmount = BigDecimal("100000.00"),
                     success = true,
                     dryRun = false,
-                    fee = BigDecimal("100.00"), // 0.00100000 fee rate
+                    fee = BigDecimal("100.00"), // rate 0.001
                     slippagePercent = BigDecimal.ZERO,
                     source = TradeSource.LOCAL_ESTIMATE,
                     id = 80,
@@ -446,7 +446,7 @@ class TradeDeduplicatorTest : StringSpec() {
                     usdAmount = BigDecimal("100000.00"),
                     success = true,
                     dryRun = false,
-                    fee = BigDecimal("0.00"), // 0.00000000 fee rate; delta == 0.001 threshold (inclusive)
+                    fee = BigDecimal("0.00"), // Δ rate == 0.001 threshold (inclusive → duplicate)
                     source = TradeSource.API_FILL,
                     id = 81,
                 )
@@ -466,7 +466,7 @@ class TradeDeduplicatorTest : StringSpec() {
                     usdAmount = BigDecimal("100000.00"),
                     success = true,
                     dryRun = false,
-                    fee = BigDecimal("99.999"), // 0.00099999 fee rate
+                    fee = BigDecimal("99.999"),
                     slippagePercent = BigDecimal.ZERO,
                     source = TradeSource.LOCAL_ESTIMATE,
                     id = 82,
@@ -481,7 +481,7 @@ class TradeDeduplicatorTest : StringSpec() {
                     usdAmount = BigDecimal("100000.00"),
                     success = true,
                     dryRun = false,
-                    fee = BigDecimal("0.00"), // delta == 0.00099999 < 0.001 threshold
+                    fee = BigDecimal("0.00"),
                     source = TradeSource.API_FILL,
                     id = 83,
                 )
@@ -501,14 +501,14 @@ class TradeDeduplicatorTest : StringSpec() {
                     usdAmount = BigDecimal("100000.00"),
                     success = true,
                     dryRun = false,
-                    fee = BigDecimal("100.00"), // 0.001 fee rate
+                    fee = BigDecimal("100.00"),
                     slippagePercent = BigDecimal.ZERO,
                     source = TradeSource.LOCAL_ESTIMATE,
                     id = 110,
                 )
             val settledFill =
                 TradeRecord(
-                    timestamp = now.plusMillis(10_000), // exactly at the inclusive window limit
+                    timestamp = now.plusMillis(10_000),
                     pair = "XBTUSD",
                     side = "BUY",
                     symbol = "BTC",
@@ -516,7 +516,7 @@ class TradeDeduplicatorTest : StringSpec() {
                     usdAmount = BigDecimal("100000.00"),
                     success = true,
                     dryRun = false,
-                    fee = BigDecimal("300.00"), // 0.003 fee rate (materially different)
+                    fee = BigDecimal("300.00"),
                     source = TradeSource.API_FILL,
                     id = 111,
                 )
@@ -536,14 +536,14 @@ class TradeDeduplicatorTest : StringSpec() {
                     usdAmount = BigDecimal("100000.00"),
                     success = true,
                     dryRun = false,
-                    fee = BigDecimal("100.00"), // 0.001 fee rate
+                    fee = BigDecimal("100.00"),
                     slippagePercent = BigDecimal.ZERO,
                     source = TradeSource.LOCAL_ESTIMATE,
                     id = 112,
                 )
             val settledFill =
                 TradeRecord(
-                    timestamp = now.plusMillis(10_001), // one millisecond beyond the window
+                    timestamp = now.plusMillis(10_001),
                     pair = "XBTUSD",
                     side = "BUY",
                     symbol = "BTC",
@@ -551,7 +551,7 @@ class TradeDeduplicatorTest : StringSpec() {
                     usdAmount = BigDecimal("100000.00"),
                     success = true,
                     dryRun = false,
-                    fee = BigDecimal("300.00"), // 0.003 fee rate (materially different)
+                    fee = BigDecimal("300.00"),
                     source = TradeSource.API_FILL,
                     id = 113,
                 )
@@ -571,7 +571,7 @@ class TradeDeduplicatorTest : StringSpec() {
                     usdAmount = BigDecimal("100000.00"),
                     success = true,
                     dryRun = false,
-                    fee = BigDecimal("100.00"), // 0.001 fee rate
+                    fee = BigDecimal("100.00"),
                     slippagePercent = BigDecimal.ZERO,
                     source = TradeSource.LOCAL_ESTIMATE,
                     id = 90,
@@ -586,7 +586,7 @@ class TradeDeduplicatorTest : StringSpec() {
                     usdAmount = BigDecimal("100000.00"),
                     success = true,
                     dryRun = false,
-                    fee = BigDecimal("300.00"), // 0.003 fee rate (materially different)
+                    fee = BigDecimal("300.00"),
                     source = TradeSource.API_FILL,
                     id = null,
                 )
@@ -606,7 +606,7 @@ class TradeDeduplicatorTest : StringSpec() {
                     usdAmount = BigDecimal("100000.00"),
                     success = true,
                     dryRun = false,
-                    fee = BigDecimal("100.00"), // 0.001 fee rate
+                    fee = BigDecimal("100.00"),
                     slippagePercent = BigDecimal.ZERO,
                     source = TradeSource.LOCAL_ESTIMATE,
                     id = null,
@@ -621,7 +621,7 @@ class TradeDeduplicatorTest : StringSpec() {
                     usdAmount = BigDecimal("100000.00"),
                     success = true,
                     dryRun = false,
-                    fee = BigDecimal("300.00"), // 0.003 fee rate (materially different)
+                    fee = BigDecimal("300.00"),
                     source = TradeSource.API_FILL,
                     id = 91,
                 )

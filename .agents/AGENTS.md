@@ -35,6 +35,7 @@ Canonical deep docs:
 | Spotless, JaCoCo, Karma, CI | [gradle-quality-gates](skills/gradle-quality-gates/SKILL.md) |
 | CHANGELOG / README / docs sync | [changelog-and-docs-sync](skills/changelog-and-docs-sync/SKILL.md) |
 | Full docs audit vs source code | [documentation-review](skills/documentation-review/SKILL.md) |
+| Complex-code comments (audit / hygiene) | [complex-code-comments](skills/complex-code-comments/SKILL.md) |
 | README screenshot PNGs (sim UI) | [docs-screenshot-refresh](skills/docs-screenshot-refresh/SKILL.md) |
 | End-user User Guide (visual) | [user-guide](skills/user-guide/SKILL.md) |
 | UI visual critique (recommend) | [ui-visual-review](skills/ui-visual-review/SKILL.md) |
@@ -63,6 +64,7 @@ same content via committed `.cursor/rules/`:
 | `pr-verifications-before-open.mdc` | Finish every PR Test plan item before `gh pr create`; never defer to after merge |
 | `parallel-multi-agent.mdc` | Fan out independent workstreams; keep coupled files single-threaded |
 | `no-blocking-long-processes.mdc` | Background servers; don’t hang on `java -jar` / `gradlew run` |
+| `complex-code-comments.mdc` | Comment only non-obvious complexity; keep comments accurate |
 | `ui-change-verification.mdc` | Path-triggered: laptop viewport, CSS `?v=`, QA smells (`view/**`, `frontend-js/**`) |
 
 Do **not** gitignore `.cursor/`. Other frameworks should read OPERATING.md (or

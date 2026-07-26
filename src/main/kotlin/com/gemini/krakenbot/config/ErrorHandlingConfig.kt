@@ -11,17 +11,10 @@ import org.koin.core.component.inject
 import org.slf4j.LoggerFactory
 import java.time.Instant
 
-/**
- * Error handling and status pages configuration for HTTP responses.
- * Provides consistent error responses with proper logging and HTTP status codes.
- */
 object ErrorHandlingConfig : KoinComponent {
     private val objectMapper: ObjectMapper by inject()
     private val log = LoggerFactory.getLogger(ErrorHandlingConfig::class.java)
 
-    /**
-     * Configure status pages and error handling for the application.
-     */
     fun Application.configureErrorHandling() {
         install(StatusPages) {
             val statusErrors =
@@ -69,7 +62,6 @@ object ErrorHandlingConfig : KoinComponent {
                 }
             }
 
-            // Handle all other exceptions
             exception<Exception> { call, cause ->
                 log.error("Unhandled exception: {}", cause.message, cause)
                 val status =
@@ -93,9 +85,6 @@ object ErrorHandlingConfig : KoinComponent {
         }
     }
 
-    /**
-     * Build a JSON error response string using the provided ObjectMapper.
-     */
     private fun buildErrorJson(status: Int, error: String, message: String): String {
         val errorBody =
             mapOf(

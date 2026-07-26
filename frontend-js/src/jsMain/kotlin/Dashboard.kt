@@ -93,6 +93,9 @@ fun sortTable(header: HTMLElement, colIdx: Int, forceDir: String? = null) {
 
     val isAsc = header.classList.contains(CssClass.Utility.Asc)
     val sortAsc = if (forceDir != null) forceDir == CssClass.Utility.Asc.toString() else !isAsc
+    // Column 0 is the asset label (string sort); every other column is numeric. Comparisons
+    // prefer the server-rendered data-sort-value attribute and fall back to the visible cell
+    // text with currency/percent decoration stripped.
     val key = if (colIdx == 0) "string" else "float"
 
     rows.sortWith(

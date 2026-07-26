@@ -243,6 +243,8 @@ class OrderExecutorCashCapTest : StringSpec() {
                     }
                 }
 
+                // dryRun=false takes the settle-poll path (up to 3 attempts). dry-run would size
+                // buys from projected cash without calling getBalances.
                 orderExecutor.executeOrders(
                     buyOrders = mapOf(Asset.ETH to BigDecimal("100.00")),
                     sellOrders = mapOf(Asset.BTC to BigDecimal("100.00")),
@@ -281,6 +283,7 @@ class OrderExecutorCashCapTest : StringSpec() {
                 var balancePoll = 0
                 krakenService.balanceSupplier = { observedBalances[balancePoll++] }
 
+                // Best positive poll is $50 (not last/$25); buy budget = 99% → $49.50 → vol 0.0495.
                 orderExecutor.executeOrders(
                     buyOrders = mapOf(Asset.ETH to BigDecimal("100.00")),
                     sellOrders = mapOf(Asset.BTC to BigDecimal("100.00")),

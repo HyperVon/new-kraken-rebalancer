@@ -164,6 +164,7 @@ class PortfolioAnalyzerImpl(
             )
         ratio = ratio.coerceAtMost(BigDecimal.ONE)
 
+        // Deploy% = (DD / MaxDD)^exponent × 100; ratio already capped at 1 so Deploy% ≤ 100.
         // Fractional exponents require Double.pow; re-enter BigDecimal immediately and scale.
         val deployDouble =
             ratio.toDouble().pow(settings.fiatDeploymentExponent) * 100.0
@@ -180,6 +181,7 @@ class PortfolioAnalyzerImpl(
                 .filter { it.symbol.isUsd }
                 .sumOf { it.targetPercent.toBigDecimal() }
 
+        // Shrink configured USD target by Deploy% so cash is freed for crypto on drawdowns.
         return if (fiatDeploymentPct > BigDecimal.ZERO) {
             val factor =
                 BigDecimal.ONE.subtract(
@@ -199,6 +201,7 @@ class PortfolioAnalyzerImpl(
                 .filter { !it.symbol.isUsd }
                 .sumOf { it.targetPercent.toBigDecimal() }
 
+        // Scale every crypto base target so (100 − effectiveUsd) is split in the same proportions.
         val remainingForCrypto = HUNDRED.subtract(effectiveUsdTarget)
         return if (totalNonUsdTarget > BigDecimal.ZERO) {
             remainingForCrypto.divide(
@@ -231,7 +234,6 @@ class PortfolioAnalyzerImpl(
             val symbolVal = symbol.value
             val currentVal = currentValuesUSD[symbolVal] ?: BigDecimal.ZERO
 
-            // Use consolidated calculation logic
             val metrics =
                 PortfolioCalculations.calculateAssetMetrics(
                     symbol = symbol,
@@ -253,6 +255,7 @@ class PortfolioAnalyzerImpl(
                 s.deviationTriggerPercent,
             )
 
+            // Both gates required: |Dev%| ≥ trigger and |DevUSD| ≥ dust (isSignificant).
             val triggerThreshold = BigDecimal.valueOf(s.deviationTriggerPercent)
             val isTriggered =
                 metrics.deviationPercent.abs() >= triggerThreshold && metrics.isSignificant
@@ -264,6 +267,7 @@ class PortfolioAnalyzerImpl(
             }
 
             if (symbol.isUsd) {
+                // USD never becomes a buy/sell row; only flags a fiat-correction candidate.
                 if (isTriggered) {
                     log.info(
                         "Asset USD Deviation: {}% (Trigger: {}%). USD Dev: {}",
@@ -284,6 +288,7 @@ class PortfolioAnalyzerImpl(
                         metrics.deviationUSD,
                     )
 
+                    // Overweight (positive DevUSD) → sell excess; underweight → buy deficit.
                     if (metrics.deviationUSD > BigDecimal.ZERO) {
                         sellOrders[symbolVal] = metrics.deviationUSD
                     } else {
@@ -293,6 +298,8 @@ class PortfolioAnalyzerImpl(
             }
         }
 
+        // Fiat correction only when USD alone triggered (deposit/withdrawal); skip if crypto
+        // already produced orders so we do not double-spend the same cash move.
         if (buyOrders.isEmpty() && sellOrders.isEmpty() && usdTriggered) {
             log.info(
                 "USD Deviation triggered but no individual asset triggers. " +
@@ -319,6 +326,7 @@ class PortfolioAnalyzerImpl(
         actionLog: MutableList<String>,
     ) {
         val deviationAbs = usdDev.abs()
+        // Positive USD DevUSD = surplus cash (deposit) → buy underweights; negative = shortage → sell overweights.
         val isDeposit = usdDev > BigDecimal.ZERO
         var totalCounterDev = BigDecimal.ZERO
         val candidates = mutableListOf<String>()

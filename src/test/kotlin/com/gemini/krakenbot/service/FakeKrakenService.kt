@@ -5,17 +5,20 @@ import com.gemini.krakenbot.model.TradeRecord
 import java.math.BigDecimal
 
 /**
- * A simple in-process fake for [KrakenService] that allows tests to control returned
- * balances and prices via supplier lambdas, and to inspect recorded [executeOrder] calls.
+ * Test-only controllable [KrakenService]: suppliers drive balances/prices/history, and
+ * [executedOrders] records placements. Prefer this in unit/evaluation tests.
  *
- * All suppliers and the optional [executeOrderAction] can be reassigned between tests.
+ * Distinct from [com.gemini.krakenbot.service.impl.SimulatedKrakenService], the production
+ * emulator used when `settings.simulation=true` (seeded portfolio, drifted prices).
+ *
+ * Suppliers and [executeOrderAction] / [orderResultFactory] may be reassigned between tests.
  */
 class FakeKrakenService : KrakenService {
     var balanceSupplier: () -> Map<String, Any> = { emptyMap() }
     var pricesSupplier: (String) -> Map<String, Any> = { emptyMap() }
     var tradeHistorySupplier: (Long?, Int?) -> List<TradeRecord> = { _, _ -> emptyList() }
 
-    /** If set, invoked after recording the order (may throw for legacy tests). */
+    /** Optional side effect after recording (e.g. throw to simulate placement failure). */
     var executeOrderAction: ((String, String, String, BigDecimal) -> Unit)? =
         null
 
@@ -25,8 +28,6 @@ class FakeKrakenService : KrakenService {
 
     var executedOrders = mutableListOf<OrderCall>()
     var getBalancesCallCount = 0
-
-    // OrderCall is a top-level data class so call-site destructuring stays stable.
 
     override suspend fun getBalances(): RawBalances {
         getBalancesCallCount++

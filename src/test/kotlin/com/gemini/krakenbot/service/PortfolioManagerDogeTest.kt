@@ -67,10 +67,6 @@ class PortfolioManagerDogeTest : StringSpec() {
 
                 portfolioManager.performRebalanceCycle()
 
-                // Verify the service was called with the DOGE pair; the FakeKrakenService
-                // records the price lookup via pricesSupplier being invoked.
-                // We confirm the cycle completed and prices were fetched by checking
-                // that the fake was invoked (non-empty prices returned means pair was looked up).
                 krakenService.getBalancesCallCount shouldBe 2
             }
         }

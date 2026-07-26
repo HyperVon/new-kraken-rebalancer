@@ -9,9 +9,7 @@ import java.math.BigDecimal
 import java.math.RoundingMode
 import java.time.Instant
 
-/**
- * Utility functions for calculating trade execution metrics (slippage, fees, executed prices).
- */
+/** Local trade economics at placement time (slippage, fee estimate, executed price). */
 object TradeCalculator {
     fun calculateExecutedPrice(usdAmount: BigDecimal, volume: BigDecimal): BigDecimal = if (volume.isPositive) {
         usdAmount.divide(volume, PrecisionConstants.SCALE_CRYPTO, RoundingMode.HALF_UP)
@@ -19,6 +17,10 @@ object TradeCalculator {
         BigDecimal.ZERO
     }
 
+    /**
+     * Adverse slippage as a positive percent: buy pays above expected, sell fills below expected.
+     * Favorable fills are negative.
+     */
     fun calculateSlippage(side: String, executedPrice: BigDecimal, expectedPrice: BigDecimal): BigDecimal {
         if (expectedPrice.isZero) return BigDecimal.ZERO
 
@@ -53,6 +55,7 @@ object TradeCalculator {
         val slippage = calculateSlippage(side, executedPrice, expectedPrice)
         val estimatedFee = estimateFee(usdAmount)
 
+        // LOCAL_ESTIMATE: planning-time price/fee, not a Kraken fill (API_FILL comes from sync).
         return TradeRecord(
             timestamp = timestamp,
             pair = pair,

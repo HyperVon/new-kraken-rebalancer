@@ -92,6 +92,7 @@ class DashboardTest : StringSpec() {
 
                 updateAge()
                 ageVal.textContent shouldBe "10s ago"
+                // Fresh (< STALE_THRESHOLD_SECONDS): Utility.Live CSS — chip text is STREAM, not trading mode.
                 badge.classList.contains(CssClass.Utility.Live).shouldBeTrue()
 
                 val staleTime = Date.now() - 100000.0
@@ -135,19 +136,15 @@ class DashboardTest : StringSpec() {
                 val headers = container.querySelectorAll(CssClass.Query.SORTABLE_TH)
                 val targetHeader = headers.item(0) as HTMLElement
 
-                // Set initial state to sort by col 5
                 sortTable(targetHeader, 5, CssClass.Utility.Asc.toString())
 
-                // Verify B is first (30%)
                 var rows = container.querySelectorAll("${HtmlTags.TBODY} ${HtmlTags.TR}")
                 rows.item(0)!!.textContent!!.shouldContain("B")
 
-                // Reverse sort
                 sortTable(targetHeader, 5, CssClass.Utility.Desc.toString())
                 rows = container.querySelectorAll("${HtmlTags.TBODY} ${HtmlTags.TR}")
                 rows.item(0)!!.textContent!!.shouldContain("A")
 
-                // Reapply sort (should still be A first)
                 reapplySort()
                 rows = container.querySelectorAll("${HtmlTags.TBODY} ${HtmlTags.TR}")
                 rows.item(0)!!.textContent!!.shouldContain("A")
