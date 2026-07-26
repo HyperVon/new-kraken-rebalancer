@@ -974,10 +974,11 @@ Scope: content-mode skill-reviewer pass targeting
 repo *and* industry practices that fit a money-moving Kotlin service — not
 another copy of the code-review checklist.
 
-Prior ACO checklist items (`ACO-PASS2-1`, `ACO-PASS3-1`, `ACO-FORBID-1`,
-`ACO-RERUN-1`) stay valid but are **insufficient alone**: Pass 3 today is a
-thin pointer, so optimizers “converge” on FQNs/Spotless while leaving layering
-and design debt untouched — or worse, invent new architectures.
+Historical gap (now addressed): prior ACO checklist items (`ACO-PASS2-1`,
+`ACO-PASS3-1`, `ACO-FORBID-1`, `ACO-RERUN-1`) were insufficient alone — Pass 3
+**was** a thin pointer, so optimizers could “converge” on FQNs/Spotless while
+leaving layering and design debt untouched. Pass 3 is now a pattern-driven
+audit linked to `architecture-patterns.md`.
 
 ### Status legend
 

@@ -54,12 +54,15 @@ simplicity.”
 1. **Fail closed on money paths** — Missing/zero price aborts the cycle;
    unsettleable USD after sells aborts buys; never “timeout and continue” into
    live buys. Prefer no trade over a wrong trade.
-2. **Idempotency & stable identity** — Live AddOrder uses deterministic
-   `cl_ord_id` from `cycleId|symbol|side` when `cycleId` is non-blank;
-   **`userref` is not uniqueness**. Do not remove client order ids while
-   deduplicating code.
+2. **Open-order uniqueness & stable identity** — AddOrder uses deterministic
+   `cl_ord_id` from `cycleId|symbol|side.apiValue` when `cycleId` is non-blank;
+   **`userref` is not uniqueness**. Kraken enforces `cl_ord_id` among *open*
+   orders only — not full request idempotency across filled/canceled orders
+   (see [kraken-api-integration](../kraken-api-integration/SKILL.md)). Do not
+   remove client order ids while deduplicating code.
 3. **Mode orthogonality** — `simulation` (which backend) ⊥ `dryRun` (whether to
-   place). Do not collapse into one flag for “simplicity.”
+   place). Do not collapse into one flag for “simplicity.” See
+   [dry-run-and-simulation](../dry-run-and-simulation/SKILL.md).
 4. **Pin for the unit of work** — One rebalance/sync = one pinned backend + one
    `dryRun` snapshot passed into `executeOrder`. Mid-cycle config flips must not
    fork the unit of work.
@@ -167,6 +170,7 @@ Also expect JaCoCo 95%/90% and Karma 90%/75% gates. Loop to Pass 1 until clean.
 - **Pure-core poison** — injecting `Database` / `HttpClient` into
   `RebalancerEngine`
 - **Abstract factory theater** — new generic base types with one impl
+- **Exclusion green** — JaCoCo/Karma exclusion growth without new tests
 - **Cancellation swallow** — `catch (Exception)` without rethrowing
   `CancellationException`
 

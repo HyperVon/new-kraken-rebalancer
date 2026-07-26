@@ -45,7 +45,9 @@ Before merging or deleting a type, name which pattern it implements.
 ### 4. Pure-ish domain calculator (`RebalancerEngine` + `PortfolioCalculations`)
 
 - Rebalance math has **no** network, SQLite, Koin, or Ktor.
-- Logging is allowed for cycle diagnostics; still treat as calculation logic.
+- Logging is allowed for cycle diagnostics; `:common` `ViewText` (and other
+  pure shared strings) may appear in failure messages — still treat as
+  calculation logic, not a view adapter.
 - `PortfolioAnalyzerImpl` owns I/O (balances, prices, ATH) and **delegates**
   math to the engine.
 - **Rule:** New trigger/ATH/dust logic goes in the engine/calculations — not in
@@ -73,7 +75,7 @@ Before merging or deleting a type, name which pattern it implements.
 - Hot `SharedFlow`: config watch, snapshot broadcast (UI).
 - Cold `Flow`: paginated sync, USD settle poll (execution — never broadcast).
 - **Rule:** Promoting a cold poll to a hot SharedFlow "for reuse" is an
-  architecture bug. See `docs/FLOWS.md`.
+  architecture bug. See [docs/FLOWS.md](../../../docs/FLOWS.md).
 
 ### 8. Explicit success/failure types
 
@@ -91,10 +93,13 @@ Allowed directions (→ = "may depend on"):
 
 ```text
 controller  →  service ports, view, :common (Routes/DTOs), api mappers
-view/*      →  :common view utils, wire DTOs/models for display, Settings
+view/*      →  :common view utils, wire DTOs/models for display, Settings;
+               display-only helpers from PortfolioCalculations (percent bars)
+               — not KrakenService / OrderExecutor / repositories
 service/impl → service ports, repository ports, util, :common models/config
-RebalancerEngine / PortfolioCalculations → :common config/models/util only
-  (no repository, no KrakenService, no Ktor, no Koin)
+RebalancerEngine / PortfolioCalculations → service domain types (AnalysisResult,
+  AssetPrices, …), sibling calculations, :common config/models/util/ViewText,
+  logging — no repository, no KrakenService, no Ktor, no Koin
 repository/impl → Exposed, util (safeTransaction*), models
 :common     →  nothing JVM/JS-specific
 frontend-js →  DOM/Chart.js + :common Ids/text (no JVM services)
@@ -108,10 +113,9 @@ frontend-js →  DOM/Chart.js + :common Ids/text (no JVM services)
 - `controller` calling `KrakenServiceImpl` / `SimulatedKrakenService` concrete
   types
 - New business rules inside `SettingsFormComponent` / chart components beyond
-  display formatting (display may use `PortfolioCalculations` helpers for
-  percent bars — must not place orders or change targets)
+  display formatting (must not place orders or change targets)
 
-Quick ripgrep (treat hits as defects unless justified):
+Quick ripgrep (from repository root; treat hits as defects unless justified):
 
 ```bash
 rg 'KrakenService|OrderExecutor|TradeRepository' src/main/kotlin/com/gemini/krakenbot/view --glob '*.kt'
