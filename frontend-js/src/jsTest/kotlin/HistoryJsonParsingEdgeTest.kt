@@ -56,8 +56,9 @@ class HistoryJsonParsingEdgeTest : StringSpec() {
         }
 
         "parseTradeRecord reads a JSON.parse payload with native boolean and numeric id" {
-            // Real JSON.parse yields a native JS boolean (hits dynamicBoolean's `is Boolean` arm) and
-            // a JS number id; string economics stay strings. Assert every field the DTO wire carries.
+            // Real JSON.parse (not a Kotlin-built object): native JS boolean and a JS number id, with
+            // string economics. Asserts every field the API DTO wire carries so numeric→string
+            // coercion or an id shape drift would fail here.
             val wire =
                 """
                 {
@@ -68,6 +69,10 @@ class HistoryJsonParsingEdgeTest : StringSpec() {
                 """.trimIndent()
 
             val parsed = parseTradeRecord(JSON.parse(wire))
+            parsed.timestamp shouldBe "2023-01-01T10:00:00Z"
+            parsed.pair shouldBe "XXBTZUSD"
+            parsed.side shouldBe "SELL"
+            parsed.symbol shouldBe "BTC"
             parsed.success shouldBe true
             parsed.dryRun shouldBe false
             parsed.id shouldBe 42
@@ -79,9 +84,9 @@ class HistoryJsonParsingEdgeTest : StringSpec() {
             parsed.slippagePercent shouldBe "0.15"
         }
 
-        "dynamicBoolean coerces a non-boolean truthy string to false via the toString arm" {
-            // A non-"true" string (not a native boolean) takes the `toString().toBoolean()` arm, which
-            // is strict: only "true" is true. Locks that "yes"/"1" do NOT read as true.
+        "dynamicBoolean reads a non-boolean string via the strict toString arm" {
+            // A non-boolean string takes the `toString().toBoolean()` arm, which only accepts "true"
+            // (case-insensitive). Locks that a truthy-looking "yes" does NOT read as true.
             val yes: dynamic = baseTrade()
             yes["success"] = "yes"
             parseTradeRecord(yes).success shouldBe false
