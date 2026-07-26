@@ -957,3 +957,443 @@ plus `:frontend-js:jsBrowserTest` when JS changed.
 - Dry-run emulator orders omit `orderTxid`, so sell settle uses the balance-poll
   fallback by design.
 ````
+
+---
+
+## 2026-07-26 — autonomous-code-optimizer (architecture / design / standards) — APPLIED
+
+All findings below were applied on 2026-07-26: stance, design principles,
+pattern-driven Pass 3, and architecture anti-patterns landed in
+`SKILL.md`; the pattern catalog, layer graph, refactor decision rules, DI
+shape, and Kotlin craft standards moved to the new sibling
+`autonomous-code-optimizer/architecture-patterns.md` (ACO-SIBLING-1).
+
+Scope: content-mode skill-reviewer pass targeting
+`.agents/skills/autonomous-code-optimizer/SKILL.md` only. Emphasis: teach
+**architecture patterns, design standards, and coding craft** grounded in this
+repo *and* industry practices that fit a money-moving Kotlin service — not
+another copy of the code-review checklist.
+
+Prior ACO checklist items (`ACO-PASS2-1`, `ACO-PASS3-1`, `ACO-FORBID-1`,
+`ACO-RERUN-1`) stay valid but are **insufficient alone**: Pass 3 today is a
+thin pointer, so optimizers “converge” on FQNs/Spotless while leaving layering
+and design debt untouched — or worse, invent new architectures.
+
+### Status legend
+
+- **PENDING** — not yet pasted into the skill
+- **APPLIED** — merged into skill / sibling ref
+
+---
+
+### [ACO-STANCE-1] P1 — Optimize inside the architecture; do not redesign
+
+- Skill: `.agents/skills/autonomous-code-optimizer/SKILL.md` (intro / stance)
+- Gap: Agents treat “exhaustive optimize” as license to invent hexagonal
+  packages, event buses, or merge SRP types for “simplicity.”
+- Why: Collides with [architecture-review](skills/architecture-review/SKILL.md)
+  (recommend-only redesign) and can break money-path invariants.
+
+````markdown
+## Stance (non-negotiable)
+
+This skill **improves code quality inside the current architecture**. It does
+**not** redesign module boundaries, replace SSR/HTMX, swap SQLite, or invent
+new messaging layers.
+
+| Intent | Skill |
+| :--- | :--- |
+| Clean / converge / remove debt **in place** | **this skill** |
+| “Should we redesign X?” | [architecture-review](../architecture-review/SKILL.md) |
+| Scoped style/FQN/` :common` cleanup | [kotlin-refactoring-and-cleanup](../kotlin-refactoring-and-cleanup/SKILL.md) |
+| Product/UI/docs improvements + PR | [continuous-improvement](../continuous-improvement/SKILL.md) |
+
+**Allowed:** extract helpers, restore SRP, delete dead code, fix layering
+violations, DRY within a layer, tighten types, improve tests.
+
+**Forbidden without explicit user approval:** new top-level packages that
+bypass `service` / `repository` / `view` / `controller`; replacing
+`DynamicKrakenService` pinning; replacing HTMX SSE with a JS `EventSource` /
+WebSocket client; collapsing façade collaborators into one god class “for
+simplicity.”
+````
+
+---
+
+### [ACO-PATTERNS-1] P1 — Named patterns already in the codebase (preserve)
+
+- Skill: Pass 3 → new subsection or sibling `architecture-patterns.md`
+- Gap: Pass 3 never names the patterns agents must recognize, so refactors
+  erase them.
+- Why: Mid-level engineers following only the thin checklist do not know
+  *what good looks like* here.
+- Grounding: `AppModule`, `KrakenService` port, `DynamicKrakenService`,
+  `TradeHistoryServiceImpl`, `RebalancerEngine`, `view/component/*`, FLOWS.md.
+
+````markdown
+## Architecture patterns in this repo (preserve under optimization)
+
+Treat these as **load-bearing design**, not accidental structure. Before
+merging or deleting a type, name which pattern it implements.
+
+### 1. Ports & adapters (hexagonal-lite)
+
+- **Ports:** interfaces in `service/` and `repository/`
+  (`KrakenService`, `PortfolioManager`, `OrderExecutor`, `TradeRepository`, …).
+- **Adapters:** `service/impl/*`, `repository/impl/*`, Ktor
+  `controller` / `view`.
+- **Rule:** Domain orchestration depends on **ports**, not concrete adapters.
+  Optimizing “away” an interface that has a Fake/Mock in tests is a
+  regression unless the fake moves with it.
+
+### 2. Strategy + coroutine-context pin (`DynamicKrakenService`)
+
+- `simulation` selects **which** adapter (`KrakenServiceImpl` vs
+  `SimulatedKrakenService`); `dryRun` is enforced **inside** the adapter’s
+  `executeOrder`, not in the router.
+- `withStableBackend` pins the adapter on `CoroutineContext` for the whole
+  cycle/sync so a mid-cycle settings flip cannot split sell/buy across
+  backends.
+- **Rule:** Never “simplify” by resolving the backend on every call inside a
+  money path. Nested pins must reuse the outer pin (already implemented —
+  do not break).
+
+### 3. Façade (`TradeHistoryServiceImpl`)
+
+- Public history API is a thin façade over Sync / SnapshotStore / Query /
+  (Reconstruction via Sync).
+- Controllers and `PortfolioManager` talk to the **façade port**, not the
+  collaborators.
+- **Rule:** Do not re-inline sync/query into `DashboardController` or merge
+  SnapshotStore + Sync into one class during cleanup. Add methods on the
+  façade; keep collaborator SRP.
+
+### 4. Pure-ish domain calculator (`RebalancerEngine` + `PortfolioCalculations`)
+
+- Rebalance math has **no** network, SQLite, Koin, or Ktor.
+- Logging is allowed for cycle diagnostics; still treat as calculation logic.
+- `PortfolioAnalyzerImpl` owns I/O (balances, prices, ATH) and **delegates**
+  math to the engine.
+- **Rule:** New trigger/ATH/dust logic goes in the engine/calculations — not
+  in the executor or a view. Price-safety abort (`Result.Failure`) stays in
+  the calculator path before orders.
+
+### 5. Orchestrator / brain / brawn SRP
+
+| Role | Type | Pattern job |
+| :--- | :--- | :--- |
+| Orchestrator | `PortfolioManagerImpl` | Loop, config `collectLatest`, cycleId/MDC, pin, wire analyzer → executor → snapshot |
+| Brain | `PortfolioAnalyzerImpl` | Snapshot inputs + analysis; no `executeOrder` |
+| Brawn | `OrderExecutorImpl` | Place/settle only; no ATH/target % math |
+
+### 6. SSR component composition (not a SPA)
+
+- `view/component/*` render DTOs + `Settings`; `DashboardView` composes pages;
+  `DashboardController` maps HTTP ↔ services ↔ HTML/JSON.
+- HTMX + SSE shell owns live updates; `:frontend-js` owns charts/DOM after swap.
+- **Rule:** Do not introduce client-side routing or a second SSE stack while
+  “optimizing.”
+
+### 7. Hot vs cold Flow ownership
+
+- Hot `SharedFlow`: config watch, snapshot broadcast (UI).
+- Cold `Flow`: paginated sync, USD settle poll (execution — never broadcast).
+- **Rule:** Promoting a cold poll to a hot SharedFlow “for reuse” is an
+  architecture bug. See `docs/FLOWS.md`.
+
+### 8. Explicit success/failure types
+
+- Domain analysis: `com.gemini.krakenbot.model.Result` (KMP; not
+  `kotlin.Result`).
+- Orders: `OrderResult` sealed interface.
+- **Rule:** Prefer these over nullable-or-throw control flow on money/analysis
+  paths. Do not replace with generic `Either` libraries.
+````
+
+Optional sibling: `.agents/skills/autonomous-code-optimizer/architecture-patterns.md`
+if SKILL.md would exceed ~500 lines — keep SKILL.md as the loop + short
+stance; put the pattern catalog in the sibling and link it from Pass 3.
+
+---
+
+### [ACO-LAYER-1] P1 — Dependency direction (allowed import graph)
+
+- Skill: Pass 3
+- Gap: No enforceable layering rules; agents pull Kraken/DB into views or math
+  into controllers.
+- Why: Layering is the #1 architecture standard that survives refactors.
+- Grounding: controller deps today (Config/TradeHistory/View only); engine has
+  no Kraken; AppModule splits `coreModule` / `webModule`.
+
+````markdown
+## Layer dependency rules (Pass 3 scan)
+
+Allowed directions (→ = “may depend on”):
+
+```text
+controller  →  service ports, view, :common (Routes/DTOs), api mappers
+view/*      →  :common view utils, wire DTOs/models for display, Settings
+service/impl → service ports, repository ports, util, :common models/config
+RebalancerEngine / PortfolioCalculations → :common config/models/util only
+  (no repository, no KrakenService, no Ktor, no Koin)
+repository/impl → Exposed, util (safeTransaction*), models
+:common     →  nothing JVM/JS-specific
+frontend-js →  DOM/Chart.js + :common Ids/text (no JVM services)
+```
+
+**Fail Pass 3 if you find:**
+
+- `view/**` importing `KrakenService`, `OrderExecutor`, or writing repositories
+- `RebalancerEngine` / `PortfolioCalculations` importing `repository` or
+  `KrakenService`
+- `controller` calling `KrakenServiceImpl` / `SimulatedKrakenService` concrete
+  types
+- New business rules inside `SettingsFormComponent` / chart components beyond
+  display formatting (display may use `PortfolioCalculations` helpers for
+  percent bars — must not place orders or change targets)
+
+Quick ripgrep (treat hits as defects unless justified):
+
+```bash
+rg 'KrakenService|OrderExecutor|TradeRepository' src/main/kotlin/com/gemini/krakenbot/view --glob '*.kt'
+rg 'repository\.|KrakenService' src/main/kotlin/com/gemini/krakenbot/service/impl/RebalancerEngine.kt \
+  src/main/kotlin/com/gemini/krakenbot/service/impl/PortfolioCalculations.kt
+rg 'KrakenServiceImpl|SimulatedKrakenService' src/main/kotlin/com/gemini/krakenbot/controller --glob '*.kt'
+```
+````
+
+---
+
+### [ACO-PRINCIPLES-1] P0 — Design principles for money-moving code
+
+- Skill: new section before Pass 2 / 3 (or Pass 2 intro)
+- Gap: Checklists list mechanics; agents lack *principles* that decide hard
+  trade-offs during cleanup.
+- Why: Without principles, “make it cleaner” deletes fail-closed paths and
+  idempotency.
+- Mix: industry (fail-closed, idempotency, least privilege) + repo evidence
+  (settle abort, `cl_ord_id`, CORS local-trust, dryRun pin on executeOrder).
+
+````markdown
+## Design principles (apply on every optimization decision)
+
+1. **Fail closed on money paths** — Missing/zero price aborts the cycle;
+   unsettleable USD after sells aborts buys; never “timeout and continue”
+   into live buys. Prefer no trade over a wrong trade.
+2. **Idempotency & stable identity** — Live AddOrder uses deterministic
+   `cl_ord_id` from `cycleId|symbol|side` when `cycleId` is non-blank;
+   **`userref` is not uniqueness**. Do not remove client order ids while
+   deduplicating code.
+3. **Mode orthogonality** — `simulation` (which backend) ⊥ `dryRun` (whether
+   to place). Do not collapse into one flag for “simplicity.”
+4. **Pin for the unit of work** — One rebalance/sync = one pinned backend +
+   one `dryRun` snapshot passed into `executeOrder`. Mid-cycle config flips
+   must not fork the unit of work.
+5. **Cancellation is control flow** — `CancellationException` always rethrown
+   in loops/SSE; never logged as a business error (`collectLatest` restarts
+   depend on this).
+6. **Least privilege at the edge** — No-auth dashboard ⇒ keep CORS
+   `isLocalOrPrivateOrigin`; never widen to `*` while cleaning config.
+7. **Pure core, impure shell** — Push decisions that need tests without I/O
+   into `RebalancerEngine` / `PortfolioCalculations`; keep I/O at analyzer,
+   executor, repositories.
+8. **Prefer delete + extract over abstract** — During optimization, remove
+   dead code and extract duplication *within a layer*. Do not introduce
+   frameworks, new DI scopes, or generic “BaseService” hierarchies.
+9. **Observability without secrecy** — Keep `cycleId` in MDC for cycle logs;
+   never log HMAC, API secrets, or resolved credentials.
+10. **Coverage is evidence, not a goal** — New tests for behavior you change;
+    never widen JaCoCo/Karma exclusions to declare convergence.
+````
+
+---
+
+### [ACO-EXTRACT-1] P1 — When to extract vs leave alone (optimizer decision rules)
+
+- Skill: Pass 3 or new “Refactor decision rules”
+- Gap: Agents either over-abstract or leave god-methods because the skill
+  only says “SRP.”
+- Why: Extraction heuristics are a coding-standard agents lack.
+- Grounding: history package split; AppModule explicit ctor comments (#89);
+  OverviewGrid display helpers vs engine math.
+
+````markdown
+## Refactor decision rules (Pass 3)
+
+### Extract when
+
+- A function mixes **I/O + pure math** → split so math is unit-testable
+  without fakes (engine/calculations pattern).
+- A type has **two reasons to change** (e.g. sync pagination vs snapshot
+  broadcast) → separate collaborators behind a façade.
+- The same **BigDecimal scale/rounding** appears 3+ times →
+  `toUsdScale()` / `PrecisionConstants` / shared helper.
+- A view block is copied across pages → `view/component/*` + `:common`
+  strings/IDs.
+
+### Do **not** extract when
+
+- A one-off private helper used once — leave it local.
+- “Future flexibility” ports with a single impl and no test fake need —
+  YAGNI.
+- Cross-layer “utils” that would let views call Kraken or engines touch DB.
+- New sealed hierarchies for problems already solved by `Result` /
+  `OrderResult`.
+
+### Size / smell triggers (investigate, don’t blindly split)
+
+- `*Impl` file continuously growing with unrelated sections (sync + HTTP +
+  math).
+- Constructor arity climbing because the type absorbed collaborators (prefer
+  façade + smaller types, like history).
+- Comments explaining *what the next 40 lines do* → extract a named function
+  instead of a comment (see complex-code-comments).
+````
+
+---
+
+### [ACO-DI-1] P2 — Preserve DI shape while moving code
+
+- Skill: Pass 3 checklist item + pointer to koin-di-and-config
+- Gap: Optimizers switch everything to `singleOf` and break nullable
+  `krakenService` injection / RateLimiter defaults.
+- Why: DI wiring is part of the architecture.
+- Grounding: `AppModule.kt` comments on explicit ctors.
+
+````markdown
+### DI / module shape (do not “simplify” away)
+
+- Keep `coreModule` (domain/persistence/exchange) separate from `webModule`
+  (views/controller).
+- `KrakenService` binding stays `DynamicKrakenService` wrapping real + sim.
+- `PortfolioManagerImpl`: **explicit** `single { … krakenService = get() }` —
+  `singleOf` skips the nullable param and disables cycle pinning.
+- `KrakenServiceImpl`: **explicit** `single { … }` so default `RateLimiter()`
+  remains; tests inject recording limiters.
+- New services: prefer constructor injection of **ports**; register in the
+  matching module; avoid service locators (`get()` outside Koin DSL / route
+  inject).
+````
+
+---
+
+### [ACO-KOTLIN-1] P2 — Coding standards beyond Spotless/FQN
+
+- Skill: Pass 1 expansion or “Kotlin craft” subsection
+- Gap: Pass 1 is FQN/paths/secrets only; craft standards live nowhere in the
+  optimizer loop.
+- Why: Exhaustive cleanup should raise the floor of idiomatic Kotlin *as this
+  repo writes it*.
+- Grounding: `Result` fold/map; sealed `OrderResult`; `safeTransactionIO`;
+  rethrow cancellation; BigDecimal extensions.
+
+````markdown
+## Kotlin craft standards (Pass 1 + ongoing)
+
+- **Errors:** use domain `Result` / `OrderResult` on analysis/order paths;
+  do not swallow exceptions with empty `catch`. Always rethrow
+  `CancellationException` before other catches.
+- **Nulls:** prefer `?.` / `?:` / early `return`; avoid `!!` in `src/main`
+  (scan with `rg '\!\!'`).
+- **Concurrency:** no `GlobalScope`; blocking DB/network under
+  `Dispatchers.IO` via `safeTransactionIO` / `withContext`; structured
+  concurrency for loops.
+- **Money:** `BigDecimal` + `toUsdScale()` / `toCryptoScale()` /
+  `PrecisionConstants`; no `Double`/`Float`/`toDouble()` in production money
+  paths; tests: `shouldBeEqualComparingTo` only.
+- **Transactions:** repository writes through `safeTransaction` /
+  `safeTransactionIO` — no bare `transaction { }` that bypasses error
+  wrapping.
+- **Strings/IDs:** UI and route literals in `:common` (`ViewText`, `HtmlIds`,
+  `CssClass`, `Routes`); no raw duplicated labels in components.
+- **Imports:** no FQNs unless collision; no absolute user paths / machine
+  hostnames.
+- **Comments:** only non-obvious intent/invariants (pinning, fail-closed,
+  pair-alias exact match). Delete stale comments; do not strip the *why*
+  on money-path traps.
+- **API surface:** keep façade/port methods intentional; don’t expose
+  collaborator types to controllers “temporarily.”
+````
+
+---
+
+### [ACO-PASS3-REWRITE-1] P1 — Replace thin Pass 3 with a pattern-driven audit
+
+- Skill: replace current Pass 3 bullets
+- Gap: Current Pass 3 is seven checklist lines with no *how* or *why*.
+- Why: This is the primary vehicle for architecture content in the loop.
+
+````markdown
+## Pass 3 — Architecture & design
+
+Read [architecture patterns](architecture-patterns.md) (or the inlined
+patterns section). Then audit:
+
+1. **Pattern integrity** — Ports/adapters, façade, strategy+pin, pure engine,
+   orchestrator/brain/brawn, SSR composition, hot/cold flows still intact.
+2. **Layering** — Run the dependency-direction rg scans; fix violations by
+   moving code to the correct layer (not by widening imports).
+3. **SRP do-nots** — Match the code-review table; fix by moving methods, not
+   by renaming only.
+4. **Fail-closed & modes** — Settle abort, price abort, `dryRun`≠`simulation`,
+   `cl_ord_id` path unchanged by cleanup.
+5. **Persistence** — `safeTransaction` / `safeTransactionIO`; no controller
+   SQL.
+6. **UI shell** — Components under `view/component/*`; HTMX SSE shell; no new
+   `EventSource`; mode plate + OOB header status; Chart.js deep-clone +
+   callback re-attach.
+7. **DI shape** — `coreModule`/`webModule`; explicit ctors where required.
+8. **Cross-check** domain skills only for mechanics you touch (math, flows,
+   exposed, `:common`, kraken) — do not paste their essays into diffs.
+
+**Exit criterion:** zero layering violations, zero SRP do-not breaches, no
+pattern erased “for simplicity.”
+````
+
+---
+
+### [ACO-ANTI-1] P1 — Architecture anti-patterns (optimizer edition)
+
+- Skill: extend “Do not count as a clean cycle” + Pass 3
+- Gap: Forbidden list is safety/coverage oriented; missing design anti-patterns.
+- Why: Agents need named bad moves.
+
+````markdown
+### Architecture anti-patterns (never “done”)
+
+- **God-class merge** — folding Sync + SnapshotStore + Query into one type
+- **Pin bypass** — unpinned `executeOrder` / settle inside a cycle
+- **Flag collapse** — single `isSim` replacing `simulation` + `dryRun`
+- **Layer leak** — Kraken or SQL from `view/**` or math from `controller`
+- **Second channel** — JS `EventSource`/WebSocket beside HTMX SSE
+- **Pure-core poison** — injecting `Database` / `HttpClient` into
+  `RebalancerEngine`
+- **Abstract factory theater** — new generic base types with one impl
+- **Exclusion green** — JaCoCo/Karma exclusion growth without tests
+- **Cancellation swallow** — `catch (Exception)` without rethrowing
+  `CancellationException`
+````
+
+---
+
+### [ACO-SIBLING-1] P3 — Progressive disclosure via `architecture-patterns.md`
+
+- Skill: package layout under `autonomous-code-optimizer/`
+- Gap: Full pattern catalog + principles + layer graph will bloat SKILL.md.
+- Why: skill-reviewer progressive-disclosure rule (~500 lines).
+
+Recommendation: keep SKILL.md = stance + 4-pass loop + short checklists +
+links; move long pattern catalog + principles examples to
+`architecture-patterns.md`. Pass 3 starts with “read sibling.”
+
+---
+
+### Suggested apply order (this section)
+
+1. `ACO-STANCE-1` + `ACO-PRINCIPLES-1` (orientation + P0 safety design)
+2. `ACO-PATTERNS-1` (+ `ACO-SIBLING-1` if length warrants)
+3. `ACO-LAYER-1` + `ACO-PASS3-REWRITE-1` + `ACO-ANTI-1`
+4. `ACO-EXTRACT-1` + `ACO-DI-1` + `ACO-KOTLIN-1`
+5. Reconcile older checklist drafts (`ACO-PASS2-1`, `ACO-FORBID-1`) so they
+   don’t duplicate — principles reference checklists, checklists don’t restate
+   essays.
