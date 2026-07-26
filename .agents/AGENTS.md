@@ -207,3 +207,28 @@ See [write-kotest](skills/write-kotest/SKILL.md).
 - In-memory SQLite only (`:memory:`).
 - Prefer `FakeKrakenService` for deterministic tests; `SimulatedKrakenService` is the production emulator (not the same).
 - Evaluation/E2E/chaos: `EvaluationScenariosTest`, `docs/EVALUATION.md`; Flow tests use `advanceUntilIdle()`.
+
+---
+
+## Cursor Cloud specific instructions
+
+- **JDK 25 is required** and is pre-installed at `/usr/lib/jvm/temurin-25` and set
+  as the default `java`/`javac` (via `update-alternatives`). Gradle's launcher and
+  the JDK 25 toolchain both resolve automatically — no `JAVA_HOME` export is needed
+  for `./gradlew`. (JDK 21 is also present but is not used.)
+- **Run the app (simulation mode, no Kraken keys):** the app needs
+  `rebalancer-config.json` (gitignored) at the repo root. Copy
+  `rebalancer-config-template.json` to it and set `"simulation": true` (keep
+  `"dryRun": true`), then `./gradlew run` — dashboard serves on
+  <http://localhost:8080>. In simulation mode the offline emulator seeds ~15 days of
+  snapshots/trades into an empty SQLite DB, so charts/tables are populated on first
+  boot. No real credentials touch Kraken. `./gradlew run` is long-lived; background it.
+- **Standard commands** (build/lint/test/coverage/JS tests) are already documented —
+  see README `## Testing` / `## Getting Started` and `## 5. Quality gates` above.
+  `./gradlew build` runs Spotless (lint), JVM tests + JaCoCo verification, and the
+  Kotlin/JS Karma tests in one shot. The Kotlin/JS build downloads an isolated
+  Node/Yarn into `.gradle/` — no host Node install required.
+- **Config hot-reload:** saving settings via the Settings UI (or editing
+  `rebalancer-config.json`) restarts the rebalance loop with the new settings without
+  a server restart (`watchConfigChanges().collectLatest`). Ktor `Autoreload` is off
+  (dev mode disabled), so **Kotlin code changes still require restarting `./gradlew run`**.
