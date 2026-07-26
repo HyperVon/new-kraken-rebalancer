@@ -8,12 +8,13 @@ import com.gemini.krakenbot.service.RawBalances
 import com.gemini.krakenbot.service.RawPrices
 import kotlinx.coroutines.withContext
 import java.math.BigDecimal
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.coroutines.AbstractCoroutineContextElement
 import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.coroutineContext
 
 class DynamicKrakenService(
-    val realService: KrakenServiceImpl,
+    private val realService: KrakenServiceImpl,
     private val simulatedService: SimulatedKrakenService,
     private val configService: ConfigService,
 ) : KrakenService {
@@ -34,6 +35,9 @@ class DynamicKrakenService(
 
     private suspend fun currentBackend(): KrakenService =
         coroutineContext[PinnedBackend]?.service ?: resolveFromConfig()
+
+    /** Cached after [getTradeHistory] so progress metadata need not downcast the port. */
+    private val lastTradeHistoryTotalCount = AtomicInteger(0)
 
     /**
      * Pins the live vs simulation backend for [block] at entry. If a pin is already
@@ -64,9 +68,17 @@ class DynamicKrakenService(
         dryRun: Boolean?,
     ): OrderResult = currentBackend().executeOrder(pair, type, side, volume, dryRun)
 
-    override suspend fun getTradeHistory(startSec: Long?, offset: Int?): List<TradeRecord> =
-        currentBackend().getTradeHistory(startSec, offset)
+    override suspend fun getTradeHistory(startSec: Long?, offset: Int?): List<TradeRecord> {
+        val backend = currentBackend()
+        val trades = backend.getTradeHistory(startSec, offset)
+        lastTradeHistoryTotalCount.set(backend.getLastTradeHistoryTotalCount())
+        return trades
+    }
 
     override suspend fun getOHLC(pair: String, interval: Int, since: Long?): List<Pair<Long, BigDecimal>> =
         currentBackend().getOHLC(pair, interval, since)
+
+    override fun getLastTradeHistoryTotalCount(): Int = lastTradeHistoryTotalCount.get()
+
+    override suspend fun getApiCallCounter(): Double = currentBackend().getApiCallCounter()
 }

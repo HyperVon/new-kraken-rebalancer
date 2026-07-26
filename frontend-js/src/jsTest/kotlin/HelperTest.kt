@@ -4,7 +4,6 @@ import com.gemini.krakenbot.model.Asset
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
-import kotlin.js.json
 
 class HelperTest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
@@ -12,16 +11,17 @@ class HelperTest : StringSpec() {
     init {
         "getUniqueSymbols excludes and includes USD correctly" {
             val snapshots =
-                arrayOf(
+                listOf(
                     mockSnapshotRecord(
-                        assets = json(
-                            Asset.BTC to jsObject(),
-                            Asset.ETH to jsObject(),
-                            Asset.USD to jsObject(),
+                        assets =
+                        mapOf(
+                            Asset.BTC to mockSnapshotRecord().assets.getValue(Asset.BTC),
+                            Asset.ETH to mockSnapshotRecord().assets.getValue(Asset.BTC).copy(symbol = Asset.ETH),
+                            Asset.USD to mockSnapshotRecord().assets.getValue(Asset.BTC).copy(symbol = Asset.USD),
                         ),
                     ),
-                    mockSnapshotRecord(assets = null),
-                    jsObject(),
+                    mockSnapshotRecord(assets = emptyMap()),
+                    mockSnapshotRecord(assets = emptyMap()),
                 )
             val symbolsExcludeUsd = getUniqueSymbols(snapshots, excludeUsd = true)
             symbolsExcludeUsd shouldBe listOf(Asset.BTC, Asset.ETH)
@@ -32,9 +32,9 @@ class HelperTest : StringSpec() {
 
         "getUniqueSymbols returns empty list when no assets" {
             val snapshots =
-                arrayOf(
-                    jsObject(),
-                    mockSnapshotRecord(assets = null),
+                listOf(
+                    mockSnapshotRecord(assets = emptyMap()),
+                    mockSnapshotRecord(assets = emptyMap()),
                 )
             getUniqueSymbols(snapshots, excludeUsd = true) shouldBe emptyList()
         }

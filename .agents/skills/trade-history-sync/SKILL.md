@@ -1,16 +1,19 @@
 ---
 name: trade-history-sync
 description: >-
-  Trade history sync — TradeHistoryServiceImpl, TradeDeduplicator (pair aliases,
-  local-estimate vs API, fee diffs; 5min scan / 10s reconcile / 300s sync
-  overlap), sync metadata offsets, dry-run vs live reconcile, and simulation
-  seed ~15 days. Use when changing history sync, dedupe, or snapshot seeding.
+  Trade history sync — TradeHistorySyncService (via TradeHistoryService façade),
+  TradeDeduplicator (pair aliases, local-estimate vs API, fee diffs; 5min scan /
+  10s reconcile / 300s sync overlap), sync metadata offsets, dry-run vs live
+  reconcile, and simulation seed ~15 days. Use when changing history sync,
+  dedupe, or snapshot seeding.
 ---
 
 # Trade History Sync
 
-Primary types: `TradeHistoryServiceImpl`, `TradeDeduplicator`,
-`SnapshotHistoryCalculator`, `SqliteTradeRepositoryImpl`.
+Primary types: `TradeHistoryService` façade → `TradeHistorySyncService` /
+`TradeHistorySnapshotStore` / `TradeHistoryQueryService` /
+`TradeHistoryReconstructionService` under `service/impl/history/`; also
+`TradeDeduplicator`, `SnapshotHistoryCalculator`, `SqliteTradeRepositoryImpl`.
 
 ## Sync behavior
 
@@ -52,12 +55,13 @@ When DB empty and `settings.simulation`:
 
 `SnapshotHistoryCalculator` reconstructs timelines (trades + daily closes).
 Pruning / daily-close span uses `HISTORICAL_DAYS_BACK` (**90**); the OHLC
-fetch in `TradeHistoryServiceImpl.reconstructHistoricalSnapshots` uses
-**95** days so daily closes cover the full reconstruction window.
+fetch in `TradeHistoryReconstructionService.reconstructHistoricalSnapshots`
+uses **95** days so daily closes cover the full reconstruction window.
 
 ## Live stream
 
-After sync/rebalance, snapshots emit on `snapshotFlow` for SSE
+After sync/rebalance, snapshots emit on `TradeHistorySnapshotStore.snapshotFlow`
+for SSE
 `/api/status/stream`.
 
 ## Checklist

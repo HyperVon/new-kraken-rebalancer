@@ -91,16 +91,18 @@ class PortfolioManagerImpl(
         val cycleId = UUID.randomUUID().toString()
         MDC.put(CYCLE_ID_MDC_KEY, cycleId)
         try {
-            return when (val ks = krakenService) {
-                is DynamicKrakenService -> ks.withStableBackend { performRebalanceCyclePinned() }
-                else -> performRebalanceCyclePinned()
+            val ks = krakenService
+            return if (ks != null) {
+                ks.withStableBackend { performRebalanceCyclePinned(cycleId) }
+            } else {
+                performRebalanceCyclePinned(cycleId)
             }
         } finally {
             MDC.remove(CYCLE_ID_MDC_KEY)
         }
     }
 
-    private suspend fun performRebalanceCyclePinned(): PortfolioSnapshot? {
+    private suspend fun performRebalanceCyclePinned(cycleId: String): PortfolioSnapshot? {
         log.info("--- Starting Snapshot Phase ---")
         val config = configService.getConfig()
         val actionLog = mutableListOf<String>()
@@ -166,6 +168,7 @@ class PortfolioManagerImpl(
             prices = prices,
             settings = config.settings,
             actionLog = actionLog,
+            cycleId = cycleId,
         )
 
         val finalState =

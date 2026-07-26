@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **PORT-1**: `KrakenService` exposes `getLastTradeHistoryTotalCount()` /
+  `getApiCallCounter()`; callers always use `withStableBackend` (no
+  `DynamicKrakenService` / `realService` casts).
+- **HIST-1**: `TradeHistoryServiceImpl` is a thin façade over Sync /
+  SnapshotStore / Query / Reconstruction under `service/impl/history/`.
+- **UI-1**: History JSON APIs use shared `:common` DTOs + typed JS parsing;
+  HTMX dashboard SSE/fragments unchanged.
+- **EXEC-1**: Rebalance cycles record `cycleId`/`orderTxid` on trades; buy
+  budget prefers fill-confirmed sell proceeds (balance-poll fallback).
+- **TEST-1**: Added `SimulationEvaluationScenariosTest` against
+  `SimulatedKrakenService` + real TradeHistory / in-memory SQLite.
+
 ## [6.13.7] - 2026-07-25
 
 ### Changed

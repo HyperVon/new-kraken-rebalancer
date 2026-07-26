@@ -94,8 +94,8 @@ the CLAUDE.md / Copilot stubs) so they get the same norms without Cursor.
 | Brawn (execution) | `OrderExecutorImpl` |
 | Exchange gateway | `DynamicKrakenService` → `KrakenServiceImpl` or `SimulatedKrakenService` |
 | Rate limit | `RateLimiter` (safeLimit **12**, decay **0.33**, `Mutex`) |
-| History reconstruction | `SnapshotHistoryCalculator` |
-| Live history / SSE source | `TradeHistoryServiceImpl` |
+| History reconstruction | `SnapshotHistoryCalculator` (`service/impl/history/`) |
+| Live history / SSE source | `TradeHistoryServiceImpl` façade → Sync / SnapshotStore / Query / Reconstruction |
 | HTTP | `DashboardRoutes` / `DashboardController` |
 | Views | `view/component/*`, `DashboardView`, `view/css/*` |
 | Shared routes/IDs | `:common` `Routes`, `HtmlIds`, `CssClass`, `ViewText` |
@@ -113,12 +113,12 @@ Full detail: [`docs/ALGORITHM.md`](../docs/ALGORITHM.md) and skill [portfolio-re
 - **Fiat correction**: if *only* USD triggers (deposit/withdrawal), redistribute among counter-balanced assets.
 - **Dust**: also skips execution of orders below `dustThresholdUSD`.
 - **Sell then buy**: sell overweight first; after **≥1 successful sell** (and not
-  dry-run), poll USD up to **3** attempts with exponential backoff starting at
-  **250ms** (doubling: 250ms → 500ms → 1000ms); use the **best positive**
-  observation; accept early at **≥95%** of projected; **abort buys** if no
-  positive USD is observed; cycle buy budget **99%** of settled USD
-  (`withStableBackend` captures live vs simulation per invocation; cycle
-  `dryRun` is passed into each `executeOrder`).
+  dry-run), prefer fill-confirmed sell proceeds (trade history matched by order
+  txid) with the same **3** attempts / **250ms** doubling backoff / **≥95%**
+  early-accept / fail-closed abort; fall back to USD balance poll when no txids
+  exist; cycle buy budget **99%** of settled USD (`withStableBackend` pins live
+  vs simulation; cycle `dryRun` is passed into each `executeOrder`). Trades
+  persist `cycleId` + `orderTxid`.
 - **Precision**: `BigDecimal` only — crypto scale **8**, USD scale **2**. Tests: `shouldBeEqualComparingTo` (never `shouldBeEqualByComparingTo` / `.equals()`).
 
 ---

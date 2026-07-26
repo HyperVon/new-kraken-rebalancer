@@ -5,6 +5,7 @@ import com.gemini.krakenbot.model.OrderResult
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.OrderType
 import com.gemini.krakenbot.model.TradeRecord
+import com.gemini.krakenbot.model.TradeSource
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.KrakenService
 import com.gemini.krakenbot.service.RawBalances
@@ -28,6 +29,7 @@ class SimulatedKrakenService(private val configService: ConfigService) : KrakenS
     private val simulatedPrices = ConcurrentHashMap<String, BigDecimal>()
     private val simulatedTrades = CopyOnWriteArrayList<TradeRecord>()
     private var historicalTradesSeeded = false
+    private var lastTradeHistoryTotalCount = 0
 
     init {
         log.info("Initialized SimulatedKrakenService")
@@ -246,6 +248,7 @@ class SimulatedKrakenService(private val configService: ConfigService) : KrakenS
             balances[Asset.USD] = usdBalance.add(usdAmount).toUsdScale()
         }
 
+        val orderTxid = "SIM-${System.nanoTime()}"
         val trade =
             TradeRecord(
                 timestamp = Instant.now(),
@@ -258,6 +261,8 @@ class SimulatedKrakenService(private val configService: ConfigService) : KrakenS
                 dryRun = false,
                 price = price.toCryptoScale(),
                 fee = BigDecimal.ZERO,
+                source = TradeSource.API_FILL,
+                orderTxid = orderTxid,
             )
         simulatedTrades.add(trade)
 
@@ -266,6 +271,7 @@ class SimulatedKrakenService(private val configService: ConfigService) : KrakenS
             pair = pair,
             side = side,
             volume = normalizedVolume,
+            orderTxid = orderTxid,
         )
     }
 
@@ -281,11 +287,14 @@ class SimulatedKrakenService(private val configService: ConfigService) : KrakenS
             }
 
         filtered = filtered.sortedBy { it.timestamp }
+        lastTradeHistoryTotalCount = filtered.size
 
         // Kraken returns at most 50 records per page. An offset at/beyond the
         // result size therefore yields an empty page, not the whole history.
         return filtered.drop(offset?.coerceAtLeast(0) ?: 0).take(TRADE_HISTORY_PAGE_SIZE)
     }
+
+    override fun getLastTradeHistoryTotalCount(): Int = lastTradeHistoryTotalCount
 
     override suspend fun getOHLC(pair: String, interval: Int, since: Long?): List<Pair<Long, BigDecimal>> = emptyList()
 

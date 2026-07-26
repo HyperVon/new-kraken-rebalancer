@@ -1,6 +1,8 @@
 package com.gemini.krakenbot.controller
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.gemini.krakenbot.api.buildSyncProgressResponse
+import com.gemini.krakenbot.api.toApiDto
 import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.InvalidConfigurationException
@@ -217,13 +219,13 @@ class DashboardController(
 
     private suspend fun RoutingContext.handleGetHistorySnapshots() {
         val (from, to) = parseTimeRange(call)
-        val snapshots = tradeHistoryService.getSnapshotsInRange(from, to)
+        val snapshots = tradeHistoryService.getSnapshotsInRange(from, to).map { it.toApiDto() }
         respondJson(snapshots)
     }
 
     private suspend fun RoutingContext.handleGetHistoryTrades() {
         val (from, to) = parseTimeRange(call)
-        val trades = tradeHistoryService.getTradesInRange(from, to)
+        val trades = tradeHistoryService.getTradesInRange(from, to).map { it.toApiDto() }
         respondJson(trades)
     }
 
@@ -235,7 +237,7 @@ class DashboardController(
             } else {
                 tradeHistoryService.getHistoryStats()
             }
-        respondJson(stats)
+        respondJson(stats.toApiDto())
     }
 
     private suspend fun ServerSSESession.handleSseStream() {
@@ -266,13 +268,7 @@ class DashboardController(
         val offset = tradeHistoryService.getSyncMetadata(SyncMetadataKeys.SYNC_OFFSET)
         val total = tradeHistoryService.getSyncMetadata(SyncMetadataKeys.SYNC_TOTAL)
         val seeded = tradeHistoryService.isHistorySeeded()
-        val responseMap =
-            mapOf(
-                SyncMetadataKeys.IS_SEEDED to seeded,
-                SyncMetadataKeys.OFFSET to offset,
-                SyncMetadataKeys.TOTAL to total,
-            )
-        respondJson(responseMap)
+        respondJson(buildSyncProgressResponse(seeded, offset, total))
     }
 
     private suspend fun RoutingContext.handleGetHealth() {

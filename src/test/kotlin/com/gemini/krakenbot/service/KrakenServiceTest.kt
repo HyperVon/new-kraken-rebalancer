@@ -1338,7 +1338,7 @@ class KrakenServiceTest : StringSpec() {
                 ohlc.size shouldBe 1
                 ohlc[0].first shouldBe 1616662800L
                 ohlc[0].second.shouldBeEqualComparingTo(BigDecimal("52500.0"))
-                service.lastFetchedCount.get() shouldBe 0
+                service.getLastTradeHistoryTotalCount() shouldBe 0
             }
         }
 

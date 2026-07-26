@@ -45,7 +45,7 @@ flowchart TD
         E1R -- No --> E1F["Log failure, skip cash update"]
         E1C --> E2
         E1F --> E2
-        E2["Refresh USD if sell succeeded\nand not dry-run\n(best of 3x backoff from 250ms;\nabort buys if none positive)"] --> E3["Execute BUY orders second\n(99% cycle cash budget)"]
+        E2["Settle USD after sells\n(fill-confirm by txid, else balance poll;\n3x backoff; abort buys if none positive)"] --> E3["Execute BUY orders second\n(99% cycle cash budget)"]
         E3 --> E4["Record Snapshot\n& Trade History\nto SQLite database"]
     end
 
@@ -200,16 +200,17 @@ failure.
       logged but do not inflate the available cash. If every sell fails (or none
       run), buys continue against the **pre-sell** projected cash and the 99%
       cycle budget — no invented sell liquidity.
-2. **USD Balance Refresh**: After **≥1 successful sell** and when **not** in
-   dry-run mode, the system polls the exchange up to **3** times with exponential
-   backoff starting at **250ms** (doubling each attempt: 250ms → 500ms → 1000ms)
-   to fetch the settled USD balance. It tracks the **best (maximum) positive**
-   observation and accepts early once the balance reaches **≥95%** of the
-   projected amount. If no positive USD balance is observed after all attempts,
-   **buys are aborted** (fail-closed — projected proceeds are never treated as
-   confirmed cash). The poll is skipped when no sell succeeded or when
-   `dryRun` is true; in those cases buys use the **projected** cash balance
-   (pre-sell cash when sells did not succeed).
+2. **USD Settle (fill-confirmed, balance fallback)**: After **≥1 successful
+   sell** and when **not** in dry-run mode, the system prefers **fill-confirmed**
+   sell proceeds: poll trade history (same 3× backoff from **250ms**) for API
+   fills whose `ordertxid` matches the sell AddOrder txids, sum proceeds, and
+   set cash = opening USD + confirmed proceeds. Early-accept at **≥95%** of
+   projected; **abort buys** if nothing positive is confirmed (fail-closed).
+   When no sell txids are available (e.g. some test doubles), fall back to the
+   legacy USD **balance poll** with the same attempt/backoff/≥95%/fail-closed
+   rules. Skipped entirely when no sell succeeded or `dryRun` is true (buys
+   use projected cash). Successful sells record `cycleId` and `orderTxid` on
+   persisted trade rows.
 3. **Buy Orders Second**:
     - The whole sell→buy sequence runs inside `KrakenService.withStableBackend`
       so a mid-cycle `simulation` flip cannot split sells and buys across backends.

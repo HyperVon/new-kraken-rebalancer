@@ -1,5 +1,6 @@
 package com.gemini.krakenbot.frontend
 
+import com.gemini.krakenbot.api.PortfolioSnapshot
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.TimeRange
@@ -80,64 +81,70 @@ class CoverageTest : StringSpec() {
             try {
                 registerHistoryGlobals()
 
-                buildPortfolioValueChart(emptyArray())
-                buildAssetHoldingsChart(emptyArray())
-                buildAllocationDriftChart(emptyArray())
-                buildCumulativeNetCashFlowChart(emptyArray())
+                buildPortfolioValueChart(emptyList())
+                buildAssetHoldingsChart(emptyList())
+                buildAllocationDriftChart(emptyList())
+                buildCumulativeNetCashFlowChart(emptyList())
             } finally {
                 document.body!!.removeChild(container)
             }
         }
 
         "calculateCumulativeNetCashFlow handles various trade scenarios" {
-            val empty = calculateCumulativeNetCashFlow(emptyArray())
+            val empty = calculateCumulativeNetCashFlow(emptyList())
             empty.size shouldBe 0
 
-            val buy =
-                TestDomBuilders.tradeJson(
-                    timestamp = "2023-01-01",
-                    side = OrderSide.BUY.name,
-                    usdAmount = 100.0,
+            val resultBuy =
+                calculateCumulativeNetCashFlow(
+                    listOf(
+                        mockTradeRecord(
+                            timestamp = "2023-01-01",
+                            side = OrderSide.BUY.name,
+                            usdAmount = "100.0",
+                        ),
+                    ),
                 )
-            val resultBuy = calculateCumulativeNetCashFlow(arrayOf(buy))
             resultBuy.size shouldBe 1
             val r0 = resultBuy[0]
             r0.y.toString().toDouble() shouldBe -100.0
 
-            val sell =
-                TestDomBuilders.tradeJson(
-                    timestamp = "2023-01-01",
-                    side = OrderSide.SELL.name,
-                    usdAmount = 50.0,
+            val resultSell =
+                calculateCumulativeNetCashFlow(
+                    listOf(
+                        mockTradeRecord(
+                            timestamp = "2023-01-01",
+                            side = OrderSide.SELL.name,
+                            usdAmount = "50.0",
+                        ),
+                    ),
                 )
-            val resultSell = calculateCumulativeNetCashFlow(arrayOf(sell))
             resultSell.size shouldBe 1
             val s0 = resultSell[0]
             s0.y.toString().toDouble() shouldBe 50.0
 
             val mixed =
-                arrayOf(
-                    TestDomBuilders.tradeJson(
+                listOf(
+                    mockTradeRecord(
                         timestamp = "2023-01-01",
                         side = OrderSide.BUY.name,
-                        usdAmount = 100.0,
+                        usdAmount = "100.0",
                     ),
-                    TestDomBuilders.tradeJson(
+                    mockTradeRecord(
                         timestamp = "2023-01-02",
                         success = false,
                         side = OrderSide.SELL.name,
-                        usdAmount = 50.0,
+                        usdAmount = "50.0",
                     ),
-                    TestDomBuilders.tradeJson(
+                    mockTradeRecord(
                         timestamp = "2023-01-03",
                         dryRun = true,
                         side = OrderSide.BUY.name,
-                        usdAmount = 200.0,
+                        usdAmount = "200.0",
                     ),
-                    TestDomBuilders.tradeJson(
+                    mockTradeRecord(
                         timestamp = "2023-01-04",
                         side = OrderSide.SELL.name,
-                        usdAmount = 30.0,
+                        usdAmount = "30.0",
                     ),
                 )
             val resultMixed = calculateCumulativeNetCashFlow(mixed)
@@ -149,13 +156,13 @@ class CoverageTest : StringSpec() {
         }
 
         "renderTradeTable handles missing tbody and empty trades" {
-            renderTradeTable(arrayOf())
+            renderTradeTable(emptyList())
 
             val container = document.createElement(HtmlTags.DIV)
             container.innerHTML = TestDomBuilders.tradeTableDom()
             document.body!!.appendChild(container)
             try {
-                renderTradeTable(arrayOf())
+                renderTradeTable(emptyList())
                 val tbody = document.getElementById(HtmlIds.TRADE_TABLE_BODY) as HTMLTableSectionElement
                 tbody.rows.length shouldBe 1
                 tbody.innerHTML shouldContain "No trades found"
@@ -185,38 +192,18 @@ class CoverageTest : StringSpec() {
             window.asDynamic().capturedUrls = capturedUrls.toTypedArray()
             window.asDynamic().Chart = mockChartConstructor()
             window.asDynamic().fetch =
-                mockFetch { url ->
-                    capturedUrls.add(url)
-                    window.asDynamic().capturedUrls = capturedUrls.toTypedArray()
-                    when {
-                        url.contains("snapshots") ->
-                            arrayOf(
-                                mockSnapshotRecord(
-                                    assets =
-                                    json(
-                                        Asset.BTC to
-                                            json(
-                                                "valueUSD" to 100,
-                                                "balance" to 1,
-                                                "currentPercent" to 100,
-                                            ),
-                                    ),
-                                ),
-                            )
-                        url.contains("trades") ->
-                            arrayOf(
-                                mockTradeRecord(symbol = Asset.BTC, volume = 1, usdAmount = 100),
-                            )
-                        url.contains("sync-progress") -> json("seeded" to false, "offset" to 5, "total" to 10)
-                        else ->
-                            mockPortfolioStatsRecord(
-                                allTimeHigh = 100,
-                                totalTradesExecuted = 1,
-                                totalVolumeTraded = 100,
-                                totalFeesPaid = 1,
-                            )
-                    }
-                }
+                mockFetch(
+                    mockHistoryFetchHandler(
+                        syncProgress = json("seeded" to false, "offset" to "5", "total" to "10"),
+                        stats =
+                        mockPortfolioStatsRecord(
+                            allTimeHigh = "100",
+                            totalTradesExecuted = 1L,
+                            totalVolumeTraded = "100",
+                            totalFeesPaid = "1",
+                        ),
+                    ),
+                )
             try {
                 registerHistoryGlobals()
 
@@ -555,51 +542,61 @@ class CoverageTest : StringSpec() {
             try {
                 registerHistoryGlobals()
                 val snapshots =
-                    arrayOf(
-                        json(
-                            "timestamp" to "2023-01-01",
-                            "totalValueUSD" to 100,
-                            "assets" to
-                                json(
-                                    Asset.USD to
-                                        json(
-                                            "valueUSD" to 100,
-                                            "balance" to 100,
-                                            "currentPercent" to 100,
-                                            "deviationPercent" to 5,
-                                        ),
-                                ),
+                    listOf(
+                        mockSnapshotRecord(
+                            timestamp = "2023-01-01",
+                            totalValueUSD = "100",
+                            assets =
+                            mapOf(
+                                Asset.USD to
+                                    PortfolioSnapshot.AssetSnapshot(
+                                        symbol = Asset.USD,
+                                        balance = "100",
+                                        price = "0",
+                                        valueUSD = "100",
+                                        targetPercent = "0",
+                                        currentPercent = "100",
+                                        deviationPercent = "5",
+                                        deviationUSD = "0",
+                                    ),
+                            ),
                         ),
-                        json(
-                            "timestamp" to "2023-01-02",
-                            "totalValueUSD" to 160,
-                            "assets" to
-                                json(
-                                    Asset.BTC to
-                                        json(
-                                            "valueUSD" to 60,
-                                            "balance" to 2,
-                                            "currentPercent" to 37.5,
-                                            "deviationPercent" to -25,
-                                        ),
-                                    Asset.USD to
-                                        json(
-                                            "valueUSD" to 100,
-                                            "balance" to 50,
-                                            "currentPercent" to 62.5,
-                                            "deviationPercent" to 25,
-                                        ),
-                                ),
+                        mockSnapshotRecord(
+                            timestamp = "2023-01-02",
+                            totalValueUSD = "160",
+                            assets =
+                            mapOf(
+                                Asset.BTC to
+                                    PortfolioSnapshot.AssetSnapshot(
+                                        symbol = Asset.BTC,
+                                        balance = "2",
+                                        price = "0",
+                                        valueUSD = "60",
+                                        targetPercent = "0",
+                                        currentPercent = "37.5",
+                                        deviationPercent = "-25",
+                                        deviationUSD = "0",
+                                    ),
+                                Asset.USD to
+                                    PortfolioSnapshot.AssetSnapshot(
+                                        symbol = Asset.USD,
+                                        balance = "50",
+                                        price = "0",
+                                        valueUSD = "100",
+                                        targetPercent = "0",
+                                        currentPercent = "62.5",
+                                        deviationPercent = "25",
+                                        deviationUSD = "0",
+                                    ),
+                            ),
                         ),
                     )
                 val trades =
-                    arrayOf(
-                        json(
-                            "timestamp" to "2023-01-01",
-                            "success" to true,
-                            "dryRun" to false,
-                            "side" to OrderSide.BUY.name,
-                            "usdAmount" to 10,
+                    listOf(
+                        mockTradeRecord(
+                            timestamp = "2023-01-01",
+                            side = OrderSide.BUY.name,
+                            usdAmount = "10",
                         ),
                     )
 
@@ -799,26 +796,24 @@ class CoverageTest : StringSpec() {
                 tableContainer.innerHTML = TestDomBuilders.emptyTradeTableDom()
                 container.appendChild(tableContainer)
 
-                val badTrades =
-                    arrayOf(
-                        json(
-                            "timestamp" to "2023-01-01",
-                            "symbol" to null,
-                            "side" to OrderSide.SELL.name,
-                            "volume" to "bad",
-                            "usdAmount" to "bad",
-                            "success" to null,
-                            "dryRun" to null,
+                renderTradeTable(
+                    listOf(
+                        mockTradeRecord(
+                            symbol = "",
+                            timestamp = "2023-01-01",
+                            side = OrderSide.SELL.name,
+                            volume = "bad",
+                            usdAmount = "bad",
                         ),
-                    )
-                renderTradeTable(badTrades.unsafeCast<Array<JsTradeRecord>>())
+                    ),
+                )
                 val tbody = document.getElementById(HtmlIds.TRADE_TABLE_BODY) as HTMLTableSectionElement
                 tbody.rows.length shouldBe 1
 
                 val statsContainer = document.createElement(HtmlTags.DIV)
                 statsContainer.innerHTML = TestDomBuilders.statsDom()
                 container.appendChild(statsContainer)
-                updateStats(json().unsafeCast<JsHistoryStats>())
+                updateStats(mockPortfolioStatsRecord(allTimeHigh = "0", totalTradesExecuted = 0L))
 
                 val sortContainer = document.createElement(HtmlTags.DIV)
                 sortContainer.innerHTML =

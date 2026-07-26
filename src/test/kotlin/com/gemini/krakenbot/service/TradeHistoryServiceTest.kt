@@ -21,7 +21,7 @@ import com.gemini.krakenbot.repository.TradeSummaryStats
 import com.gemini.krakenbot.service.impl.DynamicKrakenService
 import com.gemini.krakenbot.service.impl.KrakenServiceImpl
 import com.gemini.krakenbot.service.impl.SimulatedKrakenService
-import com.gemini.krakenbot.service.impl.TradeHistoryServiceImpl
+import com.gemini.krakenbot.service.impl.history.TradeHistoryServiceImpl
 import com.gemini.krakenbot.util.TradeCalculator
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
@@ -41,7 +41,6 @@ import java.io.File
 import java.math.BigDecimal
 import java.time.Instant
 import java.time.temporal.ChronoUnit
-import java.util.concurrent.atomic.AtomicInteger
 import kotlin.time.Duration.Companion.milliseconds
 
 class TradeHistoryServiceTest : StringSpec() {
@@ -51,9 +50,16 @@ class TradeHistoryServiceTest : StringSpec() {
     private val objectMapper = jacksonObjectMapper().registerModule(JavaTimeModule())
     private val repository = mockk<TradeRepository>(relaxed = true)
     private val statsRepository = mockk<PortfolioStatsRepository>(relaxed = true)
-    private val krakenService = mockk<KrakenService>(relaxed = true)
+    private val krakenService = mockk<KrakenService>(relaxed = true).also { stubWithStableBackend(it) }
     private val configService = mockk<ConfigService>(relaxed = true)
     private val portfolioAnalyzer = mockk<PortfolioAnalyzer>(relaxed = true)
+
+    private fun stubWithStableBackend(service: KrakenService) {
+        coEvery { service.withStableBackend(any<suspend (KrakenService) -> Any?>()) } coAnswers {
+            val block = firstArg<suspend (KrakenService) -> Any?>()
+            block(service)
+        }
+    }
 
     private fun createService(): TradeHistoryServiceImpl {
         val appConfig = AppConfig(
@@ -1220,7 +1226,7 @@ class TradeHistoryServiceTest : StringSpec() {
                 coEvery { krakenService.getTradeHistory(any(), 50) } returns emptyList()
 
                 coEvery { repository.getTradesInRange(any(), any()) } returns listOf(apiTrade1, apiTrade2)
-                coEvery { repository.saveTrade(any()) } just Runs
+                coEvery { repository.saveTrade(any()) } returns 1
                 coEvery { repository.updateTrade(any(), any()) } just Runs
                 coEvery { repository.setHistorySeeded(true) } just Runs
                 coEvery { repository.setSyncMetadata(any(), any()) } just Runs
@@ -1356,7 +1362,7 @@ class TradeHistoryServiceTest : StringSpec() {
                 coEvery { krakenService.getTradeHistory(any(), 0) } returns listOf(apiTrade)
                 coEvery { krakenService.getTradeHistory(any(), 50) } returns emptyList()
                 coEvery { repository.getTradesInRange(any(), any()) } returns listOf(apiTrade)
-                coEvery { repository.saveTrade(any()) } just Runs
+                coEvery { repository.saveTrade(any()) } returns 1
                 coEvery { repository.updateTrade(any(), any()) } just Runs
                 coEvery { repository.setHistorySeeded(true) } just Runs
                 coEvery { repository.setSyncMetadata(any(), any()) } just Runs
@@ -1421,7 +1427,7 @@ class TradeHistoryServiceTest : StringSpec() {
                 coEvery { krakenService.getTradeHistory(any(), 0) } returns listOf(apiTrade)
                 coEvery { krakenService.getTradeHistory(any(), 50) } returns emptyList()
                 coEvery { repository.getTradesInRange(any(), any()) } returns listOf(apiTrade)
-                coEvery { repository.saveTrade(any()) } just Runs
+                coEvery { repository.saveTrade(any()) } returns 1
                 coEvery { repository.updateTrade(any(), any()) } just Runs
                 coEvery { repository.setHistorySeeded(true) } just Runs
                 coEvery { repository.setSyncMetadata(any(), any()) } just Runs
@@ -1486,7 +1492,7 @@ class TradeHistoryServiceTest : StringSpec() {
                 coEvery { krakenService.getTradeHistory(any(), 0) } returns listOf(apiTrade)
                 coEvery { krakenService.getTradeHistory(any(), 50) } returns emptyList()
                 coEvery { repository.getTradesInRange(any(), any()) } returns listOf(apiTrade)
-                coEvery { repository.saveTrade(any()) } just Runs
+                coEvery { repository.saveTrade(any()) } returns 1
                 coEvery { repository.updateTrade(any(), any()) } just Runs
                 coEvery { repository.setHistorySeeded(true) } just Runs
                 coEvery { repository.setSyncMetadata(any(), any()) } just Runs
@@ -2055,7 +2061,7 @@ class TradeHistoryServiceTest : StringSpec() {
 
                 coEvery { krakenService.getTradeHistory(any(), 0) } returns emptyList()
                 coEvery { repository.getTradesInRange(any(), any()) } returns listOf(dryRunTwin, liveTwin)
-                coEvery { repository.saveTrade(any()) } just Runs
+                coEvery { repository.saveTrade(any()) } returns 1
                 coEvery { repository.updateTrade(any(), any()) } just Runs
                 coEvery { repository.setHistorySeeded(true) } just Runs
                 coEvery { repository.setSyncMetadata(any(), any()) } just Runs
@@ -2077,8 +2083,9 @@ class TradeHistoryServiceTest : StringSpec() {
         "syncTradesFromKraken_UsesKrakenServiceImplLastFetchedCountForSyncMetadata" {
             runTest {
                 val realKraken = mockk<KrakenServiceImpl>(relaxed = true)
-                every { realKraken.lastFetchedCount } returns AtomicInteger(42)
+                every { realKraken.getLastTradeHistoryTotalCount() } returns 42
                 coEvery { realKraken.getTradeHistory(any(), 0) } returns emptyList()
+                stubWithStableBackend(realKraken)
 
                 val appConfig = AppConfig(
                     kraken = KrakenCredentials(
@@ -2133,7 +2140,7 @@ class TradeHistoryServiceTest : StringSpec() {
         "syncTradesFromKraken_UsesDynamicKrakenServiceRealLastFetchedCount" {
             runTest {
                 val realKraken = mockk<KrakenServiceImpl>(relaxed = true)
-                every { realKraken.lastFetchedCount } returns AtomicInteger(99)
+                every { realKraken.getLastTradeHistoryTotalCount() } returns 99
                 coEvery { realKraken.getTradeHistory(any(), any()) } returns emptyList()
                 val simulated = mockk<SimulatedKrakenService>(relaxed = true)
                 val dynamic = DynamicKrakenService(
@@ -2244,7 +2251,7 @@ class TradeHistoryServiceTest : StringSpec() {
                 coEvery { krakenService.getTradeHistory(any(), 0) } returns listOf(apiTrade)
                 coEvery { krakenService.getTradeHistory(any(), 50) } returns emptyList()
                 coEvery { repository.getTradesInRange(any(), any()) } returns listOf(apiTrade)
-                coEvery { repository.saveTrade(any()) } just Runs
+                coEvery { repository.saveTrade(any()) } returns 1
                 coEvery { repository.setHistorySeeded(true) } just Runs
                 coEvery { repository.setSyncMetadata(any(), any()) } just Runs
                 coEvery { krakenService.getBalances() } returns balances
@@ -2270,7 +2277,7 @@ class TradeHistoryServiceTest : StringSpec() {
     }
 
     private companion object {
-        /** Mirrors `extraBufferCapacity` of `TradeHistoryServiceImpl.snapshotFlow`. */
+        /** Mirrors `extraBufferCapacity` of `TradeHistorySnapshotStore` snapshotFlow. */
         const val SNAPSHOT_FLOW_REPLAY = 1
         const val SNAPSHOT_FLOW_EXTRA_BUFFER = 16
         const val SNAPSHOT_FLOW_BUFFER = SNAPSHOT_FLOW_REPLAY + SNAPSHOT_FLOW_EXTRA_BUFFER

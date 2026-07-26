@@ -769,7 +769,7 @@ class DashboardControllerTest : StringSpec() {
                 }
                 val response = client.get(Routes.API_HISTORY_STATS.withRange(TimeRange.SEVEN_DAYS))
                 response.status shouldBe HttpStatusCode.OK
-                response.bodyAsText() shouldContain "\"allTimeHigh\":15000.00"
+                response.bodyAsText() shouldContain "\"allTimeHigh\":\"15000.00\""
             }
         }
 
@@ -790,7 +790,7 @@ class DashboardControllerTest : StringSpec() {
                 }
                 val response = client.get(Routes.API_HISTORY_STATS)
                 response.status shouldBe HttpStatusCode.OK
-                response.bodyAsText() shouldContain "\"allTimeHigh\":15000.00"
+                response.bodyAsText() shouldContain "\"allTimeHigh\":\"15000.00\""
             }
         }
 

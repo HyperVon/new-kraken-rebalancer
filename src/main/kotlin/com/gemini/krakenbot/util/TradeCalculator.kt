@@ -49,6 +49,7 @@ object TradeCalculator {
         usdAmount: BigDecimal,
         prices: AssetPrices,
         timestamp: Instant = Instant.now(),
+        cycleId: String? = null,
     ): TradeRecord {
         val expectedPrice = prices[symbol] ?: BigDecimal.ZERO
         val executedPrice = calculateExecutedPrice(usdAmount, volume)
@@ -71,6 +72,8 @@ object TradeCalculator {
             slippagePercent = slippage,
             expectedPrice = expectedPrice,
             source = TradeSource.LOCAL_ESTIMATE,
+            cycleId = cycleId,
+            orderTxid = result.orderTxid,
         )
     }
 }

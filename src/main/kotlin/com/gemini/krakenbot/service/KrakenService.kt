@@ -29,6 +29,15 @@ interface KrakenService {
     suspend fun getOHLC(pair: String, interval: Int = 1440, since: Long? = null): List<Pair<Long, BigDecimal>>
 
     /**
+     * Total trade count from the last [getTradeHistory] response (Kraken `count` / sim total).
+     * Used for sync progress pagination metadata without downcasting the port.
+     */
+    fun getLastTradeHistoryTotalCount(): Int = 0
+
+    /** Current private-API call-counter load; 0 for backends without a rate limiter. */
+    suspend fun getApiCallCounter(): Double = 0.0
+
+    /**
      * Runs [block] with a stable backend selection passed as the argument.
      * Default passes `this`. [DynamicKrakenService] pins live vs simulation in the
      * coroutine context at top-level entry; nested calls reuse the outer pin so a
