@@ -12,7 +12,6 @@ import com.gemini.krakenbot.service.impl.KrakenServiceImpl
 import com.gemini.krakenbot.service.impl.SimulatedKrakenService
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
-import io.kotest.matchers.shouldBe
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
@@ -21,6 +20,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.runTest
 import java.math.BigDecimal
+import kotlin.time.Duration.Companion.milliseconds
 
 class DynamicKrakenServiceTest : StringSpec() {
 
@@ -331,7 +331,7 @@ class DynamicKrakenServiceTest : StringSpec() {
                 coroutineScope {
                     val first = async {
                         dynamicService.withStableBackend { backend ->
-                            delay(50)
+                            delay(50.milliseconds)
                             backend.executeOrder(
                                 pair = Asset.BTC_USD_PAIR,
                                 type = OrderType.MARKET.apiValue,
@@ -341,7 +341,7 @@ class DynamicKrakenServiceTest : StringSpec() {
                         }
                     }
                     val second = async {
-                        delay(10)
+                        delay(10.milliseconds)
                         every { configService.getConfig() } returns appConfig(simulation = false)
                         dynamicService.withStableBackend { backend ->
                             backend.executeOrder(

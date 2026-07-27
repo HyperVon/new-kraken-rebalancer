@@ -2,6 +2,7 @@ package com.gemini.krakenbot.service
 
 import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.model.Asset
+import kotlin.math.abs
 
 object AssetColorAssigner {
 
@@ -67,8 +68,8 @@ object AssetColorAssigner {
         val normalized = h.toFloat() / 360
         val sFrac = s.toFloat() / 100
         val lFrac = l.toFloat() / 100
-        val c = (1 - kotlin.math.abs(2 * lFrac - 1)) * sFrac
-        val x = c * (1 - kotlin.math.abs((normalized * 6) % 2 - 1))
+        val c = (1 - abs(2 * lFrac - 1)) * sFrac
+        val x = c * (1 - abs((normalized * 6) % 2 - 1))
         val m = lFrac - c / 2
         val (r, g, b) = when {
             normalized < 1.0 / 6 -> Triple(c, x, 0f)

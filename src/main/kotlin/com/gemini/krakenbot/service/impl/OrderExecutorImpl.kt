@@ -323,7 +323,7 @@ class OrderExecutorImpl(
     }
 
     /**
-     * Sum net-of-fee USD proceeds for sells whose [TradeRecord.orderTxid] is in [txidSet],
+     * Sum net-of-fee USD proceeds for sells whose [com.gemini.krakenbot.model.TradeRecord.orderTxid] is in [txidSet],
      * paginating newest-first until a short/empty page or [MAX_FILL_HISTORY_PAGES].
      * Does not stop early when every txid has been seen once — one AddOrder can
      * produce multiple fill legs across page boundaries.

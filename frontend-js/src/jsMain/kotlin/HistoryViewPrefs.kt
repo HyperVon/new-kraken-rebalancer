@@ -347,16 +347,16 @@ object HistoryViewPrefs {
     fun refreshSelect(store: HistoryViewsStore, selectedId: String) {
         val select = document.getElementById(HtmlIds.HISTORY_VIEWS_SELECT) as? HTMLSelectElement ?: return
         select.innerHTML = ""
-        for (view in store.views) {
+        for ((id, name) in store.views) {
             val option = document.createElement(HtmlTags.OPTION) as HTMLOptionElement
-            option.value = view.id
+            option.value = id
             option.textContent =
-                if (view.id == store.defaultId) {
-                    "${view.name} ★"
+                if (id == store.defaultId) {
+                    "$name ★"
                 } else {
-                    view.name
+                    name
                 }
-            if (view.id == selectedId) {
+            if (id == selectedId) {
                 option.selected = true
             }
             select.appendChild(option)

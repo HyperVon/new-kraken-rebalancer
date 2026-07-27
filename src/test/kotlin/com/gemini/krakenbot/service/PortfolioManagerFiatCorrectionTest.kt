@@ -189,8 +189,8 @@ class PortfolioManagerFiatCorrectionTest : StringSpec() {
             buyOrders.values.none { it.signum() == 0 }.shouldBeTrue()
             sellOrders.isEmpty().shouldBeTrue()
             (
-                buyOrders.values.fold(BigDecimal.ZERO, BigDecimal::add)
-                    .compareTo(usdDev.abs()) <= 0
+                buyOrders.values
+                    .fold(BigDecimal.ZERO, BigDecimal::add) <= usdDev.abs()
                 ).shouldBeTrue()
         }
 
@@ -221,8 +221,7 @@ class PortfolioManagerFiatCorrectionTest : StringSpec() {
             sellOrders.values.none { it.signum() == 0 }.shouldBeTrue()
             buyOrders.isEmpty().shouldBeTrue()
             (
-                sellOrders.values.fold(BigDecimal.ZERO, BigDecimal::add)
-                    .compareTo(usdDev.abs()) <= 0
+                sellOrders.values.fold(BigDecimal.ZERO, BigDecimal::add) <= usdDev.abs()
                 ).shouldBeTrue()
         }
 
@@ -252,8 +251,8 @@ class PortfolioManagerFiatCorrectionTest : StringSpec() {
 
             buyOrders.values.none { it.signum() == 0 }.shouldBeTrue()
             (
-                buyOrders.values.fold(BigDecimal.ZERO, BigDecimal::add)
-                    .compareTo(usdDev.abs()) <= 0
+                buyOrders.values
+                    .fold(BigDecimal.ZERO, BigDecimal::add) <= usdDev.abs()
                 ).shouldBeTrue()
         }
     }

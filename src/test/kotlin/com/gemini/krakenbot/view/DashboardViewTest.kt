@@ -440,7 +440,7 @@ class DashboardViewTest : StringSpec() {
 
         "PerformanceTableComponent_Companion_getCOLUMNS" {
             val companionClass = Class.forName(
-                "${PerformanceTableComponent::class.java.name}\$Companion",
+                $$"$${PerformanceTableComponent::class.java.name}$Companion",
             )
             val getCOLUMNS = companionClass.getDeclaredMethod("getCOLUMNS")
             getCOLUMNS.isAccessible = true

@@ -62,7 +62,6 @@ object TestFixtures {
 
     /** Generic credential / key constants. */
     const val SECRET = "secret"
-    const val KEY = "key"
 
     /** In-memory database path. */
     const val MEMORY_ = ":memory:"

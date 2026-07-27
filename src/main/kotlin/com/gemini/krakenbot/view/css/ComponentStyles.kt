@@ -65,7 +65,7 @@ object ComponentStyles {
             }
         }
 
-        "${CssClass.StatusCard.Default.querySelector}" {
+        CssClass.StatusCard.Default.querySelector {
             display = Display.flex
             flexDirection = FlexDirection.column
             gap = 0.375.rem
@@ -532,7 +532,7 @@ object ComponentStyles {
             borderTopColor = CssTheme.colorBorderFaint
         }
 
-        "${CssClass.Activity.ItemTrade.querySelector}" {
+        CssClass.Activity.ItemTrade.querySelector {
             paddingLeft = 0.625.rem
             borderLeftWidth = 3.px
             borderLeftStyle = BorderStyle.solid

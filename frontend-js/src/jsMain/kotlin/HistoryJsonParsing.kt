@@ -19,9 +19,9 @@ private fun dynamicString(value: dynamic): String? {
     return value.toString()
 }
 
-private fun dynamicBoolean(value: dynamic, default: Boolean = false): Boolean = when {
-    value == null || value == undefined -> default
-    value is Boolean -> value
+private fun dynamicBoolean(value: dynamic, default: Boolean = false): Boolean = when (value) {
+    null, undefined -> default
+    is Boolean -> value
     else -> value.toString().toBoolean()
 }
 

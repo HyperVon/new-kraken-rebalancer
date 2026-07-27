@@ -41,7 +41,7 @@ class DynamicKrakenService(
 
     /**
      * Pins the live vs simulation backend for [block] at entry. If a pin is already
-     * active on this coroutine, it is reused (so nested [OrderExecutor] wraps cannot
+     * active on this coroutine, it is reused (so nested [com.gemini.krakenbot.service.OrderExecutor] wraps cannot
      * shadow a full rebalance/sync pin). Concurrent top-level invocations each capture
      * their own entry-time backend.
      */

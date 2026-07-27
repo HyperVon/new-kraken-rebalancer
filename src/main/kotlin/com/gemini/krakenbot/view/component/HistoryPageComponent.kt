@@ -11,7 +11,6 @@ import com.gemini.krakenbot.view.util.HtmlAttrs
 import com.gemini.krakenbot.view.util.HtmlIds
 import com.gemini.krakenbot.view.util.Icons
 import com.gemini.krakenbot.view.util.Icons.icon
-import com.gemini.krakenbot.view.util.Routes
 import com.gemini.krakenbot.view.util.ViewText
 import com.gemini.krakenbot.view.util.ZoomActions
 import com.gemini.krakenbot.view.util.brandWithMode

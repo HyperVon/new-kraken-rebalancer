@@ -218,7 +218,7 @@ class SettingsFormComponent {
                         }
                         label {
                             input(
-                                type = InputType.color,
+                                type = color,
                             ) {
                                 value = rowColor
                                 classes = setOf(CssClass.Form.AllocationColorSwatch.value)

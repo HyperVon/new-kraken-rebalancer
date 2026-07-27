@@ -92,7 +92,7 @@ class KrakenServiceTest : StringSpec() {
         )
         every { configService.getConfig() } returns config
 
-        val mockEngine = MockEngine { request ->
+        val mockEngine = MockEngine {
             respond(
                 content = responseContent,
                 status = HttpStatusCode.OK,
@@ -298,7 +298,7 @@ class KrakenServiceTest : StringSpec() {
                 )
                 every { configService.getConfig() } returns config
 
-                val mockEngine = MockEngine { request ->
+                val mockEngine = MockEngine {
                     throw RuntimeException(null as String?)
                 }
                 val httpClient = HttpClient(mockEngine)
@@ -489,7 +489,7 @@ class KrakenServiceTest : StringSpec() {
         "queryPrivate_InvalidNonce_RetryExceeded" {
             runTest {
                 val errorJson = "{\"error\":[\"EAPI:Invalid nonce\"]}"
-                val mockEngine = MockEngine { request ->
+                val mockEngine = MockEngine {
                     respond(
                         content = errorJson,
                         status = HttpStatusCode.OK,
@@ -749,7 +749,7 @@ class KrakenServiceTest : StringSpec() {
         "getTradeHistory_QueryPrivateException" {
             runTest {
                 val errorJson = "{\"error\":[\"EGeneral:Internal Error\"]}"
-                val mockEngine = MockEngine { request ->
+                val mockEngine = MockEngine {
                     respond(
                         content = errorJson,
                         status = HttpStatusCode.OK,
@@ -1070,7 +1070,7 @@ class KrakenServiceTest : StringSpec() {
         "retryOnTransientFailure_SucceedsOnSecondAttempt" {
             runTest {
                 var attempt = 0
-                val mockEngine = MockEngine { request ->
+                val mockEngine = MockEngine {
                     if (attempt++ == 0) {
                         respond(
                             content = "{\"error\":[\"EAPI:Rate limit exceeded\"]}",
@@ -1116,7 +1116,7 @@ class KrakenServiceTest : StringSpec() {
         "retryOnTransientFailure_SucceedsOnSecondAttempt_Lockout" {
             runTest {
                 var attempt = 0
-                val mockEngine = MockEngine { request ->
+                val mockEngine = MockEngine {
                     if (attempt++ == 0) {
                         respond(
                             content = "{\"error\":[\"EGeneral:Temporary lockout\"]}",
@@ -1164,7 +1164,7 @@ class KrakenServiceTest : StringSpec() {
         "retryOnTransientFailure_LockoutBackoffReachesFifteenMinuteCap" {
             runTest {
                 var attempt = 0
-                val mockEngine = MockEngine { request ->
+                val mockEngine = MockEngine {
                     // 8 lockouts then success → waits 10+20+40+80+160+320+640+900s
                     if (attempt++ < 8) {
                         respond(
@@ -1215,7 +1215,7 @@ class KrakenServiceTest : StringSpec() {
 
         "retryOnTransientFailure_FailsExhausted" {
             runTest {
-                val mockEngine = MockEngine { request ->
+                val mockEngine = MockEngine {
                     respond(
                         content = "{\"error\":[\"EAPI:Rate limit exceeded\"]}",
                         status = HttpStatusCode.OK,
@@ -1254,7 +1254,7 @@ class KrakenServiceTest : StringSpec() {
             runTest {
                 // maxLockoutAttempts = 9: nine consecutive Temporary lockout responses exhaust retries.
                 var attempt = 0
-                val mockEngine = MockEngine { request ->
+                val mockEngine = MockEngine {
                     attempt++
                     respond(
                         content = "{\"error\":[\"EGeneral:Temporary lockout\"]}",
@@ -1299,7 +1299,7 @@ class KrakenServiceTest : StringSpec() {
         "retryOnTransientFailure_SocketTimeoutException_RetrySuccess" {
             runTest {
                 var attempt = 0
-                val mockEngine = MockEngine { request ->
+                val mockEngine = MockEngine {
                     if (attempt++ == 0) {
                         throw SocketTimeoutException("Simulated socket timeout", null)
                     } else {
@@ -1341,7 +1341,7 @@ class KrakenServiceTest : StringSpec() {
         "retryOnTransientFailure_ClientRequestException_RetrySuccess" {
             runTest {
                 var attempt = 0
-                val mockEngine = MockEngine { request ->
+                val mockEngine = MockEngine {
                     if (attempt++ == 0) {
                         val response = mockk<HttpResponse>(relaxed = true)
                         throw ClientRequestException(response, "Simulated rate limit / error")
@@ -1444,7 +1444,7 @@ class KrakenServiceTest : StringSpec() {
         "queryPrivate_RateLimiter_ThrottlesCorrectly" {
             runTest {
                 var callCount = 0
-                val mockEngine = MockEngine { request ->
+                val mockEngine = MockEngine {
                     callCount++
                     respond(
                         content = "{\"error\":[],\"result\":{}}",

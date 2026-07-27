@@ -1,7 +1,6 @@
 package com.gemini.krakenbot.frontend
 
 import com.gemini.krakenbot.model.Asset
-import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.DataProps
 import com.gemini.krakenbot.view.util.FormFields
@@ -154,36 +153,6 @@ object TestDomBuilders {
         <div id="${HtmlIds.ALLOCATIONS_CONTAINER}"></div>
         ${settingsDom()}
         """.trimIndent()
-
-    fun tradeJson(
-        timestamp: String = "2023-01-01",
-        symbol: String? = Asset.BTC,
-        side: String = OrderSide.BUY.name,
-        volume: Any? = 0.1,
-        usdAmount: Any? = 100.0,
-        success: Boolean? = true,
-        dryRun: Boolean? = false,
-        price: Any? = 50000.0,
-        fee: Any? = 2.6,
-        slippagePercent: Any? = null,
-        expectedPrice: Any? = null,
-        source: String? = null,
-        errorMessage: String? = null,
-    ): dynamic = json(
-        DataProps.TIMESTAMP to timestamp,
-        DataProps.SYMBOL to symbol,
-        DataProps.SIDE to side,
-        DataProps.VOLUME to volume,
-        DataProps.USD_AMOUNT to usdAmount,
-        DataProps.SUCCESS to success,
-        DataProps.DRY_RUN to dryRun,
-        DataProps.PRICE to price,
-        DataProps.FEE to fee,
-        DataProps.SLIPPAGE_PERCENT to slippagePercent,
-        DataProps.EXPECTED_PRICE to expectedPrice,
-        DataProps.SOURCE to source,
-        DataProps.ERROR_MESSAGE to errorMessage,
-    )
 
     // Appends each Chart config to window.chartConfigs for CoverageTest callback assertions.
     fun setupMockChart(isDatasetVisible: (Int) -> Boolean = { true }) {

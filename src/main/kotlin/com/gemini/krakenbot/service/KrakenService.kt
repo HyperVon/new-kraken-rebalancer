@@ -42,7 +42,7 @@ interface KrakenService {
 
     /**
      * Runs [block] with a stable backend selection passed as the argument.
-     * Default passes `this`. [DynamicKrakenService] pins live vs simulation in the
+     * Default passes `this`. [com.gemini.krakenbot.service.impl.DynamicKrakenService] pins live vs simulation in the
      * coroutine context at top-level entry; nested calls reuse the outer pin so a
      * mid-cycle `simulation` flip cannot mix backends. Concurrent top-level calls
      * each capture their own entry-time backend.

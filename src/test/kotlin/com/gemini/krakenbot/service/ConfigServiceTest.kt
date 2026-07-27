@@ -152,11 +152,11 @@ class ConfigServiceTest : StringSpec() {
 
         "updateConfig_DoesNotPersistEnvResolvedCredentials" {
             val secretFromEnv = System.getenv("PATH") ?: "fallback-path"
-            val content = """
+            val content = $$"""
                 {
                   "kraken": {
-                    "apiKey": "${'$'}{PATH:fallback-path}",
-                    "privateKey": "${'$'}{TEST_KRAKEN_PRIVATE_KEY:default-private-key}"
+                    "apiKey": "${PATH:fallback-path}",
+                    "privateKey": "${TEST_KRAKEN_PRIVATE_KEY:default-private-key}"
                   },
                   "settings": {
                     "loopDelaySeconds": 60,
@@ -185,8 +185,8 @@ class ConfigServiceTest : StringSpec() {
             service.updateConfig(updated)
 
             val savedContent = tempFile.readText()
-            savedContent shouldContain "\${PATH:fallback-path}"
-            savedContent shouldContain "\${TEST_KRAKEN_PRIVATE_KEY:default-private-key}"
+            savedContent shouldContain $$"${PATH:fallback-path}"
+            savedContent shouldContain $$"${TEST_KRAKEN_PRIVATE_KEY:default-private-key}"
             savedContent shouldNotContain secretFromEnv
 
             val reloaded = ConfigServiceImpl(objectMapper, tempFile.absolutePath)
@@ -526,11 +526,11 @@ class ConfigServiceTest : StringSpec() {
         }
 
         "loadConfig_ResolveEnvVars" {
-            val content = """
+            val content = $$"""
                 {
                   "kraken": {
-                    "apiKey": "${'$'}{TEST_KRAKEN_API_KEY:default-api-key}",
-                    "privateKey": "${'$'}{TEST_KRAKEN_PRIVATE_KEY:default-private-key}"
+                    "apiKey": "${TEST_KRAKEN_API_KEY:default-api-key}",
+                    "privateKey": "${TEST_KRAKEN_PRIVATE_KEY:default-private-key}"
                   },
                   "settings": {
                     "loopDelaySeconds": 60,
@@ -557,10 +557,10 @@ class ConfigServiceTest : StringSpec() {
 
         "loadConfig_ResolveEnvVars_WithActualEnvValue" {
             val pathValue = System.getenv("PATH") ?: "fallback"
-            val content = """
+            val content = $$"""
                 {
                   "kraken": {
-                    "apiKey": "${'$'}{PATH:fallback-path}",
+                    "apiKey": "${PATH:fallback-path}",
                     "privateKey": "some-private-key"
                   },
                   "settings": {
@@ -586,10 +586,10 @@ class ConfigServiceTest : StringSpec() {
         }
 
         "loadConfig_ResolveEnvVars_NoDefaultValue" {
-            val content = """
+            val content = $$"""
                 {
                   "kraken": {
-                    "apiKey": "${'$'}{NON_EXISTENT_VAR_NO_DEFAULT}",
+                    "apiKey": "${NON_EXISTENT_VAR_NO_DEFAULT}",
                     "privateKey": "some-private-key"
                   },
                   "settings": {
@@ -618,10 +618,10 @@ class ConfigServiceTest : StringSpec() {
             mockkStatic(System::class)
             every { System.getenv("SOME_BLANK_VAR") } returns "  "
 
-            val content = """
+            val content = $$"""
                 {
                   "kraken": {
-                    "apiKey": "${'$'}{SOME_BLANK_VAR:default-val}",
+                    "apiKey": "${SOME_BLANK_VAR:default-val}",
                     "privateKey": "some-private-key"
                   },
                   "settings": {

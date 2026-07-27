@@ -1306,8 +1306,7 @@ class TradeHistoryServiceTest : StringSpec() {
                     repository.updateTrade(
                         localTrade,
                         match {
-                            it.dryRun == false &&
-                                it.source == TradeSource.API_FILL
+                            !it.dryRun && it.source == TradeSource.API_FILL
                         },
                     )
                 }
@@ -1344,8 +1343,7 @@ class TradeHistoryServiceTest : StringSpec() {
                     repository.updateTrade(
                         localTrade,
                         match {
-                            it.dryRun == false &&
-                                it.source == TradeSource.API_FILL
+                            !it.dryRun && it.source == TradeSource.API_FILL
                         },
                     )
                 }

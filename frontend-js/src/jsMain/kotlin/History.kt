@@ -1162,36 +1162,32 @@ internal fun checkSyncProgress(): Promise<Boolean> = fetchJSON(Routes.API_HISTOR
     .then { rawStatus: dynamic ->
         val status = parseSyncProgressResponse(rawStatus)
         val banner = document.getElementById(HtmlIds.SYNC_PROGRESS_BANNER) as? HTMLElement
-        if (banner == null) {
+        banner == null || if (status.seeded) {
+            banner.style.display = "none"
             true
         } else {
-            if (status.seeded) {
-                banner.style.display = "none"
-                true
-            } else {
-                banner.style.display = "block"
-                val offset = dynamicNumber(status.offset) ?: 0.0
-                val total = dynamicNumber(status.total) ?: 0.0
-                var pct = 0
-                if (total > 0.0) {
-                    pct =
-                        (offset / total * PrecisionConstants.TOTAL_ALLOCATION_PERCENTAGE).toInt().coerceAtMost(
-                            PrecisionConstants.HUNDRED_INT,
-                        )
-                }
-
-                val bar = document.getElementById(HtmlIds.SYNC_PROGRESS_BAR) as? HTMLElement
-                val text = document.getElementById(HtmlIds.SYNC_PROGRESS_TEXT) as? HTMLElement
-
-                if (bar != null) bar.style.width = "$pct%"
-                if (text != null) {
-                    val offsetLabel = offset.asDynamic().toLocaleString()
-                    val totalLabel = total.asDynamic().toLocaleString()
-                    text.textContent = "$offsetLabel / $totalLabel ($pct%)"
-                }
-
-                false
+            banner.style.display = "block"
+            val offset = dynamicNumber(status.offset) ?: 0.0
+            val total = dynamicNumber(status.total) ?: 0.0
+            var pct = 0
+            if (total > 0.0) {
+                pct =
+                    (offset / total * PrecisionConstants.TOTAL_ALLOCATION_PERCENTAGE).toInt().coerceAtMost(
+                        PrecisionConstants.HUNDRED_INT,
+                    )
             }
+
+            val bar = document.getElementById(HtmlIds.SYNC_PROGRESS_BAR) as? HTMLElement
+            val text = document.getElementById(HtmlIds.SYNC_PROGRESS_TEXT) as? HTMLElement
+
+            if (bar != null) bar.style.width = "$pct%"
+            if (text != null) {
+                val offsetLabel = offset.asDynamic().toLocaleString()
+                val totalLabel = total.asDynamic().toLocaleString()
+                text.textContent = "$offsetLabel / $totalLabel ($pct%)"
+            }
+
+            false
         }
     }.`catch` { e ->
         console.error("Error checking sync progress", e)

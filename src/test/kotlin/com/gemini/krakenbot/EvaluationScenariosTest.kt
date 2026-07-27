@@ -129,13 +129,13 @@ class EvaluationScenariosTest : StringSpec() {
             reportFile.writeText(sb.toString())
         }
 
-        /** Keep the markdown report environment-agnostic for docs sync. */
+        /** Keep the Markdown report environment-agnostic for docs sync. */
         private fun sanitizeEvidencePlain(evidence: String): String {
             val projectRoot = File("").absoluteFile.canonicalPath.trimEnd('/', '\\') + File.separator
             return evidence
                 .replace(projectRoot, ".../")
-                .replace(Regex("""/var/folders/[^\s]+/"""), ".../")
-                .replace(Regex("""/tmp/[^\s]+/"""), ".../")
+                .replace(Regex("""/var/folders/\S+/"""), ".../")
+                .replace(Regex("""/tmp/\S+/"""), ".../")
                 .replace(Regex("""scenario(\d+)-\d+\.json"""), "scenario$1-*.json")
         }
 
@@ -1370,7 +1370,7 @@ class EvaluationScenariosTest : StringSpec() {
 
                 // Severe slippage: a BTC sell credits a flat $250 whatever the notional, so the ETH buy
                 // must size against the $350 actually settled (99% of it), not the projected proceeds.
-                fakeKraken.executeOrderAction = { pair, type, side, volume ->
+                fakeKraken.executeOrderAction = { pair, _, side, volume ->
                     if (pair == TestFixtures.XBTUSD && side == TestFixtures.SELL) {
                         balanceBTC = balanceBTC.subtract(volume)
                         balanceUSD = balanceUSD.add(BigDecimal("250.0"))
@@ -1927,7 +1927,7 @@ class EvaluationScenariosTest : StringSpec() {
                 fakeKraken.pricesSupplier = {
                     mapOf(TestFixtures.XBTUSD to 50000.0)
                 }
-                fakeKraken.orderResultFactory = { pair, type, side, volume ->
+                fakeKraken.orderResultFactory = { pair, _, side, volume ->
                     OrderResult(
                         success = false,
                         pair = pair,
@@ -2582,13 +2582,6 @@ class EvaluationScenariosTest : StringSpec() {
             runTest {
                 val fakeKraken = FakeKrakenService()
                 val mockConfig = mockk<ConfigService>(relaxed = true)
-                val statsRepo = mockk<PortfolioStatsRepository>(relaxed = true)
-                val analyzer =
-                    PortfolioAnalyzerImpl(
-                        fakeKraken,
-                        mockConfig,
-                        statsRepo,
-                    )
                 val executor =
                     OrderExecutorImpl(fakeKraken, tradeHistoryService)
 
