@@ -74,7 +74,7 @@ class TradeCalculatorTest : StringSpec() {
 
         "estimateFee should calculate fee correctly" {
             val fee = TradeCalculator.estimateFee(BigDecimal("1000.00"))
-            fee.shouldBeEqualComparingTo(BigDecimal("2.6000"))
+            fee.shouldBeEqualComparingTo(BigDecimal("6.0000"))
         }
 
         "createTradeRecord should assemble full TradeRecord" {

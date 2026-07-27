@@ -19,7 +19,8 @@ object PrecisionConstants {
     /** Post-sell buy budget: spend at most 99% of settled USD. */
     const val CASH_RESERVE_FACTOR_DOUBLE = 0.99
 
-    const val FEE_RATE_ESTIMATE_DOUBLE = 0.0026
+    /** Per-leg fee estimate for local trade planning before API reconciliation. */
+    const val FEE_RATE_ESTIMATE_DOUBLE = 0.006
 
     /** Seconds after which dashboard/JS treat snapshot age as STALE (not "live trading"). */
     const val STALE_THRESHOLD_SECONDS = 90L

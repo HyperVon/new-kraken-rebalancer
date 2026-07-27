@@ -129,7 +129,7 @@ class ModelTest : StringSpec() {
 
         "testServiceCompanions" {
             OrderExecutorImpl.CASH_RESERVE_FACTOR.shouldBeEqualComparingTo(BigDecimal("0.99"))
-            OrderExecutorImpl.FEE_RATE_ESTIMATE.shouldBeEqualComparingTo(BigDecimal("0.0026"))
+            OrderExecutorImpl.FEE_RATE_ESTIMATE.shouldBeEqualComparingTo(BigDecimal("0.006"))
 
             PortfolioCalculations.HUNDRED.shouldBeEqualComparingTo(BigDecimal("100"))
             PortfolioCalculations.SCALE_PERCENT shouldBe 4

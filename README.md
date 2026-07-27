@@ -145,7 +145,7 @@ with a wide range of tools and paradigms:
 | Category               | Technologies Used                                                                                                                                           |
 | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Languages**          | Java 25, Kotlin 2.4, Go 1.26, TypeScript, JavaScript (ES6+)                                                                                                 |
-| **Backend Frameworks** | Spring Boot 4, Ktor 2.3 → 3.5, NestJS, Express, Go `net/http`                                                                                               |
+| **Backend Frameworks** | Spring Boot 4, Ktor 2.3 → 3.5.1, NestJS, Express, Go `net/http`                                                                                             |
 | **DI / IoC**           | Spring IoC (`@Autowired`), Koin 3.5 → 4.2, NestJS modules                                                                                                   |
 | **Build Systems**      | Maven, Gradle (Kotlin DSL), npm / yarn, Go modules                                                                                                          |
 | **Frontend**           | React (JS → TypeScript), Angular (explored), HTMX + kotlinx.html DSL, Tailwind CSS v4, Chart.js                                                             |
@@ -403,7 +403,7 @@ This path is internal orchestration — not a second browser-facing SSE stream l
 │   └── src/commonMain/kotlin/com/gemini/krakenbot/
 │       ├── api/                           # Wire DTOs: PortfolioSnapshot, TradeRecord, HistoryStats, SyncProgressResponse
 │       ├── config/                        # AppConfig, Settings, Allocation, KrakenCredentials, InvalidConfigurationException
-│       ├── model/                         # Asset, OrderSide, OrderType, Result, TimeRange, SyncMetadataKeys, TradeSourceKeys
+│       ├── model/                         # Asset, OrderSide (OrderType defined alongside), Result, TimeRange, SyncMetadataKeys, TradeSourceKeys
 │       ├── util/                          # PrecisionConstants
 │       └── view/util/                     # Routes, FormFields, ViewText, CssClass, HtmlIds, HtmlAttrs, HtmxAttrs, DataProps, ChartProps
 ├── frontend-js/                            # Kotlin/JS client-side subproject compiling to rebalancer.js
@@ -431,7 +431,7 @@ This path is internal orchestration — not a second browser-facing SSE stream l
 │   ├── repository/                        # TradeRepository, PortfolioStatsRepository
 │   │   ├── impl/                          # Sqlite*Impl + RepositoryUtils (safeTransaction)
 │   │   └── table/                         # TradeTable, PortfolioSnapshotTable, AssetSnapshotTable, PortfolioStatsTable, HistorySyncMetadataTable, ActionLogTable
-│   ├── service/                           # Interfaces + ServiceUtils
+│   ├── service/                           # Interfaces, ServiceUtils, and AssetColorAssigner
 │   │   └── impl/                          # Service implementations (coroutine-aware)
 │   │       ├── PortfolioManagerImpl.kt   # Loop orchestrator
 │   │       ├── PortfolioAnalyzerImpl.kt  # Snapshot/analysis + ATH I/O
@@ -644,6 +644,7 @@ To run JS browser tests only:
 Tests cover:
 
 - **Scenario Evaluation Suite** (`EvaluationScenariosTest`) — **33 highly realistic scenarios** testing the full end-to-end execution of rebalances, mathematical edge cases, API credentials invalidation, concurrency locks, and SSE client streams. See **[EVALUATION.md](docs/EVALUATION.md)** for descriptions and test results of all 33 scenarios.
+- **Simulation Evaluation Suite** (`SimulationEvaluationScenariosTest`) — 5 invariant cases against the production `SimulatedKrakenService` emulator with real TradeHistory + in-memory SQLite. See **[EVALUATION.md](docs/EVALUATION.md)** for case descriptions.
 - `KrakenE2ETest` / `ResilienceChaosTest` / `PrecisionRoundingFuzzTest` /
   `SerializationParityTest` — advanced E2E black-box and fuzz testing
 - `PortfolioManagerComprehensiveTest` — full rebalance cycles with order result
