@@ -286,7 +286,7 @@ The dedicated History view provides detailed analysis and charts tracking portfo
 - **Cumulative Net Cash Flow** (gross signed cash flow plus dashed **Net After Fees** series)
 - **Comprehensive Trade Log Table** (showing all executions, with a toggle to filter/show dry-run trades)
 
-![History Charts](docs/images/history.png)
+![History Overview](docs/images/history.png)
 
 ![History — Allocation Deviation & Net Cash Flow](docs/images/history-charts.png)
 
