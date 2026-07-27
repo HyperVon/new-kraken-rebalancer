@@ -2,6 +2,7 @@ package com.gemini.krakenbot.view.component
 
 import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.view.util.ActiveNav
+import com.gemini.krakenbot.view.util.ChartProps
 import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.FormFields
 import com.gemini.krakenbot.view.util.HtmlAttrs
@@ -201,12 +202,30 @@ class SettingsFormComponent {
             div(CssClass.Form.AllocationListContainer) {
                 id = HtmlIds.ALLOCATIONS_CONTAINER
                 config.allocations.forEach { alloc ->
+                    val rowColor = alloc.color ?: ChartProps.SOLID_FALLBACK
                     div(CssClass.Form.AllocationEditRow) {
                         div(CssClass.Form.AllocationEditSymbol) { +alloc.symbol.value }
                         input(
                             type = InputType.hidden,
                             name = FormFields.SYMBOLS,
                         ) { value = alloc.symbol.value }
+                        input(
+                            type = InputType.hidden,
+                            name = FormFields.COLORS,
+                        ) {
+                            value = rowColor
+                            classes = setOf(CssClass.Form.AllocationColorInput.value)
+                        }
+                        label {
+                            input(
+                                type = InputType.color,
+                            ) {
+                                value = rowColor
+                                classes = setOf(CssClass.Form.AllocationColorSwatch.value)
+                                attributes[HtmlAttrs.ONINPUT] =
+                                    "this.closest('.${CssClass.Form.AllocationEditRow}').querySelector('.${CssClass.Form.AllocationColorInput}').value = this.value"
+                            }
+                        }
                         div(CssClass.Form.AllocationEditInputWrapper) {
                             input(
                                 CssClass.Form.InputGlass,

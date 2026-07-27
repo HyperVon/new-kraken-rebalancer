@@ -1,5 +1,6 @@
 package com.gemini.krakenbot.view
 
+import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.config.AppConfig
@@ -69,7 +70,7 @@ class DashboardViewTest : StringSpec() {
         shellComponent = shell,
         settingsFormComponent = SettingsFormComponent(),
         fragmentComponent = fragment,
-        historyPageComponent = HistoryPageComponent(),
+        historyPageComponent = HistoryPageComponent(jacksonObjectMapper()),
     )
 
     private val ALLOCATION_BAR_LABEL = CssClass.AllocationChart.BarLabel.toString()

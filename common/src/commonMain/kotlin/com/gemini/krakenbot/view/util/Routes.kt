@@ -43,4 +43,5 @@ object FormFields {
     const val FIAT_DEPLOYMENT_EXPONENT = "fiatDeploymentExponent"
     const val SYMBOLS = "symbols"
     const val TARGETS = "targets"
+    const val COLORS = "colors"
 }

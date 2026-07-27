@@ -80,7 +80,7 @@ class DashboardControllerTest : StringSpec() {
                         recentActivityComponent = get(),
                     )
                 }
-                single { HistoryPageComponent() }
+                single { HistoryPageComponent(get()) }
                 single {
                     DashboardView(
                         shellComponent = get(),
@@ -300,6 +300,7 @@ class DashboardControllerTest : StringSpec() {
                                 FormFields.SIMULATION to listOf("on"),
                                 FormFields.SYMBOLS to listOf(Asset.USD),
                                 FormFields.TARGETS to listOf("100.0"),
+                                FormFields.COLORS to listOf("#94A3B8"),
                             ).formUrlEncode(),
                         )
                         header(
@@ -312,7 +313,57 @@ class DashboardControllerTest : StringSpec() {
             }
 
             captured.captured.settings.simulation shouldBe true
+            captured.captured.allocations.single().color shouldBe "#94a3b8"
             verify { configService.updateConfig(any()) }
+        }
+
+        "postSettings_DropsUnpairedSymbolsWhenTargetsShorter" {
+            val serverConfig =
+                AppConfig(
+                    kraken =
+                    KrakenCredentials(
+                        apiKey = TestFixtures.TEST_SERVER_API_KEY,
+                        privateKey = TestFixtures.TEST_SERVER_API_SECRET,
+                    ),
+                    settings =
+                    Settings(
+                        loopDelaySeconds = 60L,
+                        deviationTriggerPercent = 2.0,
+                        dustThresholdUSD = 1.0,
+                        dryRun = true,
+                        fiatMaxDrawdown = 0.0,
+                        fiatDeploymentExponent = 1.0,
+                    ),
+                    allocations = listOf(Allocation(Asset.USD, 100.0)),
+                )
+            val captured = slot<AppConfig>()
+            every { configService.getConfig() } returns serverConfig
+            every { configService.updateConfig(capture(captured)) } returns Unit
+
+            testApplication {
+                application {
+                    configureTestEnv()
+                }
+                client.post(Routes.SETTINGS) {
+                    setBody(
+                        parametersOf(
+                            FormFields.LOOP_DELAY_SECONDS to listOf("60"),
+                            FormFields.DEVIATION_TRIGGER_PERCENT to listOf("2.0"),
+                            FormFields.DUST_THRESHOLD_USD to listOf("1.0"),
+                            FormFields.SYMBOLS to listOf(Asset.USD, Asset.BTC),
+                            FormFields.TARGETS to listOf("100.0"),
+                            FormFields.COLORS to listOf("#94a3b8", "#fbbf24"),
+                        ).formUrlEncode(),
+                    )
+                    header(
+                        HttpHeaders.ContentType,
+                        ContentType.Application.FormUrlEncoded.toString(),
+                    )
+                }
+            }
+
+            captured.captured.allocations.map { it.symbol.value } shouldBe listOf(Asset.USD)
+            captured.captured.allocations.single().color shouldBe "#94a3b8"
         }
 
         "postSettings_OnValidationError_ReturnsErrorHtmlBody" {

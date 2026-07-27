@@ -1,5 +1,6 @@
 package com.gemini.krakenbot.view
 
+import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.view.component.HistoryPageComponent
 import com.gemini.krakenbot.view.util.CdnUrls
@@ -9,6 +10,7 @@ import com.gemini.krakenbot.view.util.ViewText
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.string.shouldContain
+import io.kotest.matchers.string.shouldNotContain
 import kotlinx.html.html
 import kotlinx.html.stream.createHTML
 
@@ -18,7 +20,7 @@ class HistoryPageComponentTest : StringSpec() {
 
     init {
         "should render HistoryPage HTML structure" {
-            val component = HistoryPageComponent()
+            val component = HistoryPageComponent(jacksonObjectMapper())
             val settings = Settings(
                 loopDelaySeconds = 60L,
                 deviationTriggerPercent = 2.0,
@@ -49,6 +51,21 @@ class HistoryPageComponentTest : StringSpec() {
             htmlString shouldContain ViewText.HEADER_FEE
             htmlString shouldContain ViewText.HEADER_SLIPPAGE
             htmlString shouldContain "rebalancer.js"
+        }
+
+        "should JSON-escape asset colors in window.__ASSET_COLORS__" {
+            val component = HistoryPageComponent(jacksonObjectMapper())
+            val settings = Settings(
+                loopDelaySeconds = 60L,
+                deviationTriggerPercent = 2.0,
+                dryRun = true,
+            )
+            val htmlString = createHTML().html {
+                component.render(settings, mapOf("BTC" to "x\"};alert(1);//"))
+            }
+            htmlString shouldContain "window.__ASSET_COLORS__="
+            htmlString shouldContain "\\\"};alert(1);//"
+            htmlString shouldNotContain "window.__ASSET_COLORS__={\"BTC\":\"x\"};alert(1);//"
         }
     }
 }

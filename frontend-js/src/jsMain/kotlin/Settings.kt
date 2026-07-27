@@ -113,10 +113,24 @@ fun addAssetRow() {
     symbolDiv.className = CssClass.Form.AllocationEditSymbol.toString()
     symbolDiv.textContent = symbol
 
-    val hiddenInput = document.createInput()
-    hiddenInput.type = "hidden"
-    hiddenInput.name = FormFields.SYMBOLS
-    hiddenInput.value = symbol
+    val symbolHidden = document.createInput()
+    symbolHidden.type = "hidden"
+    symbolHidden.name = FormFields.SYMBOLS
+    symbolHidden.value = symbol
+
+    val colorHidden = document.createInput()
+    colorHidden.type = "hidden"
+    colorHidden.name = FormFields.COLORS
+    colorHidden.className = CssClass.Form.AllocationColorInput.toString()
+
+    val colorLabel = document.createLabel()
+    val colorPicker = document.createInput()
+    colorPicker.type = "color"
+    colorPicker.className = CssClass.Form.AllocationColorSwatch.toString()
+    colorPicker.value = pickColorForNewAsset()
+    colorHidden.value = colorPicker.value
+    colorPicker.oninput = { colorHidden.value = colorPicker.value }
+    colorLabel.appendChild(colorPicker)
 
     val inputWrapper = document.createDiv()
     inputWrapper.className = CssClass.Form.AllocationEditInputWrapper.toString()
@@ -148,13 +162,45 @@ fun addAssetRow() {
     }
 
     row.appendChild(symbolDiv)
-    row.appendChild(hiddenInput)
+    row.appendChild(symbolHidden)
+    row.appendChild(colorHidden)
+    row.appendChild(colorLabel)
     row.appendChild(inputWrapper)
     row.appendChild(removeBtn)
 
     container.appendChild(row)
     symbolInput.value = ""
     updateAllocationTotal()
+}
+
+private val COLOR_PALETTE_CANDIDATES = arrayOf(
+    "#60a5fa",
+    "#34d399",
+    "#f87171",
+    "#2dd4bf",
+    "#fb923c",
+    "#e879f9",
+    "#facc15",
+    "#38bdf8",
+)
+
+private fun pickColorForNewAsset(): String {
+    val used = currentAllocationColors().toSet()
+    val free = COLOR_PALETTE_CANDIDATES.filterNot { it in used }
+    if (free.isNotEmpty()) return free.first()
+    return COLOR_PALETTE_CANDIDATES[used.size % COLOR_PALETTE_CANDIDATES.size]
+}
+
+private fun currentAllocationColors(): List<String> {
+    val inputs = document.querySelectorAll(".${CssClass.Form.AllocationColorInput}")
+    val colors = mutableListOf<String>()
+    for (i in 0 until inputs.length) {
+        val input = inputs.item(i) as? HTMLInputElement
+        if (input != null && input.value.isNotEmpty()) {
+            colors.add(input.value)
+        }
+    }
+    return colors
 }
 
 /** Uppercased symbols from all allocation symbol inputs currently in the DOM. */

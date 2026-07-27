@@ -83,8 +83,9 @@ The top of the Dashboard is a hero card plus two tiles:
 - **Portfolio Allocation (Top Assets)** — Horizontal bars for the largest
   holdings by USD value (and cash), showing up to the **top 15**. Bar lengths are
   relative to the largest holding (the biggest fills the track), with each bar
-  labelled by its USD value and current %. Each symbol uses a fixed color (BTC
-  amber, ETH violet, USD slate) shared with History charts.
+  labelled by its USD value and current %. Each symbol uses its configured color
+  from Settings (BTC/ETH/USD start with amber/violet/slate defaults; other
+  assets get an auto-assigned color), shared with History charts.
 - **Asset Performance** — Sortable table of price, value, target %, current %,
   and **Dev %** (how far each asset is from target, with dollar impact).
   Amber = over target, blue = under target (not profit/loss green/red); a small
@@ -135,8 +136,11 @@ running loop — no process restart required.
 
 ### Target allocations
 
-- Every allocation row is a symbol + target percent, bounded to **0–100%** by the
-  input itself.
+- Every allocation row is a symbol + target percent + optional color swatch,
+  bounded to **0–100%** by the percent input itself.
+- Colors persist in `rebalancer-config.json`. Missing or invalid colors are
+  auto-assigned on load/save (known defaults for BTC/ETH/USD; HSL-derived
+  colors for everything else).
 - **Total** must read **100.00%** (green badge) before save succeeds.
 - **USD is required** — cash is part of the strategy, not optional.
 - **Add Asset** / **Remove** change the universe without restarting the app.
@@ -185,7 +189,7 @@ user-saved views only (built-ins stay locked).
 Charts on this view:
 
 - **Portfolio Value Over Time** — Total portfolio (blue) plus per-asset USD
-  values with fixed colors (BTC amber, ETH violet).
+  values using the same configured per-asset colors as Settings / Dashboard.
 - **Asset Holdings Over Time** — Relative change in holdings (percent), same
   per-asset colors.
 

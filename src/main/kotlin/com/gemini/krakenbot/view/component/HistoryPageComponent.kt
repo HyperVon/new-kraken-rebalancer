@@ -1,5 +1,6 @@
 package com.gemini.krakenbot.view.component
 
+import com.fasterxml.jackson.databind.ObjectMapper
 import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.TimeRange
 import com.gemini.krakenbot.util.PrecisionConstants
@@ -28,10 +29,10 @@ import com.gemini.krakenbot.view.util.td
 import kotlinx.html.*
 import kotlinx.html.InputType.checkBox
 
-class HistoryPageComponent {
+class HistoryPageComponent(private val objectMapper: ObjectMapper) {
 
     context(html: HTML)
-    fun render(settings: Settings) {
+    fun render(settings: Settings, symbolColorMap: Map<String, String> = emptyMap()) {
         html.head {
             commonMetadataAndStyles()
             title("${ViewText.HISTORY_TITLE} - ${ViewText.APP_TITLE}")
@@ -50,6 +51,14 @@ class HistoryPageComponent {
                     renderChartSection(chart)
                 }
                 renderTradeTable()
+            }
+            if (symbolColorMap.isNotEmpty()) {
+                val json = objectMapper.writeValueAsString(symbolColorMap)
+                script {
+                    unsafe {
+                        raw("window.__ASSET_COLORS__=$json")
+                    }
+                }
             }
             script(src = rebalancerJsSrc()) {}
         }

@@ -39,3 +39,5 @@ fun Document.createSpan(): HTMLSpanElement = createElement(HtmlTags.SPAN) as HTM
 fun Document.createInput(): HTMLInputElement = createElement(HtmlTags.INPUT) as HTMLInputElement
 
 fun Document.createButton(): HTMLButtonElement = createElement(HtmlTags.BUTTON) as HTMLButtonElement
+
+fun Document.createLabel(): HTMLLabelElement = createElement(HtmlTags.LABEL) as HTMLLabelElement

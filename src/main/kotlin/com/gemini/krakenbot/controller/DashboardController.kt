@@ -10,6 +10,7 @@ import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.model.TimeRange
+import com.gemini.krakenbot.service.AssetColorAssigner
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.TradeHistoryService
 import com.gemini.krakenbot.view.DashboardView
@@ -84,9 +85,13 @@ class DashboardController(
             }
 
             get(Routes.HISTORY) {
-                val settings = configService.getConfig().settings
+                val config = configService.getConfig()
+                val settings = config.settings
+                val symbolColorMap = config.allocations.mapNotNull { alloc ->
+                    alloc.color?.let { alloc.symbol.value.uppercase() to it }
+                }.toMap()
                 call.respondHtml(HttpStatusCode.OK) {
-                    dashboardView.renderHistoryPage(settings)
+                    dashboardView.renderHistoryPage(settings, symbolColorMap)
                 }
             }
 
@@ -145,11 +150,13 @@ class DashboardController(
 
         val symbols = params.getAll(FormFields.SYMBOLS) ?: emptyList()
         val targets = params.getAll(FormFields.TARGETS) ?: emptyList()
+        val colors = params.getAll(FormFields.COLORS) ?: emptyList()
 
-        val allocations =
-            symbols.zip(targets).map { (symbol, targetStr) ->
-                Allocation(symbol, targetStr.toDoubleOrNull() ?: 0.0)
-            }
+        val allocations = symbols.zip(targets).mapIndexed { index, (symbol, targetStr) ->
+            val target = targetStr.toDoubleOrNull() ?: 0.0
+            val color = AssetColorAssigner.normalizeHex(colors.getOrElse(index) { "" })
+            Allocation(symbol, target, color)
+        }
 
         val updatedConfig =
             AppConfig(
@@ -190,6 +197,7 @@ class DashboardController(
     private suspend fun RoutingContext.handleGetDashboardFragment() {
         val history = tradeHistoryService.getHistory()
         val latest = history.firstOrNull()
+        val allocations = configService.getConfig().allocations
 
         if (latest == null) {
             val noSnapshotHtml =
@@ -207,7 +215,7 @@ class DashboardController(
 
         val html =
             createHTML(prettyPrint = false).div {
-                dashboardView.renderDashboardFragment(latest, history)
+                dashboardView.renderDashboardFragment(latest, history, allocations)
             }
         call.respondText(html, ContentType.Text.Html)
     }

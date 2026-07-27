@@ -5,6 +5,7 @@ import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.InvalidConfigurationException
 import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.config.Settings
+import com.gemini.krakenbot.service.AssetColorAssigner
 import com.gemini.krakenbot.service.ConfigService
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.Flow
@@ -44,7 +45,7 @@ class ConfigServiceImpl(
         val rawContent = readRawConfigContent()
         persistedKrakenCredentials = parseConfig(rawContent).kraken
         val parsedConfig = parseConfig(resolveEnvVars(rawContent))
-        val validatedConfig = validateOrThrowInvalidConfiguration(parsedConfig)
+        val validatedConfig = validateAndNormalize(parsedConfig)
         appConfig = validatedConfig
         _configFlow.tryEmit(validatedConfig.settings)
     }
@@ -53,7 +54,7 @@ class ConfigServiceImpl(
 
     @Synchronized
     override fun updateConfig(newConfig: AppConfig) {
-        val validatedConfig = validateOrThrowInvalidConfiguration(newConfig)
+        val validatedConfig = validateAndNormalize(newConfig)
         val previousKraken = appConfig.kraken
         val persistedConfig = configForPersistence(validatedConfig, previousKraken)
         appConfig = validatedConfig
@@ -111,10 +112,13 @@ class ConfigServiceImpl(
         .replace("\\", "\\\\")
         .replace("\"", "\\\"")
 
-    private fun validateOrThrowInvalidConfiguration(config: AppConfig): AppConfig {
+    /** Validates settings/allocations, then backfills missing or invalid colors. */
+    private fun validateAndNormalize(config: AppConfig): AppConfig {
         try {
             validateConfig(config)
-            return config
+            return config.copy(
+                allocations = AssetColorAssigner.assignMissingColors(config.allocations),
+            )
         } catch (e: IllegalArgumentException) {
             throw InvalidConfigurationException(e.message)
         }

@@ -85,6 +85,7 @@ object HtmlTags {
     const val THEAD = "thead"
     const val TBODY = "tbody"
     const val OPTION = "option"
+    const val LABEL = "label"
 }
 
 /** Centralized HTML element IDs used in view layout templates and client scripts. */

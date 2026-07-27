@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.15.0] - 2026-07-26
+
+### Added
+
+- **Asset colors**: Each `Allocation` now has an optional `color` field in the config file. The Settings form includes a color picker per asset. Assets without a stored color get a deterministic HSL-derived color on config load/save (BTC/ETH/USD keep known defaults when free). The color map is JSON-embedded on the History page for JS chart rendering, and threaded through the SSR render chain for the allocation bar chart. Posted colors must be `#rrggbb` (invalid values are ignored and reassigned).
+
 ## [6.14.2] - 2026-07-26
 
 ### Changed

@@ -1,5 +1,6 @@
 package com.gemini.krakenbot.view.component
 
+import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.util.PrecisionConstants
 import com.gemini.krakenbot.view.util.CssClass
@@ -26,7 +27,11 @@ class DashboardFragmentComponent(
             .withZone(ZoneId.systemDefault())
 
     context(div: DIV)
-    fun render(latest: PortfolioSnapshot, history: List<PortfolioSnapshot>) {
+    fun render(
+        latest: PortfolioSnapshot,
+        history: List<PortfolioSnapshot>,
+        allocations: List<Allocation> = emptyList(),
+    ) {
         val timeSinceUpdate =
             0L.coerceAtLeast(
                 Instant.now().epochSecond - latest.timestamp.epochSecond,
@@ -39,7 +44,7 @@ class DashboardFragmentComponent(
         overviewGridComponent.render(latest, history)
 
         div.div(CssClass.Layout.DetailGrid) {
-            allocationChartComponent.render(latest)
+            allocationChartComponent.render(latest, allocations)
             performanceTableComponent.render(latest)
         }
 
