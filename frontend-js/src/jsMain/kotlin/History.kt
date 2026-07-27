@@ -50,8 +50,19 @@ private val assetColorMap: Map<String, String> by lazy {
 private fun colorForSymbol(symbol: String, fallbackIndex: Int): String =
     assetColorMap[symbol.uppercase()] ?: ChartProps.borderColorForSymbol(symbol, fallbackIndex)
 
-private fun bgColorForSymbol(symbol: String, fallbackIndex: Int): String =
-    assetColorMap[symbol.uppercase()] ?: ChartProps.backgroundColorForSymbol(symbol, fallbackIndex)
+private fun bgColorForSymbol(symbol: String, fallbackIndex: Int): String {
+    val solid = assetColorMap[symbol.uppercase()]
+    if (solid != null) return hexToRgba(solid, 0.1)
+    return ChartProps.backgroundColorForSymbol(symbol, fallbackIndex)
+}
+
+private fun hexToRgba(hex: String, alpha: Double): String {
+    val clean = hex.removePrefix("#")
+    val r = clean.substring(0, 2).toInt(16)
+    val g = clean.substring(2, 4).toInt(16)
+    val b = clean.substring(4, 6).toInt(16)
+    return "rgba($r, $g, $b, $alpha)"
+}
 
 @JsName("Object")
 private external object JSObject {

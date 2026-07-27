@@ -128,6 +128,7 @@ fun addAssetRow() {
     colorPicker.type = "color"
     colorPicker.className = CssClass.Form.AllocationColorSwatch.toString()
     colorPicker.value = pickColorForNewAsset()
+    colorHidden.value = colorPicker.value
     colorPicker.oninput = { colorHidden.value = colorPicker.value }
     colorLabel.appendChild(colorPicker)
 
@@ -185,7 +186,9 @@ private val COLOR_PALETTE_CANDIDATES = arrayOf(
 
 private fun pickColorForNewAsset(): String {
     val used = currentAllocationColors().toSet()
-    return COLOR_PALETTE_CANDIDATES.firstOrNull { it !in used } ?: COLOR_PALETTE_CANDIDATES.first()
+    val free = COLOR_PALETTE_CANDIDATES.filterNot { it in used }
+    if (free.isNotEmpty()) return free.first()
+    return COLOR_PALETTE_CANDIDATES[used.size % COLOR_PALETTE_CANDIDATES.size]
 }
 
 private fun currentAllocationColors(): List<String> {

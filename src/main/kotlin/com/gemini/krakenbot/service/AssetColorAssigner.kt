@@ -35,15 +35,22 @@ object AssetColorAssigner {
         var hue = (symbol.hashCode().toLong() * GOLDEN_RATIO_CONJUGATE)
             .let { ((it % 360) + 360) % 360 }
             .toInt()
-        val sat = 70
-        val light = 55
         for (attempt in 0 until MAX_ATTEMPTS) {
-            val hex = hslToHex(hue, sat, light)
+            val slPair = slValues[attempt % slValues.size]
+            val hex = hslToHex(hue, slPair.first, slPair.second)
             if (hex !in usedColors) return hex
             hue = (hue + 47) % 360
         }
-        return hslToHex(hue, sat, light)
+        return hslToHex(hue, slValues.first().first, slValues.first().second)
     }
+
+    private val slValues = listOf(
+        70 to 55,
+        60 to 65,
+        80 to 45,
+        50 to 70,
+        90 to 35,
+    )
 
     private fun hslToHex(h: Int, s: Int, l: Int): String {
         val normalized = h.toFloat() / 360

@@ -221,7 +221,7 @@ class SettingsFormComponent {
                                 value = alloc.color ?: "#60a5fa"
                                 classes = setOf(CssClass.Form.AllocationColorSwatch.value)
                                 attributes[HtmlAttrs.ONINPUT] =
-                                    "this.parentElement.previousElementSibling.value = this.value"
+                                    "this.closest('.${CssClass.Form.AllocationEditRow}').querySelector('.${CssClass.Form.AllocationColorInput}').value = this.value"
                             }
                         }
                         div(CssClass.Form.AllocationEditInputWrapper) {
