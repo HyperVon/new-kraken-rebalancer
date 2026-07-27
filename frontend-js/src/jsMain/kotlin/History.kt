@@ -32,6 +32,27 @@ import com.gemini.krakenbot.view.util.CssClass.Query.ZOOM_BTNS as ZOOM_BTNS_QUER
 @JsName("Chart")
 private external class Chart(ctx: dynamic, config: dynamic)
 
+private val assetColorMap: Map<String, String> by lazy {
+    val global = js("window.__ASSET_COLORS__")
+    if (global != null && global != undefined) {
+        val map = mutableMapOf<String, String>()
+        val keys: Array<String> = js("Object.keys(__ASSET_COLORS__)")
+        for (key in keys) {
+            val v: String = js("__ASSET_COLORS__[key]")
+            map[key] = v
+        }
+        map
+    } else {
+        emptyMap()
+    }
+}
+
+private fun colorForSymbol(symbol: String, fallbackIndex: Int): String =
+    assetColorMap[symbol.uppercase()] ?: ChartProps.borderColorForSymbol(symbol, fallbackIndex)
+
+private fun bgColorForSymbol(symbol: String, fallbackIndex: Int): String =
+    assetColorMap[symbol.uppercase()] ?: ChartProps.backgroundColorForSymbol(symbol, fallbackIndex)
+
 @JsName("Object")
 private external object JSObject {
     fun keys(obj: dynamic): Array<String>
@@ -599,7 +620,7 @@ internal fun buildPortfolioValueChart(snapshots: List<PortfolioSnapshot>) {
     )
 
     symbolList.forEachIndexed { i, sym ->
-        val color = ChartProps.borderColorForSymbol(sym, i)
+        val color = colorForSymbol(sym, i)
         val symbolData =
             mapSnapshotsToPoints(snapshots) { snapshot ->
                 dynamicNumber(snapshot.assets[sym]?.valueUSD) ?: 0.0
@@ -653,7 +674,7 @@ internal fun buildAssetHoldingsChart(snapshots: List<PortfolioSnapshot>) {
     val datasets =
         symbolList
             .mapIndexed { i, sym ->
-                val color = ChartProps.borderColorForSymbol(sym, i)
+                val color = colorForSymbol(sym, i)
                 val symbolData =
                     mapSnapshotsToPoints(snapshots) { snapshot ->
                         val current = dynamicNumber(snapshot.assets[sym]?.balance) ?: 0.0
@@ -709,8 +730,8 @@ internal fun buildAllocationDriftChart(snapshots: List<PortfolioSnapshot>) {
     val datasets =
         symbolList
             .mapIndexed { i, sym ->
-                val color = ChartProps.borderColorForSymbol(sym, i)
-                val bg = ChartProps.backgroundColorForSymbol(sym, i)
+                val color = colorForSymbol(sym, i)
+                val bg = bgColorForSymbol(sym, i)
                 val symbolData =
                     mapSnapshotsToPoints(snapshots) { snapshot ->
                         dynamicNumber(snapshot.assets[sym]?.deviationPercent) ?: 0.0

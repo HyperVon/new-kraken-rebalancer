@@ -244,6 +244,29 @@ object FormStyles {
             color = CssTheme.colorTextPrimary
         }
 
+        ".${CssClass.Form.AllocationColorSwatch}" {
+            width = 2.rem
+            height = 2.rem
+            padding = Padding(0.px)
+            borderWidth = 0.px
+            borderStyle = BorderStyle.none
+            borderRadius = 0.5.rem
+            cursor = Cursor.pointer
+            backgroundColor = Color.transparent
+            display = Display.inlineFlex
+            put("flex-shrink", "0")
+        }
+
+        ".${CssClass.Form.AllocationColorSwatch}::-webkit-color-swatch-wrapper" {
+            padding = Padding(0.px)
+        }
+
+        ".${CssClass.Form.AllocationColorSwatch}::-webkit-color-swatch" {
+            borderWidth = 0.px
+            borderStyle = BorderStyle.none
+            borderRadius = 0.5.rem
+        }
+
         ".${CssClass.Form.AllocationEditInputWrapper}" {
             position = Position.relative
             flexGrow = 1.0

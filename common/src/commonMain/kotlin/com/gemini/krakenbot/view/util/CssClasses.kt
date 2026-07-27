@@ -111,6 +111,8 @@ sealed class CssClass(open val value: String) {
         object AllocationTotalOk : Form("allocation-total-ok")
         object AllocationTotalBad : Form("allocation-total-bad")
         object AllocationEditSymbol : Form("allocation-edit-symbol")
+        object AllocationColorSwatch : Form("allocation-color-swatch")
+        object AllocationColorInput : Form("allocation-color-input")
         object AllocationEditInputWrapper : Form("allocation-edit-input-wrapper")
         object PercentSuffix : Form("percent-suffix")
         object AddAssetBox : Form("add-asset-box")

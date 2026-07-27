@@ -31,7 +31,7 @@ import kotlinx.html.InputType.checkBox
 class HistoryPageComponent {
 
     context(html: HTML)
-    fun render(settings: Settings) {
+    fun render(settings: Settings, symbolColorMap: Map<String, String> = emptyMap()) {
         html.head {
             commonMetadataAndStyles()
             title("${ViewText.HISTORY_TITLE} - ${ViewText.APP_TITLE}")
@@ -50,6 +50,14 @@ class HistoryPageComponent {
                     renderChartSection(chart)
                 }
                 renderTradeTable()
+            }
+            if (symbolColorMap.isNotEmpty()) {
+                script {
+                    val jsonMap = symbolColorMap.entries.joinToString(",") { (k, v) -> "\"$k\":\"$v\"" }
+                    unsafe {
+                        raw("window.__ASSET_COLORS__={$jsonMap}")
+                    }
+                }
             }
             script(src = rebalancerJsSrc()) {}
         }

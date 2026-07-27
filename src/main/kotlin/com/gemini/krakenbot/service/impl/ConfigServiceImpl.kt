@@ -5,6 +5,7 @@ import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.InvalidConfigurationException
 import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.config.Settings
+import com.gemini.krakenbot.service.AssetColorAssigner
 import com.gemini.krakenbot.service.ConfigService
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.Flow
@@ -114,7 +115,10 @@ class ConfigServiceImpl(
     private fun validateOrThrowInvalidConfiguration(config: AppConfig): AppConfig {
         try {
             validateConfig(config)
-            return config
+            val withColors = config.copy(
+                allocations = AssetColorAssigner.assignMissingColors(config.allocations),
+            )
+            return withColors
         } catch (e: IllegalArgumentException) {
             throw InvalidConfigurationException(e.message)
         }

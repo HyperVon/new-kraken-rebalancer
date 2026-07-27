@@ -15,15 +15,18 @@
   "allocations": [
     {
       "symbol": "BTC",
-      "targetPercent": 50
+      "targetPercent": 50,
+      "color": "#fbbf24"
     },
     {
       "symbol": "ETH",
-      "targetPercent": 45
+      "targetPercent": 45,
+      "color": "#a78bfa"
     },
     {
       "symbol": "USD",
-      "targetPercent": 5
+      "targetPercent": 5,
+      "color": "#94a3b8"
     }
   ]
 }

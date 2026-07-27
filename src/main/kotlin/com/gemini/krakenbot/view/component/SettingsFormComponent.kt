@@ -207,6 +207,23 @@ class SettingsFormComponent {
                             type = InputType.hidden,
                             name = FormFields.SYMBOLS,
                         ) { value = alloc.symbol.value }
+                        input(
+                            type = InputType.hidden,
+                            name = FormFields.COLORS,
+                        ) {
+                            value = alloc.color ?: ""
+                            classes = setOf(CssClass.Form.AllocationColorInput.value)
+                        }
+                        label {
+                            input(
+                                type = InputType.color,
+                            ) {
+                                value = alloc.color ?: "#60a5fa"
+                                classes = setOf(CssClass.Form.AllocationColorSwatch.value)
+                                attributes[HtmlAttrs.ONINPUT] =
+                                    "this.parentElement.previousElementSibling.value = this.value"
+                            }
+                        }
                         div(CssClass.Form.AllocationEditInputWrapper) {
                             input(
                                 CssClass.Form.InputGlass,

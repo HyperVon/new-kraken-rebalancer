@@ -84,9 +84,13 @@ class DashboardController(
             }
 
             get(Routes.HISTORY) {
-                val settings = configService.getConfig().settings
+                val config = configService.getConfig()
+                val settings = config.settings
+                val symbolColorMap = config.allocations
+                    .filter { it.color != null }
+                    .associate { it.symbol.value.uppercase() to it.color!! }
                 call.respondHtml(HttpStatusCode.OK) {
-                    dashboardView.renderHistoryPage(settings)
+                    dashboardView.renderHistoryPage(settings, symbolColorMap)
                 }
             }
 
@@ -145,11 +149,13 @@ class DashboardController(
 
         val symbols = params.getAll(FormFields.SYMBOLS) ?: emptyList()
         val targets = params.getAll(FormFields.TARGETS) ?: emptyList()
+        val colors = params.getAll(FormFields.COLORS) ?: emptyList()
 
-        val allocations =
-            symbols.zip(targets).map { (symbol, targetStr) ->
-                Allocation(symbol, targetStr.toDoubleOrNull() ?: 0.0)
-            }
+        val allocations = symbols.mapIndexed { index, symbol ->
+            val target = targets.getOrElse(index) { "0.0" }.toDoubleOrNull() ?: 0.0
+            val color = colors.getOrElse(index) { "" }.ifBlank { null }
+            Allocation(symbol, target, color)
+        }
 
         val updatedConfig =
             AppConfig(
@@ -190,6 +196,7 @@ class DashboardController(
     private suspend fun RoutingContext.handleGetDashboardFragment() {
         val history = tradeHistoryService.getHistory()
         val latest = history.firstOrNull()
+        val allocations = configService.getConfig().allocations
 
         if (latest == null) {
             val noSnapshotHtml =
@@ -207,7 +214,7 @@ class DashboardController(
 
         val html =
             createHTML(prettyPrint = false).div {
-                dashboardView.renderDashboardFragment(latest, history)
+                dashboardView.renderDashboardFragment(latest, history, allocations)
             }
         call.respondText(html, ContentType.Text.Html)
     }
