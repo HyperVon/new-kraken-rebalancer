@@ -52,15 +52,18 @@ private fun colorForSymbol(symbol: String, fallbackIndex: Int): String =
 
 private fun bgColorForSymbol(symbol: String, fallbackIndex: Int): String {
     val solid = assetColorMap[symbol.uppercase()]
-    if (solid != null) return hexToRgba(solid, 0.1)
+    if (solid != null) {
+        return hexToRgba(solid, 0.1) ?: ChartProps.backgroundColorForSymbol(symbol, fallbackIndex)
+    }
     return ChartProps.backgroundColorForSymbol(symbol, fallbackIndex)
 }
 
-private fun hexToRgba(hex: String, alpha: Double): String {
+private fun hexToRgba(hex: String, alpha: Double): String? {
     val clean = hex.removePrefix("#")
-    val r = clean.substring(0, 2).toInt(16)
-    val g = clean.substring(2, 4).toInt(16)
-    val b = clean.substring(4, 6).toInt(16)
+    if (clean.length != 6) return null
+    val r = clean.substring(0, 2).toIntOrNull(16) ?: return null
+    val g = clean.substring(2, 4).toIntOrNull(16) ?: return null
+    val b = clean.substring(4, 6).toIntOrNull(16) ?: return null
     return "rgba($r, $g, $b, $alpha)"
 }
 

@@ -172,7 +172,7 @@ object ChartProps {
         COLOR_FUCHSIA_BG_PALETTE,
     )
 
-    /** Fixed per-asset colors shared by History charts and Dashboard allocation bars. */
+    /** Default per-asset chart colors; Settings-stored colors override when present. */
     fun borderColorForSymbol(symbol: String, fallbackIndex: Int = 0): String = when (symbol.uppercase()) {
         Asset.BTC -> COLOR_AMBER
         Asset.ETH -> COLOR_VIOLET

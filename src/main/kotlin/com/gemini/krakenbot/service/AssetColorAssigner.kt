@@ -2,32 +2,43 @@ package com.gemini.krakenbot.service
 
 import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.model.Asset
-import com.gemini.krakenbot.view.util.ChartProps
 
 object AssetColorAssigner {
 
+    // Keep in sync with ChartProps.SOLID_* (defaults live here to avoid service → view coupling).
     private val knownDefaults = mapOf(
-        Asset.BTC to ChartProps.SOLID_BTC,
-        Asset.ETH to ChartProps.SOLID_ETH,
-        Asset.USD to ChartProps.SOLID_USD,
+        Asset.BTC to "#fbbf24",
+        Asset.ETH to "#a78bfa",
+        Asset.USD to "#94a3b8",
     )
 
+    private val HEX_COLOR = Regex("^#[0-9a-f]{6}$")
+
+    /** Returns lowercase `#rrggbb`, or null if blank/invalid. */
+    fun normalizeHex(raw: String?): String? {
+        if (raw.isNullOrBlank()) return null
+        val trimmed = raw.trim()
+        val withHash = if (trimmed.startsWith("#")) trimmed else "#$trimmed"
+        val normalized = withHash.lowercase()
+        return normalized.takeIf { HEX_COLOR.matches(it) }
+    }
+
     fun assignMissingColors(allocations: List<Allocation>): List<Allocation> {
-        val usedColors = allocations.mapNotNull { it.color }.toMutableSet()
-        return allocations.map { alloc ->
+        val normalized = allocations.map { alloc ->
+            alloc.copy(color = normalizeHex(alloc.color))
+        }
+        val usedColors = normalized.mapNotNull { it.color }.toMutableSet()
+        return normalized.map { alloc ->
+            if (alloc.color != null) return@map alloc
             val symbol = alloc.symbol.value.uppercase()
-            when {
-                alloc.color != null -> alloc
-                knownDefaults.containsKey(symbol) -> {
-                    usedColors.add(knownDefaults.getValue(symbol))
-                    alloc.copy(color = knownDefaults.getValue(symbol))
-                }
-                else -> {
-                    val color = generateColor(symbol, usedColors)
-                    usedColors.add(color)
-                    alloc.copy(color = color)
-                }
+            val known = knownDefaults[symbol]
+            if (known != null && known !in usedColors) {
+                usedColors.add(known)
+                return@map alloc.copy(color = known)
             }
+            val color = generateColor(symbol, usedColors)
+            usedColors.add(color)
+            alloc.copy(color = color)
         }
     }
 

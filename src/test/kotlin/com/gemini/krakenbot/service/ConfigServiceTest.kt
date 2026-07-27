@@ -111,6 +111,45 @@ class ConfigServiceTest : StringSpec() {
             readBack.kraken.privateKey.value shouldBe "s"
         }
 
+        "loadConfig_AssignsMissingColors" {
+            configService.loadConfig()
+            val colors = configService.getConfig().allocations.map { it.color }
+            colors.all { it != null }.shouldBeTrue()
+            colors.first() shouldBe "#94a3b8"
+        }
+
+        "updateConfig_PersistsAssignedColors" {
+            configService.loadConfig()
+            val oldConfig = configService.getConfig()
+            configService.updateConfig(
+                AppConfig(
+                    oldConfig.kraken,
+                    oldConfig.settings,
+                    listOf(
+                        Allocation(Asset.USD, 50.0),
+                        Allocation(Asset.BTC, 50.0),
+                    ),
+                ),
+            )
+            val readBack = objectMapper.readValue(tempFile, AppConfig::class.java)
+            readBack.allocations.map { it.color } shouldBe listOf("#94a3b8", "#fbbf24")
+        }
+
+        "updateConfig_RejectsInvalidColorByReassigning" {
+            configService.loadConfig()
+            val oldConfig = configService.getConfig()
+            configService.updateConfig(
+                AppConfig(
+                    oldConfig.kraken,
+                    oldConfig.settings,
+                    listOf(Allocation(Asset.USD, 100.0, "not-a-color")),
+                ),
+            )
+            val color = configService.getConfig().allocations.single().color
+            color.shouldNotBeNull()
+            color shouldBe "#94a3b8"
+        }
+
         "updateConfig_DoesNotPersistEnvResolvedCredentials" {
             val secretFromEnv = System.getenv("PATH") ?: "fallback-path"
             val content = """

@@ -264,8 +264,8 @@ page trade log).
 ### Settings
 
 All configuration is managed through the web UI — loop interval, deviation
-trigger, dust threshold, fiat deployment parameters, and per-asset allocation
-targets.
+trigger, dust threshold, fiat deployment parameters, per-asset allocation
+targets, and per-asset chart colors.
 
 ![Settings](docs/images/settings.png)
 

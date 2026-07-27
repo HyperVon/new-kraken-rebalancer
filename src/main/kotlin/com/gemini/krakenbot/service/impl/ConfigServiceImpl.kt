@@ -45,7 +45,7 @@ class ConfigServiceImpl(
         val rawContent = readRawConfigContent()
         persistedKrakenCredentials = parseConfig(rawContent).kraken
         val parsedConfig = parseConfig(resolveEnvVars(rawContent))
-        val validatedConfig = validateOrThrowInvalidConfiguration(parsedConfig)
+        val validatedConfig = validateAndNormalize(parsedConfig)
         appConfig = validatedConfig
         _configFlow.tryEmit(validatedConfig.settings)
     }
@@ -54,7 +54,7 @@ class ConfigServiceImpl(
 
     @Synchronized
     override fun updateConfig(newConfig: AppConfig) {
-        val validatedConfig = validateOrThrowInvalidConfiguration(newConfig)
+        val validatedConfig = validateAndNormalize(newConfig)
         val previousKraken = appConfig.kraken
         val persistedConfig = configForPersistence(validatedConfig, previousKraken)
         appConfig = validatedConfig
@@ -112,13 +112,13 @@ class ConfigServiceImpl(
         .replace("\\", "\\\\")
         .replace("\"", "\\\"")
 
-    private fun validateOrThrowInvalidConfiguration(config: AppConfig): AppConfig {
+    /** Validates settings/allocations, then backfills missing or invalid colors. */
+    private fun validateAndNormalize(config: AppConfig): AppConfig {
         try {
             validateConfig(config)
-            val withColors = config.copy(
+            return config.copy(
                 allocations = AssetColorAssigner.assignMissingColors(config.allocations),
             )
-            return withColors
         } catch (e: IllegalArgumentException) {
             throw InvalidConfigurationException(e.message)
         }

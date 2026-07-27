@@ -48,7 +48,7 @@ class ServerFeaturesIntegrationTest : StringSpec() {
                         recentActivityComponent = get(),
                     )
                 }
-                single { HistoryPageComponent() }
+                single { HistoryPageComponent(get()) }
                 single {
                     DashboardView(
                         shellComponent = get(),

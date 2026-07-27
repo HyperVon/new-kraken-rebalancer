@@ -10,6 +10,7 @@ import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.model.TimeRange
+import com.gemini.krakenbot.service.AssetColorAssigner
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.TradeHistoryService
 import com.gemini.krakenbot.view.DashboardView
@@ -86,9 +87,9 @@ class DashboardController(
             get(Routes.HISTORY) {
                 val config = configService.getConfig()
                 val settings = config.settings
-                val symbolColorMap = config.allocations
-                    .filter { it.color != null }
-                    .associate { it.symbol.value.uppercase() to it.color!! }
+                val symbolColorMap = config.allocations.mapNotNull { alloc ->
+                    alloc.color?.let { alloc.symbol.value.uppercase() to it }
+                }.toMap()
                 call.respondHtml(HttpStatusCode.OK) {
                     dashboardView.renderHistoryPage(settings, symbolColorMap)
                 }
@@ -151,9 +152,9 @@ class DashboardController(
         val targets = params.getAll(FormFields.TARGETS) ?: emptyList()
         val colors = params.getAll(FormFields.COLORS) ?: emptyList()
 
-        val allocations = symbols.mapIndexed { index, symbol ->
-            val target = targets.getOrElse(index) { "0.0" }.toDoubleOrNull() ?: 0.0
-            val color = colors.getOrElse(index) { "" }.ifBlank { null }
+        val allocations = symbols.zip(targets).mapIndexed { index, (symbol, targetStr) ->
+            val target = targetStr.toDoubleOrNull() ?: 0.0
+            val color = AssetColorAssigner.normalizeHex(colors.getOrElse(index) { "" })
             Allocation(symbol, target, color)
         }
 
