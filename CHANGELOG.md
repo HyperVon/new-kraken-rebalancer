@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.15.1] - 2026-07-27
+
+### Changed
+
+- **Fee estimate rate**: Updated `FEE_RATE_ESTIMATE_DOUBLE` from `0.0026` to `0.006` to reflect current fee assumptions for local trade planning.
+
+### Fixed
+
+- **Documentation review**: Corrected Ktor version range "3.5 → 3.5.1" in Technologies Explored table, added `AssetColorAssigner` to project structure tree, clarified `OrderType` lives in `OrderSide.kt`, added `SimulationEvaluationScenariosTest` mention in Testing section, and fixed trailing punctuation in `fiatDeploymentExponent` Configuration Reference description.
+
 ## [6.15.0] - 2026-07-26
 
 ### Added
