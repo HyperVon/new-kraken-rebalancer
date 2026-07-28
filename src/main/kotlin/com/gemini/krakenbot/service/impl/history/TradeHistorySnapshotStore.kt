@@ -271,5 +271,7 @@ class TradeHistorySnapshotStore(
 
     suspend fun saveTrade(trade: TradeRecord): Int = repository.saveTrade(trade)
 
+    suspend fun updateTrade(oldTrade: TradeRecord, newTrade: TradeRecord) = repository.updateTrade(oldTrade, newTrade)
+
     fun getHistoryFlow(): Flow<PortfolioSnapshot> = snapshotFlow.asSharedFlow()
 }

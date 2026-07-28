@@ -198,6 +198,17 @@ class OrderExecutorImpl(
         if (volume.signum() <= 0) return null
         val pair = Asset.tradingPair(symbol)
         val clOrdId = clientOrderId(cycleId, symbol, side.apiValue)
+        val pending = TradeCalculator.createTradeRecord(
+            result = OrderResult(false, pair, side.apiValue, volume, settings.dryRun, "SUBMISSION_PENDING:$clOrdId"),
+            symbol = symbol,
+            pair = pair,
+            side = side.uppercaseName,
+            volume = volume,
+            usdAmount = usdAmount,
+            prices = prices,
+            cycleId = cycleId.ifBlank { null },
+        )
+        val pendingId = tradeHistoryService.saveTrade(pending)
         val result =
             backend.executeOrder(
                 pair = pair,
@@ -215,7 +226,18 @@ class OrderExecutorImpl(
             usdAmount = usdAmount,
             side = side,
         )
-        recordTrade(result, symbol, pair, side, volume, usdAmount, prices, cycleId, cycleTradeIds)
+        val resolved = TradeCalculator.createTradeRecord(
+            result = result,
+            symbol = symbol,
+            pair = pair,
+            side = side.uppercaseName,
+            volume = volume,
+            usdAmount = usdAmount,
+            prices = prices,
+            cycleId = cycleId.ifBlank { null },
+        ).copy(id = pendingId)
+        tradeHistoryService.updateTrade(pending.copy(id = pendingId), resolved)
+        cycleTradeIds.add(pendingId)
         return result
     }
 

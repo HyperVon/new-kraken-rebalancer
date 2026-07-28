@@ -66,6 +66,9 @@ class TradeHistoryServiceImpl(
 
     override suspend fun saveTrade(trade: TradeRecord): Int = snapshotStore.saveTrade(trade)
 
+    override suspend fun updateTrade(oldTrade: TradeRecord, newTrade: TradeRecord) =
+        snapshotStore.updateTrade(oldTrade, newTrade)
+
     override suspend fun getSnapshotsInRange(from: Instant, to: Instant): List<PortfolioSnapshot> =
         queryService.getSnapshotsInRange(from, to)
 

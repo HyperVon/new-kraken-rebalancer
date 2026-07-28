@@ -122,7 +122,7 @@ sequenceDiagram
 
 - `replay = 1` means `PortfolioManager` immediately gets the current config the moment it subscribes on startup — no race condition on boot.
 - Config’s `MutableSharedFlow` uses **no** `extraBufferCapacity` (default 0) with `DROP_OLDEST`; snapshot flow uses `extraBufferCapacity = 16` so slow SSE clients do not stall emitters.
-- `collectLatest` (not `collect`) is used so that a settings change during a long loop `delay()` takes effect immediately, without waiting for the delay to expire.
+- `collectLatest` (not `collect`) is used so that a settings change during a long loop `delay()` takes effect immediately. An active rebalance session is non-cancellable at the settings boundary, so it completes before the newest settings restart the loop.
 
 ---
 

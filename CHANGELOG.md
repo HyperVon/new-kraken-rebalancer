@@ -19,6 +19,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Execution safety**: Settings saves now wait for an active rebalance session to finish, and each
+  order records a durable submission intent before contacting Kraken.
+
 - **History UI**: Newer range selections now win over slower stale responses;
   empty ranges clear populated charts and reset scrubbers; malformed saved view
   entries no longer discard valid presets; and chart parsing rejects non-finite
