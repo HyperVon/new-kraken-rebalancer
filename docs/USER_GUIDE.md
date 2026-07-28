@@ -132,7 +132,9 @@ state pill:
 
 **Simulation Mode** is listed first. **Save Configuration** lives in the page
 header next to the nav (not at the bottom of the form). Saving hot-reloads the
-running loop — no process restart required.
+running loop — no process restart required. If a rebalance is actively
+executing, the file is saved immediately but the new runtime settings take
+effect only after that cycle finishes.
 
 ### Target allocations
 
@@ -279,6 +281,10 @@ badges instead.
 2. Disable **Simulation** and **Dry Run** only when you intend to trade.
 3. Watch **Recent Activity** on the first few cycles; keep History open to audit
    fills.
+4. If logs report an uncertain live submission, stop changing modes or
+   retrying manually. Verify Kraken open orders, closed orders, and fills before
+   resolving the durable pending intent; the bot blocks further live orders to
+   avoid a duplicate submission.
 
 ---
 

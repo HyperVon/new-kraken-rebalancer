@@ -154,7 +154,7 @@ with a wide range of tools and paradigms:
 | **Testing**            | JUnit 5 + Mockito, Kotest 6 + MockK, Vitest + React Testing Library, Go `testing` + `go-test-coverage`                                                      |
 | **Coverage**           | JaCoCo (95%+ enforced on Kotlin stack), Vitest coverage (>99%), Go per-package gates (98.2%)                                                                |
 | **Serialization**      | Jackson 2.22.1, Go `encoding/json`, Zod schema validation                                                                                                   |
-| **Real-Time**          | Ktor Server-Sent Events (SSE), Kotlin `SharedFlow` (snapshots + rebalance events), HTMX SSE extension                                                       |
+| **Real-Time**          | Ktor Server-Sent Events (SSE), Kotlin `SharedFlow` (config changes + snapshot broadcasts), HTMX SSE extension                                               |
 | **CI / Security**      | GitHub Actions, Dependabot, SHA-pinned actions, CVE patching (Netty, Logback, Jackson); CodeQL workflow present but **disabled** (Kotlin 2.4.x unsupported) |
 | **Code Quality**       | Lombok, ESLint, `go fmt`, Kotlin named context parameters, strict `BigDecimal` precision, atomic file I/O                                                   |
 
@@ -201,7 +201,10 @@ with a wide range of tools and paradigms:
 - Modify all settings (allocations, thresholds, assets) via the web UI
 - Add or remove assets without restarting the application
 - Allocation validation ensures targets always sum to 100%
-- `ConfigService.watchConfigChanges()` exposes a `Flow<Settings>`, which `PortfolioManagerImpl` uses to reactively abort and restart its rebalancing loop with the new settings without polling.
+- `ConfigService.watchConfigChanges()` exposes a `Flow<Settings>`, which
+  `PortfolioManagerImpl` uses to restart its sleeping rebalancing loop with new
+  settings without polling. Saves made during an active cycle persist
+  immediately but defer runtime publication until that execution session ends.
 
 ### Offline Exchange Simulator & Pre-Seeding
 
@@ -221,6 +224,12 @@ with a wide range of tools and paradigms:
   Kraken or the emulator) but never places them
 - **Structured Order Results** — each order returns success/failure status;
   failed orders don't corrupt cash projections
+- **Durable Live-Order Journal** — before a real AddOrder request, the bot
+  persists a `PENDING` intent with its deterministic `cl_ord_id`. Ambiguous
+  transport/response failures become `UNCERTAIN`, abort the remaining batch,
+  and block later live orders until an operator verifies Kraken and resolves
+  the SQLite row; unresolved intents are not reconciled, deduplicated, or
+  pruned automatically
 - **Atomic File Writes** — config updates use write-then-atomic-rename (NIO Files.move with StandardCopyOption.ATOMIC_MOVE) to prevent file system corruption
 - **Graceful Shutdown** — JVM shutdown hook cleanly cancels the coroutine loop scope, closes Ktor HttpClient, and stops Koin DI
 - **Redacted Secret Logging** — value class `toString()` implementations for API credentials return redacts to protect application logs
@@ -228,7 +237,9 @@ with a wide range of tools and paradigms:
   decaying call counter (elapsed seconds × 0.33; safe limit 12.0; per-endpoint
   costs); `retryWithFlow` automatically retries transient
   socket/HTTP/rate-limit/lockout errors with exponential backoff (lockouts
-  start at 10s and scale up to a 15-minute ceiling)
+  start at 10s and scale up to a 15-minute ceiling). AddOrder is the safety
+  exception: it is attempted once because an ambiguous response may follow an
+  accepted order
 - **CORS Restrictions** — locks down server allowed origins to local machine addresses (`localhost`, `127.0.0.1`), Bonjour multicast DNS domains (`*.local`), and private local subnets (`192.168.x.x`, `10.x.x.x`, `172.16–31.x.x`, link-local `169.254.x.x`) to permit local Wi-Fi access from other devices while blocking public web threats
 - **No dashboard user auth** — trust model is local/private network; see [SECURITY.md](SECURITY.md)
 - **Database Indexing & Auto Migrations** — schemas index timestamp columns; on startup
@@ -385,7 +396,9 @@ This path is internal orchestration — not a second browser-facing SSE stream l
 2. **Reactive loop restart**: `PortfolioManagerImpl` collects
    `ConfigService.watchConfigChanges()` with `collectLatest`, cancelling an
    in-flight `delay()` and restarting the rebalancing loop immediately when
-   settings change.
+   settings change. During an active rebalance, `ConfigServiceImpl` stages the
+   validated runtime config until the execution session exits, preventing one
+   cycle from mixing old and new settings.
 
 ---
 
@@ -437,7 +450,7 @@ This path is internal orchestration — not a second browser-facing SSE stream l
 │   │       ├── PortfolioAnalyzerImpl.kt  # Snapshot/analysis + ATH I/O
 │   │       ├── RebalancerEngine.kt       # Domain rebalance math (no network/DB)
 │   │       ├── PortfolioCalculations.kt  # Shared target/deviation math
-│   │       ├── OrderExecutorImpl.kt      # Sell-first/buy-second + cl_ord_id
+│   │       ├── OrderExecutorImpl.kt      # Sell-first/buy-second + live submission journal
 │   │       ├── DynamicKrakenService.kt   # Routes live vs SimulatedKrakenService by settings.simulation
 │   │       ├── KrakenServiceImpl.kt      # Kraken API client + RateLimiter + retryWithFlow
 │   │       ├── KrakenApiConstants.kt     # Kraken REST path/cost constants
@@ -652,11 +665,11 @@ Tests cover:
 - `PortfolioManagerFiatCorrectionTest` — deposit/withdrawal distribution logic
 - `PortfolioManagerDrawdownTest` — ATH tracking and dynamic deployment
 - `PortfolioManagerOrderExecutionTest` — sell-first/buy-second sequencing and
-  `OrderExecuted` event flow verification
+  successful execution verification
 - `PortfolioManagerLoopTest` — loop lifecycle, error recovery, interruption
 - `PortfolioManagerZeroAllocationTest` — edge case: 0% target allocation
 - `PortfolioManagerEdgeCasesTest` — dust thresholds, price gaps, zero balances,
-  rebalance event flow
+  execution, settle, and snapshot edge cases
 - `PortfolioManagerDogeTest` — Kraken symbol mapping quirks (BTC→XBT, DOGE→XDG)
 - `KrakenServiceTest` — API signing, error handling, dry run, order failure,
   retry/lockout behaviour (using Ktor `MockEngine`)

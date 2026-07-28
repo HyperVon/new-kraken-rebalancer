@@ -52,7 +52,7 @@ Pure KMP types under `common/.../config/`:
 
 - `AppConfig` — top-level document
 - `Settings` — loop delay, triggers, dust, `dryRun`, `simulation`, fiat params
-- `Allocation` — symbol + percent
+- `Allocation` — symbol + percent + optional `#rrggbb` color
 - `KrakenCredentials` — key/secret holders (never commit real values)
 
 ## Validation (`ConfigServiceImpl`)
@@ -60,6 +60,8 @@ Pure KMP types under `common/.../config/`:
 - Allocations **sum to 100%** within tolerance `0.001`
 - **Must include USD** (`symbol.isUsd`)
 - Non-empty, no duplicate symbols, symbols match `^[A-Z0-9]{1,16}$`
+- Missing or invalid allocation colors are normalized by `AssetColorAssigner`;
+  persisted colors use `#rrggbb`
 - `loopDelaySeconds > 0`, `deviationTriggerPercent ≥ 0`, `dustThresholdUSD ≥ 0`
 - `fiatMaxDrawdown` in `0..100`, `fiatDeploymentExponent > 0`
 - Every `Double` setting and allocation percentage must be finite; reject
@@ -76,6 +78,16 @@ Only after the move succeeds may `appConfig`, raw persisted credentials, and
 the settings flow publish the new values. File reload follows the same
 transactional rule: parse and validate both representations before assigning
 runtime or raw-credential state.
+
+### Active execution sessions
+
+`PortfolioManagerImpl.performRebalanceCycle()` brackets each cycle with
+`beginExecutionSession()` / `endExecutionSession()`. While the session depth is
+positive, `updateConfig()` still validates and persists atomically, and
+`loadConfig()` still validates disk content, but both stage the runtime value in
+`pendingConfig`; they must not replace `appConfig` or emit `_configFlow`. The
+outermost `endExecutionSession()` publishes the last staged config and emits
+its settings. This keeps one money-moving cycle on one coherent config version.
 
 File is gitignored — never commit secrets.
 
@@ -96,7 +108,8 @@ File is gitignored — never commit secrets.
 
 - `_configFlow`: `MutableSharedFlow<Settings>(replay=1, DROP_OLDEST)`
 - `watchConfigChanges()` collected with **`collectLatest`** in `PortfolioManagerImpl`
-  so loop restarts immediately on change
+  so an idle loop restarts immediately on change; active sessions publish only
+  after execution ends
 - Support environment variable overrides for credentials / paths where already wired
 
 ### `${ENV:default}` substitution + JSON escaping
@@ -113,5 +126,6 @@ File is gitignored — never commit secrets.
 - [ ] Koin **4.2.2**; `KrakenService` → `DynamicKrakenService`
 - [ ] Models in `:common`; validation enforces 100% + USD
 - [ ] Atomic write-then-rename
+- [ ] Active execution session defers runtime config + flow publication
 - [ ] Reactive updates via `watchConfigChanges()` / `collectLatest`
 - [ ] No secrets in VCS; shutdown hooks cancel loops cleanly

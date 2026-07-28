@@ -42,10 +42,13 @@ flowchart TD
     subgraph EXEC["Phase 3: Execution"]
         E1["Execute SELL orders first\n(generate USD liquidity)"] --> E1R{"Order\nSucceeded?"}
         E1R -- Yes --> E1C["Update projected cash"]
-        E1R -- No --> E1F["Log failure, skip cash update"]
+        E1R -- No --> E1U{"Submission uncertain?"}
+        E1U -- Yes --> E1A["Persist UNCERTAIN\nAbort remaining batch"]
+        E1U -- No --> E1F["Log definite failure\nSkip cash update"]
         E1C --> E2
         E1F --> E2
-        E2["Settle USD after sells\n(fill-confirm by txid, else balance poll;\n3x backoff; abort buys if none positive)"] --> E3["Execute BUY orders second\n(99% cycle cash budget)"]
+        E1A --> E4
+        E2["Settle USD after sells\n(fill-confirm by txid, else balance poll;\n3x backoff; abort buys if none positive)"] --> E3["Execute BUY orders second\n(99% cash budget; stop batch if uncertain)"]
         E3 --> E4["Record Snapshot\n& Trade History\nto SQLite database"]
     end
 
@@ -79,7 +82,7 @@ To maintain the Single Responsibility Principle (SRP) and keep domain logic high
 - **`PortfolioAnalyzer` (The Brain)**: Responsible for Phase 1 and 2. It resolves prices, tracks the All-Time High (ATH), assembles end-of-cycle `PortfolioSnapshot`s, and delegates valuation / drawdown / deviation / fiat-correction math to **`RebalancerEngine`**. Portfolio value calculation returns a `Result<PortfolioValues>` for graceful error handling.
 - **`RebalancerEngine` (Domain calculator)**: Side-effect-light math (no network/DB) for portfolio values, drawdown, fiat deployment, targets, deviation analysis, and fiat correction. Logging is retained for diagnostics.
 - **`PortfolioCalculations` (Shared Math)**: Consolidated percentage, target, and deviation calculations shared by the analyzer (including end-of-cycle snapshot assembly) — eliminates duplicate math across the codebase.
-- **`OrderExecutor` (The Brawn)**: Responsible for Phase 3. It takes the calculated orders and safely executes them against the Kraken API. It manages the strict sell-before-buy sequence, projected vs. actual cash tracking, dust-threshold filtering, action-log formatting, and persisting each order via `TradeHistoryService.saveTrade`. Live placements include a deterministic Kraken **`cl_ord_id`** (from `cycleId|symbol|side`) so AddOrder retries reuse the same client order id while the order remains open (`userref` is not a uniqueness key among open orders).
+- **`OrderExecutor` (The Brawn)**: Responsible for Phase 3. It takes the calculated orders and safely executes them against the Kraken API. It manages the strict sell-before-buy sequence, projected vs. actual cash tracking, dust-threshold filtering, action-log formatting, and persisting each order via `TradeHistoryService.saveTrade`. Before a real live placement, it persists a `PENDING` intent with a deterministic Kraken **`cl_ord_id`** (from `cycleId|symbol|side`). AddOrder is attempted only once; an ambiguous transport/response failure becomes `UNCERTAIN`, aborts the remaining batch, and blocks later live orders until operator reconciliation (`userref` is not a uniqueness key among open orders).
 - **`KrakenServiceImpl` + `RateLimiter` (The Gateway)**: Handles HMAC-SHA512
   authenticated API calls with a Kraken call-counter rate limiter (linear
   elapsed-time decay of `elapsedSeconds × 0.33`, plus per-endpoint costs) and
@@ -235,6 +238,16 @@ failure.
     - Only successful buys deduct from available cash and the remaining budget.
 4. **Order Placement**:
     - Orders are placed as **Market Orders** for immediate execution.
+    - Before a real live AddOrder call, a durable `PENDING` trade intent is
+      written with `clientOrderId`. A definite exchange response resolves that
+      row. A transport failure, response failure, or response without a txid is
+      ambiguous and marks it `UNCERTAIN`; the executor stops the batch.
+    - AddOrder is **not retried** after an ambiguous response. Any unresolved
+      live intent blocks subsequent live order batches and is excluded from
+      sync reconciliation, duplicate cleanup, and retention pruning. An
+      operator must verify Kraken open orders, closed orders, and fills before
+      clearing the SQLite state; missing trade history alone is not proof that
+      Kraken rejected the order.
     - "Dust" orders (below the configured `dustThresholdUSD`) are skipped to
       avoid API errors.
     - Order volumes use `BigDecimal` with 8 decimal places of precision.

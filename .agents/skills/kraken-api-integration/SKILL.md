@@ -155,3 +155,5 @@ stronger claim against current Kraken docs before shipping:
 - [ ] Lockout backoff 10s → 15m via `retryWithFlow`
 - [ ] Cross-check dryRun/simulation via DynamicKrakenService
 - [ ] AddOrder uses `cl_ord_id` for open-order uniqueness (not `userref`)
+- [ ] AddOrder has one attempt; ambiguous outcomes remain durably unresolved
+      and block later live submissions

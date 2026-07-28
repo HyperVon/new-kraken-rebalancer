@@ -109,7 +109,10 @@ When changing always-on norms, update **OPERATING.md** and the matching
   opening a PR
 - **Safety first:** Any change touching order execution must be tested with
   `dryRun: true`. Keep `dryRun` and `simulation` distinct — see
-  [docs/ALGORITHM.md](docs/ALGORITHM.md) and the dry-run skill under `.agents/`
+  [docs/ALGORITHM.md](docs/ALGORITHM.md) and the dry-run skill under `.agents/`.
+  Preserve the live-order journal invariant: persist `PENDING` before AddOrder,
+  never retry an ambiguous AddOrder response, and block later live submissions
+  while `PENDING` / `UNCERTAIN` rows remain
 - **No credentials:** Never include API keys, secrets, or real account data in
   commits
 - **Tests:** Add or update tests for any non-trivial logic changes. The project

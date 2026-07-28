@@ -70,6 +70,9 @@ not treat this skill’s checklist as a substitute.
 - No secret logging.
 - AddOrder order identity: live path uses deterministic `cl_ord_id`
   (`OrderExecutorImpl.clientOrderId`); **`userref` is not uniqueness**.
+- Real live placement persists `PENDING` before AddOrder; AddOrder is attempted
+  once. Ambiguous responses become `UNCERTAIN`, abort the batch, and block
+  later live submissions. Unresolved rows must survive sync/dedupe/pruning.
 - **Exchange-claim gate:** any PR claim about exchange semantics (idempotency,
   uniqueness, retries, fee fields, order identity) must match current official
   Kraken docs — not memory, changelog prose, or skill text alone. Canonical
@@ -89,6 +92,8 @@ not treat this skill’s checklist as a substitute.
       pinned and unpinned Kraken calls inside one settle/placement sequence
 - [ ] Live AddOrder includes deterministic `cl_ord_id` when `cycleId` is
       non-blank; blank `cycleId` omits it
+- [ ] Live AddOrder journal is write-ahead; ambiguous outcomes are never retried
+      or automatically reconciled/removed
 - [ ] Flag any PR setting `dryRun = false` in templates, examples, or tests
       without explicit live-trading justification
 
@@ -110,7 +115,8 @@ not treat this skill’s checklist as a substitute.
 
 #### Flow / SSE diff checks
 
-- [ ] Config watch uses `collectLatest` — settings changes cancel the delay and restart
+- [ ] Config watch uses `collectLatest`; active execution sessions defer
+      publication until the cycle exits
 - [ ] `CancellationException` always rethrown in loop/SSE handlers
 - [ ] Hot SharedFlow producers use `tryEmit` with documented overflow
       (config replay=1 DROP_OLDEST; snapshots buffer 16)

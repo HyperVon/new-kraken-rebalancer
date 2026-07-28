@@ -313,7 +313,7 @@ Reply with one of:
 - `apply all` — every finding
 - `none` — stop after review
 
-Or open the [UI review canvas](…/ui-visual-review.canvas.tsx), tick findings,
+Or open the generated UI review canvas, tick findings,
 and click **Implement selected**.
 ```
 

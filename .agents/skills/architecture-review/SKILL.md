@@ -175,10 +175,12 @@ Trace in code, then answer:
    USD is **≤ 0**? (≥95% of projected is **early-accept**, not the abort
    threshold; best positive below 95% still proceeds.)
 5. **Cycle cash cap** — multi-buy batch respects 99% of settled USD?
-6. **Open-order uniqueness** — retries reuse deterministic `cl_ord_id` (not
-   `userref`)? (`cl_ord_id` is **not** full request idempotency across
-   filled/canceled orders — see kraken-api-integration.)
-7. **Audit trail** — trades persist `cycleId` + `orderTxid`?
+6. **Submission ambiguity** — real live intent persists before AddOrder,
+   AddOrder runs once, ambiguous outcomes block later batches, and unresolved
+   rows survive reconciliation/dedupe/pruning? Deterministic `cl_ord_id` is
+   open-order uniqueness, **not** full idempotency; `userref` is not uniqueness.
+7. **Audit trail** — trades persist `cycleId`, `clientOrderId`, `orderTxid`, and
+   unresolved submission state?
 8. **Mode clarity** — operator distinguishes SIMULATION / DRY RUN / LIVE
    without reading logs?
 

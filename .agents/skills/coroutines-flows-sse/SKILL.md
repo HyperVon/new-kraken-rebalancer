@@ -37,7 +37,10 @@ Canonical doc: [`docs/FLOWS.md`](../../../docs/FLOWS.md).
 
 `PortfolioManagerImpl` uses **`collectLatest`** on `watchConfigChanges()` so a
 settings change cancels the sleeping `delay()` and **restarts** the rebalance
-loop immediately.
+loop immediately. During `beginExecutionSession()` … `endExecutionSession()`,
+`ConfigServiceImpl` stages saved/reloaded config and emits only when the
+outermost session exits, so an active cycle is never cancelled into a mixed
+settings version.
 
 ### Snapshots → SSE (hot)
 
@@ -108,5 +111,6 @@ Fill-confirm poll constants (`pollFillConfirmedUsd` / `sumMatchedSellProceeds`):
 - [ ] If FLOWS Mermaid changed → run
       [validate_mermaid.py](../documentation-review/scripts/validate_mermaid.py)
 - [ ] Config watch uses `collectLatest`
+- [ ] Active execution sessions defer config-flow publication until cycle exit
 - [ ] SSE endpoint remains `/api/status/stream`
 - [ ] Flow tests use `runTest` + `advanceUntilIdle`

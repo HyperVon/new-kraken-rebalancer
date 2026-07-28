@@ -65,6 +65,21 @@ trades. When deploying:
 - Restrict access to the machine running this application
 - Regularly rotate your Kraken API keys
 
+### Ambiguous live order submissions
+
+Before contacting Kraken AddOrder in real live mode, the application persists
+a durable `PENDING` intent. AddOrder is attempted once: a network/response
+failure can occur after Kraken accepted the order, so automatic replay could
+duplicate a filled or already-closed order. Ambiguous outcomes are marked
+`UNCERTAIN`, stop the current order batch, and block later live submissions.
+
+If this happens, verify the recorded `client_order_id` against Kraken open
+orders, closed orders, and fills before changing the row in
+`kraken-rebalancer.db`. Back up the database first. Do not clear the state based
+only on an empty trade-history response; unresolved intents are deliberately
+excluded from heuristic reconciliation, duplicate cleanup, and age-based
+pruning.
+
 ### Dashboard trust model
 
 The web dashboard and HTTP API have **no user authentication**. Security relies

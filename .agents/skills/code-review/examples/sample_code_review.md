@@ -13,7 +13,7 @@ The target pull request refactors the `OrderExecutorImpl` class to enforce stric
 ### [MAJOR] BigDecimal Comparison in Unit Assertions
 
 - **Category**: `Bug Detection & Financial Math Safety`
-- **Location**: `[OrderExecutorTest.kt:L45-L52](file:///Users/charlesv/Projects/new-kraken-rebalancer/src/test/kotlin/com/gemini/krakenbot/service/OrderExecutorTest.kt#L45-L52)`
+- **Location**: `src/test/kotlin/com/gemini/krakenbot/service/OrderExecutorTest.kt:45`
 - **Issue**: The test compares calculated USD balance with `.equals()`: `executedOrder.usdAmount.equals(BigDecimal("100.50"))`. Because scale differences (e.g. `100.5` vs `100.50`) cause `.equals()` to return false, this test is fragile.
 - **Impact**: Potential false-negative unit test build failures during automated CI/CD runs.
 - **Suggested Fix**:
@@ -26,9 +26,9 @@ executedOrder.usdAmount shouldBeEqualComparingTo BigDecimal("100.50")
 ### [MINOR] Hardcoded User Directory Path in Test Asset
 
 - **Category**: `Code Quality & Cleanliness`
-- **Location**: `[OrderExecutorTest.kt:L18](file:///Users/charlesv/Projects/new-kraken-rebalancer/src/test/kotlin/com/gemini/krakenbot/service/OrderExecutorTest.kt#L18)`
-- **Issue**: Hardcoded absolute path `/Users/charlesv/Projects/new-kraken-rebalancer/src/test/resources/mock_ticker.json` found in mock setup.
-- **Impact**: Tests fail on other developers' machines or GitHub Actions CI containers where `/Users/charlesv/` does not exist.
+- **Location**: `src/test/kotlin/com/gemini/krakenbot/service/OrderExecutorTest.kt:18`
+- **Issue**: A hardcoded developer-workspace path to `src/test/resources/mock_ticker.json` was found in mock setup.
+- **Impact**: Tests fail on other developers' machines or GitHub Actions CI containers where that workspace path does not exist.
 - **Suggested Fix**:
 
 ```kotlin
@@ -42,7 +42,7 @@ val resourceStream = javaClass.classLoader.getResourceAsStream("mock_ticker.json
 
 - [x] Financial calculations checked for strict `BigDecimal` usage (scale 8/2, `compareTo()`)
 - [x] Order execution sequence and 99% USD liquidity cap verified
-- [x] No Fully Qualified Names (FQNs) or hardcoded absolute user paths (`/Users/...`) found
+- [x] Fully qualified names and hardcoded paths checked; the path issue above was flagged
 - [x] Kraken symbol mapping (`BTC` -> `XBTUSD`) and rate-limiting backoffs checked
 - [x] Kotlin/JS DOM listener cleanup and Chart.js deep-cloning verified
 - [x] JaCoCo build exclusions and `README.md` structure tree verified for package updates

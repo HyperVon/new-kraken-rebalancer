@@ -3,7 +3,7 @@ name: portfolio-rebalancing-math
 description: >-
   Portfolio rebalancing engine math — BigDecimal scales, ATH/drawdown fiat
   deployment, deviation triggers, fiat correction, dust thresholds, sell-first
-  execution, and 99% cash caps. Use when changing PortfolioCalculations,
+  execution, durable live-order intents, and 99% cash caps. Use when changing PortfolioCalculations,
   PortfolioAnalyzerImpl, RebalancerEngine, OrderExecutorImpl, or docs/ALGORITHM.md.
 ---
 
@@ -17,7 +17,8 @@ Primary code:
   fiat correction); no network/DB
 - `PortfolioCalculations` — shared % / target / deviation math
 - `PortfolioAnalyzerImpl` — snapshot/ATH I/O; delegates math to `RebalancerEngine`
-- `OrderExecutorImpl` — sell-first execution, USD settle, buy cap, `cl_ord_id` on AddOrder
+- `OrderExecutorImpl` — sell-first execution, USD settle, buy cap, and durable
+  live AddOrder intents
 
 ## Financial precision (CRITICAL)
 
@@ -139,11 +140,16 @@ effectively than spreading across all pairs.
      99% cycle budget.
    - Anti-pattern: relying on Kraken to reject zero volume — the app would still
      persist a `TradeRecord`.
-5. Market orders; volumes at crypto scale 8. Live AddOrder includes deterministic
-   `cl_ord_id` (`cycleId|symbol|side` → UUID) so `retryWithFlow` reuses the same
-   client id while the order is still open (Kraken does not treat `userref` as a
-   uniqueness key among open orders).
-6. **dryRun**: suppress placement on the active backend — SLF4J uses
+5. **Live submission journal** — when `!dryRun && !simulation`, persist a
+   `PENDING` row with deterministic `cl_ord_id` (`cycleId|symbol|side` → UUID)
+   before AddOrder. AddOrder has one attempt. A transport/response ambiguity or
+   missing txid becomes `UNCERTAIN`, aborts the batch, and blocks future live
+   orders while any unresolved row remains. Such rows are excluded from sync
+   reconciliation, duplicate cleanup, and pruning; only an operator may resolve
+   them after checking Kraken open orders, closed orders, and fills. `cl_ord_id`
+   is open-order uniqueness, not full idempotency; `userref` is not uniqueness.
+6. Market orders; volumes at crypto scale 8.
+7. **dryRun**: suppress placement on the active backend — SLF4J uses
    `[DRY RUN]` (live) / `[EMULATOR DRY RUN]` (simulation); dashboard activity
    always uses `[DRY RUN]` (see dry-run-and-simulation skill).
 
@@ -179,6 +185,8 @@ effectively than spreading across all pairs.
       (3× / 250ms doubling backoff, keep best positive, early-accept at **≥95%**
       of projected) → abort buys only when confirmed USD **≤ 0** → cycle 99% buy
       budget → dust skip
+- [ ] Real live AddOrder persists `PENDING` first, runs once, and ambiguous
+      outcomes become blocking `UNCERTAIN` without automatic reconciliation
 - [ ] Changes reflected in `docs/ALGORITHM.md` when behavior changes
 - [ ] If ALGORITHM Mermaid changed → run
       [validate_mermaid.py](../documentation-review/scripts/validate_mermaid.py)

@@ -45,6 +45,10 @@ Primary types: `TradeHistoryService` façade → `TradeHistorySyncService` /
   `LOCAL_ESTIMATE` or legacy inferred estimate shape). Persisted `API_FILL`
   rows are never overwritten; an exact persisted API-fill identity is treated
   as already synchronized.
+- Rows with `submissionState` (`PENDING` / `UNCERTAIN`) are unresolved live
+  intents, not reconciliation candidates. They are also excluded from duplicate
+  cleanup and age-based trade pruning. Never infer rejection from an empty
+  history response or clear them automatically.
 - Kraken's response-entry trade ID is persisted separately from `ordertxid` and
   is the primary identity for a fill. Only legacy rows without that ID use the
   complete economics fingerprint (timestamp, pair, side, volume, USD, price,
@@ -110,3 +114,4 @@ for SSE
 - [ ] Simulation seed durations documented if changed
 - [ ] dryRun/live reconcile does not drop legitimate distinct fills
 - [ ] Reconcile preserves local `cycleId` and prefers API `orderTxid` when present
+- [ ] Unresolved submission rows are not reconciled, deduplicated, or pruned

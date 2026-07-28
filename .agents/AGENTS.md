@@ -96,7 +96,7 @@ the CLAUDE.md / Copilot stubs) so they get the same norms without Cursor.
 | Brain (snapshot + analysis) | `PortfolioAnalyzerImpl` (REST + ATH I/O) |
 | Domain rebalance math | `RebalancerEngine` (no network/DB) |
 | Shared math | `PortfolioCalculations` |
-| Brawn (execution) | `OrderExecutorImpl` (`cl_ord_id` on AddOrder) |
+| Brawn (execution) | `OrderExecutorImpl` (sell/buy sequencing + durable live submission journal) |
 | Exchange gateway | `DynamicKrakenService` → `KrakenServiceImpl` or `SimulatedKrakenService` |
 | Rate limit | `RateLimiter` (safeLimit **12**, decay **0.33**, `Mutex`) |
 | History reconstruction | `SnapshotHistoryCalculator` (`service/impl/history/`) |
@@ -120,7 +120,10 @@ Full detail: [`docs/ALGORITHM.md`](../docs/ALGORITHM.md) and skill [portfolio-re
 - **Sell then buy**: sell overweight first; after **≥1 successful sell** (and not
   dry-run), settle USD (fill-confirmed proceeds preferred; balance-poll
   fallback), fail-closed abort if unsettleable, then buys under a **99%** cycle
-  cash budget; live AddOrder uses deterministic `cl_ord_id`. Settle attempt
+  cash budget. A real live AddOrder persists `PENDING` first, is attempted once,
+  and becomes blocking `UNCERTAIN` after an ambiguous outcome; unresolved rows
+  are never reconciled/pruned automatically. Live orders use deterministic
+  `cl_ord_id`. Settle attempt
   counts / backoff and cold-Flow poll details:
   [portfolio-rebalancing-math](skills/portfolio-rebalancing-math/SKILL.md) +
   [coroutines-flows-sse](skills/coroutines-flows-sse/SKILL.md).
@@ -141,6 +144,9 @@ See [dry-run-and-simulation](skills/dry-run-and-simulation/SKILL.md).
   **Never** flip `dryRun = false` casually in examples/tests aimed at live
   paths. Live trading moves real money — treat credential + live mode changes
   as high risk.
+- `ConfigServiceImpl` defers runtime publication of saved/reloaded config while
+  a rebalance execution session is active. Do not remove that boundary or let a
+  single cycle mix settings versions.
 
 ---
 

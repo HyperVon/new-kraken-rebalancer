@@ -41,6 +41,11 @@ wrap their full bodies in `DynamicKrakenService.withStableBackend` when the inje
 `KrakenService` is Dynamic. That installs a **coroutine-context pin** so all reads
 and writes in the cycle/sync use one backend.
 
+Normal settings saves/reloads are also staged by `ConfigServiceImpl` while an
+execution session is active and publish when the cycle exits. The backend pin
+remains a defense-in-depth invariant for concurrent callers, custom/test config
+providers, and any future config path that does not share that session boundary.
+
 `OrderExecutor.executeOrders` also wraps sell→buy in `withStableBackend`. Nested
 calls **reuse the outer pin** (they do not re-resolve), so OrderExecutor cannot
 shadow a full cycle/sync pin. Concurrent top-level invocations each capture their
