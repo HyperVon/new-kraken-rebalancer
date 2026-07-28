@@ -167,9 +167,20 @@ object ViewText {
     const val INVALID_SYMBOL_ALERT = "Invalid symbol. Symbols must be alphanumeric and up to 16 characters."
     const val SYMBOL_EXISTS_ALERT = "Symbol already exists"
     const val INVALID_DEVIATION_TRIGGER =
-        "Deviation trigger percent is required and must be a valid number."
+        "Invalid settings field: deviation trigger percent is required and must be a finite number."
     const val INVALID_DUST_THRESHOLD =
-        "Dust threshold USD is required and must be a valid number."
+        "Invalid settings field: dust threshold USD is required and must be a finite number."
+    const val INVALID_SETTINGS_FIELD = "Invalid settings field"
+    const val INVALID_LOOP_DELAY = "Invalid settings field: loop delay is required and must be an integer."
+    const val INVALID_FIAT_MAX_DRAWDOWN =
+        "Invalid settings field: fiat max drawdown is required and must be a finite number."
+    const val INVALID_FIAT_DEPLOYMENT_EXPONENT =
+        "Invalid settings field: fiat deployment exponent is required and must be a finite number."
+    const val INVALID_ALLOCATION_FIELDS =
+        "Invalid allocation fields: symbols, targets, and supplied colors must have matching entries."
+    const val INVALID_ALLOCATION_TARGET =
+        "Invalid settings field: every allocation target is required and must be a finite number."
+    const val INVALID_ALLOCATION_COLOR = "Invalid allocation fields: supplied colors must use six-digit hex format."
     const val INVALID_CONFIGURATION_FALLBACK = "Invalid configuration"
 }
 

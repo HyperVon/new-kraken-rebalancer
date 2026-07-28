@@ -317,7 +317,7 @@ class DashboardControllerTest : StringSpec() {
             verify { configService.updateConfig(any()) }
         }
 
-        "postSettings_DropsUnpairedSymbolsWhenTargetsShorter" {
+        "CQ-12-L1: post settings rejects unpaired allocation fields without updating config" {
             val serverConfig =
                 AppConfig(
                     kraken =
@@ -336,20 +336,21 @@ class DashboardControllerTest : StringSpec() {
                     ),
                     allocations = listOf(Allocation(Asset.USD, 100.0)),
                 )
-            val captured = slot<AppConfig>()
             every { configService.getConfig() } returns serverConfig
-            every { configService.updateConfig(capture(captured)) } returns Unit
+            every { configService.updateConfig(any()) } returns Unit
 
             testApplication {
                 application {
                     configureTestEnv()
                 }
-                client.post(Routes.SETTINGS) {
+                val response = client.post(Routes.SETTINGS) {
                     setBody(
                         parametersOf(
                             FormFields.LOOP_DELAY_SECONDS to listOf("60"),
                             FormFields.DEVIATION_TRIGGER_PERCENT to listOf("2.0"),
                             FormFields.DUST_THRESHOLD_USD to listOf("1.0"),
+                            FormFields.FIAT_MAX_DRAWDOWN to listOf("0.0"),
+                            FormFields.FIAT_DEPLOYMENT_EXPONENT to listOf("1.0"),
                             FormFields.SYMBOLS to listOf(Asset.USD, Asset.BTC),
                             FormFields.TARGETS to listOf("100.0"),
                             FormFields.COLORS to listOf("#94a3b8", "#fbbf24"),
@@ -360,10 +361,168 @@ class DashboardControllerTest : StringSpec() {
                         ContentType.Application.FormUrlEncoded.toString(),
                     )
                 }
+                response.bodyAsText() shouldContain ViewText.INVALID_ALLOCATION_FIELDS
+
+                val invalidColorResponse =
+                    client.post(Routes.SETTINGS) {
+                        setBody(
+                            parametersOf(
+                                FormFields.LOOP_DELAY_SECONDS to listOf("60"),
+                                FormFields.DEVIATION_TRIGGER_PERCENT to listOf("2.0"),
+                                FormFields.DUST_THRESHOLD_USD to listOf("1.0"),
+                                FormFields.FIAT_MAX_DRAWDOWN to listOf("0.0"),
+                                FormFields.FIAT_DEPLOYMENT_EXPONENT to listOf("1.0"),
+                                FormFields.SYMBOLS to listOf(Asset.USD),
+                                FormFields.TARGETS to listOf("100.0"),
+                                FormFields.COLORS to listOf("#94a3b8"),
+                                FormFields.COLORS to listOf("not-a-color"),
+                            ).formUrlEncode(),
+                        )
+                        header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
+                    }
+                invalidColorResponse.bodyAsText() shouldContain ViewText.INVALID_ALLOCATION_COLOR
             }
 
-            captured.captured.allocations.map { it.symbol.value } shouldBe listOf(Asset.USD)
-            captured.captured.allocations.single().color shouldBe "#94a3b8"
+            verify(exactly = 0) { configService.updateConfig(any()) }
+        }
+
+        "CQ-12-L1: post settings rejects malformed required trading values before persistence" {
+            val serverConfig =
+                AppConfig(
+                    kraken = KrakenCredentials(TestFixtures.TEST_SERVER_API_KEY, TestFixtures.TEST_SERVER_API_SECRET),
+                    settings =
+                    Settings(
+                        loopDelaySeconds = 60,
+                        deviationTriggerPercent = 2.0,
+                        dryRun = true,
+                    ),
+                    allocations = listOf(Allocation(Asset.USD, 100.0)),
+                )
+            every { configService.getConfig() } returns serverConfig
+            every { configService.updateConfig(any()) } returns Unit
+
+            val validFields =
+                mapOf(
+                    FormFields.LOOP_DELAY_SECONDS to "60",
+                    FormFields.DEVIATION_TRIGGER_PERCENT to "2.0",
+                    FormFields.DUST_THRESHOLD_USD to "1.0",
+                    FormFields.FIAT_MAX_DRAWDOWN to "5.0",
+                    FormFields.FIAT_DEPLOYMENT_EXPONENT to "1.5",
+                    FormFields.TARGETS to "100.0",
+                )
+            val invalidValues =
+                mapOf(
+                    FormFields.LOOP_DELAY_SECONDS to "not-a-long",
+                    FormFields.DEVIATION_TRIGGER_PERCENT to "NaN",
+                    FormFields.DUST_THRESHOLD_USD to "Infinity",
+                    FormFields.FIAT_MAX_DRAWDOWN to "not-a-number",
+                    FormFields.FIAT_DEPLOYMENT_EXPONENT to "-Infinity",
+                    FormFields.TARGETS to "not-a-target",
+                )
+
+            testApplication {
+                application { configureTestEnv() }
+                invalidValues.forEach { (invalidField, invalidValue) ->
+                    val fields = validFields + (invalidField to invalidValue)
+                    val response =
+                        client.post(Routes.SETTINGS) {
+                            setBody(
+                                parametersOf(
+                                    FormFields.LOOP_DELAY_SECONDS to
+                                        listOf(fields.getValue(FormFields.LOOP_DELAY_SECONDS)),
+                                    FormFields.DEVIATION_TRIGGER_PERCENT to
+                                        listOf(fields.getValue(FormFields.DEVIATION_TRIGGER_PERCENT)),
+                                    FormFields.DUST_THRESHOLD_USD to
+                                        listOf(fields.getValue(FormFields.DUST_THRESHOLD_USD)),
+                                    FormFields.FIAT_MAX_DRAWDOWN to
+                                        listOf(fields.getValue(FormFields.FIAT_MAX_DRAWDOWN)),
+                                    FormFields.FIAT_DEPLOYMENT_EXPONENT to
+                                        listOf(fields.getValue(FormFields.FIAT_DEPLOYMENT_EXPONENT)),
+                                    FormFields.SYMBOLS to listOf(Asset.USD),
+                                    FormFields.TARGETS to listOf(fields.getValue(FormFields.TARGETS)),
+                                    FormFields.COLORS to listOf("#94a3b8"),
+                                ).formUrlEncode(),
+                            )
+                            header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
+                        }
+                    response.bodyAsText() shouldContain ViewText.INVALID_SETTINGS_FIELD
+                }
+            }
+
+            verify(exactly = 0) { configService.updateConfig(any()) }
+        }
+
+        "CQ-12-L1: post settings rejects mismatched colors without updating config" {
+            val serverConfig =
+                AppConfig(
+                    kraken = KrakenCredentials(TestFixtures.TEST_SERVER_API_KEY, TestFixtures.TEST_SERVER_API_SECRET),
+                    settings =
+                    Settings(
+                        loopDelaySeconds = 60,
+                        deviationTriggerPercent = 2.0,
+                        dryRun = true,
+                    ),
+                    allocations = listOf(Allocation(Asset.USD, 100.0)),
+                )
+            every { configService.getConfig() } returns serverConfig
+            every { configService.updateConfig(any()) } returns Unit
+
+            testApplication {
+                application { configureTestEnv() }
+                val response =
+                    client.post(Routes.SETTINGS) {
+                        setBody(
+                            parametersOf(
+                                FormFields.LOOP_DELAY_SECONDS to listOf("60"),
+                                FormFields.DEVIATION_TRIGGER_PERCENT to listOf("2.0"),
+                                FormFields.DUST_THRESHOLD_USD to listOf("1.0"),
+                                FormFields.FIAT_MAX_DRAWDOWN to listOf("0.0"),
+                                FormFields.FIAT_DEPLOYMENT_EXPONENT to listOf("1.0"),
+                                FormFields.SYMBOLS to listOf(Asset.USD, Asset.BTC),
+                                FormFields.TARGETS to listOf("50.0", "50.0"),
+                                FormFields.COLORS to listOf("#94a3b8"),
+                            ).formUrlEncode(),
+                        )
+                        header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
+                    }
+                response.bodyAsText() shouldContain ViewText.INVALID_ALLOCATION_FIELDS
+            }
+
+            verify(exactly = 0) { configService.updateConfig(any()) }
+        }
+
+        "CQ-12-L1: post settings rejects duplicate singleton values without updating config" {
+            val serverConfig =
+                AppConfig(
+                    kraken = KrakenCredentials(TestFixtures.TEST_SERVER_API_KEY, TestFixtures.TEST_SERVER_API_SECRET),
+                    settings = Settings(loopDelaySeconds = 60, deviationTriggerPercent = 2.0, dryRun = true),
+                    allocations = listOf(Allocation(Asset.USD, 100.0)),
+                )
+            every { configService.getConfig() } returns serverConfig
+            every { configService.updateConfig(any()) } returns Unit
+
+            testApplication {
+                application { configureTestEnv() }
+                val response =
+                    client.post(Routes.SETTINGS) {
+                        setBody(
+                            parametersOf(
+                                FormFields.LOOP_DELAY_SECONDS to listOf("60"),
+                                FormFields.DEVIATION_TRIGGER_PERCENT to listOf("2.0", "3.0"),
+                                FormFields.DUST_THRESHOLD_USD to listOf("1.0"),
+                                FormFields.FIAT_MAX_DRAWDOWN to listOf("0.0"),
+                                FormFields.FIAT_DEPLOYMENT_EXPONENT to listOf("1.0"),
+                                FormFields.SYMBOLS to listOf(Asset.USD),
+                                FormFields.TARGETS to listOf("100.0"),
+                                FormFields.COLORS to listOf("#94a3b8"),
+                            ).formUrlEncode(),
+                        )
+                        header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
+                    }
+                response.bodyAsText() shouldContain ViewText.INVALID_DEVIATION_TRIGGER
+            }
+
+            verify(exactly = 0) { configService.updateConfig(any()) }
         }
 
         "postSettings_OnValidationError_ReturnsErrorHtmlBody" {
@@ -408,8 +567,11 @@ class DashboardControllerTest : StringSpec() {
                                 FormFields.LOOP_DELAY_SECONDS to listOf("60"),
                                 FormFields.DEVIATION_TRIGGER_PERCENT to listOf("2.0"),
                                 FormFields.DUST_THRESHOLD_USD to listOf("1.0"),
+                                FormFields.FIAT_MAX_DRAWDOWN to listOf("0.0"),
+                                FormFields.FIAT_DEPLOYMENT_EXPONENT to listOf("1.0"),
                                 FormFields.SYMBOLS to listOf(Asset.USD),
                                 FormFields.TARGETS to listOf("90.0"),
+                                FormFields.COLORS to listOf("#94a3b8"),
                             ).formUrlEncode(),
                         )
                         header(
@@ -546,6 +708,7 @@ class DashboardControllerTest : StringSpec() {
                                 FormFields.DUST_THRESHOLD_USD to listOf(TestFixtures.INVALID),
                                 FormFields.SYMBOLS to listOf(Asset.USD),
                                 FormFields.TARGETS to listOf("100.0"),
+                                FormFields.COLORS to listOf("#94a3b8"),
                             ).formUrlEncode(),
                         )
                         header(
@@ -654,8 +817,11 @@ class DashboardControllerTest : StringSpec() {
                                 FormFields.LOOP_DELAY_SECONDS to listOf("60"),
                                 FormFields.DEVIATION_TRIGGER_PERCENT to listOf("5.0"),
                                 FormFields.DUST_THRESHOLD_USD to listOf("5.0"),
+                                FormFields.FIAT_MAX_DRAWDOWN to listOf("0.0"),
+                                FormFields.FIAT_DEPLOYMENT_EXPONENT to listOf("1.0"),
                                 FormFields.SYMBOLS to listOf(Asset.USD),
                                 FormFields.TARGETS to listOf("100.0"),
+                                FormFields.COLORS to listOf("#94a3b8"),
                             ).formUrlEncode(),
                         )
                         header(

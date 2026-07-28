@@ -6,6 +6,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.15.6] - 2026-07-28
+
+### Added
+
+- **Quality coverage**: Added regressions for strict Settings parsing, CORS
+  hostname lookalikes, zero-target liquidation bounds, shifted fill pages,
+  order-submission exceptions, concurrent history sync, clock rollback, and
+  OHLC cancellation.
+
+### Fixed
+
+- **Execution safety**: Sell volumes cannot exceed entry holdings, repeated
+  Kraken fill IDs cannot inflate settled cash, live submission exceptions stay
+  durably uncertain, and non-live failures no longer retain stale pending text.
+- **Configuration security**: Settings submissions now reject missing,
+  malformed, non-finite, or mismatched fields; the no-auth dashboard CORS
+  allowlist now validates actual private/loopback hosts rather than prefixes.
+- **History reliability**: Exact order-ID reconciliation excludes dry-run rows,
+  concurrent paginated syncs serialize, clock rollback cannot suppress sync
+  indefinitely, and OHLC cancellation remains coroutine control flow.
+
 ## [6.15.5] - 2026-07-28
 
 ### Added

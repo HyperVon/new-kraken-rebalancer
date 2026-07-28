@@ -119,7 +119,12 @@ effectively than spreading across all pairs.
 ## Execution safety (`OrderExecutorImpl`)
 
 1. **Sell first** — only successful sells update projected cash.
-   - After each successful sell, `projectedCash += usdToSell` (order **notional**, pre-fee).
+   - Each sell volume is capped to the cycle-entry asset balance rounded down
+     to crypto scale, so cent-rounded zero-target liquidation intent cannot
+     request more units than the account holds.
+   - After each successful sell, add the effective submitted notional
+     (`result.volume × pinned price`) to `projectedCash` (pre-fee). Never add
+     the original intent after holdings capping or volume rounding.
    - Live settle replaces this with fill-confirmed proceeds: sum
      `(usdAmount − fee)` for matching sell `orderTxid`s, capped by balance peek /
      projected cash.
@@ -132,6 +137,8 @@ effectively than spreading across all pairs.
    projected; **abort buys** (fail-closed) if none. Skip settle (use projected
    cash) when dry-run or no sell succeeded. Poll/Flow mechanics:
    [coroutines-flows-sse](../coroutines-flows-sse/SKILL.md).
+   Repeated nonblank Kraken trade IDs across shifting pages count once; id-less
+   rows remain distinct because equal-economics partial fills can be legitimate.
 3. **Buy second** — wrap the sell→buy sequence in `withStableBackend`; apply a
    **cycle-level 99%** budget of settled USD
    (`PrecisionConstants.CASH_RESERVE_FACTOR` / `CASH_RESERVE_FACTOR_DOUBLE`), then
@@ -152,6 +159,11 @@ effectively than spreading across all pairs.
    reconciliation, duplicate cleanup, and pruning; only an operator may resolve
    them after checking Kraken open orders, closed orders, and fills. `cl_ord_id`
    is open-order uniqueness, not full idempotency; `userref` is not uniqueness.
+   Backend exceptions and cancellation persist `UNCERTAIN` before propagating;
+   cancellation uses `NonCancellable` only for that durability update. A
+   persistence failure never masks the original placement exception; attach it
+   as suppressed diagnostic context. Non-live backend exceptions instead update
+   the estimate with the actual failure.
 6. Market orders; volumes at crypto scale 8.
 7. **dryRun**: suppress placement on the active backend — SLF4J uses
    `[DRY RUN]` (live) / `[EMULATOR DRY RUN]` (simulation); dashboard activity

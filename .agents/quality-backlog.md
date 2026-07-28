@@ -22,6 +22,17 @@ Product polish discovered during QA belongs in
 
 | ID | Size | Kind | Status | Area | Summary | Cycle | Issue | Notes |
 | :--- | :---: | :--- | :--- | :--- | :--- | :---: | :--- | :--- |
+| CQ-12-L1 | L | bug | in_progress | settings | Reject malformed or mismatched Settings form fields | 12 | [#135](https://github.com/HyperVon/new-kraken-rebalancer/issues/135) | Approved; `codex/quality-cycle-20260728-2`; `ktor-html-views` / `koin-di-and-config` |
+| CQ-12-L2 | L | bug | in_progress | security | Harden no-auth dashboard CORS origin validation | 12 | [#131](https://github.com/HyperVon/new-kraken-rebalancer/issues/131) | Approved; `codex/quality-cycle-20260728-2`; `code-review` |
+| CQ-12-L3 | L | bug | in_progress | orders | Cap zero-target sell volume to available holdings | 12 | [#137](https://github.com/HyperVon/new-kraken-rebalancer/issues/137) | Approved; `codex/quality-cycle-20260728-2`; `portfolio-rebalancing-math` |
+| CQ-12-L4 | L | bug | in_progress | orders | Deduplicate shifted Kraken fill pages during sell settlement | 12 | [#136](https://github.com/HyperVon/new-kraken-rebalancer/issues/136) | Approved; `codex/quality-cycle-20260728-2`; `portfolio-rebalancing-math` / `trade-history-sync` |
+| CQ-12-L5 | L | bug | in_progress | history/sync | Preserve dry-run isolation during exact order-ID reconciliation | 12 | [#134](https://github.com/HyperVon/new-kraken-rebalancer/issues/134) | Approved; `codex/quality-cycle-20260728-2`; `dry-run-and-simulation` / `trade-history-sync` |
+| CQ-12-L6 | L | bug | in_progress | history/sync | Serialize concurrent paginated trade-history syncs | 12 | [#132](https://github.com/HyperVon/new-kraken-rebalancer/issues/132) | Approved; `codex/quality-cycle-20260728-2`; `trade-history-sync` / `coroutines-flows-sse` |
+| CQ-12-L7 | L | bug | in_progress | history/sync | Prevent clock rollback from suppressing history sync | 12 | [#133](https://github.com/HyperVon/new-kraken-rebalancer/issues/133) | Approved; `codex/quality-cycle-20260728-2`; `trade-history-sync` / `kraken-api-integration` |
+| CQ-12-1 | M | bug | in_progress | Kraken/OHLC | Propagate cancellation from live OHLC requests | 12 | — | `codex/quality-cycle-20260728-2`; `kraken-api-integration` / `write-kotest` |
+| CQ-12-2 | M | gap | in_progress | orders | Cover live submission exceptions, uncertain journaling, and later-cycle blocking | 12 | — | `codex/quality-cycle-20260728-2`; `write-kotest` |
+| CQ-12-3 | M | bug | in_progress | simulation | Persist actual non-live order exceptions instead of stale pending text | 12 | — | `codex/quality-cycle-20260728-2`; `dry-run-and-simulation` / `write-kotest` |
+| CQ-12-4 | S | harness | in_progress | eval | Correct Scenario 5 evidence to match the cycle-boundary assertion | 12 | — | `codex/quality-cycle-20260728-2`; `write-kotest` |
 
 ## Done (recent)
 

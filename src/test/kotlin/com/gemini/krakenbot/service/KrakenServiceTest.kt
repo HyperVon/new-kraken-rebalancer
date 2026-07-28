@@ -33,6 +33,7 @@ import io.ktor.http.*
 import io.ktor.http.content.TextContent
 import io.mockk.every
 import io.mockk.mockk
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.currentTime
 import kotlinx.coroutines.test.runTest
@@ -1496,6 +1497,24 @@ class KrakenServiceTest : StringSpec() {
                 val service = createService("invalid-json")
                 val ohlc = service.getOHLC(TestFixtures.XXBTZUSD, 1440, null)
                 ohlc.isEmpty().shouldBeTrue()
+            }
+        }
+
+        "CQ-12-1: getOHLC rethrows coroutine cancellation" {
+            runTest {
+                val cancellation = CancellationException("OHLC request cancelled")
+                val mockEngine = MockEngine { throw cancellation }
+                val service = KrakenServiceImpl(
+                    configService = mockk(relaxed = true),
+                    objectMapper = jacksonObjectMapper(),
+                    httpClient = HttpClient(mockEngine),
+                )
+
+                val thrown = shouldThrow<CancellationException> {
+                    service.getOHLC(TestFixtures.XXBTZUSD, 1440, null)
+                }
+
+                thrown shouldBe cancellation
             }
         }
 

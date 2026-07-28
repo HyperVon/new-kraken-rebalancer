@@ -66,6 +66,11 @@ Pure KMP types under `common/.../config/`:
 - `fiatMaxDrawdown` in `0..100`, `fiatDeploymentExponent > 0`
 - Every `Double` setting and allocation percentage must be finite; reject
   `NaN` and positive/negative infinity before publishing or persisting config.
+- The Settings controller requires every numeric trading field to parse
+  strictly, requires each scalar field exactly once, and requires aligned
+  symbol/target/color rows. It rejects malformed submissions before
+  `updateConfig`; it never supplies trading defaults or truncates allocation
+  rows.
 
 ## Atomic persistence
 

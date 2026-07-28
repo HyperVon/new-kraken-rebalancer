@@ -36,6 +36,7 @@ import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.shouldBe
 import io.mockk.*
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -66,7 +67,7 @@ class TradeHistoryServiceTest : StringSpec() {
         }
     }
 
-    private fun createService(): TradeHistoryServiceImpl {
+    private fun createService(syncNowProvider: () -> Instant = Instant::now): TradeHistoryServiceImpl {
         val appConfig = AppConfig(
             kraken = KrakenCredentials(TestFixtures.TRADE_HISTORY_API_KEY, TestFixtures.TRADE_HISTORY_API_SECRET),
             settings = Settings(
@@ -95,6 +96,7 @@ class TradeHistoryServiceTest : StringSpec() {
             objectMapper,
             portfolioAnalyzer,
             TestFixtures.TEST_TRADE_HISTORY_JSON,
+            syncNowProvider,
         )
     }
 
@@ -1196,6 +1198,45 @@ class TradeHistoryServiceTest : StringSpec() {
             }
         }
 
+        "CQ-12-L6: concurrent sync calls serialize and recheck the throttle" {
+            runTest {
+                val service = createService()
+                val firstPageStarted = CompletableDeferred<Unit>()
+                val releaseFirstPage = CompletableDeferred<Unit>()
+                coEvery { krakenService.getTradeHistory(any(), 0) } coAnswers {
+                    firstPageStarted.complete(Unit)
+                    releaseFirstPage.await()
+                    emptyList()
+                }
+
+                val first = launch { service.syncTradesFromKraken() }
+                firstPageStarted.await()
+                val second = launch { service.syncTradesFromKraken() }
+                yield()
+                releaseFirstPage.complete(Unit)
+                first.join()
+                second.join()
+
+                coVerify(exactly = 1) { krakenService.getTradeHistory(any(), 0) }
+                verify(exactly = 1) { configService.beginExecutionSession() }
+                verify(exactly = 1) { configService.endExecutionSession() }
+            }
+        }
+
+        "CQ-12-L7: clock rollback rebases instead of suppressing history sync" {
+            runTest {
+                var now = Instant.parse("2026-07-28T12:00:00Z")
+                val service = createService { now }
+                coEvery { krakenService.getTradeHistory(any(), 0) } returns emptyList()
+
+                service.syncTradesFromKraken()
+                now = now.minusSeconds(3_600)
+                service.syncTradesFromKraken()
+
+                coVerify(exactly = 2) { krakenService.getTradeHistory(any(), 0) }
+            }
+        }
+
         "syncTradesFromKraken_MatchingFailuresSavedAsNew" {
             runTest {
                 coEvery { repository.isHistorySeeded() } returns true
@@ -1249,6 +1290,8 @@ class TradeHistoryServiceTest : StringSpec() {
                     usdAmount = BigDecimal.TEN,
                     success = true,
                     dryRun = true,
+                    source = TradeSource.LOCAL_ESTIMATE,
+                    orderTxid = "DRY-RUN-OID",
                 )
                 coEvery { repository.getTradesInRange(any(), any()) } returns listOf(localTrade)
 

@@ -64,7 +64,7 @@ import io.ktor.client.plugins.sse.SSE as ClientSSE
 import io.ktor.server.sse.SSE as ServerSSE
 
 class EvaluationScenariosTest : StringSpec() {
-    // SingleInstance: the mocks and mapper below are shared by all 33 scenarios, so a scenario that
+    // SingleInstance: the mocks and mapper below are shared by all 34 scenarios, so a scenario that
     // captures calls (snapshot actions, order lists) must build its own mock instead of reusing them.
     override fun isolationMode() = IsolationMode.SingleInstance
 
@@ -109,7 +109,7 @@ class EvaluationScenariosTest : StringSpec() {
             val sb = StringBuilder()
             sb.append("# Scenarios Evaluation Report\n\n")
             sb.append(
-                "This report lists the outcomes of the 33 realistic scenarios designed to evaluate the major capabilities of the Kraken Rebalancer.\n\n",
+                "This report lists the outcomes of the 34 realistic scenarios designed to evaluate the major capabilities of the Kraken Rebalancer.\n\n",
             )
             sb.append("## Evaluation Rubric & Status\n\n")
             sb.append("| Scenario | Description | Status | Details / Evidence |\n")
@@ -609,8 +609,11 @@ class EvaluationScenariosTest : StringSpec() {
                                 FormFields.LOOP_DELAY_SECONDS to listOf("120"),
                                 FormFields.DEVIATION_TRIGGER_PERCENT to listOf("3.5"),
                                 FormFields.DUST_THRESHOLD_USD to listOf("2.0"),
+                                FormFields.FIAT_MAX_DRAWDOWN to listOf("0.0"),
+                                FormFields.FIAT_DEPLOYMENT_EXPONENT to listOf("1.0"),
                                 FormFields.SYMBOLS to listOf(Asset.USD),
                                 FormFields.TARGETS to listOf("100.0"),
+                                FormFields.COLORS to listOf("#94a3b8"),
                             ).formUrlEncode(),
                         )
                         header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
@@ -632,8 +635,11 @@ class EvaluationScenariosTest : StringSpec() {
                                 FormFields.LOOP_DELAY_SECONDS to listOf("60"),
                                 FormFields.DEVIATION_TRIGGER_PERCENT to listOf("2.0"),
                                 FormFields.DUST_THRESHOLD_USD to listOf("1.0"),
+                                FormFields.FIAT_MAX_DRAWDOWN to listOf("0.0"),
+                                FormFields.FIAT_DEPLOYMENT_EXPONENT to listOf("1.0"),
                                 FormFields.SYMBOLS to listOf(Asset.USD),
                                 FormFields.TARGETS to listOf("90.0"), // 90% sum != 100%
+                                FormFields.COLORS to listOf("#94a3b8"),
                             ).formUrlEncode(),
                         )
                         header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
@@ -676,7 +682,7 @@ class EvaluationScenariosTest : StringSpec() {
             }
         }
 
-        "Scenario 5: Safety and Resilience (Dry Run & Error Recovery)" {
+        "Scenario 5: Safety and Resilience (Dry Run & Cycle Failure Propagation)" {
             runTest {
                 val fakeKraken = FakeKrakenService()
                 val mockConfig = mockk<ConfigService>(relaxed = true)
@@ -790,13 +796,15 @@ class EvaluationScenariosTest : StringSpec() {
 
                 val dustPass = fakeKraken.executedOrders.isEmpty()
 
-                // Sub-case C: Network Failure / Exception propagation test
-                // Loop catches it and doesn't crash. Let's make sure the exception is thrown by performRebalanceCycle
+                // Sub-case C: the cycle propagates network failures to its caller at the loop boundary.
+                // This does not exercise or make claims about runLoop's recovery behavior.
                 fakeKraken.balanceSupplier = { throw IOException("502 Bad Gateway") }
-                shouldThrow<Exception> {
-                    pmDust.performRebalanceCycle()
-                }
-                val errorPass = true
+                val propagatedFailure =
+                    shouldThrow<IOException> {
+                        pmDust.performRebalanceCycle()
+                    }
+                propagatedFailure.message shouldBe "502 Bad Gateway"
+                val networkFailurePropagationPass = true
 
                 // Sub-case D: Price Lookup Failure
                 // If price lookup fails, performRebalanceCycle returns early without throwing and without orders
@@ -807,18 +815,19 @@ class EvaluationScenariosTest : StringSpec() {
                 pmDust.performRebalanceCycle()
                 val priceFailPass = fakeKraken.executedOrders.isEmpty()
 
-                val finalPass = dryRunPass && dustPass && errorPass && priceFailPass
+                val finalPass = dryRunPass && dustPass && networkFailurePropagationPass && priceFailPass
                 val evidence =
                     "Sub-case A (Dry Run Mode): $dryRunPass (Actions: $capturedActions)\n" +
                         "Sub-case B (Dust Threshold): $dustPass " +
                         "(Trades executed: ${fakeKraken.executedOrders.size})\n" +
-                        "Sub-case C (Network Failure caught): $errorPass\n" +
+                        "Sub-case C (Network Failure propagated out of cycle to loop boundary): " +
+                        "$networkFailurePropagationPass\n" +
                         "Sub-case D (Price Lookup Failure aborts cycle): $priceFailPass"
 
                 finalPass.shouldBeTrue()
                 recordResult(
                     "Scenario 5",
-                    "Safety and Resilience (Dry Run & Error Recovery)",
+                    "Safety and Resilience (Dry Run & Cycle Failure Propagation)",
                     TestFixtures.PASS,
                     evidence,
                 )
@@ -2944,6 +2953,73 @@ class EvaluationScenariosTest : StringSpec() {
                     "Drawdown Deployment Changes Order Sizes",
                     TestFixtures.PASS,
                     evidence,
+                )
+            }
+        }
+
+        "Scenario 34: Zero-Target Liquidation Never Exceeds Holdings" {
+            runTest {
+                val fakeKraken = FakeKrakenService()
+                val mockConfig = mockk<ConfigService>(relaxed = true)
+                val mockHistory = mockk<TradeHistoryService>(relaxed = true)
+                val availableBtc = BigDecimal("0.00000001")
+                val btcPrice = BigDecimal("500000.00")
+                val settings =
+                    Settings(
+                        loopDelaySeconds = 0L,
+                        deviationTriggerPercent = 0.0,
+                        dustThresholdUSD = 0.0,
+                        dryRun = true,
+                        fiatMaxDrawdown = 0.0,
+                        fiatDeploymentExponent = 1.0,
+                    )
+                every { mockConfig.getConfig() } returns
+                    AppConfig(
+                        kraken = KrakenCredentials("k", "s"),
+                        settings = settings,
+                        allocations =
+                        listOf(
+                            Allocation(Asset.BTC, 0.0),
+                            Allocation(Asset.USD, 100.0),
+                        ),
+                    )
+                fakeKraken.balanceSupplier = {
+                    mapOf(
+                        "XXBT" to availableBtc,
+                        "ZUSD" to BigDecimal.ZERO,
+                    )
+                }
+                fakeKraken.pricesSupplier = { mapOf(TestFixtures.XBTUSD to btcPrice) }
+
+                val analyzer =
+                    PortfolioAnalyzerImpl(
+                        fakeKraken,
+                        mockConfig,
+                        mockk<PortfolioStatsRepository>(relaxed = true),
+                    )
+                val manager =
+                    PortfolioManagerImpl(
+                        mockConfig,
+                        mockHistory,
+                        analyzer,
+                        OrderExecutorImpl(fakeKraken, mockHistory),
+                    )
+
+                // Raw BTC value is $0.005; portfolio valuation rounds the zero-target sell intent
+                // to $0.01, whose ordinary HALF_UP division would request two satoshis.
+                manager.performRebalanceCycle()
+
+                val sell = fakeKraken.executedOrders.single()
+                sell.side shouldBe TestFixtures.SELL
+                sell.volume.shouldBeEqualComparingTo(availableBtc)
+                (sell.volume <= availableBtc).shouldBeTrue()
+
+                recordResult(
+                    "Scenario 34",
+                    "Zero-Target Liquidation Never Exceeds Holdings",
+                    TestFixtures.PASS,
+                    "BTC holding=$availableBtc @ $$btcPrice; rounded liquidation intent=$0.01; " +
+                        "submitted sell volume=${sell.volume}",
                 )
             }
         }

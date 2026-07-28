@@ -68,7 +68,8 @@ section owns the **cold Flow poll implementation**.
 
 - `TradeHistorySyncService` paginated Kraken history fetch (private cold
   `getTradeHistoryPaginated()`; invoked from the façade
-  `syncTradesFromKraken()`).
+  `syncTradesFromKraken()`). One coroutine `Mutex` spans the throttle check and
+  pagination so concurrent top-level sync callers cannot overlap.
 - `settleUsdAfterSells()` — only when **≥1 sell succeeded** and **not** dry-run:
   - **Primary:** `pollFillConfirmedUsd()` → `sumMatchedSellProceeds()` (history
     matched by sell `orderTxid`, **net of fee**, up to 5×50 pages) → balance peek
@@ -86,6 +87,8 @@ Fill-confirm poll constants (`pollFillConfirmedUsd` / `sumMatchedSellProceeds`):
   early accept vs `projectedCash`, `startSec = now − 600s`.
 - `sumMatchedSellProceeds`: up to 5 pages × 50 rows; match sell `orderTxid`;
   net `usdAmount − fee`; keep scanning after the first sighting (multi-leg fills).
+  Deduplicate repeated nonblank Kraken trade IDs across shifted pages, but keep
+  id-less rows distinct.
 - Cap fill-confirmed USD with `min(fill, balancePeek)` when spendable balance is
   visible; otherwise `min(fill, projectedCash)` (same as the primary bullets
   above — never both caps at once).

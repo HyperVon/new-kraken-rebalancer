@@ -127,6 +127,8 @@ Full detail: [`docs/ALGORITHM.md`](../docs/ALGORITHM.md) and skill [portfolio-re
   counts / backoff and cold-Flow poll details:
   [portfolio-rebalancing-math](skills/portfolio-rebalancing-math/SKILL.md) +
   [coroutines-flows-sse](skills/coroutines-flows-sse/SKILL.md).
+  Sell volumes are capped to cycle-entry holdings; repeated nonblank Kraken
+  trade IDs across shifted settle pages count once.
 - **Precision**: `BigDecimal` only — crypto scale **8**, USD scale **2**. Tests: `shouldBeEqualComparingTo` (never `shouldBeEqualByComparingTo` / `.equals()`).
 
 ---
@@ -183,7 +185,9 @@ claim CodeQL is active CI until re-enabled.
 ## 6. Security & local-trust dashboard
 
 - **No user auth** on the dashboard/API — security model is local/private network trust.
-- CORS allows only origins passing `isLocalOrPrivateOrigin` (`localhost`, private RFC1918, `*.local`, etc.).
+- CORS allows only structurally parsed origins passing
+  `isLocalOrPrivateOrigin` (`localhost`, valid private/loopback IPs, and
+  `*.local`); private-IP hostname lookalikes are rejected.
 - **NEVER** hardcode API keys/secrets. Load from env or gitignored `rebalancer-config.json`.
 - Do not log HMAC signatures or private keys.
 
@@ -233,3 +237,6 @@ flags: [dry-run-and-simulation](skills/dry-run-and-simulation/SKILL.md).
   [coroutines-flows-sse](skills/coroutines-flows-sse/SKILL.md)); manual
   `rebalancer-config.json` edits on disk require restart. **Kotlin / SSR / frontend
   changes require `./gradlew run` restart** (Ktor Autoreload off).
+- **Settings input:** Every numeric trading field and allocation row is parsed
+  strictly before persistence; missing, non-finite, malformed, or mismatched
+  form values are rejected instead of defaulted or truncated.

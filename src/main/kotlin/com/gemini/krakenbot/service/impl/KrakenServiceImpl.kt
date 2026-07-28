@@ -354,6 +354,8 @@ class KrakenServiceImpl(
         val result =
             try {
                 queryPublic(path)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 log.error("Failed to query public OHLC endpoint for pair $pair", e)
                 return emptyList()
