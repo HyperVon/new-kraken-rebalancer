@@ -17,12 +17,12 @@ need only this file (no issue spam).
 
 | ID | Size | Status | Area | Summary | Cycle | Issue | Notes |
 | :--- | :---: | :--- | :--- | :--- | :---: | :--- | :--- |
-| CI-15-1 | S | in_progress | agent workflow | Prefer the least expensive capable model and reasoning effort | 15 | — | User-requested; shipping on `quality/cycle-20260727` |
 
 ## Done (recent)
 
 | ID | Size | Status | Area | Summary | Cycle | PR |
 | :--- | :---: | :--- | :--- | :--- | :---: | :--- |
+| CI-15-1 | S | done | agent workflow | Prefer the least expensive capable model and reasoning effort | 15 | #121 |
 | CI-14-1 | M | done | history | Enforce the 300-point snapshot cap and preserve range endpoints | 14 | #113 |
 | CI-14-2 | M | done | history | Scope latest snapshot time to the requested summary range | 14 | #113 |
 | CI-14-3 | S | done | history | Make persisted snapshot action ordering deterministic | 14 | #113 |
