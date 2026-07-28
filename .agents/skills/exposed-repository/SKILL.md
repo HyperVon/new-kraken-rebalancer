@@ -226,8 +226,15 @@ val allIds = PortfolioSnapshotTable
     .where { ... }
     .map { it[PortfolioSnapshotTable.id] }
 
-val downsampledIds = if (allIds.size <= 300) allIds
-    else allIds.filterIndexed { index, _ -> index % (allIds.size / 300) == 0 }
+val downsampledIds = if (allIds.size <= MAX_SNAPSHOT_POINTS) {
+    allIds
+} else {
+    List(MAX_SNAPSHOT_POINTS) { sampleIndex ->
+        val sourceIndex =
+            (sampleIndex.toLong() * allIds.lastIndex / (MAX_SNAPSHOT_POINTS - 1)).toInt()
+        allIds[sourceIndex]
+    }
+}
 ```
 
 ## Checklist

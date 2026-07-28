@@ -6,22 +6,18 @@ import kotlinx.browser.document
 import kotlinx.browser.window
 
 fun main() {
-    // 1. Unconditionally register global functions and variables
     registerDashboardGlobals()
     registerSettingsGlobals()
     registerHistoryGlobals()
 
-    // 2. Unconditionally register global HTMX event listener
     document.addEventListener(HtmlEvents.HTMX_AFTER_SWAP, {
         updateAge()
         reapplySort()
     })
 
-    // 3. Tick the freshness chip every second so STREAM→STALE is detected client-side even
-    //    when no new SSE snapshot arrives to trigger htmx:afterSwap.
+    // Tick the freshness chip so STREAM→STALE is detected even when no SSE snapshot triggers htmx:afterSwap.
     window.setInterval({ updateAge() }, 1000)
 
-    // 4. Run initial page load checks
     if (document.body != null) {
         initOnLoad()
     } else {
@@ -32,16 +28,13 @@ fun main() {
 }
 
 fun initOnLoad() {
-    // Initial dashboard checks
     updateAge()
     reapplySort()
 
-    // Settings page initialization
     if (document.getElementById(HtmlIds.TOTAL_ALLOCATED_DISPLAY) != null) {
         initSettings()
     }
 
-    // History page initialization
     if (document.getElementById(HtmlIds.PORTFOLIO_VALUE_CHART) != null) {
         initHistory()
     }

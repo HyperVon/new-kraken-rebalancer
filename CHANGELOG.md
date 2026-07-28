@@ -6,6 +6,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.15.2] - 2026-07-27
+
+### Changed
+
+- **Dependencies**: Updated Spotless from `8.8.0` to `8.9.0`,
+  `kotlin-css-jvm` from `2026.7.6` to `2026.7.7`, and webpack from `5.109.0`
+  to `5.109.1`.
+- **Comment hygiene**: Removed startup narration that duplicated the frontend
+  initialization code and corrected the history reconstruction cutoff wording.
+
+### Fixed
+
+- **History ranges**: Snapshot chart queries now return at most 300 evenly
+  sampled points while retaining both endpoints, and range summary timestamps
+  no longer include snapshots outside the requested period.
+- **Snapshot actions**: Reloaded activity entries now use explicit insertion
+  order instead of relying on SQLite's incidental row order.
+- **Algorithm documentation**: Clarified that the local trade fee estimate is
+  fixed rather than user-configurable.
+
 ## [6.15.1] - 2026-07-27
 
 ### Changed

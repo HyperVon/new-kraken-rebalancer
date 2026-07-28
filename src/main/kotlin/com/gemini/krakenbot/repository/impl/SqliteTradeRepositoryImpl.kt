@@ -43,6 +43,10 @@ import java.math.RoundingMode
 import java.time.Instant
 
 class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepository {
+    private companion object {
+        const val MAX_SNAPSHOT_POINTS = 300
+    }
+
     private val log =
         LoggerFactory.getLogger(SqliteTradeRepositoryImpl::class.java)
 
@@ -129,13 +133,19 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
 
             if (allIds.isEmpty()) return@readTransactionIO emptyList()
 
-            // Cap chart payloads ~300 points so large ranges do not overwhelm the browser.
+            // Keep both range endpoints while evenly sampling the interior for stable chart payloads.
             val downsampledIds =
-                if (allIds.size <= 300) {
+                if (allIds.size <= MAX_SNAPSHOT_POINTS) {
                     allIds
                 } else {
-                    val step = allIds.size / 300
-                    allIds.filterIndexed { index, _ -> index % step == 0 }
+                    List(MAX_SNAPSHOT_POINTS) { sampleIndex ->
+                        val sourceIndex =
+                            (
+                                sampleIndex.toLong() * allIds.lastIndex.toLong() /
+                                    (MAX_SNAPSHOT_POINTS - 1).toLong()
+                                ).toInt()
+                        allIds[sourceIndex]
+                    }
                 }
 
             val snapshotRows =
@@ -241,6 +251,7 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
             val latestSnapshotTime =
                 PortfolioSnapshotTable
                     .select(PortfolioSnapshotTable.timestamp)
+                    .where { snapshotInRange }
                     .orderBy(PortfolioSnapshotTable.timestamp, SortOrder.DESC)
                     .limit(1)
                     .firstOrNull()
@@ -305,6 +316,7 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
             ActionLogTable
                 .selectAll()
                 .where { ActionLogTable.snapshotId inList snapshotIds }
+                .orderBy(ActionLogTable.id, SortOrder.ASC)
                 .groupBy { it[ActionLogTable.snapshotId] }
 
         return rows.map { row ->

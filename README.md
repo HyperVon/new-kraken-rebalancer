@@ -29,7 +29,7 @@ walkthrough of Dashboard, Settings, History, and safety modes
 | **Frontend**    | Server-side HTML (kotlinx.html DSL + HTMX), kotlinx-css DSL, Ktor SSE + Client-side Kotlin/JS          |
 | **API**         | Kraken REST API with HMAC-SHA512 authentication                                                        |
 | **Testing**     | Kotest 6.2.3, MockK 1.14.11, JaCoCo (95% instr/line/method, 90% branch), Karma/Istanbul (90/90/90/75)  |
-| **Build**       | Gradle 9.6.1 (Kotlin DSL), Spotless 8.8.0 + ktlint 1.7.1                                               |
+| **Build**       | Gradle 9.6.1 (Kotlin DSL), Spotless 8.9.0 + ktlint 1.7.1                                               |
 
 ---
 
