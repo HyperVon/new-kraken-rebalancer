@@ -96,6 +96,11 @@ Defaults in `KrakenServiceImpl`:
 Retry on `IOException`, `ResponseException`, and messages containing
 `Rate limit exceeded` or `Temporary lockout`.
 
+`AddOrder` is the safety exception: it uses `maxAttempts = 1`. A transport or
+response failure may occur after Kraken accepted the order, and `cl_ord_id`
+uniqueness is guaranteed only while an order remains open, so never re-POST an
+ambiguous AddOrder response. Journal it as unresolved and require reconciliation.
+
 - `retryWithFlow` tracks `attempt` (network / rate limit) and `lockoutAttempt`
   separately — lockout doubles 10s → 15m without consuming the 5 network attempts.
 - `queryPublic` uses `retryWithFlow` but no RateLimiter; private calls always

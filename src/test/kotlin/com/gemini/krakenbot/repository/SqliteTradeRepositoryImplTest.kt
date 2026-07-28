@@ -4,6 +4,7 @@ import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.config.DatabaseConfig
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderSide
+import com.gemini.krakenbot.model.OrderSubmissionState
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.model.TradeSource
@@ -939,6 +940,29 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
             }
         }
 
+        "unresolved live submissions survive retention pruning" {
+            runTest {
+                val pending =
+                    TradeRecord(
+                        timestamp = Instant.now().minus(100, ChronoUnit.DAYS),
+                        pair = Asset.BTC_USD_PAIR,
+                        side = OrderSide.BUY.name,
+                        symbol = Asset.BTC,
+                        volume = BigDecimal("0.01"),
+                        usdAmount = BigDecimal("500.00"),
+                        success = false,
+                        dryRun = false,
+                        clientOrderId = "74cf3df5-fe0c-4bd7-a884-b630701cfcd8",
+                        submissionState = OrderSubmissionState.UNCERTAIN,
+                    )
+                repository.saveTrade(pending)
+
+                repository.hasPendingSubmissions() shouldBe true
+                repository.pruneTradesOlderThan(Instant.now().minus(90, ChronoUnit.DAYS)) shouldBe 0
+                repository.hasPendingSubmissions() shouldBe true
+            }
+        }
+
         "updateTrade wraps non-IOException as IOException" {
             runTest {
                 val closedDb = DatabaseConfig.init(TestFixtures.MEMORY_)
@@ -1195,6 +1219,41 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
 
                 val remaining = repository.getTradesInRange(now.minusSeconds(1), now.plus(2, ChronoUnit.DAYS))
                 remaining.size shouldBe 2
+            }
+        }
+
+        "cleanupDuplicateTrades never deletes an unresolved submission" {
+            runTest {
+                val now = Instant.now().truncatedTo(ChronoUnit.MILLIS)
+                val unresolved =
+                    TradeRecord(
+                        timestamp = now,
+                        pair = TestFixtures.XBTUSD,
+                        side = TestFixtures.BUY,
+                        symbol = Asset.BTC,
+                        volume = BigDecimal("0.1"),
+                        usdAmount = BigDecimal("3000.00"),
+                        success = false,
+                        dryRun = false,
+                        price = BigDecimal("30000.00"),
+                        source = TradeSource.LOCAL_ESTIMATE,
+                        clientOrderId = "74cf3df5-fe0c-4bd7-a884-b630701cfcd8",
+                        submissionState = OrderSubmissionState.UNCERTAIN,
+                    )
+                repository.saveTrade(unresolved)
+                repository.saveTrade(
+                    unresolved.copy(
+                        pair = "XXBTZUSD",
+                        clientOrderId = null,
+                        submissionState = null,
+                    ),
+                )
+
+                repository.cleanupDuplicateTrades()
+
+                val remaining = repository.getTradesInRange(now.minusSeconds(1), now.plusSeconds(1))
+                remaining.size shouldBe 2
+                remaining.any { it.submissionState == OrderSubmissionState.UNCERTAIN } shouldBe true
             }
         }
     }

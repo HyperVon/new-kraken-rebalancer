@@ -11,6 +11,7 @@ import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderSide
+import com.gemini.krakenbot.model.OrderSubmissionState
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.PortfolioStats
 import com.gemini.krakenbot.model.SyncMetadataKeys
@@ -495,7 +496,46 @@ class TradeHistoryServiceTest : StringSpec() {
             }
         }
 
-        "CQ-10-1: reconciliation retains local order id when API fill omits it" {
+        "sync never clears an unresolved submission with an economics heuristic" {
+            runTest {
+                coEvery { repository.isHistorySeeded() } returns true
+                val submittedAt = Instant.ofEpochSecond(1700000000)
+                coEvery { repository.getLatestTradeTime() } returns submittedAt
+                val unresolved =
+                    TradeRecord(
+                        timestamp = submittedAt,
+                        pair = TestFixtures.XBTUSD,
+                        side = TestFixtures.BUY,
+                        symbol = Asset.BTC,
+                        volume = BigDecimal.ONE,
+                        usdAmount = BigDecimal.TEN,
+                        success = false,
+                        dryRun = false,
+                        price = BigDecimal.TEN,
+                        source = TradeSource.LOCAL_ESTIMATE,
+                        clientOrderId = "74cf3df5-fe0c-4bd7-a884-b630701cfcd8",
+                        submissionState = OrderSubmissionState.UNCERTAIN,
+                    )
+                coEvery { repository.getTradesInRange(any(), any()) } returns listOf(unresolved)
+                val similarFill =
+                    unresolved.copy(
+                        timestamp = submittedAt.plusSeconds(5),
+                        success = true,
+                        source = TradeSource.API_FILL,
+                        clientOrderId = null,
+                        submissionState = null,
+                    )
+                coEvery { krakenService.getTradeHistory(1700000000 - 300, 0) } returns listOf(similarFill)
+                coEvery { krakenService.getTradeHistory(1700000000 - 300, 50) } returns emptyList()
+
+                createService().syncTradesFromKraken()
+
+                coVerify(exactly = 0) { repository.updateTrade(unresolved, any()) }
+                coVerify(exactly = 1) { repository.saveTrade(similarFill) }
+            }
+        }
+
+        "CQ-10-1: reconciliation retains local Kraken order txid when API fill omits it" {
             runTest {
                 coEvery { repository.isHistorySeeded() } returns true
                 val latestTime = Instant.ofEpochSecond(1700000000)

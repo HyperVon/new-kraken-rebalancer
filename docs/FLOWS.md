@@ -111,8 +111,12 @@ sequenceDiagram
     User->>API: POST /settings (new settings)
     API->>CS: updateConfig(newConfig)
     CS->>CS: validate & save to disk atomically
-    note over CS: tryEmit(settings)<br/>guaranteed to succeed<br/>(DROP_OLDEST strategy)
-    CS-->>PM: SharedFlow emits new Settings
+    alt no active execution session
+        note over CS: tryEmit(settings)<br/>guaranteed to succeed<br/>(DROP_OLDEST strategy)
+        CS-->>PM: SharedFlow emits new Settings
+    else active execution session
+        CS->>CS: stage runtime config until session exits
+    end
 
     note over PM: collectLatest cancels the<br/>sleeping delay() in the active<br/>loop and immediately restarts<br/>with the new settings
     PM->>PM: restart loop with new settings
@@ -122,7 +126,16 @@ sequenceDiagram
 
 - `replay = 1` means `PortfolioManager` immediately gets the current config the moment it subscribes on startup — no race condition on boot.
 - Config’s `MutableSharedFlow` uses **no** `extraBufferCapacity` (default 0) with `DROP_OLDEST`; snapshot flow uses `extraBufferCapacity = 16` so slow SSE clients do not stall emitters.
-- `collectLatest` (not `collect`) is used so that a settings change during a long loop `delay()` takes effect immediately, without waiting for the delay to expire.
+- `collectLatest` (not `collect`) is used so that a settings change during a long loop `delay()`
+  takes effect immediately. During an active rebalance session, config saves/reloads persist to disk
+  but defer runtime publication until the session exits; unrelated coroutine cancellation still
+  propagates normally.
+- Real-live order placement writes `PENDING` plus the deterministic `cl_ord_id` before AddOrder.
+  Definite exchange rejections resolve the row immediately; transport/response failures become
+  `UNCERTAIN` and immediately abort the remaining batch. An unresolved row is excluded from
+  heuristic fill reconciliation, duplicate cleanup, and retention pruning: an operator must verify
+  Kraken open orders, closed orders, and fills before clearing its state in SQLite. Absence from
+  trade history alone is never treated as proof of rejection.
 
 ---
 

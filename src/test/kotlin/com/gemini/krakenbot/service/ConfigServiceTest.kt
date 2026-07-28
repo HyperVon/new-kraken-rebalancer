@@ -111,6 +111,27 @@ class ConfigServiceTest : StringSpec() {
             readBack.kraken.privateKey.value shouldBe "s"
         }
 
+        "execution session defers both updates and file reloads until the session ends" {
+            val originalConfig = configService.getConfig()
+            val updatedConfig = originalConfig.copy(
+                settings = originalConfig.settings.copy(loopDelaySeconds = 120L),
+            )
+            val reloadedConfig = originalConfig.copy(
+                settings = originalConfig.settings.copy(loopDelaySeconds = 180L),
+            )
+
+            configService.beginExecutionSession()
+            configService.updateConfig(updatedConfig)
+            configService.getConfig() shouldBe originalConfig
+
+            objectMapper.writeValue(tempFile, reloadedConfig)
+            configService.loadConfig()
+            configService.getConfig() shouldBe originalConfig
+
+            configService.endExecutionSession()
+            configService.getConfig().settings.loopDelaySeconds shouldBe 180L
+        }
+
         "loadConfig_AssignsMissingColors" {
             configService.loadConfig()
             val colors = configService.getConfig().allocations.map { it.color }

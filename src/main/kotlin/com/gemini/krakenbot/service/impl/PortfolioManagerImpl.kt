@@ -53,8 +53,8 @@ class PortfolioManagerImpl(
         }
 
         try {
-            // Hot SharedFlow + collectLatest: a mid-cycle config change cancels the current
-            // rebalance/delay and restarts the loop with the new settings.
+            // Hot SharedFlow + collectLatest: config changes restart an idle delay immediately.
+            // During a rebalance, ConfigService defers publication until the execution session exits.
             configService.watchConfigChanges().collectLatest { settings ->
                 while (isRunning) {
                     try {
@@ -87,6 +87,7 @@ class PortfolioManagerImpl(
     }
 
     internal suspend fun performRebalanceCycle(): PortfolioSnapshot? {
+        configService.beginExecutionSession()
         val cycleId = UUID.randomUUID().toString()
         MDC.put(CYCLE_ID_MDC_KEY, cycleId)
         try {
@@ -98,6 +99,7 @@ class PortfolioManagerImpl(
             }
         } finally {
             MDC.remove(CYCLE_ID_MDC_KEY)
+            configService.endExecutionSession()
         }
     }
 

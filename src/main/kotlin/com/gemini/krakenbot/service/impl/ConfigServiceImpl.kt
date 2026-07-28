@@ -21,6 +21,9 @@ class ConfigServiceImpl(
     private val objectMapper: ObjectMapper,
     private val configFilePath: String = DEFAULT_CONFIG_FILE_PATH,
 ) : ConfigService {
+    private var executionSessionDepth = 0
+    private var pendingConfig: AppConfig? = null
+
     @Volatile
     private lateinit var appConfig: AppConfig
 
@@ -47,8 +50,7 @@ class ConfigServiceImpl(
         val parsedConfig = parseConfig(resolveEnvVars(rawContent))
         val validatedConfig = validateAndNormalize(parsedConfig)
         persistedKrakenCredentials = rawConfig.kraken
-        appConfig = validatedConfig
-        _configFlow.tryEmit(validatedConfig.settings)
+        publishOrStage(validatedConfig)
     }
 
     override fun getConfig(): AppConfig = appConfig
@@ -56,15 +58,46 @@ class ConfigServiceImpl(
     @Synchronized
     override fun updateConfig(newConfig: AppConfig) {
         val validatedConfig = validateAndNormalize(newConfig)
-        val previousKraken = appConfig.kraken
+        val previousKraken = pendingConfig?.kraken ?: appConfig.kraken
         val persistedConfig = configForPersistence(validatedConfig, previousKraken)
         writeConfigAtomically(persistedConfig)
-        appConfig = validatedConfig
+        if (executionSessionDepth > 0) {
+            pendingConfig = validatedConfig
+        } else {
+            appConfig = validatedConfig
+        }
         persistedKrakenCredentials = persistedConfig.kraken
-        _configFlow.tryEmit(validatedConfig.settings)
+        if (executionSessionDepth == 0) _configFlow.tryEmit(validatedConfig.settings)
+    }
+
+    @Synchronized
+    override fun beginExecutionSession() {
+        executionSessionDepth++
+    }
+
+    @Synchronized
+    override fun endExecutionSession() {
+        check(executionSessionDepth > 0) { "No execution session is active." }
+        executionSessionDepth--
+        if (executionSessionDepth == 0) {
+            pendingConfig?.let { config ->
+                appConfig = config
+                pendingConfig = null
+                _configFlow.tryEmit(config.settings)
+            }
+        }
     }
 
     override fun watchConfigChanges(): Flow<Settings> = _configFlow.asSharedFlow()
+
+    private fun publishOrStage(config: AppConfig) {
+        if (executionSessionDepth > 0) {
+            pendingConfig = config
+        } else {
+            appConfig = config
+            _configFlow.tryEmit(config.settings)
+        }
+    }
 
     private fun readRawConfigContent(): String {
         val configFile = File(configFilePath)

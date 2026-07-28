@@ -100,7 +100,9 @@ class TradeHistorySyncService(
                     // tolerances so we update the local row instead of inserting a second History trade.
                     val matchingLocalTrade =
                         originalLocalTrades.find { local ->
-                            local.isLocalEstimate() && local.isMatchingApiTrade(apiTrade, allocations)
+                            local.submissionState == null &&
+                                local.isLocalEstimate() &&
+                                local.isMatchingApiTrade(apiTrade, allocations)
                         }
 
                     if (matchingLocalTrade != null) {

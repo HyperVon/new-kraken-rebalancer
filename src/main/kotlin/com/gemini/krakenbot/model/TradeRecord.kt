@@ -25,7 +25,14 @@ data class TradeRecord(
     val cycleId: String? = null,
     val orderTxid: String? = null,
     val tradeId: String? = null,
+    val clientOrderId: String? = null,
+    val submissionState: OrderSubmissionState? = null,
 )
+
+enum class OrderSubmissionState {
+    PENDING,
+    UNCERTAIN,
+}
 
 /**
  * Explicit [source] when set; otherwise infer only the unambiguous local-estimate shape for DB

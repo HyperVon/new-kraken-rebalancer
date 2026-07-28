@@ -2,6 +2,7 @@ package com.gemini.krakenbot.repository.impl
 
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderSide
+import com.gemini.krakenbot.model.OrderSubmissionState
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.model.TradeRecord
@@ -24,6 +25,7 @@ import org.jetbrains.exposed.v1.core.eq
 import org.jetbrains.exposed.v1.core.greaterEq
 import org.jetbrains.exposed.v1.core.inList
 import org.jetbrains.exposed.v1.core.isNotNull
+import org.jetbrains.exposed.v1.core.isNull
 import org.jetbrains.exposed.v1.core.less
 import org.jetbrains.exposed.v1.core.lessEq
 import org.jetbrains.exposed.v1.core.max
@@ -68,6 +70,8 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
         this[TradeTable.cycleId] = trade.cycleId
         this[TradeTable.orderTxid] = trade.orderTxid
         this[TradeTable.tradeId] = trade.tradeId
+        this[TradeTable.clientOrderId] = trade.clientOrderId
+        this[TradeTable.submissionState] = trade.submissionState?.name
     }
 
     override suspend fun save(history: List<PortfolioSnapshot>) {
@@ -118,6 +122,16 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
                 it.applyTradeFields(newTrade)
             }
         }
+    }
+
+    override suspend fun hasPendingSubmissions(): Boolean = database.readTransactionIO {
+        TradeTable
+            .selectAll()
+            .where {
+                TradeTable.submissionState.isNotNull() and
+                    (TradeTable.dryRun eq false)
+            }
+            .any()
     }
 
     override suspend fun getSnapshotsInRange(from: Instant, to: Instant): List<PortfolioSnapshot> =
@@ -374,6 +388,8 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
         cycleId = row[TradeTable.cycleId],
         orderTxid = row[TradeTable.orderTxid],
         tradeId = row[TradeTable.tradeId],
+        clientOrderId = row[TradeTable.clientOrderId],
+        submissionState = row[TradeTable.submissionState]?.let(OrderSubmissionState::valueOf),
     )
 
     override suspend fun getLatestTradeTime(): Instant? = database.readTransactionIO {
@@ -437,13 +453,16 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
     override suspend fun pruneTradesOlderThan(cutoff: Instant): Int =
         database.safeTransactionIO(log, "Failed to prune old trades") {
             val cutoffMillis = cutoff.toEpochMilli()
-            TradeTable.deleteWhere { timestamp less cutoffMillis }
+            TradeTable.deleteWhere {
+                (timestamp less cutoffMillis) and submissionState.isNull()
+            }
         }
 
     override suspend fun cleanupDuplicateTrades() {
         database.safeTransactionIO(log, "Failed to cleanup duplicate trades") {
             val allTradeRows = TradeTable.selectAll().orderBy(TradeTable.timestamp, SortOrder.ASC).toList()
             val allRecords = allTradeRows.map { buildTradeFromRow(it) }
+                .filter { it.submissionState == null }
             val toDelete = TradeDeduplicator.findDuplicateTradeIds(allRecords)
 
             if (toDelete.isNotEmpty()) {

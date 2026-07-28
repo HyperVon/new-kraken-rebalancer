@@ -10,6 +10,7 @@ sealed interface OrderResult {
     val success: Boolean
     val errorMessage: String?
     val orderTxid: String?
+    val submissionUncertain: Boolean
 
     companion object {
         operator fun invoke(
@@ -20,6 +21,7 @@ sealed interface OrderResult {
             dryRun: Boolean = false,
             errorMessage: String? = null,
             orderTxid: String? = null,
+            submissionUncertain: Boolean = false,
         ): OrderResult = if (success) {
             Success(pair, side, volume, dryRun, orderTxid)
         } else {
@@ -30,6 +32,7 @@ sealed interface OrderResult {
                 dryRun,
                 errorMessage ?: "Unknown error",
                 orderTxid,
+                submissionUncertain,
             )
         }
     }
@@ -43,6 +46,7 @@ sealed interface OrderResult {
     ) : OrderResult {
         override val success: Boolean get() = true
         override val errorMessage: String? get() = null
+        override val submissionUncertain: Boolean get() = false
     }
 
     data class Failure(
@@ -52,6 +56,7 @@ sealed interface OrderResult {
         override val dryRun: Boolean = false,
         override val errorMessage: String,
         override val orderTxid: String? = null,
+        override val submissionUncertain: Boolean = false,
     ) : OrderResult {
         override val success: Boolean get() = false
     }
