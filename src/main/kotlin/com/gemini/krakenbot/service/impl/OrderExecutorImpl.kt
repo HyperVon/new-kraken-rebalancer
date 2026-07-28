@@ -69,6 +69,11 @@ class OrderExecutorImpl(
         actionLog: MutableList<String>,
         cycleId: String,
     ) {
+        if (!settings.dryRun && tradeHistoryService.hasPendingSubmissions()) {
+            log.error("Refusing live orders while an unresolved submission intent exists")
+            actionLog.add("ERROR: Live orders blocked pending exchange reconciliation")
+            return
+        }
         // Pin live vs simulation for the whole sell→buy sequence; pass settings.dryRun into
         // each placement so a mid-cycle config flip cannot change backend or dry-run mode.
         krakenService.withStableBackend { backend ->

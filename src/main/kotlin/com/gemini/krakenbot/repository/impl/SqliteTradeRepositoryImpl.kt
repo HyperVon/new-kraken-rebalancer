@@ -120,6 +120,13 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
         }
     }
 
+    override suspend fun hasPendingSubmissions(): Boolean = database.readTransactionIO {
+        TradeTable
+            .selectAll()
+            .where { TradeTable.errorMessage.isNotNull() }
+            .any { row -> row[TradeTable.errorMessage]?.startsWith("SUBMISSION_PENDING:") == true }
+    }
+
     override suspend fun getSnapshotsInRange(from: Instant, to: Instant): List<PortfolioSnapshot> =
         database.readTransactionIO {
             val allIds =

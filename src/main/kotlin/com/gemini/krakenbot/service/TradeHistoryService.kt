@@ -19,6 +19,7 @@ interface TradeHistoryService {
 
     suspend fun saveTrade(trade: TradeRecord): Int
     suspend fun updateTrade(oldTrade: TradeRecord, newTrade: TradeRecord)
+    suspend fun hasPendingSubmissions(): Boolean
 
     suspend fun getSnapshotsInRange(from: Instant, to: Instant): List<PortfolioSnapshot>
 

@@ -6,6 +6,9 @@ import kotlinx.coroutines.flow.Flow
 import java.io.IOException
 
 interface ConfigService {
+    fun beginExecutionSession()
+    fun endExecutionSession()
+
     @Throws(IOException::class)
     fun loadConfig()
 

@@ -3,10 +3,8 @@ package com.gemini.krakenbot.service.impl
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.service.*
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import org.slf4j.MDC
 import java.io.IOException
@@ -71,7 +69,7 @@ class PortfolioManagerImpl(
                         } catch (e: Exception) {
                             log.error("Failed to synchronize historical trades during cycle", e)
                         }
-                        withContext(NonCancellable) { performRebalanceCycle() }
+                        performRebalanceCycle()
                     } catch (e: CancellationException) {
                         // Cancellation drives collectLatest restarts and shutdown; never treat it
                         // as a cycle error, or a config change would leave the old loop running.
@@ -89,6 +87,7 @@ class PortfolioManagerImpl(
     }
 
     internal suspend fun performRebalanceCycle(): PortfolioSnapshot? {
+        configService.beginExecutionSession()
         val cycleId = UUID.randomUUID().toString()
         MDC.put(CYCLE_ID_MDC_KEY, cycleId)
         try {
@@ -100,6 +99,7 @@ class PortfolioManagerImpl(
             }
         } finally {
             MDC.remove(CYCLE_ID_MDC_KEY)
+            configService.endExecutionSession()
         }
     }
 
