@@ -106,7 +106,8 @@ In this phase, the system builds a complete view of the current portfolio state.
    assets.
 3. **Calculate Valuation**:
     - Calculates the USD value of every asset (`Balance * Price`).
-    - Sums these values to determine the **Total Portfolio Value**.
+    - Rounds each displayed asset value to USD scale, but sums the raw values and
+      rounds the **Total Portfolio Value** only once.
 4. **Price safety**: If any non-USD configured asset is missing a ticker price or
    the resolved price is zero, the cycle **aborts** before orders are generated
    (`Result.Failure`) to avoid erroneous trades.
@@ -130,6 +131,8 @@ Normally, the target value is `Total Portfolio Value * Target %`. However, the s
    zero.
 2. **Drawdown Calculation**:
    `Drawdown % = (ATH - Current Value) / ATH * 100`
+   The numerator is multiplied by 100 before division so the result retains all
+   four internal percentage decimal places.
 3. **Fiat Deployment Percentage**:
    Based on the configured `fiatMaxDrawdown` (e.g., 30%) and `fiatDeploymentExponent` (e.g., 1.0):
    `Deployment % = (Drawdown % / Max Drawdown %) ^ Exponent` (Capped at 100%)
@@ -151,7 +154,10 @@ Normally, the target value is `Total Portfolio Value * Target %`. However, the s
 4. **Target Adjustment**:
    The target percentage for USD is reduced by the Deployment %:
    `Effective USD Target = Base USD Target * (1 - Deployment %)`
-   The removed allocation is redistributed proportionally to the crypto assets, ensuring the total remains 100%.
+   The removed allocation is redistributed proportionally to crypto assets,
+   ensuring the total remains 100%. If there is no positive non-USD target to
+   receive that allocation, fiat deployment is a no-op and the configured USD
+   target remains unchanged.
 
 Using these effective targets, the **Ideal Value** for each asset is calculated.
 
@@ -160,7 +166,9 @@ Using these effective targets, the **Ideal Value** for each asset is calculated.
 The difference between current and target value is calculated:
 `Deviation (USD) = Current Value - Target Value`
 `Deviation (%) = Deviation (USD) / Target Value * 100` (signed relative
-deviation). When the target value is `$0` but the holding still has a
+deviation). The deviation numerator is multiplied by 100 before division so
+trigger math retains `SCALE_PERCENT` precision. When the target value is `$0`
+but the holding still has a
 positive value, `Deviation (%)` is treated as **100%** so a zero-target
 position can still clear the percent trigger (paired with the dust gate).
 

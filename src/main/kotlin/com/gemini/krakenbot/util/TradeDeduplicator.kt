@@ -14,14 +14,17 @@ import com.gemini.krakenbot.model.isSettledApiFill
  */
 object TradeDeduplicator {
     fun findDuplicateTradeIds(records: List<TradeRecord>): List<Int> {
-        val toDelete = mutableListOf<Int>()
+        val toDelete = linkedSetOf<Int>()
         val sorted = records.sortedBy { it.timestamp }
 
         for (i in sorted.indices) {
             val record1 = sorted[i]
+            if (record1.id?.let { it in toDelete } == true) continue
             for (j in i + 1 until sorted.size) {
+                if (record1.id?.let { it in toDelete } == true) break
                 val record2 = sorted[j]
                 val id2 = record2.id ?: continue
+                if (id2 in toDelete) continue
                 val diff = record2.timestamp.toEpochMilli() - record1.timestamp.toEpochMilli()
                 // Sorted ascending: once the gap exceeds 5 minutes, later j cannot match record1.
                 if (diff > 300_000) break
@@ -46,6 +49,6 @@ object TradeDeduplicator {
                 }
             }
         }
-        return toDelete.distinct()
+        return toDelete.toList()
     }
 }

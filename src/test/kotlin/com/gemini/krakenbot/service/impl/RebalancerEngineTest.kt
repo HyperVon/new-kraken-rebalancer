@@ -4,6 +4,7 @@ import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.Result
+import com.gemini.krakenbot.service.PortfolioValues
 import com.gemini.krakenbot.util.ActionLogFormatter
 import com.gemini.krakenbot.view.util.ViewText
 import io.kotest.core.spec.IsolationMode
@@ -54,6 +55,15 @@ class RebalancerEngineTest : StringSpec() {
             dd.shouldBeEqualComparingTo(BigDecimal("20.00"))
         }
 
+        "calculateDrawdown retains four decimal places for repeating ratios" {
+            val dd = RebalancerEngine.calculateDrawdown(
+                totalPortfolioValueUSD = BigDecimal("2.00"),
+                ath = BigDecimal("3.00"),
+            )
+
+            dd.shouldBeEqualComparingTo(BigDecimal("33.3333"))
+        }
+
         "calculateFiatDeployment scales correctly with drawdown exponent" {
             val dd = BigDecimal("10.00")
             val deployment = RebalancerEngine.calculateFiatDeployment(dd, settings)
@@ -64,6 +74,16 @@ class RebalancerEngineTest : StringSpec() {
             val deployment = BigDecimal("50.00")
             val effectiveUsd = RebalancerEngine.calculateEffectiveUsdTarget(deployment, allocations)
             effectiveUsd.shouldBeEqualComparingTo(BigDecimal("10.00"))
+        }
+
+        "calculateEffectiveUsdTarget leaves USD unchanged when no crypto target can receive deployment" {
+            listOf(
+                listOf(Allocation(Asset.USD, 100.0)),
+                listOf(Allocation(Asset.BTC, 0.0), Allocation(Asset.USD, 100.0)),
+            ).forEach { noCryptoTargetAllocations ->
+                RebalancerEngine.calculateEffectiveUsdTarget(BigDecimal("50.00"), noCryptoTargetAllocations)
+                    .shouldBeEqualComparingTo(BigDecimal("100.00"))
+            }
         }
 
         "calculateCryptoScaleFactor redistributes freed USD to crypto allocations" {
@@ -82,6 +102,22 @@ class RebalancerEngineTest : StringSpec() {
             val result = RebalancerEngine.calculatePortfolioValues(balances, prices, allocations)
             val failure = result.shouldBeInstanceOf<Result.Failure<*>>()
             failure.exception.message shouldBe "${ViewText.PRICE_NOT_FOUND_PREFIX}${Asset.ETH}"
+        }
+
+        "calculatePortfolioValues accumulates raw values before rounding the total once" {
+            val tinyAllocations = listOf(
+                Allocation(Asset.BTC, 50.0),
+                Allocation(Asset.ETH, 50.0),
+            )
+            val result = RebalancerEngine.calculatePortfolioValues(
+                balances = mapOf(Asset.BTC to BigDecimal("0.004"), Asset.ETH to BigDecimal("0.004")),
+                prices = mapOf(Asset.BTC to BigDecimal.ONE, Asset.ETH to BigDecimal.ONE),
+                allocations = tinyAllocations,
+            ).shouldBeInstanceOf<Result.Success<PortfolioValues>>().value
+
+            result.currentValuesUSD.getValue(Asset.BTC).shouldBeEqualComparingTo(BigDecimal("0.00"))
+            result.currentValuesUSD.getValue(Asset.ETH).shouldBeEqualComparingTo(BigDecimal("0.00"))
+            result.totalValueUSD.shouldBeEqualComparingTo(BigDecimal("0.01"))
         }
 
         "analyzeDeviations sells overweight crypto when both gates fire" {

@@ -42,9 +42,10 @@ wrap their full bodies in `DynamicKrakenService.withStableBackend` when the inje
 and writes in the cycle/sync use one backend.
 
 Normal settings saves/reloads are also staged by `ConfigServiceImpl` while an
-execution session is active and publish when the cycle exits. The backend pin
-remains a defense-in-depth invariant for concurrent callers, custom/test config
-providers, and any future config path that does not share that session boundary.
+execution session is active and publish when the cycle or standalone paginated
+trade sync exits. The backend pin remains a defense-in-depth invariant for
+concurrent callers, custom/test config providers, and any future config path
+that does not share that session boundary.
 
 `OrderExecutor.executeOrders` also wraps sell→buy in `withStableBackend`. Nested
 calls **reuse the outer pin** (they do not re-resolve), so OrderExecutor cannot
@@ -79,7 +80,8 @@ cannot change placement mode. Outside a stable block, each call still re-reads
 ## SimulatedKrakenService
 
 - `SimulatedKrakenService`: MARKET orders only; synchronized lazy balance/price
-  init; random-walk prices per ticker fetch.
+  init; random-walk prices per ticker fetch; a coroutine `Mutex` makes each
+  non-dry-run balance check, mutation, and trade append atomic.
 - Seeding: historical snapshots (~15 days) and simulated trades when DB empty +
   simulation enabled (see trade-history-sync).
 - Still honors `dryRun` (no balance mutation on orders).

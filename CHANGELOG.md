@@ -6,6 +6,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.15.5] - 2026-07-28
+
+### Added
+
+- **Quality coverage**: Hardened evaluation precision assertions, raw-value
+  portfolio rounding, USD-only drawdown behavior, clock rollback, concurrent
+  emulator orders, sync lifecycle, order-ID reconciliation, dedupe windows,
+  and startup cancellation handling.
+
+### Fixed
+
+- **Rebalancing precision**: Percentage math now retains four decimal places
+  through trigger comparisons, and USD-only portfolios report fiat deployment
+  as a no-op because no crypto target can receive released cash.
+- **Exchange safety**: Rate-limit accounting no longer inflates after a system
+  clock rollback, and simulated concurrent orders settle balances atomically.
+- **History integrity**: Paginated sync holds one config and credential version,
+  authoritative order transaction IDs win reconciliation, and doomed duplicate
+  rows cannot transitively delete legitimate later trades.
+
 ## [6.15.4] - 2026-07-27
 
 ### Changed

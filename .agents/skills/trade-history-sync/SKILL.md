@@ -41,10 +41,18 @@ Primary types: `TradeHistoryService` façade → `TradeHistorySyncService` /
   (`sync_offset` / `sync_total`) and first-sync completion marking.
 - Paginated cold Flow, page size **50**.
 - Skip live Kraken sync when `!simulation && !hasValidCredentials()`.
+- A real sync brackets pagination with a `ConfigService` execution session in
+  addition to `withStableBackend`; settings and credentials captured at entry
+  remain published until all pages finish. Throttled and invalid-credential
+  no-ops do not open a session, and cancellation/failure closes it in `finally`.
 - Reconciliation candidates must be effective local estimates (explicit
   `LOCAL_ESTIMATE` or legacy inferred estimate shape). Persisted `API_FILL`
   rows are never overwritten; an exact persisted API-fill identity is treated
   as already synchronized.
+- When the API fill and a local estimate both have nonblank `orderTxid`, an
+  exact ID match wins before newest-first economics heuristics. ID-less and
+  legacy rows retain the tolerance fallback, but conflicting nonblank IDs never
+  reconcile.
 - Rows with `submissionState` (`PENDING` / `UNCERTAIN`) are unresolved live
   intents, not reconciliation candidates. They are also excluded from duplicate
   cleanup and age-based trade pruning. Never infer rejection from an empty
@@ -68,7 +76,7 @@ Window: **300_000 ms** (5 minutes).
 | :--- | :--- |
 | Pair alias | Same symbol+side+volume, **different** pair strings (e.g. `XBTUSD` vs `XXBTZUSD`) |
 | Local estimate vs API | Same symbol+side+pair within **10_000 ms**; volume/USD within **1%**; treat as duplicate only if fee-rate differs by ≥ **0.001** (0.1 pp). Prefer deleting the row with `TradeSource.LOCAL_ESTIMATE` (or legacy inferred estimate) when paired with `API_FILL`. |
-| Cleanup | Later record IDs deleted via `cleanupDuplicateTrades()` |
+| Cleanup | Later record IDs deleted via `cleanupDuplicateTrades()`; a row already selected for deletion cannot anchor another comparison |
 
 ## Reconcile dry-run vs live
 

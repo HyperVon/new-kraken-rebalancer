@@ -91,11 +91,12 @@ object RebalancerEngine {
         if (ath > BigDecimal.ZERO && totalPortfolioValueUSD < ath) {
             val diff = ath.subtract(totalPortfolioValueUSD)
             diff
+                .multiply(HUNDRED)
                 .divide(
                     ath,
                     SCALE_PERCENT,
                     RoundingMode.HALF_UP,
-                ).multiply(HUNDRED)
+                )
         } else {
             BigDecimal.ZERO
         }
@@ -124,9 +125,10 @@ object RebalancerEngine {
         val baseUsdTarget = allocations
             .filter { it.symbol.isUsd }
             .sumOf { it.targetPercent.toBigDecimal() }
+        val hasNonUsdTarget = allocations.any { !it.symbol.isUsd && it.targetPercent > 0.0 }
 
-        // Shrink configured USD target by Deploy% so cash is freed for crypto on drawdowns.
-        return if (fiatDeploymentPct > BigDecimal.ZERO) {
+        // Shrink configured USD target only when a positive crypto target can receive the freed allocation.
+        return if (fiatDeploymentPct > BigDecimal.ZERO && hasNonUsdTarget) {
             val factor =
                 BigDecimal.ONE.subtract(
                     fiatDeploymentPct.divide(HUNDRED, SCALE_PERCENT, RoundingMode.HALF_UP),

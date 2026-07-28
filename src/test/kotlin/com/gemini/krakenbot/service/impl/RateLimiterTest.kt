@@ -117,6 +117,23 @@ class RateLimiterTest : StringSpec() {
             }
         }
 
+        "backward clock movement does not inflate the counter" {
+            runTest {
+                var nowMs = 1_000_000L
+                val limiter = RateLimiter(
+                    safeLimit = 12.0,
+                    decayRate = 1.0,
+                    clock = { nowMs },
+                )
+                limiter.acquireWithCost(5.0)
+
+                nowMs -= 60_000L
+
+                limiter.getCurrentCounter() shouldBe 5.0
+                limiter.acquireWithCost(1.0) shouldBe 6.0
+            }
+        }
+
         "acquireWithCost does not hold mutex across delay (no HOL blocking)" {
             runTest {
                 val safeLimit = 2.0

@@ -220,6 +220,9 @@ sequenceDiagram
   have elapsed since `lastSyncTime` (5-minute throttle).
 - Live sync is skipped when credentials are invalid and `simulation` is false;
   simulation mode never hits Kraken for history.
+- A non-no-op sync opens a nested-safe `ConfigService` execution session before
+  collecting pages and closes it in `finally`. Config and credential updates
+  therefore publish only after the whole account pagination finishes.
 - Incremental sync uses a **300-second overlap** window from the **effective**
   watermark (`latestTradeTime`, falling back to `sync_watermark_epoch_sec` when
   there are no non-dry-run fills) so fills near the cutoff are not missed and
@@ -227,6 +230,9 @@ sequenceDiagram
 - Within one sync pass, API fills are fingerprinted so a pagination window shift
   cannot double-insert the same fill; dry-run locals never match API fills
   (`isMatchingApiTrade` returns false when `local.dryRun`).
+- Reconciliation first prefers an exact nonblank `orderTxid` match, then falls
+  back to the existing economics tolerance for ID-less/legacy rows; conflicting
+  nonblank IDs never reconcile.
 - Processing happens page-by-page (page size **50**), keeping memory constant
   regardless of how many total trades exist.
 - `emit()` naturally suspends until the collector finishes, meaning Kraken's API

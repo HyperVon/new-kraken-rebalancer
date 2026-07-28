@@ -181,6 +181,37 @@ class PortfolioManagerDrawdownTest : StringSpec() {
             }
         }
 
+        "USD-only drawdown reports zero deployment and keeps the full USD target" {
+            runTest {
+                coEvery { portfolioStatsRepository.load() } returns PortfolioStats(BigDecimal("1000.00"))
+                every { configService.getConfig() } returns
+                    AppConfig(
+                        kraken = KrakenCredentials("k", "s"),
+                        settings =
+                        Settings(
+                            loopDelaySeconds = 60L,
+                            deviationTriggerPercent = 2.0,
+                            dustThresholdUSD = 1.0,
+                            dryRun = false,
+                            fiatMaxDrawdown = 50.0,
+                            fiatDeploymentExponent = 1.0,
+                        ),
+                        allocations = listOf(Allocation(Asset.USD, 100.0)),
+                    )
+                krakenService.pricesSupplier = { emptyMap() }
+                krakenService.balanceSupplier = { mapOf(Asset.USD to 500.0) }
+
+                portfolioManager.performRebalanceCycle()
+
+                val snapshot = slot<PortfolioSnapshot>()
+                coVerify { tradeHistoryService.addSnapshot(capture(snapshot)) }
+                snapshot.captured.drawdownPercent.shouldBeEqualComparingTo(BigDecimal("50.0000"))
+                snapshot.captured.fiatDeploymentPercent.shouldBeEqualComparingTo(BigDecimal.ZERO)
+                snapshot.captured.effectiveUsdTargetPercent.shouldBeEqualComparingTo(BigDecimal("100.0"))
+                krakenService.executedOrders.size shouldBe 0
+            }
+        }
+
         "corrupt ATH migration aborts analysis before saving a lower ATH or planning orders" {
             runTest {
                 val statsFile = File("test-ath-fail-closed-stats.json")

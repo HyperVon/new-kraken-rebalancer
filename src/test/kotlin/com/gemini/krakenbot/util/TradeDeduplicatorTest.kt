@@ -91,6 +91,33 @@ class TradeDeduplicatorTest : StringSpec() {
             TradeDeduplicator.findDuplicateTradeIds(listOf(record1, record2)).isEmpty() shouldBe true
         }
 
+        "CQ-11-L6: a doomed pair-alias row does not bridge trades outside the five-minute window" {
+            val now = Instant.now()
+            val first = TradeRecord(
+                timestamp = now,
+                pair = "XBTUSD",
+                side = "BUY",
+                symbol = "BTC",
+                volume = BigDecimal.ONE,
+                usdAmount = BigDecimal("50000.00"),
+                success = true,
+                dryRun = false,
+                id = 201,
+            )
+            val bridge = first.copy(
+                timestamp = now.plusSeconds(4 * 60),
+                pair = "XXBTZUSD",
+                id = 202,
+            )
+            val legitimateLaterTrade = first.copy(
+                timestamp = now.plusSeconds(8 * 60),
+                id = 203,
+            )
+
+            TradeDeduplicator.findDuplicateTradeIds(listOf(first, bridge, legitimateLaterTrade)) shouldContainExactly
+                listOf(202)
+        }
+
         "CQ-10-L6: should keep pair-alias API fills with distinct Kraken trade IDs" {
             val now = Instant.now()
             val firstFill = TradeRecord(

@@ -39,13 +39,23 @@ class TradeHistorySyncService(
             return
         }
 
-        val config = configService.getConfig()
-        if (!config.settings.simulation && !config.kraken.hasValidCredentials()) {
+        val preflightConfig = configService.getConfig()
+        if (!preflightConfig.settings.simulation && !preflightConfig.kraken.hasValidCredentials()) {
             log.warn("Kraken API key is blank or placeholder. Skipping trade history synchronization.")
             return
         }
 
-        krakenService.withStableBackend { syncTradesFromKrakenPinned(config) }
+        configService.beginExecutionSession()
+        try {
+            val pinnedConfig = configService.getConfig()
+            if (!pinnedConfig.settings.simulation && !pinnedConfig.kraken.hasValidCredentials()) {
+                log.warn("Kraken API key became unavailable before synchronization started. Skipping synchronization.")
+                return
+            }
+            krakenService.withStableBackend { syncTradesFromKrakenPinned(pinnedConfig) }
+        } finally {
+            configService.endExecutionSession()
+        }
     }
 
     private suspend fun syncTradesFromKrakenPinned(config: AppConfig) {
@@ -96,14 +106,23 @@ class TradeHistorySyncService(
                         continue
                     }
 
-                    // Local row has requested economics; API has the settle. Match within
-                    // tolerances so we update the local row instead of inserting a second History trade.
-                    val matchingLocalTrade =
-                        originalLocalTrades.find { local ->
-                            local.submissionState == null &&
-                                local.isLocalEstimate() &&
-                                local.isMatchingApiTrade(apiTrade, allocations)
+                    // A Kraken order id is authoritative when both sides have one. Otherwise use
+                    // economics tolerances so legacy/id-less rows can still reconcile.
+                    val localEstimates =
+                        originalLocalTrades.filter { local ->
+                            local.submissionState == null && local.isLocalEstimate()
                         }
+                    val apiOrderTxid = apiTrade.orderTxid?.takeIf { it.isNotBlank() }
+                    val matchingLocalTrade =
+                        apiOrderTxid?.let { txid ->
+                            localEstimates.find { local -> local.orderTxid?.takeIf { it.isNotBlank() } == txid }
+                        } ?: localEstimates
+                            .asSequence()
+                            .filter { local ->
+                                apiOrderTxid == null || local.orderTxid.isNullOrBlank()
+                            }.find { local ->
+                                local.isMatchingApiTrade(apiTrade, allocations)
+                            }
 
                     if (matchingLocalTrade != null) {
                         if (matchingLocalTrade != apiTrade) {

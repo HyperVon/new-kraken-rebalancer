@@ -1300,21 +1300,43 @@ class EvaluationScenariosTest : StringSpec() {
                         mockConfig,
                         statsRepo,
                     )
-                val executor =
-                    OrderExecutorImpl(fakeKraken, tradeHistoryService)
+                val mockHistory = mockk<TradeHistoryService>(relaxed = true)
+                val capturedSnapshots = mutableListOf<PortfolioSnapshot>()
+                coEvery { mockHistory.addSnapshot(any()) } answers {
+                    capturedSnapshots.add(firstArg())
+                }
+                val executor = OrderExecutorImpl(fakeKraken, mockHistory)
 
                 val pm =
                     PortfolioManagerImpl(
                         mockConfig,
-                        mockk(relaxed = true),
+                        mockHistory,
                         analyzer,
                         executor,
                     )
                 pm.performRebalanceCycle()
 
+                fakeKraken.executedOrders.size shouldBe 1
+                val order = fakeKraken.executedOrders.single()
+                order.pair shouldBe TestFixtures.XBTUSD
+                order.type shouldBe TestFixtures.MARKET
+                order.side shouldBe TestFixtures.BUY
+                order.volume.shouldBeEqualComparingTo(BigDecimal("0.00001030"))
+                order.dryRun shouldBe true
+
+                capturedSnapshots.size shouldBe 1
+                val snapshot = capturedSnapshots.single()
+                snapshot.totalValueUSD.shouldBeEqualComparingTo(BigDecimal("1.00"))
+                snapshot.assets.getValue(Asset.USD).valueUSD.shouldBeEqualComparingTo(BigDecimal("1.00"))
+                snapshot.assets.getValue(Asset.BTC).valueUSD.shouldBeEqualComparingTo(BigDecimal("0.00"))
+                snapshot.assets.getValue(Asset.BTC).balance.shouldBeEqualComparingTo(BigDecimal("0.00000001"))
+                snapshot.assets.getValue(Asset.BTC).price.shouldBeEqualComparingTo(BigDecimal("48523.97000000"))
+
                 val evidence =
-                    "Total assets: ${fakeKraken.executedOrders.size}\n" +
-                        "Parsed prices and balances without rounding / arithmetic errors."
+                    "Precise inputs: USD=1.00000001, BTC=0.00000001 @ $48523.97\n" +
+                        "Portfolio total rounded once to $${snapshot.totalValueUSD}; " +
+                        "BTC snapshot value rounded to $${snapshot.assets.getValue(Asset.BTC).valueUSD}\n" +
+                        "Dry-run BTC buy volume: ${order.volume} (8-decimal order precision)"
 
                 recordResult(
                     "Scenario 12",
