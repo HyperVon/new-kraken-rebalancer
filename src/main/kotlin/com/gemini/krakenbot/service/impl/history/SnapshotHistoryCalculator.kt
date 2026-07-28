@@ -75,8 +75,8 @@ object SnapshotHistoryCalculator {
     ): List<PortfolioSnapshot> {
         val snapshotsToSave = mutableListOf<PortfolioSnapshot>()
 
-        // [runningBalances] starts at "now"; after each trade snapshot, undo that fill so older
-        // points see pre-trade balances. [OrderSide.isBuy]/[isSell] accept any casing.
+        // [runningBalances] starts at the reconstruction cutoff (the oldest retained snapshot, or current balances
+        // when none exists); after each trade snapshot, undo that fill so older points see pre-trade balances.
         for (ev in events) {
             val snapshotTimestamp = ev.timestamp
             var exactPortfolioValue = BigDecimal.ZERO

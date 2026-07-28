@@ -17,6 +17,13 @@ need only this file (no issue spam).
 
 | ID | Size | Status | Area | Summary | Cycle | Issue | Notes |
 | :--- | :---: | :--- | :--- | :--- | :---: | :--- | :--- |
+| CI-14-1 | M | in_progress | history | Enforce the 300-point snapshot cap and preserve range endpoints | 14 | — | `improve/cycle-20260727` |
+| CI-14-2 | M | in_progress | history | Scope latest snapshot time to the requested summary range | 14 | — | `improve/cycle-20260727` |
+| CI-14-3 | S | in_progress | history | Make persisted snapshot action ordering deterministic | 14 | — | `improve/cycle-20260727` |
+| CI-14-4 | S | in_progress | comments | Correct stale reconstruction-state wording | 14 | — | `improve/cycle-20260727` |
+| CI-14-5 | S | in_progress | docs | Describe the fee estimate as fixed rather than configurable | 14 | — | `improve/cycle-20260727` |
+| CI-14-6 | S | in_progress | deps | Patch webpack, kotlin-css, and Spotless; sync stack docs | 14 | — | `improve/cycle-20260727` |
+| CI-14-7 | S | in_progress | comments | Remove brittle numbered narration from frontend startup | 14 | — | `improve/cycle-20260727` |
 
 ## Done (recent)
 

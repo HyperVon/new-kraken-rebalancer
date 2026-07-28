@@ -4,7 +4,7 @@ import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
 plugins {
     kotlin("jvm") version "2.4.10"
-    id("com.diffplug.spotless") version "8.8.0"
+    id("com.diffplug.spotless") version "8.9.0"
     application
     jacoco
 }
@@ -101,7 +101,7 @@ dependencies {
     implementation("org.jetbrains.exposed:exposed-jdbc:$exposedVersion")
     implementation("org.jetbrains.exposed:exposed-java-time:$exposedVersion")
     implementation("org.xerial:sqlite-jdbc:3.53.2.1")
-    implementation("org.jetbrains.kotlin-wrappers:kotlin-css-jvm:2026.7.6")
+    implementation("org.jetbrains.kotlin-wrappers:kotlin-css-jvm:2026.7.7")
 
     // Testing
     val koTestVersion = "6.2.3"
@@ -262,7 +262,7 @@ rootProject.plugins.withType<YarnPlugin> {
         resolution("webpack-dev-server", "6.0.0")
         resolution("serialize-javascript", "7.0.7")
         resolution("uuid", "14.0.1")
-        resolution("webpack", "5.109.0")
+        resolution("webpack", "5.109.1")
         resolution("diff", "9.0.0")
         resolution("fast-uri", "4.1.1")
         // Dependabot #102 / CVE-2026-14257 — DoS via unbounded expansion length

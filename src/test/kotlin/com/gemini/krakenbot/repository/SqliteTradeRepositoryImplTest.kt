@@ -207,12 +207,19 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
                         effectiveUsdTargetPercent = BigDecimal.ZERO,
                     )
                 repository.saveSnapshot(s1)
+                repository.saveSnapshot(
+                    s1.copy(
+                        timestamp = now.plus(1, ChronoUnit.DAYS),
+                        totalValueUSD = BigDecimal("20000.00"),
+                    ),
+                )
 
                 val rangeStats = repository.getTradeSummaryStats(from = now.minus(3, ChronoUnit.DAYS), to = now)
                 rangeStats.totalTradesExecuted shouldBe 0L
                 rangeStats.totalVolumeTraded.shouldBeEqualComparingTo(BigDecimal.ZERO)
                 rangeStats.totalFeesPaid.shouldBeEqualComparingTo(BigDecimal.ZERO)
                 rangeStats.periodHigh?.shouldBeEqualComparingTo(BigDecimal("15000.00"))
+                rangeStats.latestSnapshotTime shouldBe s1.timestamp
             }
         }
 
@@ -1085,10 +1092,10 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
             }
         }
 
-        "getSnapshotsInRange downsamples when more than 300 snapshots" {
+        "getSnapshotsInRange evenly samples 599 snapshots and preserves both endpoints" {
             runTest {
                 val base = Instant.parse("2020-01-01T00:00:00Z")
-                repeat(600) { i ->
+                repeat(599) { i ->
                     repository.saveSnapshot(
                         PortfolioSnapshot(
                             timestamp = base.plusSeconds(i.toLong()),
@@ -1102,13 +1109,14 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
                     )
                 }
 
-                val inRange = repository.getSnapshotsInRange(base, base.plusSeconds(599))
+                val inRange = repository.getSnapshotsInRange(base, base.plusSeconds(598))
                 inRange.size shouldBe 300
                 inRange.first().timestamp shouldBe base
                 inRange.first().totalValueUSD.shouldBeEqualComparingTo(BigDecimal("1000"))
-                // step = 600/300 = 2, so every other snapshot is kept
                 inRange[1].timestamp shouldBe base.plusSeconds(2)
+                inRange[150].timestamp shouldBe base.plusSeconds(300)
                 inRange.last().timestamp shouldBe base.plusSeconds(598)
+                inRange.last().totalValueUSD.shouldBeEqualComparingTo(BigDecimal("1598"))
             }
         }
 
