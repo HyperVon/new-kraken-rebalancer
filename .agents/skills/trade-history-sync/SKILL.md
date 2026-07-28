@@ -22,7 +22,8 @@ Primary types: `TradeHistoryService` façade → `TradeHistorySyncService` /
   `isHistorySeeded`):
   - `effectiveLatest = latestTradeTime ?: watermarkInstant` — **only**
     null-coalesce, never `max()` the two.
-  - `latestTradeTime` excludes `dryRun = true` rows (`getLatestTradeTime` filter).
+  - `latestTradeTime` includes only `success = true` and `dryRun = false` rows;
+    failed attempts and dry-run estimates never advance the exchange cursor.
   - `sync_watermark_epoch_sec` is written after every successful sync so
     dry-run-only accounts still advance.
   - Both null → full history (`startSec` null).
@@ -40,6 +41,17 @@ Primary types: `TradeHistoryService` façade → `TradeHistorySyncService` /
   (`sync_offset` / `sync_total`) and first-sync completion marking.
 - Paginated cold Flow, page size **50**.
 - Skip live Kraken sync when `!simulation && !hasValidCredentials()`.
+- Reconciliation candidates must be effective local estimates (explicit
+  `LOCAL_ESTIMATE` or legacy inferred estimate shape). Persisted `API_FILL`
+  rows are never overwritten; an exact persisted API-fill identity is treated
+  as already synchronized.
+- Kraken's response-entry trade ID is persisted separately from `ordertxid` and
+  is the primary identity for a fill. Only legacy rows without that ID use the
+  complete economics fingerprint (timestamp, pair, side, volume, USD, price,
+  fee, and order transaction ID).
+- Ambiguous source-less historical rows (`success`, live, no error, no
+  slippage) migrate to `LEGACY_UNKNOWN`, not `API_FILL`. They are preserved;
+  only an exact conservative fingerprint prevents re-importing the same fill.
 - Progress keys (`SyncMetadataKeys`): `sync_offset`, `sync_total`,
   `history_seeded`, `sync_watermark_epoch_sec` — stored in
   `history_sync_metadata`.

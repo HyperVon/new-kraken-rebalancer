@@ -43,9 +43,10 @@ class ConfigServiceImpl(
     @Synchronized
     override fun loadConfig() {
         val rawContent = readRawConfigContent()
-        persistedKrakenCredentials = parseConfig(rawContent).kraken
+        val rawConfig = parseConfig(rawContent)
         val parsedConfig = parseConfig(resolveEnvVars(rawContent))
         val validatedConfig = validateAndNormalize(parsedConfig)
+        persistedKrakenCredentials = rawConfig.kraken
         appConfig = validatedConfig
         _configFlow.tryEmit(validatedConfig.settings)
     }
@@ -57,8 +58,8 @@ class ConfigServiceImpl(
         val validatedConfig = validateAndNormalize(newConfig)
         val previousKraken = appConfig.kraken
         val persistedConfig = configForPersistence(validatedConfig, previousKraken)
-        appConfig = validatedConfig
         writeConfigAtomically(persistedConfig)
+        appConfig = validatedConfig
         persistedKrakenCredentials = persistedConfig.kraken
         _configFlow.tryEmit(validatedConfig.settings)
     }
@@ -76,19 +77,25 @@ class ConfigServiceImpl(
     }
 
     private fun configForPersistence(config: AppConfig, previousKraken: KrakenCredentials): AppConfig {
-        // The settings form posts resolved credentials back unchanged. Preserve the raw placeholders
-        // in that case so saving unrelated settings does not write environment secrets to disk.
+        // Preserve each unchanged raw placeholder independently so rotating one credential does not
+        // materialize the other credential's resolved environment secret.
         val krakenToPersist =
-            if (krakenCredentialsEqual(config.kraken, previousKraken)) {
-                persistedKrakenCredentials
-            } else {
-                config.kraken
-            }
+            KrakenCredentials(
+                apiKey =
+                if (config.kraken.apiKey.value == previousKraken.apiKey.value) {
+                    persistedKrakenCredentials.apiKey
+                } else {
+                    config.kraken.apiKey
+                },
+                privateKey =
+                if (config.kraken.privateKey.value == previousKraken.privateKey.value) {
+                    persistedKrakenCredentials.privateKey
+                } else {
+                    config.kraken.privateKey
+                },
+            )
         return config.copy(kraken = krakenToPersist)
     }
-
-    private fun krakenCredentialsEqual(left: KrakenCredentials, right: KrakenCredentials): Boolean =
-        left.apiKey.value == right.apiKey.value && left.privateKey.value == right.privateKey.value
 
     private fun parseConfig(content: String): AppConfig = objectMapper.readValue(content, AppConfig::class.java)
 
@@ -125,8 +132,8 @@ class ConfigServiceImpl(
     }
 
     private fun writeConfigAtomically(config: AppConfig) {
+        val tempFile = File("$configFilePath.tmp")
         try {
-            val tempFile = File("$configFilePath.tmp")
             val targetPath = File(configFilePath).toPath()
 
             // Serialize completely before the atomic replacement so readers never observe a truncated
@@ -142,6 +149,8 @@ class ConfigServiceImpl(
                 StandardCopyOption.ATOMIC_MOVE,
             )
         } catch (e: IOException) {
+            runCatching { Files.deleteIfExists(tempFile.toPath()) }
+                .onFailure { cleanupFailure -> e.addSuppressed(cleanupFailure) }
             throw RuntimeException("Failed to save configuration", e)
         }
     }
@@ -160,14 +169,26 @@ class ConfigServiceImpl(
         require(settings.loopDelaySeconds > 0) {
             "Loop delay must be a positive integer."
         }
+        require(settings.deviationTriggerPercent.isFinite()) {
+            "Deviation trigger percent must be finite."
+        }
         require(settings.deviationTriggerPercent >= 0) {
             "Deviation trigger percent must be non-negative."
+        }
+        require(settings.dustThresholdUSD.isFinite()) {
+            "Dust threshold USD must be finite."
         }
         require(settings.dustThresholdUSD >= 0) {
             "Dust threshold USD must be non-negative."
         }
+        require(settings.fiatMaxDrawdown.isFinite()) {
+            "Fiat max drawdown must be finite."
+        }
         require(settings.fiatMaxDrawdown in MIN_PERCENT..MAX_PERCENT) {
             "Fiat max drawdown must be between 0% and 100%."
+        }
+        require(settings.fiatDeploymentExponent.isFinite()) {
+            "Fiat deployment exponent must be finite."
         }
         require(settings.fiatDeploymentExponent > 0) {
             "Fiat deployment exponent must be positive."
@@ -186,6 +207,9 @@ class ConfigServiceImpl(
             require(SYMBOL_PATTERN.matches(allocation.symbol.value.uppercase())) {
                 "Invalid allocation symbol '${allocation.symbol.value}'. " +
                     "Symbols must be uppercase alphanumeric and up to 16 characters long."
+            }
+            require(allocation.targetPercent.isFinite()) {
+                "Target percent for ${allocation.symbol} must be finite."
             }
             require(allocation.targetPercent >= 0) {
                 "Target percent for ${allocation.symbol} cannot be negative."

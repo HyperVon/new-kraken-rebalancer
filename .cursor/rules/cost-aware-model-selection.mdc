@@ -1,0 +1,28 @@
+---
+description: Use the least expensive model and reasoning effort likely to complete the task correctly
+alwaysApply: true
+---
+
+<!-- Canonical portable copy: .agents/OPERATING.md § Cost-aware model selection -->
+
+# Cost-aware model selection
+
+When model or reasoning-effort selection is available, use the **least
+expensive model and lowest effort reasonably likely to complete the task
+correctly**.
+
+- Start low for bounded searches, mechanical edits, formatting, straightforward
+  tests, and status checks.
+- Escalate for demonstrated complexity or risk, repeated failure, ambiguous
+  cross-cutting design, or financial/safety-sensitive reasoning.
+- Honor any model or effort explicitly required by the user, host, or an
+  applicable skill. If it is unavailable in the current host, use the closest
+  available model by capability and cost, preserve the intended role, and
+  document the substitution.
+- Optimize total cost, including retries and review time; do not choose a tier
+  that is unlikely to succeed merely because it is cheaper.
+- Choose the cheapest capable tier per parallel track instead of promoting all
+  subagents for one difficult track.
+
+Correctness and safety are non-negotiable. Never weaken verification or use an
+underpowered model for high-impact work to save cost.

@@ -17,6 +17,7 @@ import io.mockk.every
 import io.mockk.mockk
 import io.mockk.mockkStatic
 import io.mockk.unmockkStatic
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 import org.jetbrains.exposed.v1.jdbc.Database
 import org.jetbrains.exposed.v1.jdbc.JdbcTransaction
@@ -29,13 +30,15 @@ import java.io.File
 import java.io.IOException
 import java.math.BigDecimal
 
-class StatsThrowingTransactionManager(private val delegate: JdbcTransactionManager) :
-    JdbcTransactionManager by delegate {
+class StatsThrowingTransactionManager(
+    private val delegate: JdbcTransactionManager,
+    private val failure: Throwable = IOException("Direct IO failure"),
+) : JdbcTransactionManager by delegate {
     override fun newTransaction(
         isolation: Int,
         readOnly: Boolean,
         outerTransaction: JdbcTransaction?,
-    ): JdbcTransaction = throw IOException("Direct IO failure")
+    ): JdbcTransaction = throw failure
 }
 
 class SqlitePortfolioStatsRepositoryImplTest : StringSpec() {
@@ -72,7 +75,7 @@ class SqlitePortfolioStatsRepositoryImplTest : StringSpec() {
             }
         }
 
-        "load returns default stats when database throws exception" {
+        "load exposes database read failures instead of resetting ATH to zero" {
             runTest {
                 val brokenDb = DatabaseConfig.init(TestFixtures.MEMORY_)
                 val brokenRepo = SqlitePortfolioStatsRepositoryImpl(brokenDb, objectMapper)
@@ -81,9 +84,37 @@ class SqlitePortfolioStatsRepositoryImplTest : StringSpec() {
                     exec(TestFixtures.DROP_TABLE_IF_EXISTS_PORTFOLIO_STATS)
                 }
 
-                val result = brokenRepo.load()
-                result.allTimeHigh.shouldNotBeNull()
-                result.allTimeHigh.shouldBeEqualComparingTo(BigDecimal.ZERO)
+                shouldThrow<IOException> {
+                    brokenRepo.load()
+                }
+            }
+        }
+
+        "load exposes corrupt legacy stats migration instead of resetting ATH to zero" {
+            runTest {
+                val testFile = File("test-portfolio-stats-corrupt.json")
+                val testBakFile = File("test-portfolio-stats-corrupt.json.bak")
+                val isolatedDb = DatabaseConfig.init(TestFixtures.MEMORY_)
+                val testRepo =
+                    SqlitePortfolioStatsRepositoryImpl(isolatedDb, objectMapper, testFile.path)
+                try {
+                    testFile.delete()
+                    testBakFile.delete()
+                    testFile.writeText("{not-json")
+
+                    shouldThrow<IOException> {
+                        testRepo.load()
+                    }
+
+                    testFile.exists() shouldBe true
+                    testBakFile.exists() shouldBe false
+                    transaction(isolatedDb) {
+                        PortfolioStatsTable.selectAll().count() shouldBe 0
+                    }
+                } finally {
+                    testFile.delete()
+                    testBakFile.delete()
+                }
             }
         }
 
@@ -130,6 +161,33 @@ class SqlitePortfolioStatsRepositoryImplTest : StringSpec() {
                 thrown.message shouldBe "Direct IO failure"
 
                 unmockkStatic(TestFixtures.ORG_JETBRAINS_EXPOSED_SQL_TRANSACTIONS_TRANSACTION_API_KT)
+            }
+        }
+
+        listOf("load", "save").forEach { operation ->
+            "$operation propagates transaction cancellation" {
+                runTest {
+                    TransactionManager.currentOrNull()?.close()
+                    val cancellation = CancellationException("cancel stats transaction")
+                    val throwingTxManager = StatsThrowingTransactionManager(db.transactionManager, cancellation)
+                    val mockDb = mockk<Database>(relaxed = true)
+                    mockkStatic(TestFixtures.ORG_JETBRAINS_EXPOSED_SQL_TRANSACTIONS_TRANSACTION_API_KT)
+                    every { mockDb.transactionManager } returns throwingTxManager
+                    val cancelledRepo = SqlitePortfolioStatsRepositoryImpl(mockDb, objectMapper)
+
+                    try {
+                        val thrown = shouldThrow<CancellationException> {
+                            if (operation == "load") {
+                                cancelledRepo.load()
+                            } else {
+                                cancelledRepo.save(PortfolioStats(BigDecimal.TEN))
+                            }
+                        }
+                        thrown shouldBe cancellation
+                    } finally {
+                        unmockkStatic(TestFixtures.ORG_JETBRAINS_EXPOSED_SQL_TRANSACTIONS_TRANSACTION_API_KT)
+                    }
+                }
             }
         }
 

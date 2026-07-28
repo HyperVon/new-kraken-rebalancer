@@ -68,6 +68,7 @@ same content via committed `.cursor/rules/`:
 | `parallel-multi-agent.mdc` | Fan out independent workstreams; keep coupled files single-threaded |
 | `no-blocking-long-processes.mdc` | Background servers; don’t hang on `java -jar` / `gradlew run` |
 | `complex-code-comments.mdc` | Comment only non-obvious complexity; keep comments accurate |
+| `cost-aware-model-selection.mdc` | Use the cheapest model/effort likely to succeed; escalate on evidence or risk |
 | `ui-change-verification.mdc` | Path-triggered: laptop viewport, CSS `?v=`, QA smells — see rule file globs (`view/**`, `DashboardController` / `DashboardRoutes`, `frontend-js/**`, `:common` view util) |
 
 Do **not** gitignore `.cursor/`. Other frameworks should read OPERATING.md (or

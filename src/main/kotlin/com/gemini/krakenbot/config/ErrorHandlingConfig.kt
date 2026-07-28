@@ -76,7 +76,12 @@ object ErrorHandlingConfig : KoinComponent {
                     buildErrorJson(
                         status = status.value,
                         error = status.description,
-                        message = cause.message ?: "An unexpected error occurred.",
+                        message =
+                        if (status.value >= 500) {
+                            "An unexpected error occurred."
+                        } else {
+                            cause.message ?: status.description
+                        },
                     ),
                     status = status,
                     contentType = ContentType.Application.Json,

@@ -3,6 +3,7 @@ package com.gemini.krakenbot.controller
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.gemini.krakenbot.TestFixtures
+import com.gemini.krakenbot.config.ErrorHandlingConfig.configureErrorHandling
 import com.gemini.krakenbot.config.configureCachingAndConditionalHeaders
 import com.gemini.krakenbot.config.configureCompression
 import com.gemini.krakenbot.service.ConfigService
@@ -14,9 +15,13 @@ import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
+import io.kotest.matchers.string.shouldNotContain
 import io.ktor.client.request.*
+import io.ktor.client.statement.bodyAsText
 import io.ktor.http.*
 import io.ktor.server.application.*
+import io.ktor.server.routing.get
+import io.ktor.server.routing.routing
 import io.ktor.server.sse.*
 import io.ktor.server.testing.*
 import io.mockk.mockk
@@ -97,6 +102,31 @@ class ServerFeaturesIntegrationTest : StringSpec() {
                 val response = client.get(Routes.STATIC_STYLE_CSS)
                 response.status shouldBe HttpStatusCode.OK
                 response.headers[HttpHeaders.CacheControl] shouldContain "max-age=86400"
+            }
+        }
+
+        "error handling hides internal 500 details while preserving safe 400 details" {
+            testApplication {
+                application {
+                    configureErrorHandling()
+                    routing {
+                        get("/test/internal-error") {
+                            throw RuntimeException("SQL failed at /private/app/kraken-rebalancer.db")
+                        }
+                        get("/test/invalid-request") {
+                            throw IllegalArgumentException("Allocation total must equal 100%")
+                        }
+                    }
+                }
+
+                val internalError = client.get("/test/internal-error")
+                internalError.status shouldBe HttpStatusCode.InternalServerError
+                internalError.bodyAsText() shouldContain "An unexpected error occurred."
+                internalError.bodyAsText() shouldNotContain "/private/app/kraken-rebalancer.db"
+
+                val invalidRequest = client.get("/test/invalid-request")
+                invalidRequest.status shouldBe HttpStatusCode.BadRequest
+                invalidRequest.bodyAsText() shouldContain "Allocation total must equal 100%"
             }
         }
     }

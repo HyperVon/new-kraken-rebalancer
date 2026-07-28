@@ -119,6 +119,7 @@ class SimulatedKrakenService(private val configService: ConfigService) : KrakenS
                     usdAmount = usdValue,
                     success = true,
                     dryRun = false,
+                    source = TradeSource.API_FILL,
                 ),
             )
         }

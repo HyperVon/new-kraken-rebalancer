@@ -51,6 +51,9 @@ Shared scales also live in `:common` `PrecisionConstants` (`SCALE_CRYPTO=8`,
 ## ATH → drawdown → fiat deployment
 
 1. Track portfolio **ATH** in SQLite (`PortfolioStatsRepository`). Update on new highs.
+   Missing/null stats are an initial zero state, but database read or legacy
+   migration failures propagate and abort analysis before any order planning or
+   lower ATH write.
 2. `Drawdown% = (ATH - Current) / ATH × 100`.
 3. `Deploy% = (Drawdown% / fiatMaxDrawdown)^fiatDeploymentExponent`, capped at 100%.
    - Exponent `< 1` = aggressive early deployment; `> 1` = conservative; `1` = linear.

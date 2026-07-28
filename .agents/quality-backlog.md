@@ -22,6 +22,20 @@ Product polish discovered during QA belongs in
 
 | ID | Size | Kind | Status | Area | Summary | Cycle | Issue | Notes |
 | :--- | :---: | :--- | :--- | :--- | :--- | :---: | :--- | :--- |
+| CQ-10-L1 | L | bug | in_progress | history/sync | Failed non-dry-run attempts can advance the Kraken sync cursor | 10 | [#114](https://github.com/HyperVon/new-kraken-rebalancer/issues/114) | User approved; `quality/cycle-20260727` |
+| CQ-10-L2 | L | bug | in_progress | history/sync | Persisted API fills can be overwritten by distinct nearby fills | 10 | [#115](https://github.com/HyperVon/new-kraken-rebalancer/issues/115) | User approved; `quality/cycle-20260727` |
+| CQ-10-L3 | L | bug | in_progress | config | Failed config writes publish unpersisted runtime settings | 10 | [#116](https://github.com/HyperVon/new-kraken-rebalancer/issues/116) | User approved; `quality/cycle-20260727` |
+| CQ-10-L4 | L | bug | in_progress | ATH | Stats read failures collapse ATH to zero and fail open | 10 | [#117](https://github.com/HyperVon/new-kraken-rebalancer/issues/117) | User approved; `quality/cycle-20260727` |
+| CQ-10-L5 | L | bug | in_progress | config | Non-finite settings persist and later crash rebalance cycles | 10 | [#118](https://github.com/HyperVon/new-kraken-rebalancer/issues/118) | User approved; `quality/cycle-20260727` |
+| CQ-10-L6 | L | bug | in_progress | history/sync | Rounded fill fingerprints can collapse distinct Kraken fill legs | 10 | [#119](https://github.com/HyperVon/new-kraken-rebalancer/issues/119) | User approved; `quality/cycle-20260727` |
+| CQ-10-L7 | L | bug | in_progress | history/migration | Ambiguous legacy source-less rows need an explicit provenance policy | 10 | [#120](https://github.com/HyperVon/new-kraken-rebalancer/issues/120) | User approved; `quality/cycle-20260727` |
+| CQ-10-1 | S | gap | in_progress | history/sync | Preserve local orderTxid when a matching API fill omits it | 10 | — | `quality/cycle-20260727` |
+| CQ-10-2 | M | gap | in_progress | history | Propagate cancellation from reconstruction balance/ticker/OHLC calls | 10 | — | `quality/cycle-20260727` |
+| CQ-10-3 | M | bug | in_progress | frontend-js | Ignore stale out-of-order History range responses | 10 | — | `quality/cycle-20260727` |
+| CQ-10-4 | M | bug | in_progress | frontend-js | Clear populated History charts when a selected range is empty | 10 | — | `quality/cycle-20260727` |
+| CQ-10-5 | S | bug | in_progress | frontend-js | Reject NaN and infinite numeric inputs | 10 | — | `quality/cycle-20260727` |
+| CQ-10-6 | S | bug | in_progress | frontend-js | Preserve valid saved views when one preset entry is malformed | 10 | — | `quality/cycle-20260727` |
+| CQ-10-7 | M | bug | in_progress | security | Return generic 500 bodies without internal exception details | 10 | — | `quality/cycle-20260727` |
 
 ## Done (recent)
 
