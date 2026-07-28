@@ -535,7 +535,7 @@ class TradeHistoryServiceTest : StringSpec() {
             }
         }
 
-        "CQ-10-1: reconciliation retains local order id when API fill omits it" {
+        "CQ-10-1: reconciliation retains local Kraken order txid when API fill omits it" {
             runTest {
                 coEvery { repository.isHistorySeeded() } returns true
                 val latestTime = Instant.ofEpochSecond(1700000000)

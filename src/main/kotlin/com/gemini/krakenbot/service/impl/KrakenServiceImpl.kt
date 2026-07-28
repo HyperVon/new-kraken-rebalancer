@@ -423,6 +423,7 @@ class KrakenServiceImpl(
         return retryWithFlow(
             actionName = "queryPrivate($path)",
             maxAttempts = if (path == KrakenApiConstants.PATH_ADD_ORDER) 1 else 5,
+            maxLockoutAttempts = if (path == KrakenApiConstants.PATH_ADD_ORDER) 1 else 9,
         ) {
             var retryCount = 0
             var result: JsonNode? = null

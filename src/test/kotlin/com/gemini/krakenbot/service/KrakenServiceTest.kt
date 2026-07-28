@@ -331,6 +331,7 @@ class KrakenServiceTest : StringSpec() {
 
         "executeOrder_ServerErrorJsonIsUncertain" {
             runTest {
+                var requestCount = 0
                 val objectMapper = jacksonObjectMapper()
                 configService = mockk(relaxed = true)
                 every { configService.getConfig() } returns AppConfig(
@@ -346,8 +347,9 @@ class KrakenServiceTest : StringSpec() {
                     objectMapper,
                     HttpClient(
                         MockEngine {
+                            requestCount++
                             respond(
-                                content = "{\"error\":[],\"result\":{\"txid\":[\"MAYBE\"]}}",
+                                content = "{\"error\":[\"EService:Temporary lockout\"]}",
                                 status = HttpStatusCode.InternalServerError,
                                 headers = headersOf(HttpHeaders.ContentType, TestFixtures.APPLICATION_JSON),
                             )
@@ -364,6 +366,7 @@ class KrakenServiceTest : StringSpec() {
 
                 result.success.shouldBeFalse()
                 result.submissionUncertain shouldBe true
+                requestCount shouldBe 1
             }
         }
 

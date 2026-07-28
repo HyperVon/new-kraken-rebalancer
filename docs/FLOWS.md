@@ -111,8 +111,8 @@ sequenceDiagram
     User->>API: POST /settings (new settings)
     API->>CS: updateConfig(newConfig)
     CS->>CS: validate & save to disk atomically
-    note over CS: tryEmit(settings)<br/>guaranteed to succeed<br/>(DROP_OLDEST strategy)
     alt no active execution session
+        note over CS: tryEmit(settings)<br/>guaranteed to succeed<br/>(DROP_OLDEST strategy)
         CS-->>PM: SharedFlow emits new Settings
     else active execution session
         CS->>CS: stage runtime config until session exits

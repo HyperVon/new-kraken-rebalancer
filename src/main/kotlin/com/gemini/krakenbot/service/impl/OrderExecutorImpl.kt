@@ -71,7 +71,7 @@ class OrderExecutorImpl(
     ) {
         if (!settings.dryRun && !settings.simulation && tradeHistoryService.hasPendingSubmissions()) {
             log.error("Refusing live orders while an unresolved submission intent exists")
-            actionLog.add("ERROR: Live orders blocked pending exchange reconciliation")
+            actionLog.add("ERROR: Live orders blocked pending manual Kraken verification")
             return
         }
         // Pin live vs simulation for the whole sell→buy sequence; pass settings.dryRun into

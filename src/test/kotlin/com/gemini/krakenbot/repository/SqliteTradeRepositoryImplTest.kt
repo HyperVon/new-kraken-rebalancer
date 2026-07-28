@@ -1244,8 +1244,6 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
                 repository.saveTrade(
                     unresolved.copy(
                         pair = "XXBTZUSD",
-                        success = true,
-                        source = TradeSource.API_FILL,
                         clientOrderId = null,
                         submissionState = null,
                     ),
