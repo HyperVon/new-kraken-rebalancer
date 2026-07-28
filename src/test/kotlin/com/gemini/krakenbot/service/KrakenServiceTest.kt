@@ -313,6 +313,60 @@ class KrakenServiceTest : StringSpec() {
             }
         }
 
+        "executeOrder_MissingTxidIsUncertain" {
+            runTest {
+                val service = createService("{\"error\":[],\"result\":{}}")
+
+                val result = service.executeOrder(
+                    pair = TestFixtures.XBTUSD,
+                    type = OrderType.MARKET.apiValue,
+                    side = OrderSide.BUY.apiValue,
+                    volume = BigDecimal.ONE,
+                )
+
+                result.success.shouldBeFalse()
+                result.submissionUncertain shouldBe true
+            }
+        }
+
+        "executeOrder_ServerErrorJsonIsUncertain" {
+            runTest {
+                val objectMapper = jacksonObjectMapper()
+                configService = mockk(relaxed = true)
+                every { configService.getConfig() } returns AppConfig(
+                    kraken = KrakenCredentials(
+                        apiKey = "public-key",
+                        privateKey = Base64.getEncoder().encodeToString("secret-key".toByteArray()),
+                    ),
+                    settings = Settings(60L, 2.0, dryRun = false),
+                    allocations = emptyList(),
+                )
+                val service = KrakenServiceImpl(
+                    configService,
+                    objectMapper,
+                    HttpClient(
+                        MockEngine {
+                            respond(
+                                content = "{\"error\":[],\"result\":{\"txid\":[\"MAYBE\"]}}",
+                                status = HttpStatusCode.InternalServerError,
+                                headers = headersOf(HttpHeaders.ContentType, TestFixtures.APPLICATION_JSON),
+                            )
+                        },
+                    ),
+                )
+
+                val result = service.executeOrder(
+                    pair = TestFixtures.XBTUSD,
+                    type = OrderType.MARKET.apiValue,
+                    side = OrderSide.BUY.apiValue,
+                    volume = BigDecimal.ONE,
+                )
+
+                result.success.shouldBeFalse()
+                result.submissionUncertain shouldBe true
+            }
+        }
+
         "executeOrder_ExceptionWithNullMessage" {
             runTest {
                 val objectMapper = jacksonObjectMapper()

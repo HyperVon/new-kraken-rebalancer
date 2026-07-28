@@ -49,8 +49,7 @@ class OrderExecutorImpl(
         val FEE_RATE_ESTIMATE: BigDecimal = PrecisionConstants.FEE_RATE_ESTIMATE
 
         /**
-         * Deterministic Kraken `cl_ord_id` (UUID form) for a cycle/symbol/side so
-         * `retryWithFlow` re-POSTs of AddOrder reuse the same client order id.
+         * Deterministic Kraken `cl_ord_id` (UUID form) for a cycle/symbol/side.
          * Uniqueness is enforced by Kraken among *open* orders only.
          */
         fun clientOrderId(cycleId: String, symbol: String, side: String): String? {
@@ -108,6 +107,7 @@ class OrderExecutorImpl(
                     executedSells = true
                     result.orderTxid?.let { sellOrderTxids.add(it) }
                 }
+                if (result?.submissionUncertain == true) return@withStableBackend
             }
 
             var actualCash = projectedCash
@@ -177,6 +177,7 @@ class OrderExecutorImpl(
                     actualCash = actualCash.subtract(cost)
                     remainingBuyBudget = remainingBuyBudget.subtract(cost).toUsdScale()
                 }
+                if (result?.submissionUncertain == true) return@withStableBackend
             }
         }
     }

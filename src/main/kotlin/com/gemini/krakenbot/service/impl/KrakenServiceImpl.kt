@@ -13,6 +13,7 @@ import io.ktor.client.*
 import io.ktor.client.plugins.*
 import io.ktor.client.request.*
 import io.ktor.client.statement.*
+import io.ktor.http.isSuccess
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
@@ -212,13 +213,24 @@ class KrakenServiceImpl(
                 } else {
                     null
                 }
-            OrderResult(
-                success = true,
-                pair = pair,
-                side = side,
-                volume = normalizedVolume,
-                orderTxid = orderTxid,
-            )
+            if (orderTxid == null) {
+                OrderResult(
+                    success = false,
+                    pair = pair,
+                    side = side,
+                    volume = normalizedVolume,
+                    errorMessage = "Kraken AddOrder response did not contain a transaction id",
+                    submissionUncertain = true,
+                )
+            } else {
+                OrderResult(
+                    success = true,
+                    pair = pair,
+                    side = side,
+                    volume = normalizedVolume,
+                    orderTxid = orderTxid,
+                )
+            }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -428,17 +440,20 @@ class KrakenServiceImpl(
                 // Signature / private key must never be logged — only API-Sign header below.
                 val signature = signRequest(path, nonce, postData)
 
-                val responseBody =
-                    httpClient
-                        .post(apiUrl + path) {
-                            header(KrakenApiConstants.HEADER_API_KEY, apiKey)
-                            header(KrakenApiConstants.HEADER_API_SIGN, signature)
-                            header(
-                                KrakenApiConstants.HEADER_CONTENT_TYPE,
-                                KrakenApiConstants.CONTENT_TYPE_FORM_URLENCODED,
-                            )
-                            setBody(postData)
-                        }.bodyAsText()
+                val response =
+                    httpClient.post(apiUrl + path) {
+                        header(KrakenApiConstants.HEADER_API_KEY, apiKey)
+                        header(KrakenApiConstants.HEADER_API_SIGN, signature)
+                        header(
+                            KrakenApiConstants.HEADER_CONTENT_TYPE,
+                            KrakenApiConstants.CONTENT_TYPE_FORM_URLENCODED,
+                        )
+                        setBody(postData)
+                    }
+                val responseBody = response.bodyAsText()
+                if (!response.status.isSuccess()) {
+                    throw ResponseException(response, responseBody)
+                }
 
                 try {
                     val root: JsonNode = objectMapper.readTree(responseBody)

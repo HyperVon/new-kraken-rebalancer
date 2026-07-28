@@ -453,8 +453,6 @@ class TradeHistoryServiceTest : StringSpec() {
                     source = TradeSource.LOCAL_ESTIMATE,
                     cycleId = "cycle-keep-me",
                     orderTxid = "LOCAL-OID",
-                    clientOrderId = "74cf3df5-fe0c-4bd7-a884-b630701cfcd8",
-                    submissionState = OrderSubmissionState.UNCERTAIN,
                 )
                 coEvery { repository.getTradesInRange(any(), any()) } returns listOf(localTrade)
 
@@ -486,8 +484,6 @@ class TradeHistoryServiceTest : StringSpec() {
                 reconciledSlot.captured.source shouldBe TradeSource.API_FILL
                 reconciledSlot.captured.cycleId shouldBe "cycle-keep-me"
                 reconciledSlot.captured.orderTxid shouldBe "API-OID"
-                reconciledSlot.captured.clientOrderId shouldBe "74cf3df5-fe0c-4bd7-a884-b630701cfcd8"
-                reconciledSlot.captured.submissionState shouldBe null
                 reconciledSlot.captured.expectedPrice!!.shouldBeEqualComparingTo(BigDecimal("10.05"))
                 reconciledSlot.captured.slippagePercent!!.shouldBeEqualComparingTo(
                     TradeCalculator.calculateSlippage(
@@ -497,6 +493,45 @@ class TradeHistoryServiceTest : StringSpec() {
                     ),
                 )
                 coVerify(exactly = 0) { repository.saveTrade(any()) }
+            }
+        }
+
+        "sync never clears an unresolved submission with an economics heuristic" {
+            runTest {
+                coEvery { repository.isHistorySeeded() } returns true
+                val submittedAt = Instant.ofEpochSecond(1700000000)
+                coEvery { repository.getLatestTradeTime() } returns submittedAt
+                val unresolved =
+                    TradeRecord(
+                        timestamp = submittedAt,
+                        pair = TestFixtures.XBTUSD,
+                        side = TestFixtures.BUY,
+                        symbol = Asset.BTC,
+                        volume = BigDecimal.ONE,
+                        usdAmount = BigDecimal.TEN,
+                        success = false,
+                        dryRun = false,
+                        price = BigDecimal.TEN,
+                        source = TradeSource.LOCAL_ESTIMATE,
+                        clientOrderId = "74cf3df5-fe0c-4bd7-a884-b630701cfcd8",
+                        submissionState = OrderSubmissionState.UNCERTAIN,
+                    )
+                coEvery { repository.getTradesInRange(any(), any()) } returns listOf(unresolved)
+                val similarFill =
+                    unresolved.copy(
+                        timestamp = submittedAt.plusSeconds(5),
+                        success = true,
+                        source = TradeSource.API_FILL,
+                        clientOrderId = null,
+                        submissionState = null,
+                    )
+                coEvery { krakenService.getTradeHistory(1700000000 - 300, 0) } returns listOf(similarFill)
+                coEvery { krakenService.getTradeHistory(1700000000 - 300, 50) } returns emptyList()
+
+                createService().syncTradesFromKraken()
+
+                coVerify(exactly = 0) { repository.updateTrade(unresolved, any()) }
+                coVerify(exactly = 1) { repository.saveTrade(similarFill) }
             }
         }
 

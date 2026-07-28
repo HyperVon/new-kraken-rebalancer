@@ -127,7 +127,10 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
     override suspend fun hasPendingSubmissions(): Boolean = database.readTransactionIO {
         TradeTable
             .selectAll()
-            .where { TradeTable.submissionState.isNotNull() }
+            .where {
+                TradeTable.submissionState.isNotNull() and
+                    (TradeTable.dryRun eq false)
+            }
             .any()
     }
 
@@ -459,6 +462,7 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
         database.safeTransactionIO(log, "Failed to cleanup duplicate trades") {
             val allTradeRows = TradeTable.selectAll().orderBy(TradeTable.timestamp, SortOrder.ASC).toList()
             val allRecords = allTradeRows.map { buildTradeFromRow(it) }
+                .filter { it.submissionState == null }
             val toDelete = TradeDeduplicator.findDuplicateTradeIds(allRecords)
 
             if (toDelete.isNotEmpty()) {

@@ -1221,5 +1221,42 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
                 remaining.size shouldBe 2
             }
         }
+
+        "cleanupDuplicateTrades never deletes an unresolved submission" {
+            runTest {
+                val now = Instant.now().truncatedTo(ChronoUnit.MILLIS)
+                val unresolved =
+                    TradeRecord(
+                        timestamp = now,
+                        pair = TestFixtures.XBTUSD,
+                        side = TestFixtures.BUY,
+                        symbol = Asset.BTC,
+                        volume = BigDecimal("0.1"),
+                        usdAmount = BigDecimal("3000.00"),
+                        success = false,
+                        dryRun = false,
+                        price = BigDecimal("30000.00"),
+                        source = TradeSource.LOCAL_ESTIMATE,
+                        clientOrderId = "74cf3df5-fe0c-4bd7-a884-b630701cfcd8",
+                        submissionState = OrderSubmissionState.UNCERTAIN,
+                    )
+                repository.saveTrade(unresolved)
+                repository.saveTrade(
+                    unresolved.copy(
+                        pair = "XXBTZUSD",
+                        success = true,
+                        source = TradeSource.API_FILL,
+                        clientOrderId = null,
+                        submissionState = null,
+                    ),
+                )
+
+                repository.cleanupDuplicateTrades()
+
+                val remaining = repository.getTradesInRange(now.minusSeconds(1), now.plusSeconds(1))
+                remaining.size shouldBe 2
+                remaining.any { it.submissionState == OrderSubmissionState.UNCERTAIN } shouldBe true
+            }
+        }
     }
 }

@@ -1338,11 +1338,19 @@ class OrderExecutorCashCapTest : StringSpec() {
                         fiatDeploymentExponent = 1.0,
                     )
                 val values = mapOf(Asset.USD to BigDecimal("100.00"))
-                val prices = mapOf(Asset.BTC to BigDecimal("1000.00"))
+                val prices =
+                    mapOf(
+                        Asset.BTC to BigDecimal("1000.00"),
+                        Asset.ETH to BigDecimal("1000.00"),
+                    )
 
                 repeat(2) {
                     orderExecutor.executeOrders(
-                        buyOrders = mapOf(Asset.BTC to BigDecimal("50.00")),
+                        buyOrders =
+                        linkedMapOf(
+                            Asset.BTC to BigDecimal("25.00"),
+                            Asset.ETH to BigDecimal("25.00"),
+                        ),
                         sellOrders = emptyMap(),
                         currentValuesUSD = values,
                         prices = prices,

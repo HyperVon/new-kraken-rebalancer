@@ -112,7 +112,11 @@ sequenceDiagram
     API->>CS: updateConfig(newConfig)
     CS->>CS: validate & save to disk atomically
     note over CS: tryEmit(settings)<br/>guaranteed to succeed<br/>(DROP_OLDEST strategy)
-    CS-->>PM: SharedFlow emits new Settings
+    alt no active execution session
+        CS-->>PM: SharedFlow emits new Settings
+    else active execution session
+        CS->>CS: stage runtime config until session exits
+    end
 
     note over PM: collectLatest cancels the<br/>sleeping delay() in the active<br/>loop and immediately restarts<br/>with the new settings
     PM->>PM: restart loop with new settings
@@ -128,10 +132,10 @@ sequenceDiagram
   propagates normally.
 - Real-live order placement writes `PENDING` plus the deterministic `cl_ord_id` before AddOrder.
   Definite exchange rejections resolve the row immediately; transport/response failures become
-  `UNCERTAIN` and block later live submissions. Kraken fill sync clears a matching unresolved row.
-  Absence from history is never treated as proof of rejection: an operator must verify Kraken open
-  orders, closed orders, and fills before clearing an unmatched state in SQLite. Unresolved rows are
-  excluded from retention pruning.
+  `UNCERTAIN` and immediately abort the remaining batch. An unresolved row is excluded from
+  heuristic fill reconciliation, duplicate cleanup, and retention pruning: an operator must verify
+  Kraken open orders, closed orders, and fills before clearing its state in SQLite. Absence from
+  trade history alone is never treated as proof of rejection.
 
 ---
 
