@@ -81,6 +81,18 @@ object DatabaseConfig {
                     """.trimIndent(),
                 )
 
+                // Preserve fail-closed intent rows created by the first journal release while
+                // migrating from the error-message marker to explicit additive columns.
+                exec(
+                    """
+                    UPDATE trades
+                    SET submission_state = 'PENDING',
+                        client_order_id = substr(error_message, length('SUBMISSION_PENDING:') + 1)
+                    WHERE submission_state IS NULL
+                      AND error_message LIKE 'SUBMISSION_PENDING:%'
+                    """.trimIndent(),
+                )
+
                 val executedStatements = createStatements + alterStatements
                 val mappingStatements =
                     SchemaUtils

@@ -11,6 +11,7 @@ import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderSide
+import com.gemini.krakenbot.model.OrderSubmissionState
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.PortfolioStats
 import com.gemini.krakenbot.model.SyncMetadataKeys
@@ -452,6 +453,8 @@ class TradeHistoryServiceTest : StringSpec() {
                     source = TradeSource.LOCAL_ESTIMATE,
                     cycleId = "cycle-keep-me",
                     orderTxid = "LOCAL-OID",
+                    clientOrderId = "74cf3df5-fe0c-4bd7-a884-b630701cfcd8",
+                    submissionState = OrderSubmissionState.UNCERTAIN,
                 )
                 coEvery { repository.getTradesInRange(any(), any()) } returns listOf(localTrade)
 
@@ -483,6 +486,8 @@ class TradeHistoryServiceTest : StringSpec() {
                 reconciledSlot.captured.source shouldBe TradeSource.API_FILL
                 reconciledSlot.captured.cycleId shouldBe "cycle-keep-me"
                 reconciledSlot.captured.orderTxid shouldBe "API-OID"
+                reconciledSlot.captured.clientOrderId shouldBe "74cf3df5-fe0c-4bd7-a884-b630701cfcd8"
+                reconciledSlot.captured.submissionState shouldBe null
                 reconciledSlot.captured.expectedPrice!!.shouldBeEqualComparingTo(BigDecimal("10.05"))
                 reconciledSlot.captured.slippagePercent!!.shouldBeEqualComparingTo(
                     TradeCalculator.calculateSlippage(

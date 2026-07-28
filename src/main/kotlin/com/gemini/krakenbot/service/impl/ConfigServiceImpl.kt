@@ -50,8 +50,7 @@ class ConfigServiceImpl(
         val parsedConfig = parseConfig(resolveEnvVars(rawContent))
         val validatedConfig = validateAndNormalize(parsedConfig)
         persistedKrakenCredentials = rawConfig.kraken
-        appConfig = validatedConfig
-        _configFlow.tryEmit(validatedConfig.settings)
+        publishOrStage(validatedConfig)
     }
 
     override fun getConfig(): AppConfig = appConfig
@@ -59,7 +58,7 @@ class ConfigServiceImpl(
     @Synchronized
     override fun updateConfig(newConfig: AppConfig) {
         val validatedConfig = validateAndNormalize(newConfig)
-        val previousKraken = appConfig.kraken
+        val previousKraken = pendingConfig?.kraken ?: appConfig.kraken
         val persistedConfig = configForPersistence(validatedConfig, previousKraken)
         writeConfigAtomically(persistedConfig)
         if (executionSessionDepth > 0) {
@@ -90,6 +89,15 @@ class ConfigServiceImpl(
     }
 
     override fun watchConfigChanges(): Flow<Settings> = _configFlow.asSharedFlow()
+
+    private fun publishOrStage(config: AppConfig) {
+        if (executionSessionDepth > 0) {
+            pendingConfig = config
+        } else {
+            appConfig = config
+            _configFlow.tryEmit(config.settings)
+        }
+    }
 
     private fun readRawConfigContent(): String {
         val configFile = File(configFilePath)

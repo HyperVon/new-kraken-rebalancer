@@ -4,6 +4,7 @@ import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderResult
 import com.gemini.krakenbot.model.OrderSide
+import com.gemini.krakenbot.model.OrderSubmissionState
 import com.gemini.krakenbot.model.OrderType
 import com.gemini.krakenbot.service.AssetPrices
 import com.gemini.krakenbot.service.AssetValues
@@ -69,7 +70,7 @@ class OrderExecutorImpl(
         actionLog: MutableList<String>,
         cycleId: String,
     ) {
-        if (!settings.dryRun && tradeHistoryService.hasPendingSubmissions()) {
+        if (!settings.dryRun && !settings.simulation && tradeHistoryService.hasPendingSubmissions()) {
             log.error("Refusing live orders while an unresolved submission intent exists")
             actionLog.add("ERROR: Live orders blocked pending exchange reconciliation")
             return
@@ -203,8 +204,9 @@ class OrderExecutorImpl(
         if (volume.signum() <= 0) return null
         val pair = Asset.tradingPair(symbol)
         val clOrdId = clientOrderId(cycleId, symbol, side.apiValue)
+        val isLiveSubmission = !settings.dryRun && !settings.simulation
         val pending = TradeCalculator.createTradeRecord(
-            result = OrderResult(false, pair, side.apiValue, volume, settings.dryRun, "SUBMISSION_PENDING:$clOrdId"),
+            result = OrderResult(false, pair, side.apiValue, volume, settings.dryRun, "Order submission pending"),
             symbol = symbol,
             pair = pair,
             side = side.uppercaseName,
@@ -212,9 +214,12 @@ class OrderExecutorImpl(
             usdAmount = usdAmount,
             prices = prices,
             cycleId = cycleId.ifBlank { null },
+        ).copy(
+            clientOrderId = clOrdId,
+            submissionState = if (isLiveSubmission) OrderSubmissionState.PENDING else null,
         )
         val pendingId = tradeHistoryService.saveTrade(pending)
-        val result =
+        val result = try {
             backend.executeOrder(
                 pair = pair,
                 type = OrderType.MARKET.apiValue,
@@ -223,6 +228,13 @@ class OrderExecutorImpl(
                 dryRun = settings.dryRun,
                 clOrdId = clOrdId,
             )
+        } catch (e: CancellationException) {
+            markSubmissionUncertain(pending, pendingId, e.message)
+            throw e
+        } catch (e: Exception) {
+            markSubmissionUncertain(pending, pendingId, e.message)
+            throw e
+        }
         logOrderResult(
             result = result,
             actionLog = actionLog,
@@ -240,10 +252,34 @@ class OrderExecutorImpl(
             usdAmount = usdAmount,
             prices = prices,
             cycleId = cycleId.ifBlank { null },
-        ).copy(id = pendingId)
+        ).copy(
+            id = pendingId,
+            clientOrderId = clOrdId,
+            submissionState = if (isLiveSubmission && result.submissionUncertain) {
+                OrderSubmissionState.UNCERTAIN
+            } else {
+                null
+            },
+        )
         tradeHistoryService.updateTrade(pending.copy(id = pendingId), resolved)
         cycleTradeIds.add(pendingId)
         return result
+    }
+
+    private suspend fun markSubmissionUncertain(
+        pending: com.gemini.krakenbot.model.TradeRecord,
+        id: Int,
+        message: String?,
+    ) {
+        if (pending.submissionState == null) return
+        tradeHistoryService.updateTrade(
+            pending.copy(id = id),
+            pending.copy(
+                id = id,
+                errorMessage = message ?: "Order submission outcome is uncertain",
+                submissionState = OrderSubmissionState.UNCERTAIN,
+            ),
+        )
     }
 
     /**

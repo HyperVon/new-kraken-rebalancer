@@ -122,6 +122,8 @@ class TradeHistorySyncService(
                                     // Keep local cycle linkage; prefer API ordertxid when present.
                                     cycleId = matchingLocalTrade.cycleId,
                                     orderTxid = apiTrade.orderTxid ?: matchingLocalTrade.orderTxid,
+                                    clientOrderId = matchingLocalTrade.clientOrderId,
+                                    submissionState = null,
                                 )
                             log.info(
                                 "Reconciling trade record: local (timestamp={}, usdAmount={}) with API (timestamp={}, usdAmount={})",

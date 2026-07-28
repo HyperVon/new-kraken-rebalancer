@@ -36,6 +36,7 @@ import io.mockk.mockk
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.currentTime
 import kotlinx.coroutines.test.runTest
+import java.io.IOException
 import java.math.BigDecimal
 import java.util.*
 import java.util.concurrent.CountDownLatch
@@ -271,6 +272,44 @@ class KrakenServiceTest : StringSpec() {
                 )
                 result.success.shouldBeFalse()
                 result.errorMessage.shouldNotBeNull()
+                result.submissionUncertain shouldBe false
+            }
+        }
+
+        "executeOrder_TransportFailureIsUncertainAndIsNotRetried" {
+            runTest {
+                var requestCount = 0
+                val objectMapper = jacksonObjectMapper()
+                configService = mockk(relaxed = true)
+                every { configService.getConfig() } returns AppConfig(
+                    kraken = KrakenCredentials(
+                        apiKey = "public-key",
+                        privateKey = Base64.getEncoder().encodeToString("secret-key".toByteArray()),
+                    ),
+                    settings = Settings(60L, 2.0, dryRun = false),
+                    allocations = emptyList(),
+                )
+                val service = KrakenServiceImpl(
+                    configService,
+                    objectMapper,
+                    HttpClient(
+                        MockEngine {
+                            requestCount++
+                            throw IOException("response lost after acceptance")
+                        },
+                    ),
+                )
+
+                val result = service.executeOrder(
+                    pair = TestFixtures.XBTUSD,
+                    type = OrderType.MARKET.apiValue,
+                    side = OrderSide.BUY.apiValue,
+                    volume = BigDecimal.ONE,
+                )
+
+                result.success.shouldBeFalse()
+                result.submissionUncertain shouldBe true
+                requestCount shouldBe 1
             }
         }
 

@@ -13,6 +13,7 @@ import io.ktor.client.*
 import io.ktor.client.plugins.*
 import io.ktor.client.request.*
 import io.ktor.client.statement.*
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
@@ -218,6 +219,8 @@ class KrakenServiceImpl(
                 volume = normalizedVolume,
                 orderTxid = orderTxid,
             )
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             val message = e.message.orEmpty().ifEmpty { e.javaClass.simpleName }
             log.error(
@@ -234,9 +237,17 @@ class KrakenServiceImpl(
                 side = side,
                 volume = normalizedVolume,
                 errorMessage = message,
+                submissionUncertain = isAmbiguousSubmissionFailure(e),
             )
         }
     }
+
+    private fun isAmbiguousSubmissionFailure(error: Throwable): Boolean = generateSequence(error) { it.cause }
+        .any { cause ->
+            cause is IOException ||
+                cause is ResponseException ||
+                cause is JsonProcessingException
+        }
 
     override suspend fun getTradeHistory(startSec: Long?, offset: Int?): List<TradeRecord> {
         if (!configService.getConfig().kraken.hasValidCredentials()) {
@@ -397,7 +408,10 @@ class KrakenServiceImpl(
 
         val maxRetries = 5
 
-        return retryWithFlow("queryPrivate($path)") {
+        return retryWithFlow(
+            actionName = "queryPrivate($path)",
+            maxAttempts = if (path == KrakenApiConstants.PATH_ADD_ORDER) 1 else 5,
+        ) {
             var retryCount = 0
             var result: JsonNode? = null
             while (result == null) {

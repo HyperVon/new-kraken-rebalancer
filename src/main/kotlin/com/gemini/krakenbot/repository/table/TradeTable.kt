@@ -21,6 +21,8 @@ object TradeTable : Table("trades") {
     val cycleId = varchar("cycle_id", 36).nullable()
     val orderTxid = varchar("order_txid", 64).nullable()
     val tradeId = varchar("trade_id", 64).nullable()
+    val clientOrderId = varchar("client_order_id", 36).nullable()
+    val submissionState = varchar("submission_state", 16).nullable()
 
     init {
         index("idx_trades_timestamp", false, timestamp)
@@ -28,6 +30,7 @@ object TradeTable : Table("trades") {
         index("idx_trades_success", false, success)
         index("idx_trades_cycle_id", false, cycleId)
         index("idx_trades_trade_id", false, tradeId)
+        index("idx_trades_submission_state", false, submissionState)
     }
 
     override val primaryKey = PrimaryKey(id)

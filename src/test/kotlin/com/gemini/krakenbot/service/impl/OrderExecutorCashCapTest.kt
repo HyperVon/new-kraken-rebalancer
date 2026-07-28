@@ -3,6 +3,7 @@ package com.gemini.krakenbot.service.impl
 import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderResult
+import com.gemini.krakenbot.model.OrderSubmissionState
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.service.FakeKrakenService
 import com.gemini.krakenbot.service.TradeHistoryService
@@ -10,6 +11,8 @@ import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.shouldBe
+import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
 import java.math.BigDecimal
@@ -1308,6 +1311,81 @@ class OrderExecutorCashCapTest : StringSpec() {
                 // Uncapped fill would be $600; projected cap $200 → buy vol 0.198
                 krakenService.executedOrders.size shouldBe 2
                 krakenService.executedOrders[1].volume.shouldBeEqualComparingTo(BigDecimal("0.198"))
+            }
+        }
+
+        "ambiguous live failure remains unresolved and blocks the next cycle" {
+            runTest {
+                coEvery { tradeHistoryService.saveTrade(any()) } returns 42
+                coEvery { tradeHistoryService.hasPendingSubmissions() } returnsMany listOf(false, true)
+                krakenService.orderResultFactory = { pair, _, side, volume ->
+                    OrderResult(
+                        success = false,
+                        pair = pair,
+                        side = side,
+                        volume = volume,
+                        errorMessage = "response lost",
+                        submissionUncertain = true,
+                    )
+                }
+                val settings =
+                    Settings(
+                        loopDelaySeconds = 0L,
+                        deviationTriggerPercent = 2.0,
+                        dustThresholdUSD = 1.0,
+                        dryRun = false,
+                        fiatMaxDrawdown = 0.0,
+                        fiatDeploymentExponent = 1.0,
+                    )
+                val values = mapOf(Asset.USD to BigDecimal("100.00"))
+                val prices = mapOf(Asset.BTC to BigDecimal("1000.00"))
+
+                repeat(2) {
+                    orderExecutor.executeOrders(
+                        buyOrders = mapOf(Asset.BTC to BigDecimal("50.00")),
+                        sellOrders = emptyMap(),
+                        currentValuesUSD = values,
+                        prices = prices,
+                        settings = settings,
+                        actionLog = mutableListOf(),
+                        cycleId = "cycle-$it",
+                    )
+                }
+
+                krakenService.executedOrders.size shouldBe 1
+                coVerify {
+                    tradeHistoryService.updateTrade(
+                        any(),
+                        match { it.id == 42 && it.submissionState == OrderSubmissionState.UNCERTAIN },
+                    )
+                }
+            }
+        }
+
+        "simulation records never create a live submission gate" {
+            runTest {
+                coEvery { tradeHistoryService.saveTrade(any()) } returns 7
+                orderExecutor.executeOrders(
+                    buyOrders = mapOf(Asset.BTC to BigDecimal("50.00")),
+                    sellOrders = emptyMap(),
+                    currentValuesUSD = mapOf(Asset.USD to BigDecimal("100.00")),
+                    prices = mapOf(Asset.BTC to BigDecimal("1000.00")),
+                    settings =
+                    Settings(
+                        loopDelaySeconds = 0L,
+                        deviationTriggerPercent = 2.0,
+                        dustThresholdUSD = 1.0,
+                        dryRun = false,
+                        fiatMaxDrawdown = 0.0,
+                        fiatDeploymentExponent = 1.0,
+                        simulation = true,
+                    ),
+                    actionLog = mutableListOf(),
+                    cycleId = "simulation-cycle",
+                )
+
+                coVerify(exactly = 0) { tradeHistoryService.hasPendingSubmissions() }
+                coVerify { tradeHistoryService.saveTrade(match { it.submissionState == null }) }
             }
         }
     }

@@ -122,7 +122,16 @@ sequenceDiagram
 
 - `replay = 1` means `PortfolioManager` immediately gets the current config the moment it subscribes on startup — no race condition on boot.
 - Config’s `MutableSharedFlow` uses **no** `extraBufferCapacity` (default 0) with `DROP_OLDEST`; snapshot flow uses `extraBufferCapacity = 16` so slow SSE clients do not stall emitters.
-- `collectLatest` (not `collect`) is used so that a settings change during a long loop `delay()` takes effect immediately. An active rebalance session is non-cancellable at the settings boundary, so it completes before the newest settings restart the loop.
+- `collectLatest` (not `collect`) is used so that a settings change during a long loop `delay()`
+  takes effect immediately. During an active rebalance session, config saves/reloads persist to disk
+  but defer runtime publication until the session exits; unrelated coroutine cancellation still
+  propagates normally.
+- Real-live order placement writes `PENDING` plus the deterministic `cl_ord_id` before AddOrder.
+  Definite exchange rejections resolve the row immediately; transport/response failures become
+  `UNCERTAIN` and block later live submissions. Kraken fill sync clears a matching unresolved row.
+  Absence from history is never treated as proof of rejection: an operator must verify Kraken open
+  orders, closed orders, and fills before clearing an unmatched state in SQLite. Unresolved rows are
+  excluded from retention pruning.
 
 ---
 

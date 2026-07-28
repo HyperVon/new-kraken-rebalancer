@@ -4,6 +4,7 @@ import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.config.DatabaseConfig
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderSide
+import com.gemini.krakenbot.model.OrderSubmissionState
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.model.TradeSource
@@ -936,6 +937,29 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
                     )
                 remaining.size shouldBe 1
                 remaining.single().timestamp shouldBe baseTime
+            }
+        }
+
+        "unresolved live submissions survive retention pruning" {
+            runTest {
+                val pending =
+                    TradeRecord(
+                        timestamp = Instant.now().minus(100, ChronoUnit.DAYS),
+                        pair = Asset.BTC_USD_PAIR,
+                        side = OrderSide.BUY.name,
+                        symbol = Asset.BTC,
+                        volume = BigDecimal("0.01"),
+                        usdAmount = BigDecimal("500.00"),
+                        success = false,
+                        dryRun = false,
+                        clientOrderId = "74cf3df5-fe0c-4bd7-a884-b630701cfcd8",
+                        submissionState = OrderSubmissionState.UNCERTAIN,
+                    )
+                repository.saveTrade(pending)
+
+                repository.hasPendingSubmissions() shouldBe true
+                repository.pruneTradesOlderThan(Instant.now().minus(90, ChronoUnit.DAYS)) shouldBe 0
+                repository.hasPendingSubmissions() shouldBe true
             }
         }
 
