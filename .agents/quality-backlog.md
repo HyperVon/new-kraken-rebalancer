@@ -27,6 +27,17 @@ Product polish discovered during QA belongs in
 
 | ID | Size | Kind | Status | Area | Summary | Cycle | PR |
 | :--- | :---: | :--- | :--- | :--- | :--- | :---: | :--- |
+| CQ-12-L1 | L | bug | done | settings | Reject malformed or mismatched Settings form fields | 12 | #138 |
+| CQ-12-L2 | L | bug | done | security | Harden no-auth dashboard CORS origin validation | 12 | #138 |
+| CQ-12-L3 | L | bug | done | orders | Cap zero-target sell volume to available holdings | 12 | #138 |
+| CQ-12-L4 | L | bug | done | orders | Deduplicate shifted Kraken fill pages during sell settlement | 12 | #138 |
+| CQ-12-L5 | L | bug | done | history/sync | Preserve dry-run isolation during exact order-ID reconciliation | 12 | #138 |
+| CQ-12-L6 | L | bug | done | history/sync | Serialize concurrent paginated trade-history syncs | 12 | #138 |
+| CQ-12-L7 | L | bug | done | history/sync | Prevent clock rollback from suppressing history sync | 12 | #138 |
+| CQ-12-1 | M | bug | done | Kraken/OHLC | Propagate cancellation from live OHLC requests | 12 | #138 |
+| CQ-12-2 | M | gap | done | orders | Cover live submission exceptions, uncertain journaling, and later-cycle blocking | 12 | #138 |
+| CQ-12-3 | M | bug | done | simulation | Persist actual non-live order exceptions instead of stale pending text | 12 | #138 |
+| CQ-12-4 | S | harness | done | eval | Correct Scenario 5 evidence to match the cycle-boundary assertion | 12 | #138 |
 | CQ-11-L1 | L | bug | done | algorithm | Preserve four-decimal percentage precision before live trigger comparison | 11 | #130 |
 | CQ-11-L2 | L | bug | done | algorithm | Define safe fiat-deployment behavior for USD-only portfolios | 11 | #130 |
 | CQ-11-L3 | L | bug | done | config/sync | Pin configuration and credentials across paginated history sync | 11 | #130 |

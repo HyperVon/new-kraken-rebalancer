@@ -14,6 +14,8 @@ import com.gemini.krakenbot.service.KrakenService
 import com.gemini.krakenbot.util.TradeCalculator
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.slf4j.LoggerFactory
 import java.time.Duration
 import java.time.Instant
@@ -24,17 +26,21 @@ class TradeHistorySyncService(
     private val krakenService: KrakenService,
     private val configService: ConfigService,
     private val reconstructionService: TradeHistoryReconstructionService,
+    private val nowProvider: () -> Instant = Instant::now,
 ) {
     private val log = LoggerFactory.getLogger(TradeHistorySyncService::class.java)
-
-    @Volatile
+    private val syncMutex = Mutex()
     private var lastSyncTime: Instant = Instant.EPOCH
 
-    suspend fun syncTradesFromKraken() {
-        val now = Instant.now()
+    suspend fun syncTradesFromKraken() = syncMutex.withLock {
+        syncTradesFromKrakenLocked()
+    }
+
+    private suspend fun syncTradesFromKrakenLocked() {
+        val now = nowProvider()
         val elapsedSeconds = Duration.between(lastSyncTime, now).seconds
         // Throttle Kraken history pulls to at most once per 5 minutes.
-        if (elapsedSeconds < 300) {
+        if (elapsedSeconds in 0 until 300) {
             log.info("Skipping trade history synchronization; last run was only {} seconds ago.", elapsedSeconds)
             return
         }
@@ -76,7 +82,7 @@ class TradeHistorySyncService(
 
         val queryStart = effectiveLatest?.minusSeconds(300) ?: Instant.EPOCH
 
-        val queryEnd = Instant.now().plusSeconds(300)
+        val queryEnd = nowProvider().plusSeconds(300)
         val originalLocalTrades = repository.getTradesInRange(queryStart, queryEnd).toMutableList()
 
         val allocations = config.allocations.map { it.symbol.value }
@@ -110,7 +116,7 @@ class TradeHistorySyncService(
                     // economics tolerances so legacy/id-less rows can still reconcile.
                     val localEstimates =
                         originalLocalTrades.filter { local ->
-                            local.submissionState == null && local.isLocalEstimate()
+                            local.submissionState == null && !local.dryRun && local.isLocalEstimate()
                         }
                     val apiOrderTxid = apiTrade.orderTxid?.takeIf { it.isNotBlank() }
                     val matchingLocalTrade =
@@ -190,8 +196,9 @@ class TradeHistorySyncService(
             repository.setSyncMetadata(SyncMetadataKeys.SYNC_TOTAL, SyncMetadataKeys.COMPLETED)
         }
         // Persist watermark even when no real fills exist so the next sync is incremental.
-        writeSyncWatermark(Instant.now())
-        lastSyncTime = Instant.now()
+        val completedAt = nowProvider()
+        writeSyncWatermark(completedAt)
+        lastSyncTime = completedAt
         log.info("Trade history synchronization completed. Added: {} new, Reconciled: {}.", totalAdded, totalReconciled)
     }
 

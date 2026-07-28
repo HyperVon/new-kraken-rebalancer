@@ -230,6 +230,9 @@ sequenceDiagram
 - Within one sync pass, API fills are fingerprinted so a pagination window shift
   cannot double-insert the same fill; dry-run locals never match API fills
   (`isMatchingApiTrade` returns false when `local.dryRun`).
+- The throttle check and pagination run under one coroutine mutex; concurrent
+  callers wait and then recheck. A backward wall-clock jump allows the next
+  sync to rebase the 300-second throttle instead of suppressing it indefinitely.
 - Reconciliation first prefers an exact nonblank `orderTxid` match, then falls
   back to the existing economics tolerance for ID-less/legacy rows; conflicting
   nonblank IDs never reconcile.

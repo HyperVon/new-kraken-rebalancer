@@ -24,6 +24,7 @@ import com.gemini.krakenbot.view.util.Routes
 import com.gemini.krakenbot.view.util.ViewText
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
+import io.ktor.http.Parameters
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.html.respondHtml
 import io.ktor.server.http.content.staticResources
@@ -126,53 +127,12 @@ class DashboardController(
     private suspend fun RoutingContext.handlePostSettings() {
         val params = call.receiveParameters()
         val currentConfig = configService.getConfig()
-
-        val deviationTriggerPercent =
-            params[FormFields.DEVIATION_TRIGGER_PERCENT]?.toDoubleOrNull()
-        if (deviationTriggerPercent == null) {
-            respondSettingsFormError(currentConfig, ViewText.INVALID_DEVIATION_TRIGGER)
+        val updatedConfig = try {
+            parseSettingsForm(params, currentConfig)
+        } catch (e: IllegalArgumentException) {
+            respondSettingsFormError(currentConfig, e.message ?: ViewText.INVALID_CONFIGURATION_FALLBACK)
             return
         }
-        val dustThresholdUSD = params[FormFields.DUST_THRESHOLD_USD]?.toDoubleOrNull()
-        if (dustThresholdUSD == null) {
-            respondSettingsFormError(currentConfig, ViewText.INVALID_DUST_THRESHOLD)
-            return
-        }
-
-        val loopDelaySeconds =
-            params[FormFields.LOOP_DELAY_SECONDS]?.toLongOrNull() ?: 60L
-        val dryRun = params[FormFields.DRY_RUN] != null
-        val simulation = params[FormFields.SIMULATION] != null
-        val fiatMaxDrawdown =
-            params[FormFields.FIAT_MAX_DRAWDOWN]?.toDoubleOrNull() ?: 0.0
-        val fiatDeploymentExponent =
-            params[FormFields.FIAT_DEPLOYMENT_EXPONENT]?.toDoubleOrNull() ?: 1.0
-
-        val symbols = params.getAll(FormFields.SYMBOLS) ?: emptyList()
-        val targets = params.getAll(FormFields.TARGETS) ?: emptyList()
-        val colors = params.getAll(FormFields.COLORS) ?: emptyList()
-
-        val allocations = symbols.zip(targets).mapIndexed { index, (symbol, targetStr) ->
-            val target = targetStr.toDoubleOrNull() ?: 0.0
-            val color = AssetColorAssigner.normalizeHex(colors.getOrElse(index) { "" })
-            Allocation(symbol, target, color)
-        }
-
-        val updatedConfig =
-            AppConfig(
-                kraken = currentConfig.kraken,
-                settings =
-                Settings(
-                    loopDelaySeconds = loopDelaySeconds,
-                    deviationTriggerPercent = deviationTriggerPercent,
-                    dustThresholdUSD = dustThresholdUSD,
-                    dryRun = dryRun,
-                    simulation = simulation,
-                    fiatMaxDrawdown = fiatMaxDrawdown,
-                    fiatDeploymentExponent = fiatDeploymentExponent,
-                ),
-                allocations = allocations,
-            )
 
         try {
             configService.updateConfig(updatedConfig)
@@ -184,6 +144,72 @@ class DashboardController(
                 e.message ?: ViewText.INVALID_CONFIGURATION_FALLBACK,
             )
         }
+    }
+
+    private fun parseSettingsForm(params: Parameters, currentConfig: AppConfig): AppConfig {
+        val deviationTriggerPercent =
+            params.requiredSingle(FormFields.DEVIATION_TRIGGER_PERCENT, ViewText.INVALID_DEVIATION_TRIGGER)
+                .requiredFiniteDouble(ViewText.INVALID_DEVIATION_TRIGGER)
+        val dustThresholdUSD =
+            params.requiredSingle(FormFields.DUST_THRESHOLD_USD, ViewText.INVALID_DUST_THRESHOLD)
+                .requiredFiniteDouble(ViewText.INVALID_DUST_THRESHOLD)
+        val loopDelaySeconds =
+            params.requiredSingle(FormFields.LOOP_DELAY_SECONDS, ViewText.INVALID_LOOP_DELAY)
+                .requiredLong(ViewText.INVALID_LOOP_DELAY)
+        val fiatMaxDrawdown =
+            params.requiredSingle(FormFields.FIAT_MAX_DRAWDOWN, ViewText.INVALID_FIAT_MAX_DRAWDOWN)
+                .requiredFiniteDouble(ViewText.INVALID_FIAT_MAX_DRAWDOWN)
+        val fiatDeploymentExponent =
+            params.requiredSingle(FormFields.FIAT_DEPLOYMENT_EXPONENT, ViewText.INVALID_FIAT_DEPLOYMENT_EXPONENT)
+                .requiredFiniteDouble(ViewText.INVALID_FIAT_DEPLOYMENT_EXPONENT)
+        val settings =
+            Settings(
+                loopDelaySeconds = loopDelaySeconds,
+                deviationTriggerPercent = deviationTriggerPercent,
+                dustThresholdUSD = dustThresholdUSD,
+                dryRun = params[FormFields.DRY_RUN] != null,
+                simulation = params[FormFields.SIMULATION] != null,
+                fiatMaxDrawdown = fiatMaxDrawdown,
+                fiatDeploymentExponent = fiatDeploymentExponent,
+            )
+
+        val symbols = params.getAll(FormFields.SYMBOLS).orEmpty()
+        val targets = params.getAll(FormFields.TARGETS).orEmpty()
+        val colors = params.getAll(FormFields.COLORS).orEmpty()
+        require(symbols.isNotEmpty() && symbols.size == targets.size && symbols.size == colors.size) {
+            ViewText.INVALID_ALLOCATION_FIELDS
+        }
+
+        val allocations =
+            symbols.mapIndexed { index, symbol ->
+                val target = targets[index].requiredFiniteDouble(ViewText.INVALID_ALLOCATION_TARGET)
+                val rawColor = colors.getOrNull(index)
+                val color = AssetColorAssigner.normalizeHex(rawColor)
+                require(rawColor.isNullOrBlank() || color != null) {
+                    ViewText.INVALID_ALLOCATION_COLOR
+                }
+                Allocation(symbol, target, color)
+            }
+
+        return AppConfig(
+            kraken = currentConfig.kraken,
+            settings = settings,
+            allocations = allocations,
+        )
+    }
+
+    private fun Parameters.requiredSingle(name: String, message: String): String {
+        val values = getAll(name)
+        require(values?.size == 1) { message }
+        return values.single()
+    }
+
+    private fun String?.requiredLong(message: String): Long = requireNotNull(this?.toLongOrNull()) { message }
+
+    private fun String?.requiredFiniteDouble(message: String): Double {
+        val value = this?.toDoubleOrNull()
+        require(value != null && value.isFinite()) { message }
+        return value
     }
 
     private suspend fun RoutingContext.respondSettingsFormError(config: AppConfig, message: String) {

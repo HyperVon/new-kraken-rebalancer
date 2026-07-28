@@ -174,6 +174,7 @@ class PortfolioManagerImpl(
             settings = config.settings,
             actionLog = actionLog,
             cycleId = cycleId,
+            availableBalances = balances,
         )
 
         val finalState =

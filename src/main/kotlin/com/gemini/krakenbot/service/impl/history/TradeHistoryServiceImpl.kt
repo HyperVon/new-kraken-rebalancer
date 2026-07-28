@@ -26,6 +26,7 @@ class TradeHistoryServiceImpl(
         objectMapper: ObjectMapper,
         portfolioAnalyzer: PortfolioAnalyzer,
         tradeHistoryFilePath: String = "trade-history.json",
+        syncNowProvider: () -> Instant = Instant::now,
     ) : this(
         snapshotStore =
         TradeHistorySnapshotStore(
@@ -44,6 +45,7 @@ class TradeHistoryServiceImpl(
             repository = repository,
             krakenService = krakenService,
             configService = configService,
+            nowProvider = syncNowProvider,
             reconstructionService =
             TradeHistoryReconstructionService(
                 repository = repository,

@@ -221,6 +221,9 @@ failure.
       logged but do not inflate the available cash. If every sell fails (or none
       run), buys continue against the **pre-sell** projected cash and the 99%
       cycle budget — no invented sell liquidity.
+    - Sell volume is capped to the cycle-entry asset balance rounded down to
+      eight decimals. Cent-rounded full-liquidation intent therefore cannot
+      request more units than were held at analysis time.
 2. **USD Settle (fill-confirmed, balance fallback)**: After **≥1 successful
    sell** and when **not** in dry-run mode, the system prefers **fill-confirmed**
    sell proceeds: poll trade history (same 3× backoff from **250ms**, paginating
@@ -236,6 +239,9 @@ failure.
    available (e.g. some test doubles), go straight to the balance poll. Skipped
    entirely when no sell succeeded or `dryRun` is true (buys use projected cash).
    Successful sells record `cycleId` and `orderTxid` on persisted trade rows.
+   Repeated nonblank Kraken trade IDs caused by shifting offset pages count
+   once; id-less rows remain distinct because identical partial-fill economics
+   can be legitimate.
 3. **Buy Orders Second**:
     - The whole sell→buy sequence runs inside `KrakenService.withStableBackend`
       so a mid-cycle `simulation` flip cannot split sells and buys across backends.
@@ -250,6 +256,11 @@ failure.
       written with `clientOrderId`. A definite exchange response resolves that
       row. A transport failure, response failure, or response without a txid is
       ambiguous and marks it `UNCERTAIN`; the executor stops the batch.
+      Cancellation persists that uncertain state in a `NonCancellable`
+      durability block before propagating. Dry-run and simulation exceptions
+      update the local estimate with the actual known failure instead. If that
+      journal update also fails, the placement exception remains primary and
+      the persistence failure is attached as suppressed diagnostic context.
     - AddOrder is **not retried** after an ambiguous response. Any unresolved
       live intent blocks subsequent live order batches and is excluded from
       sync reconciliation, duplicate cleanup, and retention pruning. An

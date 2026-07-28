@@ -17,7 +17,10 @@ Primary types: `TradeHistoryService` façade → `TradeHistorySyncService` /
 
 ## Sync behavior
 
-- Throttle: minimum **300s** between Kraken sync runs.
+- Throttle: minimum **300s** between Kraken sync runs. A coroutine `Mutex`
+  serializes the throttle check through pagination, so concurrent callers wait
+  and recheck instead of duplicating a sync. Negative wall-clock elapsed time
+  allows the next sync to rebase instead of suppressing it indefinitely.
 - Full vs incremental is driven by the **effective watermark** (not
   `isHistorySeeded`):
   - `effectiveLatest = latestTradeTime ?: watermarkInstant` — **only**
@@ -49,7 +52,8 @@ Primary types: `TradeHistoryService` façade → `TradeHistorySyncService` /
   `LOCAL_ESTIMATE` or legacy inferred estimate shape). Persisted `API_FILL`
   rows are never overwritten; an exact persisted API-fill identity is treated
   as already synchronized.
-- When the API fill and a local estimate both have nonblank `orderTxid`, an
+- Dry-run rows are excluded before both exact-ID and heuristic reconciliation.
+  When the API fill and a non-dry-run local estimate both have nonblank `orderTxid`, an
   exact ID match wins before newest-first economics heuristics. ID-less and
   legacy rows retain the tolerance fallback, but conflicting nonblank IDs never
   reconcile.

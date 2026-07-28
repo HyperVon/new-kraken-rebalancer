@@ -1,6 +1,6 @@
 # Scenario Evaluation Suite
 
-The Kraken Rebalancer includes a production-grade **Scenario Evaluation Suite** designed to verify the correctness, performance, safety, and resilience of the rebalancer under 33 highly realistic market scenarios and operational conditions.
+The Kraken Rebalancer includes a production-grade **Scenario Evaluation Suite** designed to verify the correctness, performance, safety, and resilience of the rebalancer under 34 highly realistic market scenarios and operational conditions.
 
 Implemented in [EvaluationScenariosTest.kt](../src/test/kotlin/com/gemini/krakenbot/EvaluationScenariosTest.kt), this suite is run as part of the standard Gradle test task. It dynamically evaluates the system without making external network calls, using a highly precise in-process fake exchange client ([FakeKrakenService.kt](../src/test/kotlin/com/gemini/krakenbot/service/FakeKrakenService.kt)).
 
@@ -47,7 +47,7 @@ random), not FakeKraken exact-math cases:
 
 ## Scenarios & Outcomes
 
-Below is the report of the current 33 scenarios run by the suite and their results.
+Below is the report of the current 34 scenarios run by the suite and their results.
 Refresh this table from `build/reports/scenarios_evaluation_report.md` after
 suite changes (redact absolute paths to `.../` and temp ids to `scenarioN-*.json`).
 
@@ -57,7 +57,7 @@ suite changes (redact absolute paths to `.../` and temp ids to `scenarioN-*.json
 | Scenario 2 | Dynamic Drawdown-Based Fiat Deployment | 🟢 **PASS** | ATH Saved: 10000.00<br>Case 20% Drawdown: Deployment Pct = 100.0000%, Effective USD Target = 0.00000%, Crypto Scale Factor = 1.25000000<br>Case 10% Drawdown: Deployment Pct = 25.0000%, Effective USD Target = 15.00000%, Crypto Scale Factor = 1.06250000 |
 | Scenario 3 | Intelligent Fiat Correction (Deposit/Withdrawal) | 🟢 **PASS** | Sub-case A (Deposit Fiat Correction): true (Orders: 2 orders generated)<br>Sub-case B (Withdrawal Fiat Correction): true |
 | Scenario 4 | Live Dashboard & Config Hot-Reload | 🟢 **PASS** | GET Dashboard Shell returns 200 OK & Kraken Rebalancer<br>POST settings updates configuration safely and redirects via HX-Redirect header<br>POST invalid settings fails with allocation verification exception<br>SSE stream successfully broadcasts snapshot payload updates to HTMX clients |
-| Scenario 5 | Safety and Resilience (Dry Run & Error Recovery) | 🟢 **PASS** | Sub-case A (Dry Run Mode): true (Actions: [Deviation: BTC 20%, Deviation: USD -20%, [DRY RUN] SELL BTC Volume: 0.02 Value: $1000.00])<br>Sub-case B (Dust Threshold): true (Trades executed: 0)<br>Sub-case C (Network Failure caught): true<br>Sub-case D (Price Lookup Failure aborts cycle): true |
+| Scenario 5 | Safety and Resilience (Dry Run & Cycle Failure Propagation) | 🟢 **PASS** | Sub-case A (Dry Run Mode): true (Actions: [Deviation: BTC 20%, Deviation: USD -20%, [DRY RUN] SELL BTC Volume: 0.02 Value: $1000.00])<br>Sub-case B (Dust Threshold): true (Trades executed: 0)<br>Sub-case C (Network Failure propagated out of cycle to loop boundary): true<br>Sub-case D (Price Lookup Failure aborts cycle): true |
 | Scenario 6 | Zero Target Allocation (Total Liquidation) | 🟢 **PASS** | Trades: 1 generated. Details: [OrderCall(pair=XBTUSD, type=market, side=sell, volume=0.50000000)] |
 | Scenario 7 | Kraken Symbol Mapping Quirks (DOGE/BTC) | 🟢 **PASS** | Queried pairs: XDGUSD,XBTUSD<br>DOGE buy order: OrderCall(pair=XDGUSD, type=market, side=buy, volume=30000.00000000)<br>BTC buy order: OrderCall(pair=XBTUSD, type=market, side=buy, volume=0.06000000) |
 | Scenario 8 | Concurrent Multi-Asset Rebalance with Slippage | 🟢 **PASS** | Sell BTC: OrderCall(pair=XBTUSD, type=market, side=sell, volume=0.34400000)<br>Buy ETH: OrderCall(pair=ETHUSD, type=market, side=buy, volume=3.96000000) (Expected volume: 3.96 ETH)<br>Execution log: [sell XBTUSD volume=0.34400000, buy ETHUSD volume=3.96000000] |
@@ -86,3 +86,4 @@ suite changes (redact absolute paths to `.../` and temp ids to `scenarioN-*.json
 | Scenario 31 | USD Refresh Early-Accept and Fail-Closed Buys | 🟢 **PASS** | Sub-case A (early-accept ≥95%): pollsPass=true buyPass=true<br>Sub-case B (fail-closed abort buys): pollsPass=true noBuysPass=true |
 | Scenario 32 | Multi-Cycle Convergence with Fill Feedback | 🟢 **PASS** | Start: BTC=0.18 @ $50000, ETH=0.50 @ $2000, USD=$0; targets=50%/40%/10%<br>99% partial-buy fills fed back into balances<br>Post-cycle max \|deviation\|: [3.00, 0.03, 0.03]<br>Executed orders per cycle: [2, 1, 0]<br>Total value per cycle: [10000.00, 10000.00, 10000.00] |
 | Scenario 33 | Drawdown Deployment Changes Order Sizes | 🟢 **PASS** | Portfolio: all-cash USD=$8000, BTC=0, ETH=0; targets 40/40/20<br>Control (fiatMaxDrawdown=0): BTC buy=0.064, ETH buy=1.6 (crypto notional=$6400)<br>Drawdown (ATH=$10000, 20% DD, deploy 100%): BTC buy=0.08, ETH buy=1.96 (crypto notional=$7920)<br>Snapshot: drawdown=20%, fiatDeployment=100%, effectiveUsdTarget=0% |
+| Scenario 34 | Zero-Target Liquidation Never Exceeds Holdings | 🟢 **PASS** | BTC holding=0.00000001 @ $500000.00; rounded liquidation intent=$0.01; submitted sell volume=0.00000001 |

@@ -142,7 +142,10 @@ the caption rather than lengthening legend labels.
 ## Security note
 
 Dashboard has **no user authentication**. CORS is limited by
-`isLocalOrPrivateOrigin` — do not weaken origin checks casually.
+`isLocalOrPrivateOrigin` — do not weaken origin checks casually. The predicate
+parses HTTP(S) origins structurally and accepts only localhost, valid `.local`
+hosts, numeric loopback/private/link-local IPv4, and IPv6 loopback; hostname
+prefix lookalikes must remain rejected.
 
 ## Docs screenshots
 

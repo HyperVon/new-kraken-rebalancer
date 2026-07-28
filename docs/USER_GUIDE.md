@@ -136,13 +136,18 @@ running loop — no process restart required. If a rebalance is actively
 executing, the file is saved immediately but the new runtime settings take
 effect only after that cycle finishes.
 
+Saving fails closed when any numeric field is missing, malformed, or non-finite,
+or when allocation rows are incomplete. The current configuration remains
+active and the Settings form shows the validation error.
+
 ### Target allocations
 
 - Every allocation row is a symbol + target percent + optional color swatch,
   bounded to **0–100%** by the percent input itself.
-- Colors persist in `rebalancer-config.json`. Missing or invalid colors are
-  auto-assigned on load/save (known defaults for BTC/ETH/USD; HSL-derived
-  colors for everything else).
+- Colors persist in `rebalancer-config.json`. The Settings form accepts a blank
+  swatch for automatic assignment but rejects malformed nonblank colors.
+  Config-file load/save normalization still assigns known defaults for
+  BTC/ETH/USD and HSL-derived colors for other missing or invalid values.
 - **Total** must read **100.00%** (green badge) before save succeeds.
 - **USD is required** — cash is part of the strategy, not optional.
 - **Add Asset** / **Remove** change the universe without restarting the app.

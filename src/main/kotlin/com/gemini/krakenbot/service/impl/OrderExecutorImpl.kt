@@ -10,6 +10,7 @@ import com.gemini.krakenbot.service.AssetPrices
 import com.gemini.krakenbot.service.AssetValues
 import com.gemini.krakenbot.service.KrakenService
 import com.gemini.krakenbot.service.OrderExecutor
+import com.gemini.krakenbot.service.RawBalances
 import com.gemini.krakenbot.service.RebalanceOrders
 import com.gemini.krakenbot.service.TradeHistoryService
 import com.gemini.krakenbot.util.ActionLogFormatter
@@ -19,10 +20,12 @@ import com.gemini.krakenbot.util.PrecisionConstants
 import com.gemini.krakenbot.util.TradeCalculator
 import com.gemini.krakenbot.util.resolveBalance
 import com.gemini.krakenbot.util.toUsdScale
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.last
+import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import java.math.BigDecimal
 import java.math.RoundingMode
@@ -68,6 +71,7 @@ class OrderExecutorImpl(
         settings: Settings,
         actionLog: MutableList<String>,
         cycleId: String,
+        availableBalances: RawBalances?,
     ) {
         if (!settings.dryRun && !settings.simulation && tradeHistoryService.hasPendingSubmissions()) {
             log.error("Refusing live orders while an unresolved submission intent exists")
@@ -101,9 +105,10 @@ class OrderExecutorImpl(
                         actionLog,
                         cycleId,
                         cycleTradeIds,
+                        availableBalances?.let { resolveBalance(symbol, it) },
                     )
                 if (result?.success == true) {
-                    projectedCash = projectedCash.add(usdToSell)
+                    projectedCash = projectedCash.add(result.volume.multiply(prices.getValue(symbol)))
                     executedSells = true
                     result.orderTxid?.let { sellOrderTxids.add(it) }
                 }
@@ -172,6 +177,7 @@ class OrderExecutorImpl(
                         actionLog,
                         cycleId,
                         cycleTradeIds,
+                        null,
                     )
                 if (result?.success == true) {
                     actualCash = actualCash.subtract(cost)
@@ -192,6 +198,7 @@ class OrderExecutorImpl(
         actionLog: MutableList<String>,
         cycleId: String,
         cycleTradeIds: MutableList<Int>,
+        availableVolume: BigDecimal?,
     ): OrderResult? {
         val price = prices[symbol] ?: BigDecimal.ZERO
         if (price.signum() == 0) return null
@@ -201,8 +208,27 @@ class OrderExecutorImpl(
         // exchange and persist a $0 TradeRecord otherwise (CQ-3-23 / #74).
         if (usdAmount.signum() <= 0) return null
 
-        val volume = usdAmount.divide(price, PrecisionConstants.SCALE_CRYPTO, RoundingMode.HALF_UP)
+        val requestedVolume = usdAmount.divide(price, PrecisionConstants.SCALE_CRYPTO, RoundingMode.HALF_UP)
+        // Portfolio values are cent-rounded, so a full liquidation intent can round up to one
+        // crypto quantum more than the entry balance. Kraken volume must never exceed holdings.
+        val volume =
+            if (side == OrderSide.SELL && availableVolume != null) {
+                requestedVolume.min(
+                    availableVolume.max(BigDecimal.ZERO).setScale(
+                        PrecisionConstants.SCALE_CRYPTO,
+                        RoundingMode.DOWN,
+                    ),
+                )
+            } else {
+                requestedVolume
+            }
         if (volume.signum() <= 0) return null
+        val effectiveUsdAmount = if (side == OrderSide.SELL) volume.multiply(price) else usdAmount
+        if (effectiveUsdAmount < BigDecimal.valueOf(settings.dustThresholdUSD)) {
+            log.info("Skipping dust {} for {} after volume sizing ($ {})", side.apiValue, symbol, effectiveUsdAmount)
+            actionLog.add(ActionLogFormatter.formatSkippedDust(side, symbol, effectiveUsdAmount))
+            return null
+        }
         val pair = Asset.tradingPair(symbol)
         val clOrdId = clientOrderId(cycleId, symbol, side.apiValue)
         val isLiveSubmission = !settings.dryRun && !settings.simulation
@@ -212,7 +238,7 @@ class OrderExecutorImpl(
             pair = pair,
             side = side.uppercaseName,
             volume = volume,
-            usdAmount = usdAmount,
+            usdAmount = effectiveUsdAmount,
             prices = prices,
             cycleId = cycleId.ifBlank { null },
         ).copy(
@@ -230,10 +256,13 @@ class OrderExecutorImpl(
                 clOrdId = clOrdId,
             )
         } catch (e: CancellationException) {
-            markSubmissionUncertain(pending, pendingId, e.message)
+            // Persist the durable outcome even when the surrounding cycle has already been cancelled.
+            withContext(NonCancellable) {
+                markSubmissionFailureWithoutMasking(pending, pendingId, e)
+            }
             throw e
         } catch (e: Exception) {
-            markSubmissionUncertain(pending, pendingId, e.message)
+            markSubmissionFailureWithoutMasking(pending, pendingId, e)
             throw e
         }
         logOrderResult(
@@ -241,7 +270,7 @@ class OrderExecutorImpl(
             actionLog = actionLog,
             symbol = symbol,
             volume = volume,
-            usdAmount = usdAmount,
+            usdAmount = effectiveUsdAmount,
             side = side,
         )
         val resolved = TradeCalculator.createTradeRecord(
@@ -250,7 +279,7 @@ class OrderExecutorImpl(
             pair = pair,
             side = side.uppercaseName,
             volume = volume,
-            usdAmount = usdAmount,
+            usdAmount = effectiveUsdAmount,
             prices = prices,
             cycleId = cycleId.ifBlank { null },
         ).copy(
@@ -267,20 +296,36 @@ class OrderExecutorImpl(
         return result
     }
 
-    private suspend fun markSubmissionUncertain(
+    private suspend fun markSubmissionFailure(
         pending: com.gemini.krakenbot.model.TradeRecord,
         id: Int,
         message: String?,
     ) {
-        if (pending.submissionState == null) return
         tradeHistoryService.updateTrade(
             pending.copy(id = id),
             pending.copy(
                 id = id,
-                errorMessage = message ?: "Order submission outcome is uncertain",
-                submissionState = OrderSubmissionState.UNCERTAIN,
+                errorMessage = message ?: if (pending.submissionState == null) {
+                    "Order submission failed"
+                } else {
+                    "Order submission outcome is uncertain"
+                },
+                submissionState = pending.submissionState?.let { OrderSubmissionState.UNCERTAIN },
             ),
         )
+    }
+
+    private suspend fun markSubmissionFailureWithoutMasking(
+        pending: com.gemini.krakenbot.model.TradeRecord,
+        id: Int,
+        cause: Exception,
+    ) {
+        try {
+            markSubmissionFailure(pending, id, cause.message)
+        } catch (persistenceFailure: Exception) {
+            cause.addSuppressed(persistenceFailure)
+            log.error("Failed to persist order submission failure state", persistenceFailure)
+        }
     }
 
     /**
@@ -390,7 +435,8 @@ class OrderExecutorImpl(
      * Sum net-of-fee USD proceeds for sells whose [com.gemini.krakenbot.model.TradeRecord.orderTxid] is in [txidSet],
      * paginating newest-first until a short/empty page or [MAX_FILL_HISTORY_PAGES].
      * Does not stop early when every txid has been seen once — one AddOrder can
-     * produce multiple fill legs across page boundaries.
+     * produce multiple fill legs across page boundaries. Shifting pages may repeat an identified
+     * fill, while identical id-less rows remain conservatively distinct legs.
      */
     private suspend fun sumMatchedSellProceeds(
         backend: KrakenService,
@@ -399,12 +445,15 @@ class OrderExecutorImpl(
     ): BigDecimal {
         var offset = 0
         var matchedProceeds = BigDecimal.ZERO
+        val seenTradeIds = mutableSetOf<String>()
         for (page in 0 until MAX_FILL_HISTORY_PAGES) {
             val fills = backend.getTradeHistory(startSec = startSec, offset = offset)
             if (fills.isEmpty()) break
             for (fill in fills) {
                 val txid = fill.orderTxid ?: continue
                 if (!fill.success || !OrderSide.isSell(fill.side) || txid !in txidSet) continue
+                val tradeId = fill.tradeId?.takeIf { it.isNotBlank() }
+                if (tradeId != null && !seenTradeIds.add(tradeId)) continue
                 val netProceeds = fill.usdAmount.subtract(fill.fee).max(BigDecimal.ZERO)
                 matchedProceeds = matchedProceeds.add(netProceeds)
             }

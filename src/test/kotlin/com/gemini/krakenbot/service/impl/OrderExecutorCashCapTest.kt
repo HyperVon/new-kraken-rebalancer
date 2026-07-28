@@ -3,10 +3,12 @@ package com.gemini.krakenbot.service.impl
 import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderResult
+import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.OrderSubmissionState
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.service.FakeKrakenService
 import com.gemini.krakenbot.service.TradeHistoryService
+import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
@@ -15,8 +17,10 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
+import java.io.IOException
 import java.math.BigDecimal
 import java.time.Instant
+import kotlin.coroutines.cancellation.CancellationException
 
 class OrderExecutorCashCapTest : StringSpec() {
 
@@ -202,6 +206,72 @@ class OrderExecutorCashCapTest : StringSpec() {
                 krakenService.executedOrders.size shouldBe 1
                 krakenService.executedOrders.single().side shouldBe "sell"
                 krakenService.executedOrders.single().volume.shouldBeEqualComparingTo(BigDecimal("0.00002"))
+            }
+        }
+
+        "CQ-12-L3: caps a rounded zero-target liquidation to the available crypto balance" {
+            runTest {
+                coEvery { tradeHistoryService.saveTrade(any()) } returns 71
+                orderExecutor.executeOrders(
+                    buyOrders = mapOf(Asset.ETH to BigDecimal("0.01")),
+                    sellOrders = mapOf(Asset.BTC to BigDecimal("0.01")),
+                    currentValuesUSD =
+                    mapOf(
+                        Asset.USD to BigDecimal.ZERO,
+                        Asset.BTC to BigDecimal("0.01"),
+                    ),
+                    prices =
+                    mapOf(
+                        Asset.BTC to BigDecimal("500000.00"),
+                        Asset.ETH to BigDecimal.ONE,
+                    ),
+                    settings =
+                    Settings(
+                        loopDelaySeconds = 0L,
+                        deviationTriggerPercent = 0.0,
+                        dustThresholdUSD = 0.0,
+                        dryRun = true,
+                        fiatMaxDrawdown = 0.0,
+                        fiatDeploymentExponent = 1.0,
+                    ),
+                    actionLog = mutableListOf(),
+                    availableBalances = mapOf("XXBT" to BigDecimal("0.00000001")),
+                )
+
+                // $0.01 / $500,000 rounds HALF_UP to 0.00000002, but only one satoshi is held.
+                krakenService.executedOrders.single().volume.shouldBeEqualComparingTo(BigDecimal("0.00000001"))
+                coVerify {
+                    tradeHistoryService.updateTrade(
+                        any(),
+                        match { it.id == 71 && it.usdAmount.compareTo(BigDecimal("0.0050000000")) == 0 },
+                    )
+                }
+                // The capped half-cent proceeds round to a $0.00 99% budget, so no buy is invented.
+                krakenService.executedOrders.none { it.side == OrderSide.BUY.apiValue } shouldBe true
+            }
+        }
+
+        "CQ-12-L3: reports a capped sell that falls below the dust threshold" {
+            runTest {
+                val actionLog = mutableListOf<String>()
+                orderExecutor.executeOrders(
+                    buyOrders = emptyMap(),
+                    sellOrders = mapOf(Asset.BTC to BigDecimal("0.01")),
+                    currentValuesUSD = mapOf(Asset.USD to BigDecimal.ZERO, Asset.BTC to BigDecimal("0.01")),
+                    prices = mapOf(Asset.BTC to BigDecimal("500000.00")),
+                    settings =
+                    Settings(
+                        loopDelaySeconds = 0L,
+                        deviationTriggerPercent = 0.0,
+                        dustThresholdUSD = 0.007,
+                        dryRun = true,
+                    ),
+                    actionLog = actionLog,
+                    availableBalances = mapOf("XXBT" to BigDecimal("0.00000001")),
+                )
+
+                krakenService.executedOrders shouldBe emptyList()
+                actionLog shouldBe listOf("Skipping dust sell for BTC ($0.01)")
             }
         }
 
@@ -1255,6 +1325,84 @@ class OrderExecutorCashCapTest : StringSpec() {
             }
         }
 
+        "CQ-12-L4: deduplicates shifted fill ids while retaining identical id-less legs" {
+            runTest {
+                val sellTxid = "OID-SHIFTED"
+                val duplicateFill =
+                    TradeRecord(
+                        timestamp = Instant.now(),
+                        pair = Asset.BTC_USD_PAIR,
+                        side = "SELL",
+                        symbol = Asset.BTC,
+                        volume = BigDecimal("0.10"),
+                        usdAmount = BigDecimal("100.00"),
+                        success = true,
+                        dryRun = false,
+                        price = BigDecimal("1000.00"),
+                        fee = BigDecimal("1.00"),
+                        orderTxid = sellTxid,
+                        tradeId = "T-SHIFTED",
+                    )
+                val padding =
+                    List(OrderExecutorImpl.TRADE_HISTORY_PAGE_SIZE - 1) { index ->
+                        duplicateFill.copy(
+                            side = "BUY",
+                            orderTxid = "OID-PADDING-$index",
+                            tradeId = "T-PADDING-$index",
+                        )
+                    }
+                val idLessLeg =
+                    duplicateFill.copy(
+                        volume = BigDecimal("0.01"),
+                        usdAmount = BigDecimal("10.00"),
+                        fee = BigDecimal.ZERO,
+                        tradeId = null,
+                    )
+                krakenService.tradeHistorySupplier = { _, offset ->
+                    when (offset ?: 0) {
+                        0 -> listOf(duplicateFill) + padding
+                        OrderExecutorImpl.TRADE_HISTORY_PAGE_SIZE ->
+                            listOf(duplicateFill, idLessLeg, idLessLeg.copy())
+                        else -> emptyList()
+                    }
+                }
+                krakenService.balanceSupplier = { emptyMap() }
+                krakenService.orderResultFactory = { pair, _, side, volume ->
+                    OrderResult(
+                        success = true,
+                        pair = pair,
+                        side = side,
+                        volume = volume,
+                        orderTxid = if (side == "sell") sellTxid else null,
+                    )
+                }
+
+                orderExecutor.executeOrders(
+                    buyOrders = mapOf(Asset.ETH to BigDecimal("500.00")),
+                    sellOrders = mapOf(Asset.BTC to BigDecimal("500.00")),
+                    currentValuesUSD = mapOf(Asset.USD to BigDecimal("100.00")),
+                    prices =
+                    mapOf(
+                        Asset.BTC to BigDecimal("1000.00"),
+                        Asset.ETH to BigDecimal("1000.00"),
+                    ),
+                    settings =
+                    Settings(
+                        loopDelaySeconds = 0L,
+                        deviationTriggerPercent = 2.0,
+                        dustThresholdUSD = 1.0,
+                        dryRun = false,
+                        fiatMaxDrawdown = 0.0,
+                        fiatDeploymentExponent = 1.0,
+                    ),
+                    actionLog = mutableListOf(),
+                )
+
+                // Opening $100 + ($99 unique identified leg + two distinct $10 id-less legs) = $219.
+                krakenService.executedOrders[1].volume.shouldBeEqualComparingTo(BigDecimal("0.21681"))
+            }
+        }
+
         "caps fill-confirmed cash to projected when balance peek is unavailable" {
             runTest {
                 val sellTxid = "OID-OVERSTATED"
@@ -1365,6 +1513,224 @@ class OrderExecutorCashCapTest : StringSpec() {
                     tradeHistoryService.updateTrade(
                         any(),
                         match { it.id == 42 && it.submissionState == OrderSubmissionState.UNCERTAIN },
+                    )
+                }
+            }
+        }
+
+        "CQ-12-2: live IOException marks the intent uncertain, rethrows, and blocks retry" {
+            runTest {
+                coEvery { tradeHistoryService.saveTrade(any()) } returns 51
+                coEvery { tradeHistoryService.hasPendingSubmissions() } returnsMany listOf(false, true)
+                val original = IOException("connection reset after submission")
+                krakenService.executeOrderAction = { _, _, _, _ -> throw original }
+                val settings =
+                    Settings(
+                        loopDelaySeconds = 0L,
+                        deviationTriggerPercent = 2.0,
+                        dustThresholdUSD = 1.0,
+                        dryRun = false,
+                        fiatMaxDrawdown = 0.0,
+                        fiatDeploymentExponent = 1.0,
+                    )
+
+                shouldThrow<IOException> {
+                    orderExecutor.executeOrders(
+                        buyOrders = mapOf(Asset.BTC to BigDecimal("25.00")),
+                        sellOrders = emptyMap(),
+                        currentValuesUSD = mapOf(Asset.USD to BigDecimal("100.00")),
+                        prices = mapOf(Asset.BTC to BigDecimal("1000.00")),
+                        settings = settings,
+                        actionLog = mutableListOf(),
+                        cycleId = "live-io-cycle",
+                    )
+                } shouldBe original
+
+                orderExecutor.executeOrders(
+                    buyOrders = mapOf(Asset.BTC to BigDecimal("25.00")),
+                    sellOrders = emptyMap(),
+                    currentValuesUSD = mapOf(Asset.USD to BigDecimal("100.00")),
+                    prices = mapOf(Asset.BTC to BigDecimal("1000.00")),
+                    settings = settings,
+                    actionLog = mutableListOf(),
+                    cycleId = "blocked-cycle",
+                )
+
+                krakenService.executedOrders.size shouldBe 1
+                coVerify {
+                    tradeHistoryService.updateTrade(
+                        any(),
+                        match {
+                            it.id == 51 &&
+                                it.submissionState == OrderSubmissionState.UNCERTAIN &&
+                                it.errorMessage == original.message
+                        },
+                    )
+                }
+            }
+        }
+
+        "CQ-12-2: live cancellation marks the intent uncertain and rethrows the same exception" {
+            runTest {
+                coEvery { tradeHistoryService.saveTrade(any()) } returns 52
+                coEvery { tradeHistoryService.hasPendingSubmissions() } returns false
+                val original = CancellationException("placement cancelled")
+                krakenService.executeOrderAction = { _, _, _, _ -> throw original }
+                val thrown =
+                    shouldThrow<CancellationException> {
+                        orderExecutor.executeOrders(
+                            buyOrders = mapOf(Asset.BTC to BigDecimal("25.00")),
+                            sellOrders = emptyMap(),
+                            currentValuesUSD = mapOf(Asset.USD to BigDecimal("100.00")),
+                            prices = mapOf(Asset.BTC to BigDecimal("1000.00")),
+                            settings =
+                            Settings(
+                                loopDelaySeconds = 0L,
+                                deviationTriggerPercent = 2.0,
+                                dustThresholdUSD = 1.0,
+                                dryRun = false,
+                                fiatMaxDrawdown = 0.0,
+                                fiatDeploymentExponent = 1.0,
+                            ),
+                            actionLog = mutableListOf(),
+                            cycleId = "live-cancel-cycle",
+                        )
+                    }
+
+                thrown shouldBe original
+                coVerify {
+                    tradeHistoryService.updateTrade(
+                        any(),
+                        match { it.id == 52 && it.submissionState == OrderSubmissionState.UNCERTAIN },
+                    )
+                }
+            }
+        }
+
+        "CQ-12-2: journaling failure never masks the original submission exception" {
+            runTest {
+                coEvery { tradeHistoryService.saveTrade(any()) } returns 53
+                coEvery { tradeHistoryService.hasPendingSubmissions() } returns false
+                val original = IOException("connection failed after submission")
+                val persistenceFailure = IllegalStateException("trade journal unavailable")
+                coEvery { tradeHistoryService.updateTrade(any(), any()) } throws persistenceFailure
+                krakenService.executeOrderAction = { _, _, _, _ -> throw original }
+
+                val thrown =
+                    shouldThrow<IOException> {
+                        orderExecutor.executeOrders(
+                            buyOrders = mapOf(Asset.BTC to BigDecimal("25.00")),
+                            sellOrders = emptyMap(),
+                            currentValuesUSD = mapOf(Asset.USD to BigDecimal("100.00")),
+                            prices = mapOf(Asset.BTC to BigDecimal("1000.00")),
+                            settings = Settings(loopDelaySeconds = 0L, deviationTriggerPercent = 2.0, dryRun = false),
+                            actionLog = mutableListOf(),
+                            cycleId = "live-journal-failure-cycle",
+                        )
+                    }
+
+                thrown shouldBe original
+                thrown.suppressed.single() shouldBe persistenceFailure
+            }
+        }
+
+        "CQ-12-2: journaling failure never masks the original cancellation" {
+            runTest {
+                coEvery { tradeHistoryService.saveTrade(any()) } returns 54
+                coEvery { tradeHistoryService.hasPendingSubmissions() } returns false
+                val original = CancellationException("placement cancelled")
+                val persistenceFailure = IllegalStateException("trade journal unavailable")
+                coEvery { tradeHistoryService.updateTrade(any(), any()) } throws persistenceFailure
+                krakenService.executeOrderAction = { _, _, _, _ -> throw original }
+
+                val thrown =
+                    shouldThrow<CancellationException> {
+                        orderExecutor.executeOrders(
+                            buyOrders = mapOf(Asset.BTC to BigDecimal("25.00")),
+                            sellOrders = emptyMap(),
+                            currentValuesUSD = mapOf(Asset.USD to BigDecimal("100.00")),
+                            prices = mapOf(Asset.BTC to BigDecimal("1000.00")),
+                            settings = Settings(loopDelaySeconds = 0L, deviationTriggerPercent = 2.0, dryRun = false),
+                            actionLog = mutableListOf(),
+                            cycleId = "live-journal-cancellation-cycle",
+                        )
+                    }
+
+                thrown shouldBe original
+                thrown.suppressed.single() shouldBe persistenceFailure
+            }
+        }
+
+        "CQ-12-3: dry-run backend exception replaces pending text with the failure" {
+            runTest {
+                coEvery { tradeHistoryService.saveTrade(any()) } returns 61
+                val original = IOException("dry-run backend unavailable")
+                krakenService.executeOrderAction = { _, _, _, _ -> throw original }
+
+                shouldThrow<IOException> {
+                    orderExecutor.executeOrders(
+                        buyOrders = mapOf(Asset.BTC to BigDecimal("25.00")),
+                        sellOrders = emptyMap(),
+                        currentValuesUSD = mapOf(Asset.USD to BigDecimal("100.00")),
+                        prices = mapOf(Asset.BTC to BigDecimal("1000.00")),
+                        settings =
+                        Settings(
+                            loopDelaySeconds = 0L,
+                            deviationTriggerPercent = 2.0,
+                            dustThresholdUSD = 1.0,
+                            dryRun = true,
+                            fiatMaxDrawdown = 0.0,
+                            fiatDeploymentExponent = 1.0,
+                        ),
+                        actionLog = mutableListOf(),
+                    )
+                } shouldBe original
+
+                coVerify {
+                    tradeHistoryService.updateTrade(
+                        any(),
+                        match {
+                            it.id == 61 && !it.success && it.dryRun &&
+                                it.submissionState == null && it.errorMessage == original.message
+                        },
+                    )
+                }
+            }
+        }
+
+        "CQ-12-3: simulation backend exception persists a failed non-live estimate" {
+            runTest {
+                coEvery { tradeHistoryService.saveTrade(any()) } returns 62
+                val original = IOException("emulator placement failed")
+                krakenService.executeOrderAction = { _, _, _, _ -> throw original }
+
+                shouldThrow<IOException> {
+                    orderExecutor.executeOrders(
+                        buyOrders = mapOf(Asset.BTC to BigDecimal("25.00")),
+                        sellOrders = emptyMap(),
+                        currentValuesUSD = mapOf(Asset.USD to BigDecimal("100.00")),
+                        prices = mapOf(Asset.BTC to BigDecimal("1000.00")),
+                        settings =
+                        Settings(
+                            loopDelaySeconds = 0L,
+                            deviationTriggerPercent = 2.0,
+                            dustThresholdUSD = 1.0,
+                            dryRun = false,
+                            fiatMaxDrawdown = 0.0,
+                            fiatDeploymentExponent = 1.0,
+                            simulation = true,
+                        ),
+                        actionLog = mutableListOf(),
+                    )
+                } shouldBe original
+
+                coVerify {
+                    tradeHistoryService.updateTrade(
+                        any(),
+                        match {
+                            it.id == 62 && !it.success && !it.dryRun &&
+                                it.submissionState == null && it.errorMessage == original.message
+                        },
                     )
                 }
             }

@@ -11,5 +11,6 @@ interface OrderExecutor {
         settings: Settings,
         actionLog: MutableList<String>,
         cycleId: String = "",
+        availableBalances: RawBalances? = null,
     )
 }

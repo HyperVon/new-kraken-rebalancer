@@ -74,6 +74,9 @@ cannot change placement mode. Outside a stable block, each call still re-reads
   `OrderResult(success = true, dryRun = true)` — no AddOrder POST.
 - Emulator dry-run: `[EMULATOR DRY RUN]`, same success semantics, no balance
   mutation, usually no `orderTxid`.
+- A dry-run or simulation backend exception is persisted as the actual failed
+  local estimate before the original exception propagates; it never becomes a
+  live `UNCERTAIN` submission intent.
 - The activity log always prefixes `[DRY RUN]` regardless of backend.
 - Cycle math and snapshots still run; only placement/settle differ.
 
