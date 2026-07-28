@@ -568,6 +568,7 @@ class KrakenServiceTest : StringSpec() {
                 first.usdAmount.shouldBeEqualComparingTo(BigDecimal("5000.00"))
                 first.timestamp.toEpochMilli() shouldBe 1700000000123L
                 first.orderTxid shouldBe "O1"
+                first.tradeId shouldBe "T1"
             }
         }
 

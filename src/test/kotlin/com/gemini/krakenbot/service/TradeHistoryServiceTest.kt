@@ -22,8 +22,10 @@ import com.gemini.krakenbot.repository.TradeSummaryStats
 import com.gemini.krakenbot.service.impl.DynamicKrakenService
 import com.gemini.krakenbot.service.impl.KrakenServiceImpl
 import com.gemini.krakenbot.service.impl.SimulatedKrakenService
+import com.gemini.krakenbot.service.impl.history.TradeHistoryReconstructionService
 import com.gemini.krakenbot.service.impl.history.TradeHistoryServiceImpl
 import com.gemini.krakenbot.util.TradeCalculator
+import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.booleans.shouldBeTrue
@@ -32,6 +34,7 @@ import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.shouldBe
 import io.mockk.*
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -489,6 +492,51 @@ class TradeHistoryServiceTest : StringSpec() {
                     ),
                 )
                 coVerify(exactly = 0) { repository.saveTrade(any()) }
+            }
+        }
+
+        "CQ-10-1: reconciliation retains local order id when API fill omits it" {
+            runTest {
+                coEvery { repository.isHistorySeeded() } returns true
+                val latestTime = Instant.ofEpochSecond(1700000000)
+                coEvery { repository.getLatestTradeTime() } returns latestTime
+
+                val localTrade = TradeRecord(
+                    timestamp = latestTime,
+                    pair = TestFixtures.XBTUSD,
+                    side = TestFixtures.BUY,
+                    symbol = Asset.BTC,
+                    volume = BigDecimal.ONE,
+                    usdAmount = BigDecimal.TEN,
+                    success = true,
+                    dryRun = false,
+                    price = BigDecimal.TEN,
+                    expectedPrice = BigDecimal("10.05"),
+                    source = TradeSource.LOCAL_ESTIMATE,
+                    cycleId = "cycle-keep-me",
+                    orderTxid = "LOCAL-OID",
+                )
+                coEvery { repository.getTradesInRange(any(), any()) } returns listOf(localTrade)
+
+                val apiTrade = localTrade.copy(
+                    timestamp = latestTime.plusSeconds(5),
+                    usdAmount = BigDecimal("9.95"),
+                    price = BigDecimal("9.95"),
+                    expectedPrice = null,
+                    source = TradeSource.API_FILL,
+                    cycleId = null,
+                    orderTxid = null,
+                )
+                coEvery { krakenService.getTradeHistory(1700000000 - 300, 0) } returns listOf(apiTrade)
+
+                val reconciledSlot = slot<TradeRecord>()
+                coEvery { repository.updateTrade(localTrade, capture(reconciledSlot)) } just Runs
+
+                createService().syncTradesFromKraken()
+
+                coVerify(exactly = 1) { repository.updateTrade(localTrade, any()) }
+                reconciledSlot.captured.orderTxid shouldBe "LOCAL-OID"
+                reconciledSlot.captured.cycleId shouldBe "cycle-keep-me"
             }
         }
 
@@ -1276,6 +1324,165 @@ class TradeHistoryServiceTest : StringSpec() {
             }
         }
 
+        "CQ-10-L2: sync reconciles a legacy estimate without overwriting a distinct API fill" {
+            runTest {
+                coEvery { repository.isHistorySeeded() } returns true
+                val latestTime = Instant.ofEpochSecond(1700000000)
+                coEvery { repository.getLatestTradeTime() } returns latestTime
+
+                val persistedApiFill = TradeRecord(
+                    timestamp = latestTime,
+                    pair = TestFixtures.XBTUSD,
+                    side = TestFixtures.BUY,
+                    symbol = Asset.BTC,
+                    volume = BigDecimal.ONE,
+                    usdAmount = BigDecimal("10.00"),
+                    success = true,
+                    dryRun = false,
+                    price = BigDecimal("10.00"),
+                    fee = BigDecimal("0.02"),
+                    source = TradeSource.API_FILL,
+                    id = 1,
+                    orderTxid = "OID-A",
+                )
+                val legacyLocalEstimate = persistedApiFill.copy(
+                    timestamp = latestTime.plusSeconds(1),
+                    usdAmount = BigDecimal("10.05"),
+                    expectedPrice = BigDecimal("10.05"),
+                    slippagePercent = BigDecimal.ZERO,
+                    source = null,
+                    id = 2,
+                    cycleId = "cycle-local",
+                    orderTxid = "LOCAL-OID",
+                )
+                coEvery { repository.getTradesInRange(any(), any()) } returns
+                    listOf(persistedApiFill, legacyLocalEstimate)
+
+                val newApiFill = persistedApiFill.copy(
+                    timestamp = latestTime.plusSeconds(2),
+                    usdAmount = BigDecimal("10.04"),
+                    price = BigDecimal("10.04"),
+                    fee = BigDecimal("0.03"),
+                    id = null,
+                    orderTxid = "OID-B",
+                )
+                coEvery { krakenService.getTradeHistory(any(), 0) } returns listOf(newApiFill)
+
+                val reconciledSlot = slot<TradeRecord>()
+                coEvery { repository.updateTrade(legacyLocalEstimate, capture(reconciledSlot)) } just Runs
+
+                createService().syncTradesFromKraken()
+
+                coVerify(exactly = 0) { repository.updateTrade(persistedApiFill, any()) }
+                coVerify(exactly = 1) { repository.updateTrade(legacyLocalEstimate, any()) }
+                reconciledSlot.captured.source shouldBe TradeSource.API_FILL
+                reconciledSlot.captured.orderTxid shouldBe "OID-B"
+                reconciledSlot.captured.cycleId shouldBe "cycle-local"
+                coVerify(exactly = 0) { repository.saveTrade(any()) }
+            }
+        }
+
+        "CQ-10-L2: exact persisted API fill wins before a nearby local estimate" {
+            runTest {
+                coEvery { repository.isHistorySeeded() } returns true
+                val latestTime = Instant.ofEpochSecond(1700000000)
+                coEvery { repository.getLatestTradeTime() } returns latestTime
+                val persistedApiFill = TradeRecord(
+                    timestamp = latestTime,
+                    pair = TestFixtures.XBTUSD,
+                    side = TestFixtures.BUY,
+                    symbol = Asset.BTC,
+                    volume = BigDecimal.ONE,
+                    usdAmount = BigDecimal.TEN,
+                    success = true,
+                    dryRun = false,
+                    price = BigDecimal.TEN,
+                    fee = BigDecimal("0.02"),
+                    source = TradeSource.API_FILL,
+                    id = 1,
+                    orderTxid = "OID-EXACT",
+                )
+                val nearbyEstimate = persistedApiFill.copy(
+                    timestamp = latestTime.plusSeconds(1),
+                    source = TradeSource.LOCAL_ESTIMATE,
+                    id = 2,
+                    cycleId = "cycle-nearby",
+                    orderTxid = "LOCAL-OID",
+                )
+                coEvery { repository.getTradesInRange(any(), any()) } returns
+                    listOf(nearbyEstimate, persistedApiFill)
+                coEvery { krakenService.getTradeHistory(any(), 0) } returns
+                    listOf(persistedApiFill.copy(id = null))
+
+                createService().syncTradesFromKraken()
+
+                coVerify(exactly = 0) { repository.updateTrade(any(), any()) }
+                coVerify(exactly = 0) { repository.saveTrade(any()) }
+            }
+        }
+
+        "CQ-10-L6: preserves distinct Kraken fill ids for economically identical order legs" {
+            runTest {
+                coEvery { repository.isHistorySeeded() } returns true
+                val timestamp = Instant.ofEpochSecond(1700000000)
+                coEvery { repository.getLatestTradeTime() } returns timestamp
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+
+                val firstLeg = TradeRecord(
+                    timestamp = timestamp,
+                    pair = TestFixtures.XBTUSD,
+                    side = TestFixtures.BUY,
+                    symbol = Asset.BTC,
+                    volume = BigDecimal.ONE,
+                    usdAmount = BigDecimal.TEN,
+                    success = true,
+                    dryRun = false,
+                    price = BigDecimal.TEN,
+                    fee = BigDecimal("0.02"),
+                    source = TradeSource.API_FILL,
+                    orderTxid = "ORDER-SHARED",
+                    tradeId = "TRADE-ONE",
+                )
+                val secondLeg = firstLeg.copy(tradeId = "TRADE-TWO")
+                coEvery { krakenService.getTradeHistory(any(), 0) } returns listOf(firstLeg, secondLeg)
+
+                createService().syncTradesFromKraken()
+
+                coVerify(exactly = 1) { repository.saveTrade(firstLeg) }
+                coVerify(exactly = 1) { repository.saveTrade(secondLeg) }
+            }
+        }
+
+        "CQ-10-L7: preserves an ambiguous legacy row when its refetched API fill matches exactly" {
+            runTest {
+                coEvery { repository.isHistorySeeded() } returns true
+                val timestamp = Instant.ofEpochSecond(1700000000)
+                coEvery { repository.getLatestTradeTime() } returns timestamp
+                val legacyUnknown = TradeRecord(
+                    timestamp = timestamp,
+                    pair = TestFixtures.XBTUSD,
+                    side = TestFixtures.BUY,
+                    symbol = Asset.BTC,
+                    volume = BigDecimal.ONE,
+                    usdAmount = BigDecimal.TEN,
+                    success = true,
+                    dryRun = false,
+                    price = BigDecimal.TEN,
+                    fee = BigDecimal("0.02"),
+                    id = 1,
+                    orderTxid = "ORDER-LEGACY",
+                )
+                coEvery { repository.getTradesInRange(any(), any()) } returns listOf(legacyUnknown)
+                coEvery { krakenService.getTradeHistory(any(), 0) } returns
+                    listOf(legacyUnknown.copy(id = null, source = TradeSource.API_FILL, tradeId = "TRADE-LEGACY"))
+
+                createService().syncTradesFromKraken()
+
+                coVerify(exactly = 0) { repository.updateTrade(any(), any()) }
+                coVerify(exactly = 0) { repository.saveTrade(any()) }
+            }
+        }
+
         "syncTradesFromKraken_ReconcilesUsdAmountDifference" {
             runTest {
                 coEvery { repository.isHistorySeeded() } returns true
@@ -1291,10 +1498,15 @@ class TradeHistoryServiceTest : StringSpec() {
                     usdAmount = BigDecimal.TEN,
                     success = true,
                     dryRun = false,
+                    source = TradeSource.LOCAL_ESTIMATE,
                 )
                 coEvery { repository.getTradesInRange(any(), any()) } returns listOf(localTrade)
 
-                val apiTrade = localTrade.copy(usdAmount = BigDecimal.valueOf(11))
+                val apiTrade =
+                    localTrade.copy(
+                        usdAmount = BigDecimal.valueOf(11),
+                        source = TradeSource.API_FILL,
+                    )
 
                 coEvery { krakenService.getTradeHistory(any(), 0) } returns listOf(apiTrade)
                 coEvery { krakenService.getTradeHistory(any(), 50) } returns emptyList()
@@ -1328,10 +1540,15 @@ class TradeHistoryServiceTest : StringSpec() {
                     usdAmount = BigDecimal.TEN,
                     success = true,
                     dryRun = false,
+                    source = TradeSource.LOCAL_ESTIMATE,
                 )
                 coEvery { repository.getTradesInRange(any(), any()) } returns listOf(localTrade)
 
-                val apiTrade = localTrade.copy(timestamp = latestTime.minusMillis(500))
+                val apiTrade =
+                    localTrade.copy(
+                        timestamp = latestTime.minusMillis(500),
+                        source = TradeSource.API_FILL,
+                    )
 
                 coEvery { krakenService.getTradeHistory(any(), 0) } returns listOf(apiTrade)
                 coEvery { krakenService.getTradeHistory(any(), 50) } returns emptyList()
@@ -1670,6 +1887,72 @@ class TradeHistoryServiceTest : StringSpec() {
                 val service = createService()
                 every { configService.getConfig() } returns appConfig
                 service.syncTradesFromKraken()
+            }
+        }
+
+        listOf("balances", "ticker", "OHLC").forEach { cancellationPoint ->
+            "CQ-10-2: reconstruction propagates $cancellationPoint cancellation without saving" {
+                runTest {
+                    val allocations = listOf(
+                        Allocation(Asset.BTC, 50.0),
+                        Allocation(TestFixtures.USD, 50.0),
+                    )
+                    every { configService.getConfig() } returns AppConfig(
+                        kraken = KrakenCredentials(
+                            TestFixtures.TRADE_HISTORY_API_KEY,
+                            TestFixtures.TRADE_HISTORY_API_SECRET,
+                        ),
+                        settings = Settings(
+                            loopDelaySeconds = 60,
+                            deviationTriggerPercent = 5.0,
+                            dustThresholdUSD = 5.0,
+                            dryRun = false,
+                        ),
+                        allocations = allocations,
+                    )
+                    coEvery { repository.load() } returns emptyList()
+                    coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+
+                    val balances = mapOf(
+                        Asset.BTC to BigDecimal.ONE,
+                        TestFixtures.USD to BigDecimal("1000.00"),
+                    )
+                    if (cancellationPoint == "balances") {
+                        coEvery { krakenService.getBalances() } throws CancellationException("cancel balances")
+                    } else {
+                        coEvery { krakenService.getBalances() } returns balances
+                    }
+                    every { portfolioAnalyzer.resolveBalance(Asset.BTC, balances) } returns BigDecimal.ONE
+                    every {
+                        portfolioAnalyzer.resolveBalance(TestFixtures.USD, balances)
+                    } returns BigDecimal("1000.00")
+
+                    if (cancellationPoint == "ticker") {
+                        coEvery { krakenService.getTickerPrices(any()) } throws CancellationException("cancel ticker")
+                    } else {
+                        coEvery { krakenService.getTickerPrices(any()) } returns
+                            mapOf(TestFixtures.BTCUSD to BigDecimal("30000.00"))
+                    }
+                    if (cancellationPoint == "OHLC") {
+                        coEvery {
+                            krakenService.getOHLC(TestFixtures.XBTUSD, 1440, any())
+                        } throws CancellationException("cancel OHLC")
+                    } else {
+                        coEvery { krakenService.getOHLC(any(), any(), any()) } returns emptyList()
+                    }
+
+                    val reconstructionService = TradeHistoryReconstructionService(
+                        repository = repository,
+                        krakenService = krakenService,
+                        configService = configService,
+                        portfolioAnalyzer = portfolioAnalyzer,
+                    )
+
+                    shouldThrow<CancellationException> {
+                        reconstructionService.reconstructHistoricalSnapshots()
+                    }
+                    coVerify(exactly = 0) { repository.save(any()) }
+                }
             }
         }
 

@@ -66,6 +66,21 @@ object DatabaseConfig {
                 val alterStatements = SchemaUtils.addMissingColumnsStatements(tables = tables, withLogs = false)
                 alterStatements.forEach { exec(it) }
 
+                // Rows written before provenance existed cannot distinguish a settled API fill
+                // from a local order estimate when both have no slippage. Preserve that ambiguity
+                // rather than treating it as an API fill and risking an unsafe reconciliation.
+                exec(
+                    """
+                    UPDATE trades
+                    SET source = 'LEGACY_UNKNOWN'
+                    WHERE source IS NULL
+                      AND success = 1
+                      AND dry_run = 0
+                      AND error_message IS NULL
+                      AND slippage_percent IS NULL
+                    """.trimIndent(),
+                )
+
                 val executedStatements = createStatements + alterStatements
                 val mappingStatements =
                     SchemaUtils

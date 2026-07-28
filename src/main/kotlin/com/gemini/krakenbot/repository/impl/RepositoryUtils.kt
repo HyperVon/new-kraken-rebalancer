@@ -1,5 +1,6 @@
 package com.gemini.krakenbot.repository.impl
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.jetbrains.exposed.v1.jdbc.Database
@@ -16,6 +17,8 @@ inline fun <T> Database.safeTransaction(
 ): T {
     try {
         return transaction(this) { block() }
+    } catch (e: CancellationException) {
+        throw e
     } catch (e: Exception) {
         log.error(logMessage, e)
         if (e is IOException) throw e

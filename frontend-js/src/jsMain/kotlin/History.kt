@@ -188,6 +188,7 @@ private val chartDefaults: dynamic = buildDefaultChartOptions()
 
 private val charts = mutableMapOf<String, dynamic>()
 internal var currentRange = TimeRange.THIRTY_DAYS.key
+private var historyLoadGeneration = 0L
 private var allTrades: List<TradeRecord> = emptyList()
 internal val visibilityStates = mutableMapOf<String, MutableMap<String, Boolean>>()
 private val pendingPresetVisibility = mutableSetOf<String>()
@@ -260,6 +261,7 @@ internal fun resetHistoryUiState() {
     pendingPresetVisibility.clear()
     originalChartRanges.clear()
     currentRange = TimeRange.THIRTY_DAYS.key
+    historyLoadGeneration = 0L
     allTrades = emptyList()
     HistoryViewPrefs.resetInteractionState()
 }
@@ -406,8 +408,8 @@ private fun configDataRange(config: dynamic): ChartRange? {
 // Try a numeric parse first; otherwise treat the value as an ISO timestamp → epoch ms.
 internal fun dynamicNumber(value: dynamic): Double? {
     if (value == null || value == undefined) return null
-    value.toString().toDoubleOrNull()?.let { return it }
-    return Date(value.toString()).getTime().takeUnless { it.isNaN() }
+    value.toString().toDoubleOrNull()?.let { parsed -> return parsed.takeIf { it.isFinite() } }
+    return Date(value.toString()).getTime().takeIf { it.isFinite() }
 }
 
 private fun setChartXRange(chart: dynamic, range: ChartRange) {
@@ -606,8 +608,31 @@ internal fun createOrUpdate(canvasId: String, config: dynamic) {
     syncChartScrubber(canvasId)
 }
 
+private fun clearChart(canvasId: String) {
+    val chart = charts.remove(canvasId)
+    if (chart != null && chart != undefined) {
+        try {
+            chart.destroy()
+        } catch (_: Throwable) {
+        }
+    }
+    originalChartRanges.remove(canvasId)
+    pendingPresetVisibility.remove(canvasId)
+    val scrubber =
+        document.querySelector(
+            "$CHART_SCRUBBERS_QUERY[${HtmlAttrs.DATA_CHART_ID}=\"$canvasId\"]",
+        ) as? HTMLInputElement
+    if (scrubber != null) {
+        scrubber.disabled = true
+        scrubber.value = "0"
+    }
+}
+
 internal fun buildPortfolioValueChart(snapshots: List<PortfolioSnapshot>) {
-    if (snapshots.isEmpty()) return
+    if (snapshots.isEmpty()) {
+        clearChart(HtmlIds.PORTFOLIO_VALUE_CHART)
+        return
+    }
 
     val pointCount = snapshots.size
     val symbolList = getUniqueSymbols(snapshots)
@@ -674,7 +699,10 @@ internal fun buildPortfolioValueChart(snapshots: List<PortfolioSnapshot>) {
 }
 
 internal fun buildAssetHoldingsChart(snapshots: List<PortfolioSnapshot>) {
-    if (snapshots.isEmpty()) return
+    if (snapshots.isEmpty()) {
+        clearChart(HtmlIds.ASSET_HOLDINGS_CHART)
+        return
+    }
 
     val pointCount = snapshots.size
     val symbolList = getUniqueSymbols(snapshots)
@@ -736,7 +764,10 @@ internal fun buildAssetHoldingsChart(snapshots: List<PortfolioSnapshot>) {
 }
 
 internal fun buildAllocationDriftChart(snapshots: List<PortfolioSnapshot>) {
-    if (snapshots.isEmpty()) return
+    if (snapshots.isEmpty()) {
+        clearChart(HtmlIds.ALLOCATION_DRIFT_CHART)
+        return
+    }
 
     val pointCount = snapshots.size
     val symbolList = getUniqueSymbols(snapshots, excludeUsd = false)
@@ -841,7 +872,10 @@ private inline fun calculateSignedCashFlowSeries(
 internal fun buildCumulativeNetCashFlowChart(trades: List<TradeRecord>, includeDryRun: Boolean = false) {
     val grossData = calculateCumulativeNetCashFlow(trades, includeDryRun)
     val netAfterFeesData = calculateCumulativeNetAfterFees(trades, includeDryRun)
-    if (grossData.asDynamic().length == 0) return
+    if (grossData.asDynamic().length == 0) {
+        clearChart(HtmlIds.CUMULATIVE_NET_CASH_FLOW_CHART)
+        return
+    }
 
     val grossChartData = padSinglePointSeries(grossData)
     val netChartData = padSinglePointSeries(netAfterFeesData)
@@ -1134,6 +1168,7 @@ private fun fetchRanged(vararg routes: String, range: String): Array<Promise<dyn
 
 internal fun loadAll(range: String): Promise<Unit> {
     currentRange = range
+    val requestGeneration = ++historyLoadGeneration
 
     val promises =
         fetchRanged(
@@ -1144,6 +1179,7 @@ internal fun loadAll(range: String): Promise<Unit> {
         )
 
     return Promise.all(promises).then { results ->
+        if (requestGeneration != historyLoadGeneration) return@then
         val snapshots = parsePortfolioSnapshots(results[0])
         val trades = parseTradeRecords(results[1])
         val stats = parseHistoryStats(results[2])
@@ -1155,6 +1191,8 @@ internal fun loadAll(range: String): Promise<Unit> {
         buildCumulativeNetCashFlowChart(trades, showDryRun)
         renderTradeTable(trades)
         updateStats(stats)
+    }.`catch` { error ->
+        if (requestGeneration == historyLoadGeneration) throw error
     }
 }
 

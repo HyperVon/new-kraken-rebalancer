@@ -60,6 +60,7 @@ class TradeDeduplicatorTest : StringSpec() {
                     success = true,
                     dryRun = false,
                     fee = BigDecimal("100.00"),
+                    source = TradeSource.API_FILL,
                     id = 2,
                 )
 
@@ -88,6 +89,57 @@ class TradeDeduplicatorTest : StringSpec() {
             )
 
             TradeDeduplicator.findDuplicateTradeIds(listOf(record1, record2)).isEmpty() shouldBe true
+        }
+
+        "CQ-10-L6: should keep pair-alias API fills with distinct Kraken trade IDs" {
+            val now = Instant.now()
+            val firstFill = TradeRecord(
+                timestamp = now,
+                pair = "XBTUSD",
+                side = "BUY",
+                symbol = "BTC",
+                volume = BigDecimal("1.0"),
+                usdAmount = BigDecimal("50000.00"),
+                success = true,
+                dryRun = false,
+                fee = BigDecimal("100.00"),
+                source = TradeSource.API_FILL,
+                id = 31,
+                tradeId = "KRAKEN-LEG-ONE",
+            )
+            val secondFill = firstFill.copy(
+                timestamp = now.plusMillis(100),
+                pair = "XXBTZUSD",
+                id = 32,
+                tradeId = "KRAKEN-LEG-TWO",
+            )
+
+            TradeDeduplicator.findDuplicateTradeIds(listOf(firstFill, secondFill)).isEmpty() shouldBe true
+        }
+
+        "CQ-10-L7: should keep an ambiguous legacy row beside an ID-bearing API fill" {
+            val now = Instant.now()
+            val legacyUnknown = TradeRecord(
+                timestamp = now,
+                pair = "XBTUSD",
+                side = "BUY",
+                symbol = "BTC",
+                volume = BigDecimal("1.0"),
+                usdAmount = BigDecimal("50000.00"),
+                success = true,
+                dryRun = false,
+                fee = BigDecimal("100.00"),
+                id = 41,
+            )
+            val currentFill = legacyUnknown.copy(
+                timestamp = now.plusMillis(100),
+                pair = "XXBTZUSD",
+                source = TradeSource.API_FILL,
+                id = 42,
+                tradeId = "KRAKEN-CURRENT-FILL",
+            )
+
+            TradeDeduplicator.findDuplicateTradeIds(listOf(legacyUnknown, currentFill)).isEmpty() shouldBe true
         }
 
         "should identify local estimate duplicate trade records with material fee rate differences" {

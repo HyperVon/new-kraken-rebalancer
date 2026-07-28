@@ -209,6 +209,49 @@ class ConfigServiceTest : StringSpec() {
             configService.getConfig().kraken.apiKey.value shouldBe "new-api-key"
         }
 
+        "updateConfig preserves each unchanged env credential during partial rotation" {
+            val content = $$"""
+                {
+                  "kraken": {
+                    "apiKey": "${PATH:api-default}",
+                    "privateKey": "${PATH:private-default}"
+                  },
+                  "settings": {
+                    "loopDelaySeconds": 60,
+                    "deviationTriggerPercent": 2.0,
+                    "dustThresholdUSD": 1.0,
+                    "dryRun": true,
+                    "fiatMaxDrawdown": 0.0,
+                    "fiatDeploymentExponent": 1.0
+                  },
+                  "allocations": [{"symbol": "USD", "targetPercent": 100.0}]
+                }
+            """.trimIndent()
+
+            listOf("api", "private").forEach { rotatedField ->
+                tempFile.writeText(content)
+                val service = ConfigServiceImpl(objectMapper, tempFile.absolutePath)
+                val current = service.getConfig()
+                val rotated =
+                    if (rotatedField == "api") {
+                        KrakenCredentials("new-api-key", current.kraken.privateKey.value)
+                    } else {
+                        KrakenCredentials(current.kraken.apiKey.value, "new-private-key")
+                    }
+
+                service.updateConfig(current.copy(kraken = rotated))
+
+                val rawSaved = objectMapper.readValue(tempFile, AppConfig::class.java)
+                if (rotatedField == "api") {
+                    rawSaved.kraken.apiKey.value shouldBe "new-api-key"
+                    rawSaved.kraken.privateKey.value shouldBe $$"${PATH:private-default}"
+                } else {
+                    rawSaved.kraken.apiKey.value shouldBe $$"${PATH:api-default}"
+                    rawSaved.kraken.privateKey.value shouldBe "new-private-key"
+                }
+            }
+        }
+
         "validateConfig_InvalidTotal" {
             configService.loadConfig()
             val oldConfig = configService.getConfig()
@@ -499,6 +542,137 @@ class ConfigServiceTest : StringSpec() {
                     ),
                 )
             }
+        }
+
+        "updateConfig write failure leaves runtime disk and settings flow unchanged" {
+            runTest {
+                val originalDiskContent = tempFile.readText()
+                val originalConfig = configService.getConfig()
+                val mockMapper = mockk<ObjectMapper>(relaxed = true)
+                val mockWriter = mockk<ObjectWriter>(relaxed = true)
+                every { mockMapper.writerWithDefaultPrettyPrinter() } returns mockWriter
+                every {
+                    mockMapper.readValue(
+                        any<String>(),
+                        AppConfig::class.java,
+                    )
+                } returns originalConfig
+                every {
+                    mockWriter.writeValue(
+                        any<File>(),
+                        any<Any>(),
+                    )
+                } answers {
+                    firstArg<File>().writeText("temporary credential material")
+                    throw IOException("Write error")
+                }
+
+                val service = ConfigServiceImpl(mockMapper, tempFile.absolutePath)
+                val settingsEvents = mutableListOf<Settings>()
+                val collector = launch {
+                    service.watchConfigChanges().collect { settingsEvents.add(it) }
+                }
+                advanceUntilIdle()
+
+                shouldThrow<RuntimeException> {
+                    service.updateConfig(
+                        originalConfig.copy(
+                            settings = originalConfig.settings.copy(dryRun = false),
+                        ),
+                    )
+                }
+                advanceUntilIdle()
+
+                service.getConfig() shouldBe originalConfig
+                tempFile.readText() shouldBe originalDiskContent
+                File("${tempFile.absolutePath}.tmp").exists() shouldBe false
+                settingsEvents shouldBe listOf(originalConfig.settings)
+                collector.cancel()
+            }
+        }
+
+        "updateConfig rejects every non-finite numeric setting without changing runtime or disk" {
+            val originalConfig = configService.getConfig()
+            val originalDiskContent = tempFile.readText()
+            val nonFiniteValues = listOf(Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY, Double.NaN)
+            val settingMutations =
+                listOf<Pair<String, (Settings, Double) -> Settings>>(
+                    "deviationTriggerPercent" to
+                        { settings, value -> settings.copy(deviationTriggerPercent = value) },
+                    "dustThresholdUSD" to
+                        { settings, value -> settings.copy(dustThresholdUSD = value) },
+                    "fiatMaxDrawdown" to
+                        { settings, value -> settings.copy(fiatMaxDrawdown = value) },
+                    "fiatDeploymentExponent" to
+                        { settings, value -> settings.copy(fiatDeploymentExponent = value) },
+                )
+
+            settingMutations.forEach { (_, mutate) ->
+                nonFiniteValues.forEach { value ->
+                    shouldThrow<InvalidConfigurationException> {
+                        configService.updateConfig(
+                            originalConfig.copy(settings = mutate(originalConfig.settings, value)),
+                        )
+                    }
+                    configService.getConfig() shouldBe originalConfig
+                    tempFile.readText() shouldBe originalDiskContent
+                }
+            }
+        }
+
+        "loadConfig rejects every non-finite numeric setting and preserves the active config" {
+            val originalConfig = configService.getConfig()
+            val nonFiniteValues = listOf(Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY, Double.NaN)
+            val settingMutations =
+                listOf<Pair<String, (Settings, Double) -> Settings>>(
+                    "deviationTriggerPercent" to
+                        { settings, value -> settings.copy(deviationTriggerPercent = value) },
+                    "dustThresholdUSD" to
+                        { settings, value -> settings.copy(dustThresholdUSD = value) },
+                    "fiatMaxDrawdown" to
+                        { settings, value -> settings.copy(fiatMaxDrawdown = value) },
+                    "fiatDeploymentExponent" to
+                        { settings, value -> settings.copy(fiatDeploymentExponent = value) },
+                )
+
+            settingMutations.forEach { (_, mutate) ->
+                nonFiniteValues.forEach { value ->
+                    objectMapper.writeValue(
+                        tempFile,
+                        originalConfig.copy(settings = mutate(originalConfig.settings, value)),
+                    )
+                    shouldThrow<InvalidConfigurationException> {
+                        configService.loadConfig()
+                    }
+                    configService.getConfig() shouldBe originalConfig
+                }
+            }
+        }
+
+        "failed load does not publish rejected raw credentials into a later save" {
+            val originalConfig = configService.getConfig()
+            objectMapper.writeValue(
+                tempFile,
+                originalConfig.copy(
+                    kraken = KrakenCredentials("rejected-key", "rejected-secret"),
+                    settings = originalConfig.settings.copy(fiatDeploymentExponent = Double.POSITIVE_INFINITY),
+                ),
+            )
+
+            shouldThrow<InvalidConfigurationException> {
+                configService.loadConfig()
+            }
+            configService.updateConfig(
+                originalConfig.copy(
+                    settings = originalConfig.settings.copy(
+                        loopDelaySeconds =
+                        originalConfig.settings.loopDelaySeconds + 1,
+                    ),
+                ),
+            )
+
+            val savedConfig = objectMapper.readValue(tempFile, AppConfig::class.java)
+            savedConfig.kraken shouldBe originalConfig.kraken
         }
 
         "loadConfig_InvalidConfig" {

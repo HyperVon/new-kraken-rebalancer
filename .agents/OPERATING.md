@@ -182,7 +182,33 @@ When editing code:
 3. Do not add wallpaper KDoc (“Calculate X”) on trivial helpers.
 4. For a repo-wide or targeted **comment audit** (missing / wrong / stale /
    noisy), use
-   [skills/complex-code-comments/SKILL.md](skills/complex-code-comments/SKILL.md).
+    [skills/complex-code-comments/SKILL.md](skills/complex-code-comments/SKILL.md).
+
+---
+
+## 7. Cost-aware model selection
+
+When the host allows choosing a model or reasoning effort, use the **least
+expensive model and lowest effort reasonably likely to complete the task
+correctly**.
+
+1. Start low for bounded, routine work such as searches, mechanical edits,
+   formatting, straightforward tests, and status checks.
+2. Escalate only when the task's complexity or risk justifies it: ambiguous or
+   cross-cutting design, financial/safety-sensitive reasoning, repeated failure,
+   or evidence that the current tier cannot complete the work reliably.
+3. Honor a model or effort explicitly required by the user, host, or an
+   applicable skill. If that model is unavailable in the current host, use the
+   closest available model by capability and cost, preserve the intended role,
+   and document the substitution.
+4. Optimize for total cost, including retries and review time. A cheap attempt
+   that is unlikely to succeed is not cost-effective.
+5. For parallel work, give each track the cheapest capable tier independently;
+   do not promote every subagent because one track is difficult.
+
+Correctness and safety remain the hard constraint. Cost decides between options
+that are all likely to succeed; it never justifies weakening verification or
+using an underpowered model for high-impact work.
 
 ---
 
@@ -195,6 +221,7 @@ When editing code:
 | Parallel multi-agent | `.cursor/rules/parallel-multi-agent.mdc` (`alwaysApply`) |
 | No blocking long processes | `.cursor/rules/no-blocking-long-processes.mdc` (`alwaysApply`) |
 | Complex-code comments | `.cursor/rules/complex-code-comments.mdc` (`alwaysApply`) |
+| Cost-aware model selection | `.cursor/rules/cost-aware-model-selection.mdc` (`alwaysApply`) |
 | UI change verification | `.cursor/rules/ui-change-verification.mdc` (path globs) |
 
 Cursor projections may add harness-only details (e.g. `block_until_ms: 0`,

@@ -1,16 +1,22 @@
 package com.gemini.krakenbot.service
 
+import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.config.AppConfig
+import com.gemini.krakenbot.config.DatabaseConfig
 import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.PortfolioStats
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
+import com.gemini.krakenbot.repository.impl.SqlitePortfolioStatsRepositoryImpl
+import com.gemini.krakenbot.repository.table.PortfolioStatsTable
 import com.gemini.krakenbot.service.impl.OrderExecutorImpl
 import com.gemini.krakenbot.service.impl.PortfolioAnalyzerImpl
 import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
+import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.booleans.shouldBeTrue
@@ -23,6 +29,10 @@ import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
 import kotlinx.coroutines.test.runTest
+import org.jetbrains.exposed.v1.jdbc.selectAll
+import org.jetbrains.exposed.v1.jdbc.transactions.transaction
+import java.io.File
+import java.io.IOException
 import java.math.BigDecimal
 import java.math.RoundingMode
 
@@ -168,6 +178,71 @@ class PortfolioManagerDrawdownTest : StringSpec() {
                 coVerify { portfolioStatsRepository.save(capture(captor)) }
                 captor.captured.allTimeHigh.shouldNotBeNull()
                 captor.captured.allTimeHigh.shouldBeEqualComparingTo(BigDecimal("1500.0"))
+            }
+        }
+
+        "corrupt ATH migration aborts analysis before saving a lower ATH or planning orders" {
+            runTest {
+                val statsFile = File("test-ath-fail-closed-stats.json")
+                val statsBackup = File("test-ath-fail-closed-stats.json.bak")
+                val isolatedDb = DatabaseConfig.init(TestFixtures.MEMORY_)
+                val statsRepository =
+                    SqlitePortfolioStatsRepositoryImpl(isolatedDb, jacksonObjectMapper(), statsFile.path)
+                val failClosedAnalyzer =
+                    PortfolioAnalyzerImpl(
+                        krakenService = krakenService,
+                        configService = configService,
+                        portfolioStatsRepository = statsRepository,
+                    )
+                val failClosedManager =
+                    PortfolioManagerImpl(
+                        configService = configService,
+                        tradeHistoryService = tradeHistoryService,
+                        portfolioAnalyzer = failClosedAnalyzer,
+                        orderExecutor = OrderExecutorImpl(krakenService, tradeHistoryService),
+                    )
+                val config =
+                    AppConfig(
+                        kraken = KrakenCredentials("k", "s"),
+                        settings =
+                        Settings(
+                            loopDelaySeconds = 60L,
+                            deviationTriggerPercent = 2.0,
+                            dustThresholdUSD = 1.0,
+                            dryRun = false,
+                            fiatMaxDrawdown = 50.0,
+                            fiatDeploymentExponent = 1.0,
+                        ),
+                        allocations =
+                        listOf(
+                            Allocation(Asset.BTC, 50.0),
+                            Allocation(Asset.USD, 50.0),
+                        ),
+                    )
+                every { configService.getConfig() } returns config
+                krakenService.pricesSupplier = { mapOf(Asset.BTC_USD_PAIR to 100.0) }
+                krakenService.balanceSupplier = { mapOf(Asset.BTC to 0.0, Asset.USD to 1000.0) }
+
+                try {
+                    statsFile.delete()
+                    statsBackup.delete()
+                    statsFile.writeText("{not-json")
+
+                    shouldThrow<IOException> {
+                        failClosedManager.performRebalanceCycle()
+                    }
+
+                    krakenService.executedOrders.size shouldBe 0
+                    coVerify(exactly = 0) { tradeHistoryService.addSnapshot(any()) }
+                    transaction(isolatedDb) {
+                        PortfolioStatsTable.selectAll().count() shouldBe 0
+                    }
+                    statsFile.exists() shouldBe true
+                    statsBackup.exists() shouldBe false
+                } finally {
+                    statsFile.delete()
+                    statsBackup.delete()
+                }
             }
         }
 

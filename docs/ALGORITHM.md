@@ -119,7 +119,12 @@ target state.
 
 Normally, the target value is `Total Portfolio Value * Target %`. However, the system implements a **Dynamic Fiat Deployment Strategy**:
 
-1. **ATH Tracking**: The bot tracks the portfolio's All-Time High (ATH) value in the SQLite database. ATH is set on first run or updated whenever a new high is reached.
+1. **ATH Tracking**: The bot tracks the portfolio's All-Time High (ATH) value in
+   the SQLite database. ATH is set on first run or updated whenever a new high
+   is reached. Missing or explicitly null stats represent an empty initial
+   state. A database read or legacy-file migration failure aborts the analysis
+   before ATH persistence or order planning, rather than treating the ATH as
+   zero.
 2. **Drawdown Calculation**:
    `Drawdown % = (ATH - Current Value) / ATH * 100`
 3. **Fiat Deployment Percentage**:
@@ -245,8 +250,18 @@ Each executed order creates a **local estimate** row at rebalance time:
 
 - **`TradeSource.LOCAL_ESTIMATE`** — `expectedPrice` from the ticker snapshot used for planning; fee from the fixed local planning estimate (`PrecisionConstants.FEE_RATE_ESTIMATE` = **0.006**); slippage computed vs that expected price.
 - **`TradeSource.API_FILL`** — Kraken `/0/private/TradesHistory` fills (or reconciled rows after sync).
+- **`TradeSource.LEGACY_UNKNOWN`** — a successful historical row written before
+  explicit provenance, where the stored shape cannot safely distinguish a
+  local estimate from an exchange fill.
 
-During **Kraken sync**, a matching local row is updated in place: API fill price/volume/fee replace the estimate, **`expectedPrice` is preserved**, slippage is **recomputed** against the API execution price, and `source` becomes `API_FILL`. Rows without the new `source` column infer provenance from legacy data (API fills had null slippage; local estimates had slippage set).
+During **Kraken sync**, a matching local row is updated in place: API fill price/volume/fee replace the estimate, **`expectedPrice` is preserved**, slippage is **recomputed** against the API execution price, and `source` becomes `API_FILL`. A legacy row with stored slippage remains an inferred local estimate; the null-slippage shape is not assumed to be an API fill.
+
+Each Kraken fill also retains its exchange trade ID. Sync uses that ID as the
+authoritative per-fill identity, so distinct legs of one order cannot collapse
+when their rounded economics match. For older source-less rows with no
+slippage, provenance is genuinely ambiguous: startup migration marks them
+`LEGACY_UNKNOWN`; sync preserves them and treats only an exact conservative
+fingerprint match as already imported rather than rewriting them as a fill.
 
 Dedupe prefers settled API fills over local estimates when pair alias or estimate-vs-fill rules match (see trade-history sync skill).
 

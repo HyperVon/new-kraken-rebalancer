@@ -62,6 +62,8 @@ Pure KMP types under `common/.../config/`:
 - Non-empty, no duplicate symbols, symbols match `^[A-Z0-9]{1,16}$`
 - `loopDelaySeconds > 0`, `deviationTriggerPercent ≥ 0`, `dustThresholdUSD ≥ 0`
 - `fiatMaxDrawdown` in `0..100`, `fiatDeploymentExponent > 0`
+- Every `Double` setting and allocation percentage must be finite; reject
+  `NaN` and positive/negative infinity before publishing or persisting config.
 
 ## Atomic persistence
 
@@ -69,6 +71,11 @@ Pure KMP types under `common/.../config/`:
 
 1. Write `rebalancer-config.json.tmp`
 2. `Files.move(..., ATOMIC_MOVE, REPLACE_EXISTING)` → `rebalancer-config.json`
+
+Only after the move succeeds may `appConfig`, raw persisted credentials, and
+the settings flow publish the new values. File reload follows the same
+transactional rule: parse and validate both representations before assigning
+runtime or raw-credential state.
 
 File is gitignored — never commit secrets.
 

@@ -4,7 +4,10 @@ import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.model.TradeSource
+import com.gemini.krakenbot.model.isLegacyUnknown
+import com.gemini.krakenbot.model.isLocalEstimate
 import com.gemini.krakenbot.model.isMatchingApiTrade
+import com.gemini.krakenbot.model.isSettledApiFill
 import com.gemini.krakenbot.repository.TradeRepository
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.KrakenService
@@ -79,11 +82,25 @@ class TradeHistorySyncService(
                 for (apiTrade: TradeRecord in apiTrades) {
                     if (!seenApiFillKeys.add(apiFillIdentityKey(apiTrade))) continue
 
+                    // Exact persisted fills must win before nearby local-estimate reconciliation;
+                    // otherwise an overlapping fetch can rewrite a local row even though this API
+                    // fill has already been stored (CQ-10-L2). Legacy-unknown rows are also kept
+                    // intact when their conservative fingerprint matches a fetched fill.
+                    val persistedFill =
+                        originalLocalTrades.find { persisted ->
+                            (persisted.isSettledApiFill() || persisted.isLegacyUnknown()) &&
+                                hasSamePersistedFillIdentity(persisted, apiTrade)
+                        }
+                    if (persistedFill != null) {
+                        originalLocalTrades.remove(persistedFill)
+                        continue
+                    }
+
                     // Local row has requested economics; API has the settle. Match within
                     // tolerances so we update the local row instead of inserting a second History trade.
                     val matchingLocalTrade =
                         originalLocalTrades.find { local ->
-                            local.isMatchingApiTrade(apiTrade, allocations)
+                            local.isLocalEstimate() && local.isMatchingApiTrade(apiTrade, allocations)
                         }
 
                     if (matchingLocalTrade != null) {
@@ -170,16 +187,31 @@ class TradeHistorySyncService(
     }
 
     /**
-     * Identity for a single API fill within one sync pass. Includes economics + timestamp so
-     * multi-leg fills that share [TradeRecord.orderTxid] stay distinct, while an exact
-     * pagination duplicate is skipped.
+     * Identity for a single API fill within one sync pass. Kraken's trade id is the authoritative
+     * per-fill identity; fall back to a full economics fingerprint for historical rows that lack it.
      */
-    private fun apiFillIdentityKey(trade: TradeRecord): String = listOf(
+    private fun apiFillIdentityKey(trade: TradeRecord): String = trade.tradeId
+        ?.takeIf { it.isNotBlank() }
+        ?.let { "trade-id:$it" }
+        ?: legacyApiFillFingerprint(trade)
+
+    private fun hasSamePersistedFillIdentity(persisted: TradeRecord, apiTrade: TradeRecord): Boolean {
+        val persistedTradeId = persisted.tradeId?.takeIf { it.isNotBlank() }
+        val apiTradeId = apiTrade.tradeId?.takeIf { it.isNotBlank() }
+        return if (persistedTradeId != null && apiTradeId != null) {
+            persistedTradeId == apiTradeId
+        } else {
+            legacyApiFillFingerprint(persisted) == legacyApiFillFingerprint(apiTrade)
+        }
+    }
+
+    private fun legacyApiFillFingerprint(trade: TradeRecord): String = listOf(
         trade.timestamp.toEpochMilli().toString(),
         trade.pair,
         trade.side.uppercase(),
         trade.volume.toPlainString(),
         trade.usdAmount.toPlainString(),
+        trade.price.toPlainString(),
         trade.fee.toPlainString(),
         trade.orderTxid.orEmpty(),
     ).joinToString("|")

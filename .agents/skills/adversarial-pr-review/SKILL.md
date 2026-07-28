@@ -35,7 +35,12 @@ Launch **two** Task subagents in **one** message (parallel):
 | Reviewer A | `composer-2.5-fast` |
 | Reviewer B | `cursor-grok-4.5-high` |
 
-Do **not** substitute other models unless the user explicitly overrides.
+When either Cursor model is unavailable in the current host, use a comparable
+available model automatically. Preserve the intended split: Reviewer A should
+be the cheaper, faster capable reviewer; Reviewer B should be the stronger
+high-reasoning reviewer. Record the substitutions in the PR verification notes
+and final summary. An unavailable provider-specific slug must not block the
+review workflow.
 
 ## Scope
 
@@ -104,7 +109,8 @@ Give each Task agent:
 ## Checklist
 
 - [ ] Trigger matched (new PR, push to open PR, or explicit review ask)
-- [ ] Both models used in parallel (`composer-2.5-fast`, `cursor-grok-4.5-high`)
+- [ ] Both reviewer roles ran in parallel; unavailable-model substitutions were
+      documented
 - [ ] Full PR diff vs base reviewed each round
 - [ ] Exchange / AddOrder semantic claims checked against official docs when
       present in the diff (code or docs/skills) — use links in

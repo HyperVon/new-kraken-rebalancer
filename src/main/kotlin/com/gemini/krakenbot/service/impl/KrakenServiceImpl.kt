@@ -311,7 +311,8 @@ class KrakenServiceImpl(
                     price = rawPrice.setScale(PrecisionConstants.SCALE_CRYPTO, RoundingMode.HALF_UP),
                     fee = rawFee.setScale(PrecisionConstants.SCALE_FEE, RoundingMode.HALF_UP),
                     source = TradeSource.API_FILL,
-                    orderTxid = orderTxid ?: tradeId.ifBlank { null },
+                    orderTxid = orderTxid,
+                    tradeId = tradeId.ifBlank { null },
                 ),
             )
         }

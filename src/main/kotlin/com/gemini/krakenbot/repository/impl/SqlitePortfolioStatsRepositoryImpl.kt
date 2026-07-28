@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.gemini.krakenbot.model.PortfolioStats
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.repository.table.PortfolioStatsTable
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.jetbrains.exposed.v1.core.eq
@@ -13,6 +14,7 @@ import org.jetbrains.exposed.v1.jdbc.selectAll
 import org.jetbrains.exposed.v1.jdbc.update
 import org.slf4j.LoggerFactory
 import java.io.File
+import java.io.IOException
 import java.math.BigDecimal
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
@@ -25,14 +27,21 @@ class SqlitePortfolioStatsRepositoryImpl(
     private val log =
         LoggerFactory.getLogger(SqlitePortfolioStatsRepositoryImpl::class.java)
 
-    override suspend fun load(): PortfolioStats = try {
-        val dbStats =
+    override suspend fun load(): PortfolioStats {
+        val dbStats = try {
             database.readTransactionIO {
                 PortfolioStatsTable
                     .selectAll()
                     .firstOrNull()
                     ?.let { PortfolioStats(it[PortfolioStatsTable.allTimeHigh] ?: BigDecimal.ZERO) }
             }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            log.error("Failed to load portfolio stats from database", e)
+            if (e is IOException) throw e
+            throw IOException("Database read failed", e)
+        }
         if (dbStats != null) {
             return dbStats
         }
@@ -42,8 +51,11 @@ class SqlitePortfolioStatsRepositoryImpl(
             return PortfolioStats(BigDecimal.ZERO)
         }
 
-        try {
-            val fileStats = objectMapper.readValue(file, PortfolioStats::class.java)
+        return try {
+            val rawStats = objectMapper.readTree(file)
+            val rawAth = rawStats.get("allTimeHigh")
+            if (rawAth == null || rawAth.isNull) return PortfolioStats(BigDecimal.ZERO)
+            val fileStats = objectMapper.treeToValue(rawStats, PortfolioStats::class.java)
             val ath = fileStats?.allTimeHigh ?: return PortfolioStats(BigDecimal.ZERO)
 
             log.info("Migrating allTimeHigh from stats file: {}", ath)
@@ -59,18 +71,20 @@ class SqlitePortfolioStatsRepositoryImpl(
                     Files.move(file.toPath(), targetPath, StandardCopyOption.REPLACE_EXISTING)
                 }
                 log.info("Renamed stats file to backup successfully.")
+            } catch (ex: CancellationException) {
+                throw ex
             } catch (ex: Exception) {
                 log.warn("Failed to rename stats file to backup", ex)
             }
 
             fileStats
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             log.error("Failed to migrate stats file", e)
-            PortfolioStats(BigDecimal.ZERO)
+            if (e is IOException) throw e
+            throw IOException("Failed to migrate portfolio stats", e)
         }
-    } catch (e: Exception) {
-        log.error("Failed to load portfolio stats", e)
-        PortfolioStats(BigDecimal.ZERO)
     }
 
     override suspend fun save(stats: PortfolioStats) {

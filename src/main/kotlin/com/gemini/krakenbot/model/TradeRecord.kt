@@ -24,15 +24,17 @@ data class TradeRecord(
     val id: Int? = null,
     val cycleId: String? = null,
     val orderTxid: String? = null,
+    val tradeId: String? = null,
 )
 
 /**
- * Explicit [source] when set; otherwise infer from row shape for DB rows written before the
- * `source` column existed (settled fill vs local estimate heuristics).
+ * Explicit [source] when set; otherwise infer only the unambiguous local-estimate shape for DB
+ * rows written before the `source` column existed. A successful live row without slippage could
+ * have been either a local estimate or a settled fill, so retain that ambiguity explicitly.
  */
 fun TradeRecord.effectiveSource(): TradeSource? = source ?: when {
-    success && !dryRun && errorMessage == null && slippagePercent == null -> TradeSource.API_FILL
     slippagePercent != null -> TradeSource.LOCAL_ESTIMATE
+    success && !dryRun && errorMessage == null -> TradeSource.LEGACY_UNKNOWN
     else -> null
 }
 
@@ -41,8 +43,15 @@ fun TradeRecord.isSameSymbolAndSide(other: TradeRecord): Boolean =
         this.side.equals(other.side, ignoreCase = true)
 
 /** Same fill under different Kraken pair strings (e.g. XBTUSD vs XXBTZUSD), within [tolerance]. */
-fun TradeRecord.isPairAliasDuplicateOf(other: TradeRecord, tolerance: BigDecimal = BigDecimal("0.01")): Boolean =
-    this.isSameSymbolAndSide(other) &&
+fun TradeRecord.isPairAliasDuplicateOf(other: TradeRecord, tolerance: BigDecimal = BigDecimal("0.01")): Boolean {
+    val thisTradeId = tradeId?.takeIf { it.isNotBlank() }
+    val otherTradeId = other.tradeId?.takeIf { it.isNotBlank() }
+    if (thisTradeId != null && otherTradeId != null && thisTradeId != otherTradeId) return false
+    if ((thisTradeId != null || otherTradeId != null) && (isLegacyUnknown() || other.isLegacyUnknown())) {
+        return false
+    }
+
+    return this.isSameSymbolAndSide(other) &&
         !this.pair.equals(other.pair, ignoreCase = true) &&
         this.success == other.success &&
         this.dryRun == other.dryRun &&
@@ -56,6 +65,7 @@ fun TradeRecord.isPairAliasDuplicateOf(other: TradeRecord, tolerance: BigDecimal
                         this.price.compareTo(other.price) == 0
                     )
             )
+}
 
 /** Same pair/side within [windowMillis]; volume and USD within [tolerance] (defaults: 10s, 1%). */
 fun TradeRecord.isLocalEstimateDuplicateOf(
@@ -82,6 +92,9 @@ fun TradeRecord.feePercentDiffersMateriallyFrom(other: TradeRecord): Boolean {
 fun TradeRecord.isLocalEstimate(): Boolean = effectiveSource() == TradeSource.LOCAL_ESTIMATE
 
 fun TradeRecord.isSettledApiFill(): Boolean = effectiveSource() == TradeSource.API_FILL
+
+/** True for historical rows whose origin predated explicit trade provenance. */
+fun TradeRecord.isLegacyUnknown(): Boolean = effectiveSource() == TradeSource.LEGACY_UNKNOWN
 
 fun TradeRecord.hasDifferentTradeProvenanceFrom(other: TradeRecord): Boolean =
     (this.isLocalEstimate() && other.isSettledApiFill()) ||

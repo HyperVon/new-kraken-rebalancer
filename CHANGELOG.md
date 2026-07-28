@@ -6,6 +6,38 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.15.3] - 2026-07-27
+
+### Added
+
+- **Quality coverage**: Added regressions for history reconciliation identifiers,
+  cancellation propagation, out-of-order and empty History ranges, malformed
+  saved views, non-finite chart values, and safe HTTP error responses.
+- **Agent workflow**: Added cost-aware model selection guidance that prefers the
+  least expensive model and reasoning effort likely to complete each task
+  correctly, with escalation for complexity, risk, or repeated failure.
+
+### Fixed
+
+- **History UI**: Newer range selections now win over slower stale responses;
+  empty ranges clear populated charts and reset scrubbers; malformed saved view
+  entries no longer discard valid presets; and chart parsing rejects non-finite
+  numeric values.
+- **HTTP errors**: Internal server errors no longer expose exception messages to
+  clients, while validation errors retain safe, actionable details.
+- **Trade synchronization**: Failed live attempts no longer advance the Kraken
+  history cursor, and reconciliation updates only local estimates while
+  preserving distinct or already-persisted API fills. Kraken trade IDs now
+  preserve separate same-economics fill legs; ambiguous source-less historical
+  rows migrate to `LEGACY_UNKNOWN` and are never rewritten speculatively.
+- **Configuration safety**: Runtime settings and flow updates publish only after
+  an atomic write succeeds; rejected reloads cannot leak raw credential state;
+  and all floating-point settings and allocation percentages reject non-finite
+  values.
+- **ATH safety**: Database and legacy-migration failures now abort analysis
+  before order planning or a lower ATH write instead of collapsing the ATH to
+  zero.
+
 ## [6.15.2] - 2026-07-27
 
 ### Changed

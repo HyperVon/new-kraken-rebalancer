@@ -341,6 +341,41 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
             }
         }
 
+        "CQ-10-L1: getLatestTradeTime ignores newer failed live attempts" {
+            runTest {
+                val fillTime = Instant.now().truncatedTo(ChronoUnit.MILLIS)
+                repository.saveTrade(
+                    TradeRecord(
+                        timestamp = fillTime,
+                        pair = TestFixtures.XBTUSD,
+                        side = TestFixtures.BUY,
+                        symbol = Asset.BTC,
+                        volume = BigDecimal("0.1"),
+                        usdAmount = BigDecimal("5000.00"),
+                        success = true,
+                        dryRun = false,
+                        source = TradeSource.API_FILL,
+                    ),
+                )
+                repository.saveTrade(
+                    TradeRecord(
+                        timestamp = fillTime.plusSeconds(60),
+                        pair = TestFixtures.ETHUSD,
+                        side = TestFixtures.SELL,
+                        symbol = TestFixtures.ETH,
+                        volume = BigDecimal.ONE,
+                        usdAmount = BigDecimal("2000.00"),
+                        success = false,
+                        dryRun = false,
+                        errorMessage = "Order rejected",
+                        source = TradeSource.LOCAL_ESTIMATE,
+                    ),
+                )
+
+                repository.getLatestTradeTime() shouldBe fillTime
+            }
+        }
+
         "update trade updates record" {
             runTest {
                 val now = Instant.now().truncatedTo(ChronoUnit.MILLIS)
@@ -395,6 +430,7 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
                         dryRun = false,
                         price = BigDecimal("215.66460511"),
                         fee = BigDecimal("0.0432"),
+                        source = TradeSource.API_FILL,
                     )
                 val localEstimate =
                     krakenFill.copy(
@@ -404,6 +440,7 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
                         price = BigDecimal("215.6867"),
                         fee = BigDecimal("0.0998"),
                         slippagePercent = BigDecimal.ZERO,
+                        source = TradeSource.LOCAL_ESTIMATE,
                     )
                 val distinctOrder =
                     krakenFill.copy(
@@ -554,7 +591,7 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
             }
         }
 
-        "save trade round trips expectedPrice and source" {
+        "save trade round trips expectedPrice source and Kraken trade id" {
             runTest {
                 val now = Instant.now().truncatedTo(ChronoUnit.MILLIS)
                 val trade =
@@ -572,6 +609,7 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
                         slippagePercent = BigDecimal("0.2500"),
                         expectedPrice = BigDecimal("49875.00"),
                         source = TradeSource.LOCAL_ESTIMATE,
+                        tradeId = "TRADE-ROUND-TRIP",
                     )
                 repository.saveTrade(trade)
 
@@ -579,6 +617,7 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
                 loaded.expectedPrice!!.shouldBeEqualComparingTo(BigDecimal("49875.00"))
                 loaded.source shouldBe TradeSource.LOCAL_ESTIMATE
                 loaded.slippagePercent!!.shouldBeEqualComparingTo(BigDecimal("0.2500"))
+                loaded.tradeId shouldBe "TRADE-ROUND-TRIP"
             }
         }
 

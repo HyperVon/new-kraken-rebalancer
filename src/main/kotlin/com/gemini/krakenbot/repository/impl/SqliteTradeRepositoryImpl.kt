@@ -67,6 +67,7 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
         this[TradeTable.tradeSource] = trade.source?.name
         this[TradeTable.cycleId] = trade.cycleId
         this[TradeTable.orderTxid] = trade.orderTxid
+        this[TradeTable.tradeId] = trade.tradeId
     }
 
     override suspend fun save(history: List<PortfolioSnapshot>) {
@@ -372,13 +373,18 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
         id = row[TradeTable.id],
         cycleId = row[TradeTable.cycleId],
         orderTxid = row[TradeTable.orderTxid],
+        tradeId = row[TradeTable.tradeId],
     )
 
     override suspend fun getLatestTradeTime(): Instant? = database.readTransactionIO {
-        // Exclude dry-run rows so incremental sync watermarks track real (or sim) exchange fills.
+        // Only successful non-dry-run rows can advance the exchange-fill cursor. Failed attempts
+        // and dry-run estimates never settled, so using either could skip older Kraken history.
         TradeTable
             .selectAll()
-            .where { TradeTable.dryRun eq false }
+            .where {
+                (TradeTable.success eq true) and
+                    (TradeTable.dryRun eq false)
+            }
             .orderBy(TradeTable.timestamp, SortOrder.DESC)
             .limit(1)
             .firstOrNull()

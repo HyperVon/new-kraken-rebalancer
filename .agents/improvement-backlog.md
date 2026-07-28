@@ -17,6 +17,7 @@ need only this file (no issue spam).
 
 | ID | Size | Status | Area | Summary | Cycle | Issue | Notes |
 | :--- | :---: | :--- | :--- | :--- | :---: | :--- | :--- |
+| CI-15-1 | S | in_progress | agent workflow | Prefer the least expensive capable model and reasoning effort | 15 | — | User-requested; shipping on `quality/cycle-20260727` |
 
 ## Done (recent)
 

@@ -21,6 +21,7 @@ out/
 *.log
 *.gz
 rebalancer-config.json
+rebalancer-config.json.tmp
 trade-history.json
 portfolio-stats.json
 *.db
@@ -32,4 +33,3 @@ portfolio-stats.json
 
 .junie/
 src/main/resources/static/rebalancer.js
-

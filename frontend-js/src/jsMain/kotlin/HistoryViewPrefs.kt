@@ -174,6 +174,7 @@ object HistoryViewPrefs {
     }
 
     private fun parseView(raw: dynamic): HistoryViewDef? {
+        if (raw == null || raw == undefined) return null
         val id = raw.id as? String ?: return null
         val name = raw.name as? String ?: return null
         val builtIn = (raw.builtIn as? Boolean) ?: false

@@ -13,6 +13,7 @@ import com.gemini.krakenbot.view.util.HistoryViewIds
 import com.gemini.krakenbot.view.util.HtmlEvents
 import com.gemini.krakenbot.view.util.HtmlIds
 import com.gemini.krakenbot.view.util.HtmlTags
+import com.gemini.krakenbot.view.util.Routes
 import com.gemini.krakenbot.view.util.ViewText
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
@@ -23,8 +24,10 @@ import kotlinx.browser.document
 import kotlinx.browser.localStorage
 import kotlinx.browser.window
 import kotlinx.coroutines.await
+import kotlinx.coroutines.delay
 import org.w3c.dom.*
 import org.w3c.dom.events.Event
+import kotlin.js.Promise
 import kotlin.js.jsTypeOf
 import kotlin.js.json
 import kotlin.test.assertEquals
@@ -44,6 +47,15 @@ class HistoryTest : StringSpec() {
 
             parsed shouldBe 1_672_531_200_000.0
             parsed!!.isFinite() shouldBe true
+        }
+
+        "dynamicNumber rejects non-finite numeric values" {
+            dynamicNumber("NaN") shouldBe null
+            dynamicNumber("Infinity") shouldBe null
+            dynamicNumber("-Infinity") shouldBe null
+            dynamicNumber(Double.NaN) shouldBe null
+            dynamicNumber(Double.POSITIVE_INFINITY) shouldBe null
+            dynamicNumber(Double.NEGATIVE_INFINITY) shouldBe null
         }
 
         "formatPair handles valid and missing symbols" {
@@ -510,6 +522,180 @@ class HistoryTest : StringSpec() {
             }
         }
 
+        "loadAll ignores an older range response that completes after the newest request" {
+            resetHistoryUiState()
+            val container = document.createElement(HtmlTags.DIV)
+            container.innerHTML = TestDomBuilders.historyDom()
+            document.body!!.appendChild(container)
+            window.asDynamic().Chart = mockChartConstructor()
+            val bodyResolvers = mutableMapOf<String, (dynamic) -> Unit>()
+            window.asDynamic().fetch = { url: String ->
+                val response: dynamic = json()
+                response.json = {
+                    Promise<dynamic> { resolve: (dynamic) -> Unit, _: (Throwable) -> Unit ->
+                        bodyResolvers[url] = resolve
+                    }
+                }
+                Promise.resolve<dynamic>(response)
+            }
+            registerHistoryGlobals()
+
+            fun resolveRange(range: String, snapshot: PortfolioSnapshot, tradeSymbol: String, totalTrades: Long) {
+                bodyResolvers.getValue("${Routes.API_HISTORY_SNAPSHOTS}?range=$range")(
+                    arrayOf(portfolioSnapshotToDynamic(snapshot)),
+                )
+                bodyResolvers.getValue("${Routes.API_HISTORY_TRADES}?range=$range")(
+                    arrayOf(tradeRecordToDynamic(mockTradeRecord(symbol = tradeSymbol))),
+                )
+                bodyResolvers.getValue("${Routes.API_HISTORY_STATS}?range=$range")(
+                    historyStatsToDynamic(mockPortfolioStatsRecord(totalTradesExecuted = totalTrades)),
+                )
+            }
+
+            try {
+                val older = loadAll(TimeRange.TWENTY_FOUR_HOURS.key)
+                val newest = loadAll(TimeRange.ALL.key)
+                delay(1)
+
+                resolveRange(
+                    TimeRange.ALL.key,
+                    mockSnapshotRecord(totalValueUSD = "222"),
+                    Asset.ETH,
+                    totalTrades = 2L,
+                )
+                newest.await()
+
+                resolveRange(
+                    TimeRange.TWENTY_FOUR_HOURS.key,
+                    mockSnapshotRecord(totalValueUSD = "111"),
+                    Asset.BTC,
+                    totalTrades = 1L,
+                )
+                older.await()
+
+                currentRange shouldBe TimeRange.ALL.key
+                document.getElementById(HtmlIds.STAT_TOTAL_TRADES)?.textContent shouldBe "2"
+                val tableHtml = document.getElementById(HtmlIds.TRADE_TABLE_BODY)?.innerHTML.orEmpty()
+                tableHtml shouldContain "${Asset.ETH}/${Asset.USD}"
+                tableHtml shouldNotContain "${Asset.BTC}/${Asset.USD}"
+            } finally {
+                document.body!!.removeChild(container)
+                resetHistoryUiState()
+            }
+        }
+
+        "loadAll ignores an older range failure after the newest request completes" {
+            resetHistoryUiState()
+            val bodyResolvers = mutableMapOf<String, (dynamic) -> Unit>()
+            val bodyRejectors = mutableMapOf<String, (Throwable) -> Unit>()
+            window.asDynamic().fetch = { url: String ->
+                val response: dynamic = json()
+                response.json = {
+                    Promise<dynamic> { resolve: (dynamic) -> Unit, reject: (Throwable) -> Unit ->
+                        bodyResolvers[url] = resolve
+                        bodyRejectors[url] = reject
+                    }
+                }
+                Promise.resolve<dynamic>(response)
+            }
+
+            fun resolveRange(range: String) {
+                bodyResolvers.getValue("${Routes.API_HISTORY_SNAPSHOTS}?range=$range")(emptyArray<dynamic>())
+                bodyResolvers.getValue("${Routes.API_HISTORY_TRADES}?range=$range")(emptyArray<dynamic>())
+                bodyResolvers.getValue("${Routes.API_HISTORY_STATS}?range=$range")(
+                    historyStatsToDynamic(mockPortfolioStatsRecord()),
+                )
+            }
+
+            try {
+                val older = loadAll(TimeRange.TWENTY_FOUR_HOURS.key)
+                val newest = loadAll(TimeRange.ALL.key)
+                delay(1)
+
+                resolveRange(TimeRange.ALL.key)
+                newest.await()
+
+                bodyRejectors.getValue(
+                    "${Routes.API_HISTORY_SNAPSHOTS}?range=${TimeRange.TWENTY_FOUR_HOURS.key}",
+                )(RuntimeException("obsolete request failed"))
+                older.await()
+
+                currentRange shouldBe TimeRange.ALL.key
+
+                val current = loadAll(TimeRange.SEVEN_DAYS.key)
+                delay(1)
+                bodyRejectors.getValue(
+                    "${Routes.API_HISTORY_SNAPSHOTS}?range=${TimeRange.SEVEN_DAYS.key}",
+                )(RuntimeException("current request failed"))
+                val currentFailure =
+                    try {
+                        current.await()
+                        null
+                    } catch (error: Throwable) {
+                        error
+                    }
+                currentFailure?.message shouldBe "current request failed"
+            } finally {
+                resetHistoryUiState()
+            }
+        }
+
+        "empty history data clears charts and disables their scrubbers" {
+            resetHistoryUiState()
+            val container = document.createElement(HtmlTags.DIV)
+            container.innerHTML =
+                """
+                ${TestDomBuilders.chartsDom()}
+                ${TestDomBuilders.scrubberDom(HtmlIds.PORTFOLIO_VALUE_CHART, disabled = false, value = "25")}
+                ${TestDomBuilders.scrubberDom(HtmlIds.ASSET_HOLDINGS_CHART, disabled = false, value = "25")}
+                ${TestDomBuilders.scrubberDom(HtmlIds.ALLOCATION_DRIFT_CHART, disabled = false, value = "25")}
+                ${TestDomBuilders.scrubberDom(HtmlIds.CUMULATIVE_NET_CASH_FLOW_CHART, disabled = false, value = "25")}
+                """.trimIndent()
+            document.body!!.appendChild(container)
+            val chartInstances = mutableListOf<dynamic>()
+            window.asDynamic().Chart = { _: dynamic, config: dynamic ->
+                val instance: dynamic = json()
+                instance.data = config.data
+                instance.options = config.options
+                instance.destroyed = false
+                instance.destroy = { instance.destroyed = true }
+                instance.isDatasetVisible = { _: Int -> true }
+                instance.getInitialScaleBounds = {
+                    json("x" to json("min" to 0.0, "max" to 100.0))
+                }
+                instance.scales = json("x" to json("min" to 25.0, "max" to 75.0))
+                chartInstances.add(instance)
+                instance
+            }
+            registerHistoryGlobals()
+
+            try {
+                val snapshots = listOf(mockSnapshotRecord())
+                val trades = listOf(mockTradeRecord())
+                buildPortfolioValueChart(snapshots)
+                buildAssetHoldingsChart(snapshots)
+                buildAllocationDriftChart(snapshots)
+                buildCumulativeNetCashFlowChart(trades)
+                chartInstances.size shouldBe 4
+
+                buildPortfolioValueChart(emptyList())
+                buildAssetHoldingsChart(emptyList())
+                buildAllocationDriftChart(emptyList())
+                buildCumulativeNetCashFlowChart(emptyList())
+
+                chartInstances.all { it.destroyed as Boolean } shouldBe true
+                val scrubbers = document.querySelectorAll(CssClass.Query.CHART_SCRUBBERS)
+                for (index in 0 until scrubbers.length) {
+                    val scrubber = scrubbers.item(index) as HTMLInputElement
+                    scrubber.disabled shouldBe true
+                    scrubber.value shouldBe "0"
+                }
+            } finally {
+                document.body!!.removeChild(container)
+                resetHistoryUiState()
+            }
+        }
+
         "checkSyncProgress hides the banner when history is seeded" {
             val container = document.createElement(HtmlTags.DIV)
             container.innerHTML = TestDomBuilders.syncProgressDom()
@@ -627,6 +813,23 @@ class HistoryTest : StringSpec() {
             loadedView.visibility[HtmlIds.CUMULATIVE_NET_CASH_FLOW_CHART]?.get(ViewText.TOTAL_PORTFOLIO) shouldBe true
             loadedView.visibility.containsKey("cumulative-pl-chart") shouldBe false
             localStorage.removeItem(ViewText.HISTORY_VIEWS_STORAGE_KEY)
+        }
+
+        "HistoryViewPrefs preserves valid views around malformed saved entries" {
+            localStorage.removeItem(ViewText.HISTORY_VIEWS_STORAGE_KEY)
+            localStorage.setItem(
+                ViewText.HISTORY_VIEWS_STORAGE_KEY,
+                """{"defaultId":"user-valid-2","views":[{"id":"user-valid-1","name":"First","builtIn":false,"range":"7d","showDryRun":true,"visibility":{}},null,{}, {"id":"user-valid-2","name":"Second","builtIn":false,"range":"30d","showDryRun":false,"visibility":{}}]}""",
+            )
+
+            try {
+                val store = HistoryViewPrefs.loadStore()
+                store.defaultId shouldBe "user-valid-2"
+                store.views.map { it.id }.contains("user-valid-1") shouldBe true
+                store.views.map { it.id }.contains("user-valid-2") shouldBe true
+            } finally {
+                localStorage.removeItem(ViewText.HISTORY_VIEWS_STORAGE_KEY)
+            }
         }
 
         "applyView seeds visibilityStates before loadAll" {
