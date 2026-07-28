@@ -37,8 +37,8 @@ object PortfolioCalculations {
             BigDecimal.ZERO
         ) {
             valueUSD
-                .divide(totalPortfolioValueUSD, SCALE_PERCENT, RoundingMode.HALF_UP)
                 .multiply(HUNDRED)
+                .divide(totalPortfolioValueUSD, SCALE_PERCENT, RoundingMode.HALF_UP)
         } else {
             BigDecimal.ZERO
         }
@@ -63,8 +63,8 @@ object PortfolioCalculations {
     ): BigDecimal = when {
         targetValueUSD > BigDecimal.ZERO -> {
             deviationUSD
-                .divide(targetValueUSD, SCALE_PERCENT, RoundingMode.HALF_UP)
                 .multiply(HUNDRED)
+                .divide(targetValueUSD, SCALE_PERCENT, RoundingMode.HALF_UP)
         }
         currentValueUSD > BigDecimal.ZERO -> HUNDRED
         else -> BigDecimal.ZERO

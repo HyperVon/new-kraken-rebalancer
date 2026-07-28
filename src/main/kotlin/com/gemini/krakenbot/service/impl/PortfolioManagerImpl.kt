@@ -133,12 +133,16 @@ class PortfolioManagerImpl(
         val drawdownPct =
             portfolioAnalyzer
                 .updateAthAndCalculateDrawdown(totalPortfolioValueUSD)
+        val hasDeployableCryptoTarget =
+            config.allocations.any { allocation ->
+                !allocation.symbol.isUsd && allocation.targetPercent > 0.0
+            }
         val fiatDeploymentPct =
-            portfolioAnalyzer
-                .calculateFiatDeployment(
-                    drawdownPct,
-                    config.settings,
-                )
+            if (hasDeployableCryptoTarget) {
+                portfolioAnalyzer.calculateFiatDeployment(drawdownPct, config.settings)
+            } else {
+                BigDecimal.ZERO
+            }
 
         if (fiatDeploymentPct > BigDecimal.ZERO) {
             log.info(

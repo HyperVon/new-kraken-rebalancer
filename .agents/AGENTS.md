@@ -145,8 +145,8 @@ See [dry-run-and-simulation](skills/dry-run-and-simulation/SKILL.md).
   paths. Live trading moves real money — treat credential + live mode changes
   as high risk.
 - `ConfigServiceImpl` defers runtime publication of saved/reloaded config while
-  a rebalance execution session is active. Do not remove that boundary or let a
-  single cycle mix settings versions.
+  a rebalance or paginated history-sync execution session is active. Do not
+  remove that boundary or let one cycle/sync mix settings or credentials.
 
 ---
 

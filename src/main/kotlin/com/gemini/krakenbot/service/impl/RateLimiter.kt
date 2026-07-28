@@ -33,9 +33,10 @@ open class RateLimiter(
             var acquired: Double? = null
             mutex.withLock {
                 val now = clock()
-                val elapsedSeconds = (now - lastUpdateTimeMs) / 1000.0
+                val elapsedSeconds = (now - lastUpdateTimeMs).coerceAtLeast(0L) / 1000.0
                 callCounter = maxOf(0.0, callCounter - (elapsedSeconds * decayRate))
-                lastUpdateTimeMs = now
+                // Keep the internal baseline monotonic when the wall clock moves backward.
+                lastUpdateTimeMs = maxOf(lastUpdateTimeMs, now)
 
                 if (callCounter + cost > safeLimit) {
                     val neededDecay = (callCounter + cost) - safeLimit
@@ -59,7 +60,7 @@ open class RateLimiter(
     suspend fun getCurrentCounter(): Double = mutex.withLock {
         val now = clock()
         val lastUpdate = lastUpdateTimeMs
-        val elapsedSeconds = (now - lastUpdate) / 1000.0
+        val elapsedSeconds = (now - lastUpdate).coerceAtLeast(0L) / 1000.0
         return maxOf(0.0, callCounter - (elapsedSeconds * decayRate))
     }
 

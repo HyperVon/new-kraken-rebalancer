@@ -22,6 +22,16 @@ Product polish discovered during QA belongs in
 
 | ID | Size | Kind | Status | Area | Summary | Cycle | Issue | Notes |
 | :--- | :---: | :--- | :--- | :--- | :--- | :---: | :--- | :--- |
+| CQ-11-L1 | L | bug | in_progress | algorithm | Preserve four-decimal percentage precision before live trigger comparison | 11 | [#124](https://github.com/HyperVon/new-kraken-rebalancer/issues/124) | Approved; `codex/quality-cycle-20260728`; `portfolio-rebalancing-math` |
+| CQ-11-L2 | L | bug | in_progress | algorithm | Define safe fiat-deployment behavior for USD-only portfolios | 11 | [#128](https://github.com/HyperVon/new-kraken-rebalancer/issues/128) | Approved no-op policy; `codex/quality-cycle-20260728`; `portfolio-rebalancing-math` |
+| CQ-11-L3 | L | bug | in_progress | config/sync | Pin configuration and credentials across paginated history sync | 11 | [#129](https://github.com/HyperVon/new-kraken-rebalancer/issues/129) | Approved; `codex/quality-cycle-20260728`; `dry-run-and-simulation` / `trade-history-sync` |
+| CQ-11-L4 | L | bug | in_progress | rate-limit | Prevent counter inflation after wall-clock rollback | 11 | [#127](https://github.com/HyperVon/new-kraken-rebalancer/issues/127) | Approved; `codex/quality-cycle-20260728`; `kraken-api-integration` |
+| CQ-11-L5 | L | bug | in_progress | history/sync | Reconcile Kraken fills to authoritative order transaction IDs | 11 | [#125](https://github.com/HyperVon/new-kraken-rebalancer/issues/125) | Approved; `codex/quality-cycle-20260728`; `trade-history-sync` |
+| CQ-11-L6 | L | bug | in_progress | history/dedupe | Stop transitive trade dedupe beyond the five-minute window | 11 | [#126](https://github.com/HyperVon/new-kraken-rebalancer/issues/126) | Approved; `codex/quality-cycle-20260728`; `trade-history-sync` |
+| CQ-11-1 | S | gap | in_progress | algorithm | Lock raw-value accumulation and single-round portfolio-total invariant | 11 | — | `codex/quality-cycle-20260728`; `write-kotest` |
+| CQ-11-2 | M | harness | in_progress | eval | Replace Scenario 12 unconditional PASS with exact order and precision assertions | 11 | — | `codex/quality-cycle-20260728`; `write-kotest` |
+| CQ-11-3 | M | bug | in_progress | simulation | Serialize emulator balance mutations across concurrent orders | 11 | — | `codex/quality-cycle-20260728`; `dry-run-and-simulation` / `write-kotest` |
+| CQ-11-4 | S | gap | in_progress | history/init | Cover duplicate-cleanup cancellation propagation and ordinary-error recovery | 11 | — | `codex/quality-cycle-20260728`; `coroutines-flows-sse` / `write-kotest` |
 
 ## Done (recent)
 

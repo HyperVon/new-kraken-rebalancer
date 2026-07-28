@@ -44,6 +44,19 @@ class PortfolioCalculationsTest : StringSpec() {
             deviationPct.shouldBeEqualComparingTo(BigDecimal("-20.0000"))
         }
 
+        "should retain four decimal places for repeating percentage ratios" {
+            PortfolioCalculations.calculateCurrentPercent(
+                valueUSD = BigDecimal.ONE,
+                totalPortfolioValueUSD = BigDecimal("3"),
+            ).shouldBeEqualComparingTo(BigDecimal("33.3333"))
+
+            PortfolioCalculations.calculateDeviationPercent(
+                deviationUSD = BigDecimal.ONE,
+                targetValueUSD = BigDecimal("3"),
+                currentValueUSD = BigDecimal("4"),
+            ).shouldBeEqualComparingTo(BigDecimal("33.3333"))
+        }
+
         "should treat zero-target holdings as 100% deviation when value remains" {
             val deviationPct = PortfolioCalculations.calculateDeviationPercent(
                 deviationUSD = BigDecimal("50.00"),

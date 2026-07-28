@@ -11,6 +11,11 @@ import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
 import io.mockk.every
 import io.mockk.mockk
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import java.math.BigDecimal
 import java.math.RoundingMode
 
@@ -134,6 +139,39 @@ class SimulatedKrakenServiceTest : StringSpec() {
 
             result.success shouldBe false
             result.errorMessage shouldNotBe null
+        }
+
+        "should serialize concurrent buys so accepted orders cannot overspend USD" {
+            val configService = mockk<ConfigService>()
+            every { configService.getConfig() } returns btcUsdConfig
+            val simulatedService = SimulatedKrakenService(configService)
+            val initialUsd = simulatedService.getBalances().getValue(Asset.USD)
+            val btcPrice = simulatedService.getTickerPrices(TestFixtures.BTCUSD).getValue(TestFixtures.BTCUSD)
+            val buyVolume =
+                initialUsd
+                    .multiply(BigDecimal("0.60"))
+                    .divide(btcPrice, 8, RoundingMode.HALF_UP)
+            val acceptedCost = buyVolume.multiply(btcPrice).setScale(2, RoundingMode.HALF_UP)
+            val start = CompletableDeferred<Unit>()
+
+            val results = coroutineScope {
+                List(64) {
+                    async(Dispatchers.Default) {
+                        start.await()
+                        simulatedService.executeOrder(
+                            TestFixtures.BTCUSD,
+                            TestFixtures.MARKET,
+                            TestFixtures.BUY,
+                            buyVolume,
+                        )
+                    }
+                }.also { start.complete(Unit) }.awaitAll()
+            }
+
+            results.count { it.success } shouldBe 1
+            simulatedService.getBalances().getValue(Asset.USD).shouldBeEqualComparingTo(
+                initialUsd.subtract(acceptedCost),
+            )
         }
 
         "should support dryRun mode when executing orders" {

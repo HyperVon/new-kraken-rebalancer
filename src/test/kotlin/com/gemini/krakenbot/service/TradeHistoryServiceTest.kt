@@ -128,6 +128,28 @@ class TradeHistoryServiceTest : StringSpec() {
             }
         }
 
+        "CQ-11-4: init propagates cancellation from duplicate cleanup" {
+            runTest {
+                val tradeHistoryService = createService()
+                coEvery { repository.cleanupDuplicateTrades() } throws CancellationException("stop startup")
+
+                shouldThrow<CancellationException> { tradeHistoryService.init() }
+
+                coVerify(exactly = 0) { repository.load() }
+            }
+        }
+
+        "CQ-11-4: init recovers from ordinary duplicate cleanup failure" {
+            runTest {
+                val tradeHistoryService = createService()
+                coEvery { repository.cleanupDuplicateTrades() } throws RuntimeException("cleanup failed")
+
+                tradeHistoryService.init()
+
+                coVerify(exactly = 1) { repository.load() }
+            }
+        }
+
         "addSnapshot_AddsToFrontAndSaves" {
             runTest {
                 val tradeHistoryService = createService()
@@ -325,6 +347,8 @@ class TradeHistoryServiceTest : StringSpec() {
 
                 coVerify(exactly = 1) { krakenService.getTradeHistory(1700000000 - 300, 0) }
                 coVerify(exactly = 0) { repository.setHistorySeeded(any()) }
+                verify(exactly = 1) { configService.beginExecutionSession() }
+                verify(exactly = 1) { configService.endExecutionSession() }
             }
         }
 
@@ -358,6 +382,8 @@ class TradeHistoryServiceTest : StringSpec() {
 
                 coVerify(exactly = 0) { krakenService.getTradeHistory(any(), any()) }
                 coVerify(exactly = 0) { repository.setHistorySeeded(any()) }
+                verify(exactly = 0) { configService.beginExecutionSession() }
+                verify(exactly = 0) { configService.endExecutionSession() }
             }
         }
 
@@ -452,7 +478,7 @@ class TradeHistoryServiceTest : StringSpec() {
                     expectedPrice = BigDecimal("10.05"),
                     source = TradeSource.LOCAL_ESTIMATE,
                     cycleId = "cycle-keep-me",
-                    orderTxid = "LOCAL-OID",
+                    orderTxid = "API-OID",
                 )
                 coEvery { repository.getTradesInRange(any(), any()) } returns listOf(localTrade)
 
@@ -580,8 +606,7 @@ class TradeHistoryServiceTest : StringSpec() {
             }
         }
 
-        // Sync uses Iterable.find (first match). SqliteTradeRepositoryImpl returns DESC so first=newest.
-        "syncTradesFromKraken_ReconciliationUsesFirstMatchingLocalInRangeOrder" {
+        "CQ-11-L5: reconciliation does not cross conflicting order txids" {
             runTest {
                 coEvery { repository.isHistorySeeded() } returns true
                 val latestTime = Instant.ofEpochSecond(1700000000)
@@ -638,16 +663,65 @@ class TradeHistoryServiceTest : StringSpec() {
                 coEvery { krakenService.getTradeHistory(1700000000 - 300, 0) } returns listOf(apiTrade)
                 coEvery { krakenService.getTradeHistory(1700000000 - 300, 50) } returns emptyList()
 
-                val reconciledSlot = slot<TradeRecord>()
-                coEvery { repository.updateTrade(newerLocal, capture(reconciledSlot)) } just Runs
-
                 val tradeHistoryService = createService()
                 tradeHistoryService.syncTradesFromKraken()
 
-                coVerify(exactly = 1) { repository.updateTrade(newerLocal, any()) }
+                coVerify(exactly = 0) { repository.updateTrade(newerLocal, any()) }
                 coVerify(exactly = 0) { repository.updateTrade(olderLocal, any()) }
-                reconciledSlot.captured.cycleId shouldBe "cycle-new"
-                coVerify(exactly = 0) { repository.saveTrade(any()) }
+                coVerify(exactly = 1) { repository.saveTrade(apiTrade) }
+            }
+        }
+
+        "CQ-11-L5: reconciliation prefers the local estimate with the API order txid" {
+            runTest {
+                coEvery { repository.isHistorySeeded() } returns true
+                val latestTime = Instant.ofEpochSecond(1700000000)
+                coEvery { repository.getLatestTradeTime() } returns latestTime
+
+                val matchingOlderLocal = TradeRecord(
+                    timestamp = latestTime,
+                    pair = TestFixtures.XBTUSD,
+                    side = TestFixtures.BUY,
+                    symbol = Asset.BTC,
+                    volume = BigDecimal.ONE,
+                    usdAmount = BigDecimal.TEN,
+                    success = true,
+                    dryRun = false,
+                    price = BigDecimal.TEN,
+                    expectedPrice = BigDecimal("10.05"),
+                    source = TradeSource.LOCAL_ESTIMATE,
+                    cycleId = "cycle-matching",
+                    orderTxid = "OID-MATCHING",
+                )
+                val newerHeuristicLocal = matchingOlderLocal.copy(
+                    timestamp = latestTime.plusSeconds(1),
+                    cycleId = "cycle-newer",
+                    orderTxid = "OID-OTHER",
+                )
+                coEvery { repository.getTradesInRange(any(), any()) } returns
+                    listOf(newerHeuristicLocal, matchingOlderLocal)
+
+                val apiTrade = matchingOlderLocal.copy(
+                    timestamp = latestTime.plusSeconds(5),
+                    usdAmount = BigDecimal("9.95"),
+                    price = BigDecimal("9.95"),
+                    fee = BigDecimal("0.0259"),
+                    expectedPrice = null,
+                    source = TradeSource.API_FILL,
+                    cycleId = null,
+                    orderTxid = "OID-MATCHING",
+                )
+                coEvery { krakenService.getTradeHistory(1700000000 - 300, 0) } returns listOf(apiTrade)
+
+                val reconciledSlot = slot<TradeRecord>()
+                coEvery { repository.updateTrade(matchingOlderLocal, capture(reconciledSlot)) } just Runs
+
+                createService().syncTradesFromKraken()
+
+                coVerify(exactly = 1) { repository.updateTrade(matchingOlderLocal, any()) }
+                coVerify(exactly = 0) { repository.updateTrade(newerHeuristicLocal, any()) }
+                reconciledSlot.captured.cycleId shouldBe "cycle-matching"
+                reconciledSlot.captured.orderTxid shouldBe "OID-MATCHING"
             }
         }
 
@@ -1061,6 +1135,27 @@ class TradeHistoryServiceTest : StringSpec() {
 
                 service.syncTradesFromKraken()
                 coVerify(exactly = 1) { krakenService.getTradeHistory(any(), any()) }
+                verify(exactly = 1) { configService.beginExecutionSession() }
+                verify(exactly = 1) { configService.endExecutionSession() }
+            }
+        }
+
+        "CQ-11-L3: standalone sync keeps an execution session active through Kraken work" {
+            runTest {
+                val service = createService()
+                var sessionActive = false
+                every { configService.beginExecutionSession() } answers { sessionActive = true }
+                every { configService.endExecutionSession() } answers { sessionActive = false }
+                coEvery { krakenService.getTradeHistory(any(), any()) } coAnswers {
+                    sessionActive shouldBe true
+                    emptyList()
+                }
+
+                service.syncTradesFromKraken()
+
+                sessionActive shouldBe false
+                verify(exactly = 1) { configService.beginExecutionSession() }
+                verify(exactly = 1) { configService.endExecutionSession() }
             }
         }
 
@@ -1076,6 +1171,8 @@ class TradeHistoryServiceTest : StringSpec() {
                 service.syncTradesFromKraken()
 
                 coVerify(exactly = 1) { krakenService.getTradeHistory(any(), any()) }
+                verify(exactly = 1) { configService.beginExecutionSession() }
+                verify(exactly = 1) { configService.endExecutionSession() }
             }
         }
 
@@ -1393,7 +1490,7 @@ class TradeHistoryServiceTest : StringSpec() {
                     source = null,
                     id = 2,
                     cycleId = "cycle-local",
-                    orderTxid = "LOCAL-OID",
+                    orderTxid = "OID-B",
                 )
                 coEvery { repository.getTradesInRange(any(), any()) } returns
                     listOf(persistedApiFill, legacyLocalEstimate)
@@ -1642,6 +1739,9 @@ class TradeHistoryServiceTest : StringSpec() {
                 yield()
                 job.cancel()
                 job.join()
+
+                verify(exactly = 1) { configService.beginExecutionSession() }
+                verify(exactly = 1) { configService.endExecutionSession() }
             }
         }
 
@@ -2113,6 +2213,8 @@ class TradeHistoryServiceTest : StringSpec() {
                     }
                 }
                 threw shouldBe true
+                verify(exactly = 1) { configService.beginExecutionSession() }
+                verify(exactly = 1) { configService.endExecutionSession() }
             }
         }
 

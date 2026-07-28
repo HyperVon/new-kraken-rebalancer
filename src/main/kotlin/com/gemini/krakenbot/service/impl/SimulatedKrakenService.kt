@@ -13,6 +13,8 @@ import com.gemini.krakenbot.service.RawPrices
 import com.gemini.krakenbot.util.PrecisionConstants
 import com.gemini.krakenbot.util.toCryptoScale
 import com.gemini.krakenbot.util.toUsdScale
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.slf4j.LoggerFactory
 import java.math.BigDecimal
 import java.math.RoundingMode
@@ -28,6 +30,7 @@ class SimulatedKrakenService(private val configService: ConfigService) : KrakenS
     private val balances = ConcurrentHashMap<String, BigDecimal>()
     private val simulatedPrices = ConcurrentHashMap<String, BigDecimal>()
     private val simulatedTrades = CopyOnWriteArrayList<TradeRecord>()
+    private val orderMutex = Mutex()
     private var historicalTradesSeeded = false
     private var lastTradeHistoryTotalCount = 0
 
@@ -138,9 +141,9 @@ class SimulatedKrakenService(private val configService: ConfigService) : KrakenS
         }
     }
 
-    override suspend fun getBalances(): RawBalances {
+    override suspend fun getBalances(): RawBalances = orderMutex.withLock {
         initializeMissingBalancesAndPrices()
-        return balances.toMap()
+        balances.toMap()
     }
 
     override suspend fun getTickerPrices(pairs: String): RawPrices {
@@ -215,66 +218,68 @@ class SimulatedKrakenService(private val configService: ConfigService) : KrakenS
             )
         }
 
-        val usdBalance = balances[Asset.USD] ?: BigDecimal.ZERO
-        val tokenBalance = balances[symbol] ?: BigDecimal.ZERO
+        return orderMutex.withLock {
+            val usdBalance = balances[Asset.USD] ?: BigDecimal.ZERO
+            val tokenBalance = balances[symbol] ?: BigDecimal.ZERO
 
-        if (orderSide == OrderSide.BUY) {
-            if (usdBalance < usdAmount) {
-                val error =
-                    "Insufficient USD funds in emulator balance: needed $usdAmount, had $usdBalance"
-                log.warn("[EMULATOR] $error")
-                return OrderResult(
-                    success = false,
-                    pair = pair,
-                    side = side,
-                    volume = normalizedVolume,
-                    errorMessage = error,
-                )
+            if (orderSide == OrderSide.BUY) {
+                if (usdBalance < usdAmount) {
+                    val error =
+                        "Insufficient USD funds in emulator balance: needed $usdAmount, had $usdBalance"
+                    log.warn("[EMULATOR] $error")
+                    return@withLock OrderResult(
+                        success = false,
+                        pair = pair,
+                        side = side,
+                        volume = normalizedVolume,
+                        errorMessage = error,
+                    )
+                }
+                balances[Asset.USD] = usdBalance.subtract(usdAmount).toUsdScale()
+                balances[symbol] = tokenBalance.add(normalizedVolume).toCryptoScale()
+            } else {
+                if (tokenBalance < normalizedVolume) {
+                    val error =
+                        "Insufficient $symbol funds in emulator balance: needed $normalizedVolume, had $tokenBalance"
+                    log.warn("[EMULATOR] $error")
+                    return@withLock OrderResult(
+                        success = false,
+                        pair = pair,
+                        side = side,
+                        volume = normalizedVolume,
+                        errorMessage = error,
+                    )
+                }
+                balances[symbol] = tokenBalance.subtract(normalizedVolume).toCryptoScale()
+                balances[Asset.USD] = usdBalance.add(usdAmount).toUsdScale()
             }
-            balances[Asset.USD] = usdBalance.subtract(usdAmount).toUsdScale()
-            balances[symbol] = tokenBalance.add(normalizedVolume).toCryptoScale()
-        } else {
-            if (tokenBalance < normalizedVolume) {
-                val error =
-                    "Insufficient $symbol funds in emulator balance: needed $normalizedVolume, had $tokenBalance"
-                log.warn("[EMULATOR] $error")
-                return OrderResult(
-                    success = false,
-                    pair = pair,
-                    side = side,
-                    volume = normalizedVolume,
-                    errorMessage = error,
-                )
-            }
-            balances[symbol] = tokenBalance.subtract(normalizedVolume).toCryptoScale()
-            balances[Asset.USD] = usdBalance.add(usdAmount).toUsdScale()
-        }
 
-        val orderTxid = "SIM-${System.nanoTime()}"
-        val trade =
-            TradeRecord(
-                timestamp = Instant.now(),
-                pair = pair,
-                side = side.uppercase(),
-                symbol = symbol,
-                volume = normalizedVolume,
-                usdAmount = usdAmount,
+            val orderTxid = "SIM-${System.nanoTime()}"
+            val trade =
+                TradeRecord(
+                    timestamp = Instant.now(),
+                    pair = pair,
+                    side = side.uppercase(),
+                    symbol = symbol,
+                    volume = normalizedVolume,
+                    usdAmount = usdAmount,
+                    success = true,
+                    dryRun = false,
+                    price = price.toCryptoScale(),
+                    fee = BigDecimal.ZERO,
+                    source = TradeSource.API_FILL,
+                    orderTxid = orderTxid,
+                )
+            simulatedTrades.add(trade)
+
+            OrderResult(
                 success = true,
-                dryRun = false,
-                price = price.toCryptoScale(),
-                fee = BigDecimal.ZERO,
-                source = TradeSource.API_FILL,
+                pair = pair,
+                side = side,
+                volume = normalizedVolume,
                 orderTxid = orderTxid,
             )
-        simulatedTrades.add(trade)
-
-        return OrderResult(
-            success = true,
-            pair = pair,
-            side = side,
-            volume = normalizedVolume,
-            orderTxid = orderTxid,
-        )
+        }
     }
 
     override suspend fun getTradeHistory(startSec: Long?, offset: Int?): List<TradeRecord> {

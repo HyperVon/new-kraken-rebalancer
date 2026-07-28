@@ -34,7 +34,9 @@ Shared scales also live in `:common` `PrecisionConstants` (`SCALE_CRYPTO=8`,
 
 ### Analysis vs snapshot percent scales
 
-- Deviation math uses `SCALE_PERCENT = 4`; USD values `SCALE_USD = 2`.
+- Percentage numerators are multiplied by 100 **before** division at
+  `SCALE_PERCENT = 4`; dividing the ratio first would collapse precision to
+  0.01 percentage points. USD values use `SCALE_USD = 2`.
 - `createAssetSnapshot` rounds displayed percents to 2dp — do not reuse snapshot
   percents as trigger inputs.
 - Accumulate raw per-asset USD and round the portfolio total once.
@@ -61,6 +63,8 @@ Shared scales also live in `:common` `PrecisionConstants` (`SCALE_CRYPTO=8`,
    - `fiatMaxDrawdown = 0` disables deployment.
 4. `EffectiveUsdTarget = BaseUsdTarget × (1 - Deploy%)`.
 5. Freed allocation redistributed **proportionally to crypto** so totals remain 100%.
+   When there is no positive non-USD target, deployment is an applied no-op:
+   the configured USD target remains 100% and the cycle reports 0% deployed.
 
 ---
 

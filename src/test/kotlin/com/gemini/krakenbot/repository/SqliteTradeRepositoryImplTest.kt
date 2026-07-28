@@ -564,7 +564,10 @@ class SqliteTradeRepositoryImplTest : StringSpec() {
                 repository.cleanupDuplicateTrades()
 
                 val all = repository.getTradesInRange(now.minusSeconds(1), now.plusSeconds(3600))
-                all.size shouldBe 8
+                all.size shouldBe 9
+                all.any { it.timestamp == t2FarFuture.timestamp } shouldBe true
+                all.any { it.timestamp == tPairAlias1.timestamp } shouldBe false
+                all.any { it.timestamp == tPairAlias2.timestamp } shouldBe false
             }
         }
 
