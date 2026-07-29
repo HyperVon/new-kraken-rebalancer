@@ -17,6 +17,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **Chart palette maintainability**: Replaced inline allocation-bar fallback
+  colors with named shared constants and added JVM/JS regression coverage.
 - **Security guidance**: Clarified the exact IPv4/IPv6 CORS allowlist, runtime
   log sensitivity, and the permissions and identifier chain needed to reconcile
   an ambiguous Kraken order submission.
