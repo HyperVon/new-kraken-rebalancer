@@ -17,6 +17,24 @@ walkthrough of Dashboard, Settings, History, and safety modes
 
 ---
 
+## AI-Assisted Development
+
+This project—including its application code, tests, documentation, and agent
+playbook—was developed through human-directed AI coding sessions. Most of the
+initial project and much of its earlier evolution were created with Google
+Antigravity. Cursor, Codex, and OpenCode joined the workflow only much more
+recently—roughly within the couple of weeks before this documentation was added—
+while portable repository guidance is also available to Claude Code, GitHub
+Copilot, and other agents. Independent models are used for adversarial review,
+while tests, coverage, simulation, browser QA, and human approval provide the
+final safety boundaries.
+
+See the [Agentic Development Guide](docs/AGENTIC_DEVELOPMENT.md) for the full
+provenance, instruction architecture, cross-harness setup, skill catalog,
+human–agent workflow, review loop, and maintenance guidance.
+
+---
+
 ## Tech Stack
 
 | Layer           | Technology                                                                                             |
@@ -479,6 +497,7 @@ This path is internal orchestration — not a second browser-facing SSE stream l
 │       ├── (style.css served dynamically) # Stylesheet compiled from view/css/ via kotlinx-css DSL
 │       └── (rebalancer.js copy-bundled)   # Dynamic JS bundle compiled from frontend-js subproject
 ├── docs/                                  # Project documentation and architecture guides
+│   ├── AGENTIC_DEVELOPMENT.md             # Human guide to the AI-assisted development system
 │   ├── USER_GUIDE.md                      # End-user walkthrough (Dashboard, Settings, History)
 │   ├── images/                            # README / User Guide screenshot PNGs
 │   ├── FLOWS.md                           # Kotlin Flow architecture guide

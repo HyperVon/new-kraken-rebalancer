@@ -6,6 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.15.13] - 2026-07-29
+
+### Added
+
+- **Agentic development documentation**: Added a human-only guide to the
+  project's AI-assisted provenance—including its origins in Google Antigravity
+  and recent expansion to Cursor, Codex, and OpenCode—portable instruction
+  architecture, complete skill catalog, cross-harness onboarding, multi-model
+  review workflow, safety boundaries, and continued development practices.
+
+### Changed
+
+- **Security documentation**: Refocused the public security policy on human
+  vulnerability reporters and operators, corrected current IPv6-loopback CORS
+  support, and consolidated AI-development security invariants in the agent
+  playbook.
+
 ## [6.15.12] - 2026-07-29
 
 ### Added

@@ -1,97 +1,138 @@
 # Security Policy
 
-## Supported Versions
+This policy is for users, operators, contributors, and security researchers. It
+explains which versions receive security updates, how to report a vulnerability,
+and how to operate the application safely.
+
+## Supported versions
 
 Only the latest release on the `main` branch is actively maintained and receives
 security updates.
 
-| Version        | Supported          |
-|----------------|--------------------|
-| latest (main)  | :white_check_mark: |
-| older releases | :x:                |
+| Version | Supported |
+| :--- | :--- |
+| Latest (`main`) | :white_check_mark: |
+| Older releases | :x: |
 
-## Reporting a Vulnerability
+## Reporting a vulnerability
 
-**Please do not report security vulnerabilities through public GitHub issues.**
+Please do not report security vulnerabilities through public GitHub issues.
+This application manages cryptocurrency portfolio data and can interact with the
+Kraken exchange using credentials that permit live trading.
 
-This project manages live cryptocurrency portfolio data and interacts with the
-Kraken exchange API. Security vulnerabilities should be treated with care.
+Use GitHub's
+[Private Vulnerability Reporting](https://github.com/HyperVon/new-kraken-rebalancer/security/advisories/new)
+to submit a confidential report. The same form is available from the repository's
+**Security** tab.
 
-### How to Report
+### Information that helps
 
-Please use GitHub's
-**[Private Vulnerability Reporting](https://github.com/HyperVon/new-kraken-rebalancer/security/advisories/new)**
-feature to submit a vulnerability report confidentially.
+A useful report includes:
 
-Alternatively, you may open a GitHub Security Advisory directly from the
-**Security** tab of this repository.
+- a description of the vulnerability and its potential impact;
+- affected versions or commits;
+- reproducible steps or a minimal proof of concept;
+- relevant logs or screenshots with credentials and account data removed;
+- any known mitigation or suggested fix.
 
-### What to Include
+Please exclude Kraken API keys, private keys, balances, transaction details, and
+other sensitive account information unless a secure follow-up channel has been
+agreed upon.
 
-Please include as much of the following as possible:
+### Response targets
 
-- A description of the vulnerability and its potential impact
-- Steps to reproduce the issue
-- Any relevant logs, screenshots, or proof-of-concept code
-- Suggested fix or mitigation (if known)
+- **Acknowledgement:** within 48 hours of submission
+- **Status update:** within 7 days with an initial severity assessment and
+  resolution plan
+- **Resolution:** critical vulnerabilities receive priority and are patched as
+  quickly as practical
 
-### What to Expect
+These are response targets rather than guarantees. Complex reports may require
+additional investigation or coordination.
 
-- **Acknowledgement**: Within 48 hours of submission
-- **Status update**: Within 7 days with an assessment of severity and planned
-  resolution
-- **Resolution**: Critical vulnerabilities will be prioritized and patched as
-  quickly as possible
+## Operating the application securely
 
-## Security Considerations for Users
+### Kraken credential protection
 
-This application handles sensitive Kraken API credentials and executes live
-trades. When deploying:
+`rebalancer-config.json` can contain Kraken credentials and is intentionally
+excluded by `.gitignore`. Do not commit it or attach it to an issue, pull request,
+or support request.
 
-- **Never commit your `rebalancer-config.json`** — it contains your API keys and
-  is listed in `.gitignore` for this reason
-- **Prefer env placeholders for secrets** — `ConfigServiceImpl` resolves
-  `${ENV_VAR}` / `${ENV_VAR:default}` in the config JSON at load time. On save,
-  raw placeholders are preserved **only when credentials are unchanged** (so
-  editing unrelated settings does not write resolved secrets to disk). If you
-  change API keys via the Settings form, the submitted values are persisted as
-  entered. Example: `"apiKey": "${KRAKEN_API_KEY:}"`,
-  `"privateKey": "${KRAKEN_PRIVATE_KEY:}"`
-- Run with the **minimum required API permissions** on Kraken (Query Funds,
-  Query Closed Orders & Trades, Create & Modify Orders). Query Open Orders is
-  not required by the endpoints this application uses.
-- Consider running in **dry-run mode** (`dryRun: true`) before enabling live
-  trading
-- Restrict access to the machine running this application
-- Regularly rotate your Kraken API keys
+The configuration supports environment placeholders in the form
+`${ENV_VAR}` or `${ENV_VAR:default}`. For example:
 
-### Ambiguous live order submissions
+```json
+{
+  "apiKey": "${KRAKEN_API_KEY:}",
+  "privateKey": "${KRAKEN_PRIVATE_KEY:}"
+}
+```
 
-Before contacting Kraken AddOrder in real live mode, the application persists
-a durable `PENDING` intent. AddOrder is attempted once: a network/response
-failure can occur after Kraken accepted the order, so automatic replay could
-duplicate a filled or already-closed order. Ambiguous outcomes are marked
-`UNCERTAIN`, stop the current order batch, and block later live submissions.
+When credentials remain unchanged, saving unrelated settings preserves the raw
+placeholders instead of writing resolved secrets to disk. Credentials entered or
+changed through the Settings form are persisted as entered.
 
-If this happens, verify the recorded `client_order_id` against Kraken open
-orders, closed orders, and fills before changing the row in
-`kraken-rebalancer.db`. Back up the database first. Do not clear the state based
-only on an empty trade-history response; unresolved intents are deliberately
-excluded from heuristic reconciliation, duplicate cleanup, and age-based
-pruning.
+Additional precautions include:
+
+- granting only the Kraken permissions needed by the application: **Query
+  Funds**, **Query Closed Orders & Trades**, and **Create & Modify Orders**;
+- rotating API keys periodically and immediately after suspected exposure;
+- using separate credentials for this application rather than reusing keys;
+- redacting credentials and account data from logs, screenshots, and bug reports;
+- starting with `dryRun: true` or `simulation: true` before considering live
+  trading.
+
+The endpoints currently used by the application do not require the **Query Open
+Orders** permission.
 
 ### Dashboard trust model
 
-The web dashboard and HTTP API have **no user authentication**. Security relies
-on **local / private-network trust**:
+The dashboard and HTTP API do not have user authentication. They are designed
+for a single trusted operator on a local machine or private network.
 
-- CORS only allows origins that pass `isLocalOrPrivateOrigin` (`localhost`,
-  `127.0.0.1`, `*.local`, RFC1918 private ranges, link-local `169.254.*`).
-  Literal `::1` is **not** effectively allowlisted today because host parsing
-  uses `substringBefore(":")`, which empties IPv6 addresses.
-- Do **not** expose port 8080 to the public internet
-- Prefer binding/access only from the host or trusted LAN devices that can reach
-  the process
+Browser cross-origin access is limited to local and private origins, including
+localhost, IPv4 and IPv6 loopback, `.local` hostnames, RFC1918 private ranges,
+and the `169.254.0.0/16` link-local range. This CORS policy is not a substitute
+for network access control.
 
-Treat any machine that can open the dashboard as fully trusted for config
-changes and (if `dryRun` / `simulation` are off) live trading.
+For safe operation:
+
+- do not expose port 8080 directly to the public internet;
+- restrict network access with host firewall, router, container, or reverse
+  proxy controls;
+- treat every device that can reach the dashboard as trusted to change
+  configuration and potentially initiate live trading;
+- add authentication at a trusted reverse proxy before permitting access beyond
+  a private single-operator environment.
+
+### Ambiguous live order submissions
+
+Before a real AddOrder request, the application records a durable `PENDING`
+intent. The request is attempted once because a network failure can happen after
+Kraken has already accepted the order. An automatic retry could duplicate a
+filled or already-closed order.
+
+An ambiguous result becomes `UNCERTAIN`, stops the current order batch, and
+blocks later live submissions. If this occurs:
+
+1. Stop automated live trading while investigating.
+2. Back up `kraken-rebalancer.db` before changing any stored state.
+3. Compare the recorded `client_order_id` with Kraken open orders, closed orders,
+   and fills.
+4. Resolve the stored state only after the exchange outcome is known.
+
+An empty trade-history response is not sufficient proof that Kraken rejected the
+order. Unresolved intents are deliberately excluded from heuristic
+reconciliation, duplicate cleanup, and age-based pruning.
+
+## Security scope and limitations
+
+- The project does not claim that the dashboard is safe for unrestricted public
+  hosting.
+- CORS limits browser origins but does not authenticate users or protect a
+  publicly reachable process.
+- Dry-run mode suppresses order placement but can still use real Kraken account
+  data when simulation is disabled.
+- Simulation mode uses the offline exchange emulator and does not contact Kraken.
+- No software safeguard replaces careful credential management, network
+  isolation, backups, and human review before live trading.

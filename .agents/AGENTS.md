@@ -10,6 +10,8 @@ keep in sync with OPERATING.md). Thin harness entrypoints: root **`CLAUDE.md`**,
 
 Canonical deep docs:
 
+- [`docs/AGENTIC_DEVELOPMENT.md`](../docs/AGENTIC_DEVELOPMENT.md) — human guide
+  to the AI-assisted development system
 - [`docs/USER_GUIDE.md`](../docs/USER_GUIDE.md) — end-user visual walkthrough
 - [`docs/ALGORITHM.md`](../docs/ALGORITHM.md) — rebalancing math & execution
 - [`docs/FLOWS.md`](../docs/FLOWS.md) — Kotlin Flow / SharedFlow / SSE architecture
@@ -187,12 +189,35 @@ claim CodeQL is active CI until re-enabled.
 
 ## 6. Security & local-trust dashboard
 
-- **No user auth** on the dashboard/API — security model is local/private network trust.
-- CORS allows only structurally parsed origins passing
-  `isLocalOrPrivateOrigin` (`localhost`, valid private/loopback IPs, and
-  `*.local`); private-IP hostname lookalikes are rejected.
-- **NEVER** hardcode API keys/secrets. Load from env or gitignored `rebalancer-config.json`.
-- Do not log HMAC signatures or private keys.
+- **No user auth** on the dashboard/API — the security model is a single trusted
+  operator on a local machine or private network. Do not present it as safe for
+  unrestricted public hosting.
+- CORS must continue to use structurally parsed origins through
+  `isLocalOrPrivateOrigin`: localhost, IPv4/IPv6 loopback, valid RFC1918 or
+  link-local IPs, and `*.local`. Reject paths, user-info tricks, public origins,
+  malformed IPs, and private-prefix hostname lookalikes. Do not widen CORS as a
+  substitute for authentication.
+- Never hardcode or commit API keys, private keys, real account data, or the
+  gitignored `rebalancer-config.json`. Tests, examples, screenshots, logs, and
+  issue/PR artifacts use placeholders or redacted values.
+- Preserve raw `${ENV_VAR}` / `${ENV_VAR:default}` credential placeholders when
+  unrelated settings are saved. Do not materialize resolved secrets into JSON.
+- Never log HMAC signatures, API keys, private keys, resolved credentials, or
+  sensitive Kraken responses.
+- Kraken credentials use least privilege: Query Funds, Query Closed Orders &
+  Trades, and Create & Modify Orders. Do not claim Query Open Orders is required
+  unless the API surface changes and the claim is verified.
+- Preserve the durable live-order journal: write `PENDING` before AddOrder;
+  ambiguous outcomes become blocking `UNCERTAIN`; never retry or heuristically
+  clear them. Operator reconciliation requires a database backup and exchange
+  verification by `client_order_id`.
+- Treat changes to authentication, network exposure, CORS, credentials,
+  persistence, or live-order safety as high impact and require explicit user
+  direction plus focused security tests.
+
+Public reporting and operator guidance belongs in [`SECURITY.md`](../SECURITY.md);
+development-facing security invariants remain canonical here and in the owning
+domain skills.
 
 ---
 

@@ -85,10 +85,16 @@ first
 
 ## AI / coding agents
 
+This project was developed through human-directed AI coding sessions. Read the
+[Agentic Development Guide](docs/AGENTIC_DEVELOPMENT.md) for its provenance,
+cross-harness setup, complete skill catalog, review model, and recommended
+human–agent workflow.
+
 Agent guidance is **in the repo** (commit it; do not gitignore `.cursor/`):
 
 | Path | Audience |
 | :--- | :--- |
+| [`docs/AGENTIC_DEVELOPMENT.md`](docs/AGENTIC_DEVELOPMENT.md) | Humans — development model and onboarding |
 | [`.agents/AGENTS.md`](.agents/AGENTS.md) | All agents — stack, invariants, skill index |
 | [`.agents/OPERATING.md`](.agents/OPERATING.md) | All agents — always-on operating norms |
 | [`.agents/skills/`](.agents/skills/) | All agents — task workflows |
@@ -98,6 +104,11 @@ Agent guidance is **in the repo** (commit it; do not gitignore `.cursor/`):
 
 When changing always-on norms, update **OPERATING.md** and the matching
 `.cursor/rules/*.mdc` files together.
+
+For Codex, OpenCode, or another harness without a checked-in entrypoint,
+explicitly direct it to read `.agents/AGENTS.md`, `.agents/OPERATING.md`, and
+the smallest matching skill. Keep new harness adapters thin rather than
+duplicating the portable rules.
 
 ## Code Guidelines
 
