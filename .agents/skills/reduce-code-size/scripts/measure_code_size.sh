@@ -21,6 +21,7 @@ rg --files "${existing[@]}" -g '*.kt' -g '*.kts' -0 | xargs -0 wc -l | tail -1
 echo "Largest Kotlin files:"
 rg --files "${existing[@]}" -g '*.kt' -g '*.kts' -0 |
     xargs -0 wc -l |
+    sed '/ total$/d' |
     sort -nr |
     sed -n '1,25p'
 
