@@ -2,6 +2,7 @@
 
 package com.gemini.krakenbot.service.impl
 
+import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.booleans.shouldBeFalse
@@ -162,6 +163,27 @@ class RateLimiterTest : StringSpec() {
                 // Do not drain the waiter: proving HOL only needs concurrent progress during
                 // the delay. Cancel so runTest is not left with an unfinished coroutine.
                 waiter.cancel()
+            }
+        }
+
+        "acquireWithCost throws IllegalArgumentException when cost is zero or negative" {
+            runTest {
+                val limiter = RateLimiter(safeLimit = 12.0)
+                shouldThrow<IllegalArgumentException> {
+                    limiter.acquireWithCost(0.0)
+                }
+                shouldThrow<IllegalArgumentException> {
+                    limiter.acquireWithCost(-1.0)
+                }
+            }
+        }
+
+        "acquireWithCost throws IllegalArgumentException when cost exceeds safeLimit" {
+            runTest {
+                val limiter = RateLimiter(safeLimit = 12.0)
+                shouldThrow<IllegalArgumentException> {
+                    limiter.acquireWithCost(15.0)
+                }
             }
         }
     }

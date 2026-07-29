@@ -27,6 +27,11 @@ Product polish discovered during QA belongs in
 
 | ID | Size | Kind | Status | Area | Summary | Cycle | PR |
 | :--- | :---: | :--- | :--- | :--- | :--- | :---: | :--- |
+| CQ-13-1 | S | gap | done | rate-limit | Enforce cost bounds (`cost > 0.0` and `cost <= safeLimit`) in `RateLimiter` | 13 | #139 |
+| CQ-13-2 | S | gap | done | orders | Cover zero price/volume order execution guard paths | 13 | #139 |
+| CQ-13-3 | S | gap | done | history/calc | Cover unknown order side handling during timeline reconstruction | 13 | #139 |
+| CQ-13-4 | S | gap | done | history/dedupe | Cover zero delta and API-before-local trade ordering | 13 | #139 |
+| CQ-13-5 | S | gap | done | frontend-js | Cover empty dynamic object payload parsing | 13 | #139 |
 | CQ-12-L1 | L | bug | done | settings | Reject malformed or mismatched Settings form fields | 12 | #138 |
 | CQ-12-L2 | L | bug | done | security | Harden no-auth dashboard CORS origin validation | 12 | #138 |
 | CQ-12-L3 | L | bug | done | orders | Cap zero-target sell volume to available holdings | 12 | #138 |

@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.15.7] - 2026-07-28
+
+### Added
+
+- **Quality coverage**: Added regression coverage for rate-limit cost bounds,
+  zero-price and zero-volume order guards, invalid trade sides, timestamp-edge
+  deduplication, and Kotlin/JS empty-object parsing.
+
+### Changed
+
+- **Fail-fast validation**: Invalid rate-limit costs and unsupported trade sides
+  in historical reconstruction are now rejected instead of waiting forever or
+  producing inaccurate snapshots.
+
 ## [6.15.6] - 2026-07-28
 
 ### Added

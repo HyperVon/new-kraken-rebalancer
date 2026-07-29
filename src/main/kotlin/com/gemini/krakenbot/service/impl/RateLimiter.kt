@@ -28,6 +28,8 @@ open class RateLimiter(
     private var lastUpdateTimeMs: Long = clock()
 
     open suspend fun acquireWithCost(cost: Double): Double {
+        require(cost > 0.0) { "Cost must be strictly positive: $cost" }
+        require(cost <= safeLimit) { "Requested cost $cost exceeds safeLimit $safeLimit" }
         while (true) {
             var waitMs = 0L
             var acquired: Double? = null

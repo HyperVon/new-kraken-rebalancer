@@ -1762,5 +1762,53 @@ class OrderExecutorCashCapTest : StringSpec() {
                 coVerify { tradeHistoryService.saveTrade(match { it.submissionState == null }) }
             }
         }
+
+        "executeOrders silently skips orders with zero ticker price" {
+            runTest {
+                val actionLog = mutableListOf<String>()
+                orderExecutor.executeOrders(
+                    buyOrders = mapOf(Asset.BTC to BigDecimal("50.00")),
+                    sellOrders = emptyMap(),
+                    currentValuesUSD = mapOf(Asset.USD to BigDecimal("100.00")),
+                    prices = mapOf(Asset.BTC to BigDecimal.ZERO), // Zero price
+                    settings = Settings(
+                        loopDelaySeconds = 0L,
+                        deviationTriggerPercent = 2.0,
+                        dustThresholdUSD = 1.0,
+                        dryRun = true,
+                        fiatMaxDrawdown = 0.0,
+                        fiatDeploymentExponent = 1.0,
+                    ),
+                    actionLog = actionLog,
+                )
+
+                coVerify(exactly = 0) { tradeHistoryService.saveTrade(any()) }
+            }
+        }
+
+        "executeOrders skips sell order when available holdings volume rounds down to zero" {
+            runTest {
+                val actionLog = mutableListOf<String>()
+                orderExecutor.executeOrders(
+                    buyOrders = emptyMap(),
+                    sellOrders = mapOf(Asset.BTC to BigDecimal("10.00")),
+                    currentValuesUSD = mapOf(Asset.BTC to BigDecimal("0.000000001")),
+                    prices = mapOf(Asset.BTC to BigDecimal("60000.00")),
+                    // 1e-9 rounds down to 0 at scale 8
+                    availableBalances = mapOf(Asset.BTC to BigDecimal("0.000000001")),
+                    settings = Settings(
+                        loopDelaySeconds = 0L,
+                        deviationTriggerPercent = 2.0,
+                        dustThresholdUSD = 1.0,
+                        dryRun = true,
+                        fiatMaxDrawdown = 0.0,
+                        fiatDeploymentExponent = 1.0,
+                    ),
+                    actionLog = actionLog,
+                )
+
+                coVerify(exactly = 0) { tradeHistoryService.saveTrade(any()) }
+            }
+        }
     }
 }
