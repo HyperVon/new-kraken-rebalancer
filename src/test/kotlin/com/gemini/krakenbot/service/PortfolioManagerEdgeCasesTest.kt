@@ -13,12 +13,14 @@ import com.gemini.krakenbot.model.PortfolioStats
 import com.gemini.krakenbot.service.impl.OrderExecutorImpl
 import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
 import com.gemini.krakenbot.toBigDecimalMap
+import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.shouldBe
 import io.mockk.*
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
@@ -729,6 +731,17 @@ class PortfolioManagerEdgeCasesTest : StringSpec() {
                     BigDecimal("1500.0"),
                 )
                 drawdown.shouldBeEqualComparingTo(BigDecimal.ZERO)
+            }
+        }
+
+        "testUpdateAthAndCalculateDrawdown_SaveCancellationPropagates" {
+            runTest {
+                coEvery { portfolioStatsRepository.load() } returns PortfolioStats(BigDecimal("1000.0"))
+                coEvery { portfolioStatsRepository.save(any()) } throws CancellationException("cancelled")
+
+                shouldThrow<CancellationException> {
+                    portfolioAnalyzer.updateAthAndCalculateDrawdown(BigDecimal("1500.0"))
+                }
             }
         }
 

@@ -16,6 +16,7 @@ import com.gemini.krakenbot.service.PortfolioValues
 import com.gemini.krakenbot.service.RawBalances
 import com.gemini.krakenbot.service.RawPrices
 import com.gemini.krakenbot.service.impl.PortfolioCalculations.SCALE_USD
+import kotlinx.coroutines.CancellationException
 import org.slf4j.LoggerFactory
 import java.math.BigDecimal
 import java.math.RoundingMode
@@ -86,8 +87,13 @@ class PortfolioAnalyzerImpl(
             }
         }
         val updatedStats = stats.copy(allTimeHigh = ath)
-        runCatching { portfolioStatsRepository.save(updatedStats) }
-            .onFailure { e -> log.error("Failed to persist portfolio ATH", e) }
+        try {
+            portfolioStatsRepository.save(updatedStats)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            log.error("Failed to persist portfolio ATH", e)
+        }
 
         return RebalancerEngine.calculateDrawdown(totalPortfolioValueUSD, ath)
     }
