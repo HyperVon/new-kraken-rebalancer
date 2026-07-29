@@ -145,10 +145,20 @@ object ChartProps {
     const val COLOR_SLATE_BG_PALETTE = "rgba(148, 163, 184, 0.12)"
 
     /** Solid hex colors for SSR allocation bars (match chart palette). */
-    const val SOLID_BTC = "#fbbf24"
-    const val SOLID_ETH = "#a78bfa"
-    const val SOLID_USD = "#94a3b8"
-    const val SOLID_FALLBACK = "#60a5fa"
+    const val SOLID_BLUE = "#60a5fa"
+    const val SOLID_EMERALD = "#34d399"
+    const val SOLID_AMBER = "#fbbf24"
+    const val SOLID_VIOLET = "#a78bfa"
+    const val SOLID_RED = "#f87171"
+    const val SOLID_TEAL = "#2dd4bf"
+    const val SOLID_ORANGE = "#fb923c"
+    const val SOLID_FUCHSIA = "#e879f9"
+    const val SOLID_SLATE = "#94a3b8"
+
+    const val SOLID_BTC = SOLID_AMBER
+    const val SOLID_ETH = SOLID_VIOLET
+    const val SOLID_USD = SOLID_SLATE
+    const val SOLID_FALLBACK = SOLID_BLUE
 
     val PALETTE_BORDER_COLORS = arrayOf(
         COLOR_BLUE,
@@ -196,13 +206,13 @@ object ChartProps {
 
     private val SOLID_FALLBACK_PALETTE =
         arrayOf(
-            SOLID_FALLBACK,
-            "#34d399",
-            SOLID_BTC,
-            SOLID_ETH,
-            "#f87171",
-            "#2dd4bf",
-            "#fb923c",
-            "#e879f9",
+            SOLID_BLUE,
+            SOLID_EMERALD,
+            SOLID_AMBER,
+            SOLID_VIOLET,
+            SOLID_RED,
+            SOLID_TEAL,
+            SOLID_ORANGE,
+            SOLID_FUCHSIA,
         )
 }
