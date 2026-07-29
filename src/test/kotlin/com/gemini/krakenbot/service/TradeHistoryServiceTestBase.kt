@@ -68,13 +68,6 @@ abstract class TradeHistoryServiceTestBase : StringSpec() {
         )
     }
 
-    protected fun snapshotWorth(totalValueUSD: BigDecimal) = PortfolioSnapshot(
-        timestamp = Instant.now(),
-        totalValueUSD = totalValueUSD,
-        assets = emptyMap(),
-        actions = emptyList(),
-        drawdownPercent = BigDecimal.ZERO,
-        fiatDeploymentPercent = BigDecimal.ZERO,
-        effectiveUsdTargetPercent = BigDecimal.ZERO,
-    )
+    protected fun snapshotWorth(totalValueUSD: BigDecimal) =
+        TestFixtures.emptySnapshot(timestamp = Instant.now(), totalValueUSD = totalValueUSD)
 }

@@ -5,7 +5,6 @@ import com.gemini.krakenbot.config.DatabaseConfig
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.OrderSubmissionState
-import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.TradeSource
 import com.gemini.krakenbot.repository.impl.SqliteTradeRepositoryImpl
 import io.kotest.assertions.throwables.shouldThrow
@@ -38,16 +37,7 @@ class SqliteTradeRepositoryFailureAndRetentionTest : SqliteTradeRepositoryTestBa
                     exec(TestFixtures.DROP_TABLE_IF_EXISTS_PORTFOLIO_SNAPSHOTS)
                 }
 
-                val snapshot =
-                    PortfolioSnapshot(
-                        timestamp = Instant.now(),
-                        totalValueUSD = BigDecimal.ZERO,
-                        assets = emptyMap(),
-                        actions = emptyList(),
-                        drawdownPercent = BigDecimal.ZERO,
-                        fiatDeploymentPercent = BigDecimal.ZERO,
-                        effectiveUsdTargetPercent = BigDecimal.ZERO,
-                    )
+                val snapshot = TestFixtures.emptySnapshot(Instant.now(), BigDecimal.ZERO)
 
                 val thrown =
                     shouldThrow<IOException> {
@@ -66,16 +56,7 @@ class SqliteTradeRepositoryFailureAndRetentionTest : SqliteTradeRepositoryTestBa
                     exec(TestFixtures.DROP_TABLE_IF_EXISTS_PORTFOLIO_SNAPSHOTS)
                 }
 
-                val snapshot =
-                    PortfolioSnapshot(
-                        timestamp = Instant.now(),
-                        totalValueUSD = BigDecimal.ZERO,
-                        assets = emptyMap(),
-                        actions = emptyList(),
-                        drawdownPercent = BigDecimal.ZERO,
-                        fiatDeploymentPercent = BigDecimal.ZERO,
-                        effectiveUsdTargetPercent = BigDecimal.ZERO,
-                    )
+                val snapshot = TestFixtures.emptySnapshot(Instant.now(), BigDecimal.ZERO)
 
                 val thrown =
                     shouldThrow<IOException> {
@@ -126,16 +107,7 @@ class SqliteTradeRepositoryFailureAndRetentionTest : SqliteTradeRepositoryTestBa
                 every { mockDb.transactionManager } returns throwingTxManager
 
                 val ioRepo = SqliteTradeRepositoryImpl(mockDb)
-                val snapshot =
-                    PortfolioSnapshot(
-                        timestamp = Instant.now(),
-                        totalValueUSD = BigDecimal.ZERO,
-                        assets = emptyMap(),
-                        actions = emptyList(),
-                        drawdownPercent = BigDecimal.ZERO,
-                        fiatDeploymentPercent = BigDecimal.ZERO,
-                        effectiveUsdTargetPercent = BigDecimal.ZERO,
-                    )
+                val snapshot = TestFixtures.emptySnapshot(Instant.now(), BigDecimal.ZERO)
 
                 val thrown =
                     shouldThrow<IOException> {
@@ -161,16 +133,7 @@ class SqliteTradeRepositoryFailureAndRetentionTest : SqliteTradeRepositoryTestBa
                 every { mockDb.transactionManager } returns throwingTxManager
 
                 val ioRepo = SqliteTradeRepositoryImpl(mockDb)
-                val snapshot =
-                    PortfolioSnapshot(
-                        timestamp = Instant.now(),
-                        totalValueUSD = BigDecimal.ZERO,
-                        assets = emptyMap(),
-                        actions = emptyList(),
-                        drawdownPercent = BigDecimal.ZERO,
-                        fiatDeploymentPercent = BigDecimal.ZERO,
-                        effectiveUsdTargetPercent = BigDecimal.ZERO,
-                    )
+                val snapshot = TestFixtures.emptySnapshot(Instant.now(), BigDecimal.ZERO)
 
                 val thrown =
                     shouldThrow<IOException> {
@@ -219,26 +182,8 @@ class SqliteTradeRepositoryFailureAndRetentionTest : SqliteTradeRepositoryTestBa
         "pruneSnapshotsOlderThan prunes records" {
             runTest {
                 val baseTime = Instant.now().truncatedTo(ChronoUnit.MILLIS)
-                val s1 =
-                    PortfolioSnapshot(
-                        timestamp = baseTime.minus(100, ChronoUnit.DAYS),
-                        totalValueUSD = BigDecimal("1000.00"),
-                        assets = emptyMap(),
-                        actions = emptyList(),
-                        drawdownPercent = BigDecimal.ZERO,
-                        fiatDeploymentPercent = BigDecimal.ZERO,
-                        effectiveUsdTargetPercent = BigDecimal.ZERO,
-                    )
-                val s2 =
-                    PortfolioSnapshot(
-                        timestamp = baseTime,
-                        totalValueUSD = BigDecimal("2000.00"),
-                        assets = emptyMap(),
-                        actions = emptyList(),
-                        drawdownPercent = BigDecimal.ZERO,
-                        fiatDeploymentPercent = BigDecimal.ZERO,
-                        effectiveUsdTargetPercent = BigDecimal.ZERO,
-                    )
+                val s1 = TestFixtures.emptySnapshot(baseTime.minus(100, ChronoUnit.DAYS), BigDecimal("1000.00"))
+                val s2 = TestFixtures.emptySnapshot(baseTime, BigDecimal("2000.00"))
                 repository.saveSnapshot(s1)
                 repository.saveSnapshot(s2)
 
@@ -421,15 +366,7 @@ class SqliteTradeRepositoryFailureAndRetentionTest : SqliteTradeRepositoryTestBa
                 repository.saveTrade(tradeFailed)
 
                 val snapshot =
-                    PortfolioSnapshot(
-                        timestamp = Instant.ofEpochMilli(12345678L),
-                        totalValueUSD = BigDecimal("10000.0"),
-                        assets = emptyMap(),
-                        actions = emptyList(),
-                        drawdownPercent = BigDecimal.ZERO,
-                        fiatDeploymentPercent = BigDecimal.ZERO,
-                        effectiveUsdTargetPercent = BigDecimal.ZERO,
-                    )
+                    TestFixtures.emptySnapshot(Instant.ofEpochMilli(12345678L), BigDecimal("10000.0"))
                 repository.saveSnapshot(snapshot)
 
                 val stats = repository.getTradeSummaryStats()
@@ -492,15 +429,7 @@ class SqliteTradeRepositoryFailureAndRetentionTest : SqliteTradeRepositoryTestBa
                 val base = Instant.parse("2020-01-01T00:00:00Z")
                 repeat(599) { i ->
                     repository.saveSnapshot(
-                        PortfolioSnapshot(
-                            timestamp = base.plusSeconds(i.toLong()),
-                            totalValueUSD = BigDecimal.valueOf(1000L + i),
-                            assets = emptyMap(),
-                            actions = emptyList(),
-                            drawdownPercent = BigDecimal.ZERO,
-                            fiatDeploymentPercent = BigDecimal.ZERO,
-                            effectiveUsdTargetPercent = BigDecimal.ZERO,
-                        ),
+                        TestFixtures.emptySnapshot(base.plusSeconds(i.toLong()), BigDecimal.valueOf(1000L + i)),
                     )
                 }
 

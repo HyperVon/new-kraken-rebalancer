@@ -55,15 +55,7 @@ class TradeHistoryServiceTest : TradeHistoryServiceTestBase() {
         "init_LoadsHistoryFromRepository" {
             runTest {
                 val tradeHistoryService = createService()
-                val snapshot = PortfolioSnapshot(
-                    timestamp = Instant.now(),
-                    totalValueUSD = BigDecimal.ZERO,
-                    assets = emptyMap(),
-                    actions = emptyList(),
-                    drawdownPercent = BigDecimal.ZERO,
-                    fiatDeploymentPercent = BigDecimal.ZERO,
-                    effectiveUsdTargetPercent = BigDecimal.ZERO,
-                )
+                val snapshot = TestFixtures.emptySnapshot(Instant.now(), BigDecimal.ZERO)
                 coEvery { repository.load() } returns listOf(snapshot)
                 tradeHistoryService.init()
                 tradeHistoryService.getHistory().size shouldBe 1
@@ -96,24 +88,8 @@ class TradeHistoryServiceTest : TradeHistoryServiceTestBase() {
         "addSnapshot_AddsToFrontAndSaves" {
             runTest {
                 val tradeHistoryService = createService()
-                val s1 = PortfolioSnapshot(
-                    timestamp = Instant.now().minusMillis(10),
-                    totalValueUSD = BigDecimal.ZERO,
-                    assets = emptyMap(),
-                    actions = emptyList(),
-                    drawdownPercent = BigDecimal.ZERO,
-                    fiatDeploymentPercent = BigDecimal.ZERO,
-                    effectiveUsdTargetPercent = BigDecimal.ZERO,
-                )
-                val s2 = PortfolioSnapshot(
-                    timestamp = Instant.now(),
-                    totalValueUSD = BigDecimal.ZERO,
-                    assets = emptyMap(),
-                    actions = emptyList(),
-                    drawdownPercent = BigDecimal.ZERO,
-                    fiatDeploymentPercent = BigDecimal.ZERO,
-                    effectiveUsdTargetPercent = BigDecimal.ZERO,
-                )
+                val s1 = TestFixtures.emptySnapshot(Instant.now().minusMillis(10), BigDecimal.ZERO)
+                val s2 = TestFixtures.emptySnapshot(Instant.now(), BigDecimal.ZERO)
                 tradeHistoryService.addSnapshot(s1)
                 tradeHistoryService.addSnapshot(s2)
                 tradeHistoryService.getHistory().size shouldBe 2
@@ -127,17 +103,7 @@ class TradeHistoryServiceTest : TradeHistoryServiceTestBase() {
             runTest {
                 val tradeHistoryService = createService()
                 repeat(60) {
-                    tradeHistoryService.addSnapshot(
-                        PortfolioSnapshot(
-                            timestamp = Instant.now(),
-                            totalValueUSD = BigDecimal.ZERO,
-                            assets = emptyMap(),
-                            actions = emptyList(),
-                            drawdownPercent = BigDecimal.ZERO,
-                            fiatDeploymentPercent = BigDecimal.ZERO,
-                            effectiveUsdTargetPercent = BigDecimal.ZERO,
-                        ),
-                    )
+                    tradeHistoryService.addSnapshot(TestFixtures.emptySnapshot(Instant.now(), BigDecimal.ZERO))
                 }
                 tradeHistoryService.getHistory().size shouldBe 50
                 coVerify(atLeast = 1) { repository.saveSnapshot(any()) }
@@ -166,15 +132,7 @@ class TradeHistoryServiceTest : TradeHistoryServiceTestBase() {
 
                 yield()
 
-                val s1 = PortfolioSnapshot(
-                    timestamp = Instant.now(),
-                    totalValueUSD = BigDecimal.ZERO,
-                    assets = emptyMap(),
-                    actions = emptyList(),
-                    drawdownPercent = BigDecimal.ZERO,
-                    fiatDeploymentPercent = BigDecimal.ZERO,
-                    effectiveUsdTargetPercent = BigDecimal.ZERO,
-                )
+                val s1 = TestFixtures.emptySnapshot(Instant.now(), BigDecimal.ZERO)
                 tradeHistoryService.addSnapshot(s1)
 
                 yield()

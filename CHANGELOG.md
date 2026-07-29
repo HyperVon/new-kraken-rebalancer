@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.15.11] - 2026-07-29
+
+### Changed
+
+- **Test maintainability**: Centralized repeated configuration and value-only
+  snapshot fixtures, removing more than 500 lines of duplicate Kotlin test code
+  without changing runtime behavior or coverage.
+
 ## [6.15.10] - 2026-07-29
 
 ### Added

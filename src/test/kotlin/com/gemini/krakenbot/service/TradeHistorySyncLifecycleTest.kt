@@ -7,7 +7,6 @@ import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.model.Asset
-import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.service.impl.history.TradeHistoryServiceImpl
 import io.kotest.matchers.shouldBe
 import io.mockk.*
@@ -107,15 +106,7 @@ class TradeHistorySyncLifecycleTest : TradeHistoryServiceTestBase() {
                     file.delete()
                     bakFile.delete()
 
-                    val snapshot = PortfolioSnapshot(
-                        timestamp = Instant.now(),
-                        totalValueUSD = BigDecimal("15000.00"),
-                        assets = emptyMap(),
-                        actions = emptyList(),
-                        drawdownPercent = BigDecimal.ZERO,
-                        fiatDeploymentPercent = BigDecimal.ZERO,
-                        effectiveUsdTargetPercent = BigDecimal.ZERO,
-                    )
+                    val snapshot = TestFixtures.emptySnapshot(Instant.now(), BigDecimal("15000.00"))
 
                     file.writeText(objectMapper.writeValueAsString(listOf(snapshot)))
 
@@ -143,15 +134,7 @@ class TradeHistorySyncLifecycleTest : TradeHistoryServiceTestBase() {
                     file.delete()
                     bakFile.delete()
 
-                    val snapshot = PortfolioSnapshot(
-                        timestamp = Instant.now(),
-                        totalValueUSD = BigDecimal("15000.00"),
-                        assets = emptyMap(),
-                        actions = emptyList(),
-                        drawdownPercent = BigDecimal.ZERO,
-                        fiatDeploymentPercent = BigDecimal.ZERO,
-                        effectiveUsdTargetPercent = BigDecimal.ZERO,
-                    )
+                    val snapshot = TestFixtures.emptySnapshot(Instant.now(), BigDecimal("15000.00"))
 
                     file.writeText(objectMapper.writeValueAsString(listOf(snapshot)))
 
@@ -176,15 +159,7 @@ class TradeHistorySyncLifecycleTest : TradeHistoryServiceTestBase() {
                 val tradeHistoryService = createService()
                 coEvery { repository.pruneSnapshotsOlderThan(any()) } throws RuntimeException("Prune failed")
 
-                val snapshot = PortfolioSnapshot(
-                    timestamp = Instant.now(),
-                    totalValueUSD = BigDecimal.ZERO,
-                    assets = emptyMap(),
-                    actions = emptyList(),
-                    drawdownPercent = BigDecimal.ZERO,
-                    fiatDeploymentPercent = BigDecimal.ZERO,
-                    effectiveUsdTargetPercent = BigDecimal.ZERO,
-                )
+                val snapshot = TestFixtures.emptySnapshot(Instant.now(), BigDecimal.ZERO)
 
                 tradeHistoryService.addSnapshot(snapshot)
                 coVerify(exactly = 1) { repository.saveSnapshot(snapshot) }
@@ -196,15 +171,7 @@ class TradeHistorySyncLifecycleTest : TradeHistoryServiceTestBase() {
                 val tradeHistoryService = createService()
                 coEvery { repository.pruneSnapshotsOlderThan(any()) } returns 5
 
-                val snapshot = PortfolioSnapshot(
-                    timestamp = Instant.now(),
-                    totalValueUSD = BigDecimal.ZERO,
-                    assets = emptyMap(),
-                    actions = emptyList(),
-                    drawdownPercent = BigDecimal.ZERO,
-                    fiatDeploymentPercent = BigDecimal.ZERO,
-                    effectiveUsdTargetPercent = BigDecimal.ZERO,
-                )
+                val snapshot = TestFixtures.emptySnapshot(Instant.now(), BigDecimal.ZERO)
 
                 tradeHistoryService.addSnapshot(snapshot)
                 coVerify(exactly = 1) { repository.saveSnapshot(snapshot) }

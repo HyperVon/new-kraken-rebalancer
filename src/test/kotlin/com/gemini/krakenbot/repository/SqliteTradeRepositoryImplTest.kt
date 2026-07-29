@@ -177,16 +177,7 @@ class SqliteTradeRepositoryImplTest : SqliteTradeRepositoryTestBase() {
                 repository.saveTrade(trade1)
                 repository.saveTrade(trade2)
 
-                val s1 =
-                    PortfolioSnapshot(
-                        timestamp = now.minus(2, ChronoUnit.DAYS),
-                        totalValueUSD = BigDecimal("15000.00"),
-                        assets = emptyMap(),
-                        actions = emptyList(),
-                        drawdownPercent = BigDecimal.ZERO,
-                        fiatDeploymentPercent = BigDecimal.ZERO,
-                        effectiveUsdTargetPercent = BigDecimal.ZERO,
-                    )
+                val s1 = TestFixtures.emptySnapshot(now.minus(2, ChronoUnit.DAYS), BigDecimal("15000.00"))
                 repository.saveSnapshot(s1)
                 repository.saveSnapshot(
                     s1.copy(
@@ -207,26 +198,8 @@ class SqliteTradeRepositoryImplTest : SqliteTradeRepositoryTestBase() {
         "getSnapshotsInRange and boundary times" {
             runTest {
                 val baseTime = Instant.now().truncatedTo(ChronoUnit.MILLIS)
-                val s1 =
-                    PortfolioSnapshot(
-                        timestamp = baseTime.minusSeconds(10),
-                        totalValueUSD = BigDecimal("1000.00"),
-                        assets = emptyMap(),
-                        actions = emptyList(),
-                        drawdownPercent = BigDecimal.ZERO,
-                        fiatDeploymentPercent = BigDecimal.ZERO,
-                        effectiveUsdTargetPercent = BigDecimal.ZERO,
-                    )
-                val s2 =
-                    PortfolioSnapshot(
-                        timestamp = baseTime,
-                        totalValueUSD = BigDecimal("2000.00"),
-                        assets = emptyMap(),
-                        actions = emptyList(),
-                        drawdownPercent = BigDecimal.ZERO,
-                        fiatDeploymentPercent = BigDecimal.ZERO,
-                        effectiveUsdTargetPercent = BigDecimal.ZERO,
-                    )
+                val s1 = TestFixtures.emptySnapshot(baseTime.minusSeconds(10), BigDecimal("1000.00"))
+                val s2 = TestFixtures.emptySnapshot(baseTime, BigDecimal("2000.00"))
 
                 repository.saveSnapshot(s1)
                 repository.saveSnapshot(s2)
@@ -241,16 +214,7 @@ class SqliteTradeRepositoryImplTest : SqliteTradeRepositoryTestBase() {
 
         "legacy save saves snapshots" {
             runTest {
-                val snapshot =
-                    PortfolioSnapshot(
-                        timestamp = Instant.now(),
-                        totalValueUSD = BigDecimal.ZERO,
-                        assets = emptyMap(),
-                        actions = emptyList(),
-                        drawdownPercent = BigDecimal.ZERO,
-                        fiatDeploymentPercent = BigDecimal.ZERO,
-                        effectiveUsdTargetPercent = BigDecimal.ZERO,
-                    )
+                val snapshot = TestFixtures.emptySnapshot(Instant.now(), BigDecimal.ZERO)
                 repository.save(listOf(snapshot))
                 repository.load().size shouldBe 1
             }
