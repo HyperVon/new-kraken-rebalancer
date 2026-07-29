@@ -3,6 +3,7 @@ package com.gemini.krakenbot.frontend
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.FormFields
+import com.gemini.krakenbot.view.util.HtmlAttrs
 import com.gemini.krakenbot.view.util.HtmlEvents
 import com.gemini.krakenbot.view.util.HtmlIds
 import com.gemini.krakenbot.view.util.HtmlTags
@@ -176,6 +177,9 @@ class SettingsTest : StringSpec() {
                 val numInput = firstRow.querySelector(CssClass.Query.TARGET_INPUTS) as HTMLInputElement
                 numInput.min shouldBe "0"
                 numInput.max shouldBe "100"
+
+                val colorInput = firstRow.querySelector("input[type=\"color\"]") as HTMLInputElement
+                colorInput.getAttribute(HtmlAttrs.ARIA_LABEL) shouldBe "${ViewText.ALLOCATION_COLOR_PREFIX}${Asset.LTC}"
             } finally {
                 document.body!!.removeChild(container)
             }

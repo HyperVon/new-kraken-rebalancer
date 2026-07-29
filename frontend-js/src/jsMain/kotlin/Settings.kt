@@ -4,6 +4,7 @@ import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.util.PrecisionConstants
 import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.FormFields
+import com.gemini.krakenbot.view.util.HtmlAttrs
 import com.gemini.krakenbot.view.util.HtmlIds
 import com.gemini.krakenbot.view.util.ViewText
 import kotlinx.browser.document
@@ -128,6 +129,7 @@ fun addAssetRow() {
     colorPicker.type = "color"
     colorPicker.className = CssClass.Form.AllocationColorSwatch.toString()
     colorPicker.value = pickColorForNewAsset()
+    colorPicker.setAttribute(HtmlAttrs.ARIA_LABEL, "${ViewText.ALLOCATION_COLOR_PREFIX}$symbol")
     colorHidden.value = colorPicker.value
     colorPicker.oninput = { colorHidden.value = colorPicker.value }
     colorLabel.appendChild(colorPicker)

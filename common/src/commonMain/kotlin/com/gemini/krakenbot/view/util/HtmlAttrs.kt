@@ -13,6 +13,8 @@ object HtmlAttrs {
     const val DATASET_SORT_VALUE = "sortValue"
     const val CROSSORIGIN = "crossorigin"
     const val ARIA_LABEL = "aria-label"
+    const val ARIA_SORT = "aria-sort"
+    const val TAB_INDEX = "tabindex"
     const val TITLE = "title"
     const val ROLE = "role"
 }
@@ -32,6 +34,19 @@ object HtmlEvents {
     const val INPUT = "input"
     const val DOM_CONTENT_LOADED = "DOMContentLoaded"
     const val HTMX_AFTER_SWAP = "htmx:afterSwap"
+}
+
+/** Keyboard key values used by inline HTML event handlers. */
+object HtmlKeys {
+    const val ENTER = "Enter"
+    const val SPACE = " "
+}
+
+/** ARIA sort-state values for sortable table headers. */
+object AriaSort {
+    const val NONE = "none"
+    const val ASCENDING = "ascending"
+    const val DESCENDING = "descending"
 }
 
 /** HTMX and SSE attribute name constants. */

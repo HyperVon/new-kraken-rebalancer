@@ -161,9 +161,12 @@ fun DIV.formSection(title: String, iconSvg: String, block: DIV.() -> Unit) {
     }
 }
 
-fun DIV.formGroup(label: String, block: DIV.() -> Unit) {
+fun DIV.formGroup(label: String, inputId: String, block: DIV.() -> Unit) {
     div(CssClass.Form.Group) {
-        label(CssClass.Form.Label) { +label }
+        label(CssClass.Form.Label) {
+            htmlFor = inputId
+            +label
+        }
         block()
     }
 }

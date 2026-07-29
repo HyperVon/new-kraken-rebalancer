@@ -77,23 +77,25 @@ class SettingsFormComponent {
     private fun DIV.renderGlobalParametersSection(config: AppConfig) {
         formSection(ViewText.GLOBAL_PARAMETERS, Icons.SHIELD_EXCLAMATION) {
             div(CssClass.Form.Grid2Col) {
-                formGroup(ViewText.LOOP_INTERVAL) {
+                formGroup(ViewText.LOOP_INTERVAL, FormFields.LOOP_DELAY_SECONDS) {
                     input(
                         CssClass.Form.InputGlass,
                         type = number,
                         name = FormFields.LOOP_DELAY_SECONDS,
                     ) {
+                        id = FormFields.LOOP_DELAY_SECONDS
                         min = "1"
                         value = config.settings.loopDelaySeconds.toString()
                     }
                 }
 
-                formGroup(ViewText.DEVIATION_TRIGGER) {
+                formGroup(ViewText.DEVIATION_TRIGGER, FormFields.DEVIATION_TRIGGER_PERCENT) {
                     input(
                         CssClass.Form.InputGlass,
                         type = number,
                         name = FormFields.DEVIATION_TRIGGER_PERCENT,
                     ) {
+                        id = FormFields.DEVIATION_TRIGGER_PERCENT
                         step = "0.1"
                         min = "0"
                         value =
@@ -101,24 +103,26 @@ class SettingsFormComponent {
                     }
                 }
 
-                formGroup(ViewText.DUST_THRESHOLD) {
+                formGroup(ViewText.DUST_THRESHOLD, FormFields.DUST_THRESHOLD_USD) {
                     input(
                         CssClass.Form.InputGlass,
                         type = number,
                         name = FormFields.DUST_THRESHOLD_USD,
                     ) {
+                        id = FormFields.DUST_THRESHOLD_USD
                         step = "0.5"
                         min = "0"
                         value = config.settings.dustThresholdUSD.toString()
                     }
                 }
 
-                formGroup(ViewText.FIAT_MAX_DRAWDOWN) {
+                formGroup(ViewText.FIAT_MAX_DRAWDOWN, FormFields.FIAT_MAX_DRAWDOWN) {
                     input(
                         CssClass.Form.InputGlass,
                         type = number,
                         name = FormFields.FIAT_MAX_DRAWDOWN,
                     ) {
+                        id = FormFields.FIAT_MAX_DRAWDOWN
                         step = "1.0"
                         min = "0"
                         max = "100"
@@ -126,12 +130,13 @@ class SettingsFormComponent {
                     }
                 }
 
-                formGroup(ViewText.FIAT_DEPLOYMENT_EXPONENT) {
+                formGroup(ViewText.FIAT_DEPLOYMENT_EXPONENT, FormFields.FIAT_DEPLOYMENT_EXPONENT) {
                     input(
                         CssClass.Form.InputGlass,
                         type = number,
                         name = FormFields.FIAT_DEPLOYMENT_EXPONENT,
                     ) {
+                        id = FormFields.FIAT_DEPLOYMENT_EXPONENT
                         step = "0.1"
                         // HTML min is inclusive; step floor keeps spinner off invalid 0.
                         min = "0.1"
@@ -222,6 +227,8 @@ class SettingsFormComponent {
                             ) {
                                 value = rowColor
                                 classes = setOf(CssClass.Form.AllocationColorSwatch.value)
+                                attributes[HtmlAttrs.ARIA_LABEL] =
+                                    "${ViewText.ALLOCATION_COLOR_PREFIX}${alloc.symbol.value}"
                                 attributes[HtmlAttrs.ONINPUT] =
                                     "this.closest('.${CssClass.Form.AllocationEditRow}').querySelector('.${CssClass.Form.AllocationColorInput}').value = this.value"
                             }

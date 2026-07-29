@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.15.8] - 2026-07-28
+
+### Changed
+
+- **Accessibility**: Added keyboard-visible focus styling, honors reduced-motion preferences,
+  associates each global Settings label with its input, and names allocation color controls
+  for assistive technology.
+- **Documentation and cleanup**: Corrected the evaluation scenario count to 34, removed
+  unnecessary `TradeRecord` fully qualified names, and simplified dashboard sort selection.
+
 ## [6.15.7] - 2026-07-28
 
 ### Added

@@ -134,7 +134,17 @@ class DashboardViewTest : StringSpec() {
                 view.renderSettingsPage(baseConfig, null)
             }
             html shouldContain "title>${SETTINGS_TITLE} - $APP_TITLE"
-            html shouldContain "name=\"${LOOP_DELAY_SECONDS}\""
+            listOf(
+                LOOP_DELAY_SECONDS,
+                DEVIATION_TRIGGER_PERCENT,
+                DUST_THRESHOLD_USD,
+                FIAT_MAX_DRAWDOWN,
+                FIAT_DEPLOYMENT_EXPONENT,
+            ).forEach { field ->
+                html shouldContain "name=\"$field\""
+                html shouldContain "id=\"$field\""
+                html shouldContain "for=\"$field\""
+            }
             html shouldContain "value=\"60\""
             html shouldContain "name=\"${DEVIATION_TRIGGER_PERCENT}\""
             html shouldContain "value=\"2.0\""
@@ -143,6 +153,7 @@ class DashboardViewTest : StringSpec() {
             html shouldContain "safety-state-off"
             html shouldContain "id=\"mode-plate\""
             html shouldNotContain ERROR_BANNER
+            html shouldContain "aria-label=\"Color for BTC\""
         }
 
         "renderSettingsPage_allocationTargets_carryPercentBounds" {

@@ -209,7 +209,11 @@ class DashboardControllerTest : StringSpec() {
 
                 body shouldContain "data-epoch=\"${nowTime.toEpochMilli()}\""
 
-                body shouldContain "class=\"sortable asc\" onclick=\"sortTable(this, 5)\">Dev %"
+                body shouldContain "class=\"sortable asc\""
+                body shouldContain "onclick=\"sortTable(this, 5)\""
+                body shouldContain "tabindex=\"0\""
+                body shouldContain "aria-sort=\"ascending\""
+                body shouldContain "onkeydown=\"if(event.key === 'Enter' || event.key === ' ')"
 
                 val ethIdx = body.indexOf("symbol-col\">ETH")
                 val btcIdx = body.indexOf("symbol-col\">BTC")
