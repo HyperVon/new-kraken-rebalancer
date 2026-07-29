@@ -1,6 +1,7 @@
 package com.gemini.krakenbot.frontend
 
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.view.util.AriaSort
 import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.HtmlAttrs
 import com.gemini.krakenbot.view.util.HtmlTags
@@ -64,16 +65,21 @@ class DashboardTest : StringSpec() {
             (sortedRows.item(0) as HTMLTableRowElement).cells.item(0)?.textContent shouldBe Asset.BTC
             (sortedRows.item(1) as HTMLTableRowElement).cells.item(0)?.textContent shouldBe Asset.ETH
             th0.classList.contains(CssClass.Utility.Asc).shouldBeTrue()
+            th0.getAttribute(HtmlAttrs.ARIA_SORT) shouldBe AriaSort.ASCENDING
+            th1.getAttribute(HtmlAttrs.ARIA_SORT) shouldBe AriaSort.NONE
 
             sortTable(th0, 0)
             sortedRows = tbody.querySelectorAll(CssClass.Query.HOVERABLE_TR)
             (sortedRows.item(0) as HTMLTableRowElement).cells.item(0)?.textContent shouldBe Asset.ETH
             th0.classList.contains(CssClass.Utility.Desc).shouldBeTrue()
+            th0.getAttribute(HtmlAttrs.ARIA_SORT) shouldBe AriaSort.DESCENDING
 
             sortTable(th1, 1)
             sortedRows = tbody.querySelectorAll(CssClass.Query.HOVERABLE_TR)
             (sortedRows.item(0) as HTMLTableRowElement).cells.item(0)?.textContent shouldBe Asset.ETH
             th1.classList.contains(CssClass.Utility.Asc).shouldBeTrue()
+            th0.getAttribute(HtmlAttrs.ARIA_SORT) shouldBe AriaSort.NONE
+            th1.getAttribute(HtmlAttrs.ARIA_SORT) shouldBe AriaSort.ASCENDING
         }
 
         "updateAge displays fresh and stale data" {

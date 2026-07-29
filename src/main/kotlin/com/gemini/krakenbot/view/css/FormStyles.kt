@@ -90,6 +90,11 @@ object FormStyles {
             transform { scale(0.97) }
         }
 
+        ".btn:focus-visible" {
+            put("outline", "none")
+            put("box-shadow", "0 0 0 3px rgba(59, 130, 246, 0.45)")
+        }
+
         ".btn:disabled" {
             opacity = 0.5
             cursor = Cursor.notAllowed

@@ -6,6 +6,7 @@ import com.gemini.krakenbot.model.OrderResult
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.OrderSubmissionState
 import com.gemini.krakenbot.model.OrderType
+import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.service.AssetPrices
 import com.gemini.krakenbot.service.AssetValues
 import com.gemini.krakenbot.service.KrakenService
@@ -296,11 +297,7 @@ class OrderExecutorImpl(
         return result
     }
 
-    private suspend fun markSubmissionFailure(
-        pending: com.gemini.krakenbot.model.TradeRecord,
-        id: Int,
-        message: String?,
-    ) {
+    private suspend fun markSubmissionFailure(pending: TradeRecord, id: Int, message: String?) {
         tradeHistoryService.updateTrade(
             pending.copy(id = id),
             pending.copy(
@@ -315,11 +312,7 @@ class OrderExecutorImpl(
         )
     }
 
-    private suspend fun markSubmissionFailureWithoutMasking(
-        pending: com.gemini.krakenbot.model.TradeRecord,
-        id: Int,
-        cause: Exception,
-    ) {
+    private suspend fun markSubmissionFailureWithoutMasking(pending: TradeRecord, id: Int, cause: Exception) {
         try {
             markSubmissionFailure(pending, id, cause.message)
         } catch (persistenceFailure: Exception) {
@@ -432,7 +425,7 @@ class OrderExecutorImpl(
     }
 
     /**
-     * Sum net-of-fee USD proceeds for sells whose [com.gemini.krakenbot.model.TradeRecord.orderTxid] is in [txidSet],
+     * Sum net-of-fee USD proceeds for sells whose [TradeRecord.orderTxid] is in [txidSet],
      * paginating newest-first until a short/empty page or [MAX_FILL_HISTORY_PAGES].
      * Does not stop early when every txid has been seen once — one AddOrder can
      * produce multiple fill legs across page boundaries. Shifting pages may repeat an identified

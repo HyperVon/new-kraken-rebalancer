@@ -83,6 +83,12 @@ object TableStyles {
             color = CssTheme.colorTextPrimary
         }
 
+        "th.sortable:focus-visible" {
+            put("outline", "none")
+            color = CssTheme.colorTextPrimary
+            put("box-shadow", "inset 0 0 0 2px rgba(59, 130, 246, 0.7)")
+        }
+
         "th.sortable::after" {
             content = QuotedString("")
             marginLeft = 0.35.rem

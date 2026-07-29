@@ -1,6 +1,7 @@
 package com.gemini.krakenbot.frontend
 
 import com.gemini.krakenbot.util.PrecisionConstants
+import com.gemini.krakenbot.view.util.AriaSort
 import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.HtmlAttrs
 import com.gemini.krakenbot.view.util.HtmlTags
@@ -96,7 +97,7 @@ fun sortTable(header: HTMLElement, colIdx: Int, forceDir: String? = null) {
     // Column 0 is the asset label (string sort); every other column is numeric. Comparisons
     // prefer the server-rendered data-sort-value attribute and fall back to the visible cell
     // text with currency/percent decoration stripped.
-    val key = if (colIdx == 0) "string" else "float"
+    val isNumericColumn = colIdx != 0
 
     rows.sortWith(
         Comparator { a, b ->
@@ -111,7 +112,7 @@ fun sortTable(header: HTMLElement, colIdx: Int, forceDir: String? = null) {
                     ?.trim()
                     ?.replace(CURRENCY_CLEANUP_REGEX, "") ?: ""
 
-            if (key == "float") {
+            if (isNumericColumn) {
                 val aVal = aText.toDoubleOrNull() ?: 0.0
                 val bVal = bText.toDoubleOrNull() ?: 0.0
                 val cmp = aVal.compareTo(bVal)
@@ -125,9 +126,13 @@ fun sortTable(header: HTMLElement, colIdx: Int, forceDir: String? = null) {
 
     val headersList = table.querySelectorAll(SORTABLE_TH_QUERY)
     for (i in 0 until headersList.length) {
-        (headersList.item(i) as? HTMLElement)?.classList?.remove(CssClass.Utility.Asc, CssClass.Utility.Desc)
+        (headersList.item(i) as? HTMLElement)?.apply {
+            classList.remove(CssClass.Utility.Asc, CssClass.Utility.Desc)
+            setAttribute(HtmlAttrs.ARIA_SORT, AriaSort.NONE)
+        }
     }
     header.classList.add(if (sortAsc) CssClass.Utility.Asc else CssClass.Utility.Desc)
+    header.setAttribute(HtmlAttrs.ARIA_SORT, if (sortAsc) AriaSort.ASCENDING else AriaSort.DESCENDING)
 
     rows.forEach { row -> tbody.appendChild(row) }
 

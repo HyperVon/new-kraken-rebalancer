@@ -22,6 +22,13 @@ need only this file (no issue spam).
 
 | ID | Size | Status | Area | Summary | Cycle | PR |
 | :--- | :---: | :--- | :--- | :--- | :---: | :--- |
+| CI-16-C1 | S | done | code | Replace `TradeRecord` FQNs in `OrderExecutorImpl` with an import | 16 | #140 |
+| CI-16-C2 | S | done | frontend | Replace dashboard sort-kind magic strings with a boolean | 16 | #140 |
+| CI-16-D01 | S | done | docs | Correct stale scenario count from 33 to 34 | 16 | #140 |
+| CI-16-UI1 | M | done | accessibility | Add keyboard sorting, announced sort state, and visible focus styling | 16 | #140 |
+| CI-16-UI2 | S | done | accessibility | Respect the user's reduced-motion preference | 16 | #140 |
+| CI-16-UI3 | M | done | accessibility | Associate global-settings labels with their inputs | 16 | #140 |
+| CI-16-UI4 | S | done | accessibility | Name allocation-color pickers for assistive technology | 16 | #140 |
 | CI-15-1 | S | done | agent workflow | Prefer the least expensive capable model and reasoning effort | 15 | #121 |
 | CI-14-1 | M | done | history | Enforce the 300-point snapshot cap and preserve range endpoints | 14 | #113 |
 | CI-14-2 | M | done | history | Scope latest snapshot time to the requested summary range | 14 | #113 |

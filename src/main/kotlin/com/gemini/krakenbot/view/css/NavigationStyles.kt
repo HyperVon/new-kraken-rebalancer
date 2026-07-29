@@ -34,6 +34,13 @@ object NavigationStyles {
             borderColor = CssTheme.colorWhiteFaint
         }
 
+        ".${CssClass.Navigation.Link}:focus-visible, .${CssClass.History.TimeRangeBtn}:focus-visible, " +
+            ".${CssClass.History.ViewsBtn}:focus-visible, .${CssClass.History.ZoomBtn}:focus-visible" {
+                put("outline", "none")
+                borderColor = CssTheme.colorBluePrimary
+                put("box-shadow", "0 0 0 3px rgba(59, 130, 246, 0.45)")
+            }
+
         CssClass.Navigation.LinkActive.querySelector {
             color = CssTheme.colorTextPrimary
             background = CssTheme.colorBlueGlassBgHover.value
@@ -96,6 +103,12 @@ object NavigationStyles {
                 "0 0 14px rgba(59, 130, 246, 0.3), inset 0 1px 0 rgba(255,255,255,0.1)",
             )
         }
+
+        "${CssClass.Navigation.LinkActive.querySelector}:focus-visible, " +
+            "${CssClass.History.TimeRangeBtnActive.querySelector}:focus-visible" {
+                put("outline", "3px solid rgba(59, 130, 246, 0.7)")
+                put("outline-offset", "2px")
+            }
 
         ".${CssClass.History.ViewsToolbar}" {
             display = Display.flex
@@ -469,6 +482,15 @@ object NavigationStyles {
 
         ".toast.success" {
             backgroundColor = CssTheme.colorSuccess
+        }
+
+        "@media (prefers-reduced-motion: reduce)" {
+            "*, *::before, *::after" {
+                put("animation-duration", "0.01ms !important")
+                put("animation-iteration-count", "1 !important")
+                put("scroll-behavior", "auto !important")
+                put("transition-duration", "0.01ms !important")
+            }
         }
 
         ".toast.error" {

@@ -57,6 +57,7 @@ object ViewText {
     const val LEGEND_UNDER_TARGET = "Under target"
     const val ADD_ASSET = "Add Asset"
     const val SAVE_CONFIGURATION = "Save Configuration"
+    const val ALLOCATION_COLOR_PREFIX = "Color for "
 
     // GLOB-1: stream-health chip is renamed so it never reads as "live trading".
     const val STREAM = "STREAM"
