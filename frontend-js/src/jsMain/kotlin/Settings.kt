@@ -70,7 +70,7 @@ internal fun syncModePlateFromSafetyToggles() {
 fun updateAllocationTotal() {
     val inputs = document.querySelectorAll(TARGET_INPUTS_QUERY)
     var total = 0.0
-    for (i in 0 until inputs.length) {
+    repeat(inputs.length) { i ->
         val input = inputs.item(i) as? HTMLInputElement
         if (input != null) {
             total += input.value.toDoubleOrNull() ?: 0.0
@@ -196,7 +196,7 @@ private fun pickColorForNewAsset(): String {
 private fun currentAllocationColors(): List<String> {
     val inputs = document.querySelectorAll(".${CssClass.Form.AllocationColorInput}")
     val colors = mutableListOf<String>()
-    for (i in 0 until inputs.length) {
+    repeat(inputs.length) { i ->
         val input = inputs.item(i) as? HTMLInputElement
         if (input != null && input.value.isNotEmpty()) {
             colors.add(input.value)
@@ -209,7 +209,7 @@ private fun currentAllocationColors(): List<String> {
 private fun currentAllocationSymbols(): List<String> {
     val symbolInputs = document.querySelectorAll(SYMBOL_INPUTS_QUERY)
     val symbols = mutableListOf<String>()
-    for (i in 0 until symbolInputs.length) {
+    repeat(symbolInputs.length) { i ->
         val input = symbolInputs.item(i) as? HTMLInputElement
         if (input != null) {
             symbols.add(input.value.uppercase())

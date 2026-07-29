@@ -1,23 +1,18 @@
 package com.gemini.krakenbot.frontend
 
-import com.gemini.krakenbot.api.HistoryStats
 import com.gemini.krakenbot.api.PortfolioSnapshot
 import com.gemini.krakenbot.api.TradeRecord
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.TimeRange
-import com.gemini.krakenbot.model.TradeSourceKeys
 import com.gemini.krakenbot.util.PrecisionConstants
 import com.gemini.krakenbot.view.util.ChartProps
 import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.HtmlAttrs
 import com.gemini.krakenbot.view.util.HtmlEvents
 import com.gemini.krakenbot.view.util.HtmlIds
-import com.gemini.krakenbot.view.util.HtmlTags
-import com.gemini.krakenbot.view.util.Routes
 import com.gemini.krakenbot.view.util.ViewText
 import com.gemini.krakenbot.view.util.ZoomActions
-import com.gemini.krakenbot.view.util.withRange
 import kotlinx.browser.document
 import kotlinx.browser.window
 import org.w3c.dom.*
@@ -228,7 +223,7 @@ internal fun historyCaptureVisibility(): Map<String, Map<String, Boolean>> {
         val datasets = chart.data.datasets
         if (datasets != null && datasets != undefined) {
             val length: Int = (datasets.length).unsafeCast<Int>()
-            for (i in 0 until length) {
+            repeat(length) { i ->
                 val label = datasets[i].label.toString()
                 val visible: Boolean = (chart.isDatasetVisible(i)).unsafeCast<Boolean>()
                 states[label] = visible
@@ -269,8 +264,8 @@ internal fun resetHistoryUiState() {
 internal fun syncTimeRangeButtons(range: String) {
     currentRange = range
     val buttons = document.querySelectorAll(TIME_RANGE_BTNS_QUERY)
-    for (i in 0 until buttons.length) {
-        val btn = buttons.item(i) as? HTMLElement ?: continue
+    repeat(buttons.length) { i ->
+        val btn = buttons.item(i) as? HTMLElement ?: return@repeat
         val btnRange = btn.getAttribute(HtmlAttrs.DATA_RANGE)
         if (btnRange == range) {
             btn.classList.add(ACTIVE)
@@ -300,8 +295,8 @@ internal fun pointHoverRadiusForCount(pointCount: Int, primary: Boolean): Int {
 
 internal fun setupZoomButtons() {
     val buttons = document.querySelectorAll(ZOOM_BTNS_QUERY)
-    for (i in 0 until buttons.length) {
-        val btn = buttons.item(i) as? HTMLElement ?: continue
+    repeat(buttons.length) { i ->
+        val btn = buttons.item(i) as? HTMLElement ?: return@repeat
         btn.addEventListener(HtmlEvents.CLICK, {
             val canvasId = btn.getAttribute(HtmlAttrs.DATA_CHART_ID) ?: return@addEventListener
             val action = btn.getAttribute(HtmlAttrs.DATA_ZOOM_ACTION) ?: return@addEventListener
@@ -325,8 +320,8 @@ internal data class ChartScrubberState(val enabled: Boolean, val position: Doubl
 
 internal fun setupChartScrubbers() {
     val scrubbers = document.querySelectorAll(CHART_SCRUBBERS_QUERY)
-    for (i in 0 until scrubbers.length) {
-        val scrubber = scrubbers.item(i) as? HTMLInputElement ?: continue
+    repeat(scrubbers.length) { i ->
+        val scrubber = scrubbers.item(i) as? HTMLInputElement ?: return@repeat
         scrubber.addEventListener(HtmlEvents.INPUT, {
             val canvasId = scrubber.getAttribute(HtmlAttrs.DATA_CHART_ID) ?: return@addEventListener
             panChartToScrubberPosition(canvasId, dynamicNumber(scrubber.value) ?: 0.0)
@@ -394,8 +389,8 @@ private fun configDataRange(config: dynamic): ChartRange? {
     val datasets = config.data?.datasets ?: return null
     val points = mutableListOf<Double>()
     val datasetCount: Int = datasets.length.unsafeCast<Int>()
-    for (i in 0 until datasetCount) {
-        val data = datasets[i].data ?: continue
+    repeat(datasetCount) { i ->
+        val data = datasets[i].data ?: return@repeat
         val pointCount: Int = data.length.unsafeCast<Int>()
         for (j in 0 until pointCount) {
             dynamicNumber(data[j].x)?.let(points::add)
@@ -522,7 +517,7 @@ internal fun createOrUpdate(canvasId: String, config: dynamic) {
             val datasets = existingChart.data.datasets
             if (datasets != null && datasets != undefined) {
                 val length: Int = (datasets.length).unsafeCast<Int>()
-                for (i in 0 until length) {
+                repeat(length) { i ->
                     val ds = datasets[i]
                     val label = ds.label.toString()
                     val visible: Boolean = (existingChart.isDatasetVisible(i)).unsafeCast<Boolean>()
@@ -544,7 +539,7 @@ internal fun createOrUpdate(canvasId: String, config: dynamic) {
         // DATASET_VISIBILITY_DEFAULT is the fallback for unlisted series: a preset can store
         // default=false plus a few label=true entries to express "hide everything except these".
         val defaultVisible = savedStates[ChartProps.DATASET_VISIBILITY_DEFAULT] ?: true
-        for (i in 0 until length) {
+        repeat(length) { i ->
             val ds = configDatasets[i]
             val label = ds.label.toString()
             val visible = savedStates[label] ?: defaultVisible
