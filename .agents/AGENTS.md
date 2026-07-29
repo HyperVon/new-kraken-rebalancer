@@ -36,6 +36,7 @@ Canonical deep docs:
 | CHANGELOG / README / docs sync | [changelog-and-docs-sync](skills/changelog-and-docs-sync/SKILL.md) |
 | Full docs audit vs source code | [documentation-review](skills/documentation-review/SKILL.md) |
 | Complex-code comments (audit / hygiene) | [complex-code-comments](skills/complex-code-comments/SKILL.md) |
+| Resolve actionable source-code TODO comments | [todo-resolution](skills/todo-resolution/SKILL.md) |
 | README screenshot PNGs (sim UI) | [docs-screenshot-refresh](skills/docs-screenshot-refresh/SKILL.md) |
 | End-user User Guide (visual) | [user-guide](skills/user-guide/SKILL.md) |
 | UI visual critique (recommend) | [ui-visual-review](skills/ui-visual-review/SKILL.md) |
@@ -47,6 +48,7 @@ Canonical deep docs:
 | Code review | [code-review](skills/code-review/SKILL.md) |
 | Architecture review (third-party / redesign) | [architecture-review](skills/architecture-review/SKILL.md) |
 | Skill / agent-files review (skills, rules, AGENTS) | [skill-reviewer](skills/skill-reviewer/SKILL.md) |
+| Rules / skills structural audit | [rules-and-skills-audit](skills/rules-and-skills-audit/SKILL.md) |
 | Adversarial PR review (dual-model loop) | [adversarial-pr-review](skills/adversarial-pr-review/SKILL.md) |
 | Dependency upgrades | [dependency-upgrade](skills/dependency-upgrade/SKILL.md) |
 | Commit & push | [commit-and-push](skills/commit-and-push/SKILL.md) |
