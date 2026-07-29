@@ -64,14 +64,7 @@ class PortfolioManagerDrawdownTest : StringSpec() {
                 orderExecutor = orderExecutor,
             )
 
-            val settings = Settings(
-                loopDelaySeconds = 60L,
-                deviationTriggerPercent = 2.0,
-                dustThresholdUSD = 1.0,
-                dryRun = false,
-                fiatMaxDrawdown = 50.0,
-                fiatDeploymentExponent = 1.0,
-            )
+            val settings = TestFixtures.settings(dryRun = false, loopDelaySeconds = 60L, fiatMaxDrawdown = 50.0)
             val appConfig =
                 AppConfig(
                     kraken = KrakenCredentials(
@@ -97,16 +90,8 @@ class PortfolioManagerDrawdownTest : StringSpec() {
                     Allocation(Asset.USD, 50.0),
                 )
 
-                val appConfig = AppConfig(
-                    kraken = KrakenCredentials("k", "s"),
-                    settings = Settings(
-                        loopDelaySeconds = 60L,
-                        deviationTriggerPercent = 2.0,
-                        dustThresholdUSD = 1.0,
-                        dryRun = false,
-                        fiatMaxDrawdown = 50.0,
-                        fiatDeploymentExponent = 1.0,
-                    ),
+                val appConfig = TestFixtures.config(
+                    settings = TestFixtures.settings(dryRun = false, loopDelaySeconds = 60L, fiatMaxDrawdown = 50.0),
                     allocations = allocs,
                 )
                 every { configService.getConfig() } returns appConfig
@@ -154,16 +139,8 @@ class PortfolioManagerDrawdownTest : StringSpec() {
                     ),
                 )
 
-                val appConfig = AppConfig(
-                    kraken = KrakenCredentials("k", "s"),
-                    settings = Settings(
-                        loopDelaySeconds = 60L,
-                        deviationTriggerPercent = 2.0,
-                        dustThresholdUSD = 1.0,
-                        dryRun = false,
-                        fiatMaxDrawdown = 50.0,
-                        fiatDeploymentExponent = 1.0,
-                    ),
+                val appConfig = TestFixtures.config(
+                    settings = TestFixtures.settings(dryRun = false, loopDelaySeconds = 60L, fiatMaxDrawdown = 50.0),
                     allocations = allocs,
                 )
                 every { configService.getConfig() } returns appConfig
@@ -185,17 +162,9 @@ class PortfolioManagerDrawdownTest : StringSpec() {
             runTest {
                 coEvery { portfolioStatsRepository.load() } returns PortfolioStats(BigDecimal("1000.00"))
                 every { configService.getConfig() } returns
-                    AppConfig(
-                        kraken = KrakenCredentials("k", "s"),
+                    TestFixtures.config(
                         settings =
-                        Settings(
-                            loopDelaySeconds = 60L,
-                            deviationTriggerPercent = 2.0,
-                            dustThresholdUSD = 1.0,
-                            dryRun = false,
-                            fiatMaxDrawdown = 50.0,
-                            fiatDeploymentExponent = 1.0,
-                        ),
+                        TestFixtures.settings(dryRun = false, loopDelaySeconds = 60L, fiatMaxDrawdown = 50.0),
                         allocations = listOf(Allocation(Asset.USD, 100.0)),
                     )
                 krakenService.pricesSupplier = { emptyMap() }
@@ -233,17 +202,9 @@ class PortfolioManagerDrawdownTest : StringSpec() {
                         orderExecutor = OrderExecutorImpl(krakenService, tradeHistoryService),
                     )
                 val config =
-                    AppConfig(
-                        kraken = KrakenCredentials("k", "s"),
+                    TestFixtures.config(
                         settings =
-                        Settings(
-                            loopDelaySeconds = 60L,
-                            deviationTriggerPercent = 2.0,
-                            dustThresholdUSD = 1.0,
-                            dryRun = false,
-                            fiatMaxDrawdown = 50.0,
-                            fiatDeploymentExponent = 1.0,
-                        ),
+                        TestFixtures.settings(dryRun = false, loopDelaySeconds = 60L, fiatMaxDrawdown = 50.0),
                         allocations =
                         listOf(
                             Allocation(Asset.BTC, 50.0),
@@ -279,14 +240,7 @@ class PortfolioManagerDrawdownTest : StringSpec() {
 
         "testCalculateFiatDeployment_AtMaxDrawdownSaturationExponentOne" {
             runTest {
-                val settings = Settings(
-                    loopDelaySeconds = 60L,
-                    deviationTriggerPercent = 2.0,
-                    dustThresholdUSD = 1.0,
-                    dryRun = false,
-                    fiatMaxDrawdown = 50.0,
-                    fiatDeploymentExponent = 1.0,
-                )
+                val settings = TestFixtures.settings(dryRun = false, loopDelaySeconds = 60L, fiatMaxDrawdown = 50.0)
                 portfolioAnalyzer.calculateFiatDeployment(
                     BigDecimal("50.0"),
                     settings,
@@ -296,11 +250,9 @@ class PortfolioManagerDrawdownTest : StringSpec() {
 
         "testCalculateFiatDeployment_AtMaxDrawdownSaturationExponentTwo" {
             runTest {
-                val settings = Settings(
-                    loopDelaySeconds = 60L,
-                    deviationTriggerPercent = 2.0,
-                    dustThresholdUSD = 1.0,
+                val settings = TestFixtures.settings(
                     dryRun = false,
+                    loopDelaySeconds = 60L,
                     fiatMaxDrawdown = 50.0,
                     fiatDeploymentExponent = 2.0,
                 )
@@ -313,11 +265,9 @@ class PortfolioManagerDrawdownTest : StringSpec() {
 
         "testCalculateFiatDeployment_AboveMaxDrawdownCoercesTo100" {
             runTest {
-                val settings = Settings(
-                    loopDelaySeconds = 60L,
-                    deviationTriggerPercent = 2.0,
-                    dustThresholdUSD = 1.0,
+                val settings = TestFixtures.settings(
                     dryRun = false,
+                    loopDelaySeconds = 60L,
                     fiatMaxDrawdown = 50.0,
                     fiatDeploymentExponent = 2.0,
                 )
@@ -332,11 +282,9 @@ class PortfolioManagerDrawdownTest : StringSpec() {
         // | DD 1.5% → 22% | 7.5% → 50% | 15% → 71% | 22.5% → 87% | 30% → 100% |
         "testCalculateFiatDeployment_AggressiveExponentHalf_AlgorithmTable" {
             runTest {
-                val settings = Settings(
-                    loopDelaySeconds = 60L,
-                    deviationTriggerPercent = 2.0,
-                    dustThresholdUSD = 1.0,
+                val settings = TestFixtures.settings(
                     dryRun = false,
+                    loopDelaySeconds = 60L,
                     fiatMaxDrawdown = 30.0,
                     fiatDeploymentExponent = 0.5,
                 )
@@ -363,11 +311,9 @@ class PortfolioManagerDrawdownTest : StringSpec() {
         // | DD 1.5% → 0.25% | 7.5% → 6.25% | 15% → 25% | 22.5% → 56% | 30% → 100% |
         "testCalculateFiatDeployment_ConservativeExponentTwo_AlgorithmTable" {
             runTest {
-                val settings = Settings(
-                    loopDelaySeconds = 60L,
-                    deviationTriggerPercent = 2.0,
-                    dustThresholdUSD = 1.0,
+                val settings = TestFixtures.settings(
                     dryRun = false,
+                    loopDelaySeconds = 60L,
                     fiatMaxDrawdown = 30.0,
                     fiatDeploymentExponent = 2.0,
                 )
@@ -391,11 +337,9 @@ class PortfolioManagerDrawdownTest : StringSpec() {
         "testCalculateFiatDeployment_AggressiveExponentHalf_At25PercentOfMaxIs50" {
             runTest {
                 // MaxDD 30%, DD 7.5% (25% of max) → (0.25)^0.5 * 100 = 50% exactly
-                val settings = Settings(
-                    loopDelaySeconds = 60L,
-                    deviationTriggerPercent = 2.0,
-                    dustThresholdUSD = 1.0,
+                val settings = TestFixtures.settings(
                     dryRun = false,
+                    loopDelaySeconds = 60L,
                     fiatMaxDrawdown = 30.0,
                     fiatDeploymentExponent = 0.5,
                 )
@@ -408,11 +352,9 @@ class PortfolioManagerDrawdownTest : StringSpec() {
 
         "testCalculateFiatDeployment_AggressiveExponentHalf_AtMaxDrawdownIs100" {
             runTest {
-                val settings = Settings(
-                    loopDelaySeconds = 60L,
-                    deviationTriggerPercent = 2.0,
-                    dustThresholdUSD = 1.0,
+                val settings = TestFixtures.settings(
                     dryRun = false,
+                    loopDelaySeconds = 60L,
                     fiatMaxDrawdown = 30.0,
                     fiatDeploymentExponent = 0.5,
                 )

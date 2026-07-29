@@ -1,5 +1,6 @@
 package com.gemini.krakenbot.service.impl
 
+import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderSide
@@ -24,15 +25,13 @@ class SnapshotHistoryCalculatorTest : StringSpec() {
         "buildTimelineEvents should generate trade and daily close events sorted descending" {
             val now = Instant.now()
             val cutoff = now.minus(5, ChronoUnit.DAYS)
-            val trade = TradeRecord(
+            val trade = TestFixtures.tradeRecord(
                 timestamp = now.minus(2, ChronoUnit.DAYS),
                 pair = "XBTUSD",
                 side = OrderSide.BUY.uppercaseName,
                 symbol = "BTC",
                 volume = BigDecimal("0.1"),
                 usdAmount = BigDecimal("5000.00"),
-                success = true,
-                dryRun = false,
             )
 
             val events = SnapshotHistoryCalculator.buildTimelineEvents(
@@ -48,7 +47,7 @@ class SnapshotHistoryCalculatorTest : StringSpec() {
         "calculateHistoricalSnapshots should calculate portfolio snapshots and reverse-apply trades" {
             val now = Instant.now()
             val cutoff = now.minus(5, ChronoUnit.DAYS)
-            val trade = TradeRecord(
+            val trade = TestFixtures.tradeRecord(
                 timestamp = now.minus(2, ChronoUnit.DAYS),
                 pair = "XBTUSD",
                 side = OrderSide.BUY.uppercaseName,
@@ -56,8 +55,6 @@ class SnapshotHistoryCalculatorTest : StringSpec() {
                 volume = BigDecimal("0.1"),
                 usdAmount = BigDecimal("5000.00"),
                 fee = BigDecimal("13.00"),
-                success = true,
-                dryRun = false,
             )
 
             val events = SnapshotHistoryCalculator.buildTimelineEvents(
@@ -98,7 +95,7 @@ class SnapshotHistoryCalculatorTest : StringSpec() {
             val now = Instant.now()
             val cutoff = now.minus(5, ChronoUnit.DAYS)
             val trade =
-                TradeRecord(
+                TestFixtures.tradeRecord(
                     timestamp = now.minus(2, ChronoUnit.DAYS),
                     pair = "XBTUSD",
                     side = OrderSide.BUY.apiValue,
@@ -106,8 +103,6 @@ class SnapshotHistoryCalculatorTest : StringSpec() {
                     volume = BigDecimal("0.1"),
                     usdAmount = BigDecimal("5000.00"),
                     fee = BigDecimal("13.00"),
-                    success = true,
-                    dryRun = false,
                 )
 
             val events =
@@ -148,7 +143,7 @@ class SnapshotHistoryCalculatorTest : StringSpec() {
             val now = Instant.now()
             val cutoff = now.minus(5, ChronoUnit.DAYS)
             val trade =
-                TradeRecord(
+                TestFixtures.tradeRecord(
                     timestamp = now.minus(2, ChronoUnit.DAYS),
                     pair = "XBTUSD",
                     side = OrderSide.SELL.uppercaseName,
@@ -156,8 +151,6 @@ class SnapshotHistoryCalculatorTest : StringSpec() {
                     volume = BigDecimal("0.1"),
                     usdAmount = BigDecimal("5000.00"),
                     fee = BigDecimal("13.00"),
-                    success = true,
-                    dryRun = false,
                 )
 
             val events =
@@ -200,15 +193,13 @@ class SnapshotHistoryCalculatorTest : StringSpec() {
             val cutoff = now.minus(5, ChronoUnit.DAYS)
             val tradeTime = now.minus(2, ChronoUnit.DAYS)
             val trade =
-                TradeRecord(
+                TestFixtures.tradeRecord(
                     timestamp = tradeTime,
                     pair = "XBTUSD",
                     side = OrderSide.BUY.uppercaseName,
                     symbol = "BTC",
                     volume = BigDecimal("0.1"),
                     usdAmount = BigDecimal("5000.00"),
-                    success = true,
-                    dryRun = false,
                 )
 
             val events =
@@ -261,15 +252,13 @@ class SnapshotHistoryCalculatorTest : StringSpec() {
             val cutoff = now.minus(5, ChronoUnit.DAYS)
             val tradeTime = now.minus(2, ChronoUnit.DAYS)
             val trade =
-                TradeRecord(
+                TestFixtures.tradeRecord(
                     timestamp = tradeTime,
                     pair = "XBTUSD",
                     side = OrderSide.BUY.uppercaseName,
                     symbol = "BTC",
                     volume = BigDecimal("0.1"),
                     usdAmount = BigDecimal("5000.00"),
-                    success = true,
-                    dryRun = false,
                 )
 
             val events =
@@ -357,7 +346,7 @@ class SnapshotHistoryCalculatorTest : StringSpec() {
         "calculateHistoricalSnapshots rejects unknown trade side without mutating balances" {
             val now = Instant.now()
             val cutoff = now.minus(5, ChronoUnit.DAYS)
-            val trade = TradeRecord(
+            val trade = TestFixtures.tradeRecord(
                 timestamp = now.minus(2, ChronoUnit.DAYS),
                 pair = "XBTUSD",
                 side = "UNKNOWN_SIDE",
@@ -365,8 +354,6 @@ class SnapshotHistoryCalculatorTest : StringSpec() {
                 volume = BigDecimal("0.1"),
                 usdAmount = BigDecimal("5000.00"),
                 fee = BigDecimal("13.00"),
-                success = true,
-                dryRun = false,
             )
 
             val events = SnapshotHistoryCalculator.buildTimelineEvents(

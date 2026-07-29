@@ -130,15 +130,13 @@ class SerializationParityTest : StringSpec() {
 
         "history API TradeRecord DTO serializes string economics" {
             val domain =
-                TradeRecord(
+                TestFixtures.tradeRecord(
                     timestamp = Instant.parse("2023-01-01T10:00:00Z"),
                     pair = TestFixtures.BTCUSD,
                     side = TestFixtures.BUY,
                     symbol = Asset.BTC,
                     volume = BigDecimal("0.125"),
                     usdAmount = BigDecimal("2500.00"),
-                    success = true,
-                    dryRun = false,
                     price = BigDecimal("20000.0"),
                     fee = BigDecimal("6.50"),
                     slippagePercent = BigDecimal("0.15"),
@@ -182,15 +180,13 @@ class SerializationParityTest : StringSpec() {
 
         "history API TradeRecord DTO round-trips null optionals and zero economics" {
             val domain =
-                TradeRecord(
+                TestFixtures.tradeRecord(
                     timestamp = Instant.parse("2023-01-01T10:00:00Z"),
                     pair = TestFixtures.BTCUSD,
                     side = TestFixtures.BUY,
                     symbol = Asset.BTC,
                     volume = BigDecimal("0.1"),
                     usdAmount = BigDecimal("100.00"),
-                    success = true,
-                    dryRun = false,
                     // price/fee default to ZERO; all optionals null.
                 )
 

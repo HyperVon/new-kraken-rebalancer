@@ -84,14 +84,7 @@ class DashboardViewTest : StringSpec() {
             apiKey = TestFixtures.TEST_API_KEY,
             privateKey = "privateKey",
         ),
-        Settings(
-            loopDelaySeconds = 60L,
-            deviationTriggerPercent = 2.0,
-            dustThresholdUSD = 5.0,
-            dryRun = true,
-            fiatMaxDrawdown = 20.0,
-            fiatDeploymentExponent = 1.0,
-        ),
+        TestFixtures.settings(loopDelaySeconds = 60L, dustThresholdUSD = 5.0, fiatMaxDrawdown = 20.0),
         listOf(
             Allocation(Asset.USD, 10.0),
             Allocation(Asset.BTC, 50.0),

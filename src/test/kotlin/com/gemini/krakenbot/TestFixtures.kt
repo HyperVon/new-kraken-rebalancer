@@ -5,9 +5,13 @@ import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.OrderSubmissionState
 import com.gemini.krakenbot.model.SyncMetadataKeys
+import com.gemini.krakenbot.model.TradeRecord
+import com.gemini.krakenbot.model.TradeSource
 import com.gemini.krakenbot.test.TestConstants
 import java.math.BigDecimal
+import java.time.Instant
 
 fun Map<String, Double>.toBigDecimalMap(): Map<String, BigDecimal> = this.mapValues { BigDecimal.valueOf(it.value) }
 
@@ -121,5 +125,73 @@ object TestFixtures {
         kraken = KrakenCredentials(TestConstants.API_KEY, TestConstants.API_SECRET),
         settings = DEFAULT_TEST_SETTINGS,
         allocations = DEFAULT_TEST_ALLOCATIONS,
+    )
+
+    fun settings(
+        dryRun: Boolean = true,
+        dustThresholdUSD: Double = 1.0,
+        simulation: Boolean = false,
+        loopDelaySeconds: Long = 0L,
+        deviationTriggerPercent: Double = 2.0,
+        fiatMaxDrawdown: Double = 0.0,
+        fiatDeploymentExponent: Double = 1.0,
+    ): Settings = Settings(
+        loopDelaySeconds = loopDelaySeconds,
+        deviationTriggerPercent = deviationTriggerPercent,
+        dustThresholdUSD = dustThresholdUSD,
+        dryRun = dryRun,
+        fiatMaxDrawdown = fiatMaxDrawdown,
+        fiatDeploymentExponent = fiatDeploymentExponent,
+        simulation = simulation,
+    )
+
+    fun config(
+        settings: Settings = settings(),
+        allocations: List<Allocation> = emptyList(),
+        kraken: KrakenCredentials = KrakenCredentials("k", "s"),
+    ): AppConfig = AppConfig(kraken = kraken, settings = settings, allocations = allocations)
+
+    fun tradeRecord(
+        timestamp: Instant,
+        pair: String,
+        side: String,
+        symbol: String,
+        volume: BigDecimal,
+        usdAmount: BigDecimal,
+        success: Boolean = true,
+        dryRun: Boolean = false,
+        errorMessage: String? = null,
+        price: BigDecimal = BigDecimal.ZERO,
+        fee: BigDecimal = BigDecimal.ZERO,
+        slippagePercent: BigDecimal? = null,
+        expectedPrice: BigDecimal? = null,
+        source: TradeSource? = null,
+        id: Int? = null,
+        cycleId: String? = null,
+        orderTxid: String? = null,
+        tradeId: String? = null,
+        clientOrderId: String? = null,
+        submissionState: OrderSubmissionState? = null,
+    ): TradeRecord = TradeRecord(
+        timestamp = timestamp,
+        pair = pair,
+        side = side,
+        symbol = symbol,
+        volume = volume,
+        usdAmount = usdAmount,
+        success = success,
+        dryRun = dryRun,
+        errorMessage = errorMessage,
+        price = price,
+        fee = fee,
+        slippagePercent = slippagePercent,
+        expectedPrice = expectedPrice,
+        source = source,
+        id = id,
+        cycleId = cycleId,
+        orderTxid = orderTxid,
+        tradeId = tradeId,
+        clientOrderId = clientOrderId,
+        submissionState = submissionState,
     )
 }

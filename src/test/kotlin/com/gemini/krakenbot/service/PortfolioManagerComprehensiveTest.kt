@@ -33,16 +33,8 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
      * Scenario settings: 2% trigger, $1 dust. `dryRun=false` so FakeKraken records non-dry-run
      * placements (still not a live exchange — see [FakeKrakenService]).
      */
-    private fun makeConfig(vararg allocs: Allocation) = AppConfig(
-        kraken = KrakenCredentials(apiKey = "k", privateKey = "s"),
-        settings = Settings(
-            loopDelaySeconds = 60L,
-            deviationTriggerPercent = 2.0,
-            dustThresholdUSD = 1.0,
-            dryRun = false,
-            fiatMaxDrawdown = 0.0,
-            fiatDeploymentExponent = 1.0,
-        ),
+    private fun makeConfig(vararg allocs: Allocation) = TestFixtures.config(
+        settings = TestFixtures.settings(dryRun = false, loopDelaySeconds = 60L),
         allocations = allocs.toList(),
     )
 

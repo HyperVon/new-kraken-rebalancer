@@ -1,5 +1,6 @@
 package com.gemini.krakenbot.service
 
+import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.KrakenCredentials
@@ -28,14 +29,7 @@ class PortfolioManagerDogeTest : StringSpec() {
 
         "testDogeMapping" {
             runTest {
-                val settings = Settings(
-                    loopDelaySeconds = 60L,
-                    deviationTriggerPercent = 2.0,
-                    dustThresholdUSD = 1.0,
-                    dryRun = true,
-                    fiatMaxDrawdown = 0.0,
-                    fiatDeploymentExponent = 1.0,
-                )
+                val settings = TestFixtures.settings(loopDelaySeconds = 60L)
                 val config = AppConfig(
                     kraken = KrakenCredentials(
                         apiKey = "k",
@@ -73,14 +67,7 @@ class PortfolioManagerDogeTest : StringSpec() {
 
         "testBtcMapping" {
             runTest {
-                val settings = Settings(
-                    loopDelaySeconds = 60L,
-                    deviationTriggerPercent = 2.0,
-                    dustThresholdUSD = 1.0,
-                    dryRun = true,
-                    fiatMaxDrawdown = 0.0,
-                    fiatDeploymentExponent = 1.0,
-                )
+                val settings = TestFixtures.settings(loopDelaySeconds = 60L)
                 val config = AppConfig(
                     kraken = KrakenCredentials(
                         apiKey = "k",

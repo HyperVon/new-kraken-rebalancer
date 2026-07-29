@@ -5,6 +5,7 @@ package com.gemini.krakenbot.service
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.databind.ObjectWriter
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.config.*
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.service.impl.ConfigServiceImpl
@@ -36,16 +37,8 @@ class ConfigServiceTest : StringSpec() {
     private lateinit var tempFile: File
 
     private fun createValidConfig(file: File) {
-        val settings = Settings(
-            loopDelaySeconds = 60L,
-            deviationTriggerPercent = 2.0,
-            dustThresholdUSD = 1.0,
-            dryRun = true,
-            fiatMaxDrawdown = 0.0,
-            fiatDeploymentExponent = 1.0,
-        )
-        val config = AppConfig(
-            kraken = KrakenCredentials("k", "s"),
+        val settings = TestFixtures.settings(loopDelaySeconds = 60L)
+        val config = TestFixtures.config(
             settings = settings,
             allocations = listOf(
                 element = Allocation(
@@ -512,14 +505,7 @@ class ConfigServiceTest : StringSpec() {
                 )
             } returns AppConfig(
                 kraken = KrakenCredentials("a", "b"),
-                settings = Settings(
-                    loopDelaySeconds = 1,
-                    deviationTriggerPercent = 1.0,
-                    dustThresholdUSD = 1.0,
-                    dryRun = true,
-                    fiatMaxDrawdown = 0.0,
-                    fiatDeploymentExponent = 1.0,
-                ),
+                settings = TestFixtures.settings(loopDelaySeconds = 1, deviationTriggerPercent = 1.0),
                 allocations = listOf(
                     Allocation(
                         symbol = Asset.USD,
@@ -546,14 +532,7 @@ class ConfigServiceTest : StringSpec() {
                             apiKey = "a",
                             privateKey = "b",
                         ),
-                        settings = Settings(
-                            loopDelaySeconds = 1,
-                            deviationTriggerPercent = 1.0,
-                            dustThresholdUSD = 1.0,
-                            dryRun = true,
-                            fiatMaxDrawdown = 0.0,
-                            fiatDeploymentExponent = 1.0,
-                        ),
+                        settings = TestFixtures.settings(loopDelaySeconds = 1, deviationTriggerPercent = 1.0),
                         allocations = listOf(
                             Allocation(
                                 symbol = Asset.USD,
@@ -697,16 +676,8 @@ class ConfigServiceTest : StringSpec() {
         }
 
         "loadConfig_InvalidConfig" {
-            val invalidConfig = AppConfig(
-                kraken = KrakenCredentials("k", "s"),
-                settings = Settings(
-                    loopDelaySeconds = 60L,
-                    deviationTriggerPercent = 2.0,
-                    dustThresholdUSD = 1.0,
-                    dryRun = true,
-                    fiatMaxDrawdown = 0.0,
-                    fiatDeploymentExponent = 1.0,
-                ),
+            val invalidConfig = TestFixtures.config(
+                settings = TestFixtures.settings(loopDelaySeconds = 60L),
                 allocations = listOf(
                     Allocation(
                         symbol = Asset.USD,

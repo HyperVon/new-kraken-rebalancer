@@ -33,14 +33,13 @@ class DynamicKrakenServiceTest : StringSpec() {
     private fun createService(): DynamicKrakenService =
         DynamicKrakenService(realService, simulatedService, configService)
 
-    private fun settings(simulation: Boolean, dryRun: Boolean = false) = Settings(
+    private fun settings(simulation: Boolean, dryRun: Boolean = false) = TestFixtures.settings(
+        dryRun = dryRun,
+        simulation = simulation,
         loopDelaySeconds = 60,
         deviationTriggerPercent = 5.0,
         dustThresholdUSD = 5.0,
-        dryRun = dryRun,
-        simulation = simulation,
         fiatMaxDrawdown = 30.0,
-        fiatDeploymentExponent = 1.0,
     )
 
     private fun appConfig(simulation: Boolean, dryRun: Boolean = false) = AppConfig(

@@ -1,5 +1,6 @@
 package com.gemini.krakenbot.service
 
+import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.KrakenCredentials
@@ -41,14 +42,8 @@ class PortfolioManagerZeroAllocationTest : StringSpec() {
                 val allocB = Allocation("B", 100.0)
                 val allAllocations = listOf(allocA, allocB)
 
-                val mockSettings = Settings(
-                    loopDelaySeconds = 0L,
-                    deviationTriggerPercent = 2.0,
-                    dustThresholdUSD = 1.0,
-                    dryRun = false,
-                )
-                val mockConfig = AppConfig(
-                    kraken = KrakenCredentials("k", "s"),
+                val mockSettings = TestFixtures.settings(dryRun = false)
+                val mockConfig = TestFixtures.config(
                     settings = mockSettings,
                     allocations = allAllocations,
                 )

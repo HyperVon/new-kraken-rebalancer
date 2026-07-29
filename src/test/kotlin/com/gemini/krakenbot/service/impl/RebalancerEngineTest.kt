@@ -1,5 +1,6 @@
 package com.gemini.krakenbot.service.impl
 
+import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.Asset
@@ -28,14 +29,12 @@ class RebalancerEngineTest : StringSpec() {
             Allocation(Asset.USD, 20.0),
         )
 
-        val settings = Settings(
+        val settings = TestFixtures.settings(
+            simulation = true,
             loopDelaySeconds = 60,
             deviationTriggerPercent = 5.0,
             dustThresholdUSD = 10.0,
-            dryRun = true,
-            simulation = true,
             fiatMaxDrawdown = 20.0,
-            fiatDeploymentExponent = 1.0,
         )
 
         "resolvePriceFromTicker resolves exact trading pair" {

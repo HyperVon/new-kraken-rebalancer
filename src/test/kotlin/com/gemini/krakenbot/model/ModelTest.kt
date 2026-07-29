@@ -90,14 +90,7 @@ class ModelTest : StringSpec() {
 
         "testSettings" {
             val settings =
-                Settings(
-                    loopDelaySeconds = 60,
-                    deviationTriggerPercent = 2.0,
-                    dustThresholdUSD = 1.0,
-                    dryRun = true,
-                    fiatMaxDrawdown = 50.0,
-                    fiatDeploymentExponent = 1.0,
-                )
+                TestFixtures.settings(loopDelaySeconds = 60, fiatMaxDrawdown = 50.0)
             val settings5 = settings.copy()
             settings5 shouldBe settings
             settings.hashCode() shouldBe settings5.hashCode()
@@ -174,7 +167,7 @@ class ModelTest : StringSpec() {
         "testTradeRecordExtensions" {
             val now = Instant.now()
             val t1 =
-                TradeRecord(
+                TestFixtures.tradeRecord(
                     now,
                     "XBTUSD",
                     "BUY",
@@ -183,13 +176,11 @@ class ModelTest : StringSpec() {
                     BigDecimal(
                         "50000.00",
                     ),
-                    success = true,
-                    dryRun = false,
                     id = 1,
                     fee = BigDecimal("10.00"),
                 )
             val t2 =
-                TradeRecord(
+                TestFixtures.tradeRecord(
                     now,
                     "XXBTZUSD",
                     "BUY",
@@ -198,13 +189,11 @@ class ModelTest : StringSpec() {
                     BigDecimal(
                         "50000.00",
                     ),
-                    success = true,
-                    dryRun = false,
                     id = 2,
                     fee = BigDecimal("100.00"),
                 )
             val t3 =
-                TradeRecord(
+                TestFixtures.tradeRecord(
                     now.plusSeconds(
                         300,
                     ),
@@ -213,8 +202,6 @@ class ModelTest : StringSpec() {
                     "DOGE",
                     BigDecimal.TEN,
                     BigDecimal("10.00"),
-                    success = true,
-                    dryRun = false,
                     id = 3,
                     fee = BigDecimal("0.10"),
                 )
@@ -241,26 +228,22 @@ class ModelTest : StringSpec() {
         "isMatchingApiTrade rejects when volume within tolerance but USD differs by more than 1 percent" {
             val now = Instant.now()
             val local =
-                TradeRecord(
+                TestFixtures.tradeRecord(
                     now,
                     "XBTUSD",
                     "BUY",
                     "BTC",
                     BigDecimal("1.0"),
                     BigDecimal("100.00"),
-                    success = true,
-                    dryRun = false,
                 )
             val api =
-                TradeRecord(
+                TestFixtures.tradeRecord(
                     now,
                     "XXBTZUSD",
                     "BUY",
                     "BTC",
                     BigDecimal("1.005"),
                     BigDecimal("110.00"),
-                    success = true,
-                    dryRun = false,
                 )
             local.isMatchingApiTrade(api, listOf("BTC", "DOGE")) shouldBe false
             local.isMatchingApiTrade(api.copy(volume = BigDecimal("1.0")), listOf("BTC", "DOGE")) shouldBe true
