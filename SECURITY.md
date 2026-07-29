@@ -82,8 +82,10 @@ Additional precautions include:
 - starting with `dryRun: true` or `simulation: true` before considering live
   trading.
 
-The endpoints currently used by the application do not require the **Query Open
-Orders** permission.
+Runtime logs can include order identifiers, balance amounts, and asset keys.
+Protect them as account data and redact them before sharing. The endpoints used
+during normal application operation do not require the **Query Open Orders &
+Trades** permission.
 
 ### Dashboard trust model
 
@@ -117,9 +119,18 @@ blocks later live submissions. If this occurs:
 
 1. Stop automated live trading while investigating.
 2. Back up `kraken-rebalancer.db` before changing any stored state.
-3. Compare the recorded `client_order_id` with Kraken open orders, closed orders,
-   and fills.
-4. Resolve the stored state only after the exchange outcome is known.
+3. Use the recorded local `client_order_id` as Kraken's `cl_ord_id` to locate the
+   matching open or closed order and obtain its Kraken order transaction ID.
+4. Use that order transaction ID to check TradesHistory fills, which expose
+   `ordertxid` rather than `cl_ord_id`.
+5. Resolve the stored state only after the exchange outcome is known.
+
+The recommended **Query Closed Orders & Trades** permission covers ClosedOrders
+and TradesHistory. Direct REST verification through OpenOrders additionally
+requires **Query Open Orders & Trades**, even though the application does not
+need that permission during normal operation. If it is needed for an
+investigation, prefer a separate read-only diagnostic key or remove the added
+permission after reconciliation.
 
 An empty trade-history response is not sufficient proof that Kraken rejected the
 order. Unresolved intents are deliberately excluded from heuristic

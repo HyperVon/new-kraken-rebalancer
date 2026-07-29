@@ -224,17 +224,20 @@ sounds convincing.
 | Harness | Repository support | Human takeaway |
 | :--- | :--- | :--- |
 | Google Antigravity | The initial project and much of its earlier development used Antigravity; the history of `.agents/AGENTS.md` records that foundation | Antigravity was the project's primary early harness, not merely another compatibility target |
-| Cursor | `.cursor/rules/*.mdc` projects shared conventions into Cursor-native rules | Cursor provides the deepest checked-in adapter, including optional Canvas and browser workflows |
-| Codex | The portable `.agents` files and project skills are usable directly | Codex-specific UI metadata is intentionally unnecessary for this repository |
+| Cursor | `.cursor/rules/*.mdc` projects shared conventions into Cursor-native rules | Cursor provides the deepest checked-in adapter; some skills currently require its Canvas or browser integrations |
+| Codex | The portable `.agents` files and most project skills are usable directly | Cursor-bound workflows need an equivalent artifact/tool or a small adaptation |
 | OpenCode | No separate full policy copy is committed | A human can point OpenCode at the canonical `.agents` files or maintain a thin local adapter |
 | Claude Code | `CLAUDE.md` links to the portable rules and skills | The adapter remains intentionally small |
 | GitHub Copilot | `.github/copilot-instructions.md` links to the portable rules and skills | Copilot receives the same project context without a duplicated rulebook |
-| Other tools | Ordinary Markdown, scripts, tests, and Git remain available | Any harness capable of reading repository files can reuse the core approach |
+| Other tools | Ordinary Markdown, scripts, tests, and Git remain available | Any harness capable of reading repository files can reuse the core policy and domain knowledge |
 
-Harness support is not perfectly symmetrical. A few skills contain optional
-Cursor-specific presentation or browser features. Those enhancements are
-conveniences rather than the source of project policy. The underlying review,
-QA, or decision record remains understandable to humans without Cursor.
+Harness support is not perfectly symmetrical. The `architecture-review` skill
+currently mandates a Cursor Canvas for decisions, while `ui-manual-qa` names
+Cursor's browser-control integration. A human using another harness needs to
+substitute an equivalent decision artifact or browser tool, or adapt those
+skills before expecting their end-to-end workflows to run unchanged. These
+integrations are not the source of project policy; the underlying architecture,
+safety rules, checklists, and review criteria remain ordinary repository files.
 
 ## Models and multi-model review
 
@@ -327,9 +330,10 @@ A human joining the project can get oriented through this sequence:
 7. Require evidence proportionate to the risk before approving a commit,
    pull request, deployment, or live-trading change.
 
-No particular harness is required. The important continuity comes from the
-version-controlled context, repeatable checks, preserved decisions, and human
-oversight.
+No particular harness is required for ordinary contribution. Specialized
+Cursor-bound workflows need an equivalent integration or a small adapter in
+another harness. The important continuity comes from the version-controlled
+context, repeatable checks, preserved decisions, and human oversight.
 
 ## Maintaining the playbook
 

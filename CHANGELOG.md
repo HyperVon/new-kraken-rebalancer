@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.15.14] - 2026-07-29
+
+### Changed
+
+- **Security guidance**: Clarified the exact IPv4/IPv6 CORS allowlist, runtime
+  log sensitivity, and the permissions and identifier chain needed to reconcile
+  an ambiguous Kraken order submission.
+- **Cross-harness documentation**: Distinguished the portable agent playbook
+  from specialized workflows that currently require Cursor Canvas or browser
+  integrations.
+
 ## [6.15.13] - 2026-07-29
 
 ### Added

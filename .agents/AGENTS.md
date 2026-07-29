@@ -193,24 +193,29 @@ claim CodeQL is active CI until re-enabled.
   operator on a local machine or private network. Do not present it as safe for
   unrestricted public hosting.
 - CORS must continue to use structurally parsed origins through
-  `isLocalOrPrivateOrigin`: localhost, IPv4/IPv6 loopback, valid RFC1918 or
-  link-local IPs, and `*.local`. Reject paths, user-info tricks, public origins,
-  malformed IPs, and private-prefix hostname lookalikes. Do not widen CORS as a
-  substitute for authentication.
+  `isLocalOrPrivateOrigin`: localhost, IPv4 and IPv6 loopback, RFC1918 IPv4,
+  IPv4 link-local `169.254.0.0/16`, and `*.local`. Reject paths, user-info
+  tricks, public origins, malformed IPs, and private-prefix hostname lookalikes.
+  Do not widen CORS as a substitute for authentication.
 - Never hardcode or commit API keys, private keys, real account data, or the
-  gitignored `rebalancer-config.json`. Tests, examples, screenshots, logs, and
-  issue/PR artifacts use placeholders or redacted values.
+  gitignored `rebalancer-config.json`. Committed tests, examples, documentation,
+  screenshots, and issue/PR artifacts use placeholders or redacted values.
 - Preserve raw `${ENV_VAR}` / `${ENV_VAR:default}` credential placeholders when
   unrelated settings are saved. Do not materialize resolved secrets into JSON.
-- Never log HMAC signatures, API keys, private keys, resolved credentials, or
-  sensitive Kraken responses.
-- Kraken credentials use least privilege: Query Funds, Query Closed Orders &
-  Trades, and Create & Modify Orders. Do not claim Query Open Orders is required
-  unless the API surface changes and the claim is verified.
+- Never log HMAC signatures, API keys, private keys, or resolved credentials.
+  Prefer minimal structured fields to raw private Kraken responses. Runtime logs
+  can contain order identifiers, balance amounts, and asset keys; treat them as
+  sensitive and redact them before sharing.
+- Kraken credentials for normal application operation use least privilege:
+  Query Funds, Query Closed Orders & Trades, and Create & Modify Orders. Do not
+  claim Query Open Orders is required for normal operation unless the API
+  surface changes and the claim is verified.
 - Preserve the durable live-order journal: write `PENDING` before AddOrder;
   ambiguous outcomes become blocking `UNCERTAIN`; never retry or heuristically
-  clear them. Operator reconciliation requires a database backup and exchange
-  verification by `client_order_id`.
+  clear them. Operator reconciliation requires a database backup and follows
+  local `client_order_id` → Kraken `cl_ord_id` on an open/closed order → Kraken
+  order txid → TradesHistory fills. REST-based OpenOrders verification requires
+  Query Open Orders & Trades in addition to the normal application permissions.
 - Treat changes to authentication, network exposure, CORS, credentials,
   persistence, or live-order safety as high impact and require explicit user
   direction plus focused security tests.
