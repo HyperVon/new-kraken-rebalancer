@@ -6,6 +6,7 @@ import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderSubmissionState
+import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.model.TradeSource
@@ -150,6 +151,16 @@ object TestFixtures {
         allocations: List<Allocation> = emptyList(),
         kraken: KrakenCredentials = KrakenCredentials("k", "s"),
     ): AppConfig = AppConfig(kraken = kraken, settings = settings, allocations = allocations)
+
+    fun emptySnapshot(timestamp: Instant, totalValueUSD: BigDecimal): PortfolioSnapshot = PortfolioSnapshot(
+        timestamp = timestamp,
+        totalValueUSD = totalValueUSD,
+        assets = emptyMap(),
+        actions = emptyList(),
+        drawdownPercent = BigDecimal.ZERO,
+        fiatDeploymentPercent = BigDecimal.ZERO,
+        effectiveUsdTargetPercent = BigDecimal.ZERO,
+    )
 
     fun tradeRecord(
         timestamp: Instant,

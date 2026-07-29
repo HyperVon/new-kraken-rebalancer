@@ -3,7 +3,6 @@ package com.gemini.krakenbot.controller
 import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.config.*
 import com.gemini.krakenbot.model.HistoryStats
-import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.TimeRange
 import com.gemini.krakenbot.view.component.*
 import com.gemini.krakenbot.view.util.Routes
@@ -31,26 +30,8 @@ class DashboardHistoryApiTest : DashboardControllerTestBase() {
 
     init {
         "sseStatusStream_EmitsInitialAndFlowSnapshots" {
-            val snapshot1 =
-                PortfolioSnapshot(
-                    timestamp = Instant.now(),
-                    totalValueUSD = BigDecimal("10000.0"),
-                    assets = emptyMap(),
-                    actions = emptyList(),
-                    drawdownPercent = BigDecimal.ZERO,
-                    fiatDeploymentPercent = BigDecimal.ZERO,
-                    effectiveUsdTargetPercent = BigDecimal.ZERO,
-                )
-            val snapshot2 =
-                PortfolioSnapshot(
-                    timestamp = Instant.now().plusSeconds(60),
-                    totalValueUSD = BigDecimal("12000.0"),
-                    assets = emptyMap(),
-                    actions = emptyList(),
-                    drawdownPercent = BigDecimal.ZERO,
-                    fiatDeploymentPercent = BigDecimal.ZERO,
-                    effectiveUsdTargetPercent = BigDecimal.ZERO,
-                )
+            val snapshot1 = TestFixtures.emptySnapshot(Instant.now(), BigDecimal("10000.0"))
+            val snapshot2 = TestFixtures.emptySnapshot(Instant.now().plusSeconds(60), BigDecimal("12000.0"))
 
             coEvery { tradeHistoryService.getLatestSnapshot() } returns snapshot1
             every { tradeHistoryService.getHistoryFlow() } returns
@@ -241,16 +222,7 @@ class DashboardHistoryApiTest : DashboardControllerTestBase() {
                     totalFeesPaid = BigDecimal("25.50"),
                     latestSnapshotTime = Instant.now(),
                 )
-            val snapshot =
-                PortfolioSnapshot(
-                    timestamp = Instant.now(),
-                    totalValueUSD = BigDecimal("12000.0"),
-                    assets = emptyMap(),
-                    actions = emptyList(),
-                    drawdownPercent = BigDecimal.ZERO,
-                    fiatDeploymentPercent = BigDecimal.ZERO,
-                    effectiveUsdTargetPercent = BigDecimal.ZERO,
-                )
+            val snapshot = TestFixtures.emptySnapshot(Instant.now(), BigDecimal("12000.0"))
             coEvery { tradeHistoryService.getHistoryStats() } returns stats
             coEvery { tradeHistoryService.getLatestSnapshot() } returns snapshot
 
