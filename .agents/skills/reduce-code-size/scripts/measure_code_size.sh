@@ -26,6 +26,6 @@ rg --files "${existing[@]}" -g '*.kt' -g '*.kts' -0 |
 
 echo "Construction hotspots:"
 for pattern in 'Settings(' 'AppConfig(' 'PortfolioSnapshot(' 'TradeRecord(' 'runTest {'; do
-    count=$(rg -F "$pattern" "${existing[@]}" -g '*.kt' -g '*.kts' | wc -l | tr -d ' ')
+    count=$({ rg -F "$pattern" "${existing[@]}" -g '*.kt' -g '*.kts' || true; } | wc -l | tr -d ' ')
     printf '%-24s %s\n' "$pattern" "$count"
 done

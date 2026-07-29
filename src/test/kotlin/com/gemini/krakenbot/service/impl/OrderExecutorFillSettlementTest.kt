@@ -3,24 +3,16 @@ package com.gemini.krakenbot.service.impl
 import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderResult
-import com.gemini.krakenbot.model.OrderSide
-import com.gemini.krakenbot.model.OrderSubmissionState
-import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.service.FakeKrakenService
 import com.gemini.krakenbot.service.TradeHistoryService
-import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.shouldBe
-import io.mockk.coEvery
-import io.mockk.coVerify
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
-import java.io.IOException
 import java.math.BigDecimal
 import java.time.Instant
-import kotlin.coroutines.cancellation.CancellationException
 
 class OrderExecutorFillSettlementTest : StringSpec() {
 

@@ -1,33 +1,20 @@
 package com.gemini.krakenbot.frontend
 
 import com.gemini.krakenbot.api.HistoryStats
-import com.gemini.krakenbot.api.PortfolioSnapshot
 import com.gemini.krakenbot.api.TradeRecord
-import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.TimeRange
 import com.gemini.krakenbot.model.TradeSourceKeys
 import com.gemini.krakenbot.util.PrecisionConstants
-import com.gemini.krakenbot.view.util.ChartProps
 import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.HtmlAttrs
-import com.gemini.krakenbot.view.util.HtmlEvents
 import com.gemini.krakenbot.view.util.HtmlIds
 import com.gemini.krakenbot.view.util.HtmlTags
-import com.gemini.krakenbot.view.util.Routes
 import com.gemini.krakenbot.view.util.ViewText
-import com.gemini.krakenbot.view.util.ZoomActions
-import com.gemini.krakenbot.view.util.withRange
 import kotlinx.browser.document
-import kotlinx.browser.window
 import org.w3c.dom.*
-import kotlin.collections.mutableMapOf
 import kotlin.js.Date
-import kotlin.js.Promise
 import kotlin.js.json
-import com.gemini.krakenbot.view.util.CssClass.Query.CHART_SCRUBBERS as CHART_SCRUBBERS_QUERY
-import com.gemini.krakenbot.view.util.CssClass.Query.TIME_RANGE_BTNS as TIME_RANGE_BTNS_QUERY
-import com.gemini.krakenbot.view.util.CssClass.Query.ZOOM_BTNS as ZOOM_BTNS_QUERY
 
 fun formatPair(trade: TradeRecord?): String {
     if (trade?.symbol.isNullOrBlank()) return ""

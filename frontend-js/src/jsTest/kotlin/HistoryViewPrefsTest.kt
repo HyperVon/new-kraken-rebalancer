@@ -1,36 +1,21 @@
 package com.gemini.krakenbot.frontend
 
-import com.gemini.krakenbot.api.PortfolioSnapshot
 import com.gemini.krakenbot.model.Asset
-import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.TimeRange
-import com.gemini.krakenbot.model.TradeSourceKeys
-import com.gemini.krakenbot.util.PrecisionConstants
 import com.gemini.krakenbot.view.util.ChartProps
-import com.gemini.krakenbot.view.util.CssClass
-import com.gemini.krakenbot.view.util.DataProps
 import com.gemini.krakenbot.view.util.HistoryViewIds
-import com.gemini.krakenbot.view.util.HtmlEvents
 import com.gemini.krakenbot.view.util.HtmlIds
 import com.gemini.krakenbot.view.util.HtmlTags
-import com.gemini.krakenbot.view.util.Routes
 import com.gemini.krakenbot.view.util.ViewText
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
-import io.kotest.matchers.string.shouldContain
-import io.kotest.matchers.string.shouldNotContain
 import kotlinx.browser.document
 import kotlinx.browser.localStorage
 import kotlinx.browser.window
 import kotlinx.coroutines.await
-import kotlinx.coroutines.delay
 import org.w3c.dom.*
-import org.w3c.dom.events.Event
-import kotlin.js.Promise
-import kotlin.js.jsTypeOf
 import kotlin.js.json
-import kotlin.test.assertEquals
 
 class HistoryViewPrefsTest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest

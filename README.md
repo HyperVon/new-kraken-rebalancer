@@ -670,7 +670,7 @@ Tests cover:
   successful execution verification
 - `PortfolioManagerLoopTest` — loop lifecycle, error recovery, interruption
 - `PortfolioManagerZeroAllocationTest` — edge case: 0% target allocation
-- `PortfolioManager*EdgeCasesTest` — focused specs for dust thresholds, price
+- `Portfolio*EdgeCasesTest` — focused specs for dust thresholds, price
   gaps, deviations, execution, settle, loop, and snapshot edge cases
 - `PortfolioManagerDogeTest` — Kraken symbol mapping quirks (BTC→XBT, DOGE→XDG)
 - `KrakenServiceTest` / `KrakenTradeHistoryTest` /
