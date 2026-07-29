@@ -10,7 +10,15 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
-- **Quality coverage**: Added test coverage for `RateLimiter` cost bounds, zero-price and zero-volume order execution guards, unknown trade side timeline reconstruction, zero/negative timestamp delta deduplication, and Kotlin/JS empty dynamic object payload parsing.
+- **Quality coverage**: Added regression coverage for rate-limit cost bounds,
+  zero-price and zero-volume order guards, invalid trade sides, timestamp-edge
+  deduplication, and Kotlin/JS empty-object parsing.
+
+### Changed
+
+- **Fail-fast validation**: Invalid rate-limit costs and unsupported trade sides
+  in historical reconstruction are now rejected instead of waiting forever or
+  producing inaccurate snapshots.
 
 ## [6.15.6] - 2026-07-28
 

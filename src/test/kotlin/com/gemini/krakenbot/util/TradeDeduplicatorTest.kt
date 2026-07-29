@@ -708,7 +708,7 @@ class TradeDeduplicatorTest : StringSpec() {
             TradeDeduplicator.findDuplicateTradeIds(listOf(localEstimateNullId, settledFill)).isEmpty() shouldBe true
         }
 
-        "CQ-13-4: should identify duplicates with zero timestamp delta and negative timestamp delta" {
+        "CQ-13-4: should identify duplicates at zero delta and when the API fill precedes the local estimate" {
             val now = Instant.now()
             val apiFill = TradeRecord(
                 timestamp = now,
@@ -729,8 +729,8 @@ class TradeDeduplicatorTest : StringSpec() {
                 source = TradeSource.LOCAL_ESTIMATE,
                 id = 102,
             )
-            // Local estimate recorded 500ms *after* the API fill (negative delta when subtracting local from API)
-            val localNegativeDelta = apiFill.copy(
+            // Local estimate recorded 500ms after the API fill exercises the opposite source ordering.
+            val localAfterApiFill = apiFill.copy(
                 timestamp = now.plusMillis(500),
                 fee = BigDecimal("200.00"),
                 source = TradeSource.LOCAL_ESTIMATE,
@@ -740,7 +740,7 @@ class TradeDeduplicatorTest : StringSpec() {
             val dupes1 = TradeDeduplicator.findDuplicateTradeIds(listOf(apiFill, localZeroDelta))
             dupes1 shouldContainExactly listOf(102)
 
-            val dupes2 = TradeDeduplicator.findDuplicateTradeIds(listOf(apiFill, localNegativeDelta))
+            val dupes2 = TradeDeduplicator.findDuplicateTradeIds(listOf(apiFill, localAfterApiFill))
             dupes2 shouldContainExactly listOf(103)
         }
     }

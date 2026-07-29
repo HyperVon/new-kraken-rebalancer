@@ -1763,7 +1763,7 @@ class OrderExecutorCashCapTest : StringSpec() {
             }
         }
 
-        "executeOrders silently skips orders with missing or zero ticker price" {
+        "executeOrders silently skips orders with zero ticker price" {
             runTest {
                 val actionLog = mutableListOf<String>()
                 orderExecutor.executeOrders(

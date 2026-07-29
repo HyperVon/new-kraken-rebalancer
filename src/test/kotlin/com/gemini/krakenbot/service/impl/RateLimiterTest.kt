@@ -2,6 +2,7 @@
 
 package com.gemini.krakenbot.service.impl
 
+import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.booleans.shouldBeFalse
@@ -168,10 +169,10 @@ class RateLimiterTest : StringSpec() {
         "acquireWithCost throws IllegalArgumentException when cost is zero or negative" {
             runTest {
                 val limiter = RateLimiter(safeLimit = 12.0)
-                io.kotest.assertions.throwables.shouldThrow<IllegalArgumentException> {
+                shouldThrow<IllegalArgumentException> {
                     limiter.acquireWithCost(0.0)
                 }
-                io.kotest.assertions.throwables.shouldThrow<IllegalArgumentException> {
+                shouldThrow<IllegalArgumentException> {
                     limiter.acquireWithCost(-1.0)
                 }
             }
@@ -180,7 +181,7 @@ class RateLimiterTest : StringSpec() {
         "acquireWithCost throws IllegalArgumentException when cost exceeds safeLimit" {
             runTest {
                 val limiter = RateLimiter(safeLimit = 12.0)
-                io.kotest.assertions.throwables.shouldThrow<IllegalArgumentException> {
+                shouldThrow<IllegalArgumentException> {
                     limiter.acquireWithCost(15.0)
                 }
             }

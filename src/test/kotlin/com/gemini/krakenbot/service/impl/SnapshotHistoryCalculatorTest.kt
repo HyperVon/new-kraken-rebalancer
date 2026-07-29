@@ -5,6 +5,7 @@ import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.service.impl.history.SnapshotHistoryCalculator
+import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.collections.shouldNotBeEmpty
@@ -353,7 +354,7 @@ class SnapshotHistoryCalculatorTest : StringSpec() {
             }
         }
 
-        "calculateHistoricalSnapshots safely ignores unknown trade side without mutating balances" {
+        "calculateHistoricalSnapshots rejects unknown trade side without mutating balances" {
             val now = Instant.now()
             val cutoff = now.minus(5, ChronoUnit.DAYS)
             val trade = TradeRecord(
@@ -386,16 +387,17 @@ class SnapshotHistoryCalculatorTest : StringSpec() {
 
             val currentPrices = mapOf("BTC" to BigDecimal("50000.00"), "USD" to BigDecimal.ONE)
 
-            SnapshotHistoryCalculator.calculateHistoricalSnapshots(
-                events = events,
-                allocations = allocations,
-                runningBalances = runningBalances,
-                currentPrices = currentPrices,
-                ohlcData = emptyMap(),
-                tradePrices = emptyMap(),
-            )
+            shouldThrow<IllegalArgumentException> {
+                SnapshotHistoryCalculator.calculateHistoricalSnapshots(
+                    events = events,
+                    allocations = allocations,
+                    runningBalances = runningBalances,
+                    currentPrices = currentPrices,
+                    ohlcData = emptyMap(),
+                    tradePrices = emptyMap(),
+                )
+            }
 
-            // Unknown side leaves balances untouched
             runningBalances["BTC"]!!.shouldBeEqualComparingTo(BigDecimal("0.5"))
             runningBalances["USD"]!!.shouldBeEqualComparingTo(BigDecimal("10000.00"))
         }

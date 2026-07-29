@@ -139,6 +139,9 @@ object SnapshotHistoryCalculator {
         val usdAmount = trade.usdAmount
         val fee = trade.fee
         val symbol = trade.symbol.uppercase()
+        require(OrderSide.isBuy(trade.side) || OrderSide.isSell(trade.side)) {
+            "Unsupported trade side during historical reconstruction: ${trade.side}"
+        }
 
         if (OrderSide.isBuy(trade.side)) {
             runningBalances[symbol] = (runningBalances[symbol] ?: BigDecimal.ZERO).subtract(volume)
