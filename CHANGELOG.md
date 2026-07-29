@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.15.7] - 2026-07-28
+
+### Added
+
+- **Quality coverage**: Added test coverage for `RateLimiter` cost bounds, zero-price and zero-volume order execution guards, unknown trade side timeline reconstruction, zero/negative timestamp delta deduplication, and Kotlin/JS empty dynamic object payload parsing.
+
 ## [6.15.6] - 2026-07-28
 
 ### Added

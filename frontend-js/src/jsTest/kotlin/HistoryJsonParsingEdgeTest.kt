@@ -150,6 +150,22 @@ class HistoryJsonParsingEdgeTest : StringSpec() {
             parsed.offset shouldBe ""
             parsed.total shouldBe ""
         }
+
+        "parseTradeRecord and parsePortfolioSnapshot handle empty dynamic objects gracefully" {
+            val emptyRecord = parseTradeRecord(json())
+            emptyRecord.timestamp shouldBe ""
+            emptyRecord.symbol shouldBe ""
+            emptyRecord.success shouldBe false
+            emptyRecord.dryRun shouldBe false
+            emptyRecord.price shouldBe "0"
+            emptyRecord.fee shouldBe "0"
+
+            val emptySnapshot = parsePortfolioSnapshot(json())
+            emptySnapshot.timestamp shouldBe ""
+            emptySnapshot.totalValueUSD shouldBe ""
+            emptySnapshot.assets.isEmpty() shouldBe true
+            emptySnapshot.actions.isEmpty() shouldBe true
+        }
     }
 
     private fun baseTrade(): dynamic = json(

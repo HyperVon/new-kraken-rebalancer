@@ -352,5 +352,52 @@ class SnapshotHistoryCalculatorTest : StringSpec() {
                 snapshot.assets["USD"]!!.balance.shouldBeEqualComparingTo(BigDecimal.ZERO)
             }
         }
+
+        "calculateHistoricalSnapshots safely ignores unknown trade side without mutating balances" {
+            val now = Instant.now()
+            val cutoff = now.minus(5, ChronoUnit.DAYS)
+            val trade = TradeRecord(
+                timestamp = now.minus(2, ChronoUnit.DAYS),
+                pair = "XBTUSD",
+                side = "UNKNOWN_SIDE",
+                symbol = "BTC",
+                volume = BigDecimal("0.1"),
+                usdAmount = BigDecimal("5000.00"),
+                fee = BigDecimal("13.00"),
+                success = true,
+                dryRun = false,
+            )
+
+            val events = SnapshotHistoryCalculator.buildTimelineEvents(
+                historicalTrades = listOf(trade),
+                cutoffTime = cutoff,
+                now = now,
+            )
+
+            val allocations = listOf(
+                Allocation(Asset(Asset.BTC), 50.0),
+                Allocation(Asset.USD, 50.0),
+            )
+
+            val runningBalances = mutableMapOf(
+                "BTC" to BigDecimal("0.5"),
+                "USD" to BigDecimal("10000.00"),
+            )
+
+            val currentPrices = mapOf("BTC" to BigDecimal("50000.00"), "USD" to BigDecimal.ONE)
+
+            SnapshotHistoryCalculator.calculateHistoricalSnapshots(
+                events = events,
+                allocations = allocations,
+                runningBalances = runningBalances,
+                currentPrices = currentPrices,
+                ohlcData = emptyMap(),
+                tradePrices = emptyMap(),
+            )
+
+            // Unknown side leaves balances untouched
+            runningBalances["BTC"]!!.shouldBeEqualComparingTo(BigDecimal("0.5"))
+            runningBalances["USD"]!!.shouldBeEqualComparingTo(BigDecimal("10000.00"))
+        }
     }
 }
