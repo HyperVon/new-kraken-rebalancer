@@ -2,6 +2,7 @@
 
 package com.gemini.krakenbot.service
 
+import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.config.Settings
@@ -66,18 +67,9 @@ class PortfolioManagerLoopTest : StringSpec() {
 
         "startRebalancingLoop_RunsWhenEnabled" {
             runTest {
-                val settings = Settings(
-                    loopDelaySeconds = 60L,
-                    deviationTriggerPercent = 2.0,
-                    dustThresholdUSD = 1.0,
-                    dryRun = true,
-                    fiatMaxDrawdown = 0.0,
-                    fiatDeploymentExponent = 1.0,
-                )
-                val config = AppConfig(
-                    kraken = KrakenCredentials(apiKey = "k", privateKey = "s"),
+                val settings = TestFixtures.settings(loopDelaySeconds = 60L)
+                val config = TestFixtures.config(
                     settings = settings,
-                    allocations = emptyList(),
                 )
                 every { configService.getConfig() } returns config
                 krakenService.balanceSupplier = { emptyMap() }
@@ -96,18 +88,9 @@ class PortfolioManagerLoopTest : StringSpec() {
 
         "stopRebalancingLoop_StopsExecution" {
             runTest {
-                val settings = Settings(
-                    loopDelaySeconds = 60L,
-                    deviationTriggerPercent = 2.0,
-                    dustThresholdUSD = 1.0,
-                    dryRun = true,
-                    fiatMaxDrawdown = 0.0,
-                    fiatDeploymentExponent = 1.0,
-                )
-                val config = AppConfig(
-                    kraken = KrakenCredentials(apiKey = "k", privateKey = "s"),
+                val settings = TestFixtures.settings(loopDelaySeconds = 60L)
+                val config = TestFixtures.config(
                     settings = settings,
-                    allocations = emptyList(),
                 )
                 every { configService.getConfig() } returns config
 
@@ -122,18 +105,9 @@ class PortfolioManagerLoopTest : StringSpec() {
 
         "checkAndRunCycle_HandlesExceptionGracefully" {
             runTest {
-                val settings = Settings(
-                    loopDelaySeconds = 60L,
-                    deviationTriggerPercent = 2.0,
-                    dustThresholdUSD = 1.0,
-                    dryRun = true,
-                    fiatMaxDrawdown = 0.0,
-                    fiatDeploymentExponent = 1.0,
-                )
-                val config = AppConfig(
-                    kraken = KrakenCredentials(apiKey = "k", privateKey = "s"),
+                val settings = TestFixtures.settings(loopDelaySeconds = 60L)
+                val config = TestFixtures.config(
                     settings = settings,
-                    allocations = emptyList(),
                 )
                 every { configService.getConfig() } returns config
 
@@ -154,18 +128,9 @@ class PortfolioManagerLoopTest : StringSpec() {
 
         "runLoop_HandlesSyncTradesExceptionGracefully" {
             runTest {
-                val settings = Settings(
-                    loopDelaySeconds = 60L,
-                    deviationTriggerPercent = 2.0,
-                    dustThresholdUSD = 1.0,
-                    dryRun = true,
-                    fiatMaxDrawdown = 0.0,
-                    fiatDeploymentExponent = 1.0,
-                )
-                val config = AppConfig(
-                    kraken = KrakenCredentials(apiKey = "k", privateKey = "s"),
+                val settings = TestFixtures.settings(loopDelaySeconds = 60L)
+                val config = TestFixtures.config(
                     settings = settings,
-                    allocations = emptyList(),
                 )
                 every { configService.getConfig() } returns config
 
@@ -183,18 +148,9 @@ class PortfolioManagerLoopTest : StringSpec() {
 
         "runLoop propagates cancellation from startup sync instead of entering the loop" {
             runTest {
-                val settings = Settings(
-                    loopDelaySeconds = 60L,
-                    deviationTriggerPercent = 2.0,
-                    dustThresholdUSD = 1.0,
-                    dryRun = true,
-                    fiatMaxDrawdown = 0.0,
-                    fiatDeploymentExponent = 1.0,
-                )
-                val config = AppConfig(
-                    kraken = KrakenCredentials(apiKey = "k", privateKey = "s"),
+                val settings = TestFixtures.settings(loopDelaySeconds = 60L)
+                val config = TestFixtures.config(
                     settings = settings,
-                    allocations = emptyList(),
                 )
                 every { configService.getConfig() } returns config
 
@@ -213,18 +169,9 @@ class PortfolioManagerLoopTest : StringSpec() {
 
         "cancellation during in-cycle sync stops the cycle before any rebalance work" {
             runTest {
-                val settings = Settings(
-                    loopDelaySeconds = 60L,
-                    deviationTriggerPercent = 2.0,
-                    dustThresholdUSD = 1.0,
-                    dryRun = true,
-                    fiatMaxDrawdown = 0.0,
-                    fiatDeploymentExponent = 1.0,
-                )
-                val config = AppConfig(
-                    kraken = KrakenCredentials(apiKey = "k", privateKey = "s"),
+                val settings = TestFixtures.settings(loopDelaySeconds = 60L)
+                val config = TestFixtures.config(
                     settings = settings,
-                    allocations = emptyList(),
                 )
                 every { configService.getConfig() } returns config
 
@@ -244,18 +191,9 @@ class PortfolioManagerLoopTest : StringSpec() {
 
         "config change mid-delay restarts the loop without waiting out the old delay" {
             runTest {
-                val longDelaySettings = Settings(
-                    loopDelaySeconds = 3600L,
-                    deviationTriggerPercent = 2.0,
-                    dustThresholdUSD = 1.0,
-                    dryRun = true,
-                    fiatMaxDrawdown = 0.0,
-                    fiatDeploymentExponent = 1.0,
-                )
-                val config = AppConfig(
-                    kraken = KrakenCredentials(apiKey = "k", privateKey = "s"),
+                val longDelaySettings = TestFixtures.settings(loopDelaySeconds = 3600L)
+                val config = TestFixtures.config(
                     settings = longDelaySettings,
-                    allocations = emptyList(),
                 )
                 every { configService.getConfig() } returns config
                 krakenService.balanceSupplier = { emptyMap() }

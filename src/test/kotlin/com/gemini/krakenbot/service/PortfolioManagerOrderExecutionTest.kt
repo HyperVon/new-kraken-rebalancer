@@ -1,5 +1,6 @@
 package com.gemini.krakenbot.service
 
+import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.KrakenCredentials
@@ -62,14 +63,8 @@ class PortfolioManagerOrderExecutionTest : StringSpec() {
                 )
                 val allAllocations = listOf(allocA, allocB, allocUSD)
 
-                val mockSettings = Settings(
-                    loopDelaySeconds = 0L,
-                    deviationTriggerPercent = 1.0,
-                    dustThresholdUSD = 1.0,
-                    dryRun = false,
-                )
-                val mockConfig = AppConfig(
-                    kraken = KrakenCredentials("k", "s"),
+                val mockSettings = TestFixtures.settings(dryRun = false, deviationTriggerPercent = 1.0)
+                val mockConfig = TestFixtures.config(
                     settings = mockSettings,
                     allocations = allAllocations,
                 )
@@ -105,14 +100,8 @@ class PortfolioManagerOrderExecutionTest : StringSpec() {
                 val allocUSD = Allocation(Asset.USD, 0.0)
                 val allAllocations = listOf(allocA, allocB, allocUSD)
 
-                val mockSettings = Settings(
-                    loopDelaySeconds = 0L,
-                    deviationTriggerPercent = 1.0,
-                    dustThresholdUSD = 1.0,
-                    dryRun = false,
-                )
-                val mockConfig = AppConfig(
-                    kraken = KrakenCredentials("k", "s"),
+                val mockSettings = TestFixtures.settings(dryRun = false, deviationTriggerPercent = 1.0)
+                val mockConfig = TestFixtures.config(
                     settings = mockSettings,
                     allocations = allAllocations,
                 )
@@ -151,14 +140,12 @@ class PortfolioManagerOrderExecutionTest : StringSpec() {
                 )
                 val allAllocations = listOf(allocA, allocUSD)
 
-                val mockSettings = Settings(
-                    loopDelaySeconds = 0L,
+                val mockSettings = TestFixtures.settings(
+                    dryRun = false,
                     deviationTriggerPercent = 0.1,
                     dustThresholdUSD = 10.0,
-                    dryRun = false,
                 )
-                val mockConfig = AppConfig(
-                    kraken = KrakenCredentials("k", "s"),
+                val mockConfig = TestFixtures.config(
                     settings = mockSettings,
                     allocations = allAllocations,
                 )
@@ -192,14 +179,8 @@ class PortfolioManagerOrderExecutionTest : StringSpec() {
                             90.0,
                         ),
                     )
-                val mockSettings = Settings(
-                    loopDelaySeconds = 0L,
-                    deviationTriggerPercent = 1.0,
-                    dustThresholdUSD = 1.0,
-                    dryRun = false,
-                )
-                val mockConfig = AppConfig(
-                    kraken = KrakenCredentials("k", "s"),
+                val mockSettings = TestFixtures.settings(dryRun = false, deviationTriggerPercent = 1.0)
+                val mockConfig = TestFixtures.config(
                     settings = mockSettings,
                     allocations = allAllocations,
                 )
@@ -245,14 +226,8 @@ class PortfolioManagerOrderExecutionTest : StringSpec() {
                             90.0,
                         ),
                     )
-                val mockSettings = Settings(
-                    loopDelaySeconds = 0L,
-                    deviationTriggerPercent = 1.0,
-                    dustThresholdUSD = 1.0,
-                    dryRun = false,
-                )
-                val mockConfig = AppConfig(
-                    kraken = KrakenCredentials("k", "s"),
+                val mockSettings = TestFixtures.settings(dryRun = false, deviationTriggerPercent = 1.0)
+                val mockConfig = TestFixtures.config(
                     settings = mockSettings,
                     allocations = allAllocations,
                 )

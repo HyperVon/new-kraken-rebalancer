@@ -1,6 +1,7 @@
 package com.gemini.krakenbot.view
 
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.view.component.HistoryPageComponent
 import com.gemini.krakenbot.view.util.CdnUrls
@@ -21,11 +22,7 @@ class HistoryPageComponentTest : StringSpec() {
     init {
         "should render HistoryPage HTML structure" {
             val component = HistoryPageComponent(jacksonObjectMapper())
-            val settings = Settings(
-                loopDelaySeconds = 60L,
-                deviationTriggerPercent = 2.0,
-                dryRun = true,
-            )
+            val settings = TestFixtures.settings(loopDelaySeconds = 60L, dustThresholdUSD = 5.0)
             val htmlString = createHTML().html {
                 component.render(settings)
             }
@@ -55,11 +52,7 @@ class HistoryPageComponentTest : StringSpec() {
 
         "should JSON-escape asset colors in window.__ASSET_COLORS__" {
             val component = HistoryPageComponent(jacksonObjectMapper())
-            val settings = Settings(
-                loopDelaySeconds = 60L,
-                deviationTriggerPercent = 2.0,
-                dryRun = true,
-            )
+            val settings = TestFixtures.settings(loopDelaySeconds = 60L, dustThresholdUSD = 5.0)
             val htmlString = createHTML().html {
                 component.render(settings, mapOf("BTC" to "x\"};alert(1);//"))
             }

@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.15.10] - 2026-07-29
+
+### Added
+
+- **Reusable code-size workflow**: Added a project skill that measures Kotlin
+  hotspots and guides behavior-preserving reuse and cohesive file splits.
+
+### Changed
+
+- **Maintainability**: Split the largest History frontend and JVM/JS test files
+  by responsibility, reducing every Kotlin file below 900 lines and lowering
+  merge-conflict pressure without changing runtime behavior or test coverage.
+- **Test reuse**: Centralized safe-default Settings construction and shared
+  Kotest fixtures for related controller, exchange, portfolio, repository, and
+  history specs.
+
 ## [6.15.9] - 2026-07-29
 
 ### Fixed

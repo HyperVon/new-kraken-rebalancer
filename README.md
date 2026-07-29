@@ -425,6 +425,8 @@ This path is internal orchestration — not a second browser-facing SSE stream l
 │   │   ├── Dashboard.kt                   # Stats card age calculation & table sorting
 │   │   ├── Settings.kt                    # Targets validation & dynamic row actions
 │   │   ├── History.kt                     # Chart.js timelines, zoom, and pan scrubbers
+│   │   ├── HistoryLoading.kt              # History API loading and sync progress
+│   │   ├── HistoryTradeRendering.kt       # Trade table and summary-card rendering
 │   │   ├── HistoryJsonParsing.kt          # Typed History JSON parsing over :common api DTOs
 │   │   ├── HistoryViewPrefs.kt            # Browser-local History view presets
 │   │   └── DomExtensions.kt               # Shared DOM helpers for Kotlin/JS
@@ -668,20 +670,26 @@ Tests cover:
   successful execution verification
 - `PortfolioManagerLoopTest` — loop lifecycle, error recovery, interruption
 - `PortfolioManagerZeroAllocationTest` — edge case: 0% target allocation
-- `PortfolioManagerEdgeCasesTest` — dust thresholds, price gaps, zero balances,
-  execution, settle, and snapshot edge cases
+- `Portfolio*EdgeCasesTest` — focused specs for dust thresholds, price
+  gaps, deviations, execution, settle, loop, and snapshot edge cases
 - `PortfolioManagerDogeTest` — Kraken symbol mapping quirks (BTC→XBT, DOGE→XDG)
-- `KrakenServiceTest` — API signing, error handling, dry run, order failure,
-  retry/lockout behaviour (using Ktor `MockEngine`)
+- `KrakenServiceTest` / `KrakenTradeHistoryTest` /
+  `KrakenRetryAndRateLimitTest` — API signing, order handling, history parsing,
+  retry/lockout behaviour, and endpoint costs (using Ktor `MockEngine`)
 - `ModelTest` / `ResultTest` — unit tests for domain models and the `Result` type
 - `ConfigServiceTest` — validation, hot-reload, persistence, duplicate/blank
   symbol rejection, and `watchConfigChanges()` flow
 - `ServiceUtilsTest` / `FormatterTest` — utility function coverage
 - `RateLimiterTest` — call-counter decay, endpoint costs, waiting, and reset behavior
-- `DashboardControllerTest` — REST API endpoints, invalid config error responses, and trade history sync status
-- `TradeHistoryServiceTest` — snapshot storage, size limits, and historical synchronization states
+- `DashboardControllerTest` / `DashboardHistoryApiTest` — page/settings routes,
+  REST history endpoints, SSE, health, and trade-history sync status
+- `TradeHistory*Test` — focused snapshot, reconciliation, sync lifecycle,
+  reconstruction, flow, range, and edge-case specs sharing one fixture
 - `DynamicKrakenServiceTest` / `SimulatedKrakenServiceTest` — dynamic real/simulation routing and offline exchange simulation logic
-- `SqliteTradeRepositoryImplTest` / `SqlitePortfolioStatsRepositoryImplTest` — SQLite persistence, Exposed ORM schema initialization, query logic, and transactional error propagation
+- `SqliteTradeRepositoryImplTest` /
+  `SqliteTradeRepositoryFailureAndRetentionTest` /
+  `SqlitePortfolioStatsRepositoryImplTest` — SQLite persistence, retention,
+  Exposed ORM queries, and transactional error propagation
 
 ### Test Design Principles
 

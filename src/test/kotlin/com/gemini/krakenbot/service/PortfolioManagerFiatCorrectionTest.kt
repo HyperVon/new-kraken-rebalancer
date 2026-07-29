@@ -1,5 +1,6 @@
 package com.gemini.krakenbot.service
 
+import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.KrakenCredentials
@@ -23,16 +24,8 @@ class PortfolioManagerFiatCorrectionTest : StringSpec() {
         val configService = mockk<ConfigService>(relaxed = true)
         val repo = mockk<PortfolioStatsRepository>(relaxed = true)
 
-        val config = AppConfig(
-            kraken = KrakenCredentials(apiKey = "k", privateKey = "s"),
-            settings = Settings(
-                loopDelaySeconds = 60L,
-                deviationTriggerPercent = 2.0,
-                dustThresholdUSD = 1.0,
-                dryRun = false,
-                fiatMaxDrawdown = 0.0,
-                fiatDeploymentExponent = 1.0,
-            ),
+        val config = TestFixtures.config(
+            settings = TestFixtures.settings(dryRun = false, loopDelaySeconds = 60L),
             allocations = allocs.toList(),
         )
         every { configService.getConfig() } returns config

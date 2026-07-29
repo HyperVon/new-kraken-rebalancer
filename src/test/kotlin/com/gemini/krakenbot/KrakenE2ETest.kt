@@ -40,14 +40,7 @@ class KrakenE2ETest : StringSpec() {
                             privateKey = validSecret,
                         ),
                         settings =
-                        Settings(
-                            loopDelaySeconds = 60L,
-                            deviationTriggerPercent = 2.0,
-                            dustThresholdUSD = 1.0,
-                            dryRun = false,
-                            fiatMaxDrawdown = 50.0,
-                            fiatDeploymentExponent = 1.0,
-                        ),
+                        TestFixtures.settings(dryRun = false, loopDelaySeconds = 60L, fiatMaxDrawdown = 50.0),
                         allocations =
                         listOf(
                             Allocation(Asset.BTC, 50.0),
@@ -171,14 +164,7 @@ class KrakenE2ETest : StringSpec() {
                             privateKey = validSecret,
                         ),
                         settings =
-                        Settings(
-                            loopDelaySeconds = 60L,
-                            deviationTriggerPercent = 2.0,
-                            dustThresholdUSD = 1.0,
-                            dryRun = false,
-                            fiatMaxDrawdown = 50.0,
-                            fiatDeploymentExponent = 1.0,
-                        ),
+                        TestFixtures.settings(dryRun = false, loopDelaySeconds = 60L, fiatMaxDrawdown = 50.0),
                         allocations =
                         listOf(
                             Allocation(Asset.BTC, 50.0),

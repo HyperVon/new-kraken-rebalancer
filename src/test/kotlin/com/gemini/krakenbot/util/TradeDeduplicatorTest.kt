@@ -1,5 +1,6 @@
 package com.gemini.krakenbot.util
 
+import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.model.TradeSource
 import io.kotest.core.spec.IsolationMode
@@ -18,20 +19,22 @@ class TradeDeduplicatorTest : StringSpec() {
         "should return empty list when no duplicates are present" {
             val now = Instant.now()
             val records = listOf(
-                TradeRecord(
+                TestFixtures.tradeRecord(
                     now, "XBTUSD", "BUY", "BTC",
                     BigDecimal(
                         "1.0",
                     ),
                     BigDecimal("50000.00"), success = true, dryRun = false, id = 1,
                 ),
-                TradeRecord(
+                TestFixtures.tradeRecord(
                     now.plusSeconds(
                         600,
                     ),
-                    "XDGUSD", "BUY", "DOGE", BigDecimal("100.0"), BigDecimal("10.00"),
-                    success = true,
-                    dryRun = false,
+                    "XDGUSD",
+                    "BUY",
+                    "DOGE",
+                    BigDecimal("100.0"),
+                    BigDecimal("10.00"),
                     id = 2,
                 ),
             )
@@ -43,22 +46,18 @@ class TradeDeduplicatorTest : StringSpec() {
         "should identify pair alias duplicate trade records" {
             val now = Instant.now()
             val record1 =
-                TradeRecord(
+                TestFixtures.tradeRecord(
                     now, "XBTUSD", "BUY", "BTC", BigDecimal("1.0"), BigDecimal("50000.00"),
-                    success = true,
-                    dryRun = false,
                     fee = BigDecimal("100.00"),
                     slippagePercent = BigDecimal.ZERO,
                     id = 1,
                 )
             val record2 =
-                TradeRecord(
+                TestFixtures.tradeRecord(
                     now.plusMillis(
                         100,
                     ),
                     "XXBTZUSD", "BUY", "BTC", BigDecimal("1.0"), BigDecimal("50000.00"),
-                    success = true,
-                    dryRun = false,
                     fee = BigDecimal("100.00"),
                     source = TradeSource.API_FILL,
                     id = 2,
@@ -70,15 +69,13 @@ class TradeDeduplicatorTest : StringSpec() {
 
         "CQ-7-5: should not treat pair aliases with volume over one percent apart as duplicates" {
             val now = Instant.now()
-            val record1 = TradeRecord(
+            val record1 = TestFixtures.tradeRecord(
                 timestamp = now,
                 pair = "XBTUSD",
                 side = "BUY",
                 symbol = "BTC",
                 volume = BigDecimal("1.0"),
                 usdAmount = BigDecimal("50000.00"),
-                success = true,
-                dryRun = false,
                 id = 3,
             )
             val record2 = record1.copy(
@@ -93,15 +90,13 @@ class TradeDeduplicatorTest : StringSpec() {
 
         "CQ-11-L6: a doomed pair-alias row does not bridge trades outside the five-minute window" {
             val now = Instant.now()
-            val first = TradeRecord(
+            val first = TestFixtures.tradeRecord(
                 timestamp = now,
                 pair = "XBTUSD",
                 side = "BUY",
                 symbol = "BTC",
                 volume = BigDecimal.ONE,
                 usdAmount = BigDecimal("50000.00"),
-                success = true,
-                dryRun = false,
                 id = 201,
             )
             val bridge = first.copy(
@@ -120,15 +115,13 @@ class TradeDeduplicatorTest : StringSpec() {
 
         "CQ-10-L6: should keep pair-alias API fills with distinct Kraken trade IDs" {
             val now = Instant.now()
-            val firstFill = TradeRecord(
+            val firstFill = TestFixtures.tradeRecord(
                 timestamp = now,
                 pair = "XBTUSD",
                 side = "BUY",
                 symbol = "BTC",
                 volume = BigDecimal("1.0"),
                 usdAmount = BigDecimal("50000.00"),
-                success = true,
-                dryRun = false,
                 fee = BigDecimal("100.00"),
                 source = TradeSource.API_FILL,
                 id = 31,
@@ -146,15 +139,13 @@ class TradeDeduplicatorTest : StringSpec() {
 
         "CQ-10-L7: should keep an ambiguous legacy row beside an ID-bearing API fill" {
             val now = Instant.now()
-            val legacyUnknown = TradeRecord(
+            val legacyUnknown = TestFixtures.tradeRecord(
                 timestamp = now,
                 pair = "XBTUSD",
                 side = "BUY",
                 symbol = "BTC",
                 volume = BigDecimal("1.0"),
                 usdAmount = BigDecimal("50000.00"),
-                success = true,
-                dryRun = false,
                 fee = BigDecimal("100.00"),
                 id = 41,
             )
@@ -171,29 +162,25 @@ class TradeDeduplicatorTest : StringSpec() {
 
         "should identify local estimate duplicate trade records with material fee rate differences" {
             val now = Instant.now()
-            val localEstimate = TradeRecord(
+            val localEstimate = TestFixtures.tradeRecord(
                 timestamp = now,
                 pair = "XBTUSD",
                 side = "BUY",
                 symbol = "BTC",
                 volume = BigDecimal("1.0"),
                 usdAmount = BigDecimal("50000.00"),
-                success = true,
-                dryRun = false,
                 fee = BigDecimal("10.00"),
                 slippagePercent = BigDecimal.ZERO,
                 source = TradeSource.LOCAL_ESTIMATE,
                 id = 10,
             )
-            val settledFill = TradeRecord(
+            val settledFill = TestFixtures.tradeRecord(
                 timestamp = now.plusSeconds(2),
                 pair = "XBTUSD",
                 side = "BUY",
                 symbol = "BTC",
                 volume = BigDecimal("1.0"),
                 usdAmount = BigDecimal("50000.00"),
-                success = true,
-                dryRun = false,
                 fee = BigDecimal("100.00"),
                 source = TradeSource.API_FILL,
                 id = 11,
@@ -205,15 +192,13 @@ class TradeDeduplicatorTest : StringSpec() {
 
         "should preserve legitimate equal-sized fills with different financial details" {
             val now = Instant.now()
-            val firstFill = TradeRecord(
+            val firstFill = TestFixtures.tradeRecord(
                 timestamp = now,
                 pair = "XBTUSD",
                 side = "BUY",
                 symbol = "BTC",
                 volume = BigDecimal("1.0"),
                 usdAmount = BigDecimal("50000.00"),
-                success = true,
-                dryRun = false,
                 price = BigDecimal("50000.00"),
                 fee = BigDecimal("100.00"),
                 id = 20,
@@ -233,15 +218,13 @@ class TradeDeduplicatorTest : StringSpec() {
         "should identify legacy local estimate duplicates when source is null" {
             val now = Instant.now()
             val legacyEstimate =
-                TradeRecord(
+                TestFixtures.tradeRecord(
                     timestamp = now,
                     pair = "XBTUSD",
                     side = "BUY",
                     symbol = "BTC",
                     volume = BigDecimal("1.0"),
                     usdAmount = BigDecimal("50000.00"),
-                    success = true,
-                    dryRun = false,
                     fee = BigDecimal("10.00"),
                     slippagePercent = BigDecimal.ZERO,
                     id = 30,
@@ -261,20 +244,25 @@ class TradeDeduplicatorTest : StringSpec() {
         "should stop checking pairs if timestamp difference exceeds 300 seconds" {
             val now = Instant.now()
             val record1 =
-                TradeRecord(
-                    now, "XBTUSD", "BUY", "BTC", BigDecimal("1.0"), BigDecimal("50000.00"),
-                    success = true,
-                    dryRun = false,
+                TestFixtures.tradeRecord(
+                    now,
+                    "XBTUSD",
+                    "BUY",
+                    "BTC",
+                    BigDecimal("1.0"),
+                    BigDecimal("50000.00"),
                     id = 1,
                 )
             val record2 =
-                TradeRecord(
+                TestFixtures.tradeRecord(
                     now.plusSeconds(
                         301,
                     ),
-                    "XBTUSD", "BUY", "BTC", BigDecimal("1.0"), BigDecimal("50000.00"),
-                    success = true,
-                    dryRun = false,
+                    "XBTUSD",
+                    "BUY",
+                    "BTC",
+                    BigDecimal("1.0"),
+                    BigDecimal("50000.00"),
                     id = 2,
                 )
 
@@ -285,29 +273,25 @@ class TradeDeduplicatorTest : StringSpec() {
         "should not treat pair alias API fills with different fees as duplicates" {
             val now = Instant.now()
             val record1 =
-                TradeRecord(
+                TestFixtures.tradeRecord(
                     timestamp = now,
                     pair = "XBTUSD",
                     side = "BUY",
                     symbol = "BTC",
                     volume = BigDecimal("1.0"),
                     usdAmount = BigDecimal("50000.00"),
-                    success = true,
-                    dryRun = false,
                     fee = BigDecimal("100.00"),
                     source = TradeSource.API_FILL,
                     id = 40,
                 )
             val record2 =
-                TradeRecord(
+                TestFixtures.tradeRecord(
                     timestamp = now.plusMillis(100),
                     pair = "XXBTZUSD",
                     side = "BUY",
                     symbol = "BTC",
                     volume = BigDecimal("1.0"),
                     usdAmount = BigDecimal("50000.00"),
-                    success = true,
-                    dryRun = false,
                     fee = BigDecimal("150.00"),
                     source = TradeSource.API_FILL,
                     id = 41,
@@ -319,30 +303,26 @@ class TradeDeduplicatorTest : StringSpec() {
         "should delete later id when both pair alias records are settled API fills" {
             val now = Instant.now()
             val record1 =
-                TradeRecord(
+                TestFixtures.tradeRecord(
                     timestamp = now,
                     pair = "XBTUSD",
                     side = "BUY",
                     symbol = "BTC",
                     volume = BigDecimal("1.0"),
                     usdAmount = BigDecimal("50000.00"),
-                    success = true,
-                    dryRun = false,
                     price = BigDecimal("50000.00"),
                     fee = BigDecimal("100.00"),
                     source = TradeSource.API_FILL,
                     id = 50,
                 )
             val record2 =
-                TradeRecord(
+                TestFixtures.tradeRecord(
                     timestamp = now.plusMillis(100),
                     pair = "XXBTZUSD",
                     side = "BUY",
                     symbol = "BTC",
                     volume = BigDecimal("1.0"),
                     usdAmount = BigDecimal("50000.00"),
-                    success = true,
-                    dryRun = false,
                     price = BigDecimal("50000.00"),
                     fee = BigDecimal("100.00"),
                     source = TradeSource.API_FILL,
@@ -355,15 +335,13 @@ class TradeDeduplicatorTest : StringSpec() {
         "should not treat opposite sides as duplicates even when otherwise identical" {
             val now = Instant.now()
             val buyRecord =
-                TradeRecord(
+                TestFixtures.tradeRecord(
                     timestamp = now,
                     pair = "XBTUSD",
                     side = "BUY",
                     symbol = "BTC",
                     volume = BigDecimal("1.0"),
                     usdAmount = BigDecimal("50000.00"),
-                    success = true,
-                    dryRun = false,
                     fee = BigDecimal("100.00"),
                     source = TradeSource.API_FILL,
                     id = 60,
@@ -381,15 +359,13 @@ class TradeDeduplicatorTest : StringSpec() {
         "should still treat pair-alias matches at exactly the 5-minute window as duplicates" {
             val now = Instant.now()
             val record1 =
-                TradeRecord(
+                TestFixtures.tradeRecord(
                     timestamp = now,
                     pair = "XBTUSD",
                     side = "BUY",
                     symbol = "BTC",
                     volume = BigDecimal("1.0"),
                     usdAmount = BigDecimal("50000.00"),
-                    success = true,
-                    dryRun = false,
                     fee = BigDecimal("100.00"),
                     id = 70,
                 )
@@ -406,15 +382,13 @@ class TradeDeduplicatorTest : StringSpec() {
         "should not treat pair-alias matches beyond the 5-minute window as duplicates" {
             val now = Instant.now()
             val record1 =
-                TradeRecord(
+                TestFixtures.tradeRecord(
                     timestamp = now,
                     pair = "XBTUSD",
                     side = "BUY",
                     symbol = "BTC",
                     volume = BigDecimal("1.0"),
                     usdAmount = BigDecimal("50000.00"),
-                    success = true,
-                    dryRun = false,
                     fee = BigDecimal("100.00"),
                     id = 72,
                 )
@@ -431,29 +405,25 @@ class TradeDeduplicatorTest : StringSpec() {
         "CQ-3-8: should delete the later local estimate when the API fill arrives first" {
             val now = Instant.now()
             val settledFill =
-                TradeRecord(
+                TestFixtures.tradeRecord(
                     timestamp = now,
                     pair = "XBTUSD",
                     side = "BUY",
                     symbol = "BTC",
                     volume = BigDecimal("1.0"),
                     usdAmount = BigDecimal("100000.00"),
-                    success = true,
-                    dryRun = false,
                     fee = BigDecimal("100.00"),
                     source = TradeSource.API_FILL,
                     id = 100,
                 )
             val localEstimate =
-                TradeRecord(
+                TestFixtures.tradeRecord(
                     timestamp = now.plusSeconds(2),
                     pair = "XBTUSD",
                     side = "BUY",
                     symbol = "BTC",
                     volume = BigDecimal("1.0"),
                     usdAmount = BigDecimal("100000.00"),
-                    success = true,
-                    dryRun = false,
                     fee = BigDecimal("300.00"),
                     slippagePercent = BigDecimal.ZERO,
                     source = TradeSource.LOCAL_ESTIMATE,
@@ -466,29 +436,25 @@ class TradeDeduplicatorTest : StringSpec() {
         "CQ-3-8: should keep a local/API pair whose fee rates do not differ materially" {
             val now = Instant.now()
             val settledFill =
-                TradeRecord(
+                TestFixtures.tradeRecord(
                     timestamp = now,
                     pair = "XBTUSD",
                     side = "BUY",
                     symbol = "BTC",
                     volume = BigDecimal("1.0"),
                     usdAmount = BigDecimal("100000.00"),
-                    success = true,
-                    dryRun = false,
                     fee = BigDecimal("100.00"),
                     source = TradeSource.API_FILL,
                     id = 102,
                 )
             val localEstimate =
-                TradeRecord(
+                TestFixtures.tradeRecord(
                     timestamp = now.plusSeconds(2),
                     pair = "XBTUSD",
                     side = "BUY",
                     symbol = "BTC",
                     volume = BigDecimal("1.0"),
                     usdAmount = BigDecimal("100000.00"),
-                    success = true,
-                    dryRun = false,
                     fee = BigDecimal("100.00"),
                     slippagePercent = BigDecimal.ZERO,
                     source = TradeSource.LOCAL_ESTIMATE,
@@ -501,30 +467,26 @@ class TradeDeduplicatorTest : StringSpec() {
         "CQ-3-21: should treat a fee-rate delta exactly at the 0.001 material threshold as a duplicate" {
             val now = Instant.now()
             val localEstimate =
-                TradeRecord(
+                TestFixtures.tradeRecord(
                     timestamp = now,
                     pair = "XBTUSD",
                     side = "BUY",
                     symbol = "BTC",
                     volume = BigDecimal("1.0"),
                     usdAmount = BigDecimal("100000.00"),
-                    success = true,
-                    dryRun = false,
                     fee = BigDecimal("100.00"), // rate 0.001
                     slippagePercent = BigDecimal.ZERO,
                     source = TradeSource.LOCAL_ESTIMATE,
                     id = 80,
                 )
             val settledFill =
-                TradeRecord(
+                TestFixtures.tradeRecord(
                     timestamp = now.plusSeconds(2),
                     pair = "XBTUSD",
                     side = "BUY",
                     symbol = "BTC",
                     volume = BigDecimal("1.0"),
                     usdAmount = BigDecimal("100000.00"),
-                    success = true,
-                    dryRun = false,
                     fee = BigDecimal("0.00"), // Δ rate == 0.001 threshold (inclusive → duplicate)
                     source = TradeSource.API_FILL,
                     id = 81,
@@ -536,30 +498,26 @@ class TradeDeduplicatorTest : StringSpec() {
         "CQ-3-21: should keep a pair whose fee-rate delta is one unit below the 0.001 material threshold" {
             val now = Instant.now()
             val localEstimate =
-                TradeRecord(
+                TestFixtures.tradeRecord(
                     timestamp = now,
                     pair = "XBTUSD",
                     side = "BUY",
                     symbol = "BTC",
                     volume = BigDecimal("1.0"),
                     usdAmount = BigDecimal("100000.00"),
-                    success = true,
-                    dryRun = false,
                     fee = BigDecimal("99.999"),
                     slippagePercent = BigDecimal.ZERO,
                     source = TradeSource.LOCAL_ESTIMATE,
                     id = 82,
                 )
             val settledFill =
-                TradeRecord(
+                TestFixtures.tradeRecord(
                     timestamp = now.plusSeconds(2),
                     pair = "XBTUSD",
                     side = "BUY",
                     symbol = "BTC",
                     volume = BigDecimal("1.0"),
                     usdAmount = BigDecimal("100000.00"),
-                    success = true,
-                    dryRun = false,
                     fee = BigDecimal("0.00"),
                     source = TradeSource.API_FILL,
                     id = 83,
@@ -571,30 +529,26 @@ class TradeDeduplicatorTest : StringSpec() {
         "CQ-3-21: should treat a local estimate exactly at the 10-second window as a duplicate" {
             val now = Instant.now()
             val localEstimate =
-                TradeRecord(
+                TestFixtures.tradeRecord(
                     timestamp = now,
                     pair = "XBTUSD",
                     side = "BUY",
                     symbol = "BTC",
                     volume = BigDecimal("1.0"),
                     usdAmount = BigDecimal("100000.00"),
-                    success = true,
-                    dryRun = false,
                     fee = BigDecimal("100.00"),
                     slippagePercent = BigDecimal.ZERO,
                     source = TradeSource.LOCAL_ESTIMATE,
                     id = 110,
                 )
             val settledFill =
-                TradeRecord(
+                TestFixtures.tradeRecord(
                     timestamp = now.plusMillis(10_000),
                     pair = "XBTUSD",
                     side = "BUY",
                     symbol = "BTC",
                     volume = BigDecimal("1.0"),
                     usdAmount = BigDecimal("100000.00"),
-                    success = true,
-                    dryRun = false,
                     fee = BigDecimal("300.00"),
                     source = TradeSource.API_FILL,
                     id = 111,
@@ -606,30 +560,26 @@ class TradeDeduplicatorTest : StringSpec() {
         "CQ-3-21: should not treat a local estimate one millisecond beyond the 10-second window as a duplicate" {
             val now = Instant.now()
             val localEstimate =
-                TradeRecord(
+                TestFixtures.tradeRecord(
                     timestamp = now,
                     pair = "XBTUSD",
                     side = "BUY",
                     symbol = "BTC",
                     volume = BigDecimal("1.0"),
                     usdAmount = BigDecimal("100000.00"),
-                    success = true,
-                    dryRun = false,
                     fee = BigDecimal("100.00"),
                     slippagePercent = BigDecimal.ZERO,
                     source = TradeSource.LOCAL_ESTIMATE,
                     id = 112,
                 )
             val settledFill =
-                TradeRecord(
+                TestFixtures.tradeRecord(
                     timestamp = now.plusMillis(10_001),
                     pair = "XBTUSD",
                     side = "BUY",
                     symbol = "BTC",
                     volume = BigDecimal("1.0"),
                     usdAmount = BigDecimal("100000.00"),
-                    success = true,
-                    dryRun = false,
                     fee = BigDecimal("300.00"),
                     source = TradeSource.API_FILL,
                     id = 113,
@@ -641,30 +591,26 @@ class TradeDeduplicatorTest : StringSpec() {
         "CQ-3-12: should skip safely when the later record has a null id" {
             val now = Instant.now()
             val localEstimate =
-                TradeRecord(
+                TestFixtures.tradeRecord(
                     timestamp = now,
                     pair = "XBTUSD",
                     side = "BUY",
                     symbol = "BTC",
                     volume = BigDecimal("1.0"),
                     usdAmount = BigDecimal("100000.00"),
-                    success = true,
-                    dryRun = false,
                     fee = BigDecimal("100.00"),
                     slippagePercent = BigDecimal.ZERO,
                     source = TradeSource.LOCAL_ESTIMATE,
                     id = 90,
                 )
             val settledFillNullId =
-                TradeRecord(
+                TestFixtures.tradeRecord(
                     timestamp = now.plusSeconds(2),
                     pair = "XBTUSD",
                     side = "BUY",
                     symbol = "BTC",
                     volume = BigDecimal("1.0"),
                     usdAmount = BigDecimal("100000.00"),
-                    success = true,
-                    dryRun = false,
                     fee = BigDecimal("300.00"),
                     source = TradeSource.API_FILL,
                     id = null,
@@ -676,30 +622,26 @@ class TradeDeduplicatorTest : StringSpec() {
         "CQ-3-12: should skip safely when the record to delete is the unsettled one with a null id" {
             val now = Instant.now()
             val localEstimateNullId =
-                TradeRecord(
+                TestFixtures.tradeRecord(
                     timestamp = now,
                     pair = "XBTUSD",
                     side = "BUY",
                     symbol = "BTC",
                     volume = BigDecimal("1.0"),
                     usdAmount = BigDecimal("100000.00"),
-                    success = true,
-                    dryRun = false,
                     fee = BigDecimal("100.00"),
                     slippagePercent = BigDecimal.ZERO,
                     source = TradeSource.LOCAL_ESTIMATE,
                     id = null,
                 )
             val settledFill =
-                TradeRecord(
+                TestFixtures.tradeRecord(
                     timestamp = now.plusSeconds(2),
                     pair = "XBTUSD",
                     side = "BUY",
                     symbol = "BTC",
                     volume = BigDecimal("1.0"),
                     usdAmount = BigDecimal("100000.00"),
-                    success = true,
-                    dryRun = false,
                     fee = BigDecimal("300.00"),
                     source = TradeSource.API_FILL,
                     id = 91,
@@ -710,7 +652,7 @@ class TradeDeduplicatorTest : StringSpec() {
 
         "CQ-13-4: should identify duplicates at zero delta and when the API fill precedes the local estimate" {
             val now = Instant.now()
-            val apiFill = TradeRecord(
+            val apiFill = TestFixtures.tradeRecord(
                 timestamp = now,
                 pair = "XBTUSD",
                 side = "BUY",
@@ -718,8 +660,6 @@ class TradeDeduplicatorTest : StringSpec() {
                 volume = BigDecimal("1.0"),
                 usdAmount = BigDecimal("50000.00"),
                 fee = BigDecimal("100.00"), // 0.2% fee rate
-                success = true,
-                dryRun = false,
                 source = TradeSource.API_FILL,
                 id = 101,
             )

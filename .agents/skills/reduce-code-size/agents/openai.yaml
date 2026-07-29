@@ -1,0 +1,4 @@
+interface:
+  display_name: "Reduce Code Size"
+  short_description: "Refactor duplication and split oversized files safely"
+  default_prompt: "Use $reduce-code-size to reduce implementation and test code while preserving behavior, readability, architecture, and verification coverage."

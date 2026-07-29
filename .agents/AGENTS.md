@@ -43,6 +43,7 @@ Canonical deep docs:
 | UI manual QA (click-through) | [ui-manual-qa](skills/ui-manual-qa/SKILL.md) |
 | Post-deploy UI smoke | [post-deploy-ui-smoke](skills/post-deploy-ui-smoke/SKILL.md) |
 | Refactor / cleanup | [kotlin-refactoring-and-cleanup](skills/kotlin-refactoring-and-cleanup/SKILL.md) |
+| Reduce code size / split large files | [reduce-code-size](skills/reduce-code-size/SKILL.md) |
 | Code review | [code-review](skills/code-review/SKILL.md) |
 | Architecture review (third-party / redesign) | [architecture-review](skills/architecture-review/SKILL.md) |
 | Skill / agent-files review (skills, rules, AGENTS) | [skill-reviewer](skills/skill-reviewer/SKILL.md) |

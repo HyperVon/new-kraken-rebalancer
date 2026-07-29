@@ -28,6 +28,7 @@ For tasks that match a skill in `.agents/skills/*/SKILL.md` or the index in
 | Quality gates (Spotless, JaCoCo, Karma) | `gradle-quality-gates` |
 | Dependency upgrades | `dependency-upgrade` |
 | Kotlin refactor / cleanup | `kotlin-refactoring-and-cleanup` |
+| Code-size reduction / large-file splits | `reduce-code-size` |
 | UI click-through QA | `ui-manual-qa` |
 | UI visual critique / implement | `ui-visual-review` / `ui-visual-implement` |
 | Docs screenshots | `docs-screenshot-refresh` |
