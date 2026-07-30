@@ -1025,12 +1025,12 @@ private fun RebalancerComparison.hasSortedTimestamps(): Boolean =
             timestamps.zipWithNext().all { (previous, current) -> current!! >= previous!! }
     }
 
-private fun RebalancerComparison.hasValidBaselinePoint(): Boolean = points.first().let { first ->
+private fun RebalancerComparison.hasValidBaselinePoint(): Boolean = points.firstOrNull()?.let { first ->
     first.timestamp == baselineTimestamp &&
         dynamicNumber(first.rebalancerValueUSD) == dynamicNumber(first.buyAndHoldValueUSD) &&
         dynamicNumber(first.differenceUSD) == 0.0 &&
         dynamicNumber(first.differencePercent) == 0.0
-}
+} == true
 
 private fun RebalancerComparison.hasCompletePointData(): Boolean = points.all { point ->
     point.timestamp.isNotBlank() &&

@@ -256,15 +256,18 @@ Composer 2.5 Fast and Grok 4.5 High are the currently documented examples for
 those roles. A substitution is meaningful to a human reviewer only when the
 role, capability difference, and reason for substitution remain visible.
 
-When running under the OpenCode harness, the adversarial PR-review workflow
-substitutes the following models while preserving the fast/strong role split:
+When running under a host that lacks those models, the adversarial PR-review
+workflow substitutes a comparable model for each role and records the
+substitution in that PR's verification notes and final summary. For example, one
+OpenCode session recorded the following split (preserving fast/strong roles):
 
 - fast/cheaper reviewer: **DeepSeek V4 Flash**
 - strong/high-reasoning reviewer: **MiMo V2.5**
 - default session model: **Hy3**
 
-These substitutions are recorded in the PR verification notes and final summary
-when the review runs under OpenCode.
+The specific slugs above are an observed one-time substitution, not standing
+policy; future sessions should record their own mappings per the substitution
+rule above.
 
 Multiple agreeing models are not proof of correctness. Related models can share
 the same blind spots, repeat inaccurate documentation, or approve tautological

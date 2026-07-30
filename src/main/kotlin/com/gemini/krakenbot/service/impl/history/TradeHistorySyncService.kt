@@ -78,7 +78,7 @@ class TradeHistorySyncService(
 
         val (totalAdded, totalReconciled) = processApiTrades(startSec, originalLocalTrades, allocations)
 
-        triggerReconstructionIfNeeded(config, originalLocalTrades)
+        triggerReconstructionIfNeeded(config)
 
         finalizeSync(isSeeded)
         log.info("Trade history synchronization completed. Added: {} new, Reconciled: {}.", totalAdded, totalReconciled)
@@ -115,6 +115,7 @@ class TradeHistorySyncService(
                         is TradeReconciliationResult.Inserted -> totalAdded++
                         is TradeReconciliationResult.Reconciled -> totalReconciled++
                         is TradeReconciliationResult.AlreadyPersisted -> { /* no-op */ }
+                        is TradeReconciliationResult.MatchedNoOp -> { /* no-op */ }
                     }
                 }
             }
@@ -179,6 +180,8 @@ class TradeHistorySyncService(
         matchingLocalTrade: TradeRecord,
         originalLocalTrades: MutableList<TradeRecord>,
     ): TradeReconciliationResult {
+        // One local row per API fill in this sync pass.
+        originalLocalTrades.remove(matchingLocalTrade)
         if (matchingLocalTrade != apiTrade) {
             val expectedPrice = matchingLocalTrade.expectedPrice
             val reconciledSlippage =
@@ -207,22 +210,20 @@ class TradeHistorySyncService(
             )
 
             repository.updateTrade(matchingLocalTrade, reconciledTrade)
+            return TradeReconciliationResult.Reconciled
         }
-        // One local row per API fill in this sync pass.
-        originalLocalTrades.remove(matchingLocalTrade)
-        return TradeReconciliationResult.Reconciled
+        // Data-class-equal local row: removed but not counted as a reconcile (matches pre-refactor behavior).
+        return TradeReconciliationResult.MatchedNoOp
     }
 
     private sealed class TradeReconciliationResult {
         data object Inserted : TradeReconciliationResult()
         data object Reconciled : TradeReconciliationResult()
         data object AlreadyPersisted : TradeReconciliationResult()
+        data object MatchedNoOp : TradeReconciliationResult()
     }
 
-    private suspend fun triggerReconstructionIfNeeded(
-        config: AppConfig,
-        originalLocalTrades: MutableList<TradeRecord>,
-    ) {
+    private suspend fun triggerReconstructionIfNeeded(config: AppConfig) {
         val snapshots = repository.load()
         val totalTrades = repository.getTradeSummaryStats().totalTradesExecuted
         val isSimulation = config.settings.simulation

@@ -13,7 +13,6 @@ import com.gemini.krakenbot.model.TradeSource
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.collections.shouldHaveSize
-import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.shouldBe
 import java.math.BigDecimal
@@ -140,9 +139,9 @@ class HistoryApiMapperTest : StringSpec() {
                         price = BigDecimal("40000.00"),
                         valueUSD = BigDecimal("10000.00"),
                         targetPercent = BigDecimal("50.0"),
-                        currentPercent = BigDecimal("50.0"),
-                        deviationPercent = BigDecimal("0.0"),
-                        deviationUSD = BigDecimal("0.00"),
+                        currentPercent = BigDecimal("48.0"),
+                        deviationPercent = BigDecimal("2.0"),
+                        deviationUSD = BigDecimal("200.00"),
                     ),
                 ),
                 actions = listOf("BUY"),
@@ -160,8 +159,14 @@ class HistoryApiMapperTest : StringSpec() {
             dto.fiatDeploymentPercent shouldBe "25.0"
             dto.effectiveUsdTargetPercent shouldBe "20.0"
             dto.assets.keys shouldHaveSize 1
-            dto.assets["BTC"]?.balance shouldBe "0.25"
-            dto.assets["BTC"]?.price shouldBe "40000.00"
+            val btc = dto.assets["BTC"]!!
+            btc.balance shouldBe "0.25"
+            btc.price shouldBe "40000.00"
+            btc.valueUSD shouldBe "10000.00"
+            btc.targetPercent shouldBe "50.0"
+            btc.currentPercent shouldBe "48.0"
+            btc.deviationPercent shouldBe "2.0"
+            btc.deviationUSD shouldBe "200.00"
         }
 
         "buildSyncProgressResponse maps seeded with offset and total" {
@@ -222,6 +227,11 @@ class HistoryApiMapperTest : StringSpec() {
             dto.confidence shouldBe "RECONCILED"
             dto.baselineTimestamp shouldBe "2026-01-15T10:00:00Z"
             dto.points shouldHaveSize 2
+            dto.points[1].timestamp shouldBe "2026-01-15T11:00:00Z"
+            dto.points[1].rebalancerValueUSD shouldBe "10500.00"
+            dto.points[1].buyAndHoldValueUSD shouldBe "10200.00"
+            dto.points[1].differenceUSD shouldBe "300.00"
+            dto.points[1].differencePercent shouldBe "2.94"
             dto.latestDifferenceUSD shouldBe "300.00"
             dto.latestDifferencePercent shouldBe "2.94"
             dto.unavailableReason.shouldBeNull()

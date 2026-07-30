@@ -115,9 +115,9 @@ class TradeHistorySnapshotStore(
         val config = configService.getConfig()
         val allocations = config.allocations
 
-        val (finalBalances, historicalTrades) = fetchSimulationData(allocations)
+        val (finalBalances, historicalTrades, provisionalNow) = fetchSimulationData(allocations)
 
-        val (startInstant, steps, stepHours) = calculateSnapshotGridParameters(historicalTrades)
+        val (startInstant, steps, stepHours) = calculateSnapshotGridParameters(historicalTrades, provisionalNow)
         val currentBalances = reverseSeedTrades(finalBalances, historicalTrades)
         val snapshotsToSave =
             buildSnapshotGrid(allocations, currentBalances, historicalTrades, startInstant, steps, stepHours)
@@ -135,7 +135,11 @@ class TradeHistorySnapshotStore(
         )
     }
 
-    private data class SimulationData(val balances: Map<String, BigDecimal>, val trades: List<TradeRecord>)
+    private data class SimulationData(
+        val balances: Map<String, BigDecimal>,
+        val trades: List<TradeRecord>,
+        val provisionalNow: Instant,
+    )
 
     private data class SnapshotGridParams(val startInstant: Instant, val steps: Int, val stepHours: Long)
 
@@ -163,14 +167,20 @@ class TradeHistorySnapshotStore(
                 .getTradeHistory(provisionalStart.epochSecond, 0)
                 .filter { it.success && !it.dryRun }
                 .sortedBy(TradeRecord::timestamp)
-            SimulationData(normalizedBalances, trades)
+            SimulationData(normalizedBalances, trades, provisionalNow)
         }
     }
 
-    private fun calculateSnapshotGridParameters(historicalTrades: List<TradeRecord>): SnapshotGridParams {
-        val provisionalNow = Instant.now().truncatedTo(ChronoUnit.MILLIS)
+    private fun calculateSnapshotGridParameters(
+        historicalTrades: List<TradeRecord>,
+        provisionalNow: Instant,
+    ): SnapshotGridParams {
         val stepHours = 6L
-        val steps = ((15 * 24) / stepHours).toInt()
+        val steps = (15 * 24) / stepHours.toInt()
+        // Anchor the snapshot grid to the simulator's reference time.
+        // The simulator seeds trades at fixed offsets from its `now`; the latest trade lands
+        // SimulationDefaults.SEED_LATEST_TRADE_HOURS_AGO before that `now`.
+        // Derive simulatorNow ≈ latestTrade + SEED_LATEST_TRADE_HOURS_AGO, then build the 15-day grid.
         val simulatorNow = historicalTrades
             .maxByOrNull { it.timestamp }
             ?.let {

@@ -10,14 +10,11 @@ import io.kotest.matchers.string.shouldContain
 import io.ktor.client.request.get
 import io.ktor.client.request.post
 import io.ktor.client.statement.bodyAsText
-import io.ktor.http.ContentType
-import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 import io.ktor.server.application.call
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.get
-import io.ktor.server.routing.post
 import io.ktor.server.routing.routing
 import io.ktor.server.testing.testApplication
 import org.koin.core.context.startKoin
@@ -33,172 +30,146 @@ class ErrorHandlingConfigTest : StringSpec() {
             single { jacksonObjectMapper().registerModule(JavaTimeModule()) }
         }
 
-        "should return 404 for unknown routes" {
+        beforeTest {
+            stopKoin()
             startKoin { modules(testModule) }
-            try {
-                testApplication {
-                    application {
-                        configureErrorHandling()
-                        routing {
-                            get("/test") { call.respondText("OK") }
-                        }
+        }
+
+        afterTest {
+            stopKoin()
+        }
+
+        "should return 404 for unknown routes" {
+            testApplication {
+                application {
+                    configureErrorHandling()
+                    routing {
+                        get("/test") { call.respondText("OK") }
                     }
-
-                    val response = client.get("/nonexistent")
-                    response.status shouldBe HttpStatusCode.NotFound
-
-                    val body = response.bodyAsText()
-                    body shouldContain "\"status\":404"
-                    body shouldContain "\"error\":\"Not Found\""
-                    body shouldContain "\"message\":\"The requested resource was not found.\""
-                    body shouldContain "\"timestamp\""
                 }
-            } finally {
-                stopKoin()
+
+                val response = client.get("/nonexistent")
+                response.status shouldBe HttpStatusCode.NotFound
+
+                val body = response.bodyAsText()
+                body shouldContain "\"status\":404"
+                body shouldContain "\"error\":\"Not Found\""
+                body shouldContain "\"message\":\"The requested resource was not found.\""
+                body shouldContain "\"timestamp\""
             }
         }
 
         "should return 405 for method not allowed" {
-            startKoin { modules(testModule) }
-            try {
-                testApplication {
-                    application {
-                        configureErrorHandling()
-                        routing {
-                            get("/test") { call.respondText("OK") }
-                        }
+            testApplication {
+                application {
+                    configureErrorHandling()
+                    routing {
+                        get("/test") { call.respondText("OK") }
                     }
-
-                    val response = client.post("/test")
-                    response.status shouldBe HttpStatusCode.MethodNotAllowed
-
-                    val body = response.bodyAsText()
-                    body shouldContain "\"status\":405"
-                    body shouldContain "\"error\":\"Method Not Allowed\""
                 }
-            } finally {
-                stopKoin()
+
+                val response = client.post("/test")
+                response.status shouldBe HttpStatusCode.MethodNotAllowed
+
+                val body = response.bodyAsText()
+                body shouldContain "\"status\":405"
+                body shouldContain "\"error\":\"Method Not Allowed\""
             }
         }
 
         "should return 400 for bad request" {
-            startKoin { modules(testModule) }
-            try {
-                testApplication {
-                    application {
-                        configureErrorHandling()
-                        routing {
-                            get("/test") {
-                                throw IllegalArgumentException("Invalid parameter")
-                            }
+            testApplication {
+                application {
+                    configureErrorHandling()
+                    routing {
+                        get("/test") {
+                            throw IllegalArgumentException("Invalid parameter")
                         }
                     }
-
-                    val response = client.get("/test")
-                    response.status shouldBe HttpStatusCode.BadRequest
-
-                    val body = response.bodyAsText()
-                    body shouldContain "\"status\":400"
-                    body shouldContain "\"error\":\"Bad Request\""
-                    body shouldContain "\"message\":\"Invalid parameter\""
                 }
-            } finally {
-                stopKoin()
+
+                val response = client.get("/test")
+                response.status shouldBe HttpStatusCode.BadRequest
+
+                val body = response.bodyAsText()
+                body shouldContain "\"status\":400"
+                body shouldContain "\"error\":\"Bad Request\""
+                body shouldContain "\"message\":\"Invalid parameter\""
             }
         }
 
         "should return 500 for illegal state exception" {
-            startKoin { modules(testModule) }
-            try {
-                testApplication {
-                    application {
-                        configureErrorHandling()
-                        routing {
-                            get("/test") {
-                                throw IllegalStateException("Service unavailable")
-                            }
+            testApplication {
+                application {
+                    configureErrorHandling()
+                    routing {
+                        get("/test") {
+                            throw IllegalStateException("Service unavailable")
                         }
                     }
-
-                    val response = client.get("/test")
-                    response.status shouldBe HttpStatusCode.InternalServerError
-
-                    val body = response.bodyAsText()
-                    body shouldContain "\"status\":500"
-                    body shouldContain "\"error\":\"Internal Server Error\""
-                    body shouldContain "\"message\":\"An unexpected error occurred.\""
                 }
-            } finally {
-                stopKoin()
+
+                val response = client.get("/test")
+                response.status shouldBe HttpStatusCode.InternalServerError
+
+                val body = response.bodyAsText()
+                body shouldContain "\"status\":500"
+                body shouldContain "\"error\":\"Internal Server Error\""
+                body shouldContain "\"message\":\"An unexpected error occurred.\""
             }
         }
 
         "should return 500 for generic exception" {
-            startKoin { modules(testModule) }
-            try {
-                testApplication {
-                    application {
-                        configureErrorHandling()
-                        routing {
-                            get("/test") {
-                                throw RuntimeException("Unexpected failure")
-                            }
+            testApplication {
+                application {
+                    configureErrorHandling()
+                    routing {
+                        get("/test") {
+                            throw RuntimeException("Unexpected failure")
                         }
                     }
-
-                    val response = client.get("/test")
-                    response.status shouldBe HttpStatusCode.InternalServerError
-
-                    val body = response.bodyAsText()
-                    body shouldContain "\"status\":500"
-                    body shouldContain "\"error\":\"Internal Server Error\""
-                    body shouldContain "\"message\":\"An unexpected error occurred.\""
                 }
-            } finally {
-                stopKoin()
+
+                val response = client.get("/test")
+                response.status shouldBe HttpStatusCode.InternalServerError
+
+                val body = response.bodyAsText()
+                body shouldContain "\"status\":500"
+                body shouldContain "\"error\":\"Internal Server Error\""
+                body shouldContain "\"message\":\"An unexpected error occurred.\""
             }
         }
 
         "should return JSON content type" {
-            startKoin { modules(testModule) }
-            try {
-                testApplication {
-                    application {
-                        configureErrorHandling()
-                        routing {
-                            get("/test") {
-                                throw IllegalArgumentException("test")
-                            }
+            testApplication {
+                application {
+                    configureErrorHandling()
+                    routing {
+                        get("/test") {
+                            throw IllegalArgumentException("test")
                         }
                     }
-
-                    val response = client.get("/test")
-                    response.contentType().toString() shouldContain "application/json"
                 }
-            } finally {
-                stopKoin()
+
+                val response = client.get("/test")
+                response.contentType().toString() shouldContain "application/json"
             }
         }
 
         "should include timestamp in error response" {
-            startKoin { modules(testModule) }
-            try {
-                testApplication {
-                    application {
-                        configureErrorHandling()
-                        routing {
-                            get("/test") {
-                                throw IllegalArgumentException("test")
-                            }
+            testApplication {
+                application {
+                    configureErrorHandling()
+                    routing {
+                        get("/test") {
+                            throw IllegalArgumentException("test")
                         }
                     }
-
-                    val response = client.get("/test")
-                    val body = response.bodyAsText()
-                    body shouldContain "\"timestamp\":\""
                 }
-            } finally {
-                stopKoin()
+
+                val response = client.get("/test")
+                val body = response.bodyAsText()
+                body shouldContain "\"timestamp\":\""
             }
         }
     }
