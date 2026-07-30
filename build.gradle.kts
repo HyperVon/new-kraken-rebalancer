@@ -88,7 +88,7 @@ dependencies {
     implementation("io.ktor:ktor-client-cio:$ktorVersion")
 
     // Logging
-    implementation("ch.qos.logback:logback-classic:1.6.0")
+    implementation("ch.qos.logback:logback-classic:1.6.1")
 
     // Coroutines
     val kotlinXCoroutinesVersion = "1.11.0"
@@ -261,10 +261,10 @@ rootProject.plugins.withType<YarnPlugin> {
         resolution("webpack-dev-server", "6.0.0")
         resolution("serialize-javascript", "7.0.7")
         resolution("uuid", "14.0.1")
-        resolution("webpack", "5.109.1")
+        resolution("webpack", "5.109.2")
         resolution("diff", "9.0.0")
         resolution("fast-uri", "4.1.1")
         // Dependabot #102 / CVE-2026-14257 — DoS via unbounded expansion length
-        resolution("brace-expansion", "5.0.8")
+        resolution("brace-expansion", "5.0.9")
     }
 }

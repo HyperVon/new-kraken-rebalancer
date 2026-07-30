@@ -22,6 +22,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     `hasValidBaselinePoint`, `hasCompletePointData`)
 - **New unit tests**: Added `HistoryApiMapperTest` (DTO mapping for trades, stats, snapshots, comparison)
   and `ErrorHandlingConfigTest` (Ktor status pages + exception handling).
+- **Dependencies**: Patch bumps — `logback-classic` `1.6.0` → `1.6.1`; Kotlin/JS yarn resolutions
+  `webpack` `5.109.1` → `5.109.2` and `brace-expansion` `5.0.8` → `5.0.9` (lockfile regenerated with
+  `kotlinUpgradeYarnLock`).
 
 ### Fixed
 
