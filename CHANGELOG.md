@@ -10,8 +10,6 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
-- **Screen reader & accessibility attributes**: Added missing `aria-label` attribute to the History comparison chart scrubber input, and added `role="alert"` and `aria-live="polite"` attributes to Settings configuration error banner.
-- **Centralized HTML attributes in `:common`**: Added `ARIA_LIVE` constant and `AriaLive` / `AriaRole` definitions to `HtmlAttrs.kt` in `:common` module.
 - **Code hygiene**: Removed unused `Settings` import in `PrecisionRoundingFuzzTest.kt`.
 
 ## [6.15.21] - 2026-07-30

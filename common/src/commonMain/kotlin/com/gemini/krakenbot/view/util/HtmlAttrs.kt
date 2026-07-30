@@ -13,23 +13,10 @@ object HtmlAttrs {
     const val DATASET_SORT_VALUE = "sortValue"
     const val CROSSORIGIN = "crossorigin"
     const val ARIA_LABEL = "aria-label"
-    const val ARIA_LIVE = "aria-live"
     const val ARIA_SORT = "aria-sort"
     const val TAB_INDEX = "tabindex"
     const val TITLE = "title"
     const val ROLE = "role"
-}
-
-/** Values for the aria-live attribute. */
-object AriaLive {
-    const val POLITE = "polite"
-    const val ASSERTIVE = "assertive"
-    const val OFF = "off"
-}
-
-/** ARIA role values. */
-object AriaRole {
-    const val ALERT = "alert"
 }
 
 /** Zoom control action values for History chart toolbar buttons. */

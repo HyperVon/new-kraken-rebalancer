@@ -22,9 +22,6 @@ need only this file (no issue spam).
 
 | ID | Size | Status | Area | Summary | Cycle | PR |
 | :--- | :---: | :--- | :--- | :--- | :---: | :--- |
-| CI-17-UI1 | S | done | accessibility | Add missing `aria-label` to comparison chart scrubber input | 17 | #148 |
-| CI-17-UI2 | S | done | accessibility | Add `role="alert"` and `aria-live="polite"` to Settings error banner | 17 | #148 |
-| CI-17-C1 | S | done | common | Add `ARIA_LIVE` constant and `AriaLive`/`AriaRole` definitions to `HtmlAttrs` | 17 | #148 |
 | CI-17-C2 | S | done | tests | Remove unused `Settings` import in `PrecisionRoundingFuzzTest.kt` | 17 | #148 |
 | CI-17-D1 | S | done | docs | Update `CHANGELOG.md` for version 6.15.22 release | 17 | #148 |
 | CI-16-C1 | S | done | code | Replace `TradeRecord` FQNs in `OrderExecutorImpl` with an import | 16 | #140 |
