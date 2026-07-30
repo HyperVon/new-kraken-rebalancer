@@ -22,8 +22,8 @@ need only this file (no issue spam).
 
 | ID | Size | Status | Area | Summary | Cycle | PR |
 | :--- | :---: | :--- | :--- | :--- | :---: | :--- |
-| CI-18-C1 | S | done | code | Replace wildcard imports with explicit imports across server services and configs | 18 | pending |
-| CI-18-D1 | S | done | docs | Update `CHANGELOG.md` for version 6.15.23 release | 18 | pending |
+| CI-18-C1 | S | done | code | Replace wildcard imports with explicit imports across server services and configs | 18 | #149 |
+| CI-18-D1 | S | done | docs | Update `CHANGELOG.md` for version 6.15.23 release | 18 | #149 |
 | CI-17-C2 | S | done | tests | Remove unused `Settings` import in `PrecisionRoundingFuzzTest.kt` | 17 | #148 |
 | CI-17-D1 | S | done | docs | Update `CHANGELOG.md` for version 6.15.22 release | 17 | #148 |
 | CI-16-C1 | S | done | code | Replace `TradeRecord` FQNs in `OrderExecutorImpl` with an import | 16 | #140 |
