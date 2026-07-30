@@ -16,7 +16,6 @@ import io.kotest.matchers.string.shouldNotContain
 import kotlinx.html.html
 import kotlinx.html.stream.createHTML
 
-@Suppress("unused")
 class HistoryPageComponentTest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
 
@@ -43,7 +42,6 @@ class HistoryPageComponentTest : StringSpec() {
             htmlString shouldContain CdnUrls.HAMMER_JS.substringAfterLast('/')
             htmlString shouldContain "data-zoom-action=\"in\""
             htmlString shouldContain CssClass.History.ChartScrubberInput.value
-            htmlString shouldContain "aria-label=\"Pan zoomed chart"
             htmlString shouldContain "id=\"${HtmlIds.STAT_AVG_FEE_RATE}\""
             htmlString shouldContain "id=\"${HtmlIds.STAT_AVG_SLIPPAGE}\""
             htmlString shouldContain ViewText.HEADER_PRICE

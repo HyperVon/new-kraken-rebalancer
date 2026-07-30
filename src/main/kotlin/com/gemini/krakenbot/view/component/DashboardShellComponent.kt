@@ -13,7 +13,13 @@ import com.gemini.krakenbot.view.util.commonMetadataAndStyles
 import com.gemini.krakenbot.view.util.div
 import com.gemini.krakenbot.view.util.primaryNav
 import com.gemini.krakenbot.view.util.rebalancerJsSrc
-import kotlinx.html.*
+import kotlinx.html.HTML
+import kotlinx.html.body
+import kotlinx.html.head
+import kotlinx.html.header
+import kotlinx.html.p
+import kotlinx.html.script
+import kotlinx.html.title
 
 class DashboardShellComponent {
 

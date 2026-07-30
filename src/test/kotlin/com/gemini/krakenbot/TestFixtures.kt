@@ -35,9 +35,11 @@ object TestFixtures {
     /** Base64 of `test-private-key` — Kraken private keys must decode as Base64. */
     const val TRADE_HISTORY_API_SECRET = "dGVzdC1wcml2YXRlLWtleQ=="
 
-    /** Trading side constants (lowercase, matching OrderSide.apiValue). */
+    /** Trading side constants (lowercase matching OrderSide.apiValue, uppercase for display/models). */
     const val BUY = "buy"
     const val SELL = "sell"
+    const val BUY_UPPER = "BUY"
+    const val SELL_UPPER = "SELL"
 
     /** Order type constants. */
     const val MARKET = "market"

@@ -1,6 +1,7 @@
 package com.gemini.krakenbot
 
-import com.gemini.krakenbot.config.*
+import com.gemini.krakenbot.config.Allocation
+import com.gemini.krakenbot.config.DatabaseConfig
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderResult
 import com.gemini.krakenbot.model.PortfolioSnapshot
@@ -13,16 +14,9 @@ import com.gemini.krakenbot.service.TradeHistoryService
 import com.gemini.krakenbot.service.impl.OrderExecutorImpl
 import com.gemini.krakenbot.service.impl.PortfolioAnalyzerImpl
 import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
-import com.gemini.krakenbot.view.component.*
 import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.shouldBe
-import io.ktor.client.plugins.sse.*
-import io.ktor.client.request.*
-import io.ktor.client.statement.*
-import io.ktor.http.*
-import io.ktor.server.application.*
-import io.ktor.server.testing.*
 import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
@@ -247,7 +241,7 @@ internal fun EvaluationScenariosTest.registerScenarios29To34() {
             val earlyAcceptPolls = fakeKraken.getBalancesCallCount == 1
             val earlyAcceptBuy =
                 fakeKraken.executedOrders.size == 2 &&
-                    fakeKraken.executedOrders[1].side == "buy" &&
+                    fakeKraken.executedOrders[1].side == TestFixtures.BUY &&
                     fakeKraken.executedOrders[1].volume.compareTo(BigDecimal("0.1881")) == 0
 
             // Sub-case B: fail-closed — no positive USD observed → sells only, no buys.
@@ -281,7 +275,7 @@ internal fun EvaluationScenariosTest.registerScenarios29To34() {
             val failClosedPolls = fakeKraken.getBalancesCallCount == 3
             val failClosedNoBuys =
                 fakeKraken.executedOrders.size == 1 &&
-                    fakeKraken.executedOrders.single().side == "sell"
+                    fakeKraken.executedOrders.single().side == TestFixtures.SELL
 
             val success =
                 earlyAcceptPolls && earlyAcceptBuy && failClosedPolls && failClosedNoBuys

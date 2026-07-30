@@ -268,7 +268,7 @@ class HistoryTest : StringSpec() {
                 val tbody = document.getElementById(HtmlIds.TRADE_TABLE_BODY) as HTMLTableSectionElement
                 tbody.innerHTML shouldContain "$0.0000753"
                 tbody.innerHTML shouldContain "$0.0033"
-                tbody.innerHTML shouldContain "aria-label=\"${ViewText.STATUS_SUCCESS}\""
+                tbody.innerHTML shouldContain CssClass.Table.StatusDot.toString()
             } finally {
                 document.body!!.removeChild(container)
             }

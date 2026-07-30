@@ -1,26 +1,26 @@
 package com.gemini.krakenbot.model
 
+import com.gemini.krakenbot.TestFixtures
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
 
-@Suppress("unused")
 class AssetTest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
 
     init {
         "fromTradingPair resolves all standard USD-quoted BTC aliases" {
             val allocations = listOf(Asset.BTC, Asset.USD)
-            Asset.fromTradingPair("XBTUSD", allocations) shouldBe Asset.BTC
-            Asset.fromTradingPair("BTCUSD", allocations) shouldBe Asset.BTC
-            Asset.fromTradingPair("XXBTZUSD", allocations) shouldBe Asset.BTC
+            Asset.fromTradingPair(TestFixtures.XBTUSD, allocations) shouldBe Asset.BTC
+            Asset.fromTradingPair(TestFixtures.BTCUSD, allocations) shouldBe Asset.BTC
+            Asset.fromTradingPair(TestFixtures.XXBTZUSD, allocations) shouldBe Asset.BTC
         }
 
         "fromTradingPair resolves ETH aliases and is case-insensitive" {
             val allocations = listOf(Asset.ETH, Asset.USD)
-            Asset.fromTradingPair("ETHUSD", allocations) shouldBe Asset.ETH
-            Asset.fromTradingPair("XETHZUSD", allocations) shouldBe Asset.ETH
-            Asset.fromTradingPair("xethzusd", allocations) shouldBe Asset.ETH
+            Asset.fromTradingPair(TestFixtures.ETHUSD, allocations) shouldBe Asset.ETH
+            Asset.fromTradingPair(TestFixtures.XETHZUSD, allocations) shouldBe Asset.ETH
+            Asset.fromTradingPair(TestFixtures.XETHZUSD.lowercase(), allocations) shouldBe Asset.ETH
         }
 
         "fromTradingPair does not mis-resolve a non-USD quote via prefix collision" {
@@ -32,12 +32,12 @@ class AssetTest : StringSpec() {
 
         "fromTradingPair falls back to known symbols when not in allocations" {
             val allocations = listOf(Asset.USD)
-            Asset.fromTradingPair("XBTUSD", allocations) shouldBe Asset.BTC
+            Asset.fromTradingPair(TestFixtures.XBTUSD, allocations) shouldBe Asset.BTC
         }
 
         "fromTradingPair returns null for an unrelated pair" {
             val allocations = listOf(Asset.BTC, Asset.USD)
-            Asset.fromTradingPair("ADAEUR", allocations) shouldBe null
+            Asset.fromTradingPair(TestFixtures.ADAEUR, allocations) shouldBe null
         }
     }
 }

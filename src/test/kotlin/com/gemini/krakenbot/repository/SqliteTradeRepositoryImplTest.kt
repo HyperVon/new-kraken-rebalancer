@@ -401,7 +401,7 @@ class SqliteTradeRepositoryImplTest : SqliteTradeRepositoryTestBase() {
                 val t1 =
                     TestFixtures.tradeRecord(
                         timestamp = now,
-                        pair = "BTCUSD",
+                        pair = TestFixtures.BTCUSD,
                         side = TestFixtures.BUY,
                         symbol = Asset.BTC,
                         volume = BigDecimal("1.0"),

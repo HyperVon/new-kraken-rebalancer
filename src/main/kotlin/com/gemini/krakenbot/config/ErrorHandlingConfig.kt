@@ -1,11 +1,12 @@
 package com.gemini.krakenbot.config
 
 import com.fasterxml.jackson.databind.ObjectMapper
-import io.ktor.http.*
+import io.ktor.http.ContentType
+import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.Application
 import io.ktor.server.application.install
-import io.ktor.server.plugins.statuspages.*
-import io.ktor.server.response.*
+import io.ktor.server.plugins.statuspages.StatusPages
+import io.ktor.server.response.respondText
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
 import org.slf4j.LoggerFactory

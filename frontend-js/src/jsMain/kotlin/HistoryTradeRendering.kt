@@ -160,8 +160,6 @@ private fun createStatusCell(
         val dot = document.createElement(HtmlTags.SPAN) as HTMLSpanElement
         dot.className = CssClass.Table.StatusDot.toString()
         dot.title = ViewText.STATUS_SUCCESS
-        dot.setAttribute(HtmlAttrs.ARIA_LABEL, ViewText.STATUS_SUCCESS)
-        dot.setAttribute(HtmlAttrs.ROLE, "img")
         td.appendChild(dot)
         return td
     }

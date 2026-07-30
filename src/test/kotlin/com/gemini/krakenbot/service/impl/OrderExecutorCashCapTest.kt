@@ -169,7 +169,7 @@ class OrderExecutorCashCapTest : StringSpec() {
                 )
 
                 krakenService.executedOrders.size shouldBe 1
-                krakenService.executedOrders.single().side shouldBe "sell"
+                krakenService.executedOrders.single().side shouldBe TestFixtures.SELL
                 krakenService.executedOrders.single().volume.shouldBeEqualComparingTo(BigDecimal("0.00002"))
             }
         }
@@ -282,7 +282,7 @@ class OrderExecutorCashCapTest : StringSpec() {
 
                 krakenService.getBalancesCallCount shouldBe 3
                 krakenService.executedOrders.size shouldBe 1
-                krakenService.executedOrders.single().side shouldBe "sell"
+                krakenService.executedOrders.single().side shouldBe TestFixtures.SELL
             }
         }
 
@@ -314,7 +314,7 @@ class OrderExecutorCashCapTest : StringSpec() {
 
                 krakenService.getBalancesCallCount shouldBe 3
                 krakenService.executedOrders.size shouldBe 2
-                krakenService.executedOrders[1].side shouldBe "buy"
+                krakenService.executedOrders[1].side shouldBe TestFixtures.BUY
                 krakenService.executedOrders[1].volume.shouldBeEqualComparingTo(BigDecimal("0.0495"))
             }
         }
@@ -342,8 +342,8 @@ class OrderExecutorCashCapTest : StringSpec() {
 
                 krakenService.getBalancesCallCount shouldBe 0
                 krakenService.executedOrders.size shouldBe 2
-                krakenService.executedOrders[0].side shouldBe "sell"
-                krakenService.executedOrders[1].side shouldBe "buy"
+                krakenService.executedOrders[0].side shouldBe TestFixtures.SELL
+                krakenService.executedOrders[1].side shouldBe TestFixtures.BUY
                 krakenService.executedOrders[1].volume.shouldBeEqualComparingTo(BigDecimal("0.198"))
             }
         }
@@ -371,7 +371,7 @@ class OrderExecutorCashCapTest : StringSpec() {
 
                 krakenService.getBalancesCallCount shouldBe 1
                 krakenService.executedOrders.size shouldBe 2
-                krakenService.executedOrders[1].side shouldBe "buy"
+                krakenService.executedOrders[1].side shouldBe TestFixtures.BUY
                 // Buy budget = 99% of observed $190 = $188.10 → volume 0.1881
                 krakenService.executedOrders[1].volume.shouldBeEqualComparingTo(BigDecimal("0.1881"))
             }
@@ -428,7 +428,7 @@ class OrderExecutorCashCapTest : StringSpec() {
                 )
 
                 krakenService.executedOrders.size shouldBe 1
-                krakenService.executedOrders.single().side shouldBe "buy"
+                krakenService.executedOrders.single().side shouldBe TestFixtures.BUY
                 krakenService.executedOrders.single().volume.shouldBeEqualComparingTo(BigDecimal("0.099"))
             }
         }
@@ -459,7 +459,7 @@ class OrderExecutorCashCapTest : StringSpec() {
 
                 krakenService.getBalancesCallCount shouldBe 2
                 krakenService.executedOrders.size shouldBe 2
-                krakenService.executedOrders[1].side shouldBe "buy"
+                krakenService.executedOrders[1].side shouldBe TestFixtures.BUY
                 krakenService.executedOrders[1].volume.shouldBeEqualComparingTo(BigDecimal("0.1881"))
             }
         }
@@ -469,7 +469,7 @@ class OrderExecutorCashCapTest : StringSpec() {
             runTest {
                 var buyAttempts = 0
                 krakenService.orderResultFactory = { pair, _, side, volume ->
-                    if (side == "buy") {
+                    if (side == TestFixtures.BUY) {
                         buyAttempts++
                         OrderResult(
                             success = buyAttempts > 1,
@@ -505,9 +505,9 @@ class OrderExecutorCashCapTest : StringSpec() {
                 )
 
                 krakenService.executedOrders.size shouldBe 2
-                krakenService.executedOrders[0].side shouldBe "buy"
+                krakenService.executedOrders[0].side shouldBe TestFixtures.BUY
                 krakenService.executedOrders[0].volume.shouldBeEqualComparingTo(BigDecimal("0.5"))
-                krakenService.executedOrders[1].side shouldBe "buy"
+                krakenService.executedOrders[1].side shouldBe TestFixtures.BUY
                 krakenService.executedOrders[1].volume.shouldBeEqualComparingTo(BigDecimal("0.5"))
                 actionLog.any { it.contains("FAILED BUY ETH") } shouldBe true
             }
@@ -541,7 +541,7 @@ class OrderExecutorCashCapTest : StringSpec() {
                 )
 
                 krakenService.executedOrders.size shouldBe 1
-                krakenService.executedOrders.single().side shouldBe "buy"
+                krakenService.executedOrders.single().side shouldBe TestFixtures.BUY
                 krakenService.executedOrders.single().volume.shouldBeEqualComparingTo(BigDecimal("0.09"))
                 actionLog.any { it == "Skipping dust buy for BTC ($9.00)" } shouldBe true
             }
@@ -584,7 +584,7 @@ class OrderExecutorCashCapTest : StringSpec() {
                 )
 
                 krakenService.executedOrders.single().clOrdId shouldBe expectedBuyClOrdId
-                OrderExecutorImpl.clientOrderId("", Asset.ETH, "buy") shouldBe null
+                OrderExecutorImpl.clientOrderId("", Asset.ETH, TestFixtures.BUY) shouldBe null
             }
         }
 
@@ -603,7 +603,7 @@ class OrderExecutorCashCapTest : StringSpec() {
                     cycleId = cycleId,
                 )
 
-                krakenService.executedOrders.single().side shouldBe "sell"
+                krakenService.executedOrders.single().side shouldBe TestFixtures.SELL
                 krakenService.executedOrders.single().clOrdId shouldBe expectedSellClOrdId
             }
         }

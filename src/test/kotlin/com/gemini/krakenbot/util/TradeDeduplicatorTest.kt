@@ -1,6 +1,7 @@
 package com.gemini.krakenbot.util
 
 import com.gemini.krakenbot.TestFixtures
+import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.model.TradeSource
 import io.kotest.core.spec.IsolationMode
@@ -10,7 +11,6 @@ import io.kotest.matchers.shouldBe
 import java.math.BigDecimal
 import java.time.Instant
 
-@Suppress("unused")
 class TradeDeduplicatorTest : StringSpec() {
 
     override fun isolationMode() = IsolationMode.InstancePerTest
@@ -20,7 +20,7 @@ class TradeDeduplicatorTest : StringSpec() {
             val now = Instant.now()
             val records = listOf(
                 TestFixtures.tradeRecord(
-                    now, "XBTUSD", "BUY", "BTC",
+                    now, TestFixtures.XBTUSD, TestFixtures.BUY_UPPER, Asset.BTC,
                     BigDecimal(
                         "1.0",
                     ),
@@ -45,42 +45,44 @@ class TradeDeduplicatorTest : StringSpec() {
 
         "should identify pair alias duplicate trade records" {
             val now = Instant.now()
-            val record1 =
-                TestFixtures.tradeRecord(
-                    now, "XBTUSD", "BUY", "BTC", BigDecimal("1.0"), BigDecimal("50000.00"),
-                    fee = BigDecimal("100.00"),
-                    slippagePercent = BigDecimal.ZERO,
-                    id = 1,
-                )
-            val record2 =
-                TestFixtures.tradeRecord(
-                    now.plusMillis(
-                        100,
-                    ),
-                    "XXBTZUSD", "BUY", "BTC", BigDecimal("1.0"), BigDecimal("50000.00"),
-                    fee = BigDecimal("100.00"),
-                    source = TradeSource.API_FILL,
-                    id = 2,
-                )
+            val t1 = TestFixtures.tradeRecord(
+                now,
+                TestFixtures.XBTUSD,
+                TestFixtures.BUY_UPPER,
+                Asset.BTC,
+                BigDecimal("1.0"),
+                BigDecimal("50000.00"),
+                id = 1,
+            )
+            val t2 = TestFixtures.tradeRecord(
+                now.plusSeconds(1),
+                TestFixtures.XXBTZUSD,
+                TestFixtures.BUY_UPPER,
+                Asset.BTC,
+                BigDecimal("1.0"),
+                BigDecimal("50000.00"),
+                id = 2,
+            )
 
-            val duplicates = TradeDeduplicator.findDuplicateTradeIds(listOf(record1, record2))
-            duplicates shouldContainExactly listOf(1)
+            val duplicates = TradeDeduplicator.findDuplicateTradeIds(listOf(t1, t2))
+            duplicates shouldContainExactly listOf(2)
         }
 
         "CQ-7-5: should not treat pair aliases with volume over one percent apart as duplicates" {
             val now = Instant.now()
             val record1 = TestFixtures.tradeRecord(
                 timestamp = now,
-                pair = "XBTUSD",
-                side = "BUY",
-                symbol = "BTC",
+                pair = TestFixtures.XBTUSD,
+                side = TestFixtures.BUY_UPPER,
+                symbol = Asset.BTC,
                 volume = BigDecimal("1.0"),
                 usdAmount = BigDecimal("50000.00"),
+                source = TradeSource.LOCAL_ESTIMATE,
                 id = 3,
             )
             val record2 = record1.copy(
                 timestamp = now.plusMillis(100),
-                pair = "XXBTZUSD",
+                pair = TestFixtures.XXBTZUSD,
                 volume = BigDecimal("1.02"),
                 id = 4,
             )

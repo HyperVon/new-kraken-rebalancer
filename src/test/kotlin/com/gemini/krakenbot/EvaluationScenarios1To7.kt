@@ -1,6 +1,10 @@
 package com.gemini.krakenbot
 
-import com.gemini.krakenbot.config.*
+import com.gemini.krakenbot.config.Allocation
+import com.gemini.krakenbot.config.AppConfig
+import com.gemini.krakenbot.config.DatabaseConfig
+import com.gemini.krakenbot.config.InvalidConfigurationException
+import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderResult
 import com.gemini.krakenbot.model.PortfolioSnapshot
@@ -12,7 +16,6 @@ import com.gemini.krakenbot.service.TradeHistoryService
 import com.gemini.krakenbot.service.impl.OrderExecutorImpl
 import com.gemini.krakenbot.service.impl.PortfolioAnalyzerImpl
 import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
-import com.gemini.krakenbot.view.component.*
 import com.gemini.krakenbot.view.util.FormFields
 import com.gemini.krakenbot.view.util.HtmxHeaders
 import com.gemini.krakenbot.view.util.Routes
@@ -22,12 +25,20 @@ import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
-import io.ktor.client.plugins.sse.*
-import io.ktor.client.request.*
-import io.ktor.client.statement.*
-import io.ktor.http.*
-import io.ktor.server.application.*
-import io.ktor.server.testing.*
+import io.ktor.client.plugins.sse.sse
+import io.ktor.client.request.get
+import io.ktor.client.request.header
+import io.ktor.client.request.post
+import io.ktor.client.request.setBody
+import io.ktor.client.statement.bodyAsText
+import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpStatusCode
+import io.ktor.http.formUrlEncode
+import io.ktor.http.parametersOf
+import io.ktor.server.application.Application
+import io.ktor.server.application.install
+import io.ktor.server.testing.testApplication
 import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
@@ -414,7 +425,7 @@ internal fun EvaluationScenariosTest.registerScenarios1To7() {
             // 1. GET Dashboard Shell
             val getShellResponse = client.get(Routes.ROOT)
             getShellResponse.status shouldBe HttpStatusCode.OK
-            getShellResponse.headers[HttpHeaders.ContentType] shouldContain "text/html"
+            getShellResponse.headers[HttpHeaders.ContentType] shouldContain TestFixtures.TEXT_HTML
             val bodyShell = getShellResponse.bodyAsText()
             bodyShell shouldContain ViewText.APP_TITLE
 

@@ -14,7 +14,6 @@ import org.koin.test.KoinTest
 import org.koin.test.inject
 import java.io.File
 
-@Suppress("unused")
 class KrakenRebalancerApplicationTest :
     StringSpec(),
     KoinTest {

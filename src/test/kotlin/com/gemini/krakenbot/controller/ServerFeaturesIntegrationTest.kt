@@ -9,27 +9,35 @@ import com.gemini.krakenbot.config.configureCompression
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.TradeHistoryService
 import com.gemini.krakenbot.view.DashboardView
-import com.gemini.krakenbot.view.component.*
+import com.gemini.krakenbot.view.component.AllocationChartComponent
+import com.gemini.krakenbot.view.component.DashboardFragmentComponent
+import com.gemini.krakenbot.view.component.DashboardShellComponent
+import com.gemini.krakenbot.view.component.HistoryPageComponent
+import com.gemini.krakenbot.view.component.OverviewGridComponent
+import com.gemini.krakenbot.view.component.PerformanceTableComponent
+import com.gemini.krakenbot.view.component.RecentActivityComponent
+import com.gemini.krakenbot.view.component.SettingsFormComponent
 import com.gemini.krakenbot.view.util.Routes
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldNotContain
-import io.ktor.client.request.*
+import io.ktor.client.request.get
+import io.ktor.client.request.header
 import io.ktor.client.statement.bodyAsText
-import io.ktor.http.*
-import io.ktor.server.application.*
+import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpStatusCode
+import io.ktor.server.application.install
 import io.ktor.server.routing.get
 import io.ktor.server.routing.routing
-import io.ktor.server.sse.*
-import io.ktor.server.testing.*
+import io.ktor.server.sse.SSE
+import io.ktor.server.testing.testApplication
 import io.mockk.mockk
 import org.koin.core.context.startKoin
 import org.koin.core.context.stopKoin
 import org.koin.dsl.module
 
-@Suppress("unused")
 class ServerFeaturesIntegrationTest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
 

@@ -1,6 +1,41 @@
 package com.gemini.krakenbot.view.util
 
-import kotlinx.html.*
+import kotlinx.html.A
+import kotlinx.html.BUTTON
+import kotlinx.html.ButtonType
+import kotlinx.html.DIV
+import kotlinx.html.FlowContent
+import kotlinx.html.H1
+import kotlinx.html.H2
+import kotlinx.html.H3
+import kotlinx.html.INPUT
+import kotlinx.html.InputType
+import kotlinx.html.LABEL
+import kotlinx.html.NAV
+import kotlinx.html.P
+import kotlinx.html.SPAN
+import kotlinx.html.TABLE
+import kotlinx.html.TBODY
+import kotlinx.html.TD
+import kotlinx.html.TH
+import kotlinx.html.THEAD
+import kotlinx.html.TR
+import kotlinx.html.ThScope
+import kotlinx.html.a
+import kotlinx.html.button
+import kotlinx.html.div
+import kotlinx.html.h1
+import kotlinx.html.h2
+import kotlinx.html.h3
+import kotlinx.html.input
+import kotlinx.html.label
+import kotlinx.html.nav
+import kotlinx.html.p
+import kotlinx.html.span
+import kotlinx.html.table
+import kotlinx.html.td
+import kotlinx.html.th
+import kotlinx.html.tr
 
 inline fun FlowContent.div(cssClass: CssClass? = null, crossinline block: DIV.() -> Unit = {}): Unit =
     div(classes = cssClass?.value, block = block)

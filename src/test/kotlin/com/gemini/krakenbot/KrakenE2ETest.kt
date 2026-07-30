@@ -108,7 +108,7 @@ class KrakenE2ETest : StringSpec() {
                 val objectMapper =
                     jacksonObjectMapper().findAndRegisterModules()
 
-                val db = DatabaseConfig.init(":memory:")
+                val db = DatabaseConfig.init(TestFixtures.MEMORY_)
                 val statsRepo = SqlitePortfolioStatsRepositoryImpl(db, objectMapper)
                 val tradesRepo = SqliteTradeRepositoryImpl(db)
 
@@ -231,7 +231,7 @@ class KrakenE2ETest : StringSpec() {
                 val objectMapper =
                     jacksonObjectMapper().findAndRegisterModules()
 
-                val db = DatabaseConfig.init(":memory:")
+                val db = DatabaseConfig.init(TestFixtures.MEMORY_)
                 val statsRepo = SqlitePortfolioStatsRepositoryImpl(db, objectMapper)
                 val tradesRepo = SqliteTradeRepositoryImpl(db)
 

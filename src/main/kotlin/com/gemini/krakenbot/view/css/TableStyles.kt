@@ -1,7 +1,55 @@
 package com.gemini.krakenbot.view.css
 
 import com.gemini.krakenbot.view.util.CssClass
-import kotlinx.css.*
+import kotlinx.css.Align
+import kotlinx.css.BorderCollapse
+import kotlinx.css.BorderStyle
+import kotlinx.css.Color
+import kotlinx.css.CssBuilder
+import kotlinx.css.Cursor
+import kotlinx.css.Display
+import kotlinx.css.FontWeight
+import kotlinx.css.Overflow
+import kotlinx.css.Padding
+import kotlinx.css.QuotedString
+import kotlinx.css.TextAlign
+import kotlinx.css.alignItems
+import kotlinx.css.backgroundColor
+import kotlinx.css.borderBottomColor
+import kotlinx.css.borderBottomStyle
+import kotlinx.css.borderBottomWidth
+import kotlinx.css.borderCollapse
+import kotlinx.css.borderColor
+import kotlinx.css.borderRadius
+import kotlinx.css.borderStyle
+import kotlinx.css.borderWidth
+import kotlinx.css.color
+import kotlinx.css.content
+import kotlinx.css.cursor
+import kotlinx.css.display
+import kotlinx.css.fontFamily
+import kotlinx.css.fontSize
+import kotlinx.css.fontWeight
+import kotlinx.css.height
+import kotlinx.css.marginBottom
+import kotlinx.css.marginLeft
+import kotlinx.css.marginRight
+import kotlinx.css.marginTop
+import kotlinx.css.opacity
+import kotlinx.css.overflowX
+import kotlinx.css.padding
+import kotlinx.css.paddingLeft
+import kotlinx.css.paddingRight
+import kotlinx.css.pct
+import kotlinx.css.px
+import kotlinx.css.rem
+import kotlinx.css.table
+import kotlinx.css.td
+import kotlinx.css.textAlign
+import kotlinx.css.th
+import kotlinx.css.thead
+import kotlinx.css.tr
+import kotlinx.css.width
 
 object TableStyles {
     fun CssBuilder.applyTableStyles() {

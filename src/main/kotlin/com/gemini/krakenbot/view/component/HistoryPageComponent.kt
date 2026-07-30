@@ -25,8 +25,29 @@ import com.gemini.krakenbot.view.util.rebalancerJsSrc
 import com.gemini.krakenbot.view.util.span
 import com.gemini.krakenbot.view.util.statusCard
 import com.gemini.krakenbot.view.util.td
-import kotlinx.html.*
+import kotlinx.html.BUTTON
+import kotlinx.html.ButtonType
+import kotlinx.html.DIV
+import kotlinx.html.HTML
+import kotlinx.html.InputType
 import kotlinx.html.InputType.checkBox
+import kotlinx.html.body
+import kotlinx.html.canvas
+import kotlinx.html.classes
+import kotlinx.html.head
+import kotlinx.html.header
+import kotlinx.html.id
+import kotlinx.html.input
+import kotlinx.html.script
+import kotlinx.html.select
+import kotlinx.html.table
+import kotlinx.html.tbody
+import kotlinx.html.td
+import kotlinx.html.th
+import kotlinx.html.thead
+import kotlinx.html.title
+import kotlinx.html.tr
+import kotlinx.html.unsafe
 
 class HistoryPageComponent(private val objectMapper: ObjectMapper) {
 
@@ -212,7 +233,6 @@ class HistoryPageComponent(private val objectMapper: ObjectMapper) {
                     // Starts disabled; :frontend-js enables once the chart has a zoomable range.
                     disabled = true
                     attributes[HtmlAttrs.DATA_CHART_ID] = chart.canvasId
-                    attributes[HtmlAttrs.ARIA_LABEL] = "${ViewText.HISTORY_PAN_CHART}: ${chart.title}"
                 }
             }
         }

@@ -4,7 +4,6 @@ import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
 
-@Suppress("unused")
 class NetworkUtilsTest : StringSpec() {
 
     override fun isolationMode() = IsolationMode.InstancePerTest

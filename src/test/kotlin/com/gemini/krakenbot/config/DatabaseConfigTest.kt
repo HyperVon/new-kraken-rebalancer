@@ -1,5 +1,6 @@
 package com.gemini.krakenbot.config
 
+import com.gemini.krakenbot.TestFixtures
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
@@ -7,7 +8,6 @@ import io.kotest.matchers.shouldNotBe
 import java.io.File
 import java.sql.DriverManager
 
-@Suppress("unused")
 class DatabaseConfigTest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
 
@@ -26,7 +26,7 @@ class DatabaseConfigTest : StringSpec() {
         }
 
         "should initialize in-memory database" {
-            val db = DatabaseConfig.init(":memory:")
+            val db = DatabaseConfig.init(TestFixtures.MEMORY_)
             db shouldNotBe null
         }
 
