@@ -10,6 +10,26 @@ section. For rebalancing math internals, see [ALGORITHM.md](ALGORITHM.md).
 
 ---
 
+## What problem does it solve?
+
+Market moves, deposits, and withdrawals cause a portfolio to drift away from its
+target allocation. Correcting that drift by hand requires repeated monitoring,
+calculations, and order entry. Kraken Rebalancer automates those rules so a
+Kraken user can follow a chosen allocation consistently, progressively deploy a
+cash reserve during drawdowns, and review what the strategy did from one local
+dashboard.
+
+This is an execution and monitoring tool, not a source of trading signals. You
+choose the assets, targets, and risk settings; the application does not predict
+prices or guarantee returns. Rebalancing may create fees and tax consequences.
+The simulator and dry-run mode let you decide whether the workflow fits your
+strategy before any real order is placed.
+
+For a fuller explanation of the use cases and intended audience, see
+[Why Use Kraken Rebalancer?](../README.md#why-use-kraken-rebalancer).
+
+---
+
 ## Safety modes (read this first)
 
 Two independent settings control how “real” trading is. Change them from

@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.15.17] - 2026-07-29
+
+### Changed
+
+- **Product motivation documentation**: Explained who Kraken Rebalancer is for,
+  which manual portfolio-management problems it solves, and the limits and
+  tradeoffs users should understand before enabling live trading.
+
 ## [6.15.16] - 2026-07-29
 
 ### Changed
