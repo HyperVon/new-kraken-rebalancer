@@ -520,6 +520,7 @@ This path is internal orchestration — not a second browser-facing SSE stream l
 │   │           ├── TradeHistorySnapshotStore.kt
 │   │           ├── TradeHistoryQueryService.kt
 │   │           ├── TradeHistoryReconstructionService.kt
+│   │           ├── RebalancerComparisonCalculator.kt # Rebalancer vs Buy & Hold comparison
 │   │           └── SnapshotHistoryCalculator.kt # History reconstruction helpers
 │   ├── util/                              # NetworkUtils, TradeDeduplicator, TradeCalculator, ActionLogFormatter, BigDecimalExtensions, BalanceKeys, PrecisionConstantsJvm
 │   ├── view/                              # HTML templates & components (kotlinx.html DSL)

@@ -11,7 +11,8 @@ import com.gemini.krakenbot.view.util.HtmxValues
 import com.gemini.krakenbot.view.util.ViewText
 import com.gemini.krakenbot.view.util.div
 import com.gemini.krakenbot.view.util.span
-import kotlinx.html.*
+import kotlinx.html.DIV
+import kotlinx.html.id
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter

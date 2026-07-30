@@ -7,7 +7,6 @@ import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
 import kotlin.io.encoding.Base64
 
-@Suppress("unused")
 class KrakenCredentialsTest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
 

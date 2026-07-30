@@ -36,6 +36,11 @@ import java.util.UUID
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Duration.Companion.milliseconds
 
+private const val ERROR_LIVE_ORDERS_BLOCKED = "ERROR: Live orders blocked pending manual Kraken verification"
+private const val ORDER_SUBMISSION_PENDING = "Order submission pending"
+private const val ORDER_SUBMISSION_FAILED = "Order submission failed"
+private const val ORDER_SUBMISSION_FAILED_UNCERTAIN = "Order submission outcome is uncertain"
+
 class OrderExecutorImpl(
     private val krakenService: KrakenService,
     private val tradeHistoryService: TradeHistoryService,
@@ -76,7 +81,7 @@ class OrderExecutorImpl(
     ) {
         if (!settings.dryRun && !settings.simulation && tradeHistoryService.hasPendingSubmissions()) {
             log.error("Refusing live orders while an unresolved submission intent exists")
-            actionLog.add("ERROR: Live orders blocked pending manual Kraken verification")
+            actionLog.add(ERROR_LIVE_ORDERS_BLOCKED)
             return
         }
         // Pin live vs simulation for the whole sell→buy sequence; pass settings.dryRun into
@@ -234,7 +239,7 @@ class OrderExecutorImpl(
         val clOrdId = clientOrderId(cycleId, symbol, side.apiValue)
         val isLiveSubmission = !settings.dryRun && !settings.simulation
         val pending = TradeCalculator.createTradeRecord(
-            result = OrderResult(false, pair, side.apiValue, volume, settings.dryRun, "Order submission pending"),
+            result = OrderResult(false, pair, side.apiValue, volume, settings.dryRun, ORDER_SUBMISSION_PENDING),
             symbol = symbol,
             pair = pair,
             side = side.uppercaseName,
@@ -303,9 +308,9 @@ class OrderExecutorImpl(
             pending.copy(
                 id = id,
                 errorMessage = message ?: if (pending.submissionState == null) {
-                    "Order submission failed"
+                    ORDER_SUBMISSION_FAILED
                 } else {
-                    "Order submission outcome is uncertain"
+                    ORDER_SUBMISSION_FAILED_UNCERTAIN
                 },
                 submissionState = pending.submissionState?.let { OrderSubmissionState.UNCERTAIN },
             ),

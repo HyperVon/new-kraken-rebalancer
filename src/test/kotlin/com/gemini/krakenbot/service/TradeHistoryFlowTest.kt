@@ -4,7 +4,7 @@ package com.gemini.krakenbot.service
 
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import io.kotest.matchers.collections.shouldContainExactly
-import io.mockk.*
+import io.mockk.coVerify
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.advanceUntilIdle

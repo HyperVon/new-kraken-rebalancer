@@ -32,7 +32,7 @@ class OrderExecutorFillSettlementTest : StringSpec() {
                         pair = pair,
                         side = side,
                         volume = volume,
-                        orderTxid = if (side == "sell") sellTxid else null,
+                        orderTxid = if (side == TestFixtures.SELL) sellTxid else null,
                     )
                 }
                 // Gross cost $100 − fee $1 → net $99; opening $100 → fill-confirmed $199.
@@ -72,7 +72,7 @@ class OrderExecutorFillSettlementTest : StringSpec() {
                 krakenService.getTradeHistoryCallCount shouldBe 1
                 krakenService.getBalancesCallCount shouldBe 1
                 krakenService.executedOrders.size shouldBe 2
-                krakenService.executedOrders[1].side shouldBe "buy"
+                krakenService.executedOrders[1].side shouldBe TestFixtures.BUY
                 krakenService.executedOrders[1].volume.shouldBeEqualComparingTo(BigDecimal("0.19701"))
             }
         }
@@ -86,7 +86,7 @@ class OrderExecutorFillSettlementTest : StringSpec() {
                         pair = pair,
                         side = side,
                         volume = volume,
-                        orderTxid = if (side == "sell") sellTxid else null,
+                        orderTxid = if (side == TestFixtures.SELL) sellTxid else null,
                     )
                 }
                 // Two legs: $50 − $0.50 fee each → net $49.50 × 2 = $99; opening $100 → $199.
@@ -136,7 +136,7 @@ class OrderExecutorFillSettlementTest : StringSpec() {
                 krakenService.getTradeHistoryCallCount shouldBe 1
                 krakenService.getBalancesCallCount shouldBe 1
                 krakenService.executedOrders.size shouldBe 2
-                krakenService.executedOrders[1].side shouldBe "buy"
+                krakenService.executedOrders[1].side shouldBe TestFixtures.BUY
                 krakenService.executedOrders[1].volume.shouldBeEqualComparingTo(BigDecimal("0.19701"))
             }
         }
@@ -150,7 +150,7 @@ class OrderExecutorFillSettlementTest : StringSpec() {
                         pair = pair,
                         side = side,
                         volume = volume,
-                        orderTxid = if (side == "sell") sellTxid else null,
+                        orderTxid = if (side == TestFixtures.SELL) sellTxid else null,
                     )
                 }
                 // Matching leg net $99 → fill-confirmed $199. Decoys would inflate well above that
@@ -238,7 +238,7 @@ class OrderExecutorFillSettlementTest : StringSpec() {
             runTest {
                 krakenService.orderResultFactory = { pair, _, side, volume ->
                     when {
-                        side == "sell" && pair == Asset.BTC_USD_PAIR ->
+                        side == TestFixtures.SELL && pair == Asset.BTC_USD_PAIR ->
                             OrderResult(
                                 success = false,
                                 pair = pair,
@@ -273,11 +273,11 @@ class OrderExecutorFillSettlementTest : StringSpec() {
                 // Opening $100 + successful ETH sell $100 → $200 projected; 99% → $198 buy budget → 0.198 SOL.
                 // If failed BTC sell were wrongly counted, budget would be $297 → 0.297.
                 krakenService.executedOrders.size shouldBe 3
-                krakenService.executedOrders[0].side shouldBe "sell"
+                krakenService.executedOrders[0].side shouldBe TestFixtures.SELL
                 krakenService.executedOrders[0].pair shouldBe Asset.BTC_USD_PAIR
-                krakenService.executedOrders[1].side shouldBe "sell"
+                krakenService.executedOrders[1].side shouldBe TestFixtures.SELL
                 krakenService.executedOrders[1].pair shouldBe Asset.ETH_USD_PAIR
-                krakenService.executedOrders[2].side shouldBe "buy"
+                krakenService.executedOrders[2].side shouldBe TestFixtures.BUY
                 krakenService.executedOrders[2].volume.shouldBeEqualComparingTo(BigDecimal("0.198"))
                 krakenService.getTradeHistoryCallCount shouldBe 0
                 krakenService.getBalancesCallCount shouldBe 0
@@ -293,7 +293,7 @@ class OrderExecutorFillSettlementTest : StringSpec() {
                         pair = pair,
                         side = side,
                         volume = volume,
-                        orderTxid = if (side == "sell") sellTxid else null,
+                        orderTxid = if (side == TestFixtures.SELL) sellTxid else null,
                     )
                 }
                 krakenService.tradeHistorySupplier = { _, _ ->
@@ -341,7 +341,7 @@ class OrderExecutorFillSettlementTest : StringSpec() {
                         pair = pair,
                         side = side,
                         volume = volume,
-                        orderTxid = if (side == "sell") "OID-MISSING" else null,
+                        orderTxid = if (side == TestFixtures.SELL) "OID-MISSING" else null,
                     )
                 }
                 krakenService.tradeHistorySupplier = { _, _ ->
@@ -390,7 +390,7 @@ class OrderExecutorFillSettlementTest : StringSpec() {
                         pair = pair,
                         side = side,
                         volume = volume,
-                        orderTxid = if (side == "sell") "OID-CURRENT" else null,
+                        orderTxid = if (side == TestFixtures.SELL) "OID-CURRENT" else null,
                     )
                 }
                 // Only a prior-cycle fill is visible; current OID never appears → fail-closed abort.
@@ -425,7 +425,7 @@ class OrderExecutorFillSettlementTest : StringSpec() {
                 )
 
                 krakenService.executedOrders.size shouldBe 1
-                krakenService.executedOrders.single().side shouldBe "sell"
+                krakenService.executedOrders.single().side shouldBe TestFixtures.SELL
             }
         }
 
@@ -439,7 +439,7 @@ class OrderExecutorFillSettlementTest : StringSpec() {
                         pair = pair,
                         side = side,
                         volume = volume,
-                        orderTxid = if (side == "sell") sellTxid else null,
+                        orderTxid = if (side == TestFixtures.SELL) sellTxid else null,
                     )
                 }
                 val padding =
@@ -543,7 +543,7 @@ class OrderExecutorFillSettlementTest : StringSpec() {
                         pair = pair,
                         side = side,
                         volume = volume,
-                        orderTxid = if (side == "sell") sellTxid else null,
+                        orderTxid = if (side == TestFixtures.SELL) sellTxid else null,
                     )
                 }
 
@@ -575,7 +575,7 @@ class OrderExecutorFillSettlementTest : StringSpec() {
                         pair = pair,
                         side = side,
                         volume = volume,
-                        orderTxid = if (side == "sell") sellTxid else null,
+                        orderTxid = if (side == TestFixtures.SELL) sellTxid else null,
                     )
                 }
                 // History overstates proceeds vs the $100 sell intent.

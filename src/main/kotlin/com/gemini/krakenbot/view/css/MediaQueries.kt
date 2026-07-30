@@ -1,7 +1,23 @@
 package com.gemini.krakenbot.view.css
 
 import com.gemini.krakenbot.view.util.CssClass
-import kotlinx.css.*
+import kotlinx.css.Align
+import kotlinx.css.CssBuilder
+import kotlinx.css.FlexDirection
+import kotlinx.css.GridTemplateColumns
+import kotlinx.css.Padding
+import kotlinx.css.alignItems
+import kotlinx.css.flexDirection
+import kotlinx.css.fontSize
+import kotlinx.css.gap
+import kotlinx.css.gridTemplateColumns
+import kotlinx.css.header
+import kotlinx.css.marginBottom
+import kotlinx.css.padding
+import kotlinx.css.paddingBottom
+import kotlinx.css.pct
+import kotlinx.css.px
+import kotlinx.css.rem
 
 object MediaQueries {
     fun CssBuilder.applyMediaQueries() {

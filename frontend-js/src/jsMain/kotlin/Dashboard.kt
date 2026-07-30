@@ -1,8 +1,8 @@
 package com.gemini.krakenbot.frontend
 
 import com.gemini.krakenbot.util.PrecisionConstants
-import com.gemini.krakenbot.view.util.AriaSort
 import com.gemini.krakenbot.view.util.CssClass
+import com.gemini.krakenbot.view.util.DataSort
 import com.gemini.krakenbot.view.util.HtmlAttrs
 import com.gemini.krakenbot.view.util.HtmlTags
 import com.gemini.krakenbot.view.util.ViewText
@@ -128,11 +128,11 @@ fun sortTable(header: HTMLElement, colIdx: Int, forceDir: String? = null) {
     for (i in 0 until headersList.length) {
         (headersList.item(i) as? HTMLElement)?.apply {
             classList.remove(CssClass.Utility.Asc, CssClass.Utility.Desc)
-            setAttribute(HtmlAttrs.ARIA_SORT, AriaSort.NONE)
+            setAttribute(HtmlAttrs.DATA_SORT, DataSort.NONE)
         }
     }
     header.classList.add(if (sortAsc) CssClass.Utility.Asc else CssClass.Utility.Desc)
-    header.setAttribute(HtmlAttrs.ARIA_SORT, if (sortAsc) AriaSort.ASCENDING else AriaSort.DESCENDING)
+    header.setAttribute(HtmlAttrs.DATA_SORT, if (sortAsc) DataSort.ASCENDING else DataSort.DESCENDING)
 
     rows.forEach { row -> tbody.appendChild(row) }
 

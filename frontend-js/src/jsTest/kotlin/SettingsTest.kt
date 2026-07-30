@@ -179,7 +179,6 @@ class SettingsTest : StringSpec() {
                 numInput.max shouldBe "100"
 
                 val colorInput = firstRow.querySelector("input[type=\"color\"]") as HTMLInputElement
-                colorInput.getAttribute(HtmlAttrs.ARIA_LABEL) shouldBe "${ViewText.ALLOCATION_COLOR_PREFIX}${Asset.LTC}"
             } finally {
                 document.body!!.removeChild(container)
             }

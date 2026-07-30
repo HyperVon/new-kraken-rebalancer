@@ -1,8 +1,8 @@
 package com.gemini.krakenbot.view.component
 
 import com.gemini.krakenbot.model.PortfolioSnapshot
-import com.gemini.krakenbot.view.util.AriaSort
 import com.gemini.krakenbot.view.util.CssClass
+import com.gemini.krakenbot.view.util.DataSort
 import com.gemini.krakenbot.view.util.Formatter
 import com.gemini.krakenbot.view.util.HtmlAttrs
 import com.gemini.krakenbot.view.util.HtmlKeys
@@ -13,14 +13,17 @@ import com.gemini.krakenbot.view.util.span
 import com.gemini.krakenbot.view.util.td
 import com.gemini.krakenbot.view.util.th
 import com.gemini.krakenbot.view.util.tr
-import kotlinx.html.*
+import kotlinx.html.DIV
+import kotlinx.html.table
+import kotlinx.html.tbody
+import kotlinx.html.thead
 
 class PerformanceTableComponent {
 
     private data class ColumnHeader(
         val label: String,
         val cssClass: CssClass = CssClass.Table.Sortable,
-        val ariaSort: String = AriaSort.NONE,
+        val sortState: String = DataSort.NONE,
     )
 
     private companion object {
@@ -30,7 +33,7 @@ class PerformanceTableComponent {
             ColumnHeader(ViewText.HEADER_VALUE),
             ColumnHeader(ViewText.HEADER_TARGET_PCT),
             ColumnHeader(ViewText.HEADER_CURRENT_PCT),
-            ColumnHeader(ViewText.HEADER_DEV_PCT, CssClass.Table.SortableAsc, AriaSort.ASCENDING),
+            ColumnHeader(ViewText.HEADER_DEV_PCT, CssClass.Table.SortableAsc, DataSort.ASCENDING),
         )
     }
 
@@ -53,7 +56,7 @@ class PerformanceTableComponent {
                                 th(col.cssClass) {
                                     attributes[HtmlAttrs.ONCLICK] =
                                         "sortTable(this, $index)"
-                                    attributes[HtmlAttrs.ARIA_SORT] = col.ariaSort
+                                    attributes[HtmlAttrs.DATA_SORT] = col.sortState
                                     attributes[HtmlAttrs.TAB_INDEX] = "0"
                                     attributes[HtmlAttrs.ONKEYDOWN] =
                                         "if(event.key === '${HtmlKeys.ENTER}' || " +

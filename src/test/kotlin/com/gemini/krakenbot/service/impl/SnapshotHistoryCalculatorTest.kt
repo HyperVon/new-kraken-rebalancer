@@ -16,7 +16,6 @@ import java.math.BigDecimal
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 
-@Suppress("unused")
 class SnapshotHistoryCalculatorTest : StringSpec() {
 
     override fun isolationMode() = IsolationMode.InstancePerTest

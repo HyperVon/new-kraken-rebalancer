@@ -173,8 +173,8 @@ class SimulatedKrakenService(private val configService: ConfigService) : KrakenS
             price = price,
             fee = usdAmount.multiply(SEED_FEE_RATE).setScale(4, RoundingMode.HALF_UP),
             source = TradeSource.API_FILL,
-            orderTxid = "SIM-SEED-$seedId",
-            tradeId = "SIM-SEED-FILL-$seedId",
+            orderTxid = "$SEED_ORDER_TXID_PREFIX$seedId",
+            tradeId = "$SEED_TRADE_ID_PREFIX$seedId",
         )
     }
 
@@ -301,7 +301,7 @@ class SimulatedKrakenService(private val configService: ConfigService) : KrakenS
                 balances[Asset.USD] = usdBalance.add(usdAmount).toUsdScale()
             }
 
-            val orderTxid = "SIM-${System.nanoTime()}"
+            val orderTxid = "$SIM_ORDER_TXID_PREFIX${System.nanoTime()}"
             val trade =
                 TradeRecord(
                     timestamp = Instant.now(),
@@ -354,6 +354,9 @@ class SimulatedKrakenService(private val configService: ConfigService) : KrakenS
 
     private companion object {
         const val TRADE_HISTORY_PAGE_SIZE = 50
+        const val SEED_ORDER_TXID_PREFIX = "SIM-SEED-"
+        const val SEED_TRADE_ID_PREFIX = "SIM-SEED-FILL-"
+        const val SIM_ORDER_TXID_PREFIX = "SIM-"
         val SEED_FEE_RATE: BigDecimal = BigDecimal("0.0026")
     }
 }

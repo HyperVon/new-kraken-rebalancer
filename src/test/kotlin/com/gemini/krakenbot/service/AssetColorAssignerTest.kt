@@ -10,7 +10,6 @@ import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
 
-@Suppress("unused")
 class AssetColorAssignerTest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
 

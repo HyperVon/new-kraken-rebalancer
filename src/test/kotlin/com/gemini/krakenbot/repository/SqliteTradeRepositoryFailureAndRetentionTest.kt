@@ -499,7 +499,7 @@ class SqliteTradeRepositoryFailureAndRetentionTest : SqliteTradeRepositoryTestBa
                 repository.saveTrade(unresolved)
                 repository.saveTrade(
                     unresolved.copy(
-                        pair = "XXBTZUSD",
+                        pair = TestFixtures.XXBTZUSD,
                         clientOrderId = null,
                         submissionState = null,
                     ),

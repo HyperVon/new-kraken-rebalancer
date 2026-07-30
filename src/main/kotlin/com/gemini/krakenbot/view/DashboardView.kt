@@ -12,7 +12,13 @@ import com.gemini.krakenbot.view.util.CdnUrls
 import com.gemini.krakenbot.view.util.ViewText.APP_TITLE
 import com.gemini.krakenbot.view.util.ViewText.SETTINGS_TITLE
 import com.gemini.krakenbot.view.util.commonMetadataAndStyles
-import kotlinx.html.*
+import kotlinx.html.DIV
+import kotlinx.html.FlowContent
+import kotlinx.html.HTML
+import kotlinx.html.body
+import kotlinx.html.head
+import kotlinx.html.script
+import kotlinx.html.title
 
 class DashboardView(
     private val shellComponent: DashboardShellComponent,

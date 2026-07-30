@@ -12,11 +12,9 @@ object HtmlAttrs {
     const val DATA_ZOOM_ACTION = "data-zoom-action"
     const val DATASET_SORT_VALUE = "sortValue"
     const val CROSSORIGIN = "crossorigin"
-    const val ARIA_LABEL = "aria-label"
-    const val ARIA_SORT = "aria-sort"
+    const val DATA_SORT = "data-sort"
     const val TAB_INDEX = "tabindex"
     const val TITLE = "title"
-    const val ROLE = "role"
 }
 
 /** Zoom control action values for History chart toolbar buttons. */
@@ -42,8 +40,8 @@ object HtmlKeys {
     const val SPACE = " "
 }
 
-/** ARIA sort-state values for sortable table headers. */
-object AriaSort {
+/** Sort-state values for the custom `data-sort` attribute on sortable table headers. */
+object DataSort {
     const val NONE = "none"
     const val ASCENDING = "ascending"
     const val DESCENDING = "descending"

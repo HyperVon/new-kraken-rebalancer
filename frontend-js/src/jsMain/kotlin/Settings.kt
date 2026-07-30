@@ -129,7 +129,6 @@ fun addAssetRow() {
     colorPicker.type = "color"
     colorPicker.className = CssClass.Form.AllocationColorSwatch.toString()
     colorPicker.value = pickColorForNewAsset()
-    colorPicker.setAttribute(HtmlAttrs.ARIA_LABEL, "${ViewText.ALLOCATION_COLOR_PREFIX}$symbol")
     colorHidden.value = colorPicker.value
     colorPicker.oninput = { colorHidden.value = colorPicker.value }
     colorLabel.appendChild(colorPicker)

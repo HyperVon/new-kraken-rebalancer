@@ -13,6 +13,8 @@ sealed interface OrderResult {
     val submissionUncertain: Boolean
 
     companion object {
+        const val UNKNOWN_ERROR = "Unknown error"
+
         operator fun invoke(
             success: Boolean,
             pair: String,
@@ -30,7 +32,7 @@ sealed interface OrderResult {
                 side,
                 volume,
                 dryRun,
-                errorMessage ?: "Unknown error",
+                errorMessage ?: UNKNOWN_ERROR,
                 orderTxid,
                 submissionUncertain,
             )

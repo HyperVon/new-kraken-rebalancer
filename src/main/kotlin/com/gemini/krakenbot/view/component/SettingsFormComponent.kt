@@ -25,10 +25,19 @@ import com.gemini.krakenbot.view.util.p
 import com.gemini.krakenbot.view.util.primaryNav
 import com.gemini.krakenbot.view.util.rebalancerJsSrc
 import com.gemini.krakenbot.view.util.span
-import kotlinx.html.*
+import kotlinx.html.BODY
+import kotlinx.html.ButtonType
 import kotlinx.html.ButtonType.button
 import kotlinx.html.ButtonType.submit
+import kotlinx.html.DIV
+import kotlinx.html.FlowContent
+import kotlinx.html.InputType
 import kotlinx.html.InputType.*
+import kotlinx.html.classes
+import kotlinx.html.form
+import kotlinx.html.header
+import kotlinx.html.id
+import kotlinx.html.script
 
 class SettingsFormComponent {
     context(body: BODY)
@@ -227,8 +236,6 @@ class SettingsFormComponent {
                             ) {
                                 value = rowColor
                                 classes = setOf(CssClass.Form.AllocationColorSwatch.value)
-                                attributes[HtmlAttrs.ARIA_LABEL] =
-                                    "${ViewText.ALLOCATION_COLOR_PREFIX}${alloc.symbol.value}"
                                 attributes[HtmlAttrs.ONINPUT] =
                                     "this.closest('.${CssClass.Form.AllocationEditRow}').querySelector('.${CssClass.Form.AllocationColorInput}').value = this.value"
                             }

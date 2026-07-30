@@ -2,7 +2,9 @@ package com.gemini.krakenbot.view.util
 
 import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.view.util.Icons.icon
-import kotlinx.html.*
+import kotlinx.html.DIV
+import kotlinx.html.FlowContent
+import kotlinx.html.id
 
 fun FlowContent.glassPanel(title: String, iconSvg: String? = null, block: DIV.() -> Unit) {
     div(CssClass.Layout.GlassPanel) {
