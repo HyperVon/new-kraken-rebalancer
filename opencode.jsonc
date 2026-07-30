@@ -20,5 +20,25 @@
     "opencode-worktree",
     "opencode-vibeguard",
     "@tarquinen/opencode-dcp"
-  ]
+  ],
+  "agent": {
+    "adversarial-reviewer-a": {
+      "description": "Fast capable reviewer for adversarial PR review (Reviewer A). Invoke via the Task tool when running the adversarial-pr-review skill. Read-only; pinned to opencode-go/deepseek-v4-flash.",
+      "mode": "subagent",
+      "model": "opencode-go/deepseek-v4-flash",
+      "hidden": true,
+      "permission": {
+        "edit": "deny"
+      }
+    },
+    "adversarial-reviewer-b": {
+      "description": "Strong high-reasoning reviewer for adversarial PR review (Reviewer B). Invoke via the Task tool when running the adversarial-pr-review skill. Read-only; pinned to opencode-go/grok-4.5.",
+      "mode": "subagent",
+      "model": "opencode-go/grok-4.5",
+      "hidden": true,
+      "permission": {
+        "edit": "deny"
+      }
+    }
+  }
 }

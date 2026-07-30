@@ -1,11 +1,12 @@
 ---
 name: adversarial-pr-review
 description: >-
-  Local dual-model adversarial review loop for pull requests — Composer 2.5 Fast
-  and Grok 4.5 High review in parallel, parent validates and fixes legitimate
-  findings, then re-reviews until both report no further legitimate findings.
-  Use when creating a PR, updating an open PR (commit/push to its head), or when
-  the user asks for an adversarial / multi-model PR review.
+  Local dual-model adversarial review loop for pull requests — a fast capable
+  reviewer and a strong high-reasoning reviewer run in parallel, parent
+  validates and fixes legitimate findings, then re-reviews until both report no
+  further legitimate findings. Use when creating a PR, updating an open PR
+  (commit/push to its head), or when the user asks for an adversarial /
+  multi-model PR review.
 ---
 
 # Adversarial PR review (local)
@@ -28,19 +29,46 @@ one, skip this skill unless they asked for a review.
 
 ## Models (required)
 
-Launch **two** Task subagents in **one** message (parallel):
+Launch **two** Task subagents in **one** message (parallel). Preserve the
+intended split: Reviewer A is the cheaper, faster capable reviewer; Reviewer B
+is the stronger, high-reasoning reviewer.
 
-| Role | Model slug |
-| :--- | :--- |
-| Reviewer A | `composer-2.5-fast` |
-| Reviewer B | `cursor-grok-4.5-high` |
+### OpenCode (preferred path — real model pinning)
 
-When either Cursor model is unavailable in the current host, use a comparable
-available model automatically. Preserve the intended split: Reviewer A should
-be the cheaper, faster capable reviewer; Reviewer B should be the stronger
-high-reasoning reviewer. Record the substitutions in the PR verification notes
-and final summary. An unavailable provider-specific slug must not block the
-review workflow.
+Two read-only subagents are registered in `opencode.jsonc`:
+
+| Role | `subagent_type` | Pinned model |
+| :--- | :--- | :--- |
+| Reviewer A | `adversarial-reviewer-a` | `opencode-go/deepseek-v4-flash` |
+| Reviewer B | `adversarial-reviewer-b` | `opencode-go/grok-4.5` |
+
+Invoke both via the Task tool with their `subagent_type` — the pinned models
+are applied automatically by OpenCode from the agent definition. Do **not**
+pass model slugs via the prompt; the agent definition owns the model. Both
+subagents have `edit: deny` and are `hidden: true` (invokable via Task, not
+shown in the `@` autocomplete menu).
+
+### Other harnesses (Cursor, Claude Code, Copilot, etc.)
+
+This skill is harness-agnostic and the OpenCode-registered subagents above do
+not exist outside OpenCode. Fall back to the host harness's dual-Task
+invocation with prose-slug instructions embedded in the prompt:
+
+| Role | Intent | Example slug |
+| :--- | :--- | :--- |
+| Reviewer A | cheap, fast, capable reviewer | Cursor `composer-2.5-fast` |
+| Reviewer B | strong, high-reasoning reviewer | Cursor `cursor-grok-4.5-high` |
+
+Record any model substitutions in the PR verification notes and final summary.
+An unavailable provider-specific slug must not block the review workflow.
+
+### Single-model fallback
+
+When only one model is available on the host (e.g. the current primary agent's
+model), still run **two** independent Task subagents with the same adversarial
+prompt — diversity of reviewer *sessions* is still valuable even when both
+sessions share a model. Note the single-model condition in the verification
+notes.
 
 ## Scope
 
