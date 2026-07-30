@@ -13,7 +13,16 @@
       "type": "remote",
       "url": "https://mcp.grep.app",
       "enabled": true
+    },
+    "sqlite": {
+      "type": "local",
+      "command": ["npx", "-y", "mcp-server-sqlite-npx", "kraken-rebalancer.db"],
+      "enabled": false
     }
+  },
+  "tools": {
+    "sqlite_write_query": false,
+    "sqlite_create_table": false
   },
   "plugin": [
     "opencode-pty",
