@@ -6,9 +6,13 @@ import com.gemini.krakenbot.api.SyncProgressResponse
 import com.gemini.krakenbot.api.buildSyncProgressResponse
 import com.gemini.krakenbot.api.toApiDto
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.ComparisonAvailability
+import com.gemini.krakenbot.model.ComparisonConfidence
 import com.gemini.krakenbot.model.HistoryStats
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.PortfolioStats
+import com.gemini.krakenbot.model.RebalancerComparison
+import com.gemini.krakenbot.model.RebalancerComparisonPoint
 import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.model.TradeSource
@@ -22,6 +26,8 @@ import java.math.BigDecimal
 import java.time.Instant
 import com.gemini.krakenbot.api.HistoryStats as ApiHistoryStats
 import com.gemini.krakenbot.api.PortfolioSnapshot as ApiPortfolioSnapshot
+import com.gemini.krakenbot.api.RebalancerComparison as ApiRebalancerComparison
+import com.gemini.krakenbot.api.RebalancerComparisonPoint as ApiRebalancerComparisonPoint
 import com.gemini.krakenbot.api.TradeRecord as ApiTradeRecord
 
 class SerializationParityTest : StringSpec() {
@@ -223,6 +229,72 @@ class SerializationParityTest : StringSpec() {
             val roundTrip: SyncProgressResponse = mapper.readValue(json)
             roundTrip.seeded shouldBe false
             roundTrip.offset shouldBe "123"
+        }
+
+        "comparison API DTO serializes string decimals and ISO timestamps" {
+            val domain = RebalancerComparison(
+                availability = ComparisonAvailability.AVAILABLE,
+                confidence = ComparisonConfidence.RECONCILED,
+                baselineTimestamp = Instant.parse("2026-07-01T12:00:00Z"),
+                points = listOf(
+                    RebalancerComparisonPoint(
+                        timestamp = Instant.parse("2026-07-01T12:00:00Z"),
+                        rebalancerValueUSD = BigDecimal("100000.00"),
+                        buyAndHoldValueUSD = BigDecimal("100000.00"),
+                        differenceUSD = BigDecimal.ZERO,
+                        differencePercent = BigDecimal.ZERO,
+                    ),
+                    RebalancerComparisonPoint(
+                        timestamp = Instant.parse("2026-07-02T12:00:00Z"),
+                        rebalancerValueUSD = BigDecimal("110000.00"),
+                        buyAndHoldValueUSD = BigDecimal("105000.00"),
+                        differenceUSD = BigDecimal("5000.00"),
+                        differencePercent = BigDecimal("4.7619"),
+                    ),
+                ),
+                latestDifferenceUSD = BigDecimal("5000.00"),
+                latestDifferencePercent = BigDecimal("4.7619"),
+                unavailableReason = null,
+                unavailableAt = null,
+            )
+
+            val json = mapper.writeValueAsString(domain.toApiDto())
+            json shouldContain "\"availability\":\"AVAILABLE\""
+            json shouldContain "\"confidence\":\"RECONCILED\""
+            json shouldContain "\"baselineTimestamp\":\"2026-07-01T12:00:00Z\""
+            json shouldContain "\"rebalancerValueUSD\":\"100000.00\""
+            json shouldContain "\"buyAndHoldValueUSD\":\"105000.00\""
+            json shouldContain "\"differenceUSD\":\"5000.00\""
+            json shouldContain "\"differencePercent\":\"4.7619\""
+            json shouldContain "\"latestDifferenceUSD\":\"5000.00\""
+            json shouldContain "\"unavailableReason\":null"
+
+            val roundTrip: ApiRebalancerComparison = mapper.readValue(json)
+            roundTrip.points shouldHaveSize 2
+            roundTrip.points[1].differenceUSD shouldBe "5000.00"
+        }
+
+        "comparison API DTO serializes unavailable state" {
+            val domain = RebalancerComparison(
+                availability = ComparisonAvailability.UNAVAILABLE,
+                confidence = null,
+                baselineTimestamp = Instant.parse("2026-07-01T12:00:00Z"),
+                points = emptyList(),
+                latestDifferenceUSD = null,
+                latestDifferencePercent = null,
+                unavailableReason = com.gemini.krakenbot.model.ComparisonUnavailableReason.MISSING_PRICE,
+                unavailableAt = Instant.parse("2026-07-01T12:00:00Z"),
+            )
+
+            val json = mapper.writeValueAsString(domain.toApiDto())
+            json shouldContain "\"availability\":\"UNAVAILABLE\""
+            json shouldContain "\"unavailableReason\":\"MISSING_PRICE\""
+            json shouldContain "\"points\":[]"
+
+            val roundTrip: ApiRebalancerComparison = mapper.readValue(json)
+            roundTrip.availability shouldBe "UNAVAILABLE"
+            roundTrip.unavailableReason shouldBe "MISSING_PRICE"
+            roundTrip.points shouldHaveSize 0
         }
     }
 }

@@ -206,16 +206,16 @@ class SimulatedKrakenServiceTest : StringSpec() {
 
             val simulatedService = SimulatedKrakenService(configService)
 
-            // First history call seeds ~15 simulated trades into the in-memory ledger.
+            // First history call seeds 14 simulated trades (7 paired rebalances) into the in-memory ledger.
             val history = simulatedService.getTradeHistory(null, null)
-            history.size shouldBe 15
+            history.size shouldBe 14
 
             val halfTime = history[7].timestamp.epochSecond
             val filteredTime = simulatedService.getTradeHistory(halfTime, null)
             filteredTime.all { it.timestamp.epochSecond >= halfTime } shouldBe true
 
             val paginated = simulatedService.getTradeHistory(null, 5)
-            paginated.size shouldBe 10
+            paginated.size shouldBe 9
         }
 
         "should cap trade history pages at 50 records and advance offsets" {
@@ -236,7 +236,7 @@ class SimulatedKrakenServiceTest : StringSpec() {
             val secondPage = simulatedService.getTradeHistory(null, 50)
 
             firstPage.size shouldBe 50
-            secondPage.size shouldBe 5
+            secondPage.size shouldBe 4
             // Newest-first (Kraken-like): page 0 ends at or after the start of page 1.
             (firstPage.last().timestamp >= secondPage.first().timestamp) shouldBe true
             (firstPage.first().timestamp >= firstPage.last().timestamp) shouldBe true

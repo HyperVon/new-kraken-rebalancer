@@ -21,6 +21,13 @@ Complete these **before** `gh pr create` — never defer to “after merge”. S
 4. **Visuals** — If appearance changed for README/User Guide, run docs-screenshot-refresh when shipping docs. If canonical shots are unaffected, still verify with a temp capture when claiming a visual fix.
 5. **Safety chrome** — Keep the settings-backed mode plate visible on every page (`SIMULATION` > `DRY RUN` > `LIVE TRADING`). Keep stream health separate as `STREAM` / `STALE`.
 
+## No unsolicited accessibility metadata
+
+Do not add new ARIA attributes, ARIA roles, accessibility-only labels/copy, or
+accessibility-specific acceptance criteria unless the user explicitly requests
+accessibility work. Preserve existing accessibility metadata outside the scoped
+change; do not turn ordinary UI work into accessibility remediation.
+
 After a deploy or LAN UI check, run `post-deploy-ui-smoke` (hard-refresh first).
 
 ## Common misses (regression smells)

@@ -252,6 +252,10 @@ sealed class CssClass(open val value: String) {
         object ProgressTrack : History("history-progress-track")
         object ProgressBar : History("history-progress-bar")
         object TitleNoMargin : History("history-title-no-margin")
+        object ComparisonHeader : History("comparison-header")
+        object ComparisonDelta : History("comparison-delta")
+        object ComparisonUnavailable : History("comparison-unavailable")
+        object ComparisonChartArea : History("comparison-chart-area")
     }
 
     // Utility

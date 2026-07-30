@@ -4,9 +4,11 @@ import com.fasterxml.jackson.core.type.TypeReference
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.PortfolioSnapshot
+import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.repository.TradeRepository
 import com.gemini.krakenbot.service.ConfigService
+import com.gemini.krakenbot.service.KrakenService
 import com.gemini.krakenbot.service.impl.PortfolioCalculations
 import com.gemini.krakenbot.service.impl.SimulationDefaults
 import com.gemini.krakenbot.util.PrecisionConstants
@@ -22,15 +24,16 @@ import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import java.io.File
 import java.math.BigDecimal
-import java.math.RoundingMode
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.time.Instant
 import java.time.temporal.ChronoUnit
-import java.util.concurrent.ThreadLocalRandom
+import kotlin.math.PI
+import kotlin.math.sin
 
 class TradeHistorySnapshotStore(
     private val repository: TradeRepository,
+    private val krakenService: KrakenService,
     private val configService: ConfigService,
     private val objectMapper: ObjectMapper,
     private val tradeHistoryFilePath: String = "trade-history.json",
@@ -110,39 +113,36 @@ class TradeHistorySnapshotStore(
         log.info("Simulation mode: Seeding historical snapshots in database...")
         val config = configService.getConfig()
         val allocations = config.allocations
-        val random = ThreadLocalRandom.current()
 
-        val currentPrices = mutableMapOf<String, BigDecimal>()
-        for ((symbol) in allocations) {
-            val symbolU = symbol.value.uppercase()
-            currentPrices[symbolU] =
-                (SimulationDefaults.INITIAL_PRICES[symbolU] ?: SimulationDefaults.DEFAULT_PRICE).toCryptoScale()
-        }
-        currentPrices[Asset.USD] = BigDecimal.ONE
-
-        val currentBalances = mutableMapOf<String, BigDecimal>()
-        val totalPortfolioValue = SimulationDefaults.TOTAL_PORTFOLIO_VALUE_USD
-
-        for ((symbol, targetPercent) in allocations) {
-            val symbolU = symbol.value.uppercase()
-            val targetUSD =
-                PortfolioCalculations.calculateTargetValue(
-                    BigDecimal.valueOf(targetPercent),
-                    totalPortfolioValue,
-                )
-            val driftFactor = BigDecimal.valueOf(0.85 + random.nextDouble() * 0.30)
-            val driftedUSD = targetUSD.multiply(driftFactor).toUsdScale()
-            val price = currentPrices.getValue(symbolU)
-            currentBalances[symbolU] =
-                driftedUSD.divide(price, PrecisionConstants.SCALE_CRYPTO, RoundingMode.HALF_UP)
-        }
-
-        val now = Instant.now()
+        val now = Instant.ofEpochMilli(Instant.now().toEpochMilli())
         // Empty-DB simulation seed: ~15 days of snapshots at 6-hour steps.
         val startInstant = now.minus(15, ChronoUnit.DAYS)
         val stepHours = 6L
         val steps = (15 * 24) / stepHours
         val snapshotsToSave = mutableListOf<PortfolioSnapshot>()
+
+        val (finalBalances, historicalTrades) = krakenService.withStableBackend { backend ->
+            val rawBalances = backend.getBalances()
+            val normalizedBalances = allocations.associate { (symbol) ->
+                val normalized = symbol.value.uppercase()
+                val balance = Asset.possibleBalanceKeys(normalized).firstNotNullOfOrNull(rawBalances::get)
+                    ?: BigDecimal.ZERO
+                normalized to balance
+            }
+            val trades = backend
+                .getTradeHistory(startInstant.epochSecond, 0)
+                .filter { it.success && !it.dryRun }
+                .sortedBy(TradeRecord::timestamp)
+            normalizedBalances to trades
+        }
+
+        // The emulator's balances are its present-day state. Reverse its seeded fills to obtain
+        // a historical baseline, then replay those exact fills while producing snapshots. This
+        // keeps the demo data realistic and exercises the production reconciliation path.
+        val currentBalances = finalBalances.toMutableMap()
+        for (trade in historicalTrades.asReversed()) {
+            applySeedTrade(currentBalances, trade, reverse = true)
+        }
 
         data class ValuedAsset(
             val symbol: String,
@@ -153,44 +153,25 @@ class TradeHistorySnapshotStore(
         )
 
         var step = 0
+        var nextTradeIndex = 0
         while (step <= steps) {
             val timestamp = startInstant.plus(step * stepHours, ChronoUnit.HOURS)
 
-            for (symbol in currentPrices.keys) {
-                if (symbol == Asset.USD) continue
-                val price = currentPrices.getValue(symbol)
-                val changeFactor = BigDecimal.ONE.add(BigDecimal.valueOf((random.nextDouble() - 0.5) * 0.03))
-                currentPrices[symbol] = price.multiply(changeFactor).toCryptoScale()
+            while (
+                nextTradeIndex < historicalTrades.size &&
+                historicalTrades[nextTradeIndex].timestamp <= timestamp
+            ) {
+                applySeedTrade(currentBalances, historicalTrades[nextTradeIndex], reverse = false)
+                nextTradeIndex++
             }
 
-            var portfolioValue = BigDecimal.ZERO
-            for (symbol in currentBalances.keys) {
-                portfolioValue =
-                    portfolioValue.add(
-                        currentBalances.getValue(symbol).multiply(currentPrices.getValue(symbol)),
-                    )
-            }
-            portfolioValue = portfolioValue.toUsdScale()
-
-            for ((symbol, targetPercent) in allocations) {
-                val symbolU = symbol.value.uppercase()
-                val targetUSD =
-                    PortfolioCalculations.calculateTargetValue(
-                        BigDecimal.valueOf(targetPercent),
-                        portfolioValue,
-                    )
-                val driftFactor = BigDecimal.valueOf(0.97 + random.nextDouble() * 0.06)
-                val driftedUSD = targetUSD.multiply(driftFactor).toUsdScale()
-                val price = currentPrices.getValue(symbolU)
-                currentBalances[symbolU] =
-                    driftedUSD.divide(price, PrecisionConstants.SCALE_CRYPTO, RoundingMode.HALF_UP)
-            }
+            val progress = step.toDouble() / steps.toDouble()
 
             val valuedAssets =
-                allocations.map { (symbol, targetPercent) ->
+                allocations.mapIndexed { index, (symbol, targetPercent) ->
                     val symbolU = symbol.value.uppercase()
                     val balance = currentBalances.getValue(symbolU)
-                    val price = currentPrices.getValue(symbolU)
+                    val price = historicalSeedPrice(symbolU, progress, index)
                     ValuedAsset(
                         symbol = symbolU,
                         targetPercent = targetPercent,
@@ -238,7 +219,41 @@ class TradeHistorySnapshotStore(
         }
 
         repository.save(snapshotsToSave)
-        log.info("Simulation mode: seeded {} historical snapshots", snapshotsToSave.size)
+        for (trade in historicalTrades) {
+            repository.saveTrade(trade)
+        }
+        repository.setHistorySeeded(true)
+        historicalTrades.maxOfOrNull { it.timestamp }?.let { latest ->
+            repository.setSyncMetadata(SyncMetadataKeys.SYNC_WATERMARK_EPOCH_SEC, latest.epochSecond.toString())
+        }
+        log.info(
+            "Simulation mode: seeded {} historical snapshots and {} trade records",
+            snapshotsToSave.size,
+            historicalTrades.size,
+        )
+    }
+
+    private fun applySeedTrade(balances: MutableMap<String, BigDecimal>, trade: TradeRecord, reverse: Boolean) {
+        val symbol = trade.symbol.uppercase()
+        val direction = if (reverse) -1 else 1
+        val assetDelta = if (trade.side.equals("BUY", ignoreCase = true)) trade.volume else trade.volume.negate()
+        val usdDelta = if (trade.side.equals("BUY", ignoreCase = true)) {
+            trade.usdAmount.add(trade.fee).negate()
+        } else {
+            trade.usdAmount.subtract(trade.fee)
+        }
+        balances[symbol] = balances.getValue(symbol).add(assetDelta.multiply(BigDecimal(direction)))
+        balances[Asset.USD] = balances.getValue(Asset.USD).add(usdDelta.multiply(BigDecimal(direction)))
+    }
+
+    private fun historicalSeedPrice(symbol: String, progress: Double, index: Int): BigDecimal {
+        if (symbol == Asset.USD) return BigDecimal.ONE
+        val currentPrice = SimulationDefaults.INITIAL_PRICES[symbol] ?: SimulationDefaults.DEFAULT_PRICE
+        val startFactor = if (index % 2 == 0) 0.86 else 0.93
+        val trend = startFactor + (1.0 - startFactor) * progress
+        val broadWave = sin(3.0 * PI * progress) * if (index % 2 == 0) 0.045 else 0.06
+        val shortWave = sin((9.0 + index) * PI * progress) * 0.012
+        return currentPrice.multiply(BigDecimal.valueOf(trend + broadWave + shortWave)).toCryptoScale()
     }
 
     suspend fun addSnapshot(snapshot: PortfolioSnapshot) {

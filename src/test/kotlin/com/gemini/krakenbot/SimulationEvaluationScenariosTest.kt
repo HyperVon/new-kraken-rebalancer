@@ -3,6 +3,7 @@ package com.gemini.krakenbot
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.gemini.krakenbot.config.DatabaseConfig
+import com.gemini.krakenbot.model.ComparisonAvailability
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.repository.impl.SqlitePortfolioStatsRepositoryImpl
 import com.gemini.krakenbot.repository.impl.SqliteTradeRepositoryImpl
@@ -50,7 +51,10 @@ class SimulationEvaluationScenariosTest : StringSpec() {
 
     private fun createSimStack(): SimStack {
         val configService = mockk<ConfigService>(relaxed = true)
-        every { configService.getConfig() } returns TestFixtures.DEFAULT_TEST_CONFIG
+        val simConfig = TestFixtures.DEFAULT_TEST_CONFIG.copy(
+            settings = TestFixtures.DEFAULT_TEST_SETTINGS.copy(simulation = true),
+        )
+        every { configService.getConfig() } returns simConfig
 
         val objectMapper = jacksonObjectMapper().registerModule(JavaTimeModule())
         val db = DatabaseConfig.init(TestFixtures.MEMORY_)
@@ -96,6 +100,23 @@ class SimulationEvaluationScenariosTest : StringSpec() {
                 stack.tradeHistory.init()
                 val history = stack.tradeHistory.getHistory()
                 history.size shouldBeGreaterThanOrEqual 50
+            }
+        }
+
+        "sim cold start comparison reconciles seeded fills" {
+            runTest {
+                val stack = createSimStack()
+                stack.tradeHistory.init()
+                stack.tradeHistory.syncTradesFromKraken()
+
+                val comparison = stack.tradeHistory.getRebalancerComparison(
+                    Instant.now().minusSeconds(30L * 24L * 60L * 60L),
+                    Instant.now().plusSeconds(60),
+                )
+
+                comparison.availability shouldBe ComparisonAvailability.AVAILABLE
+                comparison.points.size shouldBeGreaterThanOrEqual 50
+                (comparison.latestDifferenceUSD!!.signum() != 0) shouldBe true
             }
         }
 

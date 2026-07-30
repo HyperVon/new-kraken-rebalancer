@@ -497,6 +497,61 @@ object NavigationStyles {
             backgroundColor = CssTheme.colorDanger
         }
 
+        ".${CssClass.History.ComparisonHeader}" {
+            display = Display.flex
+            alignItems = Align.center
+            put("justify-content", "flex-start")
+            gap = 0.75.rem
+            put("flex-wrap", "wrap")
+        }
+
+        ".${CssClass.History.ComparisonDelta}" {
+            fontSize = 0.8125.rem
+            fontWeight = FontWeight.w700
+            fontFamily = CssTheme.fontMono
+            padding = Padding(0.25.rem, 0.625.rem)
+            borderRadius = 0.375.rem
+            background = CssTheme.colorGlass.value
+            borderWidth = 1.px
+            borderStyle = BorderStyle.solid
+            borderColor = CssTheme.colorGlassBorder
+            whiteSpace = WhiteSpace.nowrap
+        }
+
+        ".${CssClass.History.ComparisonDelta}.positive" {
+            color = CssTheme.colorSuccess
+            borderColor = CssTheme.colorSuccessMuted
+        }
+
+        ".${CssClass.History.ComparisonDelta}.negative" {
+            color = CssTheme.colorDanger
+            borderColor = CssTheme.colorDangerBorder
+        }
+
+        ".${CssClass.History.ComparisonDelta}.neutral" {
+            color = CssTheme.colorTextMuted
+        }
+
+        ".${CssClass.History.ComparisonUnavailable}" {
+            display = Display.none
+            padding = Padding(1.5.rem)
+            textAlign = TextAlign.center
+            color = CssTheme.colorTextMuted
+            fontSize = 0.875.rem
+        }
+
+        ".${CssClass.History.ComparisonUnavailable}.visible" {
+            display = Display.block
+        }
+
+        ".${CssClass.History.ComparisonChartArea}" {
+            display = Display.block
+        }
+
+        ".${CssClass.History.ComparisonChartArea}.hidden" {
+            display = Display.none
+        }
+
         "@keyframes slideIn" {
             "from" {
                 transform { translateY(1.rem) }

@@ -153,6 +153,94 @@ class HistoryJsonParsingTest : StringSpec() {
             parseTradeRecord(tradeRecordToDynamic(trade)) shouldBe trade
         }
 
+        "parseRebalancerComparison reads string values and points" {
+            val raw = json(
+                "availability" to "AVAILABLE",
+                "confidence" to "RECONCILED",
+                "baselineTimestamp" to "2026-07-01T12:00:00Z",
+                "points" to arrayOf(
+                    json(
+                        "timestamp" to "2026-07-01T12:00:00Z",
+                        "rebalancerValueUSD" to "100000.00",
+                        "buyAndHoldValueUSD" to "100000.00",
+                        "differenceUSD" to "0.00",
+                        "differencePercent" to "0.0000",
+                    ),
+                ),
+                "latestDifferenceUSD" to "5000.00",
+                "latestDifferencePercent" to "4.7619",
+                "unavailableReason" to null,
+                "unavailableAt" to null,
+            )
+            val parsed = parseRebalancerComparison(raw)
+            parsed.availability shouldBe "AVAILABLE"
+            parsed.confidence shouldBe "RECONCILED"
+            parsed.baselineTimestamp shouldBe "2026-07-01T12:00:00Z"
+            parsed.points.size shouldBe 1
+            parsed.points[0].rebalancerValueUSD shouldBe "100000.00"
+            parsed.latestDifferenceUSD shouldBe "5000.00"
+        }
+
+        "parseRebalancerComparison returns unavailable for null or missing input" {
+            val fromNull = parseRebalancerComparison(null)
+            fromNull.availability shouldBe "UNAVAILABLE"
+            fromNull.points.isEmpty() shouldBe true
+
+            val fromUndefined = js("undefined")
+            val fromUndef = parseRebalancerComparison(fromUndefined)
+            fromUndef.availability shouldBe "UNAVAILABLE"
+        }
+
+        "parseRebalancerComparison fails closed for unknown availability" {
+            val parsed = parseRebalancerComparison(
+                json(
+                    "availability" to "UNKNOWN",
+                    "points" to emptyArray<dynamic>(),
+                ),
+            )
+
+            parsed.availability shouldBe "UNAVAILABLE"
+            parsed.points shouldBe emptyList()
+        }
+
+        "rebalancerComparisonToDynamic round-trips through parseRebalancerComparison" {
+            val comparison = com.gemini.krakenbot.api.RebalancerComparison(
+                availability = "AVAILABLE",
+                confidence = "RECONCILED",
+                baselineTimestamp = "2026-07-01T12:00:00Z",
+                points = listOf(
+                    com.gemini.krakenbot.api.RebalancerComparisonPoint(
+                        timestamp = "2026-07-01T12:00:00Z",
+                        rebalancerValueUSD = "100000.00",
+                        buyAndHoldValueUSD = "100000.00",
+                        differenceUSD = "0.00",
+                        differencePercent = "0.0000",
+                    ),
+                ),
+                latestDifferenceUSD = "5000.00",
+                latestDifferencePercent = "4.7619",
+                unavailableReason = null,
+                unavailableAt = null,
+            )
+            val dynamic = rebalancerComparisonToDynamic(comparison)
+            parseRebalancerComparison(dynamic) shouldBe comparison
+        }
+
+        "rebalancerComparisonToDynamic round-trips unavailable state" {
+            val comparison = com.gemini.krakenbot.api.RebalancerComparison(
+                availability = "UNAVAILABLE",
+                confidence = null,
+                baselineTimestamp = null,
+                points = emptyList(),
+                latestDifferenceUSD = null,
+                latestDifferencePercent = null,
+                unavailableReason = "INSUFFICIENT_SNAPSHOTS",
+                unavailableAt = "2026-07-01T12:00:00Z",
+            )
+            val dynamic = rebalancerComparisonToDynamic(comparison)
+            parseRebalancerComparison(dynamic) shouldBe comparison
+        }
+
         "historyStatsToDynamic round-trips through parseHistoryStats" {
             val stats =
                 HistoryStats(

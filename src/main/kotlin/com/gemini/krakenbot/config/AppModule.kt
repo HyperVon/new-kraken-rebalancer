@@ -67,7 +67,14 @@ val coreModule =
         single<ConfigService> { ConfigServiceImpl(objectMapper = get()) }
         singleOf(::SqliteTradeRepositoryImpl) { bind<TradeRepository>() }
         single<PortfolioStatsRepository> { SqlitePortfolioStatsRepositoryImpl(database = get(), objectMapper = get()) }
-        single { TradeHistorySnapshotStore(repository = get(), configService = get(), objectMapper = get()) }
+        single {
+            TradeHistorySnapshotStore(
+                repository = get(),
+                krakenService = get(),
+                configService = get(),
+                objectMapper = get(),
+            )
+        }
         single { TradeHistoryQueryService(repository = get(), portfolioStatsRepository = get()) }
         single {
             TradeHistoryReconstructionService(

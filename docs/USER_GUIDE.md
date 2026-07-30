@@ -235,6 +235,36 @@ scrubber** below the chart becomes enabled. Use it to slide the visible window
 across the full selected time range. Dragging on the chart zooms; it does not
 pan. **Reset** returns to the full window and disables the scrubber again.
 
+### Rebalancer vs Buy & Hold
+
+A new chart between the summary cards and Portfolio Value that compares what
+the rebalancer actually achieved against a **hypothetical buy-and-hold**
+strategy:
+
+- **Buy & Hold** starts from the first snapshot in the selected window and
+  holds those asset quantities constant. Each subsequent point values that
+  fixed basket at that day's prices.
+- **Rebalancer** is the actual portfolio value at each snapshot.
+- The **delta badge** next to the chart title shows the cumulative
+  outperformance or underperformance (e.g. `+$5,000.00 (+4.76%)`).
+
+The comparison cannot be computed when:
+
+| Reason | Meaning |
+| :--- | :--- |
+| Insufficient snapshots | Fewer than 2 snapshots in range. |
+| Non-positive baseline | First snapshot total value is $0 (no baseline to scale from). |
+| Baseline mismatch | First snapshot's total value doesn't match the sum of its priced assets (stale data). |
+| Missing price | An asset lacks a price in a snapshot. |
+| Asset universe changed | An asset was added or removed during the window. |
+| Unexplained balance change | A balance changed without a matching trade (deposit / withdrawal). |
+| Unsupported trade | A trade with a side other than BUY or SELL. |
+
+When unavailable, the chart area hides and a message explains why — the chart
+never shows a misleading comparison.
+
+![History — portfolio value and asset holdings](images/history-portfolio-charts.png)
+
 ### Allocation deviation & net cash flow
 
 ![History — allocation deviation and cumulative net cash flow](images/history-charts.png)

@@ -3,6 +3,7 @@ package com.gemini.krakenbot.service.impl.history
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.gemini.krakenbot.model.HistoryStats
 import com.gemini.krakenbot.model.PortfolioSnapshot
+import com.gemini.krakenbot.model.RebalancerComparison
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.repository.TradeRepository
@@ -31,6 +32,7 @@ class TradeHistoryServiceImpl(
         snapshotStore =
         TradeHistorySnapshotStore(
             repository = repository,
+            krakenService = krakenService,
             configService = configService,
             objectMapper = objectMapper,
             tradeHistoryFilePath = tradeHistoryFilePath,
@@ -91,4 +93,7 @@ class TradeHistoryServiceImpl(
     override suspend fun setSyncMetadata(key: String, value: String) = syncService.setSyncMetadata(key, value)
 
     override suspend fun isHistorySeeded(): Boolean = syncService.isHistorySeeded()
+
+    override suspend fun getRebalancerComparison(from: Instant, to: Instant): RebalancerComparison =
+        queryService.getRebalancerComparison(from, to)
 }

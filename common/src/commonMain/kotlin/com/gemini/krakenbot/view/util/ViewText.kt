@@ -183,6 +183,31 @@ object ViewText {
         "Invalid settings field: every allocation target is required and must be a finite number."
     const val INVALID_ALLOCATION_COLOR = "Invalid allocation fields: supplied colors must use six-digit hex format."
     const val INVALID_CONFIGURATION_FALLBACK = "Invalid configuration"
+
+    // Rebalancer vs Buy & Hold comparison
+    const val HISTORY_REBALANCER_VS_BUY_AND_HOLD = "Rebalancer vs Buy & Hold"
+    const val REBALANCER = "Rebalancer"
+    const val BUY_AND_HOLD = "Buy & Hold"
+    const val COMPARISON_CAPTION =
+        "Based on stored snapshots and recorded trades. Starting quantities are frozen at the first snapshot in the selected range."
+    const val COMPARISON_UNAVAILABLE_PREFIX = "Comparison unavailable: "
+
+    // Unavailable reason messages
+    const val UNAVAILABLE_INSUFFICIENT_SNAPSHOTS =
+        "Not enough history exists in this range to compare strategies."
+    const val UNAVAILABLE_NON_POSITIVE_BASELINE =
+        "The comparison needs a positive starting portfolio value."
+    const val UNAVAILABLE_BASELINE_MISMATCH =
+        "Starting holdings do not reconcile with the recorded portfolio value."
+    const val UNAVAILABLE_MISSING_PRICE =
+        "A required historical asset price is missing."
+    const val UNAVAILABLE_ASSET_UNIVERSE_CHANGED =
+        "The configured asset set changed during this range."
+    const val UNAVAILABLE_UNSUPPORTED_TRADE =
+        "A recorded trade cannot be reconciled safely."
+    const val UNAVAILABLE_UNEXPLAINED_BALANCE_CHANGE =
+        "A deposit, withdrawal, transfer, or incomplete trade history may exist."
+    const val UNAVAILABLE_INVALID_RESPONSE = "Comparison data could not be validated."
 }
 
 /** Built-in History view preset identifiers (localStorage). */

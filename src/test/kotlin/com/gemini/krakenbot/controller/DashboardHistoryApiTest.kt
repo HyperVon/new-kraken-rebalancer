@@ -2,6 +2,9 @@ package com.gemini.krakenbot.controller
 
 import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.config.*
+import com.gemini.krakenbot.model.ComparisonAvailability
+import com.gemini.krakenbot.model.ComparisonConfidence
+import com.gemini.krakenbot.model.ComparisonUnavailableReason
 import com.gemini.krakenbot.model.HistoryStats
 import com.gemini.krakenbot.model.TimeRange
 import com.gemini.krakenbot.view.component.*
@@ -24,6 +27,8 @@ import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.flow.toList
 import java.math.BigDecimal
 import java.time.Instant
+import com.gemini.krakenbot.model.RebalancerComparison as DomainComparison
+import com.gemini.krakenbot.model.RebalancerComparisonPoint as DomainComparisonPoint
 import io.ktor.client.plugins.sse.SSE as ClientSSE
 
 class DashboardHistoryApiTest : DashboardControllerTestBase() {
@@ -261,6 +266,73 @@ class DashboardHistoryApiTest : DashboardControllerTestBase() {
                 val body = response.bodyAsText()
                 body shouldContain "\"lastSnapshotTime\":\"N/A\""
                 body shouldContain "\"lastSnapshotTotalValueUSD\":0"
+            }
+        }
+
+        "getApiHistoryComparison_ReturnsJson" {
+            val comparison = DomainComparison(
+                availability = ComparisonAvailability.AVAILABLE,
+                confidence = ComparisonConfidence.RECONCILED,
+                baselineTimestamp = Instant.parse("2026-07-01T12:00:00Z"),
+                points = listOf(
+                    DomainComparisonPoint(
+                        timestamp = Instant.parse("2026-07-01T12:00:00Z"),
+                        rebalancerValueUSD = BigDecimal("100000.00"),
+                        buyAndHoldValueUSD = BigDecimal("100000.00"),
+                        differenceUSD = BigDecimal.ZERO,
+                        differencePercent = BigDecimal.ZERO,
+                    ),
+                    DomainComparisonPoint(
+                        timestamp = Instant.parse("2026-07-02T12:00:00Z"),
+                        rebalancerValueUSD = BigDecimal("105000.00"),
+                        buyAndHoldValueUSD = BigDecimal("103000.00"),
+                        differenceUSD = BigDecimal("2000.00"),
+                        differencePercent = BigDecimal("1.94"),
+                    ),
+                ),
+                latestDifferenceUSD = BigDecimal("2000.00"),
+                latestDifferencePercent = BigDecimal("1.94"),
+                unavailableReason = null,
+                unavailableAt = null,
+            )
+            coEvery { tradeHistoryService.getRebalancerComparison(any(), any()) } returns comparison
+            testApplication {
+                application {
+                    configureTestEnv()
+                }
+                val response = client.get(Routes.API_HISTORY_COMPARISON.withRange(TimeRange.THIRTY_DAYS))
+                response.status shouldBe HttpStatusCode.OK
+                response.headers[HttpHeaders.ContentType] shouldContain TestFixtures.APPLICATION_JSON
+                val body = response.bodyAsText()
+                body shouldContain "\"availability\":\"AVAILABLE\""
+                body shouldContain "\"confidence\":\"RECONCILED\""
+                body shouldContain "\"rebalancerValueUSD\":\"100000.00\""
+                body shouldContain "\"latestDifferenceUSD\":\"2000.00\""
+            }
+        }
+
+        "getApiHistoryComparison_NoRangeParam_DefaultsTo30d" {
+            val comparison = DomainComparison(
+                availability = ComparisonAvailability.UNAVAILABLE,
+                confidence = null,
+                baselineTimestamp = null,
+                points = emptyList(),
+                latestDifferenceUSD = null,
+                latestDifferencePercent = null,
+                unavailableReason = ComparisonUnavailableReason.INSUFFICIENT_SNAPSHOTS,
+                unavailableAt = Instant.parse("2026-07-01T12:00:00Z"),
+            )
+            coEvery { tradeHistoryService.getRebalancerComparison(any(), any()) } returns comparison
+            testApplication {
+                application {
+                    configureTestEnv()
+                }
+                val response = client.get(Routes.API_HISTORY_COMPARISON)
+                response.status shouldBe HttpStatusCode.OK
+                val body = response.bodyAsText()
+                body shouldContain "\"availability\":\"UNAVAILABLE\""
+                body shouldContain "\"unavailableReason\":\"INSUFFICIENT_SNAPSHOTS\""
+                body shouldContain "\"unavailableAt\":\"2026-07-01T12:00:00Z\""
             }
         }
 

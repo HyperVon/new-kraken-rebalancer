@@ -53,6 +53,11 @@ div {
 Use `:common` for IDs, CSS class names, routes, and user-visible labels. The
 `div(CssClass)` helper lives in JVM `view/util/HtmlExtensions.kt`.
 
+Do not add ARIA attributes, ARIA roles, or accessibility-only copy during
+ordinary view work unless the user explicitly requests accessibility changes.
+Preserve unrelated existing metadata; see `OPERATING.md` § UI change
+verification.
+
 ## Page headers: `brandWithMode(settings)`
 
 Every page header uses the shared helper in `view/util/Layouts.kt`:
@@ -170,5 +175,6 @@ pass, use [ui-visual-review](../ui-visual-review/SKILL.md) then
 - [ ] SSE path remains `/api/status/stream`; HTMX shell wiring intact
 - [ ] Static assets cache-busted via `commonMetadataAndStyles()` / `rebalancerJsSrc()`
 - [ ] `#header-status` refreshed via `hx-swap-oob`; mode plate stays in shell
+- [ ] No new ARIA/accessibility-only metadata unless explicitly requested
 - [ ] No FQNs; markdown/docs updated if route tree changes
 - [ ] Visual changes → run docs-screenshot-refresh when shipping docs

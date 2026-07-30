@@ -105,6 +105,10 @@ not treat this skill’s checklist as a substitute.
 
 ### 5. Frontend / Flows
 
+- Flag newly introduced ARIA attributes, roles, accessibility-only copy, or
+  accessibility-specific scope unless the user explicitly requested it;
+  preserve unrelated existing metadata.
+
 - Chart.js deep-clone; **re-attach function callbacks after clone** (e.g.
   `onZoomComplete`).
 - History zoom: pan via `chart.zoomScale`, not `options.scales.x` + `update()`

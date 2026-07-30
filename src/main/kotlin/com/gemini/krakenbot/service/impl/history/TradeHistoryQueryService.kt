@@ -2,6 +2,7 @@ package com.gemini.krakenbot.service.impl.history
 
 import com.gemini.krakenbot.model.HistoryStats
 import com.gemini.krakenbot.model.PortfolioSnapshot
+import com.gemini.krakenbot.model.RebalancerComparison
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.repository.TradeRepository
@@ -35,6 +36,17 @@ class TradeHistoryQueryService(
             failedTradeCount = summary.failedTradeCount,
             dryRunTradeCount = summary.dryRunTradeCount,
         )
+    }
+
+    suspend fun getRebalancerComparison(from: Instant, to: Instant): RebalancerComparison {
+        val snapshots = getSnapshotsInRange(from, to)
+        if (snapshots.size < 2) {
+            return RebalancerComparisonCalculator.calculate(snapshots, emptyList())
+        }
+        val firstTimestamp = snapshots.first().timestamp
+        val lastTimestamp = snapshots.last().timestamp
+        val trades = getTradesInRange(firstTimestamp, lastTimestamp)
+        return RebalancerComparisonCalculator.calculate(snapshots, trades)
     }
 
     suspend fun getHistoryStats(from: Instant, to: Instant): HistoryStats {

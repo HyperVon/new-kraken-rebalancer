@@ -112,6 +112,10 @@ class DashboardController(
                 handleGetSyncProgress()
             }
 
+            get(Routes.API_HISTORY_COMPARISON) {
+                handleGetHistoryComparison()
+            }
+
             get(Routes.API_HEALTH) {
                 handleGetHealth()
             }
@@ -303,6 +307,11 @@ class DashboardController(
         val total = tradeHistoryService.getSyncMetadata(SyncMetadataKeys.SYNC_TOTAL)
         val seeded = tradeHistoryService.isHistorySeeded()
         respondJson(buildSyncProgressResponse(seeded, offset, total))
+    }
+
+    private suspend fun RoutingContext.handleGetHistoryComparison() {
+        val (from, to) = parseTimeRange(call)
+        respondJson(tradeHistoryService.getRebalancerComparison(from, to).toApiDto())
     }
 
     private suspend fun RoutingContext.handleGetHealth() {
