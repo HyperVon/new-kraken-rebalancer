@@ -342,6 +342,7 @@ The dedicated History view provides detailed analysis and charts tracking portfo
 - **View presets** — **Overview**, **Day · Total only**, **Week · Allocation**, and **Month · Net Cash Flow**, plus **Save view…** / **Set as default** / **Delete** for browser-local custom views
 - **Chart zoom** — **Zoom −** / **Zoom +** / **Reset**, plus wheel, pinch, and drag-to-zoom on the x-axis
 - **Pan scrubber** — after zooming in, a horizontal scrubber below each chart pans the visible window across the full time range (chart drag zooms; it does not pan)
+- **Rebalancer vs Buy & Hold** — compares actual portfolio value against fixed quantities from the first stored snapshot in the selected range, shows the latest USD/percentage difference, and marks ranges with incomplete reconciliation data as unavailable
 - **Portfolio Value Over Time** (overall portfolio value in USD + individual asset values)
 - **Asset Holdings Over Time** (% change in asset balance)
 - **Allocation Deviation from Target** (signed relative drift around a 0% on-target baseline)
@@ -349,6 +350,8 @@ The dedicated History view provides detailed analysis and charts tracking portfo
 - **Comprehensive Trade Log Table** (showing all executions, with a toggle to filter/show dry-run trades)
 
 ![History Overview](docs/images/history.png)
+
+![History — Portfolio Value & Asset Holdings](docs/images/history-portfolio-charts.png)
 
 ![History — Allocation Deviation & Net Cash Flow](docs/images/history-charts.png)
 
@@ -662,6 +665,7 @@ If you are modifying the client-side code in `frontend-js/` and want to compile 
 | `GET`  | `/api/history/snapshots`     | Portfolio snapshots for History charts (JSON, `?range=`)                 |
 | `GET`  | `/api/history/trades`        | Trade log for History page (JSON, `?range=`)                             |
 | `GET`  | `/api/history/stats`         | History summary-card aggregates (JSON, `?range=`)                        |
+| `GET`  | `/api/history/comparison`    | Rebalancer vs Buy & Hold comparison or unavailable reason (`?range=`)    |
 | `GET`  | `/api/history/sync-progress` | Polling endpoint for Kraken trade history sync status (JSON)             |
 | `GET`  | `/static/*`                  | Static assets (JS, dynamically compiled CSS via kotlinx-css)             |
 

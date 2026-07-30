@@ -14,6 +14,11 @@ import kotlin.js.json
 object TestDomBuilders {
     fun chartsDom(): String =
         """
+        <div id="${HtmlIds.COMPARISON_CHART_CONTENT}" class="${CssClass.History.ComparisonChartArea}">
+            <canvas id="${HtmlIds.REBALANCER_COMPARISON_CHART}"></canvas>
+        </div>
+        <div id="${HtmlIds.COMPARISON_AVAILABILITY_MESSAGE}" class="${CssClass.History.ComparisonUnavailable}"></div>
+        <span id="${HtmlIds.COMPARISON_LATEST_DIFFERENCE}">${ViewText.EM_DASH}</span>
         <canvas id="${HtmlIds.PORTFOLIO_VALUE_CHART}"></canvas>
         <canvas id="${HtmlIds.ASSET_HOLDINGS_CHART}"></canvas>
         <canvas id="${HtmlIds.ALLOCATION_DRIFT_CHART}"></canvas>

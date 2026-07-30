@@ -26,7 +26,7 @@ class HistoryZoomTest : StringSpec() {
         "setupZoomButtons invoke chart zoom APIs" {
             resetHistoryUiState()
             val container = document.createElement(HtmlTags.DIV)
-            container.innerHTML = TestDomBuilders.zoomControlsDom()
+            container.innerHTML = TestDomBuilders.zoomControlsDom(HtmlIds.REBALANCER_COMPARISON_CHART)
             document.body!!.appendChild(container)
             var zoomCalls = 0
             var resetCalls = 0
@@ -42,7 +42,7 @@ class HistoryZoomTest : StringSpec() {
             registerHistoryGlobals()
             try {
                 createOrUpdate(
-                    HtmlIds.PORTFOLIO_VALUE_CHART,
+                    HtmlIds.REBALANCER_COMPARISON_CHART,
                     createLineChartConfig(emptyArray(), getClonedChartOptions()),
                 )
                 setupZoomButtons()

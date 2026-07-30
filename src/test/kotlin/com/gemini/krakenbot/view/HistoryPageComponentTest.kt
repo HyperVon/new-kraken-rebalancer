@@ -10,6 +10,7 @@ import com.gemini.krakenbot.view.util.HtmlIds
 import com.gemini.krakenbot.view.util.ViewText
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
+import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldNotContain
 import kotlinx.html.html
@@ -30,6 +31,7 @@ class HistoryPageComponentTest : StringSpec() {
             // Shared IDs/classes are the contract between server-rendered markup and Kotlin/JS;
             // using :common constants here makes either side's drift fail this test.
             htmlString shouldContain "History - Kraken Rebalancer"
+            htmlString shouldContain "id=\"${HtmlIds.REBALANCER_COMPARISON_CHART}\""
             htmlString shouldContain "id=\"${HtmlIds.PORTFOLIO_VALUE_CHART}\""
             htmlString shouldContain "id=\"${HtmlIds.ASSET_HOLDINGS_CHART}\""
             htmlString shouldContain "id=\"${HtmlIds.ALLOCATION_DRIFT_CHART}\""
@@ -48,6 +50,12 @@ class HistoryPageComponentTest : StringSpec() {
             htmlString shouldContain ViewText.HEADER_FEE
             htmlString shouldContain ViewText.HEADER_SLIPPAGE
             htmlString shouldContain "rebalancer.js"
+            htmlString shouldContain "Rebalancer vs Buy &amp; Hold"
+            htmlString shouldContain HtmlIds.COMPARISON_LATEST_DIFFERENCE
+            htmlString shouldContain HtmlIds.COMPARISON_CHART_CONTENT
+            htmlString shouldContain HtmlIds.COMPARISON_AVAILABILITY_MESSAGE
+            htmlString shouldContain ViewText.COMPARISON_CAPTION
+            Regex("\\sid=\"${HtmlIds.REBALANCER_COMPARISON_CHART}\"").findAll(htmlString).count() shouldBe 1
         }
 
         "should JSON-escape asset colors in window.__ASSET_COLORS__" {

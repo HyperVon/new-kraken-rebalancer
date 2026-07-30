@@ -6,6 +6,45 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.15.20] - 2026-07-30
+
+### Fixed
+
+- **Rebalancer vs Buy & Hold comparison query range**: Retained snapshot list
+  timestamp range querying in `TradeHistoryQueryService` now uses `minOf`/`maxOf`
+  to guarantee all trade records within the snapshot period are retrieved regardless
+  of list ordering.
+- **Comparison baseline mismatch & price validation**: Hardened `RebalancerComparisonCalculator`
+  with explicit `BASELINE_MISMATCH_TOLERANCE` constant, price existence error messages,
+  and corrected point indexing for latest difference metrics.
+
+### Changed
+
+- **Simulation seed trade fees and timestamp grid**: `SimulatedKrakenService` now computes
+  explicit non-zero trade fees, and `TradeHistorySnapshotStore` anchors cold-start
+  simulation snapshot grids to historical trade timestamps.
+
+## [6.15.19] - 2026-07-29
+
+### Added
+
+- **Rebalancer vs Buy & Hold comparison chart**: New chart on the History page
+  that compares the rebalancer's actual portfolio value against a hypothetical
+  buy-and-hold strategy anchored to the first snapshot in the selected range.
+  Shows outperformance/underperformance in USD and percent on each data point
+  and a latest-difference badge. Unavailable states (insufficient history, missing
+  prices, asset universe changes, unexplained balance changes, unsupported
+  trades, non-positive baseline, baseline mismatch) show a clear reason and
+  hide the chart area — never a misleading comparison.
+
+### Changed
+
+- **Simulation mode comparison chart data**: Enhanced cold-start simulation seeding
+  to persist trade records alongside historical snapshots, aligning timestamp precision
+  and trade history seeding so the Rebalancer vs Buy & Hold comparison chart renders
+  realistic data immediately on startup and in documentation screenshots.
+- Refreshed the History documentation screenshots for the new five-chart layout.
+
 ## [6.15.18] - 2026-07-29
 
 ### Added

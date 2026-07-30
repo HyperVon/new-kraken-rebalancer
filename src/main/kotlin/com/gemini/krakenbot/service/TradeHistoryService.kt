@@ -2,6 +2,7 @@ package com.gemini.krakenbot.service
 
 import com.gemini.krakenbot.model.HistoryStats
 import com.gemini.krakenbot.model.PortfolioSnapshot
+import com.gemini.krakenbot.model.RebalancerComparison
 import com.gemini.krakenbot.model.TradeRecord
 import kotlinx.coroutines.flow.Flow
 import java.time.Instant
@@ -36,4 +37,6 @@ interface TradeHistoryService {
     suspend fun setSyncMetadata(key: String, value: String)
 
     suspend fun isHistorySeeded(): Boolean
+
+    suspend fun getRebalancerComparison(from: Instant, to: Instant): RebalancerComparison
 }

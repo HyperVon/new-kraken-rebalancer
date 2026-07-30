@@ -46,6 +46,7 @@ class HistoryPageComponent(private val objectMapper: ObjectMapper) {
                 renderSyncProgressBanner()
                 renderToolbar()
                 renderStatsGrid()
+                renderComparisonChartSection()
                 HistoryChartSection.ALL.forEach { chart ->
                     renderChartSection(chart)
                 }
@@ -130,6 +131,48 @@ class HistoryPageComponent(private val objectMapper: ObjectMapper) {
                     id = HtmlIds.HISTORY_DELETE_VIEW_BTN
                     type = ButtonType.button
                     +ViewText.HISTORY_DELETE_VIEW
+                }
+            }
+        }
+    }
+
+    private fun DIV.renderComparisonChartSection() {
+        div(CssClass.Layout.GlassPanel) {
+            div(CssClass.History.ChartHeader + CssClass.History.ComparisonHeader) {
+                h2(CssClass.Utility.GlassPanelTitle + CssClass.History.ChartHeaderTitle) {
+                    icon(Icons.CHART)
+                    +ViewText.HISTORY_REBALANCER_VS_BUY_AND_HOLD
+                }
+                div(CssClass.History.ComparisonDelta) {
+                    id = HtmlIds.COMPARISON_LATEST_DIFFERENCE
+                    +ViewText.EM_DASH
+                }
+                div(CssClass.History.ChartTools) {
+                    zoomButton(HtmlIds.REBALANCER_COMPARISON_CHART, ZoomActions.OUT, ViewText.HISTORY_ZOOM_OUT)
+                    zoomButton(HtmlIds.REBALANCER_COMPARISON_CHART, ZoomActions.IN, ViewText.HISTORY_ZOOM_IN)
+                    zoomButton(HtmlIds.REBALANCER_COMPARISON_CHART, ZoomActions.RESET, ViewText.HISTORY_ZOOM_RESET)
+                }
+            }
+            div(CssClass.History.ComparisonChartArea) {
+                id = HtmlIds.COMPARISON_CHART_CONTENT
+                div(CssClass.History.ChartContainer) {
+                    canvas {
+                        id = HtmlIds.REBALANCER_COMPARISON_CHART
+                    }
+                }
+            }
+            div(CssClass.History.ComparisonUnavailable) {
+                id = HtmlIds.COMPARISON_AVAILABILITY_MESSAGE
+            }
+            p(CssClass.History.ChartCaption) { +ViewText.COMPARISON_CAPTION }
+            div(CssClass.History.ChartScrubber) {
+                input(classes = CssClass.History.ChartScrubberInput.value, type = InputType.range) {
+                    min = "0"
+                    max = "100"
+                    step = "0.1"
+                    value = "0"
+                    disabled = true
+                    attributes[HtmlAttrs.DATA_CHART_ID] = HtmlIds.REBALANCER_COMPARISON_CHART
                 }
             }
         }

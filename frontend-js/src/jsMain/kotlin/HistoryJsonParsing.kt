@@ -2,6 +2,8 @@ package com.gemini.krakenbot.frontend
 
 import com.gemini.krakenbot.api.HistoryStats
 import com.gemini.krakenbot.api.PortfolioSnapshot
+import com.gemini.krakenbot.api.RebalancerComparison
+import com.gemini.krakenbot.api.RebalancerComparisonPoint
 import com.gemini.krakenbot.api.SyncProgressResponse
 import com.gemini.krakenbot.api.TradeRecord
 import com.gemini.krakenbot.model.SyncMetadataKeys
@@ -136,6 +138,69 @@ fun parseSyncProgressResponse(raw: dynamic): SyncProgressResponse = SyncProgress
     seeded = dynamicBoolean(raw[SyncMetadataKeys.IS_SEEDED]),
     offset = dynamicString(raw[SyncMetadataKeys.OFFSET]).orEmpty(),
     total = dynamicString(raw[SyncMetadataKeys.TOTAL]).orEmpty(),
+)
+
+fun parseRebalancerComparisonPoint(raw: dynamic): RebalancerComparisonPoint = RebalancerComparisonPoint(
+    timestamp = dynamicString(raw.timestamp).orEmpty(),
+    rebalancerValueUSD = dynamicString(raw.rebalancerValueUSD).orEmpty(),
+    buyAndHoldValueUSD = dynamicString(raw.buyAndHoldValueUSD).orEmpty(),
+    differenceUSD = dynamicString(raw.differenceUSD).orEmpty(),
+    differencePercent = dynamicString(raw.differencePercent).orEmpty(),
+)
+
+fun parseRebalancerComparison(raw: dynamic): RebalancerComparison {
+    if (raw == null || raw == undefined) {
+        return RebalancerComparison(
+            availability = "UNAVAILABLE",
+            confidence = null,
+            baselineTimestamp = null,
+            points = emptyList(),
+            latestDifferenceUSD = null,
+            latestDifferencePercent = null,
+            unavailableReason = "INSUFFICIENT_SNAPSHOTS",
+            unavailableAt = null,
+        )
+    }
+    val availability = when (dynamicString(raw.availability)) {
+        "AVAILABLE" -> "AVAILABLE"
+        else -> "UNAVAILABLE"
+    }
+    val pointsRaw = raw.points
+    val points = if (pointsRaw == null || pointsRaw == undefined) {
+        emptyList()
+    } else {
+        val length = dynamicArrayLength(pointsRaw)
+        (0 until length).map { index -> parseRebalancerComparisonPoint(dynamicArrayElement(pointsRaw, index)) }
+    }
+    return RebalancerComparison(
+        availability = availability,
+        confidence = dynamicString(raw.confidence),
+        baselineTimestamp = dynamicString(raw.baselineTimestamp),
+        points = points,
+        latestDifferenceUSD = dynamicString(raw.latestDifferenceUSD),
+        latestDifferencePercent = dynamicString(raw.latestDifferencePercent),
+        unavailableReason = dynamicString(raw.unavailableReason),
+        unavailableAt = dynamicString(raw.unavailableAt),
+    )
+}
+
+fun rebalancerComparisonToDynamic(comparison: RebalancerComparison): dynamic = json(
+    "availability" to comparison.availability,
+    "confidence" to comparison.confidence,
+    "baselineTimestamp" to comparison.baselineTimestamp,
+    "points" to comparison.points.map { point ->
+        json(
+            "timestamp" to point.timestamp,
+            "rebalancerValueUSD" to point.rebalancerValueUSD,
+            "buyAndHoldValueUSD" to point.buyAndHoldValueUSD,
+            "differenceUSD" to point.differenceUSD,
+            "differencePercent" to point.differencePercent,
+        )
+    }.toTypedArray(),
+    "latestDifferenceUSD" to comparison.latestDifferenceUSD,
+    "latestDifferencePercent" to comparison.latestDifferencePercent,
+    "unavailableReason" to comparison.unavailableReason,
+    "unavailableAt" to comparison.unavailableAt,
 )
 
 /** Build a dynamic trade JSON object for tests using [DataProps] keys. */

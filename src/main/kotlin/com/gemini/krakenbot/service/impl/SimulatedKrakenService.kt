@@ -82,8 +82,12 @@ class SimulatedKrakenService(private val configService: ConfigService) : KrakenS
             }
         }
 
-        // Seed demo history once, only when at least one non-USD allocation exists.
-        if (!historicalTradesSeeded && allocations.any { !it.symbol.isUsd }) {
+        // Seed demo history once when both sides of a USD-quoted fill can be represented.
+        if (
+            !historicalTradesSeeded &&
+            allocations.any { !it.symbol.isUsd } &&
+            allocations.any { it.symbol.isUsd }
+        ) {
             seedSimulatedTrades()
             historicalTradesSeeded = true
         }
@@ -95,40 +99,83 @@ class SimulatedKrakenService(private val configService: ConfigService) : KrakenS
         val nonUsd = allocations.filter { !it.symbol.isUsd }
         if (nonUsd.isEmpty()) return
 
-        val random = ThreadLocalRandom.current()
-        // 15 fake fills over the last ~5 days (hoursAgo in 1..119).
-        (1..15).forEach { _ ->
-            val hoursAgo = random.nextLong(1, 120)
-            val timestamp = now.minus(hoursAgo, ChronoUnit.HOURS)
-            val alloc = nonUsd[random.nextInt(nonUsd.size)]
+        // Seven paired rebalances over the last five days. Each pair returns the
+        // asset quantity to its starting level while retaining realistic fee and
+        // execution-price effects in USD, so seeded snapshots can reconcile the
+        // same fills without inventing deposits or withdrawals.
+        repeat(7) { index ->
+            val alloc = nonUsd[index % nonUsd.size]
             val symbol = alloc.symbol.value.uppercase()
             val pair = Asset.tradingPair(symbol)
-            val side = if (random.nextBoolean()) OrderSide.BUY.name else OrderSide.SELL.name
-            val price = simulatedPrices.getValue(symbol)
-            val tradePrice =
-                price
-                    .multiply(BigDecimal.valueOf(0.95 + random.nextDouble() * 0.10))
-                    .toCryptoScale()
-            val usdValue = BigDecimal.valueOf(500.0 + random.nextDouble() * 2500.0).toUsdScale()
-            val volume = usdValue.divide(tradePrice, PrecisionConstants.SCALE_CRYPTO, RoundingMode.HALF_UP)
+            val basePrice = SimulationDefaults.INITIAL_PRICES[symbol] ?: SimulationDefaults.DEFAULT_PRICE
+            val firstPrice = basePrice.multiply(BigDecimal.valueOf(0.94 + index * 0.012)).toCryptoScale()
+            val returnFactor = if (index % 3 == 0) {
+                1.035
+            } else if (index % 3 == 1) {
+                0.978
+            } else {
+                1.014
+            }
+            val secondPrice = firstPrice.multiply(BigDecimal.valueOf(returnFactor)).toCryptoScale()
+            val targetUsd = BigDecimal.valueOf(800L + index * 175L).toUsdScale()
+            val volume = targetUsd.divide(firstPrice, PrecisionConstants.SCALE_CRYPTO, RoundingMode.HALF_UP)
+            val firstSide = if (index % 2 == 0) OrderSide.BUY else OrderSide.SELL
+            val secondSide = if (firstSide == OrderSide.BUY) OrderSide.SELL else OrderSide.BUY
+            // Anchored to SimulationDefaults.SEED_LATEST_TRADE_HOURS_AGO so the final pair's
+            // second leg always lands that many hours before `now`; TradeHistorySnapshotStore
+            // relies on this to align its snapshot grid. Equivalent to 114L - index * 16L.
+            val firstHoursAgo =
+                SimulationDefaults.SEED_LATEST_TRADE_HOURS_AGO + 6L + (6 - index) * 16L
 
-            simulatedTrades.add(
-                TradeRecord(
-                    timestamp = timestamp,
-                    pair = pair,
-                    side = side,
-                    symbol = symbol,
-                    volume = volume,
-                    usdAmount = usdValue,
-                    success = true,
-                    dryRun = false,
-                    source = TradeSource.API_FILL,
-                ),
+            simulatedTrades += seededTrade(
+                timestamp = now.minus(firstHoursAgo, ChronoUnit.HOURS),
+                pair = pair,
+                side = firstSide,
+                symbol = symbol,
+                volume = volume,
+                price = firstPrice,
+                seedId = "${index + 1}-1",
+            )
+            simulatedTrades += seededTrade(
+                timestamp = now.minus(firstHoursAgo - 6L, ChronoUnit.HOURS),
+                pair = pair,
+                side = secondSide,
+                symbol = symbol,
+                volume = volume,
+                price = secondPrice,
+                seedId = "${index + 1}-2",
             )
         }
         val sorted = simulatedTrades.sortedBy { it.timestamp }
         simulatedTrades.clear()
         simulatedTrades.addAll(sorted)
+    }
+
+    private fun seededTrade(
+        timestamp: Instant,
+        pair: String,
+        side: OrderSide,
+        symbol: String,
+        volume: BigDecimal,
+        price: BigDecimal,
+        seedId: String,
+    ): TradeRecord {
+        val usdAmount = volume.multiply(price).toUsdScale()
+        return TradeRecord(
+            timestamp = timestamp,
+            pair = pair,
+            side = side.name,
+            symbol = symbol,
+            volume = volume,
+            usdAmount = usdAmount,
+            success = true,
+            dryRun = false,
+            price = price,
+            fee = usdAmount.multiply(SEED_FEE_RATE).setScale(4, RoundingMode.HALF_UP),
+            source = TradeSource.API_FILL,
+            orderTxid = "SIM-SEED-$seedId",
+            tradeId = "SIM-SEED-FILL-$seedId",
+        )
     }
 
     private fun fluctuatePrices() {
@@ -266,7 +313,7 @@ class SimulatedKrakenService(private val configService: ConfigService) : KrakenS
                     success = true,
                     dryRun = false,
                     price = price.toCryptoScale(),
-                    fee = BigDecimal.ZERO,
+                    fee = usdAmount.multiply(SEED_FEE_RATE).setScale(4, RoundingMode.HALF_UP),
                     source = TradeSource.API_FILL,
                     orderTxid = orderTxid,
                 )
@@ -307,5 +354,6 @@ class SimulatedKrakenService(private val configService: ConfigService) : KrakenS
 
     private companion object {
         const val TRADE_HISTORY_PAGE_SIZE = 50
+        val SEED_FEE_RATE: BigDecimal = BigDecimal("0.0026")
     }
 }

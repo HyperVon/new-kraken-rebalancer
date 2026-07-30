@@ -2,6 +2,8 @@ package com.gemini.krakenbot.frontend
 
 import com.gemini.krakenbot.api.HistoryStats
 import com.gemini.krakenbot.api.PortfolioSnapshot
+import com.gemini.krakenbot.api.RebalancerComparison
+import com.gemini.krakenbot.api.RebalancerComparisonPoint
 import com.gemini.krakenbot.api.TradeRecord
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderSide
@@ -85,15 +87,54 @@ fun mockPortfolioStatsRecord(
     avgSlippagePercent = avgSlippagePercent,
 )
 
+fun mockAvailableComparison(): RebalancerComparison = RebalancerComparison(
+    availability = "AVAILABLE",
+    confidence = "RECONCILED",
+    baselineTimestamp = "2026-07-01T12:00:00Z",
+    points = listOf(
+        RebalancerComparisonPoint(
+            timestamp = "2026-07-01T12:00:00Z",
+            rebalancerValueUSD = "100000.00",
+            buyAndHoldValueUSD = "100000.00",
+            differenceUSD = "0.00",
+            differencePercent = "0.0000",
+        ),
+        RebalancerComparisonPoint(
+            timestamp = "2026-07-02T12:00:00Z",
+            rebalancerValueUSD = "110000.00",
+            buyAndHoldValueUSD = "105000.00",
+            differenceUSD = "5000.00",
+            differencePercent = "4.7619",
+        ),
+    ),
+    latestDifferenceUSD = "5000.00",
+    latestDifferencePercent = "4.7619",
+    unavailableReason = null,
+    unavailableAt = null,
+)
+
+fun mockUnavailableComparison(reason: String = "INSUFFICIENT_SNAPSHOTS"): RebalancerComparison = RebalancerComparison(
+    availability = "UNAVAILABLE",
+    confidence = null,
+    baselineTimestamp = null,
+    points = emptyList(),
+    latestDifferenceUSD = null,
+    latestDifferencePercent = null,
+    unavailableReason = reason,
+    unavailableAt = "2026-07-01T12:00:00Z",
+)
+
 fun mockHistoryFetchHandler(
     snapshots: List<PortfolioSnapshot> = listOf(mockSnapshotRecord()),
     trades: List<TradeRecord> = listOf(mockTradeRecord()),
     stats: HistoryStats = mockPortfolioStatsRecord(),
     syncProgress: dynamic = json("seeded" to true),
+    comparison: RebalancerComparison = mockAvailableComparison(),
 ): (String) -> Any? = { url ->
     when {
         url.contains("snapshots") -> snapshots.map { portfolioSnapshotToDynamic(it) }.toTypedArray()
         url.contains("trades") -> trades.map { tradeRecordToDynamic(it) }.toTypedArray()
+        url.contains("comparison") -> rebalancerComparisonToDynamic(comparison)
         url.contains("sync-progress") -> syncProgress
         else -> historyStatsToDynamic(stats)
     }

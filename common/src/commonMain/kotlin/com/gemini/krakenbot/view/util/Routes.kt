@@ -14,6 +14,7 @@ object Routes {
     const val API_HISTORY_TRADES = "/api/history/trades"
     const val API_HISTORY_STATS = "/api/history/stats"
     const val API_HISTORY_SYNC_PROGRESS = "/api/history/sync-progress"
+    const val API_HISTORY_COMPARISON = "/api/history/comparison"
     const val API_HEALTH = "/api/health"
     const val STATIC_STYLE_CSS = "/static/style.css"
     const val STATIC_REBALANCER_JS = "/static/rebalancer.js"

@@ -3,6 +3,8 @@ package com.gemini.krakenbot.api
 import java.math.BigDecimal
 import com.gemini.krakenbot.model.HistoryStats as DomainHistoryStats
 import com.gemini.krakenbot.model.PortfolioSnapshot as DomainPortfolioSnapshot
+import com.gemini.krakenbot.model.RebalancerComparison as DomainRebalancerComparison
+import com.gemini.krakenbot.model.RebalancerComparisonPoint as DomainRebalancerComparisonPoint
 import com.gemini.krakenbot.model.TradeRecord as DomainTradeRecord
 
 private fun BigDecimal.toApiString(): String = toPlainString()
@@ -66,3 +68,22 @@ fun buildSyncProgressResponse(seeded: Boolean, offset: String?, total: String?):
         offset = offset.orEmpty(),
         total = total.orEmpty(),
     )
+
+fun DomainRebalancerComparison.toApiDto(): RebalancerComparison = RebalancerComparison(
+    availability = availability.name,
+    confidence = confidence?.name,
+    baselineTimestamp = baselineTimestamp?.toString(),
+    points = points.map { it.toApiDto() },
+    latestDifferenceUSD = latestDifferenceUSD?.toApiString(),
+    latestDifferencePercent = latestDifferencePercent?.toApiString(),
+    unavailableReason = unavailableReason?.name,
+    unavailableAt = unavailableAt?.toString(),
+)
+
+fun DomainRebalancerComparisonPoint.toApiDto(): RebalancerComparisonPoint = RebalancerComparisonPoint(
+    timestamp = timestamp.toString(),
+    rebalancerValueUSD = rebalancerValueUSD.toApiString(),
+    buyAndHoldValueUSD = buyAndHoldValueUSD.toApiString(),
+    differenceUSD = differenceUSD.toApiString(),
+    differencePercent = differencePercent.toApiString(),
+)

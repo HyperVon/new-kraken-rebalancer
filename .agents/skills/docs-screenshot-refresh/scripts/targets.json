@@ -35,17 +35,24 @@
       "click_button": "30d",
       "await_text": [
         "Total Trades",
-        "Portfolio Value Over Time",
-        "Asset Holdings Over Time"
+        "Rebalancer vs Buy & Hold"
       ],
-      "await_charts": 4,
+      "await_charts": 5,
       "position": "top"
+    },
+    {
+      "file": "history-portfolio-charts.png",
+      "path": "/history",
+      "click_button": "30d",
+      "await_charts": 5,
+      "anchor": "Portfolio Value Over Time",
+      "await_text": ["Asset Holdings Over Time"]
     },
     {
       "file": "history-charts.png",
       "path": "/history",
       "click_button": "30d",
-      "await_charts": 4,
+      "await_charts": 5,
       "anchor": "Allocation Deviation from Target",
       "await_text": ["Cumulative Net Cash Flow"],
       "ensure_visible": "Dry-run rows use estimated fees",
@@ -55,7 +62,7 @@
       "file": "history-bottom.png",
       "path": "/history",
       "click_button": "30d",
-      "await_charts": 4,
+      "await_charts": 5,
       "anchor": "Trade History"
     }
   ]

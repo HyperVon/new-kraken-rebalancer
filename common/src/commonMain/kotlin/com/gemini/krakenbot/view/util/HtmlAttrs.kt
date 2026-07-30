@@ -139,6 +139,10 @@ object HtmlIds {
     const val ASSET_HOLDINGS_CHART = "asset-holdings-chart"
     const val ALLOCATION_DRIFT_CHART = "allocation-drift-chart"
     const val CUMULATIVE_NET_CASH_FLOW_CHART = "cumulative-net-cash-flow-chart"
+    const val REBALANCER_COMPARISON_CHART = "rebalancer-comparison-chart"
+    const val COMPARISON_CHART_CONTENT = "comparison-chart-content"
+    const val COMPARISON_LATEST_DIFFERENCE = "comparison-latest-difference"
+    const val COMPARISON_AVAILABILITY_MESSAGE = "comparison-availability-message"
 }
 
 /** Centralized health check response keys. */

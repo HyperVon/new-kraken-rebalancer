@@ -74,6 +74,7 @@ internal fun loadAll(range: String): Promise<Unit> {
             Routes.API_HISTORY_SNAPSHOTS,
             Routes.API_HISTORY_TRADES,
             Routes.API_HISTORY_STATS,
+            Routes.API_HISTORY_COMPARISON,
             range = range,
         )
 
@@ -82,12 +83,14 @@ internal fun loadAll(range: String): Promise<Unit> {
         val snapshots = parsePortfolioSnapshots(results[0])
         val trades = parseTradeRecords(results[1])
         val stats = parseHistoryStats(results[2])
+        val comparison = parseRebalancerComparison(results[3])
         allTrades = trades
         buildPortfolioValueChart(snapshots)
         buildAssetHoldingsChart(snapshots)
         buildAllocationDriftChart(snapshots)
         val showDryRun = (document.getElementById(HtmlIds.SHOW_DRY_RUN_CHECKBOX) as? HTMLInputElement)?.checked ?: true
         buildCumulativeNetCashFlowChart(trades, showDryRun)
+        buildRebalancerComparisonChart(comparison)
         renderTradeTable(trades)
         updateStats(stats)
     }.`catch` { error ->

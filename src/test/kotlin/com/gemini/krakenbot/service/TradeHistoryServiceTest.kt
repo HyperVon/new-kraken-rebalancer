@@ -187,6 +187,40 @@ class TradeHistoryServiceTest : TradeHistoryServiceTestBase() {
             }
         }
 
+        "getRebalancerComparison_DoesNotQueryTradesForInsufficientSnapshots" {
+            runTest {
+                val tradeHistoryService = createService()
+                val from = Instant.parse("2026-07-01T00:00:00Z")
+                val to = Instant.parse("2026-07-02T00:00:00Z")
+                coEvery { repository.getSnapshotsInRange(from, to) } returns
+                    listOf(TestFixtures.emptySnapshot(timestamp = from, totalValueUSD = BigDecimal.ONE))
+
+                tradeHistoryService.getRebalancerComparison(from, to)
+
+                coVerify(exactly = 1) { repository.getSnapshotsInRange(from, to) }
+                coVerify(exactly = 0) { repository.getTradesInRange(any(), any()) }
+            }
+        }
+
+        "getRebalancerComparison_QueriesTradesBetweenSelectedSnapshotEndpoints" {
+            runTest {
+                val tradeHistoryService = createService()
+                val from = Instant.parse("2026-07-01T00:00:00Z")
+                val baseline = from.plusSeconds(60)
+                val last = from.plusSeconds(120)
+                val to = from.plusSeconds(180)
+                coEvery { repository.getSnapshotsInRange(from, to) } returns
+                    listOf(
+                        TestFixtures.emptySnapshot(timestamp = baseline, totalValueUSD = BigDecimal.ONE),
+                        TestFixtures.emptySnapshot(timestamp = last, totalValueUSD = BigDecimal.ONE),
+                    )
+
+                tradeHistoryService.getRebalancerComparison(from, to)
+
+                coVerify(exactly = 1) { repository.getTradesInRange(baseline, last) }
+            }
+        }
+
         "getHistoryStats_AggregatesCorrectly" {
             runTest {
                 val tradeHistoryService = createService()

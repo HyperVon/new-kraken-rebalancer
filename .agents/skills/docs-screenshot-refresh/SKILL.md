@@ -47,6 +47,7 @@ readiness waits, and scroll position. Current set:
 | `dashboard-bottom.png` | `/` — asset table + recent activity |
 | `settings.png` | `/settings` — full settings form |
 | `history.png` | `/history` (30d) — summary cards + first charts |
+| `history-portfolio-charts.png` | `/history` (30d) — portfolio value + asset holdings |
 | `history-charts.png` | `/history` (30d) — allocation deviation + cumulative net cash flow |
 | `history-bottom.png` | `/history` (30d) — trade log |
 
@@ -174,7 +175,7 @@ Then confirm the current UI semantics survived the capture:
 | `dashboard.png` | Hero total with 24h delta chip + sparkline; Cash / Crypto tiles show bars, target, deviation |
 | `dashboard-bottom.png` | Activity feed grouped per cycle with relative times, quiet-cycle summary, and the "View all history" link |
 | `settings.png` | Safety Modes render as cards with icon, description, and ON/OFF pill |
-| `history.png` / `history-charts.png` | Single-row chart headers (title + zoom); net cash flow caption visible |
+| `history.png` / `history-portfolio-charts.png` / `history-charts.png` | Single-row chart headers (title + zoom); comparison delta and net cash flow captions visible |
 | `history-bottom.png` | Trade table shows em-dashes for zero economics and status dots for plain successes |
 
 A capture that shows `LIVE TRADING` means the run directory was misconfigured —
