@@ -2,6 +2,8 @@ package com.gemini.krakenbot.view.component
 
 import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.view.util.ActiveNav
+import com.gemini.krakenbot.view.util.AriaLive
+import com.gemini.krakenbot.view.util.AriaRole
 import com.gemini.krakenbot.view.util.ChartProps
 import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.FormFields
@@ -61,6 +63,8 @@ class SettingsFormComponent {
 
                 if (errorMessage != null) {
                     div(CssClass.Utility.ErrorBanner) {
+                        role = AriaRole.ALERT
+                        attributes[HtmlAttrs.ARIA_LIVE] = AriaLive.POLITE
                         +errorMessage
                     }
                 }

@@ -176,6 +176,8 @@ class HistoryPageComponent(private val objectMapper: ObjectMapper) {
                     value = "0"
                     disabled = true
                     attributes[HtmlAttrs.DATA_CHART_ID] = HtmlIds.REBALANCER_COMPARISON_CHART
+                    attributes[HtmlAttrs.ARIA_LABEL] =
+                        "${ViewText.HISTORY_PAN_CHART}: ${ViewText.HISTORY_REBALANCER_VS_BUY_AND_HOLD}"
                 }
             }
         }
