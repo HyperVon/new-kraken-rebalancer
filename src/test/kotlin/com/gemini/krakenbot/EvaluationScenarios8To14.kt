@@ -1,7 +1,12 @@
 package com.gemini.krakenbot
 
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
-import com.gemini.krakenbot.config.*
+import com.gemini.krakenbot.config.Allocation
+import com.gemini.krakenbot.config.AppConfig
+import com.gemini.krakenbot.config.DatabaseConfig
+import com.gemini.krakenbot.config.InvalidConfigurationException
+import com.gemini.krakenbot.config.KrakenCredentials
+import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.PortfolioStats
@@ -14,7 +19,13 @@ import com.gemini.krakenbot.service.impl.ConfigServiceImpl
 import com.gemini.krakenbot.service.impl.OrderExecutorImpl
 import com.gemini.krakenbot.service.impl.PortfolioAnalyzerImpl
 import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
-import com.gemini.krakenbot.view.component.*
+import com.gemini.krakenbot.view.component.AllocationChartComponent
+import com.gemini.krakenbot.view.component.DashboardShellComponent
+import com.gemini.krakenbot.view.component.HistoryPageComponent
+import com.gemini.krakenbot.view.component.OverviewGridComponent
+import com.gemini.krakenbot.view.component.PerformanceTableComponent
+import com.gemini.krakenbot.view.component.RecentActivityComponent
+import com.gemini.krakenbot.view.component.SettingsFormComponent
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo

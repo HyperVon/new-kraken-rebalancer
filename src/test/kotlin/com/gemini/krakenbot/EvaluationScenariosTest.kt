@@ -2,7 +2,10 @@ package com.gemini.krakenbot
 
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
-import com.gemini.krakenbot.config.*
+import com.gemini.krakenbot.config.Allocation
+import com.gemini.krakenbot.config.AppConfig
+import com.gemini.krakenbot.config.KrakenCredentials
+import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.controller.DashboardController
 import com.gemini.krakenbot.controller.dashboardRouting
 import com.gemini.krakenbot.model.Asset
@@ -20,7 +23,14 @@ import com.gemini.krakenbot.service.impl.OrderExecutorImpl
 import com.gemini.krakenbot.service.impl.PortfolioAnalyzerImpl
 import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
 import com.gemini.krakenbot.view.DashboardView
-import com.gemini.krakenbot.view.component.*
+import com.gemini.krakenbot.view.component.AllocationChartComponent
+import com.gemini.krakenbot.view.component.DashboardFragmentComponent
+import com.gemini.krakenbot.view.component.DashboardShellComponent
+import com.gemini.krakenbot.view.component.HistoryPageComponent
+import com.gemini.krakenbot.view.component.OverviewGridComponent
+import com.gemini.krakenbot.view.component.PerformanceTableComponent
+import com.gemini.krakenbot.view.component.RecentActivityComponent
+import com.gemini.krakenbot.view.component.SettingsFormComponent
 import com.gemini.krakenbot.view.util.FormFields
 import com.gemini.krakenbot.view.util.HtmxHeaders
 import com.gemini.krakenbot.view.util.Routes
