@@ -16,6 +16,10 @@ Deep domain how-to lives in [skills](skills/) — see the skill index in
 
 For tasks that match a skill in `.agents/skills/*/SKILL.md` or the index in
 `AGENTS.md`, **read and follow that skill** before inventing a parallel process.
+When both a repository skill and a user-level, global, or other non-project
+skill match, the **repository skill has higher precedence**. Use the external
+skill only for behavior the project skill does not cover, and never allow it to
+override repository instructions, safety rules, or domain invariants.
 
 | User intent | Skill |
 | :--- | :--- |
@@ -35,6 +39,7 @@ For tasks that match a skill in `.agents/skills/*/SKILL.md` or the index in
 | End-user User Guide | `user-guide` |
 | Docs audit | `documentation-review` |
 | Architecture review / redesign brainstorm | `architecture-review` |
+| Product opportunity review / feature roadmap | `product-opportunity-review` |
 | Skill / agent-files review (skills, rules, AGENTS) | `skill-reviewer` |
 | Complex-code comments (audit / hygiene) | `complex-code-comments` |
 | Fan-out parallel work | `parallel-multi-agent` |

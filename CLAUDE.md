@@ -9,5 +9,8 @@ This repository’s agent rules are under **`.agents/`** (not a root `AGENTS.md`
 3. For a matching task, open the skill under `.agents/skills/<name>/SKILL.md`
    and follow it.
 
+When project and user-level/global skills both match, the project skill has
+higher precedence; external skills may only fill uncovered gaps.
+
 Cursor-only projections of OPERATING.md live in `.cursor/rules/*.mdc`; keep them
 in sync when changing OPERATING.md.

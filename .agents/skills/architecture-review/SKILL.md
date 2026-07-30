@@ -28,6 +28,7 @@ decisions canvas (or an equivalent written acceptance).
 | Skill | Role |
 | :--- | :--- |
 | **architecture-review** (this) | Fresh-eyes system design; alternatives up to greenfield; **decisions canvas** |
+| [product-opportunity-review](../product-opportunity-review/SKILL.md) | New user capabilities, unmet needs, and feature roadmap; **product strategy** |
 | [code-review](../code-review/SKILL.md) | Diff/PR audit **against current project conventions** |
 | [autonomous-code-optimizer](../autonomous-code-optimizer/SKILL.md) | Multi-pass cleanup **inside** the existing architecture |
 | [continuous-improvement](../continuous-improvement/SKILL.md) | Incremental product/code improvements with backlog/PR |

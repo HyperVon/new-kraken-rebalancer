@@ -187,6 +187,7 @@ harnesses.
 | [`code-review`](../.agents/skills/code-review/SKILL.md) | Project-specific diff review for correctness, safety, and conventions |
 | [`commit-and-push`](../.agents/skills/commit-and-push/SKILL.md) | Documentation sync, full gates, deliberate commits, and branch pushes |
 | [`open-pr`](../.agents/skills/open-pr/SKILL.md) | Fully verified pull-request creation with structured evidence |
+| [`product-opportunity-review`](../.agents/skills/product-opportunity-review/SKILL.md) | User-needs discovery, feature opportunities, prioritization, and product roadmaps |
 | [`rules-and-skills-audit`](../.agents/skills/rules-and-skills-audit/SKILL.md) | Structural conflicts, redundancy, stale guidance, and consolidation |
 | [`skill-reviewer`](../.agents/skills/skill-reviewer/SKILL.md) | Content improvements for the project agent playbook |
 

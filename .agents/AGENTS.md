@@ -3,6 +3,11 @@
 Primary agent rules live here: **`.agents/AGENTS.md`** (there is no root `AGENTS.md`).
 Domain skills live under **`.agents/skills/*/SKILL.md`**. Prefer skills for deep how-to; keep this file as non-negotiable invariants and pointers.
 
+**Skill precedence:** when a repository skill and a user-level, global, or other
+non-project skill both match a task, the repository skill governs. Use the
+external skill only to fill gaps that the project skill does not cover, and
+never let it override repository instructions or invariants.
+
 **Always-on operating norms** (all agent frameworks): **[OPERATING.md](OPERATING.md)**.
 Cursor projections of those norms live in **`.cursor/rules/*.mdc`** (committed;
 keep in sync with OPERATING.md). Thin harness entrypoints: root **`CLAUDE.md`**,
@@ -49,6 +54,7 @@ Canonical deep docs:
 | Reduce code size / split large files | [reduce-code-size](skills/reduce-code-size/SKILL.md) |
 | Code review | [code-review](skills/code-review/SKILL.md) |
 | Architecture review (third-party / redesign) | [architecture-review](skills/architecture-review/SKILL.md) |
+| Product opportunity review / feature roadmap | [product-opportunity-review](skills/product-opportunity-review/SKILL.md) |
 | Skill / agent-files review (skills, rules, AGENTS) | [skill-reviewer](skills/skill-reviewer/SKILL.md) |
 | Rules / skills structural audit | [rules-and-skills-audit](skills/rules-and-skills-audit/SKILL.md) |
 | Adversarial PR review (dual-model loop) | [adversarial-pr-review](skills/adversarial-pr-review/SKILL.md) |

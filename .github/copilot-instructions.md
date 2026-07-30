@@ -7,7 +7,8 @@ Follow the repository agent guidance (portable; not Cursor-only):
 - [`.agents/skills/`](../.agents/skills/) — task-specific workflows (commit, PR, UI QA, etc.)
 
 When a user request matches a skill in the AGENTS.md index, read that skill and
-follow it. Prefer project skills over inventing ad-hoc workflows.
+follow it. When project and user-level/global skills both match, the project
+skill has higher precedence; external skills may only fill uncovered gaps.
 
 Key norms from OPERATING.md: fan out independent workstreams in parallel;
 never block on long-lived servers in the foreground; after UI changes verify

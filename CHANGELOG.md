@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.15.18] - 2026-07-29
+
+### Added
+
+- **Product strategy workflow**: Added a recommendation-only product opportunity
+  review skill for discovering unmet user needs, evaluating feature candidates,
+  and producing evidence-based Now / Next / Later roadmaps.
+- **Project skill precedence**: Made repository skills authoritative over
+  matching user-level or global skills across the portable agent guidance and
+  harness entrypoints.
+
 ## [6.15.17] - 2026-07-29
 
 ### Changed
