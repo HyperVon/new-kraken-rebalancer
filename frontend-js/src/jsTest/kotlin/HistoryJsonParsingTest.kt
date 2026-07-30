@@ -2,6 +2,8 @@ package com.gemini.krakenbot.frontend
 
 import com.gemini.krakenbot.api.HistoryStats
 import com.gemini.krakenbot.api.PortfolioSnapshot
+import com.gemini.krakenbot.api.RebalancerComparison
+import com.gemini.krakenbot.api.RebalancerComparisonPoint
 import com.gemini.krakenbot.api.SyncProgressResponse
 import com.gemini.krakenbot.api.TradeRecord
 import com.gemini.krakenbot.model.Asset
@@ -204,12 +206,12 @@ class HistoryJsonParsingTest : StringSpec() {
         }
 
         "rebalancerComparisonToDynamic round-trips through parseRebalancerComparison" {
-            val comparison = com.gemini.krakenbot.api.RebalancerComparison(
+            val comparison = RebalancerComparison(
                 availability = "AVAILABLE",
                 confidence = "RECONCILED",
                 baselineTimestamp = "2026-07-01T12:00:00Z",
                 points = listOf(
-                    com.gemini.krakenbot.api.RebalancerComparisonPoint(
+                    RebalancerComparisonPoint(
                         timestamp = "2026-07-01T12:00:00Z",
                         rebalancerValueUSD = "100000.00",
                         buyAndHoldValueUSD = "100000.00",
@@ -227,7 +229,7 @@ class HistoryJsonParsingTest : StringSpec() {
         }
 
         "rebalancerComparisonToDynamic round-trips unavailable state" {
-            val comparison = com.gemini.krakenbot.api.RebalancerComparison(
+            val comparison = RebalancerComparison(
                 availability = "UNAVAILABLE",
                 confidence = null,
                 baselineTimestamp = null,

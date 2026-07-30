@@ -8,6 +8,7 @@ import com.gemini.krakenbot.api.toApiDto
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.ComparisonAvailability
 import com.gemini.krakenbot.model.ComparisonConfidence
+import com.gemini.krakenbot.model.ComparisonUnavailableReason
 import com.gemini.krakenbot.model.HistoryStats
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.PortfolioStats
@@ -27,7 +28,6 @@ import java.time.Instant
 import com.gemini.krakenbot.api.HistoryStats as ApiHistoryStats
 import com.gemini.krakenbot.api.PortfolioSnapshot as ApiPortfolioSnapshot
 import com.gemini.krakenbot.api.RebalancerComparison as ApiRebalancerComparison
-import com.gemini.krakenbot.api.RebalancerComparisonPoint as ApiRebalancerComparisonPoint
 import com.gemini.krakenbot.api.TradeRecord as ApiTradeRecord
 
 class SerializationParityTest : StringSpec() {
@@ -282,7 +282,7 @@ class SerializationParityTest : StringSpec() {
                 points = emptyList(),
                 latestDifferenceUSD = null,
                 latestDifferencePercent = null,
-                unavailableReason = com.gemini.krakenbot.model.ComparisonUnavailableReason.MISSING_PRICE,
+                unavailableReason = ComparisonUnavailableReason.MISSING_PRICE,
                 unavailableAt = Instant.parse("2026-07-01T12:00:00Z"),
             )
 
