@@ -256,6 +256,16 @@ Composer 2.5 Fast and Grok 4.5 High are the currently documented examples for
 those roles. A substitution is meaningful to a human reviewer only when the
 role, capability difference, and reason for substitution remain visible.
 
+When running under the OpenCode harness, the adversarial PR-review workflow
+substitutes the following models while preserving the fast/strong role split:
+
+- fast/cheaper reviewer: **DeepSeek V4 Flash**
+- strong/high-reasoning reviewer: **MiMo V2.5**
+- default session model: **Hy3**
+
+These substitutions are recorded in the PR verification notes and final summary
+when the review runs under OpenCode.
+
 Multiple agreeing models are not proof of correctness. Related models can share
 the same blind spots, repeat inaccurate documentation, or approve tautological
 tests. Source inspection, executable evidence, official Kraken documentation,

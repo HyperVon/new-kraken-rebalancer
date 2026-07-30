@@ -66,26 +66,38 @@ class TradeHistorySyncService(
 
     private suspend fun syncTradesFromKrakenPinned(config: AppConfig) {
         val isSeeded = repository.isHistorySeeded()
-        val latestTradeTime = repository.getLatestTradeTime()
-        val watermarkInstant = readSyncWatermark()
-        // Prefer real/sim fill time; only fall back to the last successful sync watermark when
-        // there are no non-dry-run fills (CQ-8-M2). Do not max() with wall-clock watermark — that
-        // would shrink the reconcile window below latestTradeTime and strand unreconciled locals.
-        val effectiveLatest = latestTradeTime ?: watermarkInstant
-
-        // Null effective → full history (startSec null). Otherwise overlap by 5 minutes so fills
-        // near the previous watermark are re-fetched and reconciled rather than double-inserted.
-        // [isHistorySeeded] only gates progress metadata / first-sync completion, not this window.
+        val effectiveLatest = calculateEffectiveLatestTime()
         val startSec = effectiveLatest?.minusSeconds(300)?.epochSecond
 
         log.info("Starting trade history synchronization (isSeeded={}, startSec={})...", isSeeded, startSec)
 
         val queryStart = effectiveLatest?.minusSeconds(300) ?: Instant.EPOCH
-
         val queryEnd = nowProvider().plusSeconds(300)
         val originalLocalTrades = repository.getTradesInRange(queryStart, queryEnd).toMutableList()
-
         val allocations = config.allocations.map { it.symbol.value }
+
+        val (totalAdded, totalReconciled) = processApiTrades(startSec, originalLocalTrades, allocations)
+
+        triggerReconstructionIfNeeded(config, originalLocalTrades)
+
+        finalizeSync(isSeeded)
+        log.info("Trade history synchronization completed. Added: {} new, Reconciled: {}.", totalAdded, totalReconciled)
+    }
+
+    private suspend fun calculateEffectiveLatestTime(): Instant? {
+        val latestTradeTime = repository.getLatestTradeTime()
+        val watermarkInstant = readSyncWatermark()
+        // Prefer real/sim fill time; only fall back to the last successful sync watermark when
+        // there are no non-dry-run fills (CQ-8-M2). Do not max() with wall-clock watermark — that
+        // would shrink the reconcile window below latestTradeTime and strand unreconciled locals.
+        return latestTradeTime ?: watermarkInstant
+    }
+
+    private suspend fun processApiTrades(
+        startSec: Long?,
+        originalLocalTrades: MutableList<TradeRecord>,
+        allocations: List<String>,
+    ): Pair<Int, Int> {
         var totalAdded = 0
         var totalReconciled = 0
         // Fingerprints of API fills already handled in this sync. Kraken newest-first offset
@@ -98,78 +110,119 @@ class TradeHistorySyncService(
                 for (apiTrade: TradeRecord in apiTrades) {
                     if (!seenApiFillKeys.add(apiFillIdentityKey(apiTrade))) continue
 
-                    // Exact persisted fills must win before nearby local-estimate reconciliation;
-                    // otherwise an overlapping fetch can rewrite a local row even though this API
-                    // fill has already been stored (CQ-10-L2). Legacy-unknown rows are also kept
-                    // intact when their conservative fingerprint matches a fetched fill.
-                    val persistedFill =
-                        originalLocalTrades.find { persisted ->
-                            (persisted.isSettledApiFill() || persisted.isLegacyUnknown()) &&
-                                hasSamePersistedFillIdentity(persisted, apiTrade)
-                        }
-                    if (persistedFill != null) {
-                        originalLocalTrades.remove(persistedFill)
-                        continue
-                    }
-
-                    // A Kraken order id is authoritative when both sides have one. Otherwise use
-                    // economics tolerances so legacy/id-less rows can still reconcile.
-                    val localEstimates =
-                        originalLocalTrades.filter { local ->
-                            local.submissionState == null && !local.dryRun && local.isLocalEstimate()
-                        }
-                    val apiOrderTxid = apiTrade.orderTxid?.takeIf { it.isNotBlank() }
-                    val matchingLocalTrade =
-                        apiOrderTxid?.let { txid ->
-                            localEstimates.find { local -> local.orderTxid?.takeIf { it.isNotBlank() } == txid }
-                        } ?: localEstimates
-                            .asSequence()
-                            .filter { local ->
-                                apiOrderTxid == null || local.orderTxid.isNullOrBlank()
-                            }.find { local ->
-                                local.isMatchingApiTrade(apiTrade, allocations)
-                            }
-
-                    if (matchingLocalTrade != null) {
-                        if (matchingLocalTrade != apiTrade) {
-                            val expectedPrice = matchingLocalTrade.expectedPrice
-                            val reconciledSlippage =
-                                expectedPrice?.let { expected ->
-                                    TradeCalculator.calculateSlippage(
-                                        apiTrade.side,
-                                        apiTrade.price,
-                                        expected,
-                                    )
-                                }
-                            val reconciledTrade =
-                                apiTrade.copy(
-                                    expectedPrice = expectedPrice,
-                                    slippagePercent = reconciledSlippage,
-                                    source = TradeSource.API_FILL,
-                                    // Keep local cycle linkage; prefer API ordertxid when present.
-                                    cycleId = matchingLocalTrade.cycleId,
-                                    orderTxid = apiTrade.orderTxid ?: matchingLocalTrade.orderTxid,
-                                )
-                            log.info(
-                                "Reconciling trade record: local (timestamp={}, usdAmount={}) with API (timestamp={}, usdAmount={})",
-                                matchingLocalTrade.timestamp,
-                                matchingLocalTrade.usdAmount,
-                                apiTrade.timestamp,
-                                apiTrade.usdAmount,
-                            )
-
-                            repository.updateTrade(matchingLocalTrade, reconciledTrade)
-                            totalReconciled++
-                        }
-                        // One local row per API fill in this sync pass.
-                        originalLocalTrades.remove(matchingLocalTrade)
-                    } else {
-                        repository.saveTrade(apiTrade)
-                        totalAdded++
+                    val result = reconcileOrInsertApiTrade(apiTrade, originalLocalTrades, allocations)
+                    when (result) {
+                        is TradeReconciliationResult.Inserted -> totalAdded++
+                        is TradeReconciliationResult.Reconciled -> totalReconciled++
+                        is TradeReconciliationResult.AlreadyPersisted -> { /* no-op */ }
                     }
                 }
             }
 
+        return totalAdded to totalReconciled
+    }
+
+    private suspend fun reconcileOrInsertApiTrade(
+        apiTrade: TradeRecord,
+        originalLocalTrades: MutableList<TradeRecord>,
+        allocations: List<String>,
+    ): TradeReconciliationResult {
+        // Exact persisted fills must win before nearby local-estimate reconciliation;
+        // otherwise an overlapping fetch can rewrite a local row even though this API
+        // fill has already been stored (CQ-10-L2). Legacy-unknown rows are also kept
+        // intact when their conservative fingerprint matches a fetched fill.
+        val persistedFill =
+            originalLocalTrades.find { persisted ->
+                (persisted.isSettledApiFill() || persisted.isLegacyUnknown()) &&
+                    hasSamePersistedFillIdentity(persisted, apiTrade)
+            }
+        if (persistedFill != null) {
+            originalLocalTrades.remove(persistedFill)
+            return TradeReconciliationResult.AlreadyPersisted
+        }
+
+        val matchingLocalTrade = findMatchingLocalTrade(apiTrade, originalLocalTrades, allocations)
+
+        return if (matchingLocalTrade != null) {
+            reconcileWithLocalTrade(apiTrade, matchingLocalTrade, originalLocalTrades)
+        } else {
+            repository.saveTrade(apiTrade)
+            TradeReconciliationResult.Inserted
+        }
+    }
+
+    private fun findMatchingLocalTrade(
+        apiTrade: TradeRecord,
+        originalLocalTrades: MutableList<TradeRecord>,
+        allocations: List<String>,
+    ): TradeRecord? {
+        // A Kraken order id is authoritative when both sides have one. Otherwise use
+        // economics tolerances so legacy/id-less rows can still reconcile.
+        val localEstimates =
+            originalLocalTrades.filter { local ->
+                local.submissionState == null && !local.dryRun && local.isLocalEstimate()
+            }
+        val apiOrderTxid = apiTrade.orderTxid?.takeIf { it.isNotBlank() }
+        return apiOrderTxid?.let { txid ->
+            localEstimates.find { local -> local.orderTxid?.takeIf { it.isNotBlank() } == txid }
+        } ?: localEstimates
+            .asSequence()
+            .filter { local ->
+                apiOrderTxid == null || local.orderTxid.isNullOrBlank()
+            }.find { local ->
+                local.isMatchingApiTrade(apiTrade, allocations)
+            }
+    }
+
+    private suspend fun reconcileWithLocalTrade(
+        apiTrade: TradeRecord,
+        matchingLocalTrade: TradeRecord,
+        originalLocalTrades: MutableList<TradeRecord>,
+    ): TradeReconciliationResult {
+        if (matchingLocalTrade != apiTrade) {
+            val expectedPrice = matchingLocalTrade.expectedPrice
+            val reconciledSlippage =
+                expectedPrice?.let { expected ->
+                    TradeCalculator.calculateSlippage(
+                        apiTrade.side,
+                        apiTrade.price,
+                        expected,
+                    )
+                }
+            val reconciledTrade =
+                apiTrade.copy(
+                    expectedPrice = expectedPrice,
+                    slippagePercent = reconciledSlippage,
+                    source = TradeSource.API_FILL,
+                    // Keep local cycle linkage; prefer API ordertxid when present.
+                    cycleId = matchingLocalTrade.cycleId,
+                    orderTxid = apiTrade.orderTxid ?: matchingLocalTrade.orderTxid,
+                )
+            log.info(
+                "Reconciling trade record: local (timestamp={}, usdAmount={}) with API (timestamp={}, usdAmount={})",
+                matchingLocalTrade.timestamp,
+                matchingLocalTrade.usdAmount,
+                apiTrade.timestamp,
+                apiTrade.usdAmount,
+            )
+
+            repository.updateTrade(matchingLocalTrade, reconciledTrade)
+        }
+        // One local row per API fill in this sync pass.
+        originalLocalTrades.remove(matchingLocalTrade)
+        return TradeReconciliationResult.Reconciled
+    }
+
+    private sealed class TradeReconciliationResult {
+        data object Inserted : TradeReconciliationResult()
+        data object Reconciled : TradeReconciliationResult()
+        data object AlreadyPersisted : TradeReconciliationResult()
+    }
+
+    private suspend fun triggerReconstructionIfNeeded(
+        config: AppConfig,
+        originalLocalTrades: MutableList<TradeRecord>,
+    ) {
         val snapshots = repository.load()
         val totalTrades = repository.getTradeSummaryStats().totalTradesExecuted
         val isSimulation = config.settings.simulation
@@ -189,7 +242,9 @@ class TradeHistorySyncService(
                 log.error("Failed to reconstruct historical snapshots", e)
             }
         }
+    }
 
+    private suspend fun finalizeSync(isSeeded: Boolean) {
         if (!isSeeded) {
             repository.setHistorySeeded(true)
             repository.setSyncMetadata(SyncMetadataKeys.SYNC_OFFSET, SyncMetadataKeys.COMPLETED)
@@ -199,7 +254,6 @@ class TradeHistorySyncService(
         val completedAt = nowProvider()
         writeSyncWatermark(completedAt)
         lastSyncTime = completedAt
-        log.info("Trade history synchronization completed. Added: {} new, Reconciled: {}.", totalAdded, totalReconciled)
     }
 
     private suspend fun readSyncWatermark(): Instant? =

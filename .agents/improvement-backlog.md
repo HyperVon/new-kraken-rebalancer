@@ -19,11 +19,6 @@ need only this file (no issue spam).
 | :--- | :---: | :--- | :--- | :--- | :---: | :--- | :--- |
 | CI-21-T01 | M | open | tests | Extract duplicated PortfolioManager wiring (35+ call sites) to shared fixture | 21 | — | — |
 | CI-21-T02 | M | open | tests | Fix flaky `DynamicKrakenServiceTest.concurrent withStableBackend` timing | 21 | — | — |
-| CI-21-L01 | L | open | complexity | Refactor `syncTradesFromKrakenPinned` (137 lines) in TradeHistorySyncService | 21 | [#153](https://github.com/HyperVon/new-kraken-rebalancer/issues/153) | — |
-| CI-21-L02 | L | open | complexity | Refactor `seedHistoricalData` (136 lines) in TradeHistorySnapshotStore | 21 | [#154](https://github.com/HyperVon/new-kraken-rebalancer/issues/154) | — |
-| CI-21-L03 | L | open | complexity | Decompose `isRenderable()` (25-line && chain) in History.kt | 21 | [#155](https://github.com/HyperVon/new-kraken-rebalancer/issues/155) | — |
-| CI-21-L04 | L | open | coverage | Add unit tests for HistoryApiMapper (DTO serialization layer) | 21 | [#156](https://github.com/HyperVon/new-kraken-rebalancer/issues/156) | — |
-| CI-21-L05 | L | open | coverage | Add unit tests for ErrorHandlingConfig (HTTP error handling paths) | 21 | [#157](https://github.com/HyperVon/new-kraken-rebalancer/issues/157) | — |
 
 ## Done (recent)
 
@@ -37,6 +32,11 @@ need only this file (no issue spam).
 | CI-21-D02 | M | done | docs | Update README architecture diagram with RebalancerComparisonCalculator | 21 | — |
 | CI-21-D03 | S | done | docs | Fix `@Suppress("unused")` contradiction in README (line 752 vs 15 test files) | 21 | — |
 | CI-21-D04 | S | done | docs | Verify and fix CHANGELOG duplicate entry (v6.15.14/15 chart palette) | 21 | — |
+| CI-21-L01 | L | done | complexity | Refactor `syncTradesFromKrakenPinned` (137 lines) in TradeHistorySyncService | 21 | [#153](https://github.com/HyperVon/new-kraken-rebalancer/issues/153) | Shipped in PR #158 |
+| CI-21-L02 | L | done | complexity | Refactor `seedHistoricalData` (136 lines) in TradeHistorySnapshotStore | 21 | [#154](https://github.com/HyperVon/new-kraken-rebalancer/issues/154) | Shipped in PR #158 |
+| CI-21-L03 | L | done | complexity | Decompose `isRenderable()` (25-line && chain) in History.kt | 21 | [#155](https://github.com/HyperVon/new-kraken-rebalancer/issues/155) | Shipped in PR #158 |
+| CI-21-L04 | L | done | coverage | Add unit tests for HistoryApiMapper (DTO serialization layer) | 21 | [#156](https://github.com/HyperVon/new-kraken-rebalancer/issues/156) | Shipped in PR #158 |
+| CI-21-L05 | L | done | coverage | Add unit tests for ErrorHandlingConfig (HTTP error handling paths) | 21 | [#157](https://github.com/HyperVon/new-kraken-rebalancer/issues/157) | Shipped in PR #158 |
 | CI-16-C1 | S | done | code | Replace `TradeRecord` FQNs in `OrderExecutorImpl` with an import | 16 | #140 |
 | CI-16-C2 | S | done | frontend | Replace dashboard sort-kind magic strings with a boolean | 16 | #140 |
 | CI-16-D01 | S | done | docs | Correct stale scenario count from 33 to 34 | 16 | #140 |

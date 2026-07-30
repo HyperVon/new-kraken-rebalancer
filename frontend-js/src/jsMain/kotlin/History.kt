@@ -1001,31 +1001,44 @@ internal fun buildRebalancerComparisonChart(comparison: RebalancerComparison) {
     createOrUpdate(HtmlIds.REBALANCER_COMPARISON_CHART, createLineChartConfig(datasets, options))
 }
 
-private fun RebalancerComparison.isRenderable(): Boolean = availability == "AVAILABLE" &&
+private fun RebalancerComparison.isRenderable(): Boolean = hasValidAvailability() &&
+    hasSufficientData() &&
+    hasValidDifferenceValues() &&
+    hasSortedTimestamps() &&
+    hasValidBaselinePoint() &&
+    hasCompletePointData()
+
+private fun RebalancerComparison.hasValidAvailability(): Boolean = availability == "AVAILABLE" &&
     (confidence == "RECONCILED" || confidence == "ESTIMATED") &&
-    points.size >= 2 &&
-    baselineTimestamp?.isNotBlank() == true &&
     unavailableReason == null &&
-    unavailableAt == null &&
-    dynamicNumber(latestDifferenceUSD) != null &&
-    dynamicNumber(latestDifferencePercent) != null &&
+    unavailableAt == null
+
+private fun RebalancerComparison.hasSufficientData(): Boolean = points.size >= 2 &&
+    baselineTimestamp?.isNotBlank() == true
+
+private fun RebalancerComparison.hasValidDifferenceValues(): Boolean = dynamicNumber(latestDifferenceUSD) != null &&
+    dynamicNumber(latestDifferencePercent) != null
+
+private fun RebalancerComparison.hasSortedTimestamps(): Boolean =
     points.map { dynamicNumber(it.timestamp) }.let { timestamps ->
         timestamps.all { it != null } &&
             timestamps.zipWithNext().all { (previous, current) -> current!! >= previous!! }
-    } &&
-    points.first().let { first ->
-        first.timestamp == baselineTimestamp &&
-            dynamicNumber(first.rebalancerValueUSD) == dynamicNumber(first.buyAndHoldValueUSD) &&
-            dynamicNumber(first.differenceUSD) == 0.0 &&
-            dynamicNumber(first.differencePercent) == 0.0
-    } &&
-    points.all { point ->
-        point.timestamp.isNotBlank() &&
-            dynamicNumber(point.rebalancerValueUSD) != null &&
-            dynamicNumber(point.buyAndHoldValueUSD) != null &&
-            dynamicNumber(point.differenceUSD) != null &&
-            dynamicNumber(point.differencePercent) != null
     }
+
+private fun RebalancerComparison.hasValidBaselinePoint(): Boolean = points.first().let { first ->
+    first.timestamp == baselineTimestamp &&
+        dynamicNumber(first.rebalancerValueUSD) == dynamicNumber(first.buyAndHoldValueUSD) &&
+        dynamicNumber(first.differenceUSD) == 0.0 &&
+        dynamicNumber(first.differencePercent) == 0.0
+}
+
+private fun RebalancerComparison.hasCompletePointData(): Boolean = points.all { point ->
+    point.timestamp.isNotBlank() &&
+        dynamicNumber(point.rebalancerValueUSD) != null &&
+        dynamicNumber(point.buyAndHoldValueUSD) != null &&
+        dynamicNumber(point.differenceUSD) != null &&
+        dynamicNumber(point.differencePercent) != null
+}
 
 internal fun unavailableReasonText(reason: String?): String = when (reason) {
     "INSUFFICIENT_SNAPSHOTS" -> ViewText.UNAVAILABLE_INSUFFICIENT_SNAPSHOTS
