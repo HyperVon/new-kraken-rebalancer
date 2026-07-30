@@ -22,9 +22,11 @@ object RebalancerComparisonCalculator {
 
     fun calculate(snapshots: List<PortfolioSnapshot>, trades: List<TradeRecord>): RebalancerComparison {
         if (snapshots.size < 2) {
+            val firstTime = snapshots.firstOrNull()?.timestamp
             return unavailable(
-                ComparisonUnavailableReason.INSUFFICIENT_SNAPSHOTS,
-                snapshots.firstOrNull()?.timestamp,
+                reason = ComparisonUnavailableReason.INSUFFICIENT_SNAPSHOTS,
+                unavailableAt = firstTime,
+                baselineTimestamp = firstTime,
             )
         }
         val orderedSnapshots = snapshots.sortedBy(PortfolioSnapshot::timestamp)
@@ -50,9 +52,9 @@ object RebalancerComparisonCalculator {
             val buyAndHoldValue = calculateBuyAndHoldValue(baselineBalances, snapshot)
             if (buyAndHoldValue.signum() <= 0) {
                 return unavailable(
-                    ComparisonUnavailableReason.NON_POSITIVE_BASELINE,
-                    snapshot.timestamp,
-                    baseline.timestamp,
+                    reason = ComparisonUnavailableReason.NON_POSITIVE_BASELINE,
+                    unavailableAt = snapshot.timestamp,
+                    baselineTimestamp = baseline.timestamp,
                 )
             }
             val rebalancerValue = snapshot.totalValueUSD
@@ -75,7 +77,11 @@ object RebalancerComparisonCalculator {
             .subtract(baselineFirstPoint.buyAndHoldValueUSD)
             .abs()
         if (firstDiffFromCalc > BigDecimal("0.01")) {
-            return unavailable(ComparisonUnavailableReason.BASELINE_MISMATCH, baseline.timestamp)
+            return unavailable(
+                reason = ComparisonUnavailableReason.BASELINE_MISMATCH,
+                unavailableAt = baseline.timestamp,
+                baselineTimestamp = baseline.timestamp,
+            )
         }
 
         val correctedPoints = points.mapIndexed { index, point ->
@@ -105,7 +111,11 @@ object RebalancerComparisonCalculator {
 
     private fun validateBaseline(baseline: PortfolioSnapshot): RebalancerComparison? {
         if (baseline.totalValueUSD <= BigDecimal.ZERO) {
-            return unavailable(ComparisonUnavailableReason.NON_POSITIVE_BASELINE, baseline.timestamp)
+            return unavailable(
+                reason = ComparisonUnavailableReason.NON_POSITIVE_BASELINE,
+                unavailableAt = baseline.timestamp,
+                baselineTimestamp = baseline.timestamp,
+            )
         }
         return null
     }
@@ -118,9 +128,9 @@ object RebalancerComparisonCalculator {
         for (snapshot in snapshots.drop(1)) {
             if (snapshot.assets.keys != baselineKeys) {
                 return unavailable(
-                    ComparisonUnavailableReason.ASSET_UNIVERSE_CHANGED,
-                    snapshot.timestamp,
-                    baseline.timestamp,
+                    reason = ComparisonUnavailableReason.ASSET_UNIVERSE_CHANGED,
+                    unavailableAt = snapshot.timestamp,
+                    baselineTimestamp = baseline.timestamp,
                 )
             }
         }
@@ -137,15 +147,15 @@ object RebalancerComparisonCalculator {
                 if (startBalance.signum() == 0) continue
                 if (symbol == USD) continue
                 val assetRow = snapshot.assets[symbol] ?: return unavailable(
-                    ComparisonUnavailableReason.MISSING_PRICE,
-                    snapshot.timestamp,
-                    baseline.timestamp,
+                    reason = ComparisonUnavailableReason.MISSING_PRICE,
+                    unavailableAt = snapshot.timestamp,
+                    baselineTimestamp = baseline.timestamp,
                 )
                 if (assetRow.price.signum() <= 0) {
                     return unavailable(
-                        ComparisonUnavailableReason.MISSING_PRICE,
-                        snapshot.timestamp,
-                        baseline.timestamp,
+                        reason = ComparisonUnavailableReason.MISSING_PRICE,
+                        unavailableAt = snapshot.timestamp,
+                        baselineTimestamp = baseline.timestamp,
                     )
                 }
             }
@@ -177,18 +187,18 @@ object RebalancerComparisonCalculator {
             for ((symbol, expectedBalance) in impliedBalances) {
                 val actualBalance = curr.assets[symbol]?.balance
                     ?: return unavailable(
-                        ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE,
-                        curr.timestamp,
-                        baselineTimestamp,
+                        reason = ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE,
+                        unavailableAt = curr.timestamp,
+                        baselineTimestamp = baselineTimestamp,
                     )
                 val scale = if (symbol == USD) SCALE_USD else SCALE_CRYPTO
                 val roundedExpected = expectedBalance.setScale(scale, RoundingMode.HALF_UP)
                 val roundedActual = actualBalance.setScale(scale, RoundingMode.HALF_UP)
                 if (roundedExpected.compareTo(roundedActual) != 0) {
                     return unavailable(
-                        ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE,
-                        curr.timestamp,
-                        baselineTimestamp,
+                        reason = ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE,
+                        unavailableAt = curr.timestamp,
+                        baselineTimestamp = baselineTimestamp,
                     )
                 }
             }
@@ -211,10 +221,18 @@ object RebalancerComparisonCalculator {
             trade.usdAmount.signum() < 0 ||
             trade.fee.signum() < 0
         ) {
-            return unavailable(ComparisonUnavailableReason.UNSUPPORTED_TRADE, trade.timestamp, baselineTimestamp)
+            return unavailable(
+                reason = ComparisonUnavailableReason.UNSUPPORTED_TRADE,
+                unavailableAt = trade.timestamp,
+                baselineTimestamp = baselineTimestamp,
+            )
         }
         if (USD !in balances) {
-            return unavailable(ComparisonUnavailableReason.UNSUPPORTED_TRADE, trade.timestamp, baselineTimestamp)
+            return unavailable(
+                reason = ComparisonUnavailableReason.UNSUPPORTED_TRADE,
+                unavailableAt = trade.timestamp,
+                baselineTimestamp = baselineTimestamp,
+            )
         }
         val usdBalance = balances[USD] ?: BigDecimal.ZERO
         val assetBalance = balances.getValue(symbol)
@@ -231,9 +249,9 @@ object RebalancerComparisonCalculator {
                 balances[USD] = usdBalance.add(usdProceeds)
             }
             else -> return unavailable(
-                ComparisonUnavailableReason.UNSUPPORTED_TRADE,
-                trade.timestamp,
-                baselineTimestamp,
+                reason = ComparisonUnavailableReason.UNSUPPORTED_TRADE,
+                unavailableAt = trade.timestamp,
+                baselineTimestamp = baselineTimestamp,
             )
         }
         return null
@@ -268,7 +286,7 @@ object RebalancerComparisonCalculator {
     private fun unavailable(
         reason: ComparisonUnavailableReason,
         unavailableAt: Instant?,
-        baselineTimestamp: Instant? = unavailableAt,
+        baselineTimestamp: Instant?,
     ): RebalancerComparison = RebalancerComparison(
         availability = ComparisonAvailability.UNAVAILABLE,
         confidence = null,
