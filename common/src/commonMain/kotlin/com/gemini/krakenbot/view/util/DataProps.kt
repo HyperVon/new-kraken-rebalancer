@@ -6,6 +6,7 @@ object DataProps {
     const val SUCCESS = "success"
     const val DRY_RUN = "dryRun"
     const val SIDE = "side"
+    const val PAIR = "pair"
     const val USD_AMOUNT = "usdAmount"
     const val SYMBOL = "symbol"
     const val VOLUME = "volume"
@@ -15,5 +16,6 @@ object DataProps {
     const val EXPECTED_PRICE = "expectedPrice"
     const val SOURCE = "source"
     const val ERROR_MESSAGE = "errorMessage"
+    const val ID = "id"
     const val HIDDEN = "hidden"
 }

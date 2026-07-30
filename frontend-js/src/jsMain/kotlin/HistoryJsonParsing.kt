@@ -143,8 +143,7 @@ fun tradeRecordToDynamic(trade: TradeRecord): dynamic = json(
     DataProps.TIMESTAMP to trade.timestamp,
     DataProps.SYMBOL to trade.symbol,
     DataProps.SIDE to trade.side,
-    // TODO: Make this a constants in DataProps or somewhere else if more appropriate
-    "pair" to trade.pair,
+    DataProps.PAIR to trade.pair,
     DataProps.VOLUME to trade.volume,
     DataProps.USD_AMOUNT to trade.usdAmount,
     DataProps.SUCCESS to trade.success,
@@ -155,8 +154,7 @@ fun tradeRecordToDynamic(trade: TradeRecord): dynamic = json(
     DataProps.EXPECTED_PRICE to trade.expectedPrice,
     DataProps.SOURCE to trade.source,
     DataProps.ERROR_MESSAGE to trade.errorMessage,
-    // TODO: Make this a constants in DataProps or somewhere else if more appropriate
-    "id" to trade.id,
+    DataProps.ID to trade.id,
 )
 
 /** Build a dynamic stats JSON object for tests. */
