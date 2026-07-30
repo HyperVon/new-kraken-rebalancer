@@ -30,12 +30,13 @@ want to:
 
 - **Stay disciplined automatically** — define the mix you want and let the bot
   correct meaningful drift instead of reacting to headlines or price swings.
-- **Put cash to work gradually during drawdowns** — retain a target cash
-  allocation, then progressively deploy it as the portfolio falls from its
-  all-time high rather than making one all-or-nothing entry.
-- **Absorb deposits and withdrawals cleanly** — rebalance new cash or fund a
-  withdrawal across the portfolio without maintaining a spreadsheet and placing
-  every order by hand.
+- **Optionally put cash to work gradually during drawdowns** — configure the bot
+  to retain a target cash allocation, then progressively deploy it as the
+  portfolio falls from its all-time high rather than making one all-or-nothing
+  entry.
+- **Absorb deposits and withdrawals cleanly** — rebalance new cash after a
+  deposit, or respond to a cash withdrawal by selling overweight assets, without
+  maintaining a spreadsheet and placing every order by hand.
 - **Keep control and an audit trail** — inspect current allocations, intended or
   completed trades, fees, slippage, and portfolio history from a local dashboard.
 - **Test before trusting it with funds** — learn with the offline simulator, then
