@@ -77,6 +77,69 @@ class ErrorHandlingConfigTest : StringSpec() {
             }
         }
 
+        "should render 400 via the registered StatusPages status handler" {
+            testApplication {
+                application {
+                    configureErrorHandling()
+                    routing {
+                        get("/test") {
+                            call.response.status(HttpStatusCode.BadRequest)
+                        }
+                    }
+                }
+
+                val response = client.get("/test")
+                response.status shouldBe HttpStatusCode.BadRequest
+
+                val body = response.bodyAsText()
+                body shouldContain "\"status\":400"
+                body shouldContain "\"error\":\"Bad Request\""
+                body shouldContain "\"message\":\"The request could not be understood by the server.\""
+            }
+        }
+
+        "should render 500 via the registered StatusPages status handler" {
+            testApplication {
+                application {
+                    configureErrorHandling()
+                    routing {
+                        get("/test") {
+                            call.response.status(HttpStatusCode.InternalServerError)
+                        }
+                    }
+                }
+
+                val response = client.get("/test")
+                response.status shouldBe HttpStatusCode.InternalServerError
+
+                val body = response.bodyAsText()
+                body shouldContain "\"status\":500"
+                body shouldContain "\"error\":\"Internal Server Error\""
+                body shouldContain "\"message\":\"An unexpected error occurred processing the request.\""
+            }
+        }
+
+        "should render 503 via the registered StatusPages status handler" {
+            testApplication {
+                application {
+                    configureErrorHandling()
+                    routing {
+                        get("/test") {
+                            call.response.status(HttpStatusCode.ServiceUnavailable)
+                        }
+                    }
+                }
+
+                val response = client.get("/test")
+                response.status shouldBe HttpStatusCode.ServiceUnavailable
+
+                val body = response.bodyAsText()
+                body shouldContain "\"status\":503"
+                body shouldContain "\"error\":\"Service Unavailable\""
+                body shouldContain "\"message\":\"The service is temporarily unavailable. Please try again later.\""
+            }
+        }
+
         "should return 400 for bad request" {
             testApplication {
                 application {

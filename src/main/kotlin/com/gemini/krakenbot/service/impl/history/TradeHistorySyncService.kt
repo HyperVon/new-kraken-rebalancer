@@ -183,9 +183,8 @@ class TradeHistorySyncService(
         matchingLocalTrade: TradeRecord,
         originalLocalTrades: MutableList<TradeRecord>,
     ): TradeReconciliationResult {
-        // One local row per API fill in this sync pass.
-        originalLocalTrades.remove(matchingLocalTrade)
-        if (matchingLocalTrade != apiTrade) {
+        val changed = matchingLocalTrade != apiTrade
+        if (changed) {
             val expectedPrice = matchingLocalTrade.expectedPrice
             val reconciledSlippage =
                 expectedPrice?.let { expected ->
@@ -213,10 +212,16 @@ class TradeHistorySyncService(
             )
 
             repository.updateTrade(matchingLocalTrade, reconciledTrade)
-            return TradeReconciliationResult.Reconciled
         }
-        // Data-class-equal local row: removed but not counted as a reconcile (matches pre-refactor behavior).
-        return TradeReconciliationResult.MatchedNoOp
+        // Drop from the pending set after persistence so a DB failure leaves the
+        // in-memory view unchanged (pre-refactor update-then-remove order).
+        originalLocalTrades.remove(matchingLocalTrade)
+        return if (changed) {
+            TradeReconciliationResult.Reconciled
+        } else {
+            // Data-class-equal local row: removed but not counted as a reconcile.
+            TradeReconciliationResult.MatchedNoOp
+        }
     }
 
     private sealed class TradeReconciliationResult {

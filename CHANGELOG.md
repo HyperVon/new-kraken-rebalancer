@@ -23,6 +23,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **New unit tests**: Added `HistoryApiMapperTest` (DTO mapping for trades, stats, snapshots, comparison)
   and `ErrorHandlingConfigTest` (Ktor status pages + exception handling).
 
+### Fixed
+
+- **Adversarial review round 3 (#158)**: Restored pre-refactor `updateTrade` → `remove` ordering in
+  `TradeHistorySyncService.reconcileWithLocalTrade` (DB-failure-safe in-memory mutation), added
+  `status(400)` / `status(500)` / `status(503)` StatusPages-handler coverage (registered messages + the
+  `>=500` `log.error` branch), and synced README + `gradle-quality-gates` JaCoCo exclusion lists after
+  removing the `ErrorHandlingConfig` exclusion.
+
 ## [6.15.21] - 2026-07-30
 
 ### Changed

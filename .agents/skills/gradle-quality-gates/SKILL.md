@@ -70,8 +70,7 @@ Exclusions live in the shared `coverageExcludes` list in root
 
 Current exclusions:
 
-- `**/config/DatabaseConfig*`, `**/config/ErrorHandlingConfig*`,
-  `**/config/KtorConfigKt*`
+- `**/config/DatabaseConfig*`, `**/config/KtorConfigKt*`
 - `**/repository/table/**`
 - `**/service/KrakenService*`, `**/service/impl/KrakenServiceImpl*`
 - `**/view/util/HtmlExtensionsKt*`, `**/view/css/**`
