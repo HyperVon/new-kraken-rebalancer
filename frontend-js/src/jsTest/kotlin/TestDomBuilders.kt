@@ -18,6 +18,7 @@ object TestDomBuilders {
             <canvas id="${HtmlIds.REBALANCER_COMPARISON_CHART}"></canvas>
         </div>
         <div id="${HtmlIds.COMPARISON_AVAILABILITY_MESSAGE}" class="${CssClass.History.ComparisonUnavailable}"></div>
+        <span id="${HtmlIds.COMPARISON_CONFIDENCE_BADGE}" class="${CssClass.History.ComparisonConfidenceBadge}"></span>
         <span id="${HtmlIds.COMPARISON_LATEST_DIFFERENCE}">${ViewText.EM_DASH}</span>
         <canvas id="${HtmlIds.PORTFOLIO_VALUE_CHART}"></canvas>
         <canvas id="${HtmlIds.ASSET_HOLDINGS_CHART}"></canvas>

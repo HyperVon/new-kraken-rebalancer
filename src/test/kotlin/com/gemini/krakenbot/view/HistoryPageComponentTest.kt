@@ -54,6 +54,7 @@ class HistoryPageComponentTest : StringSpec() {
             htmlString shouldContain HtmlIds.COMPARISON_LATEST_DIFFERENCE
             htmlString shouldContain HtmlIds.COMPARISON_CHART_CONTENT
             htmlString shouldContain HtmlIds.COMPARISON_AVAILABILITY_MESSAGE
+            htmlString shouldContain HtmlIds.COMPARISON_CONFIDENCE_BADGE
             htmlString shouldContain ViewText.COMPARISON_CAPTION
             Regex("\\sid=\"${HtmlIds.REBALANCER_COMPARISON_CHART}\"").findAll(htmlString).count() shouldBe 1
         }

@@ -256,6 +256,7 @@ sealed class CssClass(open val value: String) {
         object ComparisonDelta : History("comparison-delta")
         object ComparisonUnavailable : History("comparison-unavailable")
         object ComparisonChartArea : History("comparison-chart-area")
+        object ComparisonConfidenceBadge : History("comparison-confidence-badge")
     }
 
     // Utility

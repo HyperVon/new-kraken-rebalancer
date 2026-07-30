@@ -164,6 +164,9 @@ class HistoryPageComponent(private val objectMapper: ObjectMapper) {
             div(CssClass.History.ComparisonUnavailable) {
                 id = HtmlIds.COMPARISON_AVAILABILITY_MESSAGE
             }
+            span(CssClass.History.ComparisonConfidenceBadge) {
+                id = HtmlIds.COMPARISON_CONFIDENCE_BADGE
+            }
             p(CssClass.History.ChartCaption) { +ViewText.COMPARISON_CAPTION }
             div(CssClass.History.ChartScrubber) {
                 input(classes = CssClass.History.ChartScrubberInput.value, type = InputType.range) {

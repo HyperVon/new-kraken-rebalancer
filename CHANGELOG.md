@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.15.21] - 2026-07-30
+
+### Changed
+
+- **Buy & Hold comparison degrades gracefully on external cash flows**: The Rebalancer vs
+  Buy & Hold chart now renders as `ESTIMATED` (instead of `Comparison unavailable`) when
+  deposits, withdrawals, staking rewards, or other non-trade balance changes are detected.
+  An amber confidence badge is shown to indicate the comparison is estimated. Unsupported
+  trades still produce a hard unavailable result.
+
 ## [6.15.20] - 2026-07-30
 
 ### Fixed

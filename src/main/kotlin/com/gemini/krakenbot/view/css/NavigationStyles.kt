@@ -548,6 +548,17 @@ object NavigationStyles {
             display = Display.block
         }
 
+        ".${CssClass.History.ComparisonConfidenceBadge}" {
+            display = Display.none
+            fontSize = 0.75.rem
+            color = CssTheme.colorWarning
+            padding = Padding(0.25.rem, 0.75.rem)
+        }
+
+        ".${CssClass.History.ComparisonConfidenceBadge}.visible" {
+            display = Display.inline
+        }
+
         ".${CssClass.History.ComparisonChartArea}.hidden" {
             display = Display.none
         }

@@ -10,6 +10,7 @@ enum class ComparisonAvailability {
 
 enum class ComparisonConfidence {
     RECONCILED,
+    ESTIMATED,
 }
 
 enum class ComparisonUnavailableReason {

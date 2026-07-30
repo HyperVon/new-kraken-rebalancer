@@ -44,8 +44,14 @@ object RebalancerComparisonCalculator {
         val priceError = validatePrices(orderedSnapshots, baseline)
         if (priceError != null) return priceError
 
-        val balanceError = validateTrackedBalanceChanges(orderedSnapshots, trades)
-        if (balanceError != null) return balanceError
+        val balanceResult = validateTrackedBalanceChanges(orderedSnapshots, trades)
+        if (balanceResult == null) {
+            return unavailable(
+                reason = ComparisonUnavailableReason.UNSUPPORTED_TRADE,
+                unavailableAt = baseline.timestamp,
+                baselineTimestamp = baseline.timestamp,
+            )
+        }
 
         val baselineBalances = extractBaselineBalances(baseline)
 
@@ -101,7 +107,7 @@ object RebalancerComparisonCalculator {
 
         return RebalancerComparison(
             availability = ComparisonAvailability.AVAILABLE,
-            confidence = ComparisonConfidence.RECONCILED,
+            confidence = if (balanceResult) ComparisonConfidence.RECONCILED else ComparisonConfidence.ESTIMATED,
             baselineTimestamp = baseline.timestamp,
             points = correctedPoints,
             latestDifferenceUSD = latestDiffUSD,
@@ -165,12 +171,16 @@ object RebalancerComparisonCalculator {
         return null
     }
 
+    /**
+     * @return `true` if fully reconciled, `false` if balance mismatches found (ESTIMATED), `null` if a hard error
+     *         (unsupported trade) makes the comparison impossible.
+     */
     private fun validateTrackedBalanceChanges(
         snapshots: List<PortfolioSnapshot>,
         trades: List<TradeRecord>,
-    ): RebalancerComparison? {
+    ): Boolean? {
         val successfulTrades = trades.filter { it.success && !it.dryRun }
-        val baselineTimestamp = snapshots.first().timestamp
+        var allReconciled = true
 
         for (i in 1 until snapshots.size) {
             val prev = snapshots[i - 1]
@@ -182,37 +192,23 @@ object RebalancerComparisonCalculator {
 
             val impliedBalances = prev.assets.mapValues { (_, asset) -> asset.balance }.toMutableMap()
             for (trade in intervalTrades) {
-                val result = applyRealizedTrade(impliedBalances, trade, baselineTimestamp)
-                if (result != null) return result
+                if (!applyRealizedTrade(impliedBalances, trade)) return null
             }
 
             for ((symbol, expectedBalance) in impliedBalances) {
-                val actualBalance = curr.assets[symbol]?.balance
-                    ?: return unavailable(
-                        reason = ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE,
-                        unavailableAt = curr.timestamp,
-                        baselineTimestamp = baselineTimestamp,
-                    )
+                val actualBalance = curr.assets[symbol]?.balance ?: return null
                 val scale = if (symbol == USD) SCALE_USD else SCALE_CRYPTO
                 val roundedExpected = expectedBalance.setScale(scale, RoundingMode.HALF_UP)
                 val roundedActual = actualBalance.setScale(scale, RoundingMode.HALF_UP)
                 if (roundedExpected.compareTo(roundedActual) != 0) {
-                    return unavailable(
-                        reason = ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE,
-                        unavailableAt = curr.timestamp,
-                        baselineTimestamp = baselineTimestamp,
-                    )
+                    allReconciled = false
                 }
             }
         }
-        return null
+        return allReconciled
     }
 
-    private fun applyRealizedTrade(
-        balances: MutableMap<String, BigDecimal>,
-        trade: TradeRecord,
-        baselineTimestamp: Instant,
-    ): RebalancerComparison? {
+    private fun applyRealizedTrade(balances: MutableMap<String, BigDecimal>, trade: TradeRecord): Boolean {
         val side = trade.side.uppercase()
         val symbol = trade.symbol.uppercase()
         if (
@@ -223,18 +219,10 @@ object RebalancerComparisonCalculator {
             trade.usdAmount.signum() < 0 ||
             trade.fee.signum() < 0
         ) {
-            return unavailable(
-                reason = ComparisonUnavailableReason.UNSUPPORTED_TRADE,
-                unavailableAt = trade.timestamp,
-                baselineTimestamp = baselineTimestamp,
-            )
+            return false
         }
         if (USD !in balances) {
-            return unavailable(
-                reason = ComparisonUnavailableReason.UNSUPPORTED_TRADE,
-                unavailableAt = trade.timestamp,
-                baselineTimestamp = baselineTimestamp,
-            )
+            return false
         }
         val usdBalance = balances[USD] ?: BigDecimal.ZERO
         val assetBalance = balances.getValue(symbol)
@@ -250,13 +238,9 @@ object RebalancerComparisonCalculator {
                 val usdProceeds = trade.usdAmount.subtract(trade.fee)
                 balances[USD] = usdBalance.add(usdProceeds)
             }
-            else -> return unavailable(
-                reason = ComparisonUnavailableReason.UNSUPPORTED_TRADE,
-                unavailableAt = trade.timestamp,
-                baselineTimestamp = baselineTimestamp,
-            )
+            else -> return false
         }
-        return null
+        return true
     }
 
     private fun extractBaselineBalances(baseline: PortfolioSnapshot): Map<String, BigDecimal> =

@@ -884,6 +884,7 @@ internal fun buildRebalancerComparisonChart(comparison: RebalancerComparison) {
     val chartArea = document.getElementById(HtmlIds.COMPARISON_CHART_CONTENT)
     val unavailableDiv = document.getElementById(HtmlIds.COMPARISON_AVAILABILITY_MESSAGE)
     val deltaEl = document.getElementById(HtmlIds.COMPARISON_LATEST_DIFFERENCE)
+    val confidenceBadge = document.getElementById(HtmlIds.COMPARISON_CONFIDENCE_BADGE)
 
     if (!comparison.isRenderable()) {
         clearChart(HtmlIds.REBALANCER_COMPARISON_CHART)
@@ -892,6 +893,10 @@ internal fun buildRebalancerComparisonChart(comparison: RebalancerComparison) {
             deltaEl.className = CssClass.History.ComparisonDelta.value
         }
         if (chartArea != null) chartArea.classList.add("hidden")
+        if (confidenceBadge != null) {
+            confidenceBadge.textContent = ""
+            confidenceBadge.classList.remove("visible")
+        }
         val message = unavailableReasonText(comparison.unavailableReason)
         if (unavailableDiv != null) {
             unavailableDiv.textContent = "${ViewText.COMPARISON_UNAVAILABLE_PREFIX}$message"
@@ -904,6 +909,15 @@ internal fun buildRebalancerComparisonChart(comparison: RebalancerComparison) {
     if (unavailableDiv != null) {
         unavailableDiv.textContent = ""
         unavailableDiv.classList.remove("visible")
+    }
+    if (confidenceBadge != null) {
+        if (comparison.confidence == "ESTIMATED") {
+            confidenceBadge.textContent = ViewText.COMPARISON_CONFIDENCE_ESTIMATED
+            confidenceBadge.classList.add("visible")
+        } else {
+            confidenceBadge.textContent = ""
+            confidenceBadge.classList.remove("visible")
+        }
     }
 
     val pointCount = comparison.points.size
@@ -988,7 +1002,7 @@ internal fun buildRebalancerComparisonChart(comparison: RebalancerComparison) {
 }
 
 private fun RebalancerComparison.isRenderable(): Boolean = availability == "AVAILABLE" &&
-    confidence == "RECONCILED" &&
+    (confidence == "RECONCILED" || confidence == "ESTIMATED") &&
     points.size >= 2 &&
     baselineTimestamp?.isNotBlank() == true &&
     unavailableReason == null &&

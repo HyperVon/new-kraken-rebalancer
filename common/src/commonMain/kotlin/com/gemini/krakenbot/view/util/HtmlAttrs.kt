@@ -143,6 +143,7 @@ object HtmlIds {
     const val COMPARISON_CHART_CONTENT = "comparison-chart-content"
     const val COMPARISON_LATEST_DIFFERENCE = "comparison-latest-difference"
     const val COMPARISON_AVAILABILITY_MESSAGE = "comparison-availability-message"
+    const val COMPARISON_CONFIDENCE_BADGE = "comparison-confidence-badge"
 }
 
 /** Centralized health check response keys. */

@@ -2,6 +2,7 @@ package com.gemini.krakenbot.service.impl.history
 
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.ComparisonAvailability
+import com.gemini.krakenbot.model.ComparisonConfidence
 import com.gemini.krakenbot.model.ComparisonUnavailableReason
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.TradeRecord
@@ -231,7 +232,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.unavailableReason shouldBe ComparisonUnavailableReason.ASSET_UNIVERSE_CHANGED
         }
 
-        "deposit: unexplained balance change returns UNEXPLAINED_BALANCE_CHANGE" {
+        "deposit: unexplained balance change returns ESTIMATED confidence" {
             val snapshots = listOf(
                 snapshot(
                     now,
@@ -253,11 +254,11 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
 
             val result = RebalancerComparisonCalculator.calculate(snapshots, emptyList())
 
-            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
-            result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.confidence shouldBe ComparisonConfidence.ESTIMATED
         }
 
-        "withdrawal: unexplained balance decrease returns UNEXPLAINED_BALANCE_CHANGE" {
+        "withdrawal: unexplained balance decrease returns ESTIMATED confidence" {
             val snapshots = listOf(
                 snapshot(
                     now,
@@ -279,8 +280,8 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
 
             val result = RebalancerComparisonCalculator.calculate(snapshots, emptyList())
 
-            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
-            result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.confidence shouldBe ComparisonConfidence.ESTIMATED
         }
 
         "tracked buy: asset volume and USD/fee deltas match and remain available" {
@@ -353,7 +354,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.availability shouldBe ComparisonAvailability.AVAILABLE
         }
 
-        "dry-run ignored: does not reconcile real balance change" {
+        "dry-run ignored: estimates confidence" {
             val snapshots = listOf(
                 snapshot(
                     now,
@@ -386,11 +387,11 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
 
             val result = RebalancerComparisonCalculator.calculate(snapshots, trades)
 
-            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
-            result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.confidence shouldBe ComparisonConfidence.ESTIMATED
         }
 
-        "failed trade ignored: does not reconcile real balance change" {
+        "failed trade ignored: estimates confidence" {
             val snapshots = listOf(
                 snapshot(
                     now,
@@ -423,8 +424,8 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
 
             val result = RebalancerComparisonCalculator.calculate(snapshots, trades)
 
-            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
-            result.unavailableReason shouldBe ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.confidence shouldBe ComparisonConfidence.ESTIMATED
         }
 
         "unsupported side: returns UNSUPPORTED_TRADE" {

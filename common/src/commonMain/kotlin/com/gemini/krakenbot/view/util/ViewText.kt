@@ -208,6 +208,8 @@ object ViewText {
     const val UNAVAILABLE_UNEXPLAINED_BALANCE_CHANGE =
         "A deposit, withdrawal, transfer, or incomplete trade history may exist."
     const val UNAVAILABLE_INVALID_RESPONSE = "Comparison data could not be validated."
+    const val COMPARISON_CONFIDENCE_ESTIMATED =
+        "Estimated (external balance changes may affect precision)"
 }
 
 /** Built-in History view preset identifiers (localStorage). */
