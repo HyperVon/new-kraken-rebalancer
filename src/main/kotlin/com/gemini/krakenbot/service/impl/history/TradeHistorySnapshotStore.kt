@@ -2,6 +2,7 @@ package com.gemini.krakenbot.service.impl.history
 
 import com.fasterxml.jackson.core.type.TypeReference
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.SyncMetadataKeys
@@ -114,12 +115,49 @@ class TradeHistorySnapshotStore(
         val config = configService.getConfig()
         val allocations = config.allocations
 
+        val (finalBalances, historicalTrades, provisionalNow) = fetchSimulationData(allocations)
+
+        val (startInstant, steps, stepHours) = calculateSnapshotGridParameters(historicalTrades, provisionalNow)
+        val currentBalances = reverseSeedTrades(finalBalances, historicalTrades)
+        val snapshotsToSave =
+            buildSnapshotGrid(allocations, currentBalances, historicalTrades, startInstant, steps, stepHours)
+
+        repository.save(snapshotsToSave)
+        for (trade in historicalTrades) {
+            repository.saveTrade(trade)
+        }
+        repository.setHistorySeeded(true)
+        repository.setSyncMetadata(SyncMetadataKeys.SYNC_WATERMARK_EPOCH_SEC, Instant.now().epochSecond.toString())
+        log.info(
+            "Simulation mode: seeded {} historical snapshots and {} trade records",
+            snapshotsToSave.size,
+            historicalTrades.size,
+        )
+    }
+
+    private data class SimulationData(
+        val balances: Map<String, BigDecimal>,
+        val trades: List<TradeRecord>,
+        val provisionalNow: Instant,
+    )
+
+    private data class SnapshotGridParams(val startInstant: Instant, val steps: Int, val stepHours: Long)
+
+    private data class ValuedAsset(
+        val symbol: String,
+        val targetPercent: Double,
+        val balance: BigDecimal,
+        val price: BigDecimal,
+        val valueUSD: BigDecimal,
+    )
+
+    private suspend fun fetchSimulationData(allocations: List<Allocation>): SimulationData {
         val provisionalNow = Instant.now().truncatedTo(ChronoUnit.MILLIS)
-        // We will anchor the snapshot grid to the simulator's trade timestamps.
-        // Compute provisional start instant to fetch trades.
+        // Fetch 15 days back before the real anchor is known; the snapshot grid is later anchored
+        // to the simulator's trade timestamps derived from these fetched trades.
         val provisionalStart = provisionalNow.minus(15, ChronoUnit.DAYS)
 
-        val (finalBalances, historicalTrades) = krakenService.withStableBackend { backend ->
+        return krakenService.withStableBackend { backend ->
             val rawBalances = backend.getBalances()
             val normalizedBalances = allocations.associate { (symbol) ->
                 val normalized = symbol.value.uppercase()
@@ -131,15 +169,20 @@ class TradeHistorySnapshotStore(
                 .getTradeHistory(provisionalStart.epochSecond, 0)
                 .filter { it.success && !it.dryRun }
                 .sortedBy(TradeRecord::timestamp)
-            normalizedBalances to trades
+            SimulationData(normalizedBalances, trades, provisionalNow)
         }
+    }
 
+    private fun calculateSnapshotGridParameters(
+        historicalTrades: List<TradeRecord>,
+        provisionalNow: Instant,
+    ): SnapshotGridParams {
+        val stepHours = 6L
+        val steps = (15 * 24) / stepHours.toInt()
         // Anchor the snapshot grid to the simulator's reference time.
         // The simulator seeds trades at fixed offsets from its `now`; the latest trade lands
         // SimulationDefaults.SEED_LATEST_TRADE_HOURS_AGO before that `now`.
         // Derive simulatorNow ≈ latestTrade + SEED_LATEST_TRADE_HOURS_AGO, then build the 15-day grid.
-        val stepHours = 6L
-        val steps = (15 * 24) / stepHours
         val simulatorNow = historicalTrades
             .maxByOrNull { it.timestamp }
             ?.let {
@@ -149,8 +192,13 @@ class TradeHistorySnapshotStore(
             }
             ?: provisionalNow
         val startInstant = simulatorNow.minus(15 * 24 * 3600, ChronoUnit.SECONDS)
-        val snapshotsToSave = mutableListOf<PortfolioSnapshot>()
+        return SnapshotGridParams(startInstant, steps, stepHours)
+    }
 
+    private fun reverseSeedTrades(
+        finalBalances: Map<String, BigDecimal>,
+        historicalTrades: List<TradeRecord>,
+    ): MutableMap<String, BigDecimal> {
         // The emulator's balances are its present-day state. Reverse its seeded fills to obtain
         // a historical baseline, then replay those exact fills while producing snapshots. This
         // keeps the demo data realistic and exercises the production reconciliation path.
@@ -158,17 +206,21 @@ class TradeHistorySnapshotStore(
         for (trade in historicalTrades.asReversed()) {
             applySeedTrade(currentBalances, trade, reverse = true)
         }
+        return currentBalances
+    }
 
-        data class ValuedAsset(
-            val symbol: String,
-            val targetPercent: Double,
-            val balance: BigDecimal,
-            val price: BigDecimal,
-            val valueUSD: BigDecimal,
-        )
-
+    private fun buildSnapshotGrid(
+        allocations: List<Allocation>,
+        currentBalances: MutableMap<String, BigDecimal>,
+        historicalTrades: List<TradeRecord>,
+        startInstant: Instant,
+        steps: Int,
+        stepHours: Long,
+    ): List<PortfolioSnapshot> {
+        val snapshotsToSave = mutableListOf<PortfolioSnapshot>()
         var step = 0
         var nextTradeIndex = 0
+
         while (step <= steps) {
             val timestamp = startInstant.plus(step * stepHours, ChronoUnit.HOURS)
 
@@ -181,68 +233,65 @@ class TradeHistorySnapshotStore(
             }
 
             val progress = step.toDouble() / steps.toDouble()
-
-            val valuedAssets =
-                allocations.mapIndexed { index, (symbol, targetPercent) ->
-                    val symbolU = symbol.value.uppercase()
-                    val balance = currentBalances.getValue(symbolU)
-                    val price = historicalSeedPrice(symbolU, progress, index)
-                    ValuedAsset(
-                        symbol = symbolU,
-                        targetPercent = targetPercent,
-                        balance = balance,
-                        price = price,
-                        valueUSD = balance.multiply(price).toUsdScale(),
-                    )
-                }
-            val exactPortfolioValue =
-                valuedAssets
-                    .fold(BigDecimal.ZERO) { acc, asset -> acc.add(asset.valueUSD) }
-                    .toUsdScale()
-
-            val assetSnapshots =
-                valuedAssets.associate { asset ->
-                    asset.symbol to
-                        PortfolioCalculations.createAssetSnapshot(
-                            symbol = asset.symbol,
-                            balance = asset.balance,
-                            price = asset.price,
-                            valueUSD = asset.valueUSD,
-                            targetPercent = BigDecimal.valueOf(asset.targetPercent),
-                            totalPortfolioValueUSD = exactPortfolioValue,
-                        )
-                }
-
-            val targetUsdPercent =
-                allocations
-                    .firstOrNull { it.symbol.isUsd }
-                    ?.let { BigDecimal.valueOf(it.targetPercent) }
-                    ?: BigDecimal.valueOf(PrecisionConstants.DEFAULT_USD_TARGET_PERCENT)
-
-            snapshotsToSave.add(
-                PortfolioSnapshot(
-                    timestamp = timestamp,
-                    totalValueUSD = exactPortfolioValue,
-                    assets = assetSnapshots,
-                    actions = emptyList(),
-                    drawdownPercent = BigDecimal.ZERO,
-                    fiatDeploymentPercent = BigDecimal.ZERO,
-                    effectiveUsdTargetPercent = targetUsdPercent.toUsdScale(),
-                ),
-            )
+            val snapshot = buildSingleSnapshot(allocations, currentBalances, timestamp, progress)
+            snapshotsToSave.add(snapshot)
             step++
         }
 
-        repository.save(snapshotsToSave)
-        for (trade in historicalTrades) {
-            repository.saveTrade(trade)
-        }
-        repository.setHistorySeeded(true)
-        repository.setSyncMetadata(SyncMetadataKeys.SYNC_WATERMARK_EPOCH_SEC, Instant.now().epochSecond.toString())
-        log.info(
-            "Simulation mode: seeded {} historical snapshots and {} trade records",
-            snapshotsToSave.size,
-            historicalTrades.size,
+        return snapshotsToSave
+    }
+
+    private fun buildSingleSnapshot(
+        allocations: List<Allocation>,
+        currentBalances: Map<String, BigDecimal>,
+        timestamp: Instant,
+        progress: Double,
+    ): PortfolioSnapshot {
+        val valuedAssets =
+            allocations.mapIndexed { index, (symbol, targetPercent) ->
+                val symbolU = symbol.value.uppercase()
+                val balance = currentBalances.getValue(symbolU)
+                val price = historicalSeedPrice(symbolU, progress, index)
+                ValuedAsset(
+                    symbol = symbolU,
+                    targetPercent = targetPercent,
+                    balance = balance,
+                    price = price,
+                    valueUSD = balance.multiply(price).toUsdScale(),
+                )
+            }
+        val exactPortfolioValue =
+            valuedAssets
+                .fold(BigDecimal.ZERO) { acc, asset -> acc.add(asset.valueUSD) }
+                .toUsdScale()
+
+        val assetSnapshots =
+            valuedAssets.associate { asset ->
+                asset.symbol to
+                    PortfolioCalculations.createAssetSnapshot(
+                        symbol = asset.symbol,
+                        balance = asset.balance,
+                        price = asset.price,
+                        valueUSD = asset.valueUSD,
+                        targetPercent = BigDecimal.valueOf(asset.targetPercent),
+                        totalPortfolioValueUSD = exactPortfolioValue,
+                    )
+            }
+
+        val targetUsdPercent =
+            allocations
+                .firstOrNull { it.symbol.isUsd }
+                ?.let { BigDecimal.valueOf(it.targetPercent) }
+                ?: BigDecimal.valueOf(PrecisionConstants.DEFAULT_USD_TARGET_PERCENT)
+
+        return PortfolioSnapshot(
+            timestamp = timestamp,
+            totalValueUSD = exactPortfolioValue,
+            assets = assetSnapshots,
+            actions = emptyList(),
+            drawdownPercent = BigDecimal.ZERO,
+            fiatDeploymentPercent = BigDecimal.ZERO,
+            effectiveUsdTargetPercent = targetUsdPercent.toUsdScale(),
         )
     }
 

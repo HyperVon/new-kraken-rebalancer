@@ -33,6 +33,8 @@ fun DomainPortfolioSnapshot.AssetSnapshot.toApiDto(): PortfolioSnapshot.AssetSna
 )
 
 fun DomainTradeRecord.toApiDto(): TradeRecord = TradeRecord(
+    // The wire DTO intentionally omits internal linkage fields (cycleId, orderTxid,
+    // tradeId, clientOrderId, submissionState) that the domain model carries.
     timestamp = timestamp.toString(),
     pair = pair,
     side = side,

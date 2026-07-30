@@ -692,8 +692,8 @@ CI (`.github/workflows/maven.yml`) runs the equivalent coverage gate explicitly:
 
 The backend enforces **strict line, branch, method, and instruction coverage**
 via JaCoCo: **95% instruction, 90% branch, 95% line, and 95% method**.
-Exclusions are narrow: framework bootstrap (`DatabaseConfig`,
-`ErrorHandlingConfig`, `KtorConfig`), Exposed table declarations, Kraken API
+Exclusions are narrow: framework bootstrap (`DatabaseConfig`, `KtorConfig`),
+Exposed table declarations, Kraken API
 client interfaces/impl, generated HTML-extension lambdas, CSS DSL, and
 `KrakenRebalancerApplication`.
 

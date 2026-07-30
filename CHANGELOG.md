@@ -6,6 +6,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.15.22] - 2026-07-30
+
+### Changed
+
+- **Large-method refactoring (Cycle 21)**: Extracted helper functions from three long methods to
+  improve readability and testability:
+  - `TradeHistorySyncService.syncTradesFromKrakenPinned` (137 lines → `calculateEffectiveLatestTime`,
+    `processApiTrades`, `reconcileOrInsertApiTrade`, `findMatchingLocalTrade`, `reconcileWithLocalTrade`,
+    `triggerReconstructionIfNeeded`, `finalizeSync`)
+  - `TradeHistorySnapshotStore.seedHistoricalData` (136 lines → `fetchSimulationData`,
+    `calculateSnapshotGridParameters`, `reverseSeedTrades`, `buildSnapshotGrid`, `buildSingleSnapshot`)
+  - `History.kt RebalancerComparison.isRenderable()` 25-line `&&` chain decomposed into named predicates
+    (`hasValidAvailability`, `hasSufficientData`, `hasValidDifferenceValues`, `hasSortedTimestamps`,
+    `hasValidBaselinePoint`, `hasCompletePointData`)
+- **New unit tests**: Added `HistoryApiMapperTest` (DTO mapping for trades, stats, snapshots, comparison)
+  and `ErrorHandlingConfigTest` (Ktor status pages + exception handling).
+
+### Fixed
+
+- **Adversarial review round 3 (#158)**: Restored pre-refactor `updateTrade` → `remove` ordering in
+  `TradeHistorySyncService.reconcileWithLocalTrade` (DB-failure-safe in-memory mutation), added
+  `status(400)` / `status(500)` / `status(503)` StatusPages-handler coverage (registered messages + the
+  `>=500` `log.error` branch), and synced README + `gradle-quality-gates` JaCoCo exclusion lists after
+  removing the `ErrorHandlingConfig` exclusion.
+
 ## [6.15.21] - 2026-07-30
 
 ### Changed

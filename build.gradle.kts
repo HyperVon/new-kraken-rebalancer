@@ -150,7 +150,6 @@ val coverageExcludes =
         // Framework/bootstrap code and generated HTML DSL lambdas remain impractical
         // to exercise to the same 95/90 bundle thresholds; tested helpers now count.
         "**/config/DatabaseConfig*",
-        "**/config/ErrorHandlingConfig*",
         "**/config/KtorConfigKt*",
         "**/repository/table/**",
         "**/service/KrakenService*",
