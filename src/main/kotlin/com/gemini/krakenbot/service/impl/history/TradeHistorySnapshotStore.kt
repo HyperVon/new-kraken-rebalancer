@@ -135,13 +135,18 @@ class TradeHistorySnapshotStore(
         }
 
         // Anchor the snapshot grid to the simulator's reference time.
-        // The simulator seeds trades at fixed offsets from its `now` (latest ~12h before its `now`).
-        // Derive simulatorNow ≈ latestTrade + 12h, then build the 15-day grid from that.
+        // The simulator seeds trades at fixed offsets from its `now`; the latest trade lands
+        // SimulationDefaults.SEED_LATEST_TRADE_HOURS_AGO before that `now`.
+        // Derive simulatorNow ≈ latestTrade + SEED_LATEST_TRADE_HOURS_AGO, then build the 15-day grid.
         val stepHours = 6L
         val steps = (15 * 24) / stepHours
         val simulatorNow = historicalTrades
             .maxByOrNull { it.timestamp }
-            ?.let { Instant.ofEpochSecond(it.timestamp.epochSecond + 12 * 3600).truncatedTo(ChronoUnit.MILLIS) }
+            ?.let {
+                Instant.ofEpochSecond(
+                    it.timestamp.epochSecond + SimulationDefaults.SEED_LATEST_TRADE_HOURS_AGO * 3600,
+                ).truncatedTo(ChronoUnit.MILLIS)
+            }
             ?: provisionalNow
         val startInstant = simulatorNow.minus(15 * 24 * 3600, ChronoUnit.SECONDS)
         val snapshotsToSave = mutableListOf<PortfolioSnapshot>()
