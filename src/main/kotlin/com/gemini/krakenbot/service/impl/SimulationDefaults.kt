@@ -7,6 +7,13 @@ object SimulationDefaults {
     val DEFAULT_PRICE: BigDecimal = BigDecimal("10")
     val TOTAL_PORTFOLIO_VALUE_USD: BigDecimal = BigDecimal("100000.00")
 
+    /**
+     * Hours before the simulator's reference `now` at which the latest seeded trade lands.
+     * TradeHistorySnapshotStore uses this to align the cold-start snapshot grid with the
+     * seeded fills produced by SimulatedKrakenService.seedSimulatedTrades().
+     */
+    const val SEED_LATEST_TRADE_HOURS_AGO: Long = 12L
+
     val INITIAL_PRICES: Map<String, BigDecimal> =
         mapOf(
             Asset.BTC to BigDecimal("60000"),
