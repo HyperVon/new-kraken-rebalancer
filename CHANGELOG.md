@@ -6,6 +6,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.15.20] - 2026-07-30
+
+### Fixed
+
+- **Rebalancer vs Buy & Hold comparison query range**: Retained snapshot list
+  timestamp range querying in `TradeHistoryQueryService` now uses `minOf`/`maxOf`
+  to guarantee all trade records within the snapshot period are retrieved regardless
+  of list ordering.
+- **Comparison baseline mismatch & price validation**: Hardened `RebalancerComparisonCalculator`
+  with explicit `BASELINE_MISMATCH_TOLERANCE` constant, price existence error messages,
+  and corrected point indexing for latest difference metrics.
+
+### Changed
+
+- **Simulation seed trade fees and timestamp grid**: `SimulatedKrakenService` now computes
+  explicit non-zero trade fees, and `TradeHistorySnapshotStore` anchors cold-start
+  simulation snapshot grids to historical trade timestamps.
+
 ## [6.15.19] - 2026-07-29
 
 ### Added

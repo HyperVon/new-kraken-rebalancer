@@ -309,7 +309,7 @@ class SimulatedKrakenService(private val configService: ConfigService) : KrakenS
                     success = true,
                     dryRun = false,
                     price = price.toCryptoScale(),
-                    fee = BigDecimal.ZERO,
+                    fee = usdAmount.multiply(SEED_FEE_RATE).setScale(4, RoundingMode.HALF_UP),
                     source = TradeSource.API_FILL,
                     orderTxid = orderTxid,
                 )

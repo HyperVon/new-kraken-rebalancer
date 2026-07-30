@@ -20,6 +20,8 @@ object RebalancerComparisonCalculator {
     private val SCALE_PERCENT = PrecisionConstants.SCALE_PERCENT
     private val USD = Asset.USD
 
+    private val BASELINE_MISMATCH_TOLERANCE = BigDecimal("0.01")
+
     fun calculate(snapshots: List<PortfolioSnapshot>, trades: List<TradeRecord>): RebalancerComparison {
         if (snapshots.size < 2) {
             val firstTime = snapshots.firstOrNull()?.timestamp
@@ -69,14 +71,11 @@ object RebalancerComparisonCalculator {
             )
         }
 
-        val latestDiffUSD = points.last().differenceUSD
-        val latestDiffPct = points.last().differencePercent
-
         val baselineFirstPoint = points.first()
         val firstDiffFromCalc = baselineFirstPoint.rebalancerValueUSD
             .subtract(baselineFirstPoint.buyAndHoldValueUSD)
             .abs()
-        if (firstDiffFromCalc > BigDecimal("0.01")) {
+        if (firstDiffFromCalc > BASELINE_MISMATCH_TOLERANCE) {
             return unavailable(
                 reason = ComparisonUnavailableReason.BASELINE_MISMATCH,
                 unavailableAt = baseline.timestamp,
@@ -96,6 +95,9 @@ object RebalancerComparisonCalculator {
                 point
             }
         }
+
+        val latestDiffUSD = correctedPoints.last().differenceUSD
+        val latestDiffPct = correctedPoints.last().differencePercent
 
         return RebalancerComparison(
             availability = ComparisonAvailability.AVAILABLE,
@@ -270,7 +272,10 @@ object RebalancerComparisonCalculator {
             val price = if (symbol == USD) {
                 BigDecimal.ONE
             } else {
-                snapshot.assets[symbol]?.price ?: BigDecimal.ZERO
+                snapshot.assets[symbol]?.price
+                    ?: error(
+                        "Asset $symbol missing in snapshot ${snapshot.timestamp}; validatePrices should have caught this",
+                    )
             }
             val product = startBalance.multiply(price)
             total = total.add(product)

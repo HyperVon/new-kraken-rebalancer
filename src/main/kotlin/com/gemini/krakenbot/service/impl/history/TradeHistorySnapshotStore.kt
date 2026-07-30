@@ -114,12 +114,10 @@ class TradeHistorySnapshotStore(
         val config = configService.getConfig()
         val allocations = config.allocations
 
-        val now = Instant.ofEpochMilli(Instant.now().toEpochMilli())
-        // Empty-DB simulation seed: ~15 days of snapshots at 6-hour steps.
-        val startInstant = now.minus(15, ChronoUnit.DAYS)
-        val stepHours = 6L
-        val steps = (15 * 24) / stepHours
-        val snapshotsToSave = mutableListOf<PortfolioSnapshot>()
+        val provisionalNow = Instant.now().truncatedTo(ChronoUnit.MILLIS)
+        // We will anchor the snapshot grid to the simulator's trade timestamps.
+        // Compute provisional start instant to fetch trades.
+        val provisionalStart = provisionalNow.minus(15, ChronoUnit.DAYS)
 
         val (finalBalances, historicalTrades) = krakenService.withStableBackend { backend ->
             val rawBalances = backend.getBalances()
@@ -130,11 +128,23 @@ class TradeHistorySnapshotStore(
                 normalized to balance
             }
             val trades = backend
-                .getTradeHistory(startInstant.epochSecond, 0)
+                .getTradeHistory(provisionalStart.epochSecond, 0)
                 .filter { it.success && !it.dryRun }
                 .sortedBy(TradeRecord::timestamp)
             normalizedBalances to trades
         }
+
+        // Anchor the snapshot grid to the simulator's reference time.
+        // The simulator seeds trades at fixed offsets from its `now` (latest ~12h before its `now`).
+        // Derive simulatorNow ≈ latestTrade + 12h, then build the 15-day grid from that.
+        val stepHours = 6L
+        val steps = (15 * 24) / stepHours
+        val simulatorNow = historicalTrades
+            .maxByOrNull { it.timestamp }
+            ?.let { Instant.ofEpochSecond(it.timestamp.epochSecond + 12 * 3600).truncatedTo(ChronoUnit.MILLIS) }
+            ?: provisionalNow
+        val startInstant = simulatorNow.minus(15 * 24 * 3600, ChronoUnit.SECONDS)
+        val snapshotsToSave = mutableListOf<PortfolioSnapshot>()
 
         // The emulator's balances are its present-day state. Reverse its seeded fills to obtain
         // a historical baseline, then replay those exact fills while producing snapshots. This
@@ -223,9 +233,7 @@ class TradeHistorySnapshotStore(
             repository.saveTrade(trade)
         }
         repository.setHistorySeeded(true)
-        historicalTrades.maxOfOrNull { it.timestamp }?.let { latest ->
-            repository.setSyncMetadata(SyncMetadataKeys.SYNC_WATERMARK_EPOCH_SEC, latest.epochSecond.toString())
-        }
+        repository.setSyncMetadata(SyncMetadataKeys.SYNC_WATERMARK_EPOCH_SEC, Instant.now().epochSecond.toString())
         log.info(
             "Simulation mode: seeded {} historical snapshots and {} trade records",
             snapshotsToSave.size,

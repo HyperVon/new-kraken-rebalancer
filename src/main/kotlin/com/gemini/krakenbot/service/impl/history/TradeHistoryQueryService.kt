@@ -43,8 +43,8 @@ class TradeHistoryQueryService(
         if (snapshots.size < 2) {
             return RebalancerComparisonCalculator.calculate(snapshots, emptyList())
         }
-        val firstTimestamp = snapshots.first().timestamp
-        val lastTimestamp = snapshots.last().timestamp
+        val firstTimestamp = snapshots.minOf { it.timestamp }
+        val lastTimestamp = snapshots.maxOf { it.timestamp }
         val trades = getTradesInRange(firstTimestamp, lastTimestamp)
         return RebalancerComparisonCalculator.calculate(snapshots, trades)
     }
