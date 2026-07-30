@@ -104,14 +104,14 @@ class TradeHistoryRangeAndEdgeCasesTest : TradeHistoryServiceTestBase() {
 
         "init_MigratesEmptyTradeHistoryJsonWithoutSaving" {
             runTest {
-                val file = File(TestFixtures.TEST_TRADE_HISTORY_JSON)
-                val bakFile = File("test-trade-history.json.bak")
+                val tmpFile = File.createTempFile("edge-empty-", ".json").apply { deleteOnExit() }
+                val file = tmpFile
+                val bakFile = File("${tmpFile.absolutePath}.bak")
                 try {
-                    file.delete()
                     bakFile.delete()
                     file.writeText("[]")
 
-                    val tradeHistoryService = createService()
+                    val tradeHistoryService = createService(tradeHistoryFilePath = tmpFile.absolutePath)
                     coEvery { repository.load() } returns emptyList()
                     tradeHistoryService.init()
 
@@ -127,14 +127,14 @@ class TradeHistoryRangeAndEdgeCasesTest : TradeHistoryServiceTestBase() {
 
         "init_MigratesNullTradeHistoryJsonWithoutSaving" {
             runTest {
-                val file = File(TestFixtures.TEST_TRADE_HISTORY_JSON)
-                val bakFile = File("test-trade-history.json.bak")
+                val tmpFile = File.createTempFile("edge-null-", ".json").apply { deleteOnExit() }
+                val file = tmpFile
+                val bakFile = File("${tmpFile.absolutePath}.bak")
                 try {
-                    file.delete()
                     bakFile.delete()
                     file.writeText("null")
 
-                    val tradeHistoryService = createService()
+                    val tradeHistoryService = createService(tradeHistoryFilePath = tmpFile.absolutePath)
                     coEvery { repository.load() } returns emptyList()
                     tradeHistoryService.init()
 
@@ -172,6 +172,7 @@ class TradeHistoryRangeAndEdgeCasesTest : TradeHistoryServiceTestBase() {
                 val saved = slot<List<PortfolioSnapshot>>()
                 coEvery { repository.save(capture(saved)) } just Runs
 
+                val uniquePath = File.createTempFile("range-seed-", ".json").also { it.delete() }
                 TradeHistoryServiceImpl(
                     repository,
                     statsRepository,
@@ -179,7 +180,7 @@ class TradeHistoryRangeAndEdgeCasesTest : TradeHistoryServiceTestBase() {
                     configService,
                     objectMapper,
                     portfolioAnalyzer,
-                    TestFixtures.TEST_TRADE_HISTORY_JSON,
+                    uniquePath.absolutePath,
                 ).init()
 
                 saved.captured.isNotEmpty().shouldBeTrue()

@@ -36,7 +36,10 @@ abstract class TradeHistoryServiceTestBase : StringSpec() {
         }
     }
 
-    protected fun createService(syncNowProvider: () -> Instant = Instant::now): TradeHistoryServiceImpl {
+    protected fun createService(
+        tradeHistoryFilePath: String = TestFixtures.TEST_TRADE_HISTORY_JSON,
+        syncNowProvider: () -> Instant = Instant::now,
+    ): TradeHistoryServiceImpl {
         val appConfig = AppConfig(
             kraken = KrakenCredentials(TestFixtures.TRADE_HISTORY_API_KEY, TestFixtures.TRADE_HISTORY_API_SECRET),
             settings = TestFixtures.settings(
@@ -63,7 +66,7 @@ abstract class TradeHistoryServiceTestBase : StringSpec() {
             configService,
             objectMapper,
             portfolioAnalyzer,
-            TestFixtures.TEST_TRADE_HISTORY_JSON,
+            tradeHistoryFilePath,
             syncNowProvider,
         )
     }

@@ -100,17 +100,17 @@ class TradeHistorySyncLifecycleTest : TradeHistoryServiceTestBase() {
 
         "init_MigratesTradeHistoryJsonIfEmpty" {
             runTest {
-                val file = File(TestFixtures.TEST_TRADE_HISTORY_JSON)
-                val bakFile = File("test-trade-history.json.bak")
+                val tmpFile = File.createTempFile("lifecycle-migrate-", ".json").apply { deleteOnExit() }
+                val file = tmpFile
+                val bakFile = File("${tmpFile.absolutePath}.bak")
                 try {
-                    file.delete()
                     bakFile.delete()
 
                     val snapshot = TestFixtures.emptySnapshot(Instant.now(), BigDecimal("15000.00"))
 
                     file.writeText(objectMapper.writeValueAsString(listOf(snapshot)))
 
-                    val tradeHistoryService = createService()
+                    val tradeHistoryService = createService(tradeHistoryFilePath = tmpFile.absolutePath)
                     coEvery { repository.load() } returns emptyList()
 
                     tradeHistoryService.init()
@@ -128,17 +128,17 @@ class TradeHistorySyncLifecycleTest : TradeHistoryServiceTestBase() {
 
         "init_MigrationSaveFailureLeavesJsonUnrenamed" {
             runTest {
-                val file = File(TestFixtures.TEST_TRADE_HISTORY_JSON)
-                val bakFile = File("test-trade-history.json.bak")
+                val tmpFile = File.createTempFile("lifecycle-migrate-fail-", ".json").apply { deleteOnExit() }
+                val file = tmpFile
+                val bakFile = File("${tmpFile.absolutePath}.bak")
                 try {
-                    file.delete()
                     bakFile.delete()
 
                     val snapshot = TestFixtures.emptySnapshot(Instant.now(), BigDecimal("15000.00"))
 
                     file.writeText(objectMapper.writeValueAsString(listOf(snapshot)))
 
-                    val tradeHistoryService = createService()
+                    val tradeHistoryService = createService(tradeHistoryFilePath = tmpFile.absolutePath)
                     coEvery { repository.load() } returns emptyList()
                     coEvery { repository.save(any()) } throws RuntimeException("migrate save failed")
 
