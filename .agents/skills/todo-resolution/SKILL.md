@@ -77,9 +77,10 @@ scoped to the repository and preserve TODOs that are not yet safe or actionable.
    - Run focused tests or checks first, then the repository's relevant quality
      gates when practical. Inspect the diff and confirm the TODO's acceptance
      criteria are actually met.
-   - Audit every changed line against the expected diff. Keep only lines that
-     directly fulfill the TODO or are required for compilation or verification;
-     revert opportunistic refactors and consistency edits.
+   - Audit every line changed by the current batch against the expected diff.
+     Keep only lines that directly fulfill the TODO or are required for
+     compilation or verification; remove only opportunistic edits introduced
+     by the current task.
    - Remove the TODO comment only after the implementation is complete and
      verification passes. Remove just the marker and any now-misleading
      wording; preserve useful rationale as a normal comment when it still

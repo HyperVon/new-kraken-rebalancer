@@ -12,8 +12,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - **History fixture maintainability**: Centralized the `pair` and `id` JSON
   property names used by trade-record test fixtures.
-- **TODO workflow scope**: Added explicit minimal-diff guardrails that prevent
-  mechanical TODO cleanup from expanding into unrelated adjacent changes.
+- **TODO workflow scope**: Added explicit minimal-diff guidance for keeping
+  mechanical TODO cleanup scoped to the marked code.
 
 ## [6.15.15] - 2026-07-29
 
