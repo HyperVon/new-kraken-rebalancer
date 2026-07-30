@@ -117,10 +117,6 @@ import com.gemini.krakenbot.view.util.HtmlIds
 
 Do not redefine HTML IDs or CSS class name strings in JS.
 
-Do not introduce ARIA attributes, ARIA roles, or accessibility-only DOM text
-unless the user explicitly requests accessibility work. Preserve unrelated
-existing metadata rather than broadening a frontend task into remediation.
-
 ## Coverage (Karma / Istanbul)
 
 Thresholds in `frontend-js/karma.config.d/coverage.js`:
@@ -160,5 +156,4 @@ views, zoom, scrubber pan, dry-run filter, legend toggles).
 - [ ] Chart options deep-cloned; zoom callbacks re-attached after clone
 - [ ] Zoomed History charts pan via `zoomScale` + scrubber (not options.scales only)
 - [ ] `:common` IDs/classes used; Karma thresholds still met
-- [ ] No new ARIA/accessibility-only metadata unless explicitly requested
 - [ ] Visual changes → run docs-screenshot-refresh when shipping docs
