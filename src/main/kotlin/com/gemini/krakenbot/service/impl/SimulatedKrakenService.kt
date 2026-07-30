@@ -121,7 +121,11 @@ class SimulatedKrakenService(private val configService: ConfigService) : KrakenS
             val volume = targetUsd.divide(firstPrice, PrecisionConstants.SCALE_CRYPTO, RoundingMode.HALF_UP)
             val firstSide = if (index % 2 == 0) OrderSide.BUY else OrderSide.SELL
             val secondSide = if (firstSide == OrderSide.BUY) OrderSide.SELL else OrderSide.BUY
-            val firstHoursAgo = 114L - index * 16L
+            // Anchored to SimulationDefaults.SEED_LATEST_TRADE_HOURS_AGO so the final pair's
+            // second leg always lands that many hours before `now`; TradeHistorySnapshotStore
+            // relies on this to align its snapshot grid. Equivalent to 114L - index * 16L.
+            val firstHoursAgo =
+                SimulationDefaults.SEED_LATEST_TRADE_HOURS_AGO + 6L + (6 - index) * 16L
 
             simulatedTrades += seededTrade(
                 timestamp = now.minus(firstHoursAgo, ChronoUnit.HOURS),
