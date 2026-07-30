@@ -153,6 +153,8 @@ class TradeHistorySnapshotStore(
 
     private suspend fun fetchSimulationData(allocations: List<Allocation>): SimulationData {
         val provisionalNow = Instant.now().truncatedTo(ChronoUnit.MILLIS)
+        // Fetch 15 days back before the real anchor is known; the snapshot grid is later anchored
+        // to the simulator's trade timestamps derived from these fetched trades.
         val provisionalStart = provisionalNow.minus(15, ChronoUnit.DAYS)
 
         return krakenService.withStableBackend { backend ->

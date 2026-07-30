@@ -160,6 +160,7 @@ class HistoryApiMapperTest : StringSpec() {
             dto.effectiveUsdTargetPercent shouldBe "20.0"
             dto.assets.keys shouldHaveSize 1
             val btc = dto.assets["BTC"]!!
+            btc.symbol shouldBe "BTC"
             btc.balance shouldBe "0.25"
             btc.price shouldBe "40000.00"
             btc.valueUSD shouldBe "10000.00"
@@ -227,6 +228,11 @@ class HistoryApiMapperTest : StringSpec() {
             dto.confidence shouldBe "RECONCILED"
             dto.baselineTimestamp shouldBe "2026-01-15T10:00:00Z"
             dto.points shouldHaveSize 2
+            dto.points[0].timestamp shouldBe "2026-01-15T10:00:00Z"
+            dto.points[0].rebalancerValueUSD shouldBe "10000.00"
+            dto.points[0].buyAndHoldValueUSD shouldBe "10000.00"
+            dto.points[0].differenceUSD shouldBe "0.00"
+            dto.points[0].differencePercent shouldBe "0.00"
             dto.points[1].timestamp shouldBe "2026-01-15T11:00:00Z"
             dto.points[1].rebalancerValueUSD shouldBe "10500.00"
             dto.points[1].buyAndHoldValueUSD shouldBe "10200.00"

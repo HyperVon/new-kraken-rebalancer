@@ -67,6 +67,9 @@ class TradeHistorySyncService(
     private suspend fun syncTradesFromKrakenPinned(config: AppConfig) {
         val isSeeded = repository.isHistorySeeded()
         val effectiveLatest = calculateEffectiveLatestTime()
+        // Null effective → full history (startSec null). Otherwise overlap by 5 minutes so fills
+        // near the previous watermark are re-fetched and reconciled rather than double-inserted.
+        // [isHistorySeeded] only gates progress metadata / first-sync completion, not this window.
         val startSec = effectiveLatest?.minusSeconds(300)?.epochSecond
 
         log.info("Starting trade history synchronization (isSeeded={}, startSec={})...", isSeeded, startSec)
