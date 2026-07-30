@@ -98,19 +98,19 @@ class TradeHistorySnapshotStore(
                 val config = configService.getConfig()
                 if (config.settings.simulation) {
                     try {
-                        seedHistoricalSnapshots()
+                        seedHistoricalData()
                     } catch (e: CancellationException) {
                         throw e
                     } catch (e: Exception) {
-                        log.error("Failed to seed historical snapshots", e)
+                        log.error("Failed to seed historical data", e)
                     }
                 }
             }
         }
     }
 
-    private suspend fun seedHistoricalSnapshots() {
-        log.info("Simulation mode: Seeding historical snapshots in database...")
+    private suspend fun seedHistoricalData() {
+        log.info("Simulation mode: Seeding historical snapshots and trades in database...")
         val config = configService.getConfig()
         val allocations = config.allocations
 
