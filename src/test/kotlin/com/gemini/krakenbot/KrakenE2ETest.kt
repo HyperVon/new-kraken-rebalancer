@@ -1,26 +1,37 @@
 package com.gemini.krakenbot
 
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
-import com.gemini.krakenbot.config.*
+import com.gemini.krakenbot.config.Allocation
+import com.gemini.krakenbot.config.AppConfig
+import com.gemini.krakenbot.config.DatabaseConfig
+import com.gemini.krakenbot.config.KrakenCredentials
+import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.repository.impl.SqlitePortfolioStatsRepositoryImpl
 import com.gemini.krakenbot.repository.impl.SqliteTradeRepositoryImpl
 import com.gemini.krakenbot.service.ConfigService
-import com.gemini.krakenbot.service.impl.*
+import com.gemini.krakenbot.service.impl.ConfigServiceImpl
+import com.gemini.krakenbot.service.impl.KrakenServiceImpl
+import com.gemini.krakenbot.service.impl.OrderExecutorImpl
+import com.gemini.krakenbot.service.impl.PortfolioAnalyzerImpl
+import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
 import com.gemini.krakenbot.service.impl.history.TradeHistoryServiceImpl
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.nulls.shouldNotBeNull
-import io.ktor.client.*
-import io.ktor.client.engine.mock.*
-import io.ktor.http.*
-import io.ktor.http.content.*
+import io.ktor.client.HttpClient
+import io.ktor.client.engine.mock.MockEngine
+import io.ktor.client.engine.mock.respond
+import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpStatusCode
+import io.ktor.http.content.TextContent
+import io.ktor.http.headersOf
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
-import java.util.*
+import java.util.Base64
 
 class KrakenE2ETest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
