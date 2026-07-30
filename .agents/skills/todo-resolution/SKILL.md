@@ -51,12 +51,23 @@ scoped to the repository and preserve TODOs that are not yet safe or actionable.
    batches. Present the inventory and ask for direction before changing ten or
    more items, more than one subsystem, or any high-impact area.
 
+   For each batch, define the minimal expected diff before editing: the marked
+   sites, required declarations or imports, and any tests that must change.
+   Treat that as the default acceptance boundary.
+
 4. Implement actionable items.
 
    - Read the surrounding module, callers, tests, and relevant documentation
      before editing. Follow existing architecture and naming conventions.
-   - Make the smallest complete change that fulfills the TODO; update or add
-     focused tests for changed behavior and edge cases.
+     Reading adjacent code provides context; it does not authorize changing it.
+   - Make the smallest complete change that fulfills the TODO. For a mechanical
+     TODO such as extracting a literal into a constant, add the required
+     declaration and replace only the marked occurrence(s). Do not migrate
+     existing adjacent consumers merely for consistency unless compilation or
+     the TODO's stated behavior requires it.
+   - Update or add focused tests when behavior changes or existing verification
+     cannot cover the requested result. Do not alter fixtures or broaden test
+     coverage solely to justify unrelated adjacent cleanup.
    - Treat changes affecting security, persistence, public APIs, live trading,
      data loss, or other high-impact behavior as requiring explicit user
      direction unless the request already clearly authorizes them.
@@ -66,6 +77,10 @@ scoped to the repository and preserve TODOs that are not yet safe or actionable.
    - Run focused tests or checks first, then the repository's relevant quality
      gates when practical. Inspect the diff and confirm the TODO's acceptance
      criteria are actually met.
+   - Audit every line changed by the current batch against the expected diff.
+     Keep only lines that directly fulfill the TODO or are required for
+     compilation or verification; remove only opportunistic edits introduced
+     by the current task.
    - Remove the TODO comment only after the implementation is complete and
      verification passes. Remove just the marker and any now-misleading
      wording; preserve useful rationale as a normal comment when it still
