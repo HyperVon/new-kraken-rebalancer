@@ -159,6 +159,7 @@ private fun createStatusCell(
     if (isPlainSuccess) {
         val dot = document.createElement(HtmlTags.SPAN) as HTMLSpanElement
         dot.className = CssClass.Table.StatusDot.toString()
+        dot.title = ViewText.STATUS_SUCCESS
         td.appendChild(dot)
         return td
     }

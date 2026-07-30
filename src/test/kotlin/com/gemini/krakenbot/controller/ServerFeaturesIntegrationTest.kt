@@ -6,7 +6,6 @@ import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.config.ErrorHandlingConfig.configureErrorHandling
 import com.gemini.krakenbot.config.configureCachingAndConditionalHeaders
 import com.gemini.krakenbot.config.configureCompression
-import com.gemini.krakenbot.controller.dashboardRouting
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.TradeHistoryService
 import com.gemini.krakenbot.view.DashboardView

@@ -19,11 +19,11 @@ need only this file (no issue spam).
 | :--- | :---: | :--- | :--- | :--- | :---: | :--- | :--- |
 | CI-21-T01 | M | open | tests | Extract duplicated PortfolioManager wiring (35+ call sites) to shared fixture | 21 | — | — |
 | CI-21-T02 | M | open | tests | Fix flaky `DynamicKrakenServiceTest.concurrent withStableBackend` timing | 21 | — | — |
-| CI-21-L01 | L | open | complexity | Refactor `syncTradesFromKrakenPinned` (137 lines) in TradeHistorySyncService | 21 | — | — |
-| CI-21-L02 | L | open | complexity | Refactor `seedHistoricalData` (136 lines) in TradeHistorySnapshotStore | 21 | — | — |
-| CI-21-L03 | L | open | complexity | Decompose `isRenderable()` (25-line && chain) in History.kt | 21 | — | — |
-| CI-21-L04 | L | open | coverage | Add unit tests for HistoryApiMapper (DTO serialization layer) | 21 | — | — |
-| CI-21-L05 | L | open | coverage | Add unit tests for ErrorHandlingConfig (HTTP error handling paths) | 21 | — | — |
+| CI-21-L01 | L | open | complexity | Refactor `syncTradesFromKrakenPinned` (137 lines) in TradeHistorySyncService | 21 | [#153](https://github.com/HyperVon/new-kraken-rebalancer/issues/153) | — |
+| CI-21-L02 | L | open | complexity | Refactor `seedHistoricalData` (136 lines) in TradeHistorySnapshotStore | 21 | [#154](https://github.com/HyperVon/new-kraken-rebalancer/issues/154) | — |
+| CI-21-L03 | L | open | complexity | Decompose `isRenderable()` (25-line && chain) in History.kt | 21 | [#155](https://github.com/HyperVon/new-kraken-rebalancer/issues/155) | — |
+| CI-21-L04 | L | open | coverage | Add unit tests for HistoryApiMapper (DTO serialization layer) | 21 | [#156](https://github.com/HyperVon/new-kraken-rebalancer/issues/156) | — |
+| CI-21-L05 | L | open | coverage | Add unit tests for ErrorHandlingConfig (HTTP error handling paths) | 21 | [#157](https://github.com/HyperVon/new-kraken-rebalancer/issues/157) | — |
 
 ## Done (recent)
 
