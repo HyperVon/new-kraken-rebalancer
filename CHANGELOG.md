@@ -6,7 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [6.15.21] - 2026-07-30
+## [6.15.24] - 2026-07-30
+
+### Refactored
+
+- **Test suite import hygiene**: Replaced wildcard imports with explicit single-class imports in `DashboardViewTest` and `ConfigServiceTest`.
+
+## [6.15.23] - 2026-07-30
 
 ### Changed
 

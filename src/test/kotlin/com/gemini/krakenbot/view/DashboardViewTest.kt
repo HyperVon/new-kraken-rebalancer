@@ -8,7 +8,14 @@ import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.PortfolioSnapshot
-import com.gemini.krakenbot.view.component.*
+import com.gemini.krakenbot.view.component.AllocationChartComponent
+import com.gemini.krakenbot.view.component.DashboardFragmentComponent
+import com.gemini.krakenbot.view.component.DashboardShellComponent
+import com.gemini.krakenbot.view.component.HistoryPageComponent
+import com.gemini.krakenbot.view.component.OverviewGridComponent
+import com.gemini.krakenbot.view.component.PerformanceTableComponent
+import com.gemini.krakenbot.view.component.RecentActivityComponent
+import com.gemini.krakenbot.view.component.SettingsFormComponent
 import com.gemini.krakenbot.view.util.CdnUrls
 import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.FormFields.DEVIATION_TRIGGER_PERCENT
