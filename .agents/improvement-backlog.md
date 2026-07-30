@@ -22,8 +22,8 @@ need only this file (no issue spam).
 
 | ID | Size | Status | Area | Summary | Cycle | PR |
 | :--- | :---: | :--- | :--- | :--- | :---: | :--- |
-| CI-20-C1 | S | done | tests | Replace wildcard imports with explicit imports in `EvaluationScenarios8To14` and `EvaluationScenariosTest` | 20 | pending |
-| CI-20-D1 | S | done | docs | Update `CHANGELOG.md` for version 6.15.25 release | 20 | pending |
+| CI-20-C1 | S | done | tests | Replace wildcard imports with explicit imports in `EvaluationScenarios8To14` and `EvaluationScenariosTest` | 20 | #151 |
+| CI-20-D1 | S | done | docs | Update `CHANGELOG.md` for version 6.15.25 release | 20 | #151 |
 | CI-19-C1 | S | done | tests | Replace wildcard imports with explicit imports in `DashboardViewTest` and `ConfigServiceTest` | 19 | #150 |
 | CI-19-D1 | S | done | docs | Update `CHANGELOG.md` for version 6.15.24 release | 19 | #150 |
 | CI-18-C1 | S | done | code | Replace wildcard imports with explicit imports across server services and configs | 18 | #149 |
