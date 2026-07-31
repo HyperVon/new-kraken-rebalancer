@@ -47,7 +47,6 @@ class OrderExecutorImpl(
     private val log = LoggerFactory.getLogger(OrderExecutorImpl::class.java)
 
     companion object {
-        val CASH_RESERVE_FACTOR: BigDecimal = PrecisionConstants.CASH_RESERVE_FACTOR
         const val MAX_REFRESH_ATTEMPTS = 3
         const val REFRESH_DELAY_MS = 250L
 
@@ -145,7 +144,7 @@ class OrderExecutorImpl(
             }
 
             // Cycle-level budget: 99% of post-sell settled USD so multi-buy batches cannot erode the reserve.
-            val cycleBuyBudget = actualCash.multiply(CASH_RESERVE_FACTOR).toUsdScale()
+            val cycleBuyBudget = actualCash.multiply(PrecisionConstants.CASH_RESERVE_FACTOR).toUsdScale()
             var remainingBuyBudget = cycleBuyBudget
 
             for ((symbol, originalCost) in buyOrders) {

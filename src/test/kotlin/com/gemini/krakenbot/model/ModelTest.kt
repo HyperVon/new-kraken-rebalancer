@@ -1,8 +1,9 @@
 package com.gemini.krakenbot.model
 
 import com.gemini.krakenbot.TestFixtures
-import com.gemini.krakenbot.service.impl.OrderExecutorImpl
 import com.gemini.krakenbot.service.impl.PortfolioCalculations
+import com.gemini.krakenbot.util.CASH_RESERVE_FACTOR
+import com.gemini.krakenbot.util.PrecisionConstants
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
@@ -67,7 +68,7 @@ class ModelTest : StringSpec() {
         }
 
         "testServiceCompanions" {
-            OrderExecutorImpl.CASH_RESERVE_FACTOR.shouldBeEqualComparingTo(BigDecimal("0.99"))
+            PrecisionConstants.CASH_RESERVE_FACTOR.shouldBeEqualComparingTo(BigDecimal("0.99"))
 
             PortfolioCalculations.HUNDRED.shouldBeEqualComparingTo(BigDecimal("100"))
             PortfolioCalculations.SCALE_PERCENT shouldBe 4

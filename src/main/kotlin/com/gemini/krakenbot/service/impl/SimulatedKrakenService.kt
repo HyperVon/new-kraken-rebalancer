@@ -354,6 +354,9 @@ class SimulatedKrakenService(private val configService: ConfigService) : KrakenS
 
     override suspend fun getOHLC(pair: String, interval: Int, since: Long?): List<Pair<Long, BigDecimal>> = emptyList()
 
+    /** Offline emulator has no network rate limiter; returns 0.0. */
+    override suspend fun getApiCallCounter(): Double = 0.0
+
     private companion object {
         const val TRADE_HISTORY_PAGE_SIZE = 50
         const val SEED_ORDER_TXID_PREFIX = "SIM-SEED-"
