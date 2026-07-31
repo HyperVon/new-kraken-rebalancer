@@ -34,43 +34,43 @@ Product polish discovered during QA belongs in
 
 | ID | Size | Kind | Status | Area | Summary | Cycle | PR | Issue |
 | :--- | :---: | :--- | :--- | :--- | :--- | :---: | :--- | :---: |
-| CQ-14-L1 | L | bug | done | config/orders/simulation | Canonicalize allocation symbols and reject Kraken alias collisions before valuation and execution | 14 | #TBD | #163 |
-| CQ-14-L2 | L | bug | done | orders/journal | A live success without an order transaction ID must remain blocking `UNCERTAIN` | 14 | #TBD | #161 |
-| CQ-14-L3 | L | bug | done | orders/dust | Apply the dust threshold to floored submitted buy notional | 14 | #TBD | #166 |
-| CQ-14-L4 | L | bug | done | history/dedupe | Preserve conflicting trade provenance during startup local/API cleanup | 14 | #TBD | #165 |
-| CQ-14-L5 | L | bug | done | history/sync | Resume interrupted initial pagination instead of skipping older Kraken fills | 14 | #TBD | #162 |
-| CQ-14-L6 | L | bug | done | security/config | Harden credential-bearing config permissions and temporary-file cleanup | 14 | #TBD | #167 |
-| CQ-14-L7 | L | bug | done | flows/manager/orders | Make the PortfolioManager worker restartable and single-owner | 14 | #TBD | #160 |
-| CQ-14-L8 | L | bug | done | lifecycle/orders | Join the rebalance worker before shutdown closes HTTP and Koin dependencies | 14 | #TBD | #164 |
-| CQ-14-M2 | M | gap | done | history/migration | Exercise a genuinely old SQLite schema and provenance/submission-column migration | 14 | #TBD | — |
-| CQ-14-M3 | M | gap | done | history/sync | Cover cancellation after sync progress or trade persistence begins | 14 | #TBD | — |
-| CQ-14-M5 | M | gap | done | config/validation | Directly cover NaN and positive/negative infinity allocation targets | 14 | #TBD | — |
-| CQ-14-M8 | M | gap | done | flows/manager | Cover PortfolioManager cancellation during active analysis, execution, settlement, or snapshot work | 14 | #TBD | — |
-| CQ-14-M10 | M | bug | done | frontend-js/dashboard | Fix numeric dashboard Price and Value sorting for comma-formatted currency | 14 | #TBD | — |
-| CQ-14-M11 | M | bug | done | frontend-js/settings | Reinitialize settings controls and allocation validation after an HTMX error fragment swap | 14 | #TBD | — |
-| CQ-14-M12 | M | bug | done | frontend-js/history | Do not relabel stale History data when a selected range request fails | 14 | #TBD | — |
-| CQ-14-M13 | M | gap | done | frontend-js/history | Assert all six History summary cards update across time ranges, including null slippage | 14 | #TBD | — |
-| CQ-14-M14 | M | gap | done | frontend-js/history | Exercise captured drag/wheel zoom callbacks and assert fallback min/max bounds | 14 | #TBD | — |
-| CQ-14-M15 | M | harness | done | eval/flows | Stop evaluation scenarios from overstating hot SSE/config reload coverage built on finite or cold flows | 14 | #TBD | — |
-| CQ-14-M16 | M | harness | done | eval/report | Record failed evaluation scenarios and verify report count from registered cases | 14 | #TBD | — |
-| CQ-14-M17 | M | flake | done | frontend-js/tests | Replace wall-clock JS test delays with explicit Promise/deferred readiness | 14 | #TBD | — |
-| CQ-14-1 | S | gap | done | history/repository | Verify snapshot asset/action child-row pruning retains recent children and removes old ones | 14 | #TBD | — |
-| CQ-14-2 | S | gap | done | history/reconstruction | Cover cancellation and ordinary failure from reconstruction snapshot persistence | 14 | #TBD | — |
-| CQ-14-3 | S | gap | done | history/flows | Verify a late snapshot subscriber receives the replayed latest snapshot | 14 | #TBD | — |
-| CQ-14-5 | S | gap | done | modes/config | Verify simulation flag persistence through disk reload and dynamic routing | 14 | #TBD | — |
-| CQ-14-6 | S | gap | done | security/credentials | Assert API/private key and credentials string representations redact secrets | 14 | #TBD | — |
-| CQ-14-7 | S | gap | done | frontend-js/history | Cover malformed comparison predicates and the valid `ESTIMATED` badge branch | 14 | #TBD | — |
-| CQ-14-8 | S | gap | done | frontend-js/history | Add native JSON wire fixtures for snapshots, stats, comparison, and sync progress | 14 | #TBD | — |
-| CQ-14-9 | S | harness | done | eval/docs | Correct Scenario 10 evidence to test the actual stats database failure path | 14 | #TBD | — |
-| CQ-14-10 | S | harness | done | eval/docs | Make Scenario 20 test malformed JSON or rename its missing-file behavior claim | 14 | #TBD | — |
-| CQ-14-11 | S | harness | done | eval/docs | Sync README and EVALUATION simulation suite count from five to six | 14 | #TBD | — |
-| CQ-14-12 | S | harness | done | simulation/eval | Make the simulation trade-identity assertion deterministic instead of conditional on nonempty trades | 14 | #TBD | — |
-| CQ-14-13 | S | gap | done | orders/settlement | Cover fill-history exceptions and balance-poll fallback before a buy | 14 | #TBD | — |
-| CQ-14-14 | S | gap | done | orders/journal | Verify a failed `PENDING` persistence prevents any live exchange call | 14 | #TBD | — |
-| CQ-14-16 | S | flake | done | eval/tests | Use unique temporary stats paths and guaranteed cleanup in evaluation scenarios | 14 | #TBD | — |
-| CQ-14-17 | S | harness | done | eval | Require Scenario 25 to distinguish successful ETH logging from failure text | 14 | #TBD | — |
-| CQ-14-18 | S | harness | done | eval/math | Replace nullable Double equality in Scenario 30 with required BigDecimal comparisons | 14 | #TBD | — |
-| CQ-14-19 | S | harness | done | tests/math | Replace direct BigDecimal `shouldBe` with `shouldBeEqualComparingTo` | 14 | #TBD | — |
+| CQ-14-L1 | L | bug | done | config/orders/simulation | Canonicalize allocation symbols and reject Kraken alias collisions before valuation and execution | 14 | #168 | #163 |
+| CQ-14-L2 | L | bug | done | orders/journal | A live success without an order transaction ID must remain blocking `UNCERTAIN` | 14 | #168 | #161 |
+| CQ-14-L3 | L | bug | done | orders/dust | Apply the dust threshold to floored submitted buy notional | 14 | #168 | #166 |
+| CQ-14-L4 | L | bug | done | history/dedupe | Preserve conflicting trade provenance during startup local/API cleanup | 14 | #168 | #165 |
+| CQ-14-L5 | L | bug | done | history/sync | Resume interrupted initial pagination instead of skipping older Kraken fills | 14 | #168 | #162 |
+| CQ-14-L6 | L | bug | done | security/config | Harden credential-bearing config permissions and temporary-file cleanup | 14 | #168 | #167 |
+| CQ-14-L7 | L | bug | done | flows/manager/orders | Make the PortfolioManager worker restartable and single-owner | 14 | #168 | #160 |
+| CQ-14-L8 | L | bug | done | lifecycle/orders | Join the rebalance worker before shutdown closes HTTP and Koin dependencies | 14 | #168 | #164 |
+| CQ-14-M2 | M | gap | done | history/migration | Exercise a genuinely old SQLite schema and provenance/submission-column migration | 14 | #168 | — |
+| CQ-14-M3 | M | gap | done | history/sync | Cover cancellation after sync progress or trade persistence begins | 14 | #168 | — |
+| CQ-14-M5 | M | gap | done | config/validation | Directly cover NaN and positive/negative infinity allocation targets | 14 | #168 | — |
+| CQ-14-M8 | M | gap | done | flows/manager | Cover PortfolioManager cancellation during active analysis, execution, settlement, or snapshot work | 14 | #168 | — |
+| CQ-14-M10 | M | bug | done | frontend-js/dashboard | Fix numeric dashboard Price and Value sorting for comma-formatted currency | 14 | #168 | — |
+| CQ-14-M11 | M | bug | done | frontend-js/settings | Reinitialize settings controls and allocation validation after an HTMX error fragment swap | 14 | #168 | — |
+| CQ-14-M12 | M | bug | done | frontend-js/history | Do not relabel stale History data when a selected range request fails | 14 | #168 | — |
+| CQ-14-M13 | M | gap | done | frontend-js/history | Assert all six History summary cards update across time ranges, including null slippage | 14 | #168 | — |
+| CQ-14-M14 | M | gap | done | frontend-js/history | Exercise captured drag/wheel zoom callbacks and assert fallback min/max bounds | 14 | #168 | — |
+| CQ-14-M15 | M | harness | done | eval/flows | Stop evaluation scenarios from overstating hot SSE/config reload coverage built on finite or cold flows | 14 | #168 | — |
+| CQ-14-M16 | M | harness | done | eval/report | Record failed evaluation scenarios and verify report count from registered cases | 14 | #168 | — |
+| CQ-14-M17 | M | flake | done | frontend-js/tests | Replace wall-clock JS test delays with explicit Promise/deferred readiness | 14 | #168 | — |
+| CQ-14-1 | S | gap | done | history/repository | Verify snapshot asset/action child-row pruning retains recent children and removes old ones | 14 | #168 | — |
+| CQ-14-2 | S | gap | done | history/reconstruction | Cover cancellation and ordinary failure from reconstruction snapshot persistence | 14 | #168 | — |
+| CQ-14-3 | S | gap | done | history/flows | Verify a late snapshot subscriber receives the replayed latest snapshot | 14 | #168 | — |
+| CQ-14-5 | S | gap | done | modes/config | Verify simulation flag persistence through disk reload and dynamic routing | 14 | #168 | — |
+| CQ-14-6 | S | gap | done | security/credentials | Assert API/private key and credentials string representations redact secrets | 14 | #168 | — |
+| CQ-14-7 | S | gap | done | frontend-js/history | Cover malformed comparison predicates and the valid `ESTIMATED` badge branch | 14 | #168 | — |
+| CQ-14-8 | S | gap | done | frontend-js/history | Add native JSON wire fixtures for snapshots, stats, comparison, and sync progress | 14 | #168 | — |
+| CQ-14-9 | S | harness | done | eval/docs | Correct Scenario 10 evidence to test the actual stats database failure path | 14 | #168 | — |
+| CQ-14-10 | S | harness | done | eval/docs | Make Scenario 20 test malformed JSON or rename its missing-file behavior claim | 14 | #168 | — |
+| CQ-14-11 | S | harness | done | eval/docs | Sync README and EVALUATION simulation suite count from five to six | 14 | #168 | — |
+| CQ-14-12 | S | harness | done | simulation/eval | Make the simulation trade-identity assertion deterministic instead of conditional on nonempty trades | 14 | #168 | — |
+| CQ-14-13 | S | gap | done | orders/settlement | Cover fill-history exceptions and balance-poll fallback before a buy | 14 | #168 | — |
+| CQ-14-14 | S | gap | done | orders/journal | Verify a failed `PENDING` persistence prevents any live exchange call | 14 | #168 | — |
+| CQ-14-16 | S | flake | done | eval/tests | Use unique temporary stats paths and guaranteed cleanup in evaluation scenarios | 14 | #168 | — |
+| CQ-14-17 | S | harness | done | eval | Require Scenario 25 to distinguish successful ETH logging from failure text | 14 | #168 | — |
+| CQ-14-18 | S | harness | done | eval/math | Replace nullable Double equality in Scenario 30 with required BigDecimal comparisons | 14 | #168 | — |
+| CQ-14-19 | S | harness | done | tests/math | Replace direct BigDecimal `shouldBe` with `shouldBeEqualComparingTo` | 14 | #168 | — |
 | CQ-13-1 | S | gap | done | rate-limit | Enforce cost bounds (`cost > 0.0` and `cost <= safeLimit`) in `RateLimiter` | 13 | #139 | — |
 | CQ-13-2 | S | gap | done | orders | Cover zero price/volume order execution guard paths | 13 | #139 | — |
 | CQ-13-3 | S | gap | done | history/calc | Cover unknown order side handling during timeline reconstruction | 13 | #139 | — |
