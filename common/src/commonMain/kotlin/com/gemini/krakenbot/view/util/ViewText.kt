@@ -183,6 +183,7 @@ object ViewText {
         "Invalid settings field: every allocation target is required and must be a finite number."
     const val INVALID_ALLOCATION_COLOR = "Invalid allocation fields: supplied colors must use six-digit hex format."
     const val INVALID_CONFIGURATION_FALLBACK = "Invalid configuration"
+    const val CSRF_SESSION_EXPIRED = "Settings session expired. Reload the page and try again."
 
     // Rebalancer vs Buy & Hold comparison
     const val HISTORY_REBALANCER_VS_BUY_AND_HOLD = "Rebalancer vs Buy & Hold"

@@ -32,6 +32,8 @@ object QueryParamKeys {
 
 object HtmxHeaders {
     const val HX_REDIRECT = "HX-Redirect"
+    const val HX_RESWAP = "HX-Reswap"
+    const val HX_RETARGET = "HX-Retarget"
 }
 
 object FormFields {

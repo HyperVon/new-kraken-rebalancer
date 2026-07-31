@@ -19,6 +19,7 @@ import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.FormFields
 import com.gemini.krakenbot.view.util.HealthStatusKeys
 import com.gemini.krakenbot.view.util.HtmxHeaders
+import com.gemini.krakenbot.view.util.HtmxValues
 import com.gemini.krakenbot.view.util.QueryParamKeys
 import com.gemini.krakenbot.view.util.Routes
 import com.gemini.krakenbot.view.util.ViewText
@@ -132,14 +133,27 @@ class DashboardController(
     private suspend fun RoutingContext.handlePostSettings() {
         val params = call.receiveParameters()
         if (!CsrfProtection.isValid(call, params)) {
-            call.respond(HttpStatusCode.Forbidden)
+            val token = CsrfProtection.rotateToken(call)
+            call.response.header(HtmxHeaders.HX_RESWAP, HtmxValues.INNER_HTML)
+            call.response.header(HtmxHeaders.HX_RETARGET, HtmxValues.BODY)
+            respondSettingsFormError(
+                config = configService.getConfig(),
+                message = ViewText.CSRF_SESSION_EXPIRED,
+                csrfToken = token,
+                status = HttpStatusCode.Forbidden,
+            )
             return
         }
         val currentConfig = configService.getConfig()
         val updatedConfig = try {
             parseSettingsForm(params, currentConfig)
         } catch (e: IllegalArgumentException) {
-            respondSettingsFormError(currentConfig, e.message ?: ViewText.INVALID_CONFIGURATION_FALLBACK)
+            respondSettingsFormError(
+                config = currentConfig,
+                message = e.message ?: ViewText.INVALID_CONFIGURATION_FALLBACK,
+                csrfToken = CsrfProtection.currentToken(call),
+                status = HttpStatusCode.OK,
+            )
             return
         }
 
@@ -149,8 +163,10 @@ class DashboardController(
             call.respond(HttpStatusCode.OK)
         } catch (e: InvalidConfigurationException) {
             respondSettingsFormError(
-                updatedConfig,
-                e.message ?: ViewText.INVALID_CONFIGURATION_FALLBACK,
+                config = updatedConfig,
+                message = e.message ?: ViewText.INVALID_CONFIGURATION_FALLBACK,
+                csrfToken = CsrfProtection.currentToken(call),
+                status = HttpStatusCode.OK,
             )
         }
     }
@@ -221,12 +237,17 @@ class DashboardController(
         return value
     }
 
-    private suspend fun RoutingContext.respondSettingsFormError(config: AppConfig, message: String) {
+    private suspend fun RoutingContext.respondSettingsFormError(
+        config: AppConfig,
+        message: String,
+        csrfToken: String,
+        status: HttpStatusCode,
+    ) {
         val errHtml =
             createHTML(prettyPrint = false).div {
-                dashboardView.renderSettingsFormFragment(this, config, message, CsrfProtection.currentToken(call))
+                dashboardView.renderSettingsFormFragment(this, config, message, csrfToken)
             }
-        call.respondText(errHtml, ContentType.Text.Html)
+        call.respondText(errHtml, ContentType.Text.Html, status)
     }
 
     private suspend fun RoutingContext.handleGetDashboardFragment() {

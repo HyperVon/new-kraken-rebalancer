@@ -10,8 +10,11 @@ import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.view.util.FormFields
 import com.gemini.krakenbot.view.util.HtmxHeaders
+import com.gemini.krakenbot.view.util.HtmxValues
 import com.gemini.krakenbot.view.util.Routes
 import com.gemini.krakenbot.view.util.ViewText
+import io.kotest.matchers.booleans.shouldBeTrue
+import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.ktor.client.request.get
@@ -195,6 +198,48 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                 }
 
                 response.status shouldBe HttpStatusCode.Forbidden
+                response.bodyAsText() shouldContain ViewText.CSRF_SESSION_EXPIRED
+                response.bodyAsText() shouldContain "name=\"${FormFields.CSRF_TOKEN}\""
+                response.headers[HttpHeaders.SetCookie].shouldNotBeNull()
+                verify(exactly = 0) { configService.updateConfig(any()) }
+            }
+        }
+
+        "postSettings_RejectsWrongCsrfTokenAndRotatesRecoveryToken" {
+            val serverConfig = AppConfig(
+                KrakenCredentials(TestFixtures.TEST_API_KEY, "private-key"),
+                TestFixtures.settings(loopDelaySeconds = 60L),
+                listOf(Allocation(Asset.USD, 100.0)),
+            )
+            every { configService.getConfig() } returns serverConfig
+            every { configService.updateConfig(any()) } returns Unit
+
+            testApplication {
+                application {
+                    configureTestEnv()
+                }
+                val csrf = client.settingsCsrf()
+                val response = client.post(Routes.SETTINGS) {
+                    setBody(
+                        parametersOf(FormFields.CSRF_TOKEN to listOf("wrong-token")).formUrlEncode(),
+                    )
+                    header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
+                    header(HttpHeaders.Cookie, csrf.cookie)
+                }
+
+                val responseBody = response.bodyAsText()
+                val newToken =
+                    Regex("""name="${FormFields.CSRF_TOKEN}" value="([^"]+)"""")
+                        .find(responseBody)
+                        ?.groupValues
+                        ?.get(1)
+                        ?: error("CSRF recovery response did not contain a token")
+                response.status shouldBe HttpStatusCode.Forbidden
+                responseBody shouldContain ViewText.CSRF_SESSION_EXPIRED
+                response.headers[HtmxHeaders.HX_RESWAP] shouldBe HtmxValues.INNER_HTML
+                response.headers[HtmxHeaders.HX_RETARGET] shouldBe HtmxValues.BODY
+                (newToken != csrf.value).shouldBeTrue()
+                response.headers[HttpHeaders.SetCookie]?.contains(newToken).shouldBeTrue()
                 verify(exactly = 0) { configService.updateConfig(any()) }
             }
         }

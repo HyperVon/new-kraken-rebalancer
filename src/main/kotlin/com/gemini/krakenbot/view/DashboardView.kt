@@ -33,7 +33,7 @@ class DashboardView(
     }
 
     context(html: HTML)
-    fun renderSettingsPage(config: AppConfig, errorMessage: String?, csrfToken: String = "test-token") {
+    fun renderSettingsPage(config: AppConfig, errorMessage: String?, csrfToken: String) {
         html.head {
             commonMetadataAndStyles()
             title("$SETTINGS_TITLE - $APP_TITLE")
@@ -44,12 +44,7 @@ class DashboardView(
         }
     }
 
-    fun renderSettingsFormFragment(
-        parent: FlowContent,
-        config: AppConfig,
-        errorMessage: String?,
-        csrfToken: String = "test-token",
-    ) {
+    fun renderSettingsFormFragment(parent: FlowContent, config: AppConfig, errorMessage: String?, csrfToken: String) {
         settingsFormComponent.renderForm(parent, config, errorMessage, csrfToken)
     }
 

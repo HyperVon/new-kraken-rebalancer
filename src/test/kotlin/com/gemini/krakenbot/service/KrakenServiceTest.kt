@@ -39,11 +39,14 @@ import kotlinx.coroutines.test.currentTime
 import kotlinx.coroutines.test.runTest
 import java.io.IOException
 import java.math.BigDecimal
+import java.security.MessageDigest
 import java.util.*
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
+import javax.crypto.Mac
+import javax.crypto.spec.SecretKeySpec
 import kotlin.time.Duration.Companion.minutes
 
 class KrakenServiceTest : KrakenServiceTestBase() {
@@ -98,6 +101,7 @@ class KrakenServiceTest : KrakenServiceTestBase() {
                 val responseJson =
                     "{\"error\":[],\"result\":{\"descr\":{\"order\":\"buy 0.1 XBTUSD @ market\"},\"txid\":[\"TX-CLORD\"]}}"
                 var capturedBody = ""
+                var capturedSignature = ""
                 val objectMapper = jacksonObjectMapper()
                 configService = mockk(relaxed = true)
                 val credentials = KrakenCredentials(
@@ -113,6 +117,7 @@ class KrakenServiceTest : KrakenServiceTestBase() {
                 )
                 val mockEngine = MockEngine { request ->
                     capturedBody = (request.body as TextContent).text
+                    capturedSignature = request.headers[KrakenApiConstants.HEADER_API_SIGN].orEmpty()
                     respond(
                         content = responseJson,
                         status = HttpStatusCode.OK,
@@ -120,7 +125,7 @@ class KrakenServiceTest : KrakenServiceTestBase() {
                     )
                 }
                 val service = KrakenServiceImpl(configService, objectMapper, HttpClient(mockEngine))
-                val clOrdId = "6d1b345e-2821-40e2-ad83-4ecb18a06876"
+                val clOrdId = "id+ with&symbols"
 
                 val result = service.executeOrder(
                     pair = Asset.BTC_USD_PAIR,
@@ -131,8 +136,22 @@ class KrakenServiceTest : KrakenServiceTestBase() {
                 )
 
                 result.success.shouldBeTrue()
-                capturedBody.contains("${KrakenApiConstants.PARAM_CL_ORD_ID}=$clOrdId").shouldBeTrue()
+                capturedBody.contains("${KrakenApiConstants.PARAM_CL_ORD_ID}=id%2B+with%26symbols").shouldBeTrue()
                 capturedBody.contains("userref=").shouldBeFalse()
+
+                val nonce =
+                    Regex("""(?:^|&)${KrakenApiConstants.PARAM_NONCE}=([^&]+)""")
+                        .find(capturedBody)
+                        ?.groupValues
+                        ?.get(1)
+                        ?: error("AddOrder body did not contain a nonce")
+                val nonceHash = MessageDigest.getInstance("SHA-256")
+                    .digest((nonce + capturedBody).toByteArray())
+                val signingMessage = "/0/private/AddOrder".toByteArray() + nonceHash
+                val mac = Mac.getInstance("HmacSHA512")
+                mac.init(SecretKeySpec(TestConstants.API_SECRET.toByteArray(), "HmacSHA512"))
+                val expectedSignature = Base64.getEncoder().encodeToString(mac.doFinal(signingMessage))
+                capturedSignature shouldBe expectedSignature
             }
         }
 

@@ -19,6 +19,10 @@ internal object CsrfProtection {
         val existingToken = call.request.cookies[COOKIE_NAME]
         if (!existingToken.isNullOrBlank()) return existingToken
 
+        return rotateToken(call)
+    }
+
+    fun rotateToken(call: ApplicationCall): String {
         val tokenBytes = ByteArray(TOKEN_BYTES)
         secureRandom.nextBytes(tokenBytes)
         val token = Base64.getUrlEncoder().withoutPadding().encodeToString(tokenBytes)

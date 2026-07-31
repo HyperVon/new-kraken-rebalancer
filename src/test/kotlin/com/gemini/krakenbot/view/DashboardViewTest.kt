@@ -83,6 +83,7 @@ class DashboardViewTest : StringSpec() {
     private val BADGE_INFO = CssClass.Badge.Info.toString()
     private val BADGE_SELL = CssClass.Badge.Sell.toString()
     private val ERROR_BANNER = CssClass.Utility.ErrorBanner.toString()
+    private val testCsrfToken = "test-csrf-token"
 
     private val baseConfig = AppConfig(
         KrakenCredentials(
@@ -129,7 +130,7 @@ class DashboardViewTest : StringSpec() {
 
         "renderSettingsPage_withNoError_containsForm" {
             val html = createHTML().html {
-                view.renderSettingsPage(baseConfig, null)
+                view.renderSettingsPage(baseConfig, null, testCsrfToken)
             }
             html shouldContain "title>${SETTINGS_TITLE} - $APP_TITLE"
             listOf(
@@ -155,7 +156,7 @@ class DashboardViewTest : StringSpec() {
 
         "renderSettingsPage_allocationTargets_carryPercentBounds" {
             val html = createHTML().html {
-                view.renderSettingsPage(baseConfig, null)
+                view.renderSettingsPage(baseConfig, null, testCsrfToken)
             }
             val targetInput = Regex("<input[^>]*name=\"$TARGETS\"[^>]*>").find(html)?.value
             targetInput.shouldNotBeNull()
@@ -165,7 +166,7 @@ class DashboardViewTest : StringSpec() {
 
         "renderSettingsPage_globalParameters_carryValidationBounds" {
             val html = createHTML().html {
-                view.renderSettingsPage(baseConfig, null)
+                view.renderSettingsPage(baseConfig, null, testCsrfToken)
             }
             fun namedInput(name: String): String {
                 val input = Regex("<input[^>]*name=\"$name\"[^>]*>").find(html)?.value
@@ -183,7 +184,7 @@ class DashboardViewTest : StringSpec() {
         "renderSettingsPage_withError_displaysError" {
             val errMsg = "Invalid configuration: must sum to 100%"
             val html = createHTML().html {
-                view.renderSettingsPage(baseConfig, errMsg)
+                view.renderSettingsPage(baseConfig, errMsg, testCsrfToken)
             }
             html shouldContain errMsg
             html shouldContain ERROR_BANNER

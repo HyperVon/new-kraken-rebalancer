@@ -41,12 +41,12 @@ import kotlinx.html.script
 
 class SettingsFormComponent {
     context(body: BODY)
-    fun render(config: AppConfig, errorMessage: String?, csrfToken: String = "test-token") {
+    fun render(config: AppConfig, errorMessage: String?, csrfToken: String) {
         renderForm(body, config, errorMessage, csrfToken)
         renderSettingsScript()
     }
 
-    fun renderForm(parent: FlowContent, config: AppConfig, errorMessage: String?, csrfToken: String = "test-token") {
+    fun renderForm(parent: FlowContent, config: AppConfig, errorMessage: String?, csrfToken: String) {
         parent.div(CssClass.Layout.Container) {
             form {
                 attributes[HtmxAttrs.HX_POST] = Routes.SETTINGS
