@@ -75,7 +75,7 @@ class TradeHistoryReconstructionService(
                 }
             for ((symbol) in allocations) {
                 val symbolU = symbol.value.uppercase()
-                currentPrices[symbolU] = prices[Asset.tradingPair(symbolU)] ?: BigDecimal.ZERO
+                currentPrices[symbolU] = portfolioAnalyzer.resolvePriceFromTicker(symbolU, prices)
             }
             currentPrices[Asset.USD] = BigDecimal.ONE
         }

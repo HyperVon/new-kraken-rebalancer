@@ -468,7 +468,7 @@ This path is internal orchestration — not a second browser-facing SSE stream l
 ├── .github/copilot-instructions.md         # GitHub Copilot entrypoint → .agents/
 ├── common/                                 # Kotlin Multiplatform shared module (JVM + JS)
 │   └── src/commonMain/kotlin/com/gemini/krakenbot/
-│       ├── api/                           # Wire DTOs: PortfolioSnapshot, TradeRecord, HistoryStats, SyncProgressResponse
+│       ├── api/                           # Wire DTOs: PortfolioSnapshot, TradeRecord, HistoryStats, RebalancerComparison, SyncProgressResponse
 │       ├── config/                        # AppConfig, Settings, Allocation, KrakenCredentials, InvalidConfigurationException
 │       ├── model/                         # Asset, OrderSide (OrderType defined alongside), Result, TimeRange, SyncMetadataKeys, TradeSourceKeys
 │       ├── util/                          # PrecisionConstants
@@ -497,7 +497,7 @@ This path is internal orchestration — not a second browser-facing SSE stream l
 │   │   ├── CsrfProtection.kt              # Double-submit protection for settings mutations
 │   │   └── DashboardRoutes.kt            # Koin wiring → registerRoutes()
 │   ├── api/                               # HistoryApiMapper — JVM models ↔ :common wire DTOs
-│   ├── model/                             # PortfolioSnapshot, OrderResult, TradeRecord, TradeSource, HistoryStats, PortfolioStats
+│   ├── model/                             # PortfolioSnapshot, OrderResult, TradeRecord, TradeSource, HistoryStats, RebalancerComparison, PortfolioStats
 │   ├── repository/                        # TradeRepository, PortfolioStatsRepository
 │   │   ├── impl/                          # Sqlite*Impl + RepositoryUtils (safeTransaction)
 │   │   └── table/                         # TradeTable, PortfolioSnapshotTable, AssetSnapshotTable, PortfolioStatsTable, HistorySyncMetadataTable, ActionLogTable

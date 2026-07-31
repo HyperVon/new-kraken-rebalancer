@@ -350,6 +350,34 @@ class KrakenRetryAndRateLimitTest : KrakenServiceTestBase() {
             }
         }
 
+        "CQ-12-1: getTradeHistory rethrows coroutine cancellation" {
+            runTest {
+                val cancellation = CancellationException("TradesHistory request cancelled")
+                val mockEngine = MockEngine { throw cancellation }
+                val credentials = KrakenCredentials(
+                    "k",
+                    Base64.getEncoder().encodeToString(TestFixtures.SECRET.toByteArray()),
+                )
+                val mockConfigService = mockk<ConfigService>(relaxed = true)
+                every { mockConfigService.getConfig() } returns AppConfig(
+                    credentials,
+                    TestFixtures.settings(dryRun = false, loopDelaySeconds = 60),
+                    emptyList(),
+                )
+                val service = KrakenServiceImpl(
+                    configService = mockConfigService,
+                    objectMapper = jacksonObjectMapper(),
+                    httpClient = HttpClient(mockEngine),
+                )
+
+                val thrown = shouldThrow<CancellationException> {
+                    service.getTradeHistory(startSec = null, offset = null)
+                }
+
+                thrown shouldBe cancellation
+            }
+        }
+
         "getOHLC_NonObjectResult" {
             runTest {
                 val responseJson = "{\"error\":[],\"result\":\"not-an-object\"}"

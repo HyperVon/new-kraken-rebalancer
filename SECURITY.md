@@ -63,8 +63,10 @@ The configuration supports environment placeholders in the form
 
 ```json
 {
-  "apiKey": "${KRAKEN_API_KEY:}",
-  "privateKey": "${KRAKEN_PRIVATE_KEY:}"
+  "kraken": {
+    "apiKey": "${KRAKEN_API_KEY:}",
+    "privateKey": "${KRAKEN_PRIVATE_KEY:}"
+  }
 }
 ```
 

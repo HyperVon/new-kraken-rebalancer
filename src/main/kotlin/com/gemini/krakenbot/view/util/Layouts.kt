@@ -127,13 +127,10 @@ fun FlowContent.statusCard(
     title: String,
     iconSvg: String,
     value: String,
-    isSuccess: Boolean = false,
     valueId: String? = null,
     titleId: String? = null,
-    block: (DIV.() -> Unit)? = null,
 ) {
-    val cardClass = if (isSuccess) CssClass.StatusCard.Success else CssClass.StatusCard.Default
-    div(cardClass) {
+    div(CssClass.StatusCard.Default) {
         div(CssClass.StatusCard.Header) {
             span(CssClass.StatusCard.Title) {
                 if (titleId != null) id = titleId
@@ -146,9 +143,6 @@ fun FlowContent.statusCard(
                 id = valueId
             }
             +value
-        }
-        if (block != null) {
-            div(CssClass.StatusCard.Sub) { block() }
         }
     }
 }

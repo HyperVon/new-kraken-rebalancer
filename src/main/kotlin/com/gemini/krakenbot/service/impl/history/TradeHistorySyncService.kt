@@ -142,7 +142,6 @@ class TradeHistorySyncService(
                         is TradeReconciliationResult.Inserted -> totalAdded++
                         is TradeReconciliationResult.Reconciled -> totalReconciled++
                         is TradeReconciliationResult.AlreadyPersisted -> { /* no-op */ }
-                        is TradeReconciliationResult.MatchedNoOp -> { /* no-op */ }
                     }
                 }
             }
@@ -207,52 +206,43 @@ class TradeHistorySyncService(
         matchingLocalTrade: TradeRecord,
         originalLocalTrades: MutableList<TradeRecord>,
     ): TradeReconciliationResult {
-        val changed = matchingLocalTrade != apiTrade
-        if (changed) {
-            val expectedPrice = matchingLocalTrade.expectedPrice
-            val reconciledSlippage =
-                expectedPrice?.let { expected ->
-                    TradeCalculator.calculateSlippage(
-                        apiTrade.side,
-                        apiTrade.price,
-                        expected,
-                    )
-                }
-            val reconciledTrade =
-                apiTrade.copy(
-                    expectedPrice = expectedPrice,
-                    slippagePercent = reconciledSlippage,
-                    source = TradeSource.API_FILL,
-                    // Keep local cycle linkage; prefer API ordertxid when present.
-                    cycleId = matchingLocalTrade.cycleId,
-                    orderTxid = apiTrade.orderTxid ?: matchingLocalTrade.orderTxid,
+        val expectedPrice = matchingLocalTrade.expectedPrice
+        val reconciledSlippage =
+            expectedPrice?.let { expected ->
+                TradeCalculator.calculateSlippage(
+                    apiTrade.side,
+                    apiTrade.price,
+                    expected,
                 )
-            log.info(
-                "Reconciling trade record: local (timestamp={}, usdAmount={}) with API (timestamp={}, usdAmount={})",
-                matchingLocalTrade.timestamp,
-                matchingLocalTrade.usdAmount,
-                apiTrade.timestamp,
-                apiTrade.usdAmount,
+            }
+        val reconciledTrade =
+            apiTrade.copy(
+                expectedPrice = expectedPrice,
+                slippagePercent = reconciledSlippage,
+                source = TradeSource.API_FILL,
+                // Keep local cycle linkage; prefer API ordertxid when present.
+                cycleId = matchingLocalTrade.cycleId,
+                orderTxid = apiTrade.orderTxid ?: matchingLocalTrade.orderTxid,
             )
+        log.info(
+            "Reconciling trade record: local (timestamp={}, usdAmount={}) with API (timestamp={}, usdAmount={})",
+            matchingLocalTrade.timestamp,
+            matchingLocalTrade.usdAmount,
+            apiTrade.timestamp,
+            apiTrade.usdAmount,
+        )
 
-            repository.updateTrade(matchingLocalTrade, reconciledTrade)
-        }
+        repository.updateTrade(matchingLocalTrade, reconciledTrade)
         // Drop from the pending set after persistence so a DB failure leaves the
         // in-memory view unchanged (pre-refactor update-then-remove order).
         originalLocalTrades.remove(matchingLocalTrade)
-        return if (changed) {
-            TradeReconciliationResult.Reconciled
-        } else {
-            // Data-class-equal local row: removed but not counted as a reconcile.
-            TradeReconciliationResult.MatchedNoOp
-        }
+        return TradeReconciliationResult.Reconciled
     }
 
     private sealed class TradeReconciliationResult {
         data object Inserted : TradeReconciliationResult()
         data object Reconciled : TradeReconciliationResult()
         data object AlreadyPersisted : TradeReconciliationResult()
-        data object MatchedNoOp : TradeReconciliationResult()
     }
 
     private suspend fun triggerReconstructionIfNeeded(config: AppConfig) {

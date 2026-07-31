@@ -69,13 +69,8 @@ class ConfigServiceImpl(
         val previousKraken = pendingConfig?.kraken ?: appConfig.kraken
         val persistedConfig = configForPersistence(validatedConfig, previousKraken)
         writeConfigAtomically(persistedConfig)
-        if (executionSessionDepth > 0) {
-            pendingConfig = validatedConfig
-        } else {
-            appConfig = validatedConfig
-        }
         persistedKrakenCredentials = persistedConfig.kraken
-        if (executionSessionDepth == 0) _configFlow.tryEmit(validatedConfig.settings)
+        publishOrStage(validatedConfig)
     }
 
     @Synchronized
@@ -343,7 +338,7 @@ class ConfigServiceImpl(
         private const val ALLOCATION_PERCENT_TOLERANCE = 0.001
 
         private val ENV_VAR_PATTERN = "\\$\\{([^}]+)}".toRegex()
-        private val SYMBOL_PATTERN = "^[A-Z0-9]{1,16}$".toRegex()
+        private val SYMBOL_PATTERN = Asset.SYMBOL_PATTERN_STRING.toRegex()
         private val OWNER_ONLY_PERMISSIONS = setOf(
             PosixFilePermission.OWNER_READ,
             PosixFilePermission.OWNER_WRITE,

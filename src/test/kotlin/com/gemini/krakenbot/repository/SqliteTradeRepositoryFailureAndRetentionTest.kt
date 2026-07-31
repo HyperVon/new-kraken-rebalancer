@@ -109,18 +109,20 @@ class SqliteTradeRepositoryFailureAndRetentionTest : SqliteTradeRepositoryTestBa
 
                 val mockDb = mockk<Database>(relaxed = true)
                 mockkStatic(TestFixtures.ORG_JETBRAINS_EXPOSED_SQL_TRANSACTIONS_TRANSACTION_API_KT)
-                every { mockDb.transactionManager } returns throwingTxManager
+                try {
+                    every { mockDb.transactionManager } returns throwingTxManager
 
-                val ioRepo = SqliteTradeRepositoryImpl(mockDb)
-                val snapshot = TestFixtures.emptySnapshot(Instant.now(), BigDecimal.ZERO)
+                    val ioRepo = SqliteTradeRepositoryImpl(mockDb)
+                    val snapshot = TestFixtures.emptySnapshot(Instant.now(), BigDecimal.ZERO)
 
-                val thrown =
-                    shouldThrow<IOException> {
-                        ioRepo.save(listOf(snapshot))
-                    }
-                thrown.message shouldBe "Direct IO failure"
-
-                unmockkStatic(TestFixtures.ORG_JETBRAINS_EXPOSED_SQL_TRANSACTIONS_TRANSACTION_API_KT)
+                    val thrown =
+                        shouldThrow<IOException> {
+                            ioRepo.save(listOf(snapshot))
+                        }
+                    thrown.message shouldBe "Direct IO failure"
+                } finally {
+                    unmockkStatic(TestFixtures.ORG_JETBRAINS_EXPOSED_SQL_TRANSACTIONS_TRANSACTION_API_KT)
+                }
             }
         }
 
@@ -135,18 +137,20 @@ class SqliteTradeRepositoryFailureAndRetentionTest : SqliteTradeRepositoryTestBa
 
                 val mockDb = mockk<Database>(relaxed = true)
                 mockkStatic(TestFixtures.ORG_JETBRAINS_EXPOSED_SQL_TRANSACTIONS_TRANSACTION_API_KT)
-                every { mockDb.transactionManager } returns throwingTxManager
+                try {
+                    every { mockDb.transactionManager } returns throwingTxManager
 
-                val ioRepo = SqliteTradeRepositoryImpl(mockDb)
-                val snapshot = TestFixtures.emptySnapshot(Instant.now(), BigDecimal.ZERO)
+                    val ioRepo = SqliteTradeRepositoryImpl(mockDb)
+                    val snapshot = TestFixtures.emptySnapshot(Instant.now(), BigDecimal.ZERO)
 
-                val thrown =
-                    shouldThrow<IOException> {
-                        ioRepo.saveSnapshot(snapshot)
-                    }
-                thrown.message shouldBe "Direct IO failure"
-
-                unmockkStatic(TestFixtures.ORG_JETBRAINS_EXPOSED_SQL_TRANSACTIONS_TRANSACTION_API_KT)
+                    val thrown =
+                        shouldThrow<IOException> {
+                            ioRepo.saveSnapshot(snapshot)
+                        }
+                    thrown.message shouldBe "Direct IO failure"
+                } finally {
+                    unmockkStatic(TestFixtures.ORG_JETBRAINS_EXPOSED_SQL_TRANSACTIONS_TRANSACTION_API_KT)
+                }
             }
         }
 
@@ -161,26 +165,28 @@ class SqliteTradeRepositoryFailureAndRetentionTest : SqliteTradeRepositoryTestBa
 
                 val mockDb = mockk<Database>(relaxed = true)
                 mockkStatic(TestFixtures.ORG_JETBRAINS_EXPOSED_SQL_TRANSACTIONS_TRANSACTION_API_KT)
-                every { mockDb.transactionManager } returns throwingTxManager
+                try {
+                    every { mockDb.transactionManager } returns throwingTxManager
 
-                val ioRepo = SqliteTradeRepositoryImpl(mockDb)
-                val trade =
-                    TestFixtures.tradeRecord(
-                        timestamp = Instant.now(),
-                        pair = TestFixtures.XBTUSD,
-                        side = TestFixtures.BUY,
-                        symbol = Asset.BTC,
-                        volume = BigDecimal("0.1"),
-                        usdAmount = BigDecimal("5000.00"),
-                    )
+                    val ioRepo = SqliteTradeRepositoryImpl(mockDb)
+                    val trade =
+                        TestFixtures.tradeRecord(
+                            timestamp = Instant.now(),
+                            pair = TestFixtures.XBTUSD,
+                            side = TestFixtures.BUY,
+                            symbol = Asset.BTC,
+                            volume = BigDecimal("0.1"),
+                            usdAmount = BigDecimal("5000.00"),
+                        )
 
-                val thrown =
-                    shouldThrow<IOException> {
-                        ioRepo.saveTrade(trade)
-                    }
-                thrown.message shouldBe "Direct IO failure"
-
-                unmockkStatic(TestFixtures.ORG_JETBRAINS_EXPOSED_SQL_TRANSACTIONS_TRANSACTION_API_KT)
+                    val thrown =
+                        shouldThrow<IOException> {
+                            ioRepo.saveTrade(trade)
+                        }
+                    thrown.message shouldBe "Direct IO failure"
+                } finally {
+                    unmockkStatic(TestFixtures.ORG_JETBRAINS_EXPOSED_SQL_TRANSACTIONS_TRANSACTION_API_KT)
+                }
             }
         }
 
@@ -327,26 +333,28 @@ class SqliteTradeRepositoryFailureAndRetentionTest : SqliteTradeRepositoryTestBa
 
                 val mockDb = mockk<Database>(relaxed = true)
                 mockkStatic(TestFixtures.ORG_JETBRAINS_EXPOSED_SQL_TRANSACTIONS_TRANSACTION_API_KT)
-                every { mockDb.transactionManager } returns throwingTxManager
+                try {
+                    every { mockDb.transactionManager } returns throwingTxManager
 
-                val ioRepo = SqliteTradeRepositoryImpl(mockDb)
-                val trade =
-                    TestFixtures.tradeRecord(
-                        timestamp = Instant.now(),
-                        pair = TestFixtures.XBTUSD,
-                        side = TestFixtures.BUY,
-                        symbol = Asset.BTC,
-                        volume = BigDecimal("0.1"),
-                        usdAmount = BigDecimal("5000.00"),
-                    )
+                    val ioRepo = SqliteTradeRepositoryImpl(mockDb)
+                    val trade =
+                        TestFixtures.tradeRecord(
+                            timestamp = Instant.now(),
+                            pair = TestFixtures.XBTUSD,
+                            side = TestFixtures.BUY,
+                            symbol = Asset.BTC,
+                            volume = BigDecimal("0.1"),
+                            usdAmount = BigDecimal("5000.00"),
+                        )
 
-                val thrown =
-                    shouldThrow<IOException> {
-                        ioRepo.updateTrade(trade, trade)
-                    }
-                thrown.message shouldBe "Direct IO failure"
-
-                unmockkStatic(TestFixtures.ORG_JETBRAINS_EXPOSED_SQL_TRANSACTIONS_TRANSACTION_API_KT)
+                    val thrown =
+                        shouldThrow<IOException> {
+                            ioRepo.updateTrade(trade, trade)
+                        }
+                    thrown.message shouldBe "Direct IO failure"
+                } finally {
+                    unmockkStatic(TestFixtures.ORG_JETBRAINS_EXPOSED_SQL_TRANSACTIONS_TRANSACTION_API_KT)
+                }
             }
         }
 

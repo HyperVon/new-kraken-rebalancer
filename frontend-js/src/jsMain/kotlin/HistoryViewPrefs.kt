@@ -132,15 +132,9 @@ object HistoryViewPrefs {
                 LEGACY_MONTH_PNL_ID -> HistoryViewIds.MONTH_NET_CASH_FLOW
                 else -> store.defaultId
             }
-        val defaultId =
-            if (store.views.any { it.id == migratedDefaultId } || builtInIds.contains(migratedDefaultId)) {
-                migratedDefaultId
-            } else {
-                HistoryViewIds.OVERVIEW
-            }
         val resolvedDefault =
-            if (userViews.any { it.id == defaultId } || builtInIds.contains(defaultId)) {
-                defaultId
+            if (userViews.any { it.id == migratedDefaultId } || builtInIds.contains(migratedDefaultId)) {
+                migratedDefaultId
             } else {
                 HistoryViewIds.OVERVIEW
             }
@@ -270,7 +264,7 @@ object HistoryViewPrefs {
         syncTimeRangeButtons(view.range)
         refreshSelect(store, selectedId = view.id)
         updateDeleteEnabled(view)
-        return historyLoadAll(view.range)
+        return loadAll(view.range)
     }
 
     fun applyDefaultView(): Promise<Unit> {

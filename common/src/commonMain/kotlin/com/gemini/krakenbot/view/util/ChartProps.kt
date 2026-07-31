@@ -154,6 +154,11 @@ object ChartProps {
     const val SOLID_ORANGE = "#fb923c"
     const val SOLID_FUCHSIA = "#e879f9"
     const val SOLID_SLATE = "#94a3b8"
+    const val SOLID_YELLOW = "#facc15"
+    const val SOLID_SKY = "#38bdf8"
+
+    /** Window-global key the server injects asset colors into; read by the JS History client. */
+    const val ASSET_COLORS_GLOBAL_KEY = "__ASSET_COLORS__"
 
     const val SOLID_BTC = SOLID_AMBER
     const val SOLID_ETH = SOLID_VIOLET

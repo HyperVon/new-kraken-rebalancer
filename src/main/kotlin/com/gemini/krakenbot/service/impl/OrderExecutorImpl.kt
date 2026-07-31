@@ -16,7 +16,6 @@ import com.gemini.krakenbot.service.RebalanceOrders
 import com.gemini.krakenbot.service.TradeHistoryService
 import com.gemini.krakenbot.util.ActionLogFormatter
 import com.gemini.krakenbot.util.CASH_RESERVE_FACTOR
-import com.gemini.krakenbot.util.FEE_RATE_ESTIMATE
 import com.gemini.krakenbot.util.PrecisionConstants
 import com.gemini.krakenbot.util.TradeCalculator
 import com.gemini.krakenbot.util.resolveBalance
@@ -55,7 +54,6 @@ class OrderExecutorImpl(
         /** Kraken TradesHistory page size; used to decide when to stop paginating fill polls. */
         const val TRADE_HISTORY_PAGE_SIZE = 50
         const val MAX_FILL_HISTORY_PAGES = 5
-        val FEE_RATE_ESTIMATE: BigDecimal = PrecisionConstants.FEE_RATE_ESTIMATE
 
         /**
          * Deterministic Kraken `cl_ord_id` (UUID form) for a cycle/symbol/side.
@@ -336,6 +334,8 @@ class OrderExecutorImpl(
     private suspend fun markSubmissionFailureWithoutMasking(pending: TradeRecord, id: Int, cause: Exception) {
         try {
             markSubmissionFailure(pending, id, cause.message)
+        } catch (ce: CancellationException) {
+            throw ce
         } catch (persistenceFailure: Exception) {
             cause.addSuppressed(persistenceFailure)
             log.error("Failed to persist order submission failure state", persistenceFailure)
@@ -546,31 +546,5 @@ class OrderExecutorImpl(
                 ),
             )
         }
-    }
-
-    internal suspend fun recordTrade(
-        result: OrderResult,
-        symbol: String,
-        pair: String,
-        side: OrderSide,
-        volume: BigDecimal,
-        usdAmount: BigDecimal,
-        prices: AssetPrices,
-        cycleId: String = "",
-        cycleTradeIds: MutableList<Int>? = null,
-    ) {
-        val trade =
-            TradeCalculator.createTradeRecord(
-                result = result,
-                symbol = symbol,
-                pair = pair,
-                side = side.uppercaseName,
-                volume = volume,
-                usdAmount = usdAmount,
-                prices = prices,
-                cycleId = cycleId.ifBlank { null },
-            )
-        val tradeId = tradeHistoryService.saveTrade(trade)
-        cycleTradeIds?.add(tradeId)
     }
 }

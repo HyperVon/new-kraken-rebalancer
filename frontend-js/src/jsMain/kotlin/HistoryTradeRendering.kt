@@ -16,8 +16,8 @@ import org.w3c.dom.*
 import kotlin.js.Date
 import kotlin.js.json
 
-fun formatPair(trade: TradeRecord?): String {
-    if (trade?.symbol.isNullOrBlank()) return ""
+fun formatPair(trade: TradeRecord): String {
+    if (trade.symbol.isNullOrBlank()) return ""
     return "${trade.symbol}/USD"
 }
 

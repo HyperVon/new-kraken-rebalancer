@@ -11,17 +11,20 @@ import com.gemini.krakenbot.toBigDecimalMap
 import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.types.shouldBeInstanceOf
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.verify
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.yield
 import java.io.IOException
 import java.lang.reflect.Field
 import java.math.BigDecimal
+import kotlin.coroutines.cancellation.CancellationException
 
 class PortfolioExecutionEdgeCasesTest : PortfolioManagerEdgeCasesTestBase() {
 
@@ -260,27 +263,6 @@ class PortfolioExecutionEdgeCasesTest : PortfolioManagerEdgeCasesTestBase() {
                     )
 
                 snapshot.totalValueUSD.shouldBeEqualComparingTo(BigDecimal("1000.0"))
-
-                val currentValuesUSDMissing =
-                    mapOf(TestFixtures.USD to BigDecimal("500.0"))
-                val pricesMissing = emptyMap<String, BigDecimal>()
-
-                val snapshotFallback =
-                    portfolioAnalyzer.buildSnapshot(
-                        balances = balances,
-                        prices = pricesMissing,
-                        currentValuesUSD = currentValuesUSDMissing,
-                        totalPortfolioValueUSD = totalVal,
-                        effectiveUsdTarget = effUsdTarget,
-                        cryptoScaleFactor = cryptoScale,
-                        drawdownPct = drawdown,
-                        fiatDeploymentPct = deployment,
-                        actionLog = actionLog,
-                    )
-
-                val btcSnap = snapshotFallback.assets[Asset.BTC]
-                btcSnap!!.valueUSD.shouldBeEqualComparingTo(BigDecimal.ZERO)
-                btcSnap.price.shouldBeEqualComparingTo(BigDecimal.ONE)
             }
         }
 
@@ -341,28 +323,6 @@ class PortfolioExecutionEdgeCasesTest : PortfolioManagerEdgeCasesTestBase() {
                 verify(exactly = 0) { configService.endExecutionSession() }
                 // The `finally` cleared `workerJob`; the manager is restartable.
                 readWorkerJob() shouldBe null
-            }
-        }
-
-        "testRecordTrade_EdgeCases" {
-            runTest {
-                val result = OrderResult(
-                    success = true,
-                    pair = "XBTUSD",
-                    side = "BUY",
-                    volume = BigDecimal.ZERO,
-                    dryRun = false,
-                )
-                (orderExecutor as OrderExecutorImpl).recordTrade(
-                    result = result,
-                    symbol = "BTC",
-                    pair = "XBTUSD",
-                    side = OrderSide.BUY,
-                    volume = BigDecimal.ZERO,
-                    usdAmount = BigDecimal.ZERO,
-                    prices = emptyMap(),
-                )
-                coVerify(exactly = 1) { tradeHistoryService.saveTrade(any()) }
             }
         }
 
@@ -492,6 +452,48 @@ class PortfolioExecutionEdgeCasesTest : PortfolioManagerEdgeCasesTestBase() {
 
                 krakenService.executedOrders.isNotEmpty() shouldBe true
                 snapshot!!.totalValueUSD.shouldBeEqualComparingTo(BigDecimal("10000.00"))
+            }
+        }
+
+        "executeOrders propagates cancellation during failure-state persistence" {
+            runTest {
+                val buyOrders = emptyMap<String, BigDecimal>()
+                val sellOrders =
+                    mapOf(Asset.BTC to BigDecimal.valueOf(100.0))
+                val currentValuesUSD =
+                    mapOf(Asset.USD to BigDecimal.valueOf(1000.0))
+                val prices = mapOf(Asset.BTC to BigDecimal.TEN)
+                val settings = TestFixtures.settings(dryRun = false)
+                val actionLog = mutableListOf<String>()
+
+                krakenService.executeOrderAction = { _, _, _, _ ->
+                    throw RuntimeException("Exchange failure")
+                }
+                // updateTrade (failure-state persistence) suspends until the worker is cancelled.
+                coEvery { tradeHistoryService.updateTrade(any(), any()) } coAnswers {
+                    awaitCancellation()
+                }
+
+                var propagated: Throwable? = null
+                val job = launch {
+                    try {
+                        orderExecutor.executeOrders(
+                            buyOrders = buyOrders,
+                            sellOrders = sellOrders,
+                            currentValuesUSD = currentValuesUSD,
+                            prices = prices,
+                            settings = settings,
+                            actionLog = actionLog,
+                        )
+                    } catch (e: Throwable) {
+                        propagated = e
+                    }
+                }
+                yield()
+                job.cancel()
+                job.join()
+
+                propagated.shouldBeInstanceOf<CancellationException>()
             }
         }
     }

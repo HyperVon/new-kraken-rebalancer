@@ -1,6 +1,7 @@
 package com.gemini.krakenbot.view.component
 
 import com.gemini.krakenbot.config.Allocation
+import com.gemini.krakenbot.controller.symbolColorMap
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.service.impl.PortfolioCalculations
 import com.gemini.krakenbot.view.util.ChartProps
@@ -18,9 +19,7 @@ import java.math.RoundingMode
 class AllocationChartComponent {
     context(div: DIV)
     fun render(latest: PortfolioSnapshot, allocations: List<Allocation> = emptyList()) {
-        val colorMap = allocations.mapNotNull { alloc ->
-            alloc.color?.let { alloc.symbol.value.uppercase() to it }
-        }.toMap()
+        val colorMap = allocations.symbolColorMap()
         div.glassPanel(ViewText.PORTFOLIO_ALLOCATION, Icons.DOLLAR_CIRCLE) {
             div(CssClass.AllocationChart.Container) {
                 val sorted = latest.assets.values.sortedByDescending { it.valueUSD }

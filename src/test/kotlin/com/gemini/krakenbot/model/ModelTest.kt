@@ -1,14 +1,11 @@
 package com.gemini.krakenbot.model
 
 import com.gemini.krakenbot.TestFixtures
-import com.gemini.krakenbot.config.Settings
-import com.gemini.krakenbot.service.PortfolioValues
 import com.gemini.krakenbot.service.impl.OrderExecutorImpl
 import com.gemini.krakenbot.service.impl.PortfolioCalculations
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
-import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import java.math.BigDecimal
 import java.time.Instant
@@ -66,63 +63,11 @@ class ModelTest : StringSpec() {
                     deviationPercent = BigDecimal.ZERO,
                     deviationUSD = BigDecimal.ZERO,
                 )
-            val asset2 = asset.copy()
-            asset2 shouldBe asset
-            asset.hashCode() shouldBe asset2.hashCode()
-            asset.toString().shouldNotBeNull()
             asset.symbol.value shouldBe Asset.BTC
-
-            val snapshot =
-                PortfolioSnapshot(
-                    timestamp = Instant.EPOCH,
-                    totalValueUSD = BigDecimal.TEN,
-                    assets = mapOf(Asset.BTC to asset),
-                    actions = listOf("BUY"),
-                    drawdownPercent = BigDecimal.ZERO,
-                    fiatDeploymentPercent = BigDecimal.ZERO,
-                    effectiveUsdTargetPercent = BigDecimal.ZERO,
-                )
-            val snapshot2 = snapshot.copy()
-            snapshot2 shouldBe snapshot
-            snapshot.hashCode() shouldBe snapshot2.hashCode()
-            snapshot.toString().shouldNotBeNull()
-        }
-
-        "testSettings" {
-            val settings =
-                TestFixtures.settings(loopDelaySeconds = 60, fiatMaxDrawdown = 50.0)
-            val settings5 = settings.copy()
-            settings5 shouldBe settings
-            settings.hashCode() shouldBe settings5.hashCode()
-            settings.toString().shouldNotBeNull()
-        }
-
-        "testPortfolioStats" {
-            val stats = PortfolioStats(allTimeHigh = BigDecimal.TEN)
-            val stats2 = stats.copy()
-            stats2 shouldBe stats
-            stats.hashCode() shouldBe stats2.hashCode()
-            stats.toString().shouldNotBeNull()
-        }
-
-        "testPortfolioValues" {
-            val pv =
-                PortfolioValues(
-                    totalValueUSD = BigDecimal.TEN,
-                    currentValuesUSD = mapOf(Asset.BTC to BigDecimal.TEN),
-                )
-            pv.totalValueUSD.shouldBeEqualComparingTo(BigDecimal.TEN)
-            pv.currentValuesUSD shouldBe mapOf(Asset.BTC to BigDecimal.TEN)
-
-            val pv2 = pv.copy()
-            pv2 shouldBe pv
-            pv.hashCode() shouldBe pv2.hashCode()
-            pv.toString().shouldNotBeNull()
         }
 
         "testServiceCompanions" {
             OrderExecutorImpl.CASH_RESERVE_FACTOR.shouldBeEqualComparingTo(BigDecimal("0.99"))
-            OrderExecutorImpl.FEE_RATE_ESTIMATE.shouldBeEqualComparingTo(BigDecimal("0.006"))
 
             PortfolioCalculations.HUNDRED.shouldBeEqualComparingTo(BigDecimal("100"))
             PortfolioCalculations.SCALE_PERCENT shouldBe 4

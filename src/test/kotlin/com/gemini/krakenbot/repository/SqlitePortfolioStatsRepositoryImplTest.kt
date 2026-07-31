@@ -149,18 +149,20 @@ class SqlitePortfolioStatsRepositoryImplTest : StringSpec() {
 
                 val mockDb = mockk<Database>(relaxed = true)
                 mockkStatic(TestFixtures.ORG_JETBRAINS_EXPOSED_SQL_TRANSACTIONS_TRANSACTION_API_KT)
-                every { mockDb.transactionManager } returns throwingTxManager
+                try {
+                    every { mockDb.transactionManager } returns throwingTxManager
 
-                val ioRepo = SqlitePortfolioStatsRepositoryImpl(mockDb, objectMapper)
-                val stats = PortfolioStats(BigDecimal("10000.00"))
+                    val ioRepo = SqlitePortfolioStatsRepositoryImpl(mockDb, objectMapper)
+                    val stats = PortfolioStats(BigDecimal("10000.00"))
 
-                val thrown =
-                    shouldThrow<IOException> {
-                        ioRepo.save(stats)
-                    }
-                thrown.message shouldBe "Direct IO failure"
-
-                unmockkStatic(TestFixtures.ORG_JETBRAINS_EXPOSED_SQL_TRANSACTIONS_TRANSACTION_API_KT)
+                    val thrown =
+                        shouldThrow<IOException> {
+                            ioRepo.save(stats)
+                        }
+                    thrown.message shouldBe "Direct IO failure"
+                } finally {
+                    unmockkStatic(TestFixtures.ORG_JETBRAINS_EXPOSED_SQL_TRANSACTIONS_TRANSACTION_API_KT)
+                }
             }
         }
 

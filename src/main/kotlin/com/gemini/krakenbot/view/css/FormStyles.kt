@@ -48,7 +48,6 @@ import kotlinx.css.overflow
 import kotlinx.css.padding
 import kotlinx.css.paddingBottom
 import kotlinx.css.paddingRight
-import kotlinx.css.paddingTop
 import kotlinx.css.pct
 import kotlinx.css.position
 import kotlinx.css.properties.TextDecoration
@@ -159,10 +158,6 @@ object FormStyles {
             opacity = 0.5
             cursor = Cursor.notAllowed
             put("transform", "none")
-        }
-
-        ".${CssClass.Button.Icon}" {
-            padding = Padding(0.5.rem)
         }
 
         ".${CssClass.Form.Section}" {
@@ -361,11 +356,6 @@ object FormStyles {
             borderStyle = BorderStyle.dashed
             borderColor = CssTheme.colorBorderInput
             background = "rgba(15, 23, 42, 0.2)"
-        }
-
-        ".${CssClass.Form.GroupCentered}" {
-            put("justify-content", "center")
-            paddingTop = 1.rem
         }
 
         ".${CssClass.Form.SectionSubtitle.value}" {

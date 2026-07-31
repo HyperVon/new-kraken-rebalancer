@@ -683,14 +683,16 @@ class ConfigServiceTest : StringSpec() {
 
         "loadConfig_ResolveEnvVars_BlankEnvVar" {
             mockkStatic(System::class)
-            every { System.getenv("SOME_BLANK_VAR") } returns "  "
+            try {
+                every { System.getenv("SOME_BLANK_VAR") } returns "  "
 
-            writeRawConfig(apiKey = "\${SOME_BLANK_VAR:default-val}", privateKey = "some-private-key")
+                writeRawConfig(apiKey = "\${SOME_BLANK_VAR:default-val}", privateKey = "some-private-key")
 
-            val service = ConfigServiceImpl(objectMapper, tempFile.absolutePath)
-            service.getConfig().kraken.apiKey.value shouldBe "default-val"
-
-            unmockkStatic(System::class)
+                val service = ConfigServiceImpl(objectMapper, tempFile.absolutePath)
+                service.getConfig().kraken.apiKey.value shouldBe "default-val"
+            } finally {
+                unmockkStatic(System::class)
+            }
         }
 
         "watchConfigChanges emits current settings on subscribe and on update" {

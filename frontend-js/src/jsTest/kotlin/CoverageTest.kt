@@ -70,24 +70,6 @@ class CoverageTest : StringSpec() {
             createOrUpdate("non-existent-canvas", json())
         }
 
-        "chart builders return early for empty snapshots" {
-            val container = document.createElement(HtmlTags.DIV)
-            container.innerHTML = TestDomBuilders.chartsDom()
-            document.body!!.appendChild(container)
-            window.asDynamic().Chart = mockChartConstructor()
-            window.asDynamic().fetch = mockFetch { json() }
-            try {
-                registerHistoryGlobals()
-
-                buildPortfolioValueChart(emptyList())
-                buildAssetHoldingsChart(emptyList())
-                buildAllocationDriftChart(emptyList())
-                buildCumulativeNetCashFlowChart(emptyList())
-            } finally {
-                document.body!!.removeChild(container)
-            }
-        }
-
         "calculateCumulativeNetCashFlow handles various trade scenarios" {
             val empty = calculateCumulativeNetCashFlow(emptyList())
             empty.size shouldBe 0
@@ -521,17 +503,6 @@ class CoverageTest : StringSpec() {
             (window.asDynamic().sortTable != null) shouldBe true
         }
 
-        "main and initOnLoad handle body presence/absence" {
-            val body = document.body!!
-            val originalInner = body.innerHTML
-            body.innerHTML = "<div id='test'></div>"
-            try {
-                initOnLoad()
-            } finally {
-                body.innerHTML = originalInner
-            }
-        }
-
         "chart builders config callbacks cover tooltip and ticks formatting" {
             val container = document.createElement(HtmlTags.DIV)
             container.innerHTML = TestDomBuilders.chartsDom()
@@ -738,10 +709,6 @@ class CoverageTest : StringSpec() {
         "registerSettingsGlobals and registerDashboardGlobals wrappers can be called" {
             registerSettingsGlobals()
             registerDashboardGlobals()
-            currentSortCol = 4
-            currentSortCol shouldBe 4
-            currentSortDir = CssClass.Utility.Desc.toString()
-            currentSortDir shouldBe CssClass.Utility.Desc.toString()
 
             val container = document.createElement(HtmlTags.DIV)
             container.innerHTML =
@@ -836,26 +803,14 @@ class CoverageTest : StringSpec() {
 
         "testDomExtensionsCompleteCoverage" {
             val div = document.createDiv()
-            document.createSpan()
-            document.createInput()
-            document.createButton()
 
-            div.classList.add(CssClass.Table.Sortable)
+            div.className = CssClass.Table.Sortable.value
             div.classList.contains(CssClass.Table.Sortable).shouldBeTrue()
             div.classList.remove(CssClass.Table.Sortable)
             div.classList.contains(CssClass.Table.Sortable).shouldBeFalse()
 
             div.classList.toggle(CssClass.Table.Sortable, true).shouldBeTrue()
             div.classList.toggle(CssClass.Table.Sortable, false).shouldBeFalse()
-
-            isTrue(null).shouldBeFalse()
-            isTrue(undefined).shouldBeFalse()
-            isTrue(true).shouldBeTrue()
-            isTrue(false).shouldBeFalse()
-            isTrue("true").shouldBeTrue()
-            isTrue("TRUE").shouldBeTrue()
-            isTrue("false").shouldBeFalse()
-            isTrue(123).shouldBeFalse()
         }
     }
 }

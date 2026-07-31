@@ -4,6 +4,9 @@ import com.gemini.krakenbot.api.PortfolioSnapshot
 import com.gemini.krakenbot.api.RebalancerComparison
 import com.gemini.krakenbot.api.TradeRecord
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.ComparisonAvailability
+import com.gemini.krakenbot.model.ComparisonConfidence
+import com.gemini.krakenbot.model.ComparisonUnavailableReason
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.TimeRange
 import com.gemini.krakenbot.util.PrecisionConstants
@@ -29,12 +32,12 @@ import com.gemini.krakenbot.view.util.CssClass.Query.ZOOM_BTNS as ZOOM_BTNS_QUER
 private external class Chart(ctx: dynamic, config: dynamic)
 
 private val assetColorMap: Map<String, String> by lazy {
-    val global = js("window.__ASSET_COLORS__")
+    val global = js("window.${ChartProps.ASSET_COLORS_GLOBAL_KEY}")
     if (global != null && global != undefined) {
         val map = mutableMapOf<String, String>()
-        val keys: Array<String> = js("Object.keys(__ASSET_COLORS__)")
+        val keys: Array<String> = js("Object.keys(${ChartProps.ASSET_COLORS_GLOBAL_KEY})")
         for (key in keys) {
-            val v: String = js("__ASSET_COLORS__[key]")
+            val v: String = js("${ChartProps.ASSET_COLORS_GLOBAL_KEY}[key]")
             map[key] = v
         }
         map
@@ -63,22 +66,15 @@ private fun hexToRgba(hex: String, alpha: Double): String? {
     return "rgba($r, $g, $b, $alpha)"
 }
 
-@JsName("Object")
-private external object JSObject {
-    fun keys(obj: dynamic): Array<String>
-
-    fun assign(target: dynamic, vararg sources: dynamic): dynamic
-}
-
 /**
  * Omit datasets with config-time `hidden: true` from the legend (e.g. Day · Total only).
  * Legend click toggles use `meta.hidden` only, so those series stay listed and can be restored.
  */
-internal fun legendLabelsFilter(item: dynamic, chart: dynamic): Boolean {
+internal fun legendLabelsFilter(item: dynamic, chartData: dynamic): Boolean {
     val rawIdx = item?.datasetIndex
     if (rawIdx == null || rawIdx == undefined) return true
     val idx = (rawIdx as Number).toInt()
-    val datasets = chart?.data?.datasets ?: return true
+    val datasets = chartData?.datasets ?: return true
     val ds = datasets[idx] ?: return true
     return ds.hidden != true
 }
@@ -95,7 +91,7 @@ private fun buildLegendConfig(): dynamic = json(
             ChartProps.USE_POINT_STYLE to true,
             ChartProps.POINT_STYLE to ChartProps.LEGEND_POINT_STYLE_LINE,
             ChartProps.POINT_STYLE_WIDTH to ChartProps.LEGEND_POINT_STYLE_WIDTH,
-            ChartProps.FILTER to { item: dynamic, chart: dynamic -> legendLabelsFilter(item, chart) },
+            ChartProps.FILTER to { item: dynamic, chartData: dynamic -> legendLabelsFilter(item, chartData) },
         ),
 )
 
@@ -189,6 +185,7 @@ internal var historyLoadGeneration = 0L
 internal var allTrades: List<TradeRecord> = emptyList()
 internal val visibilityStates = mutableMapOf<String, MutableMap<String, Boolean>>()
 private val pendingPresetVisibility = mutableSetOf<String>()
+private var visibilityBackupBeforePreset: Map<String, Map<String, Boolean>>? = null
 private val originalChartRanges = mutableMapOf<String, ChartRange>()
 private val historyChartIds =
     listOf(
@@ -216,8 +213,6 @@ private const val ACTIVE = CssClass.ACTIVE
 
 internal fun historyCurrentRange(): String = currentRange
 
-internal fun historyLoadAll(range: String): Promise<Unit> = loadAll(range)
-
 internal fun historyCaptureVisibility(): Map<String, Map<String, Boolean>> {
     val result = mutableMapOf<String, Map<String, Boolean>>()
     for ((canvasId, chart) in charts) {
@@ -238,12 +233,24 @@ internal fun historyCaptureVisibility(): Map<String, Map<String, Boolean>> {
 }
 
 internal fun historyApplyVisibility(visibility: Map<String, Map<String, Boolean>>) {
+    visibilityBackupBeforePreset = visibilityStates.mapValues { it.value.toMap() }
     visibilityStates.clear()
     pendingPresetVisibility.clear()
     pendingPresetVisibility.addAll(historyChartIds)
     for ((canvasId, labels) in visibility) {
         visibilityStates[canvasId] = labels.toMutableMap()
     }
+}
+
+/** Undo a preset application whose range load failed; restores the pre-preset visibility state. */
+internal fun historyRollbackPresetVisibility() {
+    val backup = visibilityBackupBeforePreset ?: return
+    visibilityStates.clear()
+    for ((canvasId, labels) in backup) {
+        visibilityStates[canvasId] = labels.toMutableMap()
+    }
+    pendingPresetVisibility.clear()
+    visibilityBackupBeforePreset = null
 }
 
 /** Test helper — clears chart instances and visibility between specs. */
@@ -257,6 +264,7 @@ internal fun resetHistoryUiState() {
     charts.clear()
     visibilityStates.clear()
     pendingPresetVisibility.clear()
+    visibilityBackupBeforePreset = null
     originalChartRanges.clear()
     currentRange = TimeRange.THIRTY_DAYS.key
     loadedRange = TimeRange.THIRTY_DAYS.key
@@ -433,7 +441,7 @@ private fun setChartXRange(chart: dynamic, range: ChartRange) {
 }
 
 internal fun loadHistoryAfterSync(): Promise<Unit> = if (HistoryViewPrefs.hasUserInteracted()) {
-    historyLoadAll(historyCurrentRange())
+    loadAll(historyCurrentRange())
 } else {
     HistoryViewPrefs.applyDefaultView()
 }
@@ -490,8 +498,8 @@ internal fun getClonedChartOptions(): dynamic {
     options.plugins.zoom.zoom[ChartProps.ON_ZOOM_COMPLETE] = { ctx: dynamic ->
         syncScrubberFromZoomContext(ctx)
     }
-    options.plugins.legend.labels[ChartProps.FILTER] = { item: dynamic, chart: dynamic ->
-        legendLabelsFilter(item, chart)
+    options.plugins.legend.labels[ChartProps.FILTER] = { item: dynamic, chartData: dynamic ->
+        legendLabelsFilter(item, chartData)
     }
     return options
 }
@@ -557,6 +565,7 @@ internal fun createOrUpdate(canvasId: String, config: dynamic) {
     charts[canvasId] = Chart(ctx, config)
     configDataRange(config)?.let { originalChartRanges[canvasId] = it }
     pendingPresetVisibility.remove(canvasId)
+    if (pendingPresetVisibility.isEmpty()) visibilityBackupBeforePreset = null
     syncChartScrubber(canvasId)
 }
 
@@ -570,6 +579,7 @@ private fun clearChart(canvasId: String) {
     }
     originalChartRanges.remove(canvasId)
     pendingPresetVisibility.remove(canvasId)
+    if (pendingPresetVisibility.isEmpty()) visibilityBackupBeforePreset = null
     val scrubber =
         document.querySelector(
             "$CHART_SCRUBBERS_QUERY[${HtmlAttrs.DATA_CHART_ID}=\"$canvasId\"]",
@@ -913,7 +923,7 @@ internal fun buildRebalancerComparisonChart(comparison: RebalancerComparison) {
         unavailableDiv.classList.remove("visible")
     }
     if (confidenceBadge != null) {
-        if (comparison.confidence == "ESTIMATED") {
+        if (comparison.confidence == ComparisonConfidence.ESTIMATED.name) {
             confidenceBadge.textContent = ViewText.COMPARISON_CONFIDENCE_ESTIMATED
             confidenceBadge.classList.add("visible")
         } else {
@@ -1010,10 +1020,11 @@ private fun RebalancerComparison.isRenderable(): Boolean = hasValidAvailability(
     hasValidBaselinePoint() &&
     hasCompletePointData()
 
-private fun RebalancerComparison.hasValidAvailability(): Boolean = availability == "AVAILABLE" &&
-    (confidence == "RECONCILED" || confidence == "ESTIMATED") &&
-    unavailableReason == null &&
-    unavailableAt == null
+private fun RebalancerComparison.hasValidAvailability(): Boolean =
+    availability == ComparisonAvailability.AVAILABLE.name &&
+        (confidence == ComparisonConfidence.RECONCILED.name || confidence == ComparisonConfidence.ESTIMATED.name) &&
+        unavailableReason == null &&
+        unavailableAt == null
 
 private fun RebalancerComparison.hasSufficientData(): Boolean = points.size >= 2 &&
     baselineTimestamp?.isNotBlank() == true
@@ -1043,13 +1054,13 @@ private fun RebalancerComparison.hasCompletePointData(): Boolean = points.all { 
 }
 
 internal fun unavailableReasonText(reason: String?): String = when (reason) {
-    "INSUFFICIENT_SNAPSHOTS" -> ViewText.UNAVAILABLE_INSUFFICIENT_SNAPSHOTS
-    "NON_POSITIVE_BASELINE" -> ViewText.UNAVAILABLE_NON_POSITIVE_BASELINE
-    "BASELINE_MISMATCH" -> ViewText.UNAVAILABLE_BASELINE_MISMATCH
-    "MISSING_PRICE" -> ViewText.UNAVAILABLE_MISSING_PRICE
-    "ASSET_UNIVERSE_CHANGED" -> ViewText.UNAVAILABLE_ASSET_UNIVERSE_CHANGED
-    "UNSUPPORTED_TRADE" -> ViewText.UNAVAILABLE_UNSUPPORTED_TRADE
-    "UNEXPLAINED_BALANCE_CHANGE" -> ViewText.UNAVAILABLE_UNEXPLAINED_BALANCE_CHANGE
+    ComparisonUnavailableReason.INSUFFICIENT_SNAPSHOTS.name -> ViewText.UNAVAILABLE_INSUFFICIENT_SNAPSHOTS
+    ComparisonUnavailableReason.NON_POSITIVE_BASELINE.name -> ViewText.UNAVAILABLE_NON_POSITIVE_BASELINE
+    ComparisonUnavailableReason.BASELINE_MISMATCH.name -> ViewText.UNAVAILABLE_BASELINE_MISMATCH
+    ComparisonUnavailableReason.MISSING_PRICE.name -> ViewText.UNAVAILABLE_MISSING_PRICE
+    ComparisonUnavailableReason.ASSET_UNIVERSE_CHANGED.name -> ViewText.UNAVAILABLE_ASSET_UNIVERSE_CHANGED
+    ComparisonUnavailableReason.UNSUPPORTED_TRADE.name -> ViewText.UNAVAILABLE_UNSUPPORTED_TRADE
+    ComparisonUnavailableReason.UNEXPLAINED_BALANCE_CHANGE.name -> ViewText.UNAVAILABLE_UNEXPLAINED_BALANCE_CHANGE
     else -> ViewText.UNAVAILABLE_INVALID_RESPONSE
 }
 

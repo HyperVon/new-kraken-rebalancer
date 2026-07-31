@@ -23,7 +23,6 @@ import kotlinx.css.borderColor
 import kotlinx.css.borderRadius
 import kotlinx.css.borderStyle
 import kotlinx.css.borderWidth
-import kotlinx.css.bottom
 import kotlinx.css.color
 import kotlinx.css.content
 import kotlinx.css.cursor
@@ -44,19 +43,12 @@ import kotlinx.css.paddingLeft
 import kotlinx.css.pct
 import kotlinx.css.position
 import kotlinx.css.properties.TextDecoration
-import kotlinx.css.properties.deg
-import kotlinx.css.properties.rotate
-import kotlinx.css.properties.transform
-import kotlinx.css.properties.translateX
-import kotlinx.css.properties.translateY
 import kotlinx.css.px
 import kotlinx.css.rem
-import kotlinx.css.right
 import kotlinx.css.textAlign
 import kotlinx.css.textDecoration
 import kotlinx.css.whiteSpace
 import kotlinx.css.width
-import kotlinx.css.zIndex
 
 object NavigationStyles {
     fun CssBuilder.applyNavigationStyles() {
@@ -518,26 +510,6 @@ object NavigationStyles {
             fontWeight = FontWeight.w500
         }
 
-        ".toast" {
-            position = Position.fixed
-            bottom = 2.rem
-            right = 2.rem
-            padding = Padding(1.rem, 1.5.rem)
-            borderRadius = 0.5.rem
-            color = Color.white
-            fontWeight = FontWeight.w500
-            display = Display.flex
-            alignItems = Align.center
-            gap = 0.75.rem
-            put("box-shadow", "0 10px 15px -3px rgba(0, 0, 0, 0.3)")
-            zIndex = 1000
-            put("animation", "slideIn 0.3s ease")
-        }
-
-        ".toast.success" {
-            backgroundColor = CssTheme.colorSuccess
-        }
-
         "@media (prefers-reduced-motion: reduce)" {
             "*, *::before, *::after" {
                 put("animation-duration", "0.01ms !important")
@@ -545,10 +517,6 @@ object NavigationStyles {
                 put("scroll-behavior", "auto !important")
                 put("transition-duration", "0.01ms !important")
             }
-        }
-
-        ".toast.error" {
-            backgroundColor = CssTheme.colorDanger
         }
 
         ".${CssClass.History.ComparisonHeader}" {
@@ -615,17 +583,6 @@ object NavigationStyles {
 
         ".${CssClass.History.ComparisonChartArea}.hidden" {
             display = Display.none
-        }
-
-        "@keyframes slideIn" {
-            "from" {
-                transform { translateY(1.rem) }
-                opacity = 0
-            }
-            "to" {
-                transform { translateY(0.rem) }
-                opacity = 1
-            }
         }
     }
 }

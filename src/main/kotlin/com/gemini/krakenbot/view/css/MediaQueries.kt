@@ -48,11 +48,6 @@ object MediaQueries {
                 gap = 0.375.rem
                 padding = Padding(0.75.rem, 0.875.rem)
             }
-            ".${CssClass.Layout.OverviewGrid}" {
-                gridTemplateColumns = GridTemplateColumns("repeat(3, 1fr)")
-                gap = 0.75.rem
-                alignItems = Align.start
-            }
             // DASH-1: hero KPI card (left) + stacked compact tiles (right) on wider viewports.
             ".${CssClass.Layout.HeroGrid}" {
                 gridTemplateColumns = GridTemplateColumns("1.6fr 1fr")

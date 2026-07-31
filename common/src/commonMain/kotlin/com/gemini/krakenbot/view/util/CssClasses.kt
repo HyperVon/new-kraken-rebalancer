@@ -26,7 +26,6 @@ sealed class CssClass(open val value: String) {
         object DetailGrid : Layout("detail-grid")
         object HeaderTitleSection : Layout("header-title-section")
         object HeaderActions : Layout("header-actions")
-        object OverviewGrid : Layout("overview-grid")
         object BrandMark : Layout("brand-mark")
         object BrandPrimary : Layout("brand-primary")
         object BrandAccent : Layout("brand-accent")
@@ -58,7 +57,6 @@ sealed class CssClass(open val value: String) {
         object DeltaWindow : Hero("hero-delta-window")
         object Drawdown : Hero("hero-drawdown")
         object Spark : Hero("hero-spark")
-        object Tile : Hero("glass-panel hero-tile")
         object TileCash : Hero("glass-panel hero-tile hero-tile-cash")
         object TileCrypto : Hero("glass-panel hero-tile hero-tile-crypto")
         object TileHeader : Hero("hero-tile-header")
@@ -73,12 +71,10 @@ sealed class CssClass(open val value: String) {
     // Status Cards
     sealed class StatusCard(override val value: String) : CssClass(value) {
         object Default : StatusCard("glass-panel status-card")
-        object Success : StatusCard("glass-panel status-card success")
         object Header : StatusCard("status-card-header")
         object Title : StatusCard("status-card-title")
         object Icon : StatusCard("status-card-icon")
         object Value : StatusCard("status-card-value")
-        object Sub : StatusCard("status-card-sub")
         object Badge : StatusCard("status-badge")
         object Live : StatusCard("status-badge live")
         object Delayed : StatusCard("status-badge delayed")
@@ -116,7 +112,6 @@ sealed class CssClass(open val value: String) {
         object AllocationEditInputWrapper : Form("allocation-edit-input-wrapper")
         object PercentSuffix : Form("percent-suffix")
         object AddAssetBox : Form("add-asset-box")
-        object GroupCentered : Form("form-group-centered")
         object SectionHeader : Form("section-header")
         object SectionSubtitle : Form("form-section-subtitle")
         object SafetyGroup : Form("form-safety-group")
@@ -141,7 +136,6 @@ sealed class CssClass(open val value: String) {
         object Secondary : Button("btn btn-secondary")
         object Danger : Button("btn btn-danger")
         object DangerGhost : Button("btn btn-danger-ghost")
-        object Icon : Button("btn-icon")
     }
 
     // Badges (shared outline system for activity + trade log)
@@ -262,7 +256,6 @@ sealed class CssClass(open val value: String) {
     // Utility
     sealed class Utility(override val value: String) : CssClass(value) {
         object TextDanger : Utility("text-danger")
-        object TextSuccess : Utility("text-success")
         object TextOverweight : Utility("text-overweight")
         object TextUnderweight : Utility("text-underweight")
         object GlassPanelTitle : Utility("glass-panel-title")

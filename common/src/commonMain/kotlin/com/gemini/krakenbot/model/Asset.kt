@@ -33,11 +33,8 @@ value class Asset(val value: String) {
         const val XBT = "XBT"
         const val XDG = "XDG"
 
-        val ASSET_USD = Asset(USD)
-        val ASSET_BTC = Asset(BTC)
-        val ASSET_ETH = Asset(ETH)
-        val ASSET_DOGE = Asset(DOGE)
-        val ASSET_SOL = Asset(SOL)
+        /** Allocation-symbol format gate shared by JVM config validation and the JS settings form. */
+        const val SYMBOL_PATTERN_STRING = "^[A-Z0-9]{1,16}$"
 
         // Kraken's own ticker codes differ from common symbols for these two.
         private val KRAKEN_TICKER_BY_SYMBOL = mapOf(

@@ -206,10 +206,6 @@ object TableStyles {
             color = CssTheme.colorTextMuted
         }
 
-        ".text-success" {
-            color = CssTheme.colorSuccess
-        }
-
         ".${CssClass.Utility.TextDanger}" {
             color = CssTheme.colorDanger
         }
