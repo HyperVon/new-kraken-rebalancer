@@ -146,10 +146,10 @@ class KrakenServiceTest : KrakenServiceTestBase() {
                         ?.get(1)
                         ?: error("AddOrder body did not contain a nonce")
                 val nonceHash = MessageDigest.getInstance("SHA-256")
-                    .digest((nonce + capturedBody).toByteArray())
-                val signingMessage = "/0/private/AddOrder".toByteArray() + nonceHash
+                    .digest((nonce + capturedBody).toByteArray(Charsets.UTF_8))
+                val signingMessage = "/0/private/AddOrder".toByteArray(Charsets.UTF_8) + nonceHash
                 val mac = Mac.getInstance("HmacSHA512")
-                mac.init(SecretKeySpec(TestConstants.API_SECRET.toByteArray(), "HmacSHA512"))
+                mac.init(SecretKeySpec(TestConstants.API_SECRET.toByteArray(Charsets.UTF_8), "HmacSHA512"))
                 val expectedSignature = Base64.getEncoder().encodeToString(mac.doFinal(signingMessage))
                 capturedSignature shouldBe expectedSignature
             }

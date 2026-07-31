@@ -17,6 +17,7 @@ import com.gemini.krakenbot.view.component.RecentActivityComponent
 import com.gemini.krakenbot.view.component.SettingsFormComponent
 import com.gemini.krakenbot.view.util.CdnUrls
 import com.gemini.krakenbot.view.util.CssClass
+import com.gemini.krakenbot.view.util.FormFields.CSRF_TOKEN
 import com.gemini.krakenbot.view.util.FormFields.DEVIATION_TRIGGER_PERCENT
 import com.gemini.krakenbot.view.util.FormFields.DUST_THRESHOLD_USD
 import com.gemini.krakenbot.view.util.FormFields.FIAT_DEPLOYMENT_EXPONENT
@@ -147,6 +148,8 @@ class DashboardViewTest : StringSpec() {
             html shouldContain "value=\"60\""
             html shouldContain "name=\"${DEVIATION_TRIGGER_PERCENT}\""
             html shouldContain "value=\"2.0\""
+            html shouldContain "name=\"$CSRF_TOKEN\""
+            html shouldContain "value=\"$testCsrfToken\""
             html shouldContain SAFETY_MODES
             html shouldContain "safety-state-on"
             html shouldContain "safety-state-off"

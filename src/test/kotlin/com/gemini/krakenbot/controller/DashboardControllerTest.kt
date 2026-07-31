@@ -236,10 +236,59 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                         ?: error("CSRF recovery response did not contain a token")
                 response.status shouldBe HttpStatusCode.Forbidden
                 responseBody shouldContain ViewText.CSRF_SESSION_EXPIRED
+                response.headers[HtmxHeaders.HX_REFRESH] shouldBe HtmxValues.TRUE
                 response.headers[HtmxHeaders.HX_RESWAP] shouldBe HtmxValues.INNER_HTML
                 response.headers[HtmxHeaders.HX_RETARGET] shouldBe HtmxValues.BODY
                 (newToken != csrf.value).shouldBeTrue()
-                response.headers[HttpHeaders.SetCookie]?.contains(newToken).shouldBeTrue()
+                val newCookie = response.headers[HttpHeaders.SetCookie]?.substringBefore(';')
+                    ?: error("CSRF recovery response did not set a cookie")
+                newCookie.contains(newToken).shouldBeTrue()
+
+                val followUpResponse = client.post(Routes.SETTINGS) {
+                    setBody(
+                        parametersOf(
+                            FormFields.LOOP_DELAY_SECONDS to listOf("60"),
+                            FormFields.DEVIATION_TRIGGER_PERCENT to listOf("2.0"),
+                            FormFields.DUST_THRESHOLD_USD to listOf("1.0"),
+                            FormFields.FIAT_MAX_DRAWDOWN to listOf("0.0"),
+                            FormFields.FIAT_DEPLOYMENT_EXPONENT to listOf("1.0"),
+                            FormFields.CSRF_TOKEN to listOf(newToken),
+                            FormFields.SYMBOLS to listOf(Asset.USD),
+                            FormFields.TARGETS to listOf("100.0"),
+                            FormFields.COLORS to listOf("#94a3b8"),
+                        ).formUrlEncode(),
+                    )
+                    header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
+                    header(HttpHeaders.Cookie, newCookie)
+                }
+                followUpResponse.status shouldBe HttpStatusCode.OK
+                followUpResponse.headers[HtmxHeaders.HX_REDIRECT] shouldBe Routes.ROOT
+                verify(exactly = 1) { configService.updateConfig(any()) }
+            }
+        }
+
+        "postSettings_RejectsMissingFormTokenWithCookie" {
+            val serverConfig = AppConfig(
+                KrakenCredentials(TestFixtures.TEST_API_KEY, "private-key"),
+                TestFixtures.settings(loopDelaySeconds = 60L),
+                listOf(Allocation(Asset.USD, 100.0)),
+            )
+            every { configService.getConfig() } returns serverConfig
+            every { configService.updateConfig(any()) } returns Unit
+
+            testApplication {
+                application {
+                    configureTestEnv()
+                }
+                val csrf = client.settingsCsrf()
+                val response = client.post(Routes.SETTINGS) {
+                    setBody(parametersOf().formUrlEncode())
+                    header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
+                    header(HttpHeaders.Cookie, csrf.cookie)
+                }
+
+                response.status shouldBe HttpStatusCode.Forbidden
+                response.bodyAsText() shouldContain ViewText.CSRF_SESSION_EXPIRED
                 verify(exactly = 0) { configService.updateConfig(any()) }
             }
         }

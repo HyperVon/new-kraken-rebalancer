@@ -128,7 +128,8 @@ Normally, the target value is `Total Portfolio Value * Target %`. However, the s
    is reached. Missing or explicitly null stats represent an empty initial
    state. A database read or legacy-file migration failure aborts the analysis
    before ATH persistence or order planning, rather than treating the ATH as
-   zero.
+   zero. Any ATH persistence failure also aborts the cycle closed rather than
+   planning from an in-memory value that was not durably saved.
 2. **Drawdown Calculation**:
    `Drawdown % = (ATH - Current Value) / ATH * 100`
    The numerator is multiplied by 100 before division so the result retains all
@@ -269,7 +270,9 @@ failure.
       Kraken rejected the order.
     - "Dust" orders (below the configured `dustThresholdUSD`) are skipped to
       avoid API errors.
-    - Order volumes use `BigDecimal` with 8 decimal places of precision.
+    - USD intents are converted to crypto volumes at 8 decimal places with
+      `RoundingMode.DOWN`, so submitted notional never exceeds the intent.
+      Sell volumes are also floored and capped to the cycle-entry holdings.
     - `dryRun` suppresses placement on the **active** backend. Server logs use
       `[DRY RUN]` (live) or `[EMULATOR DRY RUN]` (simulation); the dashboard
       activity log always uses `[DRY RUN]`. Orthogonal to `simulation` (which

@@ -134,6 +134,7 @@ class DashboardController(
         val params = call.receiveParameters()
         if (!CsrfProtection.isValid(call, params)) {
             val token = CsrfProtection.rotateToken(call)
+            call.response.header(HtmxHeaders.HX_REFRESH, HtmxValues.TRUE)
             call.response.header(HtmxHeaders.HX_RESWAP, HtmxValues.INNER_HTML)
             call.response.header(HtmxHeaders.HX_RETARGET, HtmxValues.BODY)
             respondSettingsFormError(

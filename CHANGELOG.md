@@ -12,7 +12,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Settings mutations now use a LAN-compatible double-submit CSRF token while
   preserving unauthenticated access from trusted private-network clients.
-- Live order sizing floors buy volume to the crypto precision.
+- Crypto order-volume conversion floors at crypto precision (`DOWN`) so
+  submitted notional does not exceed the USD intent.
 
 ### Fixed
 
