@@ -10,6 +10,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **Expanded `ai-slop-detector` skill**: Updated rubric and audit workflow to cover all repository assets, including agent skills, agent rules, technical & end-user documentation, configuration templates, and build scripts.
 - **Single-sourced `:common` ownership**: The comparison enums
   (`ComparisonAvailability`, `ComparisonConfidence`,
   `ComparisonUnavailableReason`), the allocation-symbol pattern

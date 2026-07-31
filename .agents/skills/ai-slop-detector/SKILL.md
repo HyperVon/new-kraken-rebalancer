@@ -1,42 +1,55 @@
 ---
 name: ai-slop-detector
 description: >-
-  Audit and, when explicitly requested, clean up artifact-level AI slop in
-  code, tests, documentation, and diffs. Finds evidence-backed quality defects
-  such as needless complexity, excessive defensiveness, architecture drift,
-  invented integrations, misleading docs, duplicate tests, and tests that do
-  not protect required behavior. Never
-  attributes authorship or intent to a contributor. Use for "AI slop",
-  "AI-ish code", de-slopping, plausible-but-invented artifacts, mirror tests,
-  or an artifact-level code-quality audit.
+  Audit and, when explicitly requested, clean up artifact-level AI slop across
+  all repository assets: source code, tests, documentation, agent skills,
+  agent rules, configuration templates, build scripts, and diffs. Finds
+  evidence-backed quality defects such as needless complexity, excessive
+  defensiveness, architecture drift, invented integrations, hallucinated API/cli
+  claims, misleading docs, dead skill instructions, duplicate tests, and tests
+  that do not protect required behavior. Never attributes authorship or intent
+  to a contributor. Use for "AI slop", "AI-ish code", de-slopping,
+  plausible-but-invented artifacts, mirror tests, or an artifact-level code-quality
+  audit.
 ---
 
 # Evidence-Based AI Slop Audit & Cleanup
 
-**AI slop is not code written with AI.** It is an artifact that appears
-plausible but imposes avoidable review, maintenance, correctness, or safety
-cost because it lacks the judgment required by this repository's contracts.
+**AI slop is not code or documentation written with AI.** It is an artifact that
+appears plausible but imposes avoidable review, maintenance, correctness, or
+safety cost because it lacks the judgment required by this repository's contracts.
 
 This skill evaluates **artifacts and their effects**, never a contributor's
-tool use, competence, or intent. There is no reliable way to prove that code
+tool use, competence, or intent. There is no reliable way to prove that an asset
 was AI-generated. Emoji, unusual Unicode artifacts, verbosity, formulaic
 prose, PR size, author history, or a contributor's answer to a question are,
-at most, prompts to read more closely. They are not evidence of slop, authorship, severity, or bad
-faith.
+at most, prompts to read more closely. They are not evidence of slop, authorship,
+severity, or bad faith.
 
-Default to an **audit and report**. Modify code only when the user explicitly
+Default to an **audit and report**. Modify files only when the user explicitly
 asks to clean up, eliminate, or fix findings.
 
 ## Scope and boundaries
 
+This skill covers **all repository artifacts**, including:
+
+1. **Source code**: Kotlin JVM (`src/main/`), KMP `:common` (`common/src/`), and Kotlin/JS (`frontend-js/src/`).
+2. **Tests**: Kotest JVM specs, Karma/Istanbul JS tests, and Evaluation scenarios (`docs/EVALUATION.md`, `EvaluationScenariosTest`).
+3. **Documentation**: Technical and end-user documentation (`docs/*`, `README.md`, `CHANGELOG.md`, `SECURITY.md`, `CONTRIBUTING.md`, `docs/USER_GUIDE.md`, `docs/ALGORITHM.md`, `docs/FLOWS.md`).
+4. **Agent skills**: Skill instructions and resources (`.agents/skills/*/SKILL.md`, supporting scripts/examples/references).
+5. **Agent rules & guidance**: Agent invariants and operating norms (`.agents/AGENTS.md`, `.agents/OPERATING.md`, `.cursor/rules/*.mdc`, root `CLAUDE.md`, `.github/copilot-instructions.md`).
+6. **Build & configuration**: Build scripts (`build.gradle.kts`, `settings.gradle.kts`), configuration templates (`rebalancer-config-template.json`), and tool configurations.
+
 | Skill | Use it for |
 | :--- | :--- |
-| **ai-slop-detector** (this) | Evidence-backed audit of needless complexity, invented behavior, misleading tests/docs, and architecture drift |
-| [code-review](../code-review/SKILL.md) | Convention/safety checklist; this skill audits evidence. Run either, not both, unless the user asks for both |
+| **ai-slop-detector** (this) | Evidence-backed audit of needless complexity, invented behavior, misleading tests/docs/skills/rules, and architecture drift across all repo artifacts |
+| [code-review](../code-review/SKILL.md) | Convention/safety checklist for code diffs; this skill audits evidence across code and docs. Run either, not both, unless the user asks for both |
 | [reduce-code-size](../reduce-code-size/SKILL.md) | Behavior-preserving simplification after a validated finding |
 | [kotlin-refactoring-and-cleanup](../kotlin-refactoring-and-cleanup/SKILL.md) | Convention cleanup (FQNs, magic strings, warning debt) after a validated finding |
 | [write-kotest](../write-kotest/SKILL.md) | Adding or correcting JVM/JS/evaluation tests |
-| [documentation-review](../documentation-review/SKILL.md) | Full factual documentation audit against source |
+| [documentation-review](../documentation-review/SKILL.md) | Full factual documentation audit against source code |
+| [rules-and-skills-audit](../rules-and-skills-audit/SKILL.md) | Structural consolidation (redundancy, index ordering, trigger conflicts) of rules and skills |
+| [skill-reviewer](../skill-reviewer/SKILL.md) | Content improvements and domain depth for the agent playbook |
 | [adversarial-pr-review](../adversarial-pr-review/SKILL.md) | Mandatory dual-model loop for a PR being opened or updated |
 | [gradle-quality-gates](../gradle-quality-gates/SKILL.md) | Project build, formatting, coverage, and lint verification |
 | [autonomous-code-optimizer](../autonomous-code-optimizer/SKILL.md) | Unattended multi-pass refactor-to-zero; prefer for broad cleanup requests without a bounded audit |
@@ -54,21 +67,22 @@ Call something slop only when an observable artifact-level deficit is present.
 Use the strongest evidence available:
 
 1. **Reproduction or failing check**: compiler/type error, failing test,
-   unsafe runtime behavior, security exposure, or broken user flow.
+   markdownlint error, unparseable YAML frontmatter, unsafe runtime behavior,
+   security exposure, or broken user/agent flow.
 2. **Explicit contract conflict**: an invariant in source, public API,
-   configuration schema, or protocol; or in tests, `AGENTS.md`, and owning
-   skills after verifying they match source (source is the truth, not older
-   docs).
+   configuration schema, or protocol; or in tests, `AGENTS.md`, skills, and
+   documentation after verifying they match source (source is the truth, not
+   older docs).
 3. **Local inconsistency with a cost**: duplicate mechanism, bypassed boundary,
-   or needless abstraction that demonstrably complicates maintenance or changes
-   behavior.
+   conflicting agent rule, dead skill instruction, or needless abstraction that
+   demonstrably complicates maintenance or changes behavior.
 4. **Review prompt only**: unusual style, size, formulaic or boilerplate prose,
    or a pattern with insufficient context. Investigate; do not report it as a
    defect.
 
 Every finding needs all of the following:
 
-- A source, contract, diff, test, or reproduction anchor.
+- A source, contract, diff, test, skill, doc, or reproduction anchor.
 - The actual or credible failure/maintenance outcome.
 - The smallest safe correction, or a reason to defer.
 - A severity based on impact, never on suspected AI involvement.
@@ -77,10 +91,10 @@ Every finding needs all of the following:
 
 | Severity | Evidence-backed outcome |
 | :--- | :--- |
-| **P0** | Can lose money, expose secrets/security, perform destructive action, invent an external API/config/dependency that causes bad operation, or conceal broken required behavior with test changes |
-| **P1** | Breaks the build, a contract, architectural boundary, lifecycle/cancellation rule, persistence invariant, or required user/API behavior |
-| **P2** | Demonstrably duplicates logic, demonstrably adds unneeded complexity, demonstrably weakens meaningful tests, or demonstrably leaves inaccurate/misleading documentation |
-| **P3** | Reviewability or style issue with no demonstrated correctness/maintenance impact; normally suggest rather than change |
+| **P0** | Can lose money, expose secrets/security, perform destructive action, invent an external API/config/dependency/tool that causes bad operation, state misleading security/trading instructions in docs or skills that cause unsafe real-money/secret handling, or conceal broken required behavior with test/doc changes |
+| **P1** | Breaks the build, a code contract, architectural boundary, lifecycle/cancellation rule, persistence invariant, skill YAML frontmatter, or required user/API/agent behavior; or creates directly conflicting agent rules that cause execution failure |
+| **P2** | Demonstrably duplicates logic/instructions, demonstrably adds unneeded complexity, demonstrably weakens meaningful tests, leaves inaccurate/misleading documentation, or leaves stale/broken skill instructions or file links |
+| **P3** | Reviewability or style issue with no demonstrated correctness/maintenance impact (e.g., minor wording polish, non-misleading verbose prose); normally suggest rather than change |
 
 ## Audit workflow
 
@@ -90,9 +104,9 @@ Copy this list and track it for non-trivial audits:
 - [ ] Step 0: Establish scope, contracts, and mode
 - [ ] Step 1: Gather diff and high-risk evidence
 - [ ] Step 2: Run validity checks
-- [ ] Step 3: Inspect implementation and architecture fit
+- [ ] Step 3: Inspect implementation, architecture, skills, rules, and docs fit
 - [ ] Step 4: Inspect test independence and coverage intent
-- [ ] Step 5: Inspect documentation and integration claims
+- [ ] Step 5: Inspect documentation, skills, agent rules, and integration claims
 - [ ] Step 6: Classify and report evidence-backed findings
 - [ ] Step 7: Apply minimal cleanup (only when requested)
 - [ ] Step 8: Verify corrections and quality gates
@@ -101,74 +115,80 @@ Copy this list and track it for non-trivial audits:
 ### Step 0: Establish scope, contracts, and mode
 
 1. Determine whether this is a file, diff, PR, subsystem, or full-repository
-   audit. Prefer changed files and their direct contracts before expanding.
-2. Read `.agents/AGENTS.md`, then the owner skills and neighboring code that
+   audit. Check for changed code, tests, docs, skills (`.agents/skills/*`), rules
+   (`.agents/AGENTS.md`, `OPERATING.md`), configuration templates, and build files.
+2. Read `.agents/AGENTS.md`, then the owner skills and neighboring code/docs that
    establish the intended pattern.
 3. State the mode: **audit** by default; **cleanup** only with explicit user
-   direction. An audit does not silently refactor code.
+   direction. An audit does not silently refactor code or docs.
 4. Identify high-risk paths first: money/order execution, mode selection,
    credentials, CORS, persistence, concurrency, public routes, configuration,
-   and tests changed alongside those paths.
+   trading/security docs, and skills/rules affecting execution safety.
 
 For a large or broad diff, increase review depth or request a walkthrough of
-the architecture and verification strategy. Diff size is a review-budget
-signal, not evidence of slop. A walkthrough asks any contributor to explain
-the submitted design and contracts; it is not an AI-authorship interrogation.
+the architecture, skills, and verification strategy. Diff size is a review-budget
+signal, not evidence of slop.
 
 ### Step 1: Gather diff and high-risk evidence
 
 For a PR or branch, inspect the diff before searching broadly:
 
-- Production, test, build/dependency, configuration, route/API, and document
-  changes together.
-- Added imports, dependencies, generated code, feature flags, settings, and
-  configuration templates.
-- Assertions weakened or removed, tolerances widened, mocks broadened, and
-  error/edge cases deleted.
-- Related source contracts and previous behavior when a test change is unclear.
+- Production, test, build/dependency, configuration, route/API, skill, rule, and
+  document changes together.
+- Added imports, dependencies, generated code, feature flags, settings,
+  configuration templates, skill files, or agent rules.
+- Assertions weakened or removed, tolerances widened, mocks broadened, error/edge
+  cases deleted, or skill/doc safety instructions relaxed.
+- Related source contracts and previous behavior when a test, doc, or skill change is unclear.
 
 Use `git diff` and history to establish the expected behavior of a changed
-test. Do not infer motive from whether the production or test code was written
-first.
+asset. Do not infer motive from author tools.
 
 ### Step 2: Run validity checks
 
-Run the smallest relevant checks early. Compilation and static analysis catch
-invented imports, methods, APIs, configuration, and invalid examples better
-than prose inspection does.
+Run the smallest relevant checks early. Compilation, static analysis, linter tools,
+and schema parsers catch invented imports, methods, APIs, configuration, invalid
+skills, and broken markdown links better than prose inspection does.
 
 - Compile or test the affected module when feasible.
+- Run `npx markdownlint-cli` on changed or audited markdown files.
+- Verify skill YAML frontmatter (`name`, `description`) is valid and parseable.
 - Run targeted tests for changed behavior.
 - Inspect dependency declarations before accepting a new library/API claim.
-- Check routes, `Settings`, shared contracts, and configuration templates when
-  code or docs refer to them.
+- Check routes, `Settings`, shared contracts, configuration templates (`rebalancer-config-template.json`),
+  and documentation claims against source code.
 - Use the owning quality/documentation skills for full gates when the scope
   requires them.
 
 Failure to run a costly check is not proof of a defect. Record the gap and
 avoid overstating confidence.
 
-### Step 3: Inspect implementation and architecture fit
+### Step 3: Inspect implementation, architecture, skills, rules, and docs fit
 
-Judge against the standard of a strong staff engineer: defensive exactly at
+Judge code against the standard of a strong staff engineer: defensive exactly at
 trust boundaries (external APIs, user input, configuration, persistence,
-money), lean and confident inside them. Padding, ceremony, and guards against
-contractually impossible states are investigated like any other signal — prove
-the cost or the impossibility before reporting.
+money), lean and confident inside them. Judge skills, rules, and documentation against
+the standard of precision and alignment: clear, accurate, non-conflicting, and
+verifiable against source code.
 
-#### Meaningful code-level signals
+#### Meaningful artifact-level signals across repository assets
 
 Investigate these only when there is an observable cost or contract conflict:
 
-| Signal | Establish the finding by showing |
-| :--- | :--- |
-| Delegate-only wrapper or duplicate helper | No policy, transformation, error boundary, or reuse value; a direct existing call is clearer |
-| Generic/factory/DSL/sealed abstraction | It hides a simple stable case, adds change points, or duplicates an existing local pattern |
-| New subsystem-specific pattern | Neighboring code or owner skill already provides the helper/boundary being bypassed |
-| Invented integration | The dependency, route, method, config key, schema field, or external API does not exist or is incompatible |
-| Shortcut around types/errors/lifecycle | A failure is swallowed, a type/persistence/money invariant is bypassed, or cancellation is broken |
-| Unnecessary volume | Multiple blocks encode the same behavior without a separate contract, not merely a long but essential workflow |
-| Excessive defensiveness / dead guards | The guarded state is impossible under the type system or the sole caller's contract; a fallback silently masks a state that should fail hard; or the same invariant is re-validated with no added error context |
+| Artifact Type | Signal | Establish the finding by showing |
+| :--- | :--- | :--- |
+| **Source Code** | Delegate-only wrapper or duplicate helper | No policy, transformation, error boundary, or reuse value; a direct existing call is clearer |
+| **Source Code** | Generic/factory/DSL/sealed abstraction | It hides a simple stable case, adds change points, or duplicates an existing local pattern |
+| **Source Code** | Invented integration or API | The dependency, route, method, config key, schema field, or external API does not exist or is incompatible |
+| **Source Code** | Excessive defensiveness / dead guards | The guarded state is contractually impossible; a fallback silently masks a hard failure; or duplicate validation adds no context |
+| **Agent Skills** | Hallucinated tools, flags, or CLI commands | The skill instructs agents to use tools, parameters, flags, or shell commands that do not exist or fail |
+| **Agent Skills** | Contradictions with code or rules | The skill instructs agents to violate source invariants or `.agents/AGENTS.md` rules (e.g. flipping `dryRun = false` in tests) |
+| **Agent Skills** | Invalid frontmatter or dead links | YAML frontmatter is unparseable or missing required fields (`name`, `description`); or file/skill links are broken |
+| **Agent Rules** | Rules drift / conflicting instructions | `.cursor/rules/*.mdc` or `OPERATING.md` conflicts with `.agents/AGENTS.md` or active source contracts |
+| **Documentation** | Hallucinated parameters or routes | Docs list CLI flags, config keys, API endpoints, or environment variables not present in source |
+| **Documentation** | Inaccurate domain or safety claims | Docs state incorrect rebalancing formulas, ATH math, dust limits, or misleading security assumptions |
+| **Documentation** | Pure AI fluff prose | Paragraphs of formulaic filler ("In this comprehensive guide...") that obscure operational facts |
+| **Build & Config** | Config template schema drift | `rebalancer-config-template.json` lacks required `Settings` fields or provides invalid default types |
 
 #### Context-dependent constructs
 
@@ -180,13 +200,8 @@ reporting it:
 | `@Suppress` | File-local, narrowly scoped, with an evidence-based reason | It conceals a demonstrated type/warning issue without explanation or safer design |
 | `catch (Exception)` | Application error boundary with logging/mapping/recovery | It swallows a needed failure or fails to rethrow `CancellationException` in coroutine code |
 | `runBlocking` | Application startup/shutdown or a controlled blocking bridge | It blocks a request, coroutine worker, or latency-sensitive path |
-| `Thread.sleep` | Deliberate isolated test timing where virtual time cannot model the dependency | It blocks production coroutine work or makes tests flaky when virtual time is available |
-| `as` cast / `!!` | Proven internal invariant with a constrained input boundary | Untrusted/nullable data can violate it and there is no safe/error path |
-| `object` / singleton | Immutable stateless utility, such as shared calculations | It introduces mutable global state or bypasses necessary lifecycle/DI ownership |
-| `call.respondText` | Ktor response boundary for CSS, HTML, or JSON | It bypasses a required content type, escaping, or established view/route contract |
-| Raw database transaction | Schema/bootstrap or an intentional local boundary | A suspend repository path bypasses `safeTransactionIO`/`readTransactionIO` or breaks transaction safety |
-| One implementation of an interface | Useful boundary, test seam, or intended external contract | It is speculative indirection with no current seam, policy, or use |
-| Defensive validation / guard clause | Trust boundary: external API, user input, configuration, persistence, money safety | The guarded state is contractually impossible, or the invariant is already enforced at the single upstream boundary and the duplicate adds no error context |
+| Single-use skill helper / script | Complex multi-step automation fixture isolated in `scripts/` | It duplicates an existing build task or contains hallucinated CLI calls |
+| Detailed doc rationale | Explaining non-obvious safety invariants, ATH math, or CORS rules | It restates self-explanatory code line-by-line without domain rationale |
 
 #### Repository-specific anchors
 
@@ -199,9 +214,11 @@ Check the actual owner skill/source instead of inventing a fourth pattern:
 | Kraken I/O | `RateLimiter`, `Mutex`, retry/backoff, symbol mapping, and real API surface per `kraken-api-integration` |
 | Repositories | Existing Exposed helpers: `safeTransactionIO` for writes and `readTransactionIO` for reads when applicable |
 | Coroutines/Flows | No `GlobalScope`; preserve cancellation; choose replay/buffer semantics from the flow's consumer contract, not a universal `SharedFlow` recipe |
-| Ktor views/routes | `DashboardRoutes`/`DashboardController` and `view/component/*` own the established boundary; raw response text can still be valid at that boundary |
-| JSON | Jackson is the established backend serializer. Match the neighboring route/service and verify dependencies before introducing another serializer |
-| Tests | Kotest `StringSpec` with `init { }`; `shouldBeEqualComparingTo` for `BigDecimal`; `FakeKrakenService` for controllable unit/evaluation cases and `SimulatedKrakenService` for emulator integration behavior |
+| Ktor views/routes | `DashboardRoutes`/`DashboardController` and `view/component/*` own the established boundary |
+| Agent Skills | Under `.agents/skills/*/SKILL.md`; valid YAML frontmatter; accurate trigger phrases; verified file/tool links |
+| Agent Rules | Primary rules in `.agents/AGENTS.md`; `.cursor/rules/*.mdc` synced with `OPERATING.md`; no raw FQNs, path defaults, or unvalidated settings |
+| Documentation | `docs/*`, `README.md`, `CHANGELOG.md`, `SECURITY.md`, `USER_GUIDE.md` must accurately reflect source code behavior, CLI args, and config schema |
+| Config & Build | `rebalancer-config-template.json` matches `:common` `Settings` schema; `build.gradle.kts` uses verified toolchain versions |
 
 ### Step 4: Inspect test independence and coverage intent
 
@@ -220,84 +237,40 @@ Do not use test count, LOC ratio, parameter count, or mocking alone as proof.
 - Assert mock interactions when the interaction itself is the contract, such as
   protocol sequence, idempotency key, ordering, retry, or boundary delegation.
 - Exercise null only for nullable/untrusted input; exercise concurrency only
-  for shared/concurrent behavior; test data-class equality only when custom
-  semantics or an external contract makes it meaningful.
-- Treat a large table or test harness as a prompt to identify defect classes,
-  not a defect. Evaluation, fuzzing, and integration fixtures legitimately add
-  volume.
-
-Paraphrased from a contract-based test in this repository. The expected `100`
-comes from the documented zero-target behavior, not from copying the division
-branch:
-
-```kotlin
-class ZeroTargetDeviationContractTest : StringSpec() {
-
-    override fun isolationMode() = IsolationMode.InstancePerTest
-
-    init {
-        "returns 100 percent deviation for a valued zero-target holding" {
-            val deviationPercent = PortfolioCalculations.calculateDeviationPercent(
-                deviationUSD = BigDecimal("50.00"),
-                targetValueUSD = BigDecimal.ZERO,
-                currentValueUSD = BigDecimal("50.00"),
-            )
-
-            deviationPercent.shouldBeEqualComparingTo(BigDecimal("100"))
-        }
-    }
-}
-```
+  for shared/concurrent behavior.
 
 #### Test necessity
 
 Each test should be the cheapest way to kill a distinct defect class:
 
 - Name the defect class the test uniquely covers. Cosmetic input variation
-  with the same structure and no new failure mode is duplication, not
-  coverage. Table-driven rows are fine when each row kills a distinct variant.
-- Distinguish impossible from unlikely. Inputs the type system or the caller's
-  contract make impossible (null on a non-nullable internal parameter, an
-  already-validated shape deep inside the boundary) do not need unit tests.
-  Unlikely-but-possible inputs at trust boundaries (exchange responses,
-  config files, user input) are cheap insurance — keep them.
-- Reject coverage padding: assertions that only prove "does not throw",
-  "is not null", or restate a stubbed mock's return value with no production
-  logic in between.
-- Do not test the framework: getters, constructors, and delegation with no
-  logic are not defect classes unless an external contract depends on them.
+  with the same structure and no new failure mode is duplication, not coverage.
+- Distinguish impossible from unlikely. Inputs the type system or caller contract make impossible do not need unit tests.
+- Reject coverage padding: assertions that only prove "does not throw", "is not null", or restate a stubbed mock's return value with no production logic in between.
 
-#### Test-provenance delta
+### Step 5: Inspect documentation, skills, agent rules, and integration claims
 
-When tests change alongside implementation, specifically inspect a delta that:
+Documentation, skill, and rule slop is factual, operational, or execution harm, not simply a terse style:
 
-- Relaxes/removes assertions or edge cases.
-- Widens tolerances or turns exact checks into broad matches.
-- Broadens mocks/stubs so an incorrect interaction passes.
-- Replaces behavioral assertions with implementation-shaped checks.
-
-Use source contracts, adjacent tests, `git diff`, and history to determine the
-required behavior. Report a P0 only if the change demonstrably conceals broken
-required behavior; otherwise state the uncertainty and request the contract.
-
-### Step 5: Inspect documentation and integration claims
-
-Documentation slop is factual or operational harm, not simply a terse style:
-
-- Commands, imports, class/method names, routes, config keys, and examples must
-  agree with current source/build files.
-- Setup and safety instructions must match real modes, required permissions,
-  local-trust assumptions, and defaults.
-- Remove narrative comments/KDoc that restate code only when they add no domain
-  rationale; preserve or improve explanations of non-obvious safety invariants.
-- Send broad docs audits to `documentation-review`; use
-  `complex-code-comments` for targeted comment hygiene.
+1. **Source Code Agreement**:
+   - Commands, flags, imports, class/method names, routes, config keys, and examples in docs, skills, and rules must agree with current source/build files.
+2. **Setup and Safety Alignment**:
+   - Instructions in README, skills, and rules must match real execution modes (`dryRun` vs `simulation`), required Kraken permissions, local-trust assumptions, and defaults.
+3. **Skill & Rule Integrity**:
+   - Skills must have parseable YAML frontmatter (`name`, `description`).
+   - Tool calls, flags, script paths, and Markdown links (`file:///...`) in skills must exist and work.
+   - Rules in `.cursor/rules/*.mdc` must remain in sync with `OPERATING.md` and `.agents/AGENTS.md`.
+4. **Fluff Removal & Rationale Retention**:
+   - Remove generic AI filler prose ("In this section, we will discuss...") that adds no domain value.
+   - Preserve non-obvious domain rationale, ATH drawdown formulas, CORS safety constraints, and live-order journal invariants.
+5. **Handoff to Specialized Skills**:
+   - Send broad documentation factual audits to `documentation-review`.
+   - Send structural rules/skills consolidation to `rules-and-skills-audit`.
+   - Send skill content enrichment to `skill-reviewer`.
 
 ### Step 6: Classify and report
 
-Use neutral, concrete language: “the assertion no longer verifies the documented
-dust boundary,” not “the author generated a fake test.” Keep unproven concerns
-in a questions/deferred section rather than converting them into findings.
+Use neutral, concrete language: “the skill instructions reference a non-existent `--force` flag on `gradlew build`,” not “the author generated a fake skill.” Keep unproven concerns in a questions/deferred section.
 
 ```markdown
 # Artifact Quality Audit — {scope}
@@ -307,11 +280,11 @@ in a questions/deferred section rather than converting them into findings.
 
 ## Findings
 ### [P1] {specific outcome} — `path:Lx-Ly`
-- **Category:** contract / architecture / integration / test / docs
+- **Category:** code / test / docs / skill / rule / config
 - **Evidence:** {reproduction, source contract, diff, or local comparison}
-- **Impact:** {what can break or become harder to maintain}
+- **Impact:** {what can break, misinform agents, or become harder to maintain}
 - **Smallest safe correction:** {concrete patch or owner-skill direction}
-- **Verification:** {targeted test/check}
+- **Verification:** {targeted test, markdownlint, or check}
 
 ## Review prompts / deferred
 - {uncertain item, missing evidence, and the question needed to resolve it}
@@ -323,66 +296,46 @@ in a questions/deferred section rather than converting them into findings.
 ### Step 7: Apply minimal cleanup only when requested
 
 Keep corrections narrow and behavior-preserving unless the finding is a proven
-behavioral bug. Never delete functionality, meaningful edge cases, or correct
-tests because they look generated or verbose.
+bug or broken claim.
 
 | Validated issue | Minimal correction |
 | :--- | :--- |
 | Redundant wrapper/abstraction | Inline/remove it or reuse the established helper, then prove callers retain behavior |
 | Architecture/pattern drift | Move/delegate through the owning boundary and add a focused regression test |
-| Invented or incorrect integration | Replace with the verified API/dependency/config, or remove the unsupported claim |
-| Unsafe error/cancellation behavior | Preserve cancellation, map/propagate meaningful failures, and test the affected path |
-| Mirror/weak test | Replace with a contract/invariant/oracle assertion that fails a plausible wrong variant |
-| Duplicate / impossible-case test | Delete after proving its defect class is covered elsewhere or its input is contractually impossible; preserve boundary and edge coverage |
-| Excessive defensiveness / dead guard | Remove the impossible-state check or collapse the duplicated validation to the owning boundary; keep the boundary test that proves the contract |
-| Concealed test regression | Restore the required contract or fix production behavior first; document intentional contract changes |
-| Misleading docs/comments | Correct against source or delete only redundant text; retain the why behind safety-critical logic |
-
-Use small cohesive patches and run preservation tests after each relevant
-change. Do not require artificial commit splitting or alter PR metadata. If
-intent is genuinely ambiguous, report it and ask instead of deleting it. For
-substantive simplification, test rewrites, or convention cleanup beyond a
-narrow patch, hand off to `reduce-code-size` / `write-kotest` /
-`kotlin-refactoring-and-cleanup` and verify their gates.
+| Invented or incorrect API / config claim | Replace with the verified API/dependency/config in code, docs, or skills; remove unsupported claims |
+| Invalid skill frontmatter / broken link | Fix YAML frontmatter or correct/remove broken file/tool links |
+| Conflicting agent rule instruction | Sync rule with `.agents/AGENTS.md` and active source code invariants |
+| AI fluff prose in documentation | Prune filler words while retaining factual setup and safety rationale |
+| Out-of-sync config template | Align `rebalancer-config-template.json` fields and types with `:common` `Settings` DTO |
+| Unsafe error/cancellation behavior | Preserve cancellation, map/propagate failures, and test the affected path |
+| Mirror/weak test | Replace with a contract assertion that fails a plausible wrong variant |
+| Duplicate / impossible-case test | Delete after proving its defect class is covered elsewhere or input is contractually impossible |
 
 ### Step 8: Verify corrections and quality gates
 
 After cleanup:
 
-- Run focused compilation/tests that cover the corrected contract.
-- Run the owner skill's required checks for the touched module.
+- Run focused compilation/tests covering corrected code/contracts.
+- Run `npx markdownlint-cli` when markdown docs, skills, or rules are modified.
+- Verify skill YAML frontmatter is valid.
 - Run `./gradlew build` when the scope warrants full JVM/JS/coverage gates.
-- Run markdownlint for changed Markdown agent/product docs.
-- For UI, mode, trading, persistence, security, or live-order changes, run the
-  corresponding domain/manual verification before declaring success.
-- When opening/updating a PR, complete the applicable PR workflow and
-  `adversarial-pr-review`; this audit is not a substitute.
+- For UI, mode, trading, persistence, security, or live-order changes, run domain/manual verification before declaring success.
 
 ## Anti-patterns
 
-- Calling stylistic cues, contributor behavior, or PR size proof of AI use or
-  slop.
-- Labeling a familiar construct as bad without inspecting its boundary and
-  contract.
-- Replacing broad catches without preserving error recovery and coroutine
-  cancellation.
-- Deleting tests merely to reduce LOC or improve a ratio.
-- Deleting boundary edge-case tests as "unlikely" — unlikelihood at a trust
-  boundary is not impossibility; prove the input cannot occur.
-- Removing validation at trust boundaries in the name of leanness; leanness
-  applies inside contracts, not at them.
-- Treating an ownership walkthrough as a test of who used AI.
-- Refactoring uncertain code during an audit-only request.
-- Declaring a documentation/API claim false without checking current source,
-  build declarations, routes, and configuration.
+- Calling stylistic cues, contributor behavior, or PR size proof of AI use or slop.
+- Labeling a familiar construct as bad without inspecting its boundary and contract.
+- Inventing CLI flags, environment variables, or tool parameters in skills or documentation.
+- Leaving broken Markdown links or unparseable YAML frontmatter in skill files.
+- Deleting tests or doc rationale merely to reduce LOC or word count.
+- Refactoring uncertain code or docs during an audit-only request.
 - Skipping owner skills or quality gates after a validated cleanup.
 
 ## Trigger phrases
 
 - "Audit this PR/codebase for AI slop"
-- "This looks AI-ish; identify real quality problems"
-- "De-slop this file while preserving behavior"
-- "Cut the over-defensive padding and duplicate tests"
-- "Are these tests mirroring the implementation?"
-- "Find invented APIs and other plausible-but-false artifacts"
-- "Review this change for needless complexity and architecture drift"
+- "Audit our skills and documentation for AI-ish claims or slop"
+- "De-slop this file/skill/doc while preserving behavior and rationale"
+- "Find hallucinated APIs, flags, config keys, or broken links in docs/skills"
+- "Cut over-defensive padding, duplicate tests, and AI fluff prose"
+- "Review this change for needless complexity, documentation drift, and rule conflicts"
