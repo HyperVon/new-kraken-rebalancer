@@ -177,6 +177,12 @@ class AddOrderRateLimitSigningTest : KrakenServiceTestBase() {
                 )
 
                 result.success.shouldBeFalse()
+                // A structured `EAPI:Rate limit exceeded` body with HTTP 200 is a definitive pre-acceptance
+                // rejection at Kraken's edge, not an ambiguous post-acceptance outcome — classifying it as
+                // UNCERTAIN would falsely block all future live orders. Pin the classification so a future
+                // widening of `isAmbiguousSubmissionFailure` (KrakenServiceImpl.kt:273-279) cannot silently
+                // over-block live trading without this test catching it.
+                result.submissionUncertain.shouldBeFalse()
                 requestCount shouldBe 1
             }
         }

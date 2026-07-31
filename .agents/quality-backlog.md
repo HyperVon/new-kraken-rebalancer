@@ -120,7 +120,7 @@ Product polish discovered during QA belongs in
 | CQ-9-1 | S | gap | done | drawdown | Conservative exponent `2.0` ALGORITHM MaxDD=30% table | 9 | #104 | — |
 | CQ-9-2 | M | gap | done | orders | Multi-leg fills same `orderTxid` summed for buy budget (+ filter legs) | 9 | #104 | — |
 | CQ-9-3 | S | gap | done | algorithm | Underweight exact `−trigger%` enqueues BUY | 9 | #104 | — |
-| CQ-9-4 | S | gap | done | algorithm | Zero-target 100% deviation but `\ | devUSD\ | < dust` not significant | 9 |
+| CQ-9-4 | S | gap | done | algorithm | Zero-target 100% deviation but `\|devUSD\| < dust` not significant | 9 | #104 | — |
 | CQ-9-5 | S | gap | done | modes | Live `simulation=false` + `dryRun=true` routes to live + forwards dryRun | 9 | #104 | — |
 | CQ-8-L1 | L | bug | done | history/sync | `isMatchingApiTrade` ignores dry-run locals (no promote to live `API_FILL`) | 8 | #100 | — |
 | CQ-8-M1 | M | bug | done | history/sync | Cross-page duplicate API fill fingerprint skip within one sync | 8 | #100 | — |
@@ -142,7 +142,7 @@ Product polish discovered during QA belongs in
 | CQ-5-4 | S | gap | done | history | Remove redundant double-lookup Elvis in snapshot seeding; other defensive branches kept by design | 6 | [#79](https://github.com/HyperVon/new-kraken-rebalancer/pull/79) | — |
 | CQ-5-5 | S | harness | done | docs | improvement-backlog: 35 completed rows moved out of the Open section | 6 | [#79](https://github.com/HyperVon/new-kraken-rebalancer/pull/79) | — |
 | CQ-3-14 | M | gap | done | history/repo | Lift `TradeHistoryServiceImpl` + `repository.impl` branch coverage (overall ~95%) | 5 | [#78](https://github.com/HyperVon/new-kraken-rebalancer/pull/78) | — |
-| CQ-3-26 | L | bug | done | fiat | Skip `$0.00` fiat-correction shares; cap sum ≤ | usdDev | via truncated budget | 5 |
+| CQ-3-26 | L | bug | done | fiat | Skip `$0.00` fiat-correction shares; cap sum ≤ `\|usdDev\|` via truncated budget | 5 | #78 | — |
 | CQ-3-28 | M | gap | done | eval | Scenario 32 — multi-cycle convergence with fill feedback, zero orders by cycle 3 | 5 | [#78](https://github.com/HyperVon/new-kraken-rebalancer/pull/78) | — |
 | CQ-3-9 | S | gap | done | history | Reconstruct failure is best-effort: throttle window still opens, no extra Kraken calls | 5 | [#77](https://github.com/HyperVon/new-kraken-rebalancer/pull/77) | — |
 | CQ-3-17 | M | gap | done | eval | Scenario 31 — USD refresh ≥95% early-accept + fail-closed buys | 5 | [#77](https://github.com/HyperVon/new-kraken-rebalancer/pull/77) | — |
@@ -158,7 +158,7 @@ Product polish discovered during QA belongs in
 | CQ-3-12 | S | gap | done | dedupe | Null-id skip / null `idToDelete` when deleting unsettled | 4 | [#75](https://github.com/HyperVon/new-kraken-rebalancer/pull/75) | — |
 | CQ-3-13 | S | gap | done | ConfigService | Reject invalid allocation symbol (`SYMBOL_PATTERN`) | 4 | [#75](https://github.com/HyperVon/new-kraken-rebalancer/pull/75) | — |
 | CQ-3-15 | S | gap | done | orders | Failed buy must not reduce cycle 99% budget for subsequent buys | 4 | [#75](https://github.com/HyperVon/new-kraken-rebalancer/pull/75) | — |
-| CQ-3-16 | S | gap | done | math | Underweight exact dust `\ | dev\ | ==threshold` significant; just-below not | 4 |
+| CQ-3-16 | S | gap | done | math | Underweight exact dust `\|dev\|==threshold` significant; just-below not | 4 | #75 | — |
 | CQ-3-19 | S | bug | done | flows | Rethrow `CancellationException` in cycle/sync `catch (Exception)` | 4 | [#75](https://github.com/HyperVon/new-kraken-rebalancer/pull/75) | — |
 | CQ-3-21 | S | gap | done | dedupe | Fee-rate Δ exactly `0.001`; local-estimate window `10_000` vs `10_001` ms | 4 | [#75](https://github.com/HyperVon/new-kraken-rebalancer/pull/75) | — |
 | CQ-3-24 | S | gap | done | orders | Buy trimmed by remaining budget below dust → skip; budget never negative | 4 | [#75](https://github.com/HyperVon/new-kraken-rebalancer/pull/75) | — |

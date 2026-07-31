@@ -94,6 +94,25 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   settings HTMX reinit, history range rollback, six-card range coverage, zoom
   fallback bounds, malformed comparison predicates, native JSON wire fixtures
   for all History endpoints, and BigDecimal matcher compliance.
+- **Cycle-15 coverage gap closures**: 7 focused test suites closing the deferred
+  cycle-15 backlog items. `OrderSubmissionJournalE2ETest` (M1) drives the
+  SQLite-backed PENDING→resolved/UNCERTAIN journal lifecycle end-to-end through
+  real `OrderExecutorImpl` + `SqliteTradeRepositoryImpl` + `FakeKrakenService`
+  (no mocks on the journal path); `CORSConfigTest` (M4) wires production
+  `configureCORS()` via `testApplication` to assert allowed private origins
+  echo ACAO and rejected public origins 403 with no CORS headers;
+  `AddOrderRateLimitSigningTest` (M6) asserts AddOrder acquires the rate limiter
+  with cost 1.0, carries `API-Key` + `API-Sign` + monotonic nonces, and is NOT
+  retried on `EAPI:Rate limit exceeded` (maxAttempts=1 trumps retry, and the
+  pre-acceptance rejection is correctly NOT classified as ambiguous);
+  `ConfigServiceNestedSessionTest` (M7) covers nested execution-session
+  publication staging through the real config flow; `SseMultiSubscriberTest`
+  (M9) exercises the real hot `snapshotFlow` through multiple concurrent HTTP
+  SSE subscribers on the `/api/status/stream` route; `DashboardControllerTest`
+  CSRF cases (CQ-14-4) assert cookie attributes and reject duplicate matching
+  form tokens; `PortfolioExecutionEdgeCasesTest` additions (CQ-14-15) harden
+  loop smoke tests with behavioral assertions on lifecycle release and snapshot
+  publication counts.
 
 ## [6.15.23] - 2026-07-30
 

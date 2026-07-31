@@ -156,13 +156,14 @@ class SseMultiSubscriberTest : DashboardControllerTestBase() {
             }
         }
 
-        "sseStatusStream_ReplayDuplicatesInitialSnapshotAtSubscribe_OneEventStillSuffices" {
+        "sseStatusStream_ReplayDuplicatesInitialSnapshotAtSubscribe_DualPathStillYieldsInitialContent" {
             val initial = TestFixtures.emptySnapshot(Instant.parse("2026-07-31T10:00:00Z"), BigDecimal("10000.00"))
             coEvery { tradeHistoryService.getLatestSnapshot() } returns initial
             val flow = MutableSharedFlow<PortfolioSnapshot>(replay = REPLAY, extraBufferCapacity = EXTRA_BUFFER)
             // The replay cache already holds `initial`, so a freshly-connected client may observe it
-            // as both the persisted send and the replayed flow event. Taking one event is sufficient
-            // to prove the connection is live and yields the expected snapshot content.
+            // as both the persisted send and the replayed flow event. Taking two events pins the dual
+            // path (persisted send + replayed flow collect) — a regression that drops either branch
+            // would reduce the count to one and surface here, while preserving content equality.
             flow.tryEmit(initial)
             every { tradeHistoryService.getHistoryFlow() } returns flow
 
@@ -171,8 +172,8 @@ class SseMultiSubscriberTest : DashboardControllerTestBase() {
                 application { configureTestEnv() }
 
                 client.sse(Routes.API_STATUS_STREAM) {
-                    val first = incoming.take(1).toList().single()
-                    first.data shouldBe objectMapper.writeValueAsString(initial)
+                    val events = incoming.take(2).toList()
+                    events.forEach { it.data shouldBe objectMapper.writeValueAsString(initial) }
                 }
             }
         }
