@@ -44,5 +44,7 @@ internal object CsrfProtection {
         )
     }
 
-    fun currentToken(call: ApplicationCall): String = call.request.cookies[COOKIE_NAME].orEmpty()
+    fun currentToken(call: ApplicationCall): String = call.request.cookies[COOKIE_NAME]
+        ?.takeIf { it.isNotBlank() }
+        ?: issueToken(call)
 }
