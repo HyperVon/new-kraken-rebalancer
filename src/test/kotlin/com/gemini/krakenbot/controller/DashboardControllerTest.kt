@@ -17,6 +17,7 @@ import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
+import io.kotest.matchers.string.shouldNotContain
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.post
@@ -848,6 +849,62 @@ class DashboardControllerTest : DashboardControllerTestBase() {
 
             capturedConfig.captured.settings.deviationTriggerPercent shouldBe 5.0
             capturedConfig.captured.settings.dustThresholdUSD shouldBe 5.0
+        }
+
+        "getSettings_SetCookieCarriesPathHttpOnlySameSiteStrictAttributes" {
+            every { configService.getConfig() } returns AppConfig(
+                KrakenCredentials(TestFixtures.TEST_API_KEY, "private-key"),
+                TestFixtures.settings(loopDelaySeconds = 60L),
+                listOf(Allocation(Asset.USD, 100.0)),
+            )
+
+            testApplication {
+                application {
+                    configureTestEnv()
+                }
+                val response = client.get(Routes.SETTINGS)
+                val setCookie = response.headers[HttpHeaders.SetCookie]
+                    ?: error("Settings page did not issue a CSRF cookie")
+                setCookie shouldContain "Path=/"
+                setCookie shouldContain "HttpOnly"
+                setCookie shouldContain "SameSite=Strict"
+                setCookie shouldNotContain "Secure"
+                setCookie shouldNotContain "Max-Age"
+                setCookie shouldNotContain "Domain="
+            }
+        }
+
+        "postSettings_RejectsDuplicateMatchingCsrfFormTokens" {
+            val serverConfig = AppConfig(
+                KrakenCredentials(TestFixtures.TEST_API_KEY, "private-key"),
+                TestFixtures.settings(loopDelaySeconds = 60L),
+                listOf(Allocation(Asset.USD, 100.0)),
+            )
+            every { configService.getConfig() } returns serverConfig
+            every { configService.updateConfig(any()) } returns Unit
+
+            testApplication {
+                application {
+                    configureTestEnv()
+                }
+                val csrf = client.settingsCsrf()
+                // Two identical form tokens that both match the cookie: the duplicate branch in
+                // CsrfProtection.isValid (formTokens.size != 1) must reject before the constant-
+                // time equality check is reached, so the handler returns Forbidden and never
+                // mutates config.
+                val response = client.post(Routes.SETTINGS) {
+                    setBody(
+                        parametersOf(FormFields.CSRF_TOKEN to listOf(csrf.value, csrf.value)).formUrlEncode(),
+                    )
+                    header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
+                    header(HttpHeaders.Cookie, csrf.cookie)
+                }
+
+                response.status shouldBe HttpStatusCode.Forbidden
+                response.bodyAsText() shouldContain ViewText.CSRF_SESSION_EXPIRED
+                response.headers[HttpHeaders.SetCookie].shouldNotBeNull()
+                verify(exactly = 0) { configService.updateConfig(any()) }
+            }
         }
     }
 }
