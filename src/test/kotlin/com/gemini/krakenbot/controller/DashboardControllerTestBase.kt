@@ -13,8 +13,13 @@ import com.gemini.krakenbot.view.component.OverviewGridComponent
 import com.gemini.krakenbot.view.component.PerformanceTableComponent
 import com.gemini.krakenbot.view.component.RecentActivityComponent
 import com.gemini.krakenbot.view.component.SettingsFormComponent
+import com.gemini.krakenbot.view.util.Routes
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
+import io.ktor.client.HttpClient
+import io.ktor.client.request.get
+import io.ktor.client.statement.bodyAsText
+import io.ktor.http.HttpHeaders
 import io.ktor.server.application.Application
 import io.ktor.server.application.install
 import io.mockk.mockk
@@ -24,7 +29,22 @@ import org.koin.dsl.module
 import io.ktor.server.sse.SSE as ServerSSE
 
 abstract class DashboardControllerTestBase : StringSpec() {
+    protected data class CsrfTestToken(val value: String, val cookie: String)
+
     override fun isolationMode() = IsolationMode.InstancePerTest
+
+    protected suspend fun HttpClient.settingsCsrf(): CsrfTestToken {
+        val response = get(Routes.SETTINGS)
+        val token =
+            Regex("""name="csrfToken" value="([^"]+)"""")
+                .find(response.bodyAsText())
+                ?.groupValues
+                ?.get(1)
+                ?: error("Settings page did not contain a CSRF token")
+        val cookie = response.headers[HttpHeaders.SetCookie]?.substringBefore(';')
+            ?: error("Settings page did not issue a CSRF cookie")
+        return CsrfTestToken(token, cookie)
+    }
 
     protected val tradeHistoryService = mockk<TradeHistoryService>(relaxed = true)
     protected val configService = mockk<ConfigService>(relaxed = true)

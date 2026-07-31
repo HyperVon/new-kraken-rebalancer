@@ -1,12 +1,15 @@
 package com.gemini.krakenbot.model
 
 import io.kotest.assertions.throwables.shouldThrow
+import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import java.math.BigDecimal
 import java.time.Instant
 
-class RebalancerComparisonTest :
-    StringSpec({
+class RebalancerComparisonTest : StringSpec() {
+    override fun isolationMode() = IsolationMode.InstancePerTest
+
+    init {
         val baseline = Instant.parse("2026-07-01T00:00:00Z")
         val later = baseline.plusSeconds(60)
         val zero = BigDecimal("0.00")
@@ -102,4 +105,5 @@ class RebalancerComparisonTest :
             shouldThrow<IllegalArgumentException> { unavailable(latestDifferencePercent = zero) }
             shouldThrow<IllegalArgumentException> { unavailable(reason = null) }
         }
-    })
+    }
+}

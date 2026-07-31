@@ -263,5 +263,26 @@ class PortfolioManagerOrderExecutionTest : StringSpec() {
                     ).shouldBeTrue()
             }
         }
+
+        "testExecution_BuyVolumeFloorsAtCryptoPrecision" {
+            runTest {
+                val actionLog = mutableListOf<String>()
+
+                orderExecutor.executeOrders(
+                    buyOrders = mapOf(Asset.BTC to BigDecimal("1.00")),
+                    sellOrders = emptyMap(),
+                    currentValuesUSD = mapOf(Asset.USD to BigDecimal("10.00")),
+                    prices = mapOf(Asset.BTC to BigDecimal("6.00")),
+                    settings = TestFixtures.settings(dryRun = false, simulation = true),
+                    actionLog = actionLog,
+                    cycleId = "buy-volume-floor",
+                    availableBalances = null,
+                )
+
+                val order = krakenService.executedOrders.single()
+                order.volume shouldBe BigDecimal("0.16666666")
+                (order.volume.multiply(BigDecimal("6.00")) <= BigDecimal("1.00")).shouldBeTrue()
+            }
+        }
     }
 }

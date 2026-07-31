@@ -494,6 +494,7 @@ This path is internal orchestration — not a second browser-facing SSE stream l
 │   │   └── KtorConfig.kt                 # CORS, compression, content negotiation
 │   ├── controller/
 │   │   ├── DashboardController.kt        # HTTP handlers (pages, settings POST, SSE, history APIs)
+│   │   ├── CsrfProtection.kt              # Double-submit protection for settings mutations
 │   │   └── DashboardRoutes.kt            # Koin wiring → registerRoutes()
 │   ├── api/                               # HistoryApiMapper — JVM models ↔ :common wire DTOs
 │   ├── model/                             # PortfolioSnapshot, OrderResult, TradeRecord, TradeSource, HistoryStats, PortfolioStats

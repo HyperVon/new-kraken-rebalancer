@@ -32,9 +32,13 @@ object QueryParamKeys {
 
 object HtmxHeaders {
     const val HX_REDIRECT = "HX-Redirect"
+    const val HX_REFRESH = "HX-Refresh"
+    const val HX_RESWAP = "HX-Reswap"
+    const val HX_RETARGET = "HX-Retarget"
 }
 
 object FormFields {
+    const val CSRF_TOKEN = "csrfToken"
     const val LOOP_DELAY_SECONDS = "loopDelaySeconds"
     const val DEVIATION_TRIGGER_PERCENT = "deviationTriggerPercent"
     const val DUST_THRESHOLD_USD = "dustThresholdUSD"

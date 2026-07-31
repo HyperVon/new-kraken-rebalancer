@@ -29,6 +29,7 @@ import org.slf4j.LoggerFactory
 import java.io.IOException
 import java.math.BigDecimal
 import java.math.RoundingMode
+import java.net.URLEncoder
 import java.security.MessageDigest
 import java.time.Instant
 import java.util.concurrent.atomic.AtomicInteger
@@ -53,6 +54,8 @@ class KrakenServiceImpl(
     private val httpClient: HttpClient,
     private val rateLimiter: RateLimiter = RateLimiter(),
 ) : KrakenService {
+    private class AmbiguousOrderSubmissionException(message: String) : RuntimeException(message)
+
     private val log = LoggerFactory.getLogger(KrakenServiceImpl::class.java)
     private val apiUrl = KrakenApiConstants.API_URL
 
@@ -212,7 +215,6 @@ class KrakenServiceImpl(
 
         return try {
             val resp = queryPrivate(path, params)
-            log.info("Order Executed: {}", resp.toString())
             val txidNode = resp.path(KrakenApiConstants.FIELD_TXID)
             val orderTxid =
                 if (txidNode.isArray && txidNode.size() > 0) {
@@ -220,6 +222,13 @@ class KrakenServiceImpl(
                 } else {
                     null
                 }
+            log.info(
+                "Order executed pair={} side={} volume={} txid={}",
+                pair,
+                side,
+                normalizedVolume.toPlainString(),
+                orderTxid,
+            )
             if (orderTxid == null) {
                 OrderResult(
                     success = false,
@@ -263,7 +272,8 @@ class KrakenServiceImpl(
 
     private fun isAmbiguousSubmissionFailure(error: Throwable): Boolean = generateSequence(error) { it.cause }
         .any { cause ->
-            cause is IOException ||
+            cause is AmbiguousOrderSubmissionException ||
+                cause is IOException ||
                 cause is ResponseException ||
                 cause is JsonProcessingException
         }
@@ -445,7 +455,7 @@ class KrakenServiceImpl(
 
                 val postData =
                     payload.entries.joinToString("&") {
-                        "${it.key}=${it.value}"
+                        "${URLEncoder.encode(it.key, Charsets.UTF_8)}=${URLEncoder.encode(it.value, Charsets.UTF_8)}"
                     }
                 // Signature / private key must never be logged — only API-Sign header below.
                 val signature = signRequest(path, nonce, postData)
@@ -469,6 +479,13 @@ class KrakenServiceImpl(
                     val root: JsonNode = objectMapper.readTree(responseBody)
                     if (!root.path(KrakenApiConstants.FIELD_ERROR).isEmpty) {
                         val errorMsg = root.path(KrakenApiConstants.FIELD_ERROR).toString()
+                        if (errorMsg.contains(KrakenApiConstants.ERROR_INVALID_NONCE) &&
+                            path == KrakenApiConstants.PATH_ADD_ORDER
+                        ) {
+                            throw AmbiguousOrderSubmissionException(
+                                "Kraken AddOrder returned Invalid nonce after the single submission attempt",
+                            )
+                        }
                         if (errorMsg.contains(KrakenApiConstants.ERROR_INVALID_NONCE) && retryCount < maxRetries) {
                             // Exponential bump (1e8, 2e8, 4e8, …) to leap past a stale/server-ahead nonce.
                             val bumpAmount = 100_000_000L * (1L shl retryCount)

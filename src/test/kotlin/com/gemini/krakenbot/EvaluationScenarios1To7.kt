@@ -448,6 +448,15 @@ internal fun EvaluationScenariosTest.registerScenarios1To7() {
                 )
 
             every { configService.getConfig() } returns validConfig
+            val settingsResponse = client.get(Routes.SETTINGS)
+            val csrfToken =
+                Regex("""name="csrfToken" value="([^"]+)"""")
+                    .find(settingsResponse.bodyAsText())
+                    ?.groupValues
+                    ?.get(1)
+                    ?: error("Settings page did not contain a CSRF token")
+            val csrfCookie = settingsResponse.headers[HttpHeaders.SetCookie]?.substringBefore(';')
+                ?: error("Settings page did not issue a CSRF cookie")
 
             val postResponse =
                 client.post(Routes.SETTINGS) {
@@ -458,12 +467,14 @@ internal fun EvaluationScenariosTest.registerScenarios1To7() {
                             FormFields.DUST_THRESHOLD_USD to listOf("2.0"),
                             FormFields.FIAT_MAX_DRAWDOWN to listOf("0.0"),
                             FormFields.FIAT_DEPLOYMENT_EXPONENT to listOf("1.0"),
+                            FormFields.CSRF_TOKEN to listOf(csrfToken),
                             FormFields.SYMBOLS to listOf(Asset.USD),
                             FormFields.TARGETS to listOf("100.0"),
                             FormFields.COLORS to listOf("#94a3b8"),
                         ).formUrlEncode(),
                     )
                     header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
+                    header(HttpHeaders.Cookie, csrfCookie)
                 }
             postResponse.status shouldBe HttpStatusCode.OK
             postResponse.headers[HtmxHeaders.HX_REDIRECT] shouldBe Routes.ROOT
@@ -484,12 +495,14 @@ internal fun EvaluationScenariosTest.registerScenarios1To7() {
                             FormFields.DUST_THRESHOLD_USD to listOf("1.0"),
                             FormFields.FIAT_MAX_DRAWDOWN to listOf("0.0"),
                             FormFields.FIAT_DEPLOYMENT_EXPONENT to listOf("1.0"),
+                            FormFields.CSRF_TOKEN to listOf(csrfToken),
                             FormFields.SYMBOLS to listOf(Asset.USD),
                             FormFields.TARGETS to listOf("90.0"), // 90% sum != 100%
                             FormFields.COLORS to listOf("#94a3b8"),
                         ).formUrlEncode(),
                     )
                     header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
+                    header(HttpHeaders.Cookie, csrfCookie)
                 }
             postInvalidResponse.status shouldBe HttpStatusCode.OK
             postInvalidResponse.bodyAsText() shouldContain "Total allocation percentage must be exactly 100%."

@@ -56,7 +56,8 @@ Shared scales also live in `:common` `PrecisionConstants` (`SCALE_CRYPTO=8`,
 1. Track portfolio **ATH** in SQLite (`PortfolioStatsRepository`). Update on new highs.
    Missing/null stats are an initial zero state, but database read or legacy
    migration failures propagate and abort analysis before any order planning or
-   lower ATH write.
+   lower ATH write. ATH persistence failures also abort the cycle rather than
+   continuing from an in-memory value that was not durably saved.
 2. `Drawdown% = (ATH - Current) / ATH × 100`.
 3. `Deploy% = (Drawdown% / fiatMaxDrawdown)^fiatDeploymentExponent`, capped at 100%.
    - Exponent `< 1` = aggressive early deployment; `> 1` = conservative; `1` = linear.
@@ -164,7 +165,9 @@ effectively than spreading across all pairs.
    persistence failure never masks the original placement exception; attach it
    as suppressed diagnostic context. Non-live backend exceptions instead update
    the estimate with the actual failure.
-6. Market orders; volumes at crypto scale 8.
+6. Market orders; volumes at crypto scale 8. Convert USD intents with
+   `RoundingMode.DOWN` so `volume × price` never exceeds the intended notional;
+   sell volumes are additionally capped to cycle-entry holdings.
 7. **dryRun**: suppress placement on the active backend — SLF4J uses
    `[DRY RUN]` (live) / `[EMULATOR DRY RUN]` (simulation); dashboard activity
    always uses `[DRY RUN]` (see dry-run-and-simulation skill).
