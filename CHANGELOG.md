@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **Dual-stack HTTP bind**: The Ktor/Netty server now binds `::` instead of
+  `0.0.0.0` so dual-stack hosts accept IPv6 clients (and IPv4-mapped clients on
+  the same socket). IPv4-literal URLs are unaffected by bind family; keep the
+  host firewall covering both IPv4 and IPv6 (see SECURITY.md).
+
 ## [6.15.24] - 2026-07-31
 
 ### Fixed

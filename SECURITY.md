@@ -109,7 +109,11 @@ For safe operation:
 
 - do not expose port 8080 directly to the public internet;
 - restrict network access with host firewall, router, container, or reverse
-  proxy controls;
+  proxy controls. The server binds the IPv6 wildcard on dual-stack kernels
+  (`::`) and accepts IPv4-mapped clients on the same socket, so host firewall
+  rules must cover both IPv4 (`iptables`/`netsh advfirewall`) and IPv6
+  (`ip6tables`/the IPv6 profile in Windows Defender Firewall) on the same host.
+  Hosts without an IPv6 firewall commonly accept global IPv6 traffic by default;
 - treat every device that can reach the dashboard as trusted to change
   configuration and potentially initiate live trading;
 - add authentication at a trusted reverse proxy before permitting access beyond

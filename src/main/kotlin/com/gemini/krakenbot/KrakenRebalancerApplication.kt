@@ -91,11 +91,12 @@ fun main() {
 }
 
 private fun startServer() {
-    // Bind the IPv6 wildcard so dual-stack kernels (net.inet6.ip6.v6only=0 on macOS/Linux
-    // defaults) also serve IPv4-mapped clients via the same socket. The IPv4 wildcard `0.0.0.0`
-    // refuses IPv6 connections, which silently breaks clients that prefer IPv6 resolution.
-    // Guard against an environment forcing IPv4 sockets, which would defeat the dual-stack bind.
-    System.setProperty("java.net.preferIPv4Stack", "false")
+    // Bind the IPv6 wildcard. On dual-stack kernels (macOS/Windows default; Linux when
+    // net.ipv6.bindv6only=0) the same socket also accepts IPv4-mapped clients. The IPv4
+    // wildcard `0.0.0.0` refuses native IPv6, which breaks hostname clients that prefer AAAA.
+    // IPv4 literals (e.g. http://10.0.0.x:8080/) never use AAAA — bind family does not affect them.
+    // Hosts with IPv6 disabled or bindv6only=1 need an IPv4-capable network stack; keep the
+    // host firewall covering both families (see SECURITY.md).
     embeddedServer(Netty, port = 8080, host = "::") {
         install(SSE)
         configureCompression()
