@@ -68,6 +68,7 @@ Suggested section order (match the live nav):
 | `docs/images/dashboard-bottom.png` | Allocation, performance table, cycle activity feed |
 | `docs/images/settings.png` | Global parameters + allocations + safety cards |
 | `docs/images/history.png` | Range pills, six summary cards, value/holdings charts |
+| `docs/images/history-portfolio-charts.png` | Portfolio value + holdings charts (History charts region) |
 | `docs/images/history-charts.png` | Allocation drift + cumulative net cash flow (+ caption) |
 | `docs/images/history-bottom.png` | Trade history table (status dots / badges) |
 

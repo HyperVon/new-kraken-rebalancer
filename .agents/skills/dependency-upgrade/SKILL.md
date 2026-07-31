@@ -124,7 +124,7 @@ For each deprecation/breaking change:
 Known migration-sensitive areas in this codebase:
 
 - **Ktor** — plugin install APIs, SSE, HTML builder, client engine config change across majors.
-- **Exposed** — DSL/DAO signatures and `java-time` module shift between 0.5x/0.6x+.
+- **Exposed** — the `0.x → 1.x` split moved packages from `org.jetbrains.exposed.sql.*` to `org.jetbrains.exposed.v1.core.*` / `org.jetbrains.exposed.v1.jdbc.*` (see `exposed-repository` skill); also watch DSL/DAO signatures and the `java-time` module across versions.
 - **Koin** — module DSL / `KoinApplication` lifecycle.
 - **Kotest / MockK** — assertion + matcher package moves; keep `BigDecimal` comparisons on `shouldBeEqualComparingTo`.
 - **Jackson** — always bump via the `jackson-bom` platform, not individual artifacts.

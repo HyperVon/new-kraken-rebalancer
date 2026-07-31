@@ -33,6 +33,17 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `status(400)` / `status(500)` / `status(503)` StatusPages-handler coverage (registered messages + the
   `>=500` `log.error` branch), and synced README + `gradle-quality-gates` JaCoCo exclusion lists after
   removing the `ErrorHandlingConfig` exclusion.
+- **Agent guidance audit fixes**: Corrected three findings from a `rules-and-skills-audit` pass
+  on `.agents/` guidance:
+  - `user-guide` skill image inventory now lists `history-portfolio-charts.png`, matching the
+    `docs-screenshot-refresh` target list and `docs/images/` (7 images, previously 6).
+  - `dependency-upgrade` skill Exposed migration note now references the current `0.x → 1.x`
+    `org.jetbrains.exposed.v1.*` package split (Exposed is pinned at 1.3.1), replacing the
+    obsolete `0.5x/0.6x+` version-range text.
+  - `.agents/AGENTS.md` skill-index table no longer lists `improvement-backlog.md` and
+    `quality-backlog.md` as skill rows; they are working artifacts owned by the
+    `continuous-improvement` / `continuous-quality` orchestrators (now linked parenthetically
+    on their owning skills).
 
 ## [6.15.21] - 2026-07-30
 

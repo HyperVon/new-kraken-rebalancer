@@ -64,10 +64,8 @@ Canonical deep docs:
 | Update open PR (push to existing) | [commit-and-push](skills/commit-and-push/SKILL.md) → [adversarial-pr-review](skills/adversarial-pr-review/SKILL.md) |
 | Autonomous multi-pass audit | [autonomous-code-optimizer](skills/autonomous-code-optimizer/SKILL.md) |
 | Parallel multi-agent splits | [parallel-multi-agent](skills/parallel-multi-agent/SKILL.md) |
-| Continuous improvement (whole shebang) | [continuous-improvement](skills/continuous-improvement/SKILL.md) |
-| Continuous improvement backlog | [improvement-backlog.md](improvement-backlog.md) |
-| Continuous quality (QA loop) | [continuous-quality](skills/continuous-quality/SKILL.md) |
-| Continuous quality backlog | [quality-backlog.md](quality-backlog.md) |
+| Continuous improvement (whole shebang) | [continuous-improvement](skills/continuous-improvement/SKILL.md) *(writes `.agents/improvement-backlog.md`)* |
+| Continuous quality (QA loop) | [continuous-quality](skills/continuous-quality/SKILL.md) *(writes `.agents/quality-backlog.md`)* |
 
 **Always-on norms** — full text in [OPERATING.md](OPERATING.md). Cursor loads the
 same content via committed `.cursor/rules/`:
