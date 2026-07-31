@@ -18,6 +18,15 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   contributor, defaults to audit/report, and cleans up only on explicit
   request. Indexed in `.agents/AGENTS.md`.
 
+### Changed
+
+- **Lean-code operating norm**: `OPERATING.md` gains a "Lean, contract-aware
+  code" section (defensive at trust boundaries, lean inside; each test kills a
+  distinct defect class) with a matching `.cursor/rules/` projection, AGENTS
+  invariants, and producer-side guidance in `write-kotest`,
+  `kotlin-refactoring-and-cleanup`, and `code-review`, all pointing at the
+  `ai-slop-detector` rubric.
+
 ### Fixed
 
 - **Dual-stack HTTP bind**: The Ktor/Netty server now binds `::` instead of

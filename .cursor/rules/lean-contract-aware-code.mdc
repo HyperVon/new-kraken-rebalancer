@@ -1,0 +1,25 @@
+---
+description: Defensive at trust boundaries, lean inside; every test kills a distinct defect class
+alwaysApply: true
+---
+
+<!-- Canonical portable copy: .agents/OPERATING.md § Lean, contract-aware code -->
+
+# Lean, contract-aware code
+
+Write code a staff engineer would sign: **defensive exactly at trust
+boundaries** (external APIs, user input, configuration, persistence, money) —
+**lean and confident inside them**.
+
+When writing code or tests:
+
+1. No guards for states the type system or the caller's contract makes
+   impossible.
+2. Validate each invariant once, at its owning boundary.
+3. Never fall back silently over a state that should fail hard (rethrow
+   `CancellationException` in coroutine code).
+4. Each test kills a distinct defect class — no impossible-case, duplicated,
+   coverage-padding, or framework tests; keep boundary edge cases.
+5. Prefer the existing local pattern over speculative abstraction.
+
+Audit rubric: `.agents/skills/ai-slop-detector/SKILL.md`.

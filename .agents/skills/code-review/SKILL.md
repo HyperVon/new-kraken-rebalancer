@@ -39,6 +39,12 @@ not treat this skill’s checklist as a substitute.
 - No absolute user paths or machine hostnames.
 - Comments: only non-obvious complexity; flag wrong/stale/noisy comments (see
   [complex-code-comments](../complex-code-comments/SKILL.md)).
+- Lean code: no dead guards for contractually impossible states, no duplicated
+  validation below the owning boundary, no speculative abstractions without a
+  current seam.
+- Tests: each kills a distinct defect class; flag impossible-case tests,
+  cosmetic duplicates, and coverage padding (see
+  [ai-slop-detector](../ai-slop-detector/SKILL.md)).
 
 #### SRP do-nots (flag any violation)
 
