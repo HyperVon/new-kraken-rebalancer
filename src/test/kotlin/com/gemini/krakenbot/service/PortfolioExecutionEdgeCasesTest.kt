@@ -6,6 +6,7 @@ import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderResult
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.service.impl.OrderExecutorImpl
+import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
 import com.gemini.krakenbot.toBigDecimalMap
 import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
@@ -13,13 +14,21 @@ import io.kotest.matchers.shouldBe
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
+import io.mockk.verify
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.yield
 import java.io.IOException
+import java.lang.reflect.Field
 import java.math.BigDecimal
 
 class PortfolioExecutionEdgeCasesTest : PortfolioManagerEdgeCasesTestBase() {
+
+    private fun workerJobReflection(): Field =
+        PortfolioManagerImpl::class.java.getDeclaredField("workerJob").apply { isAccessible = true }
+
+    private fun readWorkerJob(): Job? = workerJobReflection().get(portfolioManager) as Job?
 
     init {
         "testExecuteOrders_DryRunAndSellsSuccess" {
@@ -317,6 +326,21 @@ class PortfolioExecutionEdgeCasesTest : PortfolioManagerEdgeCasesTestBase() {
                 yield()
                 portfolioManager.stopRebalancingLoop()
                 job.join()
+
+                // Startup sync fired and its exception was caught (not rethrown); the worker did
+                // not place orders and the lifecycle completed cleanly. Because the test calls
+                // `stopRebalancingLoop()` (which flips `isRunning=false`) before the launched
+                // `runLoop()` coroutine resumes from `yield()`, the `while(isRunning)` cycle body
+                // never enters, so no rebalance cycle ran: balances were never fetched and no
+                // snapshot/session pair was opened.
+                coVerify(atLeast = 1) { tradeHistoryService.syncTradesFromKraken() }
+                krakenService.getBalancesCallCount shouldBe 0
+                krakenService.executedOrders.isEmpty().shouldBeTrue()
+                coVerify(exactly = 0) { tradeHistoryService.addSnapshot(any()) }
+                verify(exactly = 0) { configService.beginExecutionSession() }
+                verify(exactly = 0) { configService.endExecutionSession() }
+                // The `finally` cleared `workerJob`; the manager is restartable.
+                readWorkerJob() shouldBe null
             }
         }
 
@@ -360,6 +384,19 @@ class PortfolioExecutionEdgeCasesTest : PortfolioManagerEdgeCasesTestBase() {
                 yield()
                 portfolioManager.stopRebalancingLoop()
                 job.join()
+
+                // Startup sync ran (relaxed mock: no-op) and was tolerated; the cycle never
+                // reached `fetchBalances` because `stopRebalancingLoop()` had already flipped
+                // `isRunning=false` by the time the launched coroutine resumed from `yield()`,
+                // so the `while(isRunning)` body never entered. No balances fetched, no
+                // orders placed, no snapshot/session opened, and the worker release is clean.
+                coVerify(atLeast = 1) { tradeHistoryService.syncTradesFromKraken() }
+                krakenService.getBalancesCallCount shouldBe 0
+                krakenService.executedOrders.isEmpty().shouldBeTrue()
+                coVerify(exactly = 0) { tradeHistoryService.addSnapshot(any()) }
+                verify(exactly = 0) { configService.beginExecutionSession() }
+                verify(exactly = 0) { configService.endExecutionSession() }
+                readWorkerJob() shouldBe null
             }
         }
 
@@ -379,6 +416,16 @@ class PortfolioExecutionEdgeCasesTest : PortfolioManagerEdgeCasesTestBase() {
                 yield()
                 job.cancel()
                 job.join()
+
+                // `stopRebalancingLoop()` is NOT called here — only `job.cancel()`. `isRunning`
+                // stays true at the moment the collectLatest body checks it, so one cycle runs to
+                // completion and publishes a snapshot before the `delay(60s)` is cancelled. The
+                // observed post-state: one snapshot, no orders placed (default allocations have
+                // nothing to do), and the `finally` released `workerJob` so the manager is
+                // restartable.
+                krakenService.executedOrders.isEmpty().shouldBeTrue()
+                coVerify(exactly = 1) { tradeHistoryService.addSnapshot(any()) }
+                readWorkerJob() shouldBe null
             }
         }
 
