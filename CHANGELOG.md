@@ -6,7 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [6.15.25] - 2026-07-31
+
+### Added
+
+- **`ai-slop-detector` agent skill**: Evidence-based audit and cleanup of
+  low-judgment artifacts (code, tests, docs, diffs) covering needless
+  complexity, architecture drift, invented integrations, and tests that do not
+  protect required behavior. The skill never attributes authorship or intent
+  to a contributor, defaults to audit/report, and cleans up only on explicit
+  request. Indexed in `.agents/AGENTS.md`.
 
 ### Fixed
 
