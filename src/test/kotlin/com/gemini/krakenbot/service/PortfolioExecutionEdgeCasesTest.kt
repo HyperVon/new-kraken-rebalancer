@@ -8,6 +8,7 @@ import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.service.impl.OrderExecutorImpl
 import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
 import com.gemini.krakenbot.toBigDecimalMap
+import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.shouldBe
@@ -263,6 +264,39 @@ class PortfolioExecutionEdgeCasesTest : PortfolioManagerEdgeCasesTestBase() {
                     )
 
                 snapshot.totalValueUSD.shouldBeEqualComparingTo(BigDecimal("1000.0"))
+            }
+        }
+
+        "testBuildSnapshot_failsWhenPriceMissingForAllocatedAsset" {
+            runTest {
+                val prices = mapOf("BTC" to BigDecimal("50000.0"))
+                val allocs = listOf(
+                    Allocation(Asset.USD, 50.0),
+                    Allocation(Asset.BTC, 25.0),
+                    Allocation(Asset.ETH, 25.0),
+                )
+                every { configService.getConfig() } returns TestFixtures.config(
+                    settings = TestFixtures.settings(),
+                    allocations = allocs,
+                )
+
+                shouldThrow<IllegalStateException> {
+                    portfolioAnalyzer.buildSnapshot(
+                        balances = mapOf(TestFixtures.USD to 500.0, "BTC" to 0.01, "ETH" to 0.1).toBigDecimalMap(),
+                        prices = prices,
+                        currentValuesUSD = mapOf(
+                            TestFixtures.USD to BigDecimal("500.0"),
+                            "BTC" to BigDecimal("500.0"),
+                            "ETH" to BigDecimal("500.0"),
+                        ),
+                        totalPortfolioValueUSD = BigDecimal("1500.0"),
+                        effectiveUsdTarget = BigDecimal("50.0"),
+                        cryptoScaleFactor = BigDecimal.ONE,
+                        drawdownPct = BigDecimal.ZERO,
+                        fiatDeploymentPct = BigDecimal.ZERO,
+                        actionLog = listOf("Cycle completed"),
+                    )
+                }
             }
         }
 
