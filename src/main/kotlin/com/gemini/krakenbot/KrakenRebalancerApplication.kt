@@ -91,7 +91,13 @@ fun main() {
 }
 
 private fun startServer() {
-    embeddedServer(Netty, port = 8080, host = "0.0.0.0") {
+    // Bind the IPv6 wildcard. On dual-stack kernels (macOS/Windows default; Linux when
+    // net.ipv6.bindv6only=0) the same socket also accepts IPv4-mapped clients. The IPv4
+    // wildcard `0.0.0.0` refuses native IPv6, which breaks hostname clients that prefer AAAA.
+    // IPv4 literals (e.g. http://10.0.0.x:8080/) never use AAAA — bind family does not affect them.
+    // Hosts with IPv6 disabled or bindv6only=1 need an IPv4-capable network stack; keep the
+    // host firewall covering both families (see SECURITY.md).
+    embeddedServer(Netty, port = 8080, host = "::") {
         install(SSE)
         configureCompression()
         configureCachingAndConditionalHeaders()
