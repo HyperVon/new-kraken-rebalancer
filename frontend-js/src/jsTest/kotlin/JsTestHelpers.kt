@@ -7,6 +7,7 @@ import com.gemini.krakenbot.api.RebalancerComparisonPoint
 import com.gemini.krakenbot.api.TradeRecord
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderSide
+import kotlinx.coroutines.await
 import kotlin.js.Promise
 import kotlin.js.json
 
@@ -143,6 +144,13 @@ fun mockHistoryFetchHandler(
 fun mockFetch(handler: (String) -> Any?): dynamic = { url: String ->
     val responseData = handler(url)
     Promise.resolve(json("json" to { Promise.resolve(responseData) }))
+}
+
+/** Advance the native Promise queue without relying on a wall-clock sleep. */
+suspend fun awaitPromiseQueue() {
+    repeat(3) {
+        Promise.resolve(Unit).await()
+    }
 }
 
 /** Chart.js stand-in; default `isDatasetVisible` is true only for index 0 (feeds createOrUpdate snapshots). */

@@ -8,6 +8,7 @@ import com.gemini.krakenbot.repository.table.PortfolioStatsTable
 import com.gemini.krakenbot.repository.table.TradeTable
 import org.jetbrains.exposed.v1.jdbc.Database
 import org.jetbrains.exposed.v1.jdbc.SchemaUtils
+import org.jetbrains.exposed.v1.jdbc.exists
 import org.jetbrains.exposed.v1.jdbc.transactions.transaction
 import org.jetbrains.exposed.v1.jdbc.vendors.currentDialectMetadata
 import org.slf4j.LoggerFactory
@@ -60,11 +61,16 @@ object DatabaseConfig {
             transaction(database) {
                 currentDialectMetadata.resetCaches()
 
-                val createStatements = SchemaUtils.createStatements(*tables)
+                val (tablesToCreate, tablesToAlter) = tables.partition { !it.exists() }
+                val createStatements = SchemaUtils.createStatements(*tablesToCreate.toTypedArray())
                 createStatements.forEach { exec(it) }
 
-                val alterStatements = SchemaUtils.addMissingColumnsStatements(tables = tables, withLogs = false)
+                val alterStatements = SchemaUtils.addMissingColumnsStatements(
+                    tables = tablesToAlter.toTypedArray(),
+                    withLogs = false,
+                )
                 alterStatements.forEach { exec(it) }
+                currentDialectMetadata.resetCaches()
 
                 // Rows written before provenance existed cannot distinguish a settled API fill
                 // from a local order estimate when both have no slippage. Preserve that ambiguity

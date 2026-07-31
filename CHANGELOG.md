@@ -6,6 +6,114 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.15.24] - 2026-07-31
+
+### Fixed
+
+- **Allocation symbol canonicalization (#163)**: Allocation symbols are now
+  canonicalized case-insensitively before valuation and execution. Kraken alias
+  collisions (`BTC`/`XBT`, `DOGE`/`XDG`) are rejected after canonicalization so
+  one holding cannot be valued twice or produce aggregate sell volume above the
+  cycle-entry balance. The simulator no longer falls back to default prices for
+  lowercase or alias symbols.
+- **Live order transaction ID enforcement (#161)**: A live `OrderResult.Success`
+  with a blank or null `orderTxid` is now converted to a blocking `UNCERTAIN`
+  outcome at the journal owner, persisting an unresolved row that aborts the
+  batch and blocks future live submissions until the row is resolved (the
+  journal lacks an automated reconcile path, so operators must resolve the row
+  manually or via a restored database). The previous behavior cleared the
+  submission state without an exchange identity.
+- **Floored submitted notional dust guard (#166)**: The buy dust threshold is now
+  applied to the actual submitted notional (`floored volume × price`) rather than
+  the original USD intent, preventing orders below the configured minimum
+  execution notional after crypto-precision flooring. The journaled `usdAmount`
+  for buys is the actual submitted notional; in-cycle cash/budget bookkeeping
+  retains the pre-floor intent, so accounting is conservative (a floored buy
+  spends at most the budgeted amount).
+- **Startup dedupe conflict protection (#165)**: The startup local/API trade
+  cleanup now preserves rows with conflicting success, dry-run, provenance,
+  trade ID, or order transaction ID. Valid local-estimate/API-fill duplicates
+  are still cleaned as before; dry-run and unresolved submission rows are never
+  deleted. As an accepted residual, legacy-unknown rows are also no longer
+  collapsed against later API fills (conservative; a legacy duplicate can
+  remain visible in History).
+- **Interrupted initial pagination resume (#162)**: An interrupted initial
+  full-history pagination no longer permanently skips older Kraken fills. The
+  sync detects a numeric `SYNC_OFFSET` marker, retries from page zero with
+  `startSec = null`, and only finalizes the watermark and completion metadata
+  after a successful first pass.
+- **Credential file permissions (#167)**: The config writer now applies POSIX
+  owner-only (`0600`) permissions to the final and temporary config files,
+  cleans stale `.tmp` files on load, and guarantees temporary-file cleanup after
+  serialization or move failures.
+- **PortfolioManager lifecycle and ownership (#160)**: The rebalance loop is now
+  restartable and single-owner. A scoped `startRebalancingLoop(scope)` launches
+  a managed worker that drains any cancelled predecessor before it begins, and
+  `stop` cancels it; the application shutdown hook joins the worker (bounded
+  5 s, extended while live submissions are pending). Duplicate `runLoop`
+  callers are rejected and never become a second hot-flow collector.
+- **Shutdown join (#164)**: Application shutdown now stops and joins the
+  rebalance worker (bounded 5 s, extended while live submissions are pending)
+  before canceling the application scope or closing the HTTP client and Koin,
+  ensuring durable live-order journal entries during cleanup are not
+  interrupted.
+- **Dashboard comma sorting**: Numeric Price and Value columns on the Dashboard
+  performance table now strip currency decoration and formatting whitespace
+  (including non-breaking spaces) before numeric comparison, so comma-formatted
+  currency values sort numerically instead of as `0.0`.
+- **Settings HTMX reinitialization**: Settings controls, allocation validation,
+  and mode-plate listeners are now reinitialized after an HTMX validation
+  fragment swap, so toggles and the allocation total stay synchronized.
+- **History range rollback**: A failed History range request no longer relabels
+  stale data as the new range; the previous range label and controls are
+  retained on failure.
+
+### Changed
+
+- **Evaluation harness improvements**: Scenarios 4, 18, and 27 now use hot
+  `MutableSharedFlow` instead of finite cold `flowOf` for SSE/config coverage;
+  the evaluation report registers failed scenarios and derives the count from
+  registered cases; Scenario 25 requires a strict successful action prefix;
+  Scenario 30 uses `shouldBeEqualComparingTo` for BigDecimal comparisons;
+  simulation trade-identity assertions are deterministic; temporary stats paths
+  are unique and cleaned up.
+- **JS test flake fix**: Replaced wall-clock `delay()` synchronization in
+  History/Coverage browser tests with explicit Promise-queue readiness, removing
+  timing-dependent flakiness.
+
+### Added
+
+- **New regression tests**: 30+ new JVM and Kotlin/JS test cases covering
+  lowercase/alias symbol canonicalization, missing live txid, floored dust,
+  POSIX config permissions, non-finite allocation targets, simulation
+  persistence, credential redaction, PENDING persistence failure, fill-history
+  exception fallback, interrupted pagination recovery, dedupe conflict
+  preservation, legacy schema migration, snapshot child-row pruning,
+  reconstruction save failure, late SharedFlow replay, manager lifecycle and
+  concurrent-worker safety, shutdown join cleanup, dashboard comma sorting,
+  settings HTMX reinit, history range rollback, six-card range coverage, zoom
+  fallback bounds, malformed comparison predicates, native JSON wire fixtures
+  for all History endpoints, and BigDecimal matcher compliance.
+- **Cycle-15 coverage gap closures**: 7 focused test suites closing the deferred
+  cycle-15 backlog items. `OrderSubmissionJournalE2ETest` (M1) drives the
+  SQLite-backed PENDING→resolved/UNCERTAIN journal lifecycle end-to-end through
+  real `OrderExecutorImpl` + `SqliteTradeRepositoryImpl` + `FakeKrakenService`
+  (no mocks on the journal path); `CORSConfigTest` (M4) wires production
+  `configureCORS()` via `testApplication` to assert allowed private origins
+  echo ACAO and rejected public origins 403 with no CORS headers;
+  `AddOrderRateLimitSigningTest` (M6) asserts AddOrder acquires the rate limiter
+  with cost 1.0, carries `API-Key` + `API-Sign` + monotonic nonces, and is NOT
+  retried on `EAPI:Rate limit exceeded` (maxAttempts=1 trumps retry, and the
+  pre-acceptance rejection is correctly NOT classified as ambiguous);
+  `ConfigServiceNestedSessionTest` (M7) covers nested execution-session
+  publication staging through the real config flow; `SseMultiSubscriberTest`
+  (M9) exercises the real hot `snapshotFlow` through multiple concurrent HTTP
+  SSE subscribers on the `/api/status/stream` route; `DashboardControllerTest`
+  CSRF cases (CQ-14-4) assert cookie attributes and reject duplicate matching
+  form tokens; `PortfolioExecutionEdgeCasesTest` additions (CQ-14-15) harden
+  loop smoke tests with behavioral assertions on lifecycle release and snapshot
+  publication counts.
+
 ## [6.15.23] - 2026-07-30
 
 ### Changed

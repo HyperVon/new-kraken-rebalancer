@@ -24,7 +24,7 @@ import io.ktor.server.testing.testApplication
 import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
-import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.joinAll
@@ -255,7 +255,7 @@ internal fun EvaluationScenariosTest.registerScenarios22To28() {
                 if (pair == TestFixtures.XBTUSD) {
                     OrderResult(false, pair, side, volume, errorMessage = "Order minimum size not met")
                 } else {
-                    OrderResult(true, pair, side, volume)
+                    OrderResult(true, pair, side, volume, orderTxid = "FAKE-$pair")
                 }
             }
 
@@ -285,14 +285,18 @@ internal fun EvaluationScenariosTest.registerScenarios22To28() {
             pm.performRebalanceCycle()
 
             val btcFailedLogged = capturedActions.any { it.contains("FAILED BUY BTC: Order minimum size not met") }
-            val ethSucceededLogged = capturedActions.any { it.contains("BUY ETH") }
+            val ethSucceededLogged = capturedActions.any {
+                it.startsWith("BUY ETH ") && !it.startsWith("FAILED BUY ETH")
+            }
+            val ethFailedLogged = capturedActions.any { it.startsWith("FAILED BUY ETH") }
             val ordersPlaced = fakeKraken.executedOrders.size == 2
 
-            val success = btcFailedLogged && ethSucceededLogged && ordersPlaced
+            val success = btcFailedLogged && ethSucceededLogged && !ethFailedLogged && ordersPlaced
             val evidence =
                 "Executed order calls: ${fakeKraken.executedOrders}\n" +
                     "Captured actions in history snapshot: $capturedActions\n" +
-                    "BTC failure logged: $btcFailedLogged, ETH success logged: $ethSucceededLogged"
+                    "BTC failure logged: $btcFailedLogged, ETH success logged: $ethSucceededLogged, " +
+                    "ETH failure logged: $ethFailedLogged"
 
             success.shouldBeTrue()
             EvaluationScenariosTest.recordResult(
@@ -390,7 +394,9 @@ internal fun EvaluationScenariosTest.registerScenarios22To28() {
                     effectiveUsdTargetPercent = BigDecimal.ZERO,
                 )
             coEvery { tradeHistoryService.getLatestSnapshot() } returns snap
-            every { tradeHistoryService.getHistoryFlow() } returns flowOf(snap)
+            val streamFlow = MutableSharedFlow<PortfolioSnapshot>(replay = 1, extraBufferCapacity = 1)
+            streamFlow.tryEmit(snap).shouldBeTrue()
+            every { tradeHistoryService.getHistoryFlow() } returns streamFlow
 
             val clientSse = createClient { install(ClientSSE) }
 
@@ -413,7 +419,7 @@ internal fun EvaluationScenariosTest.registerScenarios22To28() {
 
             val ssePass = results.size == 5
             val evidence =
-                "Connected 5 clients to SSE endpoint.\n" +
+                "Connected 5 clients to the hot SSE flow.\n" +
                     "Clients that successfully received broadcast: $results\n" +
                     "All 5 clients received the snapshot: $ssePass"
 

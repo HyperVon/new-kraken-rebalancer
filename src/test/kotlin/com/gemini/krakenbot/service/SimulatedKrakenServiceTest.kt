@@ -119,6 +119,34 @@ class SimulatedKrakenServiceTest : StringSpec() {
             )
         }
 
+        "should resolve lower-case allocation aliases to canonical simulator balances and prices" {
+            val configService = mockk<ConfigService>()
+            every { configService.getConfig() } returns
+                btcUsdConfig.copy(
+                    allocations = listOf(
+                        Allocation("btc", 50.0),
+                        Allocation("usd", 50.0),
+                    ),
+                )
+            val simulatedService = SimulatedKrakenService(configService)
+
+            val price = simulatedService.getTickerPrices(TestFixtures.XBTUSD).getValue(TestFixtures.XBTUSD)
+            (price > BigDecimal("100.00")) shouldBe true
+            val initialBtc = simulatedService.getBalances().getValue(Asset.BTC)
+
+            val result = simulatedService.executeOrder(
+                TestFixtures.XBTUSD,
+                TestFixtures.MARKET,
+                TestFixtures.SELL,
+                BigDecimal("0.0001"),
+            )
+
+            result.success shouldBe true
+            simulatedService.getBalances().getValue(Asset.BTC).shouldBeEqualComparingTo(
+                initialBtc.subtract(BigDecimal("0.0001")),
+            )
+        }
+
         "should fail orders if balance is insufficient" {
             val configService = mockk<ConfigService>()
             every { configService.getConfig() } returns btcUsdConfig

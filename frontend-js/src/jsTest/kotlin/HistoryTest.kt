@@ -24,7 +24,6 @@ import kotlinx.browser.document
 import kotlinx.browser.localStorage
 import kotlinx.browser.window
 import kotlinx.coroutines.await
-import kotlinx.coroutines.delay
 import org.w3c.dom.*
 import org.w3c.dom.events.Event
 import kotlin.js.Promise
@@ -559,7 +558,7 @@ class HistoryTest : StringSpec() {
             try {
                 val older = loadAll(TimeRange.TWENTY_FOUR_HOURS.key)
                 val newest = loadAll(TimeRange.ALL.key)
-                delay(1)
+                awaitPromiseQueue()
 
                 resolveRange(
                     TimeRange.ALL.key,
@@ -617,7 +616,7 @@ class HistoryTest : StringSpec() {
             try {
                 val older = loadAll(TimeRange.TWENTY_FOUR_HOURS.key)
                 val newest = loadAll(TimeRange.ALL.key)
-                delay(1)
+                awaitPromiseQueue()
 
                 resolveRange(TimeRange.ALL.key)
                 newest.await()
@@ -630,7 +629,7 @@ class HistoryTest : StringSpec() {
                 currentRange shouldBe TimeRange.ALL.key
 
                 val current = loadAll(TimeRange.SEVEN_DAYS.key)
-                delay(1)
+                awaitPromiseQueue()
                 bodyRejectors.getValue(
                     "${Routes.API_HISTORY_SNAPSHOTS}?range=${TimeRange.SEVEN_DAYS.key}",
                 )(RuntimeException("current request failed"))
@@ -643,6 +642,102 @@ class HistoryTest : StringSpec() {
                     }
                 currentFailure?.message shouldBe "current request failed"
             } finally {
+                resetHistoryUiState()
+            }
+        }
+
+        "loadAll keeps the last successful range label when the selected range fails" {
+            resetHistoryUiState()
+            val container = document.createElement(HtmlTags.DIV)
+            container.innerHTML = TestDomBuilders.historyDom() +
+                "<div id=\"${HtmlIds.STAT_ATH_TITLE}\"></div>"
+            document.body!!.appendChild(container)
+            window.asDynamic().Chart = mockChartConstructor()
+            window.asDynamic().fetch = mockFetch { url ->
+                when {
+                    url.contains("snapshots") -> arrayOf(portfolioSnapshotToDynamic(mockSnapshotRecord()))
+                    url.contains("trades") -> arrayOf(tradeRecordToDynamic(mockTradeRecord()))
+                    url.contains("comparison") -> rebalancerComparisonToDynamic(mockAvailableComparison())
+                    else -> historyStatsToDynamic(mockPortfolioStatsRecord(allTimeHigh = "9000"))
+                }
+            }
+            registerHistoryGlobals()
+
+            try {
+                loadAll(TimeRange.ALL.key).await()
+                document.getElementById(HtmlIds.STAT_ATH_TITLE)?.textContent shouldBe ViewText.HISTORY_ALL_TIME_HIGH
+
+                window.asDynamic().fetch = { url: String ->
+                    if (url.contains("snapshots")) {
+                        Promise.reject(RuntimeException("range request failed"))
+                    } else {
+                        val response: dynamic = json()
+                        response.json = { Promise.resolve(json()) }
+                        Promise.resolve(response)
+                    }
+                }
+                val failed = loadAll(TimeRange.SEVEN_DAYS.key)
+                try {
+                    failed.await()
+                } catch (error: Throwable) {
+                    error.message shouldBe "range request failed"
+                }
+
+                currentRange shouldBe TimeRange.ALL.key
+                document.getElementById(HtmlIds.STAT_ATH_TITLE)?.textContent shouldBe ViewText.HISTORY_ALL_TIME_HIGH
+                document.getElementById(HtmlIds.STAT_ATH)?.textContent shouldBe "$9,000.00"
+            } finally {
+                document.body!!.removeChild(container)
+                resetHistoryUiState()
+            }
+        }
+
+        "loadAll updates all six summary cards for each range, including null slippage" {
+            resetHistoryUiState()
+            val container = document.createElement(HtmlTags.DIV)
+            container.innerHTML = TestDomBuilders.historyDom() +
+                "<div id=\"${HtmlIds.STAT_ATH_TITLE}\"></div>"
+            document.body!!.appendChild(container)
+            window.asDynamic().Chart = mockChartConstructor()
+            window.asDynamic().fetch = mockFetch { url ->
+                val suffix = if (url.contains("range=${TimeRange.ALL.key}")) "1" else "2"
+                when {
+                    url.contains("snapshots") -> arrayOf(portfolioSnapshotToDynamic(mockSnapshotRecord()))
+                    url.contains("trades") -> arrayOf(tradeRecordToDynamic(mockTradeRecord()))
+                    url.contains("comparison") -> rebalancerComparisonToDynamic(mockAvailableComparison())
+                    else -> historyStatsToDynamic(
+                        mockPortfolioStatsRecord(
+                            allTimeHigh = "100$suffix",
+                            totalTradesExecuted = if (suffix == "1") 11 else 22,
+                            totalVolumeTraded = "200$suffix",
+                            totalFeesPaid = "3$suffix",
+                            avgFeeRatePercent = "0.0$suffix",
+                            avgSlippagePercent = if (suffix == "1") "-0.2" else null,
+                        ),
+                    )
+                }
+            }
+            registerHistoryGlobals()
+
+            try {
+                loadAll(TimeRange.ALL.key).await()
+                document.getElementById(HtmlIds.STAT_ATH)?.textContent shouldBe "$1,001.00"
+                document.getElementById(HtmlIds.STAT_TOTAL_TRADES)?.textContent shouldBe "11"
+                document.getElementById(HtmlIds.STAT_TOTAL_VOLUME)?.textContent shouldBe "$2,001.00"
+                document.getElementById(HtmlIds.STAT_TOTAL_FEES)?.textContent shouldBe "$31.00"
+                document.getElementById(HtmlIds.STAT_AVG_FEE_RATE)?.textContent shouldBe "0.01%"
+                document.getElementById(HtmlIds.STAT_AVG_SLIPPAGE)?.textContent shouldBe "-0.2%"
+
+                loadAll(TimeRange.SEVEN_DAYS.key).await()
+                document.getElementById(HtmlIds.STAT_ATH)?.textContent shouldBe "$1,002.00"
+                document.getElementById(HtmlIds.STAT_TOTAL_TRADES)?.textContent shouldBe "22"
+                document.getElementById(HtmlIds.STAT_TOTAL_VOLUME)?.textContent shouldBe "$2,002.00"
+                document.getElementById(HtmlIds.STAT_TOTAL_FEES)?.textContent shouldBe "$32.00"
+                document.getElementById(HtmlIds.STAT_AVG_FEE_RATE)?.textContent shouldBe "0.02%"
+                document.getElementById(HtmlIds.STAT_AVG_SLIPPAGE)?.textContent shouldBe ViewText.PLACEHOLDER_DASHES
+                document.getElementById(HtmlIds.STAT_ATH_TITLE)?.textContent shouldBe ViewText.PERIOD_HIGH
+            } finally {
+                document.body!!.removeChild(container)
                 resetHistoryUiState()
             }
         }
@@ -827,6 +922,44 @@ class HistoryTest : StringSpec() {
                 document.getElementById(HtmlIds.COMPARISON_AVAILABILITY_MESSAGE)
                     ?.classList
                     ?.contains("visible") shouldBe true
+            } finally {
+                document.body!!.removeChild(container)
+                resetHistoryUiState()
+            }
+        }
+
+        "buildRebalancerComparisonChart rejects malformed branches and shows ESTIMATED confidence" {
+            val container = document.createElement(HtmlTags.DIV)
+            container.innerHTML = TestDomBuilders.chartsDom()
+            document.body!!.appendChild(container)
+            window.asDynamic().Chart = mockChartConstructor()
+            registerHistoryGlobals()
+            try {
+                val available = mockAvailableComparison()
+                val baseline = available.points.first()
+                val malformed = listOf(
+                    available.copy(confidence = "UNKNOWN"),
+                    available.copy(points = listOf(baseline)),
+                    available.copy(baselineTimestamp = null),
+                    available.copy(points = available.points.reversed()),
+                    available.copy(
+                        points = listOf(baseline.copy(differenceUSD = "1.0"), available.points[1]),
+                    ),
+                    available.copy(
+                        points = listOf(baseline, available.points[1].copy(rebalancerValueUSD = "bad")),
+                    ),
+                )
+                malformed.forEach { comparison ->
+                    buildRebalancerComparisonChart(comparison)
+                    document.getElementById(HtmlIds.COMPARISON_CHART_CONTENT)
+                        ?.classList
+                        ?.contains("hidden") shouldBe true
+                }
+
+                buildRebalancerComparisonChart(available.copy(confidence = "ESTIMATED"))
+                val confidenceBadge = document.getElementById(HtmlIds.COMPARISON_CONFIDENCE_BADGE)
+                confidenceBadge?.classList?.contains("visible") shouldBe true
+                confidenceBadge?.textContent shouldBe ViewText.COMPARISON_CONFIDENCE_ESTIMATED
             } finally {
                 document.body!!.removeChild(container)
                 resetHistoryUiState()

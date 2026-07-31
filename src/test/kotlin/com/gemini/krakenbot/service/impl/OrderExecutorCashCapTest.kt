@@ -174,6 +174,27 @@ class OrderExecutorCashCapTest : StringSpec() {
             }
         }
 
+        "should skip a buy when crypto flooring makes submitted notional smaller than dust" {
+            runTest {
+                krakenService.orderResultFactory = { pair, _, side, volume ->
+                    OrderResult(success = true, pair = pair, side = side, volume = volume)
+                }
+
+                orderExecutor.executeOrders(
+                    buyOrders = mapOf(Asset.BTC to BigDecimal("1.00")),
+                    sellOrders = emptyMap(),
+                    currentValuesUSD = mapOf(Asset.USD to BigDecimal("100.00")),
+                    prices = mapOf(Asset.BTC to BigDecimal("48523.97")),
+                    settings = TestFixtures.settings(dustThresholdUSD = 1.0),
+                    actionLog = mutableListOf(),
+                )
+
+                // $1.00 intent floors to 0.00002060 BTC, worth $0.999593782 below the $1 dust floor.
+                krakenService.executedOrders shouldBe emptyList()
+                coVerify(exactly = 0) { tradeHistoryService.saveTrade(any()) }
+            }
+        }
+
         "CQ-12-L3: caps a rounded zero-target liquidation to the available crypto balance" {
             runTest {
                 coEvery { tradeHistoryService.saveTrade(any()) } returns 71

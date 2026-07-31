@@ -25,7 +25,7 @@ import io.ktor.server.testing.testApplication
 import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
-import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
@@ -259,7 +259,10 @@ internal fun EvaluationScenariosTest.registerScenarios15To21() {
                 )
 
             coEvery { tradeHistoryService.getLatestSnapshot() } returns snap1
-            every { tradeHistoryService.getHistoryFlow() } returns flowOf(snap2, snap3)
+            val streamFlow = MutableSharedFlow<PortfolioSnapshot>(replay = 2, extraBufferCapacity = 1)
+            streamFlow.tryEmit(snap2).shouldBeTrue()
+            streamFlow.tryEmit(snap3).shouldBeTrue()
+            every { tradeHistoryService.getHistoryFlow() } returns streamFlow
 
             val clientSse = createClient { install(ClientSSE) }
             clientSse.sse(Routes.API_STATUS_STREAM) {
@@ -270,7 +273,7 @@ internal fun EvaluationScenariosTest.registerScenarios15To21() {
             }
 
             val evidence =
-                "SSE stream client successfully connected and received 3 snapshots sequentially:\n" +
+                "SSE stream client connected to a hot replaying flow and received 3 snapshots sequentially:\n" +
                     "- Snapshot 1 (Initial): SNAP1\n" +
                     "- Snapshot 2: SNAP2\n" +
                     "- Snapshot 3: SNAP3"
@@ -323,30 +326,39 @@ internal fun EvaluationScenariosTest.registerScenarios15To21() {
 
     "Scenario 20: Missing or Corrupt Stats File Recovery" {
         runTest {
+            val statsFile = evaluationTempPath("20-stats")
             val db = DatabaseConfig.init(TestFixtures.MEMORY_)
-            val statsRepo = SqlitePortfolioStatsRepositoryImpl(db, objectMapper, "test-scenario20-stats.json")
+            try {
+                val statsRepo = SqlitePortfolioStatsRepositoryImpl(db, objectMapper, statsFile.absolutePath)
 
-            // Nothing writes that stats file: load() takes the missing-file branch and must fall
-            // back to ATH 0 instead of failing, the same outcome as an unreadable file.
-            val stats = statsRepo.load()
-            val loadSuccess = stats.allTimeHigh.compareTo(BigDecimal.ZERO) == 0
+                statsFile.writeText("{not-json")
+                val malformedFailure = shouldThrow<IOException> { statsRepo.load() }
 
-            statsRepo.save(PortfolioStats(BigDecimal("5000.0")))
-            val reloadedStats = statsRepo.load()
-            val saveSuccess = reloadedStats.allTimeHigh.compareTo(BigDecimal("5000.0")) == 0
+                statsFile.delete()
+                val missingStats = statsRepo.load()
+                val missingFileSuccess = missingStats.allTimeHigh.compareTo(BigDecimal.ZERO) == 0
 
-            val success = loadSuccess && saveSuccess
-            val evidence =
-                "Corrupted JSON loaded successfully (recovered with default): $loadSuccess\n" +
-                    "New stats saved and verified correctly: $saveSuccess"
+                statsRepo.save(PortfolioStats(BigDecimal("5000.0")))
+                val reloadedStats = statsRepo.load()
+                val saveSuccess = reloadedStats.allTimeHigh.compareTo(BigDecimal("5000.0")) == 0
 
-            success.shouldBeTrue()
-            EvaluationScenariosTest.recordResult(
-                "Scenario 20",
-                "Missing or Corrupt Stats File Recovery",
-                TestFixtures.PASS,
-                evidence,
-            )
+                val success = malformedFailure.message != null && missingFileSuccess && saveSuccess
+                val evidence =
+                    "Malformed JSON failed closed with IOException: ${malformedFailure.message}\n" +
+                        "Missing stats file recovered with ATH 0: $missingFileSuccess\n" +
+                        "New stats saved and verified correctly: $saveSuccess"
+
+                success.shouldBeTrue()
+                EvaluationScenariosTest.recordResult(
+                    "Scenario 20",
+                    "Missing or Corrupt Stats File Recovery",
+                    TestFixtures.PASS,
+                    evidence,
+                )
+            } finally {
+                statsFile.delete()
+                File("${statsFile.absolutePath}.bak").delete()
+            }
         }
     }
 

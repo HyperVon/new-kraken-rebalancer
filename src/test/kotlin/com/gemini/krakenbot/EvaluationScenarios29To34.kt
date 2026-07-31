@@ -21,9 +21,7 @@ import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
-import java.io.File
 import java.math.BigDecimal
-import kotlin.math.abs
 
 internal fun EvaluationScenariosTest.registerScenarios29To34() {
     "Scenario 29: Extremely Large Dust Threshold" {
@@ -106,8 +104,8 @@ internal fun EvaluationScenariosTest.registerScenarios29To34() {
         runTest {
             val fakeKraken = FakeKrakenService()
             val mockConfig = mockk<ConfigService>(relaxed = true)
-            val testStatsFile = "scenario30-stats.json"
-            val f = File(testStatsFile)
+            val f = evaluationTempPath("30-stats")
+            val testStatsFile = f.absolutePath
             val db = DatabaseConfig.init(TestFixtures.MEMORY_)
             val statsRepo = SqlitePortfolioStatsRepositoryImpl(db, objectMapper, testStatsFile)
 
@@ -166,28 +164,20 @@ internal fun EvaluationScenariosTest.registerScenarios29To34() {
             }
             pm.performRebalanceCycle()
 
-            val lastSnapshot = capturedSnapshots.lastOrNull()
-            val drawdown = lastSnapshot?.drawdownPercent
-            val deployment = lastSnapshot?.fiatDeploymentPercent
-            val effectiveUsdTarget = lastSnapshot?.effectiveUsdTargetPercent
-            val btcSnapshot = lastSnapshot?.assets?.get(Asset.BTC)
-            val btcTarget = btcSnapshot?.targetPercent
+            val lastSnapshot = requireNotNull(capturedSnapshots.lastOrNull())
+            val btcSnapshot = requireNotNull(lastSnapshot.assets[Asset.BTC])
+            lastSnapshot.drawdownPercent.shouldBeEqualComparingTo(BigDecimal("10.0"))
+            lastSnapshot.fiatDeploymentPercent.shouldBeEqualComparingTo(BigDecimal("25.0"))
+            lastSnapshot.effectiveUsdTargetPercent.shouldBeEqualComparingTo(BigDecimal("15.0"))
+            btcSnapshot.targetPercent.shouldBeEqualComparingTo(BigDecimal("85.0"))
 
-            val drawdownPass = drawdown?.toDouble() == 10.0
-            val deploymentPass = deployment?.toDouble() == 25.0
-            val usdTargetPass = effectiveUsdTarget?.toDouble() == 15.0
-            val btcTargetPass = btcTarget?.toDouble() == 85.0
-
-            val success = drawdownPass && deploymentPass && usdTargetPass && btcTargetPass
             val evidence =
-                "Drawdown: $drawdown% (Pass: $drawdownPass)\n" +
-                    "Deployment Pct: $deployment% (Expected: 25.0%, Pass: $deploymentPass)\n" +
-                    "Effective USD Target: $effectiveUsdTarget% (Expected: 15.0%, Pass: $usdTargetPass)\n" +
-                    "Adjusted BTC Target: $btcTarget% (Expected: 85.0%, Pass: $btcTargetPass)"
+                "Drawdown: ${lastSnapshot.drawdownPercent}%\n" +
+                    "Deployment Pct: ${lastSnapshot.fiatDeploymentPercent}% (Expected: 25.0%)\n" +
+                    "Effective USD Target: ${lastSnapshot.effectiveUsdTargetPercent}% (Expected: 15.0%)\n" +
+                    "Adjusted BTC Target: ${btcSnapshot.targetPercent}% (Expected: 85.0%)"
 
-            if (f.exists()) f.delete()
-
-            success.shouldBeTrue()
+            f.delete()
             EvaluationScenariosTest.recordResult(
                 "Scenario 30",
                 "Exponent Curve Calibration for Fiat Deployment",
@@ -210,7 +200,13 @@ internal fun EvaluationScenariosTest.registerScenarios29To34() {
                 mapOf(Asset.USD to BigDecimal("190.00"))
             }
             fakeKraken.orderResultFactory = { pair, _, side, volume ->
-                OrderResult(success = true, pair = pair, side = side, volume = volume)
+                OrderResult(
+                    success = true,
+                    pair = pair,
+                    side = side,
+                    volume = volume,
+                    orderTxid = "FAKE-$pair-$side",
+                )
             }
 
             val settings =

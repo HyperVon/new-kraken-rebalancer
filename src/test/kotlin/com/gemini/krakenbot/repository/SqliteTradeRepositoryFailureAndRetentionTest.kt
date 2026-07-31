@@ -5,8 +5,12 @@ import com.gemini.krakenbot.config.DatabaseConfig
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.OrderSubmissionState
+import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.TradeSource
 import com.gemini.krakenbot.repository.impl.SqliteTradeRepositoryImpl
+import com.gemini.krakenbot.repository.table.ActionLogTable
+import com.gemini.krakenbot.repository.table.AssetSnapshotTable
+import com.gemini.krakenbot.repository.table.PortfolioSnapshotTable
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.shouldBe
@@ -17,6 +21,7 @@ import io.mockk.mockkStatic
 import io.mockk.unmockkStatic
 import kotlinx.coroutines.test.runTest
 import org.jetbrains.exposed.v1.jdbc.Database
+import org.jetbrains.exposed.v1.jdbc.selectAll
 import org.jetbrains.exposed.v1.jdbc.transactions.TransactionManager
 import org.jetbrains.exposed.v1.jdbc.transactions.transaction
 import org.jetbrains.exposed.v1.jdbc.transactions.transactionManager
@@ -192,6 +197,41 @@ class SqliteTradeRepositoryFailureAndRetentionTest : SqliteTradeRepositoryTestBa
                 val loaded = repository.load()
                 loaded.size shouldBe 1
                 loaded.first().timestamp shouldBe baseTime
+            }
+        }
+
+        "pruneSnapshotsOlderThan removes child rows with the parent" {
+            runTest {
+                val baseTime = Instant.now().truncatedTo(ChronoUnit.MILLIS)
+                val oldSnapshot = TestFixtures.emptySnapshot(
+                    timestamp = baseTime.minus(100, ChronoUnit.DAYS),
+                    totalValueUSD = BigDecimal("1000.00"),
+                ).copy(
+                    assets = mapOf(
+                        Asset.BTC to PortfolioSnapshot.AssetSnapshot(
+                            symbol = Asset(Asset.BTC),
+                            balance = BigDecimal("0.1"),
+                            price = BigDecimal("10000.00"),
+                            valueUSD = BigDecimal("1000.00"),
+                            targetPercent = BigDecimal("100.00"),
+                            currentPercent = BigDecimal("100.00"),
+                            deviationPercent = BigDecimal.ZERO,
+                            deviationUSD = BigDecimal.ZERO,
+                        ),
+                    ),
+                    actions = listOf("old action"),
+                )
+                val recentSnapshot = oldSnapshot.copy(timestamp = baseTime, actions = listOf("recent action"))
+                repository.saveSnapshot(oldSnapshot)
+                repository.saveSnapshot(recentSnapshot)
+
+                repository.pruneSnapshotsOlderThan(baseTime.minus(90, ChronoUnit.DAYS)) shouldBe 1
+
+                transaction(db) {
+                    PortfolioSnapshotTable.selectAll().count() shouldBe 1
+                    AssetSnapshotTable.selectAll().count() shouldBe 1
+                    ActionLogTable.selectAll().count() shouldBe 1
+                }
             }
         }
 

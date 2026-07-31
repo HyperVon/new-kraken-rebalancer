@@ -19,7 +19,10 @@ import com.gemini.krakenbot.view.util.CssClass.Query.STATUS_BADGE as STATUS_BADG
 internal var currentSortCol: Int = PrecisionConstants.DEFAULT_SORT_COL_INDEX
 internal var currentSortDir: String = CssClass.Utility.Asc.toString()
 
-private val CURRENCY_CLEANUP_REGEX = Regex("[$,%]")
+// Currency/percent decoration plus formatting whitespace (regular, non-breaking, and narrow
+// non-breaking spaces) is stripped before numeric parsing; JS Number("3,000.00") would otherwise
+// be NaN and sort as 0.0.
+private val CURRENCY_CLEANUP_REGEX = Regex("[\\$,%\\s\\u00A0\\u202F]")
 
 fun registerDashboardGlobals() {
     window.asDynamic().sortTable = { header: HTMLElement, colIdx: Int ->

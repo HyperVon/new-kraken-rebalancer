@@ -13,6 +13,9 @@ fun main() {
     document.addEventListener(HtmlEvents.HTMX_AFTER_SWAP, {
         updateAge()
         reapplySort()
+        if (document.getElementById(HtmlIds.TOTAL_ALLOCATED_DISPLAY) != null) {
+            initSettings()
+        }
     })
 
     // Tick the freshness chip so STREAM→STALE is detected even when no SSE snapshot triggers htmx:afterSwap.

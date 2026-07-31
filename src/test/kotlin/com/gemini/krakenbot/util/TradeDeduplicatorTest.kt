@@ -2,6 +2,7 @@ package com.gemini.krakenbot.util
 
 import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.OrderSubmissionState
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.model.TradeSource
 import io.kotest.core.spec.IsolationMode
@@ -684,6 +685,172 @@ class TradeDeduplicatorTest : StringSpec() {
 
             val dupes2 = TradeDeduplicator.findDuplicateTradeIds(listOf(apiFill, localAfterApiFill))
             dupes2 shouldContainExactly listOf(103)
+        }
+
+        "CQ-14-L4: startup cleanup preserves non-equivalent trade identity" {
+            val now = Instant.now()
+            val base = TestFixtures.tradeRecord(
+                timestamp = now,
+                pair = TestFixtures.XBTUSD,
+                side = TestFixtures.BUY_UPPER,
+                symbol = Asset.BTC,
+                volume = BigDecimal.ONE,
+                usdAmount = BigDecimal("50000.00"),
+                price = BigDecimal("50000.00"),
+                fee = BigDecimal("100.00"),
+                source = TradeSource.API_FILL,
+            )
+
+            val conflictingOrderIds = listOf(
+                base.copy(id = 120, orderTxid = "ORDER-ONE"),
+                base.copy(
+                    timestamp = now.plusMillis(100),
+                    id = 121,
+                    pair = TestFixtures.XXBTZUSD,
+                    orderTxid = "ORDER-TWO",
+                ),
+            )
+            TradeDeduplicator.findDuplicateTradeIds(conflictingOrderIds).isEmpty() shouldBe true
+
+            val conflictingLocalApiOrderIds = listOf(
+                base.copy(
+                    id = 128,
+                    source = TradeSource.LOCAL_ESTIMATE,
+                    fee = BigDecimal("10.00"),
+                    slippagePercent = BigDecimal.ZERO,
+                    orderTxid = "LOCAL-ORDER",
+                ),
+                base.copy(
+                    timestamp = now.plusMillis(100),
+                    id = 129,
+                    fee = BigDecimal("300.00"),
+                    orderTxid = "API-ORDER",
+                ),
+            )
+            TradeDeduplicator.findDuplicateTradeIds(conflictingLocalApiOrderIds).isEmpty() shouldBe true
+
+            val conflictingLocalApiTradeIds = listOf(
+                base.copy(
+                    id = 130,
+                    source = TradeSource.LOCAL_ESTIMATE,
+                    fee = BigDecimal("10.00"),
+                    slippagePercent = BigDecimal.ZERO,
+                    tradeId = "LOCAL-TRADE",
+                ),
+                base.copy(
+                    timestamp = now.plusMillis(100),
+                    id = 131,
+                    fee = BigDecimal("300.00"),
+                    tradeId = "API-TRADE",
+                ),
+            )
+            TradeDeduplicator.findDuplicateTradeIds(conflictingLocalApiTradeIds).isEmpty() shouldBe true
+
+            val distinctProvenance = listOf(
+                base.copy(id = 122, source = TradeSource.LEGACY_UNKNOWN),
+                base.copy(
+                    timestamp = now.plusMillis(100),
+                    id = 123,
+                    pair = TestFixtures.XXBTZUSD,
+                    source = TradeSource.API_FILL,
+                ),
+            )
+            TradeDeduplicator.findDuplicateTradeIds(distinctProvenance).isEmpty() shouldBe true
+
+            val differentStatus = listOf(
+                base.copy(
+                    id = 124,
+                    source = TradeSource.LOCAL_ESTIMATE,
+                    success = false,
+                    slippagePercent = BigDecimal.ZERO,
+                ),
+                base.copy(
+                    timestamp = now.plusMillis(100),
+                    id = 125,
+                    success = true,
+                ),
+            )
+            TradeDeduplicator.findDuplicateTradeIds(differentStatus).isEmpty() shouldBe true
+
+            val differentDryRunStatus = listOf(
+                base.copy(
+                    id = 126,
+                    source = TradeSource.LOCAL_ESTIMATE,
+                    dryRun = true,
+                    slippagePercent = BigDecimal.ZERO,
+                ),
+                base.copy(
+                    timestamp = now.plusMillis(100),
+                    id = 127,
+                    dryRun = false,
+                ),
+            )
+            TradeDeduplicator.findDuplicateTradeIds(differentDryRunStatus).isEmpty() shouldBe true
+        }
+
+        "startup cleanup preserves unresolved submissions and accepts matching identities" {
+            val now = Instant.now()
+            val base = TestFixtures.tradeRecord(
+                timestamp = now,
+                pair = TestFixtures.XBTUSD,
+                side = TestFixtures.BUY_UPPER,
+                symbol = Asset.BTC,
+                volume = BigDecimal.ONE,
+                usdAmount = BigDecimal("50000.00"),
+                price = BigDecimal("50000.00"),
+                fee = BigDecimal("100.00"),
+                source = TradeSource.API_FILL,
+            )
+
+            TradeDeduplicator.findDuplicateTradeIds(
+                listOf(
+                    base.copy(id = 140, submissionState = OrderSubmissionState.PENDING),
+                    base.copy(id = 141, pair = TestFixtures.XXBTZUSD),
+                ),
+            ).isEmpty() shouldBe true
+            TradeDeduplicator.findDuplicateTradeIds(
+                listOf(
+                    base.copy(id = 142),
+                    base.copy(id = 143, pair = TestFixtures.XXBTZUSD, submissionState = OrderSubmissionState.UNCERTAIN),
+                ),
+            ).isEmpty() shouldBe true
+
+            TradeDeduplicator.findDuplicateTradeIds(
+                listOf(
+                    base.copy(id = 144, tradeId = "same-trade", orderTxid = "same-order"),
+                    base.copy(
+                        id = 145,
+                        pair = TestFixtures.XXBTZUSD,
+                        tradeId = "same-trade",
+                        orderTxid = "same-order",
+                    ),
+                ),
+            ) shouldContainExactly listOf(145)
+        }
+
+        "startup cleanup treats blank trade and order identifiers as absent" {
+            val now = Instant.now()
+            val base = TestFixtures.tradeRecord(
+                timestamp = now,
+                pair = TestFixtures.XBTUSD,
+                side = TestFixtures.BUY_UPPER,
+                symbol = Asset.BTC,
+                volume = BigDecimal.ONE,
+                usdAmount = BigDecimal("50000.00"),
+                price = BigDecimal("50000.00"),
+                fee = BigDecimal("100.00"),
+                source = TradeSource.API_FILL,
+                id = 150,
+                tradeId = " ",
+                orderTxid = " ",
+            )
+            val alias = base.copy(
+                timestamp = now.plusMillis(100),
+                pair = TestFixtures.XXBTZUSD,
+                id = 151,
+            )
+
+            TradeDeduplicator.findDuplicateTradeIds(listOf(base, alias)) shouldContainExactly listOf(151)
         }
     }
 }

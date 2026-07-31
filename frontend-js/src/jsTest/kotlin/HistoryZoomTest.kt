@@ -219,8 +219,10 @@ class HistoryZoomTest : StringSpec() {
                 """.trimIndent()
             document.body!!.appendChild(container)
             var updateCalls = 0
+            var capturedOptions: dynamic = null
             // No zoomScale on the mock — covers the options.scales.min/max + update() fallback path.
             window.asDynamic().Chart = { _: dynamic, config: dynamic ->
+                capturedOptions = config.options
                 jsObject {
                     data = config.data
                     options = config.options
@@ -253,6 +255,8 @@ class HistoryZoomTest : StringSpec() {
                 scrubber.value = "0"
                 scrubber.dispatchEvent(Event(HtmlEvents.INPUT))
                 updateCalls shouldBe 1
+                capturedOptions.scales.x.min.toString().toDouble() shouldBe 0.0
+                capturedOptions.scales.x.max.toString().toDouble() shouldBe 20.0
             } finally {
                 document.body!!.removeChild(container)
                 resetHistoryUiState()
@@ -266,6 +270,57 @@ class HistoryZoomTest : StringSpec() {
             val options = getClonedChartOptions()
             val callback = options.plugins.zoom.zoom[ChartProps.ON_ZOOM_COMPLETE]
             (callback != null && callback != undefined) shouldBe true
+        }
+
+        "captured zoom completion callback re-enables the scrubber after drag or wheel zoom" {
+            resetHistoryUiState()
+            val container = document.createElement(HtmlTags.DIV)
+            container.innerHTML =
+                """
+                <canvas id="${HtmlIds.PORTFOLIO_VALUE_CHART}"></canvas>
+                ${TestDomBuilders.scrubberDom(disabled = true)}
+                """.trimIndent()
+            document.body!!.appendChild(container)
+            var capturedOptions: dynamic = null
+            window.asDynamic().Chart = { _: dynamic, config: dynamic ->
+                capturedOptions = config.options
+                jsObject {
+                    data = config.data
+                    options = config.options
+                    canvas = document.getElementById(HtmlIds.PORTFOLIO_VALUE_CHART)
+                    destroy = {}
+                    isDatasetVisible = { _: Int -> true }
+                    getInitialScaleBounds = { json("x" to json("min" to 0.0, "max" to 100.0)) }
+                    scales = json("x" to json("min" to 20.0, "max" to 40.0))
+                }
+            }
+            registerHistoryGlobals()
+            try {
+                val points = arrayOf(
+                    json("x" to 0.0, "y" to 1.0),
+                    json("x" to 100.0, "y" to 2.0),
+                )
+                createOrUpdate(
+                    HtmlIds.PORTFOLIO_VALUE_CHART,
+                    createLineChartConfig(
+                        arrayOf(json(ChartProps.LABEL to ViewText.TOTAL_PORTFOLIO, ChartProps.DATA to points)),
+                        getClonedChartOptions(),
+                    ),
+                )
+
+                val scrubber = document.querySelector(CssClass.Query.CHART_SCRUBBERS) as HTMLInputElement
+                scrubber.disabled = true
+                val callback = capturedOptions.plugins.zoom.zoom[ChartProps.ON_ZOOM_COMPLETE]
+                callback(
+                    json(
+                        "chart" to json("canvas" to document.getElementById(HtmlIds.PORTFOLIO_VALUE_CHART)),
+                    ),
+                )
+                scrubber.disabled shouldBe false
+            } finally {
+                document.body!!.removeChild(container)
+                resetHistoryUiState()
+            }
         }
 
         "syncScrubberFromZoomContext enables scrubber after zoom context" {

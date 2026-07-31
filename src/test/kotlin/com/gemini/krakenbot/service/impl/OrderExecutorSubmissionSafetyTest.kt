@@ -75,6 +75,100 @@ class OrderExecutorSubmissionSafetyTest : StringSpec() {
             }
         }
 
+        "live success without an order txid becomes blocking UNCERTAIN" {
+            runTest {
+                coEvery { tradeHistoryService.saveTrade(any()) } returns 63
+                coEvery { tradeHistoryService.hasPendingSubmissions() } returnsMany listOf(false, true)
+                krakenService.orderResultFactory = { pair, _, side, volume ->
+                    OrderResult(
+                        success = true,
+                        pair = pair,
+                        side = side,
+                        volume = volume,
+                    )
+                }
+                val settings = TestFixtures.settings(dryRun = false)
+
+                orderExecutor.executeOrders(
+                    buyOrders = linkedMapOf(
+                        Asset.BTC to BigDecimal("25.00"),
+                        Asset.ETH to BigDecimal("25.00"),
+                    ),
+                    sellOrders = emptyMap(),
+                    currentValuesUSD = mapOf(Asset.USD to BigDecimal("100.00")),
+                    prices = mapOf(
+                        Asset.BTC to BigDecimal("1000.00"),
+                        Asset.ETH to BigDecimal("1000.00"),
+                    ),
+                    settings = settings,
+                    actionLog = mutableListOf(),
+                    cycleId = "missing-txid-cycle",
+                )
+                orderExecutor.executeOrders(
+                    buyOrders = mapOf(Asset.ETH to BigDecimal("25.00")),
+                    sellOrders = emptyMap(),
+                    currentValuesUSD = mapOf(Asset.USD to BigDecimal("100.00")),
+                    prices = mapOf(Asset.ETH to BigDecimal("1000.00")),
+                    settings = settings,
+                    actionLog = mutableListOf(),
+                    cycleId = "blocked-after-missing-txid",
+                )
+
+                krakenService.executedOrders.size shouldBe 1
+                coVerify(exactly = 1) {
+                    tradeHistoryService.updateTrade(
+                        any(),
+                        match {
+                            it.id == 63 &&
+                                !it.success &&
+                                it.submissionState == OrderSubmissionState.UNCERTAIN &&
+                                it.errorMessage == "Order submission outcome is uncertain"
+                        },
+                    )
+                }
+            }
+        }
+
+        "live success with an order txid resolves and permits the remaining batch" {
+            runTest {
+                coEvery { tradeHistoryService.saveTrade(any()) } returnsMany listOf(64, 65)
+                coEvery { tradeHistoryService.hasPendingSubmissions() } returns false
+                krakenService.orderResultFactory = { pair, _, side, volume ->
+                    OrderResult(
+                        success = true,
+                        pair = pair,
+                        side = side,
+                        volume = volume,
+                        orderTxid = "OID-$side",
+                    )
+                }
+
+                orderExecutor.executeOrders(
+                    buyOrders = linkedMapOf(
+                        Asset.BTC to BigDecimal("25.00"),
+                        Asset.ETH to BigDecimal("25.00"),
+                    ),
+                    sellOrders = emptyMap(),
+                    currentValuesUSD = mapOf(Asset.USD to BigDecimal("100.00")),
+                    prices = mapOf(
+                        Asset.BTC to BigDecimal("1000.00"),
+                        Asset.ETH to BigDecimal("1000.00"),
+                    ),
+                    settings = TestFixtures.settings(dryRun = false),
+                    actionLog = mutableListOf(),
+                    cycleId = "identified-live-cycle",
+                )
+
+                krakenService.executedOrders.size shouldBe 2
+                coVerify(exactly = 2) {
+                    tradeHistoryService.updateTrade(
+                        any(),
+                        match { it.success && it.submissionState == null },
+                    )
+                }
+            }
+        }
+
         "CQ-12-2: live IOException marks the intent uncertain, rethrows, and blocks retry" {
             runTest {
                 coEvery { tradeHistoryService.saveTrade(any()) } returns 51
@@ -260,6 +354,28 @@ class OrderExecutorSubmissionSafetyTest : StringSpec() {
                         },
                     )
                 }
+            }
+        }
+
+        "failed PENDING persistence prevents any live exchange call" {
+            runTest {
+                val persistenceFailure = IllegalStateException("trade journal unavailable")
+                coEvery { tradeHistoryService.hasPendingSubmissions() } returns false
+                coEvery { tradeHistoryService.saveTrade(any()) } throws persistenceFailure
+
+                shouldThrow<IllegalStateException> {
+                    orderExecutor.executeOrders(
+                        buyOrders = mapOf(Asset.BTC to BigDecimal("25.00")),
+                        sellOrders = emptyMap(),
+                        currentValuesUSD = mapOf(Asset.USD to BigDecimal("100.00")),
+                        prices = mapOf(Asset.BTC to BigDecimal("1000.00")),
+                        settings = TestFixtures.settings(dryRun = false),
+                        actionLog = mutableListOf(),
+                        cycleId = "pending-save-failure",
+                    )
+                }
+
+                krakenService.executedOrders shouldBe emptyList()
             }
         }
 

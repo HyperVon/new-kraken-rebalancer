@@ -394,6 +394,155 @@ class SqliteTradeRepositoryImplTest : SqliteTradeRepositoryTestBase() {
             }
         }
 
+        "CQ-14-L4: repository cleanup preserves conflicting trade identity" {
+            runTest {
+                val now = Instant.now().truncatedTo(ChronoUnit.MILLIS)
+                val base = TestFixtures.tradeRecord(
+                    timestamp = now,
+                    pair = TestFixtures.XBTUSD,
+                    side = TestFixtures.BUY,
+                    symbol = Asset.BTC,
+                    volume = BigDecimal.ONE,
+                    usdAmount = BigDecimal("50000.00"),
+                    price = BigDecimal("50000.00"),
+                    fee = BigDecimal("100.00"),
+                )
+                val validLocalEstimate = base.copy(
+                    source = TradeSource.LOCAL_ESTIMATE,
+                    slippagePercent = BigDecimal.ZERO,
+                    orderTxid = "VALID-ORDER",
+                )
+                val validApiFill = base.copy(
+                    timestamp = now.plusMillis(100),
+                    source = TradeSource.API_FILL,
+                    fee = BigDecimal("300.00"),
+                    orderTxid = "VALID-ORDER",
+                    tradeId = "VALID-TRADE",
+                )
+                val conflictingLocalApiOrderIds = listOf(
+                    base.copy(
+                        timestamp = now.plusSeconds(3_600),
+                        source = TradeSource.LOCAL_ESTIMATE,
+                        fee = BigDecimal("10.00"),
+                        slippagePercent = BigDecimal.ZERO,
+                        orderTxid = "LOCAL-CONFLICTING-ORDER",
+                    ),
+                    base.copy(
+                        timestamp = now.plusSeconds(3_600).plusMillis(100),
+                        source = TradeSource.API_FILL,
+                        fee = BigDecimal("300.00"),
+                        orderTxid = "API-CONFLICTING-ORDER",
+                    ),
+                )
+                val conflictingLocalApiTradeIds = listOf(
+                    base.copy(
+                        timestamp = now.plusSeconds(4_200),
+                        source = TradeSource.LOCAL_ESTIMATE,
+                        fee = BigDecimal("10.00"),
+                        slippagePercent = BigDecimal.ZERO,
+                        tradeId = "LOCAL-CONFLICTING-TRADE",
+                    ),
+                    base.copy(
+                        timestamp = now.plusSeconds(4_200).plusMillis(100),
+                        source = TradeSource.API_FILL,
+                        fee = BigDecimal("300.00"),
+                        tradeId = "API-CONFLICTING-TRADE",
+                    ),
+                )
+                val conflictingOrderTxids = listOf(
+                    base.copy(
+                        timestamp = now.plusSeconds(600),
+                        source = TradeSource.API_FILL,
+                        orderTxid = "CONFLICTING-ORDER-ONE",
+                    ),
+                    base.copy(
+                        timestamp = now.plusSeconds(600).plusMillis(100),
+                        pair = TestFixtures.XXBTZUSD,
+                        source = TradeSource.API_FILL,
+                        orderTxid = "CONFLICTING-ORDER-TWO",
+                    ),
+                )
+                val conflictingTradeIds = listOf(
+                    base.copy(
+                        timestamp = now.plusSeconds(1_200),
+                        source = TradeSource.API_FILL,
+                        tradeId = "CONFLICTING-TRADE-ONE",
+                    ),
+                    base.copy(
+                        timestamp = now.plusSeconds(1_200).plusMillis(100),
+                        pair = TestFixtures.XXBTZUSD,
+                        source = TradeSource.API_FILL,
+                        tradeId = "CONFLICTING-TRADE-TWO",
+                    ),
+                )
+                val differentStatus = listOf(
+                    base.copy(
+                        timestamp = now.plusSeconds(1_800),
+                        source = TradeSource.LOCAL_ESTIMATE,
+                        success = false,
+                        slippagePercent = BigDecimal.ZERO,
+                    ),
+                    base.copy(
+                        timestamp = now.plusSeconds(1_800).plusMillis(100),
+                        source = TradeSource.API_FILL,
+                    ),
+                )
+                val differentDryRunStatus = listOf(
+                    base.copy(
+                        timestamp = now.plusSeconds(2_400),
+                        source = TradeSource.LOCAL_ESTIMATE,
+                        dryRun = true,
+                        slippagePercent = BigDecimal.ZERO,
+                    ),
+                    base.copy(
+                        timestamp = now.plusSeconds(2_400).plusMillis(100),
+                        source = TradeSource.API_FILL,
+                    ),
+                )
+                val distinctProvenance = listOf(
+                    base.copy(
+                        timestamp = now.plusSeconds(3_000),
+                        source = TradeSource.LEGACY_UNKNOWN,
+                    ),
+                    base.copy(
+                        timestamp = now.plusSeconds(3_000).plusMillis(100),
+                        pair = TestFixtures.XXBTZUSD,
+                        source = TradeSource.API_FILL,
+                    ),
+                )
+
+                listOf(validLocalEstimate, validApiFill)
+                    .plus(conflictingLocalApiOrderIds)
+                    .plus(conflictingLocalApiTradeIds)
+                    .plus(conflictingOrderTxids)
+                    .plus(conflictingTradeIds)
+                    .plus(differentStatus)
+                    .plus(differentDryRunStatus)
+                    .plus(distinctProvenance)
+                    .forEach { repository.saveTrade(it) }
+
+                repository.cleanupDuplicateTrades()
+
+                val remaining = repository.getTradesInRange(now.minusSeconds(1), now.plusSeconds(4_201))
+                remaining.size shouldBe 15
+                remaining.any {
+                    it.source == TradeSource.LOCAL_ESTIMATE && it.orderTxid == "VALID-ORDER"
+                } shouldBe false
+                remaining.any { it.tradeId == "VALID-TRADE" } shouldBe true
+                remaining.any { it.orderTxid == "LOCAL-CONFLICTING-ORDER" } shouldBe true
+                remaining.any { it.orderTxid == "API-CONFLICTING-ORDER" } shouldBe true
+                remaining.any { it.tradeId == "LOCAL-CONFLICTING-TRADE" } shouldBe true
+                remaining.any { it.tradeId == "API-CONFLICTING-TRADE" } shouldBe true
+                remaining.any { it.orderTxid == "CONFLICTING-ORDER-ONE" } shouldBe true
+                remaining.any { it.orderTxid == "CONFLICTING-ORDER-TWO" } shouldBe true
+                remaining.any { it.tradeId == "CONFLICTING-TRADE-ONE" } shouldBe true
+                remaining.any { it.tradeId == "CONFLICTING-TRADE-TWO" } shouldBe true
+                remaining.count { !it.success } shouldBe 1
+                remaining.count { it.dryRun } shouldBe 1
+                remaining.count { it.source == TradeSource.LEGACY_UNKNOWN } shouldBe 1
+            }
+        }
+
         "cleanupDuplicateTrades exercises all duplicate scenarios and branches" {
             runTest {
                 val now = Instant.now().truncatedTo(ChronoUnit.MILLIS)

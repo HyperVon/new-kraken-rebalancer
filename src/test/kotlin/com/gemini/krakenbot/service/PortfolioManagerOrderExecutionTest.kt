@@ -14,6 +14,7 @@ import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.booleans.shouldBeTrue
+import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.shouldBe
 import io.mockk.coEvery
 import io.mockk.every
@@ -273,14 +274,18 @@ class PortfolioManagerOrderExecutionTest : StringSpec() {
                     sellOrders = emptyMap(),
                     currentValuesUSD = mapOf(Asset.USD to BigDecimal("10.00")),
                     prices = mapOf(Asset.BTC to BigDecimal("6.00")),
-                    settings = TestFixtures.settings(dryRun = false, simulation = true),
+                    settings = TestFixtures.settings(
+                        dryRun = false,
+                        dustThresholdUSD = 0.99,
+                        simulation = true,
+                    ),
                     actionLog = actionLog,
                     cycleId = "buy-volume-floor",
                     availableBalances = null,
                 )
 
                 val order = krakenService.executedOrders.single()
-                order.volume shouldBe BigDecimal("0.16666666")
+                order.volume.shouldBeEqualComparingTo(BigDecimal("0.16666666"))
                 (order.volume.multiply(BigDecimal("6.00")) <= BigDecimal("1.00")).shouldBeTrue()
             }
         }

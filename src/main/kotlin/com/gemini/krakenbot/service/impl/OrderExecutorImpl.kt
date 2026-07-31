@@ -229,7 +229,8 @@ class OrderExecutorImpl(
                 requestedVolume
             }
         if (volume.signum() <= 0) return null
-        val effectiveUsdAmount = if (side == OrderSide.SELL) volume.multiply(price) else usdAmount
+        // Compare dust against the notional actually submitted after crypto-volume flooring.
+        val effectiveUsdAmount = volume.multiply(price)
         if (effectiveUsdAmount < BigDecimal.valueOf(settings.dustThresholdUSD)) {
             log.info("Skipping dust {} for {} after volume sizing ($ {})", side.apiValue, symbol, effectiveUsdAmount)
             actionLog.add(ActionLogFormatter.formatSkippedDust(side, symbol, effectiveUsdAmount))
@@ -271,8 +272,21 @@ class OrderExecutorImpl(
             markSubmissionFailureWithoutMasking(pending, pendingId, e)
             throw e
         }
+        val resolvedResult = if (isLiveSubmission && result.success && result.orderTxid.isNullOrBlank()) {
+            OrderResult(
+                success = false,
+                pair = result.pair,
+                side = result.side,
+                volume = result.volume,
+                dryRun = result.dryRun,
+                errorMessage = ORDER_SUBMISSION_FAILED_UNCERTAIN,
+                submissionUncertain = true,
+            )
+        } else {
+            result
+        }
         logOrderResult(
-            result = result,
+            result = resolvedResult,
             actionLog = actionLog,
             symbol = symbol,
             volume = volume,
@@ -280,7 +294,7 @@ class OrderExecutorImpl(
             side = side,
         )
         val resolved = TradeCalculator.createTradeRecord(
-            result = result,
+            result = resolvedResult,
             symbol = symbol,
             pair = pair,
             side = side.uppercaseName,
@@ -291,7 +305,7 @@ class OrderExecutorImpl(
         ).copy(
             id = pendingId,
             clientOrderId = clOrdId,
-            submissionState = if (isLiveSubmission && result.submissionUncertain) {
+            submissionState = if (isLiveSubmission && resolvedResult.submissionUncertain) {
                 OrderSubmissionState.UNCERTAIN
             } else {
                 null
@@ -299,7 +313,7 @@ class OrderExecutorImpl(
         )
         tradeHistoryService.updateTrade(pending.copy(id = pendingId), resolved)
         cycleTradeIds.add(pendingId)
-        return result
+        return resolvedResult
     }
 
     private fun shouldAbortAfterFailure(result: OrderResult?): Boolean = result?.submissionUncertain == true

@@ -33,6 +33,8 @@ import kotlinx.coroutines.test.runTest
 import java.io.File
 import java.io.IOException
 import java.nio.file.Files
+import java.nio.file.attribute.PosixFileAttributeView
+import java.nio.file.attribute.PosixFilePermission
 
 class ConfigServiceTest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
@@ -40,6 +42,15 @@ class ConfigServiceTest : StringSpec() {
     private lateinit var configService: ConfigService
     private lateinit var objectMapper: ObjectMapper
     private lateinit var tempFile: File
+
+    private val ownerOnlyPermissions = setOf(
+        PosixFilePermission.OWNER_READ,
+        PosixFilePermission.OWNER_WRITE,
+    )
+    private val permissivePermissions = ownerOnlyPermissions + setOf(
+        PosixFilePermission.GROUP_READ,
+        PosixFilePermission.OTHERS_READ,
+    )
 
     private val nonFiniteSettingMutations =
         listOf<Pair<String, (Settings, Double) -> Settings>>(
@@ -117,6 +128,15 @@ class ConfigServiceTest : StringSpec() {
             configService.getConfig().allocations.first().symbol.value shouldBe Asset.USD
         }
 
+        "loadConfig removes a stale temporary credential file" {
+            val staleTempFile = File("${tempFile.absolutePath}.tmp")
+            staleTempFile.writeText("stale credential material")
+
+            ConfigServiceImpl(objectMapper, tempFile.absolutePath)
+
+            staleTempFile.exists() shouldBe false
+        }
+
         "loadConfig_FileNotFound" {
             val missingFile = File(tempFile.parent, "missing.json")
             val ex = shouldThrow<RuntimeException> {
@@ -148,6 +168,47 @@ class ConfigServiceTest : StringSpec() {
             readBack.allocations.size shouldBe 2
             readBack.kraken.apiKey.value shouldBe "k"
             readBack.kraken.privateKey.value shouldBe "s"
+        }
+
+        "updateConfig canonicalizes allocation case and Kraken aliases before persistence" {
+            configService.updateConfig(
+                configService.getConfig().copy(
+                    allocations = listOf(
+                        Allocation("usd", 20.0),
+                        Allocation("xbt", 40.0),
+                        Allocation("doge", 40.0),
+                    ),
+                ),
+            )
+
+            configService.getConfig().allocations.map { it.symbol.value } shouldBe
+                listOf(Asset.USD, Asset.BTC, Asset.DOGE)
+            objectMapper.readValue(tempFile, AppConfig::class.java).allocations.map { it.symbol.value } shouldBe
+                listOf(Asset.USD, Asset.BTC, Asset.DOGE)
+        }
+
+        "updateConfig rejects allocation aliases that collide after canonicalization" {
+            assertAllocationsRejected(
+                Allocation(Asset.BTC, 25.0),
+                Allocation(Asset.XBT, 25.0),
+                Allocation(Asset.USD, 50.0),
+            )
+            assertAllocationsRejected(
+                Allocation(Asset.DOGE, 25.0),
+                Allocation(Asset.XDG, 25.0),
+                Allocation(Asset.USD, 50.0),
+            )
+        }
+
+        "updateConfig persists the independent simulation flag through disk reload" {
+            val updated = configService.getConfig().copy(
+                settings = configService.getConfig().settings.copy(simulation = true, dryRun = false),
+            )
+
+            configService.updateConfig(updated)
+
+            ConfigServiceImpl(objectMapper, tempFile.absolutePath).getConfig().settings.simulation shouldBe true
+            ConfigServiceImpl(objectMapper, tempFile.absolutePath).getConfig().settings.dryRun shouldBe false
         }
 
         "execution session defers both updates and file reloads until the session ends" {
@@ -229,6 +290,28 @@ class ConfigServiceTest : StringSpec() {
             reloaded.getConfig().settings.dryRun shouldBe false
         }
 
+        "updateConfig makes the final credential config owner-only on POSIX" {
+            if (Files.getFileAttributeView(tempFile.toPath(), PosixFileAttributeView::class.java) != null) {
+                Files.setPosixFilePermissions(tempFile.toPath(), permissivePermissions)
+                configService.updateConfig(
+                    configService.getConfig().copy(
+                        settings = configService.getConfig().settings.copy(loopDelaySeconds = 61L),
+                    ),
+                )
+
+                Files.getPosixFilePermissions(tempFile.toPath()) shouldBe ownerOnlyPermissions
+            }
+        }
+
+        "loadConfig hardens an existing credential config owner-only on POSIX" {
+            if (Files.getFileAttributeView(tempFile.toPath(), PosixFileAttributeView::class.java) != null) {
+                Files.setPosixFilePermissions(tempFile.toPath(), permissivePermissions)
+                ConfigServiceImpl(objectMapper, tempFile.absolutePath)
+
+                Files.getPosixFilePermissions(tempFile.toPath()) shouldBe ownerOnlyPermissions
+            }
+        }
+
         "updateConfig_PersistsUserChangedCredentials" {
             val oldConfig = configService.getConfig()
             val updated = oldConfig.copy(
@@ -308,6 +391,24 @@ class ConfigServiceTest : StringSpec() {
             )
         }
 
+        "validateConfig_RejectsNonFiniteAllocationTargets" {
+            val originalConfig = configService.getConfig()
+            val originalDiskContent = tempFile.readText()
+            listOf(Double.NaN, Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY).forEach { value ->
+                withClue("targetPercent=$value") {
+                    shouldThrow<InvalidConfigurationException> {
+                        configService.updateConfig(
+                            originalConfig.copy(
+                                allocations = listOf(Allocation(Asset.USD, value)),
+                            ),
+                        )
+                    }
+                }
+                configService.getConfig() shouldBe originalConfig
+                tempFile.readText() shouldBe originalDiskContent
+            }
+        }
+
         "validateConfig_BadSettings" {
             val settings = configService.getConfig().settings
             assertSettingsRejected(
@@ -350,6 +451,78 @@ class ConfigServiceTest : StringSpec() {
 
             shouldThrow<RuntimeException> {
                 configService.updateConfig(validConfig)
+            }
+        }
+
+        "updateConfig removes the temp file after a non-IO serialization failure" {
+            val mockMapper = mockk<ObjectMapper>(relaxed = true)
+            val mockWriter = mockk<ObjectWriter>(relaxed = true)
+            val validConfig =
+                TestFixtures.config(
+                    kraken = KrakenCredentials("a", "b"),
+                    settings = TestFixtures.settings(loopDelaySeconds = 1, deviationTriggerPercent = 1.0),
+                    allocations = listOf(Allocation(Asset.USD, 100.0)),
+                )
+            every { mockMapper.writerWithDefaultPrettyPrinter() } returns mockWriter
+            every {
+                mockMapper.readValue(
+                    any<String>(),
+                    AppConfig::class.java,
+                )
+            } returns validConfig
+            every {
+                mockWriter.writeValue(
+                    any<File>(),
+                    any<Any>(),
+                )
+            } answers {
+                firstArg<File>().writeText("temporary credential material")
+                throw IllegalStateException("serialization failed")
+            }
+
+            configService = ConfigServiceImpl(mockMapper, tempFile.absolutePath)
+
+            shouldThrow<IllegalStateException> {
+                configService.updateConfig(validConfig)
+            }
+            File("${tempFile.absolutePath}.tmp").exists() shouldBe false
+        }
+
+        "writeConfigAtomically uses owner-only temp permissions before serialization on POSIX" {
+            if (Files.getFileAttributeView(tempFile.toPath(), PosixFileAttributeView::class.java) != null) {
+                val mockMapper = mockk<ObjectMapper>(relaxed = true)
+                val mockWriter = mockk<ObjectWriter>(relaxed = true)
+                val validConfig =
+                    TestFixtures.config(
+                        kraken = KrakenCredentials("a", "b"),
+                        settings = TestFixtures.settings(loopDelaySeconds = 1, deviationTriggerPercent = 1.0),
+                        allocations = listOf(Allocation(Asset.USD, 100.0)),
+                    )
+                var observedPermissions: Set<PosixFilePermission>? = null
+                every { mockMapper.writerWithDefaultPrettyPrinter() } returns mockWriter
+                every {
+                    mockMapper.readValue(
+                        any<String>(),
+                        AppConfig::class.java,
+                    )
+                } returns validConfig
+                every {
+                    mockWriter.writeValue(
+                        any<File>(),
+                        any<Any>(),
+                    )
+                } answers {
+                    observedPermissions = Files.getPosixFilePermissions(firstArg<File>().toPath())
+                    throw IOException("write failed")
+                }
+
+                configService = ConfigServiceImpl(mockMapper, tempFile.absolutePath)
+
+                shouldThrow<RuntimeException> {
+                    configService.updateConfig(validConfig)
+                }
+                observedPermissions shouldBe ownerOnlyPermissions
+                File("${tempFile.absolutePath}.tmp").exists() shouldBe false
             }
         }
 

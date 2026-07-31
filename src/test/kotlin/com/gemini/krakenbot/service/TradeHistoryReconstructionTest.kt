@@ -264,6 +264,77 @@ class TradeHistoryReconstructionTest : TradeHistoryServiceTestBase() {
             }
         }
 
+        listOf(
+            "cancellation" to CancellationException("cancel snapshot save"),
+            "failure" to IllegalStateException("snapshot save failed"),
+        ).forEach { (kind, saveFailure) ->
+            "CQ-14-2: reconstruction propagates $kind while saving snapshots" {
+                runTest {
+                    val allocations = listOf(
+                        Allocation(Asset.BTC, 50.0),
+                        Allocation(TestFixtures.USD, 50.0),
+                    )
+                    every { configService.getConfig() } returns AppConfig(
+                        kraken = KrakenCredentials(
+                            TestFixtures.TRADE_HISTORY_API_KEY,
+                            TestFixtures.TRADE_HISTORY_API_SECRET,
+                        ),
+                        settings = TestFixtures.settings(
+                            dryRun = false,
+                            loopDelaySeconds = 60,
+                            deviationTriggerPercent = 5.0,
+                            dustThresholdUSD = 5.0,
+                        ),
+                        allocations = allocations,
+                    )
+                    coEvery { repository.load() } returns emptyList()
+                    val balances = mapOf(
+                        Asset.BTC to BigDecimal.ONE,
+                        TestFixtures.USD to BigDecimal("1000.00"),
+                    )
+                    coEvery { krakenService.getBalances() } returns balances
+                    every { portfolioAnalyzer.resolveBalance(Asset.BTC, balances) } returns BigDecimal.ONE
+                    every {
+                        portfolioAnalyzer.resolveBalance(TestFixtures.USD, balances)
+                    } returns BigDecimal("1000.00")
+                    coEvery { krakenService.getTickerPrices(any()) } returns
+                        mapOf(TestFixtures.BTCUSD to BigDecimal("30000.00"))
+                    coEvery { krakenService.getOHLC(any(), any(), any()) } returns emptyList()
+                    coEvery { repository.getTradesInRange(any(), any()) } returns listOf(
+                        TestFixtures.tradeRecord(
+                            timestamp = Instant.now().minus(1, ChronoUnit.DAYS),
+                            pair = TestFixtures.BTCUSD,
+                            side = TestFixtures.BUY,
+                            symbol = Asset.BTC,
+                            volume = BigDecimal("0.1"),
+                            usdAmount = BigDecimal("3000.00"),
+                            price = BigDecimal("30000.00"),
+                            fee = BigDecimal("3.00"),
+                        ),
+                    )
+                    coEvery { repository.save(any()) } throws saveFailure
+
+                    val reconstructionService = TradeHistoryReconstructionService(
+                        repository = repository,
+                        krakenService = krakenService,
+                        configService = configService,
+                        portfolioAnalyzer = portfolioAnalyzer,
+                    )
+
+                    if (saveFailure is CancellationException) {
+                        shouldThrow<CancellationException> {
+                            reconstructionService.reconstructHistoricalSnapshots()
+                        }
+                    } else {
+                        shouldThrow<IllegalStateException> {
+                            reconstructionService.reconstructHistoricalSnapshots()
+                        }
+                    }
+                    coVerify(exactly = 1) { repository.save(any()) }
+                }
+            }
+        }
+
         "reconstructHistoricalSnapshots_FallbackMappingsAndSimulation" {
             runTest {
                 val appConfig = AppConfig(

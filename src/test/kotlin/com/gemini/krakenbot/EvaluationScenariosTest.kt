@@ -16,7 +16,10 @@ import com.gemini.krakenbot.view.component.PerformanceTableComponent
 import com.gemini.krakenbot.view.component.RecentActivityComponent
 import com.gemini.krakenbot.view.component.SettingsFormComponent
 import io.kotest.core.spec.IsolationMode
+import io.kotest.core.spec.Spec
 import io.kotest.core.spec.style.StringSpec
+import io.kotest.core.test.TestCase
+import io.kotest.engine.test.TestResult
 import io.ktor.client.request.get
 import io.ktor.server.application.Application
 import io.ktor.server.application.install
@@ -26,6 +29,11 @@ import org.koin.core.context.stopKoin
 import org.koin.dsl.module
 import java.io.File
 import io.ktor.server.sse.SSE as ServerSSE
+
+internal fun evaluationTempPath(prefix: String): File = File.createTempFile("scenario-$prefix-", ".json").apply {
+    deleteOnExit()
+    delete()
+}
 
 class EvaluationScenariosTest : StringSpec() {
     // SingleInstance: the mocks and mapper below are shared by all 34 scenarios, so a scenario that
@@ -43,6 +51,9 @@ class EvaluationScenariosTest : StringSpec() {
 
     companion object {
         private val results = mutableMapOf<String, ScenarioResult>()
+        private val registeredScenarios = mutableMapOf<String, String>()
+        private const val FAIL = "FAIL"
+        private val scenarioNamePattern = Regex("""^(Scenario \d+): (.+)$""")
 
         data class ScenarioResult(
             val name: String,
@@ -59,11 +70,26 @@ class EvaluationScenariosTest : StringSpec() {
             status: String,
             evidence: String,
         ) {
+            registeredScenarios[name] = description
             results[name] = ScenarioResult(name, description, status, evidence)
             writeReport()
         }
 
+        @Synchronized
         private fun writeReport() {
+            registeredScenarios.forEach { (name, description) ->
+                if (name !in results) {
+                    results[name] = ScenarioResult(
+                        name = name,
+                        description = description,
+                        status = FAIL,
+                        evidence = "Scenario completed without recording an outcome",
+                    )
+                }
+            }
+            check(results.keys == registeredScenarios.keys) {
+                "Evaluation report outcome count does not match registered scenario count"
+            }
             val reportPath =
                 System.getenv("SCENARIOS_REPORT_PATH")
                     ?: System.getProperty("scenarios.report.path")
@@ -73,8 +99,9 @@ class EvaluationScenariosTest : StringSpec() {
             val sb = StringBuilder()
             sb.append("# Scenarios Evaluation Report\n\n")
             sb.append(
-                "This report lists the outcomes of the 34 realistic scenarios designed to evaluate the major capabilities of the Kraken Rebalancer.\n\n",
+                "This report lists the outcomes of ${registeredScenarios.size} registered realistic scenarios designed to evaluate the major capabilities of the Kraken Rebalancer.\n\n",
             )
+            sb.append("Registered scenarios: ${registeredScenarios.size}; recorded outcomes: ${results.size}.\n\n")
             sb.append("## Evaluation Rubric & Status\n\n")
             sb.append("| Scenario | Description | Status | Details / Evidence |\n")
             sb.append("| :--- | :--- | :--- | :--- |\n")
@@ -106,6 +133,32 @@ class EvaluationScenariosTest : StringSpec() {
         private fun sanitizeEvidence(evidence: String): String = sanitizeEvidencePlain(evidence)
             .replace("\n", "<br>")
             .replace("|", "\\|")
+    }
+
+    override suspend fun afterTest(testCase: TestCase, result: TestResult) {
+        val match = scenarioNamePattern.matchEntire(testCase.name.name) ?: return
+        val name = match.groupValues[1]
+        val description = match.groupValues[2]
+        if (result.isErrorOrFailure) {
+            val error = result.errorOrNull
+            recordResult(
+                name = name,
+                description = description,
+                status = FAIL,
+                evidence = error?.let { "${it::class.simpleName}: ${it.message ?: "no message"}" }
+                    ?: "Scenario failed without an exception",
+            )
+        } else {
+            synchronized(EvaluationScenariosTest::class.java) {
+                registeredScenarios[name] = description
+            }
+        }
+    }
+
+    override suspend fun afterSpec(spec: Spec) {
+        synchronized(EvaluationScenariosTest::class.java) {
+            writeReport()
+        }
     }
 
     init {
