@@ -246,6 +246,26 @@ class TradeHistoryServiceTest : TradeHistoryServiceTestBase() {
             }
         }
 
+        "getHistoryStats_NoArg_PrefersPeriodHighAboveStoredAth" {
+            runTest {
+                val tradeHistoryService = createService()
+
+                coEvery { statsRepository.load() } returns PortfolioStats(BigDecimal("10000.00"))
+                coEvery { repository.getTradeSummaryStats() } returns TradeSummaryStats(
+                    totalTradesExecuted = 5L,
+                    totalVolumeTraded = BigDecimal("600.00"),
+                    totalFeesPaid = BigDecimal("0.60"),
+                    latestSnapshotTime = Instant.now(),
+                    periodHigh = BigDecimal("18000.00"),
+                )
+
+                val stats = tradeHistoryService.getHistoryStats()
+                stats.allTimeHigh.shouldBeEqualComparingTo(BigDecimal("18000.00"))
+                coVerify(exactly = 1) { repository.getTradeSummaryStats() }
+                coVerify(exactly = 0) { repository.getTradeSummaryStats(any(), any()) }
+            }
+        }
+
         "getHistoryStats_WithRange_AggregatesCorrectly" {
             runTest {
                 val tradeHistoryService = createService()

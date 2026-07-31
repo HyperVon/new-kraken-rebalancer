@@ -156,7 +156,7 @@ class PortfolioAnalyzerImpl(
                 if (symbol.isUsd) {
                     BigDecimal.ONE
                 } else {
-                    prices.getValue(symbol.value)
+                    prices[symbol.value] ?: error("Unresolved price for ${symbol.value}")
                 }
 
             val metrics =

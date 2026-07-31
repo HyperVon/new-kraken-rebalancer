@@ -39,9 +39,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   snapshots resolve canonical Kraken ticker keys (e.g. `XXBTZUSD`) through the
   shared price resolver instead of falling back to ZERO on alias/canonical
   mismatch.
-- **Swallowed/mislogged `CancellationException` paths**: The order-failure
-  journal dump and `TradesHistory` fetch now rethrow coroutine cancellation
-  instead of masking it as a failure path.
+- **`CancellationException` handling in failure paths**: The order-failure
+  journal dump now rethrows coroutine cancellation instead of swallowing it
+  into the failure path, and the `TradesHistory` fetch no longer logs
+  cancellations as errors before rethrowing them.
 - **Settings save blocking file IO on the Netty event loop**: Settings
   persistence now runs on `Dispatchers.IO`.
 - **SECURITY.md credential example nesting**: The example now shows credentials
@@ -49,9 +50,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Removed
 
-- **Dead production surface**: `recordTrade`, `BigDecimal.isNonZero`,
-  `FEE_RATE_ESTIMATE`, the `MatchedNoOp` reconcile branch, and the typed
-  `DOMTokenList.add(CssClass)` extension.
+- **Dead production surface**: `recordTrade`, `BigDecimal.isNonZero`, the
+  redundant `OrderExecutorImpl.FEE_RATE_ESTIMATE` alias (the
+  `PrecisionConstants.FEE_RATE_ESTIMATE` constant remains), the `MatchedNoOp`
+  reconcile branch, and the typed `DOMTokenList.add(CssClass)` extension.
 - **Unreachable guards**: The snapshot `$1` price fallback and the
   `Formatter` null branches (formatting functions are now non-null
   `BigDecimal`).
