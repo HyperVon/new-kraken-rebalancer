@@ -21,6 +21,7 @@ description: >-
 | [open-pr](../open-pr/SKILL.md) | Create the PR (runs adversarial first) |
 | [commit-and-push](../commit-and-push/SKILL.md) | Commit/push; adversarial when updating an open PR |
 | [architecture-review](../architecture-review/SKILL.md) | Fresh-eyes redesign brainstorm (not PR gates) |
+| [ai-slop-detector](../ai-slop-detector/SKILL.md) | Evidence-ladder/severity audit of slop-like artifacts; run either this or code-review, not both, unless asked |
 
 **PR handoff:** If the user is opening or updating a pull request, follow
 [open-pr](../open-pr/SKILL.md) or [commit-and-push](../commit-and-push/SKILL.md)
@@ -38,6 +39,12 @@ not treat this skill’s checklist as a substitute.
 - No absolute user paths or machine hostnames.
 - Comments: only non-obvious complexity; flag wrong/stale/noisy comments (see
   [complex-code-comments](../complex-code-comments/SKILL.md)).
+- Lean code: no dead guards for contractually impossible states, no duplicated
+  validation below the owning boundary, no speculative abstractions without a
+  current seam.
+- Tests: each kills a distinct defect class; flag impossible-case tests,
+  cosmetic duplicates, and coverage padding (see
+  [ai-slop-detector](../ai-slop-detector/SKILL.md)).
 
 #### SRP do-nots (flag any violation)
 

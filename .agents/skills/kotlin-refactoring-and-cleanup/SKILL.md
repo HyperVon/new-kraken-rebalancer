@@ -21,6 +21,7 @@ For **exhaustive** repo-wide multi-pass convergence until a clean cycle, use
 | [autonomous-code-optimizer](../autonomous-code-optimizer/SKILL.md) | Exhaustive 4-pass loop until zero issues |
 | [common-kmp-module](../common-kmp-module/SKILL.md) | Where shared symbols belong |
 | [gradle-quality-gates](../gradle-quality-gates/SKILL.md) | Verify commands after cleanup |
+| [ai-slop-detector](../ai-slop-detector/SKILL.md) | Evidence audit that may hand cleanup here |
 
 ## 1. No FQNs
 
@@ -67,6 +68,14 @@ Repository I/O from suspend callers uses
 call blocking `safeTransaction` from coroutine paths without
 `withContext(Dispatchers.IO)`.
 
+## 9. Lean code (no padding)
+
+Refactors must not add guards for impossible states, duplicated validation
+below the owning boundary, or speculative abstractions without a current seam.
+Validation lives at trust boundaries (external API, user input, config,
+persistence, money); inside them, code stays lean and fails hard. See
+[ai-slop-detector](../ai-slop-detector/SKILL.md) § Step 3.
+
 ## Scanner
 
 ```bash
@@ -87,5 +96,6 @@ rg 'dryRun\s*=\s*false' src/test/ src/main/ --glob '*.kt'
 
 - [ ] FQNs gone; magic strings in `:common`
 - [ ] No absolute paths; warnings clean
+- [ ] No dead guards, duplicated validation, or speculative abstractions added
 - [ ] README + JaCoCo synced; tests pass
 - [ ] Markdown lint includes `.agents/AGENTS.md`

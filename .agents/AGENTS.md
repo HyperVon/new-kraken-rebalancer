@@ -62,6 +62,7 @@ Canonical deep docs:
 | Commit & push | [commit-and-push](skills/commit-and-push/SKILL.md) |
 | Open PR | [open-pr](skills/open-pr/SKILL.md) |
 | Update open PR (push to existing) | [commit-and-push](skills/commit-and-push/SKILL.md) → [adversarial-pr-review](skills/adversarial-pr-review/SKILL.md) |
+| Evidence-based AI-slop audit / cleanup | [ai-slop-detector](skills/ai-slop-detector/SKILL.md) |
 | Autonomous multi-pass audit | [autonomous-code-optimizer](skills/autonomous-code-optimizer/SKILL.md) |
 | Parallel multi-agent splits | [parallel-multi-agent](skills/parallel-multi-agent/SKILL.md) |
 | Continuous improvement (whole shebang) | [continuous-improvement](skills/continuous-improvement/SKILL.md) *(writes `.agents/improvement-backlog.md`)* |
@@ -77,6 +78,7 @@ same content via committed `.cursor/rules/`:
 | `parallel-multi-agent.mdc` | Fan out independent workstreams; keep coupled files single-threaded |
 | `no-blocking-long-processes.mdc` | Background servers; don’t hang on `java -jar` / `gradlew run` |
 | `complex-code-comments.mdc` | Comment only non-obvious complexity; keep comments accurate |
+| `lean-contract-aware-code.mdc` | Defensive at trust boundaries, lean inside; each test kills a defect class |
 | `cost-aware-model-selection.mdc` | Use the cheapest model/effort likely to succeed; escalate on evidence or risk |
 | `ui-change-verification.mdc` | Path-triggered: laptop viewport, CSS `?v=`, QA smells — see rule file globs (`view/**`, `DashboardController` / `DashboardRoutes`, `frontend-js/**`, `:common` view util) |
 
@@ -237,6 +239,9 @@ domain skills.
 - Markdown: lint per [gradle-quality-gates](skills/gradle-quality-gates/SKILL.md)
   (`.agents/AGENTS.md`, `OPERATING.md`, skills, product docs, harness stubs).
 - Offload blocking IO with `withContext(Dispatchers.IO)`.
+- Guards and validation live at trust boundaries (external API, user input,
+  config, persistence, money); no dead guards or duplicated validation inside
+  them — rubric: [ai-slop-detector](skills/ai-slop-detector/SKILL.md).
 - GitHub auth via `gh` CLI (`gh auth setup-git`); do not ask the user to authenticate manually.
 - Keep a Changelog; sync README tree + JaCoCo exclusions when packages move — see [changelog-and-docs-sync](skills/changelog-and-docs-sync/SKILL.md).
 
@@ -251,6 +256,7 @@ See [write-kotest](skills/write-kotest/SKILL.md).
 - In-memory SQLite only (`:memory:`).
 - Prefer `FakeKrakenService` for deterministic tests; `SimulatedKrakenService` is the production emulator (not the same).
 - Evaluation/E2E/chaos: `EvaluationScenariosTest`, `docs/EVALUATION.md`; Flow tests use `advanceUntilIdle()`.
+- Each test kills a distinct defect class; no impossible-case, cosmetic-duplicate, or coverage-padding tests (see [ai-slop-detector](skills/ai-slop-detector/SKILL.md) § Test necessity).
 
 ---
 

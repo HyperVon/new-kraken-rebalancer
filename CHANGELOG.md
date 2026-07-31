@@ -6,7 +6,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [6.15.25] - 2026-07-31
+
+### Added
+
+- **`ai-slop-detector` agent skill**: Evidence-based audit and cleanup of
+  artifacts that impose avoidable cost (code, tests, docs, diffs) covering
+  needless complexity, excessive defensiveness, architecture drift, invented
+  integrations, duplicate/impossible-case tests, and tests that do not protect
+  required behavior. The skill never attributes authorship or intent to a
+  contributor, defaults to audit/report, and cleans up only on explicit
+  request. Indexed in `.agents/AGENTS.md`.
+
+### Changed
+
+- **Lean-code operating norm**: `OPERATING.md` gains a "Lean, contract-aware
+  code" section (defensive at trust boundaries, lean inside; each test kills a
+  distinct defect class) with a matching `.cursor/rules/` projection, AGENTS
+  invariants, and producer-side guidance in `write-kotest`,
+  `kotlin-refactoring-and-cleanup`, and `code-review`, all pointing at the
+  `ai-slop-detector` rubric.
 
 ### Fixed
 

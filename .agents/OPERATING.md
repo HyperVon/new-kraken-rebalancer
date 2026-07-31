@@ -192,7 +192,38 @@ When editing code:
 
 ---
 
-## 7. Cost-aware model selection
+## 7. Lean, contract-aware code
+
+Write code a staff engineer would sign: **defensive exactly at trust
+boundaries** (external APIs, user input, configuration, persistence, money) —
+**lean and confident inside them**.
+
+When writing code or tests:
+
+1. No guards for states the type system or the caller's contract makes
+   impossible (null checks on non-nullable internals, re-validating
+   already-parsed input deep inside the boundary, emptiness checks before
+   loops that already handle empty).
+2. Validate each invariant once, at its owning boundary — not again in every
+   layer below it.
+3. Never fall back silently over a state that should fail hard; "safe"
+   defaults that swallow failures hide defects (and still rethrow
+   `CancellationException` in coroutine code).
+4. Each test kills a distinct defect class. Skip impossible-case tests,
+   cosmetic input duplication, coverage padding ("does not throw" / "is not
+   null" only), and framework tests (getters, no-logic delegation). Keep
+   unlikely-but-possible boundary cases (exchange responses, config, user
+   input) — they are cheap insurance.
+5. Prefer the existing local pattern over a new abstraction; a wrapper,
+   factory, or interface needs a current seam or policy, not a hypothetical
+   one.
+
+Audit rubric and cleanup workflow:
+[skills/ai-slop-detector/SKILL.md](skills/ai-slop-detector/SKILL.md).
+
+---
+
+## 8. Cost-aware model selection
 
 When the host allows choosing a model or reasoning effort, use the **least
 expensive model and lowest effort reasonably likely to complete the task
@@ -227,6 +258,7 @@ using an underpowered model for high-impact work.
 | Parallel multi-agent | `.cursor/rules/parallel-multi-agent.mdc` (`alwaysApply`) |
 | No blocking long processes | `.cursor/rules/no-blocking-long-processes.mdc` (`alwaysApply`) |
 | Complex-code comments | `.cursor/rules/complex-code-comments.mdc` (`alwaysApply`) |
+| Lean, contract-aware code | `.cursor/rules/lean-contract-aware-code.mdc` (`alwaysApply`) |
 | Cost-aware model selection | `.cursor/rules/cost-aware-model-selection.mdc` (`alwaysApply`) |
 | UI change verification | `.cursor/rules/ui-change-verification.mdc` (path globs) |
 

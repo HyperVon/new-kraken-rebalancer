@@ -183,6 +183,7 @@ harnesses.
 | Skill | What it covers |
 | :--- | :--- |
 | [`adversarial-pr-review`](../.agents/skills/adversarial-pr-review/SKILL.md) | Parallel fast/strong model review, human-readable findings, fixes, and convergence |
+| [`ai-slop-detector`](../.agents/skills/ai-slop-detector/SKILL.md) | Evidence-backed audit/cleanup of needless complexity, invented behavior, and misleading tests/docs; never attributes authorship |
 | [`architecture-review`](../.agents/skills/architecture-review/SKILL.md) | Independent system redesign ideas without automatic implementation |
 | [`code-review`](../.agents/skills/code-review/SKILL.md) | Project-specific diff review for correctness, safety, and conventions |
 | [`commit-and-push`](../.agents/skills/commit-and-push/SKILL.md) | Documentation sync, full gates, deliberate commits, and branch pushes |

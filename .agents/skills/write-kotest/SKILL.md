@@ -156,9 +156,29 @@ History chart zoom/scrubber specs should cover:
 ./gradlew test jacocoTestReport jacocoTestCoverageVerification
 ```
 
+## Test necessity (no test slop)
+
+Each test is the cheapest way to kill a **distinct defect class**:
+
+- If you cannot name the failure mode a new test uniquely covers, do not add
+  it. Cosmetic input variation with identical structure is duplication; use
+  table-driven rows only when each row kills a distinct variant.
+- Skip inputs the type system or the caller's contract makes impossible (null
+  on a non-nullable internal parameter; an already-validated shape deep inside
+  the boundary). Keep unlikely-but-possible boundary cases (Kraken responses,
+  config files, user input) — they are cheap insurance.
+- No coverage padding: assertions that only prove "does not throw" or
+  "is not null", or that restate a stubbed mock's return value with no
+  production logic in between.
+- Do not test the framework: getters, constructors, and delegation with no
+  logic unless an external contract depends on them.
+
+Full rubric: [ai-slop-detector](../ai-slop-detector/SKILL.md) § Test necessity.
+
 ## Checklist
 
 - [ ] `init` block + isolation mode; suppress only demonstrated warnings
+- [ ] Each test kills a distinct defect class; no impossible-case or coverage-padding tests
 - [ ] `shouldBeEqualComparingTo`; `:memory:` DB; `TestFixtures` where useful
 - [ ] FakeKraken for tests; Flow tests use `advanceUntilIdle`
 - [ ] Evaluation scenarios updated when algorithm behavior changes
