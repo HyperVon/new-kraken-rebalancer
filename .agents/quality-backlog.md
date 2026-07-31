@@ -20,15 +20,8 @@ Product polish discovered during QA belongs in
 
 ## Open / deferred
 
-| ID | Size | Kind | Status | Area | Summary | Cycle | Issue | Notes |
-| :--- | :---: | :--- | :--- | :--- | :--- | :---: | :--- | :--- |
-| CQ-14-M1 | M | gap | open | orders/journal | Cover the SQLite-backed `PENDING` to resolved/`UNCERTAIN` journal lifecycle end to end | 14 | — | Not shipped in 14; submission-safety tests still use a mocked journal service |
-| CQ-14-M4 | M | gap | deferred | security/CORS | Exercise production Ktor CORS wiring for allowed private and rejected public origins | 14 | — | Deferred: `KtorConfig.kt` is excluded from JaCoCo and envisioning a focused `testApplication` harness needs a separate cycle to avoid scope creep |
-| CQ-14-M6 | M | gap | open | Kraken/orders | Cover AddOrder rate-limit cost, signing headers, nonce, and one-attempt transport failure | 14 | — | Not shipped in 14; `KrakenRetryAndRateLimitTest` untouched |
-| CQ-14-M7 | M | gap | open | config/flows | Cover nested execution-session publication through the real config flow | 14 | — | Not shipped in 14; `ConfigServiceTest` session tests remain mocked/partial |
-| CQ-14-M9 | M | gap | open | history/SSE | Exercise the real hot snapshot flow through multiple HTTP SSE subscribers | 14 | — | Not shipped in 14; SSE route tests still use cold `flowOf` |
-| CQ-14-4 | S | gap | open | security/CSRF | Assert CSRF cookie attributes and reject duplicate matching form tokens | 14 | — | Not shipped in 14; `DashboardControllerTest` untouched |
-| CQ-14-15 | S | harness | open | flows/manager | Add behavioral assertions to exception and cancellation loop tests | 14 | — | Not shipped in 14; `PortfolioExecutionEdgeCasesTest` untouched |
+_None — all cycle-14 items are done. See the Done table below for both #168
+(cycle-14 production fixes) and #169 (cycle-15 test-only gap closures)._
 
 ## Done (recent)
 
@@ -54,6 +47,13 @@ Product polish discovered during QA belongs in
 | CQ-14-M15 | M | harness | done | eval/flows | Stop evaluation scenarios from overstating hot SSE/config reload coverage built on finite or cold flows | 14 | #168 | — |
 | CQ-14-M16 | M | harness | done | eval/report | Record failed evaluation scenarios and verify report count from registered cases | 14 | #168 | — |
 | CQ-14-M17 | M | flake | done | frontend-js/tests | Replace wall-clock JS test delays with explicit Promise/deferred readiness | 14 | #168 | — |
+| CQ-14-M1 | M | gap | done | orders/journal | Cover the SQLite-backed `PENDING` to resolved/`UNCERTAIN` journal lifecycle end to end | 14 | #169 | — |
+| CQ-14-M4 | M | gap | done | security/CORS | Exercise production Ktor CORS wiring for allowed private and rejected public origins | 14 | #169 | — |
+| CQ-14-M6 | M | gap | done | Kraken/orders | Cover AddOrder rate-limit cost, signing headers, nonce, and one-attempt transport failure | 14 | #169 | — |
+| CQ-14-M7 | M | gap | done | config/flows | Cover nested execution-session publication through the real config flow | 14 | #169 | — |
+| CQ-14-M9 | M | gap | done | history/SSE | Exercise the real hot snapshot flow through multiple HTTP SSE subscribers | 14 | #169 | — |
+| CQ-14-4 | S | gap | done | security/CSRF | Assert CSRF cookie attributes and reject duplicate matching form tokens | 14 | #169 | — |
+| CQ-14-15 | S | harness | done | flows/manager | Add behavioral assertions to exception and cancellation loop tests | 14 | #169 | — |
 | CQ-14-1 | S | gap | done | history/repository | Verify snapshot asset/action child-row pruning retains recent children and removes old ones | 14 | #168 | — |
 | CQ-14-2 | S | gap | done | history/reconstruction | Cover cancellation and ordinary failure from reconstruction snapshot persistence | 14 | #168 | — |
 | CQ-14-3 | S | gap | done | history/flows | Verify a late snapshot subscriber receives the replayed latest snapshot | 14 | #168 | — |
