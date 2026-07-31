@@ -71,9 +71,11 @@ class TradeHistorySyncService(
         // near the previous watermark are re-fetched and reconciled rather than double-inserted.
         // [isHistorySeeded] only gates progress metadata / first-sync completion, not this window.
         val startSec = effectiveLatest?.minusSeconds(300)?.epochSecond
-        // A numeric progress cursor marks an interrupted seed; recovery widens to a full query so
-        // a partial watermark cannot filter out older pages.
-        val isRecoveringInitialSync = readInitialPaginationOffset() != null
+        // A numeric progress cursor marks an interrupted seed. Recovery only applies while the
+        // database is unseeded: once seeding completed, an orphaned numeric offset (e.g. the process
+        // died after setHistorySeeded but before the COMPLETED marker) is stale and must not force
+        // a full-history query on every future sync.
+        val isRecoveringInitialSync = !isSeeded && readInitialPaginationOffset() != null
         val paginationStartSec = if (isRecoveringInitialSync) null else startSec
 
         log.info(
@@ -278,6 +280,11 @@ class TradeHistorySyncService(
     private suspend fun finalizeSync(isSeeded: Boolean) {
         if (!isSeeded) {
             repository.setHistorySeeded(true)
+            repository.setSyncMetadata(SyncMetadataKeys.SYNC_OFFSET, SyncMetadataKeys.COMPLETED)
+            repository.setSyncMetadata(SyncMetadataKeys.SYNC_TOTAL, SyncMetadataKeys.COMPLETED)
+        } else if (readInitialPaginationOffset() != null) {
+            // Self-heal: an orphaned numeric offset (crash after seeding, before COMPLETED) would
+            // otherwise linger forever; it must not mark any future sync as an interrupted seed.
             repository.setSyncMetadata(SyncMetadataKeys.SYNC_OFFSET, SyncMetadataKeys.COMPLETED)
             repository.setSyncMetadata(SyncMetadataKeys.SYNC_TOTAL, SyncMetadataKeys.COMPLETED)
         }

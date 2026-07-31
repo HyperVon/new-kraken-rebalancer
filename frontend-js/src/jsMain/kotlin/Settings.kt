@@ -33,11 +33,19 @@ private fun wireModePlateSync() {
     val dryRun =
         document.querySelector("input[name=\"${FormFields.DRY_RUN}\"]") as? HTMLInputElement
     if (simulation == null && dryRun == null) return
+    // Bind at most once per DOM node: htmx:afterSwap re-runs this after fragment swaps that keep
+    // the toggles (e.g. a validation error swap), and a second listener would stack handlers.
     val onChange: (Event) -> Unit = { syncModePlateFromSafetyToggles() }
-    simulation?.addEventListener("change", onChange)
-    dryRun?.addEventListener("change", onChange)
+    if (simulation != null && BOUND_MODE_TOGGLES.add(simulation)) {
+        simulation.addEventListener("change", onChange)
+    }
+    if (dryRun != null && BOUND_MODE_TOGGLES.add(dryRun)) {
+        dryRun.addEventListener("change", onChange)
+    }
     syncModePlateFromSafetyToggles()
 }
+
+private val BOUND_MODE_TOGGLES = mutableSetOf<HTMLInputElement>()
 
 internal fun syncModePlateFromSafetyToggles() {
     val plate = document.getElementById(HtmlIds.MODE_PLATE) as? HTMLElement ?: return
@@ -101,7 +109,10 @@ fun addAssetRow() {
         return
     }
 
-    if (currentAllocationSymbols().contains(symbol)) {
+    // Mirror the server-side alias canonicalization (BTC↔XBT, DOGE↔XDG) so an alias of an existing
+    // allocation is rejected in the form instead of only at save time.
+    val canonical = Asset.canonicalSymbol(symbol)
+    if (currentAllocationSymbols().contains(canonical)) {
         window.alert(ViewText.SYMBOL_EXISTS_ALERT)
         return
     }
@@ -112,12 +123,12 @@ fun addAssetRow() {
 
     val symbolDiv = document.createDiv()
     symbolDiv.className = CssClass.Form.AllocationEditSymbol.toString()
-    symbolDiv.textContent = symbol
+    symbolDiv.textContent = canonical
 
     val symbolHidden = document.createInput()
     symbolHidden.type = "hidden"
     symbolHidden.name = FormFields.SYMBOLS
-    symbolHidden.value = symbol
+    symbolHidden.value = canonical
 
     val colorHidden = document.createInput()
     colorHidden.type = "hidden"
@@ -204,14 +215,14 @@ private fun currentAllocationColors(): List<String> {
     return colors
 }
 
-/** Uppercased symbols from all allocation symbol inputs currently in the DOM. */
+/** Canonical symbols from all allocation symbol inputs currently in the DOM. */
 private fun currentAllocationSymbols(): List<String> {
     val symbolInputs = document.querySelectorAll(SYMBOL_INPUTS_QUERY)
     val symbols = mutableListOf<String>()
     repeat(symbolInputs.length) { i ->
         val input = symbolInputs.item(i) as? HTMLInputElement
         if (input != null) {
-            symbols.add(input.value.uppercase())
+            symbols.add(Asset.canonicalSymbol(input.value.uppercase()))
         }
     }
     return symbols

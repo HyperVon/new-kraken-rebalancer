@@ -19,17 +19,24 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Live order transaction ID enforcement (#161)**: A live `OrderResult.Success`
   with a blank or null `orderTxid` is now converted to a blocking `UNCERTAIN`
   outcome at the journal owner, persisting an unresolved row that aborts the
-  batch and blocks future live submissions until reconciled. The previous
-  behavior cleared the submission state without an exchange identity.
+  batch and blocks future live submissions until the row is resolved (the
+  journal lacks an automated reconcile path, so operators must resolve the row
+  manually or via a restored database). The previous behavior cleared the
+  submission state without an exchange identity.
 - **Floored submitted notional dust guard (#166)**: The buy dust threshold is now
   applied to the actual submitted notional (`floored volume × price`) rather than
   the original USD intent, preventing orders below the configured minimum
-  execution notional after crypto-precision flooring.
+  execution notional after crypto-precision flooring. The journaled `usdAmount`
+  for buys is the actual submitted notional; in-cycle cash/budget bookkeeping
+  retains the pre-floor intent, so accounting is conservative (a floored buy
+  spends at most the budgeted amount).
 - **Startup dedupe conflict protection (#165)**: The startup local/API trade
   cleanup now preserves rows with conflicting success, dry-run, provenance,
   trade ID, or order transaction ID. Valid local-estimate/API-fill duplicates
   are still cleaned as before; dry-run and unresolved submission rows are never
-  deleted.
+  deleted. As an accepted residual, legacy-unknown rows are also no longer
+  collapsed against later API fills (conservative; a legacy duplicate can
+  remain visible in History).
 - **Interrupted initial pagination resume (#162)**: An interrupted initial
   full-history pagination no longer permanently skips older Kraken fills. The
   sync detects a numeric `SYNC_OFFSET` marker, retries from page zero with
@@ -45,11 +52,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   callers are rejected. Stopped managers no longer perform startup sync. Hot
   `SharedFlow` lifecycle is preserved through stop/restart.
 - **Shutdown join (#164)**: Application shutdown now stops and joins the
-  rebalance worker (bounded 5 s) before canceling the application scope or
-  closing the HTTP client and Koin, ensuring durable live-order journal entries
-  during cleanup are not interrupted.
+  rebalance worker (bounded 5 s, extended while live submissions are pending)
+  before canceling the application scope or closing the HTTP client and Koin,
+  ensuring durable live-order journal entries during cleanup are not
+  interrupted.
 - **Dashboard comma sorting**: Numeric Price and Value columns on the Dashboard
-  performance table now sort correctly for comma-formatted currency values.
+  performance table now strip currency decoration and formatting whitespace
+  (including non-breaking spaces) before numeric comparison, so comma-formatted
+  currency values sort numerically instead of as `0.0`.
 - **Settings HTMX reinitialization**: Settings controls, allocation validation,
   and mode-plate listeners are now reinitialized after an HTMX validation
   fragment swap, so toggles and the allocation total stay synchronized.

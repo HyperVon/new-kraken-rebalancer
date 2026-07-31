@@ -70,11 +70,20 @@ class PortfolioManagerImpl(
     override fun startRebalancingLoop(scope: CoroutineScope): Job {
         val job = synchronized(lifecycleLock) {
             isRunning = true
-            workerJob?.takeIf { it.isActive }
-                ?: scope.launch(start = CoroutineStart.LAZY) { runLoop() }.also { newJob ->
+            val staleJob = workerJob
+            if (staleJob != null && staleJob.isActive) {
+                staleJob
+            } else {
+                // A cancelled worker is still draining until its finally block runs. The replacement
+                // joins it before runLoop so it can never lose the admission race on runLoopMutex.
+                scope.launch(start = CoroutineStart.LAZY) {
+                    staleJob?.join()
+                    runLoop()
+                }.also { newJob ->
                     workerJob = newJob
                     newJob.start()
                 }
+            }
         }
         log.info("Rebalancing loop started.")
         return job
@@ -83,6 +92,13 @@ class PortfolioManagerImpl(
     override suspend fun runLoop() {
         if (!runLoopMutex.tryLock()) {
             log.warn("Rebalancing loop worker already exists; ignoring duplicate runLoop caller.")
+            // The caller returned without becoming the worker; drop its ownership claim so a later
+            // restart can launch a replacement instead of inheriting a dead job reference.
+            synchronized(lifecycleLock) {
+                if (workerJob === coroutineContext[Job]) {
+                    workerJob = null
+                }
+            }
             return
         }
 

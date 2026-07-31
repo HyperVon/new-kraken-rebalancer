@@ -18,6 +18,7 @@ import com.gemini.krakenbot.util.TradeCalculator
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.shouldNotBe
 import io.mockk.Runs
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -627,6 +628,99 @@ class TradeHistorySyncReconciliationTest : TradeHistoryServiceTestBase() {
                     verify(exactly = 2) { configService.beginExecutionSession() }
                     verify(exactly = 2) { configService.endExecutionSession() }
                 }
+            }
+        }
+
+        "CQ-14-L5: a seeded database with an orphaned numeric offset does not resume full-history pagination" {
+            runTest {
+                val now = Instant.parse("2033-05-01T12:00:00Z")
+                // The seed completed but the process died before SYNC_OFFSET was rewritten to
+                // COMPLETED, leaving a numeric cursor behind (the interrupted-seed marker).
+                val seeded = true
+                val metadata = mutableMapOf(
+                    SyncMetadataKeys.HISTORY_SEEDED to "true",
+                    SyncMetadataKeys.SYNC_OFFSET to "50",
+                    SyncMetadataKeys.SYNC_TOTAL to "150",
+                )
+                val seedTrade = TestFixtures.tradeRecord(
+                    timestamp = now.minusSeconds(60),
+                    pair = TestFixtures.XBTUSD,
+                    side = TestFixtures.BUY,
+                    symbol = Asset.BTC,
+                    volume = BigDecimal.ONE,
+                    usdAmount = BigDecimal.TEN,
+                    source = TradeSource.API_FILL,
+                    tradeId = "TRADE-001",
+                )
+                val persistedTrades = mutableListOf(seedTrade)
+                val queriedStartSecs = mutableListOf<Long?>()
+
+                val appConfig = AppConfig(
+                    kraken = KrakenCredentials(
+                        TestFixtures.TRADE_HISTORY_API_KEY,
+                        TestFixtures.TRADE_HISTORY_API_SECRET,
+                    ),
+                    settings = TestFixtures.settings(
+                        dryRun = false,
+                        simulation = true,
+                        loopDelaySeconds = 60,
+                        deviationTriggerPercent = 5.0,
+                        dustThresholdUSD = 5.0,
+                    ),
+                    allocations = emptyList(),
+                )
+                every { configService.getConfig() } returns appConfig
+                coEvery { repository.isHistorySeeded() } coAnswers { seeded }
+                coEvery { repository.getLatestTradeTime() } coAnswers {
+                    persistedTrades.maxByOrNull(TradeRecord::timestamp)?.timestamp
+                }
+                coEvery { repository.getSyncMetadata(any()) } coAnswers {
+                    metadata[firstArg<String>()]
+                }
+                coEvery { repository.setSyncMetadata(any(), any()) } coAnswers {
+                    metadata[firstArg<String>()] = secondArg<String>()
+                }
+                coEvery { repository.getTradesInRange(any(), any()) } coAnswers {
+                    val from = firstArg<Instant>()
+                    val to = secondArg<Instant>()
+                    persistedTrades
+                        .filter { !it.timestamp.isBefore(from) && !it.timestamp.isAfter(to) }
+                        .sortedByDescending(TradeRecord::timestamp)
+                }
+                coEvery { repository.saveTrade(any()) } coAnswers {
+                    val trade = firstArg<TradeRecord>()
+                    if (persistedTrades.none { it.tradeId == trade.tradeId }) persistedTrades.add(trade)
+                    persistedTrades.size
+                }
+                coEvery { repository.load() } returns emptyList()
+                coEvery { repository.getTradeSummaryStats() } returns TradeSummaryStats(
+                    totalTradesExecuted = 0L,
+                    totalVolumeTraded = BigDecimal.ZERO,
+                    totalFeesPaid = BigDecimal.ZERO,
+                    latestSnapshotTime = null,
+                )
+                every { krakenService.getLastTradeHistoryTotalCount() } returns 150
+                coEvery { krakenService.getTradeHistory(any(), any()) } coAnswers {
+                    val startSec = firstArg<Long?>()
+                    val offset = secondArg<Int?>() ?: 0
+                    queriedStartSecs.add(startSec)
+                    // The orphan offset must NOT widen the window to a full history query: the
+                    // sync is incremental, so page zero only returns fills from the overlap window.
+                    listOf<TradeRecord>()
+                        .drop(offset)
+                        .take(50)
+                }
+
+                val service = createService(syncNowProvider = { now })
+                service.syncTradesFromKraken()
+
+                // Every fetch used the incremental window, never a null startSec full-history query.
+                queriedStartSecs.isNotEmpty() shouldBe true
+                (queriedStartSecs.none { it == null }) shouldBe true
+                // The orphaned numeric cursor is self-healed to COMPLETED.
+                metadata[SyncMetadataKeys.SYNC_OFFSET] shouldBe SyncMetadataKeys.COMPLETED
+                metadata[SyncMetadataKeys.SYNC_TOTAL] shouldBe SyncMetadataKeys.COMPLETED
+                persistedTrades.mapNotNull(TradeRecord::tradeId).toSet().size shouldBe 1
             }
         }
 

@@ -31,11 +31,26 @@ private const val REBALANCING_SHUTDOWN_TIMEOUT_MILLIS = 5_000L
 
 private val log = LoggerFactory.getLogger("KrakenRebalancerApplication")
 
-internal suspend fun joinRebalancingWorker(workerJob: Job?): Boolean =
-    withTimeoutOrNull(REBALANCING_SHUTDOWN_TIMEOUT_MILLIS) {
+internal suspend fun joinRebalancingWorker(
+    workerJob: Job?,
+    hasPendingSubmissions: suspend () -> Boolean = { false },
+): Boolean {
+    val joinedWithinBudget = withTimeoutOrNull(REBALANCING_SHUTDOWN_TIMEOUT_MILLIS) {
         workerJob?.join()
         true
     } ?: false
+    if (joinedWithinBudget) return true
+    if (hasPendingSubmissions()) {
+        // A live submission (or its journal write) may still be in flight. Releasing the HTTP client
+        // and Koin graph now could strand a PENDING/UNCERTAIN record, so extend the wait instead.
+        log.warn(
+            "Timed out waiting for the rebalance worker while submissions are pending; extending the shutdown wait to preserve the order journal.",
+        )
+        workerJob?.join()
+        return true
+    }
+    return false
+}
 
 fun main() {
     startKoin {
@@ -59,7 +74,10 @@ fun main() {
         Thread {
             // Stop and join the worker before closing its Koin-managed client and dependency graph.
             portfolioManager.stopRebalancingLoop()
-            val workerJoined = runBlocking { joinRebalancingWorker(workerJob) }
+            val workerJoined =
+                runBlocking {
+                    joinRebalancingWorker(workerJob) { tradeHistoryService.hasPendingSubmissions() }
+                }
             if (!workerJoined) {
                 log.warn("Timed out waiting for the rebalance worker to finish during shutdown.")
             }

@@ -277,6 +277,50 @@ class PortfolioManagerLoopTest : StringSpec() {
             }
         }
 
+        "restart immediately after stop drains the cancelled worker before the new loop starts" {
+            runTest {
+                val settings = TestFixtures.settings(loopDelaySeconds = 3600L)
+                val config = TestFixtures.config(settings = settings)
+                every { configService.getConfig() } returns config
+
+                val configFlow = MutableSharedFlow<Settings>(replay = 1, extraBufferCapacity = 8)
+                every { configService.watchConfigChanges() } returns configFlow
+                val firstCycleSyncStarted = CompletableDeferred<Unit>()
+                val restartedCycleSyncStarted = CompletableDeferred<Unit>()
+                var syncCalls = 0
+                coEvery { tradeHistoryService.syncTradesFromKraken() } coAnswers {
+                    syncCalls++
+                    if (syncCalls == 2) {
+                        firstCycleSyncStarted.complete(Unit)
+                        awaitCancellation()
+                    }
+                    if (syncCalls == 3) {
+                        restartedCycleSyncStarted.complete(Unit)
+                        awaitCancellation()
+                    }
+                }
+
+                configFlow.emit(settings)
+                val firstWorker = portfolioManager.startRebalancingLoop(this)
+                runCurrent()
+                firstCycleSyncStarted.await()
+
+                // No join between stop and start: the cancelled worker is still draining its
+                // runLoopMutex/workerJob cleanup when the restart launches its replacement.
+                portfolioManager.stopRebalancingLoop()
+                val secondWorker = portfolioManager.startRebalancingLoop(this)
+                runCurrent()
+                restartedCycleSyncStarted.await()
+
+                syncCalls shouldBe 3
+                (secondWorker !== firstWorker) shouldBe true
+
+                portfolioManager.stopRebalancingLoop()
+                secondWorker.join()
+                firstWorker.join()
+            }
+        }
+
         "cancellation during execution rethrows and closes the execution session" {
             runTest {
                 val settings = TestFixtures.settings(loopDelaySeconds = 3600L)

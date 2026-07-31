@@ -12,6 +12,7 @@ import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import org.slf4j.LoggerFactory
 import java.io.File
 import java.io.IOException
 import java.nio.file.Files
@@ -26,6 +27,7 @@ class ConfigServiceImpl(
     private val objectMapper: ObjectMapper,
     private val configFilePath: String = DEFAULT_CONFIG_FILE_PATH,
 ) : ConfigService {
+    private val log = LoggerFactory.getLogger(ConfigServiceImpl::class.java)
     private var executionSessionDepth = 0
     private var pendingConfig: AppConfig? = null
 
@@ -112,7 +114,14 @@ class ConfigServiceImpl(
             "Configuration file '$configFilePath' not found in the application directory."
         }
 
-        setOwnerOnlyPermissions(configFile.toPath())
+        // Read-path hardening must never block startup: a read-only filesystem or a config owned by
+        // another user (deployed via root, run as a service account) would otherwise turn a benign
+        // load into a hard boot failure. The write path still enforces owner-only permissions.
+        try {
+            setOwnerOnlyPermissions(configFile.toPath())
+        } catch (e: IOException) {
+            log.warn("Could not enforce owner-only permissions on '$configFilePath' while reading; continuing.", e)
+        }
         return configFile.readText()
     }
 
@@ -120,7 +129,7 @@ class ConfigServiceImpl(
         try {
             Files.deleteIfExists(File("$configFilePath.tmp").toPath())
         } catch (e: IOException) {
-            throw RuntimeException("Failed to clean temporary configuration", e)
+            log.warn("Failed to clean temporary configuration file '$configFilePath.tmp'; continuing.", e)
         }
     }
 
