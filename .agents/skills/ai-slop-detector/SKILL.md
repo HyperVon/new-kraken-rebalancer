@@ -6,8 +6,8 @@ description: >-
   such as needless complexity, architecture drift, invented integrations,
   misleading docs, and tests that do not protect required behavior. Never
   attributes authorship or intent to a contributor. Use for "AI slop",
-  "AI-ish code", de-slopping, suspicious generated artifacts, mirror tests,
-  or a low-judgment code-quality audit.
+  "AI-ish code", de-slopping, plausible-but-invented artifacts, mirror tests,
+  or an artifact-level code-quality audit.
 ---
 
 # Evidence-Based AI Slop Audit & Cleanup
@@ -31,18 +31,20 @@ asks to clean up, eliminate, or fix findings.
 | Skill | Use it for |
 | :--- | :--- |
 | **ai-slop-detector** (this) | Evidence-backed audit of needless complexity, invented behavior, misleading tests/docs, and architecture drift |
-| [code-review](../code-review/SKILL.md) | Standard project convention and safety review |
+| [code-review](../code-review/SKILL.md) | Convention/safety checklist; this skill audits evidence. Run either, not both, unless the user asks for both |
 | [reduce-code-size](../reduce-code-size/SKILL.md) | Behavior-preserving simplification after a validated finding |
 | [write-kotest](../write-kotest/SKILL.md) | Adding or correcting JVM/JS/evaluation tests |
 | [documentation-review](../documentation-review/SKILL.md) | Full factual documentation audit against source |
 | [adversarial-pr-review](../adversarial-pr-review/SKILL.md) | Mandatory dual-model loop for a PR being opened or updated |
 | [gradle-quality-gates](../gradle-quality-gates/SKILL.md) | Project build, formatting, coverage, and lint verification |
+| [autonomous-code-optimizer](../autonomous-code-optimizer/SKILL.md) | Unattended multi-pass refactor-to-zero; prefer for broad cleanup requests without a bounded audit |
 
 This skill does not replace an applicable owner skill, mandatory PR workflow,
 or quality gate. Load domain skills for touched code, especially
 `portfolio-rebalancing-math`, `kraken-api-integration`,
 `dry-run-and-simulation`, `common-kmp-module`, `exposed-repository`,
-`coroutines-flows-sse`, `ktor-html-views`, and `frontend-js-development`.
+`coroutines-flows-sse`, `ktor-html-views`, `frontend-js-development`,
+`trade-history-sync`, and `koin-di-and-config`.
 
 ## Evidence standard
 
@@ -51,8 +53,10 @@ Use the strongest evidence available:
 
 1. **Reproduction or failing check**: compiler/type error, failing test,
    unsafe runtime behavior, security exposure, or broken user flow.
-2. **Explicit contract conflict**: an invariant in source, tests, `AGENTS.md`,
-   an owning skill, public API, configuration schema, or protocol.
+2. **Explicit contract conflict**: an invariant in source, public API,
+   configuration schema, or protocol; or in tests, `AGENTS.md`, and owning
+   skills after verifying they match source (source is the truth, not older
+   docs).
 3. **Local inconsistency with a cost**: duplicate mechanism, bypassed boundary,
    or needless abstraction that demonstrably complicates maintenance or changes
    behavior.
@@ -71,8 +75,8 @@ Every finding needs all of the following:
 | Severity | Evidence-backed outcome |
 | :--- | :--- |
 | **P0** | Can lose money, expose secrets/security, perform destructive action, invent an external API/config/dependency that causes bad operation, or conceal broken required behavior with test changes |
-| **P1** | Breaks a contract, architectural boundary, lifecycle/cancellation rule, persistence invariant, or required user/API behavior |
-| **P2** | Demonstrably duplicates logic, adds unneeded complexity, weakens meaningful tests, or leaves inaccurate/misleading documentation |
+| **P1** | Breaks the build, a contract, architectural boundary, lifecycle/cancellation rule, persistence invariant, or required user/API behavior |
+| **P2** | Demonstrably duplicates logic, demonstrably adds unneeded complexity, demonstrably weakens meaningful tests, or leaves inaccurate/misleading documentation |
 | **P3** | Reviewability or style issue with no demonstrated correctness/maintenance impact; normally suggest rather than change |
 
 ## Audit workflow
@@ -211,8 +215,9 @@ Do not use test count, LOC ratio, parameter count, or mocking alone as proof.
   not a defect. Evaluation, fuzzing, and integration fixtures legitimately add
   volume.
 
-Example of a contract-based test in this repository. The expected `100` comes
-from the documented zero-target behavior, not from copying the division branch:
+Paraphrased from a contract-based test in this repository. The expected `100`
+comes from the documented zero-target behavior, not from copying the division
+branch:
 
 ```kotlin
 class PortfolioCalculationsTest : StringSpec() {
@@ -304,7 +309,9 @@ tests because they look generated or verbose.
 
 Use small cohesive patches and run preservation tests after each relevant
 change. Do not require artificial commit splitting or alter PR metadata. If
-intent is genuinely ambiguous, report it and ask instead of deleting it.
+intent is genuinely ambiguous, report it and ask instead of deleting it. For
+substantive simplification or test rewrites beyond a narrow patch, hand off to
+`reduce-code-size` / `write-kotest` and verify their gates.
 
 ### Step 8: Verify corrections and quality gates
 
@@ -340,5 +347,5 @@ After cleanup:
 - "This looks AI-ish; identify real quality problems"
 - "De-slop this file while preserving behavior"
 - "Are these tests mirroring the implementation?"
-- "Find suspicious generated artifacts or invented APIs"
+- "Find plausible-but-invented artifacts or invented APIs"
 - "Review this change for needless complexity and architecture drift"
