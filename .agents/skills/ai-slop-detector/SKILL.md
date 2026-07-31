@@ -33,6 +33,7 @@ asks to clean up, eliminate, or fix findings.
 | **ai-slop-detector** (this) | Evidence-backed audit of needless complexity, invented behavior, misleading tests/docs, and architecture drift |
 | [code-review](../code-review/SKILL.md) | Convention/safety checklist; this skill audits evidence. Run either, not both, unless the user asks for both |
 | [reduce-code-size](../reduce-code-size/SKILL.md) | Behavior-preserving simplification after a validated finding |
+| [kotlin-refactoring-and-cleanup](../kotlin-refactoring-and-cleanup/SKILL.md) | Convention cleanup (FQNs, magic strings, warning debt) after a validated finding |
 | [write-kotest](../write-kotest/SKILL.md) | Adding or correcting JVM/JS/evaluation tests |
 | [documentation-review](../documentation-review/SKILL.md) | Full factual documentation audit against source |
 | [adversarial-pr-review](../adversarial-pr-review/SKILL.md) | Mandatory dual-model loop for a PR being opened or updated |
@@ -60,8 +61,9 @@ Use the strongest evidence available:
 3. **Local inconsistency with a cost**: duplicate mechanism, bypassed boundary,
    or needless abstraction that demonstrably complicates maintenance or changes
    behavior.
-4. **Review prompt only**: unusual style, size, generated-looking prose, or a
-   pattern with insufficient context. Investigate; do not report it as a defect.
+4. **Review prompt only**: unusual style, size, formulaic or boilerplate prose,
+   or a pattern with insufficient context. Investigate; do not report it as a
+   defect.
 
 Every finding needs all of the following:
 
@@ -76,7 +78,7 @@ Every finding needs all of the following:
 | :--- | :--- |
 | **P0** | Can lose money, expose secrets/security, perform destructive action, invent an external API/config/dependency that causes bad operation, or conceal broken required behavior with test changes |
 | **P1** | Breaks the build, a contract, architectural boundary, lifecycle/cancellation rule, persistence invariant, or required user/API behavior |
-| **P2** | Demonstrably duplicates logic, demonstrably adds unneeded complexity, demonstrably weakens meaningful tests, or leaves inaccurate/misleading documentation |
+| **P2** | Demonstrably duplicates logic, demonstrably adds unneeded complexity, demonstrably weakens meaningful tests, or demonstrably leaves inaccurate/misleading documentation |
 | **P3** | Reviewability or style issue with no demonstrated correctness/maintenance impact; normally suggest rather than change |
 
 ## Audit workflow
@@ -220,7 +222,7 @@ comes from the documented zero-target behavior, not from copying the division
 branch:
 
 ```kotlin
-class PortfolioCalculationsTest : StringSpec() {
+class ZeroTargetDeviationContractTest : StringSpec() {
 
     override fun isolationMode() = IsolationMode.InstancePerTest
 
@@ -310,8 +312,9 @@ tests because they look generated or verbose.
 Use small cohesive patches and run preservation tests after each relevant
 change. Do not require artificial commit splitting or alter PR metadata. If
 intent is genuinely ambiguous, report it and ask instead of deleting it. For
-substantive simplification or test rewrites beyond a narrow patch, hand off to
-`reduce-code-size` / `write-kotest` and verify their gates.
+substantive simplification, test rewrites, or convention cleanup beyond a
+narrow patch, hand off to `reduce-code-size` / `write-kotest` /
+`kotlin-refactoring-and-cleanup` and verify their gates.
 
 ### Step 8: Verify corrections and quality gates
 
