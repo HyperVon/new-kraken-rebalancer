@@ -12,10 +12,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - **`ai-slop-detector` agent skill**: Evidence-based audit and cleanup of
   artifacts that impose avoidable cost (code, tests, docs, diffs) covering
-  needless complexity, architecture drift, invented integrations, and tests
-  that do not protect required behavior. The skill never attributes authorship
-  or intent to a contributor, defaults to audit/report, and cleans up only on
-  explicit request. Indexed in `.agents/AGENTS.md`.
+  needless complexity, excessive defensiveness, architecture drift, invented
+  integrations, duplicate/impossible-case tests, and tests that do not protect
+  required behavior. The skill never attributes authorship or intent to a
+  contributor, defaults to audit/report, and cleans up only on explicit
+  request. Indexed in `.agents/AGENTS.md`.
 
 ### Fixed
 

@@ -3,8 +3,9 @@ name: ai-slop-detector
 description: >-
   Audit and, when explicitly requested, clean up artifact-level AI slop in
   code, tests, documentation, and diffs. Finds evidence-backed quality defects
-  such as needless complexity, architecture drift, invented integrations,
-  misleading docs, and tests that do not protect required behavior. Never
+  such as needless complexity, excessive defensiveness, architecture drift,
+  invented integrations, misleading docs, duplicate tests, and tests that do
+  not protect required behavior. Never
   attributes authorship or intent to a contributor. Use for "AI slop",
   "AI-ish code", de-slopping, plausible-but-invented artifacts, mirror tests,
   or an artifact-level code-quality audit.
@@ -18,9 +19,9 @@ cost because it lacks the judgment required by this repository's contracts.
 
 This skill evaluates **artifacts and their effects**, never a contributor's
 tool use, competence, or intent. There is no reliable way to prove that code
-was AI-generated. Emoji, Unicode, verbosity, formulaic prose, PR size, author
-history, or a contributor's answer to a question are, at most, prompts to read
-more closely. They are not evidence of slop, authorship, severity, or bad
+was AI-generated. Emoji, unusual Unicode artifacts, verbosity, formulaic
+prose, PR size, author history, or a contributor's answer to a question are,
+at most, prompts to read more closely. They are not evidence of slop, authorship, severity, or bad
 faith.
 
 Default to an **audit and report**. Modify code only when the user explicitly
@@ -149,6 +150,12 @@ avoid overstating confidence.
 
 ### Step 3: Inspect implementation and architecture fit
 
+Judge against the standard of a strong staff engineer: defensive exactly at
+trust boundaries (external APIs, user input, configuration, persistence,
+money), lean and confident inside them. Padding, ceremony, and guards against
+contractually impossible states are investigated like any other signal — prove
+the cost or the impossibility before reporting.
+
 #### Meaningful code-level signals
 
 Investigate these only when there is an observable cost or contract conflict:
@@ -161,6 +168,7 @@ Investigate these only when there is an observable cost or contract conflict:
 | Invented integration | The dependency, route, method, config key, schema field, or external API does not exist or is incompatible |
 | Shortcut around types/errors/lifecycle | A failure is swallowed, a type/persistence/money invariant is bypassed, or cancellation is broken |
 | Unnecessary volume | Multiple blocks encode the same behavior without a separate contract, not merely a long but essential workflow |
+| Excessive defensiveness / dead guards | The guarded state is impossible under the type system or the sole caller's contract; a fallback silently masks a state that should fail hard; or the same invariant is re-validated with no added error context |
 
 #### Context-dependent constructs
 
@@ -178,6 +186,7 @@ reporting it:
 | `call.respondText` | Ktor response boundary for CSS, HTML, or JSON | It bypasses a required content type, escaping, or established view/route contract |
 | Raw database transaction | Schema/bootstrap or an intentional local boundary | A suspend repository path bypasses `safeTransactionIO`/`readTransactionIO` or breaks transaction safety |
 | One implementation of an interface | Useful boundary, test seam, or intended external contract | It is speculative indirection with no current seam, policy, or use |
+| Defensive validation / guard clause | Trust boundary: external API, user input, configuration, persistence, money safety | The guarded state is contractually impossible, or the invariant is already enforced at the single upstream boundary and the duplicate adds no error context |
 
 #### Repository-specific anchors
 
@@ -239,6 +248,24 @@ class ZeroTargetDeviationContractTest : StringSpec() {
     }
 }
 ```
+
+#### Test necessity
+
+Each test should be the cheapest way to kill a distinct defect class:
+
+- Name the defect class the test uniquely covers. Cosmetic input variation
+  with the same structure and no new failure mode is duplication, not
+  coverage. Table-driven rows are fine when each row kills a distinct variant.
+- Distinguish impossible from unlikely. Inputs the type system or the caller's
+  contract make impossible (null on a non-nullable internal parameter, an
+  already-validated shape deep inside the boundary) do not need unit tests.
+  Unlikely-but-possible inputs at trust boundaries (exchange responses,
+  config files, user input) are cheap insurance — keep them.
+- Reject coverage padding: assertions that only prove "does not throw",
+  "is not null", or restate a stubbed mock's return value with no production
+  logic in between.
+- Do not test the framework: getters, constructors, and delegation with no
+  logic are not defect classes unless an external contract depends on them.
 
 #### Test-provenance delta
 
@@ -306,6 +333,8 @@ tests because they look generated or verbose.
 | Invented or incorrect integration | Replace with the verified API/dependency/config, or remove the unsupported claim |
 | Unsafe error/cancellation behavior | Preserve cancellation, map/propagate meaningful failures, and test the affected path |
 | Mirror/weak test | Replace with a contract/invariant/oracle assertion that fails a plausible wrong variant |
+| Duplicate / impossible-case test | Delete after proving its defect class is covered elsewhere or its input is contractually impossible; preserve boundary and edge coverage |
+| Excessive defensiveness / dead guard | Remove the impossible-state check or collapse the duplicated validation to the owning boundary; keep the boundary test that proves the contract |
 | Concealed test regression | Restore the required contract or fix production behavior first; document intentional contract changes |
 | Misleading docs/comments | Correct against source or delete only redundant text; retain the why behind safety-critical logic |
 
@@ -338,6 +367,10 @@ After cleanup:
 - Replacing broad catches without preserving error recovery and coroutine
   cancellation.
 - Deleting tests merely to reduce LOC or improve a ratio.
+- Deleting boundary edge-case tests as "unlikely" — unlikelihood at a trust
+  boundary is not impossibility; prove the input cannot occur.
+- Removing validation at trust boundaries in the name of leanness; leanness
+  applies inside contracts, not at them.
 - Treating an ownership walkthrough as a test of who used AI.
 - Refactoring uncertain code during an audit-only request.
 - Declaring a documentation/API claim false without checking current source,
@@ -349,6 +382,7 @@ After cleanup:
 - "Audit this PR/codebase for AI slop"
 - "This looks AI-ish; identify real quality problems"
 - "De-slop this file while preserving behavior"
+- "Cut the over-defensive padding and duplicate tests"
 - "Are these tests mirroring the implementation?"
-- "Find plausible-but-invented artifacts or invented APIs"
+- "Find invented APIs and other plausible-but-false artifacts"
 - "Review this change for needless complexity and architecture drift"
