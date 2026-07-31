@@ -15,11 +15,10 @@ import com.gemini.krakenbot.service.PortfolioAnalyzer
 import com.gemini.krakenbot.service.PortfolioValues
 import com.gemini.krakenbot.service.RawBalances
 import com.gemini.krakenbot.service.RawPrices
-import com.gemini.krakenbot.service.impl.PortfolioCalculations.SCALE_USD
+import com.gemini.krakenbot.util.toUsdScale
 import kotlinx.coroutines.CancellationException
 import org.slf4j.LoggerFactory
 import java.math.BigDecimal
-import java.math.RoundingMode
 import java.time.Instant
 import com.gemini.krakenbot.util.resolveBalance as resolveBalanceFromKeys
 
@@ -74,7 +73,7 @@ class PortfolioAnalyzerImpl(
                 ath = totalPortfolioValueUSD
                 log.info(
                     "Initial ATH set to {}",
-                    ath.setScale(SCALE_USD, RoundingMode.HALF_UP),
+                    ath.toUsdScale(),
                 )
             }
 
@@ -82,7 +81,7 @@ class PortfolioAnalyzerImpl(
                 ath = totalPortfolioValueUSD
                 log.info(
                     "New All-Time High detected: {}",
-                    ath.setScale(SCALE_USD, RoundingMode.HALF_UP),
+                    ath.toUsdScale(),
                 )
             }
         }
@@ -93,6 +92,7 @@ class PortfolioAnalyzerImpl(
             throw e
         } catch (e: Exception) {
             log.error("Failed to persist portfolio ATH", e)
+            throw e
         }
 
         return RebalancerEngine.calculateDrawdown(totalPortfolioValueUSD, ath)

@@ -177,6 +177,28 @@ class DashboardControllerTest : DashboardControllerTestBase() {
             }
         }
 
+        "postSettings_RejectsMissingCsrfToken" {
+            every { configService.getConfig() } returns AppConfig(
+                KrakenCredentials(TestFixtures.TEST_API_KEY, "private-key"),
+                TestFixtures.settings(loopDelaySeconds = 60L),
+                listOf(Allocation(Asset.USD, 100.0)),
+            )
+            every { configService.updateConfig(any()) } returns Unit
+
+            testApplication {
+                application {
+                    configureTestEnv()
+                }
+                val response = client.post(Routes.SETTINGS) {
+                    setBody(parametersOf().formUrlEncode())
+                    header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
+                }
+
+                response.status shouldBe HttpStatusCode.Forbidden
+                verify(exactly = 0) { configService.updateConfig(any()) }
+            }
+        }
+
         "postSettings_SucceedsAndSetsHxRedirectHeader" {
             val serverConfig =
                 AppConfig(
@@ -203,6 +225,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                 application {
                     configureTestEnv()
                 }
+                val csrf = client.settingsCsrf()
                 val response =
                     client.post(Routes.SETTINGS) {
                         setBody(
@@ -212,6 +235,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                                 FormFields.DUST_THRESHOLD_USD to listOf("2.0"),
                                 FormFields.FIAT_MAX_DRAWDOWN to listOf("5.0"),
                                 FormFields.FIAT_DEPLOYMENT_EXPONENT to listOf("1.5"),
+                                FormFields.CSRF_TOKEN to listOf(csrf.value),
                                 FormFields.DRY_RUN to listOf("on"),
                                 FormFields.SIMULATION to listOf("on"),
                                 FormFields.SYMBOLS to listOf(Asset.USD),
@@ -223,6 +247,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                             HttpHeaders.ContentType,
                             ContentType.Application.FormUrlEncoded.toString(),
                         )
+                        header(HttpHeaders.Cookie, csrf.cookie)
                     }
                 response.status shouldBe HttpStatusCode.OK
                 response.headers[HtmxHeaders.HX_REDIRECT] shouldBe Routes.ROOT
@@ -252,6 +277,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                 application {
                     configureTestEnv()
                 }
+                val csrf = client.settingsCsrf()
                 val response = client.post(Routes.SETTINGS) {
                     setBody(
                         parametersOf(
@@ -260,6 +286,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                             FormFields.DUST_THRESHOLD_USD to listOf("1.0"),
                             FormFields.FIAT_MAX_DRAWDOWN to listOf("0.0"),
                             FormFields.FIAT_DEPLOYMENT_EXPONENT to listOf("1.0"),
+                            FormFields.CSRF_TOKEN to listOf(csrf.value),
                             FormFields.SYMBOLS to listOf(Asset.USD, Asset.BTC),
                             FormFields.TARGETS to listOf("100.0"),
                             FormFields.COLORS to listOf("#94a3b8", "#fbbf24"),
@@ -269,6 +296,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                         HttpHeaders.ContentType,
                         ContentType.Application.FormUrlEncoded.toString(),
                     )
+                    header(HttpHeaders.Cookie, csrf.cookie)
                 }
                 response.bodyAsText() shouldContain ViewText.INVALID_ALLOCATION_FIELDS
 
@@ -281,6 +309,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                                 FormFields.DUST_THRESHOLD_USD to listOf("1.0"),
                                 FormFields.FIAT_MAX_DRAWDOWN to listOf("0.0"),
                                 FormFields.FIAT_DEPLOYMENT_EXPONENT to listOf("1.0"),
+                                FormFields.CSRF_TOKEN to listOf(csrf.value),
                                 FormFields.SYMBOLS to listOf(Asset.USD),
                                 FormFields.TARGETS to listOf("100.0"),
                                 FormFields.COLORS to listOf("#94a3b8"),
@@ -288,6 +317,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                             ).formUrlEncode(),
                         )
                         header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
+                        header(HttpHeaders.Cookie, csrf.cookie)
                     }
                 invalidColorResponse.bodyAsText() shouldContain ViewText.INVALID_ALLOCATION_COLOR
             }
@@ -327,6 +357,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
 
             testApplication {
                 application { configureTestEnv() }
+                val csrf = client.settingsCsrf()
                 invalidValues.forEach { (invalidField, invalidValue) ->
                     val fields = validFields + (invalidField to invalidValue)
                     val response =
@@ -343,12 +374,14 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                                         listOf(fields.getValue(FormFields.FIAT_MAX_DRAWDOWN)),
                                     FormFields.FIAT_DEPLOYMENT_EXPONENT to
                                         listOf(fields.getValue(FormFields.FIAT_DEPLOYMENT_EXPONENT)),
+                                    FormFields.CSRF_TOKEN to listOf(csrf.value),
                                     FormFields.SYMBOLS to listOf(Asset.USD),
                                     FormFields.TARGETS to listOf(fields.getValue(FormFields.TARGETS)),
                                     FormFields.COLORS to listOf("#94a3b8"),
                                 ).formUrlEncode(),
                             )
                             header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
+                            header(HttpHeaders.Cookie, csrf.cookie)
                         }
                     response.bodyAsText() shouldContain ViewText.INVALID_SETTINGS_FIELD
                 }
@@ -370,6 +403,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
 
             testApplication {
                 application { configureTestEnv() }
+                val csrf = client.settingsCsrf()
                 val response =
                     client.post(Routes.SETTINGS) {
                         setBody(
@@ -379,12 +413,14 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                                 FormFields.DUST_THRESHOLD_USD to listOf("1.0"),
                                 FormFields.FIAT_MAX_DRAWDOWN to listOf("0.0"),
                                 FormFields.FIAT_DEPLOYMENT_EXPONENT to listOf("1.0"),
+                                FormFields.CSRF_TOKEN to listOf(csrf.value),
                                 FormFields.SYMBOLS to listOf(Asset.USD, Asset.BTC),
                                 FormFields.TARGETS to listOf("50.0", "50.0"),
                                 FormFields.COLORS to listOf("#94a3b8"),
                             ).formUrlEncode(),
                         )
                         header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
+                        header(HttpHeaders.Cookie, csrf.cookie)
                     }
                 response.bodyAsText() shouldContain ViewText.INVALID_ALLOCATION_FIELDS
             }
@@ -404,6 +440,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
 
             testApplication {
                 application { configureTestEnv() }
+                val csrf = client.settingsCsrf()
                 val response =
                     client.post(Routes.SETTINGS) {
                         setBody(
@@ -413,12 +450,14 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                                 FormFields.DUST_THRESHOLD_USD to listOf("1.0"),
                                 FormFields.FIAT_MAX_DRAWDOWN to listOf("0.0"),
                                 FormFields.FIAT_DEPLOYMENT_EXPONENT to listOf("1.0"),
+                                FormFields.CSRF_TOKEN to listOf(csrf.value),
                                 FormFields.SYMBOLS to listOf(Asset.USD),
                                 FormFields.TARGETS to listOf("100.0"),
                                 FormFields.COLORS to listOf("#94a3b8"),
                             ).formUrlEncode(),
                         )
                         header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
+                        header(HttpHeaders.Cookie, csrf.cookie)
                     }
                 response.bodyAsText() shouldContain ViewText.INVALID_DEVIATION_TRIGGER
             }
@@ -454,6 +493,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                 application {
                     configureTestEnv()
                 }
+                val csrf = client.settingsCsrf()
                 val response =
                     client.post(Routes.SETTINGS) {
                         setBody(
@@ -463,6 +503,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                                 FormFields.DUST_THRESHOLD_USD to listOf("1.0"),
                                 FormFields.FIAT_MAX_DRAWDOWN to listOf("0.0"),
                                 FormFields.FIAT_DEPLOYMENT_EXPONENT to listOf("1.0"),
+                                FormFields.CSRF_TOKEN to listOf(csrf.value),
                                 FormFields.SYMBOLS to listOf(Asset.USD),
                                 FormFields.TARGETS to listOf("90.0"),
                                 FormFields.COLORS to listOf("#94a3b8"),
@@ -472,6 +513,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                             HttpHeaders.ContentType,
                             ContentType.Application.FormUrlEncoded.toString(),
                         )
+                        header(HttpHeaders.Cookie, csrf.cookie)
                     }
                 response.status shouldBe HttpStatusCode.OK
                 response.bodyAsText() shouldContain "Total allocation percentage must be exactly 100%."
@@ -525,6 +567,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                 application {
                     configureTestEnv()
                 }
+                val csrf = client.settingsCsrf()
                 val response =
                     client.post(Routes.SETTINGS) {
                         setBody(
@@ -534,6 +577,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                                 FormFields.DUST_THRESHOLD_USD to listOf("5.0"),
                                 FormFields.FIAT_MAX_DRAWDOWN to listOf(TestFixtures.INVALID),
                                 FormFields.FIAT_DEPLOYMENT_EXPONENT to listOf(TestFixtures.INVALID),
+                                FormFields.CSRF_TOKEN to listOf(csrf.value),
                                 FormFields.SYMBOLS to
                                     listOf(
                                         Asset.BTC,
@@ -546,6 +590,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                             HttpHeaders.ContentType,
                             ContentType.Application.FormUrlEncoded.toString(),
                         )
+                        header(HttpHeaders.Cookie, csrf.cookie)
                     }
                 response.status shouldBe HttpStatusCode.OK
                 response.bodyAsText() shouldContain ViewText.INVALID_DEVIATION_TRIGGER
@@ -579,6 +624,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                 application {
                     configureTestEnv()
                 }
+                val csrf = client.settingsCsrf()
                 val response =
                     client.post(Routes.SETTINGS) {
                         setBody(
@@ -586,6 +632,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                                 FormFields.LOOP_DELAY_SECONDS to listOf("60"),
                                 FormFields.DEVIATION_TRIGGER_PERCENT to listOf("5.0"),
                                 FormFields.DUST_THRESHOLD_USD to listOf(TestFixtures.INVALID),
+                                FormFields.CSRF_TOKEN to listOf(csrf.value),
                                 FormFields.SYMBOLS to listOf(Asset.USD),
                                 FormFields.TARGETS to listOf("100.0"),
                                 FormFields.COLORS to listOf("#94a3b8"),
@@ -595,6 +642,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                             HttpHeaders.ContentType,
                             ContentType.Application.FormUrlEncoded.toString(),
                         )
+                        header(HttpHeaders.Cookie, csrf.cookie)
                     }
                 response.status shouldBe HttpStatusCode.OK
                 response.bodyAsText() shouldContain ViewText.INVALID_DUST_THRESHOLD
@@ -628,15 +676,17 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                 application {
                     configureTestEnv()
                 }
+                val csrf = client.settingsCsrf()
                 val response =
                     client.post(Routes.SETTINGS) {
                         setBody(
-                            parametersOf().formUrlEncode(),
+                            parametersOf(FormFields.CSRF_TOKEN to listOf(csrf.value)).formUrlEncode(),
                         )
                         header(
                             HttpHeaders.ContentType,
                             ContentType.Application.FormUrlEncoded.toString(),
                         )
+                        header(HttpHeaders.Cookie, csrf.cookie)
                     }
                 response.status shouldBe HttpStatusCode.OK
                 response.bodyAsText() shouldContain ViewText.INVALID_DEVIATION_TRIGGER
@@ -676,6 +726,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                 application {
                     configureTestEnv()
                 }
+                val csrf = client.settingsCsrf()
                 val response =
                     client.post(Routes.SETTINGS) {
                         setBody(
@@ -685,6 +736,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                                 FormFields.DUST_THRESHOLD_USD to listOf("5.0"),
                                 FormFields.FIAT_MAX_DRAWDOWN to listOf("0.0"),
                                 FormFields.FIAT_DEPLOYMENT_EXPONENT to listOf("1.0"),
+                                FormFields.CSRF_TOKEN to listOf(csrf.value),
                                 FormFields.SYMBOLS to listOf(Asset.USD),
                                 FormFields.TARGETS to listOf("100.0"),
                                 FormFields.COLORS to listOf("#94a3b8"),
@@ -694,6 +746,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                             HttpHeaders.ContentType,
                             ContentType.Application.FormUrlEncoded.toString(),
                         )
+                        header(HttpHeaders.Cookie, csrf.cookie)
                     }
                 response.status shouldBe HttpStatusCode.OK
                 response.bodyAsText() shouldContain ViewText.INVALID_CONFIGURATION_FALLBACK

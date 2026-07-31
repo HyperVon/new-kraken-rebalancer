@@ -6,6 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.15.23] - 2026-07-30
+
+### Changed
+
+- Settings mutations now use a LAN-compatible double-submit CSRF token while
+  preserving unauthenticated access from trusted private-network clients.
+- Live order sizing floors buy volume to the crypto precision.
+
+### Fixed
+
+- Prevented AddOrder from being re-posted after an Invalid nonce response; the
+  single attempt is journaled as an unresolved submission.
+- Portfolio ATH persistence failures now fail the cycle closed instead of
+  calculating deployment from an unpersisted high.
+- Hardened private request form encoding and reduced private order logging to
+  non-sensitive order fields.
+- Added row-count checks to trade journal updates and synchronized precision
+  helper usage in manager, analyzer, and simulator paths.
+
 ## [6.15.22] - 2026-07-30
 
 ### Changed
@@ -409,8 +428,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   network/database dependencies.
 - **Kraken AddOrder `cl_ord_id`**: `KrakenService.executeOrder` and
   `OrderExecutorImpl` send a deterministic UUID-form client order id derived from
-  `cycleId|symbol|side` so `retryWithFlow` re-POSTs reuse the same id. Kraken
-  enforces uniqueness among *open* orders (`userref` is not a uniqueness key).
+  `cycleId|symbol|side`; non-AddOrder retries reuse the same id where applicable,
+  while AddOrder is attempted only once. Kraken enforces uniqueness among *open*
+  orders (`userref` is not a uniqueness key).
 
 ### Changed
 

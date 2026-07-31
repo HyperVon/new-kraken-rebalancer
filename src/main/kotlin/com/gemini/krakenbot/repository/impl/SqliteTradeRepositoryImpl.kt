@@ -108,7 +108,7 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
 
     override suspend fun updateTrade(oldTrade: TradeRecord, newTrade: TradeRecord) {
         database.safeTransactionIO(log, "Failed to update trade in database", "Database update failed") {
-            TradeTable.update({
+            val updatedRows = TradeTable.update({
                 // Prefer primary key; multi-column fallback only when the in-memory row has no id.
                 if (oldTrade.id != null) {
                     TradeTable.id eq oldTrade.id
@@ -120,6 +120,9 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
                 }
             }) {
                 it.applyTradeFields(newTrade)
+            }
+            check(updatedRows == 1) {
+                "Expected to update one trade row, but updated $updatedRows for trade ${oldTrade.id}"
             }
         }
     }

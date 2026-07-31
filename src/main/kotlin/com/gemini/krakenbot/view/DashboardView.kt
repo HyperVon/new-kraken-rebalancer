@@ -33,19 +33,24 @@ class DashboardView(
     }
 
     context(html: HTML)
-    fun renderSettingsPage(config: AppConfig, errorMessage: String?) {
+    fun renderSettingsPage(config: AppConfig, errorMessage: String?, csrfToken: String = "test-token") {
         html.head {
             commonMetadataAndStyles()
             title("$SETTINGS_TITLE - $APP_TITLE")
             script(src = CdnUrls.HTMX) {}
         }
         html.body {
-            settingsFormComponent.render(config, errorMessage)
+            settingsFormComponent.render(config, errorMessage, csrfToken)
         }
     }
 
-    fun renderSettingsFormFragment(parent: FlowContent, config: AppConfig, errorMessage: String?) {
-        settingsFormComponent.renderForm(parent, config, errorMessage)
+    fun renderSettingsFormFragment(
+        parent: FlowContent,
+        config: AppConfig,
+        errorMessage: String?,
+        csrfToken: String = "test-token",
+    ) {
+        settingsFormComponent.renderForm(parent, config, errorMessage, csrfToken)
     }
 
     context(html: HTML)

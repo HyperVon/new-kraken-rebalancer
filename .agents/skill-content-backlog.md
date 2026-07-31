@@ -40,7 +40,8 @@ Severity: **P0** money/safety teaching gap · **P1** high-leverage pattern ·
 ### [KRAKEN-NONCE-1] Monotonic nonce + `Invalid nonce` recovery
 
 - Skill: `.agents/skills/kraken-api-integration/SKILL.md`
-- Gap: Skill documents HMAC signing but not the nonce lifecycle.
+- Resolution: The skill and implementation now document monotonic nonces,
+  non-AddOrder recovery, and the AddOrder one-shot exception.
 - Why: Kraken rejects non-monotonic nonces; all private calls (trading + sync) stall after restart or clock skew.
 
 ````markdown
@@ -51,7 +52,9 @@ Severity: **P0** money/safety teaching gap · **P1** high-leverage pattern ·
   private request — nonces must stay **strictly increasing**.
 - On Kraken `Invalid nonce` inside `queryPrivate`, bump the generator by
   `100_000_000L * (1 shl retryCount)` (up to 5 inner retries) before
-  re-signing — never reuse the failed nonce.
+  re-signing non-AddOrder calls — never reuse the failed nonce. AddOrder must
+  not be re-POSTed after its single attempt; journal an Invalid nonce result as
+  `UNCERTAIN`.
 - Anti-patterns: random or time-only nonces; sharing one nonce across
   concurrent private posts; logging nonce + postData beside signatures.
 - NTP rollback can still seed lower — the bump-and-retry path is the intended

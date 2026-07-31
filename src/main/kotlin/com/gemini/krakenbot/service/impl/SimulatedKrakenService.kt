@@ -171,7 +171,7 @@ class SimulatedKrakenService(private val configService: ConfigService) : KrakenS
             success = true,
             dryRun = false,
             price = price,
-            fee = usdAmount.multiply(SEED_FEE_RATE).setScale(4, RoundingMode.HALF_UP),
+            fee = usdAmount.multiply(SEED_FEE_RATE).setScale(PrecisionConstants.SCALE_FEE, RoundingMode.HALF_UP),
             source = TradeSource.API_FILL,
             orderTxid = "$SEED_ORDER_TXID_PREFIX$seedId",
             tradeId = "$SEED_TRADE_ID_PREFIX$seedId",
@@ -249,11 +249,6 @@ class SimulatedKrakenService(private val configService: ConfigService) : KrakenS
         val normalizedVolume = volume.toCryptoScale()
         val usdAmount = normalizedVolume.multiply(price).toUsdScale()
 
-        log.info(
-            "[EMULATOR] Executing $side order on $pair, volume: $normalizedVolume, " +
-                "calculated price: $price ($$usdAmount) cl_ord_id=$clOrdId",
-        )
-
         if ((dryRun ?: configService.getConfig().settings.dryRun)) {
             log.info("[EMULATOR DRY RUN] Order would execute successfully cl_ord_id=$clOrdId")
             return OrderResult(
@@ -264,6 +259,11 @@ class SimulatedKrakenService(private val configService: ConfigService) : KrakenS
                 dryRun = true,
             )
         }
+
+        log.info(
+            "[EMULATOR] Executing $side order on $pair, volume: $normalizedVolume, " +
+                "calculated price: $price ($$usdAmount) cl_ord_id=$clOrdId",
+        )
 
         return orderMutex.withLock {
             val usdBalance = balances[Asset.USD] ?: BigDecimal.ZERO
@@ -313,7 +313,9 @@ class SimulatedKrakenService(private val configService: ConfigService) : KrakenS
                     success = true,
                     dryRun = false,
                     price = price.toCryptoScale(),
-                    fee = usdAmount.multiply(SEED_FEE_RATE).setScale(4, RoundingMode.HALF_UP),
+                    fee = usdAmount.multiply(
+                        SEED_FEE_RATE,
+                    ).setScale(PrecisionConstants.SCALE_FEE, RoundingMode.HALF_UP),
                     source = TradeSource.API_FILL,
                     orderTxid = orderTxid,
                 )

@@ -41,17 +41,20 @@ import kotlinx.html.script
 
 class SettingsFormComponent {
     context(body: BODY)
-    fun render(config: AppConfig, errorMessage: String?) {
-        renderForm(body, config, errorMessage)
+    fun render(config: AppConfig, errorMessage: String?, csrfToken: String = "test-token") {
+        renderForm(body, config, errorMessage, csrfToken)
         renderSettingsScript()
     }
 
-    fun renderForm(parent: FlowContent, config: AppConfig, errorMessage: String?) {
+    fun renderForm(parent: FlowContent, config: AppConfig, errorMessage: String?, csrfToken: String = "test-token") {
         parent.div(CssClass.Layout.Container) {
             form {
                 attributes[HtmxAttrs.HX_POST] = Routes.SETTINGS
                 attributes[HtmxAttrs.HX_TARGET] = HtmxValues.BODY
                 attributes[HtmxAttrs.HX_SWAP] = HtmxValues.INNER_HTML
+                input(type = hidden, name = FormFields.CSRF_TOKEN) {
+                    value = csrfToken
+                }
 
                 header {
                     brandWithMode(config.settings)

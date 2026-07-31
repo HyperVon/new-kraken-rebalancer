@@ -118,7 +118,7 @@ class OrderExecutorImpl(
                     executedSells = true
                     result.orderTxid?.let { sellOrderTxids.add(it) }
                 }
-                if (result?.submissionUncertain == true) return@withStableBackend
+                if (shouldAbortAfterFailure(result)) return@withStableBackend
             }
 
             var actualCash = projectedCash
@@ -189,7 +189,7 @@ class OrderExecutorImpl(
                     actualCash = actualCash.subtract(cost)
                     remainingBuyBudget = remainingBuyBudget.subtract(cost).toUsdScale()
                 }
-                if (result?.submissionUncertain == true) return@withStableBackend
+                if (shouldAbortAfterFailure(result)) return@withStableBackend
             }
         }
     }
@@ -214,7 +214,7 @@ class OrderExecutorImpl(
         // exchange and persist a $0 TradeRecord otherwise (CQ-3-23 / #74).
         if (usdAmount.signum() <= 0) return null
 
-        val requestedVolume = usdAmount.divide(price, PrecisionConstants.SCALE_CRYPTO, RoundingMode.HALF_UP)
+        val requestedVolume = usdAmount.divide(price, PrecisionConstants.SCALE_CRYPTO, RoundingMode.DOWN)
         // Portfolio values are cent-rounded, so a full liquidation intent can round up to one
         // crypto quantum more than the entry balance. Kraken volume must never exceed holdings.
         val volume =
@@ -301,6 +301,8 @@ class OrderExecutorImpl(
         cycleTradeIds.add(pendingId)
         return result
     }
+
+    private fun shouldAbortAfterFailure(result: OrderResult?): Boolean = result?.submissionUncertain == true
 
     private suspend fun markSubmissionFailure(pending: TradeRecord, id: Int, message: String?) {
         tradeHistoryService.updateTrade(

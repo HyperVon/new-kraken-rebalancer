@@ -241,6 +241,47 @@ class KrakenServiceTest : KrakenServiceTestBase() {
             }
         }
 
+        "executeOrder_InvalidNonceIsUncertainAndIsNotRetried" {
+            runTest {
+                var requestCount = 0
+                val objectMapper = jacksonObjectMapper()
+                configService = mockk(relaxed = true)
+                every { configService.getConfig() } returns AppConfig(
+                    kraken = KrakenCredentials(
+                        apiKey = "public-key",
+                        privateKey = Base64.getEncoder().encodeToString("secret-key".toByteArray()),
+                    ),
+                    settings = Settings(60L, 2.0, dryRun = false),
+                    allocations = emptyList(),
+                )
+                val service = KrakenServiceImpl(
+                    configService,
+                    objectMapper,
+                    HttpClient(
+                        MockEngine {
+                            requestCount++
+                            respond(
+                                content = "{\"error\":[\"EAPI:Invalid nonce\"]}",
+                                status = HttpStatusCode.OK,
+                                headers = headersOf(HttpHeaders.ContentType, TestFixtures.APPLICATION_JSON),
+                            )
+                        },
+                    ),
+                )
+
+                val result = service.executeOrder(
+                    pair = TestFixtures.XBTUSD,
+                    type = OrderType.MARKET.apiValue,
+                    side = OrderSide.BUY.apiValue,
+                    volume = BigDecimal.ONE,
+                )
+
+                result.success.shouldBeFalse()
+                result.submissionUncertain shouldBe true
+                requestCount shouldBe 1
+            }
+        }
+
         "executeOrder_MissingTxidIsUncertain" {
             runTest {
                 val service = createService("{\"error\":[],\"result\":{}}")

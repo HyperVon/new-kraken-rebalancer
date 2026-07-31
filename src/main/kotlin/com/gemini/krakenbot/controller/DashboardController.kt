@@ -72,8 +72,9 @@ class DashboardController(
 
             get(Routes.SETTINGS) {
                 val config = configService.getConfig()
+                val csrfToken = CsrfProtection.issueToken(call)
                 call.respondHtml(HttpStatusCode.OK) {
-                    dashboardView.renderSettingsPage(config, null)
+                    dashboardView.renderSettingsPage(config, null, csrfToken)
                 }
             }
 
@@ -130,6 +131,10 @@ class DashboardController(
 
     private suspend fun RoutingContext.handlePostSettings() {
         val params = call.receiveParameters()
+        if (!CsrfProtection.isValid(call, params)) {
+            call.respond(HttpStatusCode.Forbidden)
+            return
+        }
         val currentConfig = configService.getConfig()
         val updatedConfig = try {
             parseSettingsForm(params, currentConfig)
@@ -219,7 +224,7 @@ class DashboardController(
     private suspend fun RoutingContext.respondSettingsFormError(config: AppConfig, message: String) {
         val errHtml =
             createHTML(prettyPrint = false).div {
-                dashboardView.renderSettingsFormFragment(this, config, message)
+                dashboardView.renderSettingsFormFragment(this, config, message, CsrfProtection.currentToken(call))
             }
         call.respondText(errHtml, ContentType.Text.Html)
     }

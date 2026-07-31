@@ -35,6 +35,7 @@ object HtmxHeaders {
 }
 
 object FormFields {
+    const val CSRF_TOKEN = "csrfToken"
     const val LOOP_DELAY_SECONDS = "loopDelaySeconds"
     const val DEVIATION_TRIGGER_PERCENT = "deviationTriggerPercent"
     const val DUST_THRESHOLD_USD = "dustThresholdUSD"

@@ -72,9 +72,11 @@ gitignored config.
 - `KrakenServiceImpl` seeds an `AtomicLong` from
   `System.currentTimeMillis() * 1_000_000L` and uses `incrementAndGet()` per
   private request — nonces must stay **strictly increasing**.
-- On Kraken `Invalid nonce` inside `queryPrivate`, bump the generator by
-  `100_000_000L * (1 shl retryCount)` (up to 5 inner retries) before
-  re-signing — never reuse the failed nonce.
+- On Kraken `Invalid nonce` inside `queryPrivate`, non-AddOrder calls may bump
+  the generator by `100_000_000L * (1 shl retryCount)` (up to 5 inner retries)
+  before re-signing — never reuse the failed nonce. AddOrder is different:
+  after its single POST, any Invalid nonce response is unresolved and must be
+  journaled as `UNCERTAIN`; never re-POST it.
 - Anti-patterns: random or time-only nonces; sharing one nonce across
   concurrent private posts; logging nonce + postData beside signatures.
 - NTP rollback can still seed lower — the bump-and-retry path is the intended

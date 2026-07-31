@@ -8,6 +8,8 @@ import com.gemini.krakenbot.service.PortfolioAnalyzer
 import com.gemini.krakenbot.service.PortfolioManager
 import com.gemini.krakenbot.service.RawBalances
 import com.gemini.krakenbot.service.TradeHistoryService
+import com.gemini.krakenbot.util.toPercentScale
+import com.gemini.krakenbot.util.toUsdScale
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
@@ -15,7 +17,6 @@ import org.slf4j.LoggerFactory
 import org.slf4j.MDC
 import java.io.IOException
 import java.math.BigDecimal
-import java.math.RoundingMode
 import java.util.UUID
 import kotlin.time.Duration.Companion.seconds
 
@@ -130,10 +131,7 @@ class PortfolioManagerImpl(
 
         log.info(
             "Total Portfolio Value: $${
-                totalPortfolioValueUSD.setScale(
-                    2,
-                    RoundingMode.HALF_UP,
-                )
+                totalPortfolioValueUSD.toUsdScale()
             }",
         )
 
@@ -154,8 +152,8 @@ class PortfolioManagerImpl(
         if (fiatDeploymentPct > BigDecimal.ZERO) {
             log.info(
                 "Drawdown Detected: {}%. Fiat Deployment: {}%",
-                drawdownPct.setScale(2, RoundingMode.HALF_UP),
-                fiatDeploymentPct.setScale(2, RoundingMode.HALF_UP),
+                drawdownPct.toPercentScale(),
+                fiatDeploymentPct.toPercentScale(),
             )
         }
 
@@ -173,16 +171,23 @@ class PortfolioManagerImpl(
             )
         actionLog.addAll(cycleActions)
 
-        orderExecutor.executeOrders(
-            buyOrders = buyOrders,
-            sellOrders = sellOrders,
-            currentValuesUSD = currentValuesUSD,
-            prices = prices,
-            settings = config.settings,
-            actionLog = actionLog,
-            cycleId = cycleId,
-            availableBalances = balances,
-        )
+        try {
+            orderExecutor.executeOrders(
+                buyOrders = buyOrders,
+                sellOrders = sellOrders,
+                currentValuesUSD = currentValuesUSD,
+                prices = prices,
+                settings = config.settings,
+                actionLog = actionLog,
+                cycleId = cycleId,
+                availableBalances = balances,
+            )
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            log.error("Order execution failed; continuing with a snapshot", e)
+            actionLog.add("ERROR: Order execution failed: ${e.message ?: e.javaClass.simpleName}")
+        }
 
         val finalState =
             if (buyOrders.isNotEmpty() || sellOrders.isNotEmpty()) {
