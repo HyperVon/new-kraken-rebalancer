@@ -45,6 +45,12 @@ value class Asset(val value: String) {
             DOGE to XDG,
         )
 
+        // Keep allocation symbols on the application side of Kraken's ticker aliases.
+        private val CANONICAL_SYMBOL_BY_ALIAS = mapOf(
+            XBT to BTC,
+            XDG to DOGE,
+        )
+
         private val FALLBACK_SYMBOLS = listOf(BTC, ETH, DOGE)
 
         operator fun invoke(value: String): Asset = Asset(value)
@@ -53,6 +59,12 @@ value class Asset(val value: String) {
         fun toKrakenTicker(symbol: String): String {
             val normalizedSymbol = normalizedSymbol(symbol)
             return KRAKEN_TICKER_BY_SYMBOL[normalizedSymbol] ?: normalizedSymbol
+        }
+
+        /** Uppercase a symbol and map Kraken ticker aliases to the application symbol. */
+        fun canonicalSymbol(symbol: String): String {
+            val normalizedSymbol = normalizedSymbol(symbol)
+            return CANONICAL_SYMBOL_BY_ALIAS[normalizedSymbol] ?: normalizedSymbol
         }
 
         fun tradingPair(symbol: String): String = "${toKrakenTicker(symbol)}$USD"
@@ -70,8 +82,10 @@ value class Asset(val value: String) {
             return allocations
                 .filterNot(::isUsdSymbol)
                 .firstOrNull { symbol -> matchesTradingPair(normalizedPair, symbol) }
+                ?.let(::canonicalSymbol)
                 ?: allocations
                     .firstOrNull { symbol -> isUsdSymbol(symbol) && matchesTradingPair(normalizedPair, symbol) }
+                    ?.let(::canonicalSymbol)
                 ?: FALLBACK_SYMBOLS
                     .firstOrNull { symbol -> matchesTradingPair(normalizedPair, symbol) }
         }
@@ -89,7 +103,7 @@ value class Asset(val value: String) {
          * where e.g. a `XBTUSDT`/`XBTUSDC` quote could be mis-resolved to BTC.
          */
         fun acceptedUsdQuotedPairs(symbol: String): Set<String> {
-            val normalizedSymbol = normalizedSymbol(symbol)
+            val normalizedSymbol = canonicalSymbol(symbol)
             val krakenTicker = toKrakenTicker(normalizedSymbol)
             return setOf(
                 "$krakenTicker$USD",
@@ -106,7 +120,7 @@ value class Asset(val value: String) {
 
         /** Balance-map key candidates, including Kraken X/Z asset prefixes (e.g. XXBT, ZUSD). */
         fun possibleBalanceKeys(symbol: String): List<String> {
-            val normalized = normalizedSymbol(symbol)
+            val normalized = canonicalSymbol(symbol)
             val krakenTicker = toKrakenTicker(normalized)
             return listOf(
                 symbol,

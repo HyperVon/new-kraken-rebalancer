@@ -71,15 +71,36 @@ class TradeHistorySyncService(
         // near the previous watermark are re-fetched and reconciled rather than double-inserted.
         // [isHistorySeeded] only gates progress metadata / first-sync completion, not this window.
         val startSec = effectiveLatest?.minusSeconds(300)?.epochSecond
+        // A numeric progress cursor marks an interrupted seed; recovery widens to a full query so
+        // a partial watermark cannot filter out older pages.
+        val isRecoveringInitialSync = readInitialPaginationOffset() != null
+        val paginationStartSec = if (isRecoveringInitialSync) null else startSec
 
-        log.info("Starting trade history synchronization (isSeeded={}, startSec={})...", isSeeded, startSec)
+        log.info(
+            "Starting trade history synchronization (isSeeded={}, startSec={}, recovering={})...",
+            isSeeded,
+            paginationStartSec,
+            isRecoveringInitialSync,
+        )
 
-        val queryStart = effectiveLatest?.minusSeconds(300) ?: Instant.EPOCH
+        // A resumed seed uses a full-history query. The persisted page offset is only
+        // a progress marker; restart from page zero because new fills can shift Kraken offsets.
+        val queryStart =
+            if (isRecoveringInitialSync) {
+                Instant.EPOCH
+            } else {
+                effectiveLatest?.minusSeconds(300) ?: Instant.EPOCH
+            }
         val queryEnd = nowProvider().plusSeconds(300)
         val originalLocalTrades = repository.getTradesInRange(queryStart, queryEnd).toMutableList()
         val allocations = config.allocations.map { it.symbol.value }
 
-        val (totalAdded, totalReconciled) = processApiTrades(startSec, originalLocalTrades, allocations)
+        val (totalAdded, totalReconciled) = processApiTrades(
+            startSec = paginationStartSec,
+            isSeeded = isSeeded,
+            originalLocalTrades = originalLocalTrades,
+            allocations = allocations,
+        )
 
         triggerReconstructionIfNeeded(config)
 
@@ -98,6 +119,7 @@ class TradeHistorySyncService(
 
     private suspend fun processApiTrades(
         startSec: Long?,
+        isSeeded: Boolean,
         originalLocalTrades: MutableList<TradeRecord>,
         allocations: List<String>,
     ): Pair<Int, Int> {
@@ -108,7 +130,7 @@ class TradeHistorySyncService(
         // lands mid-pagination; without this set that row is double-inserted (CQ-8-M1).
         val seenApiFillKeys = mutableSetOf<String>()
 
-        getTradeHistoryPaginated(startSec = startSec)
+        getTradeHistoryPaginated(startSec = startSec, isSeeded = isSeeded)
             .collect { apiTrades ->
                 for (apiTrade: TradeRecord in apiTrades) {
                     if (!seenApiFillKeys.add(apiFillIdentityKey(apiTrade))) continue
@@ -277,6 +299,11 @@ class TradeHistorySyncService(
         )
     }
 
+    private suspend fun readInitialPaginationOffset(): Int? = repository
+        .getSyncMetadata(SyncMetadataKeys.SYNC_OFFSET)
+        ?.toIntOrNull()
+        ?.takeIf { it >= 0 && it % PAGE_SIZE == 0 }
+
     /**
      * Identity for a single API fill within one sync pass. Kraken's trade id is the authoritative
      * per-fill identity; fall back to a full economics fingerprint for historical rows that lack it.
@@ -307,11 +334,9 @@ class TradeHistorySyncService(
         trade.orderTxid.orEmpty(),
     ).joinToString("|")
 
-    /** Cold paginated Kraken history (page size 50); writes sync_offset/total only until first seed completes. */
-    private fun getTradeHistoryPaginated(startSec: Long?): Flow<List<TradeRecord>> = flow {
-        val pageSize = 50
+    /** Cold paginated Kraken history; progress is durable until the first seed completes. */
+    private fun getTradeHistoryPaginated(startSec: Long?, isSeeded: Boolean): Flow<List<TradeRecord>> = flow {
         var offset = 0
-        val isSeeded = repository.isHistorySeeded()
 
         while (true) {
             log.info("Fetching trade history batch with offset={}", offset)
@@ -327,8 +352,8 @@ class TradeHistorySyncService(
 
             emit(apiTrades)
 
-            if (apiTrades.size < pageSize) break
-            offset += pageSize
+            if (apiTrades.size < PAGE_SIZE) break
+            offset += PAGE_SIZE
         }
     }
 
@@ -337,4 +362,8 @@ class TradeHistorySyncService(
     suspend fun setSyncMetadata(key: String, value: String) = repository.setSyncMetadata(key, value)
 
     suspend fun isHistorySeeded(): Boolean = repository.isHistorySeeded()
+
+    private companion object {
+        const val PAGE_SIZE = 50
+    }
 }

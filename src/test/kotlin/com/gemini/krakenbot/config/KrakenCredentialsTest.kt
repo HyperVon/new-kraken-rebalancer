@@ -5,6 +5,7 @@ package com.gemini.krakenbot.config
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.string.shouldNotContain
 import kotlin.io.encoding.Base64
 
 class KrakenCredentialsTest : StringSpec() {
@@ -37,6 +38,15 @@ class KrakenCredentialsTest : StringSpec() {
             KrakenCredentials("real-api-key", "invalid_base64_!@#$").hasValidCredentials() shouldBe false
             KrakenCredentials("real-api-key", "real-private-key").hasValidCredentials() shouldBe false
             KrakenCredentials("real-api-key", "not=valid=base64!!!").hasValidCredentials() shouldBe false
+        }
+
+        "string representations redact both credential values" {
+            val credentials = KrakenCredentials("raw-api-key", validPrivateKey)
+
+            credentials.apiKey.toString() shouldBe "***REDACTED***"
+            credentials.privateKey.toString() shouldBe "***REDACTED***"
+            credentials.toString() shouldNotContain "raw-api-key"
+            credentials.toString() shouldNotContain validPrivateKey
         }
     }
 }

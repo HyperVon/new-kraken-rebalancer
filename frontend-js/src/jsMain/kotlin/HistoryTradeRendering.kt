@@ -200,7 +200,7 @@ internal fun updateStats(stats: HistoryStats) {
 
     if (athTitle != null) {
         athTitle.textContent =
-            if (currentRange == TimeRange.ALL.key) {
+            if (loadedRange == TimeRange.ALL.key) {
                 ViewText.HISTORY_ALL_TIME_HIGH
             } else {
                 ViewText.PERIOD_HIGH

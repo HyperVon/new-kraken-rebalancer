@@ -5,6 +5,7 @@ import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.DatabaseConfig
 import com.gemini.krakenbot.config.InvalidConfigurationException
 import com.gemini.krakenbot.config.KrakenCredentials
+import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderResult
 import com.gemini.krakenbot.model.PortfolioSnapshot
@@ -13,6 +14,7 @@ import com.gemini.krakenbot.repository.impl.SqlitePortfolioStatsRepositoryImpl
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.FakeKrakenService
 import com.gemini.krakenbot.service.TradeHistoryService
+import com.gemini.krakenbot.service.impl.ConfigServiceImpl
 import com.gemini.krakenbot.service.impl.OrderExecutorImpl
 import com.gemini.krakenbot.service.impl.PortfolioAnalyzerImpl
 import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
@@ -43,9 +45,11 @@ import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
-import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import java.io.File
 import java.io.IOException
@@ -191,8 +195,8 @@ internal fun EvaluationScenariosTest.registerScenarios1To7() {
         runTest {
             val fakeKraken = FakeKrakenService()
             val mockConfig = mockk<ConfigService>(relaxed = true)
-            val testStatsFile = "scenario2-stats.json"
-            val f = File(testStatsFile)
+            val f = evaluationTempPath("2-stats")
+            val testStatsFile = f.absolutePath
             val db = DatabaseConfig.init(TestFixtures.MEMORY_)
             val statsRepo = SqlitePortfolioStatsRepositoryImpl(db, objectMapper, testStatsFile)
 
@@ -416,7 +420,7 @@ internal fun EvaluationScenariosTest.registerScenarios1To7() {
         }
     }
 
-    "Scenario 4: Live Dashboard & Config Hot-Reload" {
+    "Scenario 4: Live Dashboard & Settings Flow Publication" {
         testApplication {
             application {
                 configureTestEnv()
@@ -447,7 +451,12 @@ internal fun EvaluationScenariosTest.registerScenarios1To7() {
                     ),
                 )
 
+            val configFlow = MutableSharedFlow<Settings>(replay = 1, extraBufferCapacity = 1)
             every { configService.getConfig() } returns validConfig
+            every { configService.watchConfigChanges() } returns configFlow
+            every { configService.updateConfig(any()) } answers {
+                configFlow.tryEmit(firstArg<AppConfig>().settings).shouldBeTrue()
+            }
             val settingsResponse = client.get(Routes.SETTINGS)
             val csrfToken =
                 Regex("""name="csrfToken" value="([^"]+)"""")
@@ -479,6 +488,25 @@ internal fun EvaluationScenariosTest.registerScenarios1To7() {
             postResponse.status shouldBe HttpStatusCode.OK
             postResponse.headers[HtmxHeaders.HX_REDIRECT] shouldBe Routes.ROOT
             verify { configService.updateConfig(any()) }
+            configFlow.replayCache.single().loopDelaySeconds shouldBe 120L
+
+            val actualConfigPath = evaluationTempPath("4-config")
+            try {
+                objectMapper.writeValue(actualConfigPath, validConfig)
+                val actualConfig = ConfigServiceImpl(objectMapper, actualConfigPath.absolutePath)
+                val publishedSettings = mutableListOf<Settings>()
+                val configCollector = launch(start = CoroutineStart.UNDISPATCHED) {
+                    actualConfig.watchConfigChanges().take(2).toList(publishedSettings)
+                }
+                actualConfig.updateConfig(
+                    validConfig.copy(settings = validConfig.settings.copy(loopDelaySeconds = 180L)),
+                )
+                configCollector.join()
+                publishedSettings.last().loopDelaySeconds shouldBe 180L
+            } finally {
+                actualConfigPath.delete()
+                File("${actualConfigPath.absolutePath}.tmp").delete()
+            }
 
             // 3. POST Invalid Settings (Validation fails)
             every { configService.updateConfig(any()) } throws
@@ -519,23 +547,31 @@ internal fun EvaluationScenariosTest.registerScenarios1To7() {
                     effectiveUsdTargetPercent = BigDecimal.ZERO,
                 )
             coEvery { tradeHistoryService.getLatestSnapshot() } returns snapshot
-            every { tradeHistoryService.getHistoryFlow() } returns flowOf(snapshot)
+            val streamFlow = MutableSharedFlow<PortfolioSnapshot>(replay = 1, extraBufferCapacity = 1)
+            streamFlow.tryEmit(
+                snapshot.copy(
+                    totalValueUSD = BigDecimal("5100.0"),
+                    actions = listOf("HOT FLOW UPDATE"),
+                ),
+            ).shouldBeTrue()
+            every { tradeHistoryService.getHistoryFlow() } returns streamFlow
 
             val clientSse = createClient { install(ClientSSE) }
             clientSse.sse(Routes.API_STATUS_STREAM) {
-                val events = incoming.take(1).toList()
+                val events = incoming.take(2).toList()
                 events[0].data shouldContain "BROADCAST TEST"
+                events[1].data shouldContain "HOT FLOW UPDATE"
             }
 
             val evidence =
                 "GET Dashboard Shell returns 200 OK & ${ViewText.APP_TITLE}\n" +
-                    "POST settings updates configuration safely and redirects via HX-Redirect header\n" +
+                    "POST settings updates configuration and publishes the new settings on a replaying hot flow\n" +
                     "POST invalid settings fails with allocation verification exception\n" +
-                    "SSE stream successfully broadcasts snapshot payload updates to HTMX clients"
+                    "SSE stream receives the persisted snapshot and a replayed hot-flow snapshot update"
 
             EvaluationScenariosTest.recordResult(
                 "Scenario 4",
-                "Live Dashboard & Config Hot-Reload",
+                "Live Dashboard & Settings Flow Publication",
                 TestFixtures.PASS,
                 evidence,
             )

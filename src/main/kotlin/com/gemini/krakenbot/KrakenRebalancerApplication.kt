@@ -16,14 +16,26 @@ import io.ktor.server.netty.Netty
 import io.ktor.server.sse.SSE
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeoutOrNull
 import org.koin.core.context.GlobalContext
 import org.koin.core.context.startKoin
 import org.koin.core.context.stopKoin
 import org.koin.logger.slf4jLogger
+import org.slf4j.LoggerFactory
+
+private const val REBALANCING_SHUTDOWN_TIMEOUT_MILLIS = 5_000L
+
+private val log = LoggerFactory.getLogger("KrakenRebalancerApplication")
+
+internal suspend fun joinRebalancingWorker(workerJob: Job?): Boolean =
+    withTimeoutOrNull(REBALANCING_SHUTDOWN_TIMEOUT_MILLIS) {
+        workerJob?.join()
+        true
+    } ?: false
 
 fun main() {
     startKoin {
@@ -36,20 +48,21 @@ fun main() {
     val tradeHistoryService = koin.get<TradeHistoryService>()
     val httpClient = koin.get<HttpClient>()
 
-    portfolioManager.startRebalancingLoop()
     // Blocking: history cleanup/migration/simulation seeding must finish before runLoop is launched
     // below and before the server accepts traffic, so cycle one and the dashboard see seeded state.
     runBlocking { tradeHistoryService.init() }
 
     val applicationScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
-    applicationScope.launch {
-        portfolioManager.runLoop()
-    }
+    val workerJob = portfolioManager.startRebalancingLoop(applicationScope)
 
     Runtime.getRuntime().addShutdownHook(
         Thread {
-            // Stop and cancel the worker before closing its Koin-managed client and dependency graph.
+            // Stop and join the worker before closing its Koin-managed client and dependency graph.
             portfolioManager.stopRebalancingLoop()
+            val workerJoined = runBlocking { joinRebalancingWorker(workerJob) }
+            if (!workerJoined) {
+                log.warn("Timed out waiting for the rebalance worker to finish during shutdown.")
+            }
             applicationScope.cancel()
             httpClient.close()
             stopKoin()

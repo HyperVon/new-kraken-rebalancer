@@ -248,5 +248,37 @@ class ModelTest : StringSpec() {
             local.isMatchingApiTrade(api, listOf("BTC", "DOGE")) shouldBe false
             local.isMatchingApiTrade(api.copy(volume = BigDecimal("1.0")), listOf("BTC", "DOGE")) shouldBe true
         }
+
+        "pair alias matching rejects conflicting trade identity and economics" {
+            val now = Instant.now()
+            val base = TestFixtures.tradeRecord(
+                timestamp = now,
+                pair = TestFixtures.XBTUSD,
+                side = TestFixtures.BUY_UPPER,
+                symbol = Asset.BTC,
+                volume = BigDecimal.ONE,
+                usdAmount = BigDecimal("50000.00"),
+                price = BigDecimal("50000.00"),
+                fee = BigDecimal("100.00"),
+                source = TradeSource.API_FILL,
+            )
+            fun alias(record: TradeRecord) = record.copy(pair = TestFixtures.XXBTZUSD)
+
+            base.copy(tradeId = "fill-a").isPairAliasDuplicateOf(alias(base.copy(tradeId = "fill-b"))) shouldBe false
+            base.copy(tradeId = "fill-a").isPairAliasDuplicateOf(
+                alias(base.copy(source = TradeSource.LEGACY_UNKNOWN)),
+            ) shouldBe false
+            base.isPairAliasDuplicateOf(alias(base.copy(symbol = Asset.DOGE))) shouldBe false
+            base.isPairAliasDuplicateOf(base.copy(pair = TestFixtures.XBTUSD)) shouldBe false
+            base.isPairAliasDuplicateOf(alias(base.copy(success = false))) shouldBe false
+            base.isPairAliasDuplicateOf(alias(base.copy(dryRun = true))) shouldBe false
+            base.isPairAliasDuplicateOf(alias(base.copy(volume = BigDecimal("1.02")))) shouldBe false
+            base.isPairAliasDuplicateOf(alias(base.copy(usdAmount = BigDecimal("51000.00")))) shouldBe false
+            base.isPairAliasDuplicateOf(alias(base.copy(fee = BigDecimal("101.00")))) shouldBe false
+            base.isPairAliasDuplicateOf(
+                alias(base.copy(source = TradeSource.LOCAL_ESTIMATE, slippagePercent = BigDecimal.ZERO)),
+            ) shouldBe true
+            base.isPairAliasDuplicateOf(alias(base)) shouldBe true
+        }
     }
 }

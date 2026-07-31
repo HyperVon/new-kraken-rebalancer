@@ -1,7 +1,10 @@
 package com.gemini.krakenbot.frontend
 
+import com.gemini.krakenbot.view.util.FormFields
 import com.gemini.krakenbot.view.util.HtmlEvents
+import com.gemini.krakenbot.view.util.HtmlIds
 import com.gemini.krakenbot.view.util.HtmlTags
+import com.gemini.krakenbot.view.util.ViewText
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
@@ -78,6 +81,50 @@ class MainTest : StringSpec() {
                 val event = document.createEvent(HtmlEvents.EVENT)
                 event.initEvent(type = HtmlEvents.HTMX_AFTER_SWAP, bubbles = true, cancelable = true)
                 document.dispatchEvent(event)
+            } finally {
+                window.asDynamic().setInterval = oldSetInterval
+                document.body!!.removeChild(container)
+            }
+        }
+
+        "main reinitializes settings controls after an HTMX error swap" {
+            val oldSetInterval = window.asDynamic().setInterval
+            window.asDynamic().setInterval = { _: () -> Unit, _: Int -> 0 }
+            val container = document.createElement(HtmlTags.DIV)
+            fun settingsMarkup(firstTarget: String, secondTarget: String): String =
+                """
+                ${TestDomBuilders.settingsDom()}
+                <input name="${FormFields.TARGETS}" value="$firstTarget">
+                <input name="${FormFields.SYMBOLS}" value="BTC">
+                <input name="${FormFields.TARGETS}" value="$secondTarget">
+                <input name="${FormFields.SYMBOLS}" value="USD">
+                """.trimIndent()
+            container.innerHTML = settingsMarkup("50.0", "50.0")
+            document.body!!.appendChild(container)
+
+            try {
+                main()
+                container.innerHTML = settingsMarkup("40.0", "40.0")
+
+                val event = document.createEvent(HtmlEvents.EVENT)
+                event.initEvent(type = HtmlEvents.HTMX_AFTER_SWAP, bubbles = true, cancelable = true)
+                document.dispatchEvent(event)
+
+                val totalDisplay = document.getElementById(HtmlIds.TOTAL_ALLOCATED_DISPLAY)
+                    as HTMLElement
+                val saveButton = document.getElementById(HtmlIds.SAVE_BUTTON)
+                    as HTMLButtonElement
+                totalDisplay.textContent shouldBe "Total: 80.00%"
+                saveButton.disabled shouldBe true
+
+                val simulation = document.querySelector(
+                    "input[name=\"${FormFields.SIMULATION}\"]",
+                ) as HTMLInputElement
+                simulation.checked = true
+                val change = document.createEvent(HtmlEvents.EVENT)
+                change.initEvent(type = HtmlEvents.CHANGE, bubbles = true, cancelable = true)
+                simulation.dispatchEvent(change)
+                document.getElementById(HtmlIds.MODE_PLATE_LABEL)?.textContent shouldBe ViewText.MODE_SIMULATION
             } finally {
                 window.asDynamic().setInterval = oldSetInterval
                 document.body!!.removeChild(container)

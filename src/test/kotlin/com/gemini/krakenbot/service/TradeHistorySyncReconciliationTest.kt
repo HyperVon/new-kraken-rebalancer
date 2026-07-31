@@ -9,11 +9,13 @@ import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.OrderSubmissionState
 import com.gemini.krakenbot.model.PortfolioStats
+import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.model.TradeSource
 import com.gemini.krakenbot.repository.TradeSummaryStats
 import com.gemini.krakenbot.service.impl.history.TradeHistoryServiceImpl
 import com.gemini.krakenbot.util.TradeCalculator
+import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.shouldBe
 import io.mockk.Runs
@@ -23,6 +25,7 @@ import io.mockk.every
 import io.mockk.just
 import io.mockk.slot
 import io.mockk.verify
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
 import java.math.BigDecimal
@@ -503,6 +506,127 @@ class TradeHistorySyncReconciliationTest : TradeHistoryServiceTestBase() {
                 coVerify(exactly = 1) { krakenService.getTradeHistory(null, 50) }
                 coVerify(exactly = 51) { repository.saveTrade(any()) }
                 coVerify(exactly = 1) { repository.setHistorySeeded(true) }
+            }
+        }
+
+        listOf(
+            "cancellation" to { CancellationException("cancel after page progress and persistence") },
+            "failure" to { IllegalStateException("failure after page progress and persistence") },
+        ).forEach { (interruptionKind, interruptionFactory) ->
+            "CQ-14-L5: interrupted initial pagination resumes older fills after $interruptionKind" {
+                runTest {
+                    val now = Instant.parse("2033-05-01T12:00:00Z")
+                    val allTrades = List(150) { index ->
+                        val secondsAgo = when {
+                            index < 50 -> index.toLong()
+                            index < 100 -> 300L + (index - 50)
+                            else -> 1_000L + (index - 100) * 600L
+                        }
+                        TestFixtures.tradeRecord(
+                            timestamp = now.minusSeconds(secondsAgo),
+                            pair = TestFixtures.XBTUSD,
+                            side = TestFixtures.BUY,
+                            symbol = Asset.BTC,
+                            volume = BigDecimal.ONE,
+                            usdAmount = BigDecimal.TEN,
+                            source = TradeSource.API_FILL,
+                            tradeId = "TRADE-${index.toString().padStart(3, '0')}",
+                        )
+                    }
+                    val persistedTrades = mutableListOf<TradeRecord>()
+                    val metadata = mutableMapOf<String, String>()
+                    var seeded = false
+                    var throwOnPersistedPageOne = true
+                    val expectedFailure = interruptionFactory()
+
+                    val appConfig = AppConfig(
+                        kraken = KrakenCredentials(
+                            TestFixtures.TRADE_HISTORY_API_KEY,
+                            TestFixtures.TRADE_HISTORY_API_SECRET,
+                        ),
+                        settings = TestFixtures.settings(
+                            dryRun = false,
+                            simulation = true,
+                            loopDelaySeconds = 60,
+                            deviationTriggerPercent = 5.0,
+                            dustThresholdUSD = 5.0,
+                        ),
+                        allocations = emptyList(),
+                    )
+                    every { configService.getConfig() } returns appConfig
+                    coEvery { repository.isHistorySeeded() } coAnswers { seeded }
+                    coEvery { repository.getLatestTradeTime() } coAnswers {
+                        persistedTrades.maxByOrNull(TradeRecord::timestamp)?.timestamp
+                    }
+                    coEvery { repository.getSyncMetadata(any()) } coAnswers {
+                        metadata[firstArg<String>()]
+                    }
+                    coEvery { repository.setSyncMetadata(any(), any()) } coAnswers {
+                        metadata[firstArg<String>()] = secondArg<String>()
+                    }
+                    coEvery { repository.setHistorySeeded(any()) } coAnswers {
+                        seeded = firstArg<Boolean>()
+                    }
+                    coEvery { repository.getTradesInRange(any(), any()) } coAnswers {
+                        val from = firstArg<Instant>()
+                        val to = secondArg<Instant>()
+                        persistedTrades
+                            .filter { !it.timestamp.isBefore(from) && !it.timestamp.isAfter(to) }
+                            .sortedByDescending(TradeRecord::timestamp)
+                    }
+                    coEvery { repository.saveTrade(any()) } coAnswers {
+                        val trade = firstArg<TradeRecord>()
+                        if (persistedTrades.none { it.tradeId == trade.tradeId }) persistedTrades.add(trade)
+                        if (trade.tradeId == allTrades[50].tradeId && throwOnPersistedPageOne) {
+                            throwOnPersistedPageOne = false
+                            throw expectedFailure
+                        }
+                        persistedTrades.size
+                    }
+                    coEvery { repository.load() } returns emptyList()
+                    coEvery { repository.getTradeSummaryStats() } returns TradeSummaryStats(
+                        totalTradesExecuted = 0L,
+                        totalVolumeTraded = BigDecimal.ZERO,
+                        totalFeesPaid = BigDecimal.ZERO,
+                        latestSnapshotTime = null,
+                    )
+                    every { krakenService.getLastTradeHistoryTotalCount() } returns allTrades.size
+                    coEvery { krakenService.getTradeHistory(any(), any()) } coAnswers {
+                        val startSec = firstArg<Long?>()
+                        val offset = secondArg<Int?>() ?: 0
+                        allTrades
+                            .filter { startSec == null || it.timestamp.epochSecond >= startSec }
+                            .drop(offset)
+                            .take(50)
+                    }
+
+                    val service = createService(syncNowProvider = { now })
+
+                    val thrown = shouldThrow<Throwable> { service.syncTradesFromKraken() }
+                    thrown::class shouldBe expectedFailure::class
+
+                    persistedTrades.size shouldBe 51
+                    seeded shouldBe false
+                    metadata[SyncMetadataKeys.SYNC_OFFSET] shouldBe "50"
+                    metadata[SyncMetadataKeys.SYNC_TOTAL] shouldBe "150"
+                    metadata[SyncMetadataKeys.HISTORY_SEEDED] shouldBe null
+                    metadata[SyncMetadataKeys.SYNC_WATERMARK_EPOCH_SEC] shouldBe null
+                    verify(exactly = 1) { configService.beginExecutionSession() }
+                    verify(exactly = 1) { configService.endExecutionSession() }
+
+                    service.syncTradesFromKraken()
+
+                    persistedTrades.mapNotNull(TradeRecord::tradeId).toSet().size shouldBe 150
+                    persistedTrades.size shouldBe 150
+                    seeded shouldBe true
+                    metadata[SyncMetadataKeys.SYNC_OFFSET] shouldBe SyncMetadataKeys.COMPLETED
+                    metadata[SyncMetadataKeys.SYNC_TOTAL] shouldBe SyncMetadataKeys.COMPLETED
+                    coVerify(exactly = 2) { krakenService.getTradeHistory(null, 0) }
+                    coVerify(exactly = 1) { krakenService.getTradeHistory(null, 100) }
+                    coVerify(exactly = 1) { krakenService.getTradeHistory(null, 150) }
+                    verify(exactly = 2) { configService.beginExecutionSession() }
+                    verify(exactly = 2) { configService.endExecutionSession() }
+                }
             }
         }
 

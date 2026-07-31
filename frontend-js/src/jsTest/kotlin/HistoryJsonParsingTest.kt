@@ -13,6 +13,7 @@ import com.gemini.krakenbot.model.TradeSourceKeys
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
+import kotlin.js.JSON
 import kotlin.js.json
 
 class HistoryJsonParsingTest : StringSpec() {
@@ -181,6 +182,60 @@ class HistoryJsonParsingTest : StringSpec() {
             parsed.points.size shouldBe 1
             parsed.points[0].rebalancerValueUSD shouldBe "100000.00"
             parsed.latestDifferenceUSD shouldBe "5000.00"
+        }
+
+        "native JSON fixtures parse every history wire payload" {
+            val snapshots = parsePortfolioSnapshots(
+                JSON.parse(
+                    """
+                    [{
+                      "timestamp":"2026-07-01T12:00:00Z","totalValueUSD":"100.00",
+                      "assets":{"BTC":{"symbol":"BTC","balance":"0.001","price":"100000.00",
+                      "valueUSD":"100.00","targetPercent":"100","currentPercent":"100",
+                      "deviationPercent":"0","deviationUSD":"0"}},"actions":["BUY BTC"],
+                      "drawdownPercent":"0","fiatDeploymentPercent":"0","effectiveUsdTargetPercent":"0"
+                    }]
+                    """.trimIndent(),
+                ),
+            )
+            snapshots.single().assets[Asset.BTC]?.valueUSD shouldBe "100.00"
+            snapshots.single().actions shouldBe listOf("BUY BTC")
+
+            val stats = parseHistoryStats(
+                JSON.parse(
+                    """
+                    {"allTimeHigh":"100.00","totalTradesExecuted":2,"totalVolumeTraded":"200.00",
+                     "totalFeesPaid":"0.50","latestSnapshotTime":null,"avgFeeRatePercent":"0.25",
+                     "avgSlippagePercent":null,"failedTradeCount":0,"dryRunTradeCount":1}
+                    """.trimIndent(),
+                ),
+            )
+            stats.totalTradesExecuted shouldBe 2L
+            stats.avgSlippagePercent shouldBe null
+
+            val comparison = parseRebalancerComparison(
+                JSON.parse(
+                    """
+                    {"availability":"AVAILABLE","confidence":"ESTIMATED",
+                     "baselineTimestamp":"2026-07-01T12:00:00Z","points":[
+                       {"timestamp":"2026-07-01T12:00:00Z","rebalancerValueUSD":"100.00",
+                        "buyAndHoldValueUSD":"100.00","differenceUSD":"0.00","differencePercent":"0"},
+                       {"timestamp":"2026-07-02T12:00:00Z","rebalancerValueUSD":"110.00",
+                        "buyAndHoldValueUSD":"105.00","differenceUSD":"5.00","differencePercent":"4.76"}],
+                     "latestDifferenceUSD":"5.00","latestDifferencePercent":"4.76",
+                     "unavailableReason":null,"unavailableAt":null}
+                    """.trimIndent(),
+                ),
+            )
+            comparison.confidence shouldBe "ESTIMATED"
+            comparison.points.size shouldBe 2
+
+            val sync = parseSyncProgressResponse(
+                JSON.parse(
+                    """{"${SyncMetadataKeys.IS_SEEDED}":false,"${SyncMetadataKeys.OFFSET}":"5","${SyncMetadataKeys.TOTAL}":"10"}""",
+                ),
+            )
+            sync shouldBe SyncProgressResponse(seeded = false, offset = "5", total = "10")
         }
 
         "parseRebalancerComparison returns unavailable for null or missing input" {

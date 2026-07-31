@@ -1,6 +1,8 @@
 package com.gemini.krakenbot.util
 
 import com.gemini.krakenbot.model.TradeRecord
+import com.gemini.krakenbot.model.TradeSource
+import com.gemini.krakenbot.model.effectiveSource
 import com.gemini.krakenbot.model.feePercentDiffersMateriallyFrom
 import com.gemini.krakenbot.model.hasDifferentTradeProvenanceFrom
 import com.gemini.krakenbot.model.isLocalEstimateDuplicateOf
@@ -29,11 +31,13 @@ object TradeDeduplicator {
                 // Sorted ascending: once the gap exceeds 5 minutes, later j cannot match record1.
                 if (diff > 300_000) break
 
-                val pairAliasDuplicate = record1.isPairAliasDuplicateOf(record2)
+                val sameIdentity = hasCompatibleIdentity(record1, record2)
+                val pairAliasDuplicate = sameIdentity && record1.isPairAliasDuplicateOf(record2)
                 // Estimate↔API only when fee rates diverge (≥0.1 pp) — identical fees look like
                 // two real fills, not an estimate replaced by a settle.
                 val localEstimateDuplicate =
-                    record1.isLocalEstimateDuplicateOf(record2) &&
+                    sameIdentity &&
+                        record1.isLocalEstimateDuplicateOf(record2) &&
                         record1.feePercentDiffersMateriallyFrom(record2) &&
                         record1.hasDifferentTradeProvenanceFrom(record2)
 
@@ -50,5 +54,24 @@ object TradeDeduplicator {
             }
         }
         return toDelete.toList()
+    }
+
+    private fun hasCompatibleIdentity(first: TradeRecord, second: TradeRecord): Boolean {
+        if (first.submissionState != null || second.submissionState != null) return false
+        if (first.success != second.success || first.dryRun != second.dryRun) return false
+
+        val firstTradeId = first.tradeId?.takeIf { it.isNotBlank() }
+        val secondTradeId = second.tradeId?.takeIf { it.isNotBlank() }
+        if (firstTradeId != null && secondTradeId != null && firstTradeId != secondTradeId) return false
+
+        val firstOrderTxid = first.orderTxid?.takeIf { it.isNotBlank() }
+        val secondOrderTxid = second.orderTxid?.takeIf { it.isNotBlank() }
+        if (firstOrderTxid != null && secondOrderTxid != null && firstOrderTxid != secondOrderTxid) return false
+
+        val firstSource = first.effectiveSource()
+        val secondSource = second.effectiveSource()
+        return firstSource == secondSource ||
+            (firstSource == TradeSource.LOCAL_ESTIMATE && secondSource == TradeSource.API_FILL) ||
+            (firstSource == TradeSource.API_FILL && secondSource == TradeSource.LOCAL_ESTIMATE)
     }
 }

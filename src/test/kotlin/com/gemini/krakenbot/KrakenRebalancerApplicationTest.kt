@@ -1,3 +1,5 @@
+@file:OptIn(ExperimentalCoroutinesApi::class)
+
 package com.gemini.krakenbot
 
 import com.gemini.krakenbot.config.appModule
@@ -7,7 +9,16 @@ import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.nulls.shouldNotBeNull
+import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
 import org.koin.core.context.startKoin
 import org.koin.core.context.stopKoin
 import org.koin.test.KoinTest
@@ -55,6 +66,42 @@ class KrakenRebalancerApplicationTest :
                 if (!existed) {
                     configFile.delete()
                 }
+            }
+        }
+
+        "shutdown join waits for worker cleanup before dependencies are released" {
+            runTest {
+                val cleanupStarted = CompletableDeferred<Unit>()
+                val releaseCleanup = CompletableDeferred<Unit>()
+                val cleanupFinished = CompletableDeferred<Unit>()
+                val worker = Job()
+                val cleanup = launch {
+                    withContext(NonCancellable) {
+                        cleanupStarted.complete(Unit)
+                        releaseCleanup.await()
+                        cleanupFinished.complete(Unit)
+                        worker.complete()
+                    }
+                }
+
+                cleanupStarted.await()
+                var dependenciesReleased = false
+                val joiner = launch {
+                    joinRebalancingWorker(worker) shouldBe true
+                    dependenciesReleased = true
+                }
+                runCurrent()
+
+                dependenciesReleased shouldBe false
+                cleanupFinished.isCompleted shouldBe false
+
+                releaseCleanup.complete(Unit)
+                runCurrent()
+                joiner.join()
+                cleanup.join()
+
+                dependenciesReleased shouldBe true
+                cleanupFinished.isCompleted shouldBe true
             }
         }
     }

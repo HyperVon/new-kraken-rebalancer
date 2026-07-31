@@ -29,7 +29,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
-import org.jetbrains.exposed.v1.jdbc.transactions.TransactionManager
+import org.jetbrains.exposed.v1.jdbc.transactions.transaction
 import java.io.File
 import java.io.IOException
 import java.math.BigDecimal
@@ -197,43 +197,37 @@ internal fun EvaluationScenariosTest.registerScenarios8To14() {
         }
     }
 
-    "Scenario 10: Atomic File Writer Resilience" {
+    "Scenario 10: Portfolio Stats Database Failure Resilience" {
         runTest {
-            val baseFile = File("build/test-scenario10-base")
-            baseFile.parentFile?.mkdirs()
-            baseFile.delete()
-            baseFile.createNewFile()
-
-            val targetStatsFile = File(baseFile, "stats.json")
             val db = DatabaseConfig.init(TestFixtures.MEMORY_)
             val statsRepo =
                 SqlitePortfolioStatsRepositoryImpl(
                     db,
                     objectMapper,
-                    targetStatsFile.absolutePath,
+                    evaluationTempPath("10").absolutePath,
                 )
             val stats = PortfolioStats(BigDecimal("1234.56"))
 
-            // save() only writes SQLite, so the IOException has to be forced by unregistering the
-            // transaction manager; targetStatsFile is read by load(), never written by save().
-            TransactionManager.closeAndUnregister(db)
+            // save() writes SQLite, not the legacy JSON path. Drop the actual stats table to exercise
+            // the repository's database-write failure mapping.
+            transaction(db) {
+                exec(TestFixtures.DROP_TABLE_IF_EXISTS_PORTFOLIO_STATS)
+            }
 
-            shouldThrow<IOException> {
+            val failure = shouldThrow<IOException> {
                 statsRepo.save(stats)
             }
-            val writeFailPass = true
-
-            baseFile.delete()
+            val writeFailPass = failure.message == "Database write failed"
 
             val evidence =
-                "Target stats path: ${targetStatsFile.absolutePath}\n" +
-                    "AtomicJsonFile.write failed with IOException as expected: $writeFailPass\n" +
-                    "Repository remains uncorrupted."
+                "Portfolio stats table was removed from the in-memory database.\n" +
+                    "Stats save failed with the database-write IOException: $writeFailPass\n" +
+                    "Failure message: ${failure.message}"
 
             writeFailPass.shouldBeTrue()
             EvaluationScenariosTest.recordResult(
                 "Scenario 10",
-                "Atomic File Writer Resilience",
+                "Portfolio Stats Database Failure Resilience",
                 TestFixtures.PASS,
                 evidence,
             )

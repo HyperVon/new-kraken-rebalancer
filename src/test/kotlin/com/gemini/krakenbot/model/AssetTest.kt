@@ -16,6 +16,11 @@ class AssetTest : StringSpec() {
             Asset.fromTradingPair(TestFixtures.XXBTZUSD, allocations) shouldBe Asset.BTC
         }
 
+        "fromTradingPair returns canonical symbols for lower-case Kraken aliases" {
+            Asset.fromTradingPair(TestFixtures.XBTUSD, listOf(TestFixtures.BTC_LOWER, "usd")) shouldBe Asset.BTC
+            Asset.fromTradingPair(Asset.tradingPair("xdg"), listOf("doge", "usd")) shouldBe Asset.DOGE
+        }
+
         "fromTradingPair resolves ETH aliases and is case-insensitive" {
             val allocations = listOf(Asset.ETH, Asset.USD)
             Asset.fromTradingPair(TestFixtures.ETHUSD, allocations) shouldBe Asset.ETH

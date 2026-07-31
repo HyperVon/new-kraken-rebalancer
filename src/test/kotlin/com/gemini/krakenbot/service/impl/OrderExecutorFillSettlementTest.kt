@@ -382,6 +382,40 @@ class OrderExecutorFillSettlementTest : StringSpec() {
             }
         }
 
+        "falls back to balance poll when fill history throws" {
+            runTest {
+                val sellTxid = "OID-HISTORY-FAILURE"
+                krakenService.orderResultFactory = { pair, _, side, volume ->
+                    OrderResult(
+                        success = true,
+                        pair = pair,
+                        side = side,
+                        volume = volume,
+                        orderTxid = if (side == TestFixtures.SELL) sellTxid else "OID-BUY",
+                    )
+                }
+                krakenService.tradeHistorySupplier = { _, _ -> error("history unavailable") }
+                krakenService.balanceSupplier = { mapOf(Asset.USD to BigDecimal("190.00")) }
+
+                orderExecutor.executeOrders(
+                    buyOrders = mapOf(Asset.ETH to BigDecimal("200.00")),
+                    sellOrders = mapOf(Asset.BTC to BigDecimal("100.00")),
+                    currentValuesUSD = mapOf(Asset.USD to BigDecimal("100.00")),
+                    prices = mapOf(
+                        Asset.BTC to BigDecimal("1000.00"),
+                        Asset.ETH to BigDecimal("1000.00"),
+                    ),
+                    settings = TestFixtures.settings(dryRun = false),
+                    actionLog = mutableListOf(),
+                )
+
+                krakenService.getTradeHistoryCallCount shouldBe 3
+                krakenService.getBalancesCallCount shouldBe 1
+                krakenService.executedOrders.size shouldBe 2
+                krakenService.executedOrders[1].volume.shouldBeEqualComparingTo(BigDecimal("0.1881"))
+            }
+        }
+
         "does not inflate buy budget from unmatched prior-cycle sell fills" {
             runTest {
                 krakenService.orderResultFactory = { pair, _, side, volume ->

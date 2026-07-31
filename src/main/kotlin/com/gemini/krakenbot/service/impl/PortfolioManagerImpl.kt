@@ -11,13 +11,19 @@ import com.gemini.krakenbot.service.TradeHistoryService
 import com.gemini.krakenbot.util.toPercentScale
 import com.gemini.krakenbot.util.toUsdScale
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
 import org.slf4j.LoggerFactory
 import org.slf4j.MDC
 import java.io.IOException
 import java.math.BigDecimal
 import java.util.UUID
+import kotlin.coroutines.coroutineContext
 import kotlin.time.Duration.Companion.seconds
 
 class PortfolioManagerImpl(
@@ -35,22 +41,80 @@ class PortfolioManagerImpl(
         private const val ERROR_PERSIST_TRADE_HISTORY_PREFIX = "ERROR: Failed to persist trade history: "
     }
 
+    // The monitor covers synchronous start/stop Job ownership; the Mutex rejects duplicate coroutine callers.
+    private val lifecycleLock = Any()
+    private val runLoopMutex = Mutex()
+
     @Volatile
     private var isRunning = false
 
-    @Synchronized
+    @Volatile
+    private var workerJob: Job? = null
+
     override fun stopRebalancingLoop() {
-        this.isRunning = false
+        val job = synchronized(lifecycleLock) {
+            isRunning = false
+            workerJob
+        }
+        job?.cancel()
         log.info("Rebalancing loop stopped.")
     }
 
-    @Synchronized
     override fun startRebalancingLoop() {
-        this.isRunning = true
+        synchronized(lifecycleLock) {
+            isRunning = true
+        }
         log.info("Rebalancing loop started.")
     }
 
+    override fun startRebalancingLoop(scope: CoroutineScope): Job {
+        val job = synchronized(lifecycleLock) {
+            isRunning = true
+            workerJob?.takeIf { it.isActive }
+                ?: scope.launch(start = CoroutineStart.LAZY) { runLoop() }.also { newJob ->
+                    workerJob = newJob
+                    newJob.start()
+                }
+        }
+        log.info("Rebalancing loop started.")
+        return job
+    }
+
     override suspend fun runLoop() {
+        if (!runLoopMutex.tryLock()) {
+            log.warn("Rebalancing loop worker already exists; ignoring duplicate runLoop caller.")
+            return
+        }
+
+        val currentJob = coroutineContext[Job]
+        try {
+            val admitted = synchronized(lifecycleLock) {
+                if (!isRunning) {
+                    false
+                } else {
+                    val existingJob = workerJob
+                    if (existingJob != null && existingJob !== currentJob && existingJob.isActive) {
+                        false
+                    } else {
+                        workerJob = currentJob
+                        true
+                    }
+                }
+            }
+            if (!admitted) return
+
+            runLoopBody()
+        } finally {
+            synchronized(lifecycleLock) {
+                if (workerJob === currentJob) {
+                    workerJob = null
+                }
+            }
+            runLoopMutex.unlock()
+        }
+    }
+
+    private suspend fun runLoopBody() {
         try {
             log.info("Checking and performing historical trades synchronization from Kraken API...")
             tradeHistoryService.syncTradesFromKraken()

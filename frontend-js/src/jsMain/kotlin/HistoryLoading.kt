@@ -84,6 +84,8 @@ internal fun loadAll(range: String): Promise<Unit> {
         val trades = parseTradeRecords(results[1])
         val stats = parseHistoryStats(results[2])
         val comparison = parseRebalancerComparison(results[3])
+        loadedRange = range
+        currentRange = range
         allTrades = trades
         buildPortfolioValueChart(snapshots)
         buildAssetHoldingsChart(snapshots)
@@ -94,7 +96,11 @@ internal fun loadAll(range: String): Promise<Unit> {
         renderTradeTable(trades)
         updateStats(stats)
     }.`catch` { error ->
-        if (requestGeneration == historyLoadGeneration) throw error
+        if (requestGeneration == historyLoadGeneration) {
+            currentRange = loadedRange
+            syncTimeRangeButtons(currentRange)
+            throw error
+        }
     }
 }
 

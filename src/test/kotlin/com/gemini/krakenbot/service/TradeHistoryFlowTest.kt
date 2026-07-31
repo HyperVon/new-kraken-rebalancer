@@ -6,6 +6,7 @@ import com.gemini.krakenbot.model.PortfolioSnapshot
 import io.kotest.matchers.collections.shouldContainExactly
 import io.mockk.coVerify
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
@@ -61,6 +62,23 @@ class TradeHistoryFlowTest : TradeHistoryServiceTestBase() {
                 secondSubscriber.shouldContainExactly(retained)
 
                 jobs.forEach { it.cancel() }
+            }
+        }
+
+        "CQ-14-3: getHistoryFlow_replays the latest snapshot to a late subscriber" {
+            runTest {
+                val service = createService()
+                val latest = snapshotWorth(BigDecimal("42.00"))
+                service.addSnapshot(latest)
+
+                val received = mutableListOf<PortfolioSnapshot>()
+                val job = launch {
+                    service.getHistoryFlow().take(1).collect { received.add(it) }
+                }
+                advanceUntilIdle()
+
+                received shouldContainExactly listOf(latest)
+                job.cancel()
             }
         }
     }

@@ -14,12 +14,10 @@ import io.kotest.matchers.string.shouldContain
 import kotlinx.browser.document
 import kotlinx.browser.window
 import kotlinx.coroutines.await
-import kotlinx.coroutines.delay
 import org.w3c.dom.*
 import kotlin.js.Date
 import kotlin.js.Promise
 import kotlin.js.json
-import kotlin.time.Duration.Companion.milliseconds
 
 private const val TEST_CHART = "test-chart"
 
@@ -707,14 +705,13 @@ class CoverageTest : StringSpec() {
             try {
                 initHistory()
 
-                // initHistory polls sync via Promises; short delay lets the first resolve before assert/interval.
-                delay(10.milliseconds)
+                awaitPromiseQueue()
 
                 (intervalCb != null).shouldBeTrue()
 
                 intervalCb?.invoke()
 
-                delay(10.milliseconds)
+                awaitPromiseQueue()
 
                 clearIntervalCalled.shouldBeTrue()
 
@@ -730,7 +727,7 @@ class CoverageTest : StringSpec() {
                 event.initEvent(type = HtmlEvents.CHANGE, bubbles = true, cancelable = true)
                 checkbox.dispatchEvent(event)
 
-                delay(10.milliseconds)
+                awaitPromiseQueue()
             } finally {
                 window.asDynamic().setInterval = oldSetInterval
                 window.asDynamic().clearInterval = oldClearInterval

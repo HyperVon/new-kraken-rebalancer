@@ -76,6 +76,7 @@ class FakeKrakenService : KrakenService {
                 side = side,
                 volume = volume,
                 dryRun = dryRun == true,
+                orderTxid = if (dryRun == true) null else "FAKE-ORDER-${executedOrders.size}",
             )
     }
 

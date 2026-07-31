@@ -82,6 +82,49 @@ class DashboardTest : StringSpec() {
             th1.getAttribute(HtmlAttrs.DATA_SORT) shouldBe DataSort.ASCENDING
         }
 
+        "sortTable parses comma-formatted Price and Value cells numerically" {
+            val table = document.createElement(HtmlTags.TABLE) as HTMLTableElement
+            val thead = document.createElement(HtmlTags.THEAD) as HTMLTableSectionElement
+            val headerRow = document.createElement(HtmlTags.TR) as HTMLTableRowElement
+            val headers = listOf("Asset", "Price", "Value").map { label ->
+                (document.createElement(HtmlTags.TH) as HTMLTableCellElement).apply {
+                    className = CssClass.Table.Sortable.toString()
+                    textContent = label
+                }
+            }
+            headers.forEach { headerRow.appendChild(it) }
+            thead.appendChild(headerRow)
+            table.appendChild(thead)
+
+            val tbody = document.createElement(HtmlTags.TBODY) as HTMLTableSectionElement
+            fun addRow(asset: String, price: String, value: String) {
+                val row = document.createElement(HtmlTags.TR) as HTMLTableRowElement
+                row.className = CssClass.Table.Hoverable.toString()
+                listOf(asset, price, value).forEach { text ->
+                    row.appendChild(document.createElement(HtmlTags.TD).apply { textContent = text })
+                }
+                tbody.appendChild(row)
+            }
+            addRow(Asset.ETH, "$3,000.00", "$12,000.00")
+            addRow(Asset.BTC, "$60,000.00", "$8,000.00")
+            table.appendChild(tbody)
+            document.body!!.appendChild(table)
+
+            try {
+                sortTable(headers[1], 1, CssClass.Utility.Asc.toString())
+                (tbody.rows.item(0) as HTMLTableRowElement).cells.item(0)?.textContent shouldBe Asset.ETH
+                sortTable(headers[1], 1, CssClass.Utility.Desc.toString())
+                (tbody.rows.item(0) as HTMLTableRowElement).cells.item(0)?.textContent shouldBe Asset.BTC
+
+                sortTable(headers[2], 2, CssClass.Utility.Asc.toString())
+                (tbody.rows.item(0) as HTMLTableRowElement).cells.item(0)?.textContent shouldBe Asset.BTC
+                sortTable(headers[2], 2, CssClass.Utility.Desc.toString())
+                (tbody.rows.item(0) as HTMLTableRowElement).cells.item(0)?.textContent shouldBe Asset.ETH
+            } finally {
+                document.body!!.removeChild(table)
+            }
+        }
+
         "updateAge displays fresh and stale data" {
             val offsetTime = Date.now() - 10000.0
             val container = document.createElement(HtmlTags.DIV) as HTMLDivElement

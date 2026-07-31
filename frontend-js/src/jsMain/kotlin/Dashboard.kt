@@ -19,7 +19,7 @@ import com.gemini.krakenbot.view.util.CssClass.Query.STATUS_BADGE as STATUS_BADG
 internal var currentSortCol: Int = PrecisionConstants.DEFAULT_SORT_COL_INDEX
 internal var currentSortDir: String = CssClass.Utility.Asc.toString()
 
-private val CURRENCY_CLEANUP_REGEX = Regex("[$,%]")
+private val CURRENCY_CLEANUP_REGEX = Regex("[\\$,%]")
 
 fun registerDashboardGlobals() {
     window.asDynamic().sortTable = { header: HTMLElement, colIdx: Int ->

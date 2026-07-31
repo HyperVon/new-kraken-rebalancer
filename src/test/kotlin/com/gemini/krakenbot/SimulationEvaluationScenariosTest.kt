@@ -49,10 +49,22 @@ class SimulationEvaluationScenariosTest : StringSpec() {
         val repository: SqliteTradeRepositoryImpl,
     )
 
-    private fun createSimStack(): SimStack {
+    private fun createSimStack(forceRebalance: Boolean = false): SimStack {
         val configService = mockk<ConfigService>(relaxed = true)
         val simConfig = TestFixtures.DEFAULT_TEST_CONFIG.copy(
-            settings = TestFixtures.DEFAULT_TEST_SETTINGS.copy(simulation = true),
+            settings = TestFixtures.DEFAULT_TEST_SETTINGS.copy(
+                simulation = true,
+                deviationTriggerPercent = if (forceRebalance) {
+                    0.0
+                } else {
+                    TestFixtures.DEFAULT_TEST_SETTINGS.deviationTriggerPercent
+                },
+                dustThresholdUSD = if (forceRebalance) {
+                    0.0
+                } else {
+                    TestFixtures.DEFAULT_TEST_SETTINGS.dustThresholdUSD
+                },
+            ),
         )
         every { configService.getConfig() } returns simConfig
 
@@ -122,7 +134,7 @@ class SimulationEvaluationScenariosTest : StringSpec() {
 
         "sim rebalance cycle persists snapshot and trades with cycleId" {
             runTest {
-                val stack = createSimStack()
+                val stack = createSimStack(forceRebalance = true)
                 val snapshot = stack.portfolioManager.performRebalanceCycle()
                 snapshot.shouldNotBeNull()
 
@@ -135,10 +147,11 @@ class SimulationEvaluationScenariosTest : StringSpec() {
                         Instant.EPOCH,
                         Instant.now().plusSeconds(60),
                     )
-                if (trades.isNotEmpty()) {
-                    trades.any { it.cycleId != null } shouldBe true
-                    trades.any { it.orderTxid != null } shouldBe true
-                }
+                trades.shouldNotBeEmpty()
+                val cycleTrades = trades.filter { it.cycleId != null }
+                cycleTrades.shouldNotBeEmpty()
+                cycleTrades.all { it.cycleId!!.isNotBlank() } shouldBe true
+                cycleTrades.all { it.orderTxid?.isNotBlank() == true } shouldBe true
             }
         }
 

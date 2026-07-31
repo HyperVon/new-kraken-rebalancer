@@ -184,6 +184,7 @@ private val chartDefaults: dynamic = buildDefaultChartOptions()
 
 private val charts = mutableMapOf<String, dynamic>()
 internal var currentRange = TimeRange.THIRTY_DAYS.key
+internal var loadedRange = TimeRange.THIRTY_DAYS.key
 internal var historyLoadGeneration = 0L
 internal var allTrades: List<TradeRecord> = emptyList()
 internal val visibilityStates = mutableMapOf<String, MutableMap<String, Boolean>>()
@@ -258,6 +259,7 @@ internal fun resetHistoryUiState() {
     pendingPresetVisibility.clear()
     originalChartRanges.clear()
     currentRange = TimeRange.THIRTY_DAYS.key
+    loadedRange = TimeRange.THIRTY_DAYS.key
     historyLoadGeneration = 0L
     allTrades = emptyList()
     HistoryViewPrefs.resetInteractionState()

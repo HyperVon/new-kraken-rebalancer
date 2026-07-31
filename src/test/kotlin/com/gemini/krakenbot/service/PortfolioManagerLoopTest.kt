@@ -3,6 +3,7 @@
 package com.gemini.krakenbot.service
 
 import com.gemini.krakenbot.TestFixtures
+import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.config.Settings
@@ -16,10 +17,14 @@ import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
 import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.verify
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.flowOf
@@ -100,6 +105,7 @@ class PortfolioManagerLoopTest : StringSpec() {
                 portfolioManager.runLoop()
 
                 krakenService.getBalancesCallCount shouldBe 0
+                coVerify(exactly = 0) { tradeHistoryService.syncTradesFromKraken() }
             }
         }
 
@@ -217,6 +223,103 @@ class PortfolioManagerLoopTest : StringSpec() {
                 krakenService.getBalancesCallCount shouldBe cyclesBeforeChange + 1
 
                 job.cancel()
+            }
+        }
+
+        "hot config lifecycle stops and restarts one managed worker without overlap" {
+            runTest {
+                val settings = TestFixtures.settings(loopDelaySeconds = 3600L)
+                val config = TestFixtures.config(settings = settings)
+                every { configService.getConfig() } returns config
+
+                val configFlow = MutableSharedFlow<Settings>(replay = 1, extraBufferCapacity = 8)
+                every { configService.watchConfigChanges() } returns configFlow
+                val firstCycleSyncStarted = CompletableDeferred<Unit>()
+                val restartedCycleSyncStarted = CompletableDeferred<Unit>()
+                var syncCalls = 0
+                coEvery { tradeHistoryService.syncTradesFromKraken() } coAnswers {
+                    syncCalls++
+                    if (syncCalls == 2) {
+                        firstCycleSyncStarted.complete(Unit)
+                        awaitCancellation()
+                    }
+                    if (syncCalls == 4) {
+                        restartedCycleSyncStarted.complete(Unit)
+                        awaitCancellation()
+                    }
+                }
+
+                configFlow.emit(settings)
+                val firstWorker = portfolioManager.startRebalancingLoop(this)
+                runCurrent()
+                firstCycleSyncStarted.await()
+
+                // A second caller must not become a second hot-flow collector or startup sync.
+                val duplicateCaller = launch { portfolioManager.runLoop() }
+                duplicateCaller.join()
+                syncCalls shouldBe 2
+
+                portfolioManager.stopRebalancingLoop()
+                firstWorker.join()
+
+                // The replayed setting is still available, but the stopped worker must not consume it.
+                configFlow.emit(settings)
+                syncCalls shouldBe 2
+                val secondWorker = portfolioManager.startRebalancingLoop(this)
+                runCurrent()
+                restartedCycleSyncStarted.await()
+
+                syncCalls shouldBe 4
+                (secondWorker !== firstWorker) shouldBe true
+
+                portfolioManager.stopRebalancingLoop()
+                secondWorker.join()
+            }
+        }
+
+        "cancellation during execution rethrows and closes the execution session" {
+            runTest {
+                val settings = TestFixtures.settings(loopDelaySeconds = 3600L)
+                val config = TestFixtures.config(
+                    settings = settings,
+                    allocations = listOf(
+                        Allocation(TestFixtures.A, 50.0),
+                        Allocation(TestFixtures.B, 50.0),
+                    ),
+                )
+                every { configService.getConfig() } returns config
+                krakenService.pricesSupplier = {
+                    mapOf(TestFixtures.AUSD to 100.0, TestFixtures.BUSD to 100.0)
+                }
+                krakenService.balanceSupplier = {
+                    mapOf(TestFixtures.A to 11.0, TestFixtures.B to 9.0)
+                }
+
+                val executionStarted = CompletableDeferred<Unit>()
+                val blockingExecutor = mockk<OrderExecutor>()
+                coEvery {
+                    blockingExecutor.executeOrders(any(), any(), any(), any(), any(), any(), any(), any())
+                } coAnswers {
+                    executionStarted.complete(Unit)
+                    awaitCancellation()
+                }
+                val manager = PortfolioManagerImpl(
+                    configService = configService,
+                    tradeHistoryService = tradeHistoryService,
+                    portfolioAnalyzer = portfolioAnalyzer,
+                    orderExecutor = blockingExecutor,
+                    krakenService = krakenService,
+                )
+
+                val worker = manager.startRebalancingLoop(this)
+                executionStarted.await()
+
+                manager.stopRebalancingLoop()
+                worker.join()
+
+                verify(exactly = 1) { configService.beginExecutionSession() }
+                verify(exactly = 1) { configService.endExecutionSession() }
+                coVerify(exactly = 0) { tradeHistoryService.addSnapshot(any()) }
             }
         }
     }

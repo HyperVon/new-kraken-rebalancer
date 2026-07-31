@@ -5,6 +5,7 @@ import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.InvalidConfigurationException
 import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.config.Settings
+import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.service.AssetColorAssigner
 import com.gemini.krakenbot.service.ConfigService
 import kotlinx.coroutines.channels.BufferOverflow
@@ -14,7 +15,11 @@ import kotlinx.coroutines.flow.asSharedFlow
 import java.io.File
 import java.io.IOException
 import java.nio.file.Files
+import java.nio.file.Path
 import java.nio.file.StandardCopyOption
+import java.nio.file.attribute.PosixFileAttributeView
+import java.nio.file.attribute.PosixFilePermission
+import java.nio.file.attribute.PosixFilePermissions
 import kotlin.math.abs
 
 class ConfigServiceImpl(
@@ -45,6 +50,7 @@ class ConfigServiceImpl(
 
     @Synchronized
     override fun loadConfig() {
+        cleanupStaleTempFile()
         val rawContent = readRawConfigContent()
         val rawConfig = parseConfig(rawContent)
         val parsedConfig = parseConfig(resolveEnvVars(rawContent))
@@ -106,7 +112,16 @@ class ConfigServiceImpl(
             "Configuration file '$configFilePath' not found in the application directory."
         }
 
+        setOwnerOnlyPermissions(configFile.toPath())
         return configFile.readText()
+    }
+
+    private fun cleanupStaleTempFile() {
+        try {
+            Files.deleteIfExists(File("$configFilePath.tmp").toPath())
+        } catch (e: IOException) {
+            throw RuntimeException("Failed to clean temporary configuration", e)
+        }
     }
 
     private fun configForPersistence(config: AppConfig, previousKraken: KrakenCredentials): AppConfig {
@@ -152,12 +167,17 @@ class ConfigServiceImpl(
         .replace("\\", "\\\\")
         .replace("\"", "\\\"")
 
-    /** Validates settings/allocations, then backfills missing or invalid colors. */
+    /** Canonicalizes and validates settings/allocations, then backfills missing or invalid colors. */
     private fun validateAndNormalize(config: AppConfig): AppConfig {
         try {
-            validateConfig(config)
-            return config.copy(
-                allocations = AssetColorAssigner.assignMissingColors(config.allocations),
+            val canonicalConfig = config.copy(
+                allocations = config.allocations.map { allocation ->
+                    allocation.copy(symbol = Asset(Asset.canonicalSymbol(allocation.symbol.value)))
+                },
+            )
+            validateConfig(canonicalConfig)
+            return canonicalConfig.copy(
+                allocations = AssetColorAssigner.assignMissingColors(canonicalConfig.allocations),
             )
         } catch (e: IllegalArgumentException) {
             throw InvalidConfigurationException(e.message)
@@ -166,14 +186,17 @@ class ConfigServiceImpl(
 
     private fun writeConfigAtomically(config: AppConfig) {
         val tempFile = File("$configFilePath.tmp")
+        var primaryFailure: Throwable? = null
         try {
             val targetPath = File(configFilePath).toPath()
+            createOwnerOnlyFile(tempFile.toPath())
 
             // Serialize completely before the atomic replacement so readers never observe a truncated
             // configuration if writing fails or the process exits mid-write.
             objectMapper
                 .writerWithDefaultPrettyPrinter()
                 .writeValue(tempFile, config)
+            setOwnerOnlyPermissions(tempFile.toPath())
 
             Files.move(
                 tempFile.toPath(),
@@ -181,11 +204,36 @@ class ConfigServiceImpl(
                 StandardCopyOption.REPLACE_EXISTING,
                 StandardCopyOption.ATOMIC_MOVE,
             )
+            setOwnerOnlyPermissions(targetPath)
         } catch (e: IOException) {
-            runCatching { Files.deleteIfExists(tempFile.toPath()) }
-                .onFailure { cleanupFailure -> e.addSuppressed(cleanupFailure) }
+            primaryFailure = e
             throw RuntimeException("Failed to save configuration", e)
+        } catch (e: RuntimeException) {
+            primaryFailure = e
+            throw e
+        } finally {
+            runCatching { Files.deleteIfExists(tempFile.toPath()) }
+                .onFailure { cleanupFailure -> primaryFailure?.addSuppressed(cleanupFailure) }
         }
+    }
+
+    private fun createOwnerOnlyFile(path: Path) {
+        if (Files.exists(path)) {
+            setOwnerOnlyPermissions(path)
+            return
+        }
+
+        try {
+            Files.createFile(path, PosixFilePermissions.asFileAttribute(OWNER_ONLY_PERMISSIONS))
+        } catch (_: UnsupportedOperationException) {
+            Files.createFile(path)
+        }
+        setOwnerOnlyPermissions(path)
+    }
+
+    private fun setOwnerOnlyPermissions(path: Path) {
+        Files.getFileAttributeView(path, PosixFileAttributeView::class.java)
+            ?.setPermissions(OWNER_ONLY_PERMISSIONS)
     }
 
     private fun validateConfig(config: AppConfig) {
@@ -287,5 +335,9 @@ class ConfigServiceImpl(
 
         private val ENV_VAR_PATTERN = "\\$\\{([^}]+)}".toRegex()
         private val SYMBOL_PATTERN = "^[A-Z0-9]{1,16}$".toRegex()
+        private val OWNER_ONLY_PERMISSIONS = setOf(
+            PosixFilePermission.OWNER_READ,
+            PosixFilePermission.OWNER_WRITE,
+        )
     }
 }
