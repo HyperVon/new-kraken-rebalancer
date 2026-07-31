@@ -91,7 +91,12 @@ fun main() {
 }
 
 private fun startServer() {
-    embeddedServer(Netty, port = 8080, host = "0.0.0.0") {
+    // Bind the IPv6 wildcard so dual-stack kernels (net.inet6.ip6.v6only=0 on macOS/Linux
+    // defaults) also serve IPv4-mapped clients via the same socket. The IPv4 wildcard `0.0.0.0`
+    // refuses IPv6 connections, which silently breaks clients that prefer IPv6 resolution.
+    // Guard against an environment forcing IPv4 sockets, which would defeat the dual-stack bind.
+    System.setProperty("java.net.preferIPv4Stack", "false")
+    embeddedServer(Netty, port = 8080, host = "::") {
         install(SSE)
         configureCompression()
         configureCachingAndConditionalHeaders()
