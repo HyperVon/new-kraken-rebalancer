@@ -134,7 +134,7 @@ fun sortTable(header: HTMLElement, colIdx: Int, forceDir: String? = null) {
             setAttribute(HtmlAttrs.DATA_SORT, DataSort.NONE)
         }
     }
-    header.classList.add(if (sortAsc) CssClass.Utility.Asc else CssClass.Utility.Desc)
+    header.classList.add(if (sortAsc) CssClass.Utility.Asc.value else CssClass.Utility.Desc.value)
     header.setAttribute(HtmlAttrs.DATA_SORT, if (sortAsc) DataSort.ASCENDING else DataSort.DESCENDING)
 
     rows.forEach { row -> tbody.appendChild(row) }

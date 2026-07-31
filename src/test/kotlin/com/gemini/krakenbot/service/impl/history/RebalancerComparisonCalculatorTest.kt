@@ -108,40 +108,6 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             (result.latestDifferenceUSD!!.compareTo(BigDecimal.ZERO) < 0) shouldBe true
         }
 
-        "fees included: realized trade fee changes USD correctly" {
-            val snapshots = listOf(
-                snapshot(
-                    now,
-                    "100000.00",
-                    mapOf(
-                        "BTC" to assetRow("1.0", "50000.00", "50000.00"),
-                        "USD" to assetRow("50000.00", "1.0", "50000.00"),
-                    ),
-                ),
-                snapshot(
-                    now.plusSeconds(3600),
-                    "120000.00",
-                    mapOf(
-                        "BTC" to assetRow("2.0", "45000.00", "90000.00"),
-                        "USD" to assetRow("29974.00", "1.0", "29974.00"),
-                    ),
-                ),
-            )
-            val trades = listOf(
-                trade(
-                    now.plusSeconds(1800),
-                    side = "buy",
-                    symbol = "BTC",
-                    volume = "1.0",
-                    usdAmount = "20000.00",
-                    fee = "26.00",
-                ),
-            )
-
-            val result = RebalancerComparisonCalculator.calculate(snapshots, trades)
-            result.availability shouldBe ComparisonAvailability.AVAILABLE
-        }
-
         "range rebasing: suffix uses its own first snapshot as baseline" {
             val snapshots = listOf(
                 snapshot(

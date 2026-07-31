@@ -99,6 +99,7 @@ internal fun loadAll(range: String): Promise<Unit> {
         if (requestGeneration == historyLoadGeneration) {
             currentRange = loadedRange
             syncTimeRangeButtons(currentRange)
+            historyRollbackPresetVisibility()
             throw error
         }
     }

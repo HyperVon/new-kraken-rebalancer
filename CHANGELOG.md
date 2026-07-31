@@ -6,6 +6,69 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.15.26] - 2026-07-31
+
+### Changed
+
+- **Single-sourced `:common` ownership**: The comparison enums
+  (`ComparisonAvailability`, `ComparisonConfidence`,
+  `ComparisonUnavailableReason`), the allocation-symbol pattern
+  (`^[A-Z0-9]{1,16}$`), the color-palette candidates (now built from the
+  `ChartProps.SOLID_*` constants), and the `__ASSET_COLORS__` global key now
+  live in `:common`, so the JVM backend and Kotlin/JS frontend consume single
+  sources of truth.
+- **`getHistoryStats()` delegates to the ranged overload**: the no-arg stats
+  route now reuses `getHistoryStats(epoch, now)`, eliminating divergent
+  all-time-high semantics between history-stats routes.
+- **`updateConfig` reuses `publishOrStage`**: the settings-update tail is the
+  shared stage/persist/publish pipeline instead of inlined logic.
+- **Dedupe log wording corrected**: the duplicate-row cleanup log now says
+  "pair-alias or estimate/fill match".
+- **README package tree lists `RebalancerComparison`** in the `:common` API
+  and JVM model rows.
+
+### Fixed
+
+- **Chart.js legend filter argument**: The legend labels filter now reads the
+  second callback argument (`chart.data`) instead of the chart instance, so
+  toggling a series visibility applies to the correct dataset.
+- **Failed view-preset loads leaking stale series visibility**: If a built-in
+  preset's history fetch fails or is throttled, previously toggled series
+  visibility is rolled back instead of being overwritten.
+- **Alias-blind ticker lookup in live history reconstruction**: Historical
+  snapshots resolve canonical Kraken ticker keys (e.g. `XXBTZUSD`) through the
+  shared price resolver instead of falling back to ZERO on alias/canonical
+  mismatch.
+- **`CancellationException` handling in failure paths**: The order-failure
+  journal dump now rethrows coroutine cancellation instead of swallowing it
+  into the failure path, and the `TradesHistory` fetch no longer logs
+  cancellations as errors before rethrowing them.
+- **Settings save blocking file IO on the Netty event loop**: Settings
+  persistence now runs on `Dispatchers.IO`.
+- **SECURITY.md credential example nesting**: The example now shows credentials
+  nested under a `kraken` key, matching `rebalancer-config-template.json`.
+
+### Removed
+
+- **Dead production surface**: `recordTrade`, `BigDecimal.isNonZero`, the
+  redundant `OrderExecutorImpl.FEE_RATE_ESTIMATE` alias (the
+  `PrecisionConstants.FEE_RATE_ESTIMATE` constant remains), the `MatchedNoOp`
+  reconcile branch, and the typed `DOMTokenList.add(CssClass)` extension.
+- **Unreachable guards**: The snapshot `$1` price fallback and the
+  `Formatter` null branches (formatting functions are now non-null
+  `BigDecimal`).
+- **Dead `:common` constants and CSS**: Unused constants (toast styles,
+  `overview-grid`, `INVALID_SETTINGS_FIELD`, `NO_TRADES_EXECUTED`,
+  `ALLOCATION_COLOR_PREFIX`, `HEADER_ACTION`, `HISTORY_PAN_CHART`,
+  sync-metadata and companion asset constants) and their CSS rules.
+- **Test-only helpers in `jsMain`**: The four `*ToDynamic` wire-mapping test
+  helpers moved to `jsTest`; the `isTrue` extension and `formatPair(null)`
+  path removed.
+- **Unused Exposed dependencies**: `exposed-dao` and `exposed-java-time`.
+- **Duplicate or impossible-case tests**: ModelTest data-class framework
+  assertions, fixture-pass-through `SettingsTest`, `HelperTest`, and
+  coverage-padding blocks.
+
 ## [6.15.25] - 2026-07-31
 
 ### Added

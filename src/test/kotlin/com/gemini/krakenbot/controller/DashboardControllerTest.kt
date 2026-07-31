@@ -478,7 +478,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                             header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
                             header(HttpHeaders.Cookie, csrf.cookie)
                         }
-                    response.bodyAsText() shouldContain ViewText.INVALID_SETTINGS_FIELD
+                    response.bodyAsText() shouldContain "Invalid settings field"
                 }
             }
 

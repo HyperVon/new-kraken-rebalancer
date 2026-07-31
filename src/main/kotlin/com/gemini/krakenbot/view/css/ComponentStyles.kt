@@ -172,17 +172,6 @@ object ComponentStyles {
             put("line-height", "1.15")
         }
 
-        ".status-card.success .${CssClass.StatusCard.Value}" {
-            color = CssTheme.colorSuccess
-        }
-
-        ".${CssClass.StatusCard.Sub}" {
-            paddingTop = 0.px
-            fontSize = 0.75.rem
-            color = CssTheme.colorTextSecondary
-            put("line-height", "1.35")
-        }
-
         // DASH-1: Total Portfolio hero card
         ".hero-card" {
             display = Display.flex

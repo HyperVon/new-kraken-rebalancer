@@ -153,10 +153,10 @@ class PortfolioAnalyzerImpl(
             val balance = resolveBalance(symbol = symbol.value, balances = balances)
             val valUSD = currentValuesUSD[symbol.value] ?: BigDecimal.ZERO
             val price =
-                if (!symbol.isUsd) {
-                    prices[symbol.value] ?: BigDecimal.ONE
-                } else {
+                if (symbol.isUsd) {
                     BigDecimal.ONE
+                } else {
+                    prices[symbol.value] ?: error("Unresolved price for ${symbol.value}")
                 }
 
             val metrics =

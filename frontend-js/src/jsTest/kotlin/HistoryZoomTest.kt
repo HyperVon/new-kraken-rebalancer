@@ -95,15 +95,12 @@ class HistoryZoomTest : StringSpec() {
 
                 val legendFilter: dynamic = lastConfig.options.plugins.legend.labels.filter
                 (jsTypeOf(legendFilter) == "function") shouldBe true
-                val chartLike =
+                val chartDataLike =
                     json(
-                        "data" to
-                            json(
-                                "datasets" to lastConfig.data.datasets,
-                            ),
+                        "datasets" to lastConfig.data.datasets,
                     )
-                (legendFilter(json("datasetIndex" to 0), chartLike) as Boolean) shouldBe true
-                (legendFilter(json("datasetIndex" to 1), chartLike) as Boolean) shouldBe false
+                (legendFilter(json("datasetIndex" to 0), chartDataLike) as Boolean) shouldBe true
+                (legendFilter(json("datasetIndex" to 1), chartDataLike) as Boolean) shouldBe false
             } finally {
                 document.body!!.removeChild(container)
                 resetHistoryUiState()
@@ -113,16 +110,13 @@ class HistoryZoomTest : StringSpec() {
         "legendLabelsFilter keeps legend-toggled series and drops config-hidden ones" {
             val visibleDs = json(ChartProps.LABEL to ViewText.TOTAL_PORTFOLIO)
             val configHiddenDs = json(ChartProps.LABEL to Asset.BTC, DataProps.HIDDEN to true)
-            val chartLike =
+            val chartDataLike =
                 json(
-                    "data" to
-                        json(
-                            "datasets" to arrayOf(visibleDs, configHiddenDs),
-                        ),
+                    "datasets" to arrayOf(visibleDs, configHiddenDs),
                 )
-            legendLabelsFilter(json("datasetIndex" to 0), chartLike) shouldBe true
-            legendLabelsFilter(json("datasetIndex" to 1), chartLike) shouldBe false
-            legendLabelsFilter(json(), chartLike) shouldBe true
+            legendLabelsFilter(json("datasetIndex" to 0), chartDataLike) shouldBe true
+            legendLabelsFilter(json("datasetIndex" to 1), chartDataLike) shouldBe false
+            legendLabelsFilter(json(), chartDataLike) shouldBe true
         }
 
         "chartScrubberState enables only when zoomed" {

@@ -6,9 +6,6 @@ import java.math.RoundingMode
 val BigDecimal.isZero: Boolean
     get() = signum() == 0
 
-val BigDecimal.isNonZero: Boolean
-    get() = signum() != 0
-
 val BigDecimal.isPositive: Boolean
     get() = signum() > 0
 

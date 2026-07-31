@@ -469,7 +469,7 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
             val toDelete = TradeDeduplicator.findDuplicateTradeIds(allRecords)
 
             if (toDelete.isNotEmpty()) {
-                log.info("Cleaning up {} duplicate local trades due to pair name mismatch...", toDelete.size)
+                log.info("Cleaning up {} duplicate trade rows (pair-alias or estimate/fill match)...", toDelete.size)
                 TradeTable.deleteWhere { id inList toDelete }
             }
         }

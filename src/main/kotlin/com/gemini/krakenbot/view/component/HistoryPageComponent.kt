@@ -6,6 +6,7 @@ import com.gemini.krakenbot.model.TimeRange
 import com.gemini.krakenbot.util.PrecisionConstants
 import com.gemini.krakenbot.view.util.ActiveNav
 import com.gemini.krakenbot.view.util.CdnUrls
+import com.gemini.krakenbot.view.util.ChartProps
 import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.HtmlAttrs
 import com.gemini.krakenbot.view.util.HtmlIds
@@ -77,7 +78,7 @@ class HistoryPageComponent(private val objectMapper: ObjectMapper) {
                 val json = objectMapper.writeValueAsString(symbolColorMap)
                 script {
                     unsafe {
-                        raw("window.__ASSET_COLORS__=$json")
+                        raw("window.${ChartProps.ASSET_COLORS_GLOBAL_KEY}=$json")
                     }
                 }
             }

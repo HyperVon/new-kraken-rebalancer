@@ -2,6 +2,7 @@ package com.gemini.krakenbot.frontend
 
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.util.PrecisionConstants
+import com.gemini.krakenbot.view.util.ChartProps
 import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.FormFields
 import com.gemini.krakenbot.view.util.HtmlAttrs
@@ -196,14 +197,14 @@ fun addAssetRow() {
 }
 
 private val COLOR_PALETTE_CANDIDATES = arrayOf(
-    "#60a5fa",
-    "#34d399",
-    "#f87171",
-    "#2dd4bf",
-    "#fb923c",
-    "#e879f9",
-    "#facc15",
-    "#38bdf8",
+    ChartProps.SOLID_BLUE,
+    ChartProps.SOLID_EMERALD,
+    ChartProps.SOLID_RED,
+    ChartProps.SOLID_TEAL,
+    ChartProps.SOLID_ORANGE,
+    ChartProps.SOLID_FUCHSIA,
+    ChartProps.SOLID_YELLOW,
+    ChartProps.SOLID_SKY,
 )
 
 private fun pickColorForNewAsset(): String {
@@ -238,6 +239,6 @@ private fun currentAllocationSymbols(): List<String> {
     return symbols
 }
 
-private val SYMBOL_REGEX = Regex("^[A-Z0-9]{1,16}$")
+private val SYMBOL_REGEX = Regex(Asset.SYMBOL_PATTERN_STRING)
 
 fun Double.toFixed(digits: Int): String = this.asDynamic().toFixed(digits).toString()

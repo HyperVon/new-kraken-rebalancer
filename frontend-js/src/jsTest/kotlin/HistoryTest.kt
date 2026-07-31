@@ -60,7 +60,6 @@ class HistoryTest : StringSpec() {
         "formatPair handles valid and missing symbols" {
             formatPair(mockTradeRecord(symbol = Asset.BTC)) shouldBe "${Asset.BTC}/${Asset.USD}"
             formatPair(mockTradeRecord(symbol = "")) shouldBe ""
-            formatPair(null) shouldBe ""
         }
 
         "getUniqueSymbols filters and sorts symbols" {
@@ -686,6 +685,65 @@ class HistoryTest : StringSpec() {
                 currentRange shouldBe TimeRange.ALL.key
                 document.getElementById(HtmlIds.STAT_ATH_TITLE)?.textContent shouldBe ViewText.HISTORY_ALL_TIME_HIGH
                 document.getElementById(HtmlIds.STAT_ATH)?.textContent shouldBe "$9,000.00"
+            } finally {
+                document.body!!.removeChild(container)
+                resetHistoryUiState()
+            }
+        }
+
+        "failed view preset load rolls back to the previous visibility" {
+            resetHistoryUiState()
+            val container = document.createElement(HtmlTags.DIV)
+            container.innerHTML = TestDomBuilders.historyDom()
+            document.body!!.appendChild(container)
+            window.asDynamic().Chart = mockChartConstructor()
+            registerHistoryGlobals()
+
+            try {
+                visibilityStates[HtmlIds.PORTFOLIO_VALUE_CHART] = mutableMapOf(
+                    ChartProps.DATASET_VISIBILITY_DEFAULT to true,
+                    Asset.BTC to false,
+                )
+
+                val dayTotal = HistoryViewPrefs.builtInViews().first { it.id == HistoryViewIds.DAY_TOTAL }
+                historyApplyVisibility(dayTotal.visibility)
+
+                window.asDynamic().fetch = { url: String ->
+                    if (url.contains("snapshots")) {
+                        Promise.reject(RuntimeException("preset load failed"))
+                    } else {
+                        val response: dynamic = json()
+                        response.json = { Promise.resolve(json()) }
+                        Promise.resolve(response)
+                    }
+                }
+                val failed = loadAll(TimeRange.TWENTY_FOUR_HOURS.key)
+                try {
+                    failed.await()
+                } catch (error: Throwable) {
+                    error.message shouldBe "preset load failed"
+                }
+
+                visibilityStates[HtmlIds.PORTFOLIO_VALUE_CHART] shouldBe mapOf(
+                    ChartProps.DATASET_VISIBILITY_DEFAULT to true,
+                    Asset.BTC to false,
+                )
+
+                window.asDynamic().fetch = mockFetch { url ->
+                    when {
+                        url.contains("snapshots") -> arrayOf(portfolioSnapshotToDynamic(mockSnapshotRecord()))
+                        url.contains("trades") -> arrayOf(tradeRecordToDynamic(mockTradeRecord()))
+                        url.contains("comparison") -> rebalancerComparisonToDynamic(mockAvailableComparison())
+                        else -> historyStatsToDynamic(mockPortfolioStatsRecord())
+                    }
+                }
+                loadAll(TimeRange.SEVEN_DAYS.key).await()
+
+                // The failed preset's hidden flags (default=false, Day · Total only) were never applied.
+                visibilityStates[HtmlIds.PORTFOLIO_VALUE_CHART] shouldBe mapOf(
+                    ChartProps.DATASET_VISIBILITY_DEFAULT to true,
+                    Asset.BTC to false,
+                )
             } finally {
                 document.body!!.removeChild(container)
                 resetHistoryUiState()

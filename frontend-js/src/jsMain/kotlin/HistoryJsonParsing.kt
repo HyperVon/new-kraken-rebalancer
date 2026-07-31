@@ -6,10 +6,10 @@ import com.gemini.krakenbot.api.RebalancerComparison
 import com.gemini.krakenbot.api.RebalancerComparisonPoint
 import com.gemini.krakenbot.api.SyncProgressResponse
 import com.gemini.krakenbot.api.TradeRecord
+import com.gemini.krakenbot.model.ComparisonAvailability
+import com.gemini.krakenbot.model.ComparisonUnavailableReason
 import com.gemini.krakenbot.model.SyncMetadataKeys
-import com.gemini.krakenbot.view.util.DataProps
 import kotlin.js.JsName
-import kotlin.js.json
 
 @JsName("Object")
 private external object JsObject {
@@ -37,18 +37,10 @@ private fun dynamicArrayLength(raw: dynamic): Int {
     if (length != null && length != undefined) {
         return length.unsafeCast<Number>().toInt()
     }
-    val size = raw.size
-    if (size != null && size != undefined) {
-        return size.unsafeCast<Number>().toInt()
-    }
     return 0
 }
 
-private fun dynamicArrayElement(raw: dynamic, index: Int): dynamic {
-    val indexed = raw[index]
-    if (indexed != null && indexed != undefined) return indexed
-    return raw.get(index)
-}
+private fun dynamicArrayElement(raw: dynamic, index: Int): dynamic = raw[index]
 
 private fun parseAssetSnapshot(raw: dynamic): PortfolioSnapshot.AssetSnapshot = PortfolioSnapshot.AssetSnapshot(
     symbol = dynamicString(raw.symbol).orEmpty(),
@@ -151,19 +143,19 @@ fun parseRebalancerComparisonPoint(raw: dynamic): RebalancerComparisonPoint = Re
 fun parseRebalancerComparison(raw: dynamic): RebalancerComparison {
     if (raw == null || raw == undefined) {
         return RebalancerComparison(
-            availability = "UNAVAILABLE",
+            availability = ComparisonAvailability.UNAVAILABLE.name,
             confidence = null,
             baselineTimestamp = null,
             points = emptyList(),
             latestDifferenceUSD = null,
             latestDifferencePercent = null,
-            unavailableReason = "INSUFFICIENT_SNAPSHOTS",
+            unavailableReason = ComparisonUnavailableReason.INSUFFICIENT_SNAPSHOTS.name,
             unavailableAt = null,
         )
     }
     val availability = when (dynamicString(raw.availability)) {
-        "AVAILABLE" -> "AVAILABLE"
-        else -> "UNAVAILABLE"
+        ComparisonAvailability.AVAILABLE.name -> ComparisonAvailability.AVAILABLE.name
+        else -> ComparisonAvailability.UNAVAILABLE.name
     }
     val pointsRaw = raw.points
     val points = if (pointsRaw == null || pointsRaw == undefined) {
@@ -181,82 +173,5 @@ fun parseRebalancerComparison(raw: dynamic): RebalancerComparison {
         latestDifferencePercent = dynamicString(raw.latestDifferencePercent),
         unavailableReason = dynamicString(raw.unavailableReason),
         unavailableAt = dynamicString(raw.unavailableAt),
-    )
-}
-
-fun rebalancerComparisonToDynamic(comparison: RebalancerComparison): dynamic = json(
-    "availability" to comparison.availability,
-    "confidence" to comparison.confidence,
-    "baselineTimestamp" to comparison.baselineTimestamp,
-    "points" to comparison.points.map { point ->
-        json(
-            "timestamp" to point.timestamp,
-            "rebalancerValueUSD" to point.rebalancerValueUSD,
-            "buyAndHoldValueUSD" to point.buyAndHoldValueUSD,
-            "differenceUSD" to point.differenceUSD,
-            "differencePercent" to point.differencePercent,
-        )
-    }.toTypedArray(),
-    "latestDifferenceUSD" to comparison.latestDifferenceUSD,
-    "latestDifferencePercent" to comparison.latestDifferencePercent,
-    "unavailableReason" to comparison.unavailableReason,
-    "unavailableAt" to comparison.unavailableAt,
-)
-
-/** Build a dynamic trade JSON object for tests using [DataProps] keys. */
-fun tradeRecordToDynamic(trade: TradeRecord): dynamic = json(
-    DataProps.TIMESTAMP to trade.timestamp,
-    DataProps.SYMBOL to trade.symbol,
-    DataProps.SIDE to trade.side,
-    DataProps.PAIR to trade.pair,
-    DataProps.VOLUME to trade.volume,
-    DataProps.USD_AMOUNT to trade.usdAmount,
-    DataProps.SUCCESS to trade.success,
-    DataProps.DRY_RUN to trade.dryRun,
-    DataProps.PRICE to trade.price,
-    DataProps.FEE to trade.fee,
-    DataProps.SLIPPAGE_PERCENT to trade.slippagePercent,
-    DataProps.EXPECTED_PRICE to trade.expectedPrice,
-    DataProps.SOURCE to trade.source,
-    DataProps.ERROR_MESSAGE to trade.errorMessage,
-    DataProps.ID to trade.id,
-)
-
-/** Build a dynamic stats JSON object for tests. */
-fun historyStatsToDynamic(stats: HistoryStats): dynamic = json(
-    "allTimeHigh" to stats.allTimeHigh,
-    "totalTradesExecuted" to stats.totalTradesExecuted,
-    "totalVolumeTraded" to stats.totalVolumeTraded,
-    "totalFeesPaid" to stats.totalFeesPaid,
-    "latestSnapshotTime" to stats.latestSnapshotTime,
-    "avgFeeRatePercent" to stats.avgFeeRatePercent,
-    "avgSlippagePercent" to stats.avgSlippagePercent,
-    "failedTradeCount" to stats.failedTradeCount,
-    "dryRunTradeCount" to stats.dryRunTradeCount,
-)
-
-fun portfolioSnapshotToDynamic(snapshot: PortfolioSnapshot): dynamic {
-    val assetsDynamic = json()
-    snapshot.assets.forEach { (symbol, asset) ->
-        assetsDynamic[symbol] =
-            json(
-                "symbol" to asset.symbol,
-                "balance" to asset.balance,
-                "price" to asset.price,
-                "valueUSD" to asset.valueUSD,
-                "targetPercent" to asset.targetPercent,
-                "currentPercent" to asset.currentPercent,
-                "deviationPercent" to asset.deviationPercent,
-                "deviationUSD" to asset.deviationUSD,
-            )
-    }
-    return json(
-        "timestamp" to snapshot.timestamp,
-        "totalValueUSD" to snapshot.totalValueUSD,
-        "assets" to assetsDynamic,
-        "actions" to snapshot.actions.toTypedArray(),
-        "drawdownPercent" to snapshot.drawdownPercent,
-        "fiatDeploymentPercent" to snapshot.fiatDeploymentPercent,
-        "effectiveUsdTargetPercent" to snapshot.effectiveUsdTargetPercent,
     )
 }

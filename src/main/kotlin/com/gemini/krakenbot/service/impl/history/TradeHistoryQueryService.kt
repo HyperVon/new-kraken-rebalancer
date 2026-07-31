@@ -22,21 +22,7 @@ class TradeHistoryQueryService(
 
     suspend fun getTradesInRange(from: Instant, to: Instant): List<TradeRecord> = repository.getTradesInRange(from, to)
 
-    suspend fun getHistoryStats(): HistoryStats {
-        val stats = portfolioStatsRepository.load()
-        val summary = repository.getTradeSummaryStats()
-        return HistoryStats(
-            allTimeHigh = stats.allTimeHigh,
-            totalTradesExecuted = summary.totalTradesExecuted,
-            totalVolumeTraded = summary.totalVolumeTraded,
-            totalFeesPaid = summary.totalFeesPaid,
-            latestSnapshotTime = summary.latestSnapshotTime,
-            avgFeeRatePercent = summary.avgFeeRatePercent,
-            avgSlippagePercent = summary.avgSlippagePercent,
-            failedTradeCount = summary.failedTradeCount,
-            dryRunTradeCount = summary.dryRunTradeCount,
-        )
-    }
+    suspend fun getHistoryStats(): HistoryStats = getHistoryStats(Instant.EPOCH, Instant.now())
 
     suspend fun getRebalancerComparison(from: Instant, to: Instant): RebalancerComparison {
         val snapshots = getSnapshotsInRange(from, to)

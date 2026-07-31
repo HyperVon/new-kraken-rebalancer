@@ -10,27 +10,23 @@ class FormatterTest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
 
     init {
-        "formatCurrency formats values and handles null" {
+        "formatCurrency formats values" {
             Formatter.formatCurrency(BigDecimal("1234.567")) shouldBe "1,234.57"
-            Formatter.formatCurrency(null) shouldBe "0.00"
         }
 
-        "formatPercent formats values and handles null" {
+        "formatPercent formats values" {
             Formatter.formatPercent(BigDecimal("12.3456")) shouldBe "12.35"
-            Formatter.formatPercent(null) shouldBe "0.00"
         }
 
         "getDeviationClass returns correct class for deviation" {
             Formatter.getDeviationClass(BigDecimal("1.0")) shouldBe CssClass.Utility.TextOverweight
             Formatter.getDeviationClass(BigDecimal("-1.0")) shouldBe CssClass.Utility.TextUnderweight
             Formatter.getDeviationClass(BigDecimal.ZERO) shouldBe null
-            Formatter.getDeviationClass(null) shouldBe null
         }
 
         "getDeviationSign returns plus for positive deviation" {
             Formatter.getDeviationSign(BigDecimal("1.0")) shouldBe "+"
             Formatter.getDeviationSign(BigDecimal.ZERO) shouldBe ""
-            Formatter.getDeviationSign(null) shouldBe ""
         }
     }
 }

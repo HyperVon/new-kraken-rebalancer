@@ -295,6 +295,8 @@ class KrakenServiceImpl(
         val result =
             try {
                 queryPrivate(KrakenApiConstants.PATH_TRADES_HISTORY, params)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 log.error("Failed to query private TradesHistory endpoint", e)
                 throw e

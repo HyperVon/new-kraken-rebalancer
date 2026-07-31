@@ -7,6 +7,7 @@ import com.gemini.krakenbot.api.RebalancerComparisonPoint
 import com.gemini.krakenbot.api.TradeRecord
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderSide
+import com.gemini.krakenbot.view.util.DataProps
 import kotlinx.coroutines.await
 import kotlin.js.Promise
 import kotlin.js.json
@@ -124,6 +125,83 @@ fun mockUnavailableComparison(reason: String = "INSUFFICIENT_SNAPSHOTS"): Rebala
     unavailableReason = reason,
     unavailableAt = "2026-07-01T12:00:00Z",
 )
+
+internal fun rebalancerComparisonToDynamic(comparison: RebalancerComparison): dynamic = json(
+    "availability" to comparison.availability,
+    "confidence" to comparison.confidence,
+    "baselineTimestamp" to comparison.baselineTimestamp,
+    "points" to comparison.points.map { point ->
+        json(
+            "timestamp" to point.timestamp,
+            "rebalancerValueUSD" to point.rebalancerValueUSD,
+            "buyAndHoldValueUSD" to point.buyAndHoldValueUSD,
+            "differenceUSD" to point.differenceUSD,
+            "differencePercent" to point.differencePercent,
+        )
+    }.toTypedArray(),
+    "latestDifferenceUSD" to comparison.latestDifferenceUSD,
+    "latestDifferencePercent" to comparison.latestDifferencePercent,
+    "unavailableReason" to comparison.unavailableReason,
+    "unavailableAt" to comparison.unavailableAt,
+)
+
+/** Build a dynamic trade JSON object for tests using [DataProps] keys. */
+internal fun tradeRecordToDynamic(trade: TradeRecord): dynamic = json(
+    DataProps.TIMESTAMP to trade.timestamp,
+    DataProps.SYMBOL to trade.symbol,
+    DataProps.SIDE to trade.side,
+    DataProps.PAIR to trade.pair,
+    DataProps.VOLUME to trade.volume,
+    DataProps.USD_AMOUNT to trade.usdAmount,
+    DataProps.SUCCESS to trade.success,
+    DataProps.DRY_RUN to trade.dryRun,
+    DataProps.PRICE to trade.price,
+    DataProps.FEE to trade.fee,
+    DataProps.SLIPPAGE_PERCENT to trade.slippagePercent,
+    DataProps.EXPECTED_PRICE to trade.expectedPrice,
+    DataProps.SOURCE to trade.source,
+    DataProps.ERROR_MESSAGE to trade.errorMessage,
+    DataProps.ID to trade.id,
+)
+
+/** Build a dynamic stats JSON object for tests. */
+internal fun historyStatsToDynamic(stats: HistoryStats): dynamic = json(
+    "allTimeHigh" to stats.allTimeHigh,
+    "totalTradesExecuted" to stats.totalTradesExecuted,
+    "totalVolumeTraded" to stats.totalVolumeTraded,
+    "totalFeesPaid" to stats.totalFeesPaid,
+    "latestSnapshotTime" to stats.latestSnapshotTime,
+    "avgFeeRatePercent" to stats.avgFeeRatePercent,
+    "avgSlippagePercent" to stats.avgSlippagePercent,
+    "failedTradeCount" to stats.failedTradeCount,
+    "dryRunTradeCount" to stats.dryRunTradeCount,
+)
+
+internal fun portfolioSnapshotToDynamic(snapshot: PortfolioSnapshot): dynamic {
+    val assetsDynamic = json()
+    snapshot.assets.forEach { (symbol, asset) ->
+        assetsDynamic[symbol] =
+            json(
+                "symbol" to asset.symbol,
+                "balance" to asset.balance,
+                "price" to asset.price,
+                "valueUSD" to asset.valueUSD,
+                "targetPercent" to asset.targetPercent,
+                "currentPercent" to asset.currentPercent,
+                "deviationPercent" to asset.deviationPercent,
+                "deviationUSD" to asset.deviationUSD,
+            )
+    }
+    return json(
+        "timestamp" to snapshot.timestamp,
+        "totalValueUSD" to snapshot.totalValueUSD,
+        "assets" to assetsDynamic,
+        "actions" to snapshot.actions.toTypedArray(),
+        "drawdownPercent" to snapshot.drawdownPercent,
+        "fiatDeploymentPercent" to snapshot.fiatDeploymentPercent,
+        "effectiveUsdTargetPercent" to snapshot.effectiveUsdTargetPercent,
+    )
+}
 
 fun mockHistoryFetchHandler(
     snapshots: List<PortfolioSnapshot> = listOf(mockSnapshotRecord()),

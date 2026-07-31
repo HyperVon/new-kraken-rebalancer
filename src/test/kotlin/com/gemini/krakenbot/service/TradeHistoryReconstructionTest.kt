@@ -11,6 +11,7 @@ import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.repository.TradeSummaryStats
 import com.gemini.krakenbot.service.impl.history.TradeHistoryReconstructionService
 import io.kotest.assertions.throwables.shouldThrow
+import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.shouldBe
 import io.mockk.Runs
 import io.mockk.coEvery
@@ -195,6 +196,65 @@ class TradeHistoryReconstructionTest : TradeHistoryServiceTestBase() {
                 val service = createService()
                 every { configService.getConfig() } returns appConfig
                 service.syncTradesFromKraken()
+            }
+        }
+
+        "reconstructHistoricalSnapshots_resolvesCanonicalKrakenTickerKeys" {
+            runTest {
+                val appConfig = AppConfig(
+                    kraken =
+                    KrakenCredentials(
+                        TestFixtures.TRADE_HISTORY_API_KEY,
+                        TestFixtures.TRADE_HISTORY_API_SECRET,
+                    ),
+                    settings = TestFixtures.settings(
+                        loopDelaySeconds = 60,
+                        deviationTriggerPercent = 5.0,
+                        dustThresholdUSD = 5.0,
+                    ),
+                    allocations = listOf(
+                        Allocation(Asset.BTC, 50.0),
+                        Allocation(TestFixtures.USD, 50.0),
+                    ),
+                )
+                every { configService.getConfig() } returns appConfig
+
+                coEvery { repository.load() } returns emptyList()
+                val balances = mapOf(
+                    Asset.BTC to BigDecimal.ONE,
+                    TestFixtures.USD to BigDecimal("30000.00"),
+                )
+                coEvery { krakenService.getBalances() } returns balances
+                every { portfolioAnalyzer.resolveBalance(Asset.BTC, balances) } returns BigDecimal.ONE
+                every {
+                    portfolioAnalyzer.resolveBalance(TestFixtures.USD, balances)
+                } returns BigDecimal("30000.00")
+
+                // Live Kraken keys tickers by canonical pair (XXBTZUSD), not the request alias (XBTUSD).
+                val canonicalPrices = mapOf(TestFixtures.XXBTZUSD to BigDecimal("30000.00"))
+                coEvery { krakenService.getTickerPrices(any()) } returns canonicalPrices
+                every {
+                    portfolioAnalyzer.resolvePriceFromTicker(Asset.BTC, canonicalPrices)
+                } returns BigDecimal("30000.00")
+                coEvery { krakenService.getOHLC(any(), any(), any()) } returns emptyList()
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+
+                val reconstructed = slot<List<PortfolioSnapshot>>()
+                coEvery { repository.save(capture(reconstructed)) } just Runs
+
+                val reconstructionService = TradeHistoryReconstructionService(
+                    repository = repository,
+                    krakenService = krakenService,
+                    configService = configService,
+                    portfolioAnalyzer = portfolioAnalyzer,
+                )
+                reconstructionService.reconstructHistoricalSnapshots()
+
+                verify(exactly = 1) { portfolioAnalyzer.resolvePriceFromTicker(Asset.BTC, canonicalPrices) }
+                reconstructed.isCaptured.shouldBeTrue()
+                reconstructed.captured.any {
+                    it.assets[Asset.BTC]?.price?.compareTo(BigDecimal.ZERO) != 0
+                }.shouldBeTrue()
             }
         }
 

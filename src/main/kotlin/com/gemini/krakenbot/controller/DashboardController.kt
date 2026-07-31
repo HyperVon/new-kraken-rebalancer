@@ -42,6 +42,8 @@ import io.ktor.server.sse.ServerSSESession
 import io.ktor.server.sse.sse
 import io.ktor.sse.ServerSentEvent
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.html.div
 import kotlinx.html.h2
 import kotlinx.html.p
@@ -90,9 +92,7 @@ class DashboardController(
             get(Routes.HISTORY) {
                 val config = configService.getConfig()
                 val settings = config.settings
-                val symbolColorMap = config.allocations.mapNotNull { alloc ->
-                    alloc.color?.let { alloc.symbol.value.uppercase() to it }
-                }.toMap()
+                val symbolColorMap = config.allocations.symbolColorMap()
                 call.respondHtml(HttpStatusCode.OK) {
                     dashboardView.renderHistoryPage(settings, symbolColorMap)
                 }
@@ -159,7 +159,7 @@ class DashboardController(
         }
 
         try {
-            configService.updateConfig(updatedConfig)
+            withContext(Dispatchers.IO) { configService.updateConfig(updatedConfig) }
             call.response.header(HtmxHeaders.HX_REDIRECT, Routes.ROOT)
             call.respond(HttpStatusCode.OK)
         } catch (e: InvalidConfigurationException) {
@@ -367,3 +367,6 @@ internal fun parseTimeRange(call: ApplicationCall): Pair<Instant, Instant> {
     val from = timeRange.calculateFromInstant(now)
     return Pair(from, now)
 }
+
+internal fun List<Allocation>.symbolColorMap(): Map<String, String> =
+    mapNotNull { alloc -> alloc.color?.let { alloc.symbol.value.uppercase() to it } }.toMap()

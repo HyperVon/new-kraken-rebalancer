@@ -17,12 +17,6 @@ class BigDecimalExtensionsTest : StringSpec() {
             BigDecimal("1.50").isZero shouldBe false
         }
 
-        "isNonZero should correctly identify non-zero values" {
-            BigDecimal.ZERO.isNonZero shouldBe false
-            BigDecimal("0.00").isNonZero shouldBe false
-            BigDecimal("1.50").isNonZero shouldBe true
-        }
-
         "isPositive should correctly identify positive values" {
             BigDecimal("10.00").isPositive shouldBe true
             BigDecimal.ZERO.isPositive shouldBe false

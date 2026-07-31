@@ -16,7 +16,6 @@ object ViewText {
     const val DRAWDOWN_PREFIX = "Drawdown: "
     const val RECENT_ACTIVITY = "Recent Activity"
     const val NO_TRADING_HISTORY = "No trading history available."
-    const val NO_TRADES_EXECUTED = "No trades executed (Cycle complete)"
 
     // DASH-3: activity feed labels.
     const val ACTIVITY_VIEW_ALL = "View all history"
@@ -57,7 +56,6 @@ object ViewText {
     const val LEGEND_UNDER_TARGET = "Under target"
     const val ADD_ASSET = "Add Asset"
     const val SAVE_CONFIGURATION = "Save Configuration"
-    const val ALLOCATION_COLOR_PREFIX = "Color for "
 
     // GLOB-1: stream-health chip is renamed so it never reads as "live trading".
     const val STREAM = "STREAM"
@@ -92,7 +90,6 @@ object ViewText {
     const val HEADER_CURRENT_PCT = "Current %"
     const val HEADER_DEV_PCT = "Dev %"
     const val HEADER_TIME = "Time"
-    const val HEADER_ACTION = "Action"
 
     // History page
     const val HISTORY_TITLE = "History"
@@ -123,7 +120,6 @@ object ViewText {
     const val HISTORY_ZOOM_IN = "Zoom +"
     const val HISTORY_ZOOM_OUT = "Zoom −"
     const val HISTORY_ZOOM_RESET = "Reset"
-    const val HISTORY_PAN_CHART = "Pan zoomed chart"
     const val HISTORY_VIEW_OVERVIEW = "Overview"
     const val HISTORY_VIEW_DAY_TOTAL = "Day · Total only"
     const val HISTORY_VIEW_WEEK_ALLOCATION = "Week · Allocation"
@@ -171,7 +167,6 @@ object ViewText {
         "Invalid settings field: deviation trigger percent is required and must be a finite number."
     const val INVALID_DUST_THRESHOLD =
         "Invalid settings field: dust threshold USD is required and must be a finite number."
-    const val INVALID_SETTINGS_FIELD = "Invalid settings field"
     const val INVALID_LOOP_DELAY = "Invalid settings field: loop delay is required and must be an integer."
     const val INVALID_FIAT_MAX_DRAWDOWN =
         "Invalid settings field: fiat max drawdown is required and must be a finite number."
