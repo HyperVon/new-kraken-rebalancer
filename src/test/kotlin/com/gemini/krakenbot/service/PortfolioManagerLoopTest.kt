@@ -24,6 +24,7 @@ import io.mockk.verify
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -31,6 +32,7 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.yield
 import java.math.BigDecimal
 import kotlin.time.Duration.Companion.milliseconds
@@ -287,16 +289,24 @@ class PortfolioManagerLoopTest : StringSpec() {
                 every { configService.watchConfigChanges() } returns configFlow
                 val firstCycleSyncStarted = CompletableDeferred<Unit>()
                 val restartedCycleSyncStarted = CompletableDeferred<Unit>()
+                val firstWorkerGate = CompletableDeferred<Unit>()
+                val restartedWorkerGate = CompletableDeferred<Unit>()
                 var syncCalls = 0
                 coEvery { tradeHistoryService.syncTradesFromKraken() } coAnswers {
                     syncCalls++
-                    if (syncCalls == 2) {
-                        firstCycleSyncStarted.complete(Unit)
-                        awaitCancellation()
-                    }
-                    if (syncCalls == 3) {
-                        restartedCycleSyncStarted.complete(Unit)
-                        awaitCancellation()
+                    // The gate is awaited inside NonCancellable so stop() cannot release the mutex
+                    // through cancellation propagation; the new worker must therefore wait for the
+                    // predecessor's join (and would never reach its own sync without it).
+                    when (syncCalls) {
+                        1 -> {
+                            firstCycleSyncStarted.complete(Unit)
+                            withContext(NonCancellable) { firstWorkerGate.await() }
+                        }
+                        2 -> {
+                            restartedCycleSyncStarted.complete(Unit)
+                            withContext(NonCancellable) { restartedWorkerGate.await() }
+                        }
+                        else -> throw AssertionError("unexpected sync call #$syncCalls")
                     }
                 }
 
@@ -305,17 +315,28 @@ class PortfolioManagerLoopTest : StringSpec() {
                 runCurrent()
                 firstCycleSyncStarted.await()
 
-                // No join between stop and start: the cancelled worker is still draining its
-                // runLoopMutex/workerJob cleanup when the restart launches its replacement.
+                // The first worker is still holding runLoopMutex (suspended in NonCancellable),
+                // so a stop+start without the join would let the new runLoop hit tryLock-fail
+                // and the replacement would never call syncTradesFromKraken again.
                 portfolioManager.stopRebalancingLoop()
                 val secondWorker = portfolioManager.startRebalancingLoop(this)
                 runCurrent()
-                restartedCycleSyncStarted.await()
 
-                syncCalls shouldBe 3
+                // The new worker is blocked on staleJob.join() and has not yet entered runLoop.
+                restartedCycleSyncStarted.isCompleted shouldBe false
+                syncCalls shouldBe 1
+
+                // Release the first worker; its drain lets the new worker acquire the mutex
+                // and run its own startup sync.
+                firstWorkerGate.complete(Unit)
+                runCurrent()
+                restartedCycleSyncStarted.await()
+                syncCalls shouldBe 2
                 (secondWorker !== firstWorker) shouldBe true
 
                 portfolioManager.stopRebalancingLoop()
+                restartedWorkerGate.complete(Unit)
+                runCurrent()
                 secondWorker.join()
                 firstWorker.join()
             }

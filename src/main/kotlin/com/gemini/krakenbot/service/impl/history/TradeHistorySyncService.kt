@@ -285,8 +285,14 @@ class TradeHistorySyncService(
         } else if (readInitialPaginationOffset() != null) {
             // Self-heal: an orphaned numeric offset (crash after seeding, before COMPLETED) would
             // otherwise linger forever; it must not mark any future sync as an interrupted seed.
+            // Also normalize SYNC_TOTAL so a crash between the two COMPLETED writes does not leave
+            // a lone numeric total behind.
             repository.setSyncMetadata(SyncMetadataKeys.SYNC_OFFSET, SyncMetadataKeys.COMPLETED)
-            repository.setSyncMetadata(SyncMetadataKeys.SYNC_TOTAL, SyncMetadataKeys.COMPLETED)
+            if (repository.getSyncMetadata(SyncMetadataKeys.SYNC_TOTAL)
+                    ?.toIntOrNull() != null
+            ) {
+                repository.setSyncMetadata(SyncMetadataKeys.SYNC_TOTAL, SyncMetadataKeys.COMPLETED)
+            }
         }
         // Persist watermark even when no real fills exist so the next sync is incremental.
         val completedAt = nowProvider()

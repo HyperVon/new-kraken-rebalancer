@@ -107,6 +107,11 @@ class DashboardTest : StringSpec() {
             }
             addRow(Asset.ETH, "$3,000.00", "$12,000.00")
             addRow(Asset.BTC, "$60,000.00", "$8,000.00")
+            // Non-breaking-space thousands separator on the Value cell: Number("50\u00A0000.00")
+            // is NaN, so the comma-only cleanup leaves SOL sorting as 0.0; the whitespace-aware
+            // regex strips the NBSP and recovers 50000.0, which must place SOL first on a value
+            // sort. Without the fix, SOL would sort as 0.0 and the assertion below would fail.
+            addRow(Asset.SOL, "$3,000.00", "$50\u00A0000.00")
             table.appendChild(tbody)
             document.body!!.appendChild(table)
 
@@ -119,7 +124,7 @@ class DashboardTest : StringSpec() {
                 sortTable(headers[2], 2, CssClass.Utility.Asc.toString())
                 (tbody.rows.item(0) as HTMLTableRowElement).cells.item(0)?.textContent shouldBe Asset.BTC
                 sortTable(headers[2], 2, CssClass.Utility.Desc.toString())
-                (tbody.rows.item(0) as HTMLTableRowElement).cells.item(0)?.textContent shouldBe Asset.ETH
+                (tbody.rows.item(0) as HTMLTableRowElement).cells.item(0)?.textContent shouldBe Asset.SOL
             } finally {
                 document.body!!.removeChild(table)
             }

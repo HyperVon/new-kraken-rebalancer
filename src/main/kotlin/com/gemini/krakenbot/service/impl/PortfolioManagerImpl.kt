@@ -92,10 +92,12 @@ class PortfolioManagerImpl(
     override suspend fun runLoop() {
         if (!runLoopMutex.tryLock()) {
             log.warn("Rebalancing loop worker already exists; ignoring duplicate runLoop caller.")
-            // The caller returned without becoming the worker; drop its ownership claim so a later
-            // restart can launch a replacement instead of inheriting a dead job reference.
+            // The caller returned without becoming the worker. Only drop its ownership claim
+            // when the owned job is already completed; an alive owned job is still draining and
+            // will release workerJob from its own finally block.
             synchronized(lifecycleLock) {
-                if (workerJob === coroutineContext[Job]) {
+                val owned = workerJob
+                if (owned != null && owned === coroutineContext[Job] && owned.isCompleted) {
                     workerJob = null
                 }
             }

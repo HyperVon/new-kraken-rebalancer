@@ -48,9 +48,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   serialization or move failures.
 - **PortfolioManager lifecycle and ownership (#160)**: The rebalance loop is now
   restartable and single-owner. A scoped `startRebalancingLoop(scope)` launches
-  a managed worker, `stop` cancels and joins it, and duplicate `runLoop`
-  callers are rejected. Stopped managers no longer perform startup sync. Hot
-  `SharedFlow` lifecycle is preserved through stop/restart.
+  a managed worker that drains any cancelled predecessor before it begins, and
+  `stop` cancels it; the application shutdown hook joins the worker (bounded
+  5 s, extended while live submissions are pending). Duplicate `runLoop`
+  callers are rejected and never become a second hot-flow collector.
 - **Shutdown join (#164)**: Application shutdown now stops and joins the
   rebalance worker (bounded 5 s, extended while live submissions are pending)
   before canceling the application scope or closing the HTTP client and Koin,

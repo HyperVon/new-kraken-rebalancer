@@ -33,19 +33,29 @@ private fun wireModePlateSync() {
     val dryRun =
         document.querySelector("input[name=\"${FormFields.DRY_RUN}\"]") as? HTMLInputElement
     if (simulation == null && dryRun == null) return
-    // Bind at most once per DOM node: htmx:afterSwap re-runs this after fragment swaps that keep
-    // the toggles (e.g. a validation error swap), and a second listener would stack handlers.
+    // Mark each input as bound on first attachment so subsequent htmx:afterSwap callbacks
+    // (which can re-run this when the toggles survive a partial fragment swap) do not stack
+    // duplicate change listeners. The marker lives on the element itself, so detached inputs
+    // are GC'd normally without retaining references from a module-level set.
     val onChange: (Event) -> Unit = { syncModePlateFromSafetyToggles() }
-    if (simulation != null && BOUND_MODE_TOGGLES.add(simulation)) {
+    if (simulation != null && !simulation.dataset.isBound()) {
+        simulation.markBound()
         simulation.addEventListener("change", onChange)
     }
-    if (dryRun != null && BOUND_MODE_TOGGLES.add(dryRun)) {
+    if (dryRun != null && !dryRun.dataset.isBound()) {
+        dryRun.markBound()
         dryRun.addEventListener("change", onChange)
     }
     syncModePlateFromSafetyToggles()
 }
 
-private val BOUND_MODE_TOGGLES = mutableSetOf<HTMLInputElement>()
+private const val BOUND_MARKER = "modeToggleBound"
+
+private fun org.w3c.dom.DOMStringMap.isBound(): Boolean = this[BOUND_MARKER] == "1"
+
+private fun HTMLInputElement.markBound() {
+    this.dataset[BOUND_MARKER] = "1"
+}
 
 internal fun syncModePlateFromSafetyToggles() {
     val plate = document.getElementById(HtmlIds.MODE_PLATE) as? HTMLElement ?: return
