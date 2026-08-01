@@ -23,7 +23,7 @@ import com.gemini.krakenbot.util.toUsdScale
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.last
 import kotlinx.coroutines.withContext
@@ -410,27 +410,29 @@ class OrderExecutorImpl(
     ): Flow<BigDecimal> = flow {
         val startSec = Instant.now().minusSeconds(600).epochSecond
         val txidSet = sellOrderTxids.toSet()
-        coldPollBackoff(
-            actionName = "Fill confirmation",
-            targetThreshold = targetThreshold,
-            bestLog = "Using best fill-confirmed USD after sell refresh: {}",
-            noneLog = "No fill-confirmed USD observed after sell refresh",
-            resolve = { attempt ->
-                val matchedProceeds = sumMatchedSellProceeds(backend, startSec, txidSet)
-                if (matchedProceeds > BigDecimal.ZERO) {
-                    val cash = openingUsd.add(matchedProceeds).toUsdScale()
-                    log.info(
-                        "Fill-confirmed USD after sells (attempt {}): {} (proceeds {})",
-                        attempt + 1,
-                        cash,
-                        matchedProceeds,
-                    )
-                    cash
-                } else {
-                    null
-                }
-            },
-        ).collect { emit(it) }
+        emitAll(
+            coldPollBackoff(
+                actionName = "Fill confirmation",
+                targetThreshold = targetThreshold,
+                bestLog = "Using best fill-confirmed USD after sell refresh: {}",
+                noneLog = "No fill-confirmed USD observed after sell refresh",
+                resolve = { attempt ->
+                    val matchedProceeds = sumMatchedSellProceeds(backend, startSec, txidSet)
+                    if (matchedProceeds > BigDecimal.ZERO) {
+                        val cash = openingUsd.add(matchedProceeds).toUsdScale()
+                        log.info(
+                            "Fill-confirmed USD after sells (attempt {}): {} (proceeds {})",
+                            attempt + 1,
+                            cash,
+                            matchedProceeds,
+                        )
+                        cash
+                    } else {
+                        null
+                    }
+                },
+            ),
+        )
     }
 
     /**
