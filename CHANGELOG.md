@@ -6,31 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [6.15.31] - 2026-07-31
+## [6.15.30] - 2026-07-31
+
+### Added
+
+- Direct unit coverage for `PortfolioAnalyzerImpl`: ATH set / raise / hold + drawdown
+  branches, save-failure rethrow, and `buildSnapshot` USD-price handling, missing-value
+  fallback, and unresolved-crypto-price error path.
 
 ### Changed
 
-- **Frontend dedup**: extracted a shared `usdOptionsToLocale(...)` / `usdCellOrDash(...)`
-  currency-formatting helper used by `formatUSD`, `formatPriceOrDash`, and
-  `formatFeeOrDash`.
-- **CSS**: consolidated the hero-tile and allocation-chart bar styles into shared
-  rules with per-variant overrides, and centralized focus-ring, glass-surface, and
-  mode-plate glow colors in `CssTheme` (used across `ComponentStyles`,
-  `NavigationStyles`, `FormStyles`, `LayoutStyles`).
-- **Accessibility**: decorative inline SVG icons now render `aria-hidden="true"`;
-  the hero sparkline exposes `role="img"` with a descriptive `aria-label`.
-
-### Fixed
-
-- Made the concurrent `DynamicKrakenServiceTest` pin-ordering test deterministic
-  (replaced timing sleeps with `CompletableDeferred` sequencing) and removed a
-  fixed-duration wait in `SseMultiSubscriberTest` in favor of a bounded
-  subscription-count poll.
-
-### Tests
-
-- Migrated `PortfolioManagerOrderExecutionTest` onto the shared
-  `PortfolioManagerTestFixture` (the last exact structural duplicate).
+- Centralize allocation-editor `step` / `min` / `max` bounds in shared
+  `PrecisionConstants` so the SSR settings form and the JS asset-row editor stay in sync.
 
 ## [6.15.29] - 2026-07-31
 

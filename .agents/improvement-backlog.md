@@ -17,16 +17,15 @@ need only this file (no issue spam).
 
 | ID | Size | Status | Area | Summary | Cycle | Issue | Notes |
 | :--- | :---: | :--- | :--- | :--- | :---: | :--- | :--- |
-| Q05 | M | open | tests | Add direct unit tests for `HistoryChartState` (visibility capture/apply/rollback, scrubber sync) — needs DOM/Chart.js harness | — | — | assessed, not forced |
-| Q10 | M | open | frontend | Dedupe allocation-editor markup/logic between SSR `SettingsFormComponent` and JS `Settings.kt` — high drift risk across two render paradigms | — | — | assessed, not forced |
-| T-05 | M | open | config | Make `ConfigServiceImpl` fail loudly on unknown JSON fields — requires trust-boundary/scoping decision on the shared ObjectMapper | — | — | assessed, needs user direction |
+| CI-21-T01 | M | open | tests | Extract duplicated PortfolioManager wiring (35+ call sites) to shared fixture | 21 | — | — |
+| CI-21-T02 | M | open | tests | Fix flaky `DynamicKrakenServiceTest.concurrent withStableBackend` timing | 21 | — | — |
 
 ## Done (recent)
 
 | ID | Size | Status | Area | Summary | Cycle | PR |
 | :--- | :---: | :--- | :--- | :--- | :---: | :--- |
-| CI-21-T01 | M | done | tests | Use shared `PortfolioManagerTestFixture`; migrate `PortfolioManagerOrderExecutionTest` (remaining exact duplicate); remaining ~30 sites legitimately scoped (real DB / SimulatedKraken / scenario) | 21 | fix/remaining-items (partial by design) |
-| CI-21-T02 | M | done | tests | De-flake `DynamicKrakenServiceTest.concurrent withStableBackend` — replace timing `delay` with `CompletableDeferred` sequencing | 21 | fix/remaining-items |
+| CI-23-Q01 | M | done | tests | Add direct unit tests for `PortfolioAnalyzerImpl` (ATH/drawdown + buildSnapshot) | 23 | — |
+| CI-23-Q02 | S | done | frontend | Centralize allocation-editor input bounds in `PrecisionConstants` (SSR + JS share step/min/max) | 23 | — |
 | CI-21-Q01 | S | done | imports | Replace wildcard imports in 14 server view files (`kotlinx.html.*`, `kotlinx.css.*`) | 21 | — |
 | CI-21-Q02 | S | done | imports | Replace wildcard imports in 18 test files (`io.mockk.*`, `io.ktor.*`) | 21 | — |
 | CI-21-Q03 | S | done | imports | Replace wildcard imports in 13 frontend files (`org.w3c.dom.*`) | 21 | — |
