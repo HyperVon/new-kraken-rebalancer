@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.15.30] - 2026-07-31
+
+### Added
+
+- Direct unit coverage for `PortfolioAnalyzerImpl`: ATH set / raise / hold + drawdown
+  branches, save-failure rethrow, and `buildSnapshot` USD-price handling, missing-value
+  fallback, and unresolved-crypto-price error path.
+
 ## [6.15.29] - 2026-07-31
 
 ### Changed

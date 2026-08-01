@@ -24,6 +24,7 @@ need only this file (no issue spam).
 
 | ID | Size | Status | Area | Summary | Cycle | PR |
 | :--- | :---: | :--- | :--- | :--- | :---: | :--- |
+| CI-23-Q01 | M | done | tests | Add direct unit tests for `PortfolioAnalyzerImpl` (ATH/drawdown + buildSnapshot) | 23 | — |
 | CI-21-Q01 | S | done | imports | Replace wildcard imports in 14 server view files (`kotlinx.html.*`, `kotlinx.css.*`) | 21 | — |
 | CI-21-Q02 | S | done | imports | Replace wildcard imports in 18 test files (`io.mockk.*`, `io.ktor.*`) | 21 | — |
 | CI-21-Q03 | S | done | imports | Replace wildcard imports in 13 frontend files (`org.w3c.dom.*`) | 21 | — |
