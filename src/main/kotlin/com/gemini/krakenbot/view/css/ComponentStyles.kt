@@ -343,36 +343,62 @@ object ComponentStyles {
             gap = 0.625.rem
         }
 
-        ".${CssClass.Hero.TileBarTrack.value}" {
+        // Shared progress-bar styling for hero tiles and the allocation chart. Bit-by-bit
+        // differences are re-applied as per-variant overrides below to keep output identical.
+        val barTracks = "${CssClass.Hero.TileBarTrack.value}, ${CssClass.AllocationChart.BarTrack.value}"
+        "$barTracks" {
             flexGrow = 1.0
-            height = 0.625.rem
-            background = "linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.08))"
+            background = "linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.09))"
             borderRadius = CssTheme.radiusPill
             overflow = Overflow.hidden
             solidBorder(CssTheme.colorWhiteSubtle)
-            put("box-shadow", "inset 0 1px 2px rgba(0,0,0,0.35)")
         }
 
-        ".${CssClass.Hero.TileBarFill.value}" {
+        val barFills = "${CssClass.Hero.TileBarFill.value}, ${CssClass.AllocationChart.BarFill.value}"
+        "$barFills" {
             position = Position.relative
             height = 100.pct
             borderRadius = CssTheme.radiusPill
             put("background-image", CssTheme.glassBarSheen)
             put("background-blend-mode", "soft-light")
-            put("box-shadow", "inset 0 1px 0 rgba(255,255,255,0.35), 0 0 12px rgba(255,255,255,0.10)")
+            put("box-shadow", "inset 0 1px 0 rgba(255,255,255,0.35), 0 0 12px rgba(255,255,255,0.12)")
             put("transition", "width 0.8s cubic-bezier(0.4, 0, 0.2, 1)")
         }
 
-        ".${CssClass.Hero.TileBarFill.value}::after" {
+        val barFillSheens =
+            "${CssClass.Hero.TileBarFill.value}::after, ${CssClass.AllocationChart.BarFill.value}::after"
+        "$barFillSheens" {
             put("content", "\"\"")
             position = Position.absolute
+            left = 8.pct
+            right = 8.pct
+            top = 1.px
+            height = 38.pct
+            borderRadius = CssTheme.radiusPill
+            background = "linear-gradient(90deg, transparent, rgba(186,230,255,0.48), transparent)"
+            put("pointer-events", "none")
+        }
+
+        // Hero tile bars use the compact sizing from the original DASH-1 tiles.
+        ".${CssClass.Hero.TileBarTrack.value}" {
+            height = 0.625.rem
+            background = "linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.08))"
+            put("box-shadow", "inset 0 1px 2px rgba(0,0,0,0.35)")
+        }
+        ".${CssClass.Hero.TileBarFill.value}" {
+            put("box-shadow", "inset 0 1px 0 rgba(255,255,255,0.35), 0 0 12px rgba(255,255,255,0.10)")
+        }
+        ".${CssClass.Hero.TileBarFill.value}::after" {
             left = 10.pct
             right = 10.pct
-            top = 1.px
             height = 40.pct
-            borderRadius = CssTheme.radiusPill
             background = "linear-gradient(90deg, transparent, rgba(186,230,255,0.45), transparent)"
-            put("pointer-events", "none")
+        }
+
+        // Allocation bars use the larger original sizing and deeper inset shadow.
+        ".${CssClass.AllocationChart.BarTrack.value}" {
+            height = 0.85.rem
+            put("box-shadow", "inset 0 1px 2px rgba(0,0,0,0.4)")
         }
 
         ".${CssClass.Hero.TileMeta.value}" {
@@ -404,41 +430,6 @@ object ComponentStyles {
             fontWeight = FontWeight.w700
             color = CssTheme.colorTextPrimary
             fontSize = 0.875.rem
-        }
-
-        ".${CssClass.AllocationChart.BarTrack}" {
-            flexGrow = 1.0
-            height = 0.85.rem
-            background = "linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.09))"
-            borderRadius = CssTheme.radiusPill
-            overflow = Overflow.hidden
-            solidBorder(CssTheme.colorWhiteSubtle)
-            put("box-shadow", "inset 0 1px 2px rgba(0,0,0,0.4)")
-        }
-
-        ".${CssClass.AllocationChart.BarFill}" {
-            position = Position.relative
-            height = 100.pct
-            borderRadius = CssTheme.radiusPill
-            put("background-image", CssTheme.glassBarSheen)
-            put("background-blend-mode", "soft-light")
-            put(
-                "box-shadow",
-                "inset 0 1px 0 rgba(255,255,255,0.35), 0 0 12px rgba(255,255,255,0.12)",
-            )
-            put("transition", "width 0.8s cubic-bezier(0.4, 0, 0.2, 1)")
-        }
-
-        ".${CssClass.AllocationChart.BarFill}::after" {
-            put("content", "\"\"")
-            position = Position.absolute
-            left = 8.pct
-            right = 8.pct
-            top = 1.px
-            height = 38.pct
-            borderRadius = CssTheme.radiusPill
-            background = "linear-gradient(90deg, transparent, rgba(186,230,255,0.48), transparent)"
-            put("pointer-events", "none")
         }
 
         ".${CssClass.AllocationChart.BarValue}" {

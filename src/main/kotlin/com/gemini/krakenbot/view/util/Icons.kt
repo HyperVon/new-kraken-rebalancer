@@ -20,6 +20,10 @@ object Icons {
     val CHART = loadIcon("chart.svg")
 
     fun HTMLTag.icon(rawSvg: String) {
-        unsafe { +rawSvg }
+        unsafe { +rawSvg.decorative() }
     }
+
+    // All bundled icons are decorative glyphs rendered beside text labels, so hide them
+    // from assistive tech rather than exposing the raw SVG as separate content.
+    private fun String.decorative(): String = replaceFirst("<svg", "<svg aria-hidden=\"true\"")
 }

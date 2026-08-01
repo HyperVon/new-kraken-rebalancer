@@ -95,6 +95,22 @@ object CssTheme {
     val colorPurpleMuted = Color("rgba(167, 139, 250, 0.18)")
     val colorPurpleBorder = Color("rgba(167, 139, 250, 0.35)")
 
+    // Focus-visible rings shared across interactive controls (WCAG-visible affordance).
+    const val focusRingStrong = "0 0 0 3px rgba(59, 130, 246, 0.45)"
+    const val focusRingCompact = "0 0 0 2px rgba(59, 130, 246, 0.45)"
+    const val focusRingSubtle = "0 0 0 3px rgba(59, 130, 246, 0.2)"
+
+    // Translucent glass surfaces for secondary buttons / inputs.
+    val colorGlassSurfaceSubtle = Color("rgba(30, 41, 59, 0.5)")
+    val colorGlassSurfaceHover = Color("rgba(30, 41, 59, 0.8)")
+    val colorGlassSurfaceInput = Color("rgba(15, 23, 42, 0.4)")
+    val colorGlassSurfaceFaint = Color("rgba(15, 23, 42, 0.2)")
+
+    // Trading-mode plate glows (combined with insetTopHighlight at call sites).
+    const val glowBlueStrong = "0 0 16px rgba(59, 130, 246, 0.25)"
+    const val glowAmberSoft = "0 0 14px rgba(245, 158, 11, 0.22)"
+    const val glowRedSoft = "0 0 14px rgba(239, 68, 68, 0.22)"
+
     fun CssBuilder.applyRootVariables() {
         ":root" {
             put("--font-sans", fontSans)

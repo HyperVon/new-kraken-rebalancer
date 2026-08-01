@@ -47,12 +47,9 @@ private fun hexToRgba(hex: String, alpha: Double): String? {
 }
 
 fun formatUSD(valDouble: Double): String {
-    val options: dynamic = json()
-    options.minimumFractionDigits = PrecisionConstants.SCALE_USD
-    options.maximumFractionDigits = PrecisionConstants.SCALE_USD
     // Format the magnitude, then place the sign before the $ ("-$1.23", not "$-1.23").
     val absVal = if (valDouble < 0) -valDouble else valDouble
-    val formatted = absVal.asDynamic().toLocaleString(EN_US, options) as String
+    val formatted = usdOptionsToLocale(absVal, PrecisionConstants.SCALE_USD, PrecisionConstants.SCALE_USD)
     return if (valDouble < 0) "-$$formatted" else "$$formatted"
 }
 
