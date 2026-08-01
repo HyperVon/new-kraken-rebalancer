@@ -1,6 +1,7 @@
 package com.gemini.krakenbot
 
 import com.gemini.krakenbot.config.ErrorHandlingConfig.configureErrorHandling
+import com.gemini.krakenbot.config.ServerConfig
 import com.gemini.krakenbot.config.appModule
 import com.gemini.krakenbot.config.configureCORS
 import com.gemini.krakenbot.config.configureCachingAndConditionalHeaders
@@ -97,7 +98,7 @@ private fun startServer() {
     // IPv4 literals (e.g. http://10.0.0.x:8080/) never use AAAA — bind family does not affect them.
     // Hosts with IPv6 disabled or bindv6only=1 need an IPv4-capable network stack; keep the
     // host firewall covering both families (see SECURITY.md).
-    embeddedServer(Netty, port = 8080, host = "::") {
+    embeddedServer(Netty, port = ServerConfig.resolveServerPort(), host = "::") {
         install(SSE)
         configureCompression()
         configureCachingAndConditionalHeaders()

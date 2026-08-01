@@ -8,8 +8,25 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [6.15.31] - 2026-08-01
 
+### Added
+
+- **Repository-local Kilo Code commands**: added read-only `/quality-gate` and
+  `/review-diff` workflows plus an isolated `/simulation-smoke` check. The
+  commands use the committed agent guidance, prohibit access to local runtime
+  data, and keep simulation verification on the offline emulator.
+- **Kilo Agent Manager simulation**: added configurable server-port support plus
+  safe `.kilo/setup-script` and `.kilo/run-script` hooks. Worktree runs use a
+  temporary template-based configuration and database with both simulation and
+  dry-run safeguards enabled.
+
 ### Changed
 
+- **Kilo simulation smoke command:** simplified `/simulation-smoke` to delegate
+  to the tested `.kilo/run-script` instead of duplicating shell process and
+  temporary-configuration logic.
+- **Kilo Agent Manager run isolation:** the run hook now skips occupied ports,
+  avoids fixed-port smoke checks, and forcefully cleans up its owned process
+  before removing its temporary runtime directory.
 - **Execution cold-poll dedup** (`OrderExecutorImpl`): extracted a shared
   `coldPollBackoff(...)` helper from the two structurally identical USD-settle
   poll loops (`pollFillConfirmedUsd`, `pollUsdBalanceAfterSells`) and named the

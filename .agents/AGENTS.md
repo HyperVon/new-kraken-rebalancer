@@ -283,3 +283,40 @@ flags: [dry-run-and-simulation](skills/dry-run-and-simulation/SKILL.md).
 - **Settings input:** Every numeric trading field and allocation row is parsed
   strictly before persistence; missing, non-finite, malformed, or mismatched
   form values are rejected instead of defaulted or truncated.
+
+---
+
+## 10. Kilo Agent Manager integration
+
+The following files are optional, Kilo-specific Agent Manager integrations under
+`.kilo/`. They are not application requirements or the canonical project
+workflow. The repository remains harness agnostic: other agent tools should use
+the standard Gradle/README workflows and the shared guidance in `.agents/`.
+
+- **Scope:** these hooks are for Kilo Code's Agent Manager only. They do not
+  define or require a general agent protocol.
+
+- **Setup:** `.kilo/setup-script` prepares Gradle classes in the selected
+  worktree without reading `.env`, application config, databases, logs, or
+  runtime data.
+- **Run:** `.kilo/run-script` builds the fat JAR and starts an isolated local
+  simulation for the Agent Manager Run button. It copies only
+  `rebalancer-config-template.json` into a private temporary directory, forces
+  both `simulation=true` and `dryRun=true`, and uses a temporary database.
+- **Port:** the application defaults to `8080` and accepts the JVM property
+  `kraken.server.port`. The run hook probes candidates in the
+  `18080`-`19079` range and skips occupied ports. Set `KILO_AGENT_PORT` to use
+  an explicit valid, unused port.
+- **Health check:** the run hook polls only the local `/api/health` endpoint,
+  suppresses build and application output, emits only a generic readiness
+  message or failure, and forcefully terminates and reaps only its own child
+  process during cleanup. It removes only its own temporary directory.
+
+Agent Manager automatically copies root `.env` and `.env.*` files into managed
+worktrees. Do not use those files for credentials in this workflow; keep them
+placeholder-only or use a separate operator-managed secret mechanism. Never
+commit `rebalancer-config.json`, API credentials, private keys, account data,
+or runtime logs.
+
+Bring worktree changes back with Agent Manager Apply, a normal merge, or a PR.
+Do not use shared `git stash` or autostash across worktrees.

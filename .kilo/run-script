@@ -1,0 +1,165 @@
+#!/bin/sh
+set -eu
+umask 077
+
+WORKTREE_PATH=${WORKTREE_PATH:-$PWD}
+REPO_PATH=${REPO_PATH:-$WORKTREE_PATH}
+
+if [ ! -d "$WORKTREE_PATH" ] || [ ! -d "$REPO_PATH" ]; then
+    printf '%s\n' 'Agent Manager run failed.' >&2
+    exit 1
+fi
+
+cd "$WORKTREE_PATH"
+
+if ! ./gradlew --no-daemon fatJar >/dev/null 2>&1; then
+    printf '%s\n' 'Agent Manager run failed.' >&2
+    exit 1
+fi
+
+JAR_PATH=
+for candidate in "$WORKTREE_PATH"/build/libs/kraken-bot-*-all.jar; do
+    if [ -f "$candidate" ]; then
+        JAR_PATH=$candidate
+        break
+    fi
+done
+if [ -z "$JAR_PATH" ]; then
+    printf '%s\n' 'Agent Manager run failed.' >&2
+    exit 1
+fi
+
+port_is_available() {
+    python3 - "$1" <<'PY'
+import socket
+import sys
+
+port = int(sys.argv[1])
+try:
+    addresses = socket.getaddrinfo("localhost", port, type=socket.SOCK_STREAM)
+except socket.gaierror:
+    addresses = []
+
+for family, socktype, protocol, _, address in addresses:
+    with socket.socket(family, socktype, protocol) as sock:
+        sock.settimeout(0.2)
+        try:
+            sock.connect(address)
+        except OSError:
+            continue
+        raise SystemExit(1)
+
+raise SystemExit(0)
+PY
+}
+
+PORT_START=18080
+PORT_COUNT=1000
+
+if [ -n "${KILO_AGENT_PORT:-}" ]; then
+    case "$KILO_AGENT_PORT" in
+        ''|*[!0-9]*)
+            printf '%s\n' 'Agent Manager run failed.' >&2
+            exit 1
+            ;;
+    esac
+    if [ "$KILO_AGENT_PORT" -lt 1 ] || [ "$KILO_AGENT_PORT" -gt 65535 ]; then
+        printf '%s\n' 'Agent Manager run failed.' >&2
+        exit 1
+    fi
+    if ! port_is_available "$KILO_AGENT_PORT"; then
+        printf '%s\n' 'Agent Manager run failed.' >&2
+        exit 1
+    fi
+    PORT=$KILO_AGENT_PORT
+else
+    PORT_HASH=$(printf '%s' "$WORKTREE_PATH" | cksum | awk '{print $1}')
+    PORT_ATTEMPT=0
+    while [ "$PORT_ATTEMPT" -lt "$PORT_COUNT" ]; do
+        PORT=$((PORT_START + (PORT_HASH + PORT_ATTEMPT) % PORT_COUNT))
+        if port_is_available "$PORT"; then
+            break
+        fi
+        PORT_ATTEMPT=$((PORT_ATTEMPT + 1))
+    done
+    if [ "$PORT_ATTEMPT" -ge "$PORT_COUNT" ]; then
+        printf '%s\n' 'Agent Manager run failed.' >&2
+        exit 1
+    fi
+fi
+
+if [ ! -f "$WORKTREE_PATH/rebalancer-config-template.json" ]; then
+    printf '%s\n' 'Agent Manager run failed.' >&2
+    exit 1
+fi
+
+RUN_DIR=$(mktemp -d "${TMPDIR:-/tmp}/kraken-agent.XXXXXX")
+APP_PID=
+
+cleanup() {
+    status=$?
+    if [ -n "$APP_PID" ] && kill -0 "$APP_PID" 2>/dev/null; then
+        kill "$APP_PID" 2>/dev/null || true
+        kill -KILL "$APP_PID" 2>/dev/null || true
+        wait "$APP_PID" 2>/dev/null || true
+        APP_PID=
+    fi
+    rm -rf "$RUN_DIR"
+    exit "$status"
+}
+trap cleanup EXIT HUP INT TERM
+
+cp "$WORKTREE_PATH/rebalancer-config-template.json" "$RUN_DIR/rebalancer-config.json"
+chmod 600 "$RUN_DIR/rebalancer-config.json"
+
+if ! python3 - "$RUN_DIR/rebalancer-config.json" <<'PY'
+import json
+import sys
+
+path = sys.argv[1]
+with open(path, encoding="utf-8") as config_file:
+    config = json.load(config_file)
+settings = config.get("settings")
+if not isinstance(settings, dict):
+    raise SystemExit(1)
+settings["simulation"] = True
+settings["dryRun"] = True
+with open(path, "w", encoding="utf-8") as config_file:
+    json.dump(config, config_file, indent=2)
+    config_file.write("\n")
+PY
+then
+    printf '%s\n' 'Agent Manager run failed.' >&2
+    exit 1
+fi
+
+DB_PATH="$RUN_DIR/kraken-rebalancer.db"
+(
+    cd "$RUN_DIR"
+    exec java \
+        -Xshare:off \
+        --sun-misc-unsafe-memory-access=allow \
+        --enable-native-access=ALL-UNNAMED \
+        "-Dkraken.server.port=$PORT" \
+        "-Dkraken.db.path=$DB_PATH" \
+        -jar "$JAR_PATH"
+) >/dev/null 2>&1 &
+APP_PID=$!
+
+attempt=0
+while [ "$attempt" -lt 30 ]; do
+    if ! kill -0 "$APP_PID" 2>/dev/null; then
+        printf '%s\n' 'Agent Manager run failed.' >&2
+        exit 1
+    fi
+    if curl -fsS --max-time 1 "http://localhost:$PORT/api/health" >/dev/null 2>&1; then
+        printf '%s\n' 'Agent Manager simulation ready.'
+        wait "$APP_PID"
+        exit $?
+    fi
+    attempt=$((attempt + 1))
+    sleep 1
+done
+
+printf '%s\n' 'Agent Manager run failed.' >&2
+exit 1
