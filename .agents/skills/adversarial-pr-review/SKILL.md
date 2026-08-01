@@ -46,7 +46,10 @@ Invoke both via the Task tool with their `subagent_type` — the pinned models
 are applied automatically by OpenCode from the agent definition. Do **not**
 pass model slugs via the prompt; the agent definition owns the model. Both
 subagents have `edit: deny` and are `hidden: true` (invokable via Task, not
-shown in the `@` autocomplete menu).
+shown in the `@` autocomplete menu). If either pinned subagent fails to
+launch, apply
+[Automatic fallback on reviewer launch failure](#automatic-fallback-on-reviewer-launch-failure)
+— do not wait for user direction.
 
 ### Other harnesses (Cursor, Claude Code, Copilot, etc.)
 
@@ -69,6 +72,27 @@ model), still run **two** independent Task subagents with the same adversarial
 prompt — diversity of reviewer *sessions* is still valuable even when both
 sessions share a model. Note the single-model condition in the verification
 notes.
+
+### Automatic fallback on reviewer launch failure
+
+Applies to every harness. If launching an intended reviewer fails — unknown
+agent type, task cancelled/aborted, provider error, or an unavailable model —
+do **not** pause to ask the user which agent or model to substitute. Recover
+autonomously and keep the loop moving:
+
+1. Retry the same reviewer once if the failure looks transient (rate limit,
+   network, provider error).
+2. Otherwise substitute the closest available Task agent for that reviewer
+   role and continue in parallel. The non-negotiable is **two independent
+   reviewer sessions** with the adversarial prompt below — not a specific
+   agent type or model. (OpenCode-specific: fall back from
+   `adversarial-reviewer-a` / `adversarial-reviewer-b` to the generic
+   `general` subagent for each failed role.)
+3. Record every substitution — role, intended agent/model, actual agent/model,
+   reason — in the PR verification notes and final summary.
+
+Never skip the second reviewer session, and never block the review loop on
+reviewer-agent selection.
 
 ## Scope
 

@@ -104,13 +104,13 @@ object FormStyles {
         }
 
         ".btn-secondary" {
-            background = "rgba(30, 41, 59, 0.5)"
+            background = CssTheme.colorGlassSurfaceSubtle.value
             solidBorder(CssTheme.colorBorderInput)
             color = CssTheme.colorMutedLight
         }
 
         ".btn-secondary:hover" {
-            background = "rgba(30, 41, 59, 0.8)"
+            background = CssTheme.colorGlassSurfaceHover.value
             borderColor = CssTheme.colorBorderInputHover
             color = Color.white
         }
@@ -145,7 +145,7 @@ object FormStyles {
 
         ".btn:focus-visible" {
             put("outline", "none")
-            put("box-shadow", "0 0 0 3px rgba(59, 130, 246, 0.45)")
+            put("box-shadow", CssTheme.focusRingStrong)
         }
 
         ".btn:disabled" {
@@ -197,7 +197,7 @@ object FormStyles {
         }
 
         ".${CssClass.Form.InputGlass}" {
-            background = "rgba(15, 23, 42, 0.4)"
+            background = CssTheme.colorGlassSurfaceInput.value
             solidBorder(CssTheme.colorBorderInput)
             color = Color.white
             padding = Padding(0.5.rem, 0.75.rem)
@@ -210,7 +210,7 @@ object FormStyles {
         ".${CssClass.Form.InputGlass}:focus" {
             put("outline", "none")
             borderColor = CssTheme.colorBluePrimary
-            put("box-shadow", "0 0 0 3px rgba(59, 130, 246, 0.2)")
+            put("box-shadow", CssTheme.focusRingSubtle)
         }
 
         ".${CssClass.Form.CheckboxContainer}" {
@@ -343,7 +343,7 @@ object FormStyles {
             borderWidth = 1.px
             borderStyle = BorderStyle.dashed
             borderColor = CssTheme.colorBorderInput
-            background = "rgba(15, 23, 42, 0.2)"
+            background = CssTheme.colorGlassSurfaceFaint.value
         }
 
         ".${CssClass.Form.SectionSubtitle.value}" {
@@ -391,7 +391,7 @@ object FormStyles {
 
         ".${CssClass.Form.SafetyCard.value}:focus-within .${CssClass.Form.SafetyCardInner.value}" {
             borderColor = CssTheme.colorKrakenBlue
-            put("box-shadow", "0 0 0 2px rgba(59, 130, 246, 0.45), ${CssTheme.shadowSurface1}")
+            put("box-shadow", "${CssTheme.focusRingCompact}, ${CssTheme.shadowSurface1}")
         }
 
         ".${CssClass.Form.SafetyCard.value}:hover .${CssClass.Form.SafetyCardInner.value}" {

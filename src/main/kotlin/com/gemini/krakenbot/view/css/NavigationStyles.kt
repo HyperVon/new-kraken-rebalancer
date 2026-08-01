@@ -75,12 +75,16 @@ object NavigationStyles {
             borderColor = CssTheme.colorWhiteFaint
         }
 
-        ".${CssClass.Navigation.Link}:focus-visible, .${CssClass.History.TimeRangeBtn}:focus-visible, " +
-            ".${CssClass.History.ViewsBtn}:focus-visible, .${CssClass.History.ZoomBtn}:focus-visible" {
-                put("outline", "none")
-                borderColor = CssTheme.colorBluePrimary
-                put("box-shadow", "0 0 0 3px rgba(59, 130, 246, 0.45)")
-            }
+        // Parens are load-bearing: without them `"A" + "B" { }` parses as
+        // `"A" + ("B".invoke(...))` and every selector except the last is dropped.
+        (
+            ".${CssClass.Navigation.Link}:focus-visible, .${CssClass.History.TimeRangeBtn}:focus-visible, " +
+                ".${CssClass.History.ViewsBtn}:focus-visible, .${CssClass.History.ZoomBtn}:focus-visible"
+            ) {
+            put("outline", "none")
+            borderColor = CssTheme.colorBluePrimary
+            put("box-shadow", CssTheme.focusRingStrong)
+        }
 
         CssClass.Navigation.LinkActive.querySelector {
             color = CssTheme.colorTextPrimary
@@ -141,11 +145,18 @@ object NavigationStyles {
             )
         }
 
-        "${CssClass.Navigation.LinkActive.querySelector}:focus-visible, " +
-            "${CssClass.History.TimeRangeBtnActive.querySelector}:focus-visible" {
-                put("outline", "3px solid rgba(59, 130, 246, 0.7)")
-                put("outline-offset", "2px")
-            }
+        // Parens are load-bearing here as well (see the rule above): without
+        // them only the last concatenated selector would emit.
+        (
+            "${CssClass.Navigation.LinkActive.querySelector}:focus-visible, " +
+                "${CssClass.History.TimeRangeBtnActive.querySelector}:focus-visible"
+            ) {
+            // Transparent outline stays invisible normally but is system-painted in
+            // forced-colors mode, where the box-shadow ring is not rendered.
+            put("outline", "3px solid transparent")
+            borderColor = CssTheme.colorBluePrimary
+            put("box-shadow", CssTheme.focusRingStrong)
+        }
 
         ".${CssClass.History.ViewsToolbar}" {
             display = Display.flex
@@ -198,7 +209,7 @@ object NavigationStyles {
         ".${CssClass.History.ViewsSelect}:focus" {
             put("outline", "none")
             borderColor = CssTheme.colorBluePrimary
-            put("box-shadow", "0 0 0 3px rgba(59, 130, 246, 0.2)")
+            put("box-shadow", CssTheme.focusRingSubtle)
         }
 
         ".${CssClass.History.ViewsSelect} option" {
@@ -513,17 +524,17 @@ object NavigationStyles {
             whiteSpace = WhiteSpace.nowrap
         }
 
-        ".${CssClass.History.ComparisonDelta}.positive" {
+        ".${CssClass.History.ComparisonDelta}.${CssClass.Utility.Positive}" {
             color = CssTheme.colorSuccess
-            borderColor = CssTheme.colorSuccessMuted
+            borderColor = CssTheme.colorSuccessBorder
         }
 
-        ".${CssClass.History.ComparisonDelta}.negative" {
+        ".${CssClass.History.ComparisonDelta}.${CssClass.Utility.Negative}" {
             color = CssTheme.colorDanger
             borderColor = CssTheme.colorDangerBorder
         }
 
-        ".${CssClass.History.ComparisonDelta}.neutral" {
+        ".${CssClass.History.ComparisonDelta}.${CssClass.Utility.Neutral}" {
             color = CssTheme.colorTextMuted
         }
 
@@ -535,7 +546,7 @@ object NavigationStyles {
             fontSize = 0.875.rem
         }
 
-        ".${CssClass.History.ComparisonUnavailable}.visible" {
+        ".${CssClass.History.ComparisonUnavailable}.${CssClass.Utility.Visible}" {
             display = Display.block
         }
 
@@ -550,11 +561,11 @@ object NavigationStyles {
             padding = Padding(0.25.rem, 0.75.rem)
         }
 
-        ".${CssClass.History.ComparisonConfidenceBadge}.visible" {
+        ".${CssClass.History.ComparisonConfidenceBadge}.${CssClass.Utility.Visible}" {
             display = Display.inline
         }
 
-        ".${CssClass.History.ComparisonChartArea}.hidden" {
+        ".${CssClass.History.ComparisonChartArea}.${CssClass.Utility.Hidden}" {
             display = Display.none
         }
     }

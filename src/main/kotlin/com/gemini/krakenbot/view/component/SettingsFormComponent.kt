@@ -1,6 +1,7 @@
 package com.gemini.krakenbot.view.component
 
 import com.gemini.krakenbot.config.AppConfig
+import com.gemini.krakenbot.util.PrecisionConstants
 import com.gemini.krakenbot.view.util.ActiveNav
 import com.gemini.krakenbot.view.util.ChartProps
 import com.gemini.krakenbot.view.util.CssClass
@@ -249,9 +250,9 @@ class SettingsFormComponent {
                                 type = number,
                                 name = FormFields.TARGETS,
                             ) {
-                                step = "0.1"
-                                min = "0"
-                                max = "100"
+                                step = PrecisionConstants.ALLOCATION_STEP_PERCENT.toString()
+                                min = PrecisionConstants.ALLOCATION_MIN_PERCENT.toString()
+                                max = PrecisionConstants.TOTAL_ALLOCATION_PERCENTAGE.toString()
                                 value = alloc.targetPercent.toString()
                                 attributes[HtmlAttrs.ONINPUT] =
                                     "updateAllocationTotal()"

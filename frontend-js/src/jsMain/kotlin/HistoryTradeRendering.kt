@@ -14,7 +14,6 @@ import com.gemini.krakenbot.view.util.ViewText
 import kotlinx.browser.document
 import org.w3c.dom.*
 import kotlin.js.Date
-import kotlin.js.json
 
 fun formatPair(trade: TradeRecord): String {
     if (trade.symbol.isNullOrBlank()) return ""
@@ -100,23 +99,18 @@ private fun renderTradeRow(t: TradeRecord): HTMLTableRowElement {
     return tr
 }
 
-/** HIST-3: format a trade price at crypto precision, or a muted em-dash when it is zero/absent. */
-private fun formatPriceOrDash(value: Double): String {
+private fun usdCellOrDash(value: Double, min: Int, max: Int): String {
     if (value == 0.0) return ViewText.EM_DASH
-    val options: dynamic = json()
-    options.minimumFractionDigits = PrecisionConstants.MIN_CRYPTO_DECIMAL_PLACES
-    options.maximumFractionDigits = PrecisionConstants.SCALE_CRYPTO
-    return "$" + value.asDynamic().toLocaleString(EN_US, options)
+    return "$" + usdOptionsToLocale(value, min, max)
 }
 
+/** HIST-3: format a trade price at crypto precision, or a muted em-dash when it is zero/absent. */
+private fun formatPriceOrDash(value: Double): String =
+    usdCellOrDash(value, PrecisionConstants.MIN_CRYPTO_DECIMAL_PLACES, PrecisionConstants.SCALE_CRYPTO)
+
 /** HIST-3: format a trade fee at up to 4dp, or a muted em-dash when it is zero/absent. */
-private fun formatFeeOrDash(value: Double): String {
-    if (value == 0.0) return ViewText.EM_DASH
-    val options: dynamic = json()
-    options.minimumFractionDigits = PrecisionConstants.SCALE_USD
-    options.maximumFractionDigits = PrecisionConstants.SCALE_FEE
-    return "$" + value.asDynamic().toLocaleString(EN_US, options)
-}
+private fun formatFeeOrDash(value: Double): String =
+    usdCellOrDash(value, PrecisionConstants.SCALE_USD, PrecisionConstants.SCALE_FEE)
 
 private fun slippageBadgeClass(value: Double): CssClass = when {
     value > 0.0 -> CssClass.Badge.SlippageAdverse

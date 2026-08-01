@@ -17,13 +17,27 @@ need only this file (no issue spam).
 
 | ID | Size | Status | Area | Summary | Cycle | Issue | Notes |
 | :--- | :---: | :--- | :--- | :--- | :---: | :--- | :--- |
-| CI-21-T01 | M | open | tests | Extract duplicated PortfolioManager wiring (35+ call sites) to shared fixture | 21 | — | — |
-| CI-21-T02 | M | open | tests | Fix flaky `DynamicKrakenServiceTest.concurrent withStableBackend` timing | 21 | — | — |
+| CI-22-Q05 | M | open | tests | Add direct tests for HistoryChartState (visibility capture/apply/rollback, scrubber sync) | 22 | — | Needs a DOM/Chart.js harness |
+| CI-22-Q10 | M | open | frontend | Dedupe allocation-editor markup/logic between SettingsFormComponent (SSR) and frontend Settings.kt | 22 | — | High drift risk |
+| CI-22-Q11 | M | open | config | Decide whether ConfigServiceImpl should fail loudly on unknown JSON fields (shared-ObjectMapper trust-boundary change) | 22 | — | Needs direction decision |
+| CI-22-Q14 | S | open | code | Remove dead `Icons.BACK_ARROW` (defined, zero usages repo-wide) | 22 | — | Found during PR review |
+| CI-22-Q06 | S | dropped | frontend | Replace wildcard `org.w3c.dom.*` imports in frontend-js main/test (17 files) | 22 | — | ktlint `no-wildcard-imports` rule disabled (build.gradle.kts:17) → not enforced, low-value churn |
 
 ## Done (recent)
 
 | ID | Size | Status | Area | Summary | Cycle | PR |
 | :--- | :---: | :--- | :--- | :--- | :---: | :--- |
+| CI-21-T01 | M | done | tests | Extract duplicated PortfolioManager wiring to shared fixture (last exact duplicate migrated; remaining call sites legitimately scoped) | 22 | — |
+| CI-21-T02 | M | done | tests | De-flake `DynamicKrakenServiceTest.concurrent withStableBackend` via CompletableDeferred sequencing | 22 | — |
+| CI-22-Q01 | M | done | frontend | Consolidate duplicated Chart.js currency-format builders (`usdOptionsToLocale` / `usdCellOrDash`) | 22 | — |
+| CI-22-Q02 | M | done | css | Dedupe hero tile bar + allocation chart bar CSS (computed styles identical) | 22 | — |
+| CI-22-Q03 | M | done | css | Centralize focus-ring / glass-surface / glow colors in `CssTheme` | 22 | — |
+| CI-22-Q04 | M | done | tests | Direct `PortfolioAnalyzerImplTest` ATH/drawdown + buildSnapshot coverage | 22 | — |
+| CI-22-Q07 | S | done | frontend | Use `CssClass.Utility.Positive/Negative/Neutral/Visible/Hidden` in HistoryComparisonChart + NavigationStyles; fix positive delta border (C6) | 22 | — |
+| CI-22-C7 | S | done | frontend | Extract `queryChartScrubber(canvasId)` helper; dedupe scrubber query in HistoryChartState/HistoryZoom | 22 | — |
+| CI-22-Q08 | S | done | frontend | Allocation input bounds from `:common` `PrecisionConstants` (SSR form + JS editor) | 22 | — |
+| CI-22-Q09 | S | done | docs | README "exceeded" → `>=` trigger wording; add RebalancerComparisonEnums to tree + AGENTS RebalancerComparison | 22 | — |
+| CI-22-Q12 | S | done | tests | `SseMultiSubscriberTest`: bounded subscription-count poll replaces fixed settle delay | 22 | — |
 | CI-21-Q01 | S | done | imports | Replace wildcard imports in 14 server view files (`kotlinx.html.*`, `kotlinx.css.*`) | 21 | — |
 | CI-21-Q02 | S | done | imports | Replace wildcard imports in 18 test files (`io.mockk.*`, `io.ktor.*`) | 21 | — |
 | CI-21-Q03 | S | done | imports | Replace wildcard imports in 13 frontend files (`org.w3c.dom.*`) | 21 | — |

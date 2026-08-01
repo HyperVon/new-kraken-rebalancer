@@ -172,6 +172,15 @@ After a deploy or LAN UI check, run
 - Scrubber thumb moves but **chart does not pan** (wrote `options.scales`
   instead of `chart.zoomScale`)
 
+### No unsolicited accessibility metadata
+
+Do not add new ARIA attributes, ARIA roles, accessibility-only labels/copy, or
+accessibility-specific acceptance criteria unless the user explicitly requests
+accessibility work. Do not expand ordinary UI requests into accessibility
+remediation. Preserve existing accessibility metadata when it is outside the
+requested change; remove or alter it only when the user asks or the scoped
+feature cannot work correctly without doing so.
+
 ---
 
 ## 6. Complex-code comments

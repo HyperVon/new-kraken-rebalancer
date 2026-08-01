@@ -191,21 +191,21 @@ object LayoutStyles {
             color = CssTheme.colorBlueAccent
             backgroundColor = CssTheme.colorBlueGlassBg
             borderColor = CssTheme.colorBlueGlassBorderHover
-            put("box-shadow", "0 0 16px rgba(59, 130, 246, 0.25), ${CssTheme.insetTopHighlight}")
+            put("box-shadow", "${CssTheme.glowBlueStrong}, ${CssTheme.insetTopHighlight}")
         }
 
         ".mode-dry-run" {
             color = CssTheme.colorWarning
             backgroundColor = CssTheme.colorWarningMuted
             borderColor = CssTheme.colorWarningBorder
-            put("box-shadow", "0 0 14px rgba(245, 158, 11, 0.22), ${CssTheme.insetTopHighlight}")
+            put("box-shadow", "${CssTheme.glowAmberSoft}, ${CssTheme.insetTopHighlight}")
         }
 
         ".mode-live" {
             color = CssTheme.colorDanger
             backgroundColor = CssTheme.colorDangerMuted
             borderColor = CssTheme.colorDangerBorder
-            put("box-shadow", "0 0 14px rgba(239, 68, 68, 0.22), ${CssTheme.insetTopHighlight}")
+            put("box-shadow", "${CssTheme.glowRedSoft}, ${CssTheme.insetTopHighlight}")
         }
 
         ".${CssClass.Layout.HeaderStatus.value}" {

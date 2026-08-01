@@ -69,6 +69,14 @@ private fun fetchJSON(url: String): Promise<dynamic> = window
 
 internal const val EN_US = "en-US"
 
+/** Shared USD locale formatter used by both chart labels and trade cells. */
+internal fun usdOptionsToLocale(value: Double, min: Int, max: Int): String {
+    val options: dynamic = json()
+    options.minimumFractionDigits = min
+    options.maximumFractionDigits = max
+    return value.asDynamic().toLocaleString(EN_US, options)
+}
+
 private fun fetchRanged(vararg routes: String, range: String): Array<Promise<dynamic>> = routes.map { route ->
     fetchJSON(route.withRange(range))
 }.toTypedArray()

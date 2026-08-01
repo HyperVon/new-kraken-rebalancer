@@ -15,12 +15,11 @@ import io.kotest.core.spec.style.StringSpec
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.runTest
 import java.math.BigDecimal
-import kotlin.time.Duration.Companion.milliseconds
 
 class DynamicKrakenServiceTest : StringSpec() {
 
@@ -325,12 +324,20 @@ class DynamicKrakenServiceTest : StringSpec() {
                 every { configService.getConfig() } returns appConfig(simulation = true)
                 val dynamicService = createService()
 
-                // Overlapping pins: each block keeps its own backend; a mid-flight config flip
-                // must not retarget the other caller's captured service.
+                // Overlapping pins: each async keeps its own backend; a mid-flight config flip
+                // must not retarget the other caller's captured service. Ordering is gated
+                // deterministically instead of relying on wall-clock delay: `second` only flips
+                // config to live after `first` has already read config at entry (pinning
+                // simulated), and `first` stays pinned and executes its sell only after `second`
+                // has finished. withStableBackend resolves the backend before invoking its block,
+                // so completing `firstPinned` inside the block guarantees the sim pin is captured.
+                val firstPinned = CompletableDeferred<Unit>()
+                val secondFinished = CompletableDeferred<Unit>()
                 coroutineScope {
                     val first = async {
                         dynamicService.withStableBackend { backend ->
-                            delay(50.milliseconds)
+                            firstPinned.complete(Unit)
+                            secondFinished.await()
                             backend.executeOrder(
                                 pair = Asset.BTC_USD_PAIR,
                                 type = OrderType.MARKET.apiValue,
@@ -340,15 +347,21 @@ class DynamicKrakenServiceTest : StringSpec() {
                         }
                     }
                     val second = async {
-                        delay(10.milliseconds)
-                        every { configService.getConfig() } returns appConfig(simulation = false)
-                        dynamicService.withStableBackend { backend ->
-                            backend.executeOrder(
-                                pair = Asset.ETH_USD_PAIR,
-                                type = OrderType.MARKET.apiValue,
-                                side = OrderSide.BUY.apiValue,
-                                volume = BigDecimal.ONE,
-                            )
+                        try {
+                            firstPinned.await()
+                            every { configService.getConfig() } returns appConfig(simulation = false)
+                            dynamicService.withStableBackend { backend ->
+                                backend.executeOrder(
+                                    pair = Asset.ETH_USD_PAIR,
+                                    type = OrderType.MARKET.apiValue,
+                                    side = OrderSide.BUY.apiValue,
+                                    volume = BigDecimal.ONE,
+                                )
+                            }
+                        } finally {
+                            // Unblock `first` even when this coroutine fails, so a pinning
+                            // regression surfaces as the real error instead of a 60s timeout.
+                            secondFinished.complete(Unit)
                         }
                     }
                     first.await()

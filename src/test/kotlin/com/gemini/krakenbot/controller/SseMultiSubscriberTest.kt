@@ -18,6 +18,8 @@ import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.flow.toList
 import java.math.BigDecimal
 import java.time.Instant
+import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.TimeSource
 import io.ktor.client.plugins.sse.SSE as ClientSSE
 
 /**
@@ -40,12 +42,27 @@ class SseMultiSubscriberTest : DashboardControllerTestBase() {
         const val REPLAY = 1
         const val EXTRA_BUFFER = 16
 
-        /**
-         * Time to let concurrent SSE HTTP connections establish against the in-process server before
-         * broadcasting. The collectors park on `incoming.take(n)`; a short real delay orders producers
-         * after subscribers without depending on a virtual-time scheduler.
-         */
-        const val SUBSCRIBE_SETTLE_MS = 200L
+        /** Internal poll cadence while waiting for SSE subscribers to attach (real HTTP). */
+        const val SUBSCRIBE_POLL_MS = 20L
+
+        /** Upper bound for all concurrent SSE connections to subscribe before broadcasting. */
+        const val SUBSCRIBE_TIMEOUT_MS = 5_000L
+    }
+
+    /**
+     * Polls until [flow] has [expected] active collectors, so a broadcast is only emitted after all
+     * concurrent SSE connections have subscribed server-side. Bounded in real time because this is
+     * a real-HTTP integration test that cannot use a virtual scheduler; replaces a fragile fixed
+     * settle delay that flaked when connections took longer (or shorter) than the constant.
+     */
+    private suspend fun awaitSubscribers(flow: MutableSharedFlow<*>, expected: Int) {
+        val start = TimeSource.Monotonic.markNow()
+        while (flow.subscriptionCount.value < expected) {
+            check(start.elapsedNow() <= SUBSCRIBE_TIMEOUT_MS.milliseconds) {
+                "Timed out waiting for $expected SSE subscribers; got ${flow.subscriptionCount.value}"
+            }
+            delay(SUBSCRIBE_POLL_MS)
+        }
     }
 
     init {
@@ -71,7 +88,7 @@ class SseMultiSubscriberTest : DashboardControllerTestBase() {
                     }
                 }
 
-                delay(SUBSCRIBE_SETTLE_MS)
+                awaitSubscribers(flow, subscriberCount)
                 flow.tryEmit(update)
 
                 jobs.awaitAll()
@@ -140,7 +157,7 @@ class SseMultiSubscriberTest : DashboardControllerTestBase() {
                         incoming.take(1).toList()
                     }
                 }
-                delay(SUBSCRIBE_SETTLE_MS)
+                awaitSubscribers(flow, 2)
                 flow.tryEmit(firstBroadcast)
                 departed.await()
 

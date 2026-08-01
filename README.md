@@ -216,8 +216,8 @@ with a wide range of tools and paradigms:
 ### Autonomous Rebalancing
 
 - Continuously monitors portfolio allocations against configurable targets
-- Automatically generates and executes market orders when deviation thresholds
-  are exceeded
+- Automatically generates and executes market orders when absolute deviation
+  thresholds (`>=`) are met
 - Sells overweight assets first to generate liquidity, then buys underweight
   assets
 
@@ -470,7 +470,7 @@ This path is internal orchestration — not a second browser-facing SSE stream l
 │   └── src/commonMain/kotlin/com/gemini/krakenbot/
 │       ├── api/                           # Wire DTOs: PortfolioSnapshot, TradeRecord, HistoryStats, RebalancerComparison, SyncProgressResponse
 │       ├── config/                        # AppConfig, Settings, Allocation, KrakenCredentials, InvalidConfigurationException
-│       ├── model/                         # Asset, OrderSide (OrderType defined alongside), Result, TimeRange, SyncMetadataKeys, TradeSourceKeys
+│       ├── model/                         # Asset, OrderSide (OrderType defined alongside), RebalancerComparisonEnums, Result, TimeRange, SyncMetadataKeys, TradeSourceKeys
 │       ├── util/                          # PrecisionConstants
 │       └── view/util/                     # Routes, FormFields, ViewText, CssClass, HtmlIds, HtmlAttrs, HtmxAttrs, DataProps, ChartProps
 ├── frontend-js/                            # Kotlin/JS client-side subproject compiling to rebalancer.js
