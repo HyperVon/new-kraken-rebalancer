@@ -16,6 +16,7 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 import java.math.BigDecimal
 
@@ -79,7 +80,18 @@ class PortfolioAnalyzerImplTest : StringSpec() {
             }
         }
 
-        "buildSnapshot uses ONE price for USD asset and unresolved-price error for missing crypto" {
+        "updateAth rethrows CancellationException from save" {
+            runTest {
+                coEvery { portfolioStatsRepository.load() } returns PortfolioStats(BigDecimal.ZERO)
+                coEvery { portfolioStatsRepository.save(any()) } throws CancellationException(null)
+
+                shouldThrow<CancellationException> {
+                    analyzer.updateAthAndCalculateDrawdown(BigDecimal("1000"))
+                }
+            }
+        }
+
+        "buildSnapshot uses ONE price for USD and ticker price for crypto" {
             runTest {
                 every { configService.getConfig() } returns
                     TestFixtures.config(

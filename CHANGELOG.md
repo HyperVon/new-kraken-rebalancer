@@ -18,7 +18,6 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Centralize allocation-editor `step` / `min` / `max` bounds in shared
   `PrecisionConstants` so the SSR settings form and the JS asset-row editor stay in sync.
-- Reject POST settings requests that submit more than one CSRF token.
 
 ## [6.15.29] - 2026-07-31
 

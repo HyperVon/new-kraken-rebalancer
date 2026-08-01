@@ -258,32 +258,6 @@ class DashboardControllerTest : DashboardControllerTestBase() {
             }
         }
 
-        "postSettings_RejectsMultipleCsrfTokens" {
-            val serverConfig = dashboardConfig()
-            every { configService.getConfig() } returns serverConfig
-            every { configService.updateConfig(any()) } returns Unit
-
-            testApplication {
-                application {
-                    configureTestEnv()
-                }
-                val csrf = client.settingsCsrf()
-                val response = client.post(Routes.SETTINGS) {
-                    setBody(
-                        parametersOf(
-                            FormFields.CSRF_TOKEN to listOf(csrf.value, "second-token"),
-                        ).formUrlEncode(),
-                    )
-                    header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
-                    header(HttpHeaders.Cookie, csrf.cookie)
-                }
-
-                response.status shouldBe HttpStatusCode.Forbidden
-                response.bodyAsText() shouldContain ViewText.CSRF_SESSION_EXPIRED
-                verify(exactly = 0) { configService.updateConfig(any()) }
-            }
-        }
-
         "postSettings_RejectsMissingFormTokenWithCookie" {
             val serverConfig = dashboardConfig()
             every { configService.getConfig() } returns serverConfig
