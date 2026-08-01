@@ -13,10 +13,6 @@ deferred. Agents update this file each cycle per
 explicitly deferred across cycles. Small S items that ship in the same cycle PR
 need only this file (no issue spam).
 
-## Open / deferred
-
-_None — all improvement backlog items are in the Dropped or Done tables below._
-
 ## Dropped
 
 Items evaluated and deliberately not pursued (never actioned; the recorded reason is why).
