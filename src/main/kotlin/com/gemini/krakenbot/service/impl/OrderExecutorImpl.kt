@@ -23,6 +23,7 @@ import com.gemini.krakenbot.util.toUsdScale
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.last
 import kotlinx.coroutines.withContext
@@ -406,10 +407,10 @@ class OrderExecutorImpl(
         projectedCash: BigDecimal,
         sellOrderTxids: List<String>,
         targetThreshold: BigDecimal = projectedCash.multiply(EARLY_ACCEPT_PROPORTION),
-    ): Flow<BigDecimal> {
+    ): Flow<BigDecimal> = flow {
         val startSec = Instant.now().minusSeconds(600).epochSecond
         val txidSet = sellOrderTxids.toSet()
-        return coldPollBackoff(
+        coldPollBackoff(
             actionName = "Fill confirmation",
             targetThreshold = targetThreshold,
             bestLog = "Using best fill-confirmed USD after sell refresh: {}",
@@ -429,7 +430,7 @@ class OrderExecutorImpl(
                     null
                 }
             },
-        )
+        ).collect { emit(it) }
     }
 
     /**
