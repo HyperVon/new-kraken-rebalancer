@@ -11,6 +11,7 @@ import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
 import kotlinx.browser.document
+import org.w3c.dom.HTMLElement
 
 class HistoryChartStateTest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
@@ -35,6 +36,12 @@ class HistoryChartStateTest : StringSpec() {
             try {
                 syncTimeRangeButtons(TimeRange.SEVEN_DAYS.key)
                 historyCurrentRange() shouldBe TimeRange.SEVEN_DAYS.key
+                val sevenDayButton =
+                    selector.querySelector("[${HtmlAttrs.DATA_RANGE}=\"7d\"]") as HTMLElement
+                val twentyFourHourButton =
+                    selector.querySelector("[${HtmlAttrs.DATA_RANGE}=\"24h\"]") as HTMLElement
+                sevenDayButton.classList.contains(CssClass.ACTIVE) shouldBe true
+                twentyFourHourButton.classList.contains(CssClass.ACTIVE) shouldBe false
             } finally {
                 document.body!!.removeChild(selector)
                 resetHistoryUiState()

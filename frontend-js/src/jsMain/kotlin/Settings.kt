@@ -129,8 +129,10 @@ fun addAssetRow() {
     }
 
     val container = document.getElementById(HtmlIds.ALLOCATIONS_CONTAINER) ?: return
-    container.innerHTML =
-        container.innerHTML + AllocationEditor.editRow(canonical, pickColorForNewAsset(), DEFAULT_NEW_ALLOCATION_TARGET)
+    container.insertAdjacentHTML(
+        "beforeend",
+        AllocationEditor.editRow(canonical, pickColorForNewAsset(), DEFAULT_NEW_ALLOCATION_TARGET),
+    )
     symbolInput.value = ""
     updateAllocationTotal()
 }

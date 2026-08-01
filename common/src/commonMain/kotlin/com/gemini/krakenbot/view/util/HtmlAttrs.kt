@@ -3,7 +3,6 @@ package com.gemini.krakenbot.view.util
 /** Standard HTML event-handler and custom attribute name constants. */
 object HtmlAttrs {
     const val ONCLICK = "onclick"
-    const val ONINPUT = "oninput"
     const val ONKEYDOWN = "onkeydown"
     const val DATA_EPOCH = "data-epoch"
     const val DATA_RANGE = "data-range"
