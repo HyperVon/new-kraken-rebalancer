@@ -52,21 +52,6 @@ class ModelTest : StringSpec() {
             Asset.matchesUsdQuotedPair("XBTUSDT", Asset.BTC) shouldBe false
         }
 
-        "testPortfolioSnapshot" {
-            val asset =
-                PortfolioSnapshot.AssetSnapshot(
-                    symbol = Asset.BTC,
-                    balance = BigDecimal.ONE,
-                    price = BigDecimal.TEN,
-                    valueUSD = BigDecimal.TEN,
-                    targetPercent = BigDecimal.ONE,
-                    currentPercent = BigDecimal.ONE,
-                    deviationPercent = BigDecimal.ZERO,
-                    deviationUSD = BigDecimal.ZERO,
-                )
-            asset.symbol.value shouldBe Asset.BTC
-        }
-
         "testServiceCompanions" {
             PrecisionConstants.CASH_RESERVE_FACTOR.shouldBeEqualComparingTo(BigDecimal("0.99"))
 

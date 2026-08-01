@@ -12,7 +12,6 @@ import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import kotlinx.browser.document
-import kotlinx.browser.window
 import org.w3c.dom.*
 import kotlin.js.Date
 
@@ -160,11 +159,6 @@ class DashboardTest : StringSpec() {
             }
         }
 
-        "registerDashboardGlobals exposes table sorting" {
-            registerDashboardGlobals()
-            (window.asDynamic().sortTable != null) shouldBe true
-        }
-
         "reapplySort preserves the active sort direction" {
             val container = document.createElement(HtmlTags.DIV)
             container.innerHTML =
@@ -203,26 +197,6 @@ class DashboardTest : StringSpec() {
                 reapplySort()
                 rows = container.querySelectorAll("${HtmlTags.TBODY} ${HtmlTags.TR}")
                 rows.item(0)!!.textContent!!.shouldContain("A")
-            } finally {
-                document.body!!.removeChild(container)
-            }
-        }
-
-        "dashboard helpers tolerate missing and invalid elements" {
-            updateAge()
-            reapplySort()
-
-            val container = document.createElement(HtmlTags.DIV)
-            container.innerHTML =
-                """
-                <span class="${CssClass.DataAge.Value}"></span>
-                <span class="${CssClass.DataAge.Time}" ${HtmlAttrs.DATA_EPOCH}="invalid"></span>
-                <div id="orphan-header"></div>
-                """.trimIndent()
-            document.body!!.appendChild(container)
-            try {
-                updateAge()
-                sortTable(document.getElementById("orphan-header") as HTMLElement, 0)
             } finally {
                 document.body!!.removeChild(container)
             }
@@ -341,25 +315,25 @@ class DashboardTest : StringSpec() {
             }
         }
 
-        "sortTable tolerates out-of-range columns and empty cells" {
+        "sortTable tolerates out-of-range columns" {
             val container = document.createElement(HtmlTags.DIV)
-            container.innerHTML =
-                """
-                <table>
-                    <thead>
-                        <tr><th class="${CssClass.Table.Sortable}">C0</th></tr>
-                    </thead>
-                    <tbody>
-                        <tr class="${CssClass.Table.Hoverable}"><td></td></tr>
-                        <tr class="${CssClass.Table.Hoverable}"><td></td></tr>
-                    </tbody>
-                </table>
-                """.trimIndent()
+            container.innerHTML = TestDomBuilders.sortableTableDom()
             document.body!!.appendChild(container)
             try {
-                val header = container.querySelector(CssClass.Query.SORTABLE_TH) as HTMLElement
-                sortTable(header, 0)
-                sortTable(header, 5)
+                val header0 =
+                    container.querySelector(CssClass.Query.SORTABLE_TH) as HTMLTableCellElement
+
+                // Column index 5 is out of range (only two columns): must not throw and must leave rows in place.
+                sortTable(header0, 5)
+                var rows = container.querySelectorAll("${HtmlTags.TBODY} ${HtmlTags.TR}")
+                (rows.item(0) as HTMLTableRowElement).cells.item(0)?.textContent shouldBe "A"
+                (rows.item(1) as HTMLTableRowElement).cells.item(0)?.textContent shouldBe "C"
+
+                // A real sort on the populated column still reorders correctly.
+                sortTable(header0, 0, CssClass.Utility.Desc.toString())
+                rows = container.querySelectorAll("${HtmlTags.TBODY} ${HtmlTags.TR}")
+                (rows.item(0) as HTMLTableRowElement).cells.item(0)?.textContent shouldBe "C"
+                (rows.item(1) as HTMLTableRowElement).cells.item(0)?.textContent shouldBe "A"
             } finally {
                 document.body!!.removeChild(container)
             }

@@ -277,7 +277,7 @@ ui-visual-implement can reload the brief:
 
 Create a Cursor Canvas at:
 
-`/Users/<user>/.cursor/projects/<workspace>/canvases/ui-visual-review.canvas.tsx`
+`~/.cursor/projects/<workspace>/canvases/ui-visual-review.canvas.tsx`
 
 Embed the findings **inline** (no fetch). Use `Checkbox` + `useCanvasState` so
 the user can toggle each SHORT-ID. Include:

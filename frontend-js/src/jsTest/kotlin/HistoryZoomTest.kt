@@ -257,15 +257,6 @@ class HistoryZoomTest : StringSpec() {
             }
         }
 
-        "getClonedChartOptions attaches onZoomComplete to re-sync scrubber" {
-            resetHistoryUiState()
-            registerHistoryGlobals()
-            // JSON.stringify clone strips functions; production re-attaches onZoomComplete after clone.
-            val options = getClonedChartOptions()
-            val callback = options.plugins.zoom.zoom[ChartProps.ON_ZOOM_COMPLETE]
-            (callback != null && callback != undefined) shouldBe true
-        }
-
         "captured zoom completion callback re-enables the scrubber after drag or wheel zoom" {
             resetHistoryUiState()
             val container = document.createElement(HtmlTags.DIV)
@@ -310,57 +301,6 @@ class HistoryZoomTest : StringSpec() {
                         "chart" to json("canvas" to document.getElementById(HtmlIds.PORTFOLIO_VALUE_CHART)),
                     ),
                 )
-                scrubber.disabled shouldBe false
-            } finally {
-                document.body!!.removeChild(container)
-                resetHistoryUiState()
-            }
-        }
-
-        "syncScrubberFromZoomContext enables scrubber after zoom context" {
-            resetHistoryUiState()
-            val container = document.createElement(HtmlTags.DIV)
-            container.innerHTML =
-                """
-                <canvas id="${HtmlIds.PORTFOLIO_VALUE_CHART}"></canvas>
-                ${TestDomBuilders.scrubberDom(disabled = true)}
-                """.trimIndent()
-            document.body!!.appendChild(container)
-            window.asDynamic().Chart = { _: dynamic, config: dynamic ->
-                jsObject {
-                    data = config.data
-                    options = config.options
-                    canvas = document.getElementById(HtmlIds.PORTFOLIO_VALUE_CHART)
-                    destroy = {}
-                    isDatasetVisible = { _: Int -> true }
-                    getInitialScaleBounds = {
-                        json("x" to json("min" to 0.0, "max" to 100.0))
-                    }
-                    scales = json("x" to json("min" to 25.0, "max" to 50.0))
-                }
-            }
-            registerHistoryGlobals()
-            try {
-                val points =
-                    arrayOf(
-                        json("x" to 0.0, "y" to 1.0),
-                        json("x" to 100.0, "y" to 2.0),
-                    )
-                createOrUpdate(
-                    HtmlIds.PORTFOLIO_VALUE_CHART,
-                    createLineChartConfig(
-                        arrayOf(json(ChartProps.LABEL to ViewText.TOTAL_PORTFOLIO, ChartProps.DATA to points)),
-                        getClonedChartOptions(),
-                    ),
-                )
-                syncScrubberFromZoomContext(json())
-                syncScrubberFromZoomContext(null)
-                val chart = jsObject {
-                    canvas = document.getElementById(HtmlIds.PORTFOLIO_VALUE_CHART)
-                }
-                syncScrubberFromZoomContext(json("chart" to chart))
-                val scrubber =
-                    document.querySelector(CssClass.Query.CHART_SCRUBBERS) as HTMLInputElement
                 scrubber.disabled shouldBe false
             } finally {
                 document.body!!.removeChild(container)

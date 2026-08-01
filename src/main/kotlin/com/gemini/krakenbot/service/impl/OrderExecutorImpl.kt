@@ -50,6 +50,12 @@ class OrderExecutorImpl(
         const val MAX_REFRESH_ATTEMPTS = 3
         const val REFRESH_DELAY_MS = 250L
 
+        /** Early-accept threshold: settle once the observed value is >= 95% of projected. */
+        val EARLY_ACCEPT_PROPORTION = BigDecimal("0.95")
+
+        /** Backoff cap (milliseconds) for cold settle polls. */
+        const val MAX_POLL_BACKOFF_MS = 32000L
+
         /** Kraken TradesHistory page size; used to decide when to stop paginating fill polls. */
         const val TRADE_HISTORY_PAGE_SIZE = 50
         const val MAX_FILL_HISTORY_PAGES = 5
@@ -399,42 +405,31 @@ class OrderExecutorImpl(
         openingUsd: BigDecimal,
         projectedCash: BigDecimal,
         sellOrderTxids: List<String>,
-        targetThreshold: BigDecimal = projectedCash.multiply(BigDecimal("0.95")),
-    ): Flow<BigDecimal> = flow {
-        var bestCash = BigDecimal.ZERO
-        var backoffMs = REFRESH_DELAY_MS
+        targetThreshold: BigDecimal = projectedCash.multiply(EARLY_ACCEPT_PROPORTION),
+    ): Flow<BigDecimal> {
         val startSec = Instant.now().minusSeconds(600).epochSecond
         val txidSet = sellOrderTxids.toSet()
-
-        repeat(MAX_REFRESH_ATTEMPTS) { attempt ->
-            delay(backoffMs.milliseconds)
-            try {
+        return coldPollBackoff(
+            actionName = "Fill confirmation",
+            targetThreshold = targetThreshold,
+            bestLog = "Using best fill-confirmed USD after sell refresh: {}",
+            noneLog = "No fill-confirmed USD observed after sell refresh",
+            resolve = { attempt ->
                 val matchedProceeds = sumMatchedSellProceeds(backend, startSec, txidSet)
                 if (matchedProceeds > BigDecimal.ZERO) {
                     val cash = openingUsd.add(matchedProceeds).toUsdScale()
-                    bestCash = bestCash.max(cash)
                     log.info(
                         "Fill-confirmed USD after sells (attempt {}): {} (proceeds {})",
                         attempt + 1,
                         cash,
                         matchedProceeds,
                     )
-                    emit(bestCash)
-                    if (cash >= targetThreshold) return@flow
+                    cash
+                } else {
+                    null
                 }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                log.warn("Fill confirmation poll failed (attempt {})", attempt + 1, e)
-            }
-            backoffMs = (backoffMs * 2).coerceAtMost(32000L)
-        }
-        emit(bestCash)
-        if (bestCash > BigDecimal.ZERO) {
-            log.warn("Using best fill-confirmed USD after sell refresh: $$bestCash")
-        } else {
-            log.error("No fill-confirmed USD observed after sell refresh")
-        }
+            },
+        )
     }
 
     /**
@@ -472,38 +467,64 @@ class OrderExecutorImpl(
     /**
      * Post-sell USD settle: up to [MAX_REFRESH_ATTEMPTS] polls, each waiting first and doubling the
      * [REFRESH_DELAY_MS] backoff. Keeps the best positive observation; early-exits once balance is
-     * ≥95% of [projectedCash]. Emits ZERO if nothing positive was seen.
+     * >=95% of [projectedCash]. Emits ZERO if nothing positive was seen.
      */
     private fun pollUsdBalanceAfterSells(
         backend: KrakenService,
         projectedCash: BigDecimal,
-        targetThreshold: BigDecimal = projectedCash.multiply(BigDecimal("0.95")),
+        targetThreshold: BigDecimal = projectedCash.multiply(EARLY_ACCEPT_PROPORTION),
+    ): Flow<BigDecimal> = coldPollBackoff(
+        actionName = "Balance",
+        targetThreshold = targetThreshold,
+        bestLog = "Using best observed USD balance after sell refresh: {}",
+        noneLog = "No positive USD balance observed after sell refresh",
+        resolve = { attempt ->
+            val usdBalance = resolveBalance(Asset.USD, backend.getBalances())
+            if (usdBalance > BigDecimal.ZERO) {
+                log.info("Updated USD balance after sells (attempt {}): $$usdBalance", attempt + 1)
+                usdBalance
+            } else {
+                null
+            }
+        },
+    )
+
+    /**
+     * Shared cold-poll skeleton for USD settle: up to [MAX_REFRESH_ATTEMPTS] polls, each waiting
+     * [REFRESH_DELAY_MS] then doubling with a [MAX_POLL_BACKOFF_MS] cap. Keeps the best positive
+     * [resolve] result; early-exits once it reaches [targetThreshold]. Emits ZERO if nothing positive.
+     */
+    private fun coldPollBackoff(
+        actionName: String,
+        targetThreshold: BigDecimal,
+        bestLog: String,
+        noneLog: String,
+        resolve: suspend (Int) -> BigDecimal?,
     ): Flow<BigDecimal> = flow {
-        var bestObservedBalance = BigDecimal.ZERO
+        var best = BigDecimal.ZERO
         var backoffMs = REFRESH_DELAY_MS
 
         repeat(MAX_REFRESH_ATTEMPTS) { attempt ->
             delay(backoffMs.milliseconds)
             try {
-                val usdBalance = resolveBalance(Asset.USD, backend.getBalances())
-                if (usdBalance > BigDecimal.ZERO) {
-                    bestObservedBalance = bestObservedBalance.max(usdBalance)
-                    log.info("Updated USD balance after sells (attempt {}): $$usdBalance", attempt + 1)
-                    emit(bestObservedBalance)
-                    if (usdBalance >= targetThreshold) return@flow
+                val value = resolve(attempt)
+                if (value != null) {
+                    best = best.max(value)
+                    emit(best)
+                    if (value >= targetThreshold) return@flow
                 }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                log.warn("Balance poll failed (attempt {})", attempt + 1, e)
+                log.warn("$actionName poll failed (attempt {})", attempt + 1, e)
             }
-            backoffMs = (backoffMs * 2).coerceAtMost(32000L)
+            backoffMs = (backoffMs * 2).coerceAtMost(MAX_POLL_BACKOFF_MS)
         }
-        emit(bestObservedBalance)
-        if (bestObservedBalance > BigDecimal.ZERO) {
-            log.warn("Using best observed USD balance after sell refresh: $$bestObservedBalance")
+        emit(best)
+        if (best > BigDecimal.ZERO) {
+            log.warn(bestLog, best)
         } else {
-            log.error("No positive USD balance observed after sell refresh")
+            log.error(noneLog)
         }
     }
 

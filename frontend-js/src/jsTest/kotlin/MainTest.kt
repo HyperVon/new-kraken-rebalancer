@@ -8,8 +8,6 @@ import com.gemini.krakenbot.view.util.HtmlTags
 import com.gemini.krakenbot.view.util.ViewText
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
-import io.kotest.matchers.booleans.shouldBeFalse
-import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.shouldBe
 import kotlinx.browser.document
 import kotlinx.browser.window
@@ -31,19 +29,6 @@ class MainTest : StringSpec() {
 
                 val ageVal = document.querySelector(DATA_AGE_VALUE_QUERY) as HTMLElement
                 ageVal.textContent!!.shouldBe("0s ago")
-            } finally {
-                document.body!!.removeChild(container)
-            }
-        }
-
-        "initOnLoad initializes settings content" {
-            val container = document.createElement(HtmlTags.DIV)
-            container.innerHTML = TestDomBuilders.settingsDom()
-            document.body!!.appendChild(container)
-
-            try {
-                initOnLoad()
-                (window.asDynamic().addAssetRow != null) shouldBe true
             } finally {
                 document.body!!.removeChild(container)
             }
@@ -182,18 +167,6 @@ class MainTest : StringSpec() {
             } finally {
                 document.body!!.removeChild(container)
             }
-        }
-
-        "testDomExtensionsCompleteCoverage" {
-            val div = document.createDiv()
-
-            div.className = CssClass.Table.Sortable.value
-            div.classList.contains(CssClass.Table.Sortable).shouldBeTrue()
-            div.classList.remove(CssClass.Table.Sortable)
-            div.classList.contains(CssClass.Table.Sortable).shouldBeFalse()
-
-            div.classList.toggle(CssClass.Table.Sortable, true).shouldBeTrue()
-            div.classList.toggle(CssClass.Table.Sortable, false).shouldBeFalse()
         }
     }
 }

@@ -83,6 +83,9 @@ class HistoryLoadingTest : StringSpec() {
                 loadAll(TimeRange.ALL.key).await()
                 (getClonedChartOptions().scales.x.time.unit == null) shouldBe true
                 (window.asDynamic().chartDefaults.scales.x.time.unit == null) shouldBe true
+                loadAll(TimeRange.THIRTY_DAYS.key).await()
+                (getClonedChartOptions().scales.x.time.unit as String) shouldBe "day"
+                (window.asDynamic().chartDefaults.scales.x.time.unit == null) shouldBe true
             } finally {
                 document.body!!.removeChild(container)
             }
@@ -375,46 +378,6 @@ class HistoryLoadingTest : StringSpec() {
             try {
                 checkSyncProgress().await() shouldBe true
                 (document.getElementById(HtmlIds.SYNC_PROGRESS_BANNER) as HTMLElement).style.display shouldBe "none"
-            } finally {
-                document.body!!.removeChild(container)
-            }
-        }
-
-        "loadAll sets chartDefaults time unit based on range" {
-            val container = document.createElement(HtmlTags.DIV)
-            container.innerHTML = TestDomBuilders.historyDom()
-            document.body!!.appendChild(container)
-            val capturedUrls = mutableListOf<String>()
-            window.asDynamic().capturedUrls = capturedUrls.toTypedArray()
-            window.asDynamic().Chart = mockChartConstructor()
-            window.asDynamic().fetch =
-                mockFetch(
-                    mockHistoryFetchHandler(
-                        syncProgress = json("seeded" to false, "offset" to "5", "total" to "10"),
-                        stats =
-                        mockPortfolioStatsRecord(
-                            allTimeHigh = "100",
-                            totalTradesExecuted = 1L,
-                            totalVolumeTraded = "100",
-                            totalFeesPaid = "1",
-                        ),
-                    ),
-                )
-            try {
-                registerHistoryGlobals()
-
-                // loadAll mutates a deep clone only — shared chartDefaults.time.unit must stay null.
-                loadAll(TimeRange.TWENTY_FOUR_HOURS.key).await()
-                (getClonedChartOptions().scales.x.time.unit as String) shouldBe "hour"
-                (window.asDynamic().chartDefaults.scales.x.time.unit == null) shouldBe true
-
-                loadAll(TimeRange.ALL.key).await()
-                (getClonedChartOptions().scales.x.time.unit == null) shouldBe true
-                (window.asDynamic().chartDefaults.scales.x.time.unit == null) shouldBe true
-
-                loadAll(TimeRange.THIRTY_DAYS.key).await()
-                (getClonedChartOptions().scales.x.time.unit as String) shouldBe "day"
-                (window.asDynamic().chartDefaults.scales.x.time.unit == null) shouldBe true
             } finally {
                 document.body!!.removeChild(container)
             }
