@@ -79,7 +79,7 @@ object NavigationStyles {
             ".${CssClass.History.ViewsBtn}:focus-visible, .${CssClass.History.ZoomBtn}:focus-visible" {
                 put("outline", "none")
                 borderColor = CssTheme.colorBluePrimary
-                put("box-shadow", "0 0 0 3px rgba(59, 130, 246, 0.45)")
+                put("box-shadow", CssTheme.focusRingStrong)
             }
 
         CssClass.Navigation.LinkActive.querySelector {
@@ -143,8 +143,9 @@ object NavigationStyles {
 
         "${CssClass.Navigation.LinkActive.querySelector}:focus-visible, " +
             "${CssClass.History.TimeRangeBtnActive.querySelector}:focus-visible" {
-                put("outline", "3px solid rgba(59, 130, 246, 0.7)")
-                put("outline-offset", "2px")
+                put("outline", "none")
+                borderColor = CssTheme.colorBluePrimary
+                put("box-shadow", CssTheme.focusRingStrong)
             }
 
         ".${CssClass.History.ViewsToolbar}" {
@@ -198,7 +199,7 @@ object NavigationStyles {
         ".${CssClass.History.ViewsSelect}:focus" {
             put("outline", "none")
             borderColor = CssTheme.colorBluePrimary
-            put("box-shadow", "0 0 0 3px rgba(59, 130, 246, 0.2)")
+            put("box-shadow", CssTheme.focusRingSubtle)
         }
 
         ".${CssClass.History.ViewsSelect} option" {

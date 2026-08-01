@@ -2,15 +2,8 @@ package com.gemini.krakenbot.service
 
 import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.config.Allocation
-import com.gemini.krakenbot.config.AppConfig
-import com.gemini.krakenbot.config.KrakenCredentials
-import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.PortfolioStats
-import com.gemini.krakenbot.repository.PortfolioStatsRepository
-import com.gemini.krakenbot.service.impl.OrderExecutorImpl
-import com.gemini.krakenbot.service.impl.PortfolioAnalyzerImpl
-import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.booleans.shouldBeTrue
@@ -18,7 +11,6 @@ import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.shouldBe
 import io.mockk.coEvery
 import io.mockk.every
-import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
 import java.math.BigDecimal
 
@@ -26,32 +18,14 @@ class PortfolioManagerOrderExecutionTest : StringSpec() {
 
     override fun isolationMode() = IsolationMode.InstancePerTest
 
-    private val krakenService = FakeKrakenService()
-    private val configService = mockk<ConfigService>(relaxed = true)
-    private val tradeHistoryService = mockk<TradeHistoryService>(relaxed = true)
-    private val portfolioStatsRepository =
-        mockk<PortfolioStatsRepository>(relaxed = true)
-    private lateinit var portfolioManager: PortfolioManagerImpl
-    private lateinit var portfolioAnalyzer: PortfolioAnalyzer
-    private lateinit var orderExecutor: OrderExecutor
+    private lateinit var fixture: PortfolioManagerTestFixture
 
     init {
         beforeTest {
+            fixture = createPortfolioManagerTestFixture()
             coEvery {
-                portfolioStatsRepository.load()
+                fixture.portfolioStatsRepository.load()
             } returns PortfolioStats(BigDecimal.ZERO)
-            portfolioAnalyzer = PortfolioAnalyzerImpl(
-                krakenService = krakenService,
-                configService = configService,
-                portfolioStatsRepository = portfolioStatsRepository,
-            )
-            orderExecutor = OrderExecutorImpl(krakenService, tradeHistoryService)
-            portfolioManager = PortfolioManagerImpl(
-                configService = configService,
-                tradeHistoryService = tradeHistoryService,
-                portfolioAnalyzer = portfolioAnalyzer,
-                orderExecutor = orderExecutor,
-            )
         }
 
         "testExecutionOrder_SellsBeforeBuys" {
@@ -70,10 +44,10 @@ class PortfolioManagerOrderExecutionTest : StringSpec() {
                     allocations = allAllocations,
                 )
 
-                every { configService.getConfig() } returns mockConfig
+                every { fixture.configService.getConfig() } returns mockConfig
 
-                krakenService.balanceSupplier = {
-                    val sold = krakenService.executedOrders.any { it.side.equals("sell", ignoreCase = true) }
+                fixture.krakenService.balanceSupplier = {
+                    val sold = fixture.krakenService.executedOrders.any { it.side.equals("sell", ignoreCase = true) }
                     if (sold) {
                         mapOf("A" to 1.0, "B" to 50.0, Asset.USD to 400.0)
                     } else {
@@ -82,15 +56,15 @@ class PortfolioManagerOrderExecutionTest : StringSpec() {
                 }
 
                 val prices = mapOf("AUSD" to 100.0, "BUSD" to 10.0)
-                krakenService.pricesSupplier = { prices }
+                fixture.krakenService.pricesSupplier = { prices }
 
-                portfolioManager.performRebalanceCycle()
+                fixture.portfolioManager.performRebalanceCycle()
 
-                krakenService.executedOrders.size shouldBe 2
-                krakenService.executedOrders[0].pair shouldBe "AUSD"
-                krakenService.executedOrders[0].side shouldBe "sell"
-                krakenService.executedOrders[1].pair shouldBe "BUSD"
-                krakenService.executedOrders[1].side shouldBe "buy"
+                fixture.krakenService.executedOrders.size shouldBe 2
+                fixture.krakenService.executedOrders[0].pair shouldBe "AUSD"
+                fixture.krakenService.executedOrders[0].side shouldBe "sell"
+                fixture.krakenService.executedOrders[1].pair shouldBe "BUSD"
+                fixture.krakenService.executedOrders[1].side shouldBe "buy"
             }
         }
 
@@ -107,10 +81,10 @@ class PortfolioManagerOrderExecutionTest : StringSpec() {
                     allocations = allAllocations,
                 )
 
-                every { configService.getConfig() } returns mockConfig
+                every { fixture.configService.getConfig() } returns mockConfig
 
-                krakenService.balanceSupplier = {
-                    val sold = krakenService.executedOrders.any { it.side.equals("sell", ignoreCase = true) }
+                fixture.krakenService.balanceSupplier = {
+                    val sold = fixture.krakenService.executedOrders.any { it.side.equals("sell", ignoreCase = true) }
                     if (sold) {
                         mapOf("A" to 1.0, "B" to 50.0, Asset.USD to 400.0)
                     } else {
@@ -119,14 +93,14 @@ class PortfolioManagerOrderExecutionTest : StringSpec() {
                 }
 
                 val prices = mapOf("AUSD" to 100.0, "BUSD" to 10.0)
-                krakenService.pricesSupplier = { prices }
+                fixture.krakenService.pricesSupplier = { prices }
 
-                portfolioManager.performRebalanceCycle()
+                fixture.portfolioManager.performRebalanceCycle()
 
-                krakenService.executedOrders.any {
+                fixture.krakenService.executedOrders.any {
                     it.side.equals("sell", ignoreCase = true) && it.pair == "AUSD"
                 }.shouldBeTrue()
-                krakenService.executedOrders.any {
+                fixture.krakenService.executedOrders.any {
                     it.side.equals("buy", ignoreCase = true) && it.pair == "BUSD"
                 }.shouldBeTrue()
             }
@@ -151,17 +125,17 @@ class PortfolioManagerOrderExecutionTest : StringSpec() {
                     allocations = allAllocations,
                 )
 
-                every { configService.getConfig() } returns mockConfig
+                every { fixture.configService.getConfig() } returns mockConfig
 
                 val balances = mapOf("A" to 1.05, Asset.USD to 895.0)
-                krakenService.balanceSupplier = { balances }
+                fixture.krakenService.balanceSupplier = { balances }
 
                 val prices = mapOf("AUSD" to 100.0)
-                krakenService.pricesSupplier = { prices }
+                fixture.krakenService.pricesSupplier = { prices }
 
-                portfolioManager.performRebalanceCycle()
+                fixture.portfolioManager.performRebalanceCycle()
 
-                krakenService.executedOrders.none {
+                fixture.krakenService.executedOrders.none {
                     it.pair == "AUSD" && it.side == "sell"
                 } shouldBe true
             }
@@ -185,13 +159,13 @@ class PortfolioManagerOrderExecutionTest : StringSpec() {
                     settings = mockSettings,
                     allocations = allAllocations,
                 )
-                every { configService.getConfig() } returns mockConfig
+                every { fixture.configService.getConfig() } returns mockConfig
 
                 val initialBalances =
                     mapOf("A" to 5.0, "B" to 50.0, Asset.USD to 0.0)
 
                 var callCount = 0
-                krakenService.balanceSupplier = {
+                fixture.krakenService.balanceSupplier = {
                     callCount++
                     if (callCount == 1) {
                         initialBalances
@@ -203,14 +177,14 @@ class PortfolioManagerOrderExecutionTest : StringSpec() {
                 }
 
                 val prices = mapOf("AUSD" to 100.0, "BUSD" to 10.0)
-                krakenService.pricesSupplier = { prices }
+                fixture.krakenService.pricesSupplier = { prices }
 
-                portfolioManager.performRebalanceCycle()
+                fixture.portfolioManager.performRebalanceCycle()
 
                 // Fail-closed: balance polls throw → no positive USD observed → buys aborted
-                krakenService.executedOrders.size shouldBe 1
-                krakenService.executedOrders[0].pair shouldBe "AUSD"
-                krakenService.executedOrders[0].side shouldBe "sell"
+                fixture.krakenService.executedOrders.size shouldBe 1
+                fixture.krakenService.executedOrders[0].pair shouldBe "AUSD"
+                fixture.krakenService.executedOrders[0].side shouldBe "sell"
             }
         }
 
@@ -232,7 +206,7 @@ class PortfolioManagerOrderExecutionTest : StringSpec() {
                     settings = mockSettings,
                     allocations = allAllocations,
                 )
-                every { configService.getConfig() } returns mockConfig
+                every { fixture.configService.getConfig() } returns mockConfig
 
                 val initialBalances =
                     mapOf("A" to 5.0, "B" to 50.0, Asset.USD to 0.0)
@@ -240,23 +214,23 @@ class PortfolioManagerOrderExecutionTest : StringSpec() {
                     mapOf("A" to 2.0, "B" to 50.0, Asset.USD to 200.0)
 
                 var callCount = 0
-                krakenService.balanceSupplier = {
+                fixture.krakenService.balanceSupplier = {
                     callCount++
                     if (callCount == 1) initialBalances else updatedBalances
                 }
 
                 val prices = mapOf("AUSD" to 100.0, "BUSD" to 10.0)
-                krakenService.pricesSupplier = { prices }
+                fixture.krakenService.pricesSupplier = { prices }
 
-                portfolioManager.performRebalanceCycle()
+                fixture.portfolioManager.performRebalanceCycle()
 
-                krakenService.executedOrders.size shouldBe 2
-                krakenService.executedOrders[0].pair shouldBe "AUSD"
-                krakenService.executedOrders[0].side shouldBe "sell"
-                krakenService.executedOrders[1].pair shouldBe "BUSD"
-                krakenService.executedOrders[1].side shouldBe "buy"
+                fixture.krakenService.executedOrders.size shouldBe 2
+                fixture.krakenService.executedOrders[0].pair shouldBe "AUSD"
+                fixture.krakenService.executedOrders[0].side shouldBe "sell"
+                fixture.krakenService.executedOrders[1].pair shouldBe "BUSD"
+                fixture.krakenService.executedOrders[1].side shouldBe "buy"
                 (
-                    krakenService.executedOrders[1].volume.subtract(
+                    fixture.krakenService.executedOrders[1].volume.subtract(
                         BigDecimal.valueOf(
                             19.8,
                         ),
@@ -269,7 +243,7 @@ class PortfolioManagerOrderExecutionTest : StringSpec() {
             runTest {
                 val actionLog = mutableListOf<String>()
 
-                orderExecutor.executeOrders(
+                fixture.orderExecutor.executeOrders(
                     buyOrders = mapOf(Asset.BTC to BigDecimal("1.00")),
                     sellOrders = emptyMap(),
                     currentValuesUSD = mapOf(Asset.USD to BigDecimal("10.00")),
@@ -284,7 +258,7 @@ class PortfolioManagerOrderExecutionTest : StringSpec() {
                     availableBalances = null,
                 )
 
-                val order = krakenService.executedOrders.single()
+                val order = fixture.krakenService.executedOrders.single()
                 order.volume.shouldBeEqualComparingTo(BigDecimal("0.16666666"))
                 (order.volume.multiply(BigDecimal("6.00")) <= BigDecimal("1.00")).shouldBeTrue()
             }
