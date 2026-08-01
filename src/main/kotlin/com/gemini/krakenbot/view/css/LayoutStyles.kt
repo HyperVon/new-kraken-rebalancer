@@ -215,9 +215,7 @@ object LayoutStyles {
             padding = Padding(0.375.rem, 0.75.rem)
             borderRadius = CssTheme.radiusPill
             background = CssTheme.colorSurface2.value
-            borderWidth = 1.px
-            borderStyle = BorderStyle.solid
-            borderColor = CssTheme.colorGlassBorder
+            solidBorder(CssTheme.colorGlassBorder)
             put(
                 "box-shadow",
                 "0 4px 12px rgba(0,0,0,0.4), inset 0 1px 0 rgba(186,220,255,0.1)",
@@ -248,9 +246,7 @@ object LayoutStyles {
             background = CssTheme.glassSurfaceGradient
             put("backdrop-filter", "blur(16px)")
             put("-webkit-backdrop-filter", "blur(16px)")
-            borderWidth = 1.px
-            borderStyle = BorderStyle.solid
-            borderColor = CssTheme.colorSurface1Border
+            solidBorder(CssTheme.colorSurface1Border)
             put("box-shadow", CssTheme.shadowSurface1)
             borderRadius = 0.875.rem
             padding = Padding(1.5.rem)

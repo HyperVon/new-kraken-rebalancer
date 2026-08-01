@@ -76,18 +76,14 @@ object ComponentStyles {
         ".${CssClass.StatusCard.Badge}.live" {
             backgroundColor = CssTheme.colorSuccessMuted
             color = CssTheme.colorSuccess
-            borderWidth = 1.px
-            borderStyle = BorderStyle.solid
-            borderColor = CssTheme.colorSuccessBorder
+            solidBorder(CssTheme.colorSuccessBorder)
             put("animation", "pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite")
         }
 
         ".${CssClass.StatusCard.Badge}.delayed" {
             backgroundColor = CssTheme.colorWarningMuted
             color = CssTheme.colorWarning
-            borderWidth = 1.px
-            borderStyle = BorderStyle.solid
-            borderColor = CssTheme.colorWarningBorder
+            solidBorder(CssTheme.colorWarningBorder)
         }
 
         ".${CssClass.Form.AllocationTotal}" {
@@ -353,9 +349,7 @@ object ComponentStyles {
             background = "linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.08))"
             borderRadius = CssTheme.radiusPill
             overflow = Overflow.hidden
-            borderWidth = 1.px
-            borderStyle = BorderStyle.solid
-            borderColor = CssTheme.colorWhiteSubtle
+            solidBorder(CssTheme.colorWhiteSubtle)
             put("box-shadow", "inset 0 1px 2px rgba(0,0,0,0.35)")
         }
 
@@ -418,9 +412,7 @@ object ComponentStyles {
             background = "linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.09))"
             borderRadius = CssTheme.radiusPill
             overflow = Overflow.hidden
-            borderWidth = 1.px
-            borderStyle = BorderStyle.solid
-            borderColor = CssTheme.colorWhiteSubtle
+            solidBorder(CssTheme.colorWhiteSubtle)
             put("box-shadow", "inset 0 1px 2px rgba(0,0,0,0.4)")
         }
 
@@ -469,9 +461,7 @@ object ComponentStyles {
         ".${CssClass.Loading.Spinner}" {
             width = 3.rem
             height = 3.rem
-            borderWidth = 4.px
-            borderStyle = BorderStyle.solid
-            borderColor = CssTheme.colorKrakenBlue
+            solidBorder(CssTheme.colorKrakenBlue, 4.px)
             put("border-top-color", "transparent")
             borderRadius = 50.pct
             put("animation", "spin 1s linear infinite")
@@ -531,9 +521,7 @@ object ComponentStyles {
         ".${CssClass.Activity.Cycle.value}" {
             borderRadius = 0.75.rem
             background = CssTheme.glassSurfaceGradient
-            borderWidth = 1.px
-            borderStyle = BorderStyle.solid
-            borderColor = CssTheme.colorSurface2Border
+            solidBorder(CssTheme.colorSurface2Border)
             overflow = Overflow.hidden
             put(
                 "box-shadow",

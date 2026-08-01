@@ -69,9 +69,7 @@ object NavigationStyles {
             color = CssTheme.colorTextSecondary
             textDecoration = TextDecoration.none
             put("transition", "all 0.2s ease")
-            borderWidth = 1.px
-            borderStyle = BorderStyle.solid
-            borderColor = Color.transparent
+            solidBorder(Color.transparent)
         }
 
         ".${CssClass.Navigation.Link}:hover" {
@@ -113,9 +111,7 @@ object NavigationStyles {
             marginBottom = 0.px
             padding = Padding(0.25.rem)
             background = CssTheme.colorGlass.value
-            borderWidth = 1.px
-            borderStyle = BorderStyle.solid
-            borderColor = CssTheme.colorGlassBorder
+            solidBorder(CssTheme.colorGlassBorder)
             borderRadius = 0.75.rem
             put("width", "fit-content")
         }
@@ -127,9 +123,7 @@ object NavigationStyles {
             fontWeight = FontWeight.w600
             color = CssTheme.colorTextSecondary
             background = "transparent"
-            borderWidth = 1.px
-            borderStyle = BorderStyle.solid
-            borderColor = Color.transparent
+            solidBorder(Color.transparent)
             cursor = Cursor.pointer
             put("transition", "all 0.2s ease")
             fontFamily = CssTheme.fontSans
@@ -162,9 +156,7 @@ object NavigationStyles {
             gap = 0.5.rem
             padding = Padding(0.25.rem, 0.5.rem)
             background = CssTheme.colorGlass.value
-            borderWidth = 1.px
-            borderStyle = BorderStyle.solid
-            borderColor = CssTheme.colorGlassBorder
+            solidBorder(CssTheme.colorGlassBorder)
             borderRadius = 0.75.rem
             put("flex-wrap", "wrap")
         }
@@ -184,9 +176,7 @@ object NavigationStyles {
             put("-moz-appearance", "none")
             background = CssTheme.colorSurface2.value
             color = CssTheme.colorTextPrimary
-            borderWidth = 1.px
-            borderStyle = BorderStyle.solid
-            borderColor = CssTheme.colorSurface2Border
+            solidBorder(CssTheme.colorSurface2Border)
             borderRadius = 0.5.rem
             padding = Padding(0.375.rem, 2.rem, 0.375.rem, 0.75.rem)
             fontSize = 0.8125.rem
@@ -234,9 +224,7 @@ object NavigationStyles {
             fontWeight = FontWeight.w600
             color = CssTheme.colorTextSecondary
             background = "transparent"
-            borderWidth = 1.px
-            borderStyle = BorderStyle.solid
-            borderColor = Color.transparent
+            solidBorder(Color.transparent)
             cursor = Cursor.pointer
             put("transition", "all 0.2s ease")
             fontFamily = CssTheme.fontSans
@@ -286,9 +274,7 @@ object NavigationStyles {
             fontWeight = FontWeight.w600
             color = CssTheme.colorTextSecondary
             background = CssTheme.colorGlass.value
-            borderWidth = 1.px
-            borderStyle = BorderStyle.solid
-            borderColor = CssTheme.colorGlassBorder
+            solidBorder(CssTheme.colorGlassBorder)
             cursor = Cursor.pointer
             put("transition", "all 0.2s ease")
             fontFamily = CssTheme.fontSans
@@ -341,9 +327,7 @@ object NavigationStyles {
             height = 1.rem
             borderRadius = 50.pct
             background = CssTheme.colorBlueAccent.value
-            borderWidth = 2.px
-            borderStyle = BorderStyle.solid
-            borderColor = CssTheme.colorBg
+            solidBorder(CssTheme.colorBg, 2.px)
             cursor = Cursor.grab
         }
 
@@ -352,9 +336,7 @@ object NavigationStyles {
             height = 1.rem
             borderRadius = 50.pct
             background = CssTheme.colorBlueAccent.value
-            borderWidth = 2.px
-            borderStyle = BorderStyle.solid
-            borderColor = CssTheme.colorBg
+            solidBorder(CssTheme.colorBg, 2.px)
             cursor = Cursor.grab
         }
 
@@ -412,9 +394,7 @@ object NavigationStyles {
         ".${CssClass.History.SyncSpinner}" {
             width = 1.rem
             height = 1.rem
-            borderWidth = 2.px
-            borderStyle = BorderStyle.solid
-            borderColor = CssTheme.colorKrakenBlue
+            solidBorder(CssTheme.colorKrakenBlue, 2.px)
             put("border-top-color", "transparent")
             borderRadius = 50.pct
             put("animation", "spin 1s linear infinite")
@@ -500,9 +480,7 @@ object NavigationStyles {
 
         ".${CssClass.Utility.ErrorBanner}" {
             backgroundColor = CssTheme.colorDangerMuted
-            borderWidth = 1.px
-            borderStyle = BorderStyle.solid
-            borderColor = CssTheme.colorDangerBorder
+            solidBorder(CssTheme.colorDangerBorder)
             color = CssTheme.colorDangerLight
             padding = Padding(1.rem)
             borderRadius = 0.5.rem
@@ -534,9 +512,7 @@ object NavigationStyles {
             padding = Padding(0.25.rem, 0.625.rem)
             borderRadius = 0.375.rem
             background = CssTheme.colorGlass.value
-            borderWidth = 1.px
-            borderStyle = BorderStyle.solid
-            borderColor = CssTheme.colorGlassBorder
+            solidBorder(CssTheme.colorGlassBorder)
             whiteSpace = WhiteSpace.nowrap
         }
 

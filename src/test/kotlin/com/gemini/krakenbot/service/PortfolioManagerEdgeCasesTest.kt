@@ -3,7 +3,6 @@ package com.gemini.krakenbot.service
 import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.config.AppConfig
-import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderResult
@@ -64,23 +63,7 @@ class PortfolioManagerEdgeCasesTest : PortfolioManagerEdgeCasesTestBase() {
             runTest {
                 krakenService.balanceSupplier = { emptyMap() }
 
-                val allocs = listOf(
-                    Allocation(
-                        symbol = Asset.USD,
-                        targetPercent = 100.0,
-                    ),
-                )
-                val settings = TestFixtures.settings()
-                val config =
-                    AppConfig(
-                        kraken = KrakenCredentials(
-                            apiKey = "k",
-                            privateKey = "s",
-                        ),
-                        settings = settings,
-                        allocations = allocs,
-                    )
-                every { configService.getConfig() } returns config
+                every { configService.getConfig() } returns singleAllocConfig()
 
                 portfolioManager.startRebalancingLoop()
                 portfolioManager.performRebalanceCycle()
@@ -95,23 +78,7 @@ class PortfolioManagerEdgeCasesTest : PortfolioManagerEdgeCasesTestBase() {
                     { mapOf(Asset.BTC to 1.0) }
                 krakenService.pricesSupplier = { emptyMap() }
 
-                val allocs = listOf(
-                    Allocation(
-                        symbol = Asset.BTC,
-                        targetPercent = 100.0,
-                    ),
-                )
-                val settings = TestFixtures.settings()
-                val config =
-                    AppConfig(
-                        kraken = KrakenCredentials(
-                            apiKey = "k",
-                            privateKey = "s",
-                        ),
-                        settings = settings,
-                        allocations = allocs,
-                    )
-                every { configService.getConfig() } returns config
+                every { configService.getConfig() } returns singleAllocConfig(Asset.BTC)
 
                 portfolioManager.startRebalancingLoop()
                 portfolioManager.performRebalanceCycle()
@@ -155,11 +122,7 @@ class PortfolioManagerEdgeCasesTest : PortfolioManagerEdgeCasesTestBase() {
                     Allocation(Asset.USD, 50.0),
                 )
                 every { configService.getConfig() } returns
-                    AppConfig(
-                        kraken = KrakenCredentials(
-                            apiKey = "k",
-                            privateKey = "s",
-                        ),
+                    TestFixtures.config(
                         settings = TestFixtures.settings(fiatMaxDrawdown = 50.0),
                         allocations = allocs,
                     )
@@ -394,23 +357,7 @@ class PortfolioManagerEdgeCasesTest : PortfolioManagerEdgeCasesTestBase() {
             runTest {
                 krakenService.balanceSupplier =
                     { mapOf(Asset.USD to 1000.0) }
-                val allocs = listOf(
-                    Allocation(
-                        symbol = Asset.USD,
-                        targetPercent = 100.0,
-                    ),
-                )
-                val settings = TestFixtures.settings()
-                val config =
-                    AppConfig(
-                        kraken = KrakenCredentials(
-                            apiKey = "k",
-                            privateKey = "s",
-                        ),
-                        settings = settings,
-                        allocations = allocs,
-                    )
-                every { configService.getConfig() } returns config
+                every { configService.getConfig() } returns singleAllocConfig()
 
                 coEvery {
                     tradeHistoryService.addSnapshot(any())
@@ -630,4 +577,15 @@ class PortfolioManagerEdgeCasesTest : PortfolioManagerEdgeCasesTestBase() {
             }
         }
     }
+
+    private fun singleAllocConfig(symbol: String = Asset.USD, settings: Settings = TestFixtures.settings()): AppConfig =
+        TestFixtures.config(
+            settings = settings,
+            allocations = listOf(
+                Allocation(
+                    symbol = symbol,
+                    targetPercent = 100.0,
+                ),
+            ),
+        )
 }

@@ -46,7 +46,7 @@ class TradeHistorySyncService(
         }
 
         val preflightConfig = configService.getConfig()
-        if (!preflightConfig.settings.simulation && !preflightConfig.kraken.hasValidCredentials()) {
+        if (!preflightConfig.canPullTradeHistory()) {
             log.warn("Kraken API key is blank or placeholder. Skipping trade history synchronization.")
             return
         }
@@ -54,7 +54,7 @@ class TradeHistorySyncService(
         configService.beginExecutionSession()
         try {
             val pinnedConfig = configService.getConfig()
-            if (!pinnedConfig.settings.simulation && !pinnedConfig.kraken.hasValidCredentials()) {
+            if (!pinnedConfig.canPullTradeHistory()) {
                 log.warn("Kraken API key became unavailable before synchronization started. Skipping synchronization.")
                 return
             }
@@ -370,3 +370,5 @@ class TradeHistorySyncService(
         const val PAGE_SIZE = 50
     }
 }
+
+private fun AppConfig.canPullTradeHistory(): Boolean = settings.simulation || kraken.hasValidCredentials()

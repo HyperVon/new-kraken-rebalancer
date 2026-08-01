@@ -164,9 +164,7 @@ object TableStyles {
             fontWeight = FontWeight.w700
             put("letter-spacing", "0.05em")
             backgroundColor = Color.transparent
-            borderWidth = 1.px
-            borderStyle = BorderStyle.solid
-            borderColor = CssTheme.colorWhiteBorder
+            solidBorder(CssTheme.colorWhiteBorder)
             color = CssTheme.colorTextSecondary
         }
 

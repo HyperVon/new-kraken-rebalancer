@@ -65,6 +65,48 @@ fun formatPctTick(v: Double, includePlus: Boolean = true): String {
     return sign + d.asDynamic().toLocaleString(EN_US, options) + "%"
 }
 
+/**
+ * A Chart.js line dataset with the shared structural props. `fill`/`borderDash` are nullable so
+ * their absence is preserved (a dataset without a `fill` key renders differently from `fill:false`).
+ */
+internal fun lineDataset(
+    label: String,
+    data: Array<dynamic>,
+    borderColor: String,
+    backgroundColor: String,
+    primary: Boolean,
+    borderPrimary: Boolean = primary,
+    fill: Boolean? = null,
+    borderDash: Array<dynamic>? = null,
+): dynamic {
+    val ds: dynamic = json(
+        ChartProps.LABEL to label,
+        ChartProps.DATA to data,
+        ChartProps.BORDER_COLOR to borderColor,
+        ChartProps.BACKGROUND_COLOR to backgroundColor,
+        ChartProps.TENSION to ChartProps.TENSION_CURVED,
+        ChartProps.BORDER_WIDTH to
+            if (borderPrimary) ChartProps.BORDER_WIDTH_PRIMARY else ChartProps.BORDER_WIDTH_SECONDARY,
+        ChartProps.POINT_RADIUS to pointRadiusForCount(data.size, primary),
+        ChartProps.POINT_HOVER_RADIUS to pointHoverRadiusForCount(data.size, primary),
+        ChartProps.POINT_HIT_RADIUS to ChartProps.POINT_HIT_RADIUS_DEFAULT,
+    )
+    if (fill != null) ds[ChartProps.FILL] = fill
+    if (borderDash != null) ds[ChartProps.BORDER_DASH] = borderDash
+    return ds
+}
+
+/** Default USD tooltip label and y-axis tick formatting shared by value charts. */
+internal fun applyUsdLabeling(options: dynamic) {
+    options.plugins.tooltip.callbacks = json()
+    options.plugins.tooltip.callbacks.label = { ctx: dynamic ->
+        val label = ctx.dataset.label.toString()
+        val yVal = dynamicNumber(ctx.parsed.y) ?: 0.0
+        "$label: ${formatUSD(yVal)}"
+    }
+    options.scales.y.ticks.callback = { v: Double, _: dynamic, _: dynamic -> formatUSD(v) }
+}
+
 internal fun getUniqueSymbols(snapshots: List<PortfolioSnapshot>, excludeUsd: Boolean = true): List<String> {
     val symbolsSet = mutableSetOf<String>()
     snapshots.forEach { snapshot ->
@@ -91,7 +133,6 @@ internal fun buildPortfolioValueChart(snapshots: List<PortfolioSnapshot>) {
         return
     }
 
-    val pointCount = snapshots.size
     val symbolList = getUniqueSymbols(snapshots)
 
     val totalPortfolioData =
@@ -101,54 +142,34 @@ internal fun buildPortfolioValueChart(snapshots: List<PortfolioSnapshot>) {
 
     val datasets = mutableListOf<dynamic>()
     datasets.add(
-        json(
-            ChartProps.LABEL to ViewText.TOTAL_PORTFOLIO,
-            ChartProps.DATA to totalPortfolioData,
-            ChartProps.BORDER_COLOR to ChartProps.COLOR_BLUE,
-            ChartProps.BACKGROUND_COLOR to ChartProps.COLOR_BLUE_BG,
-            ChartProps.FILL to true,
-            ChartProps.TENSION to ChartProps.TENSION_CURVED,
-            ChartProps.BORDER_WIDTH to ChartProps.BORDER_WIDTH_PRIMARY,
-            ChartProps.POINT_RADIUS to pointRadiusForCount(pointCount, primary = true),
-            ChartProps.POINT_HOVER_RADIUS to pointHoverRadiusForCount(pointCount, primary = true),
-            ChartProps.POINT_HIT_RADIUS to ChartProps.POINT_HIT_RADIUS_DEFAULT,
+        lineDataset(
+            label = ViewText.TOTAL_PORTFOLIO,
+            data = totalPortfolioData,
+            borderColor = ChartProps.COLOR_BLUE,
+            backgroundColor = ChartProps.COLOR_BLUE_BG,
+            primary = true,
+            fill = true,
         ),
     )
 
     symbolList.forEachIndexed { i, sym ->
-        val color = colorForSymbol(sym, i)
         val symbolData =
             mapSnapshotsToPoints(snapshots) { snapshot ->
                 dynamicNumber(snapshot.assets[sym]?.valueUSD) ?: 0.0
             }
-
         datasets.add(
-            json(
-                ChartProps.LABEL to sym,
-                ChartProps.DATA to symbolData,
-                ChartProps.BORDER_COLOR to color,
-                ChartProps.BACKGROUND_COLOR to ChartProps.TRANSPARENT,
-                ChartProps.TENSION to ChartProps.TENSION_CURVED,
-                ChartProps.BORDER_WIDTH to ChartProps.BORDER_WIDTH_SECONDARY,
-                ChartProps.POINT_RADIUS to pointRadiusForCount(pointCount, primary = false),
-                ChartProps.POINT_HOVER_RADIUS to pointHoverRadiusForCount(pointCount, primary = false),
-                ChartProps.POINT_HIT_RADIUS to ChartProps.POINT_HIT_RADIUS_DEFAULT,
+            lineDataset(
+                label = sym,
+                data = symbolData,
+                borderColor = colorForSymbol(sym, i),
+                backgroundColor = ChartProps.TRANSPARENT,
+                primary = false,
             ),
         )
     }
 
     val options = getClonedChartOptions()
-    options.plugins.tooltip.callbacks = json()
-    options.plugins.tooltip.callbacks.label = { ctx: dynamic ->
-        val label = ctx.dataset.label.toString()
-        val yVal = dynamicNumber(ctx.parsed.y) ?: 0.0
-        "$label: ${formatUSD(yVal)}"
-    }
-
-    options.scales.y.ticks.callback = { v: Double, _: dynamic, _: dynamic ->
-        formatUSD(v)
-    }
-
+    applyUsdLabeling(options)
     createOrUpdate(
         HtmlIds.PORTFOLIO_VALUE_CHART,
         createLineChartConfig(datasets.toTypedArray(), options),
@@ -173,7 +194,6 @@ internal fun buildAssetHoldingsChart(snapshots: List<PortfolioSnapshot>) {
     val datasets =
         symbolList
             .mapIndexed { i, sym ->
-                val color = colorForSymbol(sym, i)
                 val symbolData =
                     mapSnapshotsToPoints(snapshots) { snapshot ->
                         val current = dynamicNumber(snapshot.assets[sym]?.balance) ?: 0.0
@@ -185,16 +205,13 @@ internal fun buildAssetHoldingsChart(snapshots: List<PortfolioSnapshot>) {
                         }
                     }
 
-                json(
-                    ChartProps.LABEL to sym,
-                    ChartProps.DATA to symbolData,
-                    ChartProps.BORDER_COLOR to color,
-                    ChartProps.BACKGROUND_COLOR to ChartProps.TRANSPARENT,
-                    ChartProps.TENSION to ChartProps.TENSION_CURVED,
-                    ChartProps.BORDER_WIDTH to ChartProps.BORDER_WIDTH_PRIMARY,
-                    ChartProps.POINT_RADIUS to pointRadiusForCount(pointCount, primary = false),
-                    ChartProps.POINT_HOVER_RADIUS to pointHoverRadiusForCount(pointCount, primary = false),
-                    ChartProps.POINT_HIT_RADIUS to ChartProps.POINT_HIT_RADIUS_DEFAULT,
+                lineDataset(
+                    label = sym,
+                    data = symbolData,
+                    borderColor = colorForSymbol(sym, i),
+                    backgroundColor = ChartProps.TRANSPARENT,
+                    primary = false,
+                    borderPrimary = true,
                 )
             }.toTypedArray()
 
@@ -226,30 +243,25 @@ internal fun buildAllocationDriftChart(snapshots: List<PortfolioSnapshot>) {
         return
     }
 
-    val pointCount = snapshots.size
     val symbolList = getUniqueSymbols(snapshots, excludeUsd = false)
 
     val datasets =
         symbolList
             .mapIndexed { i, sym ->
-                val color = colorForSymbol(sym, i)
                 val bg = bgColorForSymbol(sym, i)
                 val symbolData =
                     mapSnapshotsToPoints(snapshots) { snapshot ->
                         dynamicNumber(snapshot.assets[sym]?.deviationPercent) ?: 0.0
                     }
 
-                json(
-                    ChartProps.LABEL to sym,
-                    ChartProps.DATA to symbolData,
-                    ChartProps.BORDER_COLOR to color,
-                    ChartProps.BACKGROUND_COLOR to bg,
-                    ChartProps.FILL to false,
-                    ChartProps.TENSION to ChartProps.TENSION_CURVED,
-                    ChartProps.BORDER_WIDTH to ChartProps.BORDER_WIDTH_PRIMARY,
-                    ChartProps.POINT_RADIUS to pointRadiusForCount(pointCount, primary = false),
-                    ChartProps.POINT_HOVER_RADIUS to pointHoverRadiusForCount(pointCount, primary = false),
-                    ChartProps.POINT_HIT_RADIUS to ChartProps.POINT_HIT_RADIUS_DEFAULT,
+                lineDataset(
+                    label = sym,
+                    data = symbolData,
+                    borderColor = colorForSymbol(sym, i),
+                    backgroundColor = bg,
+                    primary = false,
+                    borderPrimary = true,
+                    fill = false,
                 )
             }.toTypedArray()
 
@@ -344,38 +356,24 @@ internal fun buildCumulativeNetCashFlowChart(trades: List<TradeRecord>, includeD
         } else {
             ViewText.NET_AFTER_FEES
         }
-    val pointCount = (grossChartData.asDynamic().length as Int)
-
     val datasets =
         arrayOf(
-            json(
-                ChartProps.LABEL to grossLabel,
-                ChartProps.DATA to grossChartData,
-                ChartProps.BORDER_COLOR to ChartProps.COLOR_EMERALD,
-                ChartProps.BACKGROUND_COLOR to ChartProps.COLOR_GREEN_BG,
-                ChartProps.FILL to true,
-                ChartProps.TENSION to ChartProps.TENSION_CURVED,
-                ChartProps.BORDER_WIDTH to ChartProps.BORDER_WIDTH_PRIMARY,
-                ChartProps.POINT_RADIUS to pointRadiusForCount(pointCount, primary = true),
-                ChartProps.POINT_HOVER_RADIUS to pointHoverRadiusForCount(pointCount, primary = true),
-                ChartProps.POINT_HIT_RADIUS to ChartProps.POINT_HIT_RADIUS_DEFAULT,
+            lineDataset(
+                label = grossLabel,
+                data = grossChartData,
+                borderColor = ChartProps.COLOR_EMERALD,
+                backgroundColor = ChartProps.COLOR_GREEN_BG,
+                primary = true,
+                fill = true,
             ),
-            json(
-                ChartProps.LABEL to netLabel,
-                ChartProps.DATA to netChartData,
-                ChartProps.BORDER_COLOR to ChartProps.COLOR_AMBER,
-                ChartProps.BACKGROUND_COLOR to ChartProps.TRANSPARENT,
-                ChartProps.FILL to false,
-                ChartProps.TENSION to ChartProps.TENSION_CURVED,
-                ChartProps.BORDER_WIDTH to ChartProps.BORDER_WIDTH_SECONDARY,
-                ChartProps.BORDER_DASH to
-                    arrayOf(
-                        ChartProps.BORDER_DASH_SEGMENT,
-                        ChartProps.BORDER_DASH_GAP,
-                    ),
-                ChartProps.POINT_RADIUS to pointRadiusForCount(pointCount, primary = false),
-                ChartProps.POINT_HOVER_RADIUS to pointHoverRadiusForCount(pointCount, primary = false),
-                ChartProps.POINT_HIT_RADIUS to ChartProps.POINT_HIT_RADIUS_DEFAULT,
+            lineDataset(
+                label = netLabel,
+                data = netChartData,
+                borderColor = ChartProps.COLOR_AMBER,
+                backgroundColor = ChartProps.TRANSPARENT,
+                primary = false,
+                fill = false,
+                borderDash = arrayOf(ChartProps.BORDER_DASH_SEGMENT, ChartProps.BORDER_DASH_GAP),
             ),
         )
 
