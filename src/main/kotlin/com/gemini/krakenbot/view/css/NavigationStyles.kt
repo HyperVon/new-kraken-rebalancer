@@ -145,6 +145,8 @@ object NavigationStyles {
             )
         }
 
+        // Parens are load-bearing here as well (see the rule above): without
+        // them only the last concatenated selector would emit.
         (
             "${CssClass.Navigation.LinkActive.querySelector}:focus-visible, " +
                 "${CssClass.History.TimeRangeBtnActive.querySelector}:focus-visible"

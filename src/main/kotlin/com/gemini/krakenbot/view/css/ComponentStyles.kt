@@ -345,6 +345,9 @@ object ComponentStyles {
 
         // Shared progress-bar styling for hero tiles and the allocation chart;
         // per-variant overrides below keep the computed styles identical.
+        // Leading dots are required on every selector part: CssClass.value is
+        // the bare class name, and a missing dot emits a type selector that
+        // matches nothing.
         val barTracks = ".${CssClass.Hero.TileBarTrack.value}, .${CssClass.AllocationChart.BarTrack.value}"
         "$barTracks" {
             flexGrow = 1.0
