@@ -2,7 +2,6 @@ package com.gemini.krakenbot.view.css
 
 import com.gemini.krakenbot.view.util.CssClass
 import kotlinx.css.Align
-import kotlinx.css.BorderStyle
 import kotlinx.css.Color
 import kotlinx.css.CssBuilder
 import kotlinx.css.Cursor
@@ -21,8 +20,6 @@ import kotlinx.css.background
 import kotlinx.css.backgroundColor
 import kotlinx.css.borderColor
 import kotlinx.css.borderRadius
-import kotlinx.css.borderStyle
-import kotlinx.css.borderWidth
 import kotlinx.css.color
 import kotlinx.css.content
 import kotlinx.css.cursor

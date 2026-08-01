@@ -21,8 +21,6 @@ import kotlinx.css.borderBottomWidth
 import kotlinx.css.borderCollapse
 import kotlinx.css.borderColor
 import kotlinx.css.borderRadius
-import kotlinx.css.borderStyle
-import kotlinx.css.borderWidth
 import kotlinx.css.color
 import kotlinx.css.content
 import kotlinx.css.cursor
