@@ -15,9 +15,15 @@ need only this file (no issue spam).
 
 ## Open / deferred
 
-| ID | Size | Status | Area | Summary | Cycle | Issue | Notes |
-| :--- | :---: | :--- | :--- | :--- | :---: | :--- | :--- |
-| CI-22-Q06 | S | dropped | frontend | Replace wildcard `org.w3c.dom.*` imports in frontend-js main/test (17 files) | 22 | — | ktlint `no-wildcard-imports` rule disabled (build.gradle.kts:17) → not enforced, low-value churn |
+_None — all improvement backlog items are in the Dropped or Done tables below._
+
+## Dropped
+
+Items evaluated and deliberately not pursued (never actioned; the recorded reason is why).
+
+| ID | Size | Status | Area | Summary | Cycle | Notes |
+| :--- | :---: | :--- | :--- | :--- | :---: | :--- |
+| CI-22-Q06 | S | dropped | frontend | Replace wildcard `org.w3c.dom.*` imports in frontend-js main/test (17 files) | 22 | ktlint `no-wildcard-imports` rule disabled (build.gradle.kts:17) → not enforced, low-value churn |
 
 ## Done (recent)
 
