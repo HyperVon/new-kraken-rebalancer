@@ -105,9 +105,7 @@ object FormStyles {
 
         ".btn-secondary" {
             background = "rgba(30, 41, 59, 0.5)"
-            borderWidth = 1.px
-            borderStyle = BorderStyle.solid
-            borderColor = CssTheme.colorBorderInput
+            solidBorder(CssTheme.colorBorderInput)
             color = CssTheme.colorMutedLight
         }
 
@@ -119,9 +117,7 @@ object FormStyles {
 
         ".btn-danger" {
             background = CssTheme.colorDangerBgSubtle.value
-            borderWidth = 1.px
-            borderStyle = BorderStyle.solid
-            borderColor = CssTheme.colorDangerBorder
+            solidBorder(CssTheme.colorDangerBorder)
             color = CssTheme.colorDanger
         }
 
@@ -133,9 +129,7 @@ object FormStyles {
         // HIST-1: quiet ghost destructive action — reads as muted until hover.
         ".btn-danger-ghost" {
             background = "transparent"
-            borderWidth = 1.px
-            borderStyle = BorderStyle.solid
-            borderColor = Color.transparent
+            solidBorder(Color.transparent)
             color = CssTheme.colorTextMuted
         }
 
@@ -204,9 +198,7 @@ object FormStyles {
 
         ".${CssClass.Form.InputGlass}" {
             background = "rgba(15, 23, 42, 0.4)"
-            borderWidth = 1.px
-            borderStyle = BorderStyle.solid
-            borderColor = CssTheme.colorBorderInput
+            solidBorder(CssTheme.colorBorderInput)
             color = Color.white
             padding = Padding(0.5.rem, 0.75.rem)
             borderRadius = 0.5.rem
@@ -234,9 +226,7 @@ object FormStyles {
             position = Position.relative
             width = 1.25.rem
             height = 1.25.rem
-            borderWidth = 2.px
-            borderStyle = BorderStyle.solid
-            borderColor = CssTheme.colorBorderInputStrong
+            solidBorder(CssTheme.colorBorderInputStrong, 2.px)
             borderRadius = 0.25.rem
             put("transition", "all 0.2s ease")
         }
@@ -288,9 +278,7 @@ object FormStyles {
             background = CssTheme.colorSurface2.value
             padding = Padding(0.5.rem, 0.75.rem)
             borderRadius = 0.75.rem
-            borderWidth = 1.px
-            borderStyle = BorderStyle.solid
-            borderColor = CssTheme.colorSurface2Border
+            solidBorder(CssTheme.colorSurface2Border)
             put(
                 "box-shadow",
                 "0 4px 12px -4px rgba(0,0,0,0.5), inset 0 1px 0 rgba(186,220,255,0.08)",
@@ -396,9 +384,7 @@ object FormStyles {
             padding = Padding(1.25.rem)
             borderRadius = 0.875.rem
             background = CssTheme.glassSurfaceGradient
-            borderWidth = 1.px
-            borderStyle = BorderStyle.solid
-            borderColor = CssTheme.colorSurface2Border
+            solidBorder(CssTheme.colorSurface2Border)
             put("transition", "all 0.2s ease")
             put("box-shadow", CssTheme.shadowSurface1)
         }
@@ -488,9 +474,7 @@ object FormStyles {
             put("letter-spacing", "0.06em")
             backgroundColor = CssTheme.colorSlateMuted
             color = CssTheme.colorTextSecondary
-            borderWidth = 1.px
-            borderStyle = BorderStyle.solid
-            borderColor = CssTheme.colorSlateBorder
+            solidBorder(CssTheme.colorSlateBorder)
         }
 
         // ON/OFF live in the DOM; CSS toggles which span is visible with the checkbox.

@@ -6,6 +6,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.15.29] - 2026-07-31
+
+### Changed
+
+- **Reduced duplicated code across frontend, CSS, and tests**:
+  - `HistoryCharts.kt` / `HistoryComparisonChart.kt`: added an internal
+    `lineDataset(...)` builder and `applyUsdLabeling(...)` to remove eight
+    near-identical Chart.js dataset `json(...)` blocks and shared USD
+    tooltip/y-tick formatting.
+  - `HistoryChartState.kt`: extracted `captureChartVisibility(...)` and
+    `safeDestroy(...)` helpers for chart-state and destroy handling.
+  - `view/css`: added a shared `solidBorder(color, width)` extension and
+    applied it to 29 contiguous `borderWidth`/`borderStyle`/`borderColor`
+    triples across `ComponentStyles`, `NavigationStyles`, `FormStyles`,
+    `LayoutStyles`, and `TableStyles` — byte-identical emitted CSS.
+  - `TradeHistorySyncService.kt`: added `AppConfig.canPullTradeHistory()` to
+    collapse the duplicated preflight/pinned credential gates.
+  - `PortfolioManagerEdgeCasesTest.kt`: extracted a `singleAllocConfig(...)`
+    helper for repeated single-allocation configs.
+- No behavior, wire-format, or emitted-CSS changes.
+
 ## [6.15.28] - 2026-07-31
 
 ### Changed

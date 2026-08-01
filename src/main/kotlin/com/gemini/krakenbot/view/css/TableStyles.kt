@@ -21,8 +21,6 @@ import kotlinx.css.borderBottomWidth
 import kotlinx.css.borderCollapse
 import kotlinx.css.borderColor
 import kotlinx.css.borderRadius
-import kotlinx.css.borderStyle
-import kotlinx.css.borderWidth
 import kotlinx.css.color
 import kotlinx.css.content
 import kotlinx.css.cursor
@@ -164,9 +162,7 @@ object TableStyles {
             fontWeight = FontWeight.w700
             put("letter-spacing", "0.05em")
             backgroundColor = Color.transparent
-            borderWidth = 1.px
-            borderStyle = BorderStyle.solid
-            borderColor = CssTheme.colorWhiteBorder
+            solidBorder(CssTheme.colorWhiteBorder)
             color = CssTheme.colorTextSecondary
         }
 

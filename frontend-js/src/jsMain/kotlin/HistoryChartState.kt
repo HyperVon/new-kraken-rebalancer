@@ -33,21 +33,33 @@ private const val ACTIVE = CssClass.ACTIVE
 
 internal fun historyCurrentRange(): String = currentRange
 
+private fun captureChartVisibility(chart: dynamic): MutableMap<String, Boolean> {
+    if (chart == null || chart == undefined) return mutableMapOf()
+    val states = mutableMapOf<String, Boolean>()
+    val datasets = chart.data.datasets
+    if (datasets != null && datasets != undefined) {
+        val length: Int = (datasets.length).unsafeCast<Int>()
+        repeat(length) { i ->
+            val label = datasets[i].label.toString()
+            val visible: Boolean = (chart.isDatasetVisible(i)).unsafeCast<Boolean>()
+            states[label] = visible
+        }
+    }
+    return states
+}
+
+private fun safeDestroy(chart: dynamic) {
+    try {
+        chart.destroy()
+    } catch (_: Throwable) {
+    }
+}
+
 internal fun historyCaptureVisibility(): Map<String, Map<String, Boolean>> {
     val result = mutableMapOf<String, Map<String, Boolean>>()
     for ((canvasId, chart) in charts) {
         if (chart == null || chart == undefined) continue
-        val states = mutableMapOf<String, Boolean>()
-        val datasets = chart.data.datasets
-        if (datasets != null && datasets != undefined) {
-            val length: Int = (datasets.length).unsafeCast<Int>()
-            repeat(length) { i ->
-                val label = datasets[i].label.toString()
-                val visible: Boolean = (chart.isDatasetVisible(i)).unsafeCast<Boolean>()
-                states[label] = visible
-            }
-        }
-        result[canvasId] = states
+        result[canvasId] = captureChartVisibility(chart)
     }
     return result
 }
@@ -76,10 +88,7 @@ internal fun historyRollbackPresetVisibility() {
 /** Test helper — clears chart instances and visibility between specs. */
 internal fun resetHistoryUiState() {
     for ((_, chart) in charts) {
-        try {
-            chart.destroy()
-        } catch (_: Throwable) {
-        }
+        safeDestroy(chart)
     }
     charts.clear()
     visibilityStates.clear()
@@ -114,23 +123,9 @@ internal fun createOrUpdate(canvasId: String, config: dynamic) {
         // When applying a saved preset, skip snapshotting on-screen visibility — otherwise the
         // previous view's series toggles would overwrite the preset we are about to apply.
         if (!applyingPresetVisibility) {
-            val states = mutableMapOf<String, Boolean>()
-            val datasets = existingChart.data.datasets
-            if (datasets != null && datasets != undefined) {
-                val length: Int = (datasets.length).unsafeCast<Int>()
-                repeat(length) { i ->
-                    val ds = datasets[i]
-                    val label = ds.label.toString()
-                    val visible: Boolean = (existingChart.isDatasetVisible(i)).unsafeCast<Boolean>()
-                    states[label] = visible
-                }
-            }
-            visibilityStates[canvasId] = states
+            visibilityStates[canvasId] = captureChartVisibility(existingChart)
         }
-        try {
-            existingChart.destroy()
-        } catch (_: Throwable) {
-        }
+        safeDestroy(existingChart)
     }
 
     val savedStates = visibilityStates[canvasId]
@@ -161,10 +156,7 @@ internal fun createOrUpdate(canvasId: String, config: dynamic) {
 internal fun clearChart(canvasId: String) {
     val chart = charts.remove(canvasId)
     if (chart != null && chart != undefined) {
-        try {
-            chart.destroy()
-        } catch (_: Throwable) {
-        }
+        safeDestroy(chart)
     }
     originalChartRanges.remove(canvasId)
     pendingPresetVisibility.remove(canvasId)

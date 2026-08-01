@@ -51,7 +51,6 @@ internal fun buildRebalancerComparisonChart(comparison: RebalancerComparison) {
         }
     }
 
-    val pointCount = comparison.points.size
     val rebalancerData = comparison.points.map { point ->
         json("x" to point.timestamp, "y" to dynamicNumber(point.rebalancerValueUSD))
     }.toTypedArray()
@@ -61,40 +60,27 @@ internal fun buildRebalancerComparisonChart(comparison: RebalancerComparison) {
     }.toTypedArray()
 
     val datasets = arrayOf(
-        json(
-            ChartProps.LABEL to ViewText.REBALANCER,
-            ChartProps.DATA to rebalancerData,
-            ChartProps.BORDER_COLOR to ChartProps.COLOR_BLUE,
-            ChartProps.BACKGROUND_COLOR to ChartProps.TRANSPARENT,
-            ChartProps.FILL to false,
-            ChartProps.TENSION to ChartProps.TENSION_CURVED,
-            ChartProps.BORDER_WIDTH to ChartProps.BORDER_WIDTH_PRIMARY,
-            ChartProps.POINT_RADIUS to pointRadiusForCount(pointCount, primary = true),
-            ChartProps.POINT_HOVER_RADIUS to pointHoverRadiusForCount(pointCount, primary = true),
-            ChartProps.POINT_HIT_RADIUS to ChartProps.POINT_HIT_RADIUS_DEFAULT,
+        lineDataset(
+            label = ViewText.REBALANCER,
+            data = rebalancerData,
+            borderColor = ChartProps.COLOR_BLUE,
+            backgroundColor = ChartProps.TRANSPARENT,
+            primary = true,
+            fill = false,
         ),
-        json(
-            ChartProps.LABEL to ViewText.BUY_AND_HOLD,
-            ChartProps.DATA to buyAndHoldData,
-            ChartProps.BORDER_COLOR to ChartProps.COLOR_AMBER,
-            ChartProps.BACKGROUND_COLOR to ChartProps.TRANSPARENT,
-            ChartProps.FILL to false,
-            ChartProps.TENSION to ChartProps.TENSION_CURVED,
-            ChartProps.BORDER_WIDTH to ChartProps.BORDER_WIDTH_SECONDARY,
-            ChartProps.BORDER_DASH to arrayOf(ChartProps.BORDER_DASH_SEGMENT, ChartProps.BORDER_DASH_GAP),
-            ChartProps.POINT_RADIUS to pointRadiusForCount(pointCount, primary = false),
-            ChartProps.POINT_HOVER_RADIUS to pointHoverRadiusForCount(pointCount, primary = false),
-            ChartProps.POINT_HIT_RADIUS to ChartProps.POINT_HIT_RADIUS_DEFAULT,
+        lineDataset(
+            label = ViewText.BUY_AND_HOLD,
+            data = buyAndHoldData,
+            borderColor = ChartProps.COLOR_AMBER,
+            backgroundColor = ChartProps.TRANSPARENT,
+            primary = false,
+            fill = false,
+            borderDash = arrayOf(ChartProps.BORDER_DASH_SEGMENT, ChartProps.BORDER_DASH_GAP),
         ),
     )
 
     val options = getClonedChartOptions()
-    options.plugins.tooltip.callbacks = json()
-    options.plugins.tooltip.callbacks.label = { ctx: dynamic ->
-        val label = ctx.dataset.label.toString()
-        val yVal = dynamicNumber(ctx.parsed.y) ?: 0.0
-        "$label: ${formatUSD(yVal)}"
-    }
+    applyUsdLabeling(options)
     options.plugins.tooltip.callbacks.footer = { items: dynamic ->
         val firstItem: dynamic = items[0]
         val dataIndex = dynamicNumber(firstItem?.dataIndex)?.toInt() ?: -1
@@ -108,10 +94,6 @@ internal fun buildRebalancerComparisonChart(comparison: RebalancerComparison) {
         } else {
             null
         }
-    }
-
-    options.scales.y.ticks.callback = { v: Double, _: dynamic, _: dynamic ->
-        formatUSD(v)
     }
 
     val latestDiff = dynamicNumber(comparison.latestDifferenceUSD)!!
