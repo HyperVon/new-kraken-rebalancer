@@ -20,6 +20,22 @@ class HistoryJsonParsingTest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
 
     init {
+        "dynamicNumber parses ISO timestamps as finite epoch milliseconds" {
+            val parsed = dynamicNumber("2023-01-01T00:00:00Z")
+
+            parsed shouldBe 1_672_531_200_000.0
+            parsed!!.isFinite() shouldBe true
+        }
+
+        "dynamicNumber rejects non-finite numeric values" {
+            dynamicNumber("NaN") shouldBe null
+            dynamicNumber("Infinity") shouldBe null
+            dynamicNumber("-Infinity") shouldBe null
+            dynamicNumber(Double.NaN) shouldBe null
+            dynamicNumber(Double.POSITIVE_INFINITY) shouldBe null
+            dynamicNumber(Double.NEGATIVE_INFINITY) shouldBe null
+        }
+
         "parsePortfolioSnapshots reads string decimals and nested assets" {
             val raw =
                 arrayOf(

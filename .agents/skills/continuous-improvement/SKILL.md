@@ -232,8 +232,8 @@ apply order:
 3. Docs / skills sync as needed
 4. Approved dependency upgrades last (highest blast radius)
 
-Use parallel agents when ownership is disjoint; keep `History.kt` and shared
-CSS modules single-owner.
+Use parallel agents when ownership is disjoint; keep the History JS module
+(`History*.kt`) and shared CSS modules single-owner.
 
 ### Step 4 — Verify
 
@@ -315,7 +315,7 @@ results, test plan.
 - Mixing unrelated mega-themes in one PR (split cycles / PRs)
 - Skipping `pre_commit_check.sh` because “it’s just docs”
 - Silent live-trading or production-config use
-- Parallel edits to the same hot file (`History.kt`, one CSS module)
+- Parallel edits to the same hot file (one `History*.kt` file, one CSS module)
 - Filing a GitHub issue for every trivial S polish that ships same-day (noise)
 - Leaving discoveries only in chat — always persist to
   `improvement-backlog.md`

@@ -14,6 +14,8 @@ import kotlin.js.Promise
 import kotlin.js.json
 import com.gemini.krakenbot.view.util.CssClass.Query.TIME_RANGE_BTNS as TIME_RANGE_BTNS_QUERY
 
+private var syncIntervalId: Int? = null
+
 internal fun setupSyncProgressAndLoad() {
     checkSyncProgress().then { isDone ->
         if (isDone) {
@@ -53,6 +55,12 @@ internal fun setupSyncProgressAndLoad() {
         renderTradeTable(allTrades)
         buildCumulativeNetCashFlowChart(allTrades, checkbox.checked)
     })
+}
+
+internal fun loadHistoryAfterSync(): Promise<Unit> = if (HistoryViewPrefs.hasUserInteracted()) {
+    loadAll(historyCurrentRange())
+} else {
+    HistoryViewPrefs.applyDefaultView()
 }
 
 private fun fetchJSON(url: String): Promise<dynamic> = window

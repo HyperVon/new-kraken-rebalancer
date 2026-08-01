@@ -6,6 +6,32 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.15.28] - 2026-07-31
+
+### Changed
+
+- **Frontend History module split by reason to change**: The 1075-line
+  `History.kt` is decomposed into cohesive Kotlin/JS modules —
+  `HistoryChartConfig` (Chart.js defaults/options), `HistoryChartState`
+  (chart state, series visibility, time range), `HistoryZoom` (zoom buttons
+  and pan scrubbers), `HistoryCharts` (snapshot and net-cash-flow builders),
+  and `HistoryComparisonChart` (rebalancer comparison) — leaving `History.kt`
+  as the thin `initHistory` wiring. No behavior or wire-format changes.
+- **History test suites realigned**: `HistoryTest.kt` and `CoverageTest.kt`
+  are distributed into focused specs (`HistoryChartsTest`,
+  `HistoryTradeRenderingTest`, `HistoryLoadingTest`,
+  `HistoryComparisonChartTest`) alongside existing `DashboardTest`,
+  `SettingsTest`, `MainTest`, and `HistoryJsonParsingTest`, with a few new
+  branch tests (blank-symbol trade rows, out-of-range sort columns,
+  non-input/invalid allocation fields).
+
+### Removed
+
+- **Duplicate coverage tests**: Deleted four `CoverageTest.kt` cases that
+  restated existing cash-flow, stats-formatting, globals-registration, and
+  allocation-total assertions; the one unique assertion (invalid non-USD
+  allocation marks the total display bad) moved into `SettingsTest`.
+
 ## [6.15.27] - 2026-07-31
 
 ### Changed
