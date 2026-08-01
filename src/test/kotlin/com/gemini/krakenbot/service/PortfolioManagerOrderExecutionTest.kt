@@ -68,44 +68,6 @@ class PortfolioManagerOrderExecutionTest : StringSpec() {
             }
         }
 
-        "testEventFlow_EmitsOrderExecutedEvents" {
-            runTest {
-                val allocA = Allocation("A", 10.0)
-                val allocB = Allocation("B", 90.0)
-                val allocUSD = Allocation(Asset.USD, 0.0)
-                val allAllocations = listOf(allocA, allocB, allocUSD)
-
-                val mockSettings = TestFixtures.settings(dryRun = false, deviationTriggerPercent = 1.0)
-                val mockConfig = TestFixtures.config(
-                    settings = mockSettings,
-                    allocations = allAllocations,
-                )
-
-                every { fixture.configService.getConfig() } returns mockConfig
-
-                fixture.krakenService.balanceSupplier = {
-                    val sold = fixture.krakenService.executedOrders.any { it.side.equals("sell", ignoreCase = true) }
-                    if (sold) {
-                        mapOf("A" to 1.0, "B" to 50.0, Asset.USD to 400.0)
-                    } else {
-                        mapOf("A" to 5.0, "B" to 50.0, Asset.USD to 0.0)
-                    }
-                }
-
-                val prices = mapOf("AUSD" to 100.0, "BUSD" to 10.0)
-                fixture.krakenService.pricesSupplier = { prices }
-
-                fixture.portfolioManager.performRebalanceCycle()
-
-                fixture.krakenService.executedOrders.any {
-                    it.side.equals("sell", ignoreCase = true) && it.pair == "AUSD"
-                }.shouldBeTrue()
-                fixture.krakenService.executedOrders.any {
-                    it.side.equals("buy", ignoreCase = true) && it.pair == "BUSD"
-                }.shouldBeTrue()
-            }
-        }
-
         "testExecution_SkipDustSells" {
             runTest {
                 val allocA = Allocation("A", 10.0)

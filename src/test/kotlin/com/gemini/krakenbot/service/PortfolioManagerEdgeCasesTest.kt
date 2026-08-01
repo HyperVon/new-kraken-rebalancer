@@ -255,40 +255,13 @@ class PortfolioManagerEdgeCasesTest : PortfolioManagerEdgeCasesTestBase() {
                     BigDecimal("1500.0"),
                 )
                 drawdown.shouldBeEqualComparingTo(BigDecimal.ZERO)
-                coVerify { portfolioStatsRepository.save(any()) }
-            }
-        }
-
-        "testExecuteOrders_UpdateBalancesEmptyUsdOrNull" {
-            runTest {
-                val buyOrders = mapOf(Asset.ETH to BigDecimal.TEN)
-                val sellOrders =
-                    mapOf(Asset.BTC to BigDecimal.valueOf(100.0))
-                val currentValuesUSD =
-                    mapOf(Asset.USD to BigDecimal.valueOf(1000.0))
-                val prices = mapOf(
-                    Asset.BTC to BigDecimal.TEN,
-                    Asset.ETH to BigDecimal.valueOf(5),
-                )
-                val settings = TestFixtures.settings(dryRun = false)
-                val actionLog = mutableListOf<String>()
-
-                krakenService.balanceSupplier =
-                    { mapOf(Asset.BTC to 1.0, "ZUSD" to 0.0) }
-
-                orderExecutor.executeOrders(
-                    buyOrders = buyOrders,
-                    sellOrders = sellOrders,
-                    currentValuesUSD = currentValuesUSD,
-                    prices = prices,
-                    settings = settings,
-                    actionLog = actionLog,
-                )
-
-                krakenService.executedOrders.size shouldBe 1
-                krakenService.executedOrders[0].pair shouldBe "XBTUSD"
-                krakenService.executedOrders[0].side shouldBe "sell"
-                krakenService.executedOrders[0].volume.shouldBeEqualComparingTo(BigDecimal.TEN)
+                coVerify {
+                    portfolioStatsRepository.save(
+                        match {
+                            it.allTimeHigh.compareTo(BigDecimal("1500.0")) == 0
+                        },
+                    )
+                }
             }
         }
 
@@ -508,26 +481,6 @@ class PortfolioManagerEdgeCasesTest : PortfolioManagerEdgeCasesTestBase() {
                     portfolioStatsRepository.save(
                         match {
                             it.allTimeHigh.compareTo(BigDecimal("1000.0")) == 0
-                        },
-                    )
-                }
-            }
-        }
-
-        "testUpdateAthAndCalculateDrawdown_NullAth" {
-            runTest {
-                coEvery { portfolioStatsRepository.load() } returns PortfolioStats(
-                    BigDecimal.ZERO,
-                )
-                val drawdown =
-                    portfolioAnalyzer.updateAthAndCalculateDrawdown(
-                        BigDecimal("1200.0"),
-                    )
-                drawdown.shouldBeEqualComparingTo(BigDecimal.ZERO)
-                coVerify {
-                    portfolioStatsRepository.save(
-                        match {
-                            it.allTimeHigh.compareTo(BigDecimal("1200.0")) == 0
                         },
                     )
                 }

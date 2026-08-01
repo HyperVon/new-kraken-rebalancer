@@ -152,10 +152,12 @@ fun parseRebalancerComparison(raw: dynamic): RebalancerComparison {
             unavailableAt = null,
         )
     }
-    val availability = when (dynamicString(raw.availability)) {
-        ComparisonAvailability.AVAILABLE.name -> ComparisonAvailability.AVAILABLE.name
-        else -> ComparisonAvailability.UNAVAILABLE.name
-    }
+    val availability =
+        if (dynamicString(raw.availability) == ComparisonAvailability.AVAILABLE.name) {
+            ComparisonAvailability.AVAILABLE.name
+        } else {
+            ComparisonAvailability.UNAVAILABLE.name
+        }
     val pointsRaw = raw.points
     val points = parseArray(pointsRaw, ::parseRebalancerComparisonPoint)
     return RebalancerComparison(

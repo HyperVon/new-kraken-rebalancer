@@ -253,24 +253,6 @@ class SettingsTest : StringSpec() {
             }
         }
 
-        "registerSettingsGlobals exposes settings actions" {
-            registerSettingsGlobals()
-            (window.asDynamic().updateAllocationTotal != null) shouldBe true
-            (window.asDynamic().addAssetRow != null) shouldBe true
-        }
-
-        "initSettings registers globals and updates totals" {
-            val container = document.createElement(HtmlTags.DIV)
-            container.innerHTML = TestDomBuilders.settingsDom()
-            document.body!!.appendChild(container)
-            try {
-                initSettings()
-                (window.asDynamic().addAssetRow != null) shouldBe true
-            } finally {
-                document.body!!.removeChild(container)
-            }
-        }
-
         "syncModePlateFromSafetyToggles reflects checkbox state with simulation > dryRun > live precedence" {
             val container = document.createElement(HtmlTags.DIV) as HTMLDivElement
 

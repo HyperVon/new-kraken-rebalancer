@@ -273,7 +273,7 @@ Prefer fewer, sharper findings over a long laundry list.
    read-only summary canvas). Use the output template below.
 2. **Decisions Canvas (required)** — Always write an interactive Cursor Canvas
    so the user can choose a path per finding **before** any implementation.
-   Read and follow `~/.cursor/skills-cursor/canvas/SKILL.md` when authoring.
+   If present, read and follow `~/.cursor/skills-cursor/canvas/SKILL.md` when authoring.
 3. **Stop** — Do **not** start coding, open PRs, or draft an implementation
    plan until the user returns selections (via the canvas “Send decisions”
    action, a paste of the summary, or an explicit written accept list).
@@ -282,7 +282,7 @@ Prefer fewer, sharper findings over a long laundry list.
 
 Create:
 
-`/Users/<user>/.cursor/projects/<workspace>/canvases/architecture-review-decisions.canvas.tsx`
+`~/.cursor/projects/<workspace>/canvases/architecture-review-decisions.canvas.tsx`
 
 (Use a timestamped suffix only if that file already exists and must be preserved.)
 

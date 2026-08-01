@@ -6,6 +6,40 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.15.31] - 2026-08-01
+
+### Changed
+
+- **Execution cold-poll dedup** (`OrderExecutorImpl`): extracted a shared
+  `coldPollBackoff(...)` helper from the two structurally identical USD-settle
+  poll loops (`pollFillConfirmedUsd`, `pollUsdBalanceAfterSells`) and named the
+  magic constants `EARLY_ACCEPT_PROPORTION` (`0.95`) and `MAX_POLL_BACKOFF_MS`
+  (`32000`). Poll policy is unchanged (3 attempts, 250 ms start doubling to a
+  32000 ms cap, 95% early-accept, `CancellationException` rethrow,
+  best-positive or zero); `pollFillConfirmedUsd` still computes `startSec` /
+  `txidSet` once per collection via `emitAll`. Behavior-preserving.
+- **`ResilienceChaosTest`**: renamed the two "does not crash" specs to describe
+  what they assert, and tightened `shouldThrow<Exception>` to the exact
+  `ResponseException` (HTTP 502) vs `IOException` (network failure) types, with
+  valid-Base64 fixture keys so the tests reach the mocked HTTP/network paths.
+- **History JSON parsing** (`HistoryJsonParsing.kt`): replaced an identity
+  `when` with an equivalent boolean `if/else` for comparison availability.
+- **Docs/rules sync**: added the missing `reduce-code-size` row to the cursor
+  prefer-table (matches `OPERATING.md`); relativized absolute user paths and
+  marked the optional external canvas skill in the `architecture-review` /
+  `ui-visual-review` skills.
+
+### Removed
+
+- **Duplicate / padding / mirror tests** across the JVM and Kotlin/JS suites:
+  the byte-identical `testEventFlow_EmitsOrderExecutedEvents` (both files),
+  getter-only `ModelTest.testPortfolioSnapshot`, cosmetic-duplicate balance and
+  ATH-drawdown rows, frontend round-trip tests through mirrored test
+  serializers (the native-JSON fixture and edge tests remain the wire oracle),
+  a zero-assertion `sortTable` test (replaced with a real reorder oracle), and
+  `globals != null` padding specs. Coverage of the underlying behaviors is
+  retained or strengthened; no production logic was removed.
+
 ## [6.15.30] - 2026-08-01
 
 ### Added

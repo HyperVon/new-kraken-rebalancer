@@ -1,11 +1,6 @@
 package com.gemini.krakenbot.frontend
 
-import com.gemini.krakenbot.api.HistoryStats
-import com.gemini.krakenbot.api.PortfolioSnapshot
-import com.gemini.krakenbot.api.RebalancerComparison
-import com.gemini.krakenbot.api.RebalancerComparisonPoint
 import com.gemini.krakenbot.api.SyncProgressResponse
-import com.gemini.krakenbot.api.TradeRecord
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.SyncMetadataKeys
@@ -128,50 +123,6 @@ class HistoryJsonParsingTest : StringSpec() {
                 SyncProgressResponse(seeded = false, offset = "123", total = "456")
         }
 
-        "portfolioSnapshotToDynamic round-trips through parsePortfolioSnapshot" {
-            val snapshot =
-                PortfolioSnapshot(
-                    timestamp = "2023-01-01T00:00:00Z",
-                    totalValueUSD = "100",
-                    assets =
-                    mapOf(
-                        Asset.BTC to
-                            PortfolioSnapshot.AssetSnapshot(
-                                symbol = Asset.BTC,
-                                balance = "1",
-                                price = "100",
-                                valueUSD = "100",
-                                targetPercent = "50",
-                                currentPercent = "100",
-                                deviationPercent = "0",
-                                deviationUSD = "0",
-                            ),
-                    ),
-                    actions = emptyList(),
-                    drawdownPercent = "0",
-                    fiatDeploymentPercent = "0",
-                    effectiveUsdTargetPercent = "0",
-                )
-
-            parsePortfolioSnapshot(portfolioSnapshotToDynamic(snapshot)) shouldBe snapshot
-        }
-
-        "tradeRecordToDynamic round-trips through parseTradeRecord" {
-            val trade =
-                TradeRecord(
-                    timestamp = "2023-01-01T10:00:00Z",
-                    pair = "BTCUSD",
-                    side = OrderSide.SELL.name,
-                    symbol = Asset.BTC,
-                    volume = "1",
-                    usdAmount = "100",
-                    success = true,
-                    dryRun = false,
-                )
-
-            parseTradeRecord(tradeRecordToDynamic(trade)) shouldBe trade
-        }
-
         "parseRebalancerComparison reads string values and points" {
             val raw = json(
                 "availability" to "AVAILABLE",
@@ -274,59 +225,6 @@ class HistoryJsonParsingTest : StringSpec() {
 
             parsed.availability shouldBe "UNAVAILABLE"
             parsed.points shouldBe emptyList()
-        }
-
-        "rebalancerComparisonToDynamic round-trips through parseRebalancerComparison" {
-            val comparison = RebalancerComparison(
-                availability = "AVAILABLE",
-                confidence = "RECONCILED",
-                baselineTimestamp = "2026-07-01T12:00:00Z",
-                points = listOf(
-                    RebalancerComparisonPoint(
-                        timestamp = "2026-07-01T12:00:00Z",
-                        rebalancerValueUSD = "100000.00",
-                        buyAndHoldValueUSD = "100000.00",
-                        differenceUSD = "0.00",
-                        differencePercent = "0.0000",
-                    ),
-                ),
-                latestDifferenceUSD = "5000.00",
-                latestDifferencePercent = "4.7619",
-                unavailableReason = null,
-                unavailableAt = null,
-            )
-            val dynamic = rebalancerComparisonToDynamic(comparison)
-            parseRebalancerComparison(dynamic) shouldBe comparison
-        }
-
-        "rebalancerComparisonToDynamic round-trips unavailable state" {
-            val comparison = RebalancerComparison(
-                availability = "UNAVAILABLE",
-                confidence = null,
-                baselineTimestamp = null,
-                points = emptyList(),
-                latestDifferenceUSD = null,
-                latestDifferencePercent = null,
-                unavailableReason = "INSUFFICIENT_SNAPSHOTS",
-                unavailableAt = "2026-07-01T12:00:00Z",
-            )
-            val dynamic = rebalancerComparisonToDynamic(comparison)
-            parseRebalancerComparison(dynamic) shouldBe comparison
-        }
-
-        "historyStatsToDynamic round-trips through parseHistoryStats" {
-            val stats =
-                HistoryStats(
-                    allTimeHigh = "15000.5",
-                    totalTradesExecuted = 42L,
-                    totalVolumeTraded = "1000000.0",
-                    totalFeesPaid = "250.75",
-                    latestSnapshotTime = null,
-                    avgFeeRatePercent = "0.26",
-                    avgSlippagePercent = "0.15",
-                )
-
-            parseHistoryStats(historyStatsToDynamic(stats)) shouldBe stats
         }
     }
 }

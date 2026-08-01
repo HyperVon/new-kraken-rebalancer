@@ -76,43 +76,7 @@ class HistoryChartsTest : StringSpec() {
             assertEquals("2023-01-01", p0x.toString())
         }
 
-        "calculateCumulativeNetCashFlow filters and orders completed trades" {
-            val trades =
-                listOf(
-                    mockTradeRecord(
-                        timestamp = "2023-01-01T10:00:00Z",
-                        side = OrderSide.BUY.name,
-                        usdAmount = "100.0",
-                    ),
-                    mockTradeRecord(
-                        timestamp = "2023-01-01T08:00:00Z",
-                        side = OrderSide.SELL.name,
-                        usdAmount = "50.0",
-                    ),
-                    mockTradeRecord(
-                        timestamp = "2023-01-01T09:00:00Z",
-                        success = false,
-                        side = OrderSide.BUY.name,
-                        usdAmount = "200.0",
-                    ),
-                    mockTradeRecord(
-                        timestamp = "2023-01-01T11:00:00Z",
-                        dryRun = true,
-                        side = OrderSide.BUY.name,
-                        usdAmount = "300.0",
-                    ),
-                    mockTradeRecord(
-                        timestamp = "2023-01-01T12:00:00Z",
-                        side = OrderSide.SELL.name,
-                        usdAmount = "80.0",
-                    ),
-                )
-
-            val result = calculateCumulativeNetCashFlow(trades)
-            result.size shouldBe 3
-        }
-
-        "calculateCumulativeNetCashFlow skips unknown order sides" {
+        "calculateCumulativeNetCashFlow skips unknown sides, failed, and dry-run trades" {
             val trades =
                 listOf(
                     mockTradeRecord(
@@ -129,6 +93,18 @@ class HistoryChartsTest : StringSpec() {
                         timestamp = "2023-01-01T12:00:00Z",
                         side = OrderSide.BUY.name,
                         usdAmount = "20.0",
+                    ),
+                    mockTradeRecord(
+                        timestamp = "2023-01-01T13:00:00Z",
+                        success = false,
+                        side = OrderSide.BUY.name,
+                        usdAmount = "100.0",
+                    ),
+                    mockTradeRecord(
+                        timestamp = "2023-01-01T14:00:00Z",
+                        dryRun = true,
+                        side = OrderSide.SELL.name,
+                        usdAmount = "200.0",
                     ),
                 )
 

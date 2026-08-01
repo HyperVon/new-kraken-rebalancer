@@ -18,6 +18,7 @@ import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.ktor.client.*
 import io.ktor.client.engine.mock.*
+import io.ktor.client.plugins.ResponseException
 import io.ktor.http.*
 import io.mockk.every
 import io.mockk.mockk
@@ -28,14 +29,14 @@ class ResilienceChaosTest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
 
     init {
-        "should not crash the application when Kraken API returns 502 Bad Gateway" {
+        "propagates ResponseException when Kraken API returns 502 Bad Gateway" {
             runTest {
                 val appConfig =
                     AppConfig(
                         kraken =
                         KrakenCredentials(
                             apiKey = "apiKey",
-                            privateKey = "secret",
+                            privateKey = "c2VjcmV0",
                         ),
                         settings =
                         TestFixtures.settings(dryRun = false, loopDelaySeconds = 60L, fiatMaxDrawdown = 50.0),
@@ -82,22 +83,20 @@ class ResilienceChaosTest : StringSpec() {
                         orderExecutor = orderExecutor,
                     )
 
-                // The "does not crash" guarantee lives one level up: performRebalanceCycle is expected
-                // to propagate, and runLoop swallows non-cancellation failures so the loop survives.
-                shouldThrow<Exception> {
+                shouldThrow<ResponseException> {
                     portfolioManager.performRebalanceCycle()
                 }
             }
         }
 
-        "should not crash the application when an IOException occurs (Network failure)" {
+        "propagates IOException on network failure" {
             runTest {
                 val appConfig =
                     AppConfig(
                         kraken =
                         KrakenCredentials(
                             apiKey = "apiKey",
-                            privateKey = "secret",
+                            privateKey = "c2VjcmV0",
                         ),
                         settings =
                         TestFixtures.settings(dryRun = false, loopDelaySeconds = 60L, fiatMaxDrawdown = 50.0),
@@ -139,9 +138,7 @@ class ResilienceChaosTest : StringSpec() {
                         orderExecutor = orderExecutor,
                     )
 
-                // Same contract as the 502 case: the cycle propagates and runLoop is what keeps the
-                // application alive.
-                shouldThrow<Exception> {
+                shouldThrow<IOException> {
                     portfolioManager.performRebalanceCycle()
                 }
             }
