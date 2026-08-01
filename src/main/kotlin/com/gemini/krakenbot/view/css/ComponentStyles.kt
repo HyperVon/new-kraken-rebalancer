@@ -344,8 +344,8 @@ object ComponentStyles {
         }
 
         // Shared progress-bar styling for hero tiles and the allocation chart;
-        // per-variant overrides below keep the emitted CSS identical.
-        val barTracks = "${CssClass.Hero.TileBarTrack.value}, ${CssClass.AllocationChart.BarTrack.value}"
+        // per-variant overrides below keep the computed styles identical.
+        val barTracks = ".${CssClass.Hero.TileBarTrack.value}, .${CssClass.AllocationChart.BarTrack.value}"
         "$barTracks" {
             flexGrow = 1.0
             background = "linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.09))"
@@ -354,7 +354,7 @@ object ComponentStyles {
             solidBorder(CssTheme.colorWhiteSubtle)
         }
 
-        val barFills = "${CssClass.Hero.TileBarFill.value}, ${CssClass.AllocationChart.BarFill.value}"
+        val barFills = ".${CssClass.Hero.TileBarFill.value}, .${CssClass.AllocationChart.BarFill.value}"
         "$barFills" {
             position = Position.relative
             height = 100.pct
@@ -366,7 +366,7 @@ object ComponentStyles {
         }
 
         val barFillSheens =
-            "${CssClass.Hero.TileBarFill.value}::after, ${CssClass.AllocationChart.BarFill.value}::after"
+            ".${CssClass.Hero.TileBarFill.value}::after, .${CssClass.AllocationChart.BarFill.value}::after"
         "$barFillSheens" {
             put("content", "\"\"")
             position = Position.absolute

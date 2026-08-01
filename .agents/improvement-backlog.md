@@ -20,6 +20,8 @@ need only this file (no issue spam).
 | CI-22-Q05 | M | open | tests | Add direct tests for HistoryChartState (visibility capture/apply/rollback, scrubber sync) | 22 | — | Needs a DOM/Chart.js harness |
 | CI-22-Q10 | M | open | frontend | Dedupe allocation-editor markup/logic between SettingsFormComponent (SSR) and frontend Settings.kt | 22 | — | High drift risk |
 | CI-22-Q11 | M | open | config | Decide whether ConfigServiceImpl should fail loudly on unknown JSON fields (shared-ObjectMapper trust-boundary change) | 22 | — | Needs direction decision |
+| CI-22-Q14 | S | open | code | Remove dead `Icons.BACK_ARROW` (defined, zero usages repo-wide) | 22 | — | Found during PR review |
+| CI-22-Q15 | S | open | accessibility | Audit other `:focus-visible` rules (ViewsBtn/ZoomBtn/ViewsSelect/FormStyles) for a forced-colors outline fallback | 22 | — | Same pattern as LinkActive fix |
 | CI-22-Q06 | S | dropped | frontend | Replace wildcard `org.w3c.dom.*` imports in frontend-js main/test (17 files) | 22 | — | ktlint `no-wildcard-imports` rule disabled (build.gradle.kts:17) → not enforced, low-value churn |
 
 ## Done (recent)
@@ -29,7 +31,7 @@ need only this file (no issue spam).
 | CI-21-T01 | M | done | tests | Extract duplicated PortfolioManager wiring to shared fixture (last exact duplicate migrated; remaining call sites legitimately scoped) | 22 | — |
 | CI-21-T02 | M | done | tests | De-flake `DynamicKrakenServiceTest.concurrent withStableBackend` via CompletableDeferred sequencing | 22 | — |
 | CI-22-Q01 | M | done | frontend | Consolidate duplicated Chart.js currency-format builders (`usdOptionsToLocale` / `usdCellOrDash`) | 22 | — |
-| CI-22-Q02 | M | done | css | Dedupe hero tile bar + allocation chart bar CSS (identical emitted CSS) | 22 | — |
+| CI-22-Q02 | M | done | css | Dedupe hero tile bar + allocation chart bar CSS (computed styles identical) | 22 | — |
 | CI-22-Q03 | M | done | css | Centralize focus-ring / glass-surface / glow colors in `CssTheme` | 22 | — |
 | CI-22-Q04 | M | done | tests | Direct `PortfolioAnalyzerImplTest` ATH/drawdown + buildSnapshot coverage | 22 | — |
 | CI-22-Q07 | S | done | frontend | Use `CssClass.Utility.Positive/Negative/Neutral/Visible/Hidden` in HistoryComparisonChart + NavigationStyles; fix positive delta border (C6) | 22 | — |

@@ -18,6 +18,8 @@ import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.flow.toList
 import java.math.BigDecimal
 import java.time.Instant
+import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.TimeSource
 import io.ktor.client.plugins.sse.SSE as ClientSSE
 
 /**
@@ -54,9 +56,9 @@ class SseMultiSubscriberTest : DashboardControllerTestBase() {
      * settle delay that flaked when connections took longer (or shorter) than the constant.
      */
     private suspend fun awaitSubscribers(flow: MutableSharedFlow<*>, expected: Int) {
-        val deadline = System.currentTimeMillis() + SUBSCRIBE_TIMEOUT_MS
+        val start = TimeSource.Monotonic.markNow()
         while (flow.subscriptionCount.value < expected) {
-            check(System.currentTimeMillis() <= deadline) {
+            check(start.elapsedNow() <= SUBSCRIBE_TIMEOUT_MS.milliseconds) {
                 "Timed out waiting for $expected SSE subscribers; got ${flow.subscriptionCount.value}"
             }
             delay(SUBSCRIBE_POLL_MS)

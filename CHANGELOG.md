@@ -29,25 +29,30 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Scrubber lookup helper** (`DomExtensions.kt`): added
   `queryChartScrubber(canvasId)` and used it from `HistoryChartState` and
   `HistoryZoom`, removing a duplicated query-selector construction.
-- **Currency-formatting dedup** (`HistoryCharts.kt` /
+- **Currency-formatting dedup** (`HistoryLoading.kt` /
   `HistoryTradeRendering.kt`): shared `usdOptionsToLocale(...)` /
   `usdCellOrDash(...)` helpers behind `formatUSD`, `formatPriceOrDash`, and
   `formatFeeOrDash`.
 - **Bar CSS consolidation** (`ComponentStyles.kt`): hero-tile and
   allocation-chart bar rules now share common declarations with per-variant
-  overrides — identical emitted CSS.
+  overrides — no visual change; computed styles are identical to the original
+  rules.
 - **Theme color constants** (`CssTheme.kt`): centralized focus-ring,
   glass-surface, and mode-plate glow values used across `ComponentStyles`,
   `NavigationStyles`, `FormStyles`, and `LayoutStyles`. The active nav-link /
   active time-range button keyboard focus indicator now uses the shared
-  box-shadow focus ring (previously a 3px outline) — focus remains clearly
-  visible.
+  box-shadow focus ring (previously a 3px outline); a transparent outline is
+  kept so the indicator still renders in forced-colors mode.
 - **Allocation-editor bounds** (`PrecisionConstants`): shared
   `ALLOCATION_MIN_PERCENT` / `ALLOCATION_STEP_PERCENT` used by both the SSR
   settings form and the JS asset-row editor (emitted `min`/`max` render as
   `0.0`/`100.0`).
 - **Test fixture migration**: `PortfolioManagerOrderExecutionTest` now uses
   the shared `PortfolioManagerTestFixture`.
+- **Agent workflow** (`adversarial-pr-review` skill): on reviewer-agent launch
+  failure, retry once then substitute the closest available Task agent
+  (OpenCode: `general`), keeping two parallel reviewer sessions and recording
+  substitutions in PR notes.
 - **Docs sync**: README rebalancing-trigger wording now matches the `>=`
   threshold; README model tree and `.agents/AGENTS.md` `:common` wire-DTO list
   now include `RebalancerComparisonEnums` / `RebalancerComparison`.

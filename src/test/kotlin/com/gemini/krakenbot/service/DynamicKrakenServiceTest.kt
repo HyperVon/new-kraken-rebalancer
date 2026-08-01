@@ -347,17 +347,22 @@ class DynamicKrakenServiceTest : StringSpec() {
                         }
                     }
                     val second = async {
-                        firstPinned.await()
-                        every { configService.getConfig() } returns appConfig(simulation = false)
-                        dynamicService.withStableBackend { backend ->
-                            backend.executeOrder(
-                                pair = Asset.ETH_USD_PAIR,
-                                type = OrderType.MARKET.apiValue,
-                                side = OrderSide.BUY.apiValue,
-                                volume = BigDecimal.ONE,
-                            )
+                        try {
+                            firstPinned.await()
+                            every { configService.getConfig() } returns appConfig(simulation = false)
+                            dynamicService.withStableBackend { backend ->
+                                backend.executeOrder(
+                                    pair = Asset.ETH_USD_PAIR,
+                                    type = OrderType.MARKET.apiValue,
+                                    side = OrderSide.BUY.apiValue,
+                                    volume = BigDecimal.ONE,
+                                )
+                            }
+                        } finally {
+                            // Unblock `first` even when this coroutine fails, so a pinning
+                            // regression surfaces as the real error instead of a 60s timeout.
+                            secondFinished.complete(Unit)
                         }
-                        secondFinished.complete(Unit)
                     }
                     first.await()
                     second.await()

@@ -14,7 +14,6 @@ import com.gemini.krakenbot.view.util.ViewText
 import kotlinx.browser.document
 import org.w3c.dom.*
 import kotlin.js.Date
-import kotlin.js.json
 
 fun formatPair(trade: TradeRecord): String {
     if (trade.symbol.isNullOrBlank()) return ""
@@ -98,13 +97,6 @@ private fun renderTradeRow(t: TradeRecord): HTMLTableRowElement {
     tr.appendChild(createStatusCell(statusText, statusClass, t.errorMessage, isPlainSuccess))
 
     return tr
-}
-
-internal fun usdOptionsToLocale(value: Double, min: Int, max: Int): String {
-    val options: dynamic = json()
-    options.minimumFractionDigits = min
-    options.maximumFractionDigits = max
-    return value.asDynamic().toLocaleString(EN_US, options)
 }
 
 private fun usdCellOrDash(value: Double, min: Int, max: Int): String {

@@ -143,7 +143,9 @@ object NavigationStyles {
 
         "${CssClass.Navigation.LinkActive.querySelector}:focus-visible, " +
             "${CssClass.History.TimeRangeBtnActive.querySelector}:focus-visible" {
-                put("outline", "none")
+                // Transparent outline stays invisible normally but is system-painted in
+                // forced-colors mode, where the box-shadow ring is not rendered.
+                put("outline", "3px solid transparent")
                 borderColor = CssTheme.colorBluePrimary
                 put("box-shadow", CssTheme.focusRingStrong)
             }
