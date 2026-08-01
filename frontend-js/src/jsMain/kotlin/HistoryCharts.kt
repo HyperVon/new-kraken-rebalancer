@@ -182,7 +182,6 @@ internal fun buildAssetHoldingsChart(snapshots: List<PortfolioSnapshot>) {
         return
     }
 
-    val pointCount = snapshots.size
     val symbolList = getUniqueSymbols(snapshots)
 
     val baseline = snapshots[0]
