@@ -80,6 +80,7 @@ class SettingsTest : StringSpec() {
                 updateAllocationTotal()
                 saveButton.disabled.shouldBeTrue()
                 totalDisplay.classList.contains(CssClass.Form.AllocationTotalBad).shouldBeTrue()
+                totalDisplay.textContent shouldBe "Total: 100.00%"
             } finally {
                 document.body!!.removeChild(container)
             }

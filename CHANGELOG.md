@@ -24,6 +24,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `SettingsTest`, `MainTest`, and `HistoryJsonParsingTest`, with a few new
   branch tests (blank-symbol trade rows, out-of-range sort columns,
   non-input/invalid allocation fields).
+- **Docs synced to the new History module layout**: README package tree and
+  agent-rule filename references (`HistoryZoom.kt`, `HistoryChartState.kt`,
+  `HistoryTradeRendering.kt`, `History*.kt` hot-file examples) updated.
 
 ### Removed
 
