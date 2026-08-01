@@ -75,12 +75,16 @@ object NavigationStyles {
             borderColor = CssTheme.colorWhiteFaint
         }
 
-        ".${CssClass.Navigation.Link}:focus-visible, .${CssClass.History.TimeRangeBtn}:focus-visible, " +
-            ".${CssClass.History.ViewsBtn}:focus-visible, .${CssClass.History.ZoomBtn}:focus-visible" {
-                put("outline", "none")
-                borderColor = CssTheme.colorBluePrimary
-                put("box-shadow", CssTheme.focusRingStrong)
-            }
+        // Parens are load-bearing: without them `"A" + "B" { }` parses as
+        // `"A" + ("B".invoke(...))` and every selector except the last is dropped.
+        (
+            ".${CssClass.Navigation.Link}:focus-visible, .${CssClass.History.TimeRangeBtn}:focus-visible, " +
+                ".${CssClass.History.ViewsBtn}:focus-visible, .${CssClass.History.ZoomBtn}:focus-visible"
+            ) {
+            put("outline", "none")
+            borderColor = CssTheme.colorBluePrimary
+            put("box-shadow", CssTheme.focusRingStrong)
+        }
 
         CssClass.Navigation.LinkActive.querySelector {
             color = CssTheme.colorTextPrimary
@@ -141,14 +145,16 @@ object NavigationStyles {
             )
         }
 
-        "${CssClass.Navigation.LinkActive.querySelector}:focus-visible, " +
-            "${CssClass.History.TimeRangeBtnActive.querySelector}:focus-visible" {
-                // Transparent outline stays invisible normally but is system-painted in
-                // forced-colors mode, where the box-shadow ring is not rendered.
-                put("outline", "3px solid transparent")
-                borderColor = CssTheme.colorBluePrimary
-                put("box-shadow", CssTheme.focusRingStrong)
-            }
+        (
+            "${CssClass.Navigation.LinkActive.querySelector}:focus-visible, " +
+                "${CssClass.History.TimeRangeBtnActive.querySelector}:focus-visible"
+            ) {
+            // Transparent outline stays invisible normally but is system-painted in
+            // forced-colors mode, where the box-shadow ring is not rendered.
+            put("outline", "3px solid transparent")
+            borderColor = CssTheme.colorBluePrimary
+            put("box-shadow", CssTheme.focusRingStrong)
+        }
 
         ".${CssClass.History.ViewsToolbar}" {
             display = Display.flex

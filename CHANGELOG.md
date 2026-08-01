@@ -42,7 +42,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `NavigationStyles`, `FormStyles`, and `LayoutStyles`. The active nav-link /
   active time-range button keyboard focus indicator now uses the shared
   box-shadow focus ring (previously a 3px outline); a transparent outline is
-  kept so the indicator still renders in forced-colors mode.
+  kept so the indicator still renders in forced-colors mode. Also fixed a
+  selector-concatenation precedence bug in `NavigationStyles.kt` where
+  `"A" + "B" { }` parsed as `"A" + ("B".invoke(...))`, silently dropping every
+  selector except the last — the `:focus-visible` rules now actually emit for
+  nav links and time-range buttons (previously those elements fell back to the
+  browser-default focus outline).
 - **Allocation-editor bounds** (`PrecisionConstants`): shared
   `ALLOCATION_MIN_PERCENT` / `ALLOCATION_STEP_PERCENT` used by both the SSR
   settings form and the JS asset-row editor (emitted `min`/`max` render as
