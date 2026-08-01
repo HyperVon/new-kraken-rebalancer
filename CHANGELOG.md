@@ -6,6 +6,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.15.30] - 2026-07-31
+
+### Changed
+
+- **Comparison-delta theming** (`HistoryComparisonChart.kt` +
+  `NavigationStyles.kt`): replaced magic `"positive"/"negative"/"neutral"` and
+  `"hidden"/"visible"` strings with shared `CssClass.Utility.*` constants from
+  `:common`. Fixed the positive comparison-delta badge border to use
+  `colorSuccessBorder` (it previously used `colorSuccessMuted`, a background
+  tint), making it visually symmetric with the negative badge. Emitted CSS for
+  the positive badge changes (border alpha 0.15 → 0.30).
+- **Scrubber lookup helper** (`DomExtensions.kt`): added
+  `queryChartScrubber(canvasId)` and used it from `HistoryChartState` and
+  `HistoryZoom`, removing a duplicated query-selector construction.
+- **Docs sync**: README rebalancing-trigger wording now matches the `>=`
+  threshold; README model tree and `.agents/AGENTS.md` `:common` wire-DTO list
+  now include `RebalancerComparisonEnums` / `RebalancerComparison`.
+
 ## [6.15.29] - 2026-07-31
 
 ### Changed

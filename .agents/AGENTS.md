@@ -167,7 +167,7 @@ See [dry-run-and-simulation](skills/dry-run-and-simulation/SKILL.md).
 
 See [common-kmp-module](skills/common-kmp-module/SKILL.md).
 
-Belongs in `common/src/commonMain/`: `CssClass`, `HtmlIds`, `HtmlAttrs`, `HtmxAttrs`, `ViewText`, `Routes`, `TimeRange`, `OrderSide` / `OrderType`, `PrecisionConstants`, `AppConfig` / `Settings` / `Allocation`, and wire DTOs under `api/` (`PortfolioSnapshot`, `TradeRecord`, `HistoryStats`, `SyncProgressResponse`).
+Belongs in `common/src/commonMain/`: `CssClass`, `HtmlIds`, `HtmlAttrs`, `HtmxAttrs`, `ViewText`, `Routes`, `TimeRange`, `OrderSide` / `OrderType`, `PrecisionConstants`, `AppConfig` / `Settings` / `Allocation`, and wire DTOs under `api/` (`PortfolioSnapshot`, `TradeRecord`, `RebalancerComparison`, `HistoryStats`, `SyncProgressResponse`).
 
 `commonMain` must stay **pure KMP** — no JVM-only (`java.math.BigDecimal`, SLF4J) or JS-only DOM imports.
 

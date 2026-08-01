@@ -23,31 +23,31 @@ internal fun buildRebalancerComparisonChart(comparison: RebalancerComparison) {
             deltaEl.textContent = ViewText.EM_DASH
             deltaEl.className = CssClass.History.ComparisonDelta.value
         }
-        if (chartArea != null) chartArea.classList.add("hidden")
+        if (chartArea != null) chartArea.classList.add(CssClass.Utility.Hidden.value)
         if (confidenceBadge != null) {
             confidenceBadge.textContent = ""
-            confidenceBadge.classList.remove("visible")
+            confidenceBadge.classList.remove(CssClass.Utility.Visible.value)
         }
         val message = unavailableReasonText(comparison.unavailableReason)
         if (unavailableDiv != null) {
             unavailableDiv.textContent = "${ViewText.COMPARISON_UNAVAILABLE_PREFIX}$message"
-            unavailableDiv.classList.add("visible")
+            unavailableDiv.classList.add(CssClass.Utility.Visible.value)
         }
         return
     }
 
-    if (chartArea != null) chartArea.classList.remove("hidden")
+    if (chartArea != null) chartArea.classList.remove(CssClass.Utility.Hidden.value)
     if (unavailableDiv != null) {
         unavailableDiv.textContent = ""
-        unavailableDiv.classList.remove("visible")
+        unavailableDiv.classList.remove(CssClass.Utility.Visible.value)
     }
     if (confidenceBadge != null) {
         if (comparison.confidence == ComparisonConfidence.ESTIMATED.name) {
             confidenceBadge.textContent = ViewText.COMPARISON_CONFIDENCE_ESTIMATED
-            confidenceBadge.classList.add("visible")
+            confidenceBadge.classList.add(CssClass.Utility.Visible.value)
         } else {
             confidenceBadge.textContent = ""
-            confidenceBadge.classList.remove("visible")
+            confidenceBadge.classList.remove(CssClass.Utility.Visible.value)
         }
     }
 
@@ -103,11 +103,11 @@ internal fun buildRebalancerComparisonChart(comparison: RebalancerComparison) {
         deltaEl.textContent = "$signStr${formatUSD(latestDiff)} ($signStr${latestDiffPct.toFixed(2)}%)"
         deltaEl.className = CssClass.History.ComparisonDelta.value
         if (latestDiff > 0) {
-            deltaEl.classList.add("positive")
+            deltaEl.classList.add(CssClass.Utility.Positive.value)
         } else if (latestDiff < 0) {
-            deltaEl.classList.add("negative")
+            deltaEl.classList.add(CssClass.Utility.Negative.value)
         } else {
-            deltaEl.classList.add("neutral")
+            deltaEl.classList.add(CssClass.Utility.Neutral.value)
         }
     }
 

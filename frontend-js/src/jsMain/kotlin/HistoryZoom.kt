@@ -61,10 +61,7 @@ internal fun chartScrubberState(chart: dynamic, fallbackRange: ChartRange?): Cha
 }
 
 internal fun syncChartScrubber(canvasId: String) {
-    val scrubber =
-        document
-            .querySelector("$CHART_SCRUBBERS_QUERY[${HtmlAttrs.DATA_CHART_ID}=\"$canvasId\"]")
-            as? HTMLInputElement ?: return
+    val scrubber = queryChartScrubber(canvasId) ?: return
     val state = chartScrubberState(charts[canvasId], originalChartRanges[canvasId])
     scrubber.disabled = state?.enabled != true
     scrubber.value = if (state?.enabled == true) state.position.toString() else "0"
