@@ -40,7 +40,11 @@ private fun dynamicArrayLength(raw: dynamic): Int {
     return 0
 }
 
-private fun dynamicArrayElement(raw: dynamic, index: Int): dynamic = raw[index]
+private fun <T> parseArray(raw: dynamic, transform: (dynamic) -> T?): List<T> {
+    if (raw == null || raw == undefined) return emptyList()
+    val length = dynamicArrayLength(raw)
+    return (0 until length).mapNotNull { index -> transform(raw[index]) }
+}
 
 private fun parseAssetSnapshot(raw: dynamic): PortfolioSnapshot.AssetSnapshot = PortfolioSnapshot.AssetSnapshot(
     symbol = dynamicString(raw.symbol).orEmpty(),
@@ -66,13 +70,7 @@ private fun parseAssetsMap(raw: dynamic): Map<String, PortfolioSnapshot.AssetSna
 
 fun parsePortfolioSnapshot(raw: dynamic): PortfolioSnapshot {
     val actionsRaw = raw.actions
-    val actions =
-        if (actionsRaw == null || actionsRaw == undefined) {
-            emptyList()
-        } else {
-            val length = dynamicArrayLength(actionsRaw)
-            (0 until length).mapNotNull { index -> dynamicString(dynamicArrayElement(actionsRaw, index)) }
-        }
+    val actions = parseArray(actionsRaw, ::dynamicString)
     return PortfolioSnapshot(
         timestamp = dynamicString(raw.timestamp).orEmpty(),
         totalValueUSD = dynamicString(raw.totalValueUSD).orEmpty(),
@@ -84,11 +82,7 @@ fun parsePortfolioSnapshot(raw: dynamic): PortfolioSnapshot {
     )
 }
 
-fun parsePortfolioSnapshots(raw: dynamic): List<PortfolioSnapshot> {
-    if (raw == null || raw == undefined) return emptyList()
-    val length = dynamicArrayLength(raw)
-    return (0 until length).map { index -> parsePortfolioSnapshot(dynamicArrayElement(raw, index)) }
-}
+fun parsePortfolioSnapshots(raw: dynamic): List<PortfolioSnapshot> = parseArray(raw, ::parsePortfolioSnapshot)
 
 fun parseTradeRecord(raw: dynamic): TradeRecord = TradeRecord(
     timestamp = dynamicString(raw.timestamp).orEmpty(),
@@ -108,11 +102,7 @@ fun parseTradeRecord(raw: dynamic): TradeRecord = TradeRecord(
     id = dynamicInt(raw.id),
 )
 
-fun parseTradeRecords(raw: dynamic): List<TradeRecord> {
-    if (raw == null || raw == undefined) return emptyList()
-    val length = dynamicArrayLength(raw)
-    return (0 until length).map { index -> parseTradeRecord(dynamicArrayElement(raw, index)) }
-}
+fun parseTradeRecords(raw: dynamic): List<TradeRecord> = parseArray(raw, ::parseTradeRecord)
 
 fun parseHistoryStats(raw: dynamic): HistoryStats = HistoryStats(
     allTimeHigh = dynamicString(raw.allTimeHigh).orEmpty(),
@@ -158,12 +148,7 @@ fun parseRebalancerComparison(raw: dynamic): RebalancerComparison {
         else -> ComparisonAvailability.UNAVAILABLE.name
     }
     val pointsRaw = raw.points
-    val points = if (pointsRaw == null || pointsRaw == undefined) {
-        emptyList()
-    } else {
-        val length = dynamicArrayLength(pointsRaw)
-        (0 until length).map { index -> parseRebalancerComparisonPoint(dynamicArrayElement(pointsRaw, index)) }
-    }
+    val points = parseArray(pointsRaw, ::parseRebalancerComparisonPoint)
     return RebalancerComparison(
         availability = availability,
         confidence = dynamicString(raw.confidence),

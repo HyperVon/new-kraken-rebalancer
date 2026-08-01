@@ -333,12 +333,8 @@ class KrakenServiceImpl(
 
             val timestamp = Instant.ofEpochMilli((time * 1000).toLong())
             val side = type.uppercase()
-            val rawVolume = safeParseBigDecimal(volStr)
-            val rawUsdAmount = safeParseBigDecimal(costStr)
-            val rawPrice = safeParseBigDecimal(priceStr)
-            val rawFee = safeParseBigDecimal(feeStr)
-            val volume = rawVolume.setScale(PrecisionConstants.SCALE_CRYPTO, RoundingMode.HALF_UP)
-            val usdAmount = rawUsdAmount.setScale(PrecisionConstants.SCALE_USD, RoundingMode.HALF_UP)
+            val volume = safeParseBigDecimal(volStr, PrecisionConstants.SCALE_CRYPTO)
+            val usdAmount = safeParseBigDecimal(costStr, PrecisionConstants.SCALE_USD)
 
             tradesList.add(
                 TradeRecord(
@@ -350,8 +346,8 @@ class KrakenServiceImpl(
                     usdAmount = usdAmount,
                     success = true,
                     dryRun = false,
-                    price = rawPrice.setScale(PrecisionConstants.SCALE_CRYPTO, RoundingMode.HALF_UP),
-                    fee = rawFee.setScale(PrecisionConstants.SCALE_FEE, RoundingMode.HALF_UP),
+                    price = safeParseBigDecimal(priceStr, PrecisionConstants.SCALE_CRYPTO),
+                    fee = safeParseBigDecimal(feeStr, PrecisionConstants.SCALE_FEE),
                     source = TradeSource.API_FILL,
                     orderTxid = orderTxid,
                     tradeId = tradeId.ifBlank { null },

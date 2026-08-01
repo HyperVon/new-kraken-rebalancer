@@ -278,12 +278,6 @@ class TradeHistorySnapshotStore(
                     )
             }
 
-        val targetUsdPercent =
-            allocations
-                .firstOrNull { it.symbol.isUsd }
-                ?.let { BigDecimal.valueOf(it.targetPercent) }
-                ?: BigDecimal.valueOf(PrecisionConstants.DEFAULT_USD_TARGET_PERCENT)
-
         return PortfolioSnapshot(
             timestamp = timestamp,
             totalValueUSD = exactPortfolioValue,
@@ -291,7 +285,7 @@ class TradeHistorySnapshotStore(
             actions = emptyList(),
             drawdownPercent = BigDecimal.ZERO,
             fiatDeploymentPercent = BigDecimal.ZERO,
-            effectiveUsdTargetPercent = targetUsdPercent.toUsdScale(),
+            effectiveUsdTargetPercent = PortfolioCalculations.calculateUsdTargetPercent(allocations),
         )
     }
 

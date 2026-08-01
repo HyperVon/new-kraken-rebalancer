@@ -39,12 +39,20 @@ import java.time.Instant
 
 class DashboardControllerTest : DashboardControllerTestBase() {
 
+    private fun dashboardConfig(
+        settings: Settings = TestFixtures.settings(loopDelaySeconds = 60L),
+        credentials: KrakenCredentials = KrakenCredentials(TestFixtures.TEST_API_KEY, "private-key"),
+    ): AppConfig = TestFixtures.config(
+        settings = settings,
+        allocations = listOf(Allocation(Asset.USD, 100.0)),
+        kraken = credentials,
+    )
+
     init {
         "getDashboardShell_ReturnsHtml" {
-            every { configService.getConfig() } returns AppConfig(
-                KrakenCredentials(apiKey = TestFixtures.TEST_API_KEY, privateKey = "k"),
-                TestFixtures.settings(loopDelaySeconds = 60L, dustThresholdUSD = 5.0),
-                listOf(Allocation(Asset.USD, 100.0)),
+            every { configService.getConfig() } returns dashboardConfig(
+                settings = TestFixtures.settings(loopDelaySeconds = 60L, dustThresholdUSD = 5.0),
+                credentials = KrakenCredentials(apiKey = TestFixtures.TEST_API_KEY, privateKey = "k"),
             )
             testApplication {
                 application {
@@ -154,19 +162,9 @@ class DashboardControllerTest : DashboardControllerTestBase() {
         }
 
         "getSettingsPage_ReturnsSettingsForm" {
-            val config =
-                AppConfig(
-                    kraken = KrakenCredentials("real-api-key", "real-private-key"),
-                    settings =
-                    TestFixtures.settings(loopDelaySeconds = 60L),
-                    allocations =
-                    listOf(
-                        Allocation(
-                            symbol = Asset.USD,
-                            targetPercent = 100.0,
-                        ),
-                    ),
-                )
+            val config = dashboardConfig(
+                credentials = KrakenCredentials("real-api-key", "real-private-key"),
+            )
             every { configService.getConfig() } returns config
 
             testApplication {
@@ -182,11 +180,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
         }
 
         "postSettings_RejectsMissingCsrfToken" {
-            every { configService.getConfig() } returns AppConfig(
-                KrakenCredentials(TestFixtures.TEST_API_KEY, "private-key"),
-                TestFixtures.settings(loopDelaySeconds = 60L),
-                listOf(Allocation(Asset.USD, 100.0)),
-            )
+            every { configService.getConfig() } returns dashboardConfig()
             every { configService.updateConfig(any()) } returns Unit
 
             testApplication {
@@ -207,11 +201,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
         }
 
         "postSettings_RejectsWrongCsrfTokenAndRotatesRecoveryToken" {
-            val serverConfig = AppConfig(
-                KrakenCredentials(TestFixtures.TEST_API_KEY, "private-key"),
-                TestFixtures.settings(loopDelaySeconds = 60L),
-                listOf(Allocation(Asset.USD, 100.0)),
-            )
+            val serverConfig = dashboardConfig()
             every { configService.getConfig() } returns serverConfig
             every { configService.updateConfig(any()) } returns Unit
 
@@ -269,11 +259,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
         }
 
         "postSettings_RejectsMissingFormTokenWithCookie" {
-            val serverConfig = AppConfig(
-                KrakenCredentials(TestFixtures.TEST_API_KEY, "private-key"),
-                TestFixtures.settings(loopDelaySeconds = 60L),
-                listOf(Allocation(Asset.USD, 100.0)),
-            )
+            val serverConfig = dashboardConfig()
             every { configService.getConfig() } returns serverConfig
             every { configService.updateConfig(any()) } returns Unit
 
@@ -295,23 +281,12 @@ class DashboardControllerTest : DashboardControllerTestBase() {
         }
 
         "postSettings_SucceedsAndSetsHxRedirectHeader" {
-            val serverConfig =
-                AppConfig(
-                    kraken =
-                    KrakenCredentials(
-                        apiKey = TestFixtures.TEST_SERVER_API_KEY,
-                        privateKey = TestFixtures.TEST_SERVER_API_SECRET,
-                    ),
-                    settings =
-                    TestFixtures.settings(loopDelaySeconds = 60L),
-                    allocations =
-                    listOf(
-                        Allocation(
-                            symbol = Asset.USD,
-                            targetPercent = 100.0,
-                        ),
-                    ),
-                )
+            val serverConfig = dashboardConfig(
+                credentials = KrakenCredentials(
+                    apiKey = TestFixtures.TEST_SERVER_API_KEY,
+                    privateKey = TestFixtures.TEST_SERVER_API_SECRET,
+                ),
+            )
             val captured = slot<AppConfig>()
             every { configService.getConfig() } returns serverConfig
             every { configService.updateConfig(capture(captured)) } returns Unit
@@ -354,17 +329,12 @@ class DashboardControllerTest : DashboardControllerTestBase() {
         }
 
         "CQ-12-L1: post settings rejects unpaired allocation fields without updating config" {
-            val serverConfig =
-                AppConfig(
-                    kraken =
-                    KrakenCredentials(
-                        apiKey = TestFixtures.TEST_SERVER_API_KEY,
-                        privateKey = TestFixtures.TEST_SERVER_API_SECRET,
-                    ),
-                    settings =
-                    TestFixtures.settings(loopDelaySeconds = 60L),
-                    allocations = listOf(Allocation(Asset.USD, 100.0)),
-                )
+            val serverConfig = dashboardConfig(
+                credentials = KrakenCredentials(
+                    apiKey = TestFixtures.TEST_SERVER_API_KEY,
+                    privateKey = TestFixtures.TEST_SERVER_API_SECRET,
+                ),
+            )
             every { configService.getConfig() } returns serverConfig
             every { configService.updateConfig(any()) } returns Unit
 
@@ -421,13 +391,10 @@ class DashboardControllerTest : DashboardControllerTestBase() {
         }
 
         "CQ-12-L1: post settings rejects malformed required trading values before persistence" {
-            val serverConfig =
-                AppConfig(
-                    kraken = KrakenCredentials(TestFixtures.TEST_SERVER_API_KEY, TestFixtures.TEST_SERVER_API_SECRET),
-                    settings =
-                    TestFixtures.settings(loopDelaySeconds = 60, dustThresholdUSD = 5.0),
-                    allocations = listOf(Allocation(Asset.USD, 100.0)),
-                )
+            val serverConfig = dashboardConfig(
+                settings = TestFixtures.settings(loopDelaySeconds = 60, dustThresholdUSD = 5.0),
+                credentials = KrakenCredentials(TestFixtures.TEST_SERVER_API_KEY, TestFixtures.TEST_SERVER_API_SECRET),
+            )
             every { configService.getConfig() } returns serverConfig
             every { configService.updateConfig(any()) } returns Unit
 
@@ -486,13 +453,10 @@ class DashboardControllerTest : DashboardControllerTestBase() {
         }
 
         "CQ-12-L1: post settings rejects mismatched colors without updating config" {
-            val serverConfig =
-                AppConfig(
-                    kraken = KrakenCredentials(TestFixtures.TEST_SERVER_API_KEY, TestFixtures.TEST_SERVER_API_SECRET),
-                    settings =
-                    TestFixtures.settings(loopDelaySeconds = 60, dustThresholdUSD = 5.0),
-                    allocations = listOf(Allocation(Asset.USD, 100.0)),
-                )
+            val serverConfig = dashboardConfig(
+                settings = TestFixtures.settings(loopDelaySeconds = 60, dustThresholdUSD = 5.0),
+                credentials = KrakenCredentials(TestFixtures.TEST_SERVER_API_KEY, TestFixtures.TEST_SERVER_API_SECRET),
+            )
             every { configService.getConfig() } returns serverConfig
             every { configService.updateConfig(any()) } returns Unit
 
@@ -524,12 +488,10 @@ class DashboardControllerTest : DashboardControllerTestBase() {
         }
 
         "CQ-12-L1: post settings rejects duplicate singleton values without updating config" {
-            val serverConfig =
-                AppConfig(
-                    kraken = KrakenCredentials(TestFixtures.TEST_SERVER_API_KEY, TestFixtures.TEST_SERVER_API_SECRET),
-                    settings = Settings(loopDelaySeconds = 60, deviationTriggerPercent = 2.0, dryRun = true),
-                    allocations = listOf(Allocation(Asset.USD, 100.0)),
-                )
+            val serverConfig = dashboardConfig(
+                settings = Settings(loopDelaySeconds = 60, deviationTriggerPercent = 2.0, dryRun = true),
+                credentials = KrakenCredentials(TestFixtures.TEST_SERVER_API_KEY, TestFixtures.TEST_SERVER_API_SECRET),
+            )
             every { configService.getConfig() } returns serverConfig
             every { configService.updateConfig(any()) } returns Unit
 
@@ -561,23 +523,12 @@ class DashboardControllerTest : DashboardControllerTestBase() {
         }
 
         "postSettings_OnValidationError_ReturnsErrorHtmlBody" {
-            val serverConfig =
-                AppConfig(
-                    kraken =
-                    KrakenCredentials(
-                        apiKey = TestFixtures.TEST_SERVER_API_KEY,
-                        privateKey = TestFixtures.TEST_SERVER_API_SECRET,
-                    ),
-                    settings =
-                    TestFixtures.settings(loopDelaySeconds = 60L),
-                    allocations =
-                    listOf(
-                        Allocation(
-                            symbol = Asset.USD,
-                            targetPercent = 100.0,
-                        ),
-                    ),
-                )
+            val serverConfig = dashboardConfig(
+                credentials = KrakenCredentials(
+                    apiKey = TestFixtures.TEST_SERVER_API_KEY,
+                    privateKey = TestFixtures.TEST_SERVER_API_SECRET,
+                ),
+            )
             every { configService.getConfig() } returns serverConfig
             every { configService.updateConfig(any()) } throws
                 InvalidConfigurationException(
@@ -638,23 +589,12 @@ class DashboardControllerTest : DashboardControllerTestBase() {
         }
 
         "postSettings_WithInvalidDeviationTrigger_RejectsWithoutUpdatingConfig" {
-            val serverConfig =
-                AppConfig(
-                    kraken =
-                    KrakenCredentials(
-                        apiKey = TestFixtures.TEST_SERVER_API_KEY,
-                        privateKey = TestFixtures.TEST_SERVER_API_SECRET,
-                    ),
-                    settings =
-                    TestFixtures.settings(loopDelaySeconds = 60L),
-                    allocations =
-                    listOf(
-                        Allocation(
-                            symbol = Asset.USD,
-                            targetPercent = 100.0,
-                        ),
-                    ),
-                )
+            val serverConfig = dashboardConfig(
+                credentials = KrakenCredentials(
+                    apiKey = TestFixtures.TEST_SERVER_API_KEY,
+                    privateKey = TestFixtures.TEST_SERVER_API_SECRET,
+                ),
+            )
             every { configService.getConfig() } returns serverConfig
             every { configService.updateConfig(any()) } returns Unit
 
@@ -695,23 +635,12 @@ class DashboardControllerTest : DashboardControllerTestBase() {
         }
 
         "postSettings_WithInvalidDustThreshold_RejectsWithoutUpdatingConfig" {
-            val serverConfig =
-                AppConfig(
-                    kraken =
-                    KrakenCredentials(
-                        apiKey = TestFixtures.TEST_SERVER_API_KEY,
-                        privateKey = TestFixtures.TEST_SERVER_API_SECRET,
-                    ),
-                    settings =
-                    TestFixtures.settings(loopDelaySeconds = 60L),
-                    allocations =
-                    listOf(
-                        Allocation(
-                            symbol = Asset.USD,
-                            targetPercent = 100.0,
-                        ),
-                    ),
-                )
+            val serverConfig = dashboardConfig(
+                credentials = KrakenCredentials(
+                    apiKey = TestFixtures.TEST_SERVER_API_KEY,
+                    privateKey = TestFixtures.TEST_SERVER_API_SECRET,
+                ),
+            )
             every { configService.getConfig() } returns serverConfig
             every { configService.updateConfig(any()) } returns Unit
 
@@ -747,23 +676,12 @@ class DashboardControllerTest : DashboardControllerTestBase() {
         }
 
         "postSettings_WithAbsentDeviationAndDust_RejectsWithoutUpdatingConfig" {
-            val serverConfig =
-                AppConfig(
-                    kraken =
-                    KrakenCredentials(
-                        apiKey = TestFixtures.TEST_SERVER_API_KEY,
-                        privateKey = TestFixtures.TEST_SERVER_API_SECRET,
-                    ),
-                    settings =
-                    TestFixtures.settings(loopDelaySeconds = 60L),
-                    allocations =
-                    listOf(
-                        Allocation(
-                            symbol = Asset.USD,
-                            targetPercent = 100.0,
-                        ),
-                    ),
-                )
+            val serverConfig = dashboardConfig(
+                credentials = KrakenCredentials(
+                    apiKey = TestFixtures.TEST_SERVER_API_KEY,
+                    privateKey = TestFixtures.TEST_SERVER_API_SECRET,
+                ),
+            )
             every { configService.getConfig() } returns serverConfig
             every { configService.updateConfig(any()) } returns Unit
 
@@ -791,23 +709,12 @@ class DashboardControllerTest : DashboardControllerTestBase() {
         }
 
         "postSettings_WithValidatableConfigError_UsesFallbackMessageWhenNull" {
-            val serverConfig =
-                AppConfig(
-                    kraken =
-                    KrakenCredentials(
-                        apiKey = TestFixtures.TEST_SERVER_API_KEY,
-                        privateKey = TestFixtures.TEST_SERVER_API_SECRET,
-                    ),
-                    settings =
-                    TestFixtures.settings(loopDelaySeconds = 60L),
-                    allocations =
-                    listOf(
-                        Allocation(
-                            symbol = Asset.USD,
-                            targetPercent = 100.0,
-                        ),
-                    ),
-                )
+            val serverConfig = dashboardConfig(
+                credentials = KrakenCredentials(
+                    apiKey = TestFixtures.TEST_SERVER_API_KEY,
+                    privateKey = TestFixtures.TEST_SERVER_API_SECRET,
+                ),
+            )
             every { configService.getConfig() } returns serverConfig
             val capturedConfig = slot<AppConfig>()
             every {
@@ -852,11 +759,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
         }
 
         "getSettings_SetCookieCarriesPathHttpOnlySameSiteStrictAttributes" {
-            every { configService.getConfig() } returns AppConfig(
-                KrakenCredentials(TestFixtures.TEST_API_KEY, "private-key"),
-                TestFixtures.settings(loopDelaySeconds = 60L),
-                listOf(Allocation(Asset.USD, 100.0)),
-            )
+            every { configService.getConfig() } returns dashboardConfig()
 
             testApplication {
                 application {
@@ -875,11 +778,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
         }
 
         "postSettings_RejectsDuplicateMatchingCsrfFormTokens" {
-            val serverConfig = AppConfig(
-                KrakenCredentials(TestFixtures.TEST_API_KEY, "private-key"),
-                TestFixtures.settings(loopDelaySeconds = 60L),
-                listOf(Allocation(Asset.USD, 100.0)),
-            )
+            val serverConfig = dashboardConfig()
             every { configService.getConfig() } returns serverConfig
             every { configService.updateConfig(any()) } returns Unit
 

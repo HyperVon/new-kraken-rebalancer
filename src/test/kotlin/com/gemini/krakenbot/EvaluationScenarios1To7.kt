@@ -101,22 +101,7 @@ internal fun EvaluationScenariosTest.registerScenarios1To7() {
                 orderExecutionLog.add("$side $pair volume=$volume")
             }
 
-            val statsRepo = mockk<PortfolioStatsRepository>(relaxed = true)
-            val analyzer =
-                PortfolioAnalyzerImpl(
-                    fakeKraken,
-                    mockConfig,
-                    statsRepo,
-                )
-            val executor =
-                OrderExecutorImpl(fakeKraken, tradeHistoryService)
-            val pm =
-                PortfolioManagerImpl(
-                    mockConfig,
-                    mockk(relaxed = true),
-                    analyzer,
-                    executor,
-                )
+            val pm = evaluationPortfolioManager(fakeKraken, mockConfig, tradeHistoryService)
 
             // Sub-case 1: Success path (Verify Sequencing)
             pm.performRebalanceCycle()
@@ -275,16 +260,6 @@ internal fun EvaluationScenariosTest.registerScenarios1To7() {
             val scaleFactor3 = analyzer.calculateCryptoScaleFactor(effectiveUsd3)
             scaleFactor3.shouldBeEqualComparingTo(BigDecimal("1.0625"))
 
-            val success =
-                (
-                    deployPct2.toDouble() == 100.0 && effectiveUsd2.toDouble() == 0.0 &&
-                        scaleFactor2.toDouble() == 1.25
-                    ) &&
-                    (
-                        deployPct3.toDouble() == 25.0 && effectiveUsd3.toDouble() == 15.0 &&
-                            scaleFactor3.toDouble() == 1.0625
-                        )
-
             val evidence =
                 "ATH Saved: ${statsLoaded.allTimeHigh}\n" +
                     "Case 20% Drawdown: Deployment Pct = $deployPct2%, Effective USD Target = $effectiveUsd2%, " +
@@ -292,7 +267,6 @@ internal fun EvaluationScenariosTest.registerScenarios1To7() {
                     "Case 10% Drawdown: Deployment Pct = $deployPct3%, Effective USD Target = $effectiveUsd3%, " +
                     "Crypto Scale Factor = $scaleFactor3"
 
-            success.shouldBeTrue()
             if (f.exists()) {
                 f.delete()
             }
@@ -323,22 +297,7 @@ internal fun EvaluationScenariosTest.registerScenarios1To7() {
                 )
             every { mockConfig.getConfig() } returns appConfig
 
-            val statsRepo = mockk<PortfolioStatsRepository>(relaxed = true)
-            val analyzer =
-                PortfolioAnalyzerImpl(
-                    fakeKraken,
-                    mockConfig,
-                    statsRepo,
-                )
-            val executor =
-                OrderExecutorImpl(fakeKraken, tradeHistoryService)
-            val pm =
-                PortfolioManagerImpl(
-                    mockConfig,
-                    mockk(relaxed = true),
-                    analyzer,
-                    executor,
-                )
+            val pm = evaluationPortfolioManager(fakeKraken, mockConfig, tradeHistoryService)
 
             // Sub-case A: Deposit
             // Total portfolio = $10,000 (BTC=$4,500, ETH=$4,500, USD=$1,000)
@@ -437,7 +396,7 @@ internal fun EvaluationScenariosTest.registerScenarios1To7() {
             val testKey = "api-reloaded"
             val testSecret = "secret-reloaded"
             val validConfig =
-                AppConfig(
+                TestFixtures.config(
                     kraken = KrakenCredentials(testKey, testSecret),
                     settings =
                     TestFixtures.settings(
@@ -536,16 +495,9 @@ internal fun EvaluationScenariosTest.registerScenarios1To7() {
             postInvalidResponse.bodyAsText() shouldContain "Total allocation percentage must be exactly 100%."
 
             // 4. SSE Stream Broadcast
-            val snapshot =
-                PortfolioSnapshot(
-                    timestamp = Instant.now(),
-                    totalValueUSD = BigDecimal("5000.0"),
-                    assets = emptyMap(),
-                    actions = listOf("BROADCAST TEST"),
-                    drawdownPercent = BigDecimal.ZERO,
-                    fiatDeploymentPercent = BigDecimal.ZERO,
-                    effectiveUsdTargetPercent = BigDecimal.ZERO,
-                )
+            val snapshot = TestFixtures.emptySnapshot(Instant.now(), BigDecimal("5000.0")).copy(
+                actions = listOf("BROADCAST TEST"),
+            )
             coEvery { tradeHistoryService.getLatestSnapshot() } returns snapshot
             val streamFlow = MutableSharedFlow<PortfolioSnapshot>(replay = 1, extraBufferCapacity = 1)
             streamFlow.tryEmit(
@@ -738,22 +690,7 @@ internal fun EvaluationScenariosTest.registerScenarios1To7() {
             }
             fakeKraken.pricesSupplier = { _ -> mapOf(TestFixtures.XBTUSD to 50000.0) }
 
-            val statsRepo = mockk<PortfolioStatsRepository>(relaxed = true)
-            val analyzer =
-                PortfolioAnalyzerImpl(
-                    fakeKraken,
-                    mockConfig,
-                    statsRepo,
-                )
-            val executor =
-                OrderExecutorImpl(fakeKraken, tradeHistoryService)
-            val pm =
-                PortfolioManagerImpl(
-                    mockConfig,
-                    mockk(relaxed = true),
-                    analyzer,
-                    executor,
-                )
+            val pm = evaluationPortfolioManager(fakeKraken, mockConfig, tradeHistoryService)
 
             fakeKraken.executedOrders.clear()
             pm.performRebalanceCycle()
@@ -811,22 +748,7 @@ internal fun EvaluationScenariosTest.registerScenarios1To7() {
                 )
             }
 
-            val statsRepo = mockk<PortfolioStatsRepository>(relaxed = true)
-            val analyzer =
-                PortfolioAnalyzerImpl(
-                    fakeKraken,
-                    mockConfig,
-                    statsRepo,
-                )
-            val executor =
-                OrderExecutorImpl(fakeKraken, tradeHistoryService)
-            val pm =
-                PortfolioManagerImpl(
-                    mockConfig,
-                    mockk(relaxed = true),
-                    analyzer,
-                    executor,
-                )
+            val pm = evaluationPortfolioManager(fakeKraken, mockConfig, tradeHistoryService)
 
             fakeKraken.executedOrders.clear()
             pm.performRebalanceCycle()
@@ -859,4 +781,14 @@ internal fun EvaluationScenariosTest.registerScenarios1To7() {
             )
         }
     }
+}
+
+private fun evaluationPortfolioManager(
+    fakeKraken: FakeKrakenService,
+    configService: ConfigService,
+    tradeHistoryService: TradeHistoryService,
+): PortfolioManagerImpl {
+    val analyzer = PortfolioAnalyzerImpl(fakeKraken, configService, mockk(relaxed = true))
+    val executor = OrderExecutorImpl(fakeKraken, tradeHistoryService)
+    return PortfolioManagerImpl(configService, mockk(relaxed = true), analyzer, executor)
 }

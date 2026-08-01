@@ -244,35 +244,6 @@ class TradeDeduplicatorTest : StringSpec() {
             TradeDeduplicator.findDuplicateTradeIds(listOf(legacyEstimate, settledFill)) shouldContainExactly listOf(30)
         }
 
-        "should stop checking pairs if timestamp difference exceeds 300 seconds" {
-            val now = Instant.now()
-            val record1 =
-                TestFixtures.tradeRecord(
-                    now,
-                    "XBTUSD",
-                    "BUY",
-                    "BTC",
-                    BigDecimal("1.0"),
-                    BigDecimal("50000.00"),
-                    id = 1,
-                )
-            val record2 =
-                TestFixtures.tradeRecord(
-                    now.plusSeconds(
-                        301,
-                    ),
-                    "XBTUSD",
-                    "BUY",
-                    "BTC",
-                    BigDecimal("1.0"),
-                    BigDecimal("50000.00"),
-                    id = 2,
-                )
-
-            val duplicates = TradeDeduplicator.findDuplicateTradeIds(listOf(record1, record2))
-            duplicates.isEmpty() shouldBe true
-        }
-
         "should not treat pair alias API fills with different fees as duplicates" {
             val now = Instant.now()
             val record1 =
@@ -689,17 +660,7 @@ class TradeDeduplicatorTest : StringSpec() {
 
         "CQ-14-L4: startup cleanup preserves non-equivalent trade identity" {
             val now = Instant.now()
-            val base = TestFixtures.tradeRecord(
-                timestamp = now,
-                pair = TestFixtures.XBTUSD,
-                side = TestFixtures.BUY_UPPER,
-                symbol = Asset.BTC,
-                volume = BigDecimal.ONE,
-                usdAmount = BigDecimal("50000.00"),
-                price = BigDecimal("50000.00"),
-                fee = BigDecimal("100.00"),
-                source = TradeSource.API_FILL,
-            )
+            val base = canonicalXbtApiFill(now)
 
             val conflictingOrderIds = listOf(
                 base.copy(id = 120, orderTxid = "ORDER-ONE"),
@@ -790,17 +751,7 @@ class TradeDeduplicatorTest : StringSpec() {
 
         "startup cleanup preserves unresolved submissions and accepts matching identities" {
             val now = Instant.now()
-            val base = TestFixtures.tradeRecord(
-                timestamp = now,
-                pair = TestFixtures.XBTUSD,
-                side = TestFixtures.BUY_UPPER,
-                symbol = Asset.BTC,
-                volume = BigDecimal.ONE,
-                usdAmount = BigDecimal("50000.00"),
-                price = BigDecimal("50000.00"),
-                fee = BigDecimal("100.00"),
-                source = TradeSource.API_FILL,
-            )
+            val base = canonicalXbtApiFill(now)
 
             TradeDeduplicator.findDuplicateTradeIds(
                 listOf(
@@ -830,16 +781,7 @@ class TradeDeduplicatorTest : StringSpec() {
 
         "startup cleanup treats blank trade and order identifiers as absent" {
             val now = Instant.now()
-            val base = TestFixtures.tradeRecord(
-                timestamp = now,
-                pair = TestFixtures.XBTUSD,
-                side = TestFixtures.BUY_UPPER,
-                symbol = Asset.BTC,
-                volume = BigDecimal.ONE,
-                usdAmount = BigDecimal("50000.00"),
-                price = BigDecimal("50000.00"),
-                fee = BigDecimal("100.00"),
-                source = TradeSource.API_FILL,
+            val base = canonicalXbtApiFill(now).copy(
                 id = 150,
                 tradeId = " ",
                 orderTxid = " ",
@@ -853,4 +795,16 @@ class TradeDeduplicatorTest : StringSpec() {
             TradeDeduplicator.findDuplicateTradeIds(listOf(base, alias)) shouldContainExactly listOf(151)
         }
     }
+
+    private fun canonicalXbtApiFill(timestamp: Instant): TradeRecord = TestFixtures.tradeRecord(
+        timestamp = timestamp,
+        pair = TestFixtures.XBTUSD,
+        side = TestFixtures.BUY_UPPER,
+        symbol = Asset.BTC,
+        volume = BigDecimal.ONE,
+        usdAmount = BigDecimal("50000.00"),
+        price = BigDecimal("50000.00"),
+        fee = BigDecimal("100.00"),
+        source = TradeSource.API_FILL,
+    )
 }

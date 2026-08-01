@@ -10,6 +10,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **Kotlin code-size reduction**: Removed redundant test/setup construction and
+  reused existing parsing, fixture, balance-polling, and history-calculation
+  helpers without changing trading, history, or wire behavior.
 - **`OrderExecutorImpl` companion property cleanup**: Removed redundant `CASH_RESERVE_FACTOR` companion property in favor of direct `PrecisionConstants.CASH_RESERVE_FACTOR` usage across production and test code.
 - **`SimulatedKrakenService` API call counter**: Added explicit `getApiCallCounter()` override with KDoc documentation.
 

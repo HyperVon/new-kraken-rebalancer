@@ -381,19 +381,12 @@ class OrderExecutorImpl(
             }
             log.warn("Fill confirmation returned no positive USD; falling back to balance poll")
         }
-        return refreshUsdBalanceAfterSells(backend, projectedCash)
+        return pollUsdBalanceAfterSells(backend, projectedCash).last()
     }
-
-    private suspend fun refreshUsdBalanceAfterSells(backend: KrakenService, projectedCash: BigDecimal): BigDecimal =
-        pollUsdBalanceAfterSells(backend, projectedCash).last()
 
     private suspend fun peekUsdBalance(backend: KrakenService): BigDecimal = try {
         val balances = backend.getBalances()
-        if (balances.isEmpty()) {
-            BigDecimal.ZERO
-        } else {
-            resolveBalance(Asset.USD, balances)
-        }
+        resolveBalance(Asset.USD, balances)
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {
@@ -488,20 +481,16 @@ class OrderExecutorImpl(
     ): Flow<BigDecimal> = flow {
         var bestObservedBalance = BigDecimal.ZERO
         var backoffMs = REFRESH_DELAY_MS
-        val maxAttempts = MAX_REFRESH_ATTEMPTS
 
-        repeat(maxAttempts) { attempt ->
+        repeat(MAX_REFRESH_ATTEMPTS) { attempt ->
             delay(backoffMs.milliseconds)
             try {
-                val updatedBalances = backend.getBalances()
-                if (updatedBalances.isNotEmpty()) {
-                    val usdBalance = resolveBalance(Asset.USD, updatedBalances)
-                    if (usdBalance > BigDecimal.ZERO) {
-                        bestObservedBalance = bestObservedBalance.max(usdBalance)
-                        log.info("Updated USD balance after sells (attempt {}): $$usdBalance", attempt + 1)
-                        emit(bestObservedBalance)
-                        if (usdBalance >= targetThreshold) return@flow
-                    }
+                val usdBalance = resolveBalance(Asset.USD, backend.getBalances())
+                if (usdBalance > BigDecimal.ZERO) {
+                    bestObservedBalance = bestObservedBalance.max(usdBalance)
+                    log.info("Updated USD balance after sells (attempt {}): $$usdBalance", attempt + 1)
+                    emit(bestObservedBalance)
+                    if (usdBalance >= targetThreshold) return@flow
                 }
             } catch (e: CancellationException) {
                 throw e

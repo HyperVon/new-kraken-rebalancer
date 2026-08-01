@@ -1,5 +1,6 @@
 package com.gemini.krakenbot.service.impl
 
+import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.util.HUNDRED
@@ -31,6 +32,12 @@ object PortfolioCalculations {
     } else {
         baseTargetPercent.multiply(cryptoScaleFactor)
     }
+
+    fun calculateUsdTargetPercent(allocations: List<Allocation>): BigDecimal = BigDecimal
+        .valueOf(
+            allocations.firstOrNull { it.symbol.isUsd }?.targetPercent
+                ?: PrecisionConstants.DEFAULT_USD_TARGET_PERCENT,
+        ).setScale(SCALE_USD, RoundingMode.HALF_UP)
 
     fun calculateCurrentPercent(valueUSD: BigDecimal, totalPortfolioValueUSD: BigDecimal): BigDecimal =
         if (totalPortfolioValueUSD >

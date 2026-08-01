@@ -43,12 +43,10 @@ object SnapshotHistoryCalculator {
         cutoffTime: Instant,
         now: Instant = Instant.now(),
     ): List<TimelineEvent> {
-        val events = mutableListOf<TimelineEvent>()
-        for (trade in historicalTrades) {
-            events.add(TimelineEvent.TradeEvent(trade.timestamp, trade))
-        }
-
-        for (day in 0..PrecisionConstants.HISTORICAL_DAYS_BACK) {
+        val events = historicalTrades
+            .map { TimelineEvent.TradeEvent(it.timestamp, it) }
+            .toMutableList<TimelineEvent>()
+        events += (0..PrecisionConstants.HISTORICAL_DAYS_BACK).mapNotNull { day ->
             val dailyTime =
                 now
                     .minus(day.toLong(), ChronoUnit.DAYS)
@@ -56,9 +54,7 @@ object SnapshotHistoryCalculator {
                     .plus(PrecisionConstants.LAST_HOUR_OF_DAY.toLong(), ChronoUnit.HOURS)
                     .plus(PrecisionConstants.LAST_MINUTE_OF_HOUR.toLong(), ChronoUnit.MINUTES)
                     .plus(PrecisionConstants.LAST_SECOND_OF_MINUTE.toLong(), ChronoUnit.SECONDS)
-            if (dailyTime.isBefore(cutoffTime)) {
-                events.add(TimelineEvent.DailyCloseEvent(dailyTime))
-            }
+            dailyTime.takeIf { it.isBefore(cutoffTime) }?.let(TimelineEvent::DailyCloseEvent)
         }
 
         events.sort()
@@ -105,12 +101,7 @@ object SnapshotHistoryCalculator {
                     )
             }
 
-            val targetUsdPercent =
-                BigDecimal
-                    .valueOf(
-                        allocations.firstOrNull { it.symbol.isUsd }?.targetPercent
-                            ?: PrecisionConstants.DEFAULT_USD_TARGET_PERCENT,
-                    ).setScale(PrecisionConstants.SCALE_USD, RoundingMode.HALF_UP)
+            val targetUsdPercent = PortfolioCalculations.calculateUsdTargetPercent(allocations)
 
             val snapshot =
                 PortfolioSnapshot(
