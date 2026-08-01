@@ -343,8 +343,8 @@ object ComponentStyles {
             gap = 0.625.rem
         }
 
-        // Shared progress-bar styling for hero tiles and the allocation chart. Bit-by-bit
-        // differences are re-applied as per-variant overrides below to keep output identical.
+        // Shared progress-bar styling for hero tiles and the allocation chart;
+        // per-variant overrides below keep the emitted CSS identical.
         val barTracks = "${CssClass.Hero.TileBarTrack.value}, ${CssClass.AllocationChart.BarTrack.value}"
         "$barTracks" {
             flexGrow = 1.0
@@ -379,7 +379,7 @@ object ComponentStyles {
             put("pointer-events", "none")
         }
 
-        // Hero tile bars use the compact sizing from the original DASH-1 tiles.
+        // Hero tile bars keep their compact sizing.
         ".${CssClass.Hero.TileBarTrack.value}" {
             height = 0.625.rem
             background = "linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.08))"
@@ -395,7 +395,7 @@ object ComponentStyles {
             background = "linear-gradient(90deg, transparent, rgba(186,230,255,0.45), transparent)"
         }
 
-        // Allocation bars use the larger original sizing and deeper inset shadow.
+        // Allocation bars keep the larger sizing and deeper inset shadow.
         ".${CssClass.AllocationChart.BarTrack.value}" {
             height = 0.85.rem
             put("box-shadow", "inset 0 1px 2px rgba(0,0,0,0.4)")

@@ -8,6 +8,15 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [6.15.30] - 2026-07-31
 
+### Added
+
+- **Direct `PortfolioAnalyzerImpl` unit coverage**
+  (`PortfolioAnalyzerImplTest`): ATH set / raise / hold + drawdown branches,
+  save-failure and cancellation rethrow paths, and `buildSnapshot` USD-price
+  handling, missing-value fallback, and unresolved-crypto-price error.
+- **Accessibility**: decorative inline SVGs emit `aria-hidden="true"`; the hero
+  sparkline exposes `role="img"` with a descriptive `aria-label`.
+
 ### Changed
 
 - **Comparison-delta theming** (`HistoryComparisonChart.kt` +
@@ -20,9 +29,35 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Scrubber lookup helper** (`DomExtensions.kt`): added
   `queryChartScrubber(canvasId)` and used it from `HistoryChartState` and
   `HistoryZoom`, removing a duplicated query-selector construction.
+- **Currency-formatting dedup** (`HistoryCharts.kt` /
+  `HistoryTradeRendering.kt`): shared `usdOptionsToLocale(...)` /
+  `usdCellOrDash(...)` helpers behind `formatUSD`, `formatPriceOrDash`, and
+  `formatFeeOrDash`.
+- **Bar CSS consolidation** (`ComponentStyles.kt`): hero-tile and
+  allocation-chart bar rules now share common declarations with per-variant
+  overrides — identical emitted CSS.
+- **Theme color constants** (`CssTheme.kt`): centralized focus-ring,
+  glass-surface, and mode-plate glow values used across `ComponentStyles`,
+  `NavigationStyles`, `FormStyles`, and `LayoutStyles`. The active nav-link /
+  active time-range button keyboard focus indicator now uses the shared
+  box-shadow focus ring (previously a 3px outline) — focus remains clearly
+  visible.
+- **Allocation-editor bounds** (`PrecisionConstants`): shared
+  `ALLOCATION_MIN_PERCENT` / `ALLOCATION_STEP_PERCENT` used by both the SSR
+  settings form and the JS asset-row editor (emitted `min`/`max` render as
+  `0.0`/`100.0`).
+- **Test fixture migration**: `PortfolioManagerOrderExecutionTest` now uses
+  the shared `PortfolioManagerTestFixture`.
 - **Docs sync**: README rebalancing-trigger wording now matches the `>=`
   threshold; README model tree and `.agents/AGENTS.md` `:common` wire-DTO list
   now include `RebalancerComparisonEnums` / `RebalancerComparison`.
+
+### Fixed
+
+- **Test flakes**: the `DynamicKrakenServiceTest` concurrent pin-ordering
+  test is deterministic (CompletableDeferred sequencing instead of sleeps);
+  `SseMultiSubscriberTest` replaced a fixed settle delay with a bounded
+  subscription-count poll.
 
 ## [6.15.29] - 2026-07-31
 
