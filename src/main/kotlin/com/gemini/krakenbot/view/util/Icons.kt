@@ -13,7 +13,6 @@ object Icons {
     val DOLLAR_CIRCLE = loadIcon("dollar_circle.svg")
     val PULSE = loadIcon("pulse.svg")
     val EMPTY_PIE = loadIcon("empty_pie.svg")
-    val BACK_ARROW = loadIcon("back_arrow.svg")
     val FLOPPY_DISK = loadIcon("floppy_disk.svg")
     val SHIELD_EXCLAMATION = loadIcon("shield_exclamation.svg")
     val PLUS = loadIcon("plus.svg")

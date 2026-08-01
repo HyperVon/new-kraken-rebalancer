@@ -1,8 +1,8 @@
 package com.gemini.krakenbot.view.component
 
 import com.gemini.krakenbot.config.AppConfig
-import com.gemini.krakenbot.util.PrecisionConstants
 import com.gemini.krakenbot.view.util.ActiveNav
+import com.gemini.krakenbot.view.util.AllocationEditor
 import com.gemini.krakenbot.view.util.ChartProps
 import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.FormFields
@@ -34,11 +34,11 @@ import kotlinx.html.DIV
 import kotlinx.html.FlowContent
 import kotlinx.html.InputType
 import kotlinx.html.InputType.*
-import kotlinx.html.classes
 import kotlinx.html.form
 import kotlinx.html.header
 import kotlinx.html.id
 import kotlinx.html.script
+import kotlinx.html.unsafe
 
 class SettingsFormComponent {
     context(body: BODY)
@@ -221,53 +221,7 @@ class SettingsFormComponent {
                 id = HtmlIds.ALLOCATIONS_CONTAINER
                 config.allocations.forEach { alloc ->
                     val rowColor = alloc.color ?: ChartProps.SOLID_FALLBACK
-                    div(CssClass.Form.AllocationEditRow) {
-                        div(CssClass.Form.AllocationEditSymbol) { +alloc.symbol.value }
-                        input(
-                            type = InputType.hidden,
-                            name = FormFields.SYMBOLS,
-                        ) { value = alloc.symbol.value }
-                        input(
-                            type = InputType.hidden,
-                            name = FormFields.COLORS,
-                        ) {
-                            value = rowColor
-                            classes = setOf(CssClass.Form.AllocationColorInput.value)
-                        }
-                        label {
-                            input(
-                                type = color,
-                            ) {
-                                value = rowColor
-                                classes = setOf(CssClass.Form.AllocationColorSwatch.value)
-                                attributes[HtmlAttrs.ONINPUT] =
-                                    "this.closest('.${CssClass.Form.AllocationEditRow}').querySelector('.${CssClass.Form.AllocationColorInput}').value = this.value"
-                            }
-                        }
-                        div(CssClass.Form.AllocationEditInputWrapper) {
-                            input(
-                                CssClass.Form.InputGlass,
-                                type = number,
-                                name = FormFields.TARGETS,
-                            ) {
-                                step = PrecisionConstants.ALLOCATION_STEP_PERCENT.toString()
-                                min = PrecisionConstants.ALLOCATION_MIN_PERCENT.toString()
-                                max = PrecisionConstants.TOTAL_ALLOCATION_PERCENTAGE.toString()
-                                value = alloc.targetPercent.toString()
-                                attributes[HtmlAttrs.ONINPUT] =
-                                    "updateAllocationTotal()"
-                            }
-                            span(CssClass.Form.PercentSuffix) { +"%" }
-                        }
-                        button(
-                            CssClass.Button.Danger,
-                            type = button,
-                        ) {
-                            attributes[HtmlAttrs.ONCLICK] =
-                                "this.closest('.${CssClass.Form.AllocationEditRow}').remove(); updateAllocationTotal();"
-                            +ViewText.REMOVE
-                        }
-                    }
+                    unsafe { +AllocationEditor.editRow(alloc.symbol.value, rowColor, alloc.targetPercent.toString()) }
                 }
             }
 
