@@ -43,7 +43,7 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                 val drawdown = analyzer.updateAthAndCalculateDrawdown(BigDecimal("1000"))
 
                 drawdown.shouldBeEqualComparingTo(BigDecimal.ZERO)
-                coVerify { portfolioStatsRepository.save(match { it.allTimeHigh == BigDecimal("1000") }) }
+                coVerify { portfolioStatsRepository.save(match { it.allTimeHigh.compareTo(BigDecimal("1000")) == 0 }) }
             }
         }
 
@@ -54,7 +54,7 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                 val drawdown = analyzer.updateAthAndCalculateDrawdown(BigDecimal("1000"))
 
                 drawdown.shouldBeEqualComparingTo(BigDecimal.ZERO)
-                coVerify { portfolioStatsRepository.save(match { it.allTimeHigh == BigDecimal("1000") }) }
+                coVerify { portfolioStatsRepository.save(match { it.allTimeHigh.compareTo(BigDecimal("1000")) == 0 }) }
             }
         }
 
@@ -65,7 +65,7 @@ class PortfolioAnalyzerImplTest : StringSpec() {
                 val drawdown = analyzer.updateAthAndCalculateDrawdown(BigDecimal("900"))
 
                 drawdown.shouldBeEqualComparingTo(BigDecimal("10.0000"))
-                coVerify { portfolioStatsRepository.save(match { it.allTimeHigh == BigDecimal("1000") }) }
+                coVerify { portfolioStatsRepository.save(match { it.allTimeHigh.compareTo(BigDecimal("1000")) == 0 }) }
             }
         }
 

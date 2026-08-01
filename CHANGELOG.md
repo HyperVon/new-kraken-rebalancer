@@ -41,8 +41,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   glass-surface, and mode-plate glow values used across `ComponentStyles`,
   `NavigationStyles`, `FormStyles`, and `LayoutStyles`. The active nav-link /
   active time-range button keyboard focus indicator now uses the shared
-  box-shadow focus ring (previously a 3px outline); a transparent outline is
-  kept so the indicator still renders in forced-colors mode. Also fixed a
+  box-shadow focus ring (previously a 3px outline) and the focused border
+  color shifts to `colorBluePrimary`; a transparent outline is kept so the
+  indicator still renders in forced-colors mode. Also fixed a
   selector-concatenation precedence bug in `NavigationStyles.kt` where
   `"A" + "B" { }` parsed as `"A" + ("B".invoke(...))`, silently dropping every
   selector except the last — the `:focus-visible` rules now actually emit for
@@ -50,8 +51,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   browser-default focus outline).
 - **Allocation-editor bounds** (`PrecisionConstants`): shared
   `ALLOCATION_MIN_PERCENT` / `ALLOCATION_STEP_PERCENT` used by both the SSR
-  settings form and the JS asset-row editor (emitted `min`/`max` render as
-  `0.0`/`100.0`).
+  settings form and the JS asset-row editor (SSR form renders `min`/`max` as
+  `0.0`/`100.0`; JS editor output unchanged at `0`/`100` — both sides now
+  share one source).
 - **Test fixture migration**: `PortfolioManagerOrderExecutionTest` now uses
   the shared `PortfolioManagerTestFixture`.
 - **Agent workflow** (`adversarial-pr-review` skill): on reviewer-agent launch

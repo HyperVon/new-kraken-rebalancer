@@ -22,6 +22,7 @@ need only this file (no issue spam).
 | CI-22-Q11 | M | open | config | Decide whether ConfigServiceImpl should fail loudly on unknown JSON fields (shared-ObjectMapper trust-boundary change) | 22 | — | Needs direction decision |
 | CI-22-Q14 | S | open | code | Remove dead `Icons.BACK_ARROW` (defined, zero usages repo-wide) | 22 | — | Found during PR review |
 | CI-22-Q15 | S | open | accessibility | Audit other `:focus-visible` rules (ViewsBtn/ZoomBtn/ViewsSelect/FormStyles) for a forced-colors outline fallback | 22 | — | Same pattern as LinkActive fix |
+| CI-22-Q16 | S | open | tests | Add a JVM test asserting every bundled icon SVG starts with `<svg` (guards `Icons.decorative()` against silent no-op) | 22 | — | Found during PR review |
 | CI-22-Q06 | S | dropped | frontend | Replace wildcard `org.w3c.dom.*` imports in frontend-js main/test (17 files) | 22 | — | ktlint `no-wildcard-imports` rule disabled (build.gradle.kts:17) → not enforced, low-value churn |
 
 ## Done (recent)
