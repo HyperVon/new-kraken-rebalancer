@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [6.15.30] - 2026-07-31
+## [6.15.30] - 2026-08-01
 
 ### Added
 
@@ -58,6 +58,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   failure, retry once then substitute the closest available Task agent
   (OpenCode: `general`), keeping two parallel reviewer sessions and recording
   substitutions in PR notes.
+- **Agent rules**: restored the "no unsolicited accessibility metadata" rule
+  (no new ARIA attributes/roles or accessibility-only copy unless explicitly
+  requested) to `OPERATING.md`, the `code-review` and
+  `frontend-js-development` skills, and the `ui-change-verification.mdc`
+  Cursor projection — it had been lost on an unmerged branch, which let cycle
+  22 propose and ship ARIA additions (`aria-hidden` icons, sparkline
+  `role="img"`); those additions were reverted per the rule.
 - **Docs sync**: README rebalancing-trigger wording now matches the `>=`
   threshold; README model tree and `.agents/AGENTS.md` `:common` wire-DTO list
   now include `RebalancerComparisonEnums` / `RebalancerComparison`.
