@@ -14,8 +14,6 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   (`PortfolioAnalyzerImplTest`): ATH set / raise / hold + drawdown branches,
   save-failure and cancellation rethrow paths, and `buildSnapshot` USD-price
   handling, missing-value fallback, and unresolved-crypto-price error.
-- **Accessibility**: decorative inline SVGs emit `aria-hidden="true"`; the hero
-  sparkline exposes `role="img"` with a descriptive `aria-label`.
 
 ### Changed
 

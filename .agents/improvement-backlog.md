@@ -21,8 +21,6 @@ need only this file (no issue spam).
 | CI-22-Q10 | M | open | frontend | Dedupe allocation-editor markup/logic between SettingsFormComponent (SSR) and frontend Settings.kt | 22 | — | High drift risk |
 | CI-22-Q11 | M | open | config | Decide whether ConfigServiceImpl should fail loudly on unknown JSON fields (shared-ObjectMapper trust-boundary change) | 22 | — | Needs direction decision |
 | CI-22-Q14 | S | open | code | Remove dead `Icons.BACK_ARROW` (defined, zero usages repo-wide) | 22 | — | Found during PR review |
-| CI-22-Q15 | S | open | accessibility | Audit other `:focus-visible` rules (ViewsBtn/ZoomBtn/ViewsSelect/FormStyles) for a forced-colors outline fallback | 22 | — | Same pattern as LinkActive fix |
-| CI-22-Q16 | S | open | tests | Add a JVM test asserting every bundled icon SVG starts with `<svg` (guards `Icons.decorative()` against silent no-op) | 22 | — | Found during PR review |
 | CI-22-Q06 | S | dropped | frontend | Replace wildcard `org.w3c.dom.*` imports in frontend-js main/test (17 files) | 22 | — | ktlint `no-wildcard-imports` rule disabled (build.gradle.kts:17) → not enforced, low-value churn |
 
 ## Done (recent)
@@ -40,7 +38,6 @@ need only this file (no issue spam).
 | CI-22-Q08 | S | done | frontend | Allocation input bounds from `:common` `PrecisionConstants` (SSR form + JS editor) | 22 | — |
 | CI-22-Q09 | S | done | docs | README "exceeded" → `>=` trigger wording; add RebalancerComparisonEnums to tree + AGENTS RebalancerComparison | 22 | — |
 | CI-22-Q12 | S | done | tests | `SseMultiSubscriberTest`: bounded subscription-count poll replaces fixed settle delay | 22 | — |
-| CI-22-Q13 | S | done | accessibility | Decorative inline SVGs `aria-hidden`; hero sparkline `role="img"` + `aria-label` | 22 | — |
 | CI-21-Q01 | S | done | imports | Replace wildcard imports in 14 server view files (`kotlinx.html.*`, `kotlinx.css.*`) | 21 | — |
 | CI-21-Q02 | S | done | imports | Replace wildcard imports in 18 test files (`io.mockk.*`, `io.ktor.*`) | 21 | — |
 | CI-21-Q03 | S | done | imports | Replace wildcard imports in 13 frontend files (`org.w3c.dom.*`) | 21 | — |
