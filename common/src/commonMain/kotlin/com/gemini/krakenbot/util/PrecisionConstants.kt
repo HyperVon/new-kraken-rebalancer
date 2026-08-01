@@ -35,6 +35,10 @@ object PrecisionConstants {
     const val TOTAL_ALLOCATION_PERCENTAGE = 100.0
     const val ALLOCATION_TOLERANCE_DELTA = 0.01
 
+    /** Allocation-percent number-input bounds, shared by the SSR form and the JS editor. */
+    const val ALLOCATION_MIN_PERCENT = 0.0
+    const val ALLOCATION_STEP_PERCENT = 0.1
+
     const val HISTORICAL_DAYS_BACK = 90
     const val LAST_HOUR_OF_DAY = 23
     const val LAST_MINUTE_OF_HOUR = 59

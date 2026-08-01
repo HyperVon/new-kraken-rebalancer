@@ -163,8 +163,8 @@ class DashboardViewTest : StringSpec() {
             }
             val targetInput = Regex("<input[^>]*name=\"$TARGETS\"[^>]*>").find(html)?.value
             targetInput.shouldNotBeNull()
-            targetInput shouldContain "min=\"0\""
-            targetInput shouldContain "max=\"100\""
+            targetInput shouldContain "min=\"0.0\""
+            targetInput shouldContain "max=\"100.0\""
         }
 
         "renderSettingsPage_globalParameters_carryValidationBounds" {
