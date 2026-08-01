@@ -478,7 +478,12 @@ This path is internal orchestration — not a second browser-facing SSE stream l
 │   │   ├── main.kt                        # Client-side routing entry point
 │   │   ├── Dashboard.kt                   # Stats card age calculation & table sorting
 │   │   ├── Settings.kt                    # Targets validation & dynamic row actions
-│   │   ├── History.kt                     # Chart.js timelines, zoom, and pan scrubbers
+│   │   ├── History.kt                     # History page wiring (initHistory)
+│   │   ├── HistoryChartConfig.kt          # Chart.js defaults and option builders
+│   │   ├── HistoryChartState.kt           # Chart state, series visibility, and time range
+│   │   ├── HistoryCharts.kt               # Snapshot and net-cash-flow chart builders
+│   │   ├── HistoryComparisonChart.kt      # Rebalancer comparison chart
+│   │   ├── HistoryZoom.kt                 # Zoom buttons and pan scrubbers
 │   │   ├── HistoryLoading.kt              # History API loading and sync progress
 │   │   ├── HistoryTradeRendering.kt       # Trade table and summary-card rendering
 │   │   ├── HistoryJsonParsing.kt          # Typed History JSON parsing over :common api DTOs

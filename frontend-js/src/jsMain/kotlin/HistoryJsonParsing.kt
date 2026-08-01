@@ -9,6 +9,7 @@ import com.gemini.krakenbot.api.TradeRecord
 import com.gemini.krakenbot.model.ComparisonAvailability
 import com.gemini.krakenbot.model.ComparisonUnavailableReason
 import com.gemini.krakenbot.model.SyncMetadataKeys
+import kotlin.js.Date
 import kotlin.js.JsName
 
 @JsName("Object")
@@ -30,6 +31,14 @@ private fun dynamicBoolean(value: dynamic, default: Boolean = false): Boolean = 
 private fun dynamicInt(value: dynamic): Int? {
     if (value == null || value == undefined) return null
     return value.toString().toDoubleOrNull()?.toInt()
+}
+
+// Payload numbers may arrive as JS numbers OR strings (BigDecimal serializes as text).
+// Try a numeric parse first; otherwise treat the value as an ISO timestamp → epoch ms.
+internal fun dynamicNumber(value: dynamic): Double? {
+    if (value == null || value == undefined) return null
+    value.toString().toDoubleOrNull()?.let { parsed -> return parsed.takeIf { it.isFinite() } }
+    return Date(value.toString()).getTime().takeIf { it.isFinite() }
 }
 
 private fun dynamicArrayLength(raw: dynamic): Int {

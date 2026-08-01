@@ -79,6 +79,8 @@ class SettingsTest : StringSpec() {
                 sym2.value = Asset.ETH
                 updateAllocationTotal()
                 saveButton.disabled.shouldBeTrue()
+                totalDisplay.classList.contains(CssClass.Form.AllocationTotalBad).shouldBeTrue()
+                totalDisplay.textContent shouldBe "Total: 100.00%"
             } finally {
                 document.body!!.removeChild(container)
             }
@@ -352,6 +354,66 @@ class SettingsTest : StringSpec() {
                 (document.getElementById(HtmlIds.SAVE_BUTTON) as HTMLButtonElement).disabled.shouldBeTrue()
                 addAssetRow()
                 (document.getElementById(HtmlIds.ALLOCATIONS_CONTAINER) as HTMLElement).children.length shouldBe 0
+            } finally {
+                document.body!!.removeChild(container)
+            }
+        }
+
+        "addAssetRow handles edge cases" {
+            val container = document.createElement(HtmlTags.DIV)
+            container.innerHTML = TestDomBuilders.assetEditDom(Asset.BTC)
+            document.body!!.appendChild(container)
+            try {
+                val symbolInput = document.getElementById(HtmlIds.NEW_SYMBOL_INPUT) as HTMLInputElement
+                symbolInput.value = Asset.BTC
+                val allocContainer = document.getElementById(HtmlIds.ALLOCATIONS_CONTAINER) as HTMLElement
+                val existingRow = document.createElement(HtmlTags.DIV)
+                existingRow.className = CssClass.Form.AllocationEditRow.toString()
+                existingRow.innerHTML =
+                    """
+                    <input type="hidden" name="${FormFields.SYMBOLS}" value="${Asset.BTC}">
+                    """.trimIndent()
+                allocContainer.appendChild(existingRow)
+
+                window.asDynamic().alertCalled = false
+                window.asDynamic().alert = { _: String -> window.asDynamic().alertCalled = true }
+                try {
+                    addAssetRow()
+                    (window.asDynamic().alertCalled as Boolean) shouldBe true
+                    allocContainer.childElementCount.shouldBe(1)
+                } finally {
+                    window.asDynamic().alert = null
+                }
+
+                symbolInput.value = "NEW"
+                allocContainer.remove()
+                addAssetRow()
+            } finally {
+                if (container.parentNode != null) {
+                    document.body!!.removeChild(container)
+                }
+            }
+        }
+
+        "updateAllocationTotal ignores non-input elements and invalid numbers" {
+            val container = document.createElement(HtmlTags.DIV)
+            container.innerHTML = TestDomBuilders.settingsAndSyncDom()
+            document.body!!.appendChild(container)
+            try {
+                val nonInputTarget = document.createElement(HtmlTags.DIV)
+                nonInputTarget.setAttribute("name", FormFields.TARGETS)
+                container.appendChild(nonInputTarget)
+
+                val invalidInputTarget = document.createElement(HtmlTags.INPUT) as HTMLInputElement
+                invalidInputTarget.name = FormFields.TARGETS
+                invalidInputTarget.value = "invalid-double"
+                container.appendChild(invalidInputTarget)
+
+                val nonInputSymbol = document.createElement(HtmlTags.DIV)
+                nonInputSymbol.setAttribute("name", FormFields.SYMBOLS)
+                container.appendChild(nonInputSymbol)
+
+                updateAllocationTotal()
             } finally {
                 document.body!!.removeChild(container)
             }

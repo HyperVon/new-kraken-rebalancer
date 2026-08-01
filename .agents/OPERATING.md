@@ -93,8 +93,8 @@ Launch parallel agents when **all** of these hold:
 ### When to keep one stream
 
 Stay single-threaded when streams **share** the same hot files or one depends
-on the other’s output (same `History.kt`, API contract + consumer in one change,
-cross-cutting refactors).
+on the other’s output (same `History*.kt` file, API contract + consumer in one
+change, cross-cutting refactors).
 
 ### How to split
 

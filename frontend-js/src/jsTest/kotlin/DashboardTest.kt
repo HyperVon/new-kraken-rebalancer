@@ -7,6 +7,7 @@ import com.gemini.krakenbot.view.util.HtmlAttrs
 import com.gemini.krakenbot.view.util.HtmlTags
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
+import io.kotest.matchers.booleans.shouldBeFalse
 import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
@@ -222,6 +223,143 @@ class DashboardTest : StringSpec() {
             try {
                 updateAge()
                 sortTable(document.getElementById("orphan-header") as HTMLElement, 0)
+            } finally {
+                document.body!!.removeChild(container)
+            }
+        }
+
+        "updateAge handles missing elements and stale/fresh states" {
+            val container = document.createElement(HtmlTags.DIV)
+            container.innerHTML = TestDomBuilders.dataAgeDom()
+            document.body!!.appendChild(container)
+            try {
+                updateAge()
+                val ageVal = document.getElementsByClassName(CssClass.DataAge.Value.toString())[0] as HTMLSpanElement
+                ageVal.textContent shouldBe ""
+
+                val recentTime = Date.now() - 5000
+                val timeEl = document.getElementsByClassName(CssClass.DataAge.Time.toString())[0] as HTMLSpanElement
+                timeEl.setAttribute(HtmlAttrs.DATA_EPOCH, recentTime.toString())
+                updateAge()
+                ageVal.textContent shouldBe "5s ago"
+                val badge = document.getElementsByClassName(CssClass.StatusCard.Badge.toString())[0] as HTMLElement
+                badge.classList.contains(CssClass.Utility.Live).shouldBeTrue()
+                badge.classList.contains(CssClass.Utility.Delayed).shouldBeFalse()
+
+                // Past STALE_THRESHOLD_SECONDS (90): Utility.Live/Delayed CSS only — chip text is STREAM/STALE.
+                val staleTime = Date.now() - 95000
+                timeEl.setAttribute(HtmlAttrs.DATA_EPOCH, staleTime.toString())
+                updateAge()
+                ageVal.textContent shouldBe "95s ago"
+                badge.classList.contains(CssClass.Utility.Delayed).shouldBeTrue()
+                badge.classList.contains(CssClass.Utility.Live).shouldBeFalse()
+
+                val amTime = Date(2023, 0, 1, 9, 30, 0).getTime()
+                timeEl.setAttribute(HtmlAttrs.DATA_EPOCH, amTime.toString())
+                updateAge()
+                timeEl.textContent shouldBe "09:30:00 AM"
+
+                val pmTime = Date(2023, 0, 1, 15, 30, 0).getTime()
+                timeEl.setAttribute(HtmlAttrs.DATA_EPOCH, pmTime.toString())
+                updateAge()
+                timeEl.textContent shouldBe "03:30:00 PM"
+
+                val noonTime = Date(2023, 0, 1, 12, 30, 0).getTime()
+                timeEl.setAttribute(HtmlAttrs.DATA_EPOCH, noonTime.toString())
+                updateAge()
+                timeEl.textContent shouldBe "12:30:00 PM"
+
+                val badgeContainer = document.createElement(HtmlTags.DIV)
+                badgeContainer.innerHTML = TestDomBuilders.dataAgeDom("0")
+                document.body!!.appendChild(badgeContainer)
+                try {
+                    updateAge()
+                } finally {
+                    document.body!!.removeChild(badgeContainer)
+                }
+            } finally {
+                document.body!!.removeChild(container)
+            }
+        }
+
+        "reapplySort and sortTable handle edge cases" {
+            val container = document.createElement(HtmlTags.DIV)
+            container.innerHTML = TestDomBuilders.sortableTableDom()
+            document.body!!.appendChild(container)
+            try {
+                val noHeadersContainer = document.createElement(HtmlTags.DIV)
+                noHeadersContainer.innerHTML = TestDomBuilders.emptyTableDom()
+                document.body!!.appendChild(noHeadersContainer)
+                try {
+                    reapplySort()
+                } finally {
+                    document.body!!.removeChild(noHeadersContainer)
+                }
+
+                val fakeHeader = document.createElement(HtmlTags.TH) as HTMLElement
+                fakeHeader.className = CssClass.Table.Sortable.toString()
+                sortTable(fakeHeader, 0)
+
+                val sortableClass = CssClass.Table.Sortable.toString()
+                val header0 =
+                    document.getElementsByClassName(sortableClass)[0] as HTMLTableCellElement
+                val header1 =
+                    document.getElementsByClassName(sortableClass)[1] as HTMLTableCellElement
+
+                sortTable(header0, 0)
+                var rows = container.querySelectorAll("${HtmlTags.TBODY} ${HtmlTags.TR}")
+                // "10" < "5" lexicographically
+                (rows.item(0) as HTMLTableRowElement).cells.item(0)?.textContent shouldBe "A"
+
+                sortTable(header0, 0, CssClass.Utility.Desc.toString())
+                rows = container.querySelectorAll("${HtmlTags.TBODY} ${HtmlTags.TR}")
+                // "5" > "10" lexicographically
+                (rows.item(0) as HTMLTableRowElement).cells.item(0)?.textContent shouldBe "C"
+
+                sortTable(header1, 1)
+                rows = container.querySelectorAll("${HtmlTags.TBODY} ${HtmlTags.TR}")
+                (rows.item(0) as HTMLTableRowElement).cells.item(1)?.textContent shouldBe "D"
+
+                sortTable(header1, 1, CssClass.Utility.Desc.toString())
+                rows = container.querySelectorAll("${HtmlTags.TBODY} ${HtmlTags.TR}")
+                (rows.item(0) as HTMLTableRowElement).cells.item(1)?.textContent shouldBe "B"
+
+                val row2 = document.createElement(HtmlTags.TR)
+                row2.className = CssClass.Table.Hoverable.toString()
+                val td2a = document.createElement(HtmlTags.TD)
+                td2a.textContent = "Apple"
+                val td2b = document.createElement(HtmlTags.TD)
+                td2b.textContent = "Banana"
+                row2.appendChild(td2a)
+                row2.appendChild(td2b)
+                container.querySelector(HtmlTags.TBODY)!!.appendChild(row2)
+
+                sortTable(header0, 0)
+                rows = container.querySelectorAll("${HtmlTags.TBODY} ${HtmlTags.TR}")
+            } finally {
+                document.body!!.removeChild(container)
+            }
+        }
+
+        "sortTable tolerates out-of-range columns and empty cells" {
+            val container = document.createElement(HtmlTags.DIV)
+            container.innerHTML =
+                """
+                <table>
+                    <thead>
+                        <tr><th class="${CssClass.Table.Sortable}">C0</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr class="${CssClass.Table.Hoverable}"><td></td></tr>
+                        <tr class="${CssClass.Table.Hoverable}"><td></td></tr>
+                    </tbody>
+                </table>
+                """.trimIndent()
+            document.body!!.appendChild(container)
+            try {
+                val header = container.querySelector(CssClass.Query.SORTABLE_TH) as HTMLElement
+                sortTable(header, 0)
+                sortTable(header, 5)
             } finally {
                 document.body!!.removeChild(container)
             }

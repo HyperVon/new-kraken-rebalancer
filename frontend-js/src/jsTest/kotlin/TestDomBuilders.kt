@@ -160,7 +160,7 @@ object TestDomBuilders {
         ${settingsDom()}
         """.trimIndent()
 
-    // Appends each Chart config to window.chartConfigs for CoverageTest callback assertions.
+    // Appends each Chart config to window.chartConfigs for HistoryChartsTest callback assertions.
     fun setupMockChart(isDatasetVisible: (Int) -> Boolean = { true }) {
         var callCount = 0
         window.asDynamic().chartCallCount = 0

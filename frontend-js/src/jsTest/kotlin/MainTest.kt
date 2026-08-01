@@ -1,5 +1,6 @@
 package com.gemini.krakenbot.frontend
 
+import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.FormFields
 import com.gemini.krakenbot.view.util.HtmlEvents
 import com.gemini.krakenbot.view.util.HtmlIds
@@ -7,6 +8,8 @@ import com.gemini.krakenbot.view.util.HtmlTags
 import com.gemini.krakenbot.view.util.ViewText
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
+import io.kotest.matchers.booleans.shouldBeFalse
+import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.shouldBe
 import kotlinx.browser.document
 import kotlinx.browser.window
@@ -153,6 +156,44 @@ class MainTest : StringSpec() {
                 window.asDynamic().setInterval = oldSetInterval
                 document.body!!.removeChild(container)
             }
+        }
+
+        "registerSettingsGlobals and registerDashboardGlobals wrappers can be called" {
+            registerSettingsGlobals()
+            registerDashboardGlobals()
+
+            val container = document.createElement(HtmlTags.DIV)
+            container.innerHTML =
+                """
+                ${TestDomBuilders.assetEditDom("")}
+                ${TestDomBuilders.settingsDom()}
+                <table>
+                  <thead>
+                    <tr><th class="${CssClass.Table.Sortable}">${ViewText.HEADER_ASSET}</th></tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+                """.trimIndent()
+            document.body!!.appendChild(container)
+            try {
+                window.asDynamic().updateAllocationTotal()
+                window.asDynamic().addAssetRow()
+                window.asDynamic().sortTable(document.querySelector(CssClass.Query.SORTABLE_TH), 0)
+            } finally {
+                document.body!!.removeChild(container)
+            }
+        }
+
+        "testDomExtensionsCompleteCoverage" {
+            val div = document.createDiv()
+
+            div.className = CssClass.Table.Sortable.value
+            div.classList.contains(CssClass.Table.Sortable).shouldBeTrue()
+            div.classList.remove(CssClass.Table.Sortable)
+            div.classList.contains(CssClass.Table.Sortable).shouldBeFalse()
+
+            div.classList.toggle(CssClass.Table.Sortable, true).shouldBeTrue()
+            div.classList.toggle(CssClass.Table.Sortable, false).shouldBeFalse()
         }
     }
 }

@@ -27,7 +27,7 @@ Examples that should fan out:
 
 Stay single-threaded (or one dedicated agent) when streams **share** the same hot files or one depends on the other’s output:
 
-- Same `History.kt` / same CSS module needing coordinated edits
+- Same `History*.kt` file / same CSS module needing coordinated edits
 - API contract change that frontend must consume in the same change
 - Refactors that move symbols across the streams you’d otherwise split
 

@@ -182,5 +182,5 @@ Full rubric: [ai-slop-detector](../ai-slop-detector/SKILL.md) § Test necessity.
 - [ ] `shouldBeEqualComparingTo`; `:memory:` DB; `TestFixtures` where useful
 - [ ] FakeKraken for tests; Flow tests use `advanceUntilIdle`
 - [ ] Evaluation scenarios updated when algorithm behavior changes
-- [ ] JS History zoom/scrubber branches covered when touching `History.kt`
+- [ ] JS History zoom/scrubber branches covered when touching `HistoryZoom.kt`
 - [ ] No machine paths/hostnames; no FQNs

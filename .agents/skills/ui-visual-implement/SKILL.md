@@ -101,7 +101,7 @@ Rules:
 | Cycle-grouped activity + View all | `RecentActivityComponent` | Flat time/action table returns; link dropped |
 | Safety toggle cards + ON/OFF pill | `SettingsFormComponent` | Bare checkbox labels; pill not tracking checked state |
 | Chart header row + net cash flow caption | `HistoryPageComponent` | Title / zoom split into stacked rows; caveat pushed back into the legend string |
-| Em dash + status dot in trade table | `frontend-js` `History.kt` | `0.00000000` prices, constant `SUCCESS` column |
+| Em dash + status dot in trade table | `frontend-js` `HistoryTradeRendering.kt` | `0.00000000` prices, constant `SUCCESS` column |
 
 ### Step 3: Gates before verify
 

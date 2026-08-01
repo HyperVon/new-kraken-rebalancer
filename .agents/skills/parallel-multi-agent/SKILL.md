@@ -73,5 +73,6 @@ build — re-verify serially (see below).
 
 - Track CSS: header spacing + button appearance (`LayoutStyles`, `NavigationStyles`)
 - Track skills: `ui-manual-qa` / `ui-visual-review` regression cases
-- Track History JS: visibility presets + zoom scrubber (`History.kt` only)
+- Track History JS: visibility presets + zoom scrubber (`HistoryChartState.kt`,
+  `HistoryZoom.kt`)
 - Parent: wire tests + CHANGELOG + commit
