@@ -71,8 +71,8 @@ The portfolio is defined by a set of target allocations summing to 100%.
 ### 2. Operational Loop
 
 The application runs a continuous "Rebalance Cycle" with a configurable delay (
-e.g., every 60 seconds). Each cycle consists of three phases: **Snapshot**, *
-*Analysis**, and **Execution**.
+e.g., every 60 seconds). Each cycle consists of three phases: **Snapshot**, **Analysis**,
+and **Execution**.
 
 ### 3. Architectural Separation of Concerns
 

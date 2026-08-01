@@ -1008,9 +1008,9 @@ new messaging layers.
 | Intent | Skill |
 | :--- | :--- |
 | Clean / converge / remove debt **in place** | **this skill** |
-| “Should we redesign X?” | [architecture-review](../architecture-review/SKILL.md) |
-| Scoped style/FQN/` :common` cleanup | [kotlin-refactoring-and-cleanup](../kotlin-refactoring-and-cleanup/SKILL.md) |
-| Product/UI/docs improvements + PR | [continuous-improvement](../continuous-improvement/SKILL.md) |
+| “Should we redesign X?” | [architecture-review](skills/architecture-review/SKILL.md) |
+| Scoped style/FQN/` :common` cleanup | [kotlin-refactoring-and-cleanup](skills/kotlin-refactoring-and-cleanup/SKILL.md) |
+| Product/UI/docs improvements + PR | [continuous-improvement](skills/continuous-improvement/SKILL.md) |
 
 **Allowed:** extract helpers, restore SRP, delete dead code, fix layering
 violations, DRY within a layer, tighten types, improve tests.
@@ -1330,7 +1330,7 @@ rg 'KrakenServiceImpl|SimulatedKrakenService' src/main/kotlin/com/gemini/krakenb
 ````markdown
 ## Pass 3 — Architecture & design
 
-Read [architecture patterns](architecture-patterns.md) (or the inlined
+Read [architecture patterns](skills/autonomous-code-optimizer/architecture-patterns.md) (or the inlined
 patterns section). Then audit:
 
 1. **Pattern integrity** — Ports/adapters, façade, strategy+pin, pure engine,

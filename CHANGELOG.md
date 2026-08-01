@@ -41,6 +41,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Documentation link hygiene**: Corrected archived skill links, removed broken
+  links to deleted historical JavaScript assets, and repaired the phase list in
+  `docs/ALGORITHM.md`.
 - **Chart.js legend filter argument**: The legend labels filter now reads the
   second callback argument (`chart.data`) instead of the chart instance, so
   toggling a series visibility applies to the correct dataset.
@@ -2041,9 +2044,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
-- **Modernized Client-Side Javascript**: Updated static assets [dashboard.js](src/main/resources/static/dashboard.js) and [settings.js](src/main/resources/static/settings.js) to modern ES6+ standards, adopting arrow functions, block-scoped variables (`let`/`const`), template literals, `String.prototype.padStart()`, and `classList.toggle` APIs.
+- **Modernized Client-Side Javascript**: Updated static assets `dashboard.js` and `settings.js` to modern ES6+ standards, adopting arrow functions, block-scoped variables (`let`/`const`), template literals, `String.prototype.padStart()`, and `classList.toggle` APIs.
 - **Improved Settings Button State Management**: Refactored settings save button enabled/disabled logic to use boolean `.disabled` element property directly.
-- **Explicit Global Scope Binding**: Explicitly bound dynamic handlers in [settings.js](src/main/resources/static/settings.js) to the `window` object to ensure reliable execution from inline HTML event attributes.
+- **Explicit Global Scope Binding**: Explicitly bound dynamic handlers in `settings.js` to the `window` object to ensure reliable execution from inline HTML event attributes.
 
 ---
 
