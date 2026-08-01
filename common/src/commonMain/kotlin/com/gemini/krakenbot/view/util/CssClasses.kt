@@ -265,6 +265,11 @@ sealed class CssClass(open val value: String) {
         object Delayed : Utility("delayed")
         object Asc : Utility("asc")
         object Desc : Utility("desc")
+        object Visible : Utility("visible")
+        object Hidden : Utility("hidden")
+        object Positive : Utility("positive")
+        object Negative : Utility("negative")
+        object Neutral : Utility("neutral")
     }
 
     // Type-safe CSS Selectors for DOM queries

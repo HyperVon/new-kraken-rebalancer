@@ -514,17 +514,17 @@ object NavigationStyles {
             whiteSpace = WhiteSpace.nowrap
         }
 
-        ".${CssClass.History.ComparisonDelta}.positive" {
+        ".${CssClass.History.ComparisonDelta}.${CssClass.Utility.Positive}" {
             color = CssTheme.colorSuccess
-            borderColor = CssTheme.colorSuccessMuted
+            borderColor = CssTheme.colorSuccessBorder
         }
 
-        ".${CssClass.History.ComparisonDelta}.negative" {
+        ".${CssClass.History.ComparisonDelta}.${CssClass.Utility.Negative}" {
             color = CssTheme.colorDanger
             borderColor = CssTheme.colorDangerBorder
         }
 
-        ".${CssClass.History.ComparisonDelta}.neutral" {
+        ".${CssClass.History.ComparisonDelta}.${CssClass.Utility.Neutral}" {
             color = CssTheme.colorTextMuted
         }
 
@@ -536,7 +536,7 @@ object NavigationStyles {
             fontSize = 0.875.rem
         }
 
-        ".${CssClass.History.ComparisonUnavailable}.visible" {
+        ".${CssClass.History.ComparisonUnavailable}.${CssClass.Utility.Visible}" {
             display = Display.block
         }
 
@@ -551,11 +551,11 @@ object NavigationStyles {
             padding = Padding(0.25.rem, 0.75.rem)
         }
 
-        ".${CssClass.History.ComparisonConfidenceBadge}.visible" {
+        ".${CssClass.History.ComparisonConfidenceBadge}.${CssClass.Utility.Visible}" {
             display = Display.inline
         }
 
-        ".${CssClass.History.ComparisonChartArea}.hidden" {
+        ".${CssClass.History.ComparisonChartArea}.${CssClass.Utility.Hidden}" {
             display = Display.none
         }
     }

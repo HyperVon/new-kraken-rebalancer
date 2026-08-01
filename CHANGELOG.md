@@ -8,16 +8,21 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [6.15.30] - 2026-07-31
 
-### Added
-
-- Direct unit coverage for `PortfolioAnalyzerImpl`: ATH set / raise / hold + drawdown
-  branches, save-failure rethrow, and `buildSnapshot` USD-price handling, missing-value
-  fallback, and unresolved-crypto-price error path.
-
 ### Changed
 
-- Centralize allocation-editor `step` / `min` / `max` bounds in shared
-  `PrecisionConstants` so the SSR settings form and the JS asset-row editor stay in sync.
+- **Comparison-delta theming** (`HistoryComparisonChart.kt` +
+  `NavigationStyles.kt`): replaced magic `"positive"/"negative"/"neutral"` and
+  `"hidden"/"visible"` strings with shared `CssClass.Utility.*` constants from
+  `:common`. Fixed the positive comparison-delta badge border to use
+  `colorSuccessBorder` (it previously used `colorSuccessMuted`, a background
+  tint), making it visually symmetric with the negative badge. Emitted CSS for
+  the positive badge changes (border alpha 0.15 → 0.30).
+- **Scrubber lookup helper** (`DomExtensions.kt`): added
+  `queryChartScrubber(canvasId)` and used it from `HistoryChartState` and
+  `HistoryZoom`, removing a duplicated query-selector construction.
+- **Docs sync**: README rebalancing-trigger wording now matches the `>=`
+  threshold; README model tree and `.agents/AGENTS.md` `:common` wire-DTO list
+  now include `RebalancerComparisonEnums` / `RebalancerComparison`.
 
 ## [6.15.29] - 2026-07-31
 

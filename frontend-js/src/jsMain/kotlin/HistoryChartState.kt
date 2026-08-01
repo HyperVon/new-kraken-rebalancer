@@ -8,7 +8,6 @@ import com.gemini.krakenbot.view.util.HtmlAttrs
 import com.gemini.krakenbot.view.util.HtmlIds
 import kotlinx.browser.document
 import org.w3c.dom.*
-import com.gemini.krakenbot.view.util.CssClass.Query.CHART_SCRUBBERS as CHART_SCRUBBERS_QUERY
 import com.gemini.krakenbot.view.util.CssClass.Query.TIME_RANGE_BTNS as TIME_RANGE_BTNS_QUERY
 
 internal val charts = mutableMapOf<String, dynamic>()
@@ -161,10 +160,7 @@ internal fun clearChart(canvasId: String) {
     originalChartRanges.remove(canvasId)
     pendingPresetVisibility.remove(canvasId)
     if (pendingPresetVisibility.isEmpty()) visibilityBackupBeforePreset = null
-    val scrubber =
-        document.querySelector(
-            "$CHART_SCRUBBERS_QUERY[${HtmlAttrs.DATA_CHART_ID}=\"$canvasId\"]",
-        ) as? HTMLInputElement
+    val scrubber = queryChartScrubber(canvasId)
     if (scrubber != null) {
         scrubber.disabled = true
         scrubber.value = "0"
