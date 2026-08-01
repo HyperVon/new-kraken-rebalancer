@@ -17,16 +17,16 @@ need only this file (no issue spam).
 
 | ID | Size | Status | Area | Summary | Cycle | Issue | Notes |
 | :--- | :---: | :--- | :--- | :--- | :---: | :--- | :--- |
-| CI-22-Q05 | M | open | tests | Add direct tests for HistoryChartState (visibility capture/apply/rollback, scrubber sync) | 22 | — | Needs a DOM/Chart.js harness |
-| CI-22-Q10 | M | open | frontend | Dedupe allocation-editor markup/logic between SettingsFormComponent (SSR) and frontend Settings.kt | 22 | — | High drift risk |
-| CI-22-Q11 | M | open | config | Decide whether ConfigServiceImpl should fail loudly on unknown JSON fields (shared-ObjectMapper trust-boundary change) | 22 | — | Needs direction decision |
-| CI-22-Q14 | S | open | code | Remove dead `Icons.BACK_ARROW` (defined, zero usages repo-wide) | 22 | — | Found during PR review |
 | CI-22-Q06 | S | dropped | frontend | Replace wildcard `org.w3c.dom.*` imports in frontend-js main/test (17 files) | 22 | — | ktlint `no-wildcard-imports` rule disabled (build.gradle.kts:17) → not enforced, low-value churn |
 
 ## Done (recent)
 
 | ID | Size | Status | Area | Summary | Cycle | PR |
 | :--- | :---: | :--- | :--- | :--- | :---: | :--- |
+| CI-22-Q11 | M | done | config | ConfigServiceImpl fail-loudly on unknown JSON fields — decision: keep default (Jackson `FAIL_ON_UNKNOWN_PROPERTIES=true` throws `UnrecognizedPropertyException` at `ConfigServiceImpl.parseConfig`); no code change | 22 | — |
+| CI-22-Q14 | S | done | code | Remove dead `Icons.BACK_ARROW` and its `icons/back_arrow.svg` asset | 22 | — |
+| CI-22-Q05 | M | done | tests | Direct `HistoryChartStateTest.kt` unit tests for `historyCurrentRange` / `historyCaptureVisibility` / `historyRollbackPresetVisibility` (DOM + mock Chart.js harness) | 22 | — |
+| CI-22-Q10 | M | done | frontend | Dedupe allocation-editor row into shared `:common` `AllocationEditor.editRow` HTML template, used by both SettingsFormComponent (SSR) and Settings.kt (JS) | 22 | — |
 | CI-21-T01 | M | done | tests | Extract duplicated PortfolioManager wiring to shared fixture (last exact duplicate migrated; remaining call sites legitimately scoped) | 22 | — |
 | CI-21-T02 | M | done | tests | De-flake `DynamicKrakenServiceTest.concurrent withStableBackend` via CompletableDeferred sequencing | 22 | — |
 | CI-22-Q01 | M | done | frontend | Consolidate duplicated Chart.js currency-format builders (`usdOptionsToLocale` / `usdCellOrDash`) | 22 | — |

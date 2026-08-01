@@ -2,10 +2,10 @@ package com.gemini.krakenbot.frontend
 
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.util.PrecisionConstants
+import com.gemini.krakenbot.view.util.AllocationEditor
 import com.gemini.krakenbot.view.util.ChartProps
 import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.FormFields
-import com.gemini.krakenbot.view.util.HtmlAttrs
 import com.gemini.krakenbot.view.util.HtmlIds
 import com.gemini.krakenbot.view.util.ViewText
 import kotlinx.browser.document
@@ -129,72 +129,13 @@ fun addAssetRow() {
     }
 
     val container = document.getElementById(HtmlIds.ALLOCATIONS_CONTAINER) ?: return
-    val row = document.createDiv()
-    row.className = CssClass.Form.AllocationEditRow.toString()
-
-    val symbolDiv = document.createDiv()
-    symbolDiv.className = CssClass.Form.AllocationEditSymbol.toString()
-    symbolDiv.textContent = canonical
-
-    val symbolHidden = document.createInput()
-    symbolHidden.type = "hidden"
-    symbolHidden.name = FormFields.SYMBOLS
-    symbolHidden.value = canonical
-
-    val colorHidden = document.createInput()
-    colorHidden.type = "hidden"
-    colorHidden.name = FormFields.COLORS
-    colorHidden.className = CssClass.Form.AllocationColorInput.toString()
-
-    val colorLabel = document.createLabel()
-    val colorPicker = document.createInput()
-    colorPicker.type = "color"
-    colorPicker.className = CssClass.Form.AllocationColorSwatch.toString()
-    colorPicker.value = pickColorForNewAsset()
-    colorHidden.value = colorPicker.value
-    colorPicker.oninput = { colorHidden.value = colorPicker.value }
-    colorLabel.appendChild(colorPicker)
-
-    val inputWrapper = document.createDiv()
-    inputWrapper.className = CssClass.Form.AllocationEditInputWrapper.toString()
-
-    val numberInput = document.createInput()
-    numberInput.type = "number"
-    numberInput.step = PrecisionConstants.ALLOCATION_STEP_PERCENT.toString()
-    numberInput.min = PrecisionConstants.ALLOCATION_MIN_PERCENT.toString()
-    numberInput.max = PrecisionConstants.TOTAL_ALLOCATION_PERCENTAGE.toString()
-    numberInput.name = FormFields.TARGETS
-    numberInput.className = CssClass.Form.InputGlass.toString()
-    numberInput.value = "0.0"
-    numberInput.oninput = { updateAllocationTotal() }
-
-    val percentSpan = document.createSpan()
-    percentSpan.className = CssClass.Form.PercentSuffix.toString()
-    percentSpan.textContent = "%"
-
-    inputWrapper.appendChild(numberInput)
-    inputWrapper.appendChild(percentSpan)
-
-    val removeBtn = document.createButton()
-    removeBtn.type = "button"
-    removeBtn.className = CssClass.Button.Danger.toString()
-    removeBtn.textContent = ViewText.REMOVE
-    removeBtn.onclick = {
-        row.remove()
-        updateAllocationTotal()
-    }
-
-    row.appendChild(symbolDiv)
-    row.appendChild(symbolHidden)
-    row.appendChild(colorHidden)
-    row.appendChild(colorLabel)
-    row.appendChild(inputWrapper)
-    row.appendChild(removeBtn)
-
-    container.appendChild(row)
+    container.innerHTML =
+        container.innerHTML + AllocationEditor.editRow(canonical, pickColorForNewAsset(), DEFAULT_NEW_ALLOCATION_TARGET)
     symbolInput.value = ""
     updateAllocationTotal()
 }
+
+private const val DEFAULT_NEW_ALLOCATION_TARGET = "0.0"
 
 private val COLOR_PALETTE_CANDIDATES = arrayOf(
     ChartProps.SOLID_BLUE,

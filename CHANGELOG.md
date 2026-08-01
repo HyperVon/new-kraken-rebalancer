@@ -14,6 +14,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   (`PortfolioAnalyzerImplTest`): ATH set / raise / hold + drawdown branches,
   save-failure and cancellation rethrow paths, and `buildSnapshot` USD-price
   handling, missing-value fallback, and unresolved-crypto-price error.
+- **Direct `HistoryChartState` unit coverage** (`HistoryChartStateTest.kt`):
+  tests for `historyCurrentRange`, `historyCaptureVisibility` (including
+  null-chart skipping), and `historyRollbackPresetVisibility` (no-op without a
+  backup, and restore-to-pre-preset) using the DOM + mock Chart.js harness.
 
 ### Changed
 
@@ -27,6 +31,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Scrubber lookup helper** (`DomExtensions.kt`): added
   `queryChartScrubber(canvasId)` and used it from `HistoryChartState` and
   `HistoryZoom`, removing a duplicated query-selector construction.
+- **Allocation-editor dedup** (`:common` `AllocationEditor.editRow`): the
+  settings allocation-row template is now a single shared HTML source, rendered
+  by both `SettingsFormComponent` (SSR) and `Settings.kt` (JS client), removing
+  the duplicated markup/logic that had high drift risk. Also removed the dead
+  `Icons.BACK_ARROW` and its `icons/back_arrow.svg` asset.
 - **Currency-formatting dedup** (`HistoryLoading.kt` /
   `HistoryTradeRendering.kt`): shared `usdOptionsToLocale(...)` /
   `usdCellOrDash(...)` helpers behind `formatUSD`, `formatPriceOrDash`, and

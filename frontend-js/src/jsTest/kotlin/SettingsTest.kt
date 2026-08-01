@@ -233,6 +233,7 @@ class SettingsTest : StringSpec() {
             document.body!!.appendChild(container)
 
             try {
+                registerSettingsGlobals()
                 addAssetRow()
                 val row = symContainer.querySelector(".${CssClass.Form.AllocationEditRow}") as HTMLElement
                 val targetInput = row.querySelector(CssClass.Query.TARGET_INPUTS) as HTMLInputElement
