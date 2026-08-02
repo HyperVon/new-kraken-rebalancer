@@ -546,7 +546,7 @@ class TradeHistoryRangeAndEdgeCasesTest : TradeHistoryServiceTestBase() {
                     TestFixtures.TEST_TRADE_HISTORY_JSON,
                 ).syncTradesFromKraken()
 
-                coVerify(exactly = 1) {
+                coVerify(exactly = 2) {
                     repository.setSyncMetadata(TestFixtures.SYNC_TOTAL, "99")
                 }
             }

@@ -250,6 +250,36 @@ class TradeHistorySyncReconciliationTest : TradeHistoryServiceTestBase() {
             }
         }
 
+        "sync does not reconcile a failed local estimate" {
+            runTest {
+                coEvery { repository.isHistorySeeded() } returns true
+                val submittedAt = Instant.ofEpochSecond(1700000000)
+                coEvery { repository.getLatestTradeTime() } returns submittedAt
+                val failedLocal = TestFixtures.tradeRecord(
+                    timestamp = submittedAt,
+                    pair = TestFixtures.XBTUSD,
+                    side = TestFixtures.BUY,
+                    symbol = Asset.BTC,
+                    volume = BigDecimal.ONE,
+                    usdAmount = BigDecimal.TEN,
+                    success = false,
+                    source = TradeSource.LOCAL_ESTIMATE,
+                )
+                coEvery { repository.getTradesInRange(any(), any()) } returns listOf(failedLocal)
+                val apiFill = failedLocal.copy(
+                    timestamp = submittedAt.plusSeconds(5),
+                    success = true,
+                    source = TradeSource.API_FILL,
+                )
+                coEvery { krakenService.getTradeHistory(1700000000 - 300, 0) } returns listOf(apiFill)
+
+                createService().syncTradesFromKraken()
+
+                coVerify(exactly = 0) { repository.updateTrade(failedLocal, any()) }
+                coVerify(exactly = 1) { repository.saveTrade(apiFill) }
+            }
+        }
+
         "CQ-10-1: reconciliation retains local Kraken order txid when API fill omits it" {
             runTest {
                 coEvery { repository.isHistorySeeded() } returns true
@@ -510,6 +540,36 @@ class TradeHistorySyncReconciliationTest : TradeHistoryServiceTestBase() {
             }
         }
 
+        "syncTradesFromKraken_continuesWhenFilteredPageIsShort" {
+            runTest {
+                coEvery { repository.isHistorySeeded() } returns false
+                coEvery { repository.getLatestTradeTime() } returns null
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+                every { krakenService.getLastTradeHistoryTotalCount() } returns 51
+
+                val firstPageFill = TestFixtures.tradeRecord(
+                    timestamp = Instant.ofEpochSecond(1700000000),
+                    pair = TestFixtures.XBTUSD,
+                    side = TestFixtures.BUY,
+                    symbol = Asset.BTC,
+                    volume = BigDecimal.ONE,
+                    usdAmount = BigDecimal.TEN,
+                )
+                val secondPageFill = firstPageFill.copy(
+                    timestamp = Instant.ofEpochSecond(1700000600),
+                    side = TestFixtures.SELL,
+                )
+                coEvery { krakenService.getTradeHistory(null, 0) } returns listOf(firstPageFill)
+                coEvery { krakenService.getTradeHistory(null, 50) } returns listOf(secondPageFill)
+
+                createService().syncTradesFromKraken()
+
+                coVerify(exactly = 1) { krakenService.getTradeHistory(null, 0) }
+                coVerify(exactly = 1) { krakenService.getTradeHistory(null, 50) }
+                coVerify(exactly = 2) { repository.saveTrade(any()) }
+            }
+        }
+
         listOf(
             "cancellation" to { CancellationException("cancel after page progress and persistence") },
             "failure" to { IllegalStateException("failure after page progress and persistence") },
@@ -624,7 +684,7 @@ class TradeHistorySyncReconciliationTest : TradeHistoryServiceTestBase() {
                     metadata[SyncMetadataKeys.SYNC_TOTAL] shouldBe SyncMetadataKeys.COMPLETED
                     coVerify(exactly = 2) { krakenService.getTradeHistory(null, 0) }
                     coVerify(exactly = 1) { krakenService.getTradeHistory(null, 100) }
-                    coVerify(exactly = 1) { krakenService.getTradeHistory(null, 150) }
+                    coVerify(exactly = 0) { krakenService.getTradeHistory(null, 150) }
                     verify(exactly = 2) { configService.beginExecutionSession() }
                     verify(exactly = 2) { configService.endExecutionSession() }
                 }

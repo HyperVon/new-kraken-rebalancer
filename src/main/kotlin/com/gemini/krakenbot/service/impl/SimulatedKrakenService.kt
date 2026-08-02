@@ -248,6 +248,7 @@ class SimulatedKrakenService(private val configService: ConfigService) : KrakenS
         val price = simulatedPrices[symbol] ?: BigDecimal.TEN
         val normalizedVolume = volume.toCryptoScale()
         val usdAmount = normalizedVolume.multiply(price).toUsdScale()
+        val fee = usdAmount.multiply(SEED_FEE_RATE).setScale(PrecisionConstants.SCALE_FEE, RoundingMode.HALF_UP)
 
         if ((dryRun ?: configService.getConfig().settings.dryRun)) {
             log.info("[EMULATOR DRY RUN] Order would execute successfully cl_ord_id=$clOrdId")
@@ -270,9 +271,9 @@ class SimulatedKrakenService(private val configService: ConfigService) : KrakenS
             val tokenBalance = balances[symbol] ?: BigDecimal.ZERO
 
             if (orderSide == OrderSide.BUY) {
-                if (usdBalance < usdAmount) {
+                if (usdBalance < usdAmount.add(fee)) {
                     val error =
-                        "Insufficient USD funds in emulator balance: needed $usdAmount, had $usdBalance"
+                        "Insufficient USD funds in emulator balance: needed ${usdAmount.add(fee)}, had $usdBalance"
                     log.warn("[EMULATOR] $error")
                     return@withLock OrderResult(
                         success = false,
@@ -282,7 +283,7 @@ class SimulatedKrakenService(private val configService: ConfigService) : KrakenS
                         errorMessage = error,
                     )
                 }
-                balances[Asset.USD] = usdBalance.subtract(usdAmount).toUsdScale()
+                balances[Asset.USD] = usdBalance.subtract(usdAmount).subtract(fee).toUsdScale()
                 balances[symbol] = tokenBalance.add(normalizedVolume).toCryptoScale()
             } else {
                 if (tokenBalance < normalizedVolume) {
@@ -298,7 +299,7 @@ class SimulatedKrakenService(private val configService: ConfigService) : KrakenS
                     )
                 }
                 balances[symbol] = tokenBalance.subtract(normalizedVolume).toCryptoScale()
-                balances[Asset.USD] = usdBalance.add(usdAmount).toUsdScale()
+                balances[Asset.USD] = usdBalance.add(usdAmount).subtract(fee).toUsdScale()
             }
 
             val orderTxid = "$SIM_ORDER_TXID_PREFIX${System.nanoTime()}"
@@ -313,9 +314,7 @@ class SimulatedKrakenService(private val configService: ConfigService) : KrakenS
                     success = true,
                     dryRun = false,
                     price = price.toCryptoScale(),
-                    fee = usdAmount.multiply(
-                        SEED_FEE_RATE,
-                    ).setScale(PrecisionConstants.SCALE_FEE, RoundingMode.HALF_UP),
+                    fee = fee,
                     source = TradeSource.API_FILL,
                     orderTxid = orderTxid,
                 )

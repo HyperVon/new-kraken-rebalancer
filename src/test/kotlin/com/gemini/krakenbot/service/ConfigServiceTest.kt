@@ -355,6 +355,22 @@ class ConfigServiceTest : StringSpec() {
             assertAllocationsRejected(Allocation(Asset.USD, 90.0))
         }
 
+        "validateConfig_UsesSharedAllocationTolerance" {
+            configService.updateConfig(
+                configService.getConfig().copy(
+                    allocations = listOf(
+                        Allocation(Asset.USD, 49.995),
+                        Allocation(Asset.BTC, 50.0),
+                    ),
+                ),
+            )
+
+            assertAllocationsRejected(
+                Allocation(Asset.USD, 49.989),
+                Allocation(Asset.BTC, 50.0),
+            )
+        }
+
         "validateConfig_NoUSD" {
             assertAllocationsRejected(Allocation(Asset.BTC, 100.0))
         }

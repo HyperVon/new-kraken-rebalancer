@@ -187,7 +187,7 @@ class TradeHistorySyncService(
         // economics tolerances so legacy/id-less rows can still reconcile.
         val localEstimates =
             originalLocalTrades.filter { local ->
-                local.submissionState == null && !local.dryRun && local.isLocalEstimate()
+                local.submissionState == null && local.success && !local.dryRun && local.isLocalEstimate()
             }
         val apiOrderTxid = apiTrade.orderTxid?.takeIf { it.isNotBlank() }
         return apiOrderTxid?.let { txid ->
@@ -351,12 +351,16 @@ class TradeHistorySyncService(
                 repository.setSyncMetadata(SyncMetadataKeys.SYNC_TOTAL, totalCount.toString())
             }
 
-            if (apiTrades.isEmpty()) break
+            if (apiTrades.isNotEmpty()) emit(apiTrades)
 
-            emit(apiTrades)
-
-            if (apiTrades.size < PAGE_SIZE) break
-            offset += PAGE_SIZE
+            val nextOffset = offset + PAGE_SIZE
+            val hasMorePages = if (totalCount > 0) {
+                nextOffset < totalCount
+            } else {
+                apiTrades.size >= PAGE_SIZE
+            }
+            if (!hasMorePages) break
+            offset = nextOffset
         }
     }
 

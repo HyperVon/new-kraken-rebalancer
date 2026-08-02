@@ -84,7 +84,7 @@ object SnapshotHistoryCalculator {
                     val rawBal = runningBalances[symbol] ?: BigDecimal.ZERO
                     val balance = if (rawBal.isNegative) BigDecimal.ZERO else rawBal
                     val price = getPriceForTimestamp(symbol, snapshotTimestamp, ohlcData, tradePrices, currentPrices)
-                    val valueUSD = balance.multiply(price).setScale(PrecisionConstants.SCALE_USD, RoundingMode.HALF_UP)
+                    val valueUSD = balance.multiply(price)
                     exactPortfolioValue = exactPortfolioValue.add(valueUSD)
                     CalculatedAsset(symbol, balance, price, valueUSD, alloc.targetPercent)
                 }

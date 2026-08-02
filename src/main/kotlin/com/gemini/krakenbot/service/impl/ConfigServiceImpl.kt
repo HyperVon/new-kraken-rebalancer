@@ -8,6 +8,8 @@ import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.service.AssetColorAssigner
 import com.gemini.krakenbot.service.ConfigService
+import com.gemini.krakenbot.util.ALLOCATION_TOLERANCE
+import com.gemini.krakenbot.util.PrecisionConstants
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -319,7 +321,7 @@ class ConfigServiceImpl(
     private fun validateTotalAllocationPercent(config: AppConfig) {
         val totalPercent = config.allocations.sumOf { it.targetPercent }
 
-        require(abs(totalPercent - MAX_PERCENT) <= ALLOCATION_PERCENT_TOLERANCE) {
+        require(abs(totalPercent - MAX_PERCENT) <= PrecisionConstants.ALLOCATION_TOLERANCE.toDouble()) {
             "Total allocation percentage must be exactly 100%. Current sum: $totalPercent"
         }
     }
@@ -335,7 +337,6 @@ class ConfigServiceImpl(
         private const val ENV_VAR_DEFAULT_SEPARATOR = ":"
         private const val MIN_PERCENT = 0.0
         private const val MAX_PERCENT = 100.0
-        private const val ALLOCATION_PERCENT_TOLERANCE = 0.001
 
         private val ENV_VAR_PATTERN = "\\$\\{([^}]+)}".toRegex()
         private val SYMBOL_PATTERN = Asset.SYMBOL_PATTERN_STRING.toRegex()

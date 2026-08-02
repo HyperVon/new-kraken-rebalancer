@@ -6,6 +6,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.15.32] - 2026-08-01
+
+### Fixed
+
+- **Trade-history pagination**: Sync and post-sell fill settlement now use the
+  exchange's raw trade count and fixed page offsets instead of filtered page
+  lengths, so ignored pairs cannot hide later configured fills.
+- **Simulation fees**: Emulator USD balances now apply the recorded fee on both
+  buy costs and sell proceeds.
+- **Allocation validation**: Backend allocation-total validation now uses the
+  shared tolerance used by the Kotlin/JS settings form.
+- **Historical valuation**: Reconstructed portfolio totals now accumulate raw
+  asset values before rounding once at the portfolio level.
+- **Failed estimate reconciliation**: Failed local order estimates are no
+  longer promoted to API fills by heuristic history reconciliation.
+
+### Changed
+
+- **Dashboard CDN integrity**: Pinned HTMX, SSE, Chart.js, date adapter,
+  Hammer.js, and zoom-plugin scripts now include SHA-384 Subresource Integrity
+  hashes and anonymous cross-origin loading.
+
 ## [6.15.31] - 2026-08-01
 
 ### Added

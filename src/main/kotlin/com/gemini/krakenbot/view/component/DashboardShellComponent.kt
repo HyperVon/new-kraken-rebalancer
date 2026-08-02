@@ -2,6 +2,7 @@ package com.gemini.krakenbot.view.component
 
 import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.view.util.ActiveNav
+import com.gemini.krakenbot.view.util.CdnIntegrity
 import com.gemini.krakenbot.view.util.CdnUrls
 import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.HtmxAttrs
@@ -9,6 +10,7 @@ import com.gemini.krakenbot.view.util.HtmxValues
 import com.gemini.krakenbot.view.util.Routes
 import com.gemini.krakenbot.view.util.ViewText
 import com.gemini.krakenbot.view.util.brandWithMode
+import com.gemini.krakenbot.view.util.cdnScript
 import com.gemini.krakenbot.view.util.commonMetadataAndStyles
 import com.gemini.krakenbot.view.util.div
 import com.gemini.krakenbot.view.util.primaryNav
@@ -28,8 +30,8 @@ class DashboardShellComponent {
         html.head {
             commonMetadataAndStyles()
             title(ViewText.APP_TITLE)
-            script(src = CdnUrls.HTMX) {}
-            script(src = CdnUrls.HTMX_SSE) {}
+            cdnScript(CdnUrls.HTMX, CdnIntegrity.HTMX)
+            cdnScript(CdnUrls.HTMX_SSE, CdnIntegrity.HTMX_SSE)
         }
         html.body {
             div(CssClass.Layout.Container) {
