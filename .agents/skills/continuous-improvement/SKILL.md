@@ -25,6 +25,25 @@ Related always-on norms: [OPERATING.md](../../OPERATING.md),
 **Persistent backlog:** [improvement-backlog.md](../../improvement-backlog.md)
 is the source of truth for open / done / deferred items across cycles.
 
+## Bounded discovery and implementation delegation
+
+When a cycle fans out, the parent chooses an adaptive number of tracks from the
+actual backlog and file ownership. Do not send every child agent the whole
+repository or run a fixed two-agent review. Use one track per independent area
+(for example code, UI, docs, comments, or dependencies), normally 2–6 and at
+most 8, with one owner for shared or coupled files.
+
+Each Task prompt names the absolute repo/branch, already-done context, exact
+allowed paths, acceptance criteria, iteration cap, and stop condition. Workers
+return compact findings or patch summaries (at most 12 lines and 5 findings),
+do not edit outside their assigned files, run builds, start servers, inspect
+secrets/runtime data, or load unrelated skills. Keep delegated requests well
+below the roughly 256K practical context boundary; target below 128K and split
+before 180K. If a worker approaches its limit, it returns a partial report and
+the parent starts a narrower follow-up. Manual compaction is not a continuation
+strategy. The parent owns integration, backlog updates, serial quality gates,
+and final verification.
+
 ---
 
 ## Modes
@@ -232,8 +251,8 @@ apply order:
 3. Docs / skills sync as needed
 4. Approved dependency upgrades last (highest blast radius)
 
-Use parallel agents when ownership is disjoint; keep the History JS module
-(`History*.kt`) and shared CSS modules single-owner.
+Use the bounded delegation rules above when ownership is disjoint; keep the
+History JS module (`History*.kt`) and shared CSS modules single-owner.
 
 ### Step 4 — Verify
 

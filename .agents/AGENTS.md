@@ -57,7 +57,7 @@ Canonical deep docs:
 | Product opportunity review / feature roadmap | [product-opportunity-review](skills/product-opportunity-review/SKILL.md) |
 | Skill / agent-files review (skills, rules, AGENTS) | [skill-reviewer](skills/skill-reviewer/SKILL.md) |
 | Rules / skills structural audit | [rules-and-skills-audit](skills/rules-and-skills-audit/SKILL.md) |
-| Adversarial PR review (dual-model loop) | [adversarial-pr-review](skills/adversarial-pr-review/SKILL.md) |
+| Adversarial PR review (adaptive bounded multi-agent loop) | [adversarial-pr-review](skills/adversarial-pr-review/SKILL.md) |
 | Dependency upgrades | [dependency-upgrade](skills/dependency-upgrade/SKILL.md) |
 | Commit & push | [commit-and-push](skills/commit-and-push/SKILL.md) |
 | Open PR | [open-pr](skills/open-pr/SKILL.md) |

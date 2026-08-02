@@ -14,4 +14,6 @@ Perform a read-only review of the current working-tree changes.
 - Never reproduce credentials, tokens, account identifiers, personal paths, hostnames, or personal or account data from the diff or tool output. Describe any exposure without quoting the value.
 - Report findings first, ordered by severity, with `path:line` references and a concrete impact. State explicitly when no findings were found, then list residual testing gaps.
 
-This command is a local project-specific pre-pass. It does not replace the repository's mandatory dual-model adversarial review before opening or updating a pull request.
+This command is a local project-specific pre-pass. It does not replace the
+repository's mandatory adaptive bounded adversarial review before opening or
+updating a pull request.

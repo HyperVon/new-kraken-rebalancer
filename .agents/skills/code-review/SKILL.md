@@ -17,7 +17,7 @@ description: >-
 | Skill | Role |
 | :--- | :--- |
 | **code-review** (this) | Convention hunt-list on a diff / audit |
-| [adversarial-pr-review](../adversarial-pr-review/SKILL.md) | Mandatory dual-model loop before `gh pr create` or push to an open PR |
+| [adversarial-pr-review](../adversarial-pr-review/SKILL.md) | Mandatory adaptive bounded multi-agent loop before `gh pr create` or push to an open PR |
 | [open-pr](../open-pr/SKILL.md) | Create the PR (runs adversarial first) |
 | [commit-and-push](../commit-and-push/SKILL.md) | Commit/push; adversarial when updating an open PR |
 | [architecture-review](../architecture-review/SKILL.md) | Fresh-eyes redesign brainstorm (not PR gates) |

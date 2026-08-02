@@ -19,7 +19,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   agents with automatic compaction and output pruning enabled; the disabled
   SQLite MCP now points at an ignored disposable build database.
 - **CodeQL**: Re-enabled SHA-pinned Java/Kotlin analysis on `main` with Action
-  v4.37.4 and bundle 2.26.2, which support Kotlin 2.4.10.
+   v4.37.4 and bundle 2.26.2, which support Kotlin 2.4.10.
+- **Agent orchestration**: Replaced the fixed full-diff dual-reviewer procedure
+  with parent-selected bounded review tracks, compact worker reports, targeted
+  follow-ups, and explicit context-limit stop conditions.
 
 ## [6.15.32] - 2026-08-01
 

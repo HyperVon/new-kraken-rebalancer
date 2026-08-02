@@ -47,10 +47,11 @@ entrypoints for Claude Code and GitHub Copilot. Model choices have varied over
 time and are not fully encoded in commit metadata.
 
 The clearest model-specific record is the adversarial PR-review workflow. It
-uses a fast reviewer role and a stronger reasoning reviewer role, currently
-named as Composer 2.5 Fast and Grok 4.5 High when those models are available.
-Equivalent substitutions are allowed because the review structure matters more
-than a permanent dependency on one provider.
+uses a parent-chosen set of bounded reviewer tracks, selecting fast capable
+models for routine discovery and stronger reasoning models for high-risk or
+disputed questions. Composer 2.5 Fast and Grok 4.5 High remain documented
+examples when available, but the review structure and bounded scopes matter
+more than a permanent dependency on one provider.
 
 ## The human role
 
@@ -182,7 +183,7 @@ harnesses.
 
 | Skill | What it covers |
 | :--- | :--- |
-| [`adversarial-pr-review`](../.agents/skills/adversarial-pr-review/SKILL.md) | Parallel fast/strong model review, human-readable findings, fixes, and convergence |
+| [`adversarial-pr-review`](../.agents/skills/adversarial-pr-review/SKILL.md) | Parent-orchestrated bounded review tracks, human-readable findings, fixes, and convergence |
 | [`ai-slop-detector`](../.agents/skills/ai-slop-detector/SKILL.md) | Evidence-backed audit/cleanup of needless complexity, invented behavior, and misleading tests, docs, skills, or rules across all repository artifacts; never attributes authorship |
 | [`architecture-review`](../.agents/skills/architecture-review/SKILL.md) | Independent system redesign ideas without automatic implementation |
 | [`code-review`](../.agents/skills/code-review/SKILL.md) | Project-specific diff review for correctness, safety, and conventions |
@@ -241,26 +242,28 @@ skills before expecting their end-to-end workflows to run unchanged. These
 integrations are not the source of project policy; the underlying architecture,
 safety rules, checklists, and review criteria remain ordinary repository files.
 
-## Models and multi-model review
+## Models and adaptive multi-agent review
 
 The project does not maintain a complete ledger mapping every commit to a model.
 That omission is deliberate: model availability and quality change faster than
 the architecture and safety constraints of the application.
 
 The project instead records model roles where diversity is valuable. The
-adversarial PR workflow pairs:
+adversarial PR workflow first partitions the diff into independent concerns,
+then assigns the smallest useful number of bounded tracks. Typical tracks cover
+CI/build, runtime correctness, trading or exchange safety, persistence/security,
+UI/client behavior, and tests/documentation; only tracks represented by the
+diff are launched. A stronger second model is a targeted verifier for a
+high-risk or disputed track, not a reason to duplicate the entire review.
 
-- a faster, lower-cost reviewer for broad defect discovery; and
-- a stronger reasoning reviewer for deeper correctness and safety analysis.
-
-Composer 2.5 Fast and Grok 4.5 High are the currently documented examples for
-those roles. A substitution is meaningful to a human reviewer only when the
-role, capability difference, and reason for substitution remain visible.
+Composer 2.5 Fast and Grok 4.5 High are documented examples of fast-capable and
+strong-reasoning roles. A substitution is meaningful to a human reviewer only
+when the role, scope, capability difference, and reason remain visible.
 
 When running under a host that lacks those models, the adversarial PR-review
-workflow substitutes a comparable model for each role and records the
+workflow substitutes a comparable model for each selected track and records the
 substitution in that PR's verification notes and final summary. For example, one
-OpenCode session recorded the following split (preserving fast/strong roles):
+OpenCode session recorded the following bounded split:
 
 - fast/cheaper reviewer: **DeepSeek V4 Flash**
 - strong/high-reasoning reviewer: **MiMo V2.5**
@@ -270,10 +273,11 @@ The specific slugs above are an observed one-time substitution, not standing
 policy; future sessions should record their own mappings per the substitution
 rule above.
 
-Multiple agreeing models are not proof of correctness. Related models can share
-the same blind spots, repeat inaccurate documentation, or approve tautological
-tests. Source inspection, executable evidence, official Kraken documentation,
-and human judgment remain more authoritative than reviewer consensus.
+Multiple agreeing reports are not proof of correctness. Related models can
+share the same blind spots, repeat inaccurate documentation, or approve
+tautological tests. Source inspection, executable evidence, official Kraken
+documentation, and human judgment remain more authoritative than reviewer
+consensus.
 
 ## Quality evidence available to humans
 

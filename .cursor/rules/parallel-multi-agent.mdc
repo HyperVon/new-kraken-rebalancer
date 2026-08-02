@@ -7,7 +7,7 @@ alwaysApply: true
 
 # Parallel multi-agent work
 
-When a request involves **multiple independent workstreams**, do **not** serialize them by default. Split and run concurrently with the Task tool (or equivalent subagents).
+When a request involves **multiple independent workstreams**, do **not** serialize them by default. Split and run concurrently with the Task tool (or equivalent subagents). Choose an adaptive number of bounded tracks from the actual concerns; do not default to two full-task agents.
 
 ## When to parallelize
 
@@ -39,11 +39,18 @@ Stay single-threaded (or one dedicated agent) when streams **share** the same ho
 4. Keep Gradle to **one build per clone** — either the parent runs all builds, or each agent gets its own `git worktree`. Concurrent `./gradlew` in one directory kills test workers (`EOFException`) and fakes `UP-TO-DATE`.
 5. After agents return: merge, resolve conflicts, run quality gates with `--rerun-tasks`, then continue.
 
+For reviews and broad audits, normally use 2–6 tracks (maximum 8), one per
+independent concern rather than one per file. Add a second model only for a
+high-risk or disputed track. Workers are bounded scouts; the parent owns the
+coverage matrix, triage, edits, and final verification.
+
 ## Context budget
 
 - Give each agent a bounded file set, compact acceptance checklist, and explicit stop condition.
 - Request compact findings rather than raw file dumps; split broad audits into staged discovery and focused follow-ups.
-- For GPT-5.6 Luna, treat roughly **256K input tokens** as a practical reliability and cost boundary despite the larger documented context window.
+- For GPT-5.6 Luna, treat roughly **256K input tokens** as a practical reliability and cost boundary despite the larger documented context window; target delegated requests below **128K** and split before **180K**.
+- Cap discovery workers at 8 iterations and reports at 12 lines / 5 findings.
+- If a worker approaches its context limit, return a compact partial report and start a narrower follow-up. Do not use manual compaction to continue an oversized worker task.
 - The parent owns integration and final verification; do not repeat full repository context or quality gates in every subagent.
 
 ## Anti-patterns

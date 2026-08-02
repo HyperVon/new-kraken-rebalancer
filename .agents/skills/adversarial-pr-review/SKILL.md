@@ -1,18 +1,17 @@
 ---
 name: adversarial-pr-review
 description: >-
-  Local dual-model adversarial review loop for pull requests — a fast capable
-  reviewer and a strong high-reasoning reviewer run in parallel, parent
-  validates and fixes legitimate findings, then re-reviews until both report no
-  further legitimate findings. Use when creating a PR, updating an open PR
-  (commit/push to its head), or when the user asks for an adversarial /
-  multi-model PR review.
+  Parent-orchestrated adaptive adversarial PR review — partitions a PR into N
+  bounded read-only reviewer tracks based on file ownership and risk, validates
+  findings in the parent, and re-reviews only affected tracks until convergence.
+  Use when creating a PR, updating an open PR, or when the user requests an
+  adversarial or multi-model PR review.
 ---
 
 # Adversarial PR review (local)
 
-**Local only** — runs inside the current agent session. Not a Cursor Automation
-and not cloud-triggered. A bare `git push` with no agent does **not** run this.
+**Local only** — runs inside the current agent session. It is not a Cursor
+Automation or cloud-triggered workflow. A bare `git push` does not run it.
 
 ## When this skill is mandatory
 
@@ -21,151 +20,183 @@ Read and follow this skill **before finishing** any of:
 1. **Open PR** — after quality gates, before `gh pr create` ([open-pr](../open-pr/SKILL.md)).
 2. **Update open PR** — when [commit-and-push](../commit-and-push/SKILL.md) (or
    equivalent) will push to a branch that already has an open PR.
-3. **Explicit ask** — user requests adversarial / multi-model review of a PR or
-   branch diff.
+3. **Explicit ask** — when the user requests adversarial, multi-model, or
+   multi-agent review of a PR or branch diff.
 
-If the branch has no open PR and the user is only committing WIP without opening
-one, skip this skill unless they asked for a review.
+If the branch has no open PR and the user is only committing WIP without
+opening one, skip this skill unless they asked for a review.
 
-## Models (required)
+## Core operating model
 
-Launch **two** Task subagents in **one** message (parallel). Preserve the
-intended split: Reviewer A is the cheaper, faster capable reviewer; Reviewer B
-is the stronger, high-reasoning reviewer.
+This is a **parent-orchestrated review**, not a request for every subagent to
+review the entire repository. The parent agent owns the review plan, merge
+base, coverage matrix, triage, edits, quality gates, and final convergence
+decision. Task agents are bounded read-only scouts or focused verifiers.
 
-### OpenCode (preferred path — real model pinning)
+### Select N tracks from the change
 
-Two read-only subagents are registered in `opencode.jsonc`:
+`N` is deliberately not a fixed number. After inspecting the changed-file list
+and high-risk hunks, the parent chooses the smallest useful set of independent
+tracks. As a guide, a material PR normally uses **2–6 tracks**, with a hard
+maximum of **8**; a tiny one-concern change may use one track when the parent
+records why. Do not create one agent per file and do not duplicate a full-diff
+review merely to satisfy a count.
 
-| Role | `subagent_type` | Pinned model |
+Use only tracks represented by the diff. Typical tracks are:
+
+| Track | Review question | Typical scope |
 | :--- | :--- | :--- |
-| Reviewer A | `adversarial-reviewer-a` | `opencode-go/deepseek-v4-flash` |
-| Reviewer B | `adversarial-reviewer-b` | `opencode-go/grok-4.5` |
+| CI / build / tooling | Can the workflow, toolchain, and gates run as claimed? | `.github/`, Gradle, scripts, configs |
+| Runtime correctness | Did behavior, state transitions, or error handling regress? | Changed production modules plus named source dependencies |
+| Trading / exchange safety | Are money, order, retry, idempotency, and Kraken claims safe? | Trading and Kraken hunks plus official docs |
+| Persistence / security | Are credentials, schemas, migrations, permissions, and data-loss boundaries safe? | Persistence, config, security, Kilo permissions |
+| UI / client behavior | Do SSR, CSS, HTMX, Kotlin/JS, and browser interactions remain coherent? | Changed view, CSS, frontend, and related tests |
+| Tests / documentation | Do tests protect the change and do docs match source truth? | Changed tests, docs, skills, and projections |
 
-Invoke both via the Task tool with their `subagent_type` — the pinned models
-are applied automatically by OpenCode from the agent definition. Do **not**
-pass model slugs via the prompt; the agent definition owns the model. Both
-subagents have `edit: deny` and are `hidden: true` (invokable via Task, not
-shown in the `@` autocomplete menu). If either pinned subagent fails to
-launch, apply
-[Automatic fallback on reviewer launch failure](#automatic-fallback-on-reviewer-launch-failure)
-— do not wait for user direction.
+Tracks must have disjoint primary ownership where possible. Add a second,
+independent verifier only for a high-risk or disputed track; give that verifier
+the finding and the smallest affected path set, not the original full prompt.
 
-### Other harnesses (Cursor, Claude Code, Copilot, etc.)
+Before launching, write a compact parent-side matrix:
 
-This skill is harness-agnostic and the OpenCode-registered subagents above do
-not exist outside OpenCode. Fall back to the host harness's dual-Task
-invocation with prose-slug instructions embedded in the prompt:
+| Track | Files / hunks | Risk | Agent / model | Depends on | Stop condition |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| … | … | low / medium / high | … | none / track … | … |
 
-| Role | Intent | Example slug |
+## Context and delegation guardrails
+
+These rules are mandatory because a stalled near-limit subagent is worse than
+several small, independently useful reports:
+
+- Give each agent an explicit file set and only the minimum source paths needed
+  to verify those files. The parent may inspect the full diff; workers should
+  not receive it by default.
+- Target each delegated request well below the roughly **256K input-token**
+  practical reliability boundary for GPT-5.6 Luna. Prefer prompts and source
+  scopes that stay below about **128K**; split the track before it approaches
+  **180K** when the host exposes context telemetry.
+- Cap discovery agents at **8 tool iterations** unless the parent explicitly
+  widens the cap for a named high-risk question.
+- Require a final report of at most **12 lines** and at most **5 findings**.
+  Reports contain findings only, not progress logs, raw file dumps, repeated
+  prompts, or a complete transcript.
+- Tell agents not to load unrelated skills, run builds, start servers, edit,
+  inspect credentials, read runtime databases/logs, or perform the parent’s
+  integration work.
+- If a worker approaches its context or iteration limit, it must stop and return
+  a compact partial report with uncovered paths. It must **not** attempt manual
+  compaction and continue in the same task. The parent launches a new,
+  narrower follow-up for only the uncovered paths.
+- Never paste full prior reports into a follow-up. Pass only the relevant
+  finding, path, source line, and one verification question.
+- The parent owns all builds and final quality gates. Never run concurrent
+  Gradle builds in the same clone.
+
+## Agent selection and launch
+
+Use the cheapest model that can answer each track reliably, escalating only for
+high-risk financial, security, persistence, or disputed reasoning. Model
+diversity is useful, but scope diversity is mandatory. The former OpenCode
+fast/strong reviewer roles are optional model choices, not a requirement to
+launch exactly two full-diff agents:
+
+| Capability | Use when | Example role |
 | :--- | :--- | :--- |
-| Reviewer A | cheap, fast, capable reviewer | Cursor `composer-2.5-fast` |
-| Reviewer B | strong, high-reasoning reviewer | Cursor `cursor-grok-4.5-high` |
+| Fast capable | Bounded discovery, CI/docs/test consistency, straightforward source checks | `adversarial-reviewer-a` when available |
+| Strong reasoning | Trading safety, persistence, security, cross-track contradiction, disputed finding | `adversarial-reviewer-b` when available |
+| Generic capable | Host-specific fallback for any bounded track | `general` / equivalent |
 
-Record any model substitutions in the PR verification notes and final summary.
-An unavailable provider-specific slug must not block the review workflow.
+Launch independent tracks in one Task message when the host supports parallel
+calls. Include the track matrix in the prompts so agents do not redo one
+another's work. A prompt must contain:
 
-### Single-model fallback
+1. Absolute repository path, branch, and base.
+2. The single track question and exact allowed paths or hunks.
+3. The PR intent and already-completed context.
+4. Forbidden files/actions, especially secrets and runtime data.
+5. Acceptance criteria, iteration cap, and the compact output format.
 
-When only one model is available on the host (e.g. the current primary agent's
-model), still run **two** independent Task subagents with the same adversarial
-prompt — diversity of reviewer *sessions* is still valuable even when both
-sessions share a model. Note the single-model condition in the verification
-notes.
+### Automatic fallback on launch failure
 
-### Automatic fallback on reviewer launch failure
+Recover autonomously when an intended agent fails, is cancelled, or is
+unavailable:
 
-Applies to every harness. If launching an intended reviewer fails — unknown
-agent type, task cancelled/aborted, provider error, or an unavailable model —
-do **not** pause to ask the user which agent or model to substitute. Recover
-autonomously and keep the loop moving:
+1. Retry once only when the failure appears transient.
+2. Otherwise replace it with the closest available agent for the **same narrow
+   track**. Do not send the replacement the full PR diff.
+3. If the replacement also fails, the parent performs or delegates one smaller
+   verification question rather than repeatedly restarting a broad task.
+4. Record role, intended agent/model, actual agent/model, scope, and reason for
+   substitution in the verification notes.
 
-1. Retry the same reviewer once if the failure looks transient (rate limit,
-   network, provider error).
-2. Otherwise substitute the closest available Task agent for that reviewer
-   role and continue in parallel. The non-negotiable is **two independent
-   reviewer sessions** with the adversarial prompt below — not a specific
-   agent type or model. (OpenCode-specific: fall back from
-   `adversarial-reviewer-a` / `adversarial-reviewer-b` to the generic
-   `general` subagent for each failed role.)
-3. Record every substitution — role, intended agent/model, actual agent/model,
-   reason — in the PR verification notes and final summary.
+Do not block the review on a provider-specific model. Do not claim a model ran
+when the Task call returned an error or an empty report.
 
-Never skip the second reviewer session, and never block the review loop on
-reviewer-agent selection.
+## Scope and evidence
 
-## Scope
+The parent review surface is the complete PR change against its merge base
+(`main` or the PR base), including intentional behavior changes. Each worker
+sees only its assigned slice plus minimum dependencies. Agents must:
 
-- Diff under review = full PR change vs merge base (`main` or the PR’s base),
-  not only the latest commit.
-- Include intentional behavior changes; do not wave them through as “hygiene.”
-- Cross-check claims against source (constants, layering, tests that would still
-  pass if a fix were reverted).
+- cross-check claims against current source, tests, configuration, or official
+  documentation;
+- distinguish a concrete regression from a pre-existing defect or preference;
+- flag correctness, safety, persistence, layering, dead-code, tautological-test,
+  and docs/source contradictions in the assigned slice;
+- verify exchange claims against official Kraken documentation when relevant;
+- remain read-only and avoid `./gradlew`, servers, application data, and secrets.
 
-## Loop
+Use this output format and nothing more:
 
-Repeat until **convergence**:
+```text
+track: <name>
+critical: No legitimate findings | <path:line> - <evidence, impact, smallest fix>
+warning: No legitimate findings | <path:line> - <evidence, impact, smallest fix>
+nit: No legitimate findings | <path:line> - <evidence, impact, smallest fix>
+coverage: <checked paths>; <uncovered paths or none>
+```
 
-1. **Gather** — `gh pr diff` / `git diff <base>...HEAD`, changed file list, and
-   any high-risk hunks (trading math, settings POST, persistence keys, side /
-   fee / reconstruction paths).
-2. **Review** — launch both reviewers with the same adversarial prompt (below).
-   Read-only for reviewers: no edits, no `./gradlew`.
-3. **Triage** — parent merges both reports. Keep findings that are
-   **legitimate** (verified in source). Drop false positives, duplicates, and
-   pure style nits that contradict project conventions.
-4. **Fix** — apply legitimate `critical` and `warning` fixes on the PR branch.
-   Optionally fix clear `nit`s in the same pass if small. Re-run project quality
-   gates as needed ([gradle-quality-gates](../gradle-quality-gates/SKILL.md) /
-   [commit-and-push](../commit-and-push/SKILL.md) pre-commit script).
-5. **Re-review** — launch both models again on the **updated** full diff.
-6. **Stop** when both reviewers report **no further legitimate** `critical` or
-   `warning` findings (or only deferred L / explicit user-approved deferrals).
-   Nits alone do not block shipping unless the user asked for polish.
+## Adaptive convergence loop
 
-### Convergence rules
+Repeat only for affected tracks:
 
-- Cap at **5** full review rounds unless the user asks to continue.
-- If the same disputed finding survives two rounds with no safe fix, document it
-  in the PR body / comment and stop — do not thrash.
-- Do **not** force-push, skip hooks, weaken assertions to greenwash, or expand
-  scope into unrelated refactors.
+1. **Inventory** — the parent captures the merge base, changed paths, risk
+   areas, and the track matrix.
+2. **Fan out** — launch N bounded, read-only tracks in parallel when independent.
+3. **Triage** — the parent verifies each finding against source and removes
+   duplicates, false positives, and style preferences that contradict project
+   conventions.
+4. **Targeted verification** — disputed or high-impact findings get a focused
+   second verifier. It receives only the finding and affected paths.
+5. **Fix** — the parent applies legitimate critical/warning fixes and small
+   clear nits, then runs the required quality gates serially.
+6. **Re-review** — re-run only tracks whose paths or dependent contracts changed.
+   Add a cross-track verifier only when the fix crosses ownership boundaries.
+7. **Converge** — every track has a final compact report, all changed high-risk
+   paths are covered, and no legitimate critical/warning finding remains.
 
-## Reviewer prompt (use for both)
-
-Give each Task agent:
-
-- Repo absolute path and PR number(s) / branch → base.
-- Paths to diffs if written under `/tmp` (or instruct them to use `gh pr diff` /
-  `git diff`).
-- Stated intent of the PR (behavior-preserving vs intentional behavior change).
-- Highest-risk hunks quoted when known.
-- Hunt list: correctness regressions in “refactors,” persistence key migration,
-  trading-safety / silent defaults, reconstruction / side casing, layering
-  inversions, dead-code removal that isn’t dead, tautological tests, docs that
-  contradict code, **exchange semantic overclaims** (idempotency / uniqueness /
-  retries / AddOrder fields — verify against official Kraken docs linked from
-  [kraken-api-integration](../kraken-api-integration/SKILL.md), not PR prose;
-  `userref` ≠ uniqueness, `cl_ord_id` is open-order uniqueness only).
-- Output: markdown findings grouped `critical` → `warning` → `nit`, each with
-  location, evidence quote, why it matters, optional one-line suggestion.
-  **No edits. No builds.**
+Cap the overall loop at **5 rounds** and each track at **3 review passes**. If
+the same disputed finding survives two safe-fix attempts, document the evidence
+and explicit deferral instead of thrashing. Nits do not block shipping unless
+the user requested polish.
 
 ## After convergence
 
-- Commit and push review fixes on the **current** PR branch when the user’s
-  workflow already includes commit/push (or they asked to update the PR).
-- Summarize for the user: rounds run, findings fixed, any deferred items.
-- Then continue [open-pr](../open-pr/SKILL.md) or finish [commit-and-push](../commit-and-push/SKILL.md).
+- Commit and push review fixes on the current PR branch when the workflow
+  includes commit/push or the user asked for it.
+- Summarize the number of tracks, scopes, model substitutions, findings fixed,
+  deferred items, and quality gates.
+- Continue [open-pr](../open-pr/SKILL.md) or finish
+  [commit-and-push](../commit-and-push/SKILL.md).
 
 ## Checklist
 
-- [ ] Trigger matched (new PR, push to open PR, or explicit review ask)
-- [ ] Both reviewer roles ran in parallel; unavailable-model substitutions were
-      documented
-- [ ] Full PR diff vs base reviewed each round
-- [ ] Exchange / AddOrder semantic claims checked against official docs when
-      present in the diff (code or docs/skills) — use links in
-      kraken-api-integration
-- [ ] Legitimate critical/warning findings fixed and re-reviewed
-- [ ] Converged or deferred with an explicit note — no infinite loop
+- [ ] Trigger matched: new PR, push to open PR, or explicit review request
+- [ ] Parent created an N-track coverage matrix; N was justified by the diff
+- [ ] Each agent had a bounded scope, stop condition, and compact output cap
+- [ ] Independent tracks ran in parallel where safe; no overlapping Gradle builds
+- [ ] Failed agents were replaced with narrower scoped fallbacks and recorded
+- [ ] Full PR surface is covered across tracks, without every agent rereading it
+- [ ] Exchange / AddOrder claims used official docs when relevant
+- [ ] Legitimate critical/warning findings were fixed and affected tracks re-reviewed
+- [ ] Converged or explicitly deferred; no infinite loop or manual-compaction continuation

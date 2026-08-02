@@ -41,7 +41,7 @@ description: >-
 
 - One `./gradlew` per clone at a time — concurrent workers cause `EOFException`
   and flaky `UP-TO-DATE`.
-- After parallel Task agents merge:
+- After parallel tracks merge, the parent reruns gates serially:
 
   ```bash
   ./gradlew build jacocoTestCoverageVerification --rerun-tasks
