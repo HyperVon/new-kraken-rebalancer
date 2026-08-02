@@ -28,7 +28,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 # Resolve the repo root from this script's location: <root>/.agents/skills/dependency-upgrade/scripts/
-ROOT = Path(__file__).resolve().parents[3]
+ROOT = Path(__file__).resolve().parents[4]
 
 BUILD_FILES = [
     ROOT / "build.gradle.kts",

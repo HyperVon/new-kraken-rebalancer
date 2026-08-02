@@ -243,6 +243,6 @@ Before submitting repository code, verify:
 - [ ] Write/read operations use `safeTransactionIO` / `readTransactionIO`
 - [ ] Deletes cascade children before parents
 - [ ] Updates target by primary key ID
-- [ ] `BigDecimal` columns use proper scale (18, 8 for crypto, 12, 2 for USD)
+- [ ] `BigDecimal` columns use proper scale (24, 8 for crypto; 18, 2 for USD; 18, 4 for fees)
 - [ ] Null-safe defaults (`BigDecimal.ZERO`, `0L`) for aggregate results
 - [ ] No FQNs — all Exposed types imported at the top
