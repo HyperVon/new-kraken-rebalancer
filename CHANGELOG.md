@@ -21,6 +21,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **SSE integration-test barrier:** replaced polling with an event-driven
+  `subscriptionCount` wait and a bounded 30-second timeout, preventing slow
+  GitHub-hosted runners from broadcasting before concurrent collectors attach.
 - **Kilo simulation smoke command:** simplified `/simulation-smoke` to delegate
   to the tested `.kilo/run-script` instead of duplicating shell process and
   temporary-configuration logic.

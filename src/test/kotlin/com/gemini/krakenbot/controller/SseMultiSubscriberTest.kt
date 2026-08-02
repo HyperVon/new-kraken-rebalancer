@@ -12,14 +12,14 @@ import io.mockk.coEvery
 import io.mockk.every
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.withTimeout
 import java.math.BigDecimal
 import java.time.Instant
 import kotlin.time.Duration.Companion.milliseconds
-import kotlin.time.TimeSource
 import io.ktor.client.plugins.sse.SSE as ClientSSE
 
 /**
@@ -42,26 +42,18 @@ class SseMultiSubscriberTest : DashboardControllerTestBase() {
         const val REPLAY = 1
         const val EXTRA_BUFFER = 16
 
-        /** Internal poll cadence while waiting for SSE subscribers to attach (real HTTP). */
-        const val SUBSCRIBE_POLL_MS = 20L
-
         /** Upper bound for all concurrent SSE connections to subscribe before broadcasting. */
-        const val SUBSCRIBE_TIMEOUT_MS = 5_000L
+        const val SUBSCRIBE_TIMEOUT_MS = 30_000L
     }
 
     /**
-     * Polls until [flow] has [expected] active collectors, so a broadcast is only emitted after all
+     * Waits until [flow] has [expected] active collectors, so a broadcast is only emitted after all
      * concurrent SSE connections have subscribed server-side. Bounded in real time because this is
-     * a real-HTTP integration test that cannot use a virtual scheduler; replaces a fragile fixed
-     * settle delay that flaked when connections took longer (or shorter) than the constant.
+     * a real-HTTP integration test that cannot use a virtual scheduler.
      */
     private suspend fun awaitSubscribers(flow: MutableSharedFlow<*>, expected: Int) {
-        val start = TimeSource.Monotonic.markNow()
-        while (flow.subscriptionCount.value < expected) {
-            check(start.elapsedNow() <= SUBSCRIBE_TIMEOUT_MS.milliseconds) {
-                "Timed out waiting for $expected SSE subscribers; got ${flow.subscriptionCount.value}"
-            }
-            delay(SUBSCRIBE_POLL_MS)
+        withTimeout(SUBSCRIBE_TIMEOUT_MS.milliseconds) {
+            flow.subscriptionCount.first { active -> active >= expected }
         }
     }
 
