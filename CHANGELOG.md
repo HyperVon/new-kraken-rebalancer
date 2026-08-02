@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.15.37] - 2026-08-02
+
+### Added
+
+- **Adaptive model routing**: added a portable skill for selecting capable,
+  cost-aware provider/model routes and fallbacks per subagent track, with
+  optional Kilo inventory and Artificial Analysis benchmark evidence while
+  keeping live quota claims and external mappings explicit.
+- **Model suggestion command**: added the Kilo-only `/suggest-model` entry
+  point for recommending a model and fallback from a supplied task prompt
+  without executing the prompt.
+
 ## [6.15.36] - 2026-08-02
 
 ### Changed
