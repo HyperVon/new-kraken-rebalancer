@@ -6,6 +6,32 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.15.40] - 2026-08-02
+
+### Changed
+
+- **Intelligence-aware model routing**: model suggestions now state the
+  task-matched intelligence level, sufficiency rationale, confidence, and dated
+  benchmark or qualitative evidence separately from interface capabilities.
+
+## [6.15.39] - 2026-08-02
+
+### Fixed
+
+- **Provider-aware model routing**: model suggestions now distinguish the
+  selectable access route, gateway, upstream model family, credential scope, and
+  billing/entitlement owner, preventing routed model aliases from being
+  misrepresented as direct provider routes.
+
+## [6.15.38] - 2026-08-02
+
+### Changed
+
+- **Quota-aware model routing**: model suggestions now require recent,
+  provider- or plan-scoped quota/entitlement evidence before selecting a paid or
+  account-priced primary route, and distinguish insufficient quota from an
+  unavailable diagnostic without exposing private billing data.
+
 ## [6.15.37] - 2026-08-02
 
 ### Added
