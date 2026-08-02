@@ -13,6 +13,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **SSE integration-test race**: held the departing subscriber open until the
   multi-subscriber barrier and first broadcast complete, preventing CI timing
   from making the survivor test miss its transient subscription count.
+- **SSE survivor barrier**: wait for both server-side flow collectors directly
+  instead of treating the departing client's initial snapshot as subscription
+  readiness, removing the remaining CI scheduling race.
 - **Execution and history safety**: truncated the cycle buy reserve instead of
   rounding it upward, accumulated raw historical asset values before rounding
   portfolio totals, and bounded paginated trade-history reads to one end time
