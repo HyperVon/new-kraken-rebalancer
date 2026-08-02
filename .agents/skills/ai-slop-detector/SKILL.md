@@ -50,7 +50,7 @@ This skill covers **all repository artifacts**, including:
 | [documentation-review](../documentation-review/SKILL.md) | Full factual documentation audit against source code |
 | [rules-and-skills-audit](../rules-and-skills-audit/SKILL.md) | Structural consolidation (redundancy, index ordering, trigger conflicts) of rules and skills |
 | [skill-reviewer](../skill-reviewer/SKILL.md) | Content improvements and domain depth for the agent playbook |
-| [adversarial-pr-review](../adversarial-pr-review/SKILL.md) | Mandatory dual-model loop for a PR being opened or updated |
+| [adversarial-pr-review](../adversarial-pr-review/SKILL.md) | Mandatory adaptive bounded multi-agent loop for a PR being opened or updated |
 | [gradle-quality-gates](../gradle-quality-gates/SKILL.md) | Project build, formatting, coverage, and lint verification |
 | [autonomous-code-optimizer](../autonomous-code-optimizer/SKILL.md) | Unattended multi-pass refactor-to-zero; prefer for broad cleanup requests without a bounded audit |
 

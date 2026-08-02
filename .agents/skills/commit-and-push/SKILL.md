@@ -77,9 +77,10 @@ gh pr list --head "$(git branch --show-current)" --state open
 
 If an open PR exists for this branch, follow
 [adversarial-pr-review](../adversarial-pr-review/SKILL.md) on the full PR diff
-vs base **before** pushing. Fix legitimate findings (new commits as needed),
-re-run Step 2 quality gates, and re-review until that skill converges. Skip
-this step when there is no open PR (WIP commit/push only).
+vs base **before** pushing. Partition it into bounded concern tracks, fix
+legitimate findings (new commits as needed), re-run Step 2 quality gates, and
+re-review affected tracks until that skill converges. Skip this step when there
+is no open PR (WIP commit/push only).
 
 When this push will **create** a PR (or you will open one next), also finish
 every change-specific verification **before** `gh pr create` — see

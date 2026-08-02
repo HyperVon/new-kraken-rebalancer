@@ -3,7 +3,7 @@ name: open-pr
 description: >-
   Open a GitHub PR with gh — complete every verification in the PR test plan
   before creating the PR (never defer checks to after merge), pre-PR quality
-  gates, mandatory dual-model adversarial review, conventional title, and
+  gates, mandatory adaptive bounded adversarial review, conventional title, and
   structured body. Use when the user asks to open or create a pull request.
 ---
 
@@ -72,8 +72,9 @@ Do not invent a Test plan item you have not executed.
 ## Step 4: Adversarial review (mandatory)
 
 Follow [adversarial-pr-review](../adversarial-pr-review/SKILL.md) on the full
-branch diff vs base **before** creating the PR. Fix legitimate findings and
-re-review until that skill converges.
+branch diff vs base **before** creating the PR. The parent must partition the
+diff into bounded concern tracks, fix legitimate findings, and re-review
+affected tracks until that skill converges.
 
 ## Step 5: Title & body
 

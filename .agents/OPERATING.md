@@ -108,6 +108,32 @@ change, cross-cutting refactors).
 5. After agents return: merge, resolve conflicts, run quality gates with
    `--rerun-tasks`, continue.
 
+For audits and reviews, choose an adaptive `N` from the actual concerns and
+ownership boundaries rather than defaulting to two full-task agents. Usually
+use 2–6 tracks, at most 8, and add a second model only for a high-risk or
+disputed track. The parent owns the coverage matrix, triage, integration, and
+final verification; workers are bounded scouts, not alternate project owners.
+
+### Context budget
+
+Keep delegated prompts below the model's practical long-context comfort zone:
+
+1. Give each agent a bounded file set, a short acceptance checklist, and an
+   explicit stop condition.
+2. Ask for compact findings or a patch summary, not raw file dumps or full
+   transcripts. Split a broad audit into staged discovery and follow-up tasks.
+3. For GPT-5.6 Luna sessions, treat roughly **256K input tokens** as a soft
+   reliability and cost boundary even though the documented context window is
+   larger. Target delegated requests below **128K** and split before **180K**;
+   prefer several small successful calls over one near-limit prompt.
+4. Cap discovery workers at 8 iterations and reports at 12 lines / 5 findings
+   unless the parent explicitly widens the limit for a named high-risk question.
+5. If a worker approaches its context limit, have it return a compact partial
+   report and start a narrower follow-up. Manual compaction is not a strategy
+   for continuing the same oversized task.
+6. The parent agent owns integration and final verification; do not make every
+   subagent repeat the full repository context or quality gate.
+
 ### Anti-patterns
 
 - Parallel edits to the **same file** without a single owner
@@ -251,6 +277,11 @@ correctly**.
    that is unlikely to succeed is not cost-effective.
 5. For parallel work, give each track the cheapest capable tier independently;
    do not promote every subagent because one track is difficult.
+
+6. Context size is part of cost and reliability. For GPT-5.6 Luna, keep each
+   delegated request well below roughly **256K input tokens**; use bounded
+   prompts, low iteration caps, and compact reports before escalating or
+   widening context.
 
 Correctness and safety remain the hard constraint. Cost decides between options
 that are all likely to succeed; it never justifies weakening verification or

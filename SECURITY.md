@@ -71,8 +71,10 @@ The configuration supports environment placeholders in the form
 ```
 
 When credentials remain unchanged, saving unrelated settings preserves the raw
-placeholders instead of writing resolved secrets to disk. Credentials entered or
-changed through the Settings form are persisted as entered.
+placeholders instead of writing resolved secrets to disk. Credentials are
+configured in `rebalancer-config.json` or through environment placeholders; the
+Settings form does not edit credentials and preserves the current `kraken` block
+when saving other settings.
 
 Additional precautions include:
 

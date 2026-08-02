@@ -128,7 +128,9 @@ Known migration-sensitive areas in this codebase:
 - **Koin** — module DSL / `KoinApplication` lifecycle.
 - **Kotest / MockK** — assertion + matcher package moves; keep `BigDecimal` comparisons on `shouldBeEqualComparingTo`.
 - **Jackson** — always bump via the `jackson-bom` platform, not individual artifacts.
-- **Kotlin / KSP** — KSP version must track the Kotlin version (`<kotlin>-<ksp>`).
+- **Kotlin / KSP** — use a KSP release compatible with the configured Kotlin
+  compiler; do not assume their version strings must be identical. This
+  repository currently pins KSP **2.3.10** for Kotlin/JS Kotest test discovery.
 
 ### Step 6: Verify (mandatory)
 

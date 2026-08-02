@@ -34,7 +34,7 @@ flowchart TD
         A1 --> A2{"Triggered (Dev% + dust)?"}
         A2 -- "Crypto Triggered" --> A3["Generate BUY/SELL orders"]
         A2 -- "Only USD Triggered" --> A4["Fiat Correction:\nDistribute among counter-balanced assets"]
-        A2 -- "None Triggered" --> SKIP[No trades needed]
+        A2 -- "None Triggered" --> E4
     end
 
     ANALYSIS --> EXEC
@@ -48,12 +48,11 @@ flowchart TD
         E1C --> E2
         E1F --> E2
         E1A --> E4
-        E2["Settle USD after sells\n(fill-confirm by txid, else balance poll;\n3x backoff; abort buys if none positive)"] --> E3["Execute BUY orders second\n(99% cash budget; stop batch if uncertain)"]
+        E2["Settle USD if any sell succeeded\n(fill-confirm by txid, else balance poll;\n3x backoff; abort buys if none positive)"] --> E3["Execute BUY orders second\n(99% cash budget; stop batch if uncertain)"]
         E3 --> E4["Record Snapshot\n& Trade History\nto SQLite database"]
     end
 
     EXEC --> SLEEP["Sleep (configurable delay)"]
-    SKIP --> SLEEP
     SLEEP --> START
 ```
 
@@ -87,6 +86,10 @@ To maintain the Single Responsibility Principle (SRP) and keep domain logic high
   authenticated API calls with a Kraken call-counter rate limiter (linear
   elapsed-time decay of `elapsedSeconds × 0.33`, plus per-endpoint costs) and
   `retryWithFlow` for transient failures, rate limits, and temporary lockouts.
+  Defaults are `safeLimit = 12`, a `0.33` decay factor, and a `Mutex`; retry
+  attempts are capped at 5, rate-limit backoff starts at 10 seconds, and
+  temporary lockouts double from 10 seconds up to 15 minutes for at most 9
+  lockout attempts.
 - **Persistence Impls (`SqliteTradeRepositoryImpl`, `SqlitePortfolioStatsRepositoryImpl`, `ConfigServiceImpl`)**: Config uses atomic write-then-rename file operations and exposes `watchConfigChanges()` as a reactive `Flow<Settings>`. Trade logs and portfolio statistics are persisted to SQLite (using JetBrains Exposed ORM).
 - **`TradeHistoryServiceImpl`**: Thin façade over Sync / SnapshotStore / Query /
   Reconstruction. The hot `MutableSharedFlow<PortfolioSnapshot>` lives on
@@ -106,8 +109,9 @@ In this phase, the system builds a complete view of the current portfolio state.
    assets.
 3. **Calculate Valuation**:
     - Calculates the USD value of every asset (`Balance * Price`).
-    - Rounds each displayed asset value to USD scale, but sums the raw values and
-      rounds the **Total Portfolio Value** only once.
+    - Rounds each per-asset USD value used by analysis and order sizing to USD
+      scale, but sums the raw values and rounds the **Total Portfolio Value** only
+      once.
 4. **Price safety**: If any non-USD configured asset is missing a ticker price or
    the resolved price is zero, the cycle **aborts** before orders are generated
    (`Result.Failure`) to avoid erroneous trades.
@@ -277,6 +281,9 @@ failure.
       `[DRY RUN]` (live) or `[EMULATOR DRY RUN]` (simulation); the dashboard
       activity log always uses `[DRY RUN]`. Orthogonal to `simulation` (which
       only selects live Kraken vs the offline emulator).
+    - With `simulation = true` and `dryRun = false`, the offline emulator charges
+      a `0.26%` fee on each order and updates balances net of that fee. Emulator
+      dry-run returns before changing balances.
 5. **Persistence**: The cycle snapshot (including all trade actions and their outcomes) is saved directly to the SQLite database (under the trade and snapshot tables).
 
 ### Trade economics & slippage lifecycle

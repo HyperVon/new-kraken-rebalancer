@@ -74,10 +74,9 @@ first
 
    (requires a valid `rebalancer-config.json` for local runs that load config).
    Frontend browser tests are included via `check` → `:frontend-js:jsBrowserTest`.
-   **CodeQL** is present under `.github/workflows/codeql.yml` but **disabled**
-   while Kotlin 2.4.x is unsupported — triggers only on the placeholder branch
-   `disabled-kotlin-2.4-mismatch`, not `main`. Do not expect CodeQL status
-   checks on PRs.
+   **CodeQL** runs Java/Kotlin analysis from `.github/workflows/codeql.yml` on
+    `main` pushes and pull requests. The workflow uses CodeQL Action v4 and the
+    current bundle supports this project's Kotlin 2.4.10 compiler.
    Agent-assisted PRs should also follow
    [`.agents/skills/open-pr`](.agents/skills/open-pr/SKILL.md) (including the
    mandatory adversarial review). Human contributors can treat that as optional.

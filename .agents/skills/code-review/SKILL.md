@@ -17,7 +17,7 @@ description: >-
 | Skill | Role |
 | :--- | :--- |
 | **code-review** (this) | Convention hunt-list on a diff / audit |
-| [adversarial-pr-review](../adversarial-pr-review/SKILL.md) | Mandatory dual-model loop before `gh pr create` or push to an open PR |
+| [adversarial-pr-review](../adversarial-pr-review/SKILL.md) | Mandatory adaptive bounded multi-agent loop before `gh pr create` or push to an open PR |
 | [open-pr](../open-pr/SKILL.md) | Create the PR (runs adversarial first) |
 | [commit-and-push](../commit-and-push/SKILL.md) | Commit/push; adversarial when updating an open PR |
 | [architecture-review](../architecture-review/SKILL.md) | Fresh-eyes redesign brainstorm (not PR gates) |
@@ -155,7 +155,8 @@ not treat this skill’s checklist as a substitute.
 - JVM: 95% line/method/instruction, 90% branch.
 - JS: 90% statements/functions/lines, 75% branches.
 - Spotless 120-char; `allWarningsAsErrors`.
-- CodeQL currently disabled — do not claim it runs on `main`.
+- CodeQL Java/Kotlin analysis runs on `main`; verify the workflow's Action/bundle
+  pin and Kotlin compiler support before changing it.
 
 ## Output template
 

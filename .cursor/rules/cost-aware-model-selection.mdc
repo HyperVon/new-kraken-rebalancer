@@ -23,6 +23,10 @@ correctly**.
   that is unlikely to succeed merely because it is cheaper.
 - Choose the cheapest capable tier per parallel track instead of promoting all
   subagents for one difficult track.
+- Treat context size as part of cost and reliability. For GPT-5.6 Luna, keep
+  delegated requests well below roughly **256K input tokens** with bounded
+  prompts, low iteration caps, and compact reports before escalating or widening
+  context.
 
 Correctness and safety are non-negotiable. Never weaken verification or use an
 underpowered model for high-impact work to save cost.

@@ -114,7 +114,10 @@ Copy and track:
 - If the user names packages/files, stay in that scope.
 - For “everywhere”, fan out with
   [parallel-multi-agent](../parallel-multi-agent/SKILL.md) on **disjoint**
-  packages; one owner per hot file.
+  packages; one owner per hot file. The parent chooses the number of tracks,
+  gives each a bounded path set and stop condition, requests compact findings,
+  and owns integration. Do not give every worker the full repository or use
+  manual compaction to continue an oversized task.
 
 ### Step 1: Complexity scan
 
