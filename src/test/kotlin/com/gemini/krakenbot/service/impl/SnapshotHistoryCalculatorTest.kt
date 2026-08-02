@@ -246,6 +246,42 @@ class SnapshotHistoryCalculatorTest : StringSpec() {
             tradeSnapshot.assets["BTC"]!!.price.shouldBeEqualComparingTo(ohlcPrice)
         }
 
+        "calculateHistoricalSnapshots should sum raw asset values before rounding total" {
+            val now = Instant.now()
+            val events = SnapshotHistoryCalculator.buildTimelineEvents(
+                historicalTrades = emptyList(),
+                cutoffTime = now.minus(5, ChronoUnit.DAYS),
+                now = now,
+            )
+            val allocations = listOf(
+                Allocation(Asset.BTC, 33.3),
+                Allocation(Asset.ETH, 33.3),
+                Allocation(Asset.USD, 33.4),
+            )
+            val balances = mutableMapOf(
+                "BTC" to BigDecimal("1.0"),
+                "ETH" to BigDecimal("1.0"),
+                "USD" to BigDecimal("1.005"),
+            )
+            val prices = mapOf(
+                "BTC" to BigDecimal("1.005"),
+                "ETH" to BigDecimal("1.005"),
+                "USD" to BigDecimal.ONE,
+            )
+
+            val snapshot = SnapshotHistoryCalculator.calculateHistoricalSnapshots(
+                events = events,
+                allocations = allocations,
+                runningBalances = balances,
+                currentPrices = prices,
+                ohlcData = emptyMap(),
+                tradePrices = emptyMap(),
+            ).first()
+
+            snapshot.totalValueUSD.shouldBeEqualComparingTo(BigDecimal("3.02"))
+            snapshot.assets.values.forEach { it.valueUSD.shouldBeEqualComparingTo(BigDecimal("1.01")) }
+        }
+
         "calculateHistoricalSnapshots should pick first OHLC point when equidistant (strict less-than)" {
             val now = Instant.now()
             val cutoff = now.minus(5, ChronoUnit.DAYS)

@@ -8,9 +8,11 @@ import com.gemini.krakenbot.view.component.DashboardFragmentComponent
 import com.gemini.krakenbot.view.component.DashboardShellComponent
 import com.gemini.krakenbot.view.component.HistoryPageComponent
 import com.gemini.krakenbot.view.component.SettingsFormComponent
+import com.gemini.krakenbot.view.util.CdnIntegrity
 import com.gemini.krakenbot.view.util.CdnUrls
 import com.gemini.krakenbot.view.util.ViewText.APP_TITLE
 import com.gemini.krakenbot.view.util.ViewText.SETTINGS_TITLE
+import com.gemini.krakenbot.view.util.cdnScript
 import com.gemini.krakenbot.view.util.commonMetadataAndStyles
 import kotlinx.html.DIV
 import kotlinx.html.FlowContent
@@ -37,7 +39,7 @@ class DashboardView(
         html.head {
             commonMetadataAndStyles()
             title("$SETTINGS_TITLE - $APP_TITLE")
-            script(src = CdnUrls.HTMX) {}
+            cdnScript(CdnUrls.HTMX, CdnIntegrity.HTMX)
         }
         html.body {
             settingsFormComponent.render(config, errorMessage, csrfToken)

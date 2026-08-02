@@ -84,6 +84,16 @@ object CdnUrls {
             "&family=Roboto+Mono:wght@400;500;700&display=swap"
 }
 
+/** SHA-384 integrity digests for the pinned executable CDN assets. */
+object CdnIntegrity {
+    const val HTMX = "sha384-HGfztofotfshcF7+8n44JQL2oJmowVChPTg48S+jvZoztPfvwD79OC/LTtG6dMp+"
+    const val HTMX_SSE = "sha384-fw+eTlCc7suMV/1w/7fr2/PmwElUIt5i82bi+qTiLXvjRXZ2/FkiTNA/w0MhXnGI"
+    const val CHART_JS = "sha384-vsrfeLOOY6KuIYKDlmVH5UiBmgIdB1oEf7p01YgWHuqmOHfZr374+odEv96n9tNC"
+    const val CHART_JS_DATE_FNS = "sha384-cVMg8E3QFwTvGCDuK+ET4PD341jF3W8nO1auiXfuZNQkzbUUiBGLsIQUE+b1mxws"
+    const val HAMMER_JS = "sha384-Cs3dgUx6+jDxxuqHvVH8Onpyj2LF1gKZurLDlhqzuJmUqVYMJ0THTWpxK5Z086Zm"
+    const val CHART_JS_ZOOM = "sha384-dwwI6ICEN/0ZQlS5owhUa/6ZzvwUPmjH45bFVCAcjgjTulbHJvlE+TGU3g1k0N3R"
+}
+
 /** Centralized HTML tag name constants used for DOM element creation. */
 object HtmlTags {
     const val DIV = "div"

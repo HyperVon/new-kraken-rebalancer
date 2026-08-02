@@ -5,6 +5,7 @@ import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.TimeRange
 import com.gemini.krakenbot.util.PrecisionConstants
 import com.gemini.krakenbot.view.util.ActiveNav
+import com.gemini.krakenbot.view.util.CdnIntegrity
 import com.gemini.krakenbot.view.util.CdnUrls
 import com.gemini.krakenbot.view.util.ChartProps
 import com.gemini.krakenbot.view.util.CssClass
@@ -16,6 +17,7 @@ import com.gemini.krakenbot.view.util.ViewText
 import com.gemini.krakenbot.view.util.ZoomActions
 import com.gemini.krakenbot.view.util.brandWithMode
 import com.gemini.krakenbot.view.util.button
+import com.gemini.krakenbot.view.util.cdnScript
 import com.gemini.krakenbot.view.util.commonMetadataAndStyles
 import com.gemini.krakenbot.view.util.div
 import com.gemini.krakenbot.view.util.h2
@@ -57,10 +59,10 @@ class HistoryPageComponent(private val objectMapper: ObjectMapper) {
         html.head {
             commonMetadataAndStyles()
             title("${ViewText.HISTORY_TITLE} - ${ViewText.APP_TITLE}")
-            script(src = CdnUrls.CHART_JS) {}
-            script(src = CdnUrls.CHART_JS_DATE_FNS) {}
-            script(src = CdnUrls.HAMMER_JS) {}
-            script(src = CdnUrls.CHART_JS_ZOOM) {}
+            cdnScript(CdnUrls.CHART_JS, CdnIntegrity.CHART_JS)
+            cdnScript(CdnUrls.CHART_JS_DATE_FNS, CdnIntegrity.CHART_JS_DATE_FNS)
+            cdnScript(CdnUrls.HAMMER_JS, CdnIntegrity.HAMMER_JS)
+            cdnScript(CdnUrls.CHART_JS_ZOOM, CdnIntegrity.CHART_JS_ZOOM)
         }
         html.body {
             div(CssClass.Layout.Container) {

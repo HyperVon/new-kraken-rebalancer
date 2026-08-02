@@ -4,6 +4,7 @@ import com.gemini.krakenbot.view.css.CssStyles
 import kotlinx.html.HEAD
 import kotlinx.html.link
 import kotlinx.html.meta
+import kotlinx.html.script
 
 fun HEAD.commonMetadataAndStyles() {
     meta(charset = "utf-8")
@@ -20,6 +21,13 @@ fun HEAD.commonMetadataAndStyles() {
     // ?v= keeps that cache useful yet forces a refetch when rules change — stale CSS shows as native white controls.
     val stylesheetVersion = CssStyles.stylesheet.toString().hashCode()
     link(rel = "stylesheet", href = "${Routes.STATIC_STYLE_CSS}?v=$stylesheetVersion")
+}
+
+fun HEAD.cdnScript(src: String, integrity: String) {
+    script(src = src) {
+        attributes["integrity"] = integrity
+        attributes[HtmlAttrs.CROSSORIGIN] = "anonymous"
+    }
 }
 
 /** Cache-busted `/static/rebalancer.js` URL (content hash when the resource is on the classpath). */

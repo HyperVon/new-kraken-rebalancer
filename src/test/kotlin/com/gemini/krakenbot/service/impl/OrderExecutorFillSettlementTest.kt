@@ -463,7 +463,7 @@ class OrderExecutorFillSettlementTest : StringSpec() {
             }
         }
 
-        "sums fill proceeds across history pages when matching sell is on page 2" {
+        "continues fill pagination when filtered page is short" {
             runTest {
                 val sellTxid = "OID-PAGE-2"
                 val pageSize = OrderExecutorImpl.TRADE_HISTORY_PAGE_SIZE
@@ -476,19 +476,18 @@ class OrderExecutorFillSettlementTest : StringSpec() {
                         orderTxid = if (side == TestFixtures.SELL) sellTxid else null,
                     )
                 }
-                val padding =
-                    List(pageSize) { idx ->
-                        TestFixtures.tradeRecord(
-                            timestamp = Instant.now().minusSeconds(idx.toLong()),
-                            pair = Asset.ETH_USD_PAIR,
-                            side = "BUY",
-                            symbol = Asset.ETH,
-                            volume = BigDecimal("0.01"),
-                            usdAmount = BigDecimal("10.00"),
-                            price = BigDecimal("1000.00"),
-                            orderTxid = "OID-PAD-$idx",
-                        )
-                    }
+                val filteredFirstPage = listOf(
+                    TestFixtures.tradeRecord(
+                        timestamp = Instant.now().minusSeconds(1),
+                        pair = Asset.ETH_USD_PAIR,
+                        side = "BUY",
+                        symbol = Asset.ETH,
+                        volume = BigDecimal("0.01"),
+                        usdAmount = BigDecimal("10.00"),
+                        price = BigDecimal("1000.00"),
+                        orderTxid = "OID-PAD-0",
+                    ),
+                )
                 val matchingFill =
                     TestFixtures.tradeRecord(
                         timestamp = Instant.now(),
@@ -501,10 +500,9 @@ class OrderExecutorFillSettlementTest : StringSpec() {
                         fee = BigDecimal("1.00"),
                         orderTxid = sellTxid,
                     )
+                krakenService.tradeHistoryTotalCountOverride = pageSize + 1
                 krakenService.tradeHistorySupplier = { _, offset ->
-                    val all = padding + matchingFill
-                    val start = offset ?: 0
-                    all.drop(start).take(pageSize)
+                    if ((offset ?: 0) == 0) filteredFirstPage else listOf(matchingFill)
                 }
                 // Peek empty → cap to projected ($200); net fill would be $199.
                 krakenService.balanceSupplier = { emptyMap() }

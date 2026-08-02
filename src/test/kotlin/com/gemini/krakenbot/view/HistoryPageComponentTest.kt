@@ -4,6 +4,7 @@ import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.view.component.HistoryPageComponent
+import com.gemini.krakenbot.view.util.CdnIntegrity
 import com.gemini.krakenbot.view.util.CdnUrls
 import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.HtmlIds
@@ -40,6 +41,10 @@ class HistoryPageComponentTest : StringSpec() {
             htmlString shouldContain "id=\"${HtmlIds.HISTORY_SAVE_VIEW_BTN}\""
             htmlString shouldContain CdnUrls.CHART_JS_ZOOM.substringAfterLast('/')
             htmlString shouldContain CdnUrls.HAMMER_JS.substringAfterLast('/')
+            htmlString shouldContain "integrity=\"${CdnIntegrity.CHART_JS}\""
+            htmlString shouldContain "integrity=\"${CdnIntegrity.CHART_JS_DATE_FNS}\""
+            htmlString shouldContain "integrity=\"${CdnIntegrity.HAMMER_JS}\""
+            htmlString shouldContain "integrity=\"${CdnIntegrity.CHART_JS_ZOOM}\""
             htmlString shouldContain "data-zoom-action=\"in\""
             htmlString shouldContain CssClass.History.ChartScrubberInput.value
             htmlString shouldContain "id=\"${HtmlIds.STAT_AVG_FEE_RATE}\""

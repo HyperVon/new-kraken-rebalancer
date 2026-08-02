@@ -437,7 +437,8 @@ class OrderExecutorImpl(
 
     /**
      * Sum net-of-fee USD proceeds for sells whose [TradeRecord.orderTxid] is in [txidSet],
-     * paginating newest-first until a short/empty page or [MAX_FILL_HISTORY_PAGES].
+     * paginating newest-first until the exchange reports no more raw rows or
+     * [MAX_FILL_HISTORY_PAGES].
      * Does not stop early when every txid has been seen once — one AddOrder can
      * produce multiple fill legs across page boundaries. Shifting pages may repeat an identified
      * fill, while identical id-less rows remain conservatively distinct legs.
@@ -452,7 +453,7 @@ class OrderExecutorImpl(
         val seenTradeIds = mutableSetOf<String>()
         for (page in 0 until MAX_FILL_HISTORY_PAGES) {
             val fills = backend.getTradeHistory(startSec = startSec, offset = offset)
-            if (fills.isEmpty()) break
+            val totalCount = backend.getLastTradeHistoryTotalCount()
             for (fill in fills) {
                 val txid = fill.orderTxid ?: continue
                 if (!fill.success || !OrderSide.isSell(fill.side) || txid !in txidSet) continue
@@ -461,8 +462,14 @@ class OrderExecutorImpl(
                 val netProceeds = fill.usdAmount.subtract(fill.fee).max(BigDecimal.ZERO)
                 matchedProceeds = matchedProceeds.add(netProceeds)
             }
-            offset += fills.size
-            if (fills.size < TRADE_HISTORY_PAGE_SIZE) break
+            val nextOffset = offset + TRADE_HISTORY_PAGE_SIZE
+            val hasMorePages = if (totalCount > 0) {
+                nextOffset < totalCount
+            } else {
+                fills.size >= TRADE_HISTORY_PAGE_SIZE
+            }
+            if (!hasMorePages) break
+            offset = nextOffset
         }
         return matchedProceeds
     }

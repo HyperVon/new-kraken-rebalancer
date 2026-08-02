@@ -82,9 +82,11 @@ class SimulatedKrakenServiceTest : StringSpec() {
             result.success shouldBe true
 
             val newBalances = simulatedService.getBalances()
+            val grossCost = buyVolume.multiply(btcPrice).setScale(2, RoundingMode.HALF_UP)
+            val fee = grossCost.multiply(BigDecimal("0.0026")).setScale(4, RoundingMode.HALF_UP)
             newBalances[Asset.BTC]!!.shouldBeEqualComparingTo(initialBtc.add(buyVolume))
             newBalances[Asset.USD]!!.shouldBeEqualComparingTo(
-                initialUsd.subtract(buyVolume.multiply(btcPrice).setScale(2, RoundingMode.HALF_UP)),
+                initialUsd.subtract(grossCost).subtract(fee).setScale(2, RoundingMode.HALF_UP),
             )
         }
 
@@ -113,9 +115,11 @@ class SimulatedKrakenServiceTest : StringSpec() {
             result.success shouldBe true
 
             val newBalances = simulatedService.getBalances()
+            val grossProceeds = sellVolume.multiply(btcPrice).setScale(2, RoundingMode.HALF_UP)
+            val fee = grossProceeds.multiply(BigDecimal("0.0026")).setScale(4, RoundingMode.HALF_UP)
             newBalances[Asset.BTC]!!.shouldBeEqualComparingTo(initialBtc.subtract(sellVolume))
             newBalances[Asset.USD]!!.shouldBeEqualComparingTo(
-                initialUsd.add(sellVolume.multiply(btcPrice).setScale(2, RoundingMode.HALF_UP)),
+                initialUsd.add(grossProceeds).subtract(fee).setScale(2, RoundingMode.HALF_UP),
             )
         }
 
@@ -180,6 +184,7 @@ class SimulatedKrakenServiceTest : StringSpec() {
                     .multiply(BigDecimal("0.60"))
                     .divide(btcPrice, 8, RoundingMode.HALF_UP)
             val acceptedCost = buyVolume.multiply(btcPrice).setScale(2, RoundingMode.HALF_UP)
+            val acceptedFee = acceptedCost.multiply(BigDecimal("0.0026")).setScale(4, RoundingMode.HALF_UP)
             val start = CompletableDeferred<Unit>()
 
             val results = coroutineScope {
@@ -198,7 +203,7 @@ class SimulatedKrakenServiceTest : StringSpec() {
 
             results.count { it.success } shouldBe 1
             simulatedService.getBalances().getValue(Asset.USD).shouldBeEqualComparingTo(
-                initialUsd.subtract(acceptedCost),
+                initialUsd.subtract(acceptedCost).subtract(acceptedFee).setScale(2, RoundingMode.HALF_UP),
             )
         }
 

@@ -15,6 +15,7 @@ import com.gemini.krakenbot.view.component.OverviewGridComponent
 import com.gemini.krakenbot.view.component.PerformanceTableComponent
 import com.gemini.krakenbot.view.component.RecentActivityComponent
 import com.gemini.krakenbot.view.component.SettingsFormComponent
+import com.gemini.krakenbot.view.util.CdnIntegrity
 import com.gemini.krakenbot.view.util.CdnUrls
 import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.FormFields.CSRF_TOKEN
@@ -115,6 +116,8 @@ class DashboardViewTest : StringSpec() {
             html shouldContain "title>${APP_TITLE}"
             html shouldContain "link href=\"${STATIC_STYLE_CSS}?v="
             html shouldContain "script src=\"${CdnUrls.HTMX}\""
+            html shouldContain "integrity=\"${CdnIntegrity.HTMX}\""
+            html shouldContain "crossorigin=\"anonymous\""
             html shouldContain "hx-ext=\"sse\""
             html shouldContain "sse-connect=\"${API_STATUS_STREAM}\""
             html shouldContain CONNECTING
