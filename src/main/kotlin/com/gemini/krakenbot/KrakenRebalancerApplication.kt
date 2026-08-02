@@ -1,5 +1,6 @@
 package com.gemini.krakenbot
 
+import com.fasterxml.jackson.databind.ObjectMapper
 import com.gemini.krakenbot.config.ErrorHandlingConfig.configureErrorHandling
 import com.gemini.krakenbot.config.ServerConfig
 import com.gemini.krakenbot.config.appModule
@@ -63,6 +64,7 @@ fun main() {
     val portfolioManager = koin.get<PortfolioManager>()
     val tradeHistoryService = koin.get<TradeHistoryService>()
     val httpClient = koin.get<HttpClient>()
+    val objectMapper = koin.get<ObjectMapper>()
 
     // Blocking: history cleanup/migration/simulation seeding must finish before runLoop is launched
     // below and before the server accepts traffic, so cycle one and the dashboard see seeded state.
@@ -88,10 +90,10 @@ fun main() {
         },
     )
 
-    startServer()
+    startServer(objectMapper)
 }
 
-private fun startServer() {
+private fun startServer(objectMapper: ObjectMapper) {
     // Bind the IPv6 wildcard. On dual-stack kernels (macOS/Windows default; Linux when
     // net.ipv6.bindv6only=0) the same socket also accepts IPv4-mapped clients. The IPv4
     // wildcard `0.0.0.0` refuses native IPv6, which breaks hostname clients that prefer AAAA.
@@ -102,7 +104,7 @@ private fun startServer() {
         install(SSE)
         configureCompression()
         configureCachingAndConditionalHeaders()
-        configureErrorHandling()
+        configureErrorHandling(objectMapper)
         configureSerialization()
         configureCORS()
         dashboardRouting()

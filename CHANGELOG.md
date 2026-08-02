@@ -20,6 +20,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Runtime hardening**: moved legacy stats-file migration I/O to the IO
   dispatcher, removed hidden ObjectMapper service lookup, and eliminated the
   view-to-controller color-map dependency without changing dashboard behavior.
+- **Quality tooling**: retained security-floor Yarn resolutions, regenerated the
+  Kotlin/JS lockfile, and scoped the external Yarn `DEP0169` warning filter to
+  repository quality scripts only.
+- **Application wiring**: error responses now use the Koin-configured
+  `ObjectMapper` instead of creating a separate mapper during server startup.
 - **Quality tooling**: retained patched Yarn dependency floors without
   incompatibility warnings and documented the narrowly scoped filter for the
   external Yarn 1 `DEP0169` diagnostic emitted by modern Node.
