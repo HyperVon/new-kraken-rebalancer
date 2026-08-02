@@ -21,6 +21,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Reconciliation test coverage**: the tracked buy and sell
   `RebalancerComparisonCalculatorTest` cases now assert `RECONCILED` confidence,
   guarding the reconcile-verified branch instead of only `AVAILABLE`.
+- **Constants and catalog ownership**: centralized the shared Kraken trade-history
+   page size, removed duplicate portfolio precision aliases, and simplified
+   metadata-only sealed catalogs without changing pagination or rendering behavior.
+- **Dependabot #103**: replaced the deprecated vulnerable Puppeteer MCP server
+  with the maintained Playwright MCP package, removing the vulnerable nested MCP SDK.
 
 ## [6.15.34] - 2026-08-02
 

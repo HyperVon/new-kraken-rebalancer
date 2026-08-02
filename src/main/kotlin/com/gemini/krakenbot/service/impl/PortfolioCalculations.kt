@@ -12,11 +12,6 @@ import java.math.RoundingMode
  * Shared portfolio math used by [RebalancerEngine] and [PortfolioAnalyzerImpl].
  */
 object PortfolioCalculations {
-    internal const val SCALE_PERCENT = PrecisionConstants.SCALE_PERCENT
-    internal const val SCALE_USD = PrecisionConstants.SCALE_USD
-    internal const val SCALE_PRICE = PrecisionConstants.SCALE_CRYPTO
-    internal val HUNDRED = PrecisionConstants.HUNDRED
-
     /**
      * Effective target % after ATH/drawdown fiat deployment: USD uses [effectiveUsdTarget]
      * directly; crypto is [baseTargetPercent] × [cryptoScaleFactor] so reduced USD redistributes
@@ -37,15 +32,15 @@ object PortfolioCalculations {
         .valueOf(
             allocations.firstOrNull { it.symbol.isUsd }?.targetPercent
                 ?: PrecisionConstants.DEFAULT_USD_TARGET_PERCENT,
-        ).setScale(SCALE_USD, RoundingMode.HALF_UP)
+        ).setScale(PrecisionConstants.SCALE_USD, RoundingMode.HALF_UP)
 
     fun calculateCurrentPercent(valueUSD: BigDecimal, totalPortfolioValueUSD: BigDecimal): BigDecimal =
         if (totalPortfolioValueUSD >
             BigDecimal.ZERO
         ) {
             valueUSD
-                .multiply(HUNDRED)
-                .divide(totalPortfolioValueUSD, SCALE_PERCENT, RoundingMode.HALF_UP)
+                .multiply(PrecisionConstants.HUNDRED)
+                .divide(totalPortfolioValueUSD, PrecisionConstants.SCALE_PERCENT, RoundingMode.HALF_UP)
         } else {
             BigDecimal.ZERO
         }
@@ -53,7 +48,7 @@ object PortfolioCalculations {
     fun calculateTargetValue(targetPct: BigDecimal, totalPortfolioValueUSD: BigDecimal): BigDecimal =
         totalPortfolioValueUSD
             .multiply(targetPct)
-            .divide(HUNDRED, SCALE_USD, RoundingMode.HALF_UP)
+            .divide(PrecisionConstants.HUNDRED, PrecisionConstants.SCALE_USD, RoundingMode.HALF_UP)
 
     fun calculateDeviationUSD(currentValueUSD: BigDecimal, targetValueUSD: BigDecimal): BigDecimal =
         currentValueUSD.subtract(targetValueUSD)
@@ -70,10 +65,10 @@ object PortfolioCalculations {
     ): BigDecimal = when {
         targetValueUSD > BigDecimal.ZERO -> {
             deviationUSD
-                .multiply(HUNDRED)
-                .divide(targetValueUSD, SCALE_PERCENT, RoundingMode.HALF_UP)
+                .multiply(PrecisionConstants.HUNDRED)
+                .divide(targetValueUSD, PrecisionConstants.SCALE_PERCENT, RoundingMode.HALF_UP)
         }
-        currentValueUSD > BigDecimal.ZERO -> HUNDRED
+        currentValueUSD > BigDecimal.ZERO -> PrecisionConstants.HUNDRED
         else -> BigDecimal.ZERO
     }
 
@@ -141,13 +136,13 @@ object PortfolioCalculations {
         // Snapshot percents use SCALE_USD (2) for display; analysis math keeps SCALE_PERCENT (4).
         return PortfolioSnapshot.AssetSnapshot(
             symbol = Asset(symbol),
-            balance = balance.setScale(SCALE_PRICE, RoundingMode.HALF_UP),
-            price = price.setScale(SCALE_PRICE, RoundingMode.HALF_UP),
-            valueUSD = valueUSD.setScale(SCALE_USD, RoundingMode.HALF_UP),
-            targetPercent = targetPercent.setScale(SCALE_USD, RoundingMode.HALF_UP),
-            currentPercent = currentPercent.setScale(SCALE_USD, RoundingMode.HALF_UP),
-            deviationPercent = deviationPercent.setScale(SCALE_USD, RoundingMode.HALF_UP),
-            deviationUSD = deviationUSD.setScale(SCALE_USD, RoundingMode.HALF_UP),
+            balance = balance.setScale(PrecisionConstants.SCALE_CRYPTO, RoundingMode.HALF_UP),
+            price = price.setScale(PrecisionConstants.SCALE_CRYPTO, RoundingMode.HALF_UP),
+            valueUSD = valueUSD.setScale(PrecisionConstants.SCALE_USD, RoundingMode.HALF_UP),
+            targetPercent = targetPercent.setScale(PrecisionConstants.SCALE_USD, RoundingMode.HALF_UP),
+            currentPercent = currentPercent.setScale(PrecisionConstants.SCALE_USD, RoundingMode.HALF_UP),
+            deviationPercent = deviationPercent.setScale(PrecisionConstants.SCALE_USD, RoundingMode.HALF_UP),
+            deviationUSD = deviationUSD.setScale(PrecisionConstants.SCALE_USD, RoundingMode.HALF_UP),
         )
     }
 }

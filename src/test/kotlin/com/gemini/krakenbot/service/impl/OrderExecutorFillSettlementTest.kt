@@ -466,7 +466,7 @@ class OrderExecutorFillSettlementTest : StringSpec() {
         "continues fill pagination when filtered page is short" {
             runTest {
                 val sellTxid = "OID-PAGE-2"
-                val pageSize = OrderExecutorImpl.TRADE_HISTORY_PAGE_SIZE
+                val pageSize = KrakenApiConstants.TRADE_HISTORY_PAGE_SIZE
                 krakenService.orderResultFactory = { pair, _, side, volume ->
                     OrderResult(
                         success = true,
@@ -546,7 +546,7 @@ class OrderExecutorFillSettlementTest : StringSpec() {
                         tradeId = "T-SHIFTED",
                     )
                 val padding =
-                    List(OrderExecutorImpl.TRADE_HISTORY_PAGE_SIZE - 1) { index ->
+                    List(KrakenApiConstants.TRADE_HISTORY_PAGE_SIZE - 1) { index ->
                         duplicateFill.copy(
                             side = "BUY",
                             orderTxid = "OID-PADDING-$index",
@@ -563,7 +563,7 @@ class OrderExecutorFillSettlementTest : StringSpec() {
                 krakenService.tradeHistorySupplier = { _, offset ->
                     when (offset ?: 0) {
                         0 -> listOf(duplicateFill) + padding
-                        OrderExecutorImpl.TRADE_HISTORY_PAGE_SIZE ->
+                        KrakenApiConstants.TRADE_HISTORY_PAGE_SIZE ->
                             listOf(duplicateFill, idLessLeg, idLessLeg.copy())
                         else -> emptyList()
                     }

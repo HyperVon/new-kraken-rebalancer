@@ -71,7 +71,7 @@ class HistoryPageComponent(private val objectMapper: ObjectMapper) {
                 renderToolbar()
                 renderStatsGrid()
                 renderComparisonChartSection()
-                HistoryChartSection.ALL.forEach { chart ->
+                HistoryChartSection.entries.forEach { chart ->
                     renderChartSection(chart)
                 }
                 renderTradeTable()
@@ -98,7 +98,7 @@ class HistoryPageComponent(private val objectMapper: ObjectMapper) {
     private fun DIV.renderStatsGrid() {
         div(CssClass.History.StatsGrid) {
             id = HtmlIds.HISTORY_STATS
-            HistoryStatCardDefinition.ALL.forEach { card ->
+            HistoryStatCardDefinition.entries.forEach { card ->
                 statusCard(
                     title = card.title,
                     iconSvg = card.iconSvg,
@@ -320,80 +320,71 @@ class HistoryPageComponent(private val objectMapper: ObjectMapper) {
     }
 }
 
-private sealed class HistoryChartSection(
+private enum class HistoryChartSection(
     val canvasId: String,
     val title: String,
     val iconSvg: String,
     val caption: String? = null,
 ) {
-    object PortfolioValue : HistoryChartSection(
+    PORTFOLIO_VALUE(
         HtmlIds.PORTFOLIO_VALUE_CHART,
         ViewText.HISTORY_PORTFOLIO_VALUE,
         Icons.CHART,
-    )
-    object AssetHoldings : HistoryChartSection(
+    ),
+    ASSET_HOLDINGS(
         HtmlIds.ASSET_HOLDINGS_CHART,
         ViewText.HISTORY_ASSET_HOLDINGS,
         Icons.CHART,
-    )
-    object AllocationDrift : HistoryChartSection(
+    ),
+    ALLOCATION_DRIFT(
         HtmlIds.ALLOCATION_DRIFT_CHART,
         ViewText.HISTORY_ALLOCATION_DRIFT,
         Icons.CHART,
-    )
-    object CumulativeNetCashFlow :
-        HistoryChartSection(
-            HtmlIds.CUMULATIVE_NET_CASH_FLOW_CHART,
-            ViewText.HISTORY_NET_CASH_FLOW,
-            Icons.WALLET,
-            // HIST-2: legend caveat moved out of the chart legend into a caption.
-            ViewText.NET_CASH_FLOW_CAPTION,
-        )
-
-    companion object {
-        val ALL = listOf(PortfolioValue, AssetHoldings, AllocationDrift, CumulativeNetCashFlow)
-    }
+    ),
+    CUMULATIVE_NET_CASH_FLOW(
+        HtmlIds.CUMULATIVE_NET_CASH_FLOW_CHART,
+        ViewText.HISTORY_NET_CASH_FLOW,
+        Icons.WALLET,
+        // HIST-2: legend caveat moved out of the chart legend into a caption.
+        ViewText.NET_CASH_FLOW_CAPTION,
+    ),
 }
 
-private sealed class HistoryStatCardDefinition(
+private enum class HistoryStatCardDefinition(
     val title: String,
     val iconSvg: String,
     val valueId: String,
     val titleId: String? = null,
 ) {
-    object AllTimeHigh : HistoryStatCardDefinition(
+    ALL_TIME_HIGH(
         ViewText.HISTORY_ALL_TIME_HIGH,
         Icons.WALLET,
         HtmlIds.STAT_ATH,
         HtmlIds.STAT_ATH_TITLE,
-    )
-    object TotalTrades : HistoryStatCardDefinition(
+    ),
+    TOTAL_TRADES(
         ViewText.HISTORY_TOTAL_TRADES,
         Icons.CHART,
         HtmlIds.STAT_TOTAL_TRADES,
-    )
-    object TotalVolume : HistoryStatCardDefinition(
+    ),
+    TOTAL_VOLUME(
         ViewText.HISTORY_TOTAL_VOLUME,
         Icons.WALLET,
         HtmlIds.STAT_TOTAL_VOLUME,
-    )
-    object TotalFees : HistoryStatCardDefinition(
+    ),
+    TOTAL_FEES(
         ViewText.HISTORY_TOTAL_FEES,
         Icons.DOLLAR_CIRCLE,
         HtmlIds.STAT_TOTAL_FEES,
-    )
-    object AvgFeeRate : HistoryStatCardDefinition(
+    ),
+    AVG_FEE_RATE(
         ViewText.HISTORY_AVG_FEE_RATE,
         Icons.DOLLAR_CIRCLE,
         HtmlIds.STAT_AVG_FEE_RATE,
-    )
-    object AvgSlippage : HistoryStatCardDefinition(
+    ),
+    AVG_SLIPPAGE(
         ViewText.HISTORY_AVG_SLIPPAGE,
         Icons.CHART,
         HtmlIds.STAT_AVG_SLIPPAGE,
-    )
-
-    companion object {
-        val ALL = listOf(AllTimeHigh, TotalTrades, TotalVolume, TotalFees, AvgFeeRate, AvgSlippage)
-    }
+    ),
 }
