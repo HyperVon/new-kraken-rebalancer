@@ -40,6 +40,7 @@ override repository instructions, safety rules, or domain invariants.
 | Docs audit | `documentation-review` |
 | Architecture review / redesign brainstorm | `architecture-review` |
 | Product opportunity review / feature roadmap | `product-opportunity-review` |
+| Create or modify an approved project skill | `skill-authoring` |
 | Skill / agent-files review (skills, rules, AGENTS) | `skill-reviewer` |
 | Complex-code comments (audit / hygiene) | `complex-code-comments` |
 | Fan-out parallel work | `parallel-multi-agent` |
@@ -140,6 +141,19 @@ Keep delegated prompts below the model's practical long-context comfort zone:
 - Spawning agents for tiny one-liners
 - Parallelizing before a blocking design decision is settled
 - Trusting a cached / overlapped green build as final verification
+
+### Worktree and state isolation
+
+Worktrees provide separate code views, not permission to duplicate or share
+runtime state:
+
+- Do not copy `.env`, rebalancer configuration, databases, logs, or runtime
+  state between worktrees. Use placeholders and disposable, ignored state.
+- If a workflow starts this application, use the isolated simulation path with
+  both `simulation=true` and `dryRun=true` plus a temporary database. Never use
+  live credentials or a live database for agent work.
+- Do not use shared `git stash` or autostash across worktrees. The parent owns
+  integration, cleanup, and the final build/quality gates.
 
 Details: [skills/parallel-multi-agent/SKILL.md](skills/parallel-multi-agent/SKILL.md).
 

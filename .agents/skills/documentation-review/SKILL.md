@@ -94,6 +94,25 @@ Gather facts from code/build (do not trust docs yet):
 
 Use `rg`, package listings, and targeted file reads. Prefer evidence over memory.
 
+## Evidence and claims
+
+Treat every material documentation statement as a claim that needs a source:
+
+- Verify behavior against code, build configuration, tests, CI, or safely
+  observed simulation behavior. Cite the path, heading, command, or test that
+  supports the correction.
+- Separate source truth, documented intent, inference, and unresolved
+  assumptions. Do not fill a missing fact with plausible wording.
+- For external or time-sensitive claims, prefer primary or authoritative sources
+  and record the date. Do not preserve a stale claim merely because it appears
+  in an older document.
+- When documentation, source, and external references contradict one another,
+  classify the mismatch, resolve it using the strongest current evidence, and
+  record any remaining uncertainty as a gap or deferment.
+- Before changing a high-impact safety, dependency, or workflow claim, perform
+  a targeted gap check and confirm that the proposed wording does not imply a
+  broader guarantee than the repository actually provides.
+
 ### Step 1: Audit categories
 
 For every in-scope doc, classify findings:

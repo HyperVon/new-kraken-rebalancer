@@ -34,6 +34,7 @@ override repository instructions, safety rules, or domain invariants.
 | Docs audit | `documentation-review` |
 | Architecture review / redesign brainstorm | `architecture-review` |
 | Product opportunity review / feature roadmap | `product-opportunity-review` |
+| Create or modify an approved project skill | `skill-authoring` |
 | Skill / agent-files review (skills, rules, AGENTS) | `skill-reviewer` |
 | Complex-code comments (audit / hygiene) | `complex-code-comments` |
 | Fan-out parallel work | `parallel-multi-agent` |

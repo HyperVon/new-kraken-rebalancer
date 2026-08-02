@@ -53,6 +53,18 @@ paths live in [gradle-quality-gates](../gradle-quality-gates/SKILL.md).
 Include `CONTRIBUTING.md` and `SECURITY.md` in markdownlint when present.
 Fix Spotless with `./gradlew spotlessApply`. Do not proceed on failures.
 
+Before staging, inspect the change boundary:
+
+```bash
+git diff --check
+git diff --stat
+git diff --name-only
+```
+
+Confirm that every changed path is intentional and that no generated file,
+credential, runtime state, or unrelated user change is included. Do not use a
+destructive cleanup command to make the worktree appear clean.
+
 Coverage expectations: JVM JaCoCo 95% line/method/instruction, 90% branch;
 JS Karma 90% statements/functions/lines, 75% branches.
 
@@ -103,7 +115,17 @@ authenticate manually.
 
 ## Step 6: Verify
 
-`git status` should show the branch up to date with `origin/<branch>`.
+Verify both status and the exact pushed commit:
+
+```bash
+BRANCH=$(git branch --show-current)
+git fetch --no-tags origin "$BRANCH"
+test "$(git rev-parse HEAD)" = "$(git rev-parse "origin/$BRANCH")"
+git status
+```
+
+`git status` should show the branch up to date with `origin/<branch>`. If the
+SHA check fails, stop and investigate instead of claiming the push succeeded.
 
 ## Checklist
 

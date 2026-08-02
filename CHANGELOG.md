@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.15.36] - 2026-08-02
+
+### Changed
+
+- **Agent playbook workflows**: added an approved skill-authoring workflow,
+  evidence-first research and decision guidance, isolated worktree safeguards,
+  and exact pushed-commit verification while preserving the repository’s
+  provider-neutral and simulation-only agent boundaries.
+
 ## [6.15.35] - 2026-08-02
 
 ### Fixed

@@ -90,6 +90,20 @@ allowed paths, model substitution, iteration cap, coverage, and stop reason.
 Never paste full prior reports into follow-ups; pass only the finding and the
 smallest affected path set.
 
+## Worktree and state isolation
+
+Treat a worktree as an isolated code workspace, not a place to duplicate
+credentials or runtime state:
+
+- For this repository’s Agent Manager workflow, use `.kilo/setup-script` and
+  `.kilo/run-script`. The run path forces `simulation=true` and `dryRun=true`
+  and uses a private temporary database.
+- Never copy `.env`, `rebalancer-config.json`, databases, logs, or runtime state
+  into another worktree. Keep configuration placeholder-only and use disposable
+  ignored state for tests or local runs.
+- Do not use shared `git stash` or autostash across worktrees. The parent owns
+  integration, cleanup, and the final build/quality gates.
+
 ## One Gradle build per clone
 
 Gradle serializes on the project directory, so **concurrent agents running

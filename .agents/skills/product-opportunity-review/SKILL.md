@@ -53,6 +53,26 @@ new user outcome; hand the implementation concern to the owning skill.
 8. **Recommend the smallest useful version.** Distinguish an MVP that validates
    the opportunity from the fully developed vision.
 
+## Evidence and decision discipline
+
+For every opportunity or external claim:
+
+- Prefer direct product observation, repository behavior, user evidence, and
+  primary or authoritative external sources. Cite the source and date when the
+  claim may change.
+- Label evidence, inference, hypothesis, and confidence separately. A missing
+  metric or unverified user need is a gap, not evidence of demand.
+- Check for contradictions between code, docs, user-visible behavior, and
+  external research. Resolve them with the strongest current evidence or state
+  the uncertainty and its product consequence.
+- Before ranking a consequential opportunity, record the user decision, core
+  constraints, alternatives including “keep as-is,” smallest validation step,
+  and safety/recovery boundary. Ask only when an unresolved choice would change
+  the roadmap materially.
+- Do not use a competitor feature as proof of value. Treat parity as observed
+  only when the source supports it, then test whether it fits this product’s
+  operator, scale, and trust model.
+
 ## Workflow
 
 ```text

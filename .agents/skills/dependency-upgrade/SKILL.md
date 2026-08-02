@@ -86,6 +86,21 @@ gh --version && npx markdownlint-cli --version
 
 Cross-reference the numbers in `.agents/AGENTS.md` §1 (Stack Specification) so the documented stack matches reality.
 
+### Evidence for version claims
+
+- Use official release notes, migration guides, and project documentation as the
+  authority for API behavior and compatibility. Use registries to confirm
+  availability, not to infer migration safety.
+- Record the date and source for a claimed latest stable version when the result
+  can change during the upgrade. Treat an unavailable or conflicting source as
+  unverified rather than guessing.
+- Check compatibility across the full toolchain: Kotlin, KSP, Gradle, JDK,
+  plugins, and runtime libraries. Version strings do not prove compatibility,
+  especially for Kotlin and KSP.
+- For conflicting release or vulnerability information, identify the conflict,
+  resolve it with the authoritative source, and state any remaining gap before
+  applying a bump.
+
 ### Step 2: Present the plan
 
 Summarize each proposed bump as `name: old -> new` grouped by risk:

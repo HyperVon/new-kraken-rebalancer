@@ -58,6 +58,30 @@ continuous-quality — not this skill.
 6. **Alternatives must be comparable.** For each major recommendation, state
    at least one credible alternative (including “keep current”) with trade-offs.
 
+## Evidence and decision discipline
+
+Use an evidence trail before turning an observation into an architecture
+recommendation:
+
+- Prefer code, tests, configuration, and official project/library sources over
+  memory, summaries, or vendor claims. Record the path, heading, URL, or command
+  that supports a material assertion.
+- Label direct observations, reasoned inferences, hypotheses, and unresolved
+  assumptions separately. Do not present an inferred scale, demand, or failure
+  mode as observed fact.
+- When sources disagree, identify the contradiction, prefer the newer and more
+  authoritative source when justified, and retain the uncertainty when it
+  cannot be resolved. Do not silently average conflicting claims.
+- Perform a gap check before recommending a consequential change: identify the
+  missing evidence, its impact on the decision, and the smallest safe read,
+  test, or observation that would close it. Ask the user only when the gap is a
+  real blocker.
+- Before each major recommendation, state the decision, constraints, options
+  including “keep current,” evidence, reversibility, and validation signal.
+
+This discipline improves the review report; it does not authorize implementation.
+The decisions Canvas and recommend-only boundary in Step 6 remain mandatory.
+
 ---
 
 ## Workflow
