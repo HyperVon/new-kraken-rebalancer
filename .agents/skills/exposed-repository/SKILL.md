@@ -25,28 +25,27 @@ Do **not** use the legacy `org.jetbrains.exposed.sql.*` packages.
 
 ## Table & Schema Definitions
 
-Define database tables extending `LongIdTable` or `Table` with explicit precision and foreign key cascading rules:
+Define tables extending `Table` (this repo does **not** use `LongIdTable`) with an explicit auto-incrementing integer id and explicit precision / foreign key cascade rules. Use the real schema in `src/main/kotlin/com/gemini/krakenbot/repository/table/TradeTable.kt` as the canonical reference:
 
 ```kotlin
-object TradeTable : LongIdTable("trades") {
-    val timestamp = long("timestamp").index()
-    val pair = varchar("pair", 32)
-    val side = varchar("side", 8)
-    val volume = decimal("volume", 18, 8)
-    val usdAmount = decimal("usd_amount", 12, 2)
-    val success = boolean("success").default(true)
-}
+object TradeTable : Table("trades") {
+    val id = integer("id").autoIncrement()
+    val timestamp = long("timestamp")
+    val pair = varchar("pair", 16)
+    val side = varchar("side", 4)
+    val volume = decimal("volume", 24, 8)
+    val usdAmount = decimal("usd_amount", 18, 2)
+    val price = decimal("price", 24, 8)
+    val fee = decimal("fee", 18, 4)
 
-object AssetSnapshotTable : LongIdTable("asset_snapshots") {
-    val snapshotId = reference("snapshot_id", PortfolioSnapshotTable, onDelete = ReferenceOption.CASCADE)
-    val symbol = varchar("symbol", 16)
-    val balance = decimal("balance", 18, 8)
+    override val primaryKey = PrimaryKey(id)
 }
 ```
 
-- **Cryptocurrency Amounts**: Use `decimal("column_name", 18, 8)` for crypto balances and trade volumes.
-- **USD Valuations**: Use `decimal("column_name", 12, 2)` for fiat totals and valuations.
+- **Cryptocurrency Amounts**: Use `decimal("column_name", 24, 8)` for crypto balances and trade volumes (precision `>= 24`, scale `8`).
+- **USD Valuations**: Use `decimal("column_name", 18, 2)` for fiat totals and valuations; fees use `decimal("column_name", 18, 4)`.
 - **Foreign Keys**: Always specify `onDelete = ReferenceOption.CASCADE` on foreign key references.
+- **Primary keys**: `Table` with an explicit `integer("id").autoIncrement()` + `override val primaryKey = PrimaryKey(id)` — do not use `LongIdTable`.
 
 ## Repository Class Structure
 

@@ -26,7 +26,7 @@ except ImportError:
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 # scripts/ → skill/ → skills/ → .agents/ → project root
-PROJECT_ROOT = SCRIPT_DIR.parents[4]
+PROJECT_ROOT = SCRIPT_DIR.parents[3]
 IMAGE_DIR = PROJECT_ROOT / "docs" / "images"
 MANIFEST = SCRIPT_DIR / "targets.json"
 CHART_SETTLE_MS = 1_000

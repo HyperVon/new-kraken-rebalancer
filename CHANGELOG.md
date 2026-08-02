@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.15.35] - 2026-08-02
+
+### Fixed
+
+- **Skill helper root resolution**: corrected the repo-root path in
+  `capture_screenshots.py`, `validate_mermaid.py`, and `check_updates.py` to
+  resolve `.parents[3]` so they read/write under the project root instead of its
+  parent.
+- **Exposed skill schema guidance**: aligned the `exposed-repository` skill and
+  its example to the repository's actual `Table` + explicit `integer id` schema
+  and decimal precisions (`volume 24,8`, `usd_amount 18,2`, `fee 18,4`) instead
+  of the narrower `LongIdTable`/`decimal(18,8)` / `decimal(12,2)` pattern.
+- **Reconciliation test coverage**: the tracked buy and sell
+  `RebalancerComparisonCalculatorTest` cases now assert `RECONCILED` confidence,
+  guarding the reconcile-verified branch instead of only `AVAILABLE`.
+
 ## [6.15.34] - 2026-08-02
 
 ### Fixed
