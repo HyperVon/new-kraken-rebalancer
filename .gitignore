@@ -34,3 +34,9 @@ portfolio-stats.json
 .junie/
 src/main/resources/static/rebalancer.js
 node_modules/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
