@@ -8,7 +8,6 @@ permission:
   edit: deny
   external_directory: deny
   read:
-    "*": allow
     "rebalancer-config.json": deny
     "**/rebalancer-config.json": deny
     ".env": deny
@@ -20,6 +19,7 @@ permission:
     "**/*.sqlite3": deny
     "**/logs/**": deny
     "build/**": deny
+    "*": allow
 ---
 
 # Documentation Contract Auditor

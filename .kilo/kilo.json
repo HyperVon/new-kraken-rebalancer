@@ -22,6 +22,11 @@
       "type": "local",
       "command": ["npx", "-y", "mcp-server-sqlite-npx", "build/kilo-disposable.db"],
       "enabled": false
+    },
+    "playwright": {
+      "type": "local",
+      "command": ["npx", "-y", "@modelcontextprotocol/server-puppeteer"],
+      "enabled": false
     }
   },
   "permission": {
