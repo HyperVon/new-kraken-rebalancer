@@ -98,13 +98,26 @@ Use the cheapest model that can answer each track reliably, escalating only for
 high-risk financial, security, persistence, or disputed reasoning. Model
 diversity is useful, but scope diversity is mandatory. The former OpenCode
 fast/strong reviewer roles are optional model choices, not a requirement to
-launch exactly two full-diff agents:
+launch exactly two full-diff agents.
 
-| Capability | Use when | Example role |
+The routing rules below are harness-neutral. Named agent types are repository
+or Kilo/OpenCode examples only; Cursor, Claude Code, Copilot, and other hosts
+should map the same capabilities to their own read-only Task/equivalent agents.
+Preserve the bounded scope, stop condition, report cap, and parent ownership
+regardless of the host.
+
+Prefer a repository-specialized read-only agent when its contract matches the
+track. `general` is a last-resort fallback or parent-level cross-track verifier,
+not the default for every track.
+
+| Agent type / capability | Use when | Example role |
 | :--- | :--- | :--- |
-| Fast capable | Bounded discovery, CI/docs/test consistency, straightforward source checks | `adversarial-reviewer-a` when available |
-| Strong reasoning | Trading safety, persistence, security, cross-track contradiction, disputed finding | `adversarial-reviewer-b` when available |
-| Generic capable | Host-specific fallback for any bounded track | `general` / equivalent |
+| Agent-guidance auditor | Rules, skills, CI, Kilo config, permissions, and harness guidance | Kilo `agent-guidance-auditor` |
+| Documentation-contract auditor | Product docs checked against source/build/test truth | Kilo `documentation-contract-auditor` |
+| Explorer | Narrow source discovery or evidence lookup outside specialized scopes | `explore` / host equivalent |
+| Fast capable | High-volume bounded discovery or a specialized-track substitute | `adversarial-reviewer-a` when available |
+| Strong reasoning | High-risk safety, persistence, exchange semantics, or disputed finding | `adversarial-reviewer-b` when available |
+| Generic capable | Only when no closer specialized type is available | `general` / host equivalent |
 
 Launch independent tracks in one Task message when the host supports parallel
 calls. Include the track matrix in the prompts so agents do not redo one
@@ -122,10 +135,14 @@ Recover autonomously when an intended agent fails, is cancelled, or is
 unavailable:
 
 1. Retry once only when the failure appears transient.
-2. Otherwise replace it with the closest available agent for the **same narrow
-   track**. Do not send the replacement the full PR diff.
-3. If the replacement also fails, the parent performs or delegates one smaller
-   verification question rather than repeatedly restarting a broad task.
+2. Otherwise replace it with the closest available specialized agent for the
+   **same narrow track**. Use a generic agent only when no closer type exists.
+   Do not send the replacement the full PR diff.
+3. If the replacement also fails, the parent covers **every uncovered
+   acceptance criterion** with as many smaller sequential questions or
+   parent-owned checks as needed. The track cannot be marked complete while its
+   coverage matrix has unchecked paths or questions; if coverage cannot be
+   completed, document the explicit deferral instead of claiming convergence.
 4. Record role, intended agent/model, actual agent/model, scope, and reason for
    substitution in the verification notes.
 

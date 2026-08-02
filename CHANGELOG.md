@@ -22,7 +22,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
    v4.37.4 and bundle 2.26.2, which support Kotlin 2.4.10.
 - **Agent orchestration**: Replaced the fixed full-diff dual-reviewer procedure
   with parent-selected bounded review tracks, compact worker reports, targeted
-  follow-ups, and explicit context-limit stop conditions.
+  follow-ups, explicit context-limit stop conditions, and routing to specialized
+  read-only agent types before generic fallbacks across supported harnesses.
 
 ## [6.15.32] - 2026-08-01
 

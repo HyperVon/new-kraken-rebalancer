@@ -256,6 +256,14 @@ UI/client behavior, and tests/documentation; only tracks represented by the
 diff are launched. A stronger second model is a targeted verifier for a
 high-risk or disputed track, not a reason to duplicate the entire review.
 
+Repository-specialized read-only agents are preferred over a generic agent:
+Kilo's `agent-guidance-auditor` handles rules, CI, Kilo, and harness guidance;
+`documentation-contract-auditor` checks product documentation against source
+and build truth; and `explore` handles narrow source discovery. These names are
+Kilo/OpenCode examples, not portable requirements. Other harnesses should map
+the same roles to their own read-only agents while preserving the bounded scope,
+stop condition, compact report, and parent-owned integration rules.
+
 Composer 2.5 Fast and Grok 4.5 High are documented examples of fast-capable and
 strong-reasoning roles. A substitution is meaningful to a human reviewer only
 when the role, scope, capability difference, and reason remain visible.

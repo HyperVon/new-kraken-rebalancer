@@ -78,6 +78,13 @@ and tests/documentation. Use only tracks represented by the diff. A second
 model is a targeted verifier for high-risk or disputed findings, not a reason
 to send two agents the entire PR.
 
+Prefer the repository's specialized types when available: use
+`agent-guidance-auditor` for rules/CI/Kilo guidance,
+`documentation-contract-auditor` for product-doc/source contracts, and
+`explore` for narrow source discovery. These names are Kilo/OpenCode examples;
+other harnesses should map the same roles to their own read-only agents.
+Use `general` only as a last-resort bounded fallback or cross-track verifier.
+
 Launch independent tracks in one message when possible. Record the track,
 allowed paths, model substitution, iteration cap, coverage, and stop reason.
 Never paste full prior reports into follow-ups; pass only the finding and the
