@@ -13,6 +13,16 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **SSE integration-test race**: held the departing subscriber open until the
   multi-subscriber barrier and first broadcast complete, preventing CI timing
   from making the survivor test miss its transient subscription count.
+- **Execution and history safety**: truncated the cycle buy reserve instead of
+  rounding it upward, accumulated raw historical asset values before rounding
+  portfolio totals, and bounded paginated trade-history reads to one end time
+  per operation so new fills cannot shift later pages.
+- **Runtime hardening**: moved legacy stats-file migration I/O to the IO
+  dispatcher, removed hidden ObjectMapper service lookup, and eliminated the
+  view-to-controller color-map dependency without changing dashboard behavior.
+- **Quality tooling**: retained patched Yarn dependency floors without
+  incompatibility warnings and documented the narrowly scoped filter for the
+  external Yarn 1 `DEP0169` diagnostic emitted by modern Node.
 
 ## [6.15.33] - 2026-08-01
 
@@ -2302,7 +2312,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
-- **Platform-Independent Path Resolution**: Replaced the hardcoded user-specific path `/Users/charlesv/` in the evaluation test suite with a relative local fallback (`build/reports/scenarios_evaluation_report.md`), with support for customizable overrides via the `SCENARIOS_REPORT_PATH` environment variable or `scenarios.report.path` JVM system property.
+- **Platform-Independent Path Resolution**: Replaced the hardcoded user-specific path in the evaluation test suite with a relative local fallback (`build/reports/scenarios_evaluation_report.md`), with support for customizable overrides via the `SCENARIOS_REPORT_PATH` environment variable or `scenarios.report.path` JVM system property.
 - **Walkthrough and Readme Updates**: Updated references, test counts, and technical summaries to document the new evaluation suites.
 
 ---

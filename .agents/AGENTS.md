@@ -187,6 +187,11 @@ Before declaring work done, run the verify commands in
 frontend browser tests, Spotless, markdownlint including `.agents/OPERATING.md`
 and harness stubs).
 
+The repository quality scripts set `NODE_OPTIONS` only for the external
+`DEP0169` warning emitted by the Kotlin 2.4.10 downloaded Yarn 1.22.22 resolver
+under modern Node. This does not change application launches or suppress other
+Node diagnostics.
+
 **CodeQL**: enabled for Java/Kotlin analysis on `main` pushes and pull requests
 with CodeQL Action **v4.37.4** (bundle **2.26.2**). The current bundle supports
 this project's Kotlin **2.4.10** compiler. Keep the workflow's SHA pin and

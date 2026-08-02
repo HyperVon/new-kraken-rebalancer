@@ -1,22 +1,24 @@
 package com.gemini.krakenbot.config
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.Application
 import io.ktor.server.application.install
 import io.ktor.server.plugins.statuspages.StatusPages
 import io.ktor.server.response.respondText
-import org.koin.core.component.KoinComponent
-import org.koin.core.component.inject
 import org.slf4j.LoggerFactory
 import java.time.Instant
 
-object ErrorHandlingConfig : KoinComponent {
-    private val objectMapper: ObjectMapper by inject()
+object ErrorHandlingConfig {
     private val log = LoggerFactory.getLogger(ErrorHandlingConfig::class.java)
 
     fun Application.configureErrorHandling() {
+        configureErrorHandling(jacksonObjectMapper())
+    }
+
+    fun Application.configureErrorHandling(objectMapper: ObjectMapper) {
         install(StatusPages) {
             val statusErrors =
                 listOf(
@@ -53,6 +55,7 @@ object ErrorHandlingConfig : KoinComponent {
                     call.respondText(
                         text =
                         buildErrorJson(
+                            objectMapper = objectMapper,
                             status = status.value,
                             error = errorName,
                             message = errorMsg,
@@ -75,6 +78,7 @@ object ErrorHandlingConfig : KoinComponent {
                 call.respondText(
                     text =
                     buildErrorJson(
+                        objectMapper = objectMapper,
                         status = status.value,
                         error = status.description,
                         message =
@@ -91,7 +95,7 @@ object ErrorHandlingConfig : KoinComponent {
         }
     }
 
-    private fun buildErrorJson(status: Int, error: String, message: String): String {
+    private fun buildErrorJson(objectMapper: ObjectMapper, status: Int, error: String, message: String): String {
         val errorBody =
             mapOf(
                 "timestamp" to Instant.now().toString(),

@@ -2,10 +2,12 @@ package com.gemini.krakenbot.service.impl
 
 import com.gemini.krakenbot.model.OrderResult
 import com.gemini.krakenbot.model.TradeRecord
+import com.gemini.krakenbot.service.BoundedTradeHistoryService
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.KrakenService
 import com.gemini.krakenbot.service.RawBalances
 import com.gemini.krakenbot.service.RawPrices
+import com.gemini.krakenbot.service.getTradeHistoryUntil
 import kotlinx.coroutines.withContext
 import java.math.BigDecimal
 import java.util.concurrent.atomic.AtomicInteger
@@ -17,7 +19,8 @@ class DynamicKrakenService(
     private val realService: KrakenServiceImpl,
     private val simulatedService: SimulatedKrakenService,
     private val configService: ConfigService,
-) : KrakenService {
+) : KrakenService,
+    BoundedTradeHistoryService {
     // `simulation` picks the backend; `dryRun` is enforced inside that backend's executeOrder, not here.
     private fun resolveFromConfig(): KrakenService = if (configService.getConfig().settings.simulation) {
         simulatedService
@@ -41,9 +44,9 @@ class DynamicKrakenService(
 
     /**
      * Pins the live vs simulation backend for [block] at entry. If a pin is already
-     * active on this coroutine, it is reused (so nested [com.gemini.krakenbot.service.OrderExecutor] wraps cannot
-     * shadow a full rebalance/sync pin). Concurrent top-level invocations each capture
-     * their own entry-time backend.
+     * active on this coroutine, it is reused (so nested `OrderExecutor` wraps
+     * cannot shadow a full rebalance/sync pin). Concurrent top-level invocations
+     * each capture their own entry-time backend.
      */
     override suspend fun <T> withStableBackend(block: suspend (KrakenService) -> T): T {
         val existing = coroutineContext[PinnedBackend]?.service
@@ -72,6 +75,13 @@ class DynamicKrakenService(
     override suspend fun getTradeHistory(startSec: Long?, offset: Int?): List<TradeRecord> {
         val backend = currentBackend()
         val trades = backend.getTradeHistory(startSec, offset)
+        lastTradeHistoryTotalCount.set(backend.getLastTradeHistoryTotalCount())
+        return trades
+    }
+
+    override suspend fun getTradeHistoryUntil(startSec: Long?, offset: Int?, endSec: Long?): List<TradeRecord> {
+        val backend = currentBackend()
+        val trades = backend.getTradeHistoryUntil(startSec, offset, endSec)
         lastTradeHistoryTotalCount.set(backend.getLastTradeHistoryTotalCount())
         return trades
     }

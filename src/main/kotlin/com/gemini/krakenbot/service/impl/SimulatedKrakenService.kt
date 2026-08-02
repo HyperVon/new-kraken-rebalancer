@@ -6,6 +6,7 @@ import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.OrderType
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.model.TradeSource
+import com.gemini.krakenbot.service.BoundedTradeHistoryService
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.KrakenService
 import com.gemini.krakenbot.service.RawBalances
@@ -24,7 +25,9 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.ThreadLocalRandom
 
-class SimulatedKrakenService(private val configService: ConfigService) : KrakenService {
+class SimulatedKrakenService(private val configService: ConfigService) :
+    KrakenService,
+    BoundedTradeHistoryService {
     private val log = LoggerFactory.getLogger(SimulatedKrakenService::class.java)
 
     private val balances = ConcurrentHashMap<String, BigDecimal>()
@@ -330,7 +333,10 @@ class SimulatedKrakenService(private val configService: ConfigService) : KrakenS
         }
     }
 
-    override suspend fun getTradeHistory(startSec: Long?, offset: Int?): List<TradeRecord> {
+    override suspend fun getTradeHistory(startSec: Long?, offset: Int?): List<TradeRecord> =
+        getTradeHistoryUntil(startSec, offset, null)
+
+    override suspend fun getTradeHistoryUntil(startSec: Long?, offset: Int?, endSec: Long?): List<TradeRecord> {
         initializeMissingBalancesAndPrices()
 
         var filtered =
@@ -340,6 +346,11 @@ class SimulatedKrakenService(private val configService: ConfigService) : KrakenS
             } else {
                 simulatedTrades
             }
+
+        if (endSec != null) {
+            val endInstant = Instant.ofEpochSecond(endSec)
+            filtered = filtered.filter { !it.timestamp.isAfter(endInstant) }
+        }
 
         filtered = filtered.sortedByDescending { it.timestamp }
         lastTradeHistoryTotalCount = filtered.size

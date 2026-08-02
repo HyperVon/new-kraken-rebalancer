@@ -11,6 +11,7 @@ To match the high-agency, autonomous capabilities of advanced models (like Claud
 **Goal:** Eliminate "human-in-the-loop" dependency during task execution.
 
 **Key Behaviors:**
+
 1. **Process Continuity (Turn-Taking):**
    - **Rule:** Never stop after a tool output to "wait for instructions" unless the task is complete.
    - **Why:** The environment is non-interactive. You must drive the workflow.
@@ -39,7 +40,7 @@ To match the high-agency, autonomous capabilities of advanced models (like Claud
 These environment variables help prevent interactive prompts:
 
 | Variable | Value | Purpose |
-|----------|-------|---------|
+| ---------- | ------- | --------- |
 | `CI` | `true` | General CI detection |
 | `DEBIAN_FRONTEND` | `noninteractive` | Apt/dpkg prompts |
 | `GIT_TERMINAL_PROMPT` | `0` | Git auth prompts |
@@ -57,7 +58,7 @@ These environment variables help prevent interactive prompts:
 ### Package Managers
 
 | Tool | Interactive (BAD) | Non-Interactive (GOOD) |
-|------|-------------------|------------------------|
+| ------ | ------------------- | ------------------------ |
 | **NPM** | `npm init` | `npm init -y` |
 | **NPM** | `npm install` | `npm install --yes` |
 | **Yarn** | `yarn install` | `yarn install --non-interactive` |
@@ -71,7 +72,7 @@ These environment variables help prevent interactive prompts:
 ### Git Operations
 
 | Action | Interactive (BAD) | Non-Interactive (GOOD) |
-|--------|-------------------|------------------------|
+| -------- | ------------------- | ------------------------ |
 | **Commit** | `git commit` | `git commit -m "msg"` |
 | **Merge** | `git merge branch` | `git merge --no-edit branch` |
 | **Pull** | `git pull` | `git pull --no-edit` |
@@ -84,7 +85,7 @@ These environment variables help prevent interactive prompts:
 ### System & Files
 
 | Tool | Interactive (BAD) | Non-Interactive (GOOD) |
-|------|-------------------|------------------------|
+| ------ | ------------------- | ------------------------ |
 | **RM** | `rm file` (prompts) | `rm -f file` |
 | **RM** | `rm -i file` | `rm -f file` |
 | **CP** | `cp -i a b` | `cp -f a b` |
@@ -99,7 +100,7 @@ These environment variables help prevent interactive prompts:
 ### Docker
 
 | Action | Interactive (BAD) | Non-Interactive (GOOD) |
-|--------|-------------------|------------------------|
+| -------- | ------------------- | ------------------------ |
 | **Run** | `docker run -it image` | `docker run image` |
 | **Exec** | `docker exec -it container bash` | `docker exec container cmd` |
 | **Build** | `docker build .` | `docker build --progress=plain .` |
@@ -108,7 +109,7 @@ These environment variables help prevent interactive prompts:
 ### Python/Node REPLs
 
 | Tool | Interactive (BAD) | Non-Interactive (GOOD) |
-|------|-------------------|------------------------|
+| ------ | ------------------- | ------------------------ |
 | **Python** | `python` | `python -c "code"` or `python script.py` |
 | **Node** | `node` | `node -e "code"` or `node script.js` |
 | **IPython** | `ipython` | Never use - always `python -c` |
@@ -129,11 +130,13 @@ These commands **will hang indefinitely** - never use them:
 When a command doesn't have a non-interactive flag:
 
 ### The "Yes" Pipe
+
 ```bash
 yes | ./install_script.sh
 ```
 
 ### Heredoc Input
+
 ```bash
 ./configure.sh <<EOF
 option1
@@ -142,11 +145,13 @@ EOF
 ```
 
 ### Echo Pipe
+
 ```bash
 echo "password" | sudo -S command
 ```
 
 ### Timeout Wrapper (last resort)
+
 ```bash
 timeout 30 ./potentially_hanging_script.sh || echo "Timed out"
 ```
@@ -164,7 +169,9 @@ timeout 30 ./potentially_hanging_script.sh || echo "Timed out"
 ## 7. Advanced Instruction Patterns (Cognitive Optimization)
 
 ### The Problem: Implicit Constraints
+
 Large Language Models (LLMs) often struggle with:
+
 1. **Negative constraints**: Inverting or ignoring "don't do X" instructions.
 2. **Turn termination**: Stopping after tool execution instead of auto-continuing.
 3. **Context weighting**: Failing to prioritize authoritative instructions over general knowledge.
@@ -174,6 +181,7 @@ Large Language Models (LLMs) often struggle with:
 This plugin uses the **BAD vs GOOD** pattern to enforce positive constraints. Instead of saying "Don't use interactive flags", we provide a concrete "Good" alternative.
 
 **Why it works:**
+
 - "BAD: npm init" → Model identifies the failure pattern.
 - "GOOD: npm init -y" → Model receives a specific, executable instruction.
 - **Result:** Reduces hallucination of interactive commands by providing a verified substitute.
@@ -185,7 +193,8 @@ In non-interactive environments, the agent must drive the process forward.
 **The Rule:** Never stop after a tool execution unless the task is complete.
 
 **Pattern:**
-```
+
+```text
 1. Execute command (e.g., git status)
 2. Analyze output
 3. Explicitly state next step: "Status is clean. Next: I will run tests."
@@ -204,16 +213,17 @@ When instructions conflict (e.g., generic docs vs this specific strategy), estab
 The cognitive strategies used here (Explicit Action Framing) apply to all coding tasks:
 
 **Instead of:**
+
 ```markdown
 Do not use logging.getLogger()
 Don't create CLI code here
 ```
 
 **Use:**
+
 ```markdown
 ALWAYS USE: config.logging_config.get_logger()
 USE THIS REPO FOR: API backend only
 ```
 
 By framing instructions as "Actionable Positive Constraints", you reduce hallucination and improve compliance across all models.
-

@@ -46,38 +46,40 @@ class SqlitePortfolioStatsRepositoryImpl(
             return dbStats
         }
 
-        val file = File(statsFilePath)
-        if (!file.exists()) {
-            return PortfolioStats(BigDecimal.ZERO)
-        }
-
         return try {
-            val rawStats = objectMapper.readTree(file)
-            val rawAth = rawStats.get("allTimeHigh")
-            if (rawAth == null || rawAth.isNull) return PortfolioStats(BigDecimal.ZERO)
-            val fileStats = objectMapper.treeToValue(rawStats, PortfolioStats::class.java)
-            val ath = fileStats?.allTimeHigh ?: return PortfolioStats(BigDecimal.ZERO)
-
-            log.info("Migrating allTimeHigh from stats file: {}", ath)
-            database.safeTransactionIO(log, "Failed to migrate portfolio stats from file") {
-                PortfolioStatsTable.insert {
-                    it[allTimeHigh] = ath
+            withContext(Dispatchers.IO) {
+                val file = File(statsFilePath)
+                if (!file.exists()) {
+                    return@withContext PortfolioStats(BigDecimal.ZERO)
                 }
-            }
 
-            try {
-                val targetPath = File("$statsFilePath.bak").toPath()
-                withContext(Dispatchers.IO) {
+                val rawStats = objectMapper.readTree(file)
+                val rawAth = rawStats.get("allTimeHigh")
+                if (rawAth == null || rawAth.isNull) {
+                    return@withContext PortfolioStats(BigDecimal.ZERO)
+                }
+                val fileStats = objectMapper.treeToValue(rawStats, PortfolioStats::class.java)
+                val ath = fileStats?.allTimeHigh ?: return@withContext PortfolioStats(BigDecimal.ZERO)
+
+                log.info("Migrating allTimeHigh from stats file: {}", ath)
+                database.safeTransactionIO(log, "Failed to migrate portfolio stats from file") {
+                    PortfolioStatsTable.insert {
+                        it[allTimeHigh] = ath
+                    }
+                }
+
+                try {
+                    val targetPath = File("$statsFilePath.bak").toPath()
                     Files.move(file.toPath(), targetPath, StandardCopyOption.REPLACE_EXISTING)
+                    log.info("Renamed stats file to backup successfully.")
+                } catch (ex: CancellationException) {
+                    throw ex
+                } catch (ex: Exception) {
+                    log.warn("Failed to rename stats file to backup", ex)
                 }
-                log.info("Renamed stats file to backup successfully.")
-            } catch (ex: CancellationException) {
-                throw ex
-            } catch (ex: Exception) {
-                log.warn("Failed to rename stats file to backup", ex)
-            }
 
-            fileStats
+                fileStats
+            }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {

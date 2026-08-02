@@ -42,10 +42,20 @@ interface KrakenService {
 
     /**
      * Runs [block] with a stable backend selection passed as the argument.
-     * Default passes `this`. [com.gemini.krakenbot.service.impl.DynamicKrakenService] pins live vs simulation in the
-     * coroutine context at top-level entry; nested calls reuse the outer pin so a
-     * mid-cycle `simulation` flip cannot mix backends. Concurrent top-level calls
-     * each capture their own entry-time backend.
+     * Default passes `this`. `DynamicKrakenService` pins live vs simulation in
+     * the coroutine context at top-level entry; nested calls reuse the outer pin
+     * so a mid-cycle `simulation` flip cannot mix backends. Concurrent top-level
+     * calls each capture their own entry-time backend.
      */
     suspend fun <T> withStableBackend(block: suspend (KrakenService) -> T): T = block(this)
 }
+
+/** Optional capability for backends that can pass an inclusive TradesHistory end bound. */
+interface BoundedTradeHistoryService {
+    suspend fun getTradeHistoryUntil(startSec: Long?, offset: Int?, endSec: Long?): List<TradeRecord>
+}
+
+/** Uses the stable-bound capability when available and preserves two-argument test fakes otherwise. */
+suspend fun KrakenService.getTradeHistoryUntil(startSec: Long?, offset: Int?, endSec: Long?): List<TradeRecord> =
+    (this as? BoundedTradeHistoryService)?.getTradeHistoryUntil(startSec, offset, endSec)
+        ?: getTradeHistory(startSec, offset)

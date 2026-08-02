@@ -11,6 +11,7 @@ import com.gemini.krakenbot.view.util.ViewText
 import kotlinx.browser.document
 import kotlinx.browser.window
 import org.w3c.dom.*
+import org.w3c.dom.DOMStringMap
 import org.w3c.dom.events.Event
 import kotlin.math.abs
 import com.gemini.krakenbot.view.util.CssClass.Query.SYMBOL_INPUTS as SYMBOL_INPUTS_QUERY
@@ -52,7 +53,7 @@ private fun wireModePlateSync() {
 
 private const val BOUND_MARKER = "modeToggleBound"
 
-private fun org.w3c.dom.DOMStringMap.isBound(): Boolean = this[BOUND_MARKER] == "1"
+private fun DOMStringMap.isBound(): Boolean = this[BOUND_MARKER] == "1"
 
 private fun HTMLInputElement.markBound() {
     this.dataset[BOUND_MARKER] = "1"

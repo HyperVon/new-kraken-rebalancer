@@ -89,6 +89,23 @@ class DynamicKrakenServiceTest : StringSpec() {
             coVerify(exactly = 0) { realService.getOHLC(any(), any(), any()) }
         }
 
+        "forwards bounded trade history to the selected backend" {
+            every { configService.getConfig() } returns appConfig(simulation = true)
+            val dynamicService = createService()
+
+            dynamicService.getTradeHistoryUntil(12345L, 10, 12399L)
+
+            coVerify(exactly = 1) { simulatedService.getTradeHistoryUntil(12345L, 10, 12399L) }
+            coVerify(exactly = 0) { realService.getTradeHistoryUntil(any(), any(), any()) }
+
+            every { configService.getConfig() } returns appConfig(simulation = false)
+
+            dynamicService.getTradeHistoryUntil(12345L, 10, 12399L)
+
+            coVerify(exactly = 1) { realService.getTradeHistoryUntil(12345L, 10, 12399L) }
+            coVerify(exactly = 1) { simulatedService.getTradeHistoryUntil(12345L, 10, 12399L) }
+        }
+
         "forwards clOrdId to the real backend when simulation is false" {
             every { configService.getConfig() } returns appConfig(simulation = false)
             val dynamicService = createService()

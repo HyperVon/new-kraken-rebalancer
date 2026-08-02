@@ -257,7 +257,7 @@ class TradeHistorySnapshotStore(
                     targetPercent = targetPercent,
                     balance = balance,
                     price = price,
-                    valueUSD = balance.multiply(price).toUsdScale(),
+                    valueUSD = balance.multiply(price),
                 )
             }
         val exactPortfolioValue =

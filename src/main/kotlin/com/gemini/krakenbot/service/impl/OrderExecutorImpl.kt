@@ -14,6 +14,7 @@ import com.gemini.krakenbot.service.OrderExecutor
 import com.gemini.krakenbot.service.RawBalances
 import com.gemini.krakenbot.service.RebalanceOrders
 import com.gemini.krakenbot.service.TradeHistoryService
+import com.gemini.krakenbot.service.getTradeHistoryUntil
 import com.gemini.krakenbot.util.ActionLogFormatter
 import com.gemini.krakenbot.util.CASH_RESERVE_FACTOR
 import com.gemini.krakenbot.util.PrecisionConstants
@@ -151,11 +152,17 @@ class OrderExecutorImpl(
             }
 
             // Cycle-level budget: 99% of post-sell settled USD so multi-buy batches cannot erode the reserve.
-            val cycleBuyBudget = actualCash.multiply(PrecisionConstants.CASH_RESERVE_FACTOR).toUsdScale()
+            val cycleBuyBudget =
+                actualCash
+                    .multiply(PrecisionConstants.CASH_RESERVE_FACTOR)
+                    .setScale(PrecisionConstants.SCALE_USD, RoundingMode.DOWN)
             var remainingBuyBudget = cycleBuyBudget
 
             for ((symbol, originalCost) in buyOrders) {
-                val maxAffordable = remainingBuyBudget.min(actualCash).toUsdScale()
+                val maxAffordable =
+                    remainingBuyBudget
+                        .min(actualCash)
+                        .setScale(PrecisionConstants.SCALE_USD, RoundingMode.DOWN)
                 var cost = originalCost
                 if (cost > maxAffordable) {
                     log.warn(
@@ -191,7 +198,10 @@ class OrderExecutorImpl(
                     )
                 if (result?.success == true) {
                     actualCash = actualCash.subtract(cost)
-                    remainingBuyBudget = remainingBuyBudget.subtract(cost).toUsdScale()
+                    remainingBuyBudget =
+                        remainingBuyBudget
+                            .subtract(cost)
+                            .setScale(PrecisionConstants.SCALE_USD, RoundingMode.DOWN)
                 }
                 if (shouldAbortAfterFailure(result)) return@withStableBackend
             }
@@ -408,7 +418,8 @@ class OrderExecutorImpl(
         sellOrderTxids: List<String>,
         targetThreshold: BigDecimal = projectedCash.multiply(EARLY_ACCEPT_PROPORTION),
     ): Flow<BigDecimal> = flow {
-        val startSec = Instant.now().minusSeconds(600).epochSecond
+        val endSec = Instant.now().epochSecond
+        val startSec = endSec - 600
         val txidSet = sellOrderTxids.toSet()
         emitAll(
             coldPollBackoff(
@@ -417,7 +428,7 @@ class OrderExecutorImpl(
                 bestLog = "Using best fill-confirmed USD after sell refresh: {}",
                 noneLog = "No fill-confirmed USD observed after sell refresh",
                 resolve = { attempt ->
-                    val matchedProceeds = sumMatchedSellProceeds(backend, startSec, txidSet)
+                    val matchedProceeds = sumMatchedSellProceeds(backend, startSec, endSec, txidSet)
                     if (matchedProceeds > BigDecimal.ZERO) {
                         val cash = openingUsd.add(matchedProceeds).toUsdScale()
                         log.info(
@@ -446,13 +457,14 @@ class OrderExecutorImpl(
     private suspend fun sumMatchedSellProceeds(
         backend: KrakenService,
         startSec: Long,
+        endSec: Long,
         txidSet: Set<String>,
     ): BigDecimal {
         var offset = 0
         var matchedProceeds = BigDecimal.ZERO
         val seenTradeIds = mutableSetOf<String>()
         for (page in 0 until MAX_FILL_HISTORY_PAGES) {
-            val fills = backend.getTradeHistory(startSec = startSec, offset = offset)
+            val fills = backend.getTradeHistoryUntil(startSec = startSec, offset = offset, endSec = endSec)
             val totalCount = backend.getLastTradeHistoryTotalCount()
             for (fill in fills) {
                 val txid = fill.orderTxid ?: continue

@@ -23,6 +23,7 @@ import com.gemini.krakenbot.view.util.HtmxValues
 import com.gemini.krakenbot.view.util.QueryParamKeys
 import com.gemini.krakenbot.view.util.Routes
 import com.gemini.krakenbot.view.util.ViewText
+import com.gemini.krakenbot.view.util.symbolColorMap
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.Parameters
@@ -367,6 +368,3 @@ internal fun parseTimeRange(call: ApplicationCall): Pair<Instant, Instant> {
     val from = timeRange.calculateFromInstant(now)
     return Pair(from, now)
 }
-
-internal fun List<Allocation>.symbolColorMap(): Map<String, String> =
-    mapNotNull { alloc -> alloc.color?.let { alloc.symbol.value.uppercase() to it } }.toMap()
