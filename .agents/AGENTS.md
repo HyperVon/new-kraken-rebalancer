@@ -94,7 +94,7 @@ the CLAUDE.md / Copilot stubs) so they get the same norms without Cursor.
 - **Backend**: Ktor **3.5.1** (Netty, Jackson, SSE, HTML), Koin **4.2.2**
 - **Database**: SQLite via JetBrains Exposed **1.3.1**
 - **Concurrency**: `kotlinx.coroutines` **1.11.0** — prefer `Dispatchers.IO` for DB/network; no `GlobalScope`
-- **Frontend**: `kotlinx.html` + `kotlinx-css` + HTMX + Kotlin/JS (`:frontend-js` → `/static/rebalancer.js`)
+- **Frontend**: `kotlinx.html` + `kotlinx-css` + HTMX + Kotlin/JS (`:frontend-js` → `/static/rebalancer.js`); KSP **2.3.10** is required for Kotlin/JS Kotest discovery
 - **Testing**: Kotest **6.2.3**, MockK **1.14.11**, Karma/Istanbul
 - **Formatting**: Spotless **8.9.0** + ktlint **1.7.1**, **120**-char line length; `allWarningsAsErrors` in all modules
 
@@ -187,9 +187,10 @@ Before declaring work done, run the verify commands in
 frontend browser tests, Spotless, markdownlint including `.agents/OPERATING.md`
 and harness stubs).
 
-**CodeQL**: currently **disabled** (Kotlin 2.4.x unsupported) — workflow triggers
-only on placeholder branch `disabled-kotlin-2.4-mismatch`, not `main`. Do not
-claim CodeQL is active CI until re-enabled.
+**CodeQL**: enabled for Java/Kotlin analysis on `main` pushes and pull requests
+with CodeQL Action **v4.37.4** (bundle **2.26.2**). The current bundle supports
+this project's Kotlin **2.4.10** compiler. Keep the workflow's SHA pin and
+`java-kotlin` manual build in sync with the supported CodeQL bundle.
 
 ---
 
@@ -255,7 +256,10 @@ See [write-kotest](skills/write-kotest/SKILL.md).
   Add suppressions only for demonstrated warnings, not by default.
 - In-memory SQLite only (`:memory:`).
 - Prefer `FakeKrakenService` for deterministic tests; `SimulatedKrakenService` is the production emulator (not the same).
-- Evaluation/E2E/chaos: `EvaluationScenariosTest`, `docs/EVALUATION.md`; Flow tests use `advanceUntilIdle()`.
+- Evaluation/E2E/chaos: `EvaluationScenariosTest` covers deterministic
+  `FakeKrakenService` scenarios, while `SimulationEvaluationScenariosTest`
+  covers production `SimulatedKrakenService` invariants; both are documented in
+  `docs/EVALUATION.md`. Flow tests use `advanceUntilIdle()`.
 - Each test kills a distinct defect class; no impossible-case, cosmetic-duplicate, or coverage-padding tests (see [ai-slop-detector](skills/ai-slop-detector/SKILL.md) § Test necessity).
 
 ---

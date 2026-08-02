@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.15.33] - 2026-08-01
+
+### Changed
+
+- **Documentation alignment**: Updated algorithm, flow, security, evaluation,
+  CI, and configuration guidance to match current source behavior, including
+  count-driven pagination, simulator fees, snapshot persistence, and credential
+  handling.
+- **Agent guidance**: Added bounded-context delegation guidance, compatible
+  Kotlin/KSP upgrade guidance, and durable read-only Kilo documentation-audit
+  agents with automatic compaction and output pruning enabled; the disabled
+  SQLite MCP now points at an ignored disposable build database.
+- **CodeQL**: Re-enabled SHA-pinned Java/Kotlin analysis on `main` with Action
+  v4.37.4 and bundle 2.26.2, which support Kotlin 2.4.10.
+
 ## [6.15.32] - 2026-08-01
 
 ### Fixed

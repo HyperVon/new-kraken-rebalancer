@@ -85,10 +85,11 @@ Gather facts from code/build (do not trust docs yet):
    `OrderExecutorImpl` vs `docs/ALGORITHM.md`.
 6. **Flows** — config `SharedFlow`, snapshot `SharedFlow`, cold poll/sync
    flows vs `docs/FLOWS.md`.
-7. **Tests / evaluation** — `EvaluationScenariosTest` scenario count/names vs
-   `docs/EVALUATION.md`; coverage gates in JaCoCo +
+7. **Tests / evaluation** — `EvaluationScenariosTest` scenario count/names and
+   the separate `SimulationEvaluationScenariosTest` production-emulator
+   invariants vs `docs/EVALUATION.md`; coverage gates in JaCoCo +
    `frontend-js/karma.config.d/coverage.js`.
-8. **CI** — `.github/workflows/*` (note CodeQL disabled if still true).
+8. **CI** — `.github/workflows/*` (verify CodeQL language support and triggers).
 9. **Security model** — no dashboard auth; CORS via `isLocalOrPrivateOrigin`.
 
 Use `rg`, package listings, and targeted file reads. Prefer evidence over memory.
@@ -116,7 +117,8 @@ High-risk mismatch examples:
 - Algorithm missing fiat deployment / fiat correction / dust / 99% buy / 95% settle
 - Coverage stated as vague “75%+ JS” instead of Karma 90/90/90/75
 - Lint paths pointing at root `AGENTS.md` (file is `.agents/AGENTS.md`)
-- Evaluation scenario table out of sync with `EvaluationScenariosTest`
+- Evaluation suite tables out of sync with `EvaluationScenariosTest` or
+  `SimulationEvaluationScenariosTest`
 - Config template missing keys present on `Settings`
 
 #### Mermaid compatibility
@@ -203,7 +205,7 @@ After product docs are fixed:
 ### Step 5: Verify
 
 ```bash
-npx markdownlint-cli .agents/AGENTS.md .agents/OPERATING.md CLAUDE.md .github/copilot-instructions.md CHANGELOG.md README.md CONTRIBUTING.md SECURITY.md docs/*.md .agents/skills/**/SKILL.md .agents/skills/**/*.md
+npx markdownlint-cli .agents/AGENTS.md .agents/OPERATING.md CLAUDE.md .github/copilot-instructions.md CHANGELOG.md README.md CONTRIBUTING.md SECURITY.md docs/*.md .agents/skills/**/SKILL.md .agents/skills/**/*.md .cursor/rules/*.mdc .kilo/command/*.md .kilo/agent/**/*.md
 ```
 
 When any Mermaid fence was added or changed (or as part of a full audit):
@@ -219,7 +221,9 @@ Spot-check:
 - [ ] README directory tree matches packages (tables under `repository/table/`)
 - [ ] ALGORITHM covers ATH/drawdown deploy, fiat correction, dust, sell→buy, 99% cap
 - [ ] FLOWS matches ConfigService + TradeHistoryService + SSE route
-- [ ] EVALUATION scenario list matches test class (or notes intentional subset)
+- [ ] EVALUATION scenario and invariant-suite lists match
+      `EvaluationScenariosTest` and `SimulationEvaluationScenariosTest` (or note
+      an intentional subset)
 - [ ] Template JSON keys ⊆ `Settings` / `AppConfig`
 - [ ] AGENTS skill index links resolve to existing `SKILL.md` files
 - [ ] `dryRun` vs `simulation` distinguished wherever both appear
@@ -236,7 +240,7 @@ Do not declare complete until markdown lint is clean on touched files.
 | :--- | :--- | :--- |
 | Rebalance math | `PortfolioCalculations`, `PortfolioAnalyzerImpl`, `OrderExecutorImpl` | `docs/ALGORITHM.md` |
 | Flows / SSE | `ConfigServiceImpl`, `TradeHistoryServiceImpl`, `DashboardController` | `docs/FLOWS.md` |
-| Evaluation | `EvaluationScenariosTest`, `FakeKrakenService` | `docs/EVALUATION.md` |
+| Evaluation | `EvaluationScenariosTest` + `FakeKrakenService`; `SimulationEvaluationScenariosTest` + `SimulatedKrakenService` | `docs/EVALUATION.md` |
 | Config flags | `Settings`, `DynamicKrakenService` | README, template, dry-run skill |
 | Coverage | `build.gradle.kts` JaCoCo, `karma.config.d/coverage.js` | README, AGENTS, gradle-quality-gates |
 | Security | `KtorConfig.configureCORS`, `SECURITY.md` | SECURITY, AGENTS security section |
@@ -246,7 +250,8 @@ Do not declare complete until markdown lint is clean on touched files.
 ## Anti-patterns
 
 - Updating docs from memory without opening the cited source file
-- “Fixing” CodeQL/CI docs to claim enabled when workflow is disabled
+- Claiming CodeQL is enabled without verifying the workflow's supported language,
+  bundle, and branch triggers
 - Collapsing `dryRun` and `simulation` into one flag
 - Leaving README package trees with removed or renamed packages
 - Expanding CHANGELOG with speculative unreleased features not in code

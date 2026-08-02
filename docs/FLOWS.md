@@ -200,9 +200,10 @@ sequenceDiagram
     Sync->>Flow: .collect { apiTrades → }
     note over Flow: Cold! Execution starts<br/>NOW because collect() was called.
 
-    loop While there are more pages
+    loop "While API count indicates more pages"
         Flow->>API: getTradeHistory(offset=0, 50, 100 ...)
-        API-->>Flow: List<TradeRecord> (50 records)
+        API-->>Flow: List<TradeRecord> (up to 50) + count
+        note over Flow: Configured-pair filtering can make a page shorter.<br/>A positive count drives continuation, while absent or zero count falls back to page size.
         Flow->>Sync: emit(page)
         note over Flow: emit() suspends here.<br/>Waits for collector to finish<br/>processing before fetching next page.<br/>This is automatic backpressure.
         Sync->>DB: reconcile & save trades
@@ -224,20 +225,25 @@ sequenceDiagram
   collecting pages and closes it in `finally`. Config and credential updates
   therefore publish only after the whole account pagination finishes.
 - Incremental sync uses a **300-second overlap** window from the **effective**
-  watermark (`latestTradeTime`, falling back to `sync_watermark_epoch_sec` when
-  there are no non-dry-run fills) so fills near the cutoff are not missed and
-  dry-run-only accounts do not re-pull from EPOCH.
+  watermark (`latestTradeTime` is the latest successful non-dry-run trade time,
+  including local estimates; it falls back to `sync_watermark_epoch_sec` when
+  none exists) so fills near the cutoff are not missed and dry-run-only accounts
+  do not re-pull from EPOCH.
 - Within one sync pass, API fills are fingerprinted so a pagination window shift
-  cannot double-insert the same fill; dry-run locals never match API fills
+  cannot double-insert the same fill; this does not make newest-first offset
+  pagination snapshot-consistent. A new fill can shift later offsets and be
+  skipped until a later overlapping sync. Dry-run locals never match API fills
   (`isMatchingApiTrade` returns false when `local.dryRun`).
 - The throttle check and pagination run under one coroutine mutex; concurrent
   callers wait and then recheck. A backward wall-clock jump allows the next
   sync to rebase the 300-second throttle instead of suppressing it indefinitely.
-- Reconciliation first prefers an exact nonblank `orderTxid` match, then falls
-  back to the existing economics tolerance for ID-less/legacy rows; conflicting
-  nonblank IDs never reconcile.
-- Processing happens page-by-page (page size **50**), keeping memory constant
-  regardless of how many total trades exist.
+- Reconciliation first prefers an exact nonblank `orderTxid` match. The
+  economics tolerance applies only to successful, non-dry-run
+  `LOCAL_ESTIMATE` rows; `LEGACY_UNKNOWN` rows require an exact persisted
+  identity or fingerprint. Conflicting nonblank IDs never reconcile.
+- API fetching happens page-by-page (at most **50** rows), but local trades in
+  the query range and seen API-fill identities are retained for the whole pass;
+  total memory is therefore not constant in the size of the history.
 - `emit()` naturally suspends until the collector finishes, meaning Kraken's API
   is never hit faster than the database can process the last batch — automatic
   backpressure.
@@ -253,7 +259,7 @@ sequenceDiagram
 
 1. **Primary (when sell AddOrder txids exist):** `pollFillConfirmedUsd()` →
    `sumMatchedSellProceeds()` (trade history matched by `orderTxid`, net of fee,
-   paginate up to 5×50) → optional balance peek
+   paginate up to 5 pages of at most 50 rows) → optional balance peek
    `min(fillConfirmed, balance)` when spendable USD is visible → else cap to
    `projectedCash`.
 2. **Fallback:** when no txids, or fill confirmation returns no positive USD →
@@ -274,8 +280,8 @@ sequenceDiagram
         OE->>Fill: settleUsdAfterSells → pollFillConfirmedUsd → .last()
         loop "Up to 3 attempts (250ms doubling)"
             Fill->>Fill: delay(backoffMs)
-            Fill->>Hist: pages until short or max 5
-            Hist-->>Fill: matched fills (cost - fee)
+            Fill->>Hist: pages by count or page-size fallback, max 5
+            Hist-->>Fill: matched fills (up to 50 per page, cost - fee)
             alt "cash >= 95% of projected"
                 Fill->>OE: emit(bestCash)
                 Fill->>OE: (flow completes early)

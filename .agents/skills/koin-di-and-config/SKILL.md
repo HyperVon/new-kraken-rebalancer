@@ -57,7 +57,7 @@ Pure KMP types under `common/.../config/`:
 
 ## Validation (`ConfigServiceImpl`)
 
-- Allocations **sum to 100%** within tolerance `0.001`
+- Allocations **sum to 100%** within tolerance `0.01`
 - **Must include USD** (`symbol.isUsd`)
 - Non-empty, no duplicate symbols, symbols match `^[A-Z0-9]{1,16}$`
 - Missing or invalid allocation colors are normalized by `AssetColorAssigner`;

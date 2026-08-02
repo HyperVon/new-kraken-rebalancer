@@ -32,6 +32,13 @@ Every Task prompt must include:
 4. **Already done** context (so they do not redo or conflict)
 5. Project constraints worth repeating (Spotless 120, `:common` purity, sim-only, etc.)
 
+Keep prompts and reports bounded. For GPT-5.6 Luna, treat roughly **256K input
+tokens** as a practical reliability and cost boundary despite the larger
+documented context window. Give each agent an explicit file scope and stop
+condition, cap iterations for discovery tasks, and request compact findings
+instead of raw file dumps. Split broad work into staged discovery and focused
+follow-ups; the parent retains integration and final verification.
+
 Prefer `run_in_background: true` only when the parent can usefully continue; otherwise wait for coupled tracks.
 
 ## Step 3 — Integrate

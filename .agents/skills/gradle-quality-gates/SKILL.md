@@ -3,7 +3,7 @@ name: gradle-quality-gates
 description: >-
   Project quality tooling — Spotless/ktlint 120, allWarningsAsErrors, JaCoCo
   gates (95/90) and exclusions sync, Karma Istanbul thresholds, CI
-  ./gradlew build jacocoTestCoverageVerification, and CodeQL disabled note. Use
+  ./gradlew build jacocoTestCoverageVerification, and CodeQL workflow guidance. Use
   when changing build.gradle.kts, coverage, CI, or verifying a change.
 ---
 
@@ -113,13 +113,14 @@ Also lint `.agents/OPERATING.md` and thin harness stubs (`CLAUDE.md`,
 
 ## CodeQL
 
-**Currently disabled** — `.github/workflows/codeql.yml` targets a non-`main`
-branch because Kotlin 2.4.x is unsupported by CodeQL. Do not document CodeQL as
-active on `main` until the workflow is re-enabled.
+**Enabled** — `.github/workflows/codeql.yml` runs the `java-kotlin` analysis on
+`main` pushes and pull requests using CodeQL Action **v4.37.4** and bundle
+**2.26.2**, which support this project's Kotlin **2.4.10** compiler. Keep the
+workflow SHA pin and manual Gradle build aligned with the supported bundle.
 
 ## Checklist
 
 - [ ] Spotless 120 + warnings-as-errors respected
 - [ ] JaCoCo 95/95/95/90 and Karma 90/90/90/75 quoted accurately
 - [ ] Exclusions synced when packages change
-- [ ] CodeQL disabled status not contradicted
+- [ ] CodeQL workflow and documented Action/bundle support stay aligned
