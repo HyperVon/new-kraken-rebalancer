@@ -59,3 +59,16 @@ coverage matrix, triage, edits, and final verification.
 - Spawning agents for tiny one-liners (overhead > benefit)
 - Parallelizing when the next step is blocked on a single design decision — decide first, then fan out
 - Trusting a cached / overlapped green build as final verification
+
+### Worktree and state isolation
+
+Worktrees provide separate code views, not permission to duplicate or share
+runtime state:
+
+- Do not copy `.env`, rebalancer configuration, databases, logs, or runtime
+  state between worktrees. Use placeholders and disposable, ignored state.
+- If a workflow starts this application, use the isolated simulation path with
+  both `simulation=true` and `dryRun=true` plus a temporary database. Never use
+  live credentials or a live database for agent work.
+- Do not use shared `git stash` or autostash across worktrees. The parent owns
+  integration, cleanup, and the final build/quality gates.

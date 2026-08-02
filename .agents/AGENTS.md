@@ -55,6 +55,7 @@ Canonical deep docs:
 | Code review | [code-review](skills/code-review/SKILL.md) |
 | Architecture review (third-party / redesign) | [architecture-review](skills/architecture-review/SKILL.md) |
 | Product opportunity review / feature roadmap | [product-opportunity-review](skills/product-opportunity-review/SKILL.md) |
+| Create or modify an approved project skill | [skill-authoring](skills/skill-authoring/SKILL.md) |
 | Skill / agent-files review (skills, rules, AGENTS) | [skill-reviewer](skills/skill-reviewer/SKILL.md) |
 | Rules / skills structural audit | [rules-and-skills-audit](skills/rules-and-skills-audit/SKILL.md) |
 | Adversarial PR review (adaptive bounded multi-agent loop) | [adversarial-pr-review](skills/adversarial-pr-review/SKILL.md) |

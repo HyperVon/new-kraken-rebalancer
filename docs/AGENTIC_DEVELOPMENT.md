@@ -191,6 +191,7 @@ harnesses.
 | [`open-pr`](../.agents/skills/open-pr/SKILL.md) | Fully verified pull-request creation with structured evidence |
 | [`product-opportunity-review`](../.agents/skills/product-opportunity-review/SKILL.md) | User-needs discovery, feature opportunities, prioritization, and product roadmaps |
 | [`rules-and-skills-audit`](../.agents/skills/rules-and-skills-audit/SKILL.md) | Structural conflicts, redundancy, stale guidance, and consolidation |
+| [`skill-authoring`](../.agents/skills/skill-authoring/SKILL.md) | Approved creation and modification of project skills, routing, safety, and validation |
 | [`skill-reviewer`](../.agents/skills/skill-reviewer/SKILL.md) | Content improvements for the project agent playbook |
 
 ### Orchestration and continuous work
