@@ -201,6 +201,7 @@ harnesses.
 | [`autonomous-code-optimizer`](../.agents/skills/autonomous-code-optimizer/SKILL.md) | Multi-pass repository cleanup until a clean audit cycle |
 | [`continuous-improvement`](../.agents/skills/continuous-improvement/SKILL.md) | Discovery, backlog management, bounded fixes, quality gates, and pull requests |
 | [`continuous-quality`](../.agents/skills/continuous-quality/SKILL.md) | QA, edge-case invention, regression tests, fixes, and quality backlog |
+| [`model-routing`](../.agents/skills/model-routing/SKILL.md) | Provider/model inventory, capability and cost-per-task comparison, availability evidence, and fallbacks |
 | [`parallel-multi-agent`](../.agents/skills/parallel-multi-agent/SKILL.md) | Disjoint workstreams, file ownership, integration, and build coordination |
 
 ## How development has typically proceeded
