@@ -7,6 +7,7 @@ import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderResult
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.model.TradeSource
+import com.gemini.krakenbot.service.BoundedTradeHistoryService
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.KrakenService
 import com.gemini.krakenbot.service.RawBalances
@@ -53,7 +54,8 @@ class KrakenServiceImpl(
     private val objectMapper: ObjectMapper,
     private val httpClient: HttpClient,
     private val rateLimiter: RateLimiter = RateLimiter(),
-) : KrakenService {
+) : KrakenService,
+    BoundedTradeHistoryService {
     private class AmbiguousOrderSubmissionException(message: String) : RuntimeException(message)
 
     private val log = LoggerFactory.getLogger(KrakenServiceImpl::class.java)
@@ -278,7 +280,10 @@ class KrakenServiceImpl(
                 cause is JsonProcessingException
         }
 
-    override suspend fun getTradeHistory(startSec: Long?, offset: Int?): List<TradeRecord> {
+    override suspend fun getTradeHistory(startSec: Long?, offset: Int?): List<TradeRecord> =
+        getTradeHistoryUntil(startSec, offset, null)
+
+    override suspend fun getTradeHistoryUntil(startSec: Long?, offset: Int?, endSec: Long?): List<TradeRecord> {
         if (!configService.getConfig().kraken.hasValidCredentials()) {
             log.warn("Kraken API key is blank or placeholder. Skipping trade history fetch.")
             return emptyList()
@@ -287,6 +292,9 @@ class KrakenServiceImpl(
         val params = mutableMapOf<String, String>()
         if (startSec != null) {
             params[KrakenApiConstants.PARAM_START] = startSec.toString()
+        }
+        if (endSec != null) {
+            params[KrakenApiConstants.PARAM_END] = endSec.toString()
         }
         if (offset != null) {
             params[KrakenApiConstants.PARAM_OFS] = offset.toString()
@@ -302,8 +310,7 @@ class KrakenServiceImpl(
                 throw e
             }
 
-        val count = result.path(KrakenApiConstants.FIELD_COUNT).asInt(0)
-        lastFetchedCount.set(count)
+        lastFetchedCount.set(result.path(KrakenApiConstants.FIELD_COUNT).asInt(0))
 
         val tradesNode = result.path(KrakenApiConstants.FIELD_TRADES)
         if (!tradesNode.isObject) {

@@ -81,6 +81,16 @@ object ViewText {
     const val PLACEHOLDER_DASHES = "--"
     const val PRICE_NOT_FOUND_PREFIX = "Price not found for "
     const val DRY_RUN_PREFIX = "[DRY RUN] "
+    const val ACTION_DEVIATION_PREFIX = "Deviation: "
+    const val ACTION_FIAT_CORRECTION_ENFORCED = "USD Deviation Triggered. Enforcing fiat correction."
+    const val ACTION_DISTRIBUTING_FIAT_PREFIX = "Distributing Fiat Correction ($"
+    const val ACTION_DISTRIBUTING_FIAT_MIDDLE = ") among "
+    const val ACTION_CANDIDATES_SUFFIX = " candidates."
+    const val ACTION_VALUE_LABEL = "Value"
+    const val ACTION_COST_LABEL = "Cost"
+    const val ACTION_FAILED_PREFIX = "FAILED "
+    const val ACTION_SKIPPING_DUST_PREFIX = "Skipping dust "
+    const val ACTION_FOR_SUFFIX = " for "
 
     // Table Headers
     const val HEADER_ASSET = "Asset"

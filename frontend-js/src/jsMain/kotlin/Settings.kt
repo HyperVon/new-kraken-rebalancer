@@ -52,7 +52,7 @@ private fun wireModePlateSync() {
 
 private const val BOUND_MARKER = "modeToggleBound"
 
-private fun org.w3c.dom.DOMStringMap.isBound(): Boolean = this[BOUND_MARKER] == "1"
+private fun DOMStringMap.isBound(): Boolean = this[BOUND_MARKER] == "1"
 
 private fun HTMLInputElement.markBound() {
     this.dataset[BOUND_MARKER] = "1"

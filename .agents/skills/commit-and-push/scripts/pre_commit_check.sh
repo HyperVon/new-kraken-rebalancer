@@ -1,6 +1,16 @@
 #!/usr/bin/env bash
 set -e
 
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
+
+# Kotlin 2.4.10's downloaded Yarn 1.22.22 emits DEP0169 from its own GitResolver
+# under modern Node. Suppress only that external warning during quality checks.
+case " ${NODE_OPTIONS:-} " in
+  *" --disable-warning=DEP0169 "*) ;;
+  *) export NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--disable-warning=DEP0169" ;;
+esac
+
 echo "=== Step 0: Changelog policy (no [Unreleased] section) ==="
 if grep -nE '^##[[:space:]]*\[[Uu]nreleased\]' CHANGELOG.md; then
   echo "ERROR: CHANGELOG.md contains an [Unreleased] section." >&2
@@ -10,10 +20,10 @@ if grep -nE '^##[[:space:]]*\[[Uu]nreleased\]' CHANGELOG.md; then
 fi
 
 echo "=== Step 1: Running Markdown Linting ==="
-markdown_files=(.agents/AGENTS.md .agents/OPERATING.md CLAUDE.md CHANGELOG.md README.md docs/*.md .agents/skills/**/SKILL.md .agents/skills/**/*.md)
-[[ -f CONTRIBUTING.md ]] && markdown_files+=(CONTRIBUTING.md)
-[[ -f SECURITY.md ]] && markdown_files+=(SECURITY.md)
-[[ -f .github/copilot-instructions.md ]] && markdown_files+=(.github/copilot-instructions.md)
+markdown_files=()
+while IFS= read -r file; do
+  markdown_files+=("$file")
+done < <(git ls-files -- '*.md' '*.mdc')
 npx markdownlint-cli "${markdown_files[@]}"
 
 echo "=== Step 1.5: Running Kotlin Code Formatting & Line-Length Check (Spotless / ktlint) ==="

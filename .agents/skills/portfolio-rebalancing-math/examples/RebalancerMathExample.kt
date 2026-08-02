@@ -16,8 +16,8 @@ class RebalancerMathExample {
     }
 
     fun calculateCappedBuyUsdAmount(availableUsdCash: BigDecimal): BigDecimal {
-        // Cap buy allocations to 99% of available USD cash to buffer slippage & exchange fees
+        // A cash ceiling must truncate, not round up: HALF_UP could turn $0.495 into $0.50.
         val cappedCash = availableUsdCash.multiply(BigDecimal("0.99"))
-        return cappedCash.setScale(2, RoundingMode.HALF_UP)
+        return cappedCash.setScale(2, RoundingMode.DOWN)
     }
 }

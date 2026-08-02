@@ -58,6 +58,25 @@ class OrderExecutorCashCapTest : StringSpec() {
             }
         }
 
+        "should truncate a sub-dollar 99% reserve instead of spending all cash" {
+            runTest {
+                krakenService.orderResultFactory = { pair, _, side, volume ->
+                    OrderResult(success = true, pair = pair, side = side, volume = volume)
+                }
+
+                orderExecutor.executeOrders(
+                    buyOrders = mapOf(Asset.ETH to BigDecimal("0.50")),
+                    sellOrders = emptyMap(),
+                    currentValuesUSD = mapOf(Asset.USD to BigDecimal("0.50")),
+                    prices = mapOf(Asset.ETH to BigDecimal.ONE),
+                    settings = TestFixtures.settings(dustThresholdUSD = 0.0),
+                    actionLog = mutableListOf(),
+                )
+
+                krakenService.executedOrders.single().volume.shouldBeEqualComparingTo(BigDecimal("0.49"))
+            }
+        }
+
         "should cap buys that fit under cash but exceed the 99% reserve" {
             runTest {
                 krakenService.orderResultFactory = { pair, _, side, volume ->

@@ -96,8 +96,7 @@ internal fun buildRebalancerComparisonChart(comparison: RebalancerComparison) {
         }
     }
 
-    val latestDiff = dynamicNumber(comparison.latestDifferenceUSD)!!
-    val latestDiffPct = dynamicNumber(comparison.latestDifferencePercent)!!
+    val (latestDiff, latestDiffPct) = comparison.latestDifferenceValues() ?: return
     val signStr = if (latestDiff > 0) "+" else ""
     if (deltaEl != null) {
         deltaEl.textContent = "$signStr${formatUSD(latestDiff)} ($signStr${latestDiffPct.toFixed(2)}%)"
@@ -130,13 +129,20 @@ private fun RebalancerComparison.hasValidAvailability(): Boolean =
 private fun RebalancerComparison.hasSufficientData(): Boolean = points.size >= 2 &&
     baselineTimestamp?.isNotBlank() == true
 
-private fun RebalancerComparison.hasValidDifferenceValues(): Boolean = dynamicNumber(latestDifferenceUSD) != null &&
-    dynamicNumber(latestDifferencePercent) != null
+private fun RebalancerComparison.latestDifferenceValues(): Pair<Double, Double>? {
+    val latestDiff = dynamicNumber(latestDifferenceUSD) ?: return null
+    val latestDiffPct = dynamicNumber(latestDifferencePercent) ?: return null
+    return latestDiff to latestDiffPct
+}
+
+private fun RebalancerComparison.hasValidDifferenceValues(): Boolean = latestDifferenceValues() != null
 
 private fun RebalancerComparison.hasSortedTimestamps(): Boolean =
     points.map { dynamicNumber(it.timestamp) }.let { timestamps ->
-        timestamps.all { it != null } &&
-            timestamps.zipWithNext().all { (previous, current) -> current!! >= previous!! }
+        timestamps.filterNotNull().let { nonNullTimestamps ->
+            nonNullTimestamps.size == timestamps.size &&
+                nonNullTimestamps.zipWithNext().all { (previous, current) -> current >= previous }
+        }
     }
 
 private fun RebalancerComparison.hasValidBaselinePoint(): Boolean = points.firstOrNull()?.let { first ->

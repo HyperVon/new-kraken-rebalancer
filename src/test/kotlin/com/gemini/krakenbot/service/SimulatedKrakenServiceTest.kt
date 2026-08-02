@@ -18,6 +18,7 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import java.math.BigDecimal
 import java.math.RoundingMode
+import java.time.Instant
 
 class SimulatedKrakenServiceTest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
@@ -249,6 +250,23 @@ class SimulatedKrakenServiceTest : StringSpec() {
 
             val paginated = simulatedService.getTradeHistory(null, 5)
             paginated.size shouldBe 9
+        }
+
+        "should apply an inclusive end bound to trade history" {
+            val configService = mockk<ConfigService>()
+            every { configService.getConfig() } returns btcUsdConfig
+            val simulatedService = SimulatedKrakenService(configService)
+
+            val allTrades = simulatedService.getTradeHistory(null, null)
+            val endSec = allTrades[allTrades.size / 2].timestamp.epochSecond + 1
+            val expected = allTrades
+                .filter { !it.timestamp.isAfter(Instant.ofEpochSecond(endSec)) }
+                .take(50)
+
+            val bounded = simulatedService.getTradeHistoryUntil(null, null, endSec)
+
+            bounded shouldBe expected
+            simulatedService.getLastTradeHistoryTotalCount() shouldBe expected.size
         }
 
         "should cap trade history pages at 50 records and advance offsets" {

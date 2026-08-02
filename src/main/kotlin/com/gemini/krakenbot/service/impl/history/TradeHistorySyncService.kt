@@ -11,6 +11,7 @@ import com.gemini.krakenbot.model.isSettledApiFill
 import com.gemini.krakenbot.repository.TradeRepository
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.KrakenService
+import com.gemini.krakenbot.service.getTradeHistoryUntil
 import com.gemini.krakenbot.util.TradeCalculator
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -93,12 +94,14 @@ class TradeHistorySyncService(
             } else {
                 effectiveLatest?.minusSeconds(300) ?: Instant.EPOCH
             }
-        val queryEnd = nowProvider().plusSeconds(300)
+        val queryNow = nowProvider()
+        val queryEnd = queryNow.plusSeconds(300)
         val originalLocalTrades = repository.getTradesInRange(queryStart, queryEnd).toMutableList()
         val allocations = config.allocations.map { it.symbol.value }
 
         val (totalAdded, totalReconciled) = processApiTrades(
             startSec = paginationStartSec,
+            endSec = queryNow.epochSecond,
             isSeeded = isSeeded,
             originalLocalTrades = originalLocalTrades,
             allocations = allocations,
@@ -121,6 +124,7 @@ class TradeHistorySyncService(
 
     private suspend fun processApiTrades(
         startSec: Long?,
+        endSec: Long,
         isSeeded: Boolean,
         originalLocalTrades: MutableList<TradeRecord>,
         allocations: List<String>,
@@ -132,7 +136,7 @@ class TradeHistorySyncService(
         // lands mid-pagination; without this set that row is double-inserted (CQ-8-M1).
         val seenApiFillKeys = mutableSetOf<String>()
 
-        getTradeHistoryPaginated(startSec = startSec, isSeeded = isSeeded)
+        getTradeHistoryPaginated(startSec = startSec, endSec = endSec, isSeeded = isSeeded)
             .collect { apiTrades ->
                 for (apiTrade: TradeRecord in apiTrades) {
                     if (!seenApiFillKeys.add(apiFillIdentityKey(apiTrade))) continue
@@ -338,31 +342,36 @@ class TradeHistorySyncService(
     ).joinToString("|")
 
     /** Cold paginated Kraken history; progress is durable until the first seed completes. */
-    private fun getTradeHistoryPaginated(startSec: Long?, isSeeded: Boolean): Flow<List<TradeRecord>> = flow {
-        var offset = 0
+    private fun getTradeHistoryPaginated(startSec: Long?, endSec: Long, isSeeded: Boolean): Flow<List<TradeRecord>> =
+        flow {
+            var offset = 0
 
-        while (true) {
-            log.info("Fetching trade history batch with offset={}", offset)
-            val apiTrades = krakenService.getTradeHistory(startSec = startSec, offset = offset)
-            val totalCount = krakenService.getLastTradeHistoryTotalCount()
+            while (true) {
+                log.info("Fetching trade history batch with offset={}", offset)
+                val apiTrades = krakenService.getTradeHistoryUntil(
+                    startSec = startSec,
+                    offset = offset,
+                    endSec = endSec,
+                )
+                val totalCount = krakenService.getLastTradeHistoryTotalCount()
 
-            if (!isSeeded) {
-                repository.setSyncMetadata(SyncMetadataKeys.SYNC_OFFSET, offset.toString())
-                repository.setSyncMetadata(SyncMetadataKeys.SYNC_TOTAL, totalCount.toString())
+                if (!isSeeded) {
+                    repository.setSyncMetadata(SyncMetadataKeys.SYNC_OFFSET, offset.toString())
+                    repository.setSyncMetadata(SyncMetadataKeys.SYNC_TOTAL, totalCount.toString())
+                }
+
+                if (apiTrades.isNotEmpty()) emit(apiTrades)
+
+                val nextOffset = offset + PAGE_SIZE
+                val hasMorePages = if (totalCount > 0) {
+                    nextOffset < totalCount
+                } else {
+                    apiTrades.size >= PAGE_SIZE
+                }
+                if (!hasMorePages) break
+                offset = nextOffset
             }
-
-            if (apiTrades.isNotEmpty()) emit(apiTrades)
-
-            val nextOffset = offset + PAGE_SIZE
-            val hasMorePages = if (totalCount > 0) {
-                nextOffset < totalCount
-            } else {
-                apiTrades.size >= PAGE_SIZE
-            }
-            if (!hasMorePages) break
-            offset = nextOffset
         }
-    }
 
     suspend fun getSyncMetadata(key: String): String? = repository.getSyncMetadata(key)
 

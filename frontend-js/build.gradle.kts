@@ -1,3 +1,5 @@
+import org.jetbrains.kotlin.gradle.tasks.KotlinCompilationTask
+
 plugins {
     kotlin("multiplatform")
     id("com.google.devtools.ksp") version "2.3.10"
@@ -44,7 +46,7 @@ kotlin {
     }
 }
 
-tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompilationTask<*>>().configureEach {
+tasks.withType<KotlinCompilationTask<*>>().configureEach {
     compilerOptions {
         allWarningsAsErrors.set(true)
     }

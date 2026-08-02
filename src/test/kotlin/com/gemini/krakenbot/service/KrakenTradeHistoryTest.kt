@@ -257,7 +257,7 @@ class KrakenTradeHistoryTest : KrakenServiceTestBase() {
             }
         }
 
-        "getTradeHistory_WithStartAndOffset" {
+        "getTradeHistory_WithStartEndAndOffset" {
             runTest {
                 var capturedBody: String? = null
                 val mockEngine = MockEngine { request ->
@@ -287,10 +287,11 @@ class KrakenTradeHistoryTest : KrakenServiceTestBase() {
                     httpClient = HttpClient(mockEngine),
                 )
 
-                service.getTradeHistory(startSec = 1700000000L, offset = 50)
+                service.getTradeHistoryUntil(startSec = 1700000000L, offset = 50, endSec = 1700000100L)
 
                 capturedBody.shouldNotBeNull()
                 capturedBody.contains("start=1700000000") shouldBe true
+                capturedBody.contains("end=1700000100") shouldBe true
                 capturedBody.contains("ofs=50") shouldBe true
             }
         }

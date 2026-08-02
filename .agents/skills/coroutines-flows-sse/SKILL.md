@@ -75,7 +75,7 @@ section owns the **cold Flow poll implementation**.
     matched by sell `orderTxid`, **net of fee**, up to 5×50 pages) → balance peek
     `min(fill, balance)` when spendable USD is visible, else
     `min(fill, projectedCash)`.
-  - **Fallback:** `refreshUsdBalanceAfterSells()` →
+  - **Fallback:** `pollUsdBalanceAfterSells()` →
     `pollUsdBalanceAfterSells().last()` when no txids or fill confirm is empty.
   Both cold polls: **3** attempts from **250ms** (doubling; defensive
   `coerceAtMost(32s)`); emit best positive observation (or `0`); executor aborts

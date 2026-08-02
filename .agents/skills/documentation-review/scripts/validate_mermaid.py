@@ -39,7 +39,7 @@ except ImportError:
     )
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-PROJECT_ROOT = SCRIPT_DIR.parents[3]
+PROJECT_ROOT = SCRIPT_DIR.parents[4]
 MERMAID_VERSION = "8.8.0"
 MERMAID_URL = f"https://unpkg.com/mermaid@{MERMAID_VERSION}/dist/mermaid.min.js"
 MERMAID_CACHE = Path(f"/tmp/mermaid-{MERMAID_VERSION}.js")

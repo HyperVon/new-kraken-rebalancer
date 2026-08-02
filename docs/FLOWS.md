@@ -229,11 +229,13 @@ sequenceDiagram
   including local estimates; it falls back to `sync_watermark_epoch_sec` when
   none exists) so fills near the cutoff are not missed and dry-run-only accounts
   do not re-pull from EPOCH.
-- Within one sync pass, API fills are fingerprinted so a pagination window shift
-  cannot double-insert the same fill; this does not make newest-first offset
-  pagination snapshot-consistent. A new fill can shift later offsets and be
-  skipped until a later overlapping sync. Dry-run locals never match API fills
-  (`isMatchingApiTrade` returns false when `local.dryRun`).
+- Within one sync pass, the captured `endSec` keeps newest-first offsets stable
+  against fills arriving after the pass begins. API fills are fingerprinted so
+  repeated pages cannot double-insert the same fill. The bound does not make
+  separate operations immutable or protect against backfilled or exchange-
+  reordered rows; the overlap window and identity deduplication recover those
+  cases. Dry-run locals never match API fills (`isMatchingApiTrade` returns false
+  when `local.dryRun`).
 - The throttle check and pagination run under one coroutine mutex; concurrent
   callers wait and then recheck. A backward wall-clock jump allows the next
   sync to rebase the 300-second throttle instead of suppressing it indefinitely.
@@ -263,7 +265,7 @@ sequenceDiagram
    `min(fillConfirmed, balance)` when spendable USD is visible → else cap to
    `projectedCash`.
 2. **Fallback:** when no txids, or fill confirmation returns no positive USD →
-   `refreshUsdBalanceAfterSells()` → `pollUsdBalanceAfterSells().last()` (below).
+   `pollUsdBalanceAfterSells().last()` (below).
 
 Skipped when dry-run or no sell succeeded (buys use projected cash). Fail-closed:
 abort buys if neither path confirms positive USD.
@@ -292,13 +294,13 @@ sequenceDiagram
         OE->>Bal: peekUsdBalance (once)
         note over OE: min(fillConfirmed, balance) when balance > 0<br/>else min(fillConfirmed, projectedCash)
     else "no txids or fillConfirmed = 0"
-        OE->>OE: refreshUsdBalanceAfterSells (Flow 4b)
+        OE->>OE: pollUsdBalanceAfterSells (Flow 4b)
     end
 ```
 
 ### Flow 4b — USD Balance Polling fallback (Cold Flow)
 
-**Path:** `refreshUsdBalanceAfterSells()` → `pollUsdBalanceAfterSells().last()` →
+**Path:** `pollUsdBalanceAfterSells().last()` →
 Kraken balances API (with backoff). Used when sell txids are missing (e.g. some
 test doubles) or fill confirmation found no matching positive proceeds.
 
@@ -309,7 +311,7 @@ sequenceDiagram
     participant API as Kraken API
 
     note over OE: Fallback when no txids or empty fill confirm
-    OE->>Flow: refreshUsdBalanceAfterSells → .last()
+    OE->>Flow: pollUsdBalanceAfterSells → .last()
     note over Flow: .last() is a terminal operator.<br/>It collects the entire flow and<br/>returns only the final emitted value.
 
     loop "Up to 3 attempts (250ms → 500ms → 1000ms)"

@@ -7,6 +7,7 @@ import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.KrakenCredentials
+import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.service.impl.ConfigServiceImpl
 import io.kotest.assertions.throwables.shouldThrow
@@ -17,6 +18,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
+import java.io.File
 import java.nio.file.Files
 
 class ConfigServiceNestedSessionTest : StringSpec() {
@@ -24,7 +26,7 @@ class ConfigServiceNestedSessionTest : StringSpec() {
 
     private val objectMapper = jacksonObjectMapper()
 
-    private fun newService(tempFile: java.io.File): ConfigServiceImpl {
+    private fun newService(tempFile: File): ConfigServiceImpl {
         objectMapper.writeValue(
             tempFile,
             TestFixtures.config(
@@ -44,7 +46,7 @@ class ConfigServiceNestedSessionTest : StringSpec() {
                         .resolve("nested-config.json")
                         .toFile()
                 val service = newService(tempFile)
-                val events = mutableListOf<com.gemini.krakenbot.config.Settings>()
+                val events = mutableListOf<Settings>()
                 val job = launch {
                     service.watchConfigChanges().collect { events.add(it) }
                 }

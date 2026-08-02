@@ -11,6 +11,7 @@ import com.gemini.krakenbot.repository.impl.SqliteTradeRepositoryImpl
 import com.gemini.krakenbot.service.FakeKrakenService
 import com.gemini.krakenbot.service.TradeHistoryService
 import com.gemini.krakenbot.service.TradeHistoryServiceTestAdapter
+import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.collections.shouldHaveSize
@@ -182,7 +183,7 @@ class OrderSubmissionJournalE2ETest : StringSpec() {
                 val orderExecutor = OrderExecutorImpl(krakenService, tradeHistoryService)
                 val now = Instant.now().truncatedTo(ChronoUnit.MILLIS)
 
-                val thrown = io.kotest.assertions.throwables.shouldThrow<IOException> {
+                val thrown = shouldThrow<IOException> {
                     orderExecutor.executeOrders(
                         buyOrders = mapOf(Asset.BTC to BigDecimal("25.00")),
                         sellOrders = emptyMap(),

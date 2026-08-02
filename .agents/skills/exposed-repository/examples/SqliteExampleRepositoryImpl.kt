@@ -1,9 +1,9 @@
 package com.gemini.krakenbot.repository
 
-import com.gemini.krakenbot.domain.TradeRecord
-import com.gemini.krakenbot.util.safeTransaction
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
+import com.gemini.krakenbot.model.TradeRecord
+import com.gemini.krakenbot.model.TradeSource
+import com.gemini.krakenbot.repository.impl.readTransactionIO
+import com.gemini.krakenbot.repository.impl.safeTransactionIO
 import org.jetbrains.exposed.v1.core.dao.id.LongIdTable
 import org.jetbrains.exposed.v1.jdbc.Database
 import org.jetbrains.exposed.v1.core.SortOrder
@@ -11,10 +11,9 @@ import org.jetbrains.exposed.v1.core.eq
 import org.jetbrains.exposed.v1.jdbc.deleteWhere
 import org.jetbrains.exposed.v1.jdbc.insert
 import org.jetbrains.exposed.v1.jdbc.selectAll
-import org.jetbrains.exposed.v1.jdbc.transactions.transaction
 import org.jetbrains.exposed.v1.jdbc.update
 import org.slf4j.LoggerFactory
-import java.math.BigDecimal
+import java.time.Instant
 
 object ExampleTradeTable : LongIdTable("example_trades") {
     val timestamp = long("timestamp").index()
@@ -29,36 +28,36 @@ class SqliteExampleRepositoryImpl(
 ) {
     private val log = LoggerFactory.getLogger(SqliteExampleRepositoryImpl::class.java)
 
-    suspend fun saveTrade(trade: TradeRecord): Unit = withContext(Dispatchers.IO) {
-        database.safeTransaction(log, "Failed to save trade record") {
-            ExampleTradeTable.insert {
-                it[timestamp] = trade.timestamp.toEpochMilli()
-                it[pair] = trade.pair
-                it[side] = trade.side.name
-                it[volume] = trade.volume
-                it[usdAmount] = trade.usdAmount
+    suspend fun saveTrade(trade: TradeRecord): Unit = database.safeTransactionIO(log, "Failed to save trade record") {
+        ExampleTradeTable.insert {
+            it[timestamp] = trade.timestamp.toEpochMilli()
+            it[pair] = trade.pair
+            it[side] = trade.side
+            it[volume] = trade.volume
+            it[usdAmount] = trade.usdAmount
+        }
+    }
+
+    suspend fun loadAllTrades(): List<TradeRecord> = database.readTransactionIO {
+        ExampleTradeTable.selectAll()
+            .orderBy(ExampleTradeTable.timestamp, SortOrder.DESC)
+            .map { row ->
+                TradeRecord(
+                    id = row[ExampleTradeTable.id].value,
+                    timestamp = Instant.ofEpochMilli(row[ExampleTradeTable.timestamp]),
+                    pair = row[ExampleTradeTable.pair],
+                    side = row[ExampleTradeTable.side],
+                    symbol = row[ExampleTradeTable.pair],
+                    volume = row[ExampleTradeTable.volume],
+                    usdAmount = row[ExampleTradeTable.usdAmount],
+                    success = true,
+                    dryRun = false,
+                    source = TradeSource.API_FILL,
+                )
             }
-        }
     }
 
-    suspend fun loadAllTrades(): List<TradeRecord> = withContext(Dispatchers.IO) {
-        transaction(database) {
-            ExampleTradeTable.selectAll()
-                .orderBy(ExampleTradeTable.timestamp, SortOrder.DESC)
-                .map { row ->
-                    TradeRecord(
-                        id = row[ExampleTradeTable.id].value,
-                        pair = row[ExampleTradeTable.pair],
-                        volume = row[ExampleTradeTable.volume],
-                        usdAmount = row[ExampleTradeTable.usdAmount]
-                    )
-                }
-        }
-    }
-
-    suspend fun deleteTradeById(tradeId: Long): Boolean = withContext(Dispatchers.IO) {
-        database.safeTransaction(log, "Failed to delete trade record") {
-            ExampleTradeTable.deleteWhere { ExampleTradeTable.id eq tradeId } > 0
-        }
+    suspend fun deleteTradeById(tradeId: Long): Boolean = database.safeTransactionIO(log, "Failed to delete trade record") {
+        ExampleTradeTable.deleteWhere { ExampleTradeTable.id eq tradeId } > 0
     }
 }
