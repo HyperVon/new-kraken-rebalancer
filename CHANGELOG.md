@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.15.34] - 2026-08-02
+
+### Fixed
+
+- **SSE integration-test race**: held the departing subscriber open until the
+  multi-subscriber barrier and first broadcast complete, preventing CI timing
+  from making the survivor test miss its transient subscription count.
+
 ## [6.15.33] - 2026-08-01
 
 ### Changed

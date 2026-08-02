@@ -10,6 +10,7 @@ import io.ktor.client.plugins.sse.sse
 import io.ktor.server.testing.testApplication
 import io.mockk.coEvery
 import io.mockk.every
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -144,13 +145,22 @@ class SseMultiSubscriberTest : DashboardControllerTestBase() {
 
                 // A second subscriber connects, takes one event, then closes — its departure must not
                 // disturb the survivor. The survivor is still collecting, waiting for broadcasts.
+                val departedReady = CompletableDeferred<Unit>()
+                val releaseDeparted = CompletableDeferred<Unit>()
                 val departed = async {
                     client.sse(Routes.API_STATUS_STREAM) {
-                        incoming.take(1).toList()
+                        incoming.first()
+                        // Keep the server-side collector active until the parent has observed both
+                        // subscribers and delivered the first broadcast; otherwise this client can
+                        // disconnect before the subscription-count barrier sees it.
+                        departedReady.complete(Unit)
+                        releaseDeparted.await()
                     }
                 }
+                departedReady.await()
                 awaitSubscribers(flow, 2)
                 flow.tryEmit(firstBroadcast)
+                releaseDeparted.complete(Unit)
                 departed.await()
 
                 // After the second subscriber has gone, a further broadcast still reaches the survivor.
