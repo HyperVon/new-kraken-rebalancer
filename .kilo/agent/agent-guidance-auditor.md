@@ -1,7 +1,7 @@
 ---
 description: "Bounded read-only audit of agent rules, skills, projections, and CI"
 mode: subagent
-steps: 10
+steps: 8
 hidden: true
 permission:
   bash: deny
@@ -32,6 +32,6 @@ Perform a read-only audit of the explicitly requested agent-guidance and workflo
 - Report each finding with `path:line`, source evidence, impact, and the smallest correction.
 - Return compact findings only; do not dump files or repeat aligned guidance.
 - Do not edit files, run servers, read secrets or runtime data, or run Gradle builds.
-- Stop after the requested paths are checked or after 10 tool iterations, whichever comes first.
+- Stop after the requested paths are checked or after 8 tool iterations, whichever comes first.
 
 The parent agent owns edits, integration, lint, and final quality gates.

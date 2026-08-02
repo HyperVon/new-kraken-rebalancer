@@ -1,7 +1,7 @@
 ---
 description: "Bounded read-only audit of product docs against source and build truth"
 mode: subagent
-steps: 10
+steps: 8
 hidden: true
 permission:
   bash: deny
@@ -31,6 +31,6 @@ Perform a read-only documentation audit for the explicitly requested product-doc
 - Report each finding with `path:line`, source evidence, impact, and the smallest correction.
 - Return a compact report; do not dump whole files or repeat aligned sections.
 - Do not edit files, run servers, read secrets or runtime data, or run Gradle builds.
-- Stop after the requested paths are checked or after 10 tool iterations, whichever comes first.
+- Stop after the requested paths are checked or after 8 tool iterations, whichever comes first.
 
 The parent agent owns edits, integration, Mermaid validation, lint, and final quality gates.
