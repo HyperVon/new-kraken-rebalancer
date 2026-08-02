@@ -145,19 +145,15 @@ class SseMultiSubscriberTest : DashboardControllerTestBase() {
 
                 // A second subscriber connects, takes one event, then closes — its departure must not
                 // disturb the survivor. The survivor is still collecting, waiting for broadcasts.
-                val departedReady = CompletableDeferred<Unit>()
                 val releaseDeparted = CompletableDeferred<Unit>()
                 val departed = async {
                     client.sse(Routes.API_STATUS_STREAM) {
                         incoming.first()
-                        // Keep the server-side collector active until the parent has observed both
-                        // subscribers and delivered the first broadcast; otherwise this client can
-                        // disconnect before the subscription-count barrier sees it.
-                        departedReady.complete(Unit)
+                        // Keep this connection open while the parent waits for both server-side
+                        // collectors, then delivers the first broadcast.
                         releaseDeparted.await()
                     }
                 }
-                departedReady.await()
                 awaitSubscribers(flow, 2)
                 flow.tryEmit(firstBroadcast)
                 releaseDeparted.complete(Unit)
