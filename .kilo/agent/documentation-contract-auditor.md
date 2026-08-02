@@ -3,6 +3,10 @@ description: "Bounded read-only audit of product docs against source and build t
 mode: subagent
 steps: 10
 hidden: true
+permission:
+  bash: deny
+  edit: deny
+  external_directory: deny
 ---
 
 # Documentation Contract Auditor

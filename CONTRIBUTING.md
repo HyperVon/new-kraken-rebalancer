@@ -74,7 +74,7 @@ first
 
    (requires a valid `rebalancer-config.json` for local runs that load config).
    Frontend browser tests are included via `check` → `:frontend-js:jsBrowserTest`.
-    **CodeQL** runs Java/Kotlin analysis from `.github/workflows/codeql.yml` on
+   **CodeQL** runs Java/Kotlin analysis from `.github/workflows/codeql.yml` on
     `main` pushes and pull requests. The workflow uses CodeQL Action v4 and the
     current bundle supports this project's Kotlin 2.4.10 compiler.
    Agent-assisted PRs should also follow

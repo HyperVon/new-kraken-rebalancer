@@ -3,6 +3,10 @@ description: "Bounded read-only audit of agent rules, skills, projections, and C
 mode: subagent
 steps: 10
 hidden: true
+permission:
+  bash: deny
+  edit: deny
+  external_directory: deny
 ---
 
 # Agent Guidance Auditor

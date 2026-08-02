@@ -1,6 +1,6 @@
 name: "CodeQL Advanced"
 
-# CodeQL bundle 2.26.0+ supports Kotlin 2.4.x, including this project's 2.4.10.
+# The pinned CodeQL Action v4.37.4 bundle supports this project's Kotlin 2.4.10 compiler.
 on:
   push:
     branches: [ "main" ]
