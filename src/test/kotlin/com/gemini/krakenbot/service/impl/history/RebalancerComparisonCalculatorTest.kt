@@ -283,6 +283,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             val result = RebalancerComparisonCalculator.calculate(snapshots, trades)
 
             result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.confidence shouldBe ComparisonConfidence.RECONCILED
         }
 
         "tracked sell: asset volume and USD/fee deltas match and remain available" {
@@ -318,6 +319,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             val result = RebalancerComparisonCalculator.calculate(snapshots, trades)
 
             result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.confidence shouldBe ComparisonConfidence.RECONCILED
         }
 
         "dry-run ignored: estimates confidence" {
