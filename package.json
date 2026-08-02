@@ -12,7 +12,7 @@
   },
   "devDependencies": {
     "@modelcontextprotocol/server-memory": "^2026.7.4",
-    "@modelcontextprotocol/server-puppeteer": "^2025.5.12",
+    "@playwright/mcp": "^0.0.78",
     "markdownlint-cli": "^0.49.1",
     "playwright": "^1.62.1"
   }

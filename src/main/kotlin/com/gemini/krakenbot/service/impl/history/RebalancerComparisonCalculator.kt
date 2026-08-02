@@ -14,13 +14,7 @@ import java.math.RoundingMode
 import java.time.Instant
 
 object RebalancerComparisonCalculator {
-
-    private val SCALE_CRYPTO = PrecisionConstants.SCALE_CRYPTO
-    private val SCALE_USD = PrecisionConstants.SCALE_USD
-    private val SCALE_PERCENT = PrecisionConstants.SCALE_PERCENT
-    private val USD = Asset.USD
-
-    private val BASELINE_MISMATCH_TOLERANCE = BigDecimal("0.01")
+    private val baselineMismatchTolerance = BigDecimal("0.01")
 
     fun calculate(snapshots: List<PortfolioSnapshot>, trades: List<TradeRecord>): RebalancerComparison {
         if (snapshots.size < 2) {
@@ -70,10 +64,10 @@ object RebalancerComparisonCalculator {
             val differencePercent = calculateDifferencePercent(differenceUSD, buyAndHoldValue)
             points += RebalancerComparisonPoint(
                 timestamp = snapshot.timestamp,
-                rebalancerValueUSD = rebalancerValue.setScale(SCALE_USD, RoundingMode.HALF_UP),
-                buyAndHoldValueUSD = buyAndHoldValue.setScale(SCALE_USD, RoundingMode.HALF_UP),
-                differenceUSD = differenceUSD.setScale(SCALE_USD, RoundingMode.HALF_UP),
-                differencePercent = differencePercent.setScale(SCALE_PERCENT, RoundingMode.HALF_UP),
+                rebalancerValueUSD = rebalancerValue.setScale(PrecisionConstants.SCALE_USD, RoundingMode.HALF_UP),
+                buyAndHoldValueUSD = buyAndHoldValue.setScale(PrecisionConstants.SCALE_USD, RoundingMode.HALF_UP),
+                differenceUSD = differenceUSD.setScale(PrecisionConstants.SCALE_USD, RoundingMode.HALF_UP),
+                differencePercent = differencePercent.setScale(PrecisionConstants.SCALE_PERCENT, RoundingMode.HALF_UP),
             )
         }
 
@@ -81,7 +75,7 @@ object RebalancerComparisonCalculator {
         val firstDiffFromCalc = baselineFirstPoint.rebalancerValueUSD
             .subtract(baselineFirstPoint.buyAndHoldValueUSD)
             .abs()
-        if (firstDiffFromCalc > BASELINE_MISMATCH_TOLERANCE) {
+        if (firstDiffFromCalc > baselineMismatchTolerance) {
             return unavailable(
                 reason = ComparisonUnavailableReason.BASELINE_MISMATCH,
                 unavailableAt = baseline.timestamp,
@@ -92,10 +86,19 @@ object RebalancerComparisonCalculator {
         val correctedPoints = points.mapIndexed { index, point ->
             if (index == 0) {
                 point.copy(
-                    rebalancerValueUSD = baseline.totalValueUSD.setScale(SCALE_USD, RoundingMode.HALF_UP),
-                    buyAndHoldValueUSD = baseline.totalValueUSD.setScale(SCALE_USD, RoundingMode.HALF_UP),
-                    differenceUSD = BigDecimal.ZERO.setScale(SCALE_USD, RoundingMode.HALF_UP),
-                    differencePercent = BigDecimal.ZERO.setScale(SCALE_PERCENT, RoundingMode.HALF_UP),
+                    rebalancerValueUSD = baseline.totalValueUSD.setScale(
+                        PrecisionConstants.SCALE_USD,
+                        RoundingMode.HALF_UP,
+                    ),
+                    buyAndHoldValueUSD = baseline.totalValueUSD.setScale(
+                        PrecisionConstants.SCALE_USD,
+                        RoundingMode.HALF_UP,
+                    ),
+                    differenceUSD = BigDecimal.ZERO.setScale(PrecisionConstants.SCALE_USD, RoundingMode.HALF_UP),
+                    differencePercent = BigDecimal.ZERO.setScale(
+                        PrecisionConstants.SCALE_PERCENT,
+                        RoundingMode.HALF_UP,
+                    ),
                 )
             } else {
                 point
@@ -153,7 +156,7 @@ object RebalancerComparisonCalculator {
         for (snapshot in snapshots) {
             for ((symbol, startBalance) in baselineBalances) {
                 if (startBalance.signum() == 0) continue
-                if (symbol == USD) continue
+                if (symbol == Asset.USD) continue
                 val assetRow = snapshot.assets[symbol] ?: return unavailable(
                     reason = ComparisonUnavailableReason.MISSING_PRICE,
                     unavailableAt = snapshot.timestamp,
@@ -197,7 +200,11 @@ object RebalancerComparisonCalculator {
 
             for ((symbol, expectedBalance) in impliedBalances) {
                 val actualBalance = curr.assets[symbol]?.balance ?: return null
-                val scale = if (symbol == USD) SCALE_USD else SCALE_CRYPTO
+                val scale = if (symbol == Asset.USD) {
+                    PrecisionConstants.SCALE_USD
+                } else {
+                    PrecisionConstants.SCALE_CRYPTO
+                }
                 val roundedExpected = expectedBalance.setScale(scale, RoundingMode.HALF_UP)
                 val roundedActual = actualBalance.setScale(scale, RoundingMode.HALF_UP)
                 if (roundedExpected.compareTo(roundedActual) != 0) {
@@ -212,7 +219,7 @@ object RebalancerComparisonCalculator {
         val side = trade.side.uppercase()
         val symbol = trade.symbol.uppercase()
         if (
-            symbol == USD ||
+            symbol == Asset.USD ||
             symbol !in balances ||
             !Asset.matchesUsdQuotedPair(trade.pair, symbol) ||
             trade.volume.signum() < 0 ||
@@ -221,22 +228,22 @@ object RebalancerComparisonCalculator {
         ) {
             return false
         }
-        if (USD !in balances) {
+        if (Asset.USD !in balances) {
             return false
         }
-        val usdBalance = balances[USD] ?: BigDecimal.ZERO
+        val usdBalance = balances[Asset.USD] ?: BigDecimal.ZERO
         val assetBalance = balances.getValue(symbol)
 
         when (side) {
             "BUY" -> {
                 balances[symbol] = assetBalance.add(trade.volume)
                 val usdCost = trade.usdAmount.add(trade.fee)
-                balances[USD] = usdBalance.subtract(usdCost)
+                balances[Asset.USD] = usdBalance.subtract(usdCost)
             }
             "SELL" -> {
                 balances[symbol] = assetBalance.subtract(trade.volume)
                 val usdProceeds = trade.usdAmount.subtract(trade.fee)
-                balances[USD] = usdBalance.add(usdProceeds)
+                balances[Asset.USD] = usdBalance.add(usdProceeds)
             }
             else -> return false
         }
@@ -253,7 +260,7 @@ object RebalancerComparisonCalculator {
         var total = BigDecimal.ZERO
         for ((symbol, startBalance) in baselineBalances) {
             if (startBalance.signum() == 0) continue
-            val price = if (symbol == USD) {
+            val price = if (symbol == Asset.USD) {
                 BigDecimal.ONE
             } else {
                 snapshot.assets[symbol]?.price
@@ -270,7 +277,7 @@ object RebalancerComparisonCalculator {
     private fun calculateDifferencePercent(differenceUSD: BigDecimal, buyAndHoldValue: BigDecimal): BigDecimal =
         differenceUSD
             .multiply(BigDecimal(PrecisionConstants.HUNDRED_INT))
-            .divide(buyAndHoldValue, SCALE_PERCENT, RoundingMode.HALF_UP)
+            .divide(buyAndHoldValue, PrecisionConstants.SCALE_PERCENT, RoundingMode.HALF_UP)
 
     private fun unavailable(
         reason: ComparisonUnavailableReason,

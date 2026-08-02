@@ -25,7 +25,7 @@
     },
     "playwright": {
       "type": "local",
-      "command": ["npx", "-y", "@modelcontextprotocol/server-puppeteer"],
+      "command": ["npx", "-y", "@playwright/mcp"],
       "enabled": false
     }
   },

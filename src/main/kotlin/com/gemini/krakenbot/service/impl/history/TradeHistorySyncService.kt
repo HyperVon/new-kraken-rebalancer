@@ -12,6 +12,7 @@ import com.gemini.krakenbot.repository.TradeRepository
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.KrakenService
 import com.gemini.krakenbot.service.getTradeHistoryUntil
+import com.gemini.krakenbot.service.impl.KrakenApiConstants
 import com.gemini.krakenbot.util.TradeCalculator
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -143,9 +144,9 @@ class TradeHistorySyncService(
 
                     val result = reconcileOrInsertApiTrade(apiTrade, originalLocalTrades, allocations)
                     when (result) {
-                        is TradeReconciliationResult.Inserted -> totalAdded++
-                        is TradeReconciliationResult.Reconciled -> totalReconciled++
-                        is TradeReconciliationResult.AlreadyPersisted -> { /* no-op */ }
+                        TradeReconciliationResult.INSERTED -> totalAdded++
+                        TradeReconciliationResult.RECONCILED -> totalReconciled++
+                        TradeReconciliationResult.ALREADY_PERSISTED -> { /* no-op */ }
                     }
                 }
             }
@@ -169,7 +170,7 @@ class TradeHistorySyncService(
             }
         if (persistedFill != null) {
             originalLocalTrades.remove(persistedFill)
-            return TradeReconciliationResult.AlreadyPersisted
+            return TradeReconciliationResult.ALREADY_PERSISTED
         }
 
         val matchingLocalTrade = findMatchingLocalTrade(apiTrade, originalLocalTrades, allocations)
@@ -178,7 +179,7 @@ class TradeHistorySyncService(
             reconcileWithLocalTrade(apiTrade, matchingLocalTrade, originalLocalTrades)
         } else {
             repository.saveTrade(apiTrade)
-            TradeReconciliationResult.Inserted
+            TradeReconciliationResult.INSERTED
         }
     }
 
@@ -240,14 +241,10 @@ class TradeHistorySyncService(
         // Drop from the pending set after persistence so a DB failure leaves the
         // in-memory view unchanged (pre-refactor update-then-remove order).
         originalLocalTrades.remove(matchingLocalTrade)
-        return TradeReconciliationResult.Reconciled
+        return TradeReconciliationResult.RECONCILED
     }
 
-    private sealed class TradeReconciliationResult {
-        data object Inserted : TradeReconciliationResult()
-        data object Reconciled : TradeReconciliationResult()
-        data object AlreadyPersisted : TradeReconciliationResult()
-    }
+    private enum class TradeReconciliationResult { INSERTED, RECONCILED, ALREADY_PERSISTED }
 
     private suspend fun triggerReconstructionIfNeeded(config: AppConfig) {
         val snapshots = repository.load()
@@ -309,7 +306,7 @@ class TradeHistorySyncService(
     private suspend fun readInitialPaginationOffset(): Int? = repository
         .getSyncMetadata(SyncMetadataKeys.SYNC_OFFSET)
         ?.toIntOrNull()
-        ?.takeIf { it >= 0 && it % PAGE_SIZE == 0 }
+        ?.takeIf { it >= 0 && it % KrakenApiConstants.TRADE_HISTORY_PAGE_SIZE == 0 }
 
     /**
      * Identity for a single API fill within one sync pass. Kraken's trade id is the authoritative
@@ -362,11 +359,11 @@ class TradeHistorySyncService(
 
                 if (apiTrades.isNotEmpty()) emit(apiTrades)
 
-                val nextOffset = offset + PAGE_SIZE
+                val nextOffset = offset + KrakenApiConstants.TRADE_HISTORY_PAGE_SIZE
                 val hasMorePages = if (totalCount > 0) {
                     nextOffset < totalCount
                 } else {
-                    apiTrades.size >= PAGE_SIZE
+                    apiTrades.size >= KrakenApiConstants.TRADE_HISTORY_PAGE_SIZE
                 }
                 if (!hasMorePages) break
                 offset = nextOffset
@@ -378,10 +375,6 @@ class TradeHistorySyncService(
     suspend fun setSyncMetadata(key: String, value: String) = repository.setSyncMetadata(key, value)
 
     suspend fun isHistorySeeded(): Boolean = repository.isHistorySeeded()
-
-    private companion object {
-        const val PAGE_SIZE = 50
-    }
 }
 
 private fun AppConfig.canPullTradeHistory(): Boolean = settings.simulation || kraken.hasValidCredentials()

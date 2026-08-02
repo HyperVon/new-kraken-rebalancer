@@ -49,18 +49,15 @@ class OrderExecutorImpl(
     private val log = LoggerFactory.getLogger(OrderExecutorImpl::class.java)
 
     companion object {
-        const val MAX_REFRESH_ATTEMPTS = 3
-        const val REFRESH_DELAY_MS = 250L
+        private const val MAX_REFRESH_ATTEMPTS = 3
+        private const val REFRESH_DELAY_MS = 250L
 
         /** Early-accept threshold: settle once the observed value is >= 95% of projected. */
-        val EARLY_ACCEPT_PROPORTION = BigDecimal("0.95")
+        private val EARLY_ACCEPT_PROPORTION = BigDecimal("0.95")
 
         /** Backoff cap (milliseconds) for cold settle polls. */
-        const val MAX_POLL_BACKOFF_MS = 32000L
-
-        /** Kraken TradesHistory page size; used to decide when to stop paginating fill polls. */
-        const val TRADE_HISTORY_PAGE_SIZE = 50
-        const val MAX_FILL_HISTORY_PAGES = 5
+        private const val MAX_POLL_BACKOFF_MS = 32000L
+        private const val MAX_FILL_HISTORY_PAGES = 5
 
         /**
          * Deterministic Kraken `cl_ord_id` (UUID form) for a cycle/symbol/side.
@@ -474,11 +471,11 @@ class OrderExecutorImpl(
                 val netProceeds = fill.usdAmount.subtract(fill.fee).max(BigDecimal.ZERO)
                 matchedProceeds = matchedProceeds.add(netProceeds)
             }
-            val nextOffset = offset + TRADE_HISTORY_PAGE_SIZE
+            val nextOffset = offset + KrakenApiConstants.TRADE_HISTORY_PAGE_SIZE
             val hasMorePages = if (totalCount > 0) {
                 nextOffset < totalCount
             } else {
-                fills.size >= TRADE_HISTORY_PAGE_SIZE
+                fills.size >= KrakenApiConstants.TRADE_HISTORY_PAGE_SIZE
             }
             if (!hasMorePages) break
             offset = nextOffset

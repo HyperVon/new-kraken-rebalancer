@@ -357,7 +357,9 @@ class SimulatedKrakenService(private val configService: ConfigService) :
 
         // Kraken returns at most 50 records per page (newest first). An offset
         // at/beyond the result size therefore yields an empty page, not the whole history.
-        return filtered.drop(offset?.coerceAtLeast(0) ?: 0).take(TRADE_HISTORY_PAGE_SIZE)
+        return filtered
+            .drop(offset?.coerceAtLeast(0) ?: 0)
+            .take(KrakenApiConstants.TRADE_HISTORY_PAGE_SIZE)
     }
 
     override fun getLastTradeHistoryTotalCount(): Int = lastTradeHistoryTotalCount
@@ -368,7 +370,6 @@ class SimulatedKrakenService(private val configService: ConfigService) :
     override suspend fun getApiCallCounter(): Double = 0.0
 
     private companion object {
-        const val TRADE_HISTORY_PAGE_SIZE = 50
         const val SEED_ORDER_TXID_PREFIX = "SIM-SEED-"
         const val SEED_TRADE_ID_PREFIX = "SIM-SEED-FILL-"
         const val SIM_ORDER_TXID_PREFIX = "SIM-"

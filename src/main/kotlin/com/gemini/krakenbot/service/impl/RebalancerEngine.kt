@@ -12,11 +12,9 @@ import com.gemini.krakenbot.service.MutableRebalanceOrders
 import com.gemini.krakenbot.service.PortfolioValues
 import com.gemini.krakenbot.service.RawBalances
 import com.gemini.krakenbot.service.RawPrices
-import com.gemini.krakenbot.service.impl.PortfolioCalculations.HUNDRED
-import com.gemini.krakenbot.service.impl.PortfolioCalculations.SCALE_PERCENT
-import com.gemini.krakenbot.service.impl.PortfolioCalculations.SCALE_PRICE
-import com.gemini.krakenbot.service.impl.PortfolioCalculations.SCALE_USD
 import com.gemini.krakenbot.util.ActionLogFormatter
+import com.gemini.krakenbot.util.HUNDRED
+import com.gemini.krakenbot.util.PrecisionConstants
 import com.gemini.krakenbot.util.resolveBalance
 import com.gemini.krakenbot.util.toUsdScale
 import com.gemini.krakenbot.view.util.ViewText
@@ -75,13 +73,13 @@ object RebalancerEngine {
 
             val rawValUSD = balance.multiply(price)
             // Per-asset values stay USD-scaled for order sizing; accumulate raw then round once.
-            currentValuesUSD[symbol] = rawValUSD.setScale(SCALE_USD, RoundingMode.HALF_UP)
+            currentValuesUSD[symbol] = rawValUSD.setScale(PrecisionConstants.SCALE_USD, RoundingMode.HALF_UP)
             totalPortfolioValueUSD = totalPortfolioValueUSD.add(rawValUSD)
         }
 
         return Result.Success(
             PortfolioValues(
-                totalPortfolioValueUSD.setScale(SCALE_USD, RoundingMode.HALF_UP),
+                totalPortfolioValueUSD.setScale(PrecisionConstants.SCALE_USD, RoundingMode.HALF_UP),
                 currentValuesUSD,
             ),
         )
@@ -91,10 +89,10 @@ object RebalancerEngine {
         if (ath > BigDecimal.ZERO && totalPortfolioValueUSD < ath) {
             val diff = ath.subtract(totalPortfolioValueUSD)
             diff
-                .multiply(HUNDRED)
+                .multiply(PrecisionConstants.HUNDRED)
                 .divide(
                     ath,
-                    SCALE_PERCENT,
+                    PrecisionConstants.SCALE_PERCENT,
                     RoundingMode.HALF_UP,
                 )
         } else {
@@ -108,7 +106,7 @@ object RebalancerEngine {
         var ratio =
             drawdownPct.divide(
                 maxDD,
-                SCALE_PERCENT,
+                PrecisionConstants.SCALE_PERCENT,
                 RoundingMode.HALF_UP,
             )
         ratio = ratio.coerceAtMost(BigDecimal.ONE)
@@ -118,7 +116,7 @@ object RebalancerEngine {
         val deployDouble = ratio.toDouble().pow(settings.fiatDeploymentExponent) * 100.0
         return BigDecimal
             .valueOf(deployDouble)
-            .setScale(SCALE_PERCENT, RoundingMode.HALF_UP)
+            .setScale(PrecisionConstants.SCALE_PERCENT, RoundingMode.HALF_UP)
     }
 
     fun calculateEffectiveUsdTarget(fiatDeploymentPct: BigDecimal, allocations: List<Allocation>): BigDecimal {
@@ -131,7 +129,11 @@ object RebalancerEngine {
         return if (fiatDeploymentPct > BigDecimal.ZERO && hasNonUsdTarget) {
             val factor =
                 BigDecimal.ONE.subtract(
-                    fiatDeploymentPct.divide(HUNDRED, SCALE_PERCENT, RoundingMode.HALF_UP),
+                    fiatDeploymentPct.divide(
+                        PrecisionConstants.HUNDRED,
+                        PrecisionConstants.SCALE_PERCENT,
+                        RoundingMode.HALF_UP,
+                    ),
                 )
             baseUsdTarget.multiply(factor)
         } else {
@@ -145,11 +147,11 @@ object RebalancerEngine {
             .sumOf { it.targetPercent.toBigDecimal() }
 
         // Scale every crypto base target so (100 − effectiveUsd) is split in the same proportions.
-        val remainingForCrypto = HUNDRED.subtract(effectiveUsdTarget)
+        val remainingForCrypto = PrecisionConstants.HUNDRED.subtract(effectiveUsdTarget)
         return if (totalNonUsdTarget > BigDecimal.ZERO) {
             remainingForCrypto.divide(
                 totalNonUsdTarget,
-                SCALE_PRICE,
+                PrecisionConstants.SCALE_CRYPTO,
                 RoundingMode.HALF_UP,
             )
         } else {
@@ -193,7 +195,7 @@ object RebalancerEngine {
                 "Analysis [{}]: Dev: {}% ($ {}). Threshold: {}%",
                 symbolVal,
                 metrics.deviationPercent,
-                metrics.deviationUSD.setScale(SCALE_USD, RoundingMode.HALF_UP),
+                metrics.deviationUSD.setScale(PrecisionConstants.SCALE_USD, RoundingMode.HALF_UP),
                 settings.deviationTriggerPercent,
             )
 
@@ -296,12 +298,12 @@ object RebalancerEngine {
         log.info(
             "Distributing Fiat Correction ($${
                 deviationAbs.setScale(
-                    SCALE_USD,
+                    PrecisionConstants.SCALE_USD,
                     RoundingMode.HALF_UP,
                 )
             }) among ${candidates.size} candidates. Total Counter-Dev: $${
                 totalCounterDev.setScale(
-                    SCALE_USD,
+                    PrecisionConstants.SCALE_USD,
                     RoundingMode.HALF_UP,
                 )
             }",
@@ -310,14 +312,14 @@ object RebalancerEngine {
 
         // Truncate rather than round the budget so the shares can never sum above the
         // deviation we are actually correcting (CQ-3-26 / #76).
-        var remaining = deviationAbs.setScale(SCALE_USD, RoundingMode.DOWN)
+        var remaining = deviationAbs.setScale(PrecisionConstants.SCALE_USD, RoundingMode.DOWN)
 
         for (symbol in candidates) {
             val assetDev = allDevs.getValue(symbol).abs()
             val ratio =
                 assetDev.divide(
                     totalCounterDev,
-                    SCALE_PRICE,
+                    PrecisionConstants.SCALE_CRYPTO,
                     RoundingMode.HALF_UP,
                 )
             val share = deviationAbs.multiply(ratio).toUsdScale().min(remaining)

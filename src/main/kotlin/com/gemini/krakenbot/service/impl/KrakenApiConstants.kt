@@ -11,6 +11,9 @@ object KrakenApiConstants {
     const val PATH_TRADES_HISTORY = "/$API_VERSION/private/TradesHistory"
     const val PATH_OHLC = "/$API_VERSION/public/OHLC"
 
+    /** Maximum number of records returned by one Kraken TradesHistory page. */
+    const val TRADE_HISTORY_PAGE_SIZE = 50
+
     const val HEADER_API_KEY = "API-Key"
     const val HEADER_API_SIGN = "API-Sign"
     const val HEADER_CONTENT_TYPE = "Content-Type"
