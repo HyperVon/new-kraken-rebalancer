@@ -341,6 +341,14 @@ Kilo catalog token pricing, and starts `kilo run` with the selected exact route.
 It reports availability as `configured/unknown`; it does not probe every
 provider or silently retry an agent after a partial failure.
 
+For bounded parallel subagents, use `.kilo/model-router/route-subagents` with a
+track manifest instead of the host `Task` wrapper when the wrapper cannot expose
+model selection. It computes one route plan per track from a shared metadata
+snapshot, requires `--run` to launch, and starts each worker with its exact
+`kilo run --model provider/model` route. The default worker contract is read-only;
+the parent owns integration and final verification. A raw role-only Task call is
+not evidence that this cross-provider routing occurred.
+
 Before material or parallel delegation:
 
 1. Define the task profile and minimum capability.

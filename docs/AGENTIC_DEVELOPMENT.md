@@ -328,6 +328,28 @@ for a new turn while continuing the last Kilo session. OpenRouter participates
 when its provider configuration or environment credential is detected, even if
 it is absent from `kilo auth list`.
 
+### Routed subagents
+
+`route-kilo` only selects the top-level session route. For bounded subagent
+fan-out, use a manifest with one entry per independent track:
+
+```bash
+cp .kilo/model-router/manifest.example .kilo/model-router/manifest.local
+./.kilo/model-router/route-subagents \
+  --manifest .kilo/model-router/manifest.local \
+  --refresh
+```
+
+The command plans every track against one Kilo/Artificial Analysis metadata
+snapshot and prints a separate provider/model, capability, billing, and cost
+decision for each. Review the plan, then add `--run` to launch the workers
+concurrently. Each worker receives an exact `kilo run --model provider/model`
+route, a bounded read-only prompt by default, and a compact report contract.
+Use `--allow-edits` only when the manifest explicitly assigns disjoint writable
+paths and the parent has retained integration ownership. The host `Task` tool
+cannot be transparently intercepted; direct role-only Task calls therefore do
+not provide this cross-provider guarantee.
+
 Multiple agreeing reports are not proof of correctness. Related models can
 share the same blind spots, repeat inaccurate documentation, or approve
 tautological tests. Source inspection, executable evidence, official Kraken

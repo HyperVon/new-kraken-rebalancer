@@ -114,8 +114,9 @@ track. Kilo sessions inherit `kilo/kilo-auto/efficient` from `.kilo/kilo.json`;
 select `kilo/kilo-auto/frontier` for high-risk or disputed documentation claims.
 Kilo Auto chooses its underlying model server-side, so do not claim a specific
 underlying model or recreate its catalog and fallback logic in repository
-scripts. If a host Task accepts only a role and cannot expose a usable route,
-keep the audit parent-owned rather than using an unverified role-only worker.
+scripts. If a host Task accepts only a role and cannot expose a usable route, use
+`.kilo/model-router/route-subagents` for the bounded audit or keep it
+parent-owned; never use an unverified role-only worker.
 Use `review_surface.sh` only for a branch-scoped changed-path surface; it does
 not select or probe models.
 After model selection, present the track matrix, route, effort, and availability

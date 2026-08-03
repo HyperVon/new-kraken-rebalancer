@@ -52,8 +52,9 @@ Stay single-threaded (or one dedicated agent) when streams **share** the same ho
    underlying model without host evidence. `subagent_type` identifies a role, not
    a model from its name; `general` is never a model or provider substitute.
 7. Native Auto tiers manage their server-side mappings and fallbacks. For the
-   separate cross-provider requirement, `.kilo/model-router/route-kilo` may use a
-   bounded ephemeral catalog; it must not persist credentials or transient quota.
+   separate cross-provider requirement, use
+   `.kilo/model-router/route-subagents` for bounded tracks; it may use a bounded
+   ephemeral catalog but must not persist credentials or transient quota.
 8. Prefer a capable local route on hosts that expose one; for Kilo, start with
    the configured Auto Efficient tier and escalate to Auto Frontier for high-risk
    or disputed reasoning.
@@ -66,6 +67,16 @@ For reviews and broad audits, normally use 2–6 tracks (maximum 8), one per
 independent concern rather than one per file. Add a second model only for a
 high-risk or disputed track. Workers are bounded scouts; the parent owns the
 coverage matrix, triage, edits, and final verification.
+
+When the host Task surface cannot expose a model route, write a manifest and plan
+the tracks with:
+
+```bash
+./.kilo/model-router/route-subagents \
+  --manifest .kilo/model-router/manifest.example
+```
+
+After reviewing the route plan, add `--run` to launch the exact selected routes.
 
 ## Context budget
 

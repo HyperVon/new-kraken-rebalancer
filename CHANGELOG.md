@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.16.7] - 2026-08-03
+
+### Added
+
+- **Routed subagents**: added a manifest-driven launcher that selects and
+  enforces a separate provider/model route for each bounded concurrent worker.
+
 ## [6.16.6] - 2026-08-03
 
 ### Added

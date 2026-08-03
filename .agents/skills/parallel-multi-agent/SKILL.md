@@ -34,23 +34,23 @@ only its assigned paths and minimum dependencies.
 
 ### Native model-selection gate
 
-Before the first material or parallel Task call, select a host-supported model
-route for each track:
+Before the first material or parallel worker launch, select a host-supported
+model route for each track:
 
 - Record the minimum capability, primary route, effort when exposed, fallback,
   availability evidence, cost class/entitlement, and any substitution.
 - State the route and effort plan to the user and obtain explicit approval before
-  the first material or parallel Task call.
+  the first material or parallel worker launch.
 - Treat `subagent_type` as the worker role, not as route evidence from its name.
 - A Kilo Auto tier is a host-supported route when Kilo exposes it. The underlying
   model is server-selected and must not be reported unless the host provides it.
-- If the Task wrapper exposes only a role and no usable model route, keep the
-  work in the parent. Do not invent a route-enforcing launcher or claim that a
-  profile changed the model.
+- If the Task wrapper exposes only a role and no usable model route, use
+  `.kilo/model-router/route-subagents` for bounded cross-provider tracks. Do not
+  claim that a role or profile changed the model when launching a raw Task.
 - Native Auto owns its model mappings and fallbacks; it does not need a
   repository-side inventory or probe. If the task explicitly requires direct
-  cross-provider selection, use `.kilo/model-router/route-kilo`, which keeps its
-  catalog ephemeral and never persists credentials or transient quota.
+  cross-provider selection, use `.kilo/model-router/route-subagents`, which
+  keeps its catalog ephemeral and never persists credentials or transient quota.
 - For a broad request with multiple disjoint tracks, present the track matrix and
   route/effort plan with the `question` tool or host equivalent and obtain an
   explicit parallel-or-serial decision. If the user already approved the exact
@@ -60,7 +60,7 @@ route for each track:
 
 ## Step 2 — Brief each agent
 
-Every Task prompt must include:
+Every worker prompt must include:
 
 1. Absolute repo path + current branch
 2. Goal and acceptance criteria
@@ -130,12 +130,15 @@ Kilo sessions inherit the project default `kilo/kilo-auto/efficient` from
 `.kilo/kilo.json`. Select `kilo/kilo-auto/frontier` through the host for a
 high-risk or disputed review, or `kilo/kilo-auto/small` for bounded routine
 work. Auto tiers choose their underlying models and server-side fallbacks; do
-not add a repository launcher, catalog parser, connectivity probe, or hardcoded
-underlying-model pool to reproduce that behavior.
+not add a launcher, catalog parser, connectivity probe, or hardcoded
+underlying-model pool to reproduce that behavior. The separate
+`route-subagents` launcher exists only to enforce direct cross-provider routes
+when the host Task surface cannot do so.
 
 If a host Task surface cannot expose the selected route, keep the track
-parent-owned rather than claiming that a role or profile enforced a model. The
-parent still owns the review surface, integration, and final verification:
+parent-owned or use the routed manifest workflow; never claim that a role or
+profile enforced a model. The parent still owns the review surface, integration,
+and final verification:
 
 ```bash
 ./.agents/skills/adversarial-pr-review/scripts/review_surface.sh main
