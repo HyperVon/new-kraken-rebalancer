@@ -52,3 +52,15 @@ When a named workflow reaches its parallel-discovery step:
 The launcher selects an exact provider/model independently for every track,
 uses the installed quota plugin, and applies bounded runtime failover. A raw
 Kilo `Task` call remains unrouteable and must not be used as a substitute.
+
+Each `--run` writes a secret-free Markdown and JSON route report under
+`~/.cache/kilo/model-router/reports/` and prints the Markdown path after the
+workers finish. Reports include track scope, profile, planned and used
+provider/model, billing, benchmark/capability/quota metadata, timing, and
+failovers. They intentionally omit parent prompts, worker report text,
+credentials, and raw provider errors. Set `KILO_MODEL_ROUTER_REPORT_DIR` or pass
+`--report-dir` to choose another local destination.
+
+Standard read-only workers run from temporary repository copies, so an agent
+that ignores its prompt cannot modify the parent worktree. `--allow-edits` is
+the explicit exception for a custom manifest with owned writable paths.

@@ -5,12 +5,18 @@ from __future__ import annotations
 
 import argparse
 import concurrent.futures
+import contextlib
 import copy
+import datetime
 import json
+import os
 import re
+import shutil
 import subprocess
 import sys
+import tempfile
 import time
+import uuid
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
@@ -26,6 +32,7 @@ MAX_REPORT_LINES = 12
 MAX_FAILOVER_ATTEMPTS = 3
 REPORT_FAILURE_KIND = "report_contract"
 REPORT_PROTOCOL_MARKERS = ("tool_code", "ctx_", "compress {")
+DEFAULT_REPORT_SUBDIRECTORY = Path(".cache") / "kilo" / "model-router" / "reports"
 
 
 def load_manifest(path: Path) -> list[dict[str, Any]]:
@@ -196,12 +203,17 @@ def extract_report(stdout: str | bytes, stderr: str | bytes) -> tuple[str, bool]
     return fallback, False
 
 
-def launch_worker(item: Mapping[str, Any], timeout: int, allow_auto: bool) -> dict[str, Any]:
+def launch_worker(
+    item: Mapping[str, Any], timeout: int, allow_auto: bool, workspace: Path | None = None
+) -> dict[str, Any]:
     track = item["track"]
     selection = item["selection"]
+    workspace = workspace or router.ROOT
     command = [
         "kilo",
         "run",
+        "--dir",
+        str(workspace),
         "--model",
         str(selection["route"]),
         "--format",
@@ -219,7 +231,7 @@ def launch_worker(item: Mapping[str, Any], timeout: int, allow_auto: bool) -> di
     try:
         completed = subprocess.run(
             command,
-            cwd=router.ROOT,
+            cwd=workspace,
             capture_output=True,
             text=True,
             timeout=timeout,
@@ -254,13 +266,15 @@ def launch_worker(item: Mapping[str, Any], timeout: int, allow_auto: bool) -> di
         }
 
 
-def launch_with_failover(item: Mapping[str, Any], timeout: int, allow_auto: bool) -> dict[str, Any]:
+def launch_with_failover(
+    item: Mapping[str, Any], timeout: int, allow_auto: bool, workspace: Path | None = None
+) -> dict[str, Any]:
     current = dict(item)
     attempted_routes: set[str] = set()
     excluded_providers: set[str] = set()
     failovers: list[dict[str, Any]] = []
     for _ in range(MAX_FAILOVER_ATTEMPTS):
-        result = launch_worker(current, timeout, allow_auto)
+        result = launch_worker(current, timeout, allow_auto, workspace)
         attempted_routes.add(result["route"])
         result["attempted_routes"] = sorted(attempted_routes)
         result["failovers"] = failovers
@@ -316,8 +330,13 @@ def launch_with_failover(item: Mapping[str, Any], timeout: int, allow_auto: bool
 
 
 def launch_workers(prepared: Sequence[Mapping[str, Any]], max_workers: int, timeout: int, allow_auto: bool) -> list[dict[str, Any]]:
+    def launch_isolated(item: Mapping[str, Any]) -> dict[str, Any]:
+        read_only = bool(item["selection"].get("read_only", True))
+        with worker_workspace(read_only) as workspace:
+            return launch_with_failover(item, timeout, allow_auto, workspace)
+
     with concurrent.futures.ThreadPoolExecutor(max_workers=min(max_workers, len(prepared))) as executor:
-        futures = [executor.submit(launch_with_failover, item, timeout, allow_auto) for item in prepared]
+        futures = [executor.submit(launch_isolated, item) for item in prepared]
         return [future.result() for future in futures]
 
 
@@ -354,6 +373,183 @@ def print_results(results: Sequence[Mapping[str, Any]], as_json: bool) -> None:
             print(result["report"])
 
 
+def default_report_dir() -> Path:
+    configured = os.environ.get("KILO_MODEL_ROUTER_REPORT_DIR")
+    return Path(configured).expanduser() if configured else Path.home() / DEFAULT_REPORT_SUBDIRECTORY
+
+
+def _route_parts(route: str) -> tuple[str, str]:
+    provider, separator, model = route.partition("/")
+    return (provider, model) if separator else (provider, "unknown")
+
+
+def _safe_report_label(value: str) -> str:
+    label = re.sub(r"[^A-Za-z0-9_.-]+", "-", value).strip("-")
+    return label[:48] or "workflow"
+
+
+def _safe_scope(files: Sequence[str]) -> list[str]:
+    return ["<absolute-path>" if Path(path).is_absolute() else path for path in files]
+
+
+def _atomic_write(path: Path, content: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(
+        mode="w",
+        encoding="utf-8",
+        dir=path.parent,
+        prefix=f".{path.name}.",
+        delete=False,
+    ) as temporary:
+        temporary.write(content)
+        temporary.flush()
+        os.fsync(temporary.fileno())
+        temporary_path = Path(temporary.name)
+    os.replace(temporary_path, path)
+
+
+def _ignore_read_only_files(_: str, names: list[str]) -> list[str]:
+    ignored = {".git", ".gradle", "build", "node_modules", "logs", "rebalancer-config.json"}
+    return [
+        name
+        for name in names
+        if name in ignored
+        or name.startswith(".env")
+        or name.endswith((".db", ".sqlite", ".sqlite3"))
+    ]
+
+
+@contextlib.contextmanager
+def worker_workspace(read_only: bool) -> Any:
+    if not read_only:
+        yield router.ROOT
+        return
+    with tempfile.TemporaryDirectory(prefix="kilo-routed-") as directory:
+        workspace = Path(directory) / "repository"
+        shutil.copytree(router.ROOT, workspace, ignore=_ignore_read_only_files)
+        yield workspace
+
+
+def _report_track(item: Mapping[str, Any], planned: Mapping[str, Any], result: Mapping[str, Any]) -> dict[str, Any]:
+    track = item["track"]
+    route = str(result.get("route", planned["route"]))
+    actual_provider, actual_model = _route_parts(route)
+    cost = planned.get("cost", {})
+    capability = planned.get("capability", {})
+    quota = planned.get("quota", {})
+    return {
+        "track": track["id"],
+        "scope": _safe_scope(track.get("files", [])),
+        "track_role": _safe_report_label(str(planned.get("agent", DEFAULT_AGENT))),
+        "read_only": bool(planned.get("read_only", True)),
+        "profile": planned.get("profile"),
+        "planned": {
+            "route": planned.get("route"),
+            "provider": planned.get("provider"),
+            "model": planned.get("model"),
+            "billing": planned.get("billing"),
+            "effective_cost": cost.get("effective"),
+            "cost_source": cost.get("source"),
+            "aa_cost_per_task": cost.get("aa_cost_per_task"),
+            "estimated_token_cost": cost.get("estimated_token_cost"),
+            "capability": capability.get("score"),
+            "capability_source": capability.get("source"),
+            "quota_state": quota.get("state"),
+            "quota_remaining_percent": quota.get("remaining_percent"),
+            "aa": planned.get("aa"),
+        },
+        "used": {
+            "route": route,
+            "provider": actual_provider,
+            "model": actual_model,
+            "attempted_routes": list(result.get("attempted_routes", [route])),
+        },
+        "result": {
+            "status": "passed" if result.get("exit_code") == 0 else "failed",
+            "exit_code": result.get("exit_code"),
+            "duration_seconds": result.get("duration_seconds"),
+            "failure_kind": result.get("failure_kind"),
+            "failovers": [
+                {
+                    "from": failover.get("from"),
+                    "reason": failover.get("reason"),
+                    "cooldown_seconds": failover.get("cooldown_seconds"),
+                }
+                for failover in result.get("failovers", [])
+            ],
+        },
+    }
+
+
+def _markdown_report(payload: Mapping[str, Any]) -> str:
+    lines = [
+        "# Routed Worker Report",
+        "",
+        f"- Run: `{payload['run_id']}`",
+        f"- Completed: `{payload['completed_at_utc']}`",
+        f"- Workflow: `{payload['workflow']}`",
+        f"- Artificial Analysis data: `{payload['artificial_analysis']}`",
+        f"- Tracks: `{len(payload['tracks'])}`",
+        "",
+        "Persistent reports intentionally omit parent prompts, worker report text, credentials, and raw provider errors.",
+        "",
+    ]
+    for track in payload["tracks"]:
+        planned = track["planned"]
+        used = track["used"]
+        result = track["result"]
+        scope = ", ".join(f"`{path}`" for path in track["scope"]) or "minimum track paths"
+        remaining = planned["quota_remaining_percent"]
+        remaining_text = f"{remaining:.1f}" if isinstance(remaining, (int, float)) else "unknown"
+        lines.extend(
+            [
+                f"## {track['track']}",
+                f"- Scope: {scope}",
+                f"- Profile / track role: `{track['profile']}` / `{track['track_role']}`",
+                f"- Planned: `{planned['provider']}/{planned['model']}` ({planned['billing']})",
+                f"- Used: `{used['provider']}/{used['model']}`",
+                f"- Capability / quota: `{planned['capability']}` / `{planned['quota_state']}` "
+                f"({remaining_text}% remaining)",
+                f"- Cost basis: `{planned['effective_cost']}` ({planned['cost_source']})",
+                f"- Result: `{result['status']}` in `{result['duration_seconds']}s`",
+                f"- Failovers: `{len(result['failovers'])}`",
+                "",
+            ]
+        )
+    return "\n".join(lines)
+
+
+def write_run_report(
+    plan: Mapping[str, Any],
+    prepared: Sequence[Mapping[str, Any]],
+    results: Sequence[Mapping[str, Any]],
+    report_dir: str | Path | None = None,
+) -> dict[str, str]:
+    run_id = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ") + f"-{uuid.uuid4().hex[:8]}"
+    tracks_by_id = {item["track"]["id"]: item for item in prepared}
+    results_by_id = {result["track"]: result for result in results}
+    tracks = [
+        _report_track(tracks_by_id[planned["track"]], planned, results_by_id[planned["track"]])
+        for planned in plan["tracks"]
+    ]
+    payload = {
+        "schema": 1,
+        "run_id": run_id,
+        "completed_at_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "workflow": plan.get("workflow") or "custom-manifest",
+        "artificial_analysis": plan.get("aa"),
+        "tracks": tracks,
+    }
+    directory = Path(report_dir).expanduser() if report_dir else default_report_dir()
+    label = _safe_report_label(str(payload["workflow"]))
+    stem = f"{run_id}-{label}"
+    json_path = directory / f"{stem}.json"
+    markdown_path = directory / f"{stem}.md"
+    _atomic_write(json_path, json.dumps(payload, indent=2) + "\n")
+    _atomic_write(markdown_path, _markdown_report(payload))
+    return {"json": str(json_path), "markdown": str(markdown_path), "run_id": run_id}
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     source = parser.add_mutually_exclusive_group(required=True)
@@ -368,6 +564,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT)
     parser.add_argument("--allow-edits", action="store_true", help="allow manifest tracks to edit owned paths")
     parser.add_argument("--auto", action="store_true", help="pass Kilo's dangerous auto-approval flag")
+    parser.add_argument("--report-dir", help="directory for secret-free run reports")
     return parser.parse_args()
 
 
@@ -383,11 +580,18 @@ def main() -> int:
         print_plan(plan, args.json)
         return 0
     results = launch_workers(prepared, args.max_workers, args.timeout, args.auto)
+    try:
+        route_report = write_run_report(plan, prepared, results, args.report_dir)
+    except OSError:
+        route_report = None
+        print("Warning: unable to write the secret-free routed worker report", file=sys.stderr)
     if args.json:
-        print(json.dumps({**plan, "workers": results}, indent=2))
+        print(json.dumps({**plan, "workers": results, "route_report": route_report}, indent=2))
     else:
         print_plan(plan, False)
         print_results(results, False)
+        if route_report:
+            print(f"\nRoute report: {route_report['markdown']}")
     return 0 if all(result["exit_code"] == 0 for result in results) else 1
 
 

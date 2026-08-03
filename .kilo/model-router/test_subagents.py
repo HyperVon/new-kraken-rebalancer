@@ -102,6 +102,60 @@ class SubagentRouterTests(unittest.TestCase):
         self.assertEqual(1, result["exit_code"])
         self.assertEqual("report_contract", result["failure_kind"])
 
+    def test_run_report_records_routes_without_prompts_or_worker_text(self):
+        plan = {
+            "workflow": "documentation-review",
+            "aa": "fresh",
+            "tracks": [
+                {
+                    "track": "docs",
+                    "route": "openai/gpt-5.4",
+                    "provider": "openai",
+                    "model": "gpt-5.4",
+                    "agent": "documentation-contract-auditor",
+                    "profile": "routine",
+                    "billing": "subscription/account-priced",
+                    "cost": {"effective": 0.0, "source": "subscription/account-priced"},
+                    "capability": {"score": 42.0, "source": "Artificial Analysis", "minimum": 10},
+                    "quota": {"state": "sufficient", "remaining_percent": 80.0},
+                    "aa": "fresh",
+                    "read_only": True,
+                }
+            ],
+        }
+        prepared = [
+            {
+                "track": {"id": "docs", "files": ["docs/"], "task": "secret parent prompt"},
+                "selection": plan["tracks"][0],
+            }
+        ]
+        results = [
+            {
+                "track": "docs",
+                "route": "openai/gpt-5.4",
+                "attempted_routes": ["openai/gpt-5.4"],
+                "exit_code": 0,
+                "duration_seconds": 1.2,
+                "failure_kind": None,
+                "failovers": [],
+                "report": "SECRET worker findings",
+            }
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            paths = MODULE.write_run_report(plan, prepared, results, directory)
+            markdown = Path(paths["markdown"]).read_text(encoding="utf-8")
+            payload = MODULE.json.loads(Path(paths["json"]).read_text(encoding="utf-8"))
+        self.assertIn("openai/gpt-5.4", markdown)
+        self.assertNotIn("secret parent prompt", markdown)
+        self.assertNotIn("SECRET worker findings", markdown)
+        self.assertEqual("gpt-5.4", payload["tracks"][0]["used"]["model"])
+
+    def test_read_only_worker_workspace_isolated_from_parent_runtime_files(self):
+        with MODULE.worker_workspace(True) as workspace:
+            self.assertNotEqual(MODULE.router.ROOT, workspace)
+            self.assertTrue((workspace / "README.md").exists())
+            self.assertFalse((workspace / "rebalancer-config.json").exists())
+
     def test_read_only_worker_fails_over_after_rate_limit(self):
         with tempfile.TemporaryDirectory() as directory:
             fallback = MODULE.router.Candidate(

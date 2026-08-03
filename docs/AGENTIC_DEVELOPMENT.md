@@ -364,7 +364,12 @@ the user's request as `--task`; no manual manifest editing is required. The
 automatic command prints the route/quota plan and launches the read-only workers
 when invoked with `--run`. Each worker receives an exact
 `kilo run --model provider/model` route, a bounded prompt, and a compact report
-contract.
+contract. Each run also writes a secret-free Markdown and JSON route report to
+`~/.cache/kilo/model-router/reports/` and prints the Markdown path; set
+`KILO_MODEL_ROUTER_REPORT_DIR` or pass `--report-dir` to change the destination.
+Standard read-only workers inspect temporary repository copies, so accidental
+worker edits do not enter the parent worktree; `--allow-edits` is reserved for
+explicit custom manifests with owned writable paths.
 Use `--allow-edits` only when the manifest explicitly assigns disjoint writable
 paths and the parent has retained integration ownership. The host `Task` tool
 cannot be transparently intercepted; direct role-only Task calls therefore do
