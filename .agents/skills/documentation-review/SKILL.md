@@ -119,6 +119,13 @@ metadata maps it to an exact provider/model and fixed or host-defined effort.
 Inspect catalog candidates first, then probe only the exact selected route; an
 unscoped first-N probe can return zero verified rows without proving that the
 catalog or host-pinned routes are empty.
+Cross-check provider-level health before choosing a probe candidate. Never probe
+a route whose provider diagnostic reports disabled or unavailable; that failure
+does not say anything about routes under healthy providers. If an approved probe
+fails, return to the candidate list, select the next exact route from a provider
+with positive availability evidence, and present a revised plan. Serial fallback
+requires a separate explicit decision after viable provider candidates are
+exhausted; it must not be bundled as the automatic result of one failed probe.
 After route inventory, present the track matrix, exact routes, effort, and
 availability evidence with the `question` tool (or the host equivalent) and
 obtain an explicit decision before launching. If the user already approved the
@@ -131,15 +138,21 @@ use `mode: all`; supply the discovered route and effort at launch rather than
 hardcoding a model in the profile. Launch the disjoint CLI invocations through
 a genuinely concurrent host facility and retain their compact reports for
 parent triage.
+Size each track to the auditor's iteration cap and reserve the final step for
+its report. Split a multi-document track before launch when its evidence reads
+and checks cannot fit while preserving that final report step; a running worker
+without a final report does not count as completed parallel coverage.
 Workers report evidence and paths only; the parent deduplicates findings,
 applies edits, runs Mermaid/Markdown/build checks, and owns the final report.
 
-If model-route inventory or exact route enforcement is unavailable, that is a
+If model-route inventory or exact route enforcement remains unavailable after
+eligible providers and approved fallback routes are exhausted, that is a
 delegation limitation, not an incomplete code-truth inventory. When a broad
 audit was requested, use `question` to ask whether to continue parent-owned
-serially or stop while route support is configured; do not silently choose the
-fallback. Never substitute an unverified role or `general` for a model. A small
-or coupled scope may proceed without this handoff.
+serially or stop while route support is configured; do not silently choose or
+pre-authorize that fallback before route attempts finish. Never substitute an
+unverified role or `general` for a model. A small or coupled scope may proceed
+without this handoff.
 
 ## Evidence and claims
 

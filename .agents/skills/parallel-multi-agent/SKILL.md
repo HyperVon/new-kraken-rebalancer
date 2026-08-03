@@ -53,6 +53,10 @@ Before the first material or parallel Task call, run the
   bounded connectivity probe. A host-pinned provider outside the CLI catalog
   needs host-specific health/entitlement evidence; do not substitute a similarly
   named route from another provider.
+- Prefilter candidates by provider-level health. Never select or probe a route
+  whose provider is reported disabled or unavailable. If a probe fails, re-rank
+  the remaining exact routes from healthy providers and obtain approval for the
+  revised plan; one failed probe must not trigger automatic serial fallback.
 - After local routes, prefer a verified subscription/account-priced route over
   PAYG when capability and health are otherwise comparable. Never infer plan
   coverage from a zero token price or configured credential.
@@ -63,8 +67,9 @@ Before the first material or parallel Task call, run the
   parent-owned after this check. After route inventory, present the track
   matrix and exact route/effort plan with the `question` tool or host equivalent
   and obtain an explicit parallel-or-serial decision. If the user already
-  approved the exact plan, proceed without repeating the question. If no route
-  is available, ask whether to continue serially or stop for route support.
+  approved the exact plan, proceed without repeating the question. Ask whether
+  to continue serially or stop for route support only after eligible provider
+  candidates and approved fallback routes are exhausted.
 - Escalate or add an independent verifier only when the track risk and evidence
   justify it.
 
@@ -86,8 +91,10 @@ observed practical context limit. When that limit is unavailable, prefer each
 delegated request below **128K** and split it before it approaches **180K**.
 Give each agent an explicit file scope, stop condition, and iteration cap;
 request at most 12 report lines and 5 findings, not raw file dumps or progress
-logs. Split broad work into staged discovery and focused follow-ups; the parent
-retains integration and final verification.
+logs. Scope the evidence set so the worker can reserve its final step for the
+required compact report; a worker that consumes its entire iteration budget on
+reads has not completed its track. Split broad work into staged discovery and
+focused follow-ups; the parent retains integration and final verification.
 
 Workers must not perform the whole parent task. They should not receive the
 full repository context, run builds, start servers, edit files, inspect secrets

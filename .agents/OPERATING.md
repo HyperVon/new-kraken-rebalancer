@@ -102,18 +102,22 @@ route-selection support; recording the limitation is not permission to launch.
    and any substitution before launching the track.
 3. Treat `subagent_type` as an agent role, not proof of the underlying model or
    route from its name alone; use explicit host metadata for pinned profiles.
-4. Record the user approval, route mapping source, availability evidence,
+4. Prefilter probe candidates by provider-level health. Do not select or probe a
+   route whose provider is reported disabled or unavailable. After a probe
+   failure, re-rank remaining exact routes from healthy providers instead of
+   automatically falling back to serial execution.
+5. Record the user approval, route mapping source, availability evidence,
    fallback, and any substitution for each track.
-5. If exact route/effort enforcement is unavailable, stop material/parallel
+6. If exact route/effort enforcement is unavailable, stop material/parallel
    fan-out; do not silently use the parent route or a role-only fallback.
-6. For a broad request with multiple disjoint tracks, use the `question` tool or
+7. For a broad request with multiple disjoint tracks, use the `question` tool or
    host equivalent after route inventory to present the exact track/route/effort
-   plan and obtain a parallel-or-serial decision. If no route is available, ask
-   whether to continue serially or stop for route support; do not silently
-   continue parent-owned while a parallel request is unresolved. Skip the
-   question only when the user already approved the exact plan or the task is
-   small/coupled.
-7. For high-risk or disputed work, escalate or add an independent verifier only
+   plan and obtain a parallel-or-serial decision. Ask whether to continue
+   serially or stop for route support only after eligible providers and approved
+   fallback routes are exhausted; do not bundle serial fallback into one probe's
+   approval. Skip the question only when the user already approved the exact
+   plan or the task is small/coupled.
+8. For high-risk or disputed work, escalate or add an independent verifier only
    when the routing evidence and risk justify it.
 
 ### When to parallelize
@@ -318,26 +322,29 @@ does not expose exact model selection.
 3. Treat `subagent_type` as an agent role, not proof of the underlying model.
 4. If exact route selection is unavailable, record that limitation instead of
    silently assuming the parent model or a model named by the role.
-5. When selection is available, prefer a verified subscription/account-priced
+5. Prefer a genuinely local route when it clears the task's capability, context,
+   tool, modality, latency, and risk thresholds. Escalate to cloud only on a
+   capability gap, material latency requirement, or task risk.
+6. Among eligible cloud routes, prefer a verified subscription/account-priced
    route over PAYG among otherwise capable, healthy candidates; otherwise use the
    **least expensive model and lowest effort reasonably likely to complete the
    task correctly**.
-6. Start low for bounded, routine work such as searches, mechanical edits,
+7. Start low for bounded, routine work such as searches, mechanical edits,
    formatting, straightforward tests, and status checks.
-7. Escalate for ambiguous or cross-cutting design, financial/safety-sensitive
+8. Escalate for ambiguous or cross-cutting design, financial/safety-sensitive
    reasoning, repeated failure, or evidence that the current tier is inadequate.
-8. Honor a model or effort explicitly required by the user, host, or applicable
+9. Honor a model or effort explicitly required by the user, host, or applicable
     skill; document any capability-based substitution. For CLI-visible routes,
     require a recent bounded connectivity probe before presenting availability;
     host-pinned routes outside that catalog need host-specific health evidence or
     remain `unknown`.
-9. Optimize total cost, including retries and review time. Never infer
+10. Optimize total cost, including retries and review time. Never infer
     subscription coverage from a provider name, configured credential, active
     catalog row, or zero token price. Cost never justifies weakening verification
     or using an underpowered model for high-impact work.
-10. Give each parallel track the cheapest capable tier independently; do not
+11. Give each parallel track the cheapest capable tier independently; do not
     promote every subagent because one track is difficult.
-11. Treat context size as route-specific. Use the selected route's documented or
+12. Treat context size as route-specific. Use the selected route's documented or
     observed practical limit; when unavailable, keep prompts bounded below
     **128K** and split before **180K**.
 

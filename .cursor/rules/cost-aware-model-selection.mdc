@@ -7,9 +7,11 @@ alwaysApply: true
 
 # Cost-aware model selection
 
-When model or reasoning-effort selection is available, use the **least
-expensive model and lowest effort reasonably likely to complete the task
-correctly**.
+When model or reasoning-effort selection is available, prefer a genuinely local
+route that clears the task's capability, context, tool, modality, latency, and
+risk thresholds. Escalate to cloud only for a capability gap, material latency
+requirement, or task risk; then use the **least expensive model and lowest effort
+reasonably likely to complete the task correctly**.
 
 Before material or parallel delegation, run the `model-routing` preflight for
 each bounded track. Record the primary route, effort, fallback, availability
@@ -22,13 +24,17 @@ is valid route evidence only when host metadata maps it to an explicit
 provider/model and fixed or host-defined effort; record that mapping source.
 If no direct or explicit pinned mapping exists, record the limitation instead
 of inferring a route from the parent or role.
+Before selecting a probe candidate, reject providers reported disabled or
+unavailable. If an exact-route probe fails, re-rank the remaining routes from
+healthy providers; never treat one failed probe as approval for automatic serial
+fallback.
 
 For a broad request with multiple disjoint tracks, use the `question` tool or
 host equivalent after route inventory to obtain an explicit parallel-or-serial
-decision. If no exact route is available, ask whether to continue parent-owned
-serially or stop for route support; do not silently fall back while a parallel
-request is unresolved. Skip this question only when the user already approved
-the exact plan or the task is small/coupled.
+decision. Ask whether to continue parent-owned serially or stop for route support
+only after eligible providers and approved fallback routes are exhausted; do not
+silently fall back while a parallel request is unresolved. Skip this question
+only when the user already approved the exact plan or the task is small/coupled.
 
 - Start low for bounded searches, mechanical edits, formatting, straightforward
   tests, and status checks.

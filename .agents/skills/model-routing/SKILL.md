@@ -32,7 +32,7 @@ Escalate to a stronger cloud model on capability evidence, not by habit.
 | Trigger | A request to inventory models/providers, choose a subagent model, compare cost or capability, avoid exhausted routes, or select fallbacks. |
 | Inputs | The task or track, risk, required tools/modalities, estimated context, latency or budget constraints, host route data, and any observed session failures. |
 | Outputs | One primary route, one or two fallbacks when useful, effort guidance, evidence and confidence, cost classification, and any substitution record. A local route is the preferred default when capable; note when a cloud escalation is required. |
-| Side effects | Read-only host/catalog queries and optional external research. Do not change provider configuration, persist session quota state, or run availability probes by default. |
+| Side effects | Read-only host/catalog queries and optional external research. Do not change provider configuration or persist session quota state. Do not probe during routine inventory; probe only an exact candidate when availability verification is required and authorized. |
 | Stop condition | Stop after a defensible recommendation or selection. Stop and escalate when no candidate satisfies hard requirements, a required route cannot be enforced, or the only evidence is too uncertain for the task risk. |
 
 Use [parallel-multi-agent](../parallel-multi-agent/SKILL.md) for decomposition,
@@ -182,8 +182,20 @@ success proves request health at that moment, not remaining quota or future
 reliability. The helper applies `--limit` before probing, so a broad first-N
 sample can report zero verified rows even while other catalog routes are
 available. Always narrow `--match` to the exact candidate before interpreting
-`--verified-only`; a zero sampled result is not a zero-route result. If a
-host-pinned provider is not exposed by the CLI, do not
+`--verified-only`; a zero sampled result is not a zero-route result.
+
+Prefilter probe candidates by provider health. When a provider-level diagnostic
+(such as a quota/status report) marks a provider disabled or unavailable, do not
+select or probe any of its routes: a failed probe of a dead provider is not
+evidence that other providers' routes are unavailable. Choose the first probe
+candidate from a provider with positive availability evidence. If an approved
+probe fails, re-rank candidates from remaining available providers and present
+a revised plan; never convert a pre-probe approval into automatic serial or
+parent-owned execution without a new explicit decision. A recent successful
+same-session probe of the same exact route may satisfy health evidence without
+spending a new probe.
+
+If a host-pinned provider is not exposed by the CLI, do not
 substitute a similarly named Kilo or OpenRouter route. Use host-specific
 health/entitlement evidence or mark the pinned route `unknown`.
 
@@ -416,12 +428,14 @@ usable for the task. Select the least-cost candidate on that frontier that clear
 the capability threshold. Preserve uncertainty instead of inventing a precise
 score.
 
-Apply the local-first preference as a tiebreaker: among candidates that clear the
-capability threshold with comparable expected total cost and reliability, prefer
-the local route. Favor local explicitly for low-risk mechanical work even when a
-paid route is marginally faster to reason about, because local has zero marginal
-cost, no model-provider data egress, and no quota risk. Only escalate on capability evidence,
-latency that matters, or task risk.
+Apply local-first before ranking eligible cloud routes. When a local route clears
+the capability, context, tool, modality, latency, and risk thresholds, select it
+as the primary rather than treating locality as only a late tiebreaker. Favor
+local explicitly for low-risk mechanical work even when a paid route is
+marginally faster to reason about, because local has zero marginal cost, no
+model-provider data egress, and no quota risk. Escalate to cloud only on a
+capability gap, material latency requirement, or task risk. After that escalation,
+rank eligible cloud routes by the criteria above.
 
 Classify cost before comparing it:
 
@@ -545,6 +559,11 @@ domain workflows; model routing does not waive them.
   metadata that maps it to a provider/model and fixed or host-defined effort.
 - Presenting an active catalog route as available without a bounded health probe,
   or using a CLI probe for a host-pinned provider namespace it cannot address.
+- Probing a route whose provider diagnostic already reports disabled or
+  unavailable, then treating that predictable failure as evidence that no other
+  route exists.
+- Bundling serial fallback into a probe approval so one failed route silently
+  cancels remaining healthy-provider candidates.
 - Treating a subscription/account-priced label or zero token price as proof of
   entitlement, quota, or free usage.
 - Treating a generic role such as `general` as a selected model or provider

@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.16.4] - 2026-08-03
+
+### Fixed
+
+- **Parallel route fallback**: route selection now rejects providers already
+  reported disabled or unavailable, re-ranks healthy-provider candidates after
+  a failed probe, requires a separate decision before serial fallback, and keeps
+  local-first/probe semantics aligned across canonical and projected guidance.
+  Auditor tracks must also reserve a final iteration for their compact report.
+
 ## [6.16.3] - 2026-08-03
 
 ### Fixed
