@@ -168,14 +168,18 @@ repository helper keeps this bounded:
 
 ```bash
 ./.agents/skills/model-routing/scripts/inventory_routes.sh \
-  --match 'deepseek-v4-flash-0731' --tool-call --reasoning \
-  --probe --verified-only --limit 5
+  --match 'provider/model' --tool-call --reasoning \
+  --probe --verified-only --limit 1
 ```
 
 `--probe` marks a route `verified` only after a successful request;
 `--verified-only` prevents unavailable candidates from being presented. Probe
 success proves request health at that moment, not remaining quota or future
-reliability. If a host-pinned provider is not exposed by the CLI, do not
+reliability. The helper applies `--limit` before probing, so a broad first-N
+sample can report zero verified rows even while other catalog routes are
+available. Always narrow `--match` to the exact candidate before interpreting
+`--verified-only`; a zero sampled result is not a zero-route result. If a
+host-pinned provider is not exposed by the CLI, do not
 substitute a similarly named Kilo or OpenRouter route. Use host-specific
 health/entitlement evidence or mark the pinned route `unknown`.
 
@@ -186,12 +190,19 @@ Do not claim that a subagent type changed models unless the host configuration
 verifies it.
 
 For repeatable bounded Kilo inventory, use the repository helper when `kilo` is
-available. Add `--probe --verified-only` when the output will drive a route
-selection:
+available. First inspect catalog candidates without probing:
 
 ```bash
 ./.agents/skills/model-routing/scripts/inventory_routes.sh \
-  --tool-call --reasoning --probe --verified-only --limit 5
+  --tool-call --reasoning --limit 20
+```
+
+After selecting a specific candidate, probe only that exact route:
+
+```bash
+./.agents/skills/model-routing/scripts/inventory_routes.sh \
+  --match 'provider/model' --tool-call --reasoning \
+  --probe --verified-only --limit 1
 ```
 
 The wrapper keeps the verbose catalog in a disposable temporary file and emits

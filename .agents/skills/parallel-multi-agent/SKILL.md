@@ -133,14 +133,20 @@ For repeatable parent setup, use the bounded helpers when available:
 
 ```bash
 ./.agents/skills/model-routing/scripts/inventory_routes.sh \
-  --tool-call --reasoning --probe --verified-only --limit 5
+  --tool-call --reasoning --limit 20
+# After selecting an exact candidate, probe only that provider/model route:
+./.agents/skills/model-routing/scripts/inventory_routes.sh \
+  --match 'provider/model' --tool-call --reasoning \
+  --probe --verified-only --limit 1
 ./.agents/skills/adversarial-pr-review/scripts/review_surface.sh main
 ```
 
-The first emits bounded metadata and verified connectivity rows from a disposable
-catalog file. The second captures the merge base and changed-path surface without
-launching agents or reading runtime data. Use a narrow `--match` when probing to
-avoid unnecessary quota or paid calls.
+The first emits bounded catalog metadata from a disposable file. The second
+emits verified connectivity for one exact candidate, and the third captures the
+merge base and changed-path surface without launching agents or reading runtime
+data. The route helper applies `--limit` before probing, so never interpret a
+zero result from an unscoped first-N sample as proof that no route is available.
+Use a narrow `--match` when probing to avoid unnecessary quota or paid calls.
 
 ## Worktree and state isolation
 

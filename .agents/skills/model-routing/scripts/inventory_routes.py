@@ -192,17 +192,37 @@ def main() -> int:
                 return False
         return True
 
-    selected = [item for item in records if matches(item)][: args.limit]
+    candidates = [item for item in records if matches(item)]
+    selected = candidates[: args.limit]
     probes: dict[str, tuple[str, str]] = {}
+    probed_count = 0
+    verified_count = 0
     if args.probe:
+        probed_count = len(selected)
         for route, _ in selected:
             probes[route] = probe_route(route, args.probe_prompt, args.probe_timeout)
+        verified_count = sum(status == "verified" for status, _ in probes.values())
         if args.verified_only:
             selected = [item for item in selected if probes[item[0]][0] == "verified"]
 
-    print(f"Parsed {len(records)} catalog routes; showing {len(selected)}.")
+    print(
+        f"Parsed {len(records)} catalog routes; {len(candidates)} matched filters; "
+        f"showing {len(selected)}."
+    )
     if args.probe:
-        print("Availability includes one bounded roll-call probe per selected route.")
+        print(f"Probed {probed_count} selected routes; {verified_count} verified.")
+        if args.verified_only and not selected:
+            print(
+                "WARNING: no probed route verified; this does not prove that other "
+                "catalog routes or host-pinned profiles are unavailable. Use a "
+                "narrow --match for the exact provider/model route."
+            )
+        elif args.verified_only and probed_count < len(candidates):
+            print(
+                f"WARNING: only the first {probed_count} of {len(candidates)} "
+                "matching routes were probed; narrow --match before treating "
+                "the result as route availability."
+            )
     else:
         print("Availability is catalog-only; current quota and request health remain unknown.")
     print(

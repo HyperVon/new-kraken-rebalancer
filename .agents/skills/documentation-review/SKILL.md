@@ -116,6 +116,9 @@ per track and use the bounded route helper when available:
 branch-scoped audit, `review_surface.sh` can establish the changed-path surface
 without launching workers. A host-pinned profile is valid only when host
 metadata maps it to an exact provider/model and fixed or host-defined effort.
+Inspect catalog candidates first, then probe only the exact selected route; an
+unscoped first-N probe can return zero verified rows without proving that the
+catalog or host-pinned routes are empty.
 After route inventory, present the track matrix, exact routes, effort, and
 availability evidence with the `question` tool (or the host equivalent) and
 obtain an explicit decision before launching. If the user already approved the

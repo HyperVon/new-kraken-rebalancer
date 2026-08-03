@@ -13,6 +13,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Parallel audit decisions**: broad review skills now actively present route
   plans and ask for a parallel-or-serial decision instead of silently falling
   back to parent-owned work when route inventory or approval is missing.
+- **Route inventory sampling**: clarified that bounded first-N probes can show
+  zero verified samples without proving zero available routes; exact candidates
+  must be selected before probing.
 
 ## [6.16.1] - 2026-08-03
 
