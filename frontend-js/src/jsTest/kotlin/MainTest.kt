@@ -1,11 +1,5 @@
 package com.gemini.krakenbot.frontend
 
-import com.gemini.krakenbot.view.util.CssClass
-import com.gemini.krakenbot.view.util.FormFields
-import com.gemini.krakenbot.view.util.HtmlEvents
-import com.gemini.krakenbot.view.util.HtmlIds
-import com.gemini.krakenbot.view.util.HtmlTags
-import com.gemini.krakenbot.view.util.ViewText
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
@@ -13,21 +7,19 @@ import kotlinx.browser.document
 import kotlinx.browser.window
 import org.w3c.dom.*
 import kotlin.js.Date
-import com.gemini.krakenbot.view.util.CssClass.Query.DATA_AGE_VALUE as DATA_AGE_VALUE_QUERY
-
 class MainTest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
 
     init {
         "initOnLoad initializes dashboard content" {
-            val container = document.createElement(HtmlTags.DIV)
+            val container = document.createElement("div")
             container.innerHTML = TestDomBuilders.dataAgeDom(Date.now().toString())
             document.body!!.appendChild(container)
 
             try {
                 initOnLoad()
 
-                val ageVal = document.querySelector(DATA_AGE_VALUE_QUERY) as HTMLElement
+                val ageVal = document.querySelector(".data-age-value") as HTMLElement
                 ageVal.textContent!!.shouldBe("0s ago")
             } finally {
                 document.body!!.removeChild(container)
@@ -35,7 +27,7 @@ class MainTest : StringSpec() {
         }
 
         "initOnLoad initializes history content" {
-            val container = document.createElement(HtmlTags.DIV)
+            val container = document.createElement("div")
             container.innerHTML = TestDomBuilders.chartsDom()
             document.body!!.appendChild(container)
 
@@ -55,7 +47,7 @@ class MainTest : StringSpec() {
                 0
             }
 
-            val container = document.createElement(HtmlTags.DIV)
+            val container = document.createElement("div")
             container.innerHTML = TestDomBuilders.dataAgeDom(Date.now().toString())
             document.body!!.appendChild(container)
 
@@ -63,11 +55,11 @@ class MainTest : StringSpec() {
                 main()
 
                 intervalCb?.invoke()
-                val ageVal = document.querySelector(DATA_AGE_VALUE_QUERY) as HTMLElement
+                val ageVal = document.querySelector(".data-age-value") as HTMLElement
                 ageVal.textContent!!.shouldBe("0s ago")
 
-                val event = document.createEvent(HtmlEvents.EVENT)
-                event.initEvent(type = HtmlEvents.HTMX_AFTER_SWAP, bubbles = true, cancelable = true)
+                val event = document.createEvent("Event")
+                event.initEvent(type = "htmx:afterSwap", bubbles = true, cancelable = true)
                 document.dispatchEvent(event)
             } finally {
                 window.asDynamic().setInterval = oldSetInterval
@@ -78,14 +70,14 @@ class MainTest : StringSpec() {
         "main reinitializes settings controls after an HTMX error swap" {
             val oldSetInterval = window.asDynamic().setInterval
             window.asDynamic().setInterval = { _: () -> Unit, _: Int -> 0 }
-            val container = document.createElement(HtmlTags.DIV)
+            val container = document.createElement("div")
             fun settingsMarkup(firstTarget: String, secondTarget: String): String =
                 """
                 ${TestDomBuilders.settingsDom()}
-                <input name="${FormFields.TARGETS}" value="$firstTarget">
-                <input name="${FormFields.SYMBOLS}" value="BTC">
-                <input name="${FormFields.TARGETS}" value="$secondTarget">
-                <input name="${FormFields.SYMBOLS}" value="USD">
+                <input name="targets" value="$firstTarget">
+                <input name="symbols" value="BTC">
+                <input name="targets" value="$secondTarget">
+                <input name="symbols" value="USD">
                 """.trimIndent()
             container.innerHTML = settingsMarkup("50.0", "50.0")
             document.body!!.appendChild(container)
@@ -94,25 +86,25 @@ class MainTest : StringSpec() {
                 main()
                 container.innerHTML = settingsMarkup("40.0", "40.0")
 
-                val event = document.createEvent(HtmlEvents.EVENT)
-                event.initEvent(type = HtmlEvents.HTMX_AFTER_SWAP, bubbles = true, cancelable = true)
+                val event = document.createEvent("Event")
+                event.initEvent(type = "htmx:afterSwap", bubbles = true, cancelable = true)
                 document.dispatchEvent(event)
 
-                val totalDisplay = document.getElementById(HtmlIds.TOTAL_ALLOCATED_DISPLAY)
+                val totalDisplay = document.getElementById("total-allocated-display")
                     as HTMLElement
-                val saveButton = document.getElementById(HtmlIds.SAVE_BUTTON)
+                val saveButton = document.getElementById("save-button")
                     as HTMLButtonElement
                 totalDisplay.textContent shouldBe "Total: 80.00%"
                 saveButton.disabled shouldBe true
 
                 val simulation = document.querySelector(
-                    "input[name=\"${FormFields.SIMULATION}\"]",
+                    "input[name=\"simulation\"]",
                 ) as HTMLInputElement
                 simulation.checked = true
-                val change = document.createEvent(HtmlEvents.EVENT)
-                change.initEvent(type = HtmlEvents.CHANGE, bubbles = true, cancelable = true)
+                val change = document.createEvent("Event")
+                change.initEvent(type = "change", bubbles = true, cancelable = true)
                 simulation.dispatchEvent(change)
-                document.getElementById(HtmlIds.MODE_PLATE_LABEL)?.textContent shouldBe ViewText.MODE_SIMULATION
+                document.getElementById("mode-plate-label")?.textContent shouldBe "SIMULATION"
             } finally {
                 window.asDynamic().setInterval = oldSetInterval
                 document.body!!.removeChild(container)
@@ -123,7 +115,7 @@ class MainTest : StringSpec() {
             val oldSetInterval = window.asDynamic().setInterval
             window.asDynamic().setInterval = { _: () -> Unit, _: Int -> 0 }
 
-            val container = document.createElement(HtmlTags.DIV)
+            val container = document.createElement("div")
             container.innerHTML = TestDomBuilders.dataAgeDom(Date.now().toString())
             document.body!!.appendChild(container)
 
@@ -133,8 +125,8 @@ class MainTest : StringSpec() {
             try {
                 main()
 
-                val event = document.createEvent(HtmlEvents.EVENT)
-                event.initEvent(type = HtmlEvents.DOM_CONTENT_LOADED, bubbles = true, cancelable = true)
+                val event = document.createEvent("Event")
+                event.initEvent(type = "DOMContentLoaded", bubbles = true, cancelable = true)
                 document.dispatchEvent(event)
             } finally {
                 defineGetter(document, "body", { oldBody })
@@ -147,14 +139,14 @@ class MainTest : StringSpec() {
             registerSettingsGlobals()
             registerDashboardGlobals()
 
-            val container = document.createElement(HtmlTags.DIV)
+            val container = document.createElement("div")
             container.innerHTML =
                 """
                 ${TestDomBuilders.assetEditDom("")}
                 ${TestDomBuilders.settingsDom()}
                 <table>
                   <thead>
-                    <tr><th class="${CssClass.Table.Sortable}">${ViewText.HEADER_ASSET}</th></tr>
+                    <tr><th class="sortable">Asset</th></tr>
                   </thead>
                   <tbody></tbody>
                 </table>
@@ -163,7 +155,7 @@ class MainTest : StringSpec() {
             try {
                 window.asDynamic().updateAllocationTotal()
                 window.asDynamic().addAssetRow()
-                window.asDynamic().sortTable(document.querySelector(CssClass.Query.SORTABLE_TH), 0)
+                window.asDynamic().sortTable(document.querySelector("th.sortable"), 0)
             } finally {
                 document.body!!.removeChild(container)
             }

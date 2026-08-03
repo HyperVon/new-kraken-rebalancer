@@ -7,7 +7,6 @@ import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderSubmissionState
 import com.gemini.krakenbot.model.PortfolioSnapshot
-import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.model.TradeSource
 import com.gemini.krakenbot.test.TestConstants
@@ -81,8 +80,8 @@ object TestFixtures {
     const val SYNC_KEY = "sync_key"
     const val SYNC_VAL = "sync_val"
     const val SYNC_VAL_UPDATED = "sync_val_updated"
-    const val SYNC_OFFSET = SyncMetadataKeys.SYNC_OFFSET
-    const val SYNC_TOTAL = SyncMetadataKeys.SYNC_TOTAL
+    const val SYNC_OFFSET = "sync_offset"
+    const val SYNC_TOTAL = "sync_total"
 
     /** Generic test key/value constants. */
     const val TEST_KEY = "test_key"
@@ -162,6 +161,26 @@ object TestFixtures {
         drawdownPercent = BigDecimal.ZERO,
         fiatDeploymentPercent = BigDecimal.ZERO,
         effectiveUsdTargetPercent = BigDecimal.ZERO,
+    )
+
+    fun assetSnapshot(
+        symbol: String,
+        balance: BigDecimal,
+        price: BigDecimal,
+        valueUSD: BigDecimal,
+        targetPercent: BigDecimal,
+        currentPercent: BigDecimal = targetPercent,
+        deviationPercent: BigDecimal = BigDecimal.ZERO,
+        deviationUSD: BigDecimal = BigDecimal.ZERO,
+    ): PortfolioSnapshot.AssetSnapshot = PortfolioSnapshot.AssetSnapshot(
+        symbol = Asset(symbol),
+        balance = balance,
+        price = price,
+        valueUSD = valueUSD,
+        targetPercent = targetPercent,
+        currentPercent = currentPercent,
+        deviationPercent = deviationPercent,
+        deviationUSD = deviationUSD,
     )
 
     fun tradeRecord(

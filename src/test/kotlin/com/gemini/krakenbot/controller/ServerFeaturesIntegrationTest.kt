@@ -17,7 +17,6 @@ import com.gemini.krakenbot.view.component.OverviewGridComponent
 import com.gemini.krakenbot.view.component.PerformanceTableComponent
 import com.gemini.krakenbot.view.component.RecentActivityComponent
 import com.gemini.krakenbot.view.component.SettingsFormComponent
-import com.gemini.krakenbot.view.util.Routes
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
@@ -92,7 +91,7 @@ class ServerFeaturesIntegrationTest : StringSpec() {
                     dashboardRouting()
                 }
                 val response =
-                    client.get(Routes.ROOT) {
+                    client.get("/") {
                         header(HttpHeaders.AcceptEncoding, TestFixtures.GZIP)
                     }
                 response.status shouldBe HttpStatusCode.OK
@@ -107,7 +106,7 @@ class ServerFeaturesIntegrationTest : StringSpec() {
                     configureCachingAndConditionalHeaders()
                     dashboardRouting()
                 }
-                val response = client.get(Routes.STATIC_STYLE_CSS)
+                val response = client.get("/static/style.css")
                 response.status shouldBe HttpStatusCode.OK
                 response.headers[HttpHeaders.CacheControl] shouldContain "max-age=86400"
             }

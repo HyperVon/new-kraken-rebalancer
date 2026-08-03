@@ -214,15 +214,12 @@ class SqliteTradeRepositoryFailureAndRetentionTest : SqliteTradeRepositoryTestBa
                     totalValueUSD = BigDecimal("1000.00"),
                 ).copy(
                     assets = mapOf(
-                        Asset.BTC to PortfolioSnapshot.AssetSnapshot(
-                            symbol = Asset(Asset.BTC),
+                        Asset.BTC to TestFixtures.assetSnapshot(
+                            symbol = Asset.BTC,
                             balance = BigDecimal("0.1"),
                             price = BigDecimal("10000.00"),
                             valueUSD = BigDecimal("1000.00"),
                             targetPercent = BigDecimal("100.00"),
-                            currentPercent = BigDecimal("100.00"),
-                            deviationPercent = BigDecimal.ZERO,
-                            deviationUSD = BigDecimal.ZERO,
                         ),
                     ),
                     actions = listOf("old action"),

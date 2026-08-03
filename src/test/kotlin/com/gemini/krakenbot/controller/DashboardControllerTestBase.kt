@@ -13,7 +13,6 @@ import com.gemini.krakenbot.view.component.OverviewGridComponent
 import com.gemini.krakenbot.view.component.PerformanceTableComponent
 import com.gemini.krakenbot.view.component.RecentActivityComponent
 import com.gemini.krakenbot.view.component.SettingsFormComponent
-import com.gemini.krakenbot.view.util.Routes
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.ktor.client.HttpClient
@@ -34,7 +33,7 @@ abstract class DashboardControllerTestBase : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
 
     protected suspend fun HttpClient.settingsCsrf(): CsrfTestToken {
-        val response = get(Routes.SETTINGS)
+        val response = get("/settings")
         val token =
             Regex("""name="csrfToken" value="([^"]+)"""")
                 .find(response.bodyAsText())

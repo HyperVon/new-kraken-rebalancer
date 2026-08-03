@@ -10,11 +10,11 @@ import kotlinx.browser.document
 import kotlinx.browser.window
 import org.w3c.dom.*
 import kotlin.js.Date
-import com.gemini.krakenbot.view.util.CssClass.Query.DATA_AGE_TIME as DATA_AGE_TIME_QUERY
-import com.gemini.krakenbot.view.util.CssClass.Query.DATA_AGE_VALUE as DATA_AGE_VALUE_QUERY
-import com.gemini.krakenbot.view.util.CssClass.Query.HOVERABLE_TR as HOVERABLE_TR_QUERY
-import com.gemini.krakenbot.view.util.CssClass.Query.SORTABLE_TH as SORTABLE_TH_QUERY
-import com.gemini.krakenbot.view.util.CssClass.Query.STATUS_BADGE as STATUS_BADGE_QUERY
+import com.gemini.krakenbot.view.util.HtmlQueries.DATA_AGE_TIME as DATA_AGE_TIME_QUERY
+import com.gemini.krakenbot.view.util.HtmlQueries.DATA_AGE_VALUE as DATA_AGE_VALUE_QUERY
+import com.gemini.krakenbot.view.util.HtmlQueries.HOVERABLE_TR as HOVERABLE_TR_QUERY
+import com.gemini.krakenbot.view.util.HtmlQueries.SORTABLE_TH as SORTABLE_TH_QUERY
+import com.gemini.krakenbot.view.util.HtmlQueries.STATUS_BADGE as STATUS_BADGE_QUERY
 
 internal var currentSortCol: Int = PrecisionConstants.DEFAULT_SORT_COL_INDEX
 internal var currentSortDir: String = CssClass.Utility.Asc.toString()

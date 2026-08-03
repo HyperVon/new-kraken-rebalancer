@@ -59,7 +59,7 @@ the finding and the smallest affected path set, not the original full prompt.
 
 Before launching, write a compact parent-side matrix:
 
-| Track | Files / hunks | Risk | Agent / model | Depends on | Stop condition |
+| Track | Files / hunks | Risk | Role / exact route / effort | Depends on | Stop condition |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | … | … | low / medium / high | … | none / track … | … |
 
@@ -71,10 +71,10 @@ several small, independently useful reports:
 - Give each agent an explicit file set and only the minimum source paths needed
   to verify those files. The parent may inspect the full diff; workers should
   not receive it by default.
-- Target each delegated request well below the roughly **256K input-token**
-  practical reliability boundary for GPT-5.6 Luna. Prefer prompts and source
-  scopes that stay below about **128K**; split the track before it approaches
-  **180K** when the host exposes context telemetry.
+- Target each delegated request well below the selected route's documented or
+  observed practical context limit. Prefer prompts and source scopes below
+  about **128K**; split the track before it approaches **180K** when the host
+  exposes context telemetry, or use those limits conservatively when it does not.
 - Cap discovery agents at **8 tool iterations** unless the parent explicitly
   widens the cap for a named high-risk question.
 - Require a final report of at most **12 lines** and at most **5 findings**.
@@ -94,11 +94,21 @@ several small, independently useful reports:
 
 ## Agent selection and launch
 
-Use the cheapest model that can answer each track reliably, escalating only for
-high-risk financial, security, persistence, or disputed reasoning. Model
-diversity is useful, but scope diversity is mandatory. The former OpenCode
-fast/strong reviewer roles are optional model choices, not a requirement to
-launch exactly two full-diff agents.
+Before launching any material or parallel review track, complete the
+`model-routing` preflight. The exact provider/model route and effort must be
+host-enforceable and exposed to the parent. If the host cannot enforce and
+expose that selection, stop the fan-out and keep the review parent-owned or
+obtain route-selection support; file disjointness is not permission to bypass
+this gate. Choose the cheapest eligible exact route that can answer the track
+reliably, escalating only for high-risk financial, security, persistence, or
+disputed reasoning. Model diversity is useful, but scope diversity is
+mandatory.
+
+`subagent_type` and other agent-role labels identify a capability or harness
+role, not a provider/model route or effort level. A generic role such as
+`general` is never evidence that a selected model ran and never substitutes
+for an exact route. Record the exact route, effort, availability evidence,
+fallback, and any substitution before launch.
 
 The routing rules below are harness-neutral. Named agent types are repository
 or Kilo/OpenCode examples only; Cursor, Claude Code, Copilot, and other hosts
@@ -106,9 +116,10 @@ should map the same capabilities to their own read-only Task/equivalent agents.
 Preserve the bounded scope, stop condition, report cap, and parent ownership
 regardless of the host.
 
-Prefer a repository-specialized read-only agent when its contract matches the
-track. `general` is a last-resort fallback or parent-level cross-track verifier,
-not the default for every track.
+Prefer a repository-specialized read-only role when its contract matches the
+track. A generic role is only a last-resort role mapping after the exact route
+gate has passed; it is not a model/provider fallback and cannot authorize a
+material or parallel launch when route selection is unavailable.
 
 | Agent type / capability | Use when | Example role |
 | :--- | :--- | :--- |
@@ -119,35 +130,40 @@ not the default for every track.
 | Strong reasoning | High-risk safety, persistence, exchange semantics, or disputed finding | `adversarial-reviewer-b` when available |
 | Generic capable | Only when no closer specialized type is available | `general` / host equivalent |
 
-Launch independent tracks in one Task message when the host supports parallel
-calls. Include the track matrix in the prompts so agents do not redo one
-another's work. A prompt must contain:
+Launch independent tracks in one Task message only after the exact-route gate
+has passed and the host supports parallel calls. Include the track matrix in
+the prompts so agents do not redo one another's work. A prompt must contain:
 
 1. Absolute repository path, branch, and base.
 2. The single track question and exact allowed paths or hunks.
 3. The PR intent and already-completed context.
 4. Forbidden files/actions, especially secrets and runtime data.
 5. Acceptance criteria, iteration cap, and the compact output format.
+6. The exact provider/model route and effort selected for the track, plus the
+   fallback and availability evidence; do not launch if the host cannot
+   enforce and expose them.
 
 ### Automatic fallback on launch failure
 
-Recover autonomously when an intended agent fails, is cancelled, or is
-unavailable:
+Recover autonomously when an intended role fails, is cancelled, or is
+unavailable without pretending that a role replacement selected a model:
 
 1. Retry once only when the failure appears transient.
-2. Otherwise replace it with the closest available specialized agent for the
-   **same narrow track**. Use a generic agent only when no closer type exists.
-   Do not send the replacement the full PR diff.
-3. If the replacement also fails, the parent covers **every uncovered
-   acceptance criterion** with as many smaller sequential questions or
-   parent-owned checks as needed. The track cannot be marked complete while its
-   coverage matrix has unchecked paths or questions; if coverage cannot be
-   completed, document the explicit deferral instead of claiming convergence.
-4. Record role, intended agent/model, actual agent/model, scope, and reason for
-   substitution in the verification notes.
+2. Otherwise use only a preselected exact fallback route whose provider/model
+   and effort the host can enforce and expose for the **same narrow track**.
+   A different role label alone is not a valid fallback. Do not send the
+   replacement the full PR diff.
+3. If no enforceable exact fallback exists, stop fan-out and have the parent
+   cover **every uncovered acceptance criterion** with sequential checks or
+   keep the track explicitly deferred. The track cannot be marked complete
+   while its coverage matrix has unchecked paths or questions.
+4. Record requested route, selected route, effort, role, scope, availability,
+   and the reason for any substitution in the verification notes. Never infer
+   the selected route from a role label.
 
-Do not block the review on a provider-specific model. Do not claim a model ran
-when the Task call returned an error or an empty report.
+Do not bypass the exact-route gate because a provider-specific selection is
+inconvenient. Do not claim a model ran when the Task call returned an error or
+an empty report.
 
 ## Scope and evidence
 

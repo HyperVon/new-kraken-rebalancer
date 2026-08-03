@@ -16,7 +16,6 @@ import com.gemini.krakenbot.service.impl.ConfigServiceImpl
 import com.gemini.krakenbot.service.impl.OrderExecutorImpl
 import com.gemini.krakenbot.service.impl.PortfolioAnalyzerImpl
 import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
-import com.gemini.krakenbot.view.util.Routes
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.string.shouldContain
@@ -119,7 +118,7 @@ internal fun EvaluationScenariosTest.registerScenarios15To21() {
                     assets =
                     mapOf(
                         Asset.BTC to
-                            PortfolioSnapshot.AssetSnapshot(
+                            TestFixtures.assetSnapshot(
                                 symbol = Asset.BTC,
                                 balance = BigDecimal("0.5"),
                                 price = BigDecimal("24000.0"),
@@ -265,7 +264,7 @@ internal fun EvaluationScenariosTest.registerScenarios15To21() {
             every { tradeHistoryService.getHistoryFlow() } returns streamFlow
 
             val clientSse = createClient { install(ClientSSE) }
-            clientSse.sse(Routes.API_STATUS_STREAM) {
+            clientSse.sse("/api/status/stream") {
                 val events = incoming.take(3).toList()
                 events[0].data shouldContain "SNAP1"
                 events[1].data shouldContain "SNAP2"

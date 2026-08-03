@@ -1,8 +1,12 @@
 package com.gemini.krakenbot.model
 
+import com.gemini.krakenbot.codegen.GenerateApiMapper
 import java.math.BigDecimal
 import java.time.Instant
+import com.gemini.krakenbot.api.RebalancerComparison as ApiRebalancerComparison
+import com.gemini.krakenbot.api.RebalancerComparisonPoint as ApiRebalancerComparisonPoint
 
+@GenerateApiMapper(ApiRebalancerComparisonPoint::class)
 data class RebalancerComparisonPoint(
     val timestamp: Instant,
     val rebalancerValueUSD: BigDecimal,
@@ -11,6 +15,7 @@ data class RebalancerComparisonPoint(
     val differencePercent: BigDecimal,
 )
 
+@GenerateApiMapper(ApiRebalancerComparison::class)
 data class RebalancerComparison(
     val availability: ComparisonAvailability,
     val confidence: ComparisonConfidence?,

@@ -44,6 +44,26 @@ Apply techniques in this order:
 Do not create generic base classes, one-implementation factories, broad utility
 bags, or parameter-heavy helpers merely to reduce line count.
 
+## Generated Catalogs
+
+- Use the existing YAML/KSP catalog path for large, pure declarative catalogs
+  when it removes generated-by-hand declarations without changing public names
+  or `const val` semantics. Keep entries explicit; do not infer CSS composites,
+  selectors, routes, or names from conventions.
+- Keep mixed catalogs manual when they combine strings with numeric types,
+  derived expressions, arrays, functions, CSS DSL values, or domain safety
+  rules. `ChartProps`, `CssTheme`, `KrakenApiConstants`, and
+  `PrecisionConstants` are examples of catalogs that need that review.
+- `commonMain` generated output must remain pure KMP. The JVM-only `codegen`
+  module is a build-time processor, not a `:common` compile dependency.
+- Count deleted handwritten source and processor/schema/resource source
+  separately. A smaller measured application tree does not mean the repository
+  became smaller if the generator is larger; report both numbers and the
+  maintenance tradeoff.
+- Reuse the shared catalog processor support and renderer before adding a new
+  processor. Fail closed on malformed resources, duplicate names, and invalid
+  identifiers, then compile common metadata plus both JVM and JS targets.
+
 ## Splitting Large Files
 
 Treat size as an investigation trigger, not an automatic defect. Prefer files
@@ -75,6 +95,17 @@ ranges without a cohesive name is not an improvement.
 - Do not widen coverage exclusions.
 - Keep fixtures safe by default. Make live-like `dryRun = false` values explicit.
 - Use `apply_patch` for edits and preserve unrelated user changes.
+
+### Contract-test independence
+
+- Production code should consume generated `:common` IDs, classes, routes,
+  attributes, and wire-key catalogs.
+- Tests that verify emitted HTML, DOM selectors/attributes, HTTP paths/headers,
+  JSON keys, or persisted metadata must use independent raw expected literals
+  or narrowly scoped fixture markup. Otherwise a wrong catalog value can be
+  shared by production and the assertion, making the test tautological.
+- Typed constants remain appropriate for internal setup, domain fixtures, and
+  non-contract mechanics when the test is not asserting the spelling itself.
 
 ## Verification
 

@@ -3,8 +3,9 @@ name: model-routing
 description: >-
   Inventory provider/model routes and recommend subagent models using capability,
   context, comparative cost-per-task, and observed availability. Use when choosing
-  models, providers, effort levels, fallbacks, or quota-aware parallel tracks;
-  do not use it as a replacement for parallel-multi-agent, review, or domain skills.
+  models, providers, effort levels, fallbacks, or quota-aware parallel tracks,
+  including before material or parallel subagent work; do not use it as a
+  replacement for parallel-multi-agent, review, or domain skills.
 ---
 
 # Model Routing
@@ -37,6 +38,29 @@ Use [parallel-multi-agent](../parallel-multi-agent/SKILL.md) for decomposition,
 ownership, iteration caps, and integration. Use the applicable domain, review, or
 quality skill for the work itself. This skill must not turn a model recommendation
 into an unbounded extra agent or a second full review.
+
+## Delegation Gate
+
+Before launching any material or parallel Task/subagent work:
+
+1. Define the minimum capability, tool needs, risk, and context profile for each
+   bounded track.
+2. Select and record the primary route, effort, fallback, availability evidence,
+   and any substitution before launch.
+3. Treat `subagent_type` as a role only; it does not prove the underlying model
+   or route.
+4. Verify that the host can select and expose the exact provider/model route and
+   effort required for material or parallel work.
+5. If exact route/effort enforcement is unavailable, stop fan-out and keep the
+   work in the parent or obtain route-selection support. A recorded limitation
+   is a stop condition, not permission to launch a role-only worker.
+6. Escalate or add an independent verifier only when task risk and available
+   capability evidence justify it.
+
+For a genuinely low-risk, non-material single scout, the record can be brief,
+but it must identify the capability threshold and any host selection limitation.
+This exception does not authorize material or parallel delegation, and
+`subagent_type` remains a role rather than a model route.
 
 ## Non-Negotiable Rules
 
@@ -356,10 +380,11 @@ failure. Catalog metadata alone never upgrades `configured/unknown` to
 `verified`.
 
 Use the host's exact model-selection mechanism when it exists. If it does not,
-return the recommendation and the enforcement limitation rather than silently
-using the parent model. For a parallel split, make this record per track and
-follow [parallel-multi-agent](../parallel-multi-agent/SKILL.md)'s iteration and
-report limits.
+do not launch material or parallel work; return the recommendation and the
+enforcement limitation, or continue the work in the parent. For a parallel
+split, make this record per track and follow
+[parallel-multi-agent](../parallel-multi-agent/SKILL.md)'s iteration and report
+limits.
 
 When a user names a provider, report both the requested provider and the route's
 verified access/billing provider. If they differ, label the route as a
@@ -422,6 +447,10 @@ domain workflows; model routing does not waive them.
   or assuming a local model is adequate merely because it is free.
 - Escalating to a bigger model without a capability or risk reason, or never
   re-checking local capability as the task profile changes.
+- Launching material or parallel work from only `subagent_type` and claiming the
+  underlying model or route is known without host selection evidence.
+- Treating a generic role such as `general` as a selected model or provider
+  route.
 - Maintaining a permanent ledger of current model names instead of recording the
   evidence and substitutions for the session.
 

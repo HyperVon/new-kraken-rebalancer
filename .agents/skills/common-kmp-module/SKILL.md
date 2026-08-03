@@ -29,7 +29,25 @@ Path: `common/src/commonMain/kotlin/com/gemini/krakenbot/`.
 | Domain | `TimeRange`, `OrderSide`, `OrderType`, `Asset`, `Result`, `TradeSourceKeys`, `SyncMetadataKeys` |
 | Wire DTOs (`api/`) | `PortfolioSnapshot`, `TradeRecord`, `HistoryStats`, `SyncProgressResponse` |
 | Precision | `PrecisionConstants` |
-| View util | `CssClass`, `HtmlIds`, `HtmlAttrs`, `HtmxAttrs`, `ViewText`, `Routes`, `FormFields`, `QueryParamKeys`, `DataProps`, `ChartProps` |
+| View util | `CssClass`, `HtmlQueries`, `HtmlIds`, `HtmlAttrs`, `HtmxAttrs`, `ViewText`, `Routes`, `FormFields`, `QueryParamKeys`, `DataProps`, `ChartProps` |
+
+## Generated catalog boundary
+
+Large pure string catalogs are maintained as explicit YAML resources under
+`common/src/commonMain/resources/codegen/` and generated into common-compatible
+Kotlin by the JVM-only `codegen` KSP module. The annotations and resources are
+build inputs; `:common` must not depend on the processor at compile time.
+
+- Preserve public names and `const val` semantics for generated string catalogs.
+- Keep every group/name/value explicit. Do not infer composite CSS classes,
+  selectors, routes, or HTML attributes from naming conventions.
+- `CssClass` owns class values; `HtmlQueries` owns selectors that combine class,
+  tag, and form-field semantics. Keep those responsibilities separate.
+- Keep mixed semantic catalogs, JVM values, numeric precision rules, and
+  behavior-bearing objects handwritten unless a typed generator is proven to
+  preserve their contracts.
+- Generated output must compile for both common metadata/JVM and JS targets;
+  it may not import JVM, Ktor, Exposed, logging, or browser DOM APIs.
 
 ### Two TradeRecord types (do not merge)
 
@@ -76,6 +94,7 @@ Add or extend `:common` when you introduce:
 - User-visible UI copy → `ViewText`
 - Element IDs / data attributes → `HtmlIds` / `HtmlAttrs` / `HtmxAttrs`
 - CSS class names → `CssClass` sealed hierarchy
+- DOM selectors combining classes/tags/fields → `HtmlQueries`
 - HTTP paths → `Routes`
 - Shared enums/constants used by backend **and** `:frontend-js`
 

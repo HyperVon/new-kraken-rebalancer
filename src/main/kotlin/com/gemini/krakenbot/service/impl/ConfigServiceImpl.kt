@@ -253,55 +253,41 @@ class ConfigServiceImpl(
     private fun validateSettings(config: AppConfig) {
         val settings = config.settings
 
-        require(settings.loopDelaySeconds > 0) {
-            "Loop delay must be a positive integer."
-        }
-        require(settings.deviationTriggerPercent.isFinite()) {
-            "Deviation trigger percent must be finite."
-        }
-        require(settings.deviationTriggerPercent >= 0) {
-            "Deviation trigger percent must be non-negative."
-        }
-        require(settings.dustThresholdUSD.isFinite()) {
-            "Dust threshold USD must be finite."
-        }
-        require(settings.dustThresholdUSD >= 0) {
-            "Dust threshold USD must be non-negative."
-        }
-        require(settings.fiatMaxDrawdown.isFinite()) {
-            "Fiat max drawdown must be finite."
-        }
-        require(settings.fiatMaxDrawdown in MIN_PERCENT..MAX_PERCENT) {
-            "Fiat max drawdown must be between 0% and 100%."
-        }
-        require(settings.fiatDeploymentExponent.isFinite()) {
-            "Fiat deployment exponent must be finite."
-        }
-        require(settings.fiatDeploymentExponent > 0) {
-            "Fiat deployment exponent must be positive."
-        }
+        requireValidations(
+            (settings.loopDelaySeconds > 0) to "Loop delay must be a positive integer.",
+            settings.deviationTriggerPercent.isFinite() to "Deviation trigger percent must be finite.",
+            (settings.deviationTriggerPercent >= 0) to "Deviation trigger percent must be non-negative.",
+            settings.dustThresholdUSD.isFinite() to "Dust threshold USD must be finite.",
+            (settings.dustThresholdUSD >= 0) to "Dust threshold USD must be non-negative.",
+            settings.fiatMaxDrawdown.isFinite() to "Fiat max drawdown must be finite.",
+            (settings.fiatMaxDrawdown in MIN_PERCENT..MAX_PERCENT) to
+                "Fiat max drawdown must be between 0% and 100%.",
+            settings.fiatDeploymentExponent.isFinite() to "Fiat deployment exponent must be finite.",
+            (settings.fiatDeploymentExponent > 0) to "Fiat deployment exponent must be positive.",
+        )
     }
 
     private fun validateAllocations(config: AppConfig) {
-        require(config.allocations.isNotEmpty()) {
-            "At least one allocation is required."
-        }
+        requireValidations(config.allocations.isNotEmpty() to "At least one allocation is required.")
 
         config.allocations.forEach { allocation ->
-            require(allocation.symbol.value.isNotBlank()) {
-                "Allocation symbols cannot be blank."
-            }
-            require(SYMBOL_PATTERN.matches(allocation.symbol.value.uppercase())) {
-                "Invalid allocation symbol '${allocation.symbol.value}'. " +
-                    "Symbols must be uppercase alphanumeric and up to 16 characters long."
-            }
-            require(allocation.targetPercent.isFinite()) {
-                "Target percent for ${allocation.symbol} must be finite."
-            }
-            require(allocation.targetPercent >= 0) {
-                "Target percent for ${allocation.symbol} cannot be negative."
-            }
+            requireValidations(
+                allocation.symbol.value.isNotBlank() to "Allocation symbols cannot be blank.",
+                (SYMBOL_PATTERN.matches(allocation.symbol.value.uppercase())) to
+                    (
+                        "Invalid allocation symbol '${allocation.symbol.value}'. " +
+                            "Symbols must be uppercase alphanumeric and up to 16 characters long."
+                        ),
+                allocation.targetPercent.isFinite() to
+                    "Target percent for ${allocation.symbol} must be finite.",
+                (allocation.targetPercent >= 0) to
+                    "Target percent for ${allocation.symbol} cannot be negative.",
+            )
         }
+    }
+
+    private fun requireValidations(vararg validations: Pair<Boolean, String>) {
+        validations.forEach { (valid, message) -> require(valid) { message } }
     }
 
     private fun validateDuplicateAllocationSymbols(config: AppConfig) {

@@ -96,7 +96,7 @@ the CLAUDE.md / Copilot stubs) so they get the same norms without Cursor.
 - **Backend**: Ktor **3.5.1** (Netty, Jackson, SSE, HTML), Koin **4.2.2**
 - **Database**: SQLite via JetBrains Exposed **1.3.1**
 - **Concurrency**: `kotlinx.coroutines` **1.11.0** — prefer `Dispatchers.IO` for DB/network; no `GlobalScope`
-- **Frontend**: `kotlinx.html` + `kotlinx-css` + HTMX + Kotlin/JS (`:frontend-js` → `/static/rebalancer.js`); KSP **2.3.10** is required for Kotlin/JS Kotest discovery
+- **Frontend/codegen**: `kotlinx.html` + `kotlinx-css` + HTMX + Kotlin/JS (`:frontend-js` → `/static/rebalancer.js`); KSP **2.3.10** is required for Kotlin/JS Kotest discovery and the experimental JVM/common catalog processors
 - **Testing**: Kotest **6.2.3**, MockK **1.14.11**, Karma/Istanbul
 - **Formatting**: Spotless **8.9.0** + ktlint **1.7.1**, **120**-char line length; `allWarningsAsErrors` in all modules
 
@@ -116,7 +116,7 @@ the CLAUDE.md / Copilot stubs) so they get the same norms without Cursor.
 | Live history / SSE source | `TradeHistoryServiceImpl` façade → Sync / SnapshotStore / Query / Reconstruction |
 | HTTP | `DashboardRoutes` / `DashboardController` |
 | Views | `view/component/*`, `DashboardView`, `view/css/*` |
-| Shared routes/IDs | `:common` `Routes`, `HtmlIds`, `CssClass`, `ViewText` |
+| Shared routes/IDs | `:common` `Routes`, `HtmlIds`, `CssClass`, `HtmlQueries`, `ViewText` and generated pure-string catalogs |
 
 ---
 
@@ -172,6 +172,11 @@ See [common-kmp-module](skills/common-kmp-module/SKILL.md).
 Belongs in `common/src/commonMain/`: `CssClass`, `HtmlIds`, `HtmlAttrs`, `HtmxAttrs`, `ViewText`, `Routes`, `TimeRange`, `OrderSide` / `OrderType`, `PrecisionConstants`, `AppConfig` / `Settings` / `Allocation`, and wire DTOs under `api/` (`PortfolioSnapshot`, `TradeRecord`, `RebalancerComparison`, `HistoryStats`, `SyncProgressResponse`).
 
 `commonMain` must stay **pure KMP** — no JVM-only (`java.math.BigDecimal`, SLF4J) or JS-only DOM imports.
+
+Large pure string catalogs may use the explicit YAML/KSP resources under
+`common/src/commonMain/resources/codegen/`; the JVM-only `codegen` module is a
+build-time processor, not a `:common` compile dependency. Keep generated output
+KMP-compatible and leave mixed semantic catalogs explicit.
 
 ---
 

@@ -1,6 +1,5 @@
 package com.gemini.krakenbot.frontend
 
-import com.gemini.krakenbot.model.SyncMetadataKeys
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
@@ -144,7 +143,7 @@ class HistoryJsonParsingEdgeTest : StringSpec() {
         "parseSyncProgressResponse defaults missing offset and total to empty strings" {
             val parsed =
                 parseSyncProgressResponse(
-                    json(SyncMetadataKeys.IS_SEEDED to true),
+                    json("seeded" to true),
                 )
             parsed.seeded shouldBe true
             parsed.offset shouldBe ""

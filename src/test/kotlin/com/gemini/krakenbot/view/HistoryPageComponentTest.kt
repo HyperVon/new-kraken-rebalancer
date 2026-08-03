@@ -4,10 +4,6 @@ import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.view.component.HistoryPageComponent
-import com.gemini.krakenbot.view.util.CdnIntegrity
-import com.gemini.krakenbot.view.util.CdnUrls
-import com.gemini.krakenbot.view.util.CssClass
-import com.gemini.krakenbot.view.util.HtmlIds
 import com.gemini.krakenbot.view.util.ViewText
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
@@ -28,38 +24,41 @@ class HistoryPageComponentTest : StringSpec() {
                 component.render(settings)
             }
 
-            // Shared IDs/classes are the contract between server-rendered markup and Kotlin/JS;
-            // using :common constants here makes either side's drift fail this test.
+            // Raw values keep this boundary test independent from the shared catalog.
             htmlString shouldContain "History - Kraken Rebalancer"
-            htmlString shouldContain "id=\"${HtmlIds.REBALANCER_COMPARISON_CHART}\""
-            htmlString shouldContain "id=\"${HtmlIds.PORTFOLIO_VALUE_CHART}\""
-            htmlString shouldContain "id=\"${HtmlIds.ASSET_HOLDINGS_CHART}\""
-            htmlString shouldContain "id=\"${HtmlIds.ALLOCATION_DRIFT_CHART}\""
-            htmlString shouldContain "id=\"${HtmlIds.CUMULATIVE_NET_CASH_FLOW_CHART}\""
-            htmlString shouldContain "id=\"${HtmlIds.TRADE_TABLE_BODY}\""
-            htmlString shouldContain "id=\"${HtmlIds.HISTORY_VIEWS_SELECT}\""
-            htmlString shouldContain "id=\"${HtmlIds.HISTORY_SAVE_VIEW_BTN}\""
-            htmlString shouldContain CdnUrls.CHART_JS_ZOOM.substringAfterLast('/')
-            htmlString shouldContain CdnUrls.HAMMER_JS.substringAfterLast('/')
-            htmlString shouldContain "integrity=\"${CdnIntegrity.CHART_JS}\""
-            htmlString shouldContain "integrity=\"${CdnIntegrity.CHART_JS_DATE_FNS}\""
-            htmlString shouldContain "integrity=\"${CdnIntegrity.HAMMER_JS}\""
-            htmlString shouldContain "integrity=\"${CdnIntegrity.CHART_JS_ZOOM}\""
+            htmlString shouldContain "id=\"rebalancer-comparison-chart\""
+            htmlString shouldContain "id=\"portfolio-value-chart\""
+            htmlString shouldContain "id=\"asset-holdings-chart\""
+            htmlString shouldContain "id=\"allocation-drift-chart\""
+            htmlString shouldContain "id=\"cumulative-net-cash-flow-chart\""
+            htmlString shouldContain "id=\"trade-table-body\""
+            htmlString shouldContain "id=\"history-views-select\""
+            htmlString shouldContain "id=\"history-save-view-btn\""
+            htmlString shouldContain "chartjs-plugin-zoom.min.js"
+            htmlString shouldContain "hammer.min.js"
+            htmlString shouldContain
+                "integrity=\"sha384-vsrfeLOOY6KuIYKDlmVH5UiBmgIdB1oEf7p01YgWHuqmOHfZr374+odEv96n9tNC\""
+            htmlString shouldContain
+                "integrity=\"sha384-cVMg8E3QFwTvGCDuK+ET4PD341jF3W8nO1auiXfuZNQkzbUUiBGLsIQUE+b1mxws\""
+            htmlString shouldContain
+                "integrity=\"sha384-Cs3dgUx6+jDxxuqHvVH8Onpyj2LF1gKZurLDlhqzuJmUqVYMJ0THTWpxK5Z086Zm\""
+            htmlString shouldContain
+                "integrity=\"sha384-dwwI6ICEN/0ZQlS5owhUa/6ZzvwUPmjH45bFVCAcjgjTulbHJvlE+TGU3g1k0N3R\""
             htmlString shouldContain "data-zoom-action=\"in\""
-            htmlString shouldContain CssClass.History.ChartScrubberInput.value
-            htmlString shouldContain "id=\"${HtmlIds.STAT_AVG_FEE_RATE}\""
-            htmlString shouldContain "id=\"${HtmlIds.STAT_AVG_SLIPPAGE}\""
+            htmlString shouldContain "history-chart-scrubber-input"
+            htmlString shouldContain "id=\"stat-avg-fee-rate\""
+            htmlString shouldContain "id=\"stat-avg-slippage\""
             htmlString shouldContain ViewText.HEADER_PRICE
             htmlString shouldContain ViewText.HEADER_FEE
             htmlString shouldContain ViewText.HEADER_SLIPPAGE
             htmlString shouldContain "rebalancer.js"
             htmlString shouldContain "Rebalancer vs Buy &amp; Hold"
-            htmlString shouldContain HtmlIds.COMPARISON_LATEST_DIFFERENCE
-            htmlString shouldContain HtmlIds.COMPARISON_CHART_CONTENT
-            htmlString shouldContain HtmlIds.COMPARISON_AVAILABILITY_MESSAGE
-            htmlString shouldContain HtmlIds.COMPARISON_CONFIDENCE_BADGE
+            htmlString shouldContain "comparison-latest-difference"
+            htmlString shouldContain "comparison-chart-content"
+            htmlString shouldContain "comparison-availability-message"
+            htmlString shouldContain "comparison-confidence-badge"
             htmlString shouldContain ViewText.COMPARISON_CAPTION
-            Regex("\\sid=\"${HtmlIds.REBALANCER_COMPARISON_CHART}\"").findAll(htmlString).count() shouldBe 1
+            Regex("\\sid=\"rebalancer-comparison-chart\"").findAll(htmlString).count() shouldBe 1
         }
 
         "should JSON-escape asset colors in window.__ASSET_COLORS__" {

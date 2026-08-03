@@ -14,7 +14,6 @@ import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.PortfolioStats
 import com.gemini.krakenbot.model.RebalancerComparison
 import com.gemini.krakenbot.model.RebalancerComparisonPoint
-import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.model.TradeSource
 import io.kotest.core.spec.IsolationMode
@@ -107,8 +106,8 @@ class SerializationParityTest : StringSpec() {
                     assets =
                     mapOf(
                         TestFixtures.XXBTZUSD to
-                            PortfolioSnapshot.AssetSnapshot(
-                                symbol = Asset(TestFixtures.XXBTZUSD),
+                            TestFixtures.assetSnapshot(
+                                symbol = TestFixtures.XXBTZUSD,
                                 balance = BigDecimal("0.5"),
                                 price = BigDecimal("20000.0"),
                                 valueUSD = BigDecimal("10000.0"),
@@ -215,16 +214,16 @@ class SerializationParityTest : StringSpec() {
             // buildSyncProgressResponse (production) applies orEmpty(); the emitted JSON must carry
             // empty strings (not null) so the JS parser's dynamicString(...).orEmpty() agrees.
             val json = mapper.writeValueAsString(buildSyncProgressResponse(seeded = false, offset = null, total = null))
-            json shouldContain "\"${SyncMetadataKeys.OFFSET}\":\"\""
-            json shouldContain "\"${SyncMetadataKeys.TOTAL}\":\"\""
+            json shouldContain "\"offset\":\"\""
+            json shouldContain "\"total\":\"\""
         }
 
-        "history API SyncProgressResponse uses SyncMetadataKeys JSON names" {
+        "history API SyncProgressResponse uses stable JSON names" {
             val response = buildSyncProgressResponse(seeded = false, offset = "123", total = "456")
             val json = mapper.writeValueAsString(response)
-            json shouldContain "\"${SyncMetadataKeys.IS_SEEDED}\":false"
-            json shouldContain "\"${SyncMetadataKeys.OFFSET}\":\"123\""
-            json shouldContain "\"${SyncMetadataKeys.TOTAL}\":\"456\""
+            json shouldContain "\"seeded\":false"
+            json shouldContain "\"offset\":\"123\""
+            json shouldContain "\"total\":\"456\""
 
             val roundTrip: SyncProgressResponse = mapper.readValue(json)
             roundTrip.seeded shouldBe false

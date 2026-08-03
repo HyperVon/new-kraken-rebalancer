@@ -12,18 +12,11 @@ import com.gemini.krakenbot.util.PrecisionConstants
  * through this one function instead of duplicating the row structure.
  */
 object AllocationEditor {
-    private val editRow = CssClass.Form.AllocationEditRow.toString()
-    private val editSymbol = CssClass.Form.AllocationEditSymbol.toString()
-    private val colorInput = CssClass.Form.AllocationColorInput.toString()
-    private val colorSwatch = CssClass.Form.AllocationColorSwatch.toString()
-    private val editInputWrapper = CssClass.Form.AllocationEditInputWrapper.toString()
-    private val inputGlass = CssClass.Form.InputGlass.toString()
-    private val percentSuffix = CssClass.Form.PercentSuffix.toString()
-    private val dangerButton = CssClass.Button.Danger.toString()
-
     private val syncColorJs =
-        "this.closest('.$editRow').querySelector('.$colorInput').value = this.value"
-    private val removeRowJs = "this.closest('.$editRow').remove(); updateAllocationTotal()"
+        "this.closest('${CssClass.Form.AllocationEditRow.querySelector}').querySelector(" +
+            "'${CssClass.Form.AllocationColorInput.querySelector}').value = this.value"
+    private val removeRowJs =
+        "this.closest('${CssClass.Form.AllocationEditRow.querySelector}').remove(); updateAllocationTotal()"
     private const val UPDATE_TOTAL_JS = "updateAllocationTotal()"
 
     /**
@@ -37,22 +30,26 @@ object AllocationEditor {
      */
     fun editRow(symbol: String, color: String, targetPercent: String): String =
         """
-        <div class="$editRow">
-            <div class="$editSymbol">${escapeHtml(symbol)}</div>
+        <div class="${CssClass.Form.AllocationEditRow}">
+            <div class="${CssClass.Form.AllocationEditSymbol}">${escapeHtml(symbol)}</div>
             <input type="hidden" name="${FormFields.SYMBOLS}" value="${escapeHtml(symbol)}">
-            <input type="hidden" name="${FormFields.COLORS}" class="$colorInput" value="${escapeHtml(color)}">
+            <input type="hidden" name="${FormFields.COLORS}" class="${CssClass.Form.AllocationColorInput}" value="${escapeHtml(
+            color,
+        )}">
             <label>
-                <input type="color" class="$colorSwatch" value="${escapeHtml(color)}" oninput="$syncColorJs">
+                <input type="color" class="${CssClass.Form.AllocationColorSwatch}" value="${escapeHtml(
+            color,
+        )}" oninput="$syncColorJs">
             </label>
-            <div class="$editInputWrapper">
-                <input class="$inputGlass" type="number" name="${FormFields.TARGETS}"
+            <div class="${CssClass.Form.AllocationEditInputWrapper}">
+                <input class="${CssClass.Form.InputGlass}" type="number" name="${FormFields.TARGETS}"
                   step="${PrecisionConstants.ALLOCATION_STEP_PERCENT}"
                   min="${PrecisionConstants.ALLOCATION_MIN_PERCENT}"
                   max="${PrecisionConstants.TOTAL_ALLOCATION_PERCENTAGE}"
                   value="${escapeHtml(targetPercent)}" oninput="$UPDATE_TOTAL_JS">
-                <span class="$percentSuffix">%</span>
+                <span class="${CssClass.Form.PercentSuffix}">%</span>
             </div>
-            <button class="$dangerButton" type="button" onclick="$removeRowJs">${ViewText.REMOVE}</button>
+            <button class="${CssClass.Button.Danger}" type="button" onclick="$removeRowJs">${ViewText.REMOVE}</button>
         </div>
         """.trimIndent()
 

@@ -8,7 +8,7 @@ import com.gemini.krakenbot.view.util.HtmlAttrs
 import com.gemini.krakenbot.view.util.HtmlIds
 import kotlinx.browser.document
 import org.w3c.dom.*
-import com.gemini.krakenbot.view.util.CssClass.Query.TIME_RANGE_BTNS as TIME_RANGE_BTNS_QUERY
+import com.gemini.krakenbot.view.util.HtmlQueries.TIME_RANGE_BTNS as TIME_RANGE_BTNS_QUERY
 
 internal val charts = mutableMapOf<String, dynamic>()
 internal var currentRange = TimeRange.THIRTY_DAYS.key
@@ -28,7 +28,7 @@ private val historyChartIds =
         HtmlIds.CUMULATIVE_NET_CASH_FLOW_CHART,
     )
 
-private const val ACTIVE = CssClass.ACTIVE
+private val ACTIVE = CssClass.Utility.Active.value
 
 internal fun historyCurrentRange(): String = currentRange
 

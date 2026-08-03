@@ -13,8 +13,8 @@ import kotlinx.browser.window
 import org.w3c.dom.*
 import org.w3c.dom.events.Event
 import kotlin.math.abs
-import com.gemini.krakenbot.view.util.CssClass.Query.SYMBOL_INPUTS as SYMBOL_INPUTS_QUERY
-import com.gemini.krakenbot.view.util.CssClass.Query.TARGET_INPUTS as TARGET_INPUTS_QUERY
+import com.gemini.krakenbot.view.util.HtmlQueries.SYMBOL_INPUTS as SYMBOL_INPUTS_QUERY
+import com.gemini.krakenbot.view.util.HtmlQueries.TARGET_INPUTS as TARGET_INPUTS_QUERY
 
 fun initSettings() {
     registerSettingsGlobals()
@@ -89,11 +89,8 @@ internal fun syncModePlateFromSafetyToggles() {
 fun updateAllocationTotal() {
     val inputs = document.querySelectorAll(TARGET_INPUTS_QUERY)
     var total = 0.0
-    repeat(inputs.length) { i ->
-        val input = inputs.item(i) as? HTMLInputElement
-        if (input != null) {
-            total += input.value.toDoubleOrNull() ?: 0.0
-        }
+    inputs.forEachInput { input ->
+        total += input.value.toDoubleOrNull() ?: 0.0
     }
 
     val totalDisplay = document.getElementById(HtmlIds.TOTAL_ALLOCATED_DISPLAY) ?: return
@@ -160,9 +157,8 @@ private fun pickColorForNewAsset(): String {
 private fun currentAllocationColors(): List<String> {
     val inputs = document.querySelectorAll(".${CssClass.Form.AllocationColorInput}")
     val colors = mutableListOf<String>()
-    repeat(inputs.length) { i ->
-        val input = inputs.item(i) as? HTMLInputElement
-        if (input != null && input.value.isNotEmpty()) {
+    inputs.forEachInput { input ->
+        if (input.value.isNotEmpty()) {
             colors.add(input.value)
         }
     }
@@ -173,13 +169,16 @@ private fun currentAllocationColors(): List<String> {
 private fun currentAllocationSymbols(): List<String> {
     val symbolInputs = document.querySelectorAll(SYMBOL_INPUTS_QUERY)
     val symbols = mutableListOf<String>()
-    repeat(symbolInputs.length) { i ->
-        val input = symbolInputs.item(i) as? HTMLInputElement
-        if (input != null) {
-            symbols.add(Asset.canonicalSymbol(input.value.uppercase()))
-        }
+    symbolInputs.forEachInput { input ->
+        symbols.add(Asset.canonicalSymbol(input.value.uppercase()))
     }
     return symbols
+}
+
+private fun NodeList.forEachInput(action: (HTMLInputElement) -> Unit) {
+    repeat(length) { index ->
+        (item(index) as? HTMLInputElement)?.let(action)
+    }
 }
 
 private val SYMBOL_REGEX = Regex(Asset.SYMBOL_PATTERN_STRING)

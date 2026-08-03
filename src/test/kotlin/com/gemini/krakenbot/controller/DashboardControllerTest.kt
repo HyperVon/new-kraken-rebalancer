@@ -8,10 +8,6 @@ import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.PortfolioSnapshot
-import com.gemini.krakenbot.view.util.FormFields
-import com.gemini.krakenbot.view.util.HtmxHeaders
-import com.gemini.krakenbot.view.util.HtmxValues
-import com.gemini.krakenbot.view.util.Routes
 import com.gemini.krakenbot.view.util.ViewText
 import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.nulls.shouldNotBeNull
@@ -36,6 +32,43 @@ import io.mockk.slot
 import io.mockk.verify
 import java.math.BigDecimal
 import java.time.Instant
+
+// Keep HTTP boundary expectations independent from the generated common catalogs.
+private object Routes {
+    const val ROOT = "/"
+    const val SETTINGS = "/settings"
+    const val FRAGMENT_DASHBOARD = "/fragments/dashboard"
+    const val API_STATUS_STREAM = "/api/status/stream"
+    const val STATIC_STYLE_CSS = "/static/style.css"
+    const val STATIC_REBALANCER_JS = "/static/rebalancer.js"
+}
+
+private object FormFields {
+    const val CSRF_TOKEN = "csrfToken"
+    const val LOOP_DELAY_SECONDS = "loopDelaySeconds"
+    const val DEVIATION_TRIGGER_PERCENT = "deviationTriggerPercent"
+    const val DUST_THRESHOLD_USD = "dustThresholdUSD"
+    const val DRY_RUN = "dryRun"
+    const val SIMULATION = "simulation"
+    const val FIAT_MAX_DRAWDOWN = "fiatMaxDrawdown"
+    const val FIAT_DEPLOYMENT_EXPONENT = "fiatDeploymentExponent"
+    const val SYMBOLS = "symbols"
+    const val TARGETS = "targets"
+    const val COLORS = "colors"
+}
+
+private object HtmxHeaders {
+    const val HX_REDIRECT = "HX-Redirect"
+    const val HX_REFRESH = "HX-Refresh"
+    const val HX_RESWAP = "HX-Reswap"
+    const val HX_RETARGET = "HX-Retarget"
+}
+
+private object HtmxValues {
+    const val BODY = "body"
+    const val INNER_HTML = "innerHTML"
+    const val TRUE = "true"
+}
 
 class DashboardControllerTest : DashboardControllerTestBase() {
 
@@ -90,35 +123,30 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                     assets =
                     mapOf(
                         Asset.USD to
-                            PortfolioSnapshot.AssetSnapshot(
+                            TestFixtures.assetSnapshot(
                                 symbol = Asset.USD,
                                 balance = BigDecimal("5000.0"),
                                 price = BigDecimal("1.0"),
                                 valueUSD = BigDecimal("5000.0"),
                                 targetPercent = BigDecimal("33.33"),
-                                currentPercent = BigDecimal("33.33"),
-                                deviationPercent = BigDecimal("0.0"),
-                                deviationUSD = BigDecimal("0.0"),
                             ),
                         Asset.BTC to
-                            PortfolioSnapshot.AssetSnapshot(
+                            TestFixtures.assetSnapshot(
                                 symbol = Asset.BTC,
                                 balance = BigDecimal("0.1"),
                                 price = BigDecimal("50000.0"),
                                 valueUSD = BigDecimal("5000.0"),
                                 targetPercent = BigDecimal("33.33"),
-                                currentPercent = BigDecimal("33.33"),
                                 deviationPercent = BigDecimal("5.0"),
                                 deviationUSD = BigDecimal("250.0"),
                             ),
                         Asset.ETH to
-                            PortfolioSnapshot.AssetSnapshot(
+                            TestFixtures.assetSnapshot(
                                 symbol = Asset.ETH,
                                 balance = BigDecimal("2.5"),
                                 price = BigDecimal("2000.0"),
                                 valueUSD = BigDecimal("5000.0"),
                                 targetPercent = BigDecimal("33.33"),
-                                currentPercent = BigDecimal("33.33"),
                                 deviationPercent = BigDecimal("-2.0"),
                                 deviationUSD = BigDecimal("-100.0"),
                             ),

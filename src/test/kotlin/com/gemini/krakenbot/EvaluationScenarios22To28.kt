@@ -15,7 +15,6 @@ import com.gemini.krakenbot.service.impl.ConfigServiceImpl
 import com.gemini.krakenbot.service.impl.OrderExecutorImpl
 import com.gemini.krakenbot.service.impl.PortfolioAnalyzerImpl
 import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
-import com.gemini.krakenbot.view.util.Routes
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.booleans.shouldBeTrue
 import io.ktor.client.plugins.sse.sse
@@ -404,7 +403,7 @@ internal fun EvaluationScenariosTest.registerScenarios22To28() {
             val jobs =
                 (1..5).map { id ->
                     launch {
-                        clientSse.sse(Routes.API_STATUS_STREAM) {
+                        clientSse.sse("/api/status/stream") {
                             val event = incoming.take(1).toList().firstOrNull()
                             if (event != null && event.data?.contains("CONCURRENT_SSE_TEST") == true) {
                                 synchronized(results) {

@@ -1,0 +1,9 @@
+SyncMetadataKeys:
+  SYNC_OFFSET: "sync_offset"
+  SYNC_TOTAL: "sync_total"
+  HISTORY_SEEDED: "history_seeded"
+  SYNC_WATERMARK_EPOCH_SEC: "sync_watermark_epoch_sec"
+  COMPLETED: "completed"
+  IS_SEEDED: "seeded"
+  OFFSET: "offset"
+  TOTAL: "total"

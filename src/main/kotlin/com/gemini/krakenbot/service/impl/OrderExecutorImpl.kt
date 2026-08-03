@@ -250,8 +250,12 @@ class OrderExecutorImpl(
         val pair = Asset.tradingPair(symbol)
         val clOrdId = clientOrderId(cycleId, symbol, side.apiValue)
         val isLiveSubmission = !settings.dryRun && !settings.simulation
-        val pending = TradeCalculator.createTradeRecord(
-            result = OrderResult(false, pair, side.apiValue, volume, settings.dryRun, ORDER_SUBMISSION_PENDING),
+        fun createJournalRecord(
+            result: OrderResult,
+            id: Int? = null,
+            submissionState: OrderSubmissionState? = null,
+        ): TradeRecord = TradeCalculator.createTradeRecord(
+            result = result,
             symbol = symbol,
             pair = pair,
             side = side.uppercaseName,
@@ -259,8 +263,10 @@ class OrderExecutorImpl(
             usdAmount = effectiveUsdAmount,
             prices = prices,
             cycleId = cycleId.ifBlank { null },
-        ).copy(
-            clientOrderId = clOrdId,
+        ).copy(id = id, clientOrderId = clOrdId, submissionState = submissionState)
+
+        val pending = createJournalRecord(
+            result = OrderResult(false, pair, side.apiValue, volume, settings.dryRun, ORDER_SUBMISSION_PENDING),
             submissionState = if (isLiveSubmission) OrderSubmissionState.PENDING else null,
         )
         val pendingId = tradeHistoryService.saveTrade(pending)
@@ -304,18 +310,9 @@ class OrderExecutorImpl(
             usdAmount = effectiveUsdAmount,
             side = side,
         )
-        val resolved = TradeCalculator.createTradeRecord(
+        val resolved = createJournalRecord(
             result = resolvedResult,
-            symbol = symbol,
-            pair = pair,
-            side = side.uppercaseName,
-            volume = volume,
-            usdAmount = effectiveUsdAmount,
-            prices = prices,
-            cycleId = cycleId.ifBlank { null },
-        ).copy(
             id = pendingId,
-            clientOrderId = clOrdId,
             submissionState = if (isLiveSubmission && resolvedResult.submissionUncertain) {
                 OrderSubmissionState.UNCERTAIN
             } else {

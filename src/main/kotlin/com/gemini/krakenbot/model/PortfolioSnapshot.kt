@@ -1,8 +1,11 @@
 package com.gemini.krakenbot.model
 
+import com.gemini.krakenbot.codegen.GenerateApiMapper
 import java.math.BigDecimal
 import java.time.Instant
+import com.gemini.krakenbot.api.PortfolioSnapshot as ApiPortfolioSnapshot
 
+@GenerateApiMapper(ApiPortfolioSnapshot::class)
 data class PortfolioSnapshot(
     val timestamp: Instant,
     val totalValueUSD: BigDecimal,
@@ -12,6 +15,7 @@ data class PortfolioSnapshot(
     val fiatDeploymentPercent: BigDecimal,
     val effectiveUsdTargetPercent: BigDecimal,
 ) {
+    @GenerateApiMapper(ApiPortfolioSnapshot.AssetSnapshot::class)
     data class AssetSnapshot(
         val symbol: Asset,
         val balance: BigDecimal,

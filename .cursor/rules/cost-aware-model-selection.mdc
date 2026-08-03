@@ -11,22 +11,28 @@ When model or reasoning-effort selection is available, use the **least
 expensive model and lowest effort reasonably likely to complete the task
 correctly**.
 
+Before material or parallel delegation, run the `model-routing` preflight for
+each bounded track. Record the primary route, effort, fallback, availability
+evidence, and any substitution. Treat `subagent_type` as a role rather than
+proof of the underlying model; if the host cannot select or expose an exact
+route, record that limitation instead of inferring it from the parent or role.
+
 - Start low for bounded searches, mechanical edits, formatting, straightforward
   tests, and status checks.
 - Escalate for demonstrated complexity or risk, repeated failure, ambiguous
   cross-cutting design, or financial/safety-sensitive reasoning.
 - Honor any model or effort explicitly required by the user, host, or an
-  applicable skill. If it is unavailable in the current host, use the closest
-  available model by capability and cost, preserve the intended role, and
-  document the substitution.
+  applicable skill. For material or parallel delegation, stop when the exact
+  provider/model route and effort cannot be host-enforced and exposed. Do not
+  silently substitute the parent route, an unspecified route, or a generic role.
 - Optimize total cost, including retries and review time; do not choose a tier
   that is unlikely to succeed merely because it is cheaper.
 - Choose the cheapest capable tier per parallel track instead of promoting all
   subagents for one difficult track.
-- Treat context size as part of cost and reliability. For GPT-5.6 Luna, keep
-  delegated requests well below roughly **256K input tokens** with bounded
-  prompts, low iteration caps, and compact reports before escalating or widening
-  context.
+- Treat context size as part of cost and reliability. Use the selected route's
+  documented or observed practical limit; when unavailable, keep delegated
+  requests below **128K input tokens** and split before **180K** with bounded
+  prompts, low iteration caps, and compact reports.
 
 Correctness and safety are non-negotiable. Never weaken verification or use an
 underpowered model for high-impact work to save cost.

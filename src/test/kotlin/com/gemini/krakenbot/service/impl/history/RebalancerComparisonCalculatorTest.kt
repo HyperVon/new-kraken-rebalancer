@@ -1,6 +1,6 @@
 package com.gemini.krakenbot.service.impl.history
 
-import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.TestFixtures.assetSnapshot
 import com.gemini.krakenbot.model.ComparisonAvailability
 import com.gemini.krakenbot.model.ComparisonConfidence
 import com.gemini.krakenbot.model.ComparisonUnavailableReason
@@ -713,15 +713,12 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
         assets: Map<String, Triple<String, String, String>>,
     ): PortfolioSnapshot {
         val assetSnapshots = assets.mapValues { (symbol, triple) ->
-            PortfolioSnapshot.AssetSnapshot(
-                symbol = Asset(symbol),
+            assetSnapshot(
+                symbol = symbol,
                 balance = BigDecimal(triple.first),
                 price = BigDecimal(triple.second),
                 valueUSD = BigDecimal(triple.third),
                 targetPercent = BigDecimal.ZERO,
-                currentPercent = BigDecimal.ZERO,
-                deviationPercent = BigDecimal.ZERO,
-                deviationUSD = BigDecimal.ZERO,
             )
         }
         return PortfolioSnapshot(

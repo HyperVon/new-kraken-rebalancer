@@ -4,9 +4,6 @@ import com.gemini.krakenbot.api.PortfolioSnapshot
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.view.util.ChartProps
-import com.gemini.krakenbot.view.util.CssClass
-import com.gemini.krakenbot.view.util.HtmlIds
-import com.gemini.krakenbot.view.util.HtmlTags
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.booleans.shouldBeTrue
@@ -143,7 +140,7 @@ class HistoryChartsTest : StringSpec() {
         }
 
         "chart builders create charts and preserve visibility" {
-            val container = document.createElement(HtmlTags.DIV)
+            val container = document.createElement("div")
             container.innerHTML = TestDomBuilders.chartsDom()
             document.body!!.appendChild(container)
             val chartConfigs = mutableListOf<dynamic>()
@@ -248,14 +245,14 @@ class HistoryChartsTest : StringSpec() {
 
         "empty history data clears charts and disables their scrubbers" {
             resetHistoryUiState()
-            val container = document.createElement(HtmlTags.DIV)
+            val container = document.createElement("div")
             container.innerHTML =
                 """
                 ${TestDomBuilders.chartsDom()}
-                ${TestDomBuilders.scrubberDom(HtmlIds.PORTFOLIO_VALUE_CHART, disabled = false, value = "25")}
-                ${TestDomBuilders.scrubberDom(HtmlIds.ASSET_HOLDINGS_CHART, disabled = false, value = "25")}
-                ${TestDomBuilders.scrubberDom(HtmlIds.ALLOCATION_DRIFT_CHART, disabled = false, value = "25")}
-                ${TestDomBuilders.scrubberDom(HtmlIds.CUMULATIVE_NET_CASH_FLOW_CHART, disabled = false, value = "25")}
+                ${TestDomBuilders.scrubberDom("portfolio-value-chart", disabled = false, value = "25")}
+                ${TestDomBuilders.scrubberDom("asset-holdings-chart", disabled = false, value = "25")}
+                ${TestDomBuilders.scrubberDom("allocation-drift-chart", disabled = false, value = "25")}
+                ${TestDomBuilders.scrubberDom("cumulative-net-cash-flow-chart", disabled = false, value = "25")}
                 """.trimIndent()
             document.body!!.appendChild(container)
             val chartInstances = mutableListOf<dynamic>()
@@ -290,7 +287,7 @@ class HistoryChartsTest : StringSpec() {
                 buildCumulativeNetCashFlowChart(emptyList())
 
                 chartInstances.all { it.destroyed as Boolean } shouldBe true
-                val scrubbers = document.querySelectorAll(CssClass.Query.CHART_SCRUBBERS)
+                val scrubbers = document.querySelectorAll(".history-chart-scrubber-input")
                 for (index in 0 until scrubbers.length) {
                     val scrubber = scrubbers.item(index) as HTMLInputElement
                     scrubber.disabled shouldBe true
@@ -314,7 +311,7 @@ class HistoryChartsTest : StringSpec() {
         }
 
         "createOrUpdate handles existing chart and visibility states" {
-            val container = document.createElement(HtmlTags.DIV)
+            val container = document.createElement("div")
             container.innerHTML =
                 """
                 <canvas id="$TEST_CHART"></canvas>
@@ -359,7 +356,7 @@ class HistoryChartsTest : StringSpec() {
         }
 
         "chart builders config callbacks cover tooltip and ticks formatting" {
-            val container = document.createElement(HtmlTags.DIV)
+            val container = document.createElement("div")
             container.innerHTML = TestDomBuilders.chartsDom()
             document.body!!.appendChild(container)
             TestDomBuilders.setupMockChart()

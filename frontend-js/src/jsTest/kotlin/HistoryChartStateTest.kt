@@ -3,10 +3,6 @@ package com.gemini.krakenbot.frontend
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.TimeRange
 import com.gemini.krakenbot.view.util.ChartProps
-import com.gemini.krakenbot.view.util.CssClass
-import com.gemini.krakenbot.view.util.HtmlAttrs
-import com.gemini.krakenbot.view.util.HtmlIds
-import com.gemini.krakenbot.view.util.HtmlTags
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
@@ -21,14 +17,14 @@ class HistoryChartStateTest : StringSpec() {
             resetHistoryUiState()
             historyCurrentRange() shouldBe TimeRange.THIRTY_DAYS.key
 
-            val selector = document.createElement(HtmlTags.DIV)
+            val selector = document.createElement("div")
             selector.innerHTML =
                 """
-                <div class="${CssClass.History.TimeRangeSelector}">
-                    <button class="${CssClass.History.TimeRangeBtn}"
-                      ${HtmlAttrs.DATA_RANGE}="24h">24h</button>
-                    <button class="${CssClass.History.TimeRangeBtn}"
-                      ${HtmlAttrs.DATA_RANGE}="7d">7d</button>
+                <div class="time-range-selector">
+                    <button class="time-range-btn"
+                      data-range="24h">24h</button>
+                    <button class="time-range-btn"
+                      data-range="7d">7d</button>
                 </div>
                 """.trimIndent()
             document.body!!.appendChild(selector)
@@ -37,11 +33,11 @@ class HistoryChartStateTest : StringSpec() {
                 syncTimeRangeButtons(TimeRange.SEVEN_DAYS.key)
                 historyCurrentRange() shouldBe TimeRange.SEVEN_DAYS.key
                 val sevenDayButton =
-                    selector.querySelector("[${HtmlAttrs.DATA_RANGE}=\"7d\"]") as HTMLElement
+                    selector.querySelector("[data-range=\"7d\"]") as HTMLElement
                 val twentyFourHourButton =
-                    selector.querySelector("[${HtmlAttrs.DATA_RANGE}=\"24h\"]") as HTMLElement
-                sevenDayButton.classList.contains(CssClass.ACTIVE) shouldBe true
-                twentyFourHourButton.classList.contains(CssClass.ACTIVE) shouldBe false
+                    selector.querySelector("[data-range=\"24h\"]") as HTMLElement
+                sevenDayButton.classList.contains("active") shouldBe true
+                twentyFourHourButton.classList.contains("active") shouldBe false
             } finally {
                 document.body!!.removeChild(selector)
                 resetHistoryUiState()
@@ -50,7 +46,7 @@ class HistoryChartStateTest : StringSpec() {
 
         "historyCaptureVisibility snapshots per-chart label visibility" {
             resetHistoryUiState()
-            val container = document.createElement(HtmlTags.DIV)
+            val container = document.createElement("div")
             container.innerHTML = "<canvas id=\"$TEST_CHART\"></canvas>"
             document.body!!.appendChild(container)
 
@@ -82,12 +78,12 @@ class HistoryChartStateTest : StringSpec() {
 
         "historyRollbackPresetVisibility is a no-op without a backup" {
             resetHistoryUiState()
-            visibilityStates[HtmlIds.PORTFOLIO_VALUE_CHART] = mutableMapOf(
+            visibilityStates["portfolio-value-chart"] = mutableMapOf(
                 ChartProps.DATASET_VISIBILITY_DEFAULT to true,
                 Asset.BTC to false,
             )
             historyRollbackPresetVisibility()
-            visibilityStates[HtmlIds.PORTFOLIO_VALUE_CHART] shouldBe mapOf(
+            visibilityStates["portfolio-value-chart"] shouldBe mapOf(
                 ChartProps.DATASET_VISIBILITY_DEFAULT to true,
                 Asset.BTC to false,
             )
@@ -101,21 +97,21 @@ class HistoryChartStateTest : StringSpec() {
                     ChartProps.DATASET_VISIBILITY_DEFAULT to true,
                     Asset.BTC to false,
                 )
-            visibilityStates[HtmlIds.PORTFOLIO_VALUE_CHART] = before.toMutableMap()
+            visibilityStates["portfolio-value-chart"] = before.toMutableMap()
 
             val presetVisibility =
                 mapOf(
-                    HtmlIds.PORTFOLIO_VALUE_CHART to mapOf(
+                    "portfolio-value-chart" to mapOf(
                         ChartProps.DATASET_VISIBILITY_DEFAULT to false,
                         Asset.BTC to true,
                     ),
                 )
             historyApplyVisibility(presetVisibility)
-            visibilityStates[HtmlIds.PORTFOLIO_VALUE_CHART] shouldBe
-                presetVisibility.getValue(HtmlIds.PORTFOLIO_VALUE_CHART)
+            visibilityStates["portfolio-value-chart"] shouldBe
+                presetVisibility.getValue("portfolio-value-chart")
 
             historyRollbackPresetVisibility()
-            visibilityStates[HtmlIds.PORTFOLIO_VALUE_CHART] shouldBe before
+            visibilityStates["portfolio-value-chart"] shouldBe before
             resetHistoryUiState()
         }
     }

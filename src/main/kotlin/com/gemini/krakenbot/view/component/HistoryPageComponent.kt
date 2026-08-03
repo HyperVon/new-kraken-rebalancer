@@ -192,16 +192,7 @@ class HistoryPageComponent(private val objectMapper: ObjectMapper) {
                 id = HtmlIds.COMPARISON_CONFIDENCE_BADGE
             }
             p(CssClass.History.ChartCaption) { +ViewText.COMPARISON_CAPTION }
-            div(CssClass.History.ChartScrubber) {
-                input(classes = CssClass.History.ChartScrubberInput.value, type = InputType.range) {
-                    min = "0"
-                    max = "100"
-                    step = "0.1"
-                    value = "0"
-                    disabled = true
-                    attributes[HtmlAttrs.DATA_CHART_ID] = HtmlIds.REBALANCER_COMPARISON_CHART
-                }
-            }
+            renderChartScrubber(HtmlIds.REBALANCER_COMPARISON_CHART)
         }
     }
 
@@ -227,16 +218,20 @@ class HistoryPageComponent(private val objectMapper: ObjectMapper) {
             if (chart.caption != null) {
                 p(CssClass.History.ChartCaption) { +chart.caption }
             }
-            div(CssClass.History.ChartScrubber) {
-                input(classes = CssClass.History.ChartScrubberInput.value, type = InputType.range) {
-                    min = "0"
-                    max = "100"
-                    step = "0.1"
-                    value = "0"
-                    // Starts disabled; :frontend-js enables once the chart has a zoomable range.
-                    disabled = true
-                    attributes[HtmlAttrs.DATA_CHART_ID] = chart.canvasId
-                }
+            renderChartScrubber(chart.canvasId)
+        }
+    }
+
+    private fun DIV.renderChartScrubber(chartId: String) {
+        div(CssClass.History.ChartScrubber) {
+            input(classes = CssClass.History.ChartScrubberInput.value, type = InputType.range) {
+                min = "0"
+                max = "100"
+                step = "0.1"
+                value = "0"
+                // Starts disabled; :frontend-js enables once the chart has a zoomable range.
+                disabled = true
+                attributes[HtmlAttrs.DATA_CHART_ID] = chartId
             }
         }
     }

@@ -33,6 +33,13 @@ Move UI labels, HTML IDs/attrs, CSS classes, routes, and shared enums into
 `common/src/commonMain/` (`ViewText`, `HtmlIds`, `CssClass`, `Routes`,
 `TimeRange`, `OrderSide`, `PrecisionConstants`, …). See common-kmp-module skill.
 
+For a large pure string catalog, use the explicit YAML/KSP catalog path already
+used by `:common` rather than hand-maintaining another pile of `const val`
+declarations. Preserve names and compile-time `const val` behavior, and keep
+catalog entries explicit. Leave mixed semantic objects such as numeric
+precision data, chart behavior, CSS DSL values, and derived API paths manual
+unless a typed generator has a mechanically checked equivalent.
+
 ## 3. Warnings & null safety
 
 Remove unused imports/casts; migrate deprecations; prefer `?.` / `?:` over `!!`.
@@ -97,5 +104,7 @@ rg 'dryRun\s*=\s*false' src/test/ src/main/ --glob '*.kt'
 - [ ] FQNs gone; magic strings in `:common`
 - [ ] No absolute paths; warnings clean
 - [ ] No dead guards, duplicated validation, or speculative abstractions added
+- [ ] Pure catalogs use the shared generator only when it reduces maintenance;
+      mixed semantic catalogs remain explicit
 - [ ] README + JaCoCo synced; tests pass
 - [ ] Markdown lint includes `.agents/AGENTS.md`

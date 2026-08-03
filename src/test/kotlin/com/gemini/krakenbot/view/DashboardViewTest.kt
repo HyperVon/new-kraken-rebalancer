@@ -15,37 +15,7 @@ import com.gemini.krakenbot.view.component.OverviewGridComponent
 import com.gemini.krakenbot.view.component.PerformanceTableComponent
 import com.gemini.krakenbot.view.component.RecentActivityComponent
 import com.gemini.krakenbot.view.component.SettingsFormComponent
-import com.gemini.krakenbot.view.util.CdnIntegrity
-import com.gemini.krakenbot.view.util.CdnUrls
-import com.gemini.krakenbot.view.util.CssClass
-import com.gemini.krakenbot.view.util.FormFields.CSRF_TOKEN
-import com.gemini.krakenbot.view.util.FormFields.DEVIATION_TRIGGER_PERCENT
-import com.gemini.krakenbot.view.util.FormFields.DUST_THRESHOLD_USD
-import com.gemini.krakenbot.view.util.FormFields.FIAT_DEPLOYMENT_EXPONENT
-import com.gemini.krakenbot.view.util.FormFields.FIAT_MAX_DRAWDOWN
-import com.gemini.krakenbot.view.util.FormFields.LOOP_DELAY_SECONDS
-import com.gemini.krakenbot.view.util.FormFields.TARGETS
-import com.gemini.krakenbot.view.util.HtmlIds
 import com.gemini.krakenbot.view.util.Icons
-import com.gemini.krakenbot.view.util.Routes.API_STATUS_STREAM
-import com.gemini.krakenbot.view.util.Routes.STATIC_STYLE_CSS
-import com.gemini.krakenbot.view.util.ViewText.ACTIVITY_NO_TRADES
-import com.gemini.krakenbot.view.util.ViewText.APP_TITLE
-import com.gemini.krakenbot.view.util.ViewText.ASSETS_SUFFIX
-import com.gemini.krakenbot.view.util.ViewText.CASH_USD
-import com.gemini.krakenbot.view.util.ViewText.CONNECTING
-import com.gemini.krakenbot.view.util.ViewText.CRYPTO_ASSETS
-import com.gemini.krakenbot.view.util.ViewText.DEV_PREFIX
-import com.gemini.krakenbot.view.util.ViewText.MODE_DRY_RUN
-import com.gemini.krakenbot.view.util.ViewText.MODE_SIMULATION
-import com.gemini.krakenbot.view.util.ViewText.NO_TRADING_HISTORY
-import com.gemini.krakenbot.view.util.ViewText.NO_USD_DATA
-import com.gemini.krakenbot.view.util.ViewText.SAFETY_MODES
-import com.gemini.krakenbot.view.util.ViewText.SETTINGS_TITLE
-import com.gemini.krakenbot.view.util.ViewText.STREAM
-import com.gemini.krakenbot.view.util.ViewText.STREAM_STALE
-import com.gemini.krakenbot.view.util.ViewText.TARGET_PREFIX
-import com.gemini.krakenbot.view.util.ViewText.TOTAL_PORTFOLIO
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
@@ -80,11 +50,6 @@ class DashboardViewTest : StringSpec() {
         historyPageComponent = HistoryPageComponent(jacksonObjectMapper()),
     )
 
-    private val ALLOCATION_BAR_LABEL = CssClass.AllocationChart.BarLabel.toString()
-    private val BADGE_BUY = CssClass.Badge.Buy.toString()
-    private val BADGE_INFO = CssClass.Badge.Info.toString()
-    private val BADGE_SELL = CssClass.Badge.Sell.toString()
-    private val ERROR_BANNER = CssClass.Utility.ErrorBanner.toString()
     private val testCsrfToken = "test-csrf-token"
 
     private val baseConfig = AppConfig(
@@ -110,61 +75,81 @@ class DashboardViewTest : StringSpec() {
         effectiveUsdTargetPercent = BigDecimal("10.0"),
     )
 
+    private fun assetSnapshot(
+        symbol: String,
+        balance: String,
+        price: String,
+        valueUSD: String,
+        targetPercent: String,
+        currentPercent: String = targetPercent,
+        deviationPercent: String = "0.0",
+        deviationUSD: String = "0.0",
+    ) = PortfolioSnapshot.AssetSnapshot(
+        symbol = Asset(symbol),
+        balance = BigDecimal(balance),
+        price = BigDecimal(price),
+        valueUSD = BigDecimal(valueUSD),
+        targetPercent = BigDecimal(targetPercent),
+        currentPercent = BigDecimal(currentPercent),
+        deviationPercent = BigDecimal(deviationPercent),
+        deviationUSD = BigDecimal(deviationUSD),
+    )
+
     init {
         "renderDashboardShell_containsExpectedContent" {
             val html = createHTML().html { view.renderDashboardShell(baseConfig.settings) }
-            html shouldContain "title>${APP_TITLE}"
-            html shouldContain "link href=\"${STATIC_STYLE_CSS}?v="
-            html shouldContain "script src=\"${CdnUrls.HTMX}\""
-            html shouldContain "integrity=\"${CdnIntegrity.HTMX}\""
+            html shouldContain "title>Kraken Rebalancer"
+            html shouldContain "link href=\"/static/style.css?v="
+            html shouldContain "script src=\"https://unpkg.com/htmx.org@2.0.4\""
+            html shouldContain "integrity=\"sha384-HGfztofotfshcF7+8n44JQL2oJmowVChPTg48S+jvZoztPfvwD79OC/LTtG6dMp+\""
             html shouldContain "crossorigin=\"anonymous\""
             html shouldContain "hx-ext=\"sse\""
-            html shouldContain "sse-connect=\"${API_STATUS_STREAM}\""
-            html shouldContain CONNECTING
-            html shouldContain MODE_DRY_RUN
-            html shouldContain "id=\"${HtmlIds.HEADER_STATUS}\""
-            html shouldContain STREAM
+            html shouldContain "sse-connect=\"/api/status/stream\""
+            html shouldContain "Connecting to KrakenRebalancer..."
+            html shouldContain "DRY RUN"
+            html shouldContain "id=\"header-status\""
+            html shouldContain "STREAM"
         }
 
         "renderDashboardShell_simulationMode_rendersSimulationPlate" {
             val simSettings = baseConfig.settings.copy(simulation = true)
             val html = createHTML().html { view.renderDashboardShell(simSettings) }
-            html shouldContain MODE_SIMULATION
+            html shouldContain "SIMULATION"
         }
 
         "renderSettingsPage_withNoError_containsForm" {
             val html = createHTML().html {
                 view.renderSettingsPage(baseConfig, null, testCsrfToken)
             }
-            html shouldContain "title>${SETTINGS_TITLE} - $APP_TITLE"
+            html shouldContain "title>Settings - Kraken Rebalancer"
             listOf(
-                LOOP_DELAY_SECONDS,
-                DEVIATION_TRIGGER_PERCENT,
-                DUST_THRESHOLD_USD,
-                FIAT_MAX_DRAWDOWN,
-                FIAT_DEPLOYMENT_EXPONENT,
+                "loopDelaySeconds",
+                "deviationTriggerPercent",
+                "dustThresholdUSD",
+                "fiatMaxDrawdown",
+                "fiatDeploymentExponent",
             ).forEach { field ->
                 html shouldContain "name=\"$field\""
                 html shouldContain "id=\"$field\""
                 html shouldContain "for=\"$field\""
             }
             html shouldContain "value=\"60\""
-            html shouldContain "name=\"${DEVIATION_TRIGGER_PERCENT}\""
+            html shouldContain "name=\"deviationTriggerPercent\""
             html shouldContain "value=\"2.0\""
-            html shouldContain "name=\"$CSRF_TOKEN\""
+            html shouldContain "name=\"csrfToken\""
             html shouldContain "value=\"$testCsrfToken\""
-            html shouldContain SAFETY_MODES
+            html shouldContain "Safety Modes"
             html shouldContain "safety-state-on"
             html shouldContain "safety-state-off"
             html shouldContain "id=\"mode-plate\""
-            html shouldNotContain ERROR_BANNER
+            html shouldNotContain "error-banner"
         }
 
         "renderSettingsPage_allocationTargets_carryPercentBounds" {
             val html = createHTML().html {
                 view.renderSettingsPage(baseConfig, null, testCsrfToken)
             }
-            val targetInput = Regex("<input[^>]*name=\"$TARGETS\"[^>]*>").find(html)?.value
+            val targetInput = Regex("<input[^>]*name=\"targets\"[^>]*>").find(html)?.value
             targetInput.shouldNotBeNull()
             targetInput shouldContain "min=\"0.0\""
             targetInput shouldContain "max=\"100.0\""
@@ -180,11 +165,11 @@ class DashboardViewTest : StringSpec() {
                 return input
             }
 
-            namedInput(DUST_THRESHOLD_USD) shouldContain "min=\"0\""
-            val fiatMax = namedInput(FIAT_MAX_DRAWDOWN)
+            namedInput("dustThresholdUSD") shouldContain "min=\"0\""
+            val fiatMax = namedInput("fiatMaxDrawdown")
             fiatMax shouldContain "min=\"0\""
             fiatMax shouldContain "max=\"100\""
-            namedInput(FIAT_DEPLOYMENT_EXPONENT) shouldContain "min=\"0.1\""
+            namedInput("fiatDeploymentExponent") shouldContain "min=\"0.1\""
         }
 
         "renderSettingsPage_withError_displaysError" {
@@ -193,7 +178,7 @@ class DashboardViewTest : StringSpec() {
                 view.renderSettingsPage(baseConfig, errMsg, testCsrfToken)
             }
             html shouldContain errMsg
-            html shouldContain ERROR_BANNER
+            html shouldContain "error-banner"
         }
 
         "renderDashboardFragment_withLiveSnapshotAndHistory_rendersCorrectly" {
@@ -202,35 +187,30 @@ class DashboardViewTest : StringSpec() {
                 timestamp = now,
                 totalValueUSD = BigDecimal("10000.00"),
                 assets = mapOf(
-                    Asset.USD to PortfolioSnapshot.AssetSnapshot(
+                    Asset.USD to assetSnapshot(
                         symbol = Asset.USD,
-                        balance = BigDecimal("1000.0"),
-                        price = BigDecimal("1.0"),
-                        valueUSD = BigDecimal("1000.0"),
-                        targetPercent = BigDecimal("10.0"),
-                        currentPercent = BigDecimal("10.0"),
-                        deviationPercent = BigDecimal("0.0"),
-                        deviationUSD = BigDecimal("0.0"),
+                        balance = "1000.0",
+                        price = "1.0",
+                        valueUSD = "1000.0",
+                        targetPercent = "10.0",
                     ),
-                    Asset.BTC to PortfolioSnapshot.AssetSnapshot(
+                    Asset.BTC to assetSnapshot(
                         symbol = Asset.BTC,
-                        balance = BigDecimal("0.1"),
-                        price = BigDecimal("50000.0"),
-                        valueUSD = BigDecimal("5000.0"),
-                        targetPercent = BigDecimal("50.0"),
-                        currentPercent = BigDecimal("50.0"),
-                        deviationPercent = BigDecimal("5.0"),
-                        deviationUSD = BigDecimal("250.0"),
+                        balance = "0.1",
+                        price = "50000.0",
+                        valueUSD = "5000.0",
+                        targetPercent = "50.0",
+                        deviationPercent = "5.0",
+                        deviationUSD = "250.0",
                     ),
-                    Asset.ETH to PortfolioSnapshot.AssetSnapshot(
+                    Asset.ETH to assetSnapshot(
                         symbol = Asset.ETH,
-                        balance = BigDecimal("2.0"),
-                        price = BigDecimal("2000.0"),
-                        valueUSD = BigDecimal("4000.0"),
-                        targetPercent = BigDecimal("40.0"),
-                        currentPercent = BigDecimal("40.0"),
-                        deviationPercent = BigDecimal("-2.5"),
-                        deviationUSD = BigDecimal("-100.0"),
+                        balance = "2.0",
+                        price = "2000.0",
+                        valueUSD = "4000.0",
+                        targetPercent = "40.0",
+                        deviationPercent = "-2.5",
+                        deviationUSD = "-100.0",
                     ),
                 ),
                 actions = listOf(
@@ -248,26 +228,26 @@ class DashboardViewTest : StringSpec() {
                 view.renderDashboardFragment(latest, history)
             }
 
-            html shouldContain STREAM
+            html shouldContain "STREAM"
             html shouldContain "id=\"header-status\""
             html shouldContain "hx-swap-oob=\"true\""
-            html shouldContain TOTAL_PORTFOLIO
+            html shouldContain "Total Portfolio"
             html shouldContain "$10,000.00"
-            html shouldContain CASH_USD
+            html shouldContain "Cash (USD)"
             html shouldContain "$1,000.00"
-            html shouldContain "${TARGET_PREFIX}7.50%"
+            html shouldContain "Target: 7.50%"
             html shouldContain "(Base: 10.00%)"
-            html shouldContain "${DEV_PREFIX}0.00%"
+            html shouldContain "Dev: 0.00%"
             html shouldContain "Drawdown: 5.00%"
-            html shouldContain CRYPTO_ASSETS
+            html shouldContain "Crypto Assets"
             html shouldContain "$9,000.00"
-            html shouldContain "${TARGET_PREFIX}90.00% | 2${ASSETS_SUFFIX}"
+            html shouldContain "Target: 90.00% | 2 Assets"
 
-            html shouldContain "${ALLOCATION_BAR_LABEL}\">BTC"
-            html shouldContain "${ALLOCATION_BAR_LABEL}\">ETH"
+            html shouldContain "allocation-bar-label\">BTC"
+            html shouldContain "allocation-bar-label\">ETH"
 
-            html shouldContain "${BADGE_BUY}\">BUY"
-            html shouldContain "${BADGE_SELL}\">SELL"
+            html shouldContain "badge badge-buy\">BUY"
+            html shouldContain "badge badge-sell\">SELL"
         }
 
         "renderDashboardFragment_withStaleData_rendersDelayedBadge" {
@@ -276,15 +256,12 @@ class DashboardViewTest : StringSpec() {
                 timestamp = oldTime,
                 totalValueUSD = BigDecimal("1000.00"),
                 assets = mapOf(
-                    Asset.USD to PortfolioSnapshot.AssetSnapshot(
+                    Asset.USD to assetSnapshot(
                         symbol = Asset.USD,
-                        balance = BigDecimal("1000.0"),
-                        price = BigDecimal("1.0"),
-                        valueUSD = BigDecimal("1000.0"),
-                        targetPercent = BigDecimal("100.0"),
-                        currentPercent = BigDecimal("100.0"),
-                        deviationPercent = BigDecimal("0.0"),
-                        deviationUSD = BigDecimal("0.0"),
+                        balance = "1000.0",
+                        price = "1.0",
+                        valueUSD = "1000.0",
+                        targetPercent = "100.0",
                     ),
                 ),
                 actions = emptyList(),
@@ -297,8 +274,8 @@ class DashboardViewTest : StringSpec() {
                 view.renderDashboardFragment(latest, emptyList())
             }
 
-            html shouldContain STREAM_STALE
-            html shouldContain NO_TRADING_HISTORY
+            html shouldContain "STALE"
+            html shouldContain "No trading history available."
         }
 
         "renderDashboardFragment_edgeCases_coversUncoveredBranches" {
@@ -320,15 +297,12 @@ class DashboardViewTest : StringSpec() {
                 timestamp = now,
                 totalValueUSD = BigDecimal.ZERO,
                 assets = mapOf(
-                    Asset.BTC to PortfolioSnapshot.AssetSnapshot(
+                    Asset.BTC to assetSnapshot(
                         symbol = Asset.BTC,
-                        balance = BigDecimal.ZERO,
-                        price = BigDecimal.ZERO,
-                        valueUSD = BigDecimal.ZERO,
-                        targetPercent = BigDecimal.ZERO,
-                        currentPercent = BigDecimal.ZERO,
-                        deviationPercent = BigDecimal.ZERO,
-                        deviationUSD = BigDecimal.ZERO,
+                        balance = "0",
+                        price = "0",
+                        valueUSD = "0",
+                        targetPercent = "0",
                     ),
                 ),
                 actions = listOf("INFO Rebalancer initialized"),
@@ -354,9 +328,9 @@ class DashboardViewTest : StringSpec() {
                 )
             }
 
-            html shouldContain NO_USD_DATA
-            html shouldContain "${BADGE_INFO}\">INFO"
-            html shouldContain ACTIVITY_NO_TRADES
+            html shouldContain "No USD Data"
+            html shouldContain "badge badge-info\">INFO"
+            html shouldContain "No trades — portfolio within tolerance"
         }
 
         "renderDashboardFragment_usdTargetEqual_doesNotPrintBaseTarget" {
@@ -365,15 +339,12 @@ class DashboardViewTest : StringSpec() {
                 timestamp = now,
                 totalValueUSD = BigDecimal("1000.00"),
                 assets = mapOf(
-                    Asset.USD to PortfolioSnapshot.AssetSnapshot(
+                    Asset.USD to assetSnapshot(
                         symbol = Asset.USD,
-                        balance = BigDecimal("100.0"),
-                        price = BigDecimal("1.0"),
-                        valueUSD = BigDecimal("100.0"),
-                        targetPercent = BigDecimal("10.0"),
-                        currentPercent = BigDecimal("10.0"),
-                        deviationPercent = BigDecimal("0.0"),
-                        deviationUSD = BigDecimal("0.0"),
+                        balance = "100.0",
+                        price = "1.0",
+                        valueUSD = "100.0",
+                        targetPercent = "10.0",
                     ),
                 ),
                 actions = emptyList(),
@@ -386,7 +357,7 @@ class DashboardViewTest : StringSpec() {
                 view.renderDashboardFragment(latest, emptyList())
             }
 
-            html shouldContain "${TARGET_PREFIX}10.00%"
+            html shouldContain "Target: 10.00%"
             html shouldNotContain "(Base: 10.00%)"
         }
 
@@ -419,8 +390,8 @@ class DashboardViewTest : StringSpec() {
         }
 
         "renderDashboardFragment_deltaChip_rendersUpDownAndRelativeTimes" {
-            val deltaUp = CssClass.Hero.DeltaUp.toString()
-            val deltaDown = CssClass.Hero.DeltaDown.toString()
+            val deltaUp = "hero-delta up"
+            val deltaDown = "hero-delta down"
 
             val latestUp = snap(0, "11000")
             val historyUp =

@@ -4,7 +4,7 @@ import com.gemini.krakenbot.api.HistoryStats
 import com.gemini.krakenbot.api.TradeRecord
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.TimeRange
-import com.gemini.krakenbot.model.TradeSourceKeys
+import com.gemini.krakenbot.model.TradeSource
 import com.gemini.krakenbot.util.PrecisionConstants
 import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.HtmlAttrs
@@ -74,7 +74,7 @@ private fun renderTradeRow(t: TradeRecord): HTMLTableRowElement {
     val price = dynamicNumber(t.price) ?: 0.0
     val fee = dynamicNumber(t.fee) ?: 0.0
     val slippage = dynamicNumber(t.slippagePercent)
-    val isEstimatedEconomics = dryRun || t.source == TradeSourceKeys.LOCAL_ESTIMATE
+    val isEstimatedEconomics = dryRun || t.source == TradeSource.LOCAL_ESTIMATE.name
     val estimatedTitle =
         if (isEstimatedEconomics) {
             ViewText.SLIPPAGE_ESTIMATED_TITLE
@@ -91,8 +91,8 @@ private fun renderTradeRow(t: TradeRecord): HTMLTableRowElement {
     tr.appendChild(createCell(formatUSD(amt), CssClass.Table.MonoCol))
     // HIST-3: price keeps crypto precision (4-8dp) and fee keeps up to 4dp; zero/missing
     // economics show a muted em-dash, not 0.00000000.
-    tr.appendChild(createCellWithOptionalTitle(formatPriceOrDash(price), CssClass.Table.MonoCol, estimatedTitle))
-    tr.appendChild(createCellWithOptionalTitle(formatFeeOrDash(fee), CssClass.Table.MonoCol, estimatedTitle))
+    tr.appendChild(createCell(formatPriceOrDash(price), CssClass.Table.MonoCol, estimatedTitle))
+    tr.appendChild(createCell(formatFeeOrDash(fee), CssClass.Table.MonoCol, estimatedTitle))
     tr.appendChild(createSlippageCell(slippage, estimatedTitle))
     tr.appendChild(createStatusCell(statusText, statusClass, t.errorMessage, isPlainSuccess))
 
@@ -119,12 +119,6 @@ private fun slippageBadgeClass(value: Double): CssClass = when {
 }
 
 private fun formatSignedSlippage(value: Double): String = formatPctTick(value, includePlus = true)
-
-private fun createCellWithOptionalTitle(text: String, cssClass: CssClass, title: String?): HTMLTableCellElement {
-    val td = createCell(text, cssClass)
-    if (title != null) td.title = title
-    return td
-}
 
 private fun createSlippageCell(slippage: Double?, estimatedTitle: String?): HTMLTableCellElement {
     val td = document.createElement(HtmlTags.TD) as HTMLTableCellElement
@@ -167,10 +161,11 @@ private fun createStatusCell(
     return td
 }
 
-private fun createCell(text: String, cssClass: CssClass): HTMLTableCellElement {
+private fun createCell(text: String, cssClass: CssClass, title: String? = null): HTMLTableCellElement {
     val td = document.createElement(HtmlTags.TD) as HTMLTableCellElement
     td.className = cssClass.toString()
     td.textContent = text
+    if (title != null) td.title = title
     return td
 }
 
