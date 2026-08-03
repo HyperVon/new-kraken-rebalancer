@@ -8,6 +8,7 @@ MODULE_PATH = Path(__file__).with_name("router.py")
 SPEC = importlib.util.spec_from_file_location("model_router", MODULE_PATH)
 MODULE = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader is not None
+sys.path.insert(0, str(MODULE_PATH.parent))
 sys.modules[SPEC.name] = MODULE
 SPEC.loader.exec_module(MODULE)
 

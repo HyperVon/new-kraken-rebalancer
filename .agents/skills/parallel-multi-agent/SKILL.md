@@ -50,7 +50,8 @@ model route for each track:
 - Native Auto owns its model mappings and fallbacks; it does not need a
   repository-side inventory or probe. If the task explicitly requires direct
   cross-provider selection, use `.kilo/model-router/route-subagents`, which
-  keeps its catalog ephemeral and never persists credentials or transient quota.
+  keeps its catalog ephemeral and persists only secret-free route/provider
+  cooldown expiry; it never persists credentials, balances, or raw errors.
 - For a broad request with multiple disjoint tracks, present the track matrix and
   route/effort plan with the `question` tool or host equivalent and obtain an
   explicit parallel-or-serial decision. If the user already approved the exact

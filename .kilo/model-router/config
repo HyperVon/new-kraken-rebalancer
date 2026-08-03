@@ -4,6 +4,22 @@
     "apiKeyEnv": "ARTIFICIAL_ANALYSIS_API_KEY",
     "cacheHours": 24
   },
+  "quota": {
+    "plugin": {
+      "enabled": true,
+      "commandEnv": "OPENCODE_QUOTA_COMMAND",
+      "maxAgeSeconds": 300,
+      "minimumRemainingPercent": 1,
+      "timeoutSeconds": 45
+    },
+    "cooldown": {
+      "rateLimitSeconds": 60,
+      "maxSeconds": 3600,
+      "creditsSeconds": 3600,
+      "providerUnavailableSeconds": 300,
+      "authenticationSeconds": 3600
+    }
+  },
   "providers": {
     "kilo": {
       "enabled": true,

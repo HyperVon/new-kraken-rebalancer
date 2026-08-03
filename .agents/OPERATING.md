@@ -104,8 +104,9 @@ the host provides it. If no usable route is exposed, keep the work in the parent
    route from its name alone.
 4. Native Auto tiers do not need a repository-side catalog, probe script, or
    permanent route ledger. For the separate cross-provider requirement, the
-   optional `.kilo/model-router/route-kilo` launcher uses a bounded, ephemeral
-   catalog and never persists credentials or quota state.
+    optional `.kilo/model-router/route-kilo` launcher uses a bounded, ephemeral
+    catalog and persists only secret-free cooldown metadata; it never persists
+    credentials, balances, or raw provider errors.
 5. Record the user approval, route-selection evidence, fallback, and any
    substitution for each track.
 6. If the host exposes only a role and cannot expose a usable model route, stop
@@ -338,8 +339,10 @@ launcher discovers providers reported by `kilo auth list`, loaded Kilo/OpenCode
 provider configuration, or standard provider environment variables. It ranks
 active tool-capable routes using optional Artificial Analysis benchmark data or
 Kilo catalog token pricing, and starts `kilo run` with the selected exact route.
-It reports availability as `configured/unknown`; it does not probe every
-provider or silently retry an agent after a partial failure.
+When the installed `opencode-quota` plugin has fresh data, it filters exhausted
+providers and reports the quota source/state. Otherwise quota remains `unknown`.
+It does not probe every provider or silently retry an agent after a partial
+failure.
 
 For bounded parallel subagents, use `.kilo/model-router/route-subagents` with a
 track manifest instead of the host `Task` wrapper when the wrapper cannot expose
@@ -357,8 +360,9 @@ Before material or parallel delegation:
 3. Start with the least expensive capable tier and escalate for demonstrated
    complexity, repeated failure, or safety-sensitive reasoning.
 4. Treat catalog status or configured credentials as insufficient proof of live
-   quota. The cross-provider launcher reports that uncertainty and does not
-   persist transient quota state.
+   quota. The launcher persists only secret-free route/provider cooldown expiry
+   and failure category in the user cache; it never persists balances,
+   credentials, or raw provider errors.
 5. Treat context size as route-specific; when unavailable, keep delegated
    requests below **128K** and split before **180K**.
 

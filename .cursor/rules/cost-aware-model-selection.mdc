@@ -21,7 +21,8 @@ server-side; do not report that underlying model without host evidence. Treat
 `subagent_type` as a role rather than proof of a model from its name. Native Kilo
 Auto does not need repository-side route inventories or probes. For explicit
 cross-provider routing, use `.kilo/model-router/route-kilo`; it uses an ephemeral
-catalog and never persists credentials or transient quota state.
+catalog and persists only secret-free cooldown metadata, never credentials,
+balances, or raw provider errors.
 
 For a broad request with multiple disjoint tracks, use the `question` tool or
 host equivalent to obtain an explicit parallel-or-serial decision. Skip this

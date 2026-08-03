@@ -320,13 +320,22 @@ per-million-token catalog prices and task-profile estimates. Artificial Analysis
 model-to-route joins are accepted only when configured or sufficiently confident;
 unknown mappings remain visible in the selection report.
 
-The launcher does not store credentials, prove remaining quota, or change the
-model inside an already-running TUI session. Its free-route guard only examines
-the launcher prompt; it cannot inspect future tool output, so secret files must
-remain excluded from the agent context. Use `--continue` to select a route
-for a new turn while continuing the last Kilo session. OpenRouter participates
-when its provider configuration or environment credential is detected, even if
-it is absent from `kilo auth list`.
+The launcher does not store credentials or change the model inside an
+already-running TUI session. When installed, it consumes the quota plugin's
+secret-safe `status --json` and `show --json` output; fresh exhausted or
+unavailable providers are excluded, while missing or stale data remains
+`unknown`. Its free-route guard only examines the launcher prompt; it cannot
+inspect future tool output, so secret files must remain excluded from the agent
+context. Use `--continue` to select a route for a new turn while continuing the
+last Kilo session. OpenRouter participates when its provider configuration or
+environment credential is detected, even if it is absent from `kilo auth list`.
+
+Runtime `429`, credit, authentication, and provider-unavailable failures create
+only a user-cache cooldown for the affected route/provider. Routed read-only
+subagents automatically select another provider and retry within the bounded
+failover limit. Editable workers do not retry after a failed launch because the
+first worker may already have changed files. Cooldowns honor `Retry-After` when
+the provider exposes it and otherwise use bounded exponential backoff.
 
 ### Routed subagents
 
@@ -341,8 +350,9 @@ cp .kilo/model-router/manifest.example .kilo/model-router/manifest.local
 ```
 
 The command plans every track against one Kilo/Artificial Analysis metadata
-snapshot and prints a separate provider/model, capability, billing, and cost
-decision for each. Review the plan, then add `--run` to launch the workers
+snapshot and prints a separate provider/model, capability, billing, cost, and
+quota decision for each when the plugin has fresh data. Review the plan, then
+add `--run` to launch the workers
 concurrently. Each worker receives an exact `kilo run --model provider/model`
 route, a bounded read-only prompt by default, and a compact report contract.
 Use `--allow-edits` only when the manifest explicitly assigns disjoint writable

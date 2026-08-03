@@ -9,6 +9,7 @@ prior; Kilo catalog pricing is the fallback when it is not configured.
 from __future__ import annotations
 
 import argparse
+import copy
 import fnmatch
 import json
 import os
@@ -24,10 +25,13 @@ from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
 
+import availability
+
 
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_CONFIG_PATH = ROOT / ".kilo" / "model-router" / "config"
 AA_BASE_URL = "https://artificialanalysis.ai/api/v2"
+MAX_FAILOVER_ATTEMPTS = 3
 
 DEFAULT_PROFILES: dict[str, dict[str, Any]] = {
     "routine": {
@@ -70,6 +74,22 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "enabled": True,
         "apiKeyEnv": "ARTIFICIAL_ANALYSIS_API_KEY",
         "cacheHours": 24,
+    },
+    "quota": {
+        "plugin": {
+            "enabled": True,
+            "commandEnv": "OPENCODE_QUOTA_COMMAND",
+            "maxAgeSeconds": 300,
+            "minimumRemainingPercent": 1,
+            "timeoutSeconds": 45,
+        },
+        "cooldown": {
+            "rateLimitSeconds": 60,
+            "maxSeconds": 3600,
+            "creditsSeconds": 3600,
+            "providerUnavailableSeconds": 300,
+            "authenticationSeconds": 3600,
+        },
     },
     "providers": {
         "kilo": {
@@ -153,6 +173,10 @@ class Candidate:
     effective_cost: float | None = None
     effective_cost_source: str = "unavailable"
     free_allowed: bool = False
+    quota_state: str = "unknown"
+    quota_percent: float | None = None
+    quota_source: str = "unavailable"
+    quota_blocked_until: float = 0.0
     rejection: str | None = None
 
 
@@ -457,6 +481,7 @@ def build_candidates(
     raw_models: Iterable[Mapping[str, Any]],
     config: Mapping[str, Any],
     aa_models: Mapping[str, Any],
+    availability_snapshot: Mapping[str, Any] | None = None,
 ) -> list[Candidate]:
     providers = config.get("providers", {})
     model_configs = config.get("models", {})
@@ -500,6 +525,7 @@ def build_candidates(
         aa, match = match_artificial_analysis(candidate, model_settings, aa_models)
         candidate.aa = aa
         candidate.aa_match = match
+        availability.apply_to_candidate(candidate, availability_snapshot)
         candidates.append(candidate)
     return candidates
 
@@ -578,6 +604,9 @@ def is_sensitive(task: str, profile_name: str) -> bool:
 
 def candidate_qualifies(candidate: Candidate, profile: Mapping[str, Any], config: Mapping[str, Any], sensitive: bool) -> bool:
     policy = config.get("policy", {})
+    if candidate.quota_state in {"insufficient", "unavailable", "blocked"}:
+        candidate.rejection = f"quota state is {candidate.quota_state}"
+        return False
     if candidate.status not in {"active", "unknown"}:
         candidate.rejection = "catalog status is not active"
         return False
@@ -632,17 +661,29 @@ def select_candidate(
     profile: Mapping[str, Any],
     config: Mapping[str, Any],
     sensitive: bool,
+    excluded_routes: set[str] | None = None,
+    excluded_providers: set[str] | None = None,
 ) -> Candidate:
     apply_ranking_data(candidates, profile, config)
-    usable = [candidate for candidate in candidates if candidate_qualifies(candidate, profile, config, sensitive)]
+    excluded_routes = excluded_routes or set()
+    excluded_providers = excluded_providers or set()
+    usable = [
+        candidate
+        for candidate in candidates
+        if candidate.route not in excluded_routes
+        and candidate.provider not in excluded_providers
+        and candidate_qualifies(candidate, profile, config, sensitive)
+    ]
     if not usable:
         raise RouterError("no candidate satisfies the current capability, cost, and privacy policy")
 
-    def sort_key(candidate: Candidate) -> tuple[int, float, float, float]:
+    def sort_key(candidate: Candidate) -> tuple[int, int, float, float, float]:
+        unknown_quota = 1 if candidate.quota_state != "sufficient" else 0
         unknown = 1 if candidate.quality is None else 0
         cost = candidate.effective_cost if candidate.effective_cost is not None else float("inf")
         quality = candidate.quality if candidate.quality is not None else float("inf")
-        return unknown, cost, quality, -fallback_feature_score(candidate)
+        remaining = -(candidate.quota_percent if candidate.quota_percent is not None else 0)
+        return unknown, unknown_quota, cost, quality, remaining - fallback_feature_score(candidate)
 
     return min(usable, key=sort_key)
 
@@ -671,7 +712,12 @@ def report(
             "source": candidate.quality_source,
             "minimum": profile.get("minimum"),
         },
-        "availability": "configured/unknown",
+        "availability": candidate.quota_state,
+        "quota": {
+            "state": candidate.quota_state,
+            "remaining_percent": candidate.quota_percent,
+            "source": candidate.quota_source,
+        },
         "aa": aa_status,
         "free_route_guard": "blocked by prompt guard" if sensitive else "allowed by prompt guard",
         "context_limit": candidate.context_limit,
@@ -679,21 +725,83 @@ def report(
     }
 
 
-def load_selection(args: argparse.Namespace) -> tuple[dict[str, Any], list[str]]:
+def load_selection_context(args: argparse.Namespace) -> dict[str, Any]:
     config_path = Path(args.config).expanduser() if args.config else DEFAULT_CONFIG_PATH
     config = load_config(config_path)
     raw_models, warnings = fetch_catalog(config, args.refresh)
     aa_models, aa_status = load_artificial_analysis(config, args.refresh)
+    quota_snapshot = availability.snapshot(config)
+    warnings.extend(quota_snapshot["warnings"])
     task = args.task
     profile_name, profile = profile_config(config, args.profile, task)
-    candidates = build_candidates(raw_models, config, aa_models)
+    candidates = build_candidates(raw_models, config, aa_models, quota_snapshot)
     sensitive = is_sensitive(task, profile_name)
     selected = select_candidate(candidates, profile, config, sensitive)
     result = report(selected, profile_name, profile, aa_status, sensitive)
     result["config"] = str(config_path)
     result["warnings"] = warnings
     result["aa_matches"] = sum(candidate.aa is not None for candidate in candidates)
-    return result, warnings
+    return {
+        "result": result,
+        "warnings": warnings,
+        "config": config,
+        "candidates": candidates,
+        "profile_name": profile_name,
+        "profile": profile,
+        "sensitive": sensitive,
+        "task": task,
+    }
+
+
+def load_selection(args: argparse.Namespace) -> tuple[dict[str, Any], list[str]]:
+    context = load_selection_context(args)
+    return context["result"], context["warnings"]
+
+
+def build_kilo_command(args: argparse.Namespace, result: Mapping[str, Any]) -> list[str]:
+    command = ["kilo", "run", "--model", str(result["route"])]
+    if args.agent:
+        command.extend(["--agent", args.agent])
+    if args.variant:
+        command.extend(["--variant", args.variant])
+    if args.interactive:
+        command.append("--interactive")
+    if args.continue_session:
+        command.append("--continue")
+    if args.session:
+        command.extend(["--session", args.session])
+    if args.auto:
+        command.append("--auto")
+    command.extend(args.message)
+    return command
+
+
+def run_kilo_streaming(command: Sequence[str]) -> tuple[int, str]:
+    process = subprocess.Popen(
+        command,
+        cwd=ROOT,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
+    )
+    recent: list[str] = []
+    assert process.stdout is not None
+    for line in process.stdout:
+        print(line, end="")
+        recent.append(line.rstrip())
+        del recent[:-40]
+    return process.wait(), "\n".join(recent)
+
+
+def has_tool_activity(output: str) -> bool:
+    return bool(
+        re.search(
+            r"\b(?:tool call|executing|apply_patch|write_file|edit_file|bash|shell|created|updated)\b",
+            output,
+            re.IGNORECASE,
+        )
+    )
 
 
 def print_selection(result: Mapping[str, Any], stream: Any = sys.stdout) -> None:
@@ -715,6 +823,10 @@ def print_selection(result: Mapping[str, Any], stream: Any = sys.stdout) -> None
     else:
         print(f"Capability: {capability['score']:g} ({capability['source']})", file=stream)
     print(f"Availability: {result['availability']}", file=stream)
+    quota = result["quota"]
+    remaining = quota["remaining_percent"]
+    remaining_text = f"{remaining:.1f}%" if remaining is not None else "unknown"
+    print(f"Quota: {quota['state']} ({remaining_text}; {quota['source']})", file=stream)
     print(f"Free-route guard: {result['free_route_guard']}", file=stream)
     print(f"Artificial Analysis data: {result['aa']}", file=stream)
     for warning in result.get("warnings", []):
@@ -791,24 +903,61 @@ def main() -> int:
     if not args.message:
         raise RouterError("run requires a task message")
     args.task = " ".join(args.message)
-    result, _ = load_selection(args)
-    print_selection(result, stream=sys.stderr)
-    command = ["kilo", "run", "--model", str(result["route"])]
-    if args.agent:
-        command.extend(["--agent", args.agent])
-    if args.variant:
-        command.extend(["--variant", args.variant])
-    if args.interactive:
-        command.append("--interactive")
-    if args.continue_session:
-        command.append("--continue")
-    if args.session:
-        command.extend(["--session", args.session])
-    if args.auto:
-        command.append("--auto")
-    command.extend(args.message)
-    os.execvp(command[0], command)
-    return 0
+    context = load_selection_context(args)
+    result = context["result"]
+    attempted_routes: set[str] = set()
+    excluded_providers: set[str] = set()
+
+    for _ in range(MAX_FAILOVER_ATTEMPTS):
+        print_selection(result, stream=sys.stderr)
+        command = build_kilo_command(args, result)
+        if args.interactive:
+            os.execvp(command[0], command)
+        exit_code, output = run_kilo_streaming(command)
+        if exit_code == 0:
+            return 0
+        kind = availability.failure_kind(output)
+        attempted_routes.add(str(result["route"]))
+        if not kind or kind not in {"rate_limit", "credits", "provider_unavailable", "authentication"}:
+            return exit_code
+        if has_tool_activity(output):
+            print("model-router: not retrying after tool activity", file=sys.stderr)
+            return exit_code
+
+        cooldown = availability.record_failure(
+            context["config"],
+            str(result["route"]),
+            str(result["provider"]),
+            kind,
+            output,
+        )
+        excluded_providers.add(str(result["provider"]))
+        print(
+            f"model-router: {kind} on {result['route']}; trying another provider "
+            f"(cooldown {cooldown}s)",
+            file=sys.stderr,
+        )
+        candidates = copy.deepcopy(context["candidates"])
+        try:
+            next_candidate = select_candidate(
+                candidates,
+                context["profile"],
+                context["config"],
+                context["sensitive"],
+                excluded_routes=attempted_routes,
+                excluded_providers=excluded_providers,
+            )
+        except RouterError:
+            return exit_code
+        result = report(
+            next_candidate,
+            context["profile_name"],
+            context["profile"],
+            result["aa"],
+            context["sensitive"],
+        )
+        result["warnings"] = context["warnings"]
+    return 1
 
 
 if __name__ == "__main__":

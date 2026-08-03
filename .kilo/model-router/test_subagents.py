@@ -60,6 +60,68 @@ class SubagentRouterTests(unittest.TestCase):
         self.assertEqual("openai/gpt-5.4", command[command.index("--model") + 1])
         self.assertEqual("explore", command[command.index("--agent") + 1])
 
+    def test_read_only_worker_fails_over_after_rate_limit(self):
+        with tempfile.TemporaryDirectory() as directory:
+            fallback = MODULE.router.Candidate(
+                route="nvidia/free-model",
+                provider="nvidia",
+                model="free-model",
+                name="Free model",
+                status="active",
+                input_cost=0,
+                output_cost=0,
+                cache_read_cost=0,
+                context_limit=128000,
+                output_limit=16000,
+                tool_call=True,
+                reasoning=True,
+                attachment=False,
+                pdf=False,
+                billing="free",
+                free_allowed=True,
+            )
+            item = {
+                "track": {"id": "source", "task": "Inspect source", "files": [], "read_only": True},
+                "selection": {
+                    "route": "openrouter/limited",
+                    "provider": "openrouter",
+                    "profile": "coding",
+                    "aa": "fresh",
+                    "agent": "explore",
+                    "read_only": True,
+                },
+                "prompt": "bounded prompt",
+                "candidates": [fallback],
+                "profile": {"minimum": 1},
+                "config": {"quota": {"cooldownPath": str(Path(directory) / "cooldowns.json")}},
+                "sensitive": False,
+                "allow_edits": False,
+            }
+            results = [
+                {
+                    "track": "source",
+                    "route": "openrouter/limited",
+                    "exit_code": 1,
+                    "duration_seconds": 0.1,
+                    "report": "HTTP 429 rate limit",
+                    "failure_kind": "rate_limit",
+                },
+                {
+                    "track": "source",
+                    "route": "nvidia/free-model",
+                    "exit_code": 0,
+                    "duration_seconds": 0.1,
+                    "report": "done",
+                    "failure_kind": None,
+                },
+            ]
+            with patch.object(MODULE, "launch_worker", side_effect=results) as launch:
+                with patch.object(MODULE.router, "select_candidate", return_value=fallback):
+                    result = MODULE.launch_with_failover(item, timeout=10, allow_auto=False)
+            self.assertEqual(2, launch.call_count)
+            self.assertEqual("nvidia/free-model", result["route"])
+            self.assertEqual("rate_limit", result["failovers"][0]["reason"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -54,7 +54,7 @@ Stay single-threaded (or one dedicated agent) when streams **share** the same ho
 7. Native Auto tiers manage their server-side mappings and fallbacks. For the
    separate cross-provider requirement, use
    `.kilo/model-router/route-subagents` for bounded tracks; it may use a bounded
-   ephemeral catalog but must not persist credentials or transient quota.
+   ephemeral catalog but must not persist credentials, balances, or raw errors.
 8. Prefer a capable local route on hosts that expose one; for Kilo, start with
    the configured Auto Efficient tier and escalate to Auto Frontier for high-risk
    or disputed reasoning.

@@ -14,6 +14,7 @@ import time
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
+import availability
 import router
 
 
@@ -21,6 +22,7 @@ MAX_TRACKS = 8
 DEFAULT_AGENT = "explore"
 DEFAULT_TIMEOUT = 900
 MAX_REPORT_LINES = 12
+MAX_FAILOVER_ATTEMPTS = 3
 
 
 def load_manifest(path: Path) -> list[dict[str, Any]]:
@@ -91,7 +93,9 @@ def build_plan(
     config = router.load_config(Path(config_path).expanduser() if config_path else router.DEFAULT_CONFIG_PATH)
     raw_models, warnings = router.fetch_catalog(config, refresh)
     aa_models, aa_status = router.load_artificial_analysis(config, refresh)
-    candidates = router.build_candidates(raw_models, config, aa_models)
+    quota_snapshot = availability.snapshot(config)
+    warnings.extend(quota_snapshot["warnings"])
+    candidates = router.build_candidates(raw_models, config, aa_models, quota_snapshot)
     records: list[dict[str, Any]] = []
     prepared: list[dict[str, Any]] = []
 
@@ -116,6 +120,11 @@ def build_plan(
                 "track": track,
                 "selection": selection,
                 "prompt": worker_prompt(track, selection["route"], allow_edits),
+                "candidates": track_candidates,
+                "profile": profile,
+                "config": config,
+                "sensitive": sensitive,
+                "allow_edits": allow_edits,
             }
         )
 
@@ -172,6 +181,7 @@ def launch_worker(item: Mapping[str, Any], timeout: int, allow_auto: bool) -> di
             "exit_code": completed.returncode,
             "duration_seconds": round(time.monotonic() - started, 1),
             "report": output,
+            "failure_kind": availability.failure_kind(output) if completed.returncode else None,
         }
     except subprocess.TimeoutExpired as error:
         stdout = error.stdout.decode(errors="replace") if isinstance(error.stdout, bytes) else (error.stdout or "")
@@ -183,12 +193,74 @@ def launch_worker(item: Mapping[str, Any], timeout: int, allow_auto: bool) -> di
             "exit_code": None,
             "duration_seconds": round(time.monotonic() - started, 1),
             "report": f"worker timed out after {timeout}s\n{output}".strip(),
+            "failure_kind": "provider_unavailable",
         }
+
+
+def launch_with_failover(item: Mapping[str, Any], timeout: int, allow_auto: bool) -> dict[str, Any]:
+    current = dict(item)
+    attempted_routes: set[str] = set()
+    excluded_providers: set[str] = set()
+    failovers: list[dict[str, Any]] = []
+    for _ in range(MAX_FAILOVER_ATTEMPTS):
+        result = launch_worker(current, timeout, allow_auto)
+        attempted_routes.add(result["route"])
+        result["attempted_routes"] = sorted(attempted_routes)
+        result["failovers"] = failovers
+        if result["exit_code"] == 0:
+            return result
+
+        kind = result.get("failure_kind")
+        track = current["track"]
+        if not kind or not bool(current["selection"].get("read_only", True)):
+            return result
+        if kind not in {"rate_limit", "credits", "provider_unavailable", "authentication"}:
+            return result
+
+        route = str(result["route"])
+        provider = str(current["selection"]["provider"])
+        cooldown = availability.record_failure(current["config"], route, provider, kind, result["report"])
+        excluded_providers.add(provider)
+        failovers.append({"from": route, "reason": kind, "cooldown_seconds": cooldown})
+        candidates = copy.deepcopy(current["candidates"])
+        try:
+            next_candidate = router.select_candidate(
+                candidates,
+                current["profile"],
+                current["config"],
+                current["sensitive"],
+                excluded_routes=attempted_routes,
+                excluded_providers=excluded_providers,
+            )
+        except router.RouterError:
+            result["failovers"] = failovers
+            return result
+        next_selection = router.report(
+            next_candidate,
+            current["selection"]["profile"],
+            current["profile"],
+            current["selection"]["aa"],
+            current["sensitive"],
+        )
+        next_selection.update(
+            {
+                "track": track["id"],
+                "agent": current["selection"]["agent"],
+                "files": track.get("files", []),
+                "read_only": current["selection"].get("read_only", True),
+            }
+        )
+        current = dict(
+            current,
+            selection=next_selection,
+            prompt=worker_prompt(track, next_selection["route"], current["allow_edits"]),
+        )
+    return result
 
 
 def launch_workers(prepared: Sequence[Mapping[str, Any]], max_workers: int, timeout: int, allow_auto: bool) -> list[dict[str, Any]]:
     with concurrent.futures.ThreadPoolExecutor(max_workers=min(max_workers, len(prepared))) as executor:
-        futures = [executor.submit(launch_worker, item, timeout, allow_auto) for item in prepared]
+        futures = [executor.submit(launch_with_failover, item, timeout, allow_auto) for item in prepared]
         return [future.result() for future in futures]
 
 
@@ -205,7 +277,13 @@ def print_plan(plan: Mapping[str, Any], as_json: bool) -> None:
         score = capability["score"] if capability["score"] is not None else "unknown"
         effective = cost["effective"]
         cost_text = f"${effective:.6f}" if effective is not None else "unknown"
-        print(f"{track['track']}: {track['route']} | {track['profile']} | {track['billing']} | {cost_text} | capability {score}")
+        quota = track["quota"]
+        remaining = quota["remaining_percent"]
+        remaining_text = f"{remaining:.1f}%" if remaining is not None else "unknown"
+        print(
+            f"{track['track']}: {track['route']} | {track['profile']} | {track['billing']} | "
+            f"{cost_text} | capability {score} | quota {quota['state']} ({remaining_text})"
+        )
 
 
 def print_results(results: Sequence[Mapping[str, Any]], as_json: bool) -> None:
