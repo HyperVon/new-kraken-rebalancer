@@ -69,12 +69,10 @@ Copy this checklist and track progress:
 
 ### Read-only parallel detection
 
-For a large dependency surface, the parent may use
-[parallel-multi-agent](../parallel-multi-agent/SKILL.md) for independent
-evidence tracks such as Kotlin/KSP/Gradle, Ktor/Koin/Exposed, and
-testing/frontend/npm. Complete the native model-selection gate first and obtain
-approval for each selected host route and effort when exposed. Workers may
-inspect manifests, release notes, and compatibility evidence only; version
+For a large dependency surface, use the `dependency-upgrade` preset from
+`.kilo/model-router/route-subagents` for independent read-only evidence tracks
+such as Kotlin/KSP/Gradle, Ktor/Koin/Exposed, and testing/frontend/npm. Workers
+may inspect manifests, release notes, and compatibility evidence only; version
 edits, dependency refreshes, package-manager commands, migrations, and all
 builds remain parent-owned and serial. If route selection is unavailable, do
 the detection in the parent rather than using an unverified role.

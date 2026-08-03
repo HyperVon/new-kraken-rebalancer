@@ -112,10 +112,10 @@ the host provides it. If no usable route is exposed, keep the work in the parent
 6. If the host exposes only a role and cannot expose a usable model route, stop
    material/parallel fan-out; do not silently use the parent route or a role-only
    fallback.
-7. For a broad request with multiple disjoint tracks, use the `question` tool or
-   host equivalent to present the track/route/effort plan and obtain a
-   parallel-or-serial decision. Skip the question only when the user already
-   approved the exact plan or the task is small/coupled.
+7. For a broad read-only workflow covered by a routed preset, let
+   `route-subagents --run` print and execute the track/route/effort plan. Use the
+   `question` tool or host equivalent when a hard availability, scope, editing,
+   or high-risk review decision remains unresolved.
 8. For high-risk or disputed work, choose a stronger host route such as Kilo
    `kilo/kilo-auto/frontier` or add an independent verifier only when the risk
    justifies it.
@@ -351,6 +351,10 @@ snapshot, requires `--run` to launch, and starts each worker with its exact
 `kilo run --model provider/model` route. The default worker contract is read-only;
 the parent owns integration and final verification. A raw role-only Task call is
 not evidence that this cross-provider routing occurred.
+
+For the named broad project skills, use the corresponding automatic workflow
+preset listed in `.kilo/model-router/instructions.md`; pass the user's request as
+task context instead of asking for a hand-edited manifest.
 
 Before material or parallel delegation:
 

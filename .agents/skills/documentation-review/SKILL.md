@@ -119,10 +119,10 @@ scripts. If a host Task accepts only a role and cannot expose a usable route, us
 parent-owned; never use an unverified role-only worker.
 Use `review_surface.sh` only for a branch-scoped changed-path surface; it does
 not select or probe models.
-After model selection, present the track matrix, route, effort, and availability
-evidence with the `question` tool (or host equivalent) and obtain an explicit
-decision before launching. If the user already approved the exact plan, do not
-ask again.
+The automatic preset prints the track matrix, route, effort, and quota evidence
+before launching. The user's request for this read-only audit authorizes the
+bounded discovery fan-out; use `question` only when a hard availability or scope
+decision remains unresolved.
 Size each track to the auditor's iteration cap and reserve the final step for
 its report. Split a multi-document track before launch when its evidence reads
 and checks cannot fit while preserving that final report step; a running worker
@@ -136,6 +136,20 @@ not an incomplete code-truth inventory. When a broad audit was requested, use
 support is configured; do not silently pre-authorize that fallback. Never
 substitute an unverified role or `general` for a model. A small or coupled scope
 may proceed without this handoff.
+
+For Kilo broad audits, invoke the automatic preset rather than creating a local
+manifest manually:
+
+```bash
+./.kilo/model-router/route-subagents \
+  --workflow documentation-review \
+  --task "<the user's documentation-review request>" \
+  --refresh \
+  --run
+```
+
+Review the route/quota matrix, then add `--run`. The preset owns only read-only
+evidence tracks; the parent remains responsible for findings, edits, and gates.
 
 ## Evidence and claims
 

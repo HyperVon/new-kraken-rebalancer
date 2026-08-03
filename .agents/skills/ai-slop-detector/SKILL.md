@@ -131,15 +131,13 @@ signal, not evidence of slop.
 
 ### Optional parallel evidence pass
 
-For a full-repository or broad PR audit, the parent may partition read-only
-evidence after Step 0 and the native model-selection gate. Use
-[parallel-multi-agent](../parallel-multi-agent/SKILL.md) for disjoint tracks such
-as production/build/config, tests/evaluation, documentation/skills/rules, and
-UI/assets. Record the selected host route, effort when exposed, approval, and
-availability evidence per worker. Workers return findings only; the parent owns
-severity triage, cleanup decisions, edits, and serial quality gates. If the host
-cannot expose a usable route, remain parent-owned rather than using an
-unverified role. Do not fan out a small or tightly coupled audit.
+For a full-repository or broad PR audit, use the `ai-slop-detector` preset from
+`.kilo/model-router/route-subagents` after Step 0 and the native model-selection
+gate. It supplies disjoint production/build, tests/evaluation,
+documentation/skills/rules, and UI/assets tracks. Workers return findings only;
+the parent owns severity triage, cleanup decisions, edits, and serial quality
+gates. If the host cannot expose a usable route, remain parent-owned rather than
+using an unverified role. Do not fan out a small or tightly coupled audit.
 
 ### Step 1: Gather diff and high-risk evidence
 

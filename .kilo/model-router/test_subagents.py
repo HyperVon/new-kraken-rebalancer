@@ -34,7 +34,14 @@ class SubagentRouterTests(unittest.TestCase):
         )
         self.assertIn("openai/gpt-5.4", prompt)
         self.assertIn("Do not edit files", prompt)
+        self.assertIn("tool-call markup", prompt)
         self.assertIn("docs/", prompt)
+
+    def test_workflow_preset_generates_specialized_tracks(self):
+        tracks = MODULE.workflows.build_tracks("documentation-review", "Review the docs")
+        self.assertEqual(4, len(tracks))
+        self.assertEqual({"product-docs", "runtime-contracts", "agent-guidance", "build-config"}, {track["id"] for track in tracks})
+        self.assertTrue(all("Review the docs" in track["task"] for track in tracks))
 
     def test_compact_output_keeps_bounded_tail(self):
         output = "\n".join(f"line {index}" for index in range(30))

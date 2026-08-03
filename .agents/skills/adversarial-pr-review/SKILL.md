@@ -133,9 +133,10 @@ authorize a material or parallel launch when route selection is unavailable.
 | Strong reasoning | High-risk safety, persistence, exchange semantics, or disputed finding | `adversarial-reviewer-b` when available |
 | Generic capable | Only when no closer specialized type is available | `general` / host equivalent |
 
-Launch independent tracks in one Task message only after the exact-route gate
-has passed and the host supports parallel calls. Include the track matrix in
-the prompts so agents do not redo one another's work. A prompt must contain:
+For Kilo, launch independent tracks through the
+`adversarial-pr-review` preset in `.kilo/model-router/route-subagents` after the
+exact-route gate has passed. Include the track matrix in the parent task so
+agents do not redo one another's work. A prompt must contain:
 
 1. Absolute repository path, branch, and base.
 2. The single track question and exact allowed paths or hunks.
@@ -173,8 +174,9 @@ unavailable without pretending that a role replacement selected a model:
    the selected route from a role label.
 
 Do not bypass the native model-selection gate because a provider-specific
-selection is inconvenient. Do not claim a model ran when the Task call returned
-an error or an empty report.
+selection is inconvenient. Do not claim a model ran when the routed worker
+returned an error or an empty report. The native Task wrapper remains a fallback
+only when it exposes the selected route itself.
 
 ## Scope and evidence
 

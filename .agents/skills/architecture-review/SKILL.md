@@ -106,13 +106,11 @@ Default to **both**, ranked.
 
 ### Optional parallel discovery
 
-After scope confirmation, a full-system review may use
-[parallel-multi-agent](../parallel-multi-agent/SKILL.md) for bounded, read-only
-discovery tracks: backend/domain/trading/persistence; HTTP/SSR/frontend/flows;
-and product/security/operations. Complete the native model-selection gate first,
-obtain approval for the selected host route and effort when exposed, and keep
-the tracks below their context limits. The parent owns the as-is architecture
-map, cross-track synthesis, alternatives, recommendations, and the mandatory
+After scope confirmation, use the `architecture-review` preset from
+`.kilo/model-router/route-subagents` for bounded, read-only discovery tracks:
+backend/domain/trading/persistence; HTTP/SSR/frontend/flows; and
+product/security/operations. The parent owns the as-is architecture map,
+cross-track synthesis, alternatives, recommendations, and the mandatory
 decisions Canvas. Do not parallelize implementation or the final decision step;
 if route selection is unavailable, continue the discovery in the parent.
 

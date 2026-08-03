@@ -104,12 +104,20 @@ root `AGENTS.md`).
 ### Optional scan fan-out
 
 The four passes and convergence loop are coupled; do not split them into
-independent implementations. Within a pass, the parent may use
-[parallel-multi-agent](../parallel-multi-agent/SKILL.md) for bounded, read-only
-scans after the native model-selection gate and host-route approval. Workers
-must not edit, run Gradle, or claim convergence; the parent integrates findings,
-applies fixes, runs gates serially, and makes the zero-new-issues decision. If
-route selection is unavailable, keep the scan parent-owned.
+independent implementations. Within a pass, use the
+`autonomous-code-optimizer` preset from `.kilo/model-router/route-subagents` for
+bounded, read-only scans after the native model-selection gate. Workers must not
+edit, run Gradle, or claim convergence; the parent integrates findings, applies
+fixes, runs gates serially, and makes the zero-new-issues decision. If route
+selection is unavailable, keep the scan parent-owned.
+
+```bash
+./.kilo/model-router/route-subagents \
+  --workflow autonomous-code-optimizer \
+  --task "<the user's optimizer request>" \
+  --refresh \
+  --run
+```
 
 ## Pass 2 — Financial & concurrency
 

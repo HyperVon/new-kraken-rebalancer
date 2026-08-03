@@ -16,6 +16,7 @@ from typing import Any, Mapping, Sequence
 
 import availability
 import router
+import workflows
 
 
 MAX_TRACKS = 8
@@ -74,6 +75,8 @@ Owned paths: {scope}
 
 {guardrails}
 Work only on the requested track. Do not redo other tracks or the parent task.
+Use only the native file and search tools available in this session. Do not emit
+tool-call markup, `ctx_*` commands, or compression requests in your report.
 Return a compact report of at most {MAX_REPORT_LINES} lines and 5 findings, with
 path:line references where applicable. State what you checked, the result, and
 any remaining uncertainty.
@@ -84,12 +87,26 @@ Task:
 
 
 def build_plan(
-    manifest_path: Path,
+    manifest_path: Path | None,
+    workflow: str | None,
+    parent_task: str | None,
     config_path: str | None,
     refresh: bool,
     allow_edits: bool,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    tracks = load_manifest(manifest_path)
+    if workflow:
+        if not parent_task:
+            raise router.RouterError("--task is required with --workflow")
+        try:
+            tracks = workflows.build_tracks(workflow, parent_task)
+        except KeyError as error:
+            raise router.RouterError(f"unknown routed workflow: {error.args[0]}") from error
+        manifest_label = f"workflow:{workflow}"
+    elif manifest_path:
+        tracks = load_manifest(manifest_path)
+        manifest_label = str(manifest_path)
+    else:
+        raise router.RouterError("provide either --manifest or --workflow")
     config = router.load_config(Path(config_path).expanduser() if config_path else router.DEFAULT_CONFIG_PATH)
     raw_models, warnings = router.fetch_catalog(config, refresh)
     aa_models, aa_status = router.load_artificial_analysis(config, refresh)
@@ -129,7 +146,8 @@ def build_plan(
         )
 
     return {
-        "manifest": str(manifest_path),
+        "manifest": manifest_label,
+        "workflow": workflow,
         "aa": aa_status,
         "warnings": warnings,
         "tracks": records,
@@ -299,7 +317,10 @@ def print_results(results: Sequence[Mapping[str, Any]], as_json: bool) -> None:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--manifest", required=True, help="JSON track manifest")
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument("--manifest", help="JSON track manifest")
+    source.add_argument("--workflow", choices=workflows.available_workflows(), help="skill workflow preset")
+    parser.add_argument("--task", help="parent request used by a workflow preset")
     parser.add_argument("--config", help="router config path")
     parser.add_argument("--refresh", action="store_true", help="refresh Kilo and AA metadata")
     parser.add_argument("--run", action="store_true", help="launch workers after producing the route plan")
@@ -317,8 +338,8 @@ def main() -> int:
         raise router.RouterError(f"--max-workers must be between 1 and {MAX_TRACKS}")
     if args.timeout <= 0:
         raise router.RouterError("--timeout must be positive")
-    manifest_path = Path(args.manifest).expanduser()
-    plan, prepared = build_plan(manifest_path, args.config, args.refresh, args.allow_edits)
+    manifest_path = Path(args.manifest).expanduser() if args.manifest else None
+    plan, prepared = build_plan(manifest_path, args.workflow, args.task, args.config, args.refresh, args.allow_edits)
     if not args.run:
         print_plan(plan, args.json)
         return 0

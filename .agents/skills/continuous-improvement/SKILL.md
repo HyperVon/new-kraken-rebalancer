@@ -46,17 +46,21 @@ and final verification.
 
 ### Native model-selection gate for discovery
 
-Before the first discovery Task, use the [parallel-multi-agent](../parallel-multi-agent/SKILL.md)
-handoff and select a host-supported route for each track. For Kilo, the project
-default is `kilo/kilo-auto/efficient`; use `kilo/kilo-auto/frontier` only when
-the discovery risk justifies it. Record the route, effort when exposed,
-fallback, cost/entitlement, availability evidence, and user approval. Native
-Auto chooses its underlying model server-side, so do not maintain a repository
-route inventory or claim an underlying model that the host does not report. If
-the host cannot expose a usable route, keep discovery in the parent rather than
-using a generic role. Discovery workers are read-only; implementation, backlog
+Before the first discovery worker, use the `continuous-improvement` preset from
+`.kilo/model-router/route-subagents`. For Kilo, it selects a separate route per
+track using the project quota and capability policy. Native Auto chooses its
+underlying model server-side, so do not claim an underlying model that the host
+does not report. Discovery workers are read-only; implementation, backlog
 integration, Gradle, browser tests, and final verification remain parent-owned
 and serial.
+
+```bash
+./.kilo/model-router/route-subagents \
+  --workflow continuous-improvement \
+  --task "<the user's continuous-improvement request>" \
+  --refresh \
+  --run
+```
 
 ---
 

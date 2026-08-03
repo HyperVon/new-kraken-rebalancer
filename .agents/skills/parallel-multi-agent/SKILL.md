@@ -52,10 +52,10 @@ model route for each track:
   cross-provider selection, use `.kilo/model-router/route-subagents`, which
   keeps its catalog ephemeral and persists only secret-free route/provider
   cooldown expiry; it never persists credentials, balances, or raw errors.
-- For a broad request with multiple disjoint tracks, present the track matrix and
-  route/effort plan with the `question` tool or host equivalent and obtain an
-  explicit parallel-or-serial decision. If the user already approved the exact
-  plan, proceed without repeating the question.
+- For a broad read-only named workflow, use its routed preset; it prints and
+  executes the track matrix and route/effort plan. Use the `question` tool or
+  host equivalent only when a hard availability, scope, editing, or high-risk
+  review decision remains unresolved.
 - Escalate or add an independent verifier only when the track risk and available
   capability evidence justify it.
 
@@ -144,6 +144,23 @@ and final verification:
 ```bash
 ./.agents/skills/adversarial-pr-review/scripts/review_surface.sh main
 ```
+
+For named broad workflows, prefer the automatic preset instead of creating a
+manifest manually:
+
+```bash
+./.kilo/model-router/route-subagents \
+  --workflow documentation-review \
+  --task "<the user's workflow request>" \
+  --refresh \
+  --run
+```
+
+Use the matching preset listed in `.kilo/model-router/instructions.md`. The
+launcher supplies bounded scopes and specialized roles, prints the route/quota
+plan, and launches each read-only track. A named read-only workflow request
+authorizes this bounded fan-out; the parent still owns edits, integration, and
+final gates.
 
 ## Worktree and state isolation
 

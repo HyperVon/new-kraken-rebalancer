@@ -77,6 +77,17 @@ the tracks with:
 ```
 
 After reviewing the route plan, add `--run` to launch the exact selected routes.
+For a named project workflow, prefer its automatic preset instead:
+
+```bash
+./.kilo/model-router/route-subagents \
+  --workflow documentation-review \
+  --task "<the user's workflow request>" \
+  --refresh
+```
+
+The preset supplies specialized tracks; do not ask the user to maintain
+`manifest.local` for standard skills.
 
 ## Context budget
 

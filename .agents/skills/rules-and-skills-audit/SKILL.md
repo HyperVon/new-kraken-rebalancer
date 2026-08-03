@@ -18,15 +18,12 @@ Audit relevant guidance before proposing changes. Treat rules as policy and skil
 
 ## Optional parallel audit
 
-For a broad guidance tree, the parent may partition read-only work into
-canonical rules/operating norms, domain skills, harness/projections, and
-cross-link/index health. Complete the native model-selection gate and use
-[parallel-multi-agent](../parallel-multi-agent/SKILL.md) first, obtain approval
-for the selected host route and effort when exposed, and give each worker a
+For a broad guidance tree, use the `rules-and-skills-audit` preset from
+`.kilo/model-router/route-subagents` for canonical rules/operating norms, domain
+skills, harness/projections, and cross-link/index health. Give each worker a
 bounded path set. The parent resolves duplicate or conflicting findings and
-owns all edits. If the host Task cannot expose the route, use
-`.kilo/model-router/route-subagents` for bounded read-only tracks or stay
-parent-owned; never launch a role-only worker.
+owns all edits. If route selection is unavailable, stay parent-owned; never
+launch a role-only worker.
 
 ## Report format
 

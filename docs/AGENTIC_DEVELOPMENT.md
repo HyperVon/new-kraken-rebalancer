@@ -352,9 +352,19 @@ cp .kilo/model-router/manifest.example .kilo/model-router/manifest.local
 The command plans every track against one Kilo/Artificial Analysis metadata
 snapshot and prints a separate provider/model, capability, billing, cost, and
 quota decision for each when the plugin has fresh data. Review the plan, then
-add `--run` to launch the workers
-concurrently. Each worker receives an exact `kilo run --model provider/model`
-route, a bounded read-only prompt by default, and a compact report contract.
+add `--run` to launch the workers.
+
+The standard project skills use automatic presets rather than this local
+manifest: `documentation-review`, `autonomous-code-optimizer`,
+`continuous-improvement`, `continuous-quality`, `adversarial-pr-review`,
+`ai-slop-detector`, `complex-code-comments`, `dependency-upgrade`,
+`architecture-review`, `rules-and-skills-audit`, and `skill-reviewer` each map
+to a bounded track plan in `.kilo/model-router/workflows.py`. The parent passes
+the user's request as `--task`; no manual manifest editing is required. The
+automatic command prints the route/quota plan and launches the read-only workers
+when invoked with `--run`. Each worker receives an exact
+`kilo run --model provider/model` route, a bounded prompt, and a compact report
+contract.
 Use `--allow-edits` only when the manifest explicitly assigns disjoint writable
 paths and the parent has retained integration ownership. The host `Task` tool
 cannot be transparently intercepted; direct role-only Task calls therefore do
