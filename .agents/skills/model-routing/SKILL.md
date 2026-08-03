@@ -14,13 +14,22 @@ evidence and uncertainty visible. This skill owns model/provider selection; it d
 not own task decomposition, code review, trading decisions, or provider
 configuration.
 
+**Local-first by default.** When the host exposes a genuinely local model
+(for example, Ollama), and it is sufficiently capable for the task, prefer it
+over a paid or cloud route: local inference is free, avoids sending the model
+prompt/context to an external model provider, works offline, and has no
+provider quota dependency. Tools, MCPs, and shell commands still require their
+normal network and data-egress checks. Local models are comparatively weak, so
+this default only applies when their capability is adequate for the task.
+Escalate to a stronger cloud model on capability evidence, not by habit.
+
 ## Contract And Boundaries
 
 | Item | Contract |
 | :--- | :--- |
 | Trigger | A request to inventory models/providers, choose a subagent model, compare cost or capability, avoid exhausted routes, or select fallbacks. |
 | Inputs | The task or track, risk, required tools/modalities, estimated context, latency or budget constraints, host route data, and any observed session failures. |
-| Outputs | One primary route, one or two fallbacks when useful, effort guidance, evidence and confidence, cost classification, and any substitution record. |
+| Outputs | One primary route, one or two fallbacks when useful, effort guidance, evidence and confidence, cost classification, and any substitution record. A local route is the preferred default when capable; note when a cloud escalation is required. |
 | Side effects | Read-only host/catalog queries and optional external research. Do not change provider configuration, persist session quota state, or run availability probes by default. |
 | Stop condition | Stop after a defensible recommendation or selection. Stop and escalate when no candidate satisfies hard requirements, a required route cannot be enforced, or the only evidence is too uncertain for the task risk. |
 
@@ -59,6 +68,10 @@ into an unbounded extra agent or a second full review.
    transient quota state in the repository or project memory.
 9. Do not infer intelligence from a model name, parameter count, price, catalog
    status, or one benchmark. State the evidence source and its limitations.
+10. Prefer a local model when it clears the capability threshold for the task.
+    Treat local as the default primary over paid/cloud routes, and escalate to
+    a stronger model only on capability evidence or task risk. Do not assume a
+    local model is adequate purely because it is free; verify capability.
 
 ## Workflow
 
@@ -213,6 +226,49 @@ variant does not match, leave the mapping unknown. Artificial Analysis benchmark
 cost-per-task is comparative benchmark cost based on benchmark usage; it is not
 the exact cost of the current task or proof of the selected provider's price.
 
+### Local-First Preference
+
+Before ranking cloud routes, check whether the host exposes a local model that
+satisfies the task profile. When Kilo and Ollama are available, enumerate the
+local routes with:
+
+```text
+kilo models ollama
+ollama list
+```
+
+Treat local as the default primary when it meets the hard requirements:
+
+- **Capability fit**: the task's reasoning, tool-use, context, and modality needs
+  fit what the local model demonstrably supports. Basic, mechanical, bounded, or
+  low-risk work (simple edits, summary, formatting, small refactors, isolated
+  lookups) is a good local fit. High-risk trading, credential, security, or
+  adversarial-review work should not use a local model as the sole primary
+  without validated capability, an independent verifier, and required human
+  approval.
+- **Empirical check over name**: do not accept a local model on `ollama list`
+  alone. Confirm tool support (`kilo models --verbose`) and reuse recent,
+  task-relevant quality and latency evidence where available. Run a quick,
+  bounded real probe only when the user requests validation or the task
+  explicitly requires route testing; do not probe merely for routine inventory.
+- **No model-provider egress requirement**: prefer local when the task involves
+  sensitive files or you want the model prompt/context to remain on the machine;
+  apply normal tool, MCP, and network policies separately.
+
+Escalate from local to a cloud/paid route only on capability evidence or
+task risk, and say so explicitly in the decision record:
+
+| Local default | Escalate to stronger model when |
+| :--- | :--- |
+| Routine, mechanical, bounded, low-risk | Complex multi-file design, debugging, or refactors |
+| Tool-compatible simple edits | Demanding agentic tool orchestration |
+| Offline / private / no-quota work | Frontier reasoning or review quality required |
+| Sensitive-data tasks | Proven local failure or quality gap |
+
+Do not let "free" override a real capability gap, and do not overthink trivial
+router decisions — for genuinely simple tasks, choosing a capable local model is
+the expected default rather than a special case.
+
 ### 5. Hard-Filter Candidates
 
 Remove a candidate before ranking it when any of these fail:
@@ -253,6 +309,13 @@ is at least as capable, no more expensive in expected total cost, and no less
 usable for the task. Select the least-cost candidate on that frontier that clears
 the capability threshold. Preserve uncertainty instead of inventing a precise
 score.
+
+Apply the local-first preference as a tiebreaker: among candidates that clear the
+capability threshold with comparable expected total cost and reliability, prefer
+the local route. Favor local explicitly for low-risk mechanical work even when a
+paid route is marginally faster to reason about, because local has zero marginal
+cost, no model-provider data egress, and no quota risk. Only escalate on capability evidence,
+latency that matters, or task risk.
 
 Classify cost before comparing it:
 
@@ -355,12 +418,18 @@ domain workflows; model routing does not waive them.
   bounded task.
 - Selecting the same parent model for every parallel track without checking each
   track's minimum capability and cost.
+- Defaulting to a paid/cloud model for a task a capable local model handles,
+  or assuming a local model is adequate merely because it is free.
+- Escalating to a bigger model without a capability or risk reason, or never
+  re-checking local capability as the task profile changes.
 - Maintaining a permanent ledger of current model names instead of recording the
   evidence and substitutions for the session.
 
 ## Verification Checklist
 
 - [ ] The task profile and hard requirements are explicit.
+- [ ] A capable local model was considered first, and a cloud escalation (if any)
+      is defended by capability evidence or task risk.
 - [ ] Primary and fallback identifiers are exact host routes.
 - [ ] Capability evidence matches the task and records its source/version.
 - [ ] Intelligence level and sufficiency are stated with matched evidence,
