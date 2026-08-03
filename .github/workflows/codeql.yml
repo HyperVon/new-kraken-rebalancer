@@ -1,6 +1,6 @@
 name: "CodeQL Advanced"
 
-# The pinned CodeQL Action v4.37.4 bundle supports this project's Kotlin 2.4.10 compiler.
+# CodeQL Action v4.37.4 is pinned by commit SHA for the Java/Kotlin workflow.
 on:
   push:
     branches: [ "main" ]

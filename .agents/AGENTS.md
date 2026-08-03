@@ -200,9 +200,9 @@ under modern Node. This does not change application launches or suppress other
 Node diagnostics.
 
 **CodeQL**: enabled for Java/Kotlin analysis on `main` pushes and pull requests
-with CodeQL Action **v4.37.4** (bundle **2.26.2**). The current bundle supports
-this project's Kotlin **2.4.10** compiler. Keep the workflow's SHA pin and
-`java-kotlin` manual build in sync with the supported CodeQL bundle.
+with CodeQL Action **v4.37.4**. The workflow uses the `java-kotlin` language,
+`manual` build mode, and JDK **25**; keep its SHA pin and build steps aligned
+with the workflow.
 
 ---
 

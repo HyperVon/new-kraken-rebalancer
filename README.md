@@ -242,7 +242,7 @@ with a wide range of tools and paradigms:
 - Real-time portfolio overview with push updates (via Ktor Server-Sent Events)
 - Horizontal bar chart showing asset allocation by value
 - Sortable asset performance table with deviation indicators
-- **Recent Activity** — per-cycle action feed (deviations, trades, dry-run intents) with BUY/SELL badges; not the full trade log on the [History](/history) page
+- **Recent Activity** — per-cycle action feed (deviations, trades, dry-run intents) with BUY/SELL badges; not the full trade log on the `/history` page
 - STREAM/STALE SSE stream-health indicator with relative age/time (separate from trading mode)
 - Persistent mode plate (SIMULATION / DRY RUN / LIVE TRADING)
 - **Range-Filtered History Metrics** — Time frame selector controls all six top metric summary cards (All-Time High / Period High, Total Trades, Total Volume Traded, Total Fees Paid, Avg Fee Rate, Avg Slippage) dynamically alongside interactive Chart.js timelines and trade history logs with price, fee, and slippage columns.

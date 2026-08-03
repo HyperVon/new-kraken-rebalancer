@@ -23,9 +23,10 @@ description: >-
 - **Spotless** + **ktlint 1.7.1**, `max_line_length = 120`
 - Targets: `src/**/*.kt`, `common/src/**/*.kt`, `frontend-js/src/**/*.kt`, and
   `codegen/src/**/*.kt`
-- Excludes: none (all Kotlin under `src/**`, `common/src/**`, `frontend-js/src/**`)
+- Excludes: none (all Kotlin under `src/**`, `common/src/**`, `frontend-js/src/**`, and
+  `codegen/src/**`)
 - Apply: `./gradlew spotlessApply` — check: `./gradlew spotlessCheck`
-- **`allWarningsAsErrors`** enabled in root, `:common`, and `:frontend-js`
+- **`allWarningsAsErrors`** enabled in root, `:common`, `:frontend-js`, and `:codegen`
 
 ## Build performance
 
@@ -139,15 +140,15 @@ Node diagnostics.
 ## CodeQL
 
 **Enabled** — `.github/workflows/codeql.yml` runs the `java-kotlin` analysis on
-`main` pushes and pull requests using CodeQL Action **v4.37.4** and bundle
-**2.26.2**, which support this project's Kotlin **2.4.10** compiler. Keep the
-workflow SHA pin and manual Gradle build aligned with the supported bundle.
+`main` pushes and pull requests using CodeQL Action **v4.37.4**, JDK **25**, and
+`build-mode: manual`. Keep the workflow SHA pin, language, and manual build
+steps aligned with the workflow.
 
 ## Checklist
 
 - [ ] Spotless 120 + warnings-as-errors respected
 - [ ] JaCoCo 95/95/95/90 and Karma 90/90/90/75 quoted accurately
 - [ ] Exclusions synced when packages change
-- [ ] CodeQL workflow and documented Action/bundle support stay aligned
+- [ ] CodeQL workflow and documented Action, language, and build mode stay aligned
 - [ ] KSP resources, metadata generation, JVM/JS compilation, and generated
       source dependencies are verified after catalog changes
