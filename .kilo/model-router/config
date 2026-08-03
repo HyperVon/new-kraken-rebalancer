@@ -1,0 +1,44 @@
+{
+  "artificialAnalysis": {
+    "enabled": true,
+    "apiKeyEnv": "ARTIFICIAL_ANALYSIS_API_KEY",
+    "cacheHours": 24
+  },
+  "providers": {
+    "kilo": {
+      "enabled": true,
+      "billing": "account-priced",
+      "include": ["kilo-auto/efficient"]
+    },
+    "opencode-go": {
+      "enabled": true,
+      "billing": "subscription/account-priced",
+      "include": ["*"]
+    },
+    "openai": {
+      "enabled": true,
+      "billing": "subscription/account-priced",
+      "include": ["*"]
+    },
+    "openrouter": {
+      "enabled": true,
+      "billing": "paid",
+      "include": ["*"]
+    },
+    "nvidia": {
+      "enabled": true,
+      "billing": "free",
+      "freeOnly": true,
+      "allowFree": true,
+      "include": ["*"]
+    }
+  },
+  "models": {},
+  "policy": {
+    "allowPaid": true,
+    "allowFree": true,
+    "denyFreeForSensitive": true,
+    "allowUnknownCapability": true,
+    "useAaCostPerTask": true
+  }
+}

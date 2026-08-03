@@ -1,5 +1,6 @@
 {
   "$schema": "https://app.kilo.ai/config.json",
+  "model": "kilo/kilo-auto/efficient",
   "instructions": [
     ".kilo/shell-strategy.md"
   ],

@@ -132,14 +132,14 @@ signal, not evidence of slop.
 ### Optional parallel evidence pass
 
 For a full-repository or broad PR audit, the parent may partition read-only
-evidence after Step 0 and the [model-routing](../model-routing/SKILL.md)
-preflight. Use [parallel-multi-agent](../parallel-multi-agent/SKILL.md) for
-disjoint tracks such as production/build/config, tests/evaluation,
-documentation/skills/rules, and UI/assets. Record the exact route, effort,
-approval, and availability evidence per worker. Workers return findings only;
-the parent owns severity triage, cleanup decisions, edits, and serial quality
-gates. If exact route enforcement is unavailable, remain parent-owned rather
-than using an unverified role. Do not fan out a small or tightly coupled audit.
+evidence after Step 0 and the native model-selection gate. Use
+[parallel-multi-agent](../parallel-multi-agent/SKILL.md) for disjoint tracks such
+as production/build/config, tests/evaluation, documentation/skills/rules, and
+UI/assets. Record the selected host route, effort when exposed, approval, and
+availability evidence per worker. Workers return findings only; the parent owns
+severity triage, cleanup decisions, edits, and serial quality gates. If the host
+cannot expose a usable route, remain parent-owned rather than using an
+unverified role. Do not fan out a small or tightly coupled audit.
 
 ### Step 1: Gather diff and high-risk evidence
 

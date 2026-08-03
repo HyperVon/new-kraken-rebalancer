@@ -106,11 +106,10 @@ root `AGENTS.md`).
 The four passes and convergence loop are coupled; do not split them into
 independent implementations. Within a pass, the parent may use
 [parallel-multi-agent](../parallel-multi-agent/SKILL.md) for bounded, read-only
-scans after the [model-routing](../model-routing/SKILL.md) preflight and exact
-route/effort approval. Workers must not edit, run Gradle, or claim convergence;
-the parent integrates findings, applies fixes, runs gates serially, and makes
-the zero-new-issues decision. If route enforcement is unavailable, keep the
-scan parent-owned.
+scans after the native model-selection gate and host-route approval. Workers
+must not edit, run Gradle, or claim convergence; the parent integrates findings,
+applies fixes, runs gates serially, and makes the zero-new-issues decision. If
+route selection is unavailable, keep the scan parent-owned.
 
 ## Pass 2 — Financial & concurrency
 

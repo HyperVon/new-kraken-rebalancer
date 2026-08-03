@@ -20,11 +20,11 @@ per independent concern, not one agent per file. For a material audit, keep the
 fan-out bounded (usually 2–6, maximum 8) and reserve a coupled track for files
 that must be reasoned about together.
 
-| Track | Owns (files/dirs) | Risk | Role / exact route / effort | Depends on |
+| Track | Owns (files/dirs) | Risk | Role / host route / effort | Depends on |
 | :--- | :--- | :--- | :--- | :--- |
 | A | … | … | … | none / track B output |
 
-For review work, add `risk`, exact route/effort evidence, iteration cap, and
+For review work, add `risk`, host route/effort evidence, iteration cap, and
 stop condition.
 The parent owns the full diff and final coverage matrix; each worker receives
 only its assigned paths and minimum dependencies.
@@ -32,46 +32,31 @@ only its assigned paths and minimum dependencies.
 - **Independent** → parallel Task agents (same parent turn).
 - **Coupled** → one agent or the parent.
 
-### Model-routing gate
+### Native model-selection gate
 
-Before the first material or parallel Task call, run the
-[model-routing](../model-routing/SKILL.md) preflight for each track:
+Before the first material or parallel Task call, select a host-supported model
+route for each track:
 
-- Record the minimum capability, primary route, effort, fallback, availability
-  evidence, cost class/entitlement, and any substitution.
-- State the exact provider/model and effort plan to the user and obtain explicit
-  approval before the first material or parallel Task call.
+- Record the minimum capability, primary route, effort when exposed, fallback,
+  availability evidence, cost class/entitlement, and any substitution.
+- State the route and effort plan to the user and obtain explicit approval before
+  the first material or parallel Task call.
 - Treat `subagent_type` as the worker role, not as route evidence from its name.
-- Verify that the selected launcher actually enforces the route. A profile
-  `model` field or a role name is not proof that a host `Task` wrapper uses it.
-  If the wrapper has no model/effort parameter or inherits the parent route,
-  use a route-enforcing launcher instead of claiming the Task ran the selection.
-- A host-pinned profile counts as exact route evidence only when host metadata
-  explicitly maps it to a provider/model and fixed or host-defined effort. Record
-  that mapping source and do not claim an independently selected effort.
-- For CLI-visible routes, a candidate presented as available needs a recent
-  bounded connectivity probe. A host-pinned provider outside the CLI catalog
-  needs host-specific health/entitlement evidence; do not substitute a similarly
-  named route from another provider.
-- Prefilter candidates by provider-level health. Never select or probe a route
-  whose provider is reported disabled or unavailable. If a probe fails, re-rank
-  the remaining exact routes from healthy providers and obtain approval for the
-  revised plan; one failed probe must not trigger automatic serial fallback.
-- After local routes, prefer a verified subscription/account-priced route over
-  PAYG when capability and health are otherwise comparable. Never infer plan
-  coverage from a zero token price or configured credential.
-- If exact route/effort enforcement is unavailable, stop fan-out and keep the
-  work in the parent or obtain route-selection support. A recorded limitation
-  is not permission to launch a role-only worker.
-- For a broad request with multiple disjoint tracks, do not silently continue
-  parent-owned after this check. After route inventory, present the track
-  matrix and exact route/effort plan with the `question` tool or host equivalent
-  and obtain an explicit parallel-or-serial decision. If the user already
-  approved the exact plan, proceed without repeating the question. Ask whether
-  to continue serially or stop for route support only after eligible provider
-  candidates and approved fallback routes are exhausted.
-- Escalate or add an independent verifier only when the track risk and evidence
-  justify it.
+- A Kilo Auto tier is a host-supported route when Kilo exposes it. The underlying
+  model is server-selected and must not be reported unless the host provides it.
+- If the Task wrapper exposes only a role and no usable model route, keep the
+  work in the parent. Do not invent a route-enforcing launcher or claim that a
+  profile changed the model.
+- Native Auto owns its model mappings and fallbacks; it does not need a
+  repository-side inventory or probe. If the task explicitly requires direct
+  cross-provider selection, use `.kilo/model-router/route-kilo`, which keeps its
+  catalog ephemeral and never persists credentials or transient quota.
+- For a broad request with multiple disjoint tracks, present the track matrix and
+  route/effort plan with the `question` tool or host equivalent and obtain an
+  explicit parallel-or-serial decision. If the user already approved the exact
+  plan, proceed without repeating the question.
+- Escalate or add an independent verifier only when the track risk and available
+  capability evidence justify it.
 
 ## Step 2 — Brief each agent
 
@@ -82,9 +67,8 @@ Every Task prompt must include:
 3. Files to edit / files forbidden
 4. **Already done** context (so they do not redo or conflict)
 5. Project constraints worth repeating (Spotless 120, `:common` purity, sim-only, etc.)
-6. Selected exact route, effort, cost class, availability probe/host mapping
-   evidence when profile-pinned, and user approval; if the host cannot enforce
-   and expose them, do not launch
+6. Selected host route, effort when exposed, cost class, availability evidence,
+   and user approval; if the host cannot expose the route, do not launch
 
 Keep prompts and reports bounded. Use the selected route's documented or
 observed practical context limit. When that limit is unavailable, prefer each
@@ -135,49 +119,27 @@ never a model/provider substitute and cannot bypass the material/parallel route
 gate.
 
 Launch independent tracks in one message when possible. Record the track, role,
-exact route/effort mapping, model substitution, user approval, iteration cap,
+host route/effort mapping, model substitution, user approval, iteration cap,
 coverage, and stop reason.
 Never paste full prior reports into follow-ups; pass only the finding and the
 smallest affected path set.
 
-### Kilo CLI route-enforced launch
+### Native Kilo model selection
 
-When Kilo's Task surface cannot expose or honor a selected route, use a profile
-with `mode: all` and pass the dynamically selected route explicitly through the
-CLI. Keep `model` out of the profile so discovery remains authoritative:
+Kilo sessions inherit the project default `kilo/kilo-auto/efficient` from
+`.kilo/kilo.json`. Select `kilo/kilo-auto/frontier` through the host for a
+high-risk or disputed review, or `kilo/kilo-auto/small` for bounded routine
+work. Auto tiers choose their underlying models and server-side fallbacks; do
+not add a repository launcher, catalog parser, connectivity probe, or hardcoded
+underlying-model pool to reproduce that behavior.
 
-```bash
-./.agents/skills/parallel-multi-agent/scripts/run_routed_agent.sh \
-  --agent "${AUDITOR_ROLE}" \
-  --model "${SELECTED_ROUTE}" \
-  --variant "${SELECTED_EFFORT}" \
-  --prompt "${BOUNDED_READ_ONLY_PROMPT}"
-```
-
-Launch independent invocations through a host mechanism that actually runs
-them concurrently. Record the CLI command's route arguments and successful
-completion with its compact report as launcher evidence. Do not use this as a
-way to bypass the routing preflight, approval, read-only profile permissions,
-or the one-Gradle-per-clone rule.
-
-For repeatable parent setup, use the bounded helpers when available:
+If a host Task surface cannot expose the selected route, keep the track
+parent-owned rather than claiming that a role or profile enforced a model. The
+parent still owns the review surface, integration, and final verification:
 
 ```bash
-./.agents/skills/model-routing/scripts/inventory_routes.sh \
-  --tool-call --reasoning --limit 20
-# After selecting an exact candidate, probe only that provider/model route:
-./.agents/skills/model-routing/scripts/inventory_routes.sh \
-  --match 'provider/model' --tool-call --reasoning \
-  --probe --verified-only --limit 1
 ./.agents/skills/adversarial-pr-review/scripts/review_surface.sh main
 ```
-
-The first emits bounded catalog metadata from a disposable file. The second
-emits verified connectivity for one exact candidate, and the third captures the
-merge base and changed-path surface without launching agents or reading runtime
-data. The route helper applies `--limit` before probing, so never interpret a
-zero result from an unscoped first-N sample as proof that no route is available.
-Use a narrow `--match` when probing to avoid unnecessary quota or paid calls.
 
 ## Worktree and state isolation
 

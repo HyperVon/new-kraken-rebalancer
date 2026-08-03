@@ -13,40 +13,32 @@ risk thresholds. Escalate to cloud only for a capability gap, material latency
 requirement, or task risk; then use the **least expensive model and lowest effort
 reasonably likely to complete the task correctly**.
 
-Before material or parallel delegation, run the `model-routing` preflight for
-each bounded track. Record the primary route, effort, fallback, availability
-evidence, cost class/entitlement, user approval, and any substitution. For
-CLI-visible routes, require a recent bounded connectivity probe before presenting
-availability; host-pinned routes outside that catalog need host-specific health
-evidence or remain `unknown`. Treat `subagent_type` as a role
-rather than proof of the underlying model from its name. A host-pinned profile
-is valid route evidence only when host metadata maps it to an explicit
-provider/model and fixed or host-defined effort; record that mapping source.
-If no direct or explicit pinned mapping exists, record the limitation instead
-of inferring a route from the parent or role.
-Before selecting a probe candidate, reject providers reported disabled or
-unavailable. If an exact-route probe fails, re-rank the remaining routes from
-healthy providers; never treat one failed probe as approval for automatic serial
-fallback.
+Before material or parallel delegation, select the host-supported route for each
+bounded track. Record the route, effort when exposed, fallback, availability
+evidence, cost class/entitlement, user approval, and any substitution. A Kilo
+Auto tier is a valid host route even though Kilo chooses its underlying model
+server-side; do not report that underlying model without host evidence. Treat
+`subagent_type` as a role rather than proof of a model from its name. Native Kilo
+Auto does not need repository-side route inventories or probes. For explicit
+cross-provider routing, use `.kilo/model-router/route-kilo`; it uses an ephemeral
+catalog and never persists credentials or transient quota state.
 
 For a broad request with multiple disjoint tracks, use the `question` tool or
-host equivalent after route inventory to obtain an explicit parallel-or-serial
-decision. Ask whether to continue parent-owned serially or stop for route support
-only after eligible providers and approved fallback routes are exhausted; do not
-silently fall back while a parallel request is unresolved. Skip this question
-only when the user already approved the exact plan or the task is small/coupled.
+host equivalent to obtain an explicit parallel-or-serial decision. Skip this
+question only when the user already approved the exact plan or the task is
+small/coupled.
 
 - Start low for bounded searches, mechanical edits, formatting, straightforward
   tests, and status checks.
 - Escalate for demonstrated complexity or risk, repeated failure, ambiguous
-  cross-cutting design, or financial/safety-sensitive reasoning.
+  cross-cutting design, or financial/safety-sensitive reasoning. In Kilo, use
+  `kilo/kilo-auto/frontier` for high-risk or disputed review.
 - Honor any model or effort explicitly required by the user, host, or an
-  applicable skill. For material or parallel delegation, stop when the exact
-  provider/model route and effort cannot be host-enforced and exposed. Do not
-  silently substitute the parent route, an unspecified route, or a generic role.
-- Prefer a verified subscription/account-priced route over PAYG among otherwise
-  capable, healthy candidates. Never infer plan coverage from a provider name,
-  configured credential, active catalog row, or zero token price.
+  applicable skill. Stop material or parallel delegation when the host cannot
+  expose a usable route; do not silently substitute the parent or a generic role.
+- Treat a configured credential or active catalog row as insufficient proof of
+  live quota. The cross-provider launcher reports that uncertainty rather than
+  probing every route or silently retrying after a partial failure.
 - Optimize total cost, including retries and review time; do not choose a tier
   that is unlikely to succeed merely because it is cheaper.
 - Choose the cheapest capable tier per parallel track instead of promoting all

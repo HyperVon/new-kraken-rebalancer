@@ -6,6 +6,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.16.6] - 2026-08-03
+
+### Added
+
+- **Cross-provider model launcher**: added an enforceable `route-kilo` workflow
+  that selects among authenticated provider routes using Artificial Analysis
+  benchmark cost data when configured, with catalog token-cost fallback.
+- **NVIDIA provider support**: included authenticated NVIDIA routes in the
+  cross-provider candidate pool, restricted to the provider's zero-cost models.
+- **Provider discovery**: recognized loaded Kilo/OpenCode provider configuration
+  and standard environment credentials in addition to `kilo auth list`.
+
+## [6.16.5] - 2026-08-03
+
+### Changed
+
+- **Native Kilo Auto model selection**: configured `kilo/kilo-auto/efficient` as
+  the project Kilo default and documented native Auto tier selection for routine
+  and high-risk work.
+- **Routing guidance cleanup**: removed the custom model suggestion command,
+  catalog/probe helpers, and route-enforcing launcher in favor of Kilo's
+  server-managed model mappings and fallbacks.
+
 ## [6.16.4] - 2026-08-03
 
 ### Fixed

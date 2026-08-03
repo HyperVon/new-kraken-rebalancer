@@ -20,12 +20,12 @@ Audit relevant guidance before proposing changes. Treat rules as policy and skil
 
 For a broad guidance tree, the parent may partition read-only work into
 canonical rules/operating norms, domain skills, harness/projections, and
-cross-link/index health. Run [model-routing](../model-routing/SKILL.md) and
+cross-link/index health. Complete the native model-selection gate and use
 [parallel-multi-agent](../parallel-multi-agent/SKILL.md) first, obtain approval
-for exact routes and effort, and give each worker a bounded path set. The parent
-resolves duplicate or conflicting findings and owns all edits. A missing model
-inventory is not a missing file inventory; if exact route enforcement is
-unavailable, stay parent-owned rather than launching a role-only worker.
+for the selected host route and effort when exposed, and give each worker a
+bounded path set. The parent resolves duplicate or conflicting findings and
+owns all edits. If route selection is unavailable, stay parent-owned rather than
+launching a role-only worker.
 
 ## Report format
 
