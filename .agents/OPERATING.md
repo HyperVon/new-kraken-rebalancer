@@ -84,6 +84,14 @@ after the native model-selection gate below passes. If the host cannot select an
 expose a usable model route for the work, do not fan out; keep the work in the
 parent. File disjointness alone is not permission to launch role-only workers.
 
+The repository is harness-agnostic for ordinary development: any capable host
+can use the application source, tests, Gradle commands, Git workflow, and
+portable `.agents/` guidance. KiloCode-specific conveniences are optional and
+limited to Kilo Auto, `.kilo/kilo.json`, `./route-kilo`,
+`.kilo/model-router/route-subagents`, Kilo route reports, Context Mode, and
+Agent Manager. Other hosts should use their native model selection and agent
+fan-out; these Kilo-specific features do not run automatically there.
+
 For Kilo sessions, `.kilo/kilo.json` selects `kilo/kilo-auto/efficient` as the
 project default. That is a host-supported Auto tier, not a claim about which
 underlying model will answer a particular request.

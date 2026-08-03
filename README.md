@@ -66,6 +66,15 @@ See the [Agentic Development Guide](docs/AGENTIC_DEVELOPMENT.md) for the full
 provenance, instruction architecture, cross-harness setup, skill catalog,
 human–agent workflow, review loop, and maintenance guidance.
 
+The repository is still fully usable without KiloCode. Application code, tests,
+Gradle tasks, documentation, Git workflows, and the portable `.agents/` skills
+remain available to any capable development tool. KiloCode-only additions are
+optional: Kilo Auto model selection, the project-root `./route-kilo` launcher,
+automatic cross-provider routing, routed subagent fan-out, Kilo route reports,
+Context Mode, and Agent Manager integration. Other hosts should use their own
+model selection and parallel-agent mechanisms; those Kilo-specific conveniences
+will not run automatically there.
+
 ---
 
 ## Tech Stack

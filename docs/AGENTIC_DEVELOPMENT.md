@@ -245,6 +245,25 @@ skills before expecting their end-to-end workflows to run unchanged. These
 integrations are not the source of project policy; the underlying architecture,
 safety rules, checklists, and review criteria remain ordinary repository files.
 
+### KiloCode portability boundary
+
+The application and its normal development workflow do not require KiloCode.
+Any capable development tool can read the portable `.agents/` guidance, edit
+the source, run tests and Gradle tasks, review diffs, and use the repository's
+ordinary skills and scripts. The following are optional KiloCode-specific
+integrations and are not expected to work automatically in another host:
+
+- Kilo Auto model selection from `.kilo/kilo.json`
+- the project-root `./route-kilo` launcher and cross-provider provider/model selection
+- automatic routed subagent fan-out through `.kilo/model-router/route-subagents`
+- persisted Kilo route reports under `~/.cache/kilo/model-router/reports/`
+- the Context Mode plugin and Kilo Agent Manager setup/run hooks
+
+Other hosts should use their native model selection, subagent launcher, and
+parallel-workflow mechanisms. If they cannot expose a concrete model route or
+the required tool, keep the work in the parent or substitute an equivalent
+host-native artifact rather than claiming that the Kilo integration ran.
+
 ## Models and adaptive multi-agent review
 
 The project does not maintain a complete ledger mapping every commit to a model.
@@ -295,8 +314,35 @@ must choose among independently authenticated Kilo, OpenCode Go, OpenAI,
 OpenRouter, and NVIDIA routes, use the repository launcher:
 
 ```bash
-./.kilo/model-router/route-kilo --profile coding "Fix the failing Kotlin build"
+./route-kilo --profile coding "Fix the failing Kotlin build"
 ```
+
+The project-root `./route-kilo` wrapper refreshes route metadata and opens an
+interactive Kilo session automatically. It forwards the initial prompt and
+any additional router flags to `.kilo/model-router/route-kilo`.
+
+`--profile` is optional and defaults to `auto`, which infers the routing
+requirements from the prompt. Available profiles are:
+
+| Profile | Use for |
+| :--- | :--- |
+| `routine` | Summaries, formatting, lookups, and simple documentation/status tasks |
+| `coding` | Implementation, bugs, tests, refactoring, builds, and Gradle |
+| `agentic` | Complex multi-step reasoning and tool use |
+| `critical` | Security, credentials, trading, financial, architecture, or adversarial work |
+| `auto` | Automatic profile inference from the prompt |
+
+Examples:
+
+```bash
+./route-kilo "Review the README for stale information"
+./route-kilo --profile coding "Fix the failing Kotlin test"
+./route-kilo --profile critical "Review the credential-handling changes"
+```
+
+The profile constrains route selection; it does not directly choose a model.
+The router still selects the provider/model using capability, cost, quota, and
+availability.
 
 It discovers providers from `kilo auth list`, loaded Kilo/OpenCode provider
 configuration, and standard provider environment variables. It reads active

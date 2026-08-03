@@ -14,6 +14,10 @@ the host can expose. If that is unavailable, keep the work in the parent; do not
 silently use the parent or a generic role. In Kilo, the project default is the
 host-supported `kilo/kilo-auto/efficient` tier. Its underlying model is selected
 server-side and must not be inferred from the role name.
+The repository remains usable in other hosts with its source, tests, Gradle,
+Git, and portable `.agents/` guidance. Kilo-only conveniences such as
+`.kilo/kilo.json`, `./route-kilo`, `route-subagents`, route reports, Context
+Mode, and Agent Manager do not run automatically outside KiloCode.
 Choose an adaptive number of bounded tracks from the actual concerns; do not
 default to two full-task agents.
 
