@@ -236,12 +236,14 @@ def record_failure(config: Mapping[str, Any], route: str, provider: str, kind: s
         seconds = int(settings.get("creditsSeconds", 3600))
     elif kind == "provider_unavailable":
         seconds = int(settings.get("providerUnavailableSeconds", 300))
+    elif kind == "report_contract":
+        seconds = int(settings.get("reportContractSeconds", 300))
     else:
         seconds = int(settings.get("authenticationSeconds", 3600))
     blocked_until = time.time() + max(1, seconds)
     entry = {"blocked_until": blocked_until, "reason": kind, "attempts": attempts}
     state["routes"][route] = entry
-    if kind in {"rate_limit", "credits", "provider_unavailable", "authentication"}:
+    if kind in {"rate_limit", "credits", "provider_unavailable", "authentication", "report_contract"}:
         state["providers"][provider] = entry
     _save_cooldowns(config, state)
     return seconds

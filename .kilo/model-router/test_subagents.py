@@ -52,20 +52,55 @@ class SubagentRouterTests(unittest.TestCase):
     def test_compact_output_decodes_timeout_bytes(self):
         self.assertEqual("worker failed", MODULE.compact_output(b"worker failed"))
 
-    def test_worker_launch_passes_selected_route_and_agent(self):
+    def test_extract_report_uses_json_text_events_and_ignores_tool_traces(self):
+        stdout = "\n".join(
+            [
+                '{"type":"tool_use","part":{"tool":"read"}}',
+                '{"type":"text","part":{"text":"Checked: docs/README.md\\nResult: clean"}}',
+                '{"type":"step_finish","part":{"reason":"stop"}}',
+            ]
+        )
+        report, usable = MODULE.extract_report(stdout, "agent warning")
+        self.assertTrue(usable)
+        self.assertEqual("Checked: docs/README.md\nResult: clean", report)
+
+    def test_extract_report_rejects_protocol_only_output(self):
+        report, usable = MODULE.extract_report("⚙ compress {\"topic\":\"audit\"}", "")
+        self.assertFalse(usable)
+        self.assertIn("compress", report)
+
+    def test_worker_launch_passes_selected_route_and_json_output(self):
         item = {
             "track": {"id": "source", "task": "Inspect source", "files": [], "read_only": True},
             "selection": {"route": "openai/gpt-5.4", "agent": "explore"},
             "prompt": "bounded prompt",
         }
-        completed = MODULE.subprocess.CompletedProcess([], 0, "report", "")
+        completed = MODULE.subprocess.CompletedProcess(
+            [],
+            0,
+            '{"type":"text","part":{"text":"Checked: source\\nResult: clean"}}',
+            "",
+        )
         with patch.object(MODULE.subprocess, "run", return_value=completed) as run:
             result = MODULE.launch_worker(item, timeout=10, allow_auto=False)
         command = run.call_args.args[0]
         self.assertEqual(0, result["exit_code"])
         self.assertIn("--model", command)
         self.assertEqual("openai/gpt-5.4", command[command.index("--model") + 1])
-        self.assertEqual("explore", command[command.index("--agent") + 1])
+        self.assertEqual("json", command[command.index("--format") + 1])
+        self.assertNotIn("--agent", command)
+
+    def test_worker_launch_rejects_success_without_text_report(self):
+        completed = MODULE.subprocess.CompletedProcess([], 0, '{"type":"step_finish"}', "")
+        item = {
+            "track": {"id": "source", "task": "Inspect source", "files": [], "read_only": True},
+            "selection": {"route": "openai/gpt-5.4", "agent": "explore"},
+            "prompt": "bounded prompt",
+        }
+        with patch.object(MODULE.subprocess, "run", return_value=completed):
+            result = MODULE.launch_worker(item, timeout=10, allow_auto=False)
+        self.assertEqual(1, result["exit_code"])
+        self.assertEqual("report_contract", result["failure_kind"])
 
     def test_read_only_worker_fails_over_after_rate_limit(self):
         with tempfile.TemporaryDirectory() as directory:

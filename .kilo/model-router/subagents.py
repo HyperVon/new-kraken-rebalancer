@@ -24,6 +24,8 @@ DEFAULT_AGENT = "explore"
 DEFAULT_TIMEOUT = 900
 MAX_REPORT_LINES = 12
 MAX_FAILOVER_ATTEMPTS = 3
+REPORT_FAILURE_KIND = "report_contract"
+REPORT_PROTOCOL_MARKERS = ("tool_code", "ctx_", "compress {")
 
 
 def load_manifest(path: Path) -> list[dict[str, Any]]:
@@ -163,6 +165,37 @@ def compact_output(output: str | bytes) -> str:
     return "\n".join(lines[-MAX_REPORT_LINES:])
 
 
+def extract_report(stdout: str | bytes, stderr: str | bytes) -> tuple[str, bool]:
+    streams = (stdout, stderr)
+    text_blocks: list[str] = []
+    for stream in streams:
+        if isinstance(stream, bytes):
+            stream = stream.decode(errors="replace")
+        for line in stream.splitlines():
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(event, Mapping) or event.get("type") != "text":
+                continue
+            part = event.get("part")
+            text = part.get("text") if isinstance(part, Mapping) else event.get("text")
+            if isinstance(text, str) and text.strip():
+                text_blocks.append(text)
+
+    report = compact_output("\n".join(text_blocks)) if text_blocks else ""
+    usable = bool(report) and not any(marker in report.lower() for marker in REPORT_PROTOCOL_MARKERS)
+    if usable:
+        return report, True
+    fallback = compact_output(
+        "\n".join(
+            stream.decode(errors="replace") if isinstance(stream, bytes) else stream
+            for stream in streams
+        )
+    )
+    return fallback, False
+
+
 def launch_worker(item: Mapping[str, Any], timeout: int, allow_auto: bool) -> dict[str, Any]:
     track = item["track"]
     selection = item["selection"]
@@ -171,17 +204,17 @@ def launch_worker(item: Mapping[str, Any], timeout: int, allow_auto: bool) -> di
         "run",
         "--model",
         str(selection["route"]),
-        "--agent",
-        str(selection["agent"]),
+        "--format",
+        "json",
         "--title",
         f"routed-{track['id']}",
-        item["prompt"],
     ]
-    if allow_auto:
-        command.insert(-1, "--auto")
     variant = track.get("variant")
     if variant:
-        command[4:4] = ["--variant", str(variant)]
+        command.extend(["--variant", str(variant)])
+    if allow_auto:
+        command.append("--auto")
+    command.append(item["prompt"])
     started = time.monotonic()
     try:
         completed = subprocess.run(
@@ -192,19 +225,25 @@ def launch_worker(item: Mapping[str, Any], timeout: int, allow_auto: bool) -> di
             timeout=timeout,
             check=False,
         )
-        output = compact_output(f"{completed.stdout}\n{completed.stderr}")
+        output, usable_report = extract_report(completed.stdout, completed.stderr)
+        exit_code = completed.returncode
+        failure_kind = availability.failure_kind(f"{completed.stdout}\n{completed.stderr}") if exit_code else None
+        if exit_code == 0 and not usable_report:
+            exit_code = 1
+            failure_kind = REPORT_FAILURE_KIND
+            output = output or "worker returned no final text report"
         return {
             "track": track["id"],
             "route": selection["route"],
-            "exit_code": completed.returncode,
+            "exit_code": exit_code,
             "duration_seconds": round(time.monotonic() - started, 1),
             "report": output,
-            "failure_kind": availability.failure_kind(output) if completed.returncode else None,
+            "failure_kind": failure_kind,
         }
     except subprocess.TimeoutExpired as error:
         stdout = error.stdout.decode(errors="replace") if isinstance(error.stdout, bytes) else (error.stdout or "")
         stderr = error.stderr.decode(errors="replace") if isinstance(error.stderr, bytes) else (error.stderr or "")
-        output = compact_output(f"{stdout}\n{stderr}")
+        output, _ = extract_report(stdout, stderr)
         return {
             "track": track["id"],
             "route": selection["route"],
@@ -232,7 +271,7 @@ def launch_with_failover(item: Mapping[str, Any], timeout: int, allow_auto: bool
         track = current["track"]
         if not kind or not bool(current["selection"].get("read_only", True)):
             return result
-        if kind not in {"rate_limit", "credits", "provider_unavailable", "authentication"}:
+        if kind not in {"rate_limit", "credits", "provider_unavailable", "authentication", REPORT_FAILURE_KIND}:
             return result
 
         route = str(result["route"])

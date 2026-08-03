@@ -46,6 +46,20 @@ class AvailabilityTests(unittest.TestCase):
             self.assertEqual("rate_limit", payload["routes"]["openrouter/model"]["reason"])
             self.assertNotIn("429", MODULE.json.dumps(payload))
 
+    def test_report_contract_failure_uses_provider_cooldown(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "availability.json"
+            config = {
+                "quota": {
+                    "cooldownPath": str(path),
+                    "cooldown": {"reportContractSeconds": 90},
+                }
+            }
+            seconds = MODULE.record_failure(config, "openrouter/model", "openrouter", "report_contract", "")
+            self.assertEqual(90, seconds)
+            payload = MODULE.json.loads(path.read_text(encoding="utf-8"))
+            self.assertEqual("report_contract", payload["routes"]["openrouter/model"]["reason"])
+
 
 if __name__ == "__main__":
     unittest.main()
