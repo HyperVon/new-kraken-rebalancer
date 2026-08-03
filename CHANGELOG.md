@@ -6,85 +6,38 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [6.15.49] - 2026-08-03
+## [6.16.0] - 2026-08-03
 
-### Changed
+### Added
 
-- **Shared trade provenance**: moved `TradeSource` into `:common`, removed the
-  redundant generated `TradeSourceKeys` catalog, and kept database parsing plus
-  frontend wire comparisons behaviorally unchanged.
-- **Independent boundary coverage**: completed the test audit so rendered HTML,
-  DOM, HTTP, JSON, SSE, and persisted-view contracts use raw expected literals;
-  typed constants remain available for internal setup and domain semantics.
-
-## [6.15.48] - 2026-08-03
-
-### Changed
-
+- **Experimental KSP catalog generation**: added a JVM-only code-generation
+  module with reusable processor support for type-safe history API mappers and
+  explicit YAML-backed multiplatform catalogs for CSS classes, routes, HTML /
+  HTMX attributes, data properties, metadata, and `ViewText` constants. Generated
+  values retain `const val` semantics and exact existing contracts.
 - **Optional Context Mode integration**: registered the Kilo plugin and added
   repository guidance for summarizing large inspection output while preserving
   exact reads for edits, serial Gradle execution, portable fallback behavior,
   and database/credential safety.
 
-## [6.15.47] - 2026-08-03
-
 ### Changed
 
-- **Experimental catalog maintenance**: moved the remaining large pure-string
-  `ViewText` catalog to an explicit YAML resource, shared catalog rendering now
-  keeps CSS generation maintainable, and DOM selectors are owned by
-  `HtmlQueries` rather than `CssClass`.
-- **Independent contract tests**: boundary assertions use raw expected HTML,
-  DOM, HTTP, JSON, and persistence literals instead of sharing generated
-  catalog values with production code.
-- **Agent routing safety**: material or parallel review work now stops when the
-  host cannot enforce and expose the selected provider/model route and effort;
-  role labels are not treated as model selection.
-
-## [6.15.46] - 2026-08-02
-
-### Changed
-
-- **Experimental string catalog generation**: replaced repetitive shared
-  `const val` declarations with explicit KSP schemas while preserving
-  compile-time constants and exact route, HTML, HTMX, CDN, and metadata values.
-
-## [6.15.45] - 2026-08-02
-
-### Changed
-
-- **Experimental CSS catalog generation**: replaced the handwritten common CSS
-  class catalog with an explicit KSP schema that generates the multiplatform
-  `CssClass` hierarchy and typed query constants without inferring composite
-  class names.
-
-## [6.15.44] - 2026-08-02
-
-### Changed
-
-- **Experimental source reduction**: consolidated repeated settings rendering,
-  configuration validation, order-journal construction, DOM iteration, history
-  scrubber markup, typed CSS-class interpolation, and test snapshot fixtures
-  without changing wire formats, trading modes, persistence semantics, or
-  financial behavior.
-
-## [6.15.43] - 2026-08-02
-
-### Changed
-
-- **Explicit model-routing preflight**: material and parallel delegation now
-  records route, effort, fallback, availability evidence, substitutions, and
-  host selection limitations while distinguishing worker roles from models;
-  portable guidance no longer anchors on a specific model.
-
-## [6.15.42] - 2026-08-02
-
-### Changed
-
-- **Experimental API mapper code generation**: added a JVM-only KSP processor
-  for the repetitive, type-safe mapping between history domain models and
-  their `:common` wire DTOs while keeping persistence, exchange, and financial
-  logic explicit.
+- **Source reduction**: consolidated repeated settings rendering, configuration
+  validation, order-journal construction, DOM iteration, history scrubber markup,
+  HTML helpers, and test snapshot fixtures without changing trading, persistence,
+  financial, mode, cancellation, or wire-format behavior.
+- **Shared catalog ownership**: kept CSS generation maintainable through shared
+  processor infrastructure, moved DOM selectors into `HtmlQueries`, and moved
+  `TradeSource` into `:common` while removing redundant one-entry metadata
+  catalogs.
+- **Independent contract coverage**: boundary assertions now use raw expected
+  HTML, DOM, HTTP, JSON, SSE, and persisted-view literals instead of sharing
+  generated catalog values with production code; typed constants remain available
+  for internal setup and domain semantics.
+- **Agent playbook and routing safety**: documented generated-catalog patterns,
+  Context Mode usage, and a hard requirement that material or parallel work use
+  a host-enforced provider/model route and effort rather than treating role labels
+  as model selection.
 
 ## [6.15.41] - 2026-08-02
 
