@@ -94,6 +94,35 @@ Gather facts from code/build (do not trust docs yet):
 
 Use `rg`, package listings, and targeted file reads. Prefer evidence over memory.
 
+### Optional parallel audit handoff
+
+The Step 0 code-truth inventory and the model-route inventory are different
+things. After the parent has captured a bounded source/build fact sheet, a
+broad audit may fan out disjoint, read-only evidence tracks through
+[parallel-multi-agent](../parallel-multi-agent/SKILL.md):
+
+| Track | Scope |
+| :--- | :--- |
+| Product / setup | `README.md`, `docs/USER_GUIDE.md`, `CONTRIBUTING.md`, `SECURITY.md`, `CHANGELOG.md` |
+| Runtime contracts | `docs/ALGORITHM.md`, `docs/FLOWS.md`, `docs/EVALUATION.md` |
+| Agent guidance | `.agents/`, `.cursor/rules/`, harness entrypoints, skill links |
+| Build / configuration | `build.gradle.kts`, CI, templates, scripts, dependency/tooling claims |
+
+Before launching, run the [model-routing](../model-routing/SKILL.md) preflight
+per track, state the exact route and effort to the user, and obtain approval.
+Use the bounded route helper when available:
+`./.agents/skills/model-routing/scripts/inventory_routes.sh`; for a
+branch-scoped audit, `review_surface.sh` can establish the changed-path surface
+without launching workers. A host-pinned profile is valid only when host
+metadata maps it to an exact provider/model and fixed or host-defined effort.
+Workers report evidence and paths only; the parent deduplicates findings,
+applies edits, runs Mermaid/Markdown/build checks, and owns the final report.
+
+If model-route inventory or exact route enforcement is unavailable, that is a
+delegation limitation, not an incomplete code-truth inventory. Keep the audit
+parent-owned or obtain route support; never substitute an unverified role or
+`general` for a model. Skip fan-out for a small or coupled scope.
+
 ## Evidence and claims
 
 Treat every material documentation statement as a claim that needs a source:

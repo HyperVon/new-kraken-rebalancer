@@ -67,6 +67,18 @@ Copy this checklist and track progress:
 - [ ] Step 7: Update docs (README/CHANGELOG/AGENTS)
 ```
 
+### Read-only parallel detection
+
+For a large dependency surface, the parent may use
+[parallel-multi-agent](../parallel-multi-agent/SKILL.md) for independent
+evidence tracks such as Kotlin/KSP/Gradle, Ktor/Koin/Exposed, and
+testing/frontend/npm. Run [model-routing](../model-routing/SKILL.md) first and
+obtain approval for each exact route and effort. Workers may inspect manifests,
+release notes, and compatibility evidence only; version edits, dependency
+refreshes, package-manager commands, migrations, and all builds remain
+parent-owned and serial. If route enforcement is unavailable, do the detection
+in the parent rather than using an unverified role.
+
 ### Step 1: Detect current vs latest
 
 Run the checker. It parses all build files, resolves version variables, and queries Maven Central, the Gradle Plugin Portal, the npm registry, and the Gradle release feed for the latest **stable** version of each artifact:

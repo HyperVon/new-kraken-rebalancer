@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.16.1] - 2026-08-03
+
+### Fixed
+
+- **Documentation accuracy**: corrected current KSP/common-module references to
+  `TradeSource` and removed a machine-specific JDK path from agent guidance.
+- **Parallel audit routing**: documented bounded read-only fan-out for broad
+  documentation, quality, architecture, skills, dependency, and optimization
+  audits, with model-route approval gates and parent-owned edits/builds.
+
 ## [6.16.0] - 2026-08-03
 
 ### Added

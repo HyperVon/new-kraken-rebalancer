@@ -16,6 +16,17 @@ Audit relevant guidance before proposing changes. Treat rules as policy and skil
 5. Rank proposed changes by impact and risk. Prefer focused skills with precise descriptions, shared canonical guidance, and references over repeating policy in every skill.
 6. Do not delete, merge, or rewrite existing guidance without explicit approval. If asked to implement approved findings, preserve local conventions, update affected cross-references, and validate each modified skill.
 
+## Optional parallel audit
+
+For a broad guidance tree, the parent may partition read-only work into
+canonical rules/operating norms, domain skills, harness/projections, and
+cross-link/index health. Run [model-routing](../model-routing/SKILL.md) and
+[parallel-multi-agent](../parallel-multi-agent/SKILL.md) first, obtain approval
+for exact routes and effort, and give each worker a bounded path set. The parent
+resolves duplicate or conflicting findings and owns all edits. A missing model
+inventory is not a missing file inventory; if exact route enforcement is
+unavailable, stay parent-owned rather than launching a role-only worker.
+
 ## Report format
 
 Provide:

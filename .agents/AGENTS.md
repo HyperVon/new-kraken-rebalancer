@@ -281,7 +281,7 @@ See [write-kotest](skills/write-kotest/SKILL.md).
 Cloud VM deltas only. Canonical setup: [README Getting Started](../README.md#getting-started);
 flags: [dry-run-and-simulation](skills/dry-run-and-simulation/SKILL.md).
 
-- **JDK:** Temurin 25 at `/usr/lib/jvm/temurin-25` (default `java`); no `JAVA_HOME` for
+- **JDK:** Temurin 25 is the default `java`; no `JAVA_HOME` is required for
   `./gradlew`. Matches §1 toolchain (ignore JDK 21 if present).
 - **Run (sim):** `cp rebalancer-config-template.json rebalancer-config.json`, set
   `"simulation": true`, `./gradlew run` (background per [OPERATING.md](OPERATING.md) §4 —

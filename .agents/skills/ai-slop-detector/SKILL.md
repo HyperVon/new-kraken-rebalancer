@@ -129,6 +129,18 @@ For a large or broad diff, increase review depth or request a walkthrough of
 the architecture, skills, and verification strategy. Diff size is a review-budget
 signal, not evidence of slop.
 
+### Optional parallel evidence pass
+
+For a full-repository or broad PR audit, the parent may partition read-only
+evidence after Step 0 and the [model-routing](../model-routing/SKILL.md)
+preflight. Use [parallel-multi-agent](../parallel-multi-agent/SKILL.md) for
+disjoint tracks such as production/build/config, tests/evaluation,
+documentation/skills/rules, and UI/assets. Record the exact route, effort,
+approval, and availability evidence per worker. Workers return findings only;
+the parent owns severity triage, cleanup decisions, edits, and serial quality
+gates. If exact route enforcement is unavailable, remain parent-owned rather
+than using an unverified role. Do not fan out a small or tightly coupled audit.
+
 ### Step 1: Gather diff and high-risk evidence
 
 For a PR or branch, inspect the diff before searching broadly:

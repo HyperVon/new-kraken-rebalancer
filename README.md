@@ -475,7 +475,7 @@ This path is internal orchestration — not a second browser-facing SSE stream l
 │   ├── src/commonMain/kotlin/com/gemini/krakenbot/
 │       ├── api/                           # Wire DTOs: PortfolioSnapshot, TradeRecord, HistoryStats, RebalancerComparison, SyncProgressResponse
 │       ├── config/                        # AppConfig, Settings, Allocation, KrakenCredentials, InvalidConfigurationException
-│       ├── model/                         # Asset, OrderSide (OrderType defined alongside), RebalancerComparisonEnums, Result, TimeRange, generated SyncMetadataKeys, generated TradeSourceKeys
+│       ├── model/                         # Asset, OrderSide (OrderType defined alongside), RebalancerComparisonEnums, Result, TimeRange, TradeSource, generated SyncMetadataKeys
 │       ├── util/                          # PrecisionConstants
 │       ├── view/util/                     # Generated YAML string catalogs, Routes helpers, ViewText, CssClass, HtmlQueries, CssClassSchema, ChartProps
 │   └── src/commonMain/resources/codegen/   # Explicit YAML inputs for generated common catalogs

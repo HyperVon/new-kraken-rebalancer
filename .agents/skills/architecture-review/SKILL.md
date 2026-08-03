@@ -104,6 +104,18 @@ history sync, frontend, persistence, rebalance loop).
 Ask once if unclear: full redesign brainstorm vs evolutionary options only.
 Default to **both**, ranked.
 
+### Optional parallel discovery
+
+After scope confirmation, a full-system review may use
+[parallel-multi-agent](../parallel-multi-agent/SKILL.md) for bounded, read-only
+discovery tracks: backend/domain/trading/persistence; HTTP/SSR/frontend/flows;
+and product/security/operations. Run the [model-routing](../model-routing/SKILL.md)
+preflight first, obtain approval for the exact route and effort, and keep the
+tracks below their context limits. The parent owns the as-is architecture map,
+cross-track synthesis, alternatives, recommendations, and the mandatory
+decisions Canvas. Do not parallelize implementation or the final decision step;
+if route enforcement is unavailable, continue the discovery in the parent.
+
 ### Step 1: Product & constraint discovery
 
 Answer before proposing changes:

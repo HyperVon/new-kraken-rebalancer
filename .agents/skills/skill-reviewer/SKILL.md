@@ -97,6 +97,17 @@ PR verification patterns) — but **coding/architecture skills come first**.
 - [ ] Step 5: Report (+ canvas when ≥8 Apply-able findings); stop for picks
 ```
 
+### Optional parallel content pass
+
+When the scope spans many independent skills, the parent may use
+[parallel-multi-agent](../parallel-multi-agent/SKILL.md) for read-only content
+tracks such as coding/architecture, trading/persistence, UI/KMP, and
+workflow/routing/meta. Run [model-routing](../model-routing/SKILL.md) first,
+record exact route/effort and user approval per track, and have the parent
+deduplicate findings into the required report or Canvas. Workers must not edit
+skills or rules. If exact route enforcement is unavailable, review in the
+parent; do not substitute a generic role.
+
 ### Step 2: Content enrichment (PRIMARY)
 
 For each in-scope skill, read the skill, then ask:

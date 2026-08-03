@@ -44,6 +44,18 @@ the parent starts a narrower follow-up. Manual compaction is not a continuation
 strategy. The parent owns integration, backlog updates, serial quality gates,
 and final verification.
 
+### Model-routing gate for discovery
+
+Before the first discovery Task, run the [model-routing](../model-routing/SKILL.md)
+preflight and the [parallel-multi-agent](../parallel-multi-agent/SKILL.md)
+handoff. Record a route, effort, fallback, cost/entitlement, availability
+evidence, and user approval for each track. The backlog/code inventory does not
+replace model-route inventory. If the host cannot enforce and expose an exact
+route and effort, keep discovery in the parent; do not silently use the parent
+model or a generic role. Discovery workers are read-only; implementation,
+backlog integration, Gradle, browser tests, and final verification remain
+parent-owned and serial.
+
 ---
 
 ## Modes
@@ -189,8 +201,9 @@ deferred items. Do not implement code or open an improve PR unless asked.
 
 ### Step 1 — Discover backlog
 
-Fan out discovery with [parallel-multi-agent](../parallel-multi-agent/SKILL.md)
-when tracks are disjoint. Suggested discovery tracks (pick what fits timebox):
+After the model-routing gate, fan out discovery with
+[parallel-multi-agent](../parallel-multi-agent/SKILL.md) when tracks are
+disjoint. Suggested discovery tracks (pick what fits timebox):
 
 | Track | Child skill / focus |
 | :--- | :--- |
