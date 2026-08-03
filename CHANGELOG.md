@@ -19,6 +19,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   repository guidance for summarizing large inspection output while preserving
   exact reads for edits, serial Gradle execution, portable fallback behavior,
   and database/credential safety.
+- **Review-routing tooling**: added bounded route-inventory and branch-review
+  surface scripts, explicit availability probes, and host-pinned provider/model
+  mapping guidance for parallel adversarial review. Routing now prefers verified
+  subscription/account-priced access over PAYG when capability and health are
+  otherwise comparable.
 
 ### Changed
 

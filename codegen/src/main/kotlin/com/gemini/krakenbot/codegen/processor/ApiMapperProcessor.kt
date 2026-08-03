@@ -103,8 +103,11 @@ private class ApiMapperProcessor(private val codeGenerator: CodeGenerator, priva
         val fileName = source.qualifiedNameString()
             .removePrefix("${source.packageName.asString()}.")
             .replace('.', '_') + "ApiMapper"
+        val dependencies = target.containingFile?.let {
+            Dependencies(aggregating = false, sourceFile, it)
+        } ?: Dependencies(aggregating = false, sourceFile)
         OutputStreamWriter(
-            codeGenerator.createNewFile(Dependencies(aggregating = false, sourceFile), packageName, fileName),
+            codeGenerator.createNewFile(dependencies, packageName, fileName),
             Charsets.UTF_8,
         ).use { writer -> writer.write(sourceText) }
     }

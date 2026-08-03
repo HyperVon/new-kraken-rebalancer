@@ -89,16 +89,21 @@ disjointness alone is not permission to launch role-only workers.
 
 Before the first material or parallel Task/subagent call, complete the
 `model-routing` preflight. Material or parallel work has a hard route gate:
-the host must be able to select and expose the exact provider/model route and
-effort before launch. If it cannot, keep the work in the parent or obtain
+state the exact provider/model route and effort to the user and obtain explicit
+approval before launch. The host must be able to select and expose that route
+and effort. A host-pinned profile counts only when host metadata explicitly maps
+the profile to a provider/model and fixed or host-defined effort; record that
+mapping and do not claim an independently selected effort. If no direct or
+explicit pinned mapping exists, keep the work in the parent or obtain
 route-selection support; recording the limitation is not permission to launch.
 
 1. Define the task profile and minimum capability for each bounded track.
 2. Select and record the primary route, effort, fallback, availability evidence,
    and any substitution before launching the track.
-3. Treat `subagent_type` as an agent role, not proof of the underlying model.
-4. Treat `subagent_type` as an agent role, not proof of the underlying model or
-   route. Verify exact provider/model and effort enforcement separately.
+3. Treat `subagent_type` as an agent role, not proof of the underlying model or
+   route from its name alone; use explicit host metadata for pinned profiles.
+4. Record the user approval, route mapping source, availability evidence,
+   fallback, and any substitution for each track.
 5. If exact route/effort enforcement is unavailable, stop material/parallel
    fan-out; do not silently use the parent route or a role-only fallback.
 6. For high-risk or disputed work, escalate or add an independent verifier only
@@ -300,21 +305,29 @@ or parallel Task/subagent call. The preflight is required even when the host
 does not expose exact model selection.
 
 1. Define the task profile and minimum capability before comparing routes.
-2. Record the primary route, effort, fallback, availability evidence, and any
-   substitution for each track before launching it.
+2. Record the primary route, effort, cost class/entitlement, fallback,
+   availability evidence, and any substitution for each track before launching
+   it.
 3. Treat `subagent_type` as an agent role, not proof of the underlying model.
 4. If exact route selection is unavailable, record that limitation instead of
    silently assuming the parent model or a model named by the role.
-5. When selection is available, use the **least expensive model and lowest
-   effort reasonably likely to complete the task correctly**.
+5. When selection is available, prefer a verified subscription/account-priced
+   route over PAYG among otherwise capable, healthy candidates; otherwise use the
+   **least expensive model and lowest effort reasonably likely to complete the
+   task correctly**.
 6. Start low for bounded, routine work such as searches, mechanical edits,
    formatting, straightforward tests, and status checks.
 7. Escalate for ambiguous or cross-cutting design, financial/safety-sensitive
    reasoning, repeated failure, or evidence that the current tier is inadequate.
 8. Honor a model or effort explicitly required by the user, host, or applicable
-   skill; document any capability-based substitution.
-9. Optimize total cost, including retries and review time. Cost never justifies
-   weakening verification or using an underpowered model for high-impact work.
+    skill; document any capability-based substitution. For CLI-visible routes,
+    require a recent bounded connectivity probe before presenting availability;
+    host-pinned routes outside that catalog need host-specific health evidence or
+    remain `unknown`.
+9. Optimize total cost, including retries and review time. Never infer
+    subscription coverage from a provider name, configured credential, active
+    catalog row, or zero token price. Cost never justifies weakening verification
+    or using an underpowered model for high-impact work.
 10. Give each parallel track the cheapest capable tier independently; do not
     promote every subagent because one track is difficult.
 11. Treat context size as route-specific. Use the selected route's documented or

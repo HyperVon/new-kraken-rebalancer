@@ -96,19 +96,26 @@ several small, independently useful reports:
 
 Before launching any material or parallel review track, complete the
 `model-routing` preflight. The exact provider/model route and effort must be
-host-enforceable and exposed to the parent. If the host cannot enforce and
-expose that selection, stop the fan-out and keep the review parent-owned or
-obtain route-selection support; file disjointness is not permission to bypass
-this gate. Choose the cheapest eligible exact route that can answer the track
-reliably, escalating only for high-risk financial, security, persistence, or
-disputed reasoning. Model diversity is useful, but scope diversity is
-mandatory.
+host-enforceable and exposed to the parent. State the exact provider/model and
+effort plan to the user and obtain explicit approval before the first Task call.
+If the host cannot enforce and expose that selection, stop the fan-out and keep
+the review parent-owned or obtain route-selection support; file disjointness is
+not permission to bypass this gate. Choose the cheapest eligible exact route
+that can answer the track reliably, escalating only for high-risk financial,
+security, persistence, or disputed reasoning. Model diversity is useful, but
+scope diversity is mandatory.
 
 `subagent_type` and other agent-role labels identify a capability or harness
-role, not a provider/model route or effort level. A generic role such as
-`general` is never evidence that a selected model ran and never substitutes
-for an exact route. Record the exact route, effort, availability evidence,
-fallback, and any substitution before launch.
+role, not a provider/model route or effort level from their names alone. A
+host-pinned profile counts as exact route evidence only when host metadata
+explicitly maps that profile to a provider/model and fixed or host-defined
+effort; record the mapping source and do not claim an independently selected
+effort. A generic role such as `general` is never evidence that a selected model
+ran and never substitutes for an exact route. Record the exact route, effort,
+cost class/entitlement, availability evidence, fallback, user approval, and any
+substitution before launch. For CLI-visible routes, availability evidence must
+include a recent bounded connectivity probe; for host-pinned routes outside that
+catalog, use host-specific health evidence or record availability as unknown.
 
 The routing rules below are harness-neutral. Named agent types are repository
 or Kilo/OpenCode examples only; Cursor, Claude Code, Copilot, and other hosts
@@ -139,9 +146,19 @@ the prompts so agents do not redo one another's work. A prompt must contain:
 3. The PR intent and already-completed context.
 4. Forbidden files/actions, especially secrets and runtime data.
 5. Acceptance criteria, iteration cap, and the compact output format.
-6. The exact provider/model route and effort selected for the track, plus the
-   fallback and availability evidence; do not launch if the host cannot
-   enforce and expose them.
+6. The exact provider/model route and effort selected for the track, cost class,
+   host mapping evidence when profile-pinned, the fallback and availability
+   probe/health evidence, and the recorded user approval; do not launch if the
+   host cannot enforce and expose them.
+
+Before reviewing the full diff, the parent may capture the bounded surface with:
+
+```bash
+./.agents/skills/adversarial-pr-review/scripts/review_surface.sh main
+```
+
+This reports merge-base, diff statistics, and changed paths without launching
+agents or reading runtime data.
 
 ### Automatic fallback on launch failure
 

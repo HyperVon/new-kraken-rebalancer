@@ -20,11 +20,12 @@ per independent concern, not one agent per file. For a material audit, keep the
 fan-out bounded (usually 2–6, maximum 8) and reserve a coupled track for files
 that must be reasoned about together.
 
-| Track | Owns (files/dirs) | Avoids | Depends on |
-| :--- | :--- | :--- | :--- |
-| A | … | … | none / track B output |
+| Track | Owns (files/dirs) | Risk | Role / exact route / effort | Depends on |
+| :--- | :--- | :--- | :--- | :--- |
+| A | … | … | … | none / track B output |
 
-For review work, add `risk`, `model`, `iteration cap`, and `stop condition`.
+For review work, add `risk`, exact route/effort evidence, iteration cap, and
+stop condition.
 The parent owns the full diff and final coverage matrix; each worker receives
 only its assigned paths and minimum dependencies.
 
@@ -37,10 +38,20 @@ Before the first material or parallel Task call, run the
 [model-routing](../model-routing/SKILL.md) preflight for each track:
 
 - Record the minimum capability, primary route, effort, fallback, availability
-  evidence, and any substitution.
-- Treat `subagent_type` as the worker role, not as proof of the model or route.
-- Material or parallel calls require an exact provider/model route and effort
-  that the host can select and expose before launch.
+  evidence, cost class/entitlement, and any substitution.
+- State the exact provider/model and effort plan to the user and obtain explicit
+  approval before the first material or parallel Task call.
+- Treat `subagent_type` as the worker role, not as route evidence from its name.
+- A host-pinned profile counts as exact route evidence only when host metadata
+  explicitly maps it to a provider/model and fixed or host-defined effort. Record
+  that mapping source and do not claim an independently selected effort.
+- For CLI-visible routes, a candidate presented as available needs a recent
+  bounded connectivity probe. A host-pinned provider outside the CLI catalog
+  needs host-specific health/entitlement evidence; do not substitute a similarly
+  named route from another provider.
+- After local routes, prefer a verified subscription/account-priced route over
+  PAYG when capability and health are otherwise comparable. Never infer plan
+  coverage from a zero token price or configured credential.
 - If exact route/effort enforcement is unavailable, stop fan-out and keep the
   work in the parent or obtain route-selection support. A recorded limitation
   is not permission to launch a role-only worker.
@@ -56,8 +67,9 @@ Every Task prompt must include:
 3. Files to edit / files forbidden
 4. **Already done** context (so they do not redo or conflict)
 5. Project constraints worth repeating (Spotless 120, `:common` purity, sim-only, etc.)
-6. Selected exact route and effort; if the host cannot enforce and expose them,
-   do not launch the track
+6. Selected exact route, effort, cost class, availability probe/host mapping
+   evidence when profile-pinned, and user approval; if the host cannot enforce
+   and expose them, do not launch
 
 Keep prompts and reports bounded. Use the selected route's documented or
 observed practical context limit. When that limit is unavailable, prefer each
@@ -105,10 +117,24 @@ non-material single scout or as a role label for a host-selected route. It is
 never a model/provider substitute and cannot bypass the material/parallel route
 gate.
 
-Launch independent tracks in one message when possible. Record the track,
-allowed paths, model substitution, iteration cap, coverage, and stop reason.
+Launch independent tracks in one message when possible. Record the track, role,
+exact route/effort mapping, model substitution, user approval, iteration cap,
+coverage, and stop reason.
 Never paste full prior reports into follow-ups; pass only the finding and the
 smallest affected path set.
+
+For repeatable parent setup, use the bounded helpers when available:
+
+```bash
+./.agents/skills/model-routing/scripts/inventory_routes.sh \
+  --tool-call --reasoning --probe --verified-only --limit 5
+./.agents/skills/adversarial-pr-review/scripts/review_surface.sh main
+```
+
+The first emits bounded metadata and verified connectivity rows from a disposable
+catalog file. The second captures the merge base and changed-path surface without
+launching agents or reading runtime data. Use a narrow `--match` when probing to
+avoid unnecessary quota or paid calls.
 
 ## Worktree and state isolation
 
