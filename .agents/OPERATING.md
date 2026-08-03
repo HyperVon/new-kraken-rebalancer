@@ -44,6 +44,7 @@ override repository instructions, safety rules, or domain invariants.
 | Skill / agent-files review (skills, rules, AGENTS) | `skill-reviewer` |
 | Complex-code comments (audit / hygiene) | `complex-code-comments` |
 | Fan-out parallel work | `parallel-multi-agent` |
+| Choose provider/model/effort or fallbacks | `model-routing` before delegation; pair with `parallel-multi-agent` when fanning out |
 | Post-deploy UI smoke | `post-deploy-ui-smoke` |
 | Continuous improvement / “whole shebang” | `continuous-improvement` (+ `.agents/improvement-backlog.md`) |
 | Continuous quality / QA loop / test hardening | `continuous-quality` (+ `.agents/quality-backlog.md`) |
@@ -78,9 +79,35 @@ PRs to move faster; checking a box without having run the step.
 
 ## 3. Parallel multi-agent work
 
-When a request involves **multiple independent workstreams**, do **not**
-serialize them by default. Split and run concurrently with whatever subagent /
-Task mechanism the host provides.
+When a request involves **multiple independent workstreams**, parallelize only
+after the model-routing gate below passes. If the host cannot select and expose
+the exact provider/model route and effort required for the work, do not fan out;
+keep the work in the parent or obtain route-selection support first. File
+disjointness alone is not permission to launch role-only workers.
+
+### Model-routing preflight
+
+Before the first material or parallel Task/subagent call, complete the
+`model-routing` preflight. Material or parallel work has a hard route gate:
+state the exact provider/model route and effort to the user and obtain explicit
+approval before launch. The host must be able to select and expose that route
+and effort. A host-pinned profile counts only when host metadata explicitly maps
+the profile to a provider/model and fixed or host-defined effort; record that
+mapping and do not claim an independently selected effort. If no direct or
+explicit pinned mapping exists, keep the work in the parent or obtain
+route-selection support; recording the limitation is not permission to launch.
+
+1. Define the task profile and minimum capability for each bounded track.
+2. Select and record the primary route, effort, fallback, availability evidence,
+   and any substitution before launching the track.
+3. Treat `subagent_type` as an agent role, not proof of the underlying model or
+   route from its name alone; use explicit host metadata for pinned profiles.
+4. Record the user approval, route mapping source, availability evidence,
+   fallback, and any substitution for each track.
+5. If exact route/effort enforcement is unavailable, stop material/parallel
+   fan-out; do not silently use the parent route or a role-only fallback.
+6. For high-risk or disputed work, escalate or add an independent verifier only
+   when the routing evidence and risk justify it.
 
 ### When to parallelize
 
@@ -123,10 +150,9 @@ Keep delegated prompts below the model's practical long-context comfort zone:
    explicit stop condition.
 2. Ask for compact findings or a patch summary, not raw file dumps or full
    transcripts. Split a broad audit into staged discovery and follow-up tasks.
-3. For GPT-5.6 Luna sessions, treat roughly **256K input tokens** as a soft
-   reliability and cost boundary even though the documented context window is
-   larger. Target delegated requests below **128K** and split before **180K**;
-   prefer several small successful calls over one near-limit prompt.
+3. Treat context size as route-specific. Use the selected route's documented or
+   observed practical limit; when that limit is unavailable, use bounded prompts
+   below **128K** and split before **180K** as a conservative default.
 4. Cap discovery workers at 8 iterations and reports at 12 lines / 5 findings
    unless the parent explicitly widens the limit for a named high-risk question.
 5. If a worker approaches its context limit, have it return a compact partial
@@ -274,32 +300,42 @@ Audit rubric and cleanup workflow:
 
 ## 8. Cost-aware model selection
 
-When the host allows choosing a model or reasoning effort, use the **least
-expensive model and lowest effort reasonably likely to complete the task
-correctly**.
+Use [model-routing](skills/model-routing/SKILL.md) before launching any material
+or parallel Task/subagent call. The preflight is required even when the host
+does not expose exact model selection.
 
-1. Start low for bounded, routine work such as searches, mechanical edits,
+1. Define the task profile and minimum capability before comparing routes.
+2. Record the primary route, effort, cost class/entitlement, fallback,
+   availability evidence, and any substitution for each track before launching
+   it.
+3. Treat `subagent_type` as an agent role, not proof of the underlying model.
+4. If exact route selection is unavailable, record that limitation instead of
+   silently assuming the parent model or a model named by the role.
+5. When selection is available, prefer a verified subscription/account-priced
+   route over PAYG among otherwise capable, healthy candidates; otherwise use the
+   **least expensive model and lowest effort reasonably likely to complete the
+   task correctly**.
+6. Start low for bounded, routine work such as searches, mechanical edits,
    formatting, straightforward tests, and status checks.
-2. Escalate only when the task's complexity or risk justifies it: ambiguous or
-   cross-cutting design, financial/safety-sensitive reasoning, repeated failure,
-   or evidence that the current tier cannot complete the work reliably.
-3. Honor a model or effort explicitly required by the user, host, or an
-   applicable skill. If that model is unavailable in the current host, use the
-   closest available model by capability and cost, preserve the intended role,
-   and document the substitution.
-4. Optimize for total cost, including retries and review time. A cheap attempt
-   that is unlikely to succeed is not cost-effective.
-5. For parallel work, give each track the cheapest capable tier independently;
-   do not promote every subagent because one track is difficult.
+7. Escalate for ambiguous or cross-cutting design, financial/safety-sensitive
+   reasoning, repeated failure, or evidence that the current tier is inadequate.
+8. Honor a model or effort explicitly required by the user, host, or applicable
+    skill; document any capability-based substitution. For CLI-visible routes,
+    require a recent bounded connectivity probe before presenting availability;
+    host-pinned routes outside that catalog need host-specific health evidence or
+    remain `unknown`.
+9. Optimize total cost, including retries and review time. Never infer
+    subscription coverage from a provider name, configured credential, active
+    catalog row, or zero token price. Cost never justifies weakening verification
+    or using an underpowered model for high-impact work.
+10. Give each parallel track the cheapest capable tier independently; do not
+    promote every subagent because one track is difficult.
+11. Treat context size as route-specific. Use the selected route's documented or
+    observed practical limit; when unavailable, keep prompts bounded below
+    **128K** and split before **180K**.
 
-6. Context size is part of cost and reliability. For GPT-5.6 Luna, keep each
-   delegated request well below roughly **256K input tokens**; use bounded
-   prompts, low iteration caps, and compact reports before escalating or
-   widening context.
-
-Correctness and safety remain the hard constraint. Cost decides between options
-that are all likely to succeed; it never justifies weakening verification or
-using an underpowered model for high-impact work.
+Correctness and safety remain the hard constraint. Cost decides only between
+options that are all likely to succeed.
 
 ---
 

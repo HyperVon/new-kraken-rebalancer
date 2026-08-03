@@ -44,26 +44,20 @@ class SqliteTradeRepositoryImplTest : SqliteTradeRepositoryTestBase() {
                         assets =
                         mapOf(
                             Asset.BTC to
-                                PortfolioSnapshot.AssetSnapshot(
-                                    symbol = Asset(Asset.BTC),
+                                TestFixtures.assetSnapshot(
+                                    symbol = Asset.BTC,
                                     balance = BigDecimal("0.5"),
                                     price = BigDecimal("18000.00"),
                                     valueUSD = BigDecimal("900.00"),
                                     targetPercent = BigDecimal("90.0"),
-                                    currentPercent = BigDecimal("90.0"),
-                                    deviationPercent = BigDecimal("0.0"),
-                                    deviationUSD = BigDecimal("0.0"),
                                 ),
                             TestFixtures.USD to
-                                PortfolioSnapshot.AssetSnapshot(
-                                    symbol = Asset(TestFixtures.USD),
+                                TestFixtures.assetSnapshot(
+                                    symbol = TestFixtures.USD,
                                     balance = BigDecimal("100.50"),
                                     price = BigDecimal.ONE,
                                     valueUSD = BigDecimal("100.50"),
                                     targetPercent = BigDecimal("10.0"),
-                                    currentPercent = BigDecimal("10.0"),
-                                    deviationPercent = BigDecimal("0.0"),
-                                    deviationUSD = BigDecimal("0.0"),
                                 ),
                         ),
                         actions = listOf("Action 1", "Action 2"),

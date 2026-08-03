@@ -7,7 +7,6 @@ import com.gemini.krakenbot.api.RebalancerComparisonPoint
 import com.gemini.krakenbot.api.TradeRecord
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderSide
-import com.gemini.krakenbot.view.util.DataProps
 import kotlinx.coroutines.await
 import kotlin.js.Promise
 import kotlin.js.json
@@ -145,23 +144,23 @@ internal fun rebalancerComparisonToDynamic(comparison: RebalancerComparison): dy
     "unavailableAt" to comparison.unavailableAt,
 )
 
-/** Build a dynamic trade JSON object for tests using [DataProps] keys. */
+/** Build a dynamic trade JSON object with independent wire-contract keys. */
 internal fun tradeRecordToDynamic(trade: TradeRecord): dynamic = json(
-    DataProps.TIMESTAMP to trade.timestamp,
-    DataProps.SYMBOL to trade.symbol,
-    DataProps.SIDE to trade.side,
-    DataProps.PAIR to trade.pair,
-    DataProps.VOLUME to trade.volume,
-    DataProps.USD_AMOUNT to trade.usdAmount,
-    DataProps.SUCCESS to trade.success,
-    DataProps.DRY_RUN to trade.dryRun,
-    DataProps.PRICE to trade.price,
-    DataProps.FEE to trade.fee,
-    DataProps.SLIPPAGE_PERCENT to trade.slippagePercent,
-    DataProps.EXPECTED_PRICE to trade.expectedPrice,
-    DataProps.SOURCE to trade.source,
-    DataProps.ERROR_MESSAGE to trade.errorMessage,
-    DataProps.ID to trade.id,
+    "timestamp" to trade.timestamp,
+    "symbol" to trade.symbol,
+    "side" to trade.side,
+    "pair" to trade.pair,
+    "volume" to trade.volume,
+    "usdAmount" to trade.usdAmount,
+    "success" to trade.success,
+    "dryRun" to trade.dryRun,
+    "price" to trade.price,
+    "fee" to trade.fee,
+    "slippagePercent" to trade.slippagePercent,
+    "expectedPrice" to trade.expectedPrice,
+    "source" to trade.source,
+    "errorMessage" to trade.errorMessage,
+    "id" to trade.id,
 )
 
 /** Build a dynamic stats JSON object for tests. */

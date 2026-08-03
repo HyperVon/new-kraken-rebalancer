@@ -8,7 +8,6 @@ import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.PortfolioSnapshot
-import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.model.TradeSource
 import com.gemini.krakenbot.repository.TradeSummaryStats
@@ -267,7 +266,7 @@ class TradeHistorySyncCoordinationTest : TradeHistoryServiceTestBase() {
                 coEvery { repository.isHistorySeeded() } returns true
                 coEvery { repository.getLatestTradeTime() } returns null
                 coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
-                coEvery { repository.getSyncMetadata(SyncMetadataKeys.SYNC_WATERMARK_EPOCH_SEC) } returns null
+                coEvery { repository.getSyncMetadata("sync_watermark_epoch_sec") } returns null
                 coEvery { krakenService.getTradeHistory(startSec = null, offset = 0) } returns emptyList()
 
                 service.syncTradesFromKraken()
@@ -275,7 +274,7 @@ class TradeHistorySyncCoordinationTest : TradeHistoryServiceTestBase() {
                 coVerify(exactly = 1) { krakenService.getTradeHistory(startSec = null, offset = 0) }
                 coVerify(exactly = 1) {
                     repository.setSyncMetadata(
-                        SyncMetadataKeys.SYNC_WATERMARK_EPOCH_SEC,
+                        "sync_watermark_epoch_sec",
                         match { it.toLongOrNull() != null },
                     )
                 }
@@ -291,7 +290,7 @@ class TradeHistorySyncCoordinationTest : TradeHistoryServiceTestBase() {
                 coEvery { repository.getLatestTradeTime() } returns null
                 coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
                 coEvery {
-                    repository.getSyncMetadata(SyncMetadataKeys.SYNC_WATERMARK_EPOCH_SEC)
+                    repository.getSyncMetadata("sync_watermark_epoch_sec")
                 } returns watermarkSec.toString()
                 coEvery { krakenService.getTradeHistory(any(), any()) } returns emptyList()
 
@@ -317,7 +316,7 @@ class TradeHistorySyncCoordinationTest : TradeHistoryServiceTestBase() {
                 coEvery { repository.getLatestTradeTime() } returns Instant.ofEpochSecond(latestTradeSec)
                 coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
                 coEvery {
-                    repository.getSyncMetadata(SyncMetadataKeys.SYNC_WATERMARK_EPOCH_SEC)
+                    repository.getSyncMetadata("sync_watermark_epoch_sec")
                 } returns newerWatermarkSec.toString()
                 coEvery { krakenService.getTradeHistory(any(), any()) } returns emptyList()
 

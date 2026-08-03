@@ -14,7 +14,6 @@ import kotlinx.html.LABEL
 import kotlinx.html.NAV
 import kotlinx.html.P
 import kotlinx.html.SPAN
-import kotlinx.html.TABLE
 import kotlinx.html.TBODY
 import kotlinx.html.TD
 import kotlinx.html.TH
@@ -32,7 +31,6 @@ import kotlinx.html.label
 import kotlinx.html.nav
 import kotlinx.html.p
 import kotlinx.html.span
-import kotlinx.html.table
 import kotlinx.html.td
 import kotlinx.html.th
 import kotlinx.html.tr
@@ -118,12 +116,6 @@ inline fun TR.td(
     },
 ): Unit = td(classes = cssClass?.value, block = block)
 
-inline fun TABLE.tr(
-    cssClass: CssClass? = null,
-    crossinline block: TR.() -> Unit = {
-    },
-): Unit = tr(classes = cssClass?.value, block = block)
-
 inline fun TBODY.tr(
     cssClass: CssClass? = null,
     crossinline block: TR.() -> Unit = {
@@ -135,9 +127,3 @@ inline fun THEAD.tr(
     crossinline block: TR.() -> Unit = {
     },
 ): Unit = tr(classes = cssClass?.value, block = block)
-
-inline fun FlowContent.table(
-    cssClass: CssClass? = null,
-    crossinline block: TABLE.() -> Unit = {
-    },
-): Unit = table(classes = cssClass?.value, block = block)

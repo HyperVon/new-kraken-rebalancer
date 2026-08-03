@@ -9,7 +9,6 @@ import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.OrderSubmissionState
 import com.gemini.krakenbot.model.PortfolioStats
-import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.model.TradeSource
 import com.gemini.krakenbot.repository.TradeSummaryStats
@@ -668,10 +667,10 @@ class TradeHistorySyncReconciliationTest : TradeHistoryServiceTestBase() {
 
                     persistedTrades.size shouldBe 51
                     seeded shouldBe false
-                    metadata[SyncMetadataKeys.SYNC_OFFSET] shouldBe "50"
-                    metadata[SyncMetadataKeys.SYNC_TOTAL] shouldBe "150"
-                    metadata[SyncMetadataKeys.HISTORY_SEEDED] shouldBe null
-                    metadata[SyncMetadataKeys.SYNC_WATERMARK_EPOCH_SEC] shouldBe null
+                    metadata["sync_offset"] shouldBe "50"
+                    metadata["sync_total"] shouldBe "150"
+                    metadata["history_seeded"] shouldBe null
+                    metadata["sync_watermark_epoch_sec"] shouldBe null
                     verify(exactly = 1) { configService.beginExecutionSession() }
                     verify(exactly = 1) { configService.endExecutionSession() }
 
@@ -680,8 +679,8 @@ class TradeHistorySyncReconciliationTest : TradeHistoryServiceTestBase() {
                     persistedTrades.mapNotNull(TradeRecord::tradeId).toSet().size shouldBe 150
                     persistedTrades.size shouldBe 150
                     seeded shouldBe true
-                    metadata[SyncMetadataKeys.SYNC_OFFSET] shouldBe SyncMetadataKeys.COMPLETED
-                    metadata[SyncMetadataKeys.SYNC_TOTAL] shouldBe SyncMetadataKeys.COMPLETED
+                    metadata["sync_offset"] shouldBe "completed"
+                    metadata["sync_total"] shouldBe "completed"
                     coVerify(exactly = 2) { krakenService.getTradeHistory(null, 0) }
                     coVerify(exactly = 1) { krakenService.getTradeHistory(null, 100) }
                     coVerify(exactly = 0) { krakenService.getTradeHistory(null, 150) }
@@ -698,9 +697,9 @@ class TradeHistorySyncReconciliationTest : TradeHistoryServiceTestBase() {
                 // COMPLETED, leaving a numeric cursor behind (the interrupted-seed marker).
                 val seeded = true
                 val metadata = mutableMapOf(
-                    SyncMetadataKeys.HISTORY_SEEDED to "true",
-                    SyncMetadataKeys.SYNC_OFFSET to "50",
-                    SyncMetadataKeys.SYNC_TOTAL to "150",
+                    "history_seeded" to "true",
+                    "sync_offset" to "50",
+                    "sync_total" to "150",
                 )
                 val seedTrade = TestFixtures.tradeRecord(
                     timestamp = now.minusSeconds(60),
@@ -778,8 +777,8 @@ class TradeHistorySyncReconciliationTest : TradeHistoryServiceTestBase() {
                 queriedStartSecs.isNotEmpty() shouldBe true
                 (queriedStartSecs.none { it == null }) shouldBe true
                 // The orphaned numeric cursor is self-healed to COMPLETED.
-                metadata[SyncMetadataKeys.SYNC_OFFSET] shouldBe SyncMetadataKeys.COMPLETED
-                metadata[SyncMetadataKeys.SYNC_TOTAL] shouldBe SyncMetadataKeys.COMPLETED
+                metadata["sync_offset"] shouldBe "completed"
+                metadata["sync_total"] shouldBe "completed"
                 persistedTrades.mapNotNull(TradeRecord::tradeId).toSet().size shouldBe 1
             }
         }

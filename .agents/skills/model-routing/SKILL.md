@@ -3,8 +3,10 @@ name: model-routing
 description: >-
   Inventory provider/model routes and recommend subagent models using capability,
   context, comparative cost-per-task, and observed availability. Use when choosing
-  models, providers, effort levels, fallbacks, or quota-aware parallel tracks;
-  do not use it as a replacement for parallel-multi-agent, review, or domain skills.
+  models, providers, effort levels, fallbacks, or quota-aware parallel tracks,
+  including before material or parallel subagent work. Includes bounded route
+  inventory helpers; do not use it as a replacement for parallel-multi-agent,
+  review, or domain skills.
 ---
 
 # Model Routing
@@ -37,6 +39,35 @@ Use [parallel-multi-agent](../parallel-multi-agent/SKILL.md) for decomposition,
 ownership, iteration caps, and integration. Use the applicable domain, review, or
 quality skill for the work itself. This skill must not turn a model recommendation
 into an unbounded extra agent or a second full review.
+
+## Delegation Gate
+
+Before launching any material or parallel Task/subagent work:
+
+1. Define the minimum capability, tool needs, risk, and context profile for each
+   bounded track.
+2. Select and record the primary route, effort, fallback, availability evidence,
+   and any substitution before launch.
+3. State the exact provider/model and effort plan to the user and obtain explicit
+   approval before the first material or parallel Task call. No approval means
+   no launch.
+4. Treat `subagent_type` as a role by default; it does not prove the underlying
+   model or route from its name alone.
+5. A host-pinned agent profile satisfies the exact-route gate only when host
+   metadata explicitly maps that profile to a provider/model and a fixed or
+   host-defined effort. Record the mapping source and label the effort as
+   host-defined; do not claim an independently selected effort parameter.
+6. If neither direct selection nor an explicit host-pinned mapping is available,
+   stop fan-out and keep the work in the parent or obtain route-selection support.
+   A recorded limitation is a stop condition, not permission to launch a role-only
+   worker.
+7. Escalate or add an independent verifier only when task risk and available
+   capability evidence justify it.
+
+For a genuinely low-risk, non-material single scout, the record can be brief,
+but it must identify the capability threshold and any host selection limitation.
+This exception does not authorize material or parallel delegation, and
+`subagent_type` remains a role rather than a model route.
 
 ## Non-Negotiable Rules
 
@@ -119,18 +150,47 @@ kilo config check
 Use a provider-scoped refresh when the catalog is large. `kilo models` supplies
 catalog metadata and pricing, `kilo auth list` shows configured credential types,
 and `kilo config check` validates configuration. None of these proves that a
-route has remaining quota. `kilo stats` is historical usage evidence only.
+route has remaining quota or can serve a request now. `kilo stats` is historical
+usage evidence only.
 
-Do not run `kilo roll-call` or equivalent probe calls as routine inventory. They
-consume quota or money and can perturb the very availability being measured. Use a
-probe only with explicit approval and a bounded reason that cannot be answered by
-metadata or an actual task call.
+Do not probe the entire catalog. For a candidate route that will be presented as
+available, use one bounded exact-route `kilo roll-call` probe when the route is
+exposed by that CLI and the user has approved the probe or the task explicitly
+requires availability verification. Probes may consume quota or money. The
+repository helper keeps this bounded:
+
+```bash
+./.agents/skills/model-routing/scripts/inventory_routes.sh \
+  --match 'deepseek-v4-flash-0731' --tool-call --reasoning \
+  --probe --verified-only --limit 5
+```
+
+`--probe` marks a route `verified` only after a successful request;
+`--verified-only` prevents unavailable candidates from being presented. Probe
+success proves request health at that moment, not remaining quota or future
+reliability. If a host-pinned provider is not exposed by the CLI, do not
+substitute a similarly named Kilo or OpenRouter route. Use host-specific
+health/entitlement evidence or mark the pinned route `unknown`.
 
 If the host exposes only named agent types or a fixed parent model, report that
 limitation. A skill can recommend an exact route and fallback, but it cannot force
 an arbitrary model through a host interface that does not expose model selection.
 Do not claim that a subagent type changed models unless the host configuration
 verifies it.
+
+For repeatable bounded Kilo inventory, use the repository helper when `kilo` is
+available. Add `--probe --verified-only` when the output will drive a route
+selection:
+
+```bash
+./.agents/skills/model-routing/scripts/inventory_routes.sh \
+  --tool-call --reasoning --probe --verified-only --limit 5
+```
+
+The wrapper keeps the verbose catalog in a disposable temporary file and emits
+only bounded metadata rows. CLI probes cover only CLI-visible routes; they do
+not prove availability for a separate host-pinned provider namespace. Do not
+persist raw catalog/probe output, credentials, or private account data.
 
 ### 3. Check Quota And Plan Entitlements
 
@@ -269,6 +329,29 @@ Do not let "free" override a real capability gap, and do not overthink trivial
 router decisions — for genuinely simple tasks, choosing a capable local model is
 the expected default rather than a special case.
 
+### Subscription And Account-Priced Preference
+
+After local routes, prefer a **verified subscription/account-priced route** over
+a pay-as-you-go per-token route when both clear the task's capability, context,
+tool, provider, and request-health requirements. This is a preference, not a
+capability override: choose the stronger or more reliable PAYG route when the
+subscription route is inadequate, quota-limited, slower enough to increase total
+cost, or not covered by the verified entitlement.
+
+Require all of the following before treating a subscription route as eligible:
+
+- The exact provider/model route is selectable or explicitly host-pinned.
+- The subscription or account entitlement is verified for that access provider,
+  gateway, model family, and plan scope.
+- A recent route-specific health probe or equivalent host diagnostic succeeded.
+- The expected task fits the plan's known limits; unknown quota is not
+  `sufficient`.
+
+Never infer subscription coverage from a provider name, configured credential,
+active catalog row, or zero token price. Keep the access provider, gateway, model
+creator, billing owner, and entitlement scope separate. A PAYG route with
+verified access is preferable to an unverified subscription route.
+
 ### 5. Hard-Filter Candidates
 
 Remove a candidate before ranking it when any of these fail:
@@ -298,9 +381,10 @@ Do not rank by `intelligence / cost` alone. Use a capability threshold and then
 compare the non-dominated candidates on:
 
 1. Capability evidence relevant to the task.
-2. Expected total cost: route price plus likely retry, correction, review, and
-   latency costs. Include actual context and estimated input/output/reasoning
-   tokens when the host exposes them.
+2. Cost class and expected total cost: prefer a verified subscription/account-
+   priced route over PAYG among otherwise eligible candidates, then compare route
+   price plus likely retry, correction, review, and latency costs. Include actual
+   context and estimated input/output/reasoning tokens when the host exposes them.
 3. Availability confidence and route health evidence.
 4. Provider and model-family diversity for fallbacks or independent review.
 
@@ -356,10 +440,13 @@ failure. Catalog metadata alone never upgrades `configured/unknown` to
 `verified`.
 
 Use the host's exact model-selection mechanism when it exists. If it does not,
-return the recommendation and the enforcement limitation rather than silently
-using the parent model. For a parallel split, make this record per track and
-follow [parallel-multi-agent](../parallel-multi-agent/SKILL.md)'s iteration and
-report limits.
+do not launch material or parallel work; return the recommendation and the
+enforcement limitation, or continue the work in the parent. If a host-pinned
+profile supplies the mapping, record the profile, explicit provider/model,
+host-defined effort, and the metadata source. For a parallel split, make this
+record per track and follow
+[parallel-multi-agent](../parallel-multi-agent/SKILL.md)'s iteration and report
+limits.
 
 When a user names a provider, report both the requested provider and the route's
 verified access/billing provider. If they differ, label the route as a
@@ -422,6 +509,17 @@ domain workflows; model routing does not waive them.
   or assuming a local model is adequate merely because it is free.
 - Escalating to a bigger model without a capability or risk reason, or never
   re-checking local capability as the task profile changes.
+- Launching material or parallel work from only `subagent_type` and claiming the
+  underlying model or route is known without host selection evidence.
+- Launching before the user approves the exact provider/model and effort plan.
+- Treating a host-pinned profile as route evidence without recording the host
+  metadata that maps it to a provider/model and fixed or host-defined effort.
+- Presenting an active catalog route as available without a bounded health probe,
+  or using a CLI probe for a host-pinned provider namespace it cannot address.
+- Treating a subscription/account-priced label or zero token price as proof of
+  entitlement, quota, or free usage.
+- Treating a generic role such as `general` as a selected model or provider
+  route.
 - Maintaining a permanent ledger of current model names instead of recording the
   evidence and substitutions for the session.
 
@@ -431,11 +529,17 @@ domain workflows; model routing does not waive them.
 - [ ] A capable local model was considered first, and a cloud escalation (if any)
       is defended by capability evidence or task risk.
 - [ ] Primary and fallback identifiers are exact host routes.
+- [ ] The user approved the exact provider/model and effort plan before launch.
+- [ ] Any pinned profile has an explicit host metadata mapping recorded; bare
+      role names were not used as route evidence.
 - [ ] Capability evidence matches the task and records its source/version.
 - [ ] Intelligence level and sufficiency are stated with matched evidence,
       confidence, and date, or explicitly labeled qualitative evidence.
 - [ ] Cost class does not confuse zero metadata price with free usage.
-- [ ] Availability state is based on observed evidence, not catalog status alone.
+- [ ] CLI-visible selections have a recent bounded health probe, or host-pinned
+      selections have equivalent host-specific health evidence.
+- [ ] Subscription/account-priced entitlement is verified for the exact route;
+      unknown quota is not treated as sufficient.
 - [ ] Artificial Analysis mappings and benchmark cost are labeled as comparative;
       attribution is present when data is displayed.
 - [ ] Substitutions and host enforcement limits are visible.

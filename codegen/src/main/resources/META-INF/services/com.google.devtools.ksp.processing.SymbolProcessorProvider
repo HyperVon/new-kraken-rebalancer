@@ -1,0 +1,3 @@
+com.gemini.krakenbot.codegen.processor.ApiMapperProcessorProvider
+com.gemini.krakenbot.codegen.processor.CssClassProcessorProvider
+com.gemini.krakenbot.codegen.processor.StringConstantProcessorProvider

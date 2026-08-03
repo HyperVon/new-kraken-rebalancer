@@ -1,8 +1,5 @@
 package com.gemini.krakenbot.frontend
 
-import com.gemini.krakenbot.view.util.CssClass
-import com.gemini.krakenbot.view.util.HtmlIds
-import com.gemini.krakenbot.view.util.HtmlTags
 import com.gemini.krakenbot.view.util.ViewText
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
@@ -18,7 +15,7 @@ class HistoryComparisonChartTest : StringSpec() {
 
     init {
         "buildRebalancerComparisonChart tooltip and tick callbacks format values" {
-            val container = document.createElement(HtmlTags.DIV)
+            val container = document.createElement("div")
             container.innerHTML = TestDomBuilders.chartsDom()
             document.body!!.appendChild(container)
             var capturedConfig: dynamic = null
@@ -53,7 +50,7 @@ class HistoryComparisonChartTest : StringSpec() {
         }
 
         "buildRebalancerComparisonChart renders available comparison with datasets and delta" {
-            val container = document.createElement(HtmlTags.DIV)
+            val container = document.createElement("div")
             container.innerHTML = TestDomBuilders.chartsDom()
             document.body!!.appendChild(container)
             window.asDynamic().Chart = mockChartConstructor()
@@ -62,13 +59,13 @@ class HistoryComparisonChartTest : StringSpec() {
                 val comparison = mockAvailableComparison()
                 buildRebalancerComparisonChart(comparison)
 
-                val chartArea = document.getElementById(HtmlIds.COMPARISON_CHART_CONTENT)
+                val chartArea = document.getElementById("comparison-chart-content")
                 chartArea?.classList?.contains("hidden") shouldBe false
 
-                val unavailable = document.getElementById(HtmlIds.COMPARISON_AVAILABILITY_MESSAGE)
+                val unavailable = document.getElementById("comparison-availability-message")
                 unavailable?.classList?.contains("visible") shouldBe false
 
-                val deltaEl = document.getElementById(HtmlIds.COMPARISON_LATEST_DIFFERENCE)
+                val deltaEl = document.getElementById("comparison-latest-difference")
                 deltaEl?.textContent shouldContain "+$5,000.00"
             } finally {
                 document.body!!.removeChild(container)
@@ -77,11 +74,11 @@ class HistoryComparisonChartTest : StringSpec() {
         }
 
         "buildRebalancerComparisonChart shows unavailable message and hides chart" {
-            val container = document.createElement(HtmlTags.DIV)
+            val container = document.createElement("div")
             container.innerHTML =
                 TestDomBuilders.chartsDom() +
                 TestDomBuilders.scrubberDom(
-                    canvasId = HtmlIds.REBALANCER_COMPARISON_CHART,
+                    canvasId = "rebalancer-comparison-chart",
                     disabled = false,
                     value = "50",
                 )
@@ -92,17 +89,17 @@ class HistoryComparisonChartTest : StringSpec() {
                 val comparison = mockUnavailableComparison()
                 buildRebalancerComparisonChart(comparison)
 
-                val chartArea = document.getElementById(HtmlIds.COMPARISON_CHART_CONTENT)
+                val chartArea = document.getElementById("comparison-chart-content")
                 chartArea?.classList?.contains("hidden") shouldBe true
 
-                val deltaEl = document.getElementById(HtmlIds.COMPARISON_LATEST_DIFFERENCE)
+                val deltaEl = document.getElementById("comparison-latest-difference")
                 deltaEl?.textContent shouldBe ViewText.EM_DASH
 
-                val unavailableDiv = document.getElementById(HtmlIds.COMPARISON_AVAILABILITY_MESSAGE)
+                val unavailableDiv = document.getElementById("comparison-availability-message")
                 unavailableDiv?.classList?.contains("visible") shouldBe true
                 unavailableDiv?.textContent shouldContain ViewText.UNAVAILABLE_INSUFFICIENT_SNAPSHOTS
 
-                val scrubber = document.querySelector(".${CssClass.History.ChartScrubberInput}") as HTMLInputElement
+                val scrubber = document.querySelector(".history-chart-scrubber-input") as HTMLInputElement
                 scrubber.disabled shouldBe true
                 scrubber.value shouldBe "0"
             } finally {
@@ -112,7 +109,7 @@ class HistoryComparisonChartTest : StringSpec() {
         }
 
         "buildRebalancerComparisonChart fails closed for malformed available payload" {
-            val container = document.createElement(HtmlTags.DIV)
+            val container = document.createElement("div")
             container.innerHTML = TestDomBuilders.chartsDom()
             document.body!!.appendChild(container)
             window.asDynamic().Chart = mockChartConstructor()
@@ -122,10 +119,10 @@ class HistoryComparisonChartTest : StringSpec() {
 
                 buildRebalancerComparisonChart(malformed)
 
-                document.getElementById(HtmlIds.COMPARISON_CHART_CONTENT)
+                document.getElementById("comparison-chart-content")
                     ?.classList
                     ?.contains("hidden") shouldBe true
-                document.getElementById(HtmlIds.COMPARISON_AVAILABILITY_MESSAGE)
+                document.getElementById("comparison-availability-message")
                     ?.classList
                     ?.contains("visible") shouldBe true
             } finally {
@@ -135,7 +132,7 @@ class HistoryComparisonChartTest : StringSpec() {
         }
 
         "buildRebalancerComparisonChart rejects malformed branches and shows ESTIMATED confidence" {
-            val container = document.createElement(HtmlTags.DIV)
+            val container = document.createElement("div")
             container.innerHTML = TestDomBuilders.chartsDom()
             document.body!!.appendChild(container)
             window.asDynamic().Chart = mockChartConstructor()
@@ -157,13 +154,13 @@ class HistoryComparisonChartTest : StringSpec() {
                 )
                 malformed.forEach { comparison ->
                     buildRebalancerComparisonChart(comparison)
-                    document.getElementById(HtmlIds.COMPARISON_CHART_CONTENT)
+                    document.getElementById("comparison-chart-content")
                         ?.classList
                         ?.contains("hidden") shouldBe true
                 }
 
                 buildRebalancerComparisonChart(available.copy(confidence = "ESTIMATED"))
-                val confidenceBadge = document.getElementById(HtmlIds.COMPARISON_CONFIDENCE_BADGE)
+                val confidenceBadge = document.getElementById("comparison-confidence-badge")
                 confidenceBadge?.classList?.contains("visible") shouldBe true
                 confidenceBadge?.textContent shouldBe ViewText.COMPARISON_CONFIDENCE_ESTIMATED
             } finally {

@@ -2,12 +2,6 @@ package com.gemini.krakenbot.frontend
 
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.view.util.ChartProps
-import com.gemini.krakenbot.view.util.CssClass
-import com.gemini.krakenbot.view.util.DataProps
-import com.gemini.krakenbot.view.util.HistoryViewIds
-import com.gemini.krakenbot.view.util.HtmlEvents
-import com.gemini.krakenbot.view.util.HtmlIds
-import com.gemini.krakenbot.view.util.HtmlTags
 import com.gemini.krakenbot.view.util.ViewText
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
@@ -25,8 +19,8 @@ class HistoryZoomTest : StringSpec() {
     init {
         "setupZoomButtons invoke chart zoom APIs" {
             resetHistoryUiState()
-            val container = document.createElement(HtmlTags.DIV)
-            container.innerHTML = TestDomBuilders.zoomControlsDom(HtmlIds.REBALANCER_COMPARISON_CHART)
+            val container = document.createElement("div")
+            container.innerHTML = TestDomBuilders.zoomControlsDom("rebalancer-comparison-chart")
             document.body!!.appendChild(container)
             var zoomCalls = 0
             var resetCalls = 0
@@ -42,11 +36,11 @@ class HistoryZoomTest : StringSpec() {
             registerHistoryGlobals()
             try {
                 createOrUpdate(
-                    HtmlIds.REBALANCER_COMPARISON_CHART,
+                    "rebalancer-comparison-chart",
                     createLineChartConfig(emptyArray(), getClonedChartOptions()),
                 )
                 setupZoomButtons()
-                val buttons = document.querySelectorAll(CssClass.Query.ZOOM_BTNS)
+                val buttons = document.querySelectorAll(".history-zoom-btn")
                 for (i in 0 until buttons.length) {
                     (buttons.item(i) as HTMLElement).click()
                 }
@@ -60,8 +54,8 @@ class HistoryZoomTest : StringSpec() {
 
         "createOrUpdate keeps pending Day · Total only visibility on rebuild" {
             resetHistoryUiState()
-            val container = document.createElement(HtmlTags.DIV)
-            container.innerHTML = """<canvas id="${HtmlIds.PORTFOLIO_VALUE_CHART}"></canvas>"""
+            val container = document.createElement("div")
+            container.innerHTML = """<canvas id="portfolio-value-chart"></canvas>"""
             document.body!!.appendChild(container)
             var lastConfig: dynamic = null
             window.asDynamic().Chart =
@@ -76,21 +70,21 @@ class HistoryZoomTest : StringSpec() {
                         json(ChartProps.LABEL to Asset.BTC, ChartProps.DATA to emptyArray<dynamic>()),
                     )
                 createOrUpdate(
-                    HtmlIds.PORTFOLIO_VALUE_CHART,
+                    "portfolio-value-chart",
                     createLineChartConfig(datasets, getClonedChartOptions()),
                 )
 
-                val dayTotal = HistoryViewPrefs.builtInViews().first { it.id == HistoryViewIds.DAY_TOTAL }
+                val dayTotal = HistoryViewPrefs.builtInViews().first { it.id == "day-total" }
                 // pendingPresetVisibility skips snapshotting on-screen toggles so the preset wins on rebuild.
                 historyApplyVisibility(dayTotal.visibility)
                 createOrUpdate(
-                    HtmlIds.PORTFOLIO_VALUE_CHART,
+                    "portfolio-value-chart",
                     createLineChartConfig(datasets, getClonedChartOptions()),
                 )
 
                 (lastConfig.data.datasets[0].hidden as Boolean) shouldBe false
                 (lastConfig.data.datasets[1].hidden as Boolean) shouldBe true
-                visibilityStates[HtmlIds.PORTFOLIO_VALUE_CHART]
+                visibilityStates["portfolio-value-chart"]
                     ?.get(ChartProps.DATASET_VISIBILITY_DEFAULT) shouldBe false
 
                 val legendFilter: dynamic = lastConfig.options.plugins.legend.labels.filter
@@ -109,7 +103,7 @@ class HistoryZoomTest : StringSpec() {
 
         "legendLabelsFilter keeps legend-toggled series and drops config-hidden ones" {
             val visibleDs = json(ChartProps.LABEL to ViewText.TOTAL_PORTFOLIO)
-            val configHiddenDs = json(ChartProps.LABEL to Asset.BTC, DataProps.HIDDEN to true)
+            val configHiddenDs = json(ChartProps.LABEL to Asset.BTC, "hidden" to true)
             val chartDataLike =
                 json(
                     "datasets" to arrayOf(visibleDs, configHiddenDs),
@@ -144,10 +138,10 @@ class HistoryZoomTest : StringSpec() {
 
         "setupChartScrubbers pans x window from slider input" {
             resetHistoryUiState()
-            val container = document.createElement(HtmlTags.DIV)
+            val container = document.createElement("div")
             container.innerHTML =
                 """
-                <canvas id="${HtmlIds.PORTFOLIO_VALUE_CHART}"></canvas>
+                 <canvas id="portfolio-value-chart"></canvas>
                 ${TestDomBuilders.scrubberDom(disabled = true)}
                 """.trimIndent()
             document.body!!.appendChild(container)
@@ -180,19 +174,19 @@ class HistoryZoomTest : StringSpec() {
                         json("x" to 100.0, "y" to 2.0),
                     )
                 createOrUpdate(
-                    HtmlIds.PORTFOLIO_VALUE_CHART,
+                    "portfolio-value-chart",
                     createLineChartConfig(
                         arrayOf(json(ChartProps.LABEL to ViewText.TOTAL_PORTFOLIO, ChartProps.DATA to points)),
                         getClonedChartOptions(),
                     ),
                 )
                 setupChartScrubbers()
-                syncChartScrubber(HtmlIds.PORTFOLIO_VALUE_CHART)
+                syncChartScrubber("portfolio-value-chart")
                 val scrubber =
-                    document.querySelector(CssClass.Query.CHART_SCRUBBERS) as HTMLInputElement
+                    document.querySelector(".history-chart-scrubber-input") as HTMLInputElement
                 scrubber.disabled shouldBe false
                 scrubber.value = "50"
-                scrubber.dispatchEvent(Event(HtmlEvents.INPUT))
+                scrubber.dispatchEvent(Event("input"))
                 // Prefer chart.zoomScale; writing options.scales.x + update() is ignored once zoom owns the axis.
                 zoomScaleCalls shouldBe 1
                 lastMin shouldBe 40.0
@@ -205,10 +199,10 @@ class HistoryZoomTest : StringSpec() {
 
         "panChartToScrubberPosition falls back to options.scales when zoomScale missing" {
             resetHistoryUiState()
-            val container = document.createElement(HtmlTags.DIV)
+            val container = document.createElement("div")
             container.innerHTML =
                 """
-                <canvas id="${HtmlIds.PORTFOLIO_VALUE_CHART}"></canvas>
+                 <canvas id="portfolio-value-chart"></canvas>
                 ${TestDomBuilders.scrubberDom(disabled = false)}
                 """.trimIndent()
             document.body!!.appendChild(container)
@@ -237,7 +231,7 @@ class HistoryZoomTest : StringSpec() {
                         json("x" to 100.0, "y" to 2.0),
                     )
                 createOrUpdate(
-                    HtmlIds.PORTFOLIO_VALUE_CHART,
+                    "portfolio-value-chart",
                     createLineChartConfig(
                         arrayOf(json(ChartProps.LABEL to ViewText.TOTAL_PORTFOLIO, ChartProps.DATA to points)),
                         getClonedChartOptions(),
@@ -245,9 +239,9 @@ class HistoryZoomTest : StringSpec() {
                 )
                 setupChartScrubbers()
                 val scrubber =
-                    document.querySelector(CssClass.Query.CHART_SCRUBBERS) as HTMLInputElement
+                    document.querySelector(".history-chart-scrubber-input") as HTMLInputElement
                 scrubber.value = "0"
-                scrubber.dispatchEvent(Event(HtmlEvents.INPUT))
+                scrubber.dispatchEvent(Event("input"))
                 updateCalls shouldBe 1
                 capturedOptions.scales.x.min.toString().toDouble() shouldBe 0.0
                 capturedOptions.scales.x.max.toString().toDouble() shouldBe 20.0
@@ -259,10 +253,10 @@ class HistoryZoomTest : StringSpec() {
 
         "captured zoom completion callback re-enables the scrubber after drag or wheel zoom" {
             resetHistoryUiState()
-            val container = document.createElement(HtmlTags.DIV)
+            val container = document.createElement("div")
             container.innerHTML =
                 """
-                <canvas id="${HtmlIds.PORTFOLIO_VALUE_CHART}"></canvas>
+                 <canvas id="portfolio-value-chart"></canvas>
                 ${TestDomBuilders.scrubberDom(disabled = true)}
                 """.trimIndent()
             document.body!!.appendChild(container)
@@ -272,7 +266,7 @@ class HistoryZoomTest : StringSpec() {
                 jsObject {
                     data = config.data
                     options = config.options
-                    canvas = document.getElementById(HtmlIds.PORTFOLIO_VALUE_CHART)
+                    canvas = document.getElementById("portfolio-value-chart")
                     destroy = {}
                     isDatasetVisible = { _: Int -> true }
                     getInitialScaleBounds = { json("x" to json("min" to 0.0, "max" to 100.0)) }
@@ -286,19 +280,19 @@ class HistoryZoomTest : StringSpec() {
                     json("x" to 100.0, "y" to 2.0),
                 )
                 createOrUpdate(
-                    HtmlIds.PORTFOLIO_VALUE_CHART,
+                    "portfolio-value-chart",
                     createLineChartConfig(
                         arrayOf(json(ChartProps.LABEL to ViewText.TOTAL_PORTFOLIO, ChartProps.DATA to points)),
                         getClonedChartOptions(),
                     ),
                 )
 
-                val scrubber = document.querySelector(CssClass.Query.CHART_SCRUBBERS) as HTMLInputElement
+                val scrubber = document.querySelector(".history-chart-scrubber-input") as HTMLInputElement
                 scrubber.disabled = true
                 val callback = capturedOptions.plugins.zoom.zoom[ChartProps.ON_ZOOM_COMPLETE]
                 callback(
                     json(
-                        "chart" to json("canvas" to document.getElementById(HtmlIds.PORTFOLIO_VALUE_CHART)),
+                        "chart" to json("canvas" to document.getElementById("portfolio-value-chart")),
                     ),
                 )
                 scrubber.disabled shouldBe false
@@ -310,10 +304,10 @@ class HistoryZoomTest : StringSpec() {
 
         "panChartToScrubberPosition no-ops when not zoomed" {
             resetHistoryUiState()
-            val container = document.createElement(HtmlTags.DIV)
+            val container = document.createElement("div")
             container.innerHTML =
                 """
-                <canvas id="${HtmlIds.PORTFOLIO_VALUE_CHART}"></canvas>
+                 <canvas id="portfolio-value-chart"></canvas>
                 ${TestDomBuilders.scrubberDom(disabled = false)}
                 """.trimIndent()
             document.body!!.appendChild(container)
@@ -339,7 +333,7 @@ class HistoryZoomTest : StringSpec() {
                         json("x" to 100.0, "y" to 2.0),
                     )
                 createOrUpdate(
-                    HtmlIds.PORTFOLIO_VALUE_CHART,
+                    "portfolio-value-chart",
                     createLineChartConfig(
                         arrayOf(json(ChartProps.LABEL to ViewText.TOTAL_PORTFOLIO, ChartProps.DATA to points)),
                         getClonedChartOptions(),
@@ -347,9 +341,9 @@ class HistoryZoomTest : StringSpec() {
                 )
                 setupChartScrubbers()
                 val scrubber =
-                    document.querySelector(CssClass.Query.CHART_SCRUBBERS) as HTMLInputElement
+                    document.querySelector(".history-chart-scrubber-input") as HTMLInputElement
                 scrubber.value = "50"
-                scrubber.dispatchEvent(Event(HtmlEvents.INPUT))
+                scrubber.dispatchEvent(Event("input"))
                 // Full-range x window → not zoomed; pan must no-op even though scrubber is enabled in DOM.
                 zoomScaleCalls shouldBe 0
             } finally {

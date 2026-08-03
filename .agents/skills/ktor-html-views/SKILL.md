@@ -23,7 +23,7 @@ description: >-
 5. **CSS** — `view/css/*` (`CssTheme`, `LayoutStyles`, `ComponentStyles`, …,
    `CssStyles` facade).
 6. **Shared paths/IDs** — `:common` `view/util/Routes.kt`, `HtmlIds`, `HtmlAttrs`,
-   `HtmxAttrs`, `ViewText`, `CssClass`.
+   `HtmxAttrs`, `HtmlQueries`, `ViewText`, `CssClass`.
 
 Path constants (`Routes`): `/`, `/settings`, `/history`, `/fragments/dashboard`,
 `/api/status/stream`, `/api/history/*`, `/api/health`, `/static/*`.
@@ -52,6 +52,12 @@ div {
 
 Use `:common` for IDs, CSS class names, routes, and user-visible labels. The
 `div(CssClass)` helper lives in JVM `view/util/HtmlExtensions.kt`.
+
+Production views should use the generated/shared `:common` catalogs for HTML
+contracts. Boundary tests that assert rendered markup, IDs, classes, attributes,
+routes, headers, or CDN values must use independent raw expected literals rather
+than the same generated value consumed by the renderer; otherwise a catalog
+mistake can make the test tautological.
 
 ## Page headers: `brandWithMode(settings)`
 
@@ -163,7 +169,7 @@ pass, use [ui-visual-review](../ui-visual-review/SKILL.md) then
 ## Checklist
 
 - [ ] New UI goes in `view/component/` + CSS module; routes via controller
-- [ ] Consumes `CssClass` / `HtmlIds` / `ViewText` / `Routes` from `:common`
+- [ ] Consumes `CssClass` / `HtmlQueries` / `HtmlIds` / `ViewText` / `Routes` from `:common`
 - [ ] Header uses `brandWithMode(settings)`; `Settings` threaded to every page
       and fragment renderer
 - [ ] Mode plate precedence simulation > dryRun > live is intact

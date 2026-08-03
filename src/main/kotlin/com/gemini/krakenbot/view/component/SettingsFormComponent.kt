@@ -41,6 +41,53 @@ import kotlinx.html.script
 import kotlinx.html.unsafe
 
 class SettingsFormComponent {
+    private data class NumericFieldSpec(
+        val label: String,
+        val name: String,
+        val value: String,
+        val step: String? = null,
+        val min: String? = null,
+        val max: String? = null,
+    )
+
+    private fun numericFieldSpecs(config: AppConfig) = listOf(
+        NumericFieldSpec(
+            ViewText.LOOP_INTERVAL,
+            FormFields.LOOP_DELAY_SECONDS,
+            config.settings.loopDelaySeconds.toString(),
+            min = "1",
+        ),
+        NumericFieldSpec(
+            ViewText.DEVIATION_TRIGGER,
+            FormFields.DEVIATION_TRIGGER_PERCENT,
+            config.settings.deviationTriggerPercent.toString(),
+            step = "0.1",
+            min = "0",
+        ),
+        NumericFieldSpec(
+            ViewText.DUST_THRESHOLD,
+            FormFields.DUST_THRESHOLD_USD,
+            config.settings.dustThresholdUSD.toString(),
+            step = "0.5",
+            min = "0",
+        ),
+        NumericFieldSpec(
+            ViewText.FIAT_MAX_DRAWDOWN,
+            FormFields.FIAT_MAX_DRAWDOWN,
+            config.settings.fiatMaxDrawdown.toString(),
+            step = "1.0",
+            min = "0",
+            max = "100",
+        ),
+        NumericFieldSpec(
+            ViewText.FIAT_DEPLOYMENT_EXPONENT,
+            FormFields.FIAT_DEPLOYMENT_EXPONENT,
+            config.settings.fiatDeploymentExponent.toString(),
+            step = "0.1",
+            min = "0.1",
+        ),
+    )
+
     context(body: BODY)
     fun render(config: AppConfig, errorMessage: String?, csrfToken: String) {
         renderForm(body, config, errorMessage, csrfToken)
@@ -90,71 +137,15 @@ class SettingsFormComponent {
     private fun DIV.renderGlobalParametersSection(config: AppConfig) {
         formSection(ViewText.GLOBAL_PARAMETERS, Icons.SHIELD_EXCLAMATION) {
             div(CssClass.Form.Grid2Col) {
-                formGroup(ViewText.LOOP_INTERVAL, FormFields.LOOP_DELAY_SECONDS) {
-                    input(
-                        CssClass.Form.InputGlass,
-                        type = number,
-                        name = FormFields.LOOP_DELAY_SECONDS,
-                    ) {
-                        id = FormFields.LOOP_DELAY_SECONDS
-                        min = "1"
-                        value = config.settings.loopDelaySeconds.toString()
-                    }
-                }
-
-                formGroup(ViewText.DEVIATION_TRIGGER, FormFields.DEVIATION_TRIGGER_PERCENT) {
-                    input(
-                        CssClass.Form.InputGlass,
-                        type = number,
-                        name = FormFields.DEVIATION_TRIGGER_PERCENT,
-                    ) {
-                        id = FormFields.DEVIATION_TRIGGER_PERCENT
-                        step = "0.1"
-                        min = "0"
-                        value =
-                            config.settings.deviationTriggerPercent.toString()
-                    }
-                }
-
-                formGroup(ViewText.DUST_THRESHOLD, FormFields.DUST_THRESHOLD_USD) {
-                    input(
-                        CssClass.Form.InputGlass,
-                        type = number,
-                        name = FormFields.DUST_THRESHOLD_USD,
-                    ) {
-                        id = FormFields.DUST_THRESHOLD_USD
-                        step = "0.5"
-                        min = "0"
-                        value = config.settings.dustThresholdUSD.toString()
-                    }
-                }
-
-                formGroup(ViewText.FIAT_MAX_DRAWDOWN, FormFields.FIAT_MAX_DRAWDOWN) {
-                    input(
-                        CssClass.Form.InputGlass,
-                        type = number,
-                        name = FormFields.FIAT_MAX_DRAWDOWN,
-                    ) {
-                        id = FormFields.FIAT_MAX_DRAWDOWN
-                        step = "1.0"
-                        min = "0"
-                        max = "100"
-                        value = config.settings.fiatMaxDrawdown.toString()
-                    }
-                }
-
-                formGroup(ViewText.FIAT_DEPLOYMENT_EXPONENT, FormFields.FIAT_DEPLOYMENT_EXPONENT) {
-                    input(
-                        CssClass.Form.InputGlass,
-                        type = number,
-                        name = FormFields.FIAT_DEPLOYMENT_EXPONENT,
-                    ) {
-                        id = FormFields.FIAT_DEPLOYMENT_EXPONENT
-                        step = "0.1"
-                        // HTML min is inclusive; step floor keeps spinner off invalid 0.
-                        min = "0.1"
-                        value =
-                            config.settings.fiatDeploymentExponent.toString()
+                numericFieldSpecs(config).forEach { field ->
+                    formGroup(field.label, field.name) {
+                        input(CssClass.Form.InputGlass, type = number, name = field.name) {
+                            id = field.name
+                            field.step?.let { step = it }
+                            field.min?.let { min = it }
+                            field.max?.let { max = it }
+                            value = field.value
+                        }
                     }
                 }
             }

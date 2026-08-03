@@ -8,8 +8,8 @@ import com.gemini.krakenbot.view.util.ZoomActions
 import kotlinx.browser.document
 import org.w3c.dom.*
 import kotlin.js.json
-import com.gemini.krakenbot.view.util.CssClass.Query.CHART_SCRUBBERS as CHART_SCRUBBERS_QUERY
-import com.gemini.krakenbot.view.util.CssClass.Query.ZOOM_BTNS as ZOOM_BTNS_QUERY
+import com.gemini.krakenbot.view.util.HtmlQueries.CHART_SCRUBBERS as CHART_SCRUBBERS_QUERY
+import com.gemini.krakenbot.view.util.HtmlQueries.ZOOM_BTNS as ZOOM_BTNS_QUERY
 
 internal fun setupZoomButtons() {
     val buttons = document.querySelectorAll(ZOOM_BTNS_QUERY)

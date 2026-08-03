@@ -1,12 +1,6 @@
 package com.gemini.krakenbot.frontend
 
 import com.gemini.krakenbot.model.Asset
-import com.gemini.krakenbot.view.util.CssClass
-import com.gemini.krakenbot.view.util.FormFields
-import com.gemini.krakenbot.view.util.HtmlAttrs
-import com.gemini.krakenbot.view.util.HtmlEvents
-import com.gemini.krakenbot.view.util.HtmlIds
-import com.gemini.krakenbot.view.util.HtmlTags
 import com.gemini.krakenbot.view.util.ViewText
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
@@ -31,33 +25,33 @@ class SettingsTest : StringSpec() {
         }
 
         "updateAllocationTotal validates totals and USD allocation" {
-            val container = document.createElement(HtmlTags.DIV) as HTMLDivElement
+            val container = document.createElement("div") as HTMLDivElement
 
-            val totalDisplay = document.createElement(HtmlTags.SPAN) as HTMLSpanElement
-            totalDisplay.id = HtmlIds.TOTAL_ALLOCATED_DISPLAY
+            val totalDisplay = document.createElement("span") as HTMLSpanElement
+            totalDisplay.id = "total-allocated-display"
             container.appendChild(totalDisplay)
 
-            val saveButton = document.createElement(HtmlTags.BUTTON) as HTMLButtonElement
-            saveButton.id = HtmlIds.SAVE_BUTTON
+            val saveButton = document.createElement("button") as HTMLButtonElement
+            saveButton.id = "save-button"
             container.appendChild(saveButton)
 
-            val input1 = document.createElement(HtmlTags.INPUT) as HTMLInputElement
-            input1.name = FormFields.TARGETS
+            val input1 = document.createElement("input") as HTMLInputElement
+            input1.name = "targets"
             input1.value = "30.0"
             container.appendChild(input1)
 
-            val sym1 = document.createElement(HtmlTags.INPUT) as HTMLInputElement
-            sym1.name = FormFields.SYMBOLS
+            val sym1 = document.createElement("input") as HTMLInputElement
+            sym1.name = "symbols"
             sym1.value = Asset.BTC
             container.appendChild(sym1)
 
-            val input2 = document.createElement(HtmlTags.INPUT) as HTMLInputElement
-            input2.name = FormFields.TARGETS
+            val input2 = document.createElement("input") as HTMLInputElement
+            input2.name = "targets"
             input2.value = "70.0"
             container.appendChild(input2)
 
-            val sym2 = document.createElement(HtmlTags.INPUT) as HTMLInputElement
-            sym2.name = FormFields.SYMBOLS
+            val sym2 = document.createElement("input") as HTMLInputElement
+            sym2.name = "symbols"
             sym2.value = Asset.USD
             container.appendChild(sym2)
 
@@ -67,19 +61,19 @@ class SettingsTest : StringSpec() {
                 updateAllocationTotal()
                 totalDisplay.textContent shouldBe "Total: 100.00%"
                 saveButton.disabled.shouldBeFalse()
-                totalDisplay.classList.contains(CssClass.Form.AllocationTotalOk).shouldBeTrue()
+                totalDisplay.classList.contains("allocation-total-ok").shouldBeTrue()
 
                 input2.value = "60.0"
                 updateAllocationTotal()
                 totalDisplay.textContent shouldBe "Total: 90.00%"
                 saveButton.disabled.shouldBeTrue()
-                totalDisplay.classList.contains(CssClass.Form.AllocationTotalBad).shouldBeTrue()
+                totalDisplay.classList.contains("allocation-total-bad").shouldBeTrue()
 
                 input2.value = "70.0"
                 sym2.value = Asset.ETH
                 updateAllocationTotal()
                 saveButton.disabled.shouldBeTrue()
-                totalDisplay.classList.contains(CssClass.Form.AllocationTotalBad).shouldBeTrue()
+                totalDisplay.classList.contains("allocation-total-bad").shouldBeTrue()
                 totalDisplay.textContent shouldBe "Total: 100.00%"
             } finally {
                 document.body!!.removeChild(container)
@@ -88,31 +82,31 @@ class SettingsTest : StringSpec() {
 
         "updateAllocationTotal accepts ±0.01 tolerance edges and rejects outside" {
             // IEEE-safe sums: exact 99.99 (30+69.99) exceeds 0.01 by ulp and fails `<=`.
-            val container = document.createElement(HtmlTags.DIV) as HTMLDivElement
+            val container = document.createElement("div") as HTMLDivElement
 
-            val totalDisplay = document.createElement(HtmlTags.SPAN) as HTMLSpanElement
-            totalDisplay.id = HtmlIds.TOTAL_ALLOCATED_DISPLAY
+            val totalDisplay = document.createElement("span") as HTMLSpanElement
+            totalDisplay.id = "total-allocated-display"
             container.appendChild(totalDisplay)
 
-            val saveButton = document.createElement(HtmlTags.BUTTON) as HTMLButtonElement
-            saveButton.id = HtmlIds.SAVE_BUTTON
+            val saveButton = document.createElement("button") as HTMLButtonElement
+            saveButton.id = "save-button"
             container.appendChild(saveButton)
 
-            val firstTarget = document.createElement(HtmlTags.INPUT) as HTMLInputElement
-            firstTarget.name = FormFields.TARGETS
+            val firstTarget = document.createElement("input") as HTMLInputElement
+            firstTarget.name = "targets"
             firstTarget.value = "50"
             container.appendChild(firstTarget)
-            val firstSymbol = document.createElement(HtmlTags.INPUT) as HTMLInputElement
-            firstSymbol.name = FormFields.SYMBOLS
+            val firstSymbol = document.createElement("input") as HTMLInputElement
+            firstSymbol.name = "symbols"
             firstSymbol.value = Asset.BTC
             container.appendChild(firstSymbol)
 
-            val secondTarget = document.createElement(HtmlTags.INPUT) as HTMLInputElement
-            secondTarget.name = FormFields.TARGETS
+            val secondTarget = document.createElement("input") as HTMLInputElement
+            secondTarget.name = "targets"
             secondTarget.value = "49.995"
             container.appendChild(secondTarget)
-            val secondSymbol = document.createElement(HtmlTags.INPUT) as HTMLInputElement
-            secondSymbol.name = FormFields.SYMBOLS
+            val secondSymbol = document.createElement("input") as HTMLInputElement
+            secondSymbol.name = "symbols"
             secondSymbol.value = Asset.USD
             container.appendChild(secondSymbol)
 
@@ -120,17 +114,17 @@ class SettingsTest : StringSpec() {
 
             try {
                 updateAllocationTotal()
-                totalDisplay.classList.contains(CssClass.Form.AllocationTotalOk).shouldBeTrue()
+                totalDisplay.classList.contains("allocation-total-ok").shouldBeTrue()
                 saveButton.disabled.shouldBeFalse()
 
                 secondTarget.value = "50.005"
                 updateAllocationTotal()
-                totalDisplay.classList.contains(CssClass.Form.AllocationTotalOk).shouldBeTrue()
+                totalDisplay.classList.contains("allocation-total-ok").shouldBeTrue()
                 saveButton.disabled.shouldBeFalse()
 
                 secondTarget.value = "50.02"
                 updateAllocationTotal()
-                totalDisplay.classList.contains(CssClass.Form.AllocationTotalBad).shouldBeTrue()
+                totalDisplay.classList.contains("allocation-total-bad").shouldBeTrue()
                 saveButton.disabled.shouldBeTrue()
             } finally {
                 document.body!!.removeChild(container)
@@ -138,27 +132,27 @@ class SettingsTest : StringSpec() {
         }
 
         "addAssetRow appends a valid allocation" {
-            val container = document.createElement(HtmlTags.DIV) as HTMLDivElement
+            val container = document.createElement("div") as HTMLDivElement
 
-            val totalDisplay = document.createElement(HtmlTags.SPAN) as HTMLSpanElement
-            totalDisplay.id = HtmlIds.TOTAL_ALLOCATED_DISPLAY
+            val totalDisplay = document.createElement("span") as HTMLSpanElement
+            totalDisplay.id = "total-allocated-display"
             container.appendChild(totalDisplay)
 
-            val saveButton = document.createElement(HtmlTags.BUTTON) as HTMLButtonElement
-            saveButton.id = HtmlIds.SAVE_BUTTON
+            val saveButton = document.createElement("button") as HTMLButtonElement
+            saveButton.id = "save-button"
             container.appendChild(saveButton)
 
-            val symContainer = document.createElement(HtmlTags.DIV) as HTMLDivElement
-            symContainer.id = HtmlIds.ALLOCATIONS_CONTAINER
+            val symContainer = document.createElement("div") as HTMLDivElement
+            symContainer.id = "allocations-container"
             container.appendChild(symContainer)
 
-            val symInput = document.createElement(HtmlTags.INPUT) as HTMLInputElement
-            symInput.id = HtmlIds.NEW_SYMBOL_INPUT
+            val symInput = document.createElement("input") as HTMLInputElement
+            symInput.id = "new-symbol-input"
             symInput.value = Asset.LTC
             container.appendChild(symInput)
 
-            val existingSym = document.createElement(HtmlTags.INPUT) as HTMLInputElement
-            existingSym.name = FormFields.SYMBOLS
+            val existingSym = document.createElement("input") as HTMLInputElement
+            existingSym.name = "symbols"
             existingSym.value = Asset.BTC
             container.appendChild(existingSym)
 
@@ -168,15 +162,15 @@ class SettingsTest : StringSpec() {
                 addAssetRow()
                 symInput.value shouldBe ""
 
-                val rows = symContainer.querySelectorAll(".${CssClass.Form.AllocationEditRow}")
+                val rows = symContainer.querySelectorAll(".allocation-edit-row")
                 rows.length shouldBe 1
                 rows.item(0)!!.textContent!!.shouldContain(Asset.LTC)
 
                 val firstRow = rows.item(0) as HTMLElement
-                val hiddenSymInput = firstRow.querySelector(CssClass.Query.SYMBOL_INPUTS) as HTMLInputElement
+                val hiddenSymInput = firstRow.querySelector("input[name=\"symbols\"]") as HTMLInputElement
                 hiddenSymInput.value shouldBe Asset.LTC
 
-                val numInput = firstRow.querySelector(CssClass.Query.TARGET_INPUTS) as HTMLInputElement
+                val numInput = firstRow.querySelector("input[name=\"targets\"]") as HTMLInputElement
                 numInput.min shouldBe "0"
                 numInput.max shouldBe "100"
 
@@ -187,12 +181,12 @@ class SettingsTest : StringSpec() {
         }
 
         "addAssetRow alerts and does not append invalid symbols" {
-            val container = document.createElement(HtmlTags.DIV) as HTMLDivElement
+            val container = document.createElement("div") as HTMLDivElement
             container.innerHTML = TestDomBuilders.assetEditDom()
             document.body!!.appendChild(container)
 
-            val symbolInput = document.getElementById(HtmlIds.NEW_SYMBOL_INPUT) as HTMLInputElement
-            val allocations = document.getElementById(HtmlIds.ALLOCATIONS_CONTAINER) as HTMLElement
+            val symbolInput = document.getElementById("new-symbol-input") as HTMLInputElement
+            val allocations = document.getElementById("allocations-container") as HTMLElement
             val originalAlert = window.asDynamic().alert
             var alertMessage: String? = null
             window.asDynamic().alert = { message: String -> alertMessage = message }
@@ -211,22 +205,22 @@ class SettingsTest : StringSpec() {
         }
 
         "addAssetRow wires up target input and remove button callbacks" {
-            val container = document.createElement(HtmlTags.DIV) as HTMLDivElement
+            val container = document.createElement("div") as HTMLDivElement
 
-            val totalDisplay = document.createElement(HtmlTags.SPAN) as HTMLSpanElement
-            totalDisplay.id = HtmlIds.TOTAL_ALLOCATED_DISPLAY
+            val totalDisplay = document.createElement("span") as HTMLSpanElement
+            totalDisplay.id = "total-allocated-display"
             container.appendChild(totalDisplay)
 
-            val saveButton = document.createElement(HtmlTags.BUTTON) as HTMLButtonElement
-            saveButton.id = HtmlIds.SAVE_BUTTON
+            val saveButton = document.createElement("button") as HTMLButtonElement
+            saveButton.id = "save-button"
             container.appendChild(saveButton)
 
-            val symContainer = document.createElement(HtmlTags.DIV) as HTMLDivElement
-            symContainer.id = HtmlIds.ALLOCATIONS_CONTAINER
+            val symContainer = document.createElement("div") as HTMLDivElement
+            symContainer.id = "allocations-container"
             container.appendChild(symContainer)
 
-            val symInput = document.createElement(HtmlTags.INPUT) as HTMLInputElement
-            symInput.id = HtmlIds.NEW_SYMBOL_INPUT
+            val symInput = document.createElement("input") as HTMLInputElement
+            symInput.id = "new-symbol-input"
             symInput.value = Asset.LTC
             container.appendChild(symInput)
 
@@ -235,18 +229,18 @@ class SettingsTest : StringSpec() {
             try {
                 registerSettingsGlobals()
                 addAssetRow()
-                val row = symContainer.querySelector(".${CssClass.Form.AllocationEditRow}") as HTMLElement
-                val targetInput = row.querySelector(CssClass.Query.TARGET_INPUTS) as HTMLInputElement
+                val row = symContainer.querySelector(".allocation-edit-row") as HTMLElement
+                val targetInput = row.querySelector("input[name=\"targets\"]") as HTMLInputElement
 
                 targetInput.value = "25.0"
-                val inputEvent = document.createEvent(HtmlEvents.EVENT)
-                inputEvent.initEvent(type = HtmlEvents.INPUT, bubbles = true, cancelable = true)
+                val inputEvent = document.createEvent("Event")
+                inputEvent.initEvent(type = "input", bubbles = true, cancelable = true)
                 targetInput.dispatchEvent(inputEvent)
                 totalDisplay.textContent shouldBe "Total: 25.00%"
 
-                val removeBtn = row.querySelector(CssClass.Button.Danger.querySelector) as HTMLButtonElement
+                val removeBtn = row.querySelector(".btn.btn-danger") as HTMLButtonElement
                 removeBtn.click()
-                symContainer.querySelectorAll(".${CssClass.Form.AllocationEditRow}").length shouldBe 0
+                symContainer.querySelectorAll(".allocation-edit-row").length shouldBe 0
                 totalDisplay.textContent shouldBe "Total: 0.00%"
             } finally {
                 document.body!!.removeChild(container)
@@ -254,39 +248,39 @@ class SettingsTest : StringSpec() {
         }
 
         "syncModePlateFromSafetyToggles reflects checkbox state with simulation > dryRun > live precedence" {
-            val container = document.createElement(HtmlTags.DIV) as HTMLDivElement
+            val container = document.createElement("div") as HTMLDivElement
 
-            val plate = document.createElement(HtmlTags.SPAN) as HTMLSpanElement
-            plate.id = HtmlIds.MODE_PLATE
-            val label = document.createElement(HtmlTags.SPAN) as HTMLSpanElement
-            label.id = HtmlIds.MODE_PLATE_LABEL
+            val plate = document.createElement("span") as HTMLSpanElement
+            plate.id = "mode-plate"
+            val label = document.createElement("span") as HTMLSpanElement
+            label.id = "mode-plate-label"
             plate.appendChild(label)
             container.appendChild(plate)
 
-            val simulation = document.createElement(HtmlTags.INPUT) as HTMLInputElement
+            val simulation = document.createElement("input") as HTMLInputElement
             simulation.type = "checkbox"
-            simulation.name = FormFields.SIMULATION
+            simulation.name = "simulation"
             container.appendChild(simulation)
 
-            val dryRun = document.createElement(HtmlTags.INPUT) as HTMLInputElement
+            val dryRun = document.createElement("input") as HTMLInputElement
             dryRun.type = "checkbox"
-            dryRun.name = FormFields.DRY_RUN
+            dryRun.name = "dryRun"
             container.appendChild(dryRun)
 
             document.body!!.appendChild(container)
             try {
                 syncModePlateFromSafetyToggles()
-                plate.className shouldBe CssClass.Mode.Live.toString()
+                plate.className shouldBe "mode-plate mode-live"
                 label.textContent shouldBe ViewText.MODE_LIVE
 
                 dryRun.checked = true
                 syncModePlateFromSafetyToggles()
-                plate.className shouldBe CssClass.Mode.DryRun.toString()
+                plate.className shouldBe "mode-plate mode-dry-run"
                 label.textContent shouldBe ViewText.MODE_DRY_RUN
 
                 simulation.checked = true
                 syncModePlateFromSafetyToggles()
-                plate.className shouldBe CssClass.Mode.Simulation.toString()
+                plate.className shouldBe "mode-plate mode-simulation"
                 label.textContent shouldBe ViewText.MODE_SIMULATION
             } finally {
                 document.body!!.removeChild(container)
@@ -294,31 +288,31 @@ class SettingsTest : StringSpec() {
         }
 
         "initSettings wires safety toggle change events to the mode plate" {
-            val container = document.createElement(HtmlTags.DIV) as HTMLDivElement
+            val container = document.createElement("div") as HTMLDivElement
 
-            val plate = document.createElement(HtmlTags.SPAN) as HTMLSpanElement
-            plate.id = HtmlIds.MODE_PLATE
-            val label = document.createElement(HtmlTags.SPAN) as HTMLSpanElement
-            label.id = HtmlIds.MODE_PLATE_LABEL
+            val plate = document.createElement("span") as HTMLSpanElement
+            plate.id = "mode-plate"
+            val label = document.createElement("span") as HTMLSpanElement
+            label.id = "mode-plate-label"
             plate.appendChild(label)
             container.appendChild(plate)
 
-            val simulation = document.createElement(HtmlTags.INPUT) as HTMLInputElement
+            val simulation = document.createElement("input") as HTMLInputElement
             simulation.type = "checkbox"
-            simulation.name = FormFields.SIMULATION
+            simulation.name = "simulation"
             container.appendChild(simulation)
 
             document.body!!.appendChild(container)
             try {
                 initSettings()
-                plate.className shouldBe CssClass.Mode.Live.toString()
+                plate.className shouldBe "mode-plate mode-live"
 
                 simulation.checked = true
-                val changeEvent = document.createEvent(HtmlEvents.EVENT)
-                changeEvent.initEvent(type = HtmlEvents.CHANGE, bubbles = true, cancelable = true)
+                val changeEvent = document.createEvent("Event")
+                changeEvent.initEvent(type = "change", bubbles = true, cancelable = true)
                 simulation.dispatchEvent(changeEvent)
 
-                plate.className shouldBe CssClass.Mode.Simulation.toString()
+                plate.className shouldBe "mode-plate mode-simulation"
                 label.textContent shouldBe ViewText.MODE_SIMULATION
             } finally {
                 document.body!!.removeChild(container)
@@ -329,32 +323,32 @@ class SettingsTest : StringSpec() {
             updateAllocationTotal()
             addAssetRow()
 
-            val container = document.createElement(HtmlTags.DIV)
+            val container = document.createElement("div")
             container.innerHTML = "${TestDomBuilders.settingsDom()}\n${TestDomBuilders.assetEditDom(" ")}"
             document.body!!.appendChild(container)
             try {
                 updateAllocationTotal()
-                (document.getElementById(HtmlIds.SAVE_BUTTON) as HTMLButtonElement).disabled.shouldBeTrue()
+                (document.getElementById("save-button") as HTMLButtonElement).disabled.shouldBeTrue()
                 addAssetRow()
-                (document.getElementById(HtmlIds.ALLOCATIONS_CONTAINER) as HTMLElement).children.length shouldBe 0
+                (document.getElementById("allocations-container") as HTMLElement).children.length shouldBe 0
             } finally {
                 document.body!!.removeChild(container)
             }
         }
 
         "addAssetRow handles edge cases" {
-            val container = document.createElement(HtmlTags.DIV)
+            val container = document.createElement("div")
             container.innerHTML = TestDomBuilders.assetEditDom(Asset.BTC)
             document.body!!.appendChild(container)
             try {
-                val symbolInput = document.getElementById(HtmlIds.NEW_SYMBOL_INPUT) as HTMLInputElement
+                val symbolInput = document.getElementById("new-symbol-input") as HTMLInputElement
                 symbolInput.value = Asset.BTC
-                val allocContainer = document.getElementById(HtmlIds.ALLOCATIONS_CONTAINER) as HTMLElement
-                val existingRow = document.createElement(HtmlTags.DIV)
-                existingRow.className = CssClass.Form.AllocationEditRow.toString()
+                val allocContainer = document.getElementById("allocations-container") as HTMLElement
+                val existingRow = document.createElement("div")
+                existingRow.className = "allocation-edit-row"
                 existingRow.innerHTML =
                     """
-                    <input type="hidden" name="${FormFields.SYMBOLS}" value="${Asset.BTC}">
+                    <input type="hidden" name="symbols" value="${Asset.BTC}">
                     """.trimIndent()
                 allocContainer.appendChild(existingRow)
 
@@ -379,21 +373,21 @@ class SettingsTest : StringSpec() {
         }
 
         "updateAllocationTotal ignores non-input elements and invalid numbers" {
-            val container = document.createElement(HtmlTags.DIV)
+            val container = document.createElement("div")
             container.innerHTML = TestDomBuilders.settingsAndSyncDom()
             document.body!!.appendChild(container)
             try {
-                val nonInputTarget = document.createElement(HtmlTags.DIV)
-                nonInputTarget.setAttribute("name", FormFields.TARGETS)
+                val nonInputTarget = document.createElement("div")
+                nonInputTarget.setAttribute("name", "targets")
                 container.appendChild(nonInputTarget)
 
-                val invalidInputTarget = document.createElement(HtmlTags.INPUT) as HTMLInputElement
-                invalidInputTarget.name = FormFields.TARGETS
+                val invalidInputTarget = document.createElement("input") as HTMLInputElement
+                invalidInputTarget.name = "targets"
                 invalidInputTarget.value = "invalid-double"
                 container.appendChild(invalidInputTarget)
 
-                val nonInputSymbol = document.createElement(HtmlTags.DIV)
-                nonInputSymbol.setAttribute("name", FormFields.SYMBOLS)
+                val nonInputSymbol = document.createElement("div")
+                nonInputSymbol.setAttribute("name", "symbols")
                 container.appendChild(nonInputSymbol)
 
                 updateAllocationTotal()

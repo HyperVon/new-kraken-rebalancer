@@ -21,7 +21,8 @@ description: >-
 ## Formatting & compiler
 
 - **Spotless** + **ktlint 1.7.1**, `max_line_length = 120`
-- Targets: `src/**/*.kt`, `common/src/**/*.kt`, `frontend-js/src/**/*.kt`
+- Targets: `src/**/*.kt`, `common/src/**/*.kt`, `frontend-js/src/**/*.kt`, and
+  `codegen/src/**/*.kt`
 - Excludes: none (all Kotlin under `src/**`, `common/src/**`, `frontend-js/src/**`)
 - Apply: `./gradlew spotlessApply` — check: `./gradlew spotlessCheck`
 - **`allWarningsAsErrors`** enabled in root, `:common`, and `:frontend-js`
@@ -49,6 +50,24 @@ description: >-
 
 - Fast evaluation iteration is fine
   (`-x jacocoTestCoverageVerification`), but run full gates before shipping.
+
+### KSP and common catalog verification
+
+- Common catalog changes must register YAML files under
+  `common/src/commonMain/resources/codegen/` as KSP inputs and keep generated
+  metadata compilation dependent on `kspCommonMainKotlinMetadata`.
+- After changing a processor, annotation, or catalog resource, run the codegen
+  compile, common metadata generation, and both common JVM/JS compilations
+  serially before relying on downstream tests:
+
+  ```bash
+  ./gradlew :codegen:compileKotlin :common:kspCommonMainKotlinMetadata \
+    :common:compileCommonMainKotlinMetadata :common:compileKotlinJvm \
+    :common:compileKotlinJs --rerun-tasks
+  ```
+
+- The parent owns the final forced build after processor work; never trust a
+  cached or overlapping Gradle result from another clone/worker.
 
 ## JVM coverage (JaCoCo)
 
@@ -130,3 +149,5 @@ workflow SHA pin and manual Gradle build aligned with the supported bundle.
 - [ ] JaCoCo 95/95/95/90 and Karma 90/90/90/75 quoted accurately
 - [ ] Exclusions synced when packages change
 - [ ] CodeQL workflow and documented Action/bundle support stay aligned
+- [ ] KSP resources, metadata generation, JVM/JS compilation, and generated
+      source dependencies are verified after catalog changes

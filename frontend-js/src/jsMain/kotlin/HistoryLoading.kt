@@ -12,7 +12,7 @@ import kotlinx.browser.window
 import org.w3c.dom.*
 import kotlin.js.Promise
 import kotlin.js.json
-import com.gemini.krakenbot.view.util.CssClass.Query.TIME_RANGE_BTNS as TIME_RANGE_BTNS_QUERY
+import com.gemini.krakenbot.view.util.HtmlQueries.TIME_RANGE_BTNS as TIME_RANGE_BTNS_QUERY
 
 private var syncIntervalId: Int? = null
 

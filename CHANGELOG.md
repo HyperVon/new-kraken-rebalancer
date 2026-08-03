@@ -6,6 +6,44 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.16.0] - 2026-08-03
+
+### Added
+
+- **Experimental KSP catalog generation**: added a JVM-only code-generation
+  module with reusable processor support for type-safe history API mappers and
+  explicit YAML-backed multiplatform catalogs for CSS classes, routes, HTML /
+  HTMX attributes, data properties, metadata, and `ViewText` constants. Generated
+  values retain `const val` semantics and exact existing contracts.
+- **Optional Context Mode integration**: registered the Kilo plugin and added
+  repository guidance for summarizing large inspection output while preserving
+  exact reads for edits, serial Gradle execution, portable fallback behavior,
+  and database/credential safety.
+- **Review-routing tooling**: added bounded route-inventory and branch-review
+  surface scripts, explicit availability probes, and host-pinned provider/model
+  mapping guidance for parallel adversarial review. Routing now prefers verified
+  subscription/account-priced access over PAYG when capability and health are
+  otherwise comparable.
+
+### Changed
+
+- **Source reduction**: consolidated repeated settings rendering, configuration
+  validation, order-journal construction, DOM iteration, history scrubber markup,
+  HTML helpers, and test snapshot fixtures without changing trading, persistence,
+  financial, mode, cancellation, or wire-format behavior.
+- **Shared catalog ownership**: kept CSS generation maintainable through shared
+  processor infrastructure, moved DOM selectors into `HtmlQueries`, and moved
+  `TradeSource` into `:common` while removing redundant one-entry metadata
+  catalogs.
+- **Independent contract coverage**: boundary assertions now use raw expected
+  HTML, DOM, HTTP, JSON, SSE, and persisted-view literals instead of sharing
+  generated catalog values with production code; typed constants remain available
+  for internal setup and domain semantics.
+- **Agent playbook and routing safety**: documented generated-catalog patterns,
+  Context Mode usage, and a hard requirement that material or parallel work use
+  a host-enforced provider/model route and effort rather than treating role labels
+  as model selection.
+
 ## [6.15.41] - 2026-08-02
 
 ### Changed

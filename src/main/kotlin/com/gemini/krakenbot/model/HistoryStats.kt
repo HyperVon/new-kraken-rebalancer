@@ -1,8 +1,11 @@
 package com.gemini.krakenbot.model
 
+import com.gemini.krakenbot.codegen.GenerateApiMapper
 import java.math.BigDecimal
 import java.time.Instant
+import com.gemini.krakenbot.api.HistoryStats as ApiHistoryStats
 
+@GenerateApiMapper(ApiHistoryStats::class)
 data class HistoryStats(
     val allTimeHigh: BigDecimal,
     val totalTradesExecuted: Long,

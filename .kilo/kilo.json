@@ -32,5 +32,8 @@
   "permission": {
     "sqlite_write_query": "deny",
     "sqlite_create_table": "deny"
-  }
+  },
+  "plugin": [
+    "context-mode"
+  ]
 }

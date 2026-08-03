@@ -3,8 +3,6 @@ package com.gemini.krakenbot.frontend
 import com.gemini.krakenbot.api.SyncProgressResponse
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderSide
-import com.gemini.krakenbot.model.SyncMetadataKeys
-import com.gemini.krakenbot.model.TradeSourceKeys
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
@@ -80,7 +78,7 @@ class HistoryJsonParsingTest : StringSpec() {
                         "price" to 20000,
                         "fee" to "6.50",
                         "slippagePercent" to 0.15,
-                        "source" to TradeSourceKeys.LOCAL_ESTIMATE,
+                        "source" to "LOCAL_ESTIMATE",
                     ),
                 )
 
@@ -88,7 +86,7 @@ class HistoryJsonParsingTest : StringSpec() {
             parsed.size shouldBe 1
             parsed[0].volume shouldBe "0.125"
             parsed[0].usdAmount shouldBe "2500.00"
-            parsed[0].source shouldBe TradeSourceKeys.LOCAL_ESTIMATE
+            parsed[0].source shouldBe "LOCAL_ESTIMATE"
         }
 
         "parseHistoryStats reads counts and nullable averages" {
@@ -111,12 +109,12 @@ class HistoryJsonParsingTest : StringSpec() {
             parsed.avgSlippagePercent shouldBe null
         }
 
-        "parseSyncProgressResponse uses SyncMetadataKeys names" {
+        "parseSyncProgressResponse uses stable JSON names" {
             val raw =
                 json(
-                    SyncMetadataKeys.IS_SEEDED to false,
-                    SyncMetadataKeys.OFFSET to "123",
-                    SyncMetadataKeys.TOTAL to "456",
+                    "seeded" to false,
+                    "offset" to "123",
+                    "total" to "456",
                 )
 
             parseSyncProgressResponse(raw) shouldBe
@@ -199,7 +197,7 @@ class HistoryJsonParsingTest : StringSpec() {
 
             val sync = parseSyncProgressResponse(
                 JSON.parse(
-                    """{"${SyncMetadataKeys.IS_SEEDED}":false,"${SyncMetadataKeys.OFFSET}":"5","${SyncMetadataKeys.TOTAL}":"10"}""",
+                    """{"seeded":false,"offset":"5","total":"10"}""",
                 ),
             )
             sync shouldBe SyncProgressResponse(seeded = false, offset = "5", total = "10")

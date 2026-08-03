@@ -18,9 +18,6 @@ import com.gemini.krakenbot.service.impl.ConfigServiceImpl
 import com.gemini.krakenbot.service.impl.OrderExecutorImpl
 import com.gemini.krakenbot.service.impl.PortfolioAnalyzerImpl
 import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
-import com.gemini.krakenbot.view.util.FormFields
-import com.gemini.krakenbot.view.util.HtmxHeaders
-import com.gemini.krakenbot.view.util.Routes
 import com.gemini.krakenbot.view.util.ViewText
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.booleans.shouldBeTrue
@@ -386,7 +383,7 @@ internal fun EvaluationScenariosTest.registerScenarios1To7() {
             }
 
             // 1. GET Dashboard Shell
-            val getShellResponse = client.get(Routes.ROOT)
+            val getShellResponse = client.get("/")
             getShellResponse.status shouldBe HttpStatusCode.OK
             getShellResponse.headers[HttpHeaders.ContentType] shouldContain TestFixtures.TEXT_HTML
             val bodyShell = getShellResponse.bodyAsText()
@@ -416,7 +413,7 @@ internal fun EvaluationScenariosTest.registerScenarios1To7() {
             every { configService.updateConfig(any()) } answers {
                 configFlow.tryEmit(firstArg<AppConfig>().settings).shouldBeTrue()
             }
-            val settingsResponse = client.get(Routes.SETTINGS)
+            val settingsResponse = client.get("/settings")
             val csrfToken =
                 Regex("""name="csrfToken" value="([^"]+)"""")
                     .find(settingsResponse.bodyAsText())
@@ -427,25 +424,25 @@ internal fun EvaluationScenariosTest.registerScenarios1To7() {
                 ?: error("Settings page did not issue a CSRF cookie")
 
             val postResponse =
-                client.post(Routes.SETTINGS) {
+                client.post("/settings") {
                     setBody(
                         parametersOf(
-                            FormFields.LOOP_DELAY_SECONDS to listOf("120"),
-                            FormFields.DEVIATION_TRIGGER_PERCENT to listOf("3.5"),
-                            FormFields.DUST_THRESHOLD_USD to listOf("2.0"),
-                            FormFields.FIAT_MAX_DRAWDOWN to listOf("0.0"),
-                            FormFields.FIAT_DEPLOYMENT_EXPONENT to listOf("1.0"),
-                            FormFields.CSRF_TOKEN to listOf(csrfToken),
-                            FormFields.SYMBOLS to listOf(Asset.USD),
-                            FormFields.TARGETS to listOf("100.0"),
-                            FormFields.COLORS to listOf("#94a3b8"),
+                            "loopDelaySeconds" to listOf("120"),
+                            "deviationTriggerPercent" to listOf("3.5"),
+                            "dustThresholdUSD" to listOf("2.0"),
+                            "fiatMaxDrawdown" to listOf("0.0"),
+                            "fiatDeploymentExponent" to listOf("1.0"),
+                            "csrfToken" to listOf(csrfToken),
+                            "symbols" to listOf(Asset.USD),
+                            "targets" to listOf("100.0"),
+                            "colors" to listOf("#94a3b8"),
                         ).formUrlEncode(),
                     )
                     header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
                     header(HttpHeaders.Cookie, csrfCookie)
                 }
             postResponse.status shouldBe HttpStatusCode.OK
-            postResponse.headers[HtmxHeaders.HX_REDIRECT] shouldBe Routes.ROOT
+            postResponse.headers["HX-Redirect"] shouldBe "/"
             verify { configService.updateConfig(any()) }
             configFlow.replayCache.single().loopDelaySeconds shouldBe 120L
 
@@ -474,18 +471,18 @@ internal fun EvaluationScenariosTest.registerScenarios1To7() {
                 )
 
             val postInvalidResponse =
-                client.post(Routes.SETTINGS) {
+                client.post("/settings") {
                     setBody(
                         parametersOf(
-                            FormFields.LOOP_DELAY_SECONDS to listOf("60"),
-                            FormFields.DEVIATION_TRIGGER_PERCENT to listOf("2.0"),
-                            FormFields.DUST_THRESHOLD_USD to listOf("1.0"),
-                            FormFields.FIAT_MAX_DRAWDOWN to listOf("0.0"),
-                            FormFields.FIAT_DEPLOYMENT_EXPONENT to listOf("1.0"),
-                            FormFields.CSRF_TOKEN to listOf(csrfToken),
-                            FormFields.SYMBOLS to listOf(Asset.USD),
-                            FormFields.TARGETS to listOf("90.0"), // 90% sum != 100%
-                            FormFields.COLORS to listOf("#94a3b8"),
+                            "loopDelaySeconds" to listOf("60"),
+                            "deviationTriggerPercent" to listOf("2.0"),
+                            "dustThresholdUSD" to listOf("1.0"),
+                            "fiatMaxDrawdown" to listOf("0.0"),
+                            "fiatDeploymentExponent" to listOf("1.0"),
+                            "csrfToken" to listOf(csrfToken),
+                            "symbols" to listOf(Asset.USD),
+                            "targets" to listOf("90.0"), // 90% sum != 100%
+                            "colors" to listOf("#94a3b8"),
                         ).formUrlEncode(),
                     )
                     header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
@@ -509,7 +506,7 @@ internal fun EvaluationScenariosTest.registerScenarios1To7() {
             every { tradeHistoryService.getHistoryFlow() } returns streamFlow
 
             val clientSse = createClient { install(ClientSSE) }
-            clientSse.sse(Routes.API_STATUS_STREAM) {
+            clientSse.sse("/api/status/stream") {
                 val events = incoming.take(2).toList()
                 events[0].data shouldContain "BROADCAST TEST"
                 events[1].data shouldContain "HOT FLOW UPDATE"

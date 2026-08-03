@@ -115,7 +115,15 @@ import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.HtmlIds
 ```
 
-Do not redefine HTML IDs or CSS class name strings in JS.
+Production JS consumes the generated shared catalogs for IDs, attributes, HTML
+tags, CSS classes, routes, and `HtmlQueries` selectors. Do not redefine those
+contracts in production JS. Keep `CssClass` focused on classes and
+`HtmlQueries` focused on selectors.
+
+When a JS test verifies an emitted DOM/HTML contract, use an independent raw
+expected literal for the ID, class, tag, attribute, event, or selector. Typed
+catalog values are still fine for internal setup that is not itself the
+contract assertion; see [write-kotest](../write-kotest/SKILL.md).
 
 Do not introduce ARIA attributes, ARIA roles, or accessibility-only DOM text
 unless the user explicitly requests accessibility work. Preserve unrelated

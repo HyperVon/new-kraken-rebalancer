@@ -81,6 +81,8 @@ human–agent workflow, review loop, and maintenance guidance.
 | **API**         | Kraken REST API with HMAC-SHA512 authentication                                                        |
 | **Testing**     | Kotest 6.2.3, MockK 1.14.11, JaCoCo (95% instr/line/method, 90% branch), Karma/Istanbul (90/90/90/75)  |
 | **Build**       | Gradle 9.6.1 (Kotlin DSL), Spotless 8.9.0 + ktlint 1.7.1                                               |
+| **Codegen**     | Experimental JVM-only KSP processors for API mappers and YAML catalogs                                 |
+| **Agent tools** | Optional Kilo Context Mode plugin for bounded large-output analysis; standard workflows remain portable|
 
 ---
 
@@ -463,16 +465,23 @@ This path is internal orchestration — not a second browser-facing SSE stream l
 │   ├── AGENTS.md                          # Repository rules & technical guidelines
 │   ├── OPERATING.md                       # Always-on norms (all agent frameworks)
 │   └── skills/                            # Domain skills (see .agents/AGENTS.md skill index)
+├── .kilo/                                  # Optional Kilo Code integration
+│   ├── kilo.json                           # Context Mode plugin + safe local-tool settings
+│   └── shell-strategy.md                   # Non-interactive shell and bounded-output guidance
 ├── .cursor/rules/                          # Cursor projections of OPERATING.md (committed)
 ├── CLAUDE.md                               # Claude Code entrypoint → .agents/
 ├── .github/copilot-instructions.md         # GitHub Copilot entrypoint → .agents/
 ├── common/                                 # Kotlin Multiplatform shared module (JVM + JS)
-│   └── src/commonMain/kotlin/com/gemini/krakenbot/
+│   ├── src/commonMain/kotlin/com/gemini/krakenbot/
 │       ├── api/                           # Wire DTOs: PortfolioSnapshot, TradeRecord, HistoryStats, RebalancerComparison, SyncProgressResponse
 │       ├── config/                        # AppConfig, Settings, Allocation, KrakenCredentials, InvalidConfigurationException
-│       ├── model/                         # Asset, OrderSide (OrderType defined alongside), RebalancerComparisonEnums, Result, TimeRange, SyncMetadataKeys, TradeSourceKeys
+│       ├── model/                         # Asset, OrderSide (OrderType defined alongside), RebalancerComparisonEnums, Result, TimeRange, generated SyncMetadataKeys, generated TradeSourceKeys
 │       ├── util/                          # PrecisionConstants
-│       └── view/util/                     # Routes, FormFields, ViewText, CssClass, HtmlIds, HtmlAttrs, HtmxAttrs, DataProps, ChartProps
+│       ├── view/util/                     # Generated YAML string catalogs, Routes helpers, ViewText, CssClass, HtmlQueries, CssClassSchema, ChartProps
+│   └── src/commonMain/resources/codegen/   # Explicit YAML inputs for generated common catalogs
+├── codegen/                                # JVM-only KSP processors for API, CSS, and common string catalogs
+│   ├── src/main/kotlin/.../processor/      # Shared catalog support plus domain-to-wire and catalog adapters
+│   └── build.gradle.kts                    # Symbol-processing API dependency
 ├── frontend-js/                            # Kotlin/JS client-side subproject compiling to rebalancer.js
 │   ├── src/jsMain/kotlin/                 # Kotlin/JS frontend source files
 │   │   ├── main.kt                        # Client-side routing entry point
@@ -501,7 +510,8 @@ This path is internal orchestration — not a second browser-facing SSE stream l
 │   │   ├── DashboardController.kt        # HTTP handlers (pages, settings POST, SSE, history APIs)
 │   │   ├── CsrfProtection.kt              # Double-submit protection for settings mutations
 │   │   └── DashboardRoutes.kt            # Koin wiring → registerRoutes()
-│   ├── api/                               # HistoryApiMapper — JVM models ↔ :common wire DTOs
+│   ├── api/                               # Generated history mappers + custom sync-progress response mapping
+│   ├── codegen/                           # @GenerateApiMapper annotations for generated API mappers
 │   ├── model/                             # PortfolioSnapshot, OrderResult, TradeRecord, TradeSource, HistoryStats, RebalancerComparison, PortfolioStats
 │   ├── repository/                        # TradeRepository, PortfolioStatsRepository
 │   │   ├── impl/                          # Sqlite*Impl + RepositoryUtils (safeTransaction)

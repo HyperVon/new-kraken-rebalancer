@@ -1,11 +1,14 @@
 package com.gemini.krakenbot.model
 
+import com.gemini.krakenbot.codegen.GenerateApiMapper
 import com.gemini.krakenbot.service.isWithinRelativeTolerance
 import java.math.BigDecimal
 import java.math.RoundingMode
 import java.time.Instant
 import kotlin.math.abs
+import com.gemini.krakenbot.api.TradeRecord as ApiTradeRecord
 
+@GenerateApiMapper(ApiTradeRecord::class)
 data class TradeRecord(
     val timestamp: Instant,
     val pair: String,

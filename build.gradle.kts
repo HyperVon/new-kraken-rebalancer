@@ -4,6 +4,7 @@ import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
 plugins {
     kotlin("jvm") version "2.4.10"
+    id("com.google.devtools.ksp") version "2.3.10"
     id("com.diffplug.spotless") version "8.9.0"
     application
     jacoco
@@ -11,7 +12,7 @@ plugins {
 
 spotless {
     kotlin {
-        target("src/**/*.kt", "common/src/**/*.kt", "frontend-js/src/**/*.kt")
+        target("src/**/*.kt", "common/src/**/*.kt", "frontend-js/src/**/*.kt", "codegen/src/**/*.kt")
         ktlint("1.7.1").editorConfigOverride(
             mapOf(
                 "ktlint_standard_no-wildcard-imports" to "disabled",
@@ -22,7 +23,7 @@ spotless {
         )
     }
     kotlinGradle {
-        target("*.gradle.kts")
+        target("*.gradle.kts", "*/build.gradle.kts")
         ktlint("1.7.1").editorConfigOverride(
             mapOf(
                 "max_line_length" to "120",
@@ -56,6 +57,7 @@ repositories {
 }
 
 dependencies {
+    ksp(project(":codegen"))
     val ktorVersion = "3.5.1"
     val koinVersion = "4.2.2"
 

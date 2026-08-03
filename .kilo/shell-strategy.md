@@ -227,3 +227,27 @@ USE THIS REPO FOR: API backend only
 ```
 
 By framing instructions as "Actionable Positive Constraints", you reduce hallucination and improve compliance across all models.
+
+## 8. Context Mode Output Routing
+
+This repository registers the optional Kilo Context Mode plugin in
+`.kilo/kilo.json`. When the plugin is available:
+
+1. Use `ctx_batch_execute` for three or more related inspection commands or
+   verbose build, test, lint, Git, API, or repository output.
+2. Use `ctx_execute` / `ctx_execute_file` to derive concise diagnostics from
+   large output, and `ctx_search` to recall indexed results instead of replaying
+   raw logs into the conversation.
+3. Return exit status, a short summary, relevant failures, and file/line
+   references; do not echo full logs when a bounded result is sufficient.
+4. Keep exact `Read` output in the active context when an edit needs precise
+   source text. Context Mode summarizes data; it does not replace exact edit
+   context or final verification.
+5. Keep Gradle execution serial per clone. Context Mode reduces output volume;
+   it does not make concurrent Gradle builds safe.
+6. Never index credentials, secrets, live databases, or private runtime data.
+   Use disposable or read-only inputs for database and log analysis.
+
+If Context Mode is unavailable in another harness, use bounded native commands
+and continue without assuming the `ctx_*` tools exist. The standard Gradle,
+test, and shell safety rules remain authoritative.

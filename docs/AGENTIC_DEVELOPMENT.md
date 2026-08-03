@@ -46,12 +46,12 @@ of its AI-assisted development. The repository also contains checked-in
 entrypoints for Claude Code and GitHub Copilot. Model choices have varied over
 time and are not fully encoded in commit metadata.
 
-The clearest model-specific record is the adversarial PR-review workflow. It
-uses a parent-chosen set of bounded reviewer tracks, selecting fast capable
-models for routine discovery and stronger reasoning models for high-risk or
-disputed questions. Composer 2.5 Fast and Grok 4.5 High remain documented
-examples when available, but the review structure and bounded scopes matter
-more than a permanent dependency on one provider.
+The clearest routing record is the adversarial PR-review workflow. It uses a
+parent-chosen set of bounded reviewer tracks, selecting the smallest capable
+exact route for routine discovery and stronger reasoning routes for high-risk
+or disputed questions. The host must expose and enforce the selected route and
+effort; otherwise the parent keeps the review sequential rather than inferring
+a model from a role label.
 
 ## The human role
 
@@ -266,22 +266,13 @@ Kilo/OpenCode examples, not portable requirements. Other harnesses should map
 the same roles to their own read-only agents while preserving the bounded scope,
 stop condition, compact report, and parent-owned integration rules.
 
-Composer 2.5 Fast and Grok 4.5 High are documented examples of fast-capable and
-strong-reasoning roles. A substitution is meaningful to a human reviewer only
-when the role, scope, capability difference, and reason remain visible.
-
-When running under a host that lacks those models, the adversarial PR-review
-workflow substitutes a comparable model for each selected track and records the
-substitution in that PR's verification notes and final summary. For example, one
-OpenCode session recorded the following bounded split:
-
-- fast/cheaper reviewer: **DeepSeek V4 Flash**
-- strong/high-reasoning reviewer: **MiMo V2.5**
-- default session model: **Hy3**
-
-The specific slugs above are an observed one-time substitution, not standing
-policy; future sessions should record their own mappings per the substitution
-rule above.
+Before material or parallel review work, the host must enforce and expose the
+exact provider/model route and effort selected by the model-routing preflight.
+If it cannot, the parent keeps the review sequential or obtains route-selection
+support; a role label or `subagent_type` is not evidence that a model ran.
+Fallbacks are valid only when their exact route and effort are likewise
+enforceable and recorded. This keeps substitutions visible without turning a
+generic role or the parent route into an unverified model claim.
 
 Multiple agreeing reports are not proof of correctness. Related models can
 share the same blind spots, repeat inaccurate documentation, or approve

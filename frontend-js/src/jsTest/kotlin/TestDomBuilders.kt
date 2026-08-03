@@ -1,52 +1,46 @@
 package com.gemini.krakenbot.frontend
 
 import com.gemini.krakenbot.model.Asset
-import com.gemini.krakenbot.view.util.CssClass
-import com.gemini.krakenbot.view.util.DataProps
-import com.gemini.krakenbot.view.util.FormFields
-import com.gemini.krakenbot.view.util.HtmlAttrs
-import com.gemini.krakenbot.view.util.HtmlIds
 import com.gemini.krakenbot.view.util.ViewText
-import com.gemini.krakenbot.view.util.ZoomActions
 import kotlinx.browser.window
 import kotlin.js.json
 
 object TestDomBuilders {
     fun chartsDom(): String =
         """
-        <div id="${HtmlIds.COMPARISON_CHART_CONTENT}" class="${CssClass.History.ComparisonChartArea}">
-            <canvas id="${HtmlIds.REBALANCER_COMPARISON_CHART}"></canvas>
+        <div id="comparison-chart-content" class="comparison-chart-area">
+            <canvas id="rebalancer-comparison-chart"></canvas>
         </div>
-        <div id="${HtmlIds.COMPARISON_AVAILABILITY_MESSAGE}" class="${CssClass.History.ComparisonUnavailable}"></div>
-        <span id="${HtmlIds.COMPARISON_CONFIDENCE_BADGE}" class="${CssClass.History.ComparisonConfidenceBadge}"></span>
-        <span id="${HtmlIds.COMPARISON_LATEST_DIFFERENCE}">${ViewText.EM_DASH}</span>
-        <canvas id="${HtmlIds.PORTFOLIO_VALUE_CHART}"></canvas>
-        <canvas id="${HtmlIds.ASSET_HOLDINGS_CHART}"></canvas>
-        <canvas id="${HtmlIds.ALLOCATION_DRIFT_CHART}"></canvas>
-        <canvas id="${HtmlIds.CUMULATIVE_NET_CASH_FLOW_CHART}"></canvas>
+        <div id="comparison-availability-message" class="comparison-unavailable"></div>
+        <span id="comparison-confidence-badge" class="comparison-confidence-badge"></span>
+        <span id="comparison-latest-difference">${ViewText.EM_DASH}</span>
+        <canvas id="portfolio-value-chart"></canvas>
+        <canvas id="asset-holdings-chart"></canvas>
+        <canvas id="allocation-drift-chart"></canvas>
+        <canvas id="cumulative-net-cash-flow-chart"></canvas>
         """.trimIndent()
 
     fun statsDom(): String =
         """
-        <div id="${HtmlIds.STAT_ATH}"></div>
-        <div id="${HtmlIds.STAT_TOTAL_TRADES}"></div>
-        <div id="${HtmlIds.STAT_TOTAL_VOLUME}"></div>
-        <div id="${HtmlIds.STAT_TOTAL_FEES}"></div>
-        <div id="${HtmlIds.STAT_AVG_FEE_RATE}"></div>
-        <div id="${HtmlIds.STAT_AVG_SLIPPAGE}"></div>
+        <div id="stat-ath"></div>
+        <div id="stat-total-trades"></div>
+        <div id="stat-total-volume"></div>
+        <div id="stat-total-fees"></div>
+        <div id="stat-avg-fee-rate"></div>
+        <div id="stat-avg-slippage"></div>
         """.trimIndent()
 
     fun syncProgressDom(): String =
         """
-        <div id="${HtmlIds.SYNC_PROGRESS_BANNER}"></div>
-        <div id="${HtmlIds.SYNC_PROGRESS_BAR}"></div>
-        <div id="${HtmlIds.SYNC_PROGRESS_TEXT}"></div>
+        <div id="sync-progress-banner"></div>
+        <div id="sync-progress-bar"></div>
+        <div id="sync-progress-text"></div>
         """.trimIndent()
 
     fun tradeTableDom(): String =
         """
-        <input type="checkbox" id="${HtmlIds.SHOW_DRY_RUN_CHECKBOX}" checked>
-        <table><tbody id="${HtmlIds.TRADE_TABLE_BODY}"></tbody></table>
+        <input type="checkbox" id="show-dry-run-checkbox" checked>
+        <table><tbody id="trade-table-body"></tbody></table>
         """.trimIndent()
 
     fun historyDom(): String =
@@ -59,42 +53,42 @@ object TestDomBuilders {
 
     fun historyViewsDom(): String =
         """
-        <div class="${CssClass.History.TimeRangeSelector}">
-            <button class="${CssClass.History.TimeRangeBtn}" ${HtmlAttrs.DATA_RANGE}="24h">24h</button>
-            <button class="${CssClass.History.TimeRangeBtn}" ${HtmlAttrs.DATA_RANGE}="7d">7d</button>
-            <button class="${CssClass.History.TimeRangeBtnActive}" ${HtmlAttrs.DATA_RANGE}="30d">30d</button>
+        <div class="time-range-selector">
+            <button class="time-range-btn" data-range="24h">24h</button>
+            <button class="time-range-btn" data-range="7d">7d</button>
+            <button class="time-range-btn active" data-range="30d">30d</button>
         </div>
-        <select id="${HtmlIds.HISTORY_VIEWS_SELECT}"></select>
-        <button id="${HtmlIds.HISTORY_SAVE_VIEW_BTN}"></button>
-        <button id="${HtmlIds.HISTORY_SET_DEFAULT_BTN}"></button>
-        <button id="${HtmlIds.HISTORY_DELETE_VIEW_BTN}"></button>
+        <select id="history-views-select"></select>
+        <button id="history-save-view-btn"></button>
+        <button id="history-set-default-btn"></button>
+        <button id="history-delete-view-btn"></button>
         ${historyDom()}
         """.trimIndent()
 
     fun settingsDom(): String =
         """
-        <span id="${HtmlIds.MODE_PLATE}" class="${CssClass.Mode.DryRun}" title="${ViewText.MODE_DRY_RUN_TITLE}">
-          <span class="${CssClass.Mode.Dot}"></span>
-          <span id="${HtmlIds.MODE_PLATE_LABEL}">${ViewText.MODE_DRY_RUN}</span>
+        <span id="mode-plate" class="mode-plate mode-dry-run" title="${ViewText.MODE_DRY_RUN_TITLE}">
+          <span class="mode-plate-dot"></span>
+          <span id="mode-plate-label">${ViewText.MODE_DRY_RUN}</span>
         </span>
-        <input type="checkbox" name="${FormFields.SIMULATION}">
-        <input type="checkbox" name="${FormFields.DRY_RUN}" checked>
-        <span id="${HtmlIds.TOTAL_ALLOCATED_DISPLAY}"></span>
-        <button id="${HtmlIds.SAVE_BUTTON}"></button>
+        <input type="checkbox" name="simulation">
+        <input type="checkbox" name="dryRun" checked>
+        <span id="total-allocated-display"></span>
+        <button id="save-button"></button>
         """.trimIndent()
 
     fun assetEditDom(newSymbol: String = Asset.BTC): String =
         """
-        <input type="text" id="${HtmlIds.NEW_SYMBOL_INPUT}" value="$newSymbol">
-        <div id="${HtmlIds.ALLOCATIONS_CONTAINER}"></div>
+        <input type="text" id="new-symbol-input" value="$newSymbol">
+        <div id="allocations-container"></div>
         """.trimIndent()
 
     // StatusCard.Live is "status-badge live", so Badge ("status-badge") queries match production chips.
     fun dataAgeDom(epoch: String = ""): String =
         """
-        <span class="${CssClass.DataAge.Value}"></span>
-        <span class="${CssClass.DataAge.Time}" ${HtmlAttrs.DATA_EPOCH}="$epoch"></span>
-        <span class="${CssClass.StatusCard.Live}"></span>
+        <span class="data-age-value"></span>
+        <span class="data-age-time" data-epoch="$epoch"></span>
+        <span class="status-badge live"></span>
         """.trimIndent()
 
     fun sortableTableDom(): String =
@@ -102,50 +96,50 @@ object TestDomBuilders {
         <table>
             <thead>
                 <tr>
-                    <th class="${CssClass.Table.Sortable}">Col0</th>
-                    <th class="${CssClass.Table.Sortable}">Col1</th>
+                    <th class="sortable">Col0</th>
+                    <th class="sortable">Col1</th>
                 </tr>
             </thead>
             <tbody>
-                <tr class="${CssClass.Table.Hoverable}">
-                    <td ${HtmlAttrs.DATA_SORT_VALUE}="10">A</td>
-                    <td ${HtmlAttrs.DATA_SORT_VALUE}="20">B</td>
+                <tr class="hoverable">
+                    <td data-sort-value="10">A</td>
+                    <td data-sort-value="20">B</td>
                 </tr>
-                <tr class="${CssClass.Table.Hoverable}">
-                    <td ${HtmlAttrs.DATA_SORT_VALUE}="5">C</td>
-                    <td ${HtmlAttrs.DATA_SORT_VALUE}="15">D</td>
+                <tr class="hoverable">
+                    <td data-sort-value="5">C</td>
+                    <td data-sort-value="15">D</td>
                 </tr>
             </tbody>
         </table>
         """.trimIndent()
 
-    fun zoomControlsDom(canvasId: String = HtmlIds.PORTFOLIO_VALUE_CHART): String =
+    fun zoomControlsDom(canvasId: String = "portfolio-value-chart"): String =
         """
         <canvas id="$canvasId"></canvas>
-        <button class="${CssClass.History.ZoomBtn}"
-          ${HtmlAttrs.DATA_CHART_ID}="$canvasId" ${HtmlAttrs.DATA_ZOOM_ACTION}="${ZoomActions.IN}"></button>
-        <button class="${CssClass.History.ZoomBtn}"
-          ${HtmlAttrs.DATA_CHART_ID}="$canvasId" ${HtmlAttrs.DATA_ZOOM_ACTION}="${ZoomActions.OUT}"></button>
-        <button class="${CssClass.History.ZoomBtn}"
-          ${HtmlAttrs.DATA_CHART_ID}="$canvasId" ${HtmlAttrs.DATA_ZOOM_ACTION}="${ZoomActions.RESET}"></button>
+        <button class="history-zoom-btn"
+          data-chart-id="$canvasId" data-zoom-action="in"></button>
+        <button class="history-zoom-btn"
+          data-chart-id="$canvasId" data-zoom-action="out"></button>
+        <button class="history-zoom-btn"
+          data-chart-id="$canvasId" data-zoom-action="reset"></button>
         """.trimIndent()
 
     // Defaults disabled like production until syncChartScrubber sees a zoomed x-window.
     fun scrubberDom(
-        canvasId: String = HtmlIds.PORTFOLIO_VALUE_CHART,
+        canvasId: String = "portfolio-value-chart",
         disabled: Boolean = true,
         value: String = "0",
     ): String {
         val disabledAttr = if (disabled) " disabled" else ""
         return """
-        <input class="${CssClass.History.ChartScrubberInput}" type="range" min="0" max="100"
-          ${HtmlAttrs.DATA_CHART_ID}="$canvasId" value="$value"$disabledAttr />
+        <input class="history-chart-scrubber-input" type="range" min="0" max="100"
+          data-chart-id="$canvasId" value="$value"$disabledAttr />
         """.trimIndent()
     }
 
     fun emptyTradeTableDom(): String =
         """
-        <table><tbody id="${HtmlIds.TRADE_TABLE_BODY}"></tbody></table>
+        <table><tbody id="trade-table-body"></tbody></table>
         """.trimIndent()
 
     fun emptyTableDom(): String =
@@ -156,7 +150,7 @@ object TestDomBuilders {
     fun settingsAndSyncDom(): String =
         """
         ${syncProgressDom()}
-        <div id="${HtmlIds.ALLOCATIONS_CONTAINER}"></div>
+        <div id="allocations-container"></div>
         ${settingsDom()}
         """.trimIndent()
 
@@ -193,6 +187,6 @@ object TestDomBuilders {
     fun datasetConfig(label: String, hidden: Boolean? = null): dynamic = if (hidden == null) {
         json("label" to label)
     } else {
-        json("label" to label, DataProps.HIDDEN to hidden)
+        json("label" to label, "hidden" to hidden)
     }
 }

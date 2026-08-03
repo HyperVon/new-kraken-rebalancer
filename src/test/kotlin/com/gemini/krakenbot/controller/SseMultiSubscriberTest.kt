@@ -2,7 +2,6 @@ package com.gemini.krakenbot.controller
 
 import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.model.PortfolioSnapshot
-import com.gemini.krakenbot.view.util.Routes
 import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.shouldBe
@@ -73,7 +72,7 @@ class SseMultiSubscriberTest : DashboardControllerTestBase() {
                 val collected = List(subscriberCount) { mutableListOf<String>() }
                 val jobs = collected.map { received ->
                     async {
-                        client.sse(Routes.API_STATUS_STREAM) {
+                        client.sse("/api/status/stream") {
                             val events = incoming.take(2).toList()
                             events.forEach { event -> received.add(event.data ?: "") }
                         }
@@ -108,7 +107,7 @@ class SseMultiSubscriberTest : DashboardControllerTestBase() {
                 val client = createClient { install(ClientSSE) }
                 application { configureTestEnv() }
 
-                client.sse(Routes.API_STATUS_STREAM) {
+                client.sse("/api/status/stream") {
                     val events = incoming.take(2).toList()
                     events[0].data shouldBe objectMapper.writeValueAsString(initial)
                     events[1].data shouldBe objectMapper.writeValueAsString(broadcast)
@@ -137,7 +136,7 @@ class SseMultiSubscriberTest : DashboardControllerTestBase() {
                 // A survivor subscriber stays parked and waits for the initial + two broadcasts.
                 val survivor = mutableListOf<String>()
                 val survivorJob = async {
-                    client.sse(Routes.API_STATUS_STREAM) {
+                    client.sse("/api/status/stream") {
                         incoming.take(3).toList().forEach { e -> survivor.add(e.data ?: "") }
                     }
                 }
@@ -146,7 +145,7 @@ class SseMultiSubscriberTest : DashboardControllerTestBase() {
                 // departure must not disturb the survivor. Keeping the client flow active until the
                 // first broadcast prevents the server-side collector from leaving before the barrier.
                 val departed = async {
-                    client.sse(Routes.API_STATUS_STREAM) {
+                    client.sse("/api/status/stream") {
                         incoming.take(2).toList()
                     }
                 }
@@ -181,7 +180,7 @@ class SseMultiSubscriberTest : DashboardControllerTestBase() {
                 val client = createClient { install(ClientSSE) }
                 application { configureTestEnv() }
 
-                client.sse(Routes.API_STATUS_STREAM) {
+                client.sse("/api/status/stream") {
                     val events = incoming.take(2).toList()
                     events.forEach { it.data shouldBe objectMapper.writeValueAsString(initial) }
                 }

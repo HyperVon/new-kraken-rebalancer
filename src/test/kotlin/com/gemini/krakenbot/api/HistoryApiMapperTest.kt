@@ -1,6 +1,6 @@
 package com.gemini.krakenbot.api
 
-import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.TestFixtures.assetSnapshot
 import com.gemini.krakenbot.model.ComparisonAvailability
 import com.gemini.krakenbot.model.ComparisonConfidence
 import com.gemini.krakenbot.model.ComparisonUnavailableReason
@@ -133,8 +133,8 @@ class HistoryApiMapperTest : StringSpec() {
                 timestamp = now,
                 totalValueUSD = BigDecimal("10000.00"),
                 assets = mapOf(
-                    "BTC" to PortfolioSnapshot.AssetSnapshot(
-                        symbol = Asset.BTC,
+                    "BTC" to assetSnapshot(
+                        symbol = "BTC",
                         balance = BigDecimal("0.25"),
                         price = BigDecimal("40000.00"),
                         valueUSD = BigDecimal("10000.00"),

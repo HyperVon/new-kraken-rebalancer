@@ -6,8 +6,6 @@ import com.gemini.krakenbot.model.ComparisonConfidence
 import com.gemini.krakenbot.model.ComparisonUnavailableReason
 import com.gemini.krakenbot.model.HistoryStats
 import com.gemini.krakenbot.model.TimeRange
-import com.gemini.krakenbot.view.util.Routes
-import com.gemini.krakenbot.view.util.withRange
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.ktor.client.plugins.sse.sse
@@ -50,7 +48,7 @@ class DashboardHistoryApiTest : DashboardControllerTestBase() {
                 application {
                     configureTestEnv()
                 }
-                client.sse(Routes.API_STATUS_STREAM) {
+                client.sse("/api/status/stream") {
                     val events = incoming.take(2).toList()
                     events[0].data shouldBe
                         objectMapper.writeValueAsString(
@@ -80,7 +78,7 @@ class DashboardHistoryApiTest : DashboardControllerTestBase() {
                     configureTestEnv()
                 }
                 try {
-                    client.sse(Routes.API_STATUS_STREAM) {
+                    client.sse("/api/status/stream") {
                         incoming.collect {}
                     }
                 } catch (_: Exception) {
@@ -105,7 +103,7 @@ class DashboardHistoryApiTest : DashboardControllerTestBase() {
                 application {
                     configureTestEnv()
                 }
-                client.sse(Routes.API_STATUS_STREAM) {
+                client.sse("/api/status/stream") {
                     val events = incoming.toList()
                     events.isEmpty() shouldBe true
                 }
@@ -117,7 +115,7 @@ class DashboardHistoryApiTest : DashboardControllerTestBase() {
                 application {
                     configureTestEnv()
                 }
-                val response = client.get(Routes.HISTORY)
+                val response = client.get("/history")
                 response.status shouldBe HttpStatusCode.OK
                 response.bodyAsText() shouldContain "History - Kraken Rebalancer"
             }
@@ -129,7 +127,7 @@ class DashboardHistoryApiTest : DashboardControllerTestBase() {
                 application {
                     configureTestEnv()
                 }
-                val response = client.get(Routes.API_HISTORY_SNAPSHOTS.withRange("24h"))
+                val response = client.get("/api/history/snapshots?range=24h")
                 response.status shouldBe HttpStatusCode.OK
                 response.bodyAsText() shouldBe "[]"
             }
@@ -141,7 +139,7 @@ class DashboardHistoryApiTest : DashboardControllerTestBase() {
                 application {
                     configureTestEnv()
                 }
-                val response = client.get(Routes.API_HISTORY_TRADES.withRange(TimeRange.ALL))
+                val response = client.get("/api/history/trades?range=${TimeRange.ALL.key}")
                 response.status shouldBe HttpStatusCode.OK
                 response.bodyAsText() shouldBe "[]"
             }
@@ -161,7 +159,7 @@ class DashboardHistoryApiTest : DashboardControllerTestBase() {
                 application {
                     configureTestEnv()
                 }
-                val response = client.get(Routes.API_HISTORY_STATS.withRange(TimeRange.SEVEN_DAYS))
+                val response = client.get("/api/history/stats?range=${TimeRange.SEVEN_DAYS.key}")
                 response.status shouldBe HttpStatusCode.OK
                 response.bodyAsText() shouldContain "\"allTimeHigh\":\"15000.00\""
             }
@@ -182,7 +180,7 @@ class DashboardHistoryApiTest : DashboardControllerTestBase() {
                 application {
                     configureTestEnv()
                 }
-                val response = client.get(Routes.API_HISTORY_STATS)
+                val response = client.get("/api/history/stats")
                 response.status shouldBe HttpStatusCode.OK
                 response.bodyAsText() shouldContain "\"allTimeHigh\":\"15000.00\""
             }
@@ -194,13 +192,13 @@ class DashboardHistoryApiTest : DashboardControllerTestBase() {
                 application {
                     configureTestEnv()
                 }
-                client.get(Routes.API_HISTORY_SNAPSHOTS.withRange(TimeRange.SEVEN_DAYS)).status shouldBe
+                client.get("/api/history/snapshots?range=${TimeRange.SEVEN_DAYS.key}").status shouldBe
                     HttpStatusCode.OK
-                client.get(Routes.API_HISTORY_SNAPSHOTS.withRange(TimeRange.THIRTY_DAYS)).status shouldBe
+                client.get("/api/history/snapshots?range=${TimeRange.THIRTY_DAYS.key}").status shouldBe
                     HttpStatusCode.OK
-                client.get(Routes.API_HISTORY_SNAPSHOTS.withRange(TimeRange.NINETY_DAYS)).status shouldBe
+                client.get("/api/history/snapshots?range=${TimeRange.NINETY_DAYS.key}").status shouldBe
                     HttpStatusCode.OK
-                client.get(Routes.API_HISTORY_SNAPSHOTS.withRange("invalid")).status shouldBe HttpStatusCode.OK
+                client.get("/api/history/snapshots?range=invalid").status shouldBe HttpStatusCode.OK
             }
         }
 
@@ -210,7 +208,7 @@ class DashboardHistoryApiTest : DashboardControllerTestBase() {
                 application {
                     configureTestEnv()
                 }
-                val response = client.get(Routes.API_HISTORY_SNAPSHOTS)
+                val response = client.get("/api/history/snapshots")
                 response.status shouldBe HttpStatusCode.OK
                 response.bodyAsText() shouldBe "[]"
             }
@@ -233,7 +231,7 @@ class DashboardHistoryApiTest : DashboardControllerTestBase() {
                 application {
                     configureTestEnv()
                 }
-                val response = client.get(Routes.API_HEALTH)
+                val response = client.get("/api/health")
                 response.status shouldBe HttpStatusCode.OK
                 response.headers[HttpHeaders.ContentType] shouldContain TestFixtures.APPLICATION_JSON
                 val body = response.bodyAsText()
@@ -259,7 +257,7 @@ class DashboardHistoryApiTest : DashboardControllerTestBase() {
                 application {
                     configureTestEnv()
                 }
-                val response = client.get(Routes.API_HEALTH)
+                val response = client.get("/api/health")
                 response.status shouldBe HttpStatusCode.OK
                 val body = response.bodyAsText()
                 body shouldContain "\"lastSnapshotTime\":\"N/A\""
@@ -298,7 +296,7 @@ class DashboardHistoryApiTest : DashboardControllerTestBase() {
                 application {
                     configureTestEnv()
                 }
-                val response = client.get(Routes.API_HISTORY_COMPARISON.withRange(TimeRange.THIRTY_DAYS))
+                val response = client.get("/api/history/comparison?range=${TimeRange.THIRTY_DAYS.key}")
                 response.status shouldBe HttpStatusCode.OK
                 response.headers[HttpHeaders.ContentType] shouldContain TestFixtures.APPLICATION_JSON
                 val body = response.bodyAsText()
@@ -325,7 +323,7 @@ class DashboardHistoryApiTest : DashboardControllerTestBase() {
                 application {
                     configureTestEnv()
                 }
-                val response = client.get(Routes.API_HISTORY_COMPARISON)
+                val response = client.get("/api/history/comparison")
                 response.status shouldBe HttpStatusCode.OK
                 val body = response.bodyAsText()
                 body shouldContain "\"availability\":\"UNAVAILABLE\""
@@ -343,7 +341,7 @@ class DashboardHistoryApiTest : DashboardControllerTestBase() {
                 application {
                     configureTestEnv()
                 }
-                val response = client.get(Routes.API_HISTORY_SYNC_PROGRESS)
+                val response = client.get("/api/history/sync-progress")
                 response.status shouldBe HttpStatusCode.OK
                 response.headers[HttpHeaders.ContentType] shouldContain TestFixtures.APPLICATION_JSON
                 val body = response.bodyAsText()
