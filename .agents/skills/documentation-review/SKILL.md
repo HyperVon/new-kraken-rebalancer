@@ -123,6 +123,14 @@ After route inventory, present the track matrix, exact routes, effort, and
 availability evidence with the `question` tool (or the host equivalent) and
 obtain an explicit decision before launching. If the user already approved the
 exact route plan, do not ask again.
+Before using a host Task, confirm it can enforce the selected route. If it
+accepts only a role and inherits the parent model, launch the read-only auditor
+profile through the route-enforced Kilo CLI helper instead:
+`../parallel-multi-agent/scripts/run_routed_agent.sh`. The auditor profile must
+use `mode: all`; supply the discovered route and effort at launch rather than
+hardcoding a model in the profile. Launch the disjoint CLI invocations through
+a genuinely concurrent host facility and retain their compact reports for
+parent triage.
 Workers report evidence and paths only; the parent deduplicates findings,
 applies edits, runs Mermaid/Markdown/build checks, and owns the final report.
 

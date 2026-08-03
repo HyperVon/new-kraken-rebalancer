@@ -42,6 +42,10 @@ Before the first material or parallel Task call, run the
 - State the exact provider/model and effort plan to the user and obtain explicit
   approval before the first material or parallel Task call.
 - Treat `subagent_type` as the worker role, not as route evidence from its name.
+- Verify that the selected launcher actually enforces the route. A profile
+  `model` field or a role name is not proof that a host `Task` wrapper uses it.
+  If the wrapper has no model/effort parameter or inherits the parent route,
+  use a route-enforcing launcher instead of claiming the Task ran the selection.
 - A host-pinned profile counts as exact route evidence only when host metadata
   explicitly maps it to a provider/model and fixed or host-defined effort. Record
   that mapping source and do not claim an independently selected effort.
@@ -128,6 +132,26 @@ exact route/effort mapping, model substitution, user approval, iteration cap,
 coverage, and stop reason.
 Never paste full prior reports into follow-ups; pass only the finding and the
 smallest affected path set.
+
+### Kilo CLI route-enforced launch
+
+When Kilo's Task surface cannot expose or honor a selected route, use a profile
+with `mode: all` and pass the dynamically selected route explicitly through the
+CLI. Keep `model` out of the profile so discovery remains authoritative:
+
+```bash
+./.agents/skills/parallel-multi-agent/scripts/run_routed_agent.sh \
+  --agent "${AUDITOR_ROLE}" \
+  --model "${SELECTED_ROUTE}" \
+  --variant "${SELECTED_EFFORT}" \
+  --prompt "${BOUNDED_READ_ONLY_PROMPT}"
+```
+
+Launch independent invocations through a host mechanism that actually runs
+them concurrently. Record the CLI command's route arguments and successful
+completion with its compact report as launcher evidence. Do not use this as a
+way to bypass the routing preflight, approval, read-only profile permissions,
+or the one-Gradle-per-clone rule.
 
 For repeatable parent setup, use the bounded helpers when available:
 

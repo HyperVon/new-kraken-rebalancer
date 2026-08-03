@@ -57,6 +57,10 @@ Before launching any material or parallel Task/subagent work:
    metadata explicitly maps that profile to a provider/model and a fixed or
    host-defined effort. Record the mapping source and label the effort as
    host-defined; do not claim an independently selected effort parameter.
+   Verify the selected launcher honors that mapping: some Task wrappers accept
+   a role but inherit the parent route. A profile declaration is not launch
+   evidence unless the host reports the selected route or the launcher accepts
+   the route explicitly.
 6. If neither direct selection nor an explicit host-pinned mapping is available,
    stop fan-out and keep the work in the parent or obtain route-selection support.
    A recorded limitation is a stop condition, not permission to launch a role-only
@@ -465,6 +469,13 @@ host-defined effort, and the metadata source. For a parallel split, make this
 record per track and follow
 [parallel-multi-agent](../parallel-multi-agent/SKILL.md)'s iteration and report
 limits.
+
+For Kilo CLI launches, a `mode: all` profile plus explicit `--model` and
+`--variant` arguments is route-enforceable. The project helper
+`parallel-multi-agent/scripts/run_routed_agent.sh` validates that the profile
+is not subagent-only before invoking that path. Keep the route dynamic from the
+current inventory; do not hardcode it into a profile merely to satisfy a Task
+wrapper that cannot expose model selection.
 
 When a user names a provider, report both the requested provider and the route's
 verified access/billing provider. If they differ, label the route as a

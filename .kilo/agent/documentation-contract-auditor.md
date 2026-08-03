@@ -1,6 +1,6 @@
 ---
 description: "Bounded read-only audit of product docs against source and build truth"
-mode: subagent
+mode: all
 steps: 8
 hidden: true
 permission:

@@ -1,6 +1,6 @@
 ---
 description: "Bounded read-only audit of agent rules, skills, projections, and CI"
-mode: subagent
+mode: all
 steps: 8
 hidden: true
 permission:
