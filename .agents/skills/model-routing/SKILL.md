@@ -61,7 +61,14 @@ Before launching any material or parallel Task/subagent work:
    stop fan-out and keep the work in the parent or obtain route-selection support.
    A recorded limitation is a stop condition, not permission to launch a role-only
    worker.
-7. Escalate or add an independent verifier only when task risk and available
+7. For a broad request with multiple disjoint tracks, make this an explicit
+   decision point: after route inventory, present the exact track/route/effort
+   matrix with the `question` tool or host equivalent and obtain approval before
+   launching. If no exact route is available, ask whether to continue serially
+   or stop for route support; do not silently choose the parent-owned fallback.
+   If the user already approved the exact plan, proceed without repeating the
+   question.
+8. Escalate or add an independent verifier only when task risk and available
    capability evidence justify it.
 
 For a genuinely low-risk, non-material single scout, the record can be brief,

@@ -55,6 +55,12 @@ Before the first material or parallel Task call, run the
 - If exact route/effort enforcement is unavailable, stop fan-out and keep the
   work in the parent or obtain route-selection support. A recorded limitation
   is not permission to launch a role-only worker.
+- For a broad request with multiple disjoint tracks, do not silently continue
+  parent-owned after this check. After route inventory, present the track
+  matrix and exact route/effort plan with the `question` tool or host equivalent
+  and obtain an explicit parallel-or-serial decision. If the user already
+  approved the exact plan, proceed without repeating the question. If no route
+  is available, ask whether to continue serially or stop for route support.
 - Escalate or add an independent verifier only when the track risk and evidence
   justify it.
 

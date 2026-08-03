@@ -106,7 +106,14 @@ route-selection support; recording the limitation is not permission to launch.
    fallback, and any substitution for each track.
 5. If exact route/effort enforcement is unavailable, stop material/parallel
    fan-out; do not silently use the parent route or a role-only fallback.
-6. For high-risk or disputed work, escalate or add an independent verifier only
+6. For a broad request with multiple disjoint tracks, use the `question` tool or
+   host equivalent after route inventory to present the exact track/route/effort
+   plan and obtain a parallel-or-serial decision. If no route is available, ask
+   whether to continue serially or stop for route support; do not silently
+   continue parent-owned while a parallel request is unresolved. Skip the
+   question only when the user already approved the exact plan or the task is
+   small/coupled.
+7. For high-risk or disputed work, escalate or add an independent verifier only
    when the routing evidence and risk justify it.
 
 ### When to parallelize
