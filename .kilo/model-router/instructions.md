@@ -4,6 +4,12 @@ The project has a route-enforcing subagent launcher at
 `.kilo/model-router/route-subagents`. Use it for broad workflows that define
 parallel discovery or review tracks.
 
+When the initial `route-kilo` prompt contains a known repository skill reference
+such as `/open-pr` or `/documentation-review`, the launcher resolves the
+reference to `.agents/skills/<name>/SKILL.md` and prepends an instruction for the
+main session to read and follow that file. Unknown slash commands are passed
+through unchanged.
+
 ## Skill Mapping
 
 Use the matching workflow preset instead of asking the user to create or edit a
@@ -93,6 +99,25 @@ provider/model, billing, benchmark/capability/quota metadata, timing, and
 failovers. They intentionally omit parent prompts, worker report text,
 credentials, and raw provider errors. Set `KILO_MODEL_ROUTER_REPORT_DIR` or pass
 `--report-dir` to choose another local destination.
+
+When a catalog exposes model variants, the selected profile chooses one instead
+of silently accepting the provider default: routine prefers low/medium,
+coding prefers medium/high, agentic prefers high, review prefers xhigh/max, and
+critical prefers max/xhigh, with model-specific fallbacks. Headless workers use
+`--variant`; the full TUI receives a temporary agent configuration overlay and
+does not modify the project config. Review and critical profiles prioritize
+capability evidence; free routes remain eligible when they satisfy the profile
+and policy. Only explicit blacklist patterns exclude models or providers.
+
+Ranking only considers candidates that satisfy every eligibility gate: sufficiently
+qualified (quality must be assessable and meet the profile minimum — routes whose
+capability is unknown or cannot be assessed are never considered), accessible and
+useable (active, tool-capable, quota not exhausted, policy-permitted and
+available). Among the eligible set, routes are ordered by lowest effective cost,
+then by highest available quota (to prefer headroom and spread load), then by
+higher quality as a tiebreak. A free or cheaper route (quality still above the
+minimum) therefore outranks a more expensive higher-quality route; quota headroom
+breaks cost ties.
 
 Standard read-only workers run from temporary repository copies, so an agent
 that ignores its prompt cannot modify the parent worktree. `--allow-edits` is

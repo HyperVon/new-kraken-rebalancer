@@ -73,6 +73,8 @@ class HistoryLoadingTest : StringSpec() {
                 loadAll(TimeRange.TWENTY_FOUR_HOURS.key).await()
                 (getClonedChartOptions().scales.x.time.unit as String) shouldBe "hour"
                 (window.asDynamic().chartDefaults.scales.x.time.unit == null) shouldBe true
+                (getClonedChartOptions().plugins.zoom.limits.x.minRange as Double) shouldBe
+                    ChartProps.ZOOM_MIN_RANGE_MS.toDouble()
                 loadAll(TimeRange.ALL.key).await()
                 (getClonedChartOptions().scales.x.time.unit == null) shouldBe true
                 (window.asDynamic().chartDefaults.scales.x.time.unit == null) shouldBe true

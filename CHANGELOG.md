@@ -37,6 +37,29 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Review routing**: added a stronger `review` profile for documentation,
   instruction, model-selection, and source-contract audits, plus a hard gate for
   explicit different-model delegation requests.
+- **Skill-aware launcher prompts**: `./route-kilo /skillname ...` now resolves
+  known repository skills and tells the main session to read them before acting.
+- **Variant-aware routing**: model catalogs with reasoning variants now receive
+  profile-appropriate effort selection instead of always using provider defaults.
+- **Primary TUI model handoff**: full TUI launches now set the selected top-level
+  model explicitly, and review/critical primary sessions prioritize capability
+  evidence without blanket free-route exclusion.
+- **Route ranking**: ranking is now capability-gated and cost-tiebroken instead of
+  preferring free routes outright. After availability and capability (quality) gates,
+  free routes outrank paid routes only when capability is otherwise equal; the
+  removed `policy.preferFree` and profile `preferCapability` flags are no longer needed.
+- **Capability-gated selection**: routes whose capability quality cannot be assessed
+  are never considered, and ranking now orders eligible routes by lowest effective
+  cost, then highest available quota, then higher quality.
+- **History zoom time unit**: zooming the History chart now auto-switches the x-axis
+  time unit (day/hour/minute) to match the visible span, and re-syncs the pan scrubber
+  after drag/wheel zoom.
+
+### Fixed
+
+- **History zoom minimum range**: the zoom minimum-span limit now stays a numeric JS
+  value through the chart-options JSON clone, so the 1-hour minimum visible span is
+  enforced again after the `kotlin.Long` serialization regression.
 
 ## [6.16.10] - 2026-08-03
 

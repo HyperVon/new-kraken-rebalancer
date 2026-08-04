@@ -339,11 +339,34 @@ Examples:
 ./route-kilo "Review the README for stale information"
 ./route-kilo --profile coding "Fix the failing Kotlin test"
 ./route-kilo --profile critical "Review the credential-handling changes"
+./route-kilo "/documentation-review Audit the repository documentation"
 ```
 
 The profile constrains route selection; it does not directly choose a model.
 The router still selects the provider/model using capability, cost, quota, and
 availability.
+
+When the provider catalog exposes variants, the profile also selects reasoning
+effort: routine prefers low/medium, coding medium/high, agentic high, review
+xhigh/max, and critical max/xhigh, with model-specific fallbacks. Headless
+workers receive `--variant`; the full TUI uses a temporary agent configuration
+overlay because its top-level CLI has no variant flag. The project config is not
+modified. Review and critical profiles prioritize capability evidence while
+keeping eligible free routes available; only explicit blacklist patterns exclude
+models or providers.
+
+The default policy selects the lowest-cost route that satisfies the selected
+profile's capability, reasoning, tool, context, quota, and privacy requirements.
+A route is only considered when its capability is assessable and meets the
+profile minimum — models whose capability is unknown or cannot be assessed are
+never selected. Among eligible routes, effective cost decides, then highest
+available quota (headroom / load spreading), then higher capability as a
+tiebreak. Eligible free routes therefore outrank more expensive paid routes even
+when the paid route is more capable; quota headroom breaks cost ties.
+
+Known `/skillname` references are resolved to `.agents/skills/<skillname>/SKILL.md`
+and the file is explicitly included in the main session's initial instructions.
+Unknown slash commands are left unchanged.
 
 To permanently exclude a model or provider from automatic selection, update
 `.kilo/model-router/config`:

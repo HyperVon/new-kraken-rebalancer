@@ -27,6 +27,7 @@ from typing import Any, Iterable, Mapping, Sequence
 
 import availability
 
+SKILL_REFERENCE_PATTERN = re.compile(r"(?<![A-Za-z0-9_-])/([A-Za-z0-9][A-Za-z0-9_-]*)")
 
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_CONFIG_PATH = ROOT / ".kilo" / "model-router" / "config"
@@ -40,6 +41,7 @@ DEFAULT_PROFILES: dict[str, dict[str, Any]] = {
         "context": 32_000,
         "input_tokens": 4_000,
         "output_tokens": 1_500,
+        "variantPreference": ["low", "medium", "none", "instant"],
     },
     "coding": {
         "metric": "artificial_analysis_coding_index",
@@ -48,6 +50,7 @@ DEFAULT_PROFILES: dict[str, dict[str, Any]] = {
         "context": 64_000,
         "input_tokens": 10_000,
         "output_tokens": 4_000,
+        "variantPreference": ["medium", "high", "thinking", "max", "xhigh"],
     },
     "agentic": {
         "metric": "artificial_analysis_agentic_index",
@@ -57,6 +60,7 @@ DEFAULT_PROFILES: dict[str, dict[str, Any]] = {
         "context": 64_000,
         "input_tokens": 12_000,
         "output_tokens": 5_000,
+        "variantPreference": ["high", "thinking", "max", "xhigh", "medium"],
     },
     "review": {
         "metric": "artificial_analysis_intelligence_index",
@@ -69,6 +73,7 @@ DEFAULT_PROFILES: dict[str, dict[str, Any]] = {
         "context": 96_000,
         "input_tokens": 16_000,
         "output_tokens": 8_000,
+        "variantPreference": ["xhigh", "max", "high", "thinking", "medium"],
     },
     "critical": {
         "metric": "artificial_analysis_intelligence_index",
@@ -78,6 +83,7 @@ DEFAULT_PROFILES: dict[str, dict[str, Any]] = {
         "context": 128_000,
         "input_tokens": 16_000,
         "output_tokens": 8_000,
+        "variantPreference": ["max", "xhigh", "high", "thinking", "medium"],
     },
 }
 
@@ -141,7 +147,6 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "allowPaid": True,
         "allowFree": True,
         "denyFreeForSensitive": True,
-        "allowUnknownCapability": True,
         "useAaCostPerTask": True,
     },
     "profiles": DEFAULT_PROFILES,
@@ -193,6 +198,9 @@ class Candidate:
     quota_percent: float | None = None
     quota_source: str = "unavailable"
     quota_blocked_until: float = 0.0
+    variants: dict[str, Mapping[str, Any]] = field(default_factory=dict)
+    preferred_variant: str | None = None
+    variant: str | None = None
     rejection: str | None = None
 
 
@@ -534,6 +542,9 @@ def build_candidates(
         output_cost = number(cost.get("output")) if isinstance(cost, Mapping) else None
         if provider_settings.get("freeOnly") and (input_cost != 0.0 or output_cost != 0.0):
             continue
+        raw_variants = raw.get("variants", {})
+        variants = dict(raw_variants) if isinstance(raw_variants, Mapping) else {}
+        configured_variant = model_settings.get("variant")
         candidate = Candidate(
             route=route,
             provider=provider,
@@ -551,6 +562,8 @@ def build_candidates(
             pdf=bool(input_capabilities.get("pdf", False)) if isinstance(input_capabilities, Mapping) else False,
             billing=("free" if provider_settings.get("freeOnly") else billing_class(route, provider_settings, model_settings)),
             free_allowed=bool(provider_settings.get("allowFree", False)),
+            variants=variants,
+            preferred_variant=str(configured_variant) if configured_variant else None,
         )
         aa, match = match_artificial_analysis(candidate, model_settings, aa_models)
         candidate.aa = aa
@@ -662,7 +675,10 @@ def candidate_qualifies(candidate: Candidate, profile: Mapping[str, Any], config
         candidate.rejection = "paid routes disabled by policy"
         return False
     minimum = number(profile.get("minimum"))
-    if candidate.quality is not None and minimum is not None and candidate.quality < minimum:
+    if candidate.quality is None:
+        candidate.rejection = "capability quality is unknown and cannot be assessed"
+        return False
+    if minimum is not None and candidate.quality < minimum:
         candidate.rejection = f"quality score {candidate.quality:g} is below {minimum:g}"
         return False
     secondary = profile.get("secondary", {})
@@ -673,20 +689,24 @@ def candidate_qualifies(candidate: Candidate, profile: Mapping[str, Any], config
             if value is not None and value < float(threshold):
                 candidate.rejection = f"{metric} is below {threshold}"
                 return False
-    if candidate.quality is None and not policy.get("allowUnknownCapability", True):
-        candidate.rejection = "Artificial Analysis capability mapping is unavailable"
-        return False
     return True
 
 
-def fallback_feature_score(candidate: Candidate) -> float:
-    """Rank interface capability only when benchmark evidence is unavailable."""
-    score = 3 if candidate.tool_call else 0
-    score += 3 if candidate.reasoning else 0
-    score += min(candidate.context_limit / 128_000, 8)
-    score += 1 if candidate.attachment else 0
-    score += 1 if candidate.pdf else 0
-    return score
+def select_variant(candidate: Candidate, profile: Mapping[str, Any]) -> None:
+    if not candidate.variants:
+        candidate.variant = None
+        return
+    available = set(candidate.variants)
+    if candidate.preferred_variant in available:
+        candidate.variant = candidate.preferred_variant
+        return
+    preferences = profile.get("variantPreference", [])
+    if isinstance(preferences, Sequence) and not isinstance(preferences, (str, bytes)):
+        for preferred in preferences:
+            if preferred in available:
+                candidate.variant = str(preferred)
+                return
+    candidate.variant = next(iter(candidate.variants))
 
 
 def select_candidate(
@@ -710,15 +730,16 @@ def select_candidate(
     if not usable:
         raise RouterError("no candidate satisfies the current capability, cost, and privacy policy")
 
-    def sort_key(candidate: Candidate) -> tuple[int, int, float, float, float]:
+    def sort_key(candidate: Candidate) -> tuple[int, float, float, float]:
         unknown_quota = 1 if candidate.quota_state != "sufficient" else 0
-        unknown = 1 if candidate.quality is None else 0
         cost = candidate.effective_cost if candidate.effective_cost is not None else float("inf")
-        quality = candidate.quality if candidate.quality is not None else float("inf")
-        remaining = -(candidate.quota_percent if candidate.quota_percent is not None else 0)
-        return unknown, unknown_quota, cost, quality, remaining - fallback_feature_score(candidate)
+        quota = candidate.quota_percent if candidate.quota_percent is not None else 0.0
+        quality = candidate.quality if candidate.quality is not None else 0.0
+        return unknown_quota, cost, -quota, -quality
 
-    return min(usable, key=sort_key)
+    selected = min(usable, key=sort_key)
+    select_variant(selected, profile)
+    return selected
 
 
 def report(
@@ -732,6 +753,8 @@ def report(
         "route": candidate.route,
         "provider": candidate.provider,
         "model": candidate.model,
+        "variant": candidate.variant,
+        "available_variants": sorted(candidate.variants),
         "profile": profile_name,
         "billing": candidate.billing,
         "cost": {
@@ -791,23 +814,58 @@ def load_selection(args: argparse.Namespace) -> tuple[dict[str, Any], list[str]]
     return context["result"], context["warnings"]
 
 
+def referenced_skill_paths(task: str) -> list[tuple[str, Path]]:
+    references: list[tuple[str, Path]] = []
+    seen: set[str] = set()
+    for match in SKILL_REFERENCE_PATTERN.finditer(task):
+        name = match.group(1)
+        if name in seen:
+            continue
+        path = ROOT / ".agents" / "skills" / name / "SKILL.md"
+        if not path.is_file():
+            continue
+        references.append((name, path))
+        seen.add(name)
+    return references
+
+
+def prepare_initial_prompt(task: str) -> str:
+    references = referenced_skill_paths(task)
+    if not references:
+        return task
+    skill_bodies = "\n\n---\n\n".join(
+        f"Repository skill `/{name}` (`{path.relative_to(ROOT)}`):\n\n"
+        f"{path.read_text(encoding='utf-8').strip()}"
+        for name, path in references
+    )
+    return (
+        "Repository skill invocation detected. Before planning or acting, read and follow the referenced skill file(s):\n\n"
+        f"{skill_bodies}"
+        "\n\nThe original user request follows unchanged:\n"
+        f"{task}"
+    )
+
+
 def build_kilo_command(args: argparse.Namespace, result: Mapping[str, Any]) -> list[str]:
+    prompt = getattr(args, "initial_prompt", " ".join(args.message))
+    variant = args.variant or result.get("variant")
     if args.tui:
         command = ["kilo", "--model", str(result["route"])]
+        if variant:
+            command.extend(["--agent", args.agent or "build"])
         if args.agent:
-            command.extend(["--agent", args.agent])
+            if not variant:
+                command.extend(["--agent", args.agent])
         if args.continue_session:
             command.append("--continue")
         if args.session:
             command.extend(["--session", args.session])
-        command.extend(["--prompt", " ".join(args.message)])
+        command.extend(["--prompt", prompt])
         return command
 
     command = ["kilo", "run", "--model", str(result["route"])]
     if args.agent:
         command.extend(["--agent", args.agent])
-    if args.variant:
-        command.extend(["--variant", args.variant])
     if args.interactive:
         command.append("--interactive")
     if args.continue_session:
@@ -816,8 +874,30 @@ def build_kilo_command(args: argparse.Namespace, result: Mapping[str, Any]) -> l
         command.extend(["--session", args.session])
     if args.auto:
         command.append("--auto")
-    command.extend(args.message)
+    if variant:
+        command.extend(["--variant", str(variant)])
+    command.append(prompt)
     return command
+
+
+def tui_variant_config(args: argparse.Namespace, result: Mapping[str, Any]) -> str | None:
+    variant = args.variant or result.get("variant")
+    if not variant:
+        return None
+    existing = os.environ.get("KILO_CONFIG_CONTENT")
+    base: dict[str, Any] = {}
+    if existing:
+        parsed = parse_json_text(existing)
+        if not isinstance(parsed, Mapping):
+            raise RouterError("KILO_CONFIG_CONTENT must contain a JSON object")
+        base = dict(parsed)
+    agent = args.agent or "build"
+    overlay = {
+        "model": result["route"],
+        "agent": {agent: {"model": result["route"], "variant": variant}},
+        "default_agent": agent,
+    }
+    return json.dumps(deep_merge(base, overlay))
 
 
 def run_kilo_streaming(command: Sequence[str]) -> tuple[int, str]:
@@ -852,6 +932,10 @@ def print_selection(result: Mapping[str, Any], stream: Any = sys.stdout) -> None
     cost = result["cost"]
     capability = result["capability"]
     print(f"Selected route: {result['route']}", file=stream)
+    print(f"Selected variant: {result.get('variant') or 'default'}", file=stream)
+    available_variants = result.get("available_variants", [])
+    if available_variants:
+        print(f"Available variants: {', '.join(available_variants)}", file=stream)
     print(f"Task profile: {result['profile']}", file=stream)
     print(f"Billing: {result['billing']}", file=stream)
     if cost["effective"] is None:
@@ -947,9 +1031,10 @@ def main() -> int:
 
     if not args.message:
         raise RouterError("run requires a task message")
-    if args.tui and (args.interactive or args.variant or args.auto):
-        raise RouterError("--tui cannot be combined with --interactive, --variant, or --auto")
+    if args.tui and (args.interactive or args.auto):
+        raise RouterError("--tui cannot be combined with --interactive or --auto")
     args.task = " ".join(args.message)
+    args.initial_prompt = prepare_initial_prompt(args.task)
     context = load_selection_context(args)
     result = context["result"]
     attempted_routes: set[str] = set()
@@ -959,6 +1044,9 @@ def main() -> int:
         print_selection(result, stream=sys.stderr)
         command = build_kilo_command(args, result)
         if args.tui:
+            variant_config = tui_variant_config(args, result)
+            if variant_config:
+                os.environ["KILO_CONFIG_CONTENT"] = variant_config
             os.chdir(ROOT)
             os.execvp(command[0], command)
         if args.interactive:

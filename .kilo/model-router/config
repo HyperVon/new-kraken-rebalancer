@@ -52,14 +52,13 @@
   },
   "models": {},
   "blacklist": {
-    "models": ["minimax-m2.7"],
+    "models": ["minimax-m2.7", "*claude*", "*anthropic*", "*gpt-5-6-sol*"],
     "providers": []
   },
   "policy": {
     "allowPaid": true,
     "allowFree": true,
     "denyFreeForSensitive": true,
-    "allowUnknownCapability": true,
     "useAaCostPerTask": true
   }
 }

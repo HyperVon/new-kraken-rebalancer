@@ -67,7 +67,7 @@ def load_manifest(path: Path) -> list[dict[str, Any]]:
     return validated
 
 
-def worker_prompt(track: Mapping[str, Any], route: str, allow_edits: bool) -> str:
+def worker_prompt(track: Mapping[str, Any], route: str, allow_edits: bool, variant: str | None = None) -> str:
     files = track.get("files", [])
     scope = ", ".join(files) if files else "only the minimum paths needed for this track"
     read_only = bool(track.get("read_only", True)) and not allow_edits
@@ -80,6 +80,7 @@ def worker_prompt(track: Mapping[str, Any], route: str, allow_edits: bool) -> st
 
 Track: {track['id']}
 Selected route: {route}
+Selected variant: {variant or 'default'}
 Owned paths: {scope}
 
 {guardrails}
@@ -160,7 +161,7 @@ def build_plan(
             {
                 "track": track,
                 "selection": selection,
-                "prompt": worker_prompt(track, selection["route"], allow_edits),
+                "prompt": worker_prompt(track, selection["route"], allow_edits, selection.get("variant")),
                 "candidates": track_candidates,
                 "profile": profile,
                 "config": config,
@@ -237,7 +238,7 @@ def launch_worker(
         "--title",
         f"routed-{track['id']}",
     ]
-    variant = track.get("variant")
+    variant = selection.get("variant") or track.get("variant")
     if variant:
         command.extend(["--variant", str(variant)])
     if allow_auto:
@@ -340,7 +341,12 @@ def launch_with_failover(
         current = dict(
             current,
             selection=next_selection,
-            prompt=worker_prompt(track, next_selection["route"], current["allow_edits"]),
+            prompt=worker_prompt(
+                track,
+                next_selection["route"],
+                current["allow_edits"],
+                next_selection.get("variant"),
+            ),
         )
     return result
 
@@ -463,6 +469,8 @@ def _report_track(item: Mapping[str, Any], planned: Mapping[str, Any], result: M
             "route": planned.get("route"),
             "provider": planned.get("provider"),
             "model": planned.get("model"),
+            "variant": planned.get("variant"),
+            "available_variants": planned.get("available_variants", []),
             "billing": planned.get("billing"),
             "effective_cost": cost.get("effective"),
             "cost_source": cost.get("source"),
@@ -524,6 +532,8 @@ def _markdown_report(payload: Mapping[str, Any]) -> str:
                 f"- Scope: {scope}",
                 f"- Profile / track role: `{track['profile']}` / `{track['track_role']}`",
                 f"- Planned: `{planned['provider']}/{planned['model']}` ({planned['billing']})",
+                f"- Variant: `{planned['variant'] or 'default'}` "
+                f"(available: {', '.join(planned['available_variants']) or 'none'})",
                 f"- Used: `{used['provider']}/{used['model']}`",
                 f"- Capability / quota: `{planned['capability']}` / `{planned['quota_state']}` "
                 f"({remaining_text}% remaining)",

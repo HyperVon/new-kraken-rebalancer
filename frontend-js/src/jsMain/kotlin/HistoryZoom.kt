@@ -25,6 +25,7 @@ internal fun setupZoomButtons() {
                 ZoomActions.RESET -> chart.resetZoom()
             }
             syncChartScrubber(canvasId)
+            updateTimeUnitForChart(chart)
         })
     }
 }
@@ -135,7 +136,29 @@ private fun setChartXRange(chart: dynamic, range: ChartRange) {
     if (update != null && update != undefined) update.call(chart)
 }
 
+internal fun updateTimeUnitForChart(chart: dynamic) {
+    val currentRange = chartCurrentRange(chart) ?: return
+    val newUnit = when {
+        currentRange.span < PrecisionConstants.ONE_HOUR_MS -> ChartProps.TIME_UNIT_MINUTE
+        currentRange.span < ChartProps.ONE_DAY_MS -> ChartProps.TIME_UNIT_HOUR
+        else -> ChartProps.TIME_UNIT_DAY
+    }
+    val time = chart.options?.scales?.x?.time ?: return
+    val currentUnit = time.unit
+    if (currentUnit != newUnit) {
+        time.unit = newUnit
+        val update = chart.update
+        if (update != null && update != undefined) update.call(chart)
+    }
+}
+
 internal fun syncScrubberFromZoomContext(ctx: dynamic) {
-    val id = ctx?.chart?.canvas?.id
-    if (id != null && id != undefined) syncChartScrubber(id.toString())
+    val chart = ctx?.chart
+    val id = chart?.canvas?.id
+    if (id == null || id == undefined) return
+    val canvasId = id.toString()
+    val existingChart = charts[canvasId] ?: return
+
+    syncChartScrubber(canvasId)
+    updateTimeUnitForChart(existingChart)
 }
