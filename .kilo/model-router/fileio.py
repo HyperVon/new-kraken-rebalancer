@@ -23,10 +23,10 @@ def atomic_write(path: Path, content: str) -> None:
             prefix=f".{path.name}.",
             delete=False,
         ) as temporary:
+            temporary_path = Path(temporary.name)
             temporary.write(content)
             temporary.flush()
             os.fsync(temporary.fileno())
-            temporary_path = Path(temporary.name)
         if existing_mode is not None:
             os.chmod(temporary_path, existing_mode)
         os.replace(temporary_path, path)
