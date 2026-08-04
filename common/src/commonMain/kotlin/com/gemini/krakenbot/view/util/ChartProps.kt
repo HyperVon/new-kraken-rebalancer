@@ -51,6 +51,7 @@ object ChartProps {
     const val TIME_TYPE = "time"
     const val TIME_FORMAT_DEFAULT = "MMM d, yyyy HH:mm"
     const val TIME_UNIT_HOUR = "hour"
+    const val TIME_UNIT_MINUTE = "minute"
     const val TIME_UNIT_DAY = "day"
 
     // Default Layout & Dimension Constants
@@ -99,6 +100,7 @@ object ChartProps {
 
     /** Minimum visible x-span after zoom (ms) — prevents collapsing the time axis. */
     const val ZOOM_MIN_RANGE_MS = 3_600_000
+    const val ONE_DAY_MS = 86_400_000.0
     const val ZOOM_FACTOR_IN = 1.2
     const val ZOOM_FACTOR_OUT = 0.8
 

@@ -40,3 +40,8 @@ __pycache__/
 *.pyc
 *.pyo
 
+/codegen/bin/
+
+# Local model-router credentials
+.kilo/model-router/env.local
+.kilo/model-router/manifest.local

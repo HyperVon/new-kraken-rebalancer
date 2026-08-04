@@ -8,12 +8,22 @@ alwaysApply: true
 # Parallel multi-agent work
 
 When a request involves **multiple independent workstreams**, parallelize only
-after the model-routing gate passes. Material or parallel delegation requires an
-exact provider/model route and effort that the host can enforce and expose. If
-that is unavailable, keep the work in the parent or obtain route-selection
-support; do not silently use the parent, an unspecified route, or a generic role.
+after the native model-selection gate passes. Material or parallel delegation
+requires a host-supported model route and any separately configurable effort that
+the host can expose. If that is unavailable, keep the work in the parent; do not
+silently use the parent or a generic role. In Kilo, the project default is the
+host-supported `kilo/kilo-auto/efficient` tier. Its underlying model is selected
+server-side and must not be inferred from the role name.
+The repository remains usable in other hosts with its source, tests, Gradle,
+Git, and portable `.agents/` guidance. Kilo-only conveniences such as
+`.kilo/kilo.json`, `./route-kilo`, `route-subagents`, route reports, Context
+Mode, and Agent Manager do not run automatically outside KiloCode.
 Choose an adaptive number of bounded tracks from the actual concerns; do not
 default to two full-task agents.
+
+Launch independent tracks concurrently: use one parallel tool message or a
+background process for the complete fan-out and poll its results. Do not start
+one foreground worker, wait for it, and then start the next.
 
 ## When to parallelize
 
@@ -44,34 +54,48 @@ Stay single-threaded (or one dedicated agent) when streams **share** the same ho
 3. Reserve **one coupled track** for interdependent code; run independent tracks in **one message with multiple Task calls**.
 4. Keep Gradle to **one build per clone** — either the parent runs all builds, or each agent gets its own `git worktree`. Concurrent `./gradlew` in one directory kills test workers (`EOFException`) and fakes `UP-TO-DATE`.
 5. After agents return: merge, resolve conflicts, run quality gates with `--rerun-tasks`, then continue.
-6. Before launching, run the `model-routing` preflight for every track and state
-   the exact provider/model and effort plan to the user for approval. Record the
-   exact route, effort, host mapping source when profile-pinned, fallback,
-   availability evidence, and any substitution. A host-pinned profile is valid
-   only when host metadata maps it to an explicit provider/model and fixed or
-   host-defined effort. A host limitation is a stop condition for material or
-   parallel work, not permission to launch. `subagent_type` identifies a role,
-   not a verified model from its name; `general` is never a model or provider
-   substitute.
-7. Reject probe candidates whose provider is reported disabled or unavailable.
-   If a probe fails, re-rank exact routes from healthy providers and present the
-   revised plan; one failed probe must not trigger automatic serial fallback.
-8. Prefer a capable local route before ranking cloud candidates. Escalate only
-   for a capability gap, material latency requirement, or task risk; among
-   eligible cloud routes, prefer verified subscription/account-priced access
-   before PAYG when capability and health are otherwise comparable.
+6. Before launching, select and record the host route, effort when exposed,
+   fallback, availability evidence, and any substitution for every track. A
+   Kilo Auto tier is an exact host route, but do not claim its dynamically chosen
+   underlying model without host evidence. `subagent_type` identifies a role, not
+   a model from its name; `general` is never a model or provider substitute.
+7. Native Auto tiers manage their server-side mappings and fallbacks. For the
+   separate cross-provider requirement, use
+   `.kilo/model-router/route-subagents` for bounded tracks; it may use a bounded
+   ephemeral catalog but must not persist credentials, balances, or raw errors.
+8. Prefer a capable local route on hosts that expose one; for Kilo, start with
+   the configured Auto Efficient tier and escalate to Auto Frontier for high-risk
+   or disputed reasoning.
 9. For a broad request with multiple disjoint tracks, use the `question` tool or
-   host equivalent after route inventory to present the exact track/route/effort
-   matrix and obtain a parallel-or-serial decision. Ask whether to continue
-   serially or stop for route support only after eligible providers and approved
-   fallback routes are exhausted; do not silently continue parent-owned while a
-   parallel request is unresolved. Skip the question only when the user already
+   host equivalent to present the track/route/effort matrix and obtain a
+   parallel-or-serial decision. Skip the question only when the user already
    approved the exact plan or the task is small/coupled.
 
 For reviews and broad audits, normally use 2–6 tracks (maximum 8), one per
 independent concern rather than one per file. Add a second model only for a
 high-risk or disputed track. Workers are bounded scouts; the parent owns the
 coverage matrix, triage, edits, and final verification.
+
+When the host Task surface cannot expose a model route, write a manifest and plan
+the tracks with:
+
+```bash
+./.kilo/model-router/route-subagents \
+  --manifest .kilo/model-router/manifest.example
+```
+
+After reviewing the route plan, add `--run` to launch the exact selected routes.
+For a named project workflow, prefer its automatic preset instead:
+
+```bash
+./.kilo/model-router/route-subagents \
+  --workflow documentation-review \
+  --task "<the user's workflow request>" \
+  --refresh
+```
+
+The preset supplies specialized tracks; do not ask the user to maintain
+`manifest.local` for standard skills.
 
 ## Context budget
 

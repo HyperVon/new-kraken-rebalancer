@@ -47,11 +47,12 @@ entrypoints for Claude Code and GitHub Copilot. Model choices have varied over
 time and are not fully encoded in commit metadata.
 
 The clearest routing record is the adversarial PR-review workflow. It uses a
-parent-chosen set of bounded reviewer tracks, selecting the smallest capable
-exact route for routine discovery and stronger reasoning routes for high-risk
-or disputed questions. The host must expose and enforce the selected route and
-effort; otherwise the parent keeps the review sequential rather than inferring
-a model from a role label.
+parent-chosen set of bounded reviewer tracks, selecting the least expensive
+capable host tier for routine discovery and a stronger route for high-risk or
+disputed questions. In Kilo, the project default is Auto Efficient and the
+stronger native tier is Auto Frontier. The host must expose the selected route
+and effort when configurable; otherwise the parent keeps the review sequential
+rather than inferring a model from a role label.
 
 ## The human role
 
@@ -201,7 +202,7 @@ harnesses.
 | [`autonomous-code-optimizer`](../.agents/skills/autonomous-code-optimizer/SKILL.md) | Multi-pass repository cleanup until a clean audit cycle |
 | [`continuous-improvement`](../.agents/skills/continuous-improvement/SKILL.md) | Discovery, backlog management, bounded fixes, quality gates, and pull requests |
 | [`continuous-quality`](../.agents/skills/continuous-quality/SKILL.md) | QA, edge-case invention, regression tests, fixes, and quality backlog |
-| [`model-routing`](../.agents/skills/model-routing/SKILL.md) | Provider/model inventory, capability and cost-per-task comparison, quota/plan entitlement evidence, availability, and fallbacks |
+| Native Kilo Auto model selection | `.kilo/kilo.json` selects the provider-qualified Auto tier; Kilo owns per-request model selection and fallback |
 | [`parallel-multi-agent`](../.agents/skills/parallel-multi-agent/SKILL.md) | Disjoint workstreams, file ownership, integration, and build coordination |
 
 ## How development has typically proceeded
@@ -244,11 +245,43 @@ skills before expecting their end-to-end workflows to run unchanged. These
 integrations are not the source of project policy; the underlying architecture,
 safety rules, checklists, and review criteria remain ordinary repository files.
 
+### KiloCode portability boundary
+
+The application and its normal development workflow do not require KiloCode.
+Any capable development tool can read the portable `.agents/` guidance, edit
+the source, run tests and Gradle tasks, review diffs, and use the repository's
+ordinary skills and scripts. The following are optional KiloCode-specific
+integrations and are not expected to work automatically in another host:
+
+- Kilo Auto model selection from `.kilo/kilo.json`
+- the project-root `./route-kilo` launcher and cross-provider provider/model selection
+- automatic routed subagent fan-out through `.kilo/model-router/route-subagents`
+- persisted Kilo route reports under `~/.cache/kilo/model-router/reports/`
+- the Context Mode plugin and Kilo Agent Manager setup/run hooks
+
+Other hosts should use their native model selection, subagent launcher, and
+parallel-workflow mechanisms. If they cannot expose a concrete model route or
+the required tool, keep the work in the parent or substitute an equivalent
+host-native artifact rather than claiming that the Kilo integration ran.
+
 ## Models and adaptive multi-agent review
 
 The project does not maintain a complete ledger mapping every commit to a model.
 That omission is deliberate: model availability and quality change faster than
 the architecture and safety constraints of the application.
+
+Kilo sessions use the project default configured in `.kilo/kilo.json`:
+`kilo/kilo-auto/efficient`. Auto Efficient classifies each request and selects
+the least expensive benchmarked model expected to complete it. The underlying
+mapping is server-side and can change, so repository guidance must not claim that
+the Auto tier always uses a particular model or maintain a local route catalog.
+See the [Kilo Auto Model documentation](https://kilo.ai/docs/code-with-ai/agents/auto-model)
+for the current tier behavior and requirements.
+Select `kilo/kilo-auto/frontier` in Kilo for the highest-risk or disputed review;
+use `kilo/kilo-auto/small` only for bounded routine work. The `free` tier is
+reserved for non-sensitive experiments because upstream providers may use its
+prompts and outputs. Custom Efficient pools belong in Kilo profile or
+organization settings, not in this repository.
 
 The project instead records model roles where diversity is valuable. The
 adversarial PR workflow first partitions the diff into independent concerns,
@@ -266,13 +299,255 @@ Kilo/OpenCode examples, not portable requirements. Other harnesses should map
 the same roles to their own read-only agents while preserving the bounded scope,
 stop condition, compact report, and parent-owned integration rules.
 
-Before material or parallel review work, the host must enforce and expose the
-exact provider/model route and effort selected by the model-routing preflight.
-If it cannot, the parent keeps the review sequential or obtains route-selection
-support; a role label or `subagent_type` is not evidence that a model ran.
-Fallbacks are valid only when their exact route and effort are likewise
-enforceable and recorded. This keeps substitutions visible without turning a
-generic role or the parent route into an unverified model claim.
+Before material or parallel review work, the host must expose the selected model
+route and any separately configurable effort. A Kilo Auto tier is a valid route,
+but its underlying model is not known unless the host reports it. If the host
+cannot expose a usable route, the parent keeps the review sequential. A role
+label or `subagent_type` is not evidence that a particular model ran. Record the
+selected tier or concrete route, any fallback, and any substitution without
+inventing server-side Auto details.
+
+### Cross-provider launcher
+
+The native Kilo Auto tier is limited to Kilo's server-managed pool. When a task
+must choose among independently authenticated Kilo, OpenCode Go, OpenAI,
+OpenRouter, and NVIDIA routes, use the repository launcher:
+
+```bash
+./route-kilo --profile coding "Fix the failing Kotlin build"
+```
+
+The project-root `./route-kilo` wrapper opens the full Kilo TUI automatically and
+refreshes route metadata only when the cached catalog (2h) or Artificial Analysis
+snapshot (24h) is stale, so warm-cache startups are fast. Pass `--refresh` to
+force a re-fetch. It forwards the initial prompt and any additional router flags
+to `.kilo/model-router/route-kilo`.
+
+Before a selected free route is used, the router sanity-checks its sustained
+throughput with a short probe (an OpenAI-compatible chat completion that asks
+for roughly a thousand characters of output, capped by `tpsProbe.maxTokens`),
+and re-selects the next best route when the measured tokens/sec stays below
+`tpsProbe.minTps` (default 20). Probe results are cached under
+`~/.cache/kilo/model-router/tps.json` for `tpsProbe.cacheMinutes` (default 60)
+so warm startups stay fast; unmeasurable routes (no endpoint, no key, probe
+error) never block selection. The probe times out after
+`min(tpsProbe.timeoutSeconds, tpsProbe.probeCharacters / tpsProbe.minTps)`
+seconds (50s by default) and a timed-out route is cached at 0 tokens/sec, so it
+stays excluded for the cache window instead of being re-probed. If every free
+route is too slow, selection falls back to the next cheapest qualifying route,
+paid if necessary, and warns.
+Tune or disable via the `tpsProbe` section of `.kilo/model-router/config`.
+
+`--profile` is optional and defaults to `auto`, which infers the routing
+requirements from the prompt. Available profiles are:
+
+| Profile | Use for |
+| :--- | :--- |
+| `trivial` | One-line renames, formatting, summaries, and trivial lookups |
+| `routine` | Light maintenance: typos, comments, small fixes, simple docs/status tasks |
+| `coding` | Implementation, bugs, tests, builds, and Gradle |
+| `complex-coding` | Refactors, algorithms, concurrency, performance, and deeply-coupled code |
+| `agentic` | Complex multi-step reasoning and tool use |
+| `quick-review` | Documentation, instruction, and source-contract audits |
+| `detailed-review` | Deeper security, architecture, and adversarial review of shipped code |
+| `critical` | Security, credentials, trading, financial, architecture, or adversarial work |
+| `auto` | Automatic profile inference from the prompt |
+
+Profile inference is ordered critical → review → complex-coding → coding →
+routine → trivial, so deliberation tasks (review, audit, documentation,
+analysis, workflow, delegation) resolve to a `review` profile even when their
+prompt also mentions code — a code review is held to the review intelligence
+minimum, not the lower coding floor. `/code-review`-style invocations and
+security/architecture audits resolve to `detailed-review`; lighter audits to
+`quick-review`.
+
+Examples:
+
+```bash
+./route-kilo "Review the README for stale information"
+./route-kilo --profile coding "Fix the failing Kotlin test"
+./route-kilo --profile critical "Review the credential-handling changes"
+./route-kilo "/documentation-review Audit the repository documentation"
+```
+
+The profile constrains route selection; it does not directly choose a model.
+The router still selects the provider/model using capability, cost, quota, and
+availability.
+
+When the provider catalog exposes variants, the profile also selects reasoning
+effort: trivial/routine prefer low/medium, coding medium/high, complex-coding/
+agentic high/thinking, and quick-review/detailed-review/critical xhigh/max, with
+model-specific fallbacks. Headless
+workers receive `--variant`; the full TUI uses a temporary agent configuration
+overlay because its top-level CLI has no variant flag. The project config is not
+modified. Detailed-review and critical profiles prioritize capability evidence
+while keeping eligible free routes available; only explicit blacklist patterns
+exclude models or providers.
+
+The launcher also selects the TUI mode/agent from the inferred profile:
+quick-review and detailed-review start a read-only `ask` agent, while every
+other profile starts the `code` agent (the orchestrator agent is deprecated
+and never used). An explicit `--agent` flag overrides the inference.
+
+The default policy selects the lowest-cost route that satisfies the selected
+profile's capability, reasoning, tool, context, quota, and privacy requirements.
+A route is only considered when its capability is assessable and meets the
+profile minimum — models whose capability is unknown or cannot be assessed are
+never selected. Among eligible routes, effective cost decides, then smallest
+capability headroom above the profile minimum (so a just-sufficient small/fast
+model wins a trivial task, yet a genuinely strong model wins where the minimum
+is high), then an already-paid subscription over PAYG, then higher available
+quota (headroom / load spreading) as a tiebreak. High-risk profiles
+(`detailed-review`, `critical`) add a margin above their minimum, so security
+and money work never routes to a barely adequate model. Eligible free routes
+therefore outrank more expensive paid routes even when the paid route is more
+capable; quota headroom breaks cost ties. Free routes whose quota state is
+`unknown` (the quota plugin does not meter free models) are treated as usable
+and compete on cost like confirmed-sufficient routes. Subscription /
+account-priced routes keep their real per-task cost (they still burn a token
+budget), so a smaller model wins
+over a large one at a similar effective price; on an effective-cost tie a
+subscription route is preferred over a PAYG one.
+
+Known `/skillname` references are resolved to `.agents/skills/<skillname>/SKILL.md`
+and the file is explicitly included in the main session's initial instructions.
+Unknown slash commands are left unchanged.
+
+To permanently exclude a model or provider from automatic selection, update
+`.kilo/model-router/config`:
+
+```json
+"blacklist": {
+  "models": ["opencode-go/minimax-m2.7", "openrouter/google/*"],
+  "providers": ["nvidia"]
+}
+```
+
+`models` accepts full `provider/model` routes or model-ID glob patterns;
+`providers` excludes every model from that provider. The exclusions apply before
+ranking for both `./route-kilo` and routed subagents. Ask for a blacklist update
+when a route should no longer be selected; the next route plan should verify it.
+
+End-of-life models are added to `blacklist.models` automatically: when a launch
+answers HTTP 410 / "end of life", the launcher appends the exact dead route to
+`.kilo/model-router/config` and immediately retries the next best candidate
+without excluding the provider. The write appears as a config diff to review and
+commit; an EOL is a universal fact, so the exclusion is shared rather than kept
+in a private cache.
+
+It discovers providers from `kilo auth list`, loaded Kilo/OpenCode provider
+configuration, and standard provider environment variables. It reads active
+route capabilities and token prices from `kilo models`, and launches `kilo run --model provider/model`
+with the selected exact route. The current project policy treats OpenCode Go
+and the authenticated OpenAI OAuth route as account-priced, OpenRouter as paid,
+and configured NVIDIA routes as free-only. Free routes are enabled for this
+public-source project, but the launcher blocks them when the task prompt names
+credentials, secret-bearing files, or obvious PII. Edit `.kilo/model-router/config`
+when an account or billing arrangement differs.
+
+Copy `.kilo/model-router/env.example` to `.kilo/model-router/env.local`, replace
+the placeholder, and optionally load it into the current shell with
+`source .kilo/model-router/env.local`. The launcher sources it automatically too.
+`env.local` is ignored by Git and the key is never part of tracked project
+configuration. The launcher uses the Artificial Analysis free language-model endpoint and caches only its
+public model metadata under the user cache directory. It uses the published
+Intelligence Index cost-per-task as a comparative benchmark prior, not as the
+exact cost of the current request. Without that key, it falls back to Kilo's
+per-million-token catalog prices and task-profile estimates. Artificial Analysis
+model-to-route joins are accepted only when configured or sufficiently confident;
+unknown mappings remain visible in the selection report.
+
+When the Artificial Analysis endpoint is unreachable or the key is absent,
+the launcher falls back to the public OpenRouter
+[`/api/v1/models`](https://openrouter.ai/api/v1/models) benchmark feed, which
+publishes the same Artificial Analysis intelligence/coding/agentic indices for
+its hosted models. Those OpenRouter-sourced scores are used only as a
+secondary fallback (cached 24h, no key required) so that transient AA failures
+do not collapse every candidate to `capability quality is unknown`.
+
+The launcher does not store credentials or change the model inside an
+already-running TUI session. When installed, it consumes the quota plugin's
+secret-safe `status --json` and `show --json` output; fresh exhausted or
+unavailable providers are excluded, while missing or stale data remains
+`unknown`. Its free-route guard only examines the launcher prompt; it cannot
+inspect future tool output, so secret files must remain excluded from the agent
+context. Use `--continue` to select a route for a new turn while continuing the
+last Kilo session. OpenRouter participates when its provider configuration or
+environment credential is detected, even if it is absent from `kilo auth list`.
+
+To choose a route without launching a full Kilo session, use the router's
+`select` subcommand (or add `--json` for machine-readable output):
+`python3 .kilo/model-router/router.py select --task "<prompt>"`. The default
+`run` subcommand both selects the route and then launches/streams the Kilo
+session for that task, so a slow `run` usually reflects the Kilo run itself —
+not the selection step. When no route qualifies, the error lists the top
+candidate-rejection reasons (quota, tool support, capability quality, etc.) to
+aid diagnosis of transient availability or configuration issues.
+
+Runtime `429`, credit, authentication, and provider-unavailable failures create
+only a user-cache cooldown for the affected route/provider. Routed read-only
+subagents automatically select another provider and retry within the bounded
+failover limit. Editable workers do not retry after a failed launch because the
+first worker may already have changed files. Cooldowns honor `Retry-After` when
+the provider exposes it and otherwise use bounded exponential backoff.
+
+### Routed subagents
+
+`route-kilo` only selects the top-level session route. For bounded subagent
+fan-out, use a manifest with one entry per independent track:
+
+```bash
+cp .kilo/model-router/manifest.example .kilo/model-router/manifest.local
+./.kilo/model-router/route-subagents \
+  --manifest .kilo/model-router/manifest.local
+```
+
+The command plans every track against one Kilo/Artificial Analysis metadata
+snapshot and prints a separate provider/model, capability, billing, cost, and
+quota decision for each when the plugin has fresh data. Review the plan, then
+add `--run` to launch the workers.
+
+The standard project skills use automatic presets rather than this local
+manifest: `documentation-review`, `autonomous-code-optimizer`,
+`continuous-improvement`, `continuous-quality`, `adversarial-pr-review`,
+`ai-slop-detector`, `complex-code-comments`, `dependency-upgrade`,
+`architecture-review`, `rules-and-skills-audit`, and `skill-reviewer` each map
+to a bounded track plan in `.kilo/model-router/workflows.py`. The parent passes
+the user's request as `--task`; no manual manifest editing is required. The
+automatic command prints the route/quota plan and launches the read-only workers
+when invoked with `--run`. Each worker receives an exact
+`kilo run --model provider/model` route, a bounded prompt, and a compact report
+contract. Each run also writes a secret-free Markdown and JSON route report to
+`~/.cache/kilo/model-router/reports/` and prints the Markdown path; set
+`KILO_MODEL_ROUTER_REPORT_DIR` or pass `--report-dir` to change the destination.
+The launcher also prints a compact `Route summary` table to stdout after the
+workers finish (track, status, planned-to-used provider/model chain, profile,
+billing, duration), which the parent session relays into the conversation so
+the operator sees which providers/models ran which tasks without opening the
+report directory.
+Standard read-only workers inspect temporary repository copies, so accidental
+worker edits do not enter the parent worktree; `--allow-edits` is reserved for
+explicit custom manifests with owned writable paths.
+Use `--allow-edits` only when the manifest explicitly assigns disjoint writable
+paths and the parent has retained integration ownership. The host `Task` tool
+cannot be transparently intercepted; direct role-only Task calls therefore do
+not provide this cross-provider guarantee.
+
+For a second-pass adversarial review of a completed documentation audit, use the
+dedicated preset with the prior findings in the task context:
+
+```bash
+./.kilo/model-router/route-subagents \
+  --workflow documentation-adversarial-review \
+  --task "Independently re-review the documentation findings from the parent audit" \
+  --run
+```
+
+Launch the command in the host's background process facility when available and
+poll its logs/status. Review the generated route report before describing the
+result as an independent-model review; role names and Kilo Auto tiers alone do
+not prove model diversity. The preset requests distinct exact routes and records
+when provider availability forces a route reuse.
 
 Multiple agreeing reports are not proof of correctness. Related models can
 share the same blind spots, repeat inaccurate documentation, or approve

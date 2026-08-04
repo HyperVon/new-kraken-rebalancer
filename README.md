@@ -66,23 +66,32 @@ See the [Agentic Development Guide](docs/AGENTIC_DEVELOPMENT.md) for the full
 provenance, instruction architecture, cross-harness setup, skill catalog,
 human–agent workflow, review loop, and maintenance guidance.
 
+The repository is still fully usable without KiloCode. Application code, tests,
+Gradle tasks, documentation, Git workflows, and the portable `.agents/` skills
+remain available to any capable development tool. KiloCode-only additions are
+optional: Kilo Auto model selection, the project-root `./route-kilo` launcher,
+automatic cross-provider routing, routed subagent fan-out, Kilo route reports,
+Context Mode, and Agent Manager integration. Other hosts should use their own
+model selection and parallel-agent mechanisms; those Kilo-specific conveniences
+will not run automatically there.
+
 ---
 
 ## Tech Stack
 
-| Layer           | Technology                                                                                             |
-| --------------- | ------------------------------------------------------------------------------------------------------ |
-| **Language**    | Kotlin 2.4.10 (Kotlin Multiplatform: JVM + JS)                                                         |
-| **Backend**     | Ktor 3.5.1 (Netty engine), Koin 4.2.2 (DI), Jackson 2.22.1                                             |
-| **Database**    | SQLite (via JetBrains Exposed ORM 1.3.1)                                                               |
-| **HTTP Client** | Ktor CIO Client (async, coroutine-native)                                                              |
-| **Concurrency** | Kotlin Coroutines (`kotlinx.coroutines` 1.11.0)                                                        |
-| **Frontend**    | Server-side HTML (kotlinx.html DSL + HTMX), kotlinx-css DSL, Ktor SSE + Client-side Kotlin/JS          |
-| **API**         | Kraken REST API with HMAC-SHA512 authentication                                                        |
-| **Testing**     | Kotest 6.2.3, MockK 1.14.11, JaCoCo (95% instr/line/method, 90% branch), Karma/Istanbul (90/90/90/75)  |
-| **Build**       | Gradle 9.6.1 (Kotlin DSL), Spotless 8.9.0 + ktlint 1.7.1                                               |
-| **Codegen**     | Experimental JVM-only KSP processors for API mappers and YAML catalogs                                 |
-| **Agent tools** | Optional Kilo Context Mode plugin for bounded large-output analysis; standard workflows remain portable|
+| Layer           | Technology                                                                                                   |
+| --------------- | ------------------------------------------------------------------------------------------------------------ |
+| **Language**    | Kotlin 2.4.10 (Kotlin Multiplatform: JVM + JS)                                                               |
+| **Backend**     | Ktor 3.5.1 (Netty engine), Koin 4.2.2 (DI), Jackson 2.22.1                                                   |
+| **Database**    | SQLite (via JetBrains Exposed ORM 1.3.1)                                                                     |
+| **HTTP Client** | Ktor CIO Client (async, coroutine-native)                                                                    |
+| **Concurrency** | Kotlin Coroutines (`kotlinx.coroutines` 1.11.0)                                                              |
+| **Frontend**    | Server-side HTML (kotlinx.html DSL + HTMX), kotlinx-css DSL, Ktor SSE + Client-side Kotlin/JS                |
+| **API**         | Kraken REST API with HMAC-SHA512 authentication                                                              |
+| **Testing**     | Kotest 6.2.3, MockK 1.14.11, JaCoCo (95% instr/95% line/95% method/90% branch), Karma/Istanbul (90/90/90/75) |
+| **Build**       | Gradle 9.6.1 (Kotlin DSL), Spotless 8.9.0 + ktlint 1.7.1                                                     |
+| **Codegen**     | Experimental JVM-only KSP processors for API mappers and YAML catalogs                                       |
+| **Agent tools** | Optional Kilo Context Mode plugin for bounded large-output analysis; standard workflows remain portable      |
 
 ---
 
@@ -149,7 +158,7 @@ The Kotlin phase continued with several focused branches:
 - `code_quality` (PR #18) — centralized CSS classes, HTML IDs, inline styles
   extraction, service layer SRP decomposition (`PortfolioAnalyzer` +
   `OrderExecutor`), and test symbol constants
-- `refactor/kotlin-modernization` (PR #19) — Kotlin 2.4.0 named context
+- `refactor/kotlin-modernization` (PR #19) — Kotlin 2.4.10 named context
   parameters, `Asset` inline value class, pipeline typealiases, and Gradle
   configuration caching
 
@@ -195,21 +204,21 @@ Subsequent updates in Phase 5 integrated a reactive configuration loop (`watchCo
 Building the same application across multiple stacks gave me hands-on experience
 with a wide range of tools and paradigms:
 
-| Category               | Technologies Used                                                                                                                                           |
-| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Languages**          | Java 25, Kotlin 2.4, Go 1.26, TypeScript, JavaScript (ES6+)                                                                                                 |
-| **Backend Frameworks** | Spring Boot 4, Ktor 2.3 → 3.5.1, NestJS, Express, Go `net/http`                                                                                             |
-| **DI / IoC**           | Spring IoC (`@Autowired`), Koin 3.5 → 4.2, NestJS modules                                                                                                   |
-| **Build Systems**      | Maven, Gradle (Kotlin DSL), npm / yarn, Go modules                                                                                                          |
-| **Frontend**           | React (JS → TypeScript), Angular (explored), HTMX + kotlinx.html DSL, Tailwind CSS v4, Chart.js                                                             |
-| **HTTP Clients**       | OkHttp (blocking), Ktor CIO Client (async/coroutine), Node.js native `fetch`, Go `net/http`                                                                 |
-| **Concurrency**        | Java `ScheduledExecutorService`, Kotlin Coroutines, Go goroutines, Node.js event loop                                                                       |
-| **Testing**            | JUnit 5 + Mockito, Kotest 6 + MockK, Vitest + React Testing Library, Go `testing` + `go-test-coverage`                                                      |
-| **Coverage**           | JaCoCo (95%+ enforced on Kotlin stack), Vitest coverage (>99%), Go per-package gates (98.2%)                                                                |
-| **Serialization**      | Jackson 2.22.1, Go `encoding/json`, Zod schema validation                                                                                                   |
-| **Real-Time**          | Ktor Server-Sent Events (SSE), Kotlin `SharedFlow` (config changes + snapshot broadcasts), HTMX SSE extension                                               |
-| **CI / Security**      | GitHub Actions, Dependabot, SHA-pinned actions, CVE patching (Netty, Logback, Jackson); CodeQL Java/Kotlin analysis enabled on `main`                       |
-| **Code Quality**       | Lombok, ESLint, `go fmt`, Kotlin named context parameters, strict `BigDecimal` precision, atomic file I/O                                                   |
+| Category               | Technologies Used                                                                                                                     |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| **Languages**          | Kotlin 2.4 (current), Kotlin 2.x, Java 25, Go 1.26, TypeScript (all phases documented in CHANGELOG)                                   |
+| **Backend Frameworks** | Ktor 3.5.1 (current), Spring Boot 4, Ktor 2.3, NestJS, Express, Go `net/http`                                                         |
+| **DI / IoC**           | Koin 4.2.2 (current), Spring IoC (`@Autowired`), Koin 3.5, NestJS modules                                                             |
+| **Build Systems**      | Gradle 9.6.1 Kotlin DSL (current), Maven, npm / yarn, Go modules                                                                      |
+| **Frontend**           | Kotlin/JS + kotlinx.html + HTMX (current), React, Angular (explored), Tailwind CSS v4, Chart.js                                       |
+| **HTTP Clients**       | Ktor CIO Client (current), OkHttp, Node.js native `fetch`, Go `net/http`                                                              |
+| **Concurrency**        | Kotlin Coroutines (current), Java `ScheduledExecutorService`, Go goroutines, Node.js event loop                                       |
+| **Testing**            | Kotest 6 + MockK + Karma/Istanbul (current), JUnit 5, Mockito, Vitest, Go `testing`                                                   |
+| **Coverage**           | JaCoCo 95%+ (Kotlin JVM), Karma/Istanbul 90/90/90/75 (Kotlin/JS) (current); Vitest, Go per-package gates (historical)                 |
+| **Serialization**      | Jackson 2.22.1, Go `encoding/json`, Zod schema validation                                                                             |
+| **Real-Time**          | Ktor Server-Sent Events (SSE), Kotlin `SharedFlow` (config changes + snapshot broadcasts), HTMX SSE extension                         |
+| **CI / Security**      | GitHub Actions, Dependabot, SHA-pinned actions, CVE patching (Netty, Logback, Jackson); CodeQL Java/Kotlin analysis enabled on `main` |
+| **Code Quality**       | Lombok, ESLint, `go fmt`, Kotlin named context parameters, strict `BigDecimal` precision, atomic file I/O                             |
 
 ---
 
@@ -479,9 +488,7 @@ This path is internal orchestration — not a second browser-facing SSE stream l
 │       ├── util/                          # PrecisionConstants
 │       ├── view/util/                     # Generated YAML string catalogs, Routes helpers, ViewText, CssClass, HtmlQueries, CssClassSchema, ChartProps
 │   └── src/commonMain/resources/codegen/   # Explicit YAML inputs for generated common catalogs
-├── codegen/                                # JVM-only KSP processors for API, CSS, and common string catalogs
-│   ├── src/main/kotlin/.../processor/      # Shared catalog support plus domain-to-wire and catalog adapters
-│   └── build.gradle.kts                    # Symbol-processing API dependency
+├── codegen/                                # Kotlin Multiplatform module with KSP processors for API mappers and YAML string catalogs (JVM + JS targets)
 ├── frontend-js/                            # Kotlin/JS client-side subproject compiling to rebalancer.js
 │   ├── src/jsMain/kotlin/                 # Kotlin/JS frontend source files
 │   │   ├── main.kt                        # Client-side routing entry point

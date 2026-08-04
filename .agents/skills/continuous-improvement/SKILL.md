@@ -44,17 +44,23 @@ the parent starts a narrower follow-up. Manual compaction is not a continuation
 strategy. The parent owns integration, backlog updates, serial quality gates,
 and final verification.
 
-### Model-routing gate for discovery
+### Native model-selection gate for discovery
 
-Before the first discovery Task, run the [model-routing](../model-routing/SKILL.md)
-preflight and the [parallel-multi-agent](../parallel-multi-agent/SKILL.md)
-handoff. Record a route, effort, fallback, cost/entitlement, availability
-evidence, and user approval for each track. The backlog/code inventory does not
-replace model-route inventory. If the host cannot enforce and expose an exact
-route and effort, keep discovery in the parent; do not silently use the parent
-model or a generic role. Discovery workers are read-only; implementation,
-backlog integration, Gradle, browser tests, and final verification remain
-parent-owned and serial.
+Before the first discovery worker, use the `continuous-improvement` preset from
+`.kilo/model-router/route-subagents`. For Kilo, it selects a separate route per
+track using the project quota and capability policy. Native Auto chooses its
+underlying model server-side, so do not claim an underlying model that the host
+does not report. Discovery workers are read-only; implementation, backlog
+integration, Gradle, browser tests, and final verification remain parent-owned
+and serial.
+
+```bash
+./.kilo/model-router/route-subagents \
+  --workflow continuous-improvement \
+  --task "<the user's continuous-improvement request>" \
+  --refresh \
+  --run
+```
 
 ---
 
@@ -201,7 +207,7 @@ deferred items. Do not implement code or open an improve PR unless asked.
 
 ### Step 1 — Discover backlog
 
-After the model-routing gate, fan out discovery with
+After the native model-selection gate, fan out discovery with
 [parallel-multi-agent](../parallel-multi-agent/SKILL.md) when tracks are
 disjoint. Suggested discovery tracks (pick what fits timebox):
 

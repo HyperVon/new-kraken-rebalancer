@@ -302,6 +302,55 @@ class HistoryZoomTest : StringSpec() {
             }
         }
 
+        "zoom completion callback is invoked without error" {
+            resetHistoryUiState()
+            val container = document.createElement("div")
+            container.innerHTML =
+                """
+                 <canvas id="portfolio-value-chart"></canvas>
+                ${TestDomBuilders.scrubberDom(disabled = true)}
+                """.trimIndent()
+            document.body!!.appendChild(container)
+            var capturedOptions: dynamic = null
+            window.asDynamic().Chart = { _: dynamic, config: dynamic ->
+                capturedOptions = config.options
+                jsObject {
+                    data = config.data
+                    options = config.options
+                    canvas = document.getElementById("portfolio-value-chart")
+                    destroy = {}
+                    isDatasetVisible = { _: Int -> true }
+                    getInitialScaleBounds = { json("x" to json("min" to 0.0, "max" to 100.0)) }
+                    scales = json("x" to json("min" to 20.0, "max" to 40.0))
+                }
+            }
+            registerHistoryGlobals()
+            try {
+                val points = arrayOf(
+                    json("x" to 0.0, "y" to 1.0),
+                    json("x" to 100.0, "y" to 2.0),
+                )
+                createOrUpdate(
+                    "portfolio-value-chart",
+                    createLineChartConfig(
+                        arrayOf(json(ChartProps.LABEL to ViewText.TOTAL_PORTFOLIO, ChartProps.DATA to points)),
+                        getClonedChartOptions(),
+                    ),
+                )
+
+                val callback = capturedOptions.plugins.zoom.zoom[ChartProps.ON_ZOOM_COMPLETE]
+                // Verify the callback does not throw
+                callback(
+                    json(
+                        "chart" to json("canvas" to document.getElementById("portfolio-value-chart")),
+                    ),
+                )
+            } finally {
+                document.body!!.removeChild(container)
+                resetHistoryUiState()
+            }
+        }
+
         "panChartToScrubberPosition no-ops when not zoomed" {
             resetHistoryUiState()
             val container = document.createElement("div")
@@ -346,6 +395,542 @@ class HistoryZoomTest : StringSpec() {
                 scrubber.dispatchEvent(Event("input"))
                 // Full-range x window → not zoomed; pan must no-op even though scrubber is enabled in DOM.
                 zoomScaleCalls shouldBe 0
+            } finally {
+                document.body!!.removeChild(container)
+                resetHistoryUiState()
+            }
+        }
+
+        "updateTimeUnitForChart sets hour unit when zoomed in to less than a day" {
+            resetHistoryUiState()
+            val container = document.createElement("div")
+            container.innerHTML = """<canvas id="portfolio-value-chart"></canvas>"""
+            document.body!!.appendChild(container)
+            var capturedOptions: dynamic = null
+            window.asDynamic().Chart = { _: dynamic, config: dynamic ->
+                capturedOptions = config.options
+                jsObject {
+                    data = config.data
+                    options = config.options
+                    destroy = {}
+                    isDatasetVisible = { _: Int -> true }
+                    getInitialScaleBounds = { json("x" to json("min" to 0.0, "max" to 86_400_000.0)) }
+                    // Zoomed to 12 hours (43_200_000 ms) — less than ONE_DAY_MS
+                    scales = json("x" to json("min" to 10_000_000.0, "max" to 53_200_000.0))
+                }
+            }
+            registerHistoryGlobals()
+            try {
+                val points = arrayOf(
+                    json("x" to 0.0, "y" to 1.0),
+                    json("x" to 86_400_000.0, "y" to 2.0),
+                )
+                createOrUpdate(
+                    "portfolio-value-chart",
+                    createLineChartConfig(
+                        arrayOf(json(ChartProps.LABEL to ViewText.TOTAL_PORTFOLIO, ChartProps.DATA to points)),
+                        getClonedChartOptions(),
+                    ),
+                )
+
+                val chart = charts["portfolio-value-chart"]!!
+                // Initially set to day (based on 24h range)
+                chart.options.scales.x.time.unit = ChartProps.TIME_UNIT_DAY
+                updateTimeUnitForChart(chart)
+                // After update, should be hour since span < ONE_DAY_MS
+                chart.options.scales.x.time.unit.toString() shouldBe ChartProps.TIME_UNIT_HOUR
+            } finally {
+                document.body!!.removeChild(container)
+                resetHistoryUiState()
+            }
+        }
+
+        "updateTimeUnitForChart sets day unit when zoomed out to more than a day" {
+            resetHistoryUiState()
+            val container = document.createElement("div")
+            container.innerHTML = """<canvas id="portfolio-value-chart"></canvas>"""
+            document.body!!.appendChild(container)
+            var capturedOptions: dynamic = null
+            window.asDynamic().Chart = { _: dynamic, config: dynamic ->
+                capturedOptions = config.options
+                jsObject {
+                    data = config.data
+                    options = config.options
+                    destroy = {}
+                    isDatasetVisible = { _: Int -> true }
+                    getInitialScaleBounds = { json("x" to json("min" to 0.0, "max" to 172_800_000.0)) }
+                    // Zoomed to 3 days (259_200_000 ms) — more than ONE_DAY_MS
+                    scales = json("x" to json("min" to 10_000_000.0, "max" to 269_200_000.0))
+                }
+            }
+            registerHistoryGlobals()
+            try {
+                val points = arrayOf(
+                    json("x" to 0.0, "y" to 1.0),
+                    json("x" to 172_800_000.0, "y" to 2.0),
+                )
+                createOrUpdate(
+                    "portfolio-value-chart",
+                    createLineChartConfig(
+                        arrayOf(json(ChartProps.LABEL to ViewText.TOTAL_PORTFOLIO, ChartProps.DATA to points)),
+                        getClonedChartOptions(),
+                    ),
+                )
+
+                val chart = charts["portfolio-value-chart"]!!
+                // Initially set to hour
+                chart.options.scales.x.time.unit = ChartProps.TIME_UNIT_HOUR
+                updateTimeUnitForChart(chart)
+                // After update, should be day since span >= ONE_DAY_MS
+                chart.options.scales.x.time.unit.toString() shouldBe ChartProps.TIME_UNIT_DAY
+            } finally {
+                document.body!!.removeChild(container)
+                resetHistoryUiState()
+            }
+        }
+
+        "zoom completion callback updates time unit based on zoom level" {
+            resetHistoryUiState()
+            val container = document.createElement("div")
+            container.innerHTML =
+                """
+                 <canvas id="portfolio-value-chart"></canvas>
+                ${TestDomBuilders.scrubberDom(disabled = true)}
+                """.trimIndent()
+            document.body!!.appendChild(container)
+            var capturedOptions: dynamic = null
+            window.asDynamic().Chart = { _: dynamic, config: dynamic ->
+                capturedOptions = config.options
+                jsObject {
+                    data = config.data
+                    options = config.options
+                    canvas = document.getElementById("portfolio-value-chart")
+                    destroy = {}
+                    isDatasetVisible = { _: Int -> true }
+                    getInitialScaleBounds = { json("x" to json("min" to 0.0, "max" to 86_400_000.0)) }
+                    // Zoomed to 6 hours (21_600_000 ms) — less than ONE_DAY_MS
+                    scales = json("x" to json("min" to 10_000_000.0, "max" to 31_600_000.0))
+                }
+            }
+            registerHistoryGlobals()
+            try {
+                val points = arrayOf(
+                    json("x" to 0.0, "y" to 1.0),
+                    json("x" to 86_400_000.0, "y" to 2.0),
+                )
+                createOrUpdate(
+                    "portfolio-value-chart",
+                    createLineChartConfig(
+                        arrayOf(json(ChartProps.LABEL to ViewText.TOTAL_PORTFOLIO, ChartProps.DATA to points)),
+                        getClonedChartOptions(),
+                    ),
+                )
+
+                val chart = charts["portfolio-value-chart"]!!
+                chart.options.scales.x.time.unit = ChartProps.TIME_UNIT_DAY
+
+                val callback = capturedOptions.plugins.zoom.zoom[ChartProps.ON_ZOOM_COMPLETE]
+                callback(
+                    json(
+                        "chart" to json("canvas" to document.getElementById("portfolio-value-chart")),
+                    ),
+                )
+                // Callback should update time unit to hour
+                chart.options.scales.x.time.unit.toString() shouldBe ChartProps.TIME_UNIT_HOUR
+            } finally {
+                document.body!!.removeChild(container)
+                resetHistoryUiState()
+            }
+        }
+
+        "setupZoomButtons updates time unit after programmatic zoom" {
+            resetHistoryUiState()
+            val container = document.createElement("div")
+            container.innerHTML = TestDomBuilders.zoomControlsDom("portfolio-value-chart")
+            document.body!!.appendChild(container)
+            var capturedOptions: dynamic = null
+            window.asDynamic().Chart = { _: dynamic, config: dynamic ->
+                capturedOptions = config.options
+                jsObject {
+                    data = config.data
+                    options = config.options
+                    destroy = {}
+                    isDatasetVisible = { _: Int -> true }
+                    getInitialScaleBounds = { json("x" to json("min" to 0.0, "max" to 86_400_000.0)) }
+                    scales = json("x" to json("min" to 10_000_000.0, "max" to 31_600_000.0))
+                    zoom = { _: Double ->
+                        // Simulate zoom in: update scales to 6-hour range
+                        this.scales = json("x" to json("min" to 10_000_000.0, "max" to 31_600_000.0))
+                    }
+                    resetZoom = {
+                        // Simulate reset zoom: restore full range
+                        this.scales = json("x" to json("min" to 0.0, "max" to 86_400_000.0))
+                    }
+                }
+            }
+            registerHistoryGlobals()
+            try {
+                val points = arrayOf(
+                    json("x" to 0.0, "y" to 1.0),
+                    json("x" to 86_400_000.0, "y" to 2.0),
+                )
+                createOrUpdate(
+                    "portfolio-value-chart",
+                    createLineChartConfig(
+                        arrayOf(json(ChartProps.LABEL to ViewText.TOTAL_PORTFOLIO, ChartProps.DATA to points)),
+                        getClonedChartOptions(),
+                    ),
+                )
+                setupZoomButtons()
+
+                val chart = charts["portfolio-value-chart"]!!
+                chart.options.scales.x.time.unit = ChartProps.TIME_UNIT_DAY
+
+                // Click zoom in button
+                val buttons = document.querySelectorAll(".history-zoom-btn")
+                for (i in 0 until buttons.length) {
+                    val btn = buttons.item(i) as HTMLElement
+                    val action = btn.getAttribute("data-zoom-action")
+                    if (action == "in") {
+                        btn.click()
+                        break
+                    }
+                }
+                // After zoom in, time unit should be hour (span < ONE_DAY_MS)
+                chart.options.scales.x.time.unit.toString() shouldBe ChartProps.TIME_UNIT_HOUR
+
+                // Click reset button
+                for (i in 0 until buttons.length) {
+                    val btn = buttons.item(i) as HTMLElement
+                    val action = btn.getAttribute("data-zoom-action")
+                    if (action == "reset") {
+                        btn.click()
+                        break
+                    }
+                }
+// After reset, time unit should be day (span >= ONE_DAY_MS)
+                chart.options.scales.x.time.unit.toString() shouldBe ChartProps.TIME_UNIT_DAY
+            } finally {
+                document.body!!.removeChild(container)
+                resetHistoryUiState()
+            }
+        }
+
+        "updateTimeUnitForChart sets minute unit when zoomed in to less than an hour" {
+            resetHistoryUiState()
+            val container = document.createElement("div")
+            container.innerHTML = """<canvas id="portfolio-value-chart"></canvas>"""
+            document.body!!.appendChild(container)
+            var capturedOptions: dynamic = null
+            window.asDynamic().Chart = { _: dynamic, config: dynamic ->
+                capturedOptions = config.options
+                jsObject {
+                    data = config.data
+                    options = config.options
+                    destroy = {}
+                    isDatasetVisible = { _: Int -> true }
+                    getInitialScaleBounds = { json("x" to json("min" to 0.0, "max" to 86_400_000.0)) }
+                    scales = json("x" to json("min" to 42_000_000.0, "max" to 43_800_000.0))
+                }
+            }
+            registerHistoryGlobals()
+            try {
+                val points = arrayOf(
+                    json("x" to 0.0, "y" to 1.0),
+                    json("x" to 86_400_000.0, "y" to 2.0),
+                )
+                createOrUpdate(
+                    "portfolio-value-chart",
+                    createLineChartConfig(
+                        arrayOf(json(ChartProps.LABEL to ViewText.TOTAL_PORTFOLIO, ChartProps.DATA to points)),
+                        getClonedChartOptions(),
+                    ),
+                )
+
+                val chart = charts["portfolio-value-chart"]!!
+                chart.options.scales.x.time.unit = ChartProps.TIME_UNIT_DAY
+                updateTimeUnitForChart(chart)
+                chart.options.scales.x.time.unit.toString() shouldBe ChartProps.TIME_UNIT_MINUTE
+            } finally {
+                document.body!!.removeChild(container)
+                resetHistoryUiState()
+            }
+        }
+
+        "updateTimeUnitForChart sets hour unit at exactly one-hour threshold" {
+            resetHistoryUiState()
+            val container = document.createElement("div")
+            container.innerHTML = """<canvas id="portfolio-value-chart"></canvas>"""
+            document.body!!.appendChild(container)
+            var capturedOptions: dynamic = null
+            window.asDynamic().Chart = { _: dynamic, config: dynamic ->
+                capturedOptions = config.options
+                jsObject {
+                    data = config.data
+                    options = config.options
+                    destroy = {}
+                    isDatasetVisible = { _: Int -> true }
+                    getInitialScaleBounds = { json("x" to json("min" to 0.0, "max" to 86_400_000.0)) }
+                    scales = json("x" to json("min" to 41_400_000.0, "max" to 45_000_000.0))
+                }
+            }
+            registerHistoryGlobals()
+            try {
+                val points = arrayOf(
+                    json("x" to 0.0, "y" to 1.0),
+                    json("x" to 86_400_000.0, "y" to 2.0),
+                )
+                createOrUpdate(
+                    "portfolio-value-chart",
+                    createLineChartConfig(
+                        arrayOf(json(ChartProps.LABEL to ViewText.TOTAL_PORTFOLIO, ChartProps.DATA to points)),
+                        getClonedChartOptions(),
+                    ),
+                )
+
+                val chart = charts["portfolio-value-chart"]!!
+                chart.options.scales.x.time.unit = ChartProps.TIME_UNIT_MINUTE
+                updateTimeUnitForChart(chart)
+                chart.options.scales.x.time.unit.toString() shouldBe ChartProps.TIME_UNIT_HOUR
+            } finally {
+                document.body!!.removeChild(container)
+                resetHistoryUiState()
+            }
+        }
+
+        "zoom completion callback updates time unit to minute when zoomed sub-hour" {
+            resetHistoryUiState()
+            val container = document.createElement("div")
+            container.innerHTML = """
+      <canvas id="portfolio-value-chart"></canvas>
+      ${TestDomBuilders.scrubberDom(disabled = true)}
+            """.trimIndent()
+            document.body!!.appendChild(container)
+            var capturedOptions: dynamic = null
+            window.asDynamic().Chart = { _: dynamic, config: dynamic ->
+                capturedOptions = config.options
+                jsObject {
+                    data = config.data
+                    options = config.options
+                    canvas = document.getElementById("portfolio-value-chart")
+                    destroy = {}
+                    isDatasetVisible = { _: Int -> true }
+                    getInitialScaleBounds = { json("x" to json("min" to 0.0, "max" to 86_400_000.0)) }
+                    scales = json("x" to json("min" to 42_750_000.0, "max" to 43_650_000.0))
+                }
+            }
+            registerHistoryGlobals()
+            try {
+                val points = arrayOf(
+                    json("x" to 0.0, "y" to 1.0),
+                    json("x" to 86_400_000.0, "y" to 2.0),
+                )
+                createOrUpdate(
+                    "portfolio-value-chart",
+                    createLineChartConfig(
+                        arrayOf(json(ChartProps.LABEL to ViewText.TOTAL_PORTFOLIO, ChartProps.DATA to points)),
+                        getClonedChartOptions(),
+                    ),
+                )
+
+                val chart = charts["portfolio-value-chart"]!!
+                chart.options.scales.x.time.unit = ChartProps.TIME_UNIT_DAY
+
+                val callback = capturedOptions.plugins.zoom.zoom[ChartProps.ON_ZOOM_COMPLETE]
+                callback(
+                    json(
+                        "chart" to json("canvas" to document.getElementById("portfolio-value-chart")),
+                    ),
+                )
+                chart.options.scales.x.time.unit.toString() shouldBe ChartProps.TIME_UNIT_MINUTE
+            } finally {
+                document.body!!.removeChild(container)
+                resetHistoryUiState()
+            }
+        }
+
+        "configDataRange returns null for empty datasets" {
+            val config = json("data" to json("datasets" to emptyArray<dynamic>()))
+            configDataRange(config) shouldBe null
+        }
+
+        "configDataRange returns null when datasets missing" {
+            val config = json("data" to json())
+            configDataRange(config) shouldBe null
+        }
+
+        "configDataRange returns null when data missing" {
+            val config = json()
+            configDataRange(config) shouldBe null
+        }
+
+        "configDataRange computes min/max from multiple datasets with points" {
+            val points1 = arrayOf(
+                json("x" to 10.0, "y" to 1.0),
+                json("x" to 50.0, "y" to 2.0),
+                json("x" to 30.0, "y" to 3.0),
+            )
+            val points2 = arrayOf(
+                json("x" to 5.0, "y" to 4.0),
+                json("x" to 100.0, "y" to 5.0),
+            )
+            val config = json(
+                "data" to json(
+                    "datasets" to arrayOf(
+                        json("data" to points1),
+                        json("data" to points2),
+                    ),
+                ),
+            )
+            val range = configDataRange(config)
+            (range != null) shouldBe true
+            range!!.min shouldBe 5.0
+            range.max shouldBe 100.0
+        }
+
+        "configDataRange ignores points without x value" {
+            val points = arrayOf(
+                json("x" to 10.0, "y" to 1.0),
+                json("y" to 2.0),
+                json("x" to 50.0, "y" to 3.0),
+            )
+            val config = json(
+                "data" to json(
+                    "datasets" to arrayOf(json("data" to points)),
+                ),
+            )
+            val range = configDataRange(config)
+            (range != null) shouldBe true
+            range!!.min shouldBe 10.0
+            range.max shouldBe 50.0
+        }
+
+        "configDataRange returns null when all points lack x" {
+            val points = arrayOf(
+                json("y" to 1.0),
+                json("y" to 2.0),
+            )
+            val config = json(
+                "data" to json(
+                    "datasets" to arrayOf(json("data" to points)),
+                ),
+            )
+            configDataRange(config) shouldBe null
+        }
+
+        "syncScrubberFromZoomContext re-enables scrubber and updates time unit" {
+            resetHistoryUiState()
+            val container = document.createElement("div")
+            container.innerHTML = """
+                <canvas id="portfolio-value-chart"></canvas>
+                ${TestDomBuilders.scrubberDom(disabled = true)}
+            """.trimIndent()
+            document.body!!.appendChild(container)
+            var capturedOptions: dynamic = null
+            window.asDynamic().Chart = { _: dynamic, config: dynamic ->
+                capturedOptions = config.options
+                jsObject {
+                    data = config.data
+                    options = config.options
+                    canvas = document.getElementById("portfolio-value-chart")
+                    destroy = {}
+                    isDatasetVisible = { _: Int -> true }
+                    getInitialScaleBounds = { json("x" to json("min" to 0.0, "max" to 86_400_000.0)) }
+                    scales = json("x" to json("min" to 10_000_000.0, "max" to 31_600_000.0))
+                }
+            }
+            registerHistoryGlobals()
+            try {
+                val points = arrayOf(
+                    json("x" to 0.0, "y" to 1.0),
+                    json("x" to 86_400_000.0, "y" to 2.0),
+                )
+                createOrUpdate(
+                    "portfolio-value-chart",
+                    createLineChartConfig(
+                        arrayOf(json(ChartProps.LABEL to ViewText.TOTAL_PORTFOLIO, ChartProps.DATA to points)),
+                        getClonedChartOptions(),
+                    ),
+                )
+
+                val scrubber = document.querySelector(".history-chart-scrubber-input") as HTMLInputElement
+                scrubber.disabled = true
+
+                val ctx = json(
+                    "chart" to json("canvas" to document.getElementById("portfolio-value-chart")),
+                )
+                syncScrubberFromZoomContext(ctx)
+
+                scrubber.disabled shouldBe false
+                val chart = charts["portfolio-value-chart"]!!
+                chart.options.scales.x.time.unit.toString() shouldBe ChartProps.TIME_UNIT_HOUR
+            } finally {
+                document.body!!.removeChild(container)
+                resetHistoryUiState()
+            }
+        }
+
+        "syncScrubberFromZoomContext no-ops when chart id not found" {
+            resetHistoryUiState()
+            val container = document.createElement("div")
+            container.innerHTML = """
+                <canvas id="other-chart"></canvas>
+                ${TestDomBuilders.scrubberDom(disabled = true)}
+            """.trimIndent()
+            document.body!!.appendChild(container)
+            registerHistoryGlobals()
+            try {
+                val ctx = json(
+                    "chart" to json("canvas" to document.getElementById("other-chart")),
+                )
+                syncScrubberFromZoomContext(ctx)
+
+                val scrubber = document.querySelector(".history-chart-scrubber-input") as HTMLInputElement
+                scrubber.disabled shouldBe true
+            } finally {
+                document.body!!.removeChild(container)
+                resetHistoryUiState()
+            }
+        }
+
+        "syncScrubberFromZoomContext no-ops when chart not registered" {
+            resetHistoryUiState()
+            val container = document.createElement("div")
+            container.innerHTML = """
+                <canvas id="portfolio-value-chart"></canvas>
+                ${TestDomBuilders.scrubberDom(disabled = true)}
+            """.trimIndent()
+            document.body!!.appendChild(container)
+            registerHistoryGlobals()
+            try {
+                val ctx = json(
+                    "chart" to json("canvas" to document.getElementById("portfolio-value-chart")),
+                )
+                syncScrubberFromZoomContext(ctx)
+
+                val scrubber = document.querySelector(".history-chart-scrubber-input") as HTMLInputElement
+                scrubber.disabled shouldBe true
+            } finally {
+                document.body!!.removeChild(container)
+                resetHistoryUiState()
+            }
+        }
+
+        "syncScrubberFromZoomContext no-ops when ctx missing chart" {
+            resetHistoryUiState()
+            val container = document.createElement("div")
+            container.innerHTML = """
+                <canvas id="portfolio-value-chart"></canvas>
+                ${TestDomBuilders.scrubberDom(disabled = true)}
+            """.trimIndent()
+            document.body!!.appendChild(container)
+            registerHistoryGlobals()
+            try {
+                val ctx = json()
+                syncScrubberFromZoomContext(ctx)
+
+                val scrubber = document.querySelector(".history-chart-scrubber-input") as HTMLInputElement
+                scrubber.disabled shouldBe true
             } finally {
                 document.body!!.removeChild(container)
                 resetHistoryUiState()

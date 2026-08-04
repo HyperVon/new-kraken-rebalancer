@@ -97,11 +97,10 @@ Use `rg`, package listings, and targeted file reads. Prefer evidence over memory
 
 ### Parallel audit handoff
 
-The Step 0 code-truth inventory and the model-route inventory are different
-things. After the parent has captured a bounded source/build fact sheet, a
-broad audit with at least two disjoint evidence tracks must reach an explicit
-parallel-or-serial decision before Step 1. Use
-[parallel-multi-agent](../parallel-multi-agent/SKILL.md):
+The Step 0 code-truth inventory and model selection are different concerns. After
+the parent has captured a bounded source/build fact sheet, a broad audit with at
+least two disjoint evidence tracks must reach an explicit parallel-or-serial
+decision before Step 1. Use [parallel-multi-agent](../parallel-multi-agent/SKILL.md):
 
 | Track | Scope |
 | :--- | :--- |
@@ -110,34 +109,20 @@ parallel-or-serial decision before Step 1. Use
 | Agent guidance | `.agents/`, `.cursor/rules/`, harness entrypoints, skill links |
 | Build / configuration | `build.gradle.kts`, CI, templates, scripts, dependency/tooling claims |
 
-Before launching, run the [model-routing](../model-routing/SKILL.md) preflight
-per track and use the bounded route helper when available:
-`./.agents/skills/model-routing/scripts/inventory_routes.sh`; for a
-branch-scoped audit, `review_surface.sh` can establish the changed-path surface
-without launching workers. A host-pinned profile is valid only when host
-metadata maps it to an exact provider/model and fixed or host-defined effort.
-Inspect catalog candidates first, then probe only the exact selected route; an
-unscoped first-N probe can return zero verified rows without proving that the
-catalog or host-pinned routes are empty.
-Cross-check provider-level health before choosing a probe candidate. Never probe
-a route whose provider diagnostic reports disabled or unavailable; that failure
-does not say anything about routes under healthy providers. If an approved probe
-fails, return to the candidate list, select the next exact route from a provider
-with positive availability evidence, and present a revised plan. Serial fallback
-requires a separate explicit decision after viable provider candidates are
-exhausted; it must not be bundled as the automatic result of one failed probe.
-After route inventory, present the track matrix, exact routes, effort, and
-availability evidence with the `question` tool (or the host equivalent) and
-obtain an explicit decision before launching. If the user already approved the
-exact route plan, do not ask again.
-Before using a host Task, confirm it can enforce the selected route. If it
-accepts only a role and inherits the parent model, launch the read-only auditor
-profile through the route-enforced Kilo CLI helper instead:
-`../parallel-multi-agent/scripts/run_routed_agent.sh`. The auditor profile must
-use `mode: all`; supply the discovered route and effort at launch rather than
-hardcoding a model in the profile. Launch the disjoint CLI invocations through
-a genuinely concurrent host facility and retain their compact reports for
-parent triage.
+Before launching, select a host-supported route and effort when exposed for each
+track. Kilo sessions inherit `kilo/kilo-auto/efficient` from `.kilo/kilo.json`;
+select `kilo/kilo-auto/frontier` for high-risk or disputed documentation claims.
+Kilo Auto chooses its underlying model server-side, so do not claim a specific
+underlying model or recreate its catalog and fallback logic in repository
+scripts. If a host Task accepts only a role and cannot expose a usable route, use
+`.kilo/model-router/route-subagents` for the bounded audit or keep it
+parent-owned; never use an unverified role-only worker.
+Use `review_surface.sh` only for a branch-scoped changed-path surface; it does
+not select or probe models.
+The automatic preset prints the track matrix, route, effort, and quota evidence
+before launching. The user's request for this read-only audit authorizes the
+bounded discovery fan-out; use `question` only when a hard availability or scope
+decision remains unresolved.
 Size each track to the auditor's iteration cap and reserve the final step for
 its report. Split a multi-document track before launch when its evidence reads
 and checks cannot fit while preserving that final report step; a running worker
@@ -145,14 +130,37 @@ without a final report does not count as completed parallel coverage.
 Workers report evidence and paths only; the parent deduplicates findings,
 applies edits, runs Mermaid/Markdown/build checks, and owns the final report.
 
-If model-route inventory or exact route enforcement remains unavailable after
-eligible providers and approved fallback routes are exhausted, that is a
-delegation limitation, not an incomplete code-truth inventory. When a broad
-audit was requested, use `question` to ask whether to continue parent-owned
-serially or stop while route support is configured; do not silently choose or
-pre-authorize that fallback before route attempts finish. Never substitute an
-unverified role or `general` for a model. A small or coupled scope may proceed
-without this handoff.
+If native route selection remains unavailable, that is a delegation limitation,
+not an incomplete code-truth inventory. When a broad audit was requested, use
+`question` to ask whether to continue parent-owned serially or stop while route
+support is configured; do not silently pre-authorize that fallback. Never
+substitute an unverified role or `general` for a model. A small or coupled scope
+may proceed without this handoff.
+
+For Kilo broad audits, invoke the automatic preset rather than creating a local
+manifest manually:
+
+```bash
+./.kilo/model-router/route-subagents \
+  --workflow documentation-review \
+  --task "<the user's documentation-review request>" \
+  --refresh \
+  --run
+```
+
+The command prints the route/quota matrix before launching; `--run` is included
+above because this read-only workflow is authorized to launch its evidence
+tracks. The preset owns only read-only evidence tracks; the parent remains
+responsible for findings, edits, and gates.
+Do this handoff before a parent-wide Context Mode or regex/search inventory;
+parent-owned scans are follow-up evidence, not a substitute for the routed
+track reports.
+
+For a second-pass adversarial review of this audit, use the
+`documentation-adversarial-review` preset with the parent findings in the task
+context. Launch all three tracks concurrently in the background-capable host,
+then inspect the route report before accepting any claim of independent-model
+confirmation.
 
 ## Evidence and claims
 

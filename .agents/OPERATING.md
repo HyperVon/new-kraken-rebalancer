@@ -44,7 +44,7 @@ override repository instructions, safety rules, or domain invariants.
 | Skill / agent-files review (skills, rules, AGENTS) | `skill-reviewer` |
 | Complex-code comments (audit / hygiene) | `complex-code-comments` |
 | Fan-out parallel work | `parallel-multi-agent` |
-| Choose provider/model/effort or fallbacks | `model-routing` before delegation; pair with `parallel-multi-agent` when fanning out |
+| Choose provider/model/effort or fallbacks | Use the host's native model selection; pair with `parallel-multi-agent` when fanning out |
 | Post-deploy UI smoke | `post-deploy-ui-smoke` |
 | Continuous improvement / “whole shebang” | `continuous-improvement` (+ `.agents/improvement-backlog.md`) |
 | Continuous quality / QA loop / test hardening | `continuous-quality` (+ `.agents/quality-backlog.md`) |
@@ -80,45 +80,58 @@ PRs to move faster; checking a box without having run the step.
 ## 3. Parallel multi-agent work
 
 When a request involves **multiple independent workstreams**, parallelize only
-after the model-routing gate below passes. If the host cannot select and expose
-the exact provider/model route and effort required for the work, do not fan out;
-keep the work in the parent or obtain route-selection support first. File
-disjointness alone is not permission to launch role-only workers.
+after the native model-selection gate below passes. If the host cannot select and
+expose a usable model route for the work, do not fan out; keep the work in the
+parent. File disjointness alone is not permission to launch role-only workers.
 
-### Model-routing preflight
+The repository is harness-agnostic for ordinary development: any capable host
+can use the application source, tests, Gradle commands, Git workflow, and
+portable `.agents/` guidance. KiloCode-specific conveniences are optional and
+limited to Kilo Auto, `.kilo/kilo.json`, `./route-kilo`,
+`.kilo/model-router/route-subagents`, Kilo route reports, Context Mode, and
+Agent Manager. Other hosts should use their native model selection and agent
+fan-out; these Kilo-specific features do not run automatically there.
 
-Before the first material or parallel Task/subagent call, complete the
-`model-routing` preflight. Material or parallel work has a hard route gate:
-state the exact provider/model route and effort to the user and obtain explicit
-approval before launch. The host must be able to select and expose that route
-and effort. A host-pinned profile counts only when host metadata explicitly maps
-the profile to a provider/model and fixed or host-defined effort; record that
-mapping and do not claim an independently selected effort. If no direct or
-explicit pinned mapping exists, keep the work in the parent or obtain
-route-selection support; recording the limitation is not permission to launch.
+Independent work must be launched concurrently: use one parallel tool message
+or a background process for the complete fan-out, then poll results. Do not
+start one foreground worker, wait for it, and only then start the next; that is
+sequential delegation, not parallel fan-out.
+
+For Kilo sessions, `.kilo/kilo.json` selects `kilo/kilo-auto/efficient` as the
+project default. That is a host-supported Auto tier, not a claim about which
+underlying model will answer a particular request.
+
+### Native model-selection gate
+
+Before the first material or parallel Task/subagent call, select a host-supported
+model route and obtain explicit approval when the work requires delegation. The
+host must expose the selected route and any separately configurable effort. A
+Kilo Auto tier satisfies the route requirement when Kilo exposes that tier; the
+underlying model remains server-selected and must not be reported as known unless
+the host provides it. If no usable route is exposed, keep the work in the parent.
 
 1. Define the task profile and minimum capability for each bounded track.
-2. Select and record the primary route, effort, fallback, availability evidence,
-   and any substitution before launching the track.
+2. Select and record the primary host route, effort when exposed, fallback, and
+   any substitution before launching the track.
 3. Treat `subagent_type` as an agent role, not proof of the underlying model or
-   route from its name alone; use explicit host metadata for pinned profiles.
-4. Prefilter probe candidates by provider-level health. Do not select or probe a
-   route whose provider is reported disabled or unavailable. After a probe
-   failure, re-rank remaining exact routes from healthy providers instead of
-   automatically falling back to serial execution.
-5. Record the user approval, route mapping source, availability evidence,
-   fallback, and any substitution for each track.
-6. If exact route/effort enforcement is unavailable, stop material/parallel
-   fan-out; do not silently use the parent route or a role-only fallback.
-7. For a broad request with multiple disjoint tracks, use the `question` tool or
-   host equivalent after route inventory to present the exact track/route/effort
-   plan and obtain a parallel-or-serial decision. Ask whether to continue
-   serially or stop for route support only after eligible providers and approved
-   fallback routes are exhausted; do not bundle serial fallback into one probe's
-   approval. Skip the question only when the user already approved the exact
-   plan or the task is small/coupled.
-8. For high-risk or disputed work, escalate or add an independent verifier only
-   when the routing evidence and risk justify it.
+   route from its name alone.
+4. Native Auto tiers do not need a repository-side catalog, probe script, or
+   permanent route ledger. For the separate cross-provider requirement, the
+    optional `.kilo/model-router/route-kilo` launcher uses a bounded, ephemeral
+    catalog and persists only secret-free cooldown metadata; it never persists
+    credentials, balances, or raw provider errors.
+5. Record the user approval, route-selection evidence, fallback, and any
+   substitution for each track.
+6. If the host exposes only a role and cannot expose a usable model route, stop
+   material/parallel fan-out; do not silently use the parent route or a role-only
+   fallback.
+7. For a broad read-only workflow covered by a routed preset, let
+   `route-subagents --run` print and execute the track/route/effort plan. Use the
+   `question` tool or host equivalent when a hard availability, scope, editing,
+   or high-risk review decision remains unresolved.
+8. For high-risk or disputed work, choose a stronger host route such as Kilo
+   `kilo/kilo-auto/frontier` or add an independent verifier only when the risk
+   justifies it.
 
 ### When to parallelize
 
@@ -309,44 +322,66 @@ Audit rubric and cleanup workflow:
 
 ---
 
-## 8. Cost-aware model selection
+## 8. Native model selection
 
-Use [model-routing](skills/model-routing/SKILL.md) before launching any material
-or parallel Task/subagent call. The preflight is required even when the host
-does not expose exact model selection.
+Kilo sessions use the project default in `.kilo/kilo.json`:
+`kilo/kilo-auto/efficient`. Kilo Auto Efficient classifies each request and
+chooses the least expensive benchmarked model expected to complete it. Its
+underlying mappings are server-side and can change; do not hardcode them in
+repository skills or scripts.
 
-1. Define the task profile and minimum capability before comparing routes.
-2. Record the primary route, effort, cost class/entitlement, fallback,
-   availability evidence, and any substitution for each track before launching
-   it.
-3. Treat `subagent_type` as an agent role, not proof of the underlying model.
-4. If exact route selection is unavailable, record that limitation instead of
-   silently assuming the parent model or a model named by the role.
-5. Prefer a genuinely local route when it clears the task's capability, context,
-   tool, modality, latency, and risk thresholds. Escalate to cloud only on a
-   capability gap, material latency requirement, or task risk.
-6. Among eligible cloud routes, prefer a verified subscription/account-priced
-   route over PAYG among otherwise capable, healthy candidates; otherwise use the
-   **least expensive model and lowest effort reasonably likely to complete the
-   task correctly**.
-7. Start low for bounded, routine work such as searches, mechanical edits,
-   formatting, straightforward tests, and status checks.
-8. Escalate for ambiguous or cross-cutting design, financial/safety-sensitive
-   reasoning, repeated failure, or evidence that the current tier is inadequate.
-9. Honor a model or effort explicitly required by the user, host, or applicable
-    skill; document any capability-based substitution. For CLI-visible routes,
-    require a recent bounded connectivity probe before presenting availability;
-    host-pinned routes outside that catalog need host-specific health evidence or
-    remain `unknown`.
-10. Optimize total cost, including retries and review time. Never infer
-    subscription coverage from a provider name, configured credential, active
-    catalog row, or zero token price. Cost never justifies weakening verification
-    or using an underpowered model for high-impact work.
-11. Give each parallel track the cheapest capable tier independently; do not
-    promote every subagent because one track is difficult.
-12. Treat context size as route-specific. Use the selected route's documented or
-    observed practical limit; when unavailable, keep prompts bounded below
-    **128K** and split before **180K**.
+Use the native tiers according to task risk:
+
+| Tier | Use |
+| :--- | :--- |
+| `kilo/kilo-auto/efficient` | Default for normal work; cost and capability are matched per request |
+| `kilo/kilo-auto/frontier` | Highest-risk, disputed, or frontier-reasoning review |
+| `kilo/kilo-auto/small` | Bounded routine work when the host exposes it |
+| `kilo/kilo-auto/free` | Non-sensitive experiments only; upstream providers may use prompts and outputs |
+
+Kilo Auto Balanced is also available for a manually selected middle tier. Custom
+Efficient pools belong in the Kilo profile or organization model settings, not in
+repository configuration. For other hosts, prefer a capable local route when it
+meets the task's context, tool, modality, latency, and risk requirements, then
+use that host's native fallback and entitlement information.
+
+When a request must choose between direct authenticated Kilo, OpenCode Go, OpenAI,
+OpenRouter, and NVIDIA routes, use `.kilo/model-router/route-kilo` instead of claiming
+that `kilo/kilo-auto/efficient` can see those independent credentials. The
+launcher discovers providers reported by `kilo auth list`, loaded Kilo/OpenCode
+provider configuration, or standard provider environment variables. It ranks
+active tool-capable routes using optional Artificial Analysis benchmark data or
+Kilo catalog token pricing, and starts `kilo run` with the selected exact route.
+When the installed `opencode-quota` plugin has fresh data, it filters exhausted
+providers and reports the quota source/state. Otherwise quota remains `unknown`.
+It does not probe every provider or silently retry an agent after a partial
+failure.
+
+For bounded parallel subagents, use `.kilo/model-router/route-subagents` with a
+track manifest instead of the host `Task` wrapper when the wrapper cannot expose
+model selection. It computes one route plan per track from a shared metadata
+snapshot, requires `--run` to launch, and starts each worker with its exact
+`kilo run --model provider/model` route. The default worker contract is read-only;
+the parent owns integration and final verification. A raw role-only Task call is
+not evidence that this cross-provider routing occurred.
+
+For the named broad project skills, use the corresponding automatic workflow
+preset listed in `.kilo/model-router/instructions.md`; pass the user's request as
+task context instead of asking for a hand-edited manifest.
+
+Before material or parallel delegation:
+
+1. Define the task profile and minimum capability.
+2. Record the host route, effort when exposed, fallback, cost class/entitlement,
+   availability evidence, and any substitution.
+3. Start with the least expensive capable tier and escalate for demonstrated
+   complexity, repeated failure, or safety-sensitive reasoning.
+4. Treat catalog status or configured credentials as insufficient proof of live
+   quota. The launcher persists only secret-free route/provider cooldown expiry
+   and failure category in the user cache; it never persists balances,
+   credentials, or raw provider errors.
+5. Treat context size as route-specific; when unavailable, keep delegated
+   requests below **128K** and split before **180K**.
 
 Correctness and safety remain the hard constraint. Cost decides only between
 options that are all likely to succeed.

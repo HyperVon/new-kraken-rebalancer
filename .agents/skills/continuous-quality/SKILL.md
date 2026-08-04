@@ -49,16 +49,22 @@ partial report and the parent starts a narrower follow-up. Manual compaction is
 not a continuation strategy. The parent owns integration, backlog updates,
 serial final gates, and PR verification.
 
-### Model-routing gate for discovery
+### Native model-selection gate for discovery
 
-Before the first discovery Task, run the [model-routing](../model-routing/SKILL.md)
-preflight and the [parallel-multi-agent](../parallel-multi-agent/SKILL.md)
-handoff. Record a route, effort, fallback, cost/entitlement, availability
-evidence, and user approval for each track. The QA/code inventory does not
-replace model-route inventory. If the host cannot enforce and expose an exact
-route and effort, keep discovery in the parent; do not silently use the parent
-model or a generic role. Discovery workers are read-only; test fixes, Gradle,
-browser tests, coverage, and final gates remain parent-owned and serial.
+Before the first discovery worker, use the `continuous-quality` preset from
+`.kilo/model-router/route-subagents`. For Kilo, it selects a separate route per
+track using the project quota and capability policy. Native Auto chooses its
+underlying model server-side, so do not claim an underlying model that the host
+does not report. Discovery workers are read-only; test fixes, Gradle, browser
+tests, coverage, and final gates remain parent-owned and serial.
+
+```bash
+./.kilo/model-router/route-subagents \
+  --workflow continuous-quality \
+  --task "<the user's continuous-quality request>" \
+  --refresh \
+  --run
+```
 
 ---
 
@@ -229,7 +235,7 @@ If that is too heavy for a first probe, at minimum:
 ./gradlew :frontend-js:jsBrowserTest
 ```
 
-After the model-routing gate, fan out discovery with
+After the native model-selection gate, fan out discovery with
 [parallel-multi-agent](../parallel-multi-agent/SKILL.md) when tracks are
 disjoint. Suggested discovery tracks (pick what fits timebox):
 

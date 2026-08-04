@@ -6,6 +6,206 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.16.12] - 2026-08-04
+
+### Changed
+
+- **Profile grid**: routing now uses an 8-profile grid (`trivial`, `routine`,
+  `coding`, `complex-coding`, `agentic`, `quick-review`, `detailed-review`,
+  `critical`) with type-specific Artificial Analysis minimums raised toward the
+  profile median, a margin added for high-risk (`complex-coding`, `agentic`,
+  `detailed-review`, `critical`) work so security/money tasks never route to a
+  barely-adequate model, and difficulty-matched ranking that prefers the
+  smallest just-sufficient model at the lowest cost.
+- **Profile inference**: task classification was rewritten to map into the new
+  grid — deliberation tasks (review/audit/documentation/analysis) resolve to
+  `quick-review` or `detailed-review`, security/architecture/money to
+  `critical`, and refactor/algorithm/concurrency work to `complex-coding`.
+- **Local model routing**: added an `ollama` provider (local, `requiresAuth:
+  false`, free) with per-model Artificial Analysis slug and real context-window
+  overrides in `.kilo/model-router/config`, so local models compete on the
+  free/cost basis when their genuine scores clear a profile floor.
+- **Ranking documentation**: docs now describe cost-first, difficulty-headroom,
+  subscription-over-PAYG, quota-headroom, and unknown-quota-free-model ordering,
+  plus the free-billing unknown-quota handling and real per-task cost for
+  subscription/account-priced routes (a smaller model wins over a large one at a
+  similar effective price, and a subscription route is preferred over PAYG on a
+  cost tie).
+- **Selection speed**: provider catalogs are cached for two hours per provider
+  and Artificial Analysis auto-matches are cached by model, cutting probe/select
+  time from ~31s to ~2.5s warm with identical selection results.
+- **Throughput probing for free routes**: the router now sanity-checks a
+  selected free route's sustained tokens/sec with a real generation of roughly
+  1000 characters (capped by `tpsProbe.maxTokens`). Routes measured below
+  `tpsProbe.minTps` (default 20) are skipped and the next best route is
+  selected, falling back to the next cheapest qualifying route — paid if
+  necessary — with a warning when every free route is too slow. Probes time out
+  after `min(tpsProbe.timeoutSeconds, tpsProbe.probeCharacters / tpsProbe.minTps)`
+  seconds (50s by default), and a timed-out route is cached at 0 tokens/sec so
+  it stays excluded for the cache window instead of being re-probed. Results
+  are cached for `tpsProbe.cacheMinutes` (default 60) in
+  `~/.cache/kilo/model-router/tps.json`; keys resolve from the environment,
+  the Kilo auth store (`~/.local/share/kilo/auth.json`), or the Kilo
+  configuration's per-provider `apiKey`, and unmeasurable routes never block
+  selection.
+
+### Fixed
+
+- **Resilient model selection when Artificial Analysis is unavailable**: the
+  launcher now falls back to the cached Artificial Analysis data set on a live
+  fetch failure (Free-tier `/free` endpoint rate-limiting/429 or network blip),
+  and to the public OpenRouter `/api/v1/models` benchmark feed (same
+  intelligence/coding/agentic indices, no key required, cached 24h) when no AA
+  cache exists. A failed live fetch no longer collapses every candidate to
+  "capability quality is unknown," so `./route-kilo` no longer reports "no
+  candidate satisfies the current capability, cost, and privacy policy" during
+  transient AA outages. A successful refresh also no longer overwrites a larger
+  existing cache with a partial result.
+- **Diagnostic selection errors**: when no candidate qualifies, the error now
+  lists the top rejection reasons by count (e.g. "reasoning support is not
+  advertised (112 models)"), and the `select` subcommand / `--json` flag surface
+  selection-only output without launching a streaming Kilo session.
+- **Money-safety critical inference**: money/trading-safety terms (partial fill,
+  funds/funding, accounting, reconcile/reconciliation, settlement) now classify
+  to the `critical` profile for this live-money rebalancer, so fund-loss and
+  partial-fill audits route to a higher-reasoning bar.
+- **Prompt-conditioned TUI mode**: `./route-kilo` now launches the Kilo TUI in
+  the mode appropriate to the task — read-only review profiles
+  (`quick-review`, `detailed-review`) start the `ask` agent, every other profile
+  starts the `code` agent (replacing an invalid `build` agent name that fell
+  back to Ask mode). An explicit `--agent` flag overrides the inference.
+- **Stale-only refresh by default**: route-subagents examples no longer pass
+  `--refresh`, since the router already re-fetches route metadata when the
+  per-provider catalog (2h) or Artificial Analysis snapshot (24h) cache is
+  stale; the flag remains available to force a re-fetch.
+- **End-of-life model failover and blacklist**: a route that answers HTTP 410 /
+  "end of life" is classified as `model_eol`, permanently added to the
+  `blacklist.models` array in `.kilo/model-router/config`, and the next best
+  route is tried without excluding the rest of that provider (only the dead
+  model is blacklisted). Applies to both `route-kilo` runs and routed
+  subagents, and also when subagents run with `--allow-edits`.
+- **Credential isolation for read-only worker workspaces**: `.kilo/model-router/
+  env.local`, `manifest.local`, and `.kilo/agent-manager.json` are now excluded
+  from the temporary repository copies given to read-only routed workers, so
+  local-only credentials never ride into worker snapshots.
+- **Per-track route summary in the conversation**: after a routed run, the
+  launcher prints a compact `Route summary` table (track, status, planned-to-
+  used provider/model chain including failovers, profile, billing, duration);
+  the orchestrating session relays it into the conversation instead of pointing
+  at the report directory.
+- **Shipping `.kilo/.gitignore`**: the file no longer ignores itself, so its
+  per-directory ignores (Agent Manager state, package manifests) apply for
+  contributors who clone the repository.
+
+## [6.16.11] - 2026-08-03
+
+### Changed
+
+- **Evaluation documentation**: clarified that simulation tests use a fixed
+  seeded trade pattern while emulator balances and prices drift randomly.
+- **Routed worker reports**: each routed workflow run now records its
+  provider/model selection, task scope, capability, quota, cost, timing, and
+  failover outcome in secret-free Markdown and JSON reports.
+- **Read-only worker isolation**: standard discovery workers now run from
+  temporary repository copies so ignored edit attempts cannot alter the parent
+  worktree.
+- **Primary route launcher**: added a project-root `./route-kilo` convenience
+  wrapper for fresh, full-TUI automatic model selection.
+- **Launcher profiles**: documented the optional `auto`, `routine`, `coding`,
+  `agentic`, and `critical` routing profiles and their intended use cases.
+- **Harness portability**: clarified that ordinary development remains
+  available to other hosts while automatic Kilo routing, fan-out, reports,
+  Context Mode, and Agent Manager integrations require KiloCode.
+- **Full TUI launcher**: `./route-kilo` now hands the selected route to the
+  full Kilo TUI, and Kilo guidance explicitly preserves native regex search.
+- **Adversarial workflow guidance**: added a dedicated documentation
+  re-review preset and explicit concurrent/background launch and route-diversity
+  verification rules.
+- **Adversarial route diversity**: adversarial presets now request distinct
+  exact routes when available and record unavoidable route reuse explicitly.
+- **Model blacklist**: added persistent glob-based model and provider exclusions
+  in `.kilo/model-router/config`, applied before automatic route ranking.
+- **Review routing**: added a stronger `review` profile for documentation,
+  instruction, model-selection, and source-contract audits, plus a hard gate for
+  explicit different-model delegation requests.
+- **Skill-aware launcher prompts**: `./route-kilo /skillname ...` now resolves
+  known repository skills and tells the main session to read them before acting.
+- **Variant-aware routing**: model catalogs with reasoning variants now receive
+  profile-appropriate effort selection instead of always using provider defaults.
+- **Primary TUI model handoff**: full TUI launches now set the selected top-level
+  model explicitly, and review/critical primary sessions prioritize capability
+  evidence without blanket free-route exclusion.
+- **Route ranking**: ranking is now capability-gated and cost-tiebroken instead of
+  preferring free routes outright. After availability and capability (quality) gates,
+  free routes outrank paid routes only when capability is otherwise equal; the
+  removed `policy.preferFree` and profile `preferCapability` flags are no longer needed.
+- **Capability-gated selection**: routes whose capability quality cannot be assessed
+  are never considered, and ranking now orders eligible routes by lowest effective
+  cost, then highest available quota, then higher quality.
+- **History zoom time unit**: zooming the History chart now auto-switches the x-axis
+  time unit (day/hour/minute) to match the visible span, and re-syncs the pan scrubber
+  after drag/wheel zoom.
+
+### Fixed
+
+- **History zoom minimum range**: the zoom minimum-span limit now stays a numeric JS
+  value through the chart-options JSON clone, so the 1-hour minimum visible span is
+  enforced again after the `kotlin.Long` serialization regression.
+
+## [6.16.10] - 2026-08-03
+
+### Fixed
+
+- **Routed worker reports**: parse Kilo's structured worker events, avoid
+  invalid subagent-only agent fallbacks, and fail over when a worker returns
+  protocol output instead of its required report.
+
+## [6.16.9] - 2026-08-03
+
+### Changed
+
+- **Automatic skill fan-out**: added workflow presets so broad documentation,
+  optimization, QA, review, and guidance skills can plan routed subagents from
+  the user request without manual manifests.
+
+## [6.16.8] - 2026-08-03
+
+### Changed
+
+- **Quota-aware routing**: integrated the installed OpenCode Quota plugin for
+  fresh provider availability and remaining-quota filtering, with bounded
+  cooldowns and failover for runtime rate-limit or credit failures.
+
+## [6.16.7] - 2026-08-03
+
+### Added
+
+- **Routed subagents**: added a manifest-driven launcher that selects and
+  enforces a separate provider/model route for each bounded concurrent worker.
+
+## [6.16.6] - 2026-08-03
+
+### Added
+
+- **Cross-provider model launcher**: added an enforceable `route-kilo` workflow
+  that selects among authenticated provider routes using Artificial Analysis
+  benchmark cost data when configured, with catalog token-cost fallback.
+- **NVIDIA provider support**: included authenticated NVIDIA routes in the
+  cross-provider candidate pool, restricted to the provider's zero-cost models.
+- **Provider discovery**: recognized loaded Kilo/OpenCode provider configuration
+  and standard environment credentials in addition to `kilo auth list`.
+
+## [6.16.5] - 2026-08-03
+
+### Changed
+
+- **Native Kilo Auto model selection**: configured `kilo/kilo-auto/efficient` as
+  the project Kilo default and documented native Auto tier selection for routine
+  and high-risk work.
+- **Routing guidance cleanup**: removed the custom model suggestion command,
+  catalog/probe helpers, and route-enforcing launcher in favor of Kilo's
+  server-managed model mappings and fallbacks.
+
 ## [6.16.4] - 2026-08-03
 
 ### Fixed

@@ -99,14 +99,12 @@ PR verification patterns) — but **coding/architecture skills come first**.
 
 ### Optional parallel content pass
 
-When the scope spans many independent skills, the parent may use
-[parallel-multi-agent](../parallel-multi-agent/SKILL.md) for read-only content
-tracks such as coding/architecture, trading/persistence, UI/KMP, and
-workflow/routing/meta. Run [model-routing](../model-routing/SKILL.md) first,
-record exact route/effort and user approval per track, and have the parent
-deduplicate findings into the required report or Canvas. Workers must not edit
-skills or rules. If exact route enforcement is unavailable, review in the
-parent; do not substitute a generic role.
+When the scope spans many independent skills, use the `skill-reviewer` preset
+from `.kilo/model-router/route-subagents` for read-only content tracks such as
+coding/architecture, trading/persistence, UI/KMP, and workflow/meta. The parent
+deduplicates findings into the required report or Canvas. Workers must not edit
+skills or rules. If route selection is unavailable, review in the parent; do not
+substitute a generic role.
 
 ### Step 2: Content enrichment (PRIMARY)
 

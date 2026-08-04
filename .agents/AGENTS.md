@@ -66,7 +66,7 @@ Canonical deep docs:
 | Evidence-based AI-slop audit / cleanup (all repo assets) | [ai-slop-detector](skills/ai-slop-detector/SKILL.md) |
 | Autonomous multi-pass audit | [autonomous-code-optimizer](skills/autonomous-code-optimizer/SKILL.md) |
 | Parallel multi-agent splits | [parallel-multi-agent](skills/parallel-multi-agent/SKILL.md) |
-| Provider/model routing and fallback selection | [model-routing](skills/model-routing/SKILL.md) |
+| Kilo model selection and routed subagents (Kilo-specific) | [AGENTIC_DEVELOPMENT.md](../docs/AGENTIC_DEVELOPMENT.md#models-and-adaptive-multi-agent-review) and [route-subagents](../.kilo/model-router/route-subagents) |
 | Continuous improvement (whole shebang) | [continuous-improvement](skills/continuous-improvement/SKILL.md) *(writes `.agents/improvement-backlog.md`)* |
 | Continuous quality (QA loop) | [continuous-quality](skills/continuous-quality/SKILL.md) *(writes `.agents/quality-backlog.md`)* |
 

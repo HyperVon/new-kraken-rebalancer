@@ -4,7 +4,7 @@ The Kraken Rebalancer includes a production-grade **Scenario Evaluation Suite** 
 
 Implemented in [EvaluationScenariosTest.kt](../src/test/kotlin/com/gemini/krakenbot/EvaluationScenariosTest.kt), this suite is run as part of the standard Gradle test task. It dynamically evaluates the system without making external network calls, using a highly precise in-process fake exchange client ([FakeKrakenService.kt](../src/test/kotlin/com/gemini/krakenbot/service/FakeKrakenService.kt)).
 
-A complementary suite, [SimulationEvaluationScenariosTest.kt](../src/test/kotlin/com/gemini/krakenbot/SimulationEvaluationScenariosTest.kt), exercises the production [SimulatedKrakenService](../src/main/kotlin/com/gemini/krakenbot/service/impl/SimulatedKrakenService.kt) emulator with real TradeHistory + in-memory SQLite (invariant assertions; price drift is random). See the architecture section below for the six named cases.
+A complementary suite, [SimulationEvaluationScenariosTest.kt](../src/test/kotlin/com/gemini/krakenbot/SimulationEvaluationScenariosTest.kt), exercises the production [SimulatedKrakenService](../src/main/kotlin/com/gemini/krakenbot/service/impl/SimulatedKrakenService.kt) emulator with real TradeHistory + in-memory SQLite (invariant assertions; it uses a fixed seeded trade pattern while balances and prices drift randomly). See the architecture section below for the six named cases.
 
 ---
 
@@ -32,8 +32,9 @@ To guarantee robust, reliable, and side-effect-free testing in a public GitHub r
 
 ### SimulationEvaluationScenariosTest cases
 
-These are **invariant** assertions against the production emulator (price drift is
-random), not FakeKraken exact-math cases:
+These are **invariant** assertions against the production emulator, which uses a
+fixed seeded trade pattern while balances and prices drift randomly, not
+FakeKraken exact-math cases:
 
 | Case | Intent |
 | :--- | :--- |

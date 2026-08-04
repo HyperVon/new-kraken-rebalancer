@@ -59,7 +59,7 @@ the finding and the smallest affected path set, not the original full prompt.
 
 Before launching, write a compact parent-side matrix:
 
-| Track | Files / hunks | Risk | Role / exact route / effort | Depends on | Stop condition |
+| Track | Files / hunks | Risk | Role / host route / effort | Depends on | Stop condition |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | … | … | low / medium / high | … | none / track … | … |
 
@@ -94,28 +94,24 @@ several small, independently useful reports:
 
 ## Agent selection and launch
 
-Before launching any material or parallel review track, complete the
-`model-routing` preflight. The exact provider/model route and effort must be
-host-enforceable and exposed to the parent. State the exact provider/model and
-effort plan to the user and obtain explicit approval before the first Task call.
-If the host cannot enforce and expose that selection, stop the fan-out and keep
-the review parent-owned or obtain route-selection support; file disjointness is
-not permission to bypass this gate. Choose the cheapest eligible exact route
-that can answer the track reliably, escalating only for high-risk financial,
-security, persistence, or disputed reasoning. Model diversity is useful, but
-scope diversity is mandatory.
+Before launching any material or parallel review track, complete the native
+model-selection gate. The selected host route and any separately configurable
+effort must be exposed to the parent. State the route and effort plan to the
+user and obtain explicit approval before the first Task call. A Kilo Auto tier
+is a valid route, but Kilo's underlying model is server-selected and must not be
+claimed without host evidence. If the host cannot expose a usable route, stop
+the fan-out and keep the review parent-owned; file disjointness is not permission
+to bypass this gate. Choose the least expensive capable tier, escalating only
+for high-risk financial, security, persistence, or disputed reasoning. Model
+diversity is useful, but scope diversity is mandatory.
 
 `subagent_type` and other agent-role labels identify a capability or harness
-role, not a provider/model route or effort level from their names alone. A
-host-pinned profile counts as exact route evidence only when host metadata
-explicitly maps that profile to a provider/model and fixed or host-defined
-effort; record the mapping source and do not claim an independently selected
-effort. A generic role such as `general` is never evidence that a selected model
-ran and never substitutes for an exact route. Record the exact route, effort,
-cost class/entitlement, availability evidence, fallback, user approval, and any
-substitution before launch. For CLI-visible routes, availability evidence must
-include a recent bounded connectivity probe; for host-pinned routes outside that
-catalog, use host-specific health evidence or record availability as unknown.
+role, not a model or effort level from their names alone. A profile is route
+evidence only when host metadata exposes the selected route; do not claim that a
+role changed the model. Record the selected route, effort when exposed, cost
+class/entitlement, availability evidence, fallback, user approval, and any
+substitution before launch. Native Auto handles its server-side model mapping
+and fallback; repository scripts must not recreate that logic.
 
 The routing rules below are harness-neutral. Named agent types are repository
 or Kilo/OpenCode examples only; Cursor, Claude Code, Copilot, and other hosts
@@ -124,9 +120,9 @@ Preserve the bounded scope, stop condition, report cap, and parent ownership
 regardless of the host.
 
 Prefer a repository-specialized read-only role when its contract matches the
-track. A generic role is only a last-resort role mapping after the exact route
-gate has passed; it is not a model/provider fallback and cannot authorize a
-material or parallel launch when route selection is unavailable.
+track. A generic role is only a last-resort role mapping after the native
+model-selection gate has passed; it is not a model/provider fallback and cannot
+authorize a material or parallel launch when route selection is unavailable.
 
 | Agent type / capability | Use when | Example role |
 | :--- | :--- | :--- |
@@ -137,19 +133,19 @@ material or parallel launch when route selection is unavailable.
 | Strong reasoning | High-risk safety, persistence, exchange semantics, or disputed finding | `adversarial-reviewer-b` when available |
 | Generic capable | Only when no closer specialized type is available | `general` / host equivalent |
 
-Launch independent tracks in one Task message only after the exact-route gate
-has passed and the host supports parallel calls. Include the track matrix in
-the prompts so agents do not redo one another's work. A prompt must contain:
+For Kilo, launch independent tracks through the
+`adversarial-pr-review` preset in `.kilo/model-router/route-subagents` after the
+exact-route gate has passed. Include the track matrix in the parent task so
+agents do not redo one another's work. A prompt must contain:
 
 1. Absolute repository path, branch, and base.
 2. The single track question and exact allowed paths or hunks.
 3. The PR intent and already-completed context.
 4. Forbidden files/actions, especially secrets and runtime data.
 5. Acceptance criteria, iteration cap, and the compact output format.
-6. The exact provider/model route and effort selected for the track, cost class,
-   host mapping evidence when profile-pinned, the fallback and availability
-   probe/health evidence, and the recorded user approval; do not launch if the
-   host cannot enforce and expose them.
+6. The selected host route and effort when exposed, cost class, fallback,
+   availability evidence, and recorded user approval; do not launch if the host
+   cannot expose a usable route.
 
 Before reviewing the full diff, the parent may capture the bounded surface with:
 
@@ -166,11 +162,10 @@ Recover autonomously when an intended role fails, is cancelled, or is
 unavailable without pretending that a role replacement selected a model:
 
 1. Retry once only when the failure appears transient.
-2. Otherwise use only a preselected exact fallback route whose provider/model
-   and effort the host can enforce and expose for the **same narrow track**.
-   A different role label alone is not a valid fallback. Do not send the
-   replacement the full PR diff.
-3. If no enforceable exact fallback exists, stop fan-out and have the parent
+2. Otherwise use only a preselected fallback route that the host can enforce and
+   expose for the **same narrow track**. A different role label alone is not a
+   valid fallback. Do not send the replacement the full PR diff.
+3. If no host-enforceable fallback exists, stop fan-out and have the parent
    cover **every uncovered acceptance criterion** with sequential checks or
    keep the track explicitly deferred. The track cannot be marked complete
    while its coverage matrix has unchecked paths or questions.
@@ -178,9 +173,10 @@ unavailable without pretending that a role replacement selected a model:
    and the reason for any substitution in the verification notes. Never infer
    the selected route from a role label.
 
-Do not bypass the exact-route gate because a provider-specific selection is
-inconvenient. Do not claim a model ran when the Task call returned an error or
-an empty report.
+Do not bypass the native model-selection gate because a provider-specific
+selection is inconvenient. Do not claim a model ran when the routed worker
+returned an error or an empty report. The native Task wrapper remains a fallback
+only when it exposes the selected route itself.
 
 ## Scope and evidence
 
