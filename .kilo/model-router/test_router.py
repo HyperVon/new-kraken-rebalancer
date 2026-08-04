@@ -154,6 +154,46 @@ class RouterTests(unittest.TestCase):
         models = MODULE.parse_catalog_output("openai", output)
         self.assertEqual(["example"], [model["id"] for model in models])
 
+    def test_catalog_cache_writes_and_serves_cached_models(self):
+        cache = MODULE.catalog_cache_path("openai")
+        cache.parent.mkdir(parents=True, exist_ok=True)
+        cache.write_text(
+            MODULE.json.dumps({"fetchedAt": 9999999999.0, "models": [{"id": "cached-model"}]}),
+            encoding="utf-8",
+        )
+        try:
+            result = MODULE.catalog_for_provider("openai", refresh=False, cache_hours=2)
+            self.assertEqual(["cached-model"], [model["id"] for model in result])
+        finally:
+            cache.unlink(missing_ok=True)
+
+    def test_auto_match_is_cached_by_aa_fingerprint(self):
+        aa = {
+            "alpha": {"slug": "alpha", "name": "Alpha Model"},
+            "beta": {"slug": "beta", "name": "Beta Model"},
+        }
+        MODULE._AUTO_MATCH_CACHE.clear()
+        MODULE._AUTO_MATCH_WRITTEN.clear()
+        c = candidate("openrouter/alpha-7b", quality=30)
+        c.model, c.name = "alpha-7b", "Alpha 7B"
+        matched, kind = MODULE.match_artificial_analysis(c, {}, aa)
+        self.assertEqual("automatic", kind)
+        self.assertEqual("alpha", matched["slug"])
+        fingerprint = "|".join(sorted(aa))
+        key = "alpha-7b|Alpha 7B"
+        self.assertEqual("alpha", MODULE._AUTO_MATCH_CACHE[fingerprint][key])
+        path = MODULE.aa_matches_cache_path()
+        try:
+            MODULE._save_auto_match_cache(fingerprint, MODULE._AUTO_MATCH_CACHE[fingerprint])
+            self.assertTrue(path.exists())
+            saved = MODULE.json.loads(path.read_text(encoding="utf-8"))
+            self.assertEqual("alpha", saved["matches"][key])
+        finally:
+            path.unlink(missing_ok=True)
+            MODULE._AUTO_MATCH_CACHE.clear()
+            MODULE._AUTO_MATCH_WRITTEN.clear()
+
+
     def test_paid_routes_use_lower_benchmark_task_cost(self):
         cheap = candidate("openrouter/cheap", quality=30, aa_cost=0.02)
         expensive = candidate("openrouter/expensive", quality=30, aa_cost=0.20)

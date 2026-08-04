@@ -128,6 +128,9 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "apiKeyEnv": "ARTIFICIAL_ANALYSIS_API_KEY",
         "cacheHours": 24,
     },
+    "catalog": {
+        "cacheHours": 2,
+    },
     "quota": {
         "plugin": {
             "enabled": True,
@@ -405,17 +408,36 @@ def parse_catalog_output(provider: str, output: str) -> list[dict[str, Any]]:
     return list(models.values())
 
 
-def catalog_for_provider(provider: str, refresh: bool) -> list[dict[str, Any]]:
+def catalog_cache_path(provider: str) -> Path:
+    return Path.home() / ".cache" / "kilo" / "model-router" / f"catalog-{provider}.json"
+
+
+def catalog_for_provider(provider: str, refresh: bool, cache_hours: float) -> list[dict[str, Any]]:
+    cache = catalog_cache_path(provider)
+    if not refresh and cache.exists():
+        try:
+            cached = json.loads(cache.read_text(encoding="utf-8"))
+            if time.time() - float(cached.get("fetchedAt", 0)) < cache_hours * 3600:
+                return cached.get("models", [])
+        except (OSError, ValueError, TypeError, json.JSONDecodeError):
+            pass
     command = ["kilo", "models", provider, "--verbose"]
     if refresh:
         command.append("--refresh")
-    return parse_catalog_output(provider, run_command(command))
+    models = parse_catalog_output(provider, run_command(command))
+    try:
+        cache.parent.mkdir(parents=True, exist_ok=True)
+        cache.write_text(json.dumps({"fetchedAt": time.time(), "models": models}), encoding="utf-8")
+    except OSError:
+        pass
+    return models
 
 
 def fetch_catalog(config: Mapping[str, Any], refresh: bool) -> tuple[list[dict[str, Any]], list[str]]:
     providers = config.get("providers", {})
     if not isinstance(providers, Mapping):
         raise RouterError("router config providers must be an object")
+    cache_hours = float(config.get("catalog", {}).get("cacheHours", 2))
     configured = configured_provider_ids()
     models: list[dict[str, Any]] = []
     warnings: list[str] = []
@@ -426,7 +448,7 @@ def fetch_catalog(config: Mapping[str, Any], refresh: bool) -> tuple[list[dict[s
             warnings.append(f"skipped {provider}: no Kilo auth, provider config, or environment credential detected")
             continue
         try:
-            models.extend(catalog_for_provider(provider, refresh))
+            models.extend(catalog_for_provider(provider, refresh, cache_hours))
         except RouterError as error:
             warnings.append(f"skipped {provider}: {error}")
     if not models:
@@ -495,6 +517,47 @@ def tokens(value: str) -> set[str]:
     return {token for token in re.split(r"[^a-z0-9]+", value.lower()) if token}
 
 
+def aa_matches_cache_path() -> Path:
+    return Path.home() / ".cache" / "kilo" / "model-router" / "aa-matches.json"
+
+
+_AUTO_MATCH_CACHE: dict[str, dict[str, str | None]] = {}
+_AUTO_MATCH_WRITTEN: set[str] = set()
+
+
+def _load_auto_match_cache(fingerprint: str) -> dict[str, str | None]:
+    cached = _AUTO_MATCH_CACHE.get(fingerprint)
+    if cached is not None:
+        return cached
+    try:
+        stored = json.loads(aa_matches_cache_path().read_text(encoding="utf-8"))
+        if stored.get("fingerprint") == fingerprint and isinstance(stored.get("matches"), dict):
+            cached = {str(k): (v if v is not None else None) for k, v in stored["matches"].items()}
+            _AUTO_MATCH_WRITTEN.add(fingerprint)
+        else:
+            cached = {}
+        _AUTO_MATCH_CACHE[fingerprint] = cached
+    except (OSError, ValueError, TypeError, json.JSONDecodeError):
+        cached = {}
+        _AUTO_MATCH_CACHE[fingerprint] = cached
+    return cached
+
+
+def _save_auto_match_cache(fingerprint: str, matches: dict[str, str | None]) -> None:
+    if fingerprint in _AUTO_MATCH_WRITTEN:
+        return
+    try:
+        path = aa_matches_cache_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps({"fingerprint": fingerprint, "matches": matches}, indent=2),
+            encoding="utf-8",
+        )
+        _AUTO_MATCH_WRITTEN.add(fingerprint)
+    except OSError:
+        pass
+
+
 def match_artificial_analysis(
     candidate: Candidate,
     model_config: Mapping[str, Any],
@@ -503,6 +566,17 @@ def match_artificial_analysis(
     override = model_config.get("aaSlug")
     if override and str(override) in aa_models:
         return aa_models[str(override)], "configured"
+
+    fingerprint = "|".join(sorted(aa_models)) if aa_models else ""
+    if fingerprint not in _AUTO_MATCH_CACHE:
+        _load_auto_match_cache(fingerprint)
+    cache = _AUTO_MATCH_CACHE[fingerprint]
+    route_key = f"{candidate.model}|{candidate.name}"
+    if route_key in cache:
+        cached_slug = cache[route_key]
+        return (aa_models[cached_slug] if cached_slug in aa_models else None), (
+            "automatic" if cached_slug in aa_models else "none"
+        )
 
     route_values = [candidate.model, candidate.name]
     route_normalized = [normalize(value) for value in route_values]
@@ -518,7 +592,10 @@ def match_artificial_analysis(
         if best is None or score > best[0]:
             best = (score, model)
     if best is None or best[0] < 0.78:
+        cache[route_key] = None
         return None, "none"
+    matched_slug = str(best[1].get("slug", ""))
+    cache[route_key] = matched_slug
     return best[1], "automatic"
 
 
@@ -623,6 +700,10 @@ def build_candidates(
         candidate.aa_match = match
         availability.apply_to_candidate(candidate, availability_snapshot)
         candidates.append(candidate)
+    if aa_models:
+        fingerprint = "|".join(sorted(aa_models))
+        if fingerprint in _AUTO_MATCH_CACHE:
+            _save_auto_match_cache(fingerprint, _AUTO_MATCH_CACHE[fingerprint])
     return candidates
 
 

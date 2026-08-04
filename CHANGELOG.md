@@ -28,7 +28,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Ranking documentation**: docs now describe cost-first, difficulty-headroom,
   subscription-over-PAYG, quota-headroom, and unknown-quota-free-model ordering,
   plus the free-billing unknown-quota handling and real per-task cost for
-  subscription/account-priced routes.
+  subscription/account-priced routes (a smaller model wins over a large one at a
+  similar effective price, and a subscription route is preferred over PAYG on a
+  cost tie).
+- **Selection speed**: provider catalogs are cached for two hours per provider
+  and Artificial Analysis auto-matches are cached by model, cutting probe/select
+  time from ~31s to ~2.5s warm with identical selection results.
 
 ## [6.16.11] - 2026-08-03
 
