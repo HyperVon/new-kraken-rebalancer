@@ -221,6 +221,9 @@ Do **not** leave the user waiting on a foreground command that never exits
    don’t silently hang.
 4. When done, **kill** the process and free the port; don’t leave orphan
    Java/Gradle/Node runs.
+5. Prefer an exit-notification launch (a tool that reports process completion)
+   over sleep-polling; never make the user wait on a process that already
+   finished.
 
 ---
 

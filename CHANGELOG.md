@@ -21,6 +21,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `PrecisionConstants` alongside `ONE_HOUR_MS`, so zoom time-unit thresholds
   live in one catalog.
 
+### Changed
+
+- **Agent operating norms**: `.agents/OPERATING.md` and its Cursor projection
+  now direct agents to prefer exit-notification launches over sleep-polling
+  long-running processes, so the operator is never left waiting on a process
+  that already finished.
+
 ## [6.16.12] - 2026-08-04
 
 ### Changed
