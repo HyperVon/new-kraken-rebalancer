@@ -16,7 +16,6 @@ import os
 import re
 import subprocess
 import sys
-import tempfile
 import time
 import urllib.error
 import urllib.parse
@@ -27,6 +26,7 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
 
 import availability
+import fileio
 
 SKILL_REFERENCE_PATTERN = re.compile(r"(?<![A-Za-z0-9_-])/([A-Za-z0-9][A-Za-z0-9_-]*)")
 
@@ -34,22 +34,6 @@ ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_CONFIG_PATH = ROOT / ".kilo" / "model-router" / "config"
 AA_BASE_URL = "https://artificialanalysis.ai/api/v2"
 MAX_FAILOVER_ATTEMPTS = 3
-
-
-def _atomic_write(path: Path, content: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile(
-        mode="w",
-        encoding="utf-8",
-        dir=path.parent,
-        prefix=f".{path.name}.",
-        delete=False,
-    ) as temporary:
-        temporary.write(content)
-        temporary.flush()
-        os.fsync(temporary.fileno())
-        temporary_path = Path(temporary.name)
-    os.replace(temporary_path, path)
 
 
 def blacklist_model(config_path: str | None, route: str) -> bool:
@@ -73,7 +57,7 @@ def blacklist_model(config_path: str | None, route: str) -> bool:
         return True
     models.append(route)
     try:
-        _atomic_write(path, json.dumps(payload, indent=2) + "\n")
+        fileio.atomic_write(path, json.dumps(payload, indent=2) + "\n")
     except OSError:
         return False
     return True

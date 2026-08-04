@@ -17,6 +17,7 @@ Do **not** leave the user waiting on a foreground command that never exits
 3. If blocked > ~15–20s with no useful progress, say what you’re waiting on and either continue other work or ask—don’t silently hang.
 4. When done, kill the process and free the port; don’t leave orphan Java/Gradle/Node runs.
 5. Prefer `AwaitShell` with an output **pattern** over open-ended long `block_until_ms` for servers.
+6. Prefer exit notifications (`notifyOnExit`, completion futures) over sleep-polling a long-running process; never make the user wait on a process that already finished.
 
 ## Anti-patterns
 

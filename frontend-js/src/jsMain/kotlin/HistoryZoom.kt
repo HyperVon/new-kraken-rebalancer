@@ -140,7 +140,7 @@ internal fun updateTimeUnitForChart(chart: dynamic) {
     val currentRange = chartCurrentRange(chart) ?: return
     val newUnit = when {
         currentRange.span < PrecisionConstants.ONE_HOUR_MS -> ChartProps.TIME_UNIT_MINUTE
-        currentRange.span < ChartProps.ONE_DAY_MS -> ChartProps.TIME_UNIT_HOUR
+        currentRange.span < PrecisionConstants.ONE_DAY_MS -> ChartProps.TIME_UNIT_HOUR
         else -> ChartProps.TIME_UNIT_DAY
     }
     val time = chart.options?.scales?.x?.time ?: return

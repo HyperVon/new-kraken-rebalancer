@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 import availability
+import fileio
 import router
 import workflows
 
@@ -438,22 +439,6 @@ def _safe_scope(files: Sequence[str]) -> list[str]:
     return ["<absolute-path>" if Path(path).is_absolute() else path for path in files]
 
 
-def _atomic_write(path: Path, content: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile(
-        mode="w",
-        encoding="utf-8",
-        dir=path.parent,
-        prefix=f".{path.name}.",
-        delete=False,
-    ) as temporary:
-        temporary.write(content)
-        temporary.flush()
-        os.fsync(temporary.fileno())
-        temporary_path = Path(temporary.name)
-    os.replace(temporary_path, path)
-
-
 def _ignore_read_only_files(_: str, names: list[str]) -> list[str]:
     ignored = {
         ".git",
@@ -607,8 +592,8 @@ def write_run_report(
     stem = f"{run_id}-{label}"
     json_path = directory / f"{stem}.json"
     markdown_path = directory / f"{stem}.md"
-    _atomic_write(json_path, json.dumps(payload, indent=2) + "\n")
-    _atomic_write(markdown_path, _markdown_report(payload))
+    fileio.atomic_write(json_path, json.dumps(payload, indent=2) + "\n")
+    fileio.atomic_write(markdown_path, _markdown_report(payload))
     return {"json": str(json_path), "markdown": str(markdown_path), "run_id": run_id}
 
 
