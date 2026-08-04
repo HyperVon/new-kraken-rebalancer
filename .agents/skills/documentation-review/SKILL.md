@@ -148,8 +148,13 @@ manifest manually:
   --run
 ```
 
-Review the route/quota matrix, then add `--run`. The preset owns only read-only
-evidence tracks; the parent remains responsible for findings, edits, and gates.
+The command prints the route/quota matrix before launching; `--run` is included
+above because this read-only workflow is authorized to launch its evidence
+tracks. The preset owns only read-only evidence tracks; the parent remains
+responsible for findings, edits, and gates.
+Do this handoff before a parent-wide Context Mode or regex/search inventory;
+parent-owned scans are follow-up evidence, not a substitute for the routed
+track reports.
 
 ## Evidence and claims
 

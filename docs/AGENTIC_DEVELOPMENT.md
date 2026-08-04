@@ -317,8 +317,8 @@ OpenRouter, and NVIDIA routes, use the repository launcher:
 ./route-kilo --profile coding "Fix the failing Kotlin build"
 ```
 
-The project-root `./route-kilo` wrapper refreshes route metadata and opens an
-interactive Kilo session automatically. It forwards the initial prompt and
+The project-root `./route-kilo` wrapper refreshes route metadata and opens the
+full Kilo TUI automatically. It forwards the initial prompt and
 any additional router flags to `.kilo/model-router/route-kilo`.
 
 `--profile` is optional and defaults to `auto`, which infers the routing

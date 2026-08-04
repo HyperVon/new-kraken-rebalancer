@@ -27,6 +27,12 @@ manifest:
 
 When a named workflow reaches its parallel-discovery step:
 
+For Kilo broad workflows, this handoff is mandatory: invoke the matching
+`route-subagents --workflow ... --run` preset before doing the broad discovery
+in the parent. Do not replace it with a parent-only `ctx_batch_execute` scan or
+an unverified role-only worker. Context Mode remains useful inside a bounded
+track or for parent-owned follow-up, but it does not replace routed fan-out.
+
 1. Decompose only the independent read-only discovery tracks required by the
    workflow. The preset supplies bounded scopes and specialized agent roles.
 2. Plan routes and quota with the parent request as task context:
@@ -52,6 +58,12 @@ When a named workflow reaches its parallel-discovery step:
 The launcher selects an exact provider/model independently for every track,
 uses the installed quota plugin, and applies bounded runtime failover. A raw
 Kilo `Task` call remains unrouteable and must not be used as a substitute.
+
+Kilo's native `grep` tool accepts regular-expression patterns, and its native
+`glob` and `read` tools are available for repository searches. Use those tools
+directly when they are present; Context Mode is an output-management aid, not a
+replacement for native regex search. If a tool call actually fails, report the
+specific error rather than claiming that regex search is unavailable.
 
 Each `--run` writes a secret-free Markdown and JSON route report under
 `~/.cache/kilo/model-router/reports/` and prints the Markdown path after the

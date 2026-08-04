@@ -43,6 +43,23 @@ def candidate(route, billing="paid", quality=None, aa_cost=None):
 
 
 class RouterTests(unittest.TestCase):
+    def test_full_tui_command_uses_kilo_prompt_and_selected_route(self):
+        args = MODULE.argparse.Namespace(
+            tui=True,
+            agent=None,
+            variant=None,
+            interactive=False,
+            continue_session=False,
+            session=None,
+            auto=False,
+            message=["Review", "the", "docs"],
+        )
+        command = MODULE.build_kilo_command(args, {"route": "openai/example"})
+        self.assertEqual(
+            ["kilo", "--model", "openai/example", "--prompt", "Review the docs"],
+            command,
+        )
+
     def test_parse_catalog_reads_top_level_model_objects(self):
         output = """openai/example\n{
   \"id\": \"example\",

@@ -2,4 +2,4 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
-exec "$SCRIPT_DIR/.kilo/model-router/route-kilo" --refresh --interactive "$@"
+exec "$SCRIPT_DIR/.kilo/model-router/route-kilo" --refresh --tui "$@"

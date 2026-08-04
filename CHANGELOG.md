@@ -19,12 +19,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   temporary repository copies so ignored edit attempts cannot alter the parent
   worktree.
 - **Primary route launcher**: added a project-root `./route-kilo` convenience
-  wrapper for fresh, interactive automatic model selection.
+  wrapper for fresh, full-TUI automatic model selection.
 - **Launcher profiles**: documented the optional `auto`, `routine`, `coding`,
   `agentic`, and `critical` routing profiles and their intended use cases.
 - **Harness portability**: clarified that ordinary development remains
   available to other hosts while automatic Kilo routing, fan-out, reports,
   Context Mode, and Agent Manager integrations require KiloCode.
+- **Full TUI launcher**: `./route-kilo` now hands the selected route to the
+  full Kilo TUI, and Kilo guidance explicitly preserves native regex search.
 
 ## [6.16.10] - 2026-08-03
 

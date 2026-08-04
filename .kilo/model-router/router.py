@@ -759,6 +759,17 @@ def load_selection(args: argparse.Namespace) -> tuple[dict[str, Any], list[str]]
 
 
 def build_kilo_command(args: argparse.Namespace, result: Mapping[str, Any]) -> list[str]:
+    if args.tui:
+        command = ["kilo", "--model", str(result["route"])]
+        if args.agent:
+            command.extend(["--agent", args.agent])
+        if args.continue_session:
+            command.append("--continue")
+        if args.session:
+            command.extend(["--session", args.session])
+        command.extend(["--prompt", " ".join(args.message)])
+        return command
+
     command = ["kilo", "run", "--model", str(result["route"])]
     if args.agent:
         command.extend(["--agent", args.agent])
@@ -852,11 +863,12 @@ def parse_args() -> argparse.Namespace:
     catalog.add_argument("--refresh", action="store_true")
     catalog.add_argument("--json", action="store_true")
 
-    run = subparsers.add_parser("run", help="select a route and launch kilo run")
+    run = subparsers.add_parser("run", help="select a route and launch Kilo")
     add_selection_options(run)
     run.add_argument("--agent")
     run.add_argument("--variant")
     run.add_argument("--interactive", action="store_true")
+    run.add_argument("--tui", action="store_true", help="launch the full Kilo TUI")
     run.add_argument("--continue", dest="continue_session", action="store_true")
     run.add_argument("--session")
     run.add_argument("--auto", action="store_true", help="pass Kilo's dangerous auto-approval flag")
@@ -902,6 +914,8 @@ def main() -> int:
 
     if not args.message:
         raise RouterError("run requires a task message")
+    if args.tui and (args.interactive or args.variant or args.auto):
+        raise RouterError("--tui cannot be combined with --interactive, --variant, or --auto")
     args.task = " ".join(args.message)
     context = load_selection_context(args)
     result = context["result"]
@@ -911,6 +925,9 @@ def main() -> int:
     for _ in range(MAX_FAILOVER_ATTEMPTS):
         print_selection(result, stream=sys.stderr)
         command = build_kilo_command(args, result)
+        if args.tui:
+            os.chdir(ROOT)
+            os.execvp(command[0], command)
         if args.interactive:
             os.execvp(command[0], command)
         exit_code, output = run_kilo_streaming(command)
