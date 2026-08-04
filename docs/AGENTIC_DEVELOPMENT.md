@@ -323,6 +323,21 @@ snapshot (24h) is stale, so warm-cache startups are fast. Pass `--refresh` to
 force a re-fetch. It forwards the initial prompt and any additional router flags
 to `.kilo/model-router/route-kilo`.
 
+Before a selected free route is used, the router sanity-checks its sustained
+throughput with a short probe (an OpenAI-compatible chat completion that asks
+for roughly a thousand characters of output, capped by `tpsProbe.maxTokens`),
+and re-selects the next best route when the measured tokens/sec stays below
+`tpsProbe.minTps` (default 20). Probe results are cached under
+`~/.cache/kilo/model-router/tps.json` for `tpsProbe.cacheMinutes` (default 60)
+so warm startups stay fast; unmeasurable routes (no endpoint, no key, probe
+error) never block selection. The probe times out after
+`min(tpsProbe.timeoutSeconds, tpsProbe.probeCharacters / tpsProbe.minTps)`
+seconds (50s by default) and a timed-out route is cached at 0 tokens/sec, so it
+stays excluded for the cache window instead of being re-probed. If every free
+route is too slow, selection falls back to the next cheapest qualifying route,
+paid if necessary, and warns.
+Tune or disable via the `tpsProbe` section of `.kilo/model-router/config`.
+
 `--profile` is optional and defaults to `auto`, which infers the routing
 requirements from the prompt. Available profiles are:
 
@@ -477,8 +492,7 @@ fan-out, use a manifest with one entry per independent track:
 ```bash
 cp .kilo/model-router/manifest.example .kilo/model-router/manifest.local
 ./.kilo/model-router/route-subagents \
-  --manifest .kilo/model-router/manifest.local \
-  --refresh
+  --manifest .kilo/model-router/manifest.local
 ```
 
 The command plans every track against one Kilo/Artificial Analysis metadata
@@ -514,7 +528,6 @@ dedicated preset with the prior findings in the task context:
 ./.kilo/model-router/route-subagents \
   --workflow documentation-adversarial-review \
   --task "Independently re-review the documentation findings from the parent audit" \
-  --refresh \
   --run
 ```
 

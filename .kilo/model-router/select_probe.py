@@ -2,7 +2,9 @@
 """Diagnostic probe for .kilo/model-router selection.
 
 Runs prompts through the automatic model selector and prints the inferred
-profile, the selected route, and cheap/strong alternatives. Used when tuning
+profile, the selected route, and cheap/strong alternatives. Uses
+select_with_tps_guard, so free routes are throughput-probed (real HTTP call,
+cached 60 min) and slow ones are re-selected. Used when tuning
 DEFAULT_PROFILES / ranking. Reads the live catalog, AA cache, and quota snapshot;
 expects to run from .kilo/model-router/ (so `import router` resolves).
 
@@ -48,7 +50,7 @@ def probe_one(task, candidates, config, expected=None):
 
     qualifying = [c for c in candidates if qualifies(c)]
     try:
-        selected = router.select_candidate(candidates, prof, config, sensitive, [], [])
+        selected, warnings = router.select_with_tps_guard(candidates, prof, config, sensitive, [], [])
     except router.RouterError as e:
         print(f"\n=== {task!r}")
         print(f"  expected={expected} got={name}  qualifying={len(qualifying)}  ERROR: {e}")
@@ -65,6 +67,11 @@ def probe_one(task, candidates, config, expected=None):
           f"metric={prof.get('metric')} sensitive={sensitive}")
     print(f"  qualifying={len(qualifying)} (free={n_free}, non-free={len(qualifying) - n_free})")
     print(f"  SELECTED: {fmt(selected)}")
+    tps = router.cached_tps(selected.route, config)
+    if tps is not None:
+        print(f"  tps={tps:g} tokens/sec")
+    for w in warnings:
+        print(f"  warn: {w}")
     print("  cheapest 3:")
     for c in q_sorted[:3]:
         print(f"    {fmt(c)}")

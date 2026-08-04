@@ -1,5 +1,7 @@
+import copy
 import importlib.util
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -532,6 +534,353 @@ class RouterTests(unittest.TestCase):
         self.assertIsNotNone(aa)
         self.assertIn(match, ("automatic", "configured"))
         self.assertEqual(43.1, aa["evaluations"]["artificial_analysis_agentic_index"])
+
+    def _probe_config(self, **overrides):
+        config = copy.deepcopy(MODULE.DEFAULT_CONFIG)
+        config["tpsProbe"].update(overrides)
+        return config
+
+    def _free(self, name, quality=60):
+        return candidate(f"nvidia/{name}", billing="free", quality=quality)
+
+    def _free_route(self, route, quality=60):
+        return candidate(route, billing="free", quality=quality)
+
+    def _paid(self, name, quality=60, aa_cost=0.001):
+        return candidate(f"openai/{name}", billing="paid", quality=quality, aa_cost=aa_cost)
+
+    def test_slow_free_route_is_excluded_and_next_best_chosen(self):
+        with patch("model_router.probe_tps", return_value=(6.0, "probe")):
+            selected, warnings = MODULE.select_with_tps_guard(
+                [self._free("slow-a"), self._paid("fallback")],
+                MODULE.DEFAULT_PROFILES["coding"],
+                self._probe_config(),
+                False,
+            )
+        self.assertEqual("openai/fallback", selected.route)
+        self.assertTrue(any("below" in warning for warning in warnings))
+        self.assertTrue(any("next cheapest qualifying" in warning for warning in warnings))
+
+    def test_fast_free_route_is_kept(self):
+        with patch("model_router.probe_tps", return_value=(120.0, "probe")):
+            selected, warnings = MODULE.select_with_tps_guard(
+                [self._free("fast")],
+                MODULE.DEFAULT_PROFILES["coding"],
+                self._probe_config(),
+                False,
+            )
+        self.assertEqual("nvidia/fast", selected.route)
+        self.assertEqual([], warnings)
+
+    def test_unknown_tps_never_blocks_selection(self):
+        with patch("model_router.probe_tps", return_value=(None, "probe failed (URLError)")):
+            selected, warnings = MODULE.select_with_tps_guard(
+                [self._free("unmeasurable")],
+                MODULE.DEFAULT_PROFILES["coding"],
+                self._probe_config(),
+                False,
+            )
+        self.assertEqual("nvidia/unmeasurable", selected.route)
+        self.assertEqual([], warnings)
+
+    def test_paid_route_is_never_probed_when_only_free(self):
+        with patch("model_router.probe_tps", return_value=(6.0, "probe")) as probe:
+            selected, warnings = MODULE.select_with_tps_guard(
+                [self._paid("paid-only")],
+                MODULE.DEFAULT_PROFILES["coding"],
+                self._probe_config(),
+                False,
+            )
+        probe.assert_not_called()
+        self.assertEqual("openai/paid-only", selected.route)
+        self.assertEqual([], warnings)
+
+    def test_all_free_slow_falls_back_to_cheapest_qualifying_paid(self):
+        with patch("model_router.probe_tps", return_value=(5.0, "probe")) as probe:
+            selected, warnings = MODULE.select_with_tps_guard(
+                [self._free("slow-a"), self._free("slow-b"), self._paid("fallback")],
+                MODULE.DEFAULT_PROFILES["coding"],
+                self._probe_config(),
+                False,
+            )
+        self.assertEqual(2, probe.call_count)
+        self.assertEqual("openai/fallback", selected.route)
+        self.assertTrue(any("next cheapest qualifying" in warning for warning in warnings))
+
+    def test_no_qualifying_route_outside_slow_free_keeps_best_available(self):
+        config = self._probe_config()
+        config["policy"]["allowPaid"] = False
+        with patch("model_router.probe_tps", return_value=(5.0, "probe")) as probe:
+            selected, warnings = MODULE.select_with_tps_guard(
+                [self._free("slow-a"), self._free("slow-b")],
+                MODULE.DEFAULT_PROFILES["coding"],
+                config,
+                False,
+            )
+        self.assertGreater(probe.call_count, 0)
+        self.assertTrue(selected.billing == "free")
+        self.assertTrue(any("kept the best available" in warning for warning in warnings))
+
+    def test_probe_can_be_disabled(self):
+        with patch("model_router.probe_tps", return_value=(6.0, "probe")) as probe:
+            selected, warnings = MODULE.select_with_tps_guard(
+                [self._free("slow-a"), self._paid("fallback")],
+                MODULE.DEFAULT_PROFILES["coding"],
+                self._probe_config(enabled=False),
+                False,
+            )
+        probe.assert_not_called()
+        self.assertEqual("nvidia/slow-a", selected.route)
+        self.assertEqual([], warnings)
+
+    def test_probe_results_are_cached_and_reused(self):
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+            def read(self):
+                return b'{"usage": {"completion_tokens": 300}}'
+
+        cache_path = Path(tempfile.mkdtemp()) / "tps.json"
+        with patch("model_router.urllib.request.urlopen", return_value=FakeResponse()), patch.object(
+            MODULE, "TPS_CACHE_PATH", cache_path
+        ):
+            first_tps, first_source = MODULE.probe_tps(self._free("fast"), MODULE.DEFAULT_CONFIG)
+            second_tps, second_source = MODULE.probe_tps(self._free("fast"), MODULE.DEFAULT_CONFIG)
+        self.assertIsNotNone(first_tps)
+        self.assertEqual("probe", first_source)
+        self.assertEqual(first_tps, second_tps)
+        self.assertEqual("cache", second_source)
+
+    def test_stale_probe_cache_is_refreshed(self):
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+            def read(self):
+                return b'{"usage": {"completion_tokens": 300}}'
+
+        cache_path = Path(tempfile.mkdtemp()) / "tps.json"
+        cache_path.write_text(
+            '{"nvidia/stale": {"tps": 5.0, "measured_at": %f, "model": "stale"}}'
+            % (MODULE.time.time() - 7200),
+            encoding="utf-8",
+        )
+        with patch("model_router.urllib.request.urlopen", return_value=FakeResponse()), patch.object(
+            MODULE, "TPS_CACHE_PATH", cache_path
+        ):
+            tps, source = MODULE.probe_tps(self._free("stale"), MODULE.DEFAULT_CONFIG)
+        self.assertEqual("probe", source)
+        self.assertGreater(tps, 5.0)
+
+    def test_probe_request_requests_substantial_generation(self):
+        captured = {}
+
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+            def read(self):
+                return b'{"usage": {"completion_tokens": 300}}'
+
+        def fake_urlopen(request, timeout=None):
+            captured["url"] = request.full_url
+            captured["body"] = MODULE.json.loads(request.data.decode())
+            captured["headers"] = dict(request.headers)
+            return FakeResponse()
+
+        cache_path = Path(tempfile.mkdtemp()) / "tps.json"
+        with patch("model_router.urllib.request.urlopen", side_effect=fake_urlopen), patch.object(
+            MODULE, "TPS_CACHE_PATH", cache_path
+        ):
+            tps, source = MODULE.probe_tps(self._free("big-output"), MODULE.DEFAULT_CONFIG)
+        self.assertEqual("https://integrate.api.nvidia.com/v1/chat/completions", captured["url"])
+        prompt = captured["body"]["messages"][0]["content"]
+        self.assertIn("one thousand characters", prompt)
+        self.assertGreaterEqual(captured["body"]["max_tokens"], 300)
+        self.assertFalse(captured["body"]["stream"])
+        self.assertEqual(
+            "application/json", next(value for key, value in captured["headers"].items() if key.lower() == "content-type")
+        )
+        self.assertIsNotNone(tps)
+        self.assertEqual("probe", source)
+
+    def test_probe_endpoint_falls_back_to_candidate_api_url(self):
+        captured = {}
+
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+            def read(self):
+                return b'{"usage": {"completion_tokens": 300}}'
+
+        def fake_urlopen(request, timeout=None):
+            captured["url"] = request.full_url
+            return FakeResponse()
+
+        config = copy.deepcopy(MODULE.DEFAULT_CONFIG)
+        del config["providers"]["nvidia"]["probeEndpoint"]
+        candidate = self._free("via-api")
+        candidate.api_url = "https://example.com/v1"
+        cache_path = Path(tempfile.mkdtemp()) / "tps.json"
+        with patch("model_router.urllib.request.urlopen", side_effect=fake_urlopen), patch.object(
+            MODULE, "TPS_CACHE_PATH", cache_path
+        ):
+            tps, source = MODULE.probe_tps(candidate, config)
+        self.assertEqual("https://example.com/v1/chat/completions", captured["url"])
+        self.assertIsNotNone(tps)
+        self.assertEqual("probe", source)
+
+    def test_probe_uses_auth_store_key(self):
+        captured = {}
+
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+            def read(self):
+                return b'{"usage": {"completion_tokens": 300}}'
+
+        def fake_urlopen(request, timeout=None):
+            captured["headers"] = dict(request.headers)
+            return FakeResponse()
+
+        auth_path = Path(tempfile.mkdtemp()) / "auth.json"
+        auth_path.write_text('{"nvidia": {"type": "api", "key": "nv-test"}}', encoding="utf-8")
+        cache_path = Path(tempfile.mkdtemp()) / "tps.json"
+        with patch("model_router.urllib.request.urlopen", side_effect=fake_urlopen), patch.object(
+            MODULE, "TPS_CACHE_PATH", cache_path
+        ), patch.object(MODULE, "AUTH_STORE_PATH", auth_path), patch.dict(
+            MODULE.os.environ, {"NVIDIA_API_KEY": ""}
+        ):
+            tps, source = MODULE.probe_tps(self._free("auth-key"), MODULE.DEFAULT_CONFIG)
+        self.assertIsNotNone(tps)
+        self.assertEqual("probe", source)
+        self.assertEqual("Bearer nv-test", captured["headers"].get("Authorization"))
+
+    def test_probe_uses_kilo_config_api_key(self):
+        captured = {}
+
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+            def read(self):
+                return b'{"usage": {"completion_tokens": 300}}'
+
+        def fake_urlopen(request, timeout=None):
+            captured["headers"] = dict(request.headers)
+            return FakeResponse()
+
+        config_path = Path(tempfile.mkdtemp()) / "kilo.jsonc"
+        config_path.write_text(
+            '// kilo config\n{\n  "provider": {\n    "openrouter": {\n      "options": { "apiKey": "sk-or-test" }\n    }\n  }\n}\n',
+            encoding="utf-8",
+        )
+        cache_path = Path(tempfile.mkdtemp()) / "tps.json"
+        with patch("model_router.urllib.request.urlopen", side_effect=fake_urlopen), patch.object(
+            MODULE, "TPS_CACHE_PATH", cache_path
+        ), patch.object(MODULE, "KILO_CONFIG_PATHS", (config_path,)), patch.dict(
+            MODULE.os.environ, {"OPENROUTER_API_KEY": ""}
+        ):
+            tps, source = MODULE.probe_tps(self._free_route("openrouter/foo:free"), MODULE.DEFAULT_CONFIG)
+        self.assertIsNotNone(tps)
+        self.assertEqual("probe", source)
+        self.assertEqual("Bearer sk-or-test", captured["headers"].get("Authorization"))
+
+    def test_free_route_on_paid_provider_is_probed(self):
+        free_route = self._free_route("openrouter/foo:free")
+        with patch("model_router.probe_tps", return_value=(80.0, "probe")) as probe:
+            selected, warnings = MODULE.select_with_tps_guard(
+                [free_route], MODULE.DEFAULT_PROFILES["coding"], self._probe_config(), False
+            )
+        probe.assert_called_once()
+        self.assertEqual("openrouter/foo:free", selected.route)
+        self.assertEqual([], warnings)
+
+    def test_probe_timeout_scales_with_expected_output_and_min_tps(self):
+        captured = []
+
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+            def read(self):
+                return b'{"usage": {"completion_tokens": 300}}'
+
+        def fake_urlopen(request, timeout=None):
+            captured.append(timeout)
+            return FakeResponse()
+
+        cache_path = Path(tempfile.mkdtemp()) / "tps.json"
+        with patch("model_router.urllib.request.urlopen", side_effect=fake_urlopen), patch.object(
+            MODULE, "TPS_CACHE_PATH", cache_path
+        ):
+            MODULE.probe_tps(self._free("timed"), MODULE.DEFAULT_CONFIG)
+            MODULE.probe_tps(self._free("timed2"), self._probe_config(minTps=5))
+        self.assertEqual([50.0, 60.0], captured)
+
+    def test_probe_timeout_caches_zero_and_is_reused(self):
+        def fake_urlopen(request, timeout=None):
+            raise TimeoutError("timed out")
+
+        cache_path = Path(tempfile.mkdtemp()) / "tps.json"
+        with patch("model_router.urllib.request.urlopen", side_effect=fake_urlopen), patch.object(
+            MODULE, "TPS_CACHE_PATH", cache_path
+        ):
+            tps, source = MODULE.probe_tps(self._free("slowpoke"), MODULE.DEFAULT_CONFIG)
+            second_tps, second_source = MODULE.probe_tps(self._free("slowpoke"), MODULE.DEFAULT_CONFIG)
+        self.assertEqual(0.0, tps)
+        self.assertEqual("timeout", source)
+        entry = MODULE.json.loads(cache_path.read_text())["nvidia/slowpoke"]
+        self.assertEqual(0.0, entry["tps"])
+        self.assertEqual(0.0, second_tps)
+        self.assertEqual("cache", second_source)
+
+    def test_timed_out_route_is_excluded_from_selection(self):
+        free_route = self._free("slowpoke")
+        paid_fallback = self._paid("fallback")
+        with patch("model_router.probe_tps", return_value=(0.0, "timeout")):
+            selected, warnings = MODULE.select_with_tps_guard(
+                [free_route, paid_fallback], MODULE.DEFAULT_PROFILES["coding"], self._probe_config(), False
+            )
+        self.assertEqual("openai/fallback", selected.route)
+        self.assertTrue(any("below" in warning for warning in warnings))
+
+    def test_transient_probe_error_is_not_cached(self):
+        def fake_urlopen(request, timeout=None):
+            raise OSError("connection refused")
+
+        cache_path = Path(tempfile.mkdtemp()) / "tps.json"
+        with patch("model_router.urllib.request.urlopen", side_effect=fake_urlopen), patch.object(
+            MODULE, "TPS_CACHE_PATH", cache_path
+        ):
+            tps, source = MODULE.probe_tps(self._free("flaky"), MODULE.DEFAULT_CONFIG)
+        self.assertIsNone(tps)
+        self.assertIn("probe failed", source)
+        self.assertFalse(cache_path.exists())
 
 
 if __name__ == "__main__":

@@ -48,7 +48,6 @@ track or for parent-owned follow-up, but it does not replace routed fan-out.
    ./.kilo/model-router/route-subagents \
       --workflow <preset> \
       --task "<the user's workflow request>" \
-      --refresh \
       --run
    ```
 
@@ -133,6 +132,21 @@ confirmed-sufficient routes rather than being pushed behind them. Subscription /
 account-priced routes keep their real per-task cost (they still burn a token
 budget), so a smaller model wins over a large one at a similar effective price;
 on an effective-cost tie a subscription route is preferred over a PAYG one.
+
+Before a selected free route is used, the router sanity-checks its sustained
+throughput with a short probe (an OpenAI-compatible chat completion that asks
+for roughly a thousand characters of output, capped by `tpsProbe.maxTokens`),
+and re-selects the next best route when the measured tokens/sec stays below
+`tpsProbe.minTps` (default 20). Probe results are cached under
+`~/.cache/kilo/model-router/tps.json` for `tpsProbe.cacheMinutes` (default 60)
+so warm startups stay fast; unmeasurable routes (no endpoint, no key, probe
+error) never block selection. The probe times out after
+`min(tpsProbe.timeoutSeconds, tpsProbe.probeCharacters / tpsProbe.minTps)`
+seconds (50s by default) and a timed-out route is cached at 0 tokens/sec, so it
+stays excluded for the cache window instead of being re-probed. If every free
+route is too slow, selection falls back to the next cheapest qualifying route,
+paid if necessary, and warns.
+Tune or disable via the `tpsProbe` section of `.kilo/model-router/config`.
 
 Standard read-only workers run from temporary repository copies, so an agent
 that ignores its prompt cannot modify the parent worktree. `--allow-edits` is

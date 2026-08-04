@@ -134,7 +134,7 @@ def build_plan(
         track_candidates = copy.deepcopy(candidates)
         sensitive = router.is_sensitive(track["task"], profile_name)
         try:
-            selected = router.select_candidate(
+            selected, tps_warnings = router.select_with_tps_guard(
                 track_candidates,
                 profile,
                 config,
@@ -145,9 +145,11 @@ def build_plan(
             if not require_distinct_routes:
                 raise
             warnings.append(f"route diversity unavailable for track {track['id']}; reused the best available route")
-            selected = router.select_candidate(track_candidates, profile, config, sensitive)
+            selected, tps_warnings = router.select_with_tps_guard(track_candidates, profile, config, sensitive)
+        warnings.extend(tps_warnings)
         used_routes.add(selected.route)
         selection = router.report(selected, profile_name, profile, aa_status, sensitive)
+        selection["tps"] = router.cached_tps(selected.route, config)
         selection.update(
             {
                 "track": track["id"],
@@ -312,7 +314,7 @@ def launch_with_failover(
         failovers.append({"from": route, "reason": kind, "cooldown_seconds": cooldown})
         candidates = copy.deepcopy(current["candidates"])
         try:
-            next_candidate = router.select_candidate(
+            next_candidate, _tps_warnings = router.select_with_tps_guard(
                 candidates,
                 current["profile"],
                 current["config"],
@@ -330,6 +332,7 @@ def launch_with_failover(
             current["selection"]["aa"],
             current["sensitive"],
         )
+        next_selection["tps"] = router.cached_tps(next_candidate.route, current["config"])
         next_selection.update(
             {
                 "track": track["id"],

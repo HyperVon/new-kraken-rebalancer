@@ -147,6 +147,16 @@ DEFAULT_CONFIG: dict[str, Any] = {
             "authenticationSeconds": 3600,
         },
     },
+    "tpsProbe": {
+        "enabled": True,
+        "onlyFree": True,
+        "minTps": 20,
+        "probeCharacters": 1000,
+        "maxTokens": 400,
+        "timeoutSeconds": 60,
+        "cacheMinutes": 60,
+        "maxProbesPerRun": 3,
+    },
     "providers": {
         "kilo": {
             "enabled": True,
@@ -162,11 +172,15 @@ DEFAULT_CONFIG: dict[str, Any] = {
             "enabled": True,
             "billing": "subscription/account-priced",
             "include": ["*"],
+            "probeEndpoint": "https://api.openai.com/v1/chat/completions",
+            "probeApiKeyEnv": "OPENAI_API_KEY",
         },
         "openrouter": {
             "enabled": True,
             "billing": "paid",
             "include": ["*"],
+            "probeEndpoint": "https://openrouter.ai/api/v1/chat/completions",
+            "probeApiKeyEnv": "OPENROUTER_API_KEY",
         },
         "nvidia": {
             "enabled": True,
@@ -174,6 +188,8 @@ DEFAULT_CONFIG: dict[str, Any] = {
             "freeOnly": True,
             "allowFree": True,
             "include": ["*"],
+            "probeEndpoint": "https://integrate.api.nvidia.com/v1/chat/completions",
+            "probeApiKeyEnv": "NVIDIA_API_KEY",
         },
         "ollama": {
             "enabled": False,
@@ -182,6 +198,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
             "freeOnly": True,
             "allowFree": True,
             "include": ["*"],
+            "probeEndpoint": "http://localhost:11434/v1/chat/completions",
         },
     },
     "models": {},
@@ -230,6 +247,7 @@ class Candidate:
     attachment: bool
     pdf: bool
     billing: str
+    api_url: str = ""
     aa: dict[str, Any] | None = None
     aa_match: str = "none"
     quality: float | None = None
@@ -779,6 +797,8 @@ def build_candidates(
         raw_variants = raw.get("variants", {})
         variants = dict(raw_variants) if isinstance(raw_variants, Mapping) else {}
         configured_variant = model_settings.get("variant")
+        api_info = raw.get("api")
+        api_url = str(api_info.get("url") or "") if isinstance(api_info, Mapping) else ""
         candidate = Candidate(
             route=route,
             provider=provider,
@@ -798,6 +818,7 @@ def build_candidates(
             reasoning=bool(capabilities.get("reasoning", False)),
             attachment=bool(capabilities.get("attachment", False)),
             pdf=bool(input_capabilities.get("pdf", False)) if isinstance(input_capabilities, Mapping) else False,
+            api_url=api_url,
             billing=("free" if provider_settings.get("freeOnly") else billing_class(route, provider_settings, model_settings)),
             free_allowed=bool(provider_settings.get("allowFree", False)),
             variants=variants,
@@ -992,6 +1013,302 @@ def select_variant(candidate: Candidate, profile: Mapping[str, Any]) -> None:
     candidate.variant = next(iter(candidate.variants))
 
 
+TPS_CACHE_PATH = Path.home() / ".cache" / "kilo" / "model-router" / "tps.json"
+
+# A generation of roughly 1000 characters, so the measured rate reflects
+# sustained throughput instead of first-token latency.
+TPS_PROBE_PROMPT = (
+    "Write a clear technical explanation of how an automated portfolio "
+    "rebalancer detects allocation deviations and places orders, in plain "
+    "English, at least one thousand characters long. Do not stop early."
+)
+
+
+def read_tps_cache() -> dict[str, dict[str, Any]]:
+    try:
+        return json.loads(TPS_CACHE_PATH.read_text())
+    except (OSError, ValueError):
+        return {}
+
+
+def write_tps_cache(cache: Mapping[str, Any]) -> None:
+    try:
+        TPS_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        TPS_CACHE_PATH.write_text(json.dumps(dict(cache), indent=2))
+    except OSError:
+        pass
+
+
+def cached_tps(route: str, config: Mapping[str, Any]) -> float | None:
+    """Fresh cached tokens/sec for a route, or None when absent or stale."""
+    cache_minutes = float(config.get("tpsProbe", {}).get("cacheMinutes", 60))
+    if cache_minutes <= 0:
+        return None
+    entry = read_tps_cache().get(route)
+    if not entry:
+        return None
+    try:
+        if time.time() - float(entry["measured_at"]) > cache_minutes * 60:
+            return None
+        return float(entry["tps"])
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+AUTH_STORE_PATH = Path.home() / ".local" / "share" / "kilo" / "auth.json"
+KILO_CONFIG_PATHS = (
+    Path.home() / ".config" / "kilo" / "kilo.jsonc",
+    Path.home() / ".config" / "kilo" / "kilo.json",
+)
+
+
+def _endpoint_for(candidate: Candidate) -> str:
+    base = candidate.api_url.strip().rstrip("/")
+    if not base:
+        return ""
+    if base.endswith("/chat/completions"):
+        return base
+    return f"{base}/chat/completions"
+
+
+def _auth_store_key(provider: str) -> str | None:
+    names = (provider, "opencode") if provider == "opencode-go" else (provider,)
+    try:
+        data = json.loads(AUTH_STORE_PATH.read_text())
+    except (OSError, ValueError):
+        return None
+    for name in names:
+        entry = data.get(name)
+        if not isinstance(entry, dict):
+            continue
+        secret = entry.get("key") if entry.get("type") == "api" else entry.get("access")
+        if isinstance(secret, str) and secret and secret != "0":
+            return secret
+    return None
+
+
+def _load_jsonc(path: Path) -> Any:
+    try:
+        raw = path.read_text()
+    except OSError:
+        return None
+    try:
+        return json.loads(raw)
+    except ValueError:
+        pass
+    stripped = re.sub(r"(^|[\s\[{,])//.*", r"\1", raw, flags=re.M)
+    stripped = re.sub(r",\s*([}\]])", r"\1", stripped)
+    try:
+        return json.loads(stripped)
+    except ValueError:
+        return None
+
+
+def _config_api_key(provider: str) -> str | None:
+    for path in KILO_CONFIG_PATHS:
+        data = _load_jsonc(path)
+        if not isinstance(data, dict):
+            continue
+        provider_config = data.get("provider", {}).get(provider)
+        if not isinstance(provider_config, dict):
+            continue
+        options = provider_config.get("options")
+        if isinstance(options, dict):
+            key = options.get("apiKey")
+            if isinstance(key, str) and key and key != "0":
+                return key
+    return None
+
+
+def _is_timeout(error: Exception) -> bool:
+    if isinstance(error, TimeoutError):
+        return True
+    return isinstance(error, urllib.error.URLError) and isinstance(getattr(error, "reason", None), TimeoutError)
+
+
+def probe_tps(candidate: Candidate, config: Mapping[str, Any]) -> tuple[float | None, str]:
+    """Measure sustained tokens/sec for a candidate's route.
+
+    Uses the provider's OpenAI-compatible chat endpoint. Returns (tps, source);
+    tps is None when the route has no probe endpoint, no API key, or the probe
+    failed — an unknown measurement never blocks selection.
+    """
+    cached = cached_tps(candidate.route, config)
+    if cached is not None:
+        return cached, "cache"
+    probe = config.get("tpsProbe", {})
+    provider = config.get("providers", {}).get(candidate.provider, {})
+    endpoint = provider.get("probeEndpoint") or _endpoint_for(candidate)
+    if not endpoint:
+        return None, "no probe endpoint"
+    key_env = provider.get("probeApiKeyEnv")
+    api_key = os.environ.get(key_env) if key_env else None
+    if not api_key:
+        api_key = _auth_store_key(candidate.provider)
+    if not api_key:
+        api_key = _config_api_key(candidate.provider)
+    headers = {"Content-Type": "application/json"}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    body = {
+        "model": candidate.model,
+        "messages": [{"role": "user", "content": TPS_PROBE_PROMPT}],
+        "max_tokens": int(probe.get("maxTokens", 400)),
+        "stream": False,
+    }
+    request = urllib.request.Request(
+        endpoint, data=json.dumps(body).encode(), headers=headers, method="POST"
+    )
+    min_tps = float(probe.get("minTps", 20))
+    probe_chars = float(probe.get("probeCharacters", 1000))
+    timeout = float(probe.get("timeoutSeconds", 60))
+    if min_tps > 0 and probe_chars > 0:
+        timeout = min(timeout, probe_chars / min_tps)
+    started = time.monotonic()
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            payload = json.loads(response.read().decode())
+    except (urllib.error.URLError, OSError, ValueError) as error:
+        if _is_timeout(error):
+            if float(probe.get("cacheMinutes", 60)) > 0:
+                cache = read_tps_cache()
+                cache[candidate.route] = {"tps": 0.0, "measured_at": time.time(), "model": candidate.model}
+                write_tps_cache(cache)
+            return 0.0, "timeout"
+        return None, f"probe failed ({type(error).__name__})"
+    elapsed = time.monotonic() - started
+    usage = payload.get("usage")
+    tokens = usage.get("completion_tokens") if isinstance(usage, dict) else None
+    if tokens is None:
+        content = (payload.get("choices") or [{}])[0].get("message", {}).get("content") or ""
+        tokens = max(1, len(content) // 4)
+    if elapsed <= 0 or not isinstance(tokens, (int, float)) or tokens <= 0:
+        return None, "probe produced no measurable output"
+    tps = round(float(tokens) / elapsed, 2)
+    if float(probe.get("cacheMinutes", 60)) > 0:
+        cache = read_tps_cache()
+        cache[candidate.route] = {"tps": tps, "measured_at": time.time(), "model": candidate.model}
+        write_tps_cache(cache)
+    return tps, "probe"
+
+
+def select_with_tps_guard(
+    candidates: Sequence[Candidate],
+    profile: Mapping[str, Any],
+    config: Mapping[str, Any],
+    sensitive: bool,
+    excluded_routes: set[str] | None = None,
+    excluded_providers: set[str] | None = None,
+) -> tuple[Candidate, list[str]]:
+    """select_candidate plus a live throughput sanity probe for free routes.
+
+    When tpsProbe is enabled and the selected route is a free-billing route
+    with a probe endpoint, measure sustained tokens/sec (~1000-character
+    generation). Routes below tpsProbe.minTps are excluded and the next best
+    is chosen, bounded by tpsProbe.maxProbesPerRun. Unknown measurements
+    never block. If every free route falls below the threshold, the next
+    cheapest qualifying route (typically paid) is selected; if only slow
+    free routes remain, the best available is kept with a warning instead of
+    failing the run.
+    """
+    warnings: list[str] = []
+    probe = config.get("tpsProbe", {})
+    enabled = bool(probe.get("enabled", True))
+    max_probes = max(0, int(probe.get("maxProbesPerRun", 3)))
+    only_free = bool(probe.get("onlyFree", True))
+    min_tps = float(probe.get("minTps", 20))
+    excluded = set(excluded_routes or ())
+    probe_excluded: set[str] = set()
+
+    if not enabled or max_probes <= 0:
+        return (
+            select_candidate(
+                candidates,
+                profile,
+                config,
+                sensitive,
+                excluded_routes=excluded,
+                excluded_providers=excluded_providers,
+            ),
+            warnings,
+        )
+
+    for _ in range(max_probes):
+        try:
+            selected = select_candidate(
+                candidates,
+                profile,
+                config,
+                sensitive,
+                excluded_routes=excluded | probe_excluded,
+                excluded_providers=excluded_providers,
+            )
+        except RouterError:
+            # Probing excluded every remaining candidate: keep the best
+            # available route rather than fail the run.
+            warnings.append(
+                "no qualifying route outside the probed-slow free routes; kept the best available route"
+            )
+            return (
+                select_candidate(
+                    candidates,
+                    profile,
+                    config,
+                    sensitive,
+                    excluded_routes=excluded,
+                    excluded_providers=excluded_providers,
+                ),
+                warnings,
+            )
+        if only_free and selected.billing != "free":
+            if probe_excluded:
+                warnings.append(
+                    "free routes fell below the tps threshold; selected the next cheapest qualifying route"
+                )
+            return selected, warnings
+        if not config.get("providers", {}).get(selected.provider, {}).get("probeEndpoint"):
+            return selected, warnings
+        tps, _source = probe_tps(selected, config)
+        if tps is None:
+            return selected, warnings
+        if tps >= min_tps:
+            return selected, warnings
+        warnings.append(
+            f"free route {selected.route} measured {tps:g} tps (below the {min_tps:g} minimum); trying the next best route"
+        )
+        probe_excluded.add(selected.route)
+
+    free_routes = {candidate.route for candidate in candidates if candidate.billing == "free"}
+    warnings.append(
+        "free routes fell below the tps threshold; selected the next cheapest qualifying route"
+    )
+    try:
+        return (
+            select_candidate(
+                candidates,
+                profile,
+                config,
+                sensitive,
+                excluded_routes=excluded | free_routes,
+                excluded_providers=excluded_providers,
+            ),
+            warnings,
+        )
+    except RouterError:
+        warnings.append("no qualifying route outside the slow free routes; kept the best available free route")
+        return (
+            select_candidate(
+                candidates,
+                profile,
+                config,
+                sensitive,
+                excluded_routes=excluded | probe_excluded,
+                excluded_providers=excluded_providers,
+            ),
+            warnings,
+        )
+
+
 def select_candidate(
     candidates: Sequence[Candidate],
     profile: Mapping[str, Any],
@@ -1083,6 +1400,7 @@ def report(
             "source": candidate.quota_source,
         },
         "aa": aa_status,
+        "tps": None,
         "free_route_guard": "blocked by prompt guard" if sensitive else "allowed by prompt guard",
         "context_limit": candidate.context_limit,
         "tool_call": candidate.tool_call,
@@ -1100,8 +1418,10 @@ def load_selection_context(args: argparse.Namespace) -> dict[str, Any]:
     profile_name, profile = profile_config(config, args.profile, task)
     candidates = build_candidates(raw_models, config, aa_models, quota_snapshot)
     sensitive = is_sensitive(task, profile_name)
-    selected = select_candidate(candidates, profile, config, sensitive)
+    selected, tps_warnings = select_with_tps_guard(candidates, profile, config, sensitive)
+    warnings.extend(tps_warnings)
     result = report(selected, profile_name, profile, aa_status, sensitive)
+    result["tps"] = cached_tps(selected.route, config)
     result["config"] = str(config_path)
     result["warnings"] = warnings
     result["aa_matches"] = sum(candidate.aa is not None for candidate in candidates)
@@ -1262,6 +1582,9 @@ def print_selection(result: Mapping[str, Any], stream: Any = sys.stdout) -> None
     remaining = quota["remaining_percent"]
     remaining_text = f"{remaining:.1f}%" if remaining is not None else "unknown"
     print(f"Quota: {quota['state']} ({remaining_text}; {quota['source']})", file=stream)
+    tps = result.get("tps")
+    if tps is not None:
+        print(f"Measured throughput: {tps:g} tokens/sec", file=stream)
     print(f"Free-route guard: {result['free_route_guard']}", file=stream)
     print(f"Artificial Analysis data: {result['aa']}", file=stream)
     for warning in result.get("warnings", []):
@@ -1384,7 +1707,7 @@ def main() -> int:
         )
         candidates = copy.deepcopy(context["candidates"])
         try:
-            next_candidate = select_candidate(
+            next_candidate, _tps_warnings = select_with_tps_guard(
                 candidates,
                 context["profile"],
                 context["config"],
@@ -1401,6 +1724,7 @@ def main() -> int:
             result["aa"],
             context["sensitive"],
         )
+        result["tps"] = cached_tps(next_candidate.route, context["config"])
         result["warnings"] = context["warnings"]
     return 1
 

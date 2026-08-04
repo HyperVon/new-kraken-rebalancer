@@ -21,6 +21,16 @@
       "authenticationSeconds": 3600
     }
   },
+  "tpsProbe": {
+    "enabled": true,
+    "onlyFree": true,
+    "minTps": 20,
+    "probeCharacters": 1000,
+    "maxTokens": 400,
+    "timeoutSeconds": 60,
+    "cacheMinutes": 60,
+    "maxProbesPerRun": 3
+  },
   "providers": {
     "kilo": {
       "enabled": true,
@@ -35,19 +45,25 @@
     "openai": {
       "enabled": true,
       "billing": "subscription/account-priced",
-      "include": ["*"]
+      "include": ["*"],
+      "probeEndpoint": "https://api.openai.com/v1/chat/completions",
+      "probeApiKeyEnv": "OPENAI_API_KEY"
     },
     "openrouter": {
       "enabled": true,
       "billing": "paid",
-      "include": ["*"]
+      "include": ["*"],
+      "probeEndpoint": "https://openrouter.ai/api/v1/chat/completions",
+      "probeApiKeyEnv": "OPENROUTER_API_KEY"
     },
     "nvidia": {
       "enabled": true,
       "billing": "free",
       "freeOnly": true,
       "allowFree": true,
-      "include": ["*"]
+      "include": ["*"],
+      "probeEndpoint": "https://integrate.api.nvidia.com/v1/chat/completions",
+      "probeApiKeyEnv": "NVIDIA_API_KEY"
     },
     "ollama": {
       "enabled": true,
@@ -55,7 +71,8 @@
       "billing": "free",
       "freeOnly": true,
       "allowFree": true,
-      "include": ["*"]
+      "include": ["*"],
+      "probeEndpoint": "http://localhost:11434/v1/chat/completions"
     }
   },
   "models": {

@@ -34,6 +34,20 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Selection speed**: provider catalogs are cached for two hours per provider
   and Artificial Analysis auto-matches are cached by model, cutting probe/select
   time from ~31s to ~2.5s warm with identical selection results.
+- **Throughput probing for free routes**: the router now sanity-checks a
+  selected free route's sustained tokens/sec with a real generation of roughly
+  1000 characters (capped by `tpsProbe.maxTokens`). Routes measured below
+  `tpsProbe.minTps` (default 20) are skipped and the next best route is
+  selected, falling back to the next cheapest qualifying route — paid if
+  necessary — with a warning when every free route is too slow. Probes time out
+  after `min(tpsProbe.timeoutSeconds, tpsProbe.probeCharacters / tpsProbe.minTps)`
+  seconds (50s by default), and a timed-out route is cached at 0 tokens/sec so
+  it stays excluded for the cache window instead of being re-probed. Results
+  are cached for `tpsProbe.cacheMinutes` (default 60) in
+  `~/.cache/kilo/model-router/tps.json`; keys resolve from the environment,
+  the Kilo auth store (`~/.local/share/kilo/auth.json`), or the Kilo
+  configuration's per-provider `apiKey`, and unmeasurable routes never block
+  selection.
 
 ### Fixed
 
@@ -60,6 +74,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   (`quick-review`, `detailed-review`) start the `ask` agent, every other profile
   starts the `code` agent (replacing an invalid `build` agent name that fell
   back to Ask mode). An explicit `--agent` flag overrides the inference.
+- **Stale-only refresh by default**: route-subagents examples no longer pass
+  `--refresh`, since the router already re-fetches route metadata when the
+  per-provider catalog (2h) or Artificial Analysis snapshot (24h) cache is
+  stale; the flag remains available to force a re-fetch.
 
 ## [6.16.11] - 2026-08-03
 
