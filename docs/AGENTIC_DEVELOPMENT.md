@@ -326,12 +326,23 @@ requirements from the prompt. Available profiles are:
 
 | Profile | Use for |
 | :--- | :--- |
-| `routine` | Summaries, formatting, lookups, and simple documentation/status tasks |
-| `coding` | Implementation, bugs, tests, refactoring, builds, and Gradle |
+| `trivial` | One-line renames, formatting, summaries, and trivial lookups |
+| `routine` | Light maintenance: typos, comments, small fixes, simple docs/status tasks |
+| `coding` | Implementation, bugs, tests, builds, and Gradle |
+| `complex-coding` | Refactors, algorithms, concurrency, performance, and deeply-coupled code |
 | `agentic` | Complex multi-step reasoning and tool use |
-| `review` | Documentation, instruction, model-selection, and source-contract audits |
+| `quick-review` | Documentation, instruction, and source-contract audits |
+| `detailed-review` | Deeper security, architecture, and adversarial review of shipped code |
 | `critical` | Security, credentials, trading, financial, architecture, or adversarial work |
 | `auto` | Automatic profile inference from the prompt |
+
+Profile inference is ordered critical → review → complex-coding → coding →
+routine → trivial, so deliberation tasks (review, audit, documentation,
+analysis, workflow, delegation) resolve to a `review` profile even when their
+prompt also mentions code — a code review is held to the review intelligence
+minimum, not the lower coding floor. `/code-review`-style invocations and
+security/architecture audits resolve to `detailed-review`; lighter audits to
+`quick-review`.
 
 Examples:
 
@@ -347,22 +358,34 @@ The router still selects the provider/model using capability, cost, quota, and
 availability.
 
 When the provider catalog exposes variants, the profile also selects reasoning
-effort: routine prefers low/medium, coding medium/high, agentic high, review
-xhigh/max, and critical max/xhigh, with model-specific fallbacks. Headless
+effort: trivial/routine prefer low/medium, coding medium/high, complex-coding/
+agentic high/thinking, and quick-review/detailed-review/critical xhigh/max, with
+model-specific fallbacks. Headless
 workers receive `--variant`; the full TUI uses a temporary agent configuration
 overlay because its top-level CLI has no variant flag. The project config is not
-modified. Review and critical profiles prioritize capability evidence while
-keeping eligible free routes available; only explicit blacklist patterns exclude
-models or providers.
+modified. Detailed-review and critical profiles prioritize capability evidence
+while keeping eligible free routes available; only explicit blacklist patterns
+exclude models or providers.
 
 The default policy selects the lowest-cost route that satisfies the selected
 profile's capability, reasoning, tool, context, quota, and privacy requirements.
 A route is only considered when its capability is assessable and meets the
 profile minimum — models whose capability is unknown or cannot be assessed are
-never selected. Among eligible routes, effective cost decides, then highest
-available quota (headroom / load spreading), then higher capability as a
-tiebreak. Eligible free routes therefore outrank more expensive paid routes even
-when the paid route is more capable; quota headroom breaks cost ties.
+never selected. Among eligible routes, effective cost decides, then smallest
+capability headroom above the profile minimum (so a just-sufficient small/fast
+model wins a trivial task, yet a genuinely strong model wins where the minimum
+is high), then an already-paid subscription over PAYG, then higher available
+quota (headroom / load spreading) as a tiebreak. High-risk profiles
+(`detailed-review`, `critical`) add a margin above their minimum, so security
+and money work never routes to a barely adequate model. Eligible free routes
+therefore outrank more expensive paid routes even when the paid route is more
+capable; quota headroom breaks cost ties. Free routes whose quota state is
+`unknown` (the quota plugin does not meter free models) are treated as usable
+and compete on cost like confirmed-sufficient routes. Subscription /
+account-priced routes keep their real per-task cost (they still burn a token
+budget), so a smaller model wins
+over a large one at a similar effective price; on an effective-cost tie a
+subscription route is preferred over a PAYG one.
 
 Known `/skillname` references are resolved to `.agents/skills/<skillname>/SKILL.md`
 and the file is explicitly included in the main session's initial instructions.

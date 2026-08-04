@@ -6,6 +6,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.16.12] - 2026-08-04
+
+### Changed
+
+- **Profile grid**: routing now uses an 8-profile grid (`trivial`, `routine`,
+  `coding`, `complex-coding`, `agentic`, `quick-review`, `detailed-review`,
+  `critical`) with type-specific Artificial Analysis minimums raised toward the
+  profile median, a margin added for high-risk (`complex-coding`, `agentic`,
+  `detailed-review`, `critical`) work so security/money tasks never route to a
+  barely-adequate model, and difficulty-matched ranking that prefers the
+  smallest just-sufficient model at the lowest cost.
+- **Profile inference**: task classification was rewritten to map into the new
+  grid — deliberation tasks (review/audit/documentation/analysis) resolve to
+  `quick-review` or `detailed-review`, security/architecture/money to
+  `critical`, and refactor/algorithm/concurrency work to `complex-coding`.
+- **Local model routing**: added an `ollama` provider (local, `requiresAuth:
+  false`, free) with per-model Artificial Analysis slug and real context-window
+  overrides in `.kilo/model-router/config`, so local models compete on the
+  free/cost basis when their genuine scores clear a profile floor.
+- **Ranking documentation**: docs now describe cost-first, difficulty-headroom,
+  subscription-over-PAYG, quota-headroom, and unknown-quota-free-model ordering,
+  plus the free-billing unknown-quota handling and real per-task cost for
+  subscription/account-priced routes.
+
 ## [6.16.11] - 2026-08-03
 
 ### Changed

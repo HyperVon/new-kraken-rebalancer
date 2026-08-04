@@ -48,9 +48,30 @@
       "freeOnly": true,
       "allowFree": true,
       "include": ["*"]
+    },
+    "ollama": {
+      "enabled": true,
+      "requiresAuth": false,
+      "billing": "free",
+      "freeOnly": true,
+      "allowFree": true,
+      "include": ["*"]
     }
   },
-  "models": {},
+  "models": {
+    "ollama/gpt-oss:20b": {
+      "aaSlug": "gpt-oss-20b",
+      "contextLimit": 131072
+    },
+    "ollama/gemma4:12b": {
+      "aaSlug": "gemma-4-12b",
+      "contextLimit": 262144
+    },
+    "ollama/qwen3-coder:30b": {
+      "aaSlug": "qwen3-coder-next",
+      "contextLimit": 262144
+    }
+  },
   "blacklist": {
     "models": ["minimax-m2.7", "*claude*", "*anthropic*", "*gpt-5-6-sol*"],
     "providers": []

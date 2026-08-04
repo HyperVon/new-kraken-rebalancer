@@ -35,26 +35,46 @@ AA_BASE_URL = "https://artificialanalysis.ai/api/v2"
 MAX_FAILOVER_ATTEMPTS = 3
 
 DEFAULT_PROFILES: dict[str, dict[str, Any]] = {
-    "routine": {
-        "metric": "artificial_analysis_coding_index",
-        "minimum": 10,
+    "trivial": {
+        "metric": "artificial_analysis_intelligence_index",
+        "minimum": 24,
         "context": 32_000,
         "input_tokens": 4_000,
         "output_tokens": 1_500,
         "variantPreference": ["low", "medium", "none", "instant"],
     },
+    "routine": {
+        "metric": "artificial_analysis_coding_index",
+        "minimum": 30,
+        "context": 32_000,
+        "input_tokens": 6_000,
+        "output_tokens": 2_000,
+        "variantPreference": ["low", "medium", "none", "instant"],
+    },
     "coding": {
         "metric": "artificial_analysis_coding_index",
-        "minimum": 20,
+        "minimum": 45,
         "secondary": {"artificial_analysis_agentic_index": 15},
         "context": 64_000,
         "input_tokens": 10_000,
         "output_tokens": 4_000,
         "variantPreference": ["medium", "high", "thinking", "max", "xhigh"],
     },
+    "complex-coding": {
+        "metric": "artificial_analysis_coding_index",
+        "minimum": 55,
+        "margin": 5,
+        "secondary": {"artificial_analysis_agentic_index": 20},
+        "requiresReasoning": True,
+        "context": 96_000,
+        "input_tokens": 12_000,
+        "output_tokens": 5_000,
+        "variantPreference": ["xhigh", "max", "high", "thinking", "medium"],
+    },
     "agentic": {
         "metric": "artificial_analysis_agentic_index",
-        "minimum": 25,
+        "minimum": 30,
+        "margin": 5,
         "secondary": {"artificial_analysis_coding_index": 15},
         "requiresReasoning": True,
         "context": 64_000,
@@ -62,22 +82,37 @@ DEFAULT_PROFILES: dict[str, dict[str, Any]] = {
         "output_tokens": 5_000,
         "variantPreference": ["high", "thinking", "max", "xhigh", "medium"],
     },
-    "review": {
+    "quick-review": {
         "metric": "artificial_analysis_intelligence_index",
-        "minimum": 30,
+        "minimum": 34,
         "secondary": {
-            "artificial_analysis_agentic_index": 25,
+            "artificial_analysis_agentic_index": 20,
             "artificial_analysis_coding_index": 20,
         },
         "requiresReasoning": True,
         "context": 96_000,
         "input_tokens": 16_000,
         "output_tokens": 8_000,
+        "variantPreference": ["high", "xhigh", "max", "thinking", "medium"],
+    },
+    "detailed-review": {
+        "metric": "artificial_analysis_intelligence_index",
+        "minimum": 40,
+        "margin": 5,
+        "secondary": {
+            "artificial_analysis_agentic_index": 25,
+            "artificial_analysis_coding_index": 20,
+        },
+        "requiresReasoning": True,
+        "context": 128_000,
+        "input_tokens": 16_000,
+        "output_tokens": 8_000,
         "variantPreference": ["xhigh", "max", "high", "thinking", "medium"],
     },
     "critical": {
         "metric": "artificial_analysis_intelligence_index",
-        "minimum": 35,
+        "minimum": 45,
+        "margin": 5,
         "secondary": {"artificial_analysis_agentic_index": 25},
         "requiresReasoning": True,
         "context": 128_000,
@@ -132,6 +167,14 @@ DEFAULT_CONFIG: dict[str, Any] = {
         },
         "nvidia": {
             "enabled": True,
+            "billing": "free",
+            "freeOnly": True,
+            "allowFree": True,
+            "include": ["*"],
+        },
+        "ollama": {
+            "enabled": False,
+            "requiresAuth": False,
             "billing": "free",
             "freeOnly": True,
             "allowFree": True,
@@ -487,6 +530,12 @@ def integer(value: Any) -> int:
     return int(value) if isinstance(value, (int, float)) else 0
 
 
+def effective_minimum(profile: Mapping[str, Any]) -> float:
+    minimum = number(profile.get("minimum")) or 0.0
+    margin = number(profile.get("margin")) or 0.0
+    return minimum + margin
+
+
 def model_is_allowed(
     route: str,
     model: str,
@@ -554,7 +603,11 @@ def build_candidates(
             input_cost=input_cost,
             output_cost=output_cost,
             cache_read_cost=number(cache.get("read")) if isinstance(cache, Mapping) else None,
-            context_limit=integer(raw.get("limit", {}).get("context")) if isinstance(raw.get("limit"), Mapping) else 0,
+            context_limit=integer(model_settings.get("contextLimit", raw.get("limit", {}).get("context")))
+            if isinstance(model_settings, Mapping)
+            else integer(raw.get("limit", {}).get("context"))
+            if isinstance(raw.get("limit"), Mapping)
+            else 0,
             output_limit=integer(raw.get("limit", {}).get("output")) if isinstance(raw.get("limit"), Mapping) else 0,
             tool_call=bool(capabilities.get("toolcall", capabilities.get("tool_call", False))),
             reasoning=bool(capabilities.get("reasoning", False)),
@@ -576,17 +629,31 @@ def build_candidates(
 def infer_profile(task: str) -> str:
     lowered = task.lower()
     critical = ("security", "credential", "secret", "trading", "money", "financial", "architecture", "adversarial")
-    routine = ("format", "rename", "summarize", "summary", "list", "status", "lookup", "find ", "simple")
-    coding = ("code", "bug", "fix", "test", "refactor", "build", "gradle", "compile", "implement", "edit")
     if any(term in lowered for term in critical):
         return "critical"
-    if any(term in lowered for term in routine) and not any(term in lowered for term in coding):
-        return "routine"
+    # Deliberation tasks (review/audit/analysis/documentation) demand a higher reasoning
+    # bar and take precedence over coding terms: "/code-review" must not drop to the
+    # coding floor just because the task mentions "code".
+    review = ("review", "audit", "documentation", "analysis", "analyze", "instructions", "workflow", "delegate")
+    review_detailed = ("audit", "architecture", "security", "comprehensive", "thorough", "deep ", "code-review", "code review", "design review", "documentation review")
+    if any(term in lowered for term in review):
+        if any(term in lowered for term in review_detailed):
+            return "detailed-review"
+        return "quick-review"
+    # Complex/deeply-coupled programming work gets a higher coding bar than routine code edits.
+    complex_coding = ("refactor", "algorithm", "concurrency", "parallel", "optimize", "performance", "distributed", "scalable", "complex")
+    coding = ("code", "bug", "fix", "test", "debug", "build", "gradle", "compile", "implement", "edit", "investigate", "write")
+    if any(term in lowered for term in complex_coding):
+        return "complex-coding"
     if any(term in lowered for term in coding):
         return "coding"
-    review = ("review", "audit", "documentation", "analysis", "analyze", "instructions", "workflow", "delegate")
-    if any(term in lowered for term in review):
-        return "review"
+    # Light, low-reasoning maintenance vs trivial one-liners.
+    routine = ("typo", "comment", "docstring", "cleanup", "minor", "small", "update ")
+    trivial = ("format", "rename", "summarize", "summary", "list", "status", "lookup", "find ", "simple", "spell")
+    if any(term in lowered for term in routine):
+        return "routine"
+    if any(term in lowered for term in trivial):
+        return "trivial"
     return "agentic"
 
 
@@ -624,7 +691,11 @@ def apply_ranking_data(candidates: Iterable[Candidate], profile: Mapping[str, An
             candidate.estimated_token_cost = (
                 candidate.input_cost * input_tokens + candidate.output_cost * output_tokens
             ) / 1_000_000
-        if candidate.billing in {"free", "subscription", "subscription/account-priced", "account-priced"}:
+        # Only genuinely free billing is cost 0.0. Subscription / account-priced
+        # routes (e.g. a token budget on an OpenCode-Go subscription) still burn
+        # quota per task, so they keep their real per-task/estimated cost to let a
+        # smaller model win over a large one at the same effective price.
+        if candidate.billing == "free":
             candidate.effective_cost = 0.0
             candidate.effective_cost_source = candidate.billing
         elif policy.get("useAaCostPerTask", True) and candidate.aa_cost_per_task is not None:
@@ -674,11 +745,11 @@ def candidate_qualifies(candidate: Candidate, profile: Mapping[str, Any], config
     if candidate.billing == "paid" and not policy.get("allowPaid", True):
         candidate.rejection = "paid routes disabled by policy"
         return False
-    minimum = number(profile.get("minimum"))
+    minimum = effective_minimum(profile)
     if candidate.quality is None:
         candidate.rejection = "capability quality is unknown and cannot be assessed"
         return False
-    if minimum is not None and candidate.quality < minimum:
+    if candidate.quality < minimum:
         candidate.rejection = f"quality score {candidate.quality:g} is below {minimum:g}"
         return False
     secondary = profile.get("secondary", {})
@@ -730,12 +801,26 @@ def select_candidate(
     if not usable:
         raise RouterError("no candidate satisfies the current capability, cost, and privacy policy")
 
-    def sort_key(candidate: Candidate) -> tuple[int, float, float, float]:
-        unknown_quota = 1 if candidate.quota_state != "sufficient" else 0
+    def sort_key(candidate: Candidate) -> tuple[float, float, int, float, int]:
+        # Lowest effective cost wins; among (near-)equal-cost routes the profile
+        # minimum is the difficulty bar, so prefer the model with the SMALLEST
+        # capability headroom above it — a just-sufficient small/fast model for
+        # trivial tasks, yet a genuinely strong model where the bar is high.
+        # Then an already-paid subscription over PAYG, then higher quota headroom
+        # as a load-spread tiebreak. Free models are not quota-metered (report
+        # 'unknown'), so an unknown free quota never blocks them — free cost 0.0
+        # already ranks them first.
+        free = candidate.billing == "free"
+        unknown_quota = 0 if (candidate.quota_state == "sufficient" or free) else 1
         cost = candidate.effective_cost if candidate.effective_cost is not None else float("inf")
-        quota = candidate.quota_percent if candidate.quota_percent is not None else 0.0
         quality = candidate.quality if candidate.quality is not None else 0.0
-        return unknown_quota, cost, -quota, -quality
+        minimum = effective_minimum(profile)
+        headroom = quality - minimum
+        # Prefer an already-paid subscription/account-priced route over PAYG when
+        # cost and headroom tie (avoid marginal spend).
+        subscription = candidate.billing in {"subscription", "subscription/account-priced", "account-priced"}
+        quota = candidate.quota_percent if candidate.quota_percent is not None else 0.0
+        return cost, headroom, 0 if subscription else 1, -quota, unknown_quota
 
     selected = min(usable, key=sort_key)
     select_variant(selected, profile)

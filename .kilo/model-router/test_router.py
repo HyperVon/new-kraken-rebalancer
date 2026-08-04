@@ -182,7 +182,10 @@ class RouterTests(unittest.TestCase):
         self.assertEqual("critical", MODULE.infer_profile("Review the trading order execution path"))
 
     def test_task_profile_inference_uses_stronger_review_profile(self):
-        self.assertEqual("review", MODULE.infer_profile("Audit the documentation and agent instructions"))
+        self.assertEqual("detailed-review", MODULE.infer_profile("Audit the documentation and agent instructions"))
+
+    def test_code_review_task_uses_review_profile_not_coding(self):
+        self.assertEqual("detailed-review", MODULE.infer_profile("/code-review of this branch's changes vs main"))
 
     def test_free_route_guard_detects_secret_material(self):
         self.assertTrue(MODULE.is_sensitive("Read the API key from .env", "routine"))
@@ -210,6 +213,21 @@ class RouterTests(unittest.TestCase):
         with self.assertRaises(MODULE.RouterError):
             MODULE.select_candidate([unknown], profile, config, False)
 
+    def test_margin_excludes_barely_adequate_model_for_high_risk_profile(self):
+        below_margin = candidate("openrouter/weak", quality=32)
+        strong = candidate("openrouter/strong", quality=45)
+        profile = {"metric": "artificial_analysis_intelligence_index", "minimum": 30, "margin": 5}
+        config = {"policy": {"allowPaid": True, "allowFree": True}}
+        selected = MODULE.select_candidate([below_margin, strong], profile, config, False)
+        self.assertEqual("openrouter/strong", selected.route)
+
+    def test_margin_unchanged_for_regular_profile(self):
+        model = candidate("openrouter/model", quality=32)
+        profile = {"metric": "artificial_analysis_intelligence_index", "minimum": 30}
+        config = {"policy": {"allowPaid": True, "allowFree": True}}
+        selected = MODULE.select_candidate([model], profile, config, False)
+        self.assertEqual("openrouter/model", selected.route)
+
     def test_high_quota_preferred_when_cost_equal(self):
         low_quota = candidate("openai/a", quality=40, aa_cost=0.10)
         low_quota.quota_state = "sufficient"
@@ -221,6 +239,64 @@ class RouterTests(unittest.TestCase):
         config = {"policy": {"allowPaid": True, "allowFree": True}}
         selected = MODULE.select_candidate([low_quota, high_quota], profile, config, False)
         self.assertEqual("openrouter/b", selected.route)
+
+    def test_free_model_with_unknown_quota_is_usable_against_paid(self):
+        free = candidate("nvidia/free-model", billing="free", quality=40)
+        free.quota_state = "unknown"
+        free.quota_percent = None
+        free.effective_cost = 0.0
+        paid = candidate("openai/paid-model", quality=40, aa_cost=0.20)
+        paid.quota_state = "sufficient"
+        paid.quota_percent = 90.0
+        paid.effective_cost = 0.20
+        profile = {"metric": "artificial_analysis_intelligence_index", "minimum": 30}
+        config = {"policy": {"allowPaid": True, "allowFree": True}}
+        selected = MODULE.select_candidate([free, paid], profile, config, False)
+        self.assertEqual("nvidia/free-model", selected.route)
+
+    def test_paid_model_with_unknown_quota_deprioritized_behind_sufficient(self):
+        unknown_paid = candidate("openrouter/unknown-paid", quality=40, aa_cost=0.15)
+        unknown_paid.quota_state = "unknown"
+        unknown_paid.quota_percent = None
+        known_paid = candidate("openai/known-paid", quality=40, aa_cost=0.15)
+        known_paid.quota_state = "sufficient"
+        known_paid.quota_percent = 50.0
+        profile = {"metric": "artificial_analysis_intelligence_index", "minimum": 30}
+        config = {"policy": {"allowPaid": True, "allowFree": True}}
+        selected = MODULE.select_candidate([unknown_paid, known_paid], profile, config, False)
+        self.assertEqual("openai/known-paid", selected.route)
+
+    def test_subscription_uses_real_cost_smaller_model_wins_over_large(self):
+        small = candidate("opencode-go/small", billing="subscription/account-priced", quality=40, aa_cost=0.02)
+        small.quota_state = "sufficient"
+        large = candidate("opencode-go/kimi-k3", billing="subscription/account-priced", quality=55, aa_cost=0.40)
+        large.quota_state = "sufficient"
+        profile = {"metric": "artificial_analysis_intelligence_index", "minimum": 30}
+        config = {"policy": {"allowPaid": True, "allowFree": True, "useAaCostPerTask": True}}
+        selected = MODULE.select_candidate([large, small], profile, config, False)
+        self.assertEqual("opencode-go/small", selected.route)
+
+    def test_subscription_preferred_over_payg_on_cost_tie(self):
+        subscription = candidate("opencode-go/sub", billing="subscription/account-priced", quality=45, aa_cost=0.10)
+        subscription.quota_state = "sufficient"
+        payg = candidate("openrouter/payg", billing="paid", quality=45, aa_cost=0.10)
+        payg.quota_state = "sufficient"
+        profile = {"metric": "artificial_analysis_intelligence_index", "minimum": 30}
+        config = {"policy": {"allowPaid": True, "allowFree": True, "useAaCostPerTask": True}}
+        selected = MODULE.select_candidate([payg, subscription], profile, config, False)
+        self.assertEqual("opencode-go/sub", selected.route)
+
+    def test_free_unknown_quota_still_beats_subscription_with_real_cost(self):
+        free = candidate("nvidia/free-model", billing="free", quality=30)
+        free.quota_state = "unknown"
+        free.quota_percent = None
+        free.effective_cost = 0.0
+        subscription = candidate("opencode-go/sub", billing="subscription/account-priced", quality=45, aa_cost=0.20)
+        subscription.quota_state = "sufficient"
+        profile = {"metric": "artificial_analysis_intelligence_index", "minimum": 20}
+        config = {"policy": {"allowPaid": True, "allowFree": True, "useAaCostPerTask": True}}
+        selected = MODULE.select_candidate([subscription, free], profile, config, False)
+        self.assertEqual("nvidia/free-model", selected.route)
 
 
 if __name__ == "__main__":

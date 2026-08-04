@@ -101,23 +101,38 @@ credentials, and raw provider errors. Set `KILO_MODEL_ROUTER_REPORT_DIR` or pass
 `--report-dir` to choose another local destination.
 
 When a catalog exposes model variants, the selected profile chooses one instead
-of silently accepting the provider default: routine prefers low/medium,
-coding prefers medium/high, agentic prefers high, review prefers xhigh/max, and
-critical prefers max/xhigh, with model-specific fallbacks. Headless workers use
+of silently accepting the provider default: trivial/routine prefer low/medium,
+coding prefers medium/high, complex-coding/agentic prefer high/thinking, and
+quick-review/detailed-review/critical prefer xhigh/max, with model-specific
+fallbacks. Headless workers use
 `--variant`; the full TUI receives a temporary agent configuration overlay and
-does not modify the project config. Review and critical profiles prioritize
-capability evidence; free routes remain eligible when they satisfy the profile
-and policy. Only explicit blacklist patterns exclude models or providers.
+does not modify the project config. High-risk profiles (detailed-review,
+critical) prioritize capability evidence; free routes remain eligible when they
+satisfy the profile and policy. Only explicit blacklist patterns exclude models
+or providers.
 
 Ranking only considers candidates that satisfy every eligibility gate: sufficiently
 qualified (quality must be assessable and meet the profile minimum — routes whose
 capability is unknown or cannot be assessed are never considered), accessible and
 useable (active, tool-capable, quota not exhausted, policy-permitted and
-available). Among the eligible set, routes are ordered by lowest effective cost,
-then by highest available quota (to prefer headroom and spread load), then by
-higher quality as a tiebreak. A free or cheaper route (quality still above the
-minimum) therefore outranks a more expensive higher-quality route; quota headroom
-breaks cost ties.
+available). Profile inference classifies deliberation tasks (review, audit,
+documentation, analysis, workflow, delegation) as a `review` profile rather
+than `coding`, so a code review is held to a higher intelligence minimum.
+Among the eligible set, routes are ordered by lowest effective cost, then by
+smallest capability headroom above the profile minimum (so a just-sufficient
+small/fast model wins a trivial task, yet a genuinely strong model wins where
+the minimum is high), then by an already-paid subscription over PAYG, then by
+higher available quota (to prefer headroom and spread load), then by unknown
+quota deprioritized. High-risk profiles (`detailed-review`, `critical`) add a
+margin above their minimum, so security/money work never routes to a barely
+adequate model. A free or cheaper route (quality still above the minimum)
+therefore outranks a more expensive higher-quality route; quota headroom breaks
+cost ties. Free-billing models whose quota state is `unknown` (the quota plugin
+does not meter free models) are treated as usable and compete on cost like
+confirmed-sufficient routes rather than being pushed behind them. Subscription /
+account-priced routes keep their real per-task cost (they still burn a token
+budget), so a smaller model wins over a large one at a similar effective price;
+on an effective-cost tie a subscription route is preferred over a PAYG one.
 
 Standard read-only workers run from temporary repository copies, so an agent
 that ignores its prompt cannot modify the parent worktree. `--allow-edits` is
