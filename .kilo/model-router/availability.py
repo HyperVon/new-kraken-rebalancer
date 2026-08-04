@@ -12,6 +12,8 @@ import time
 from pathlib import Path
 from typing import Any, Mapping
 
+import fileio
+
 
 DEFAULT_COOLDOWN_PATH = Path.home() / ".cache" / "kilo" / "model-router" / "availability.json"
 
@@ -134,10 +136,7 @@ def _load_cooldowns(config: Mapping[str, Any]) -> dict[str, Any]:
 def _save_cooldowns(config: Mapping[str, Any], state: Mapping[str, Any]) -> None:
     path = _cooldown_path(config)
     try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        temporary = path.with_suffix(f"{path.suffix}.tmp")
-        temporary.write_text(json.dumps(state, indent=2), encoding="utf-8")
-        temporary.replace(path)
+        fileio.atomic_write(path, json.dumps(state, indent=2))
     except OSError:
         pass
 

@@ -406,9 +406,7 @@ class HistoryZoomTest : StringSpec() {
             val container = document.createElement("div")
             container.innerHTML = """<canvas id="portfolio-value-chart"></canvas>"""
             document.body!!.appendChild(container)
-            var capturedOptions: dynamic = null
             window.asDynamic().Chart = { _: dynamic, config: dynamic ->
-                capturedOptions = config.options
                 jsObject {
                     data = config.data
                     options = config.options
@@ -450,9 +448,7 @@ class HistoryZoomTest : StringSpec() {
             val container = document.createElement("div")
             container.innerHTML = """<canvas id="portfolio-value-chart"></canvas>"""
             document.body!!.appendChild(container)
-            var capturedOptions: dynamic = null
             window.asDynamic().Chart = { _: dynamic, config: dynamic ->
-                capturedOptions = config.options
                 jsObject {
                     data = config.data
                     options = config.options
@@ -548,9 +544,7 @@ class HistoryZoomTest : StringSpec() {
             val container = document.createElement("div")
             container.innerHTML = TestDomBuilders.zoomControlsDom("portfolio-value-chart")
             document.body!!.appendChild(container)
-            var capturedOptions: dynamic = null
             window.asDynamic().Chart = { _: dynamic, config: dynamic ->
-                capturedOptions = config.options
                 jsObject {
                     data = config.data
                     options = config.options
@@ -621,9 +615,7 @@ class HistoryZoomTest : StringSpec() {
             val container = document.createElement("div")
             container.innerHTML = """<canvas id="portfolio-value-chart"></canvas>"""
             document.body!!.appendChild(container)
-            var capturedOptions: dynamic = null
             window.asDynamic().Chart = { _: dynamic, config: dynamic ->
-                capturedOptions = config.options
                 jsObject {
                     data = config.data
                     options = config.options
@@ -662,9 +654,7 @@ class HistoryZoomTest : StringSpec() {
             val container = document.createElement("div")
             container.innerHTML = """<canvas id="portfolio-value-chart"></canvas>"""
             document.body!!.appendChild(container)
-            var capturedOptions: dynamic = null
             window.asDynamic().Chart = { _: dynamic, config: dynamic ->
-                capturedOptions = config.options
                 jsObject {
                     data = config.data
                     options = config.options
@@ -826,9 +816,7 @@ class HistoryZoomTest : StringSpec() {
                 ${TestDomBuilders.scrubberDom(disabled = true)}
             """.trimIndent()
             document.body!!.appendChild(container)
-            var capturedOptions: dynamic = null
             window.asDynamic().Chart = { _: dynamic, config: dynamic ->
-                capturedOptions = config.options
                 jsObject {
                     data = config.data
                     options = config.options

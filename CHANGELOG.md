@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.16.13] - 2026-08-04
+
+### Fixed
+
+- **Model router hygiene**: deduplicated the atomic file writer shared by
+  `route-kilo` and routed subagents into `.kilo/model-router/fileio.py` and
+  switched cooldown persistence to it, removing the non-atomic `.tmp`-suffix
+  race; `nvidia/minimaxai/minimax-m2.7` was added to the EOL model blacklist
+  after the launcher observed it answering end-of-life.
+- **History zoom tests**: removed six dead `capturedOptions` mock-capture
+  variables in `HistoryZoomTest.kt` that were assigned but never read.
+- **Duration constants**: `ONE_DAY_MS` moved from `ChartProps` into
+  `PrecisionConstants` alongside `ONE_HOUR_MS`, so zoom time-unit thresholds
+  live in one catalog.
+
 ## [6.16.12] - 2026-08-04
 
 ### Changed
