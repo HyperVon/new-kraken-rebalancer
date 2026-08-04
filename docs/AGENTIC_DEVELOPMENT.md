@@ -428,6 +428,14 @@ per-million-token catalog prices and task-profile estimates. Artificial Analysis
 model-to-route joins are accepted only when configured or sufficiently confident;
 unknown mappings remain visible in the selection report.
 
+When the Artificial Analysis endpoint is unreachable or the key is absent,
+the launcher falls back to the public OpenRouter
+[`/api/v1/models`](https://openrouter.ai/api/v1/models) benchmark feed, which
+publishes the same Artificial Analysis intelligence/coding/agentic indices for
+its hosted models. Those OpenRouter-sourced scores are used only as a
+secondary fallback (cached 24h, no key required) so that transient AA failures
+do not collapse every candidate to `capability quality is unknown`.
+
 The launcher does not store credentials or change the model inside an
 already-running TUI session. When installed, it consumes the quota plugin's
 secret-safe `status --json` and `show --json` output; fresh exhausted or
@@ -437,6 +445,15 @@ inspect future tool output, so secret files must remain excluded from the agent
 context. Use `--continue` to select a route for a new turn while continuing the
 last Kilo session. OpenRouter participates when its provider configuration or
 environment credential is detected, even if it is absent from `kilo auth list`.
+
+To choose a route without launching a full Kilo session, use the router's
+`select` subcommand (or add `--json` for machine-readable output):
+`python3 .kilo/model-router/router.py select --task "<prompt>"`. The default
+`run` subcommand both selects the route and then launches/streams the Kilo
+session for that task, so a slow `run` usually reflects the Kilo run itself —
+not the selection step. When no route qualifies, the error lists the top
+candidate-rejection reasons (quota, tool support, capability quality, etc.) to
+aid diagnosis of transient availability or configuration issues.
 
 Runtime `429`, credit, authentication, and provider-unavailable failures create
 only a user-cache cooldown for the affected route/provider. Routed read-only

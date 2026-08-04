@@ -463,6 +463,86 @@ def cache_path(config: Mapping[str, Any]) -> Path:
     return Path.home() / ".cache" / "kilo" / "model-router" / "aa-language-models.json"
 
 
+def openrouter_benchmarks_cache_path(config: Mapping[str, Any]) -> Path:
+    return Path.home() / ".cache" / "kilo" / "model-router" / "openrouter-benchmarks.json"
+
+
+_OR_INDEX_MAP = {
+    "intelligence_index": "artificial_analysis_intelligence_index",
+    "coding_index": "artificial_analysis_coding_index",
+    "agentic_index": "artificial_analysis_agentic_index",
+}
+
+
+def _synthesize_or_record(model_id: str, raw: Mapping[str, Any]) -> dict[str, Any]:
+    benchmarks = raw.get("benchmarks") if isinstance(raw, Mapping) else None
+    aa = benchmarks.get("artificial_analysis") if isinstance(benchmarks, Mapping) else None
+    indexed: dict[str, float] = {}
+    if isinstance(aa, Mapping):
+        for src, dst in _OR_INDEX_MAP.items():
+            value = number(aa.get(src))
+            if value is not None:
+                indexed[dst] = value
+    pricing = raw.get("pricing") if isinstance(raw, Mapping) else {}
+    return {
+        "slug": model_id,
+        "name": str(raw.get("name", model_id)) if isinstance(raw, Mapping) else model_id,
+        "evaluations": indexed,
+        "source": "openrouter",
+    }
+
+
+def load_openrouter_benchmarks(config: Mapping[str, Any], refresh: bool) -> tuple[dict[str, Any], str]:
+    settings = config.get("artificialAnalysis", {})
+    if not settings.get("enabled", True):
+        return {}, "disabled"
+    path = openrouter_benchmarks_cache_path(config)
+    cache_hours = float(settings.get("cacheHours", 24))
+    if not refresh and path.exists():
+        try:
+            cached = json.loads(path.read_text(encoding="utf-8"))
+            if time.time() - float(cached.get("fetchedAt", 0)) < cache_hours * 3600:
+                records = cached.get("models", [])
+                if records:
+                    return {r["slug"]: r for r in records if r.get("slug")}, "cached"
+        except (OSError, ValueError, TypeError, json.JSONDecodeError):
+            pass
+
+    records: list[dict[str, Any]] = []
+    try:
+        request = urllib.request.Request(
+            "https://openrouter.ai/api/v1/models",
+            headers={"Accept": "application/json"},
+        )
+        with urllib.request.urlopen(request, timeout=20) as response:
+            payload = json.load(response)
+        for raw in payload.get("data", []):
+            model_id = raw.get("id")
+            benchmarks = raw.get("benchmarks")
+            if not model_id or not isinstance(benchmarks, Mapping):
+                continue
+            if not benchmarks.get("artificial_analysis"):
+                continue
+            records.append(_synthesize_or_record(str(model_id), raw))
+    except (OSError, ValueError, KeyError, urllib.error.HTTPError):
+        if path.exists():
+            try:
+                cached = json.loads(path.read_text(encoding="utf-8"))
+                cached_records = cached.get("models", [])
+                if cached_records:
+                    return {r["slug"]: r for r in cached_records if r.get("slug")}, "fallback-after-fetch-failure"
+            except (OSError, ValueError, TypeError, json.JSONDecodeError):
+                pass
+        return {}, "unavailable"
+
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"fetchedAt": time.time(), "models": records}), encoding="utf-8")
+    except OSError:
+        pass
+    return {r["slug"]: r for r in records if r.get("slug")}, "fresh"
+
+
 def load_artificial_analysis(config: Mapping[str, Any], refresh: bool) -> tuple[dict[str, Any], str]:
     settings = config.get("artificialAnalysis", {})
     if not settings.get("enabled", True):
@@ -480,6 +560,9 @@ def load_artificial_analysis(config: Mapping[str, Any], refresh: bool) -> tuple[
     environment_name = str(settings.get("apiKeyEnv", "ARTIFICIAL_ANALYSIS_API_KEY"))
     api_key = os.environ.get(environment_name)
     if not api_key:
+        or_models, or_status = load_openrouter_benchmarks(config, refresh)
+        if or_models:
+            return or_models, f"{or_status} via openrouter (no AA key)"
         return {}, f"not configured ({environment_name} is unset)"
 
     models: list[dict[str, Any]] = []
@@ -499,11 +582,36 @@ def load_artificial_analysis(config: Mapping[str, Any], refresh: bool) -> tuple[
                 break
             page += 1
     except (OSError, ValueError, KeyError, urllib.error.HTTPError) as error:
+        if path.exists():
+            try:
+                cached = json.loads(path.read_text(encoding="utf-8"))
+                cached_models = cached.get("models", [])
+                if cached_models:
+                    return (
+                        {item["slug"]: item for item in cached_models if item.get("slug")},
+                        f"fallback-after-fetch-failure ({type(error).__name__})",
+                    )
+            except (OSError, ValueError, TypeError, json.JSONDecodeError):
+                pass
+        or_models, or_status = load_openrouter_benchmarks(config, refresh)
+        if or_models:
+            return or_models, f"{or_status} via openrouter (AA fetch failed: {type(error).__name__})"
         return {}, f"unavailable ({type(error).__name__})"
 
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps({"fetchedAt": time.time(), "models": models}), encoding="utf-8")
+        new_entry = {"fetchedAt": time.time(), "models": models}
+        existing_count = 0
+        if path.exists():
+            try:
+                existing_count = len(json.loads(path.read_text(encoding="utf-8")).get("models", []))
+            except (OSError, ValueError, TypeError, json.JSONDecodeError):
+                existing_count = 0
+        # Only persist the fresh fetch if it is at least as complete as the
+        # existing cache; a partial result that erodes a good cache would
+        # steadily degrade matching quality across refreshes.
+        if len(models) >= existing_count:
+            path.write_text(json.dumps(new_entry), encoding="utf-8")
     except OSError:
         pass
     return {item["slug"]: item for item in models if item.get("slug")}, "fresh"
@@ -709,7 +817,16 @@ def build_candidates(
 
 def infer_profile(task: str) -> str:
     lowered = task.lower()
-    critical = ("security", "credential", "secret", "trading", "money", "financial", "architecture", "adversarial")
+    critical = (
+        "security", "credential", "secret", "trading", "money", "financial",
+        "architecture", "adversarial",
+        # Live-money correctness for a trading rebalancer: partial fills,
+        # fund/balance accounting, order settlement, and reconciliation are
+        # high-stakes enough to warrant the critical floor (higher minimum +
+        # margin, and free routes are blocked for sensitive prompts).
+        "partial fill", "partial-fill", "funds", "funding",
+        "accounting", "reconcile", "reconciliation", "settlement",
+    )
     if any(term in lowered for term in critical):
         return "critical"
     # Deliberation tasks (review/audit/analysis/documentation) demand a higher reasoning
@@ -880,7 +997,18 @@ def select_candidate(
         and candidate_qualifies(candidate, profile, config, sensitive)
     ]
     if not usable:
-        raise RouterError("no candidate satisfies the current capability, cost, and privacy policy")
+        reasons: dict[str, int] = {}
+        for candidate in candidates:
+            if candidate.route in excluded_routes or candidate.provider in excluded_providers:
+                continue
+            candidate_qualifies(candidate, profile, config, sensitive)
+            if candidate.rejection:
+                reasons[candidate.rejection] = reasons.get(candidate.rejection, 0) + 1
+        detail = ""
+        if reasons:
+            summary = ", ".join(f"{reason} ({count} model{'s' if count != 1 else ''})" for reason, count in sorted(reasons.items(), key=lambda item: -item[1])[:5])
+            detail = f"; top rejection reasons: {summary}"
+        raise RouterError(f"no candidate satisfies the current capability, cost, and privacy policy{detail}")
 
     def sort_key(candidate: Candidate) -> tuple[float, float, int, float, int]:
         # Lowest effective cost wins; among (near-)equal-cost routes the profile

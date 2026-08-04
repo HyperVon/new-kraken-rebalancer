@@ -35,6 +35,27 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and Artificial Analysis auto-matches are cached by model, cutting probe/select
   time from ~31s to ~2.5s warm with identical selection results.
 
+### Fixed
+
+- **Resilient model selection when Artificial Analysis is unavailable**: the
+  launcher now falls back to the cached Artificial Analysis data set on a live
+  fetch failure (Free-tier `/free` endpoint rate-limiting/429 or network blip),
+  and to the public OpenRouter `/api/v1/models` benchmark feed (same
+  intelligence/coding/agentic indices, no key required, cached 24h) when no AA
+  cache exists. A failed live fetch no longer collapses every candidate to
+  "capability quality is unknown," so `./route-kilo` no longer reports "no
+  candidate satisfies the current capability, cost, and privacy policy" during
+  transient AA outages. A successful refresh also no longer overwrites a larger
+  existing cache with a partial result.
+- **Diagnostic selection errors**: when no candidate qualifies, the error now
+  lists the top rejection reasons by count (e.g. "reasoning support is not
+  advertised (112 models)"), and the `select` subcommand / `--json` flag surface
+  selection-only output without launching a streaming Kilo session.
+- **Money-safety critical inference**: money/trading-safety terms (partial fill,
+  funds/funding, accounting, reconcile/reconciliation, settlement) now classify
+  to the `critical` profile for this live-money rebalancer, so fund-loss and
+  partial-fill audits route to a higher-reasoning bar.
+
 ## [6.16.11] - 2026-08-03
 
 ### Changed

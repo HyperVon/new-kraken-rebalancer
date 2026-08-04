@@ -2,6 +2,7 @@ import importlib.util
 import sys
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 MODULE_PATH = Path(__file__).with_name("router.py")
 SPEC = importlib.util.spec_from_file_location("model_router", MODULE_PATH)
@@ -253,6 +254,21 @@ class RouterTests(unittest.TestCase):
         with self.assertRaises(MODULE.RouterError):
             MODULE.select_candidate([unknown], profile, config, False)
 
+    def test_no_qualified_candidate_error_includes_top_rejection_reasons(self):
+        paid_disabled = candidate("openrouter/paid", quality=50)
+        paid_disabled.billing = "paid"
+        paid_disabled.status = "active"
+        paid_disabled.rejection = None
+        unknown = candidate("openrouter/unk", quality=None, billing="free")
+        profile = {"metric": "artificial_analysis_intelligence_index", "minimum": 20}
+        config = {"policy": {"allowPaid": False, "allowFree": True}}
+        with self.assertRaises(MODULE.RouterError) as ctx:
+            MODULE.select_candidate([paid_disabled, unknown], profile, config, False)
+        message = str(ctx.exception)
+        self.assertIn("no candidate satisfies", message)
+        self.assertIn("paid routes disabled by policy", message)
+        self.assertIn("capability quality is unknown", message)
+
     def test_margin_excludes_barely_adequate_model_for_high_risk_profile(self):
         below_margin = candidate("openrouter/weak", quality=32)
         strong = candidate("openrouter/strong", quality=45)
@@ -337,6 +353,147 @@ class RouterTests(unittest.TestCase):
         config = {"policy": {"allowPaid": True, "allowFree": True, "useAaCostPerTask": True}}
         selected = MODULE.select_candidate([subscription, free], profile, config, False)
         self.assertEqual("nvidia/free-model", selected.route)
+
+    def test_synthesize_or_record_maps_indices_to_aa_metric_keys(self):
+        raw = {
+            "id": "openai/gpt-5.6-luna",
+            "name": "GPT-5.6 Luna",
+            "benchmarks": {
+                "artificial_analysis": {
+                    "intelligence_index": 51.2,
+                    "coding_index": 71.4,
+                    "agentic_index": 45.6,
+                }
+            },
+            "pricing": {"prompt": "0.10"},
+        }
+        record = MODULE._synthesize_or_record("openai/gpt-5.6-luna", raw)
+        evaluations = record["evaluations"]
+        self.assertEqual(51.2, evaluations["artificial_analysis_intelligence_index"])
+        self.assertEqual(71.4, evaluations["artificial_analysis_coding_index"])
+        self.assertEqual(45.6, evaluations["artificial_analysis_agentic_index"])
+        self.assertEqual("openai/gpt-5.6-luna", record["slug"])
+        self.assertEqual("openrouter", record["source"])
+
+    def test_synthesize_or_record_skips_missing_indices(self):
+        raw = {
+            "id": "cohere/north-mini-code:free",
+            "benchmarks": {
+                "artificial_analysis": {"intelligence_index": 19.8, "coding_index": 36.5},
+            },
+        }
+        record = MODULE._synthesize_or_record("cohere/north-mini-code:free", raw)
+        self.assertIn("artificial_analysis_intelligence_index", record["evaluations"])
+        self.assertIn("artificial_analysis_coding_index", record["evaluations"])
+        self.assertNotIn("artificial_analysis_agentic_index", record["evaluations"])
+
+    def test_load_openrouter_benchmarks_parses_model_payload(self):
+        import json as json_lib
+        import io
+
+        payload = {
+            "data": [
+                {
+                    "id": "z-ai/glm-5.2",
+                    "name": "GLM 5.2",
+                    "benchmarks": {
+                        "artificial_analysis": {"intelligence_index": 51.1, "coding_index": 68.8, "agentic_index": 43.1}
+                    },
+                    "pricing": {"prompt": "0.0"},
+                },
+                {
+                    "id": "nvidia/no-benchmarks",
+                    "name": "No Benchmarks",
+                    "benchmarks": {},
+                    "pricing": {},
+                },
+                {
+                    "id": "nvidia/missing-artificial-analysis",
+                    "name": "Missing AA",
+                    "benchmarks": {"design_arena": []},
+                    "pricing": {},
+                },
+            ]
+        }
+
+        class FakeResponse:
+            def __init__(self, data):
+                self._buf = io.StringIO(json_lib.dumps(data))
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def read(self):
+                return self._buf.read()
+
+        def fake_urlopen(request, timeout=None):
+            return FakeResponse(payload)
+
+        config = {"artificialAnalysis": {"enabled": True, "cacheHours": 24}}
+        with patch.object(MODULE.urllib.request, "urlopen", side_effect=fake_urlopen), patch.object(
+            MODULE,
+            "openrouter_benchmarks_cache_path",
+            return_value=Path("/tmp/kilo-test-or-cache-nonexistent-xyz.json"),
+        ):
+            models, status = MODULE.load_openrouter_benchmarks(config, refresh=True)
+        self.assertEqual("fresh", status)
+        self.assertIn("z-ai/glm-5.2", models)
+        self.assertNotIn("nvidia/no-benchmarks", models)
+        self.assertNotIn("nvidia/missing-artificial-analysis", models)
+        record = models["z-ai/glm-5.2"]
+        self.assertEqual(51.1, record["evaluations"]["artificial_analysis_intelligence_index"])
+        self.assertEqual(68.8, record["evaluations"]["artificial_analysis_coding_index"])
+        self.assertEqual(43.1, record["evaluations"]["artificial_analysis_agentic_index"])
+        # the temp path write is a no-op since the path is non-existent dir? it writes to /tmp which exists
+        import os
+
+        if os.path.exists("/tmp/kilo-test-or-cache-nonexistent-xyz.json"):
+            os.remove("/tmp/kilo-test-or-cache-nonexistent-xyz.json")
+
+    def test_or_fallback_aa_records_make_unknown_candidate_qualify(self):
+        # A candidate the AA cache would score as unknown-quality gets an AA record
+        # synthesized from OpenRouter benchmarks, lifting it above the profile floor.
+        or_models = {
+            "z-ai/glm-5.2": MODULE._synthesize_or_record(
+                "z-ai/glm-5.2",
+                {
+                    "id": "z-ai/glm-5.2",
+                    "name": "GLM 5.2",
+                    "benchmarks": {
+                        "artificial_analysis": {"intelligence_index": 51.1, "coding_index": 68.8, "agentic_index": 43.1}
+                    },
+                    "pricing": {"prompt": "0.0"},
+                },
+            )
+        }
+        # Build a candidate whose model matches the OR id exactly; free billing.
+        glm = MODULE.Candidate(
+            route="openrouter/z-ai/glm-5.2",
+            provider="openrouter",
+            model="z-ai/glm-5.2",
+            name="GLM 5.2",
+            status="active",
+            input_cost=0.0,
+            output_cost=0.0,
+            cache_read_cost=None,
+            context_limit=128000,
+            output_limit=16000,
+            tool_call=True,
+            reasoning=True,
+            attachment=False,
+            pdf=False,
+            billing="free",
+            free_allowed=True,
+            variants={},
+            preferred_variant=None,
+        )
+        aa, match = MODULE.match_artificial_analysis(glm, {}, or_models)
+        self.assertIsNotNone(aa)
+        self.assertIn(match, ("automatic", "configured"))
+        self.assertEqual(43.1, aa["evaluations"]["artificial_analysis_agentic_index"])
 
 
 if __name__ == "__main__":
