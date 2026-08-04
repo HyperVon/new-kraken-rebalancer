@@ -367,6 +367,11 @@ modified. Detailed-review and critical profiles prioritize capability evidence
 while keeping eligible free routes available; only explicit blacklist patterns
 exclude models or providers.
 
+The launcher also selects the TUI mode/agent from the inferred profile:
+quick-review and detailed-review start a read-only `ask` agent, while every
+other profile starts the `code` agent (the orchestrator agent is deprecated
+and never used). An explicit `--agent` flag overrides the inference.
+
 The default policy selects the lowest-cost route that satisfies the selected
 profile's capability, reasoning, tool, context, quota, and privacy requirements.
 A route is only considered when its capability is assessable and meets the

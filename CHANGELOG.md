@@ -55,6 +55,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   funds/funding, accounting, reconcile/reconciliation, settlement) now classify
   to the `critical` profile for this live-money rebalancer, so fund-loss and
   partial-fill audits route to a higher-reasoning bar.
+- **Prompt-conditioned TUI mode**: `./route-kilo` now launches the Kilo TUI in
+  the mode appropriate to the task — read-only review profiles
+  (`quick-review`, `detailed-review`) start the `ask` agent, every other profile
+  starts the `code` agent (replacing an invalid `build` agent name that fell
+  back to Ask mode). An explicit `--agent` flag overrides the inference.
 
 ## [6.16.11] - 2026-08-03
 

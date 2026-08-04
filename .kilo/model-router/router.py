@@ -855,6 +855,20 @@ def infer_profile(task: str) -> str:
     return "agentic"
 
 
+# Kilo TUI agents: ask, code, debug, explore, general, orchestrator (deprecated),
+# plan, summary, title, compaction. "code" is the implementation/Code-mode agent;
+# "ask" is read-only question/answer. Read-only review/audit work maps to "ask"
+# (the code-review skill is read-only: recommend only, do not implement unless
+# asked); everything that performs work maps to "code".
+_REVIEW_PROFILES = {"quick-review", "detailed-review"}
+
+
+def infer_agent(profile_name: str) -> str:
+    if profile_name in _REVIEW_PROFILES:
+        return "ask"
+    return "code"
+
+
 def profile_config(config: Mapping[str, Any], requested: str, task: str) -> tuple[str, dict[str, Any]]:
     name = infer_profile(task) if requested == "auto" else requested
     profiles = config.get("profiles", DEFAULT_PROFILES)
@@ -1143,13 +1157,13 @@ def prepare_initial_prompt(task: str) -> str:
 def build_kilo_command(args: argparse.Namespace, result: Mapping[str, Any]) -> list[str]:
     prompt = getattr(args, "initial_prompt", " ".join(args.message))
     variant = args.variant or result.get("variant")
+    # Infer the TUI agent (mode) from the task profile unless the operator
+    # passed an explicit --agent. Read-only review/audit profiles map to "ask";
+    # implementation work maps to "code". (Orchestrator is deprecated, unused.)
+    inferred_agent = args.agent or infer_agent(result.get("profile", "agentic"))
     if args.tui:
         command = ["kilo", "--model", str(result["route"])]
-        if variant:
-            command.extend(["--agent", args.agent or "build"])
-        if args.agent:
-            if not variant:
-                command.extend(["--agent", args.agent])
+        command.extend(["--agent", inferred_agent])
         if args.continue_session:
             command.append("--continue")
         if args.session:
@@ -1158,8 +1172,7 @@ def build_kilo_command(args: argparse.Namespace, result: Mapping[str, Any]) -> l
         return command
 
     command = ["kilo", "run", "--model", str(result["route"])]
-    if args.agent:
-        command.extend(["--agent", args.agent])
+    command.extend(["--agent", inferred_agent])
     if args.interactive:
         command.append("--interactive")
     if args.continue_session:
@@ -1185,7 +1198,7 @@ def tui_variant_config(args: argparse.Namespace, result: Mapping[str, Any]) -> s
         if not isinstance(parsed, Mapping):
             raise RouterError("KILO_CONFIG_CONTENT must contain a JSON object")
         base = dict(parsed)
-    agent = args.agent or "build"
+    agent = args.agent or infer_agent(result.get("profile", "agentic"))
     overlay = {
         "model": result["route"],
         "agent": {agent: {"model": result["route"], "variant": variant}},

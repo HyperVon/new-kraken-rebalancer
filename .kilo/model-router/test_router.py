@@ -60,9 +60,9 @@ class RouterTests(unittest.TestCase):
             auto=False,
             message=["Review", "the", "docs"],
         )
-        command = MODULE.build_kilo_command(args, {"route": "openai/example"})
+        command = MODULE.build_kilo_command(args, {"route": "openai/example", "profile": "agentic"})
         self.assertEqual(
-            ["kilo", "--model", "openai/example", "--prompt", "Review the docs"],
+            ["kilo", "--model", "openai/example", "--agent", "code", "--prompt", "Review the docs"],
             command,
         )
 
@@ -77,17 +77,55 @@ class RouterTests(unittest.TestCase):
             auto=False,
             message=["Review", "the", "docs"],
         )
-        result = {"route": "opencode-go/gpt-5.6-luna", "variant": "xhigh"}
+        result = {"route": "opencode-go/gpt-5.6-luna", "variant": "xhigh", "profile": "detailed-review"}
         command = MODULE.build_kilo_command(args, result)
         self.assertEqual(
-            ["kilo", "--model", "opencode-go/gpt-5.6-luna", "--agent", "build", "--prompt", "Review the docs"],
+            ["kilo", "--model", "opencode-go/gpt-5.6-luna", "--agent", "ask", "--prompt", "Review the docs"],
             command,
         )
         content = MODULE.tui_variant_config(args, result)
         self.assertIsNotNone(content)
         config = MODULE.json.loads(content)
-        self.assertEqual("opencode-go/gpt-5.6-luna", config["agent"]["build"]["model"])
-        self.assertEqual("xhigh", config["agent"]["build"]["variant"])
+        self.assertEqual("opencode-go/gpt-5.6-luna", config["agent"]["ask"]["model"])
+        self.assertEqual("xhigh", config["agent"]["ask"]["variant"])
+        self.assertEqual("ask", config["default_agent"])
+
+    def test_infer_agent_returns_code_for_implementation_profiles(self):
+        self.assertEqual("code", MODULE.infer_agent("agentic"))
+        self.assertEqual("code", MODULE.infer_agent("coding"))
+        self.assertEqual("code", MODULE.infer_agent("critical"))
+        self.assertEqual("code", MODULE.infer_agent("trivial"))
+
+    def test_infer_agent_returns_ask_for_review_profiles(self):
+        self.assertEqual("ask", MODULE.infer_agent("quick-review"))
+        self.assertEqual("ask", MODULE.infer_agent("detailed-review"))
+
+    def test_open_pr_task_infers_code_mode_not_ask(self):
+        # /open-pr infers the agentic profile -> implementation -> code (Code mode)
+        self.assertEqual("agentic", MODULE.infer_profile("/open-pr"))
+        self.assertEqual("code", MODULE.infer_agent(MODULE.infer_profile("/open-pr")))
+
+    def test_code_review_task_infers_ask_mode(self):
+        # /code-review infers detailed-review -> read-only -> ask (Ask mode)
+        self.assertEqual("detailed-review", MODULE.infer_profile("/code-review of this branch's changes vs main"))
+        self.assertEqual("ask", MODULE.infer_agent(MODULE.infer_profile("/code-review of this branch's changes vs main")))
+
+    def test_explicit_agent_flag_overrides_inference(self):
+        args = MODULE.argparse.Namespace(
+            tui=True,
+            agent="ask",
+            variant=None,
+            interactive=False,
+            continue_session=False,
+            session=None,
+            auto=False,
+            message=["Fix", "the", "bug"],
+        )
+        command = MODULE.build_kilo_command(args, {"route": "openai/example", "profile": "coding"})
+        self.assertEqual(
+            ["kilo", "--model", "openai/example", "--agent", "ask", "--prompt", "Fix the bug"],
+            command,
+        )
 
     def test_select_candidate_prefers_profile_variant(self):
         model = candidate("opencode-go/example", quality=50)
