@@ -21,6 +21,10 @@ Mode, and Agent Manager do not run automatically outside KiloCode.
 Choose an adaptive number of bounded tracks from the actual concerns; do not
 default to two full-task agents.
 
+Launch independent tracks concurrently: use one parallel tool message or a
+background process for the complete fan-out and poll its results. Do not start
+one foreground worker, wait for it, and then start the next.
+
 ## When to parallelize
 
 Launch parallel agents when **all** of these hold:

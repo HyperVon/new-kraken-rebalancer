@@ -58,6 +58,18 @@ DEFAULT_PROFILES: dict[str, dict[str, Any]] = {
         "input_tokens": 12_000,
         "output_tokens": 5_000,
     },
+    "review": {
+        "metric": "artificial_analysis_intelligence_index",
+        "minimum": 30,
+        "secondary": {
+            "artificial_analysis_agentic_index": 25,
+            "artificial_analysis_coding_index": 20,
+        },
+        "requiresReasoning": True,
+        "context": 96_000,
+        "input_tokens": 16_000,
+        "output_tokens": 8_000,
+    },
     "critical": {
         "metric": "artificial_analysis_intelligence_index",
         "minimum": 35,
@@ -121,6 +133,10 @@ DEFAULT_CONFIG: dict[str, Any] = {
         },
     },
     "models": {},
+    "blacklist": {
+        "models": [],
+        "providers": [],
+    },
     "policy": {
         "allowPaid": True,
         "allowFree": True,
@@ -463,12 +479,26 @@ def integer(value: Any) -> int:
     return int(value) if isinstance(value, (int, float)) else 0
 
 
-def model_is_allowed(route: str, model: str, settings: Mapping[str, Any]) -> bool:
+def model_is_allowed(
+    route: str,
+    model: str,
+    settings: Mapping[str, Any],
+    blacklist: Mapping[str, Any] | None = None,
+) -> bool:
     includes = settings.get("include", ["*"])
     excludes = settings.get("exclude", [])
     if not any(fnmatch.fnmatch(route, pattern) or fnmatch.fnmatch(model, pattern) for pattern in includes):
         return False
-    return not any(fnmatch.fnmatch(route, pattern) or fnmatch.fnmatch(model, pattern) for pattern in excludes)
+    if any(fnmatch.fnmatch(route, pattern) or fnmatch.fnmatch(model, pattern) for pattern in excludes):
+        return False
+    if not isinstance(blacklist, Mapping):
+        return True
+    model_patterns = [*blacklist.get("models", []), *blacklist.get("routes", [])]
+    provider = route.split("/", 1)[0]
+    return not (
+        any(fnmatch.fnmatch(route, pattern) or fnmatch.fnmatch(model, pattern) for pattern in model_patterns)
+        or any(fnmatch.fnmatch(provider, pattern) for pattern in blacklist.get("providers", []))
+    )
 
 
 def billing_class(route: str, provider_settings: Mapping[str, Any], model_settings: Mapping[str, Any]) -> str:
@@ -494,7 +524,7 @@ def build_candidates(
         model_settings = model_configs.get(route, {}) if isinstance(model_configs, Mapping) else {}
         if not isinstance(provider_settings, Mapping) or not isinstance(model_settings, Mapping):
             continue
-        if not model_is_allowed(route, model, provider_settings):
+        if not model_is_allowed(route, model, provider_settings, config.get("blacklist")):
             continue
         capabilities = raw.get("capabilities", {})
         input_capabilities = capabilities.get("input", {}) if isinstance(capabilities, Mapping) else {}
@@ -541,6 +571,9 @@ def infer_profile(task: str) -> str:
         return "routine"
     if any(term in lowered for term in coding):
         return "coding"
+    review = ("review", "audit", "documentation", "analysis", "analyze", "instructions", "workflow", "delegate")
+    if any(term in lowered for term in review):
+        return "review"
     return "agentic"
 
 

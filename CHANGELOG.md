@@ -27,6 +27,16 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Context Mode, and Agent Manager integrations require KiloCode.
 - **Full TUI launcher**: `./route-kilo` now hands the selected route to the
   full Kilo TUI, and Kilo guidance explicitly preserves native regex search.
+- **Adversarial workflow guidance**: added a dedicated documentation
+  re-review preset and explicit concurrent/background launch and route-diversity
+  verification rules.
+- **Adversarial route diversity**: adversarial presets now request distinct
+  exact routes when available and record unavoidable route reuse explicitly.
+- **Model blacklist**: added persistent glob-based model and provider exclusions
+  in `.kilo/model-router/config`, applied before automatic route ranking.
+- **Review routing**: added a stronger `review` profile for documentation,
+  instruction, model-selection, and source-contract audits, plus a hard gate for
+  explicit different-model delegation requests.
 
 ## [6.16.10] - 2026-08-03
 

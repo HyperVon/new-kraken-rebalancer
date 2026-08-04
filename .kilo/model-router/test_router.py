@@ -87,8 +87,20 @@ class RouterTests(unittest.TestCase):
         with self.assertRaises(MODULE.RouterError):
             MODULE.select_candidate([free], profile, config, False)
 
+    def test_blacklist_excludes_model_route_and_provider_patterns(self):
+        settings = {"include": ["*"]}
+        blacklist = {"models": ["opencode-go/minimax-*"], "providers": ["nvidia"]}
+        self.assertFalse(
+            MODULE.model_is_allowed("opencode-go/minimax-m2.7", "minimax-m2.7", settings, blacklist)
+        )
+        self.assertFalse(MODULE.model_is_allowed("nvidia/free-model", "free-model", settings, blacklist))
+        self.assertTrue(MODULE.model_is_allowed("openai/gpt-5.4", "gpt-5.4", settings, blacklist))
+
     def test_task_profile_inference_escalates_trading_work(self):
         self.assertEqual("critical", MODULE.infer_profile("Review the trading order execution path"))
+
+    def test_task_profile_inference_uses_stronger_review_profile(self):
+        self.assertEqual("review", MODULE.infer_profile("Audit the documentation and agent instructions"))
 
     def test_free_route_guard_detects_secret_material(self):
         self.assertTrue(MODULE.is_sensitive("Read the API key from .env", "routine"))

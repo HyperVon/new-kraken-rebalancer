@@ -150,6 +150,11 @@ class SubagentRouterTests(unittest.TestCase):
         self.assertNotIn("SECRET worker findings", markdown)
         self.assertEqual("gpt-5.4", payload["tracks"][0]["used"]["model"])
 
+    def test_adversarial_workflows_require_distinct_routes(self):
+        self.assertTrue(MODULE.workflows.requires_distinct_routes("documentation-adversarial-review"))
+        self.assertTrue(MODULE.workflows.requires_distinct_routes("adversarial-pr-review"))
+        self.assertFalse(MODULE.workflows.requires_distinct_routes("documentation-review"))
+
     def test_read_only_worker_workspace_isolated_from_parent_runtime_files(self):
         with MODULE.worker_workspace(True) as workspace:
             self.assertNotEqual(MODULE.router.ROOT, workspace)

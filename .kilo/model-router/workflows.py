@@ -23,6 +23,29 @@ def _track(
 
 
 WORKFLOW_TRACKS: dict[str, list[dict[str, Any]]] = {
+    "documentation-adversarial-review": [
+        _track(
+            "finding-verification",
+            "agentic",
+            "documentation-contract-auditor",
+            ["README.md", "docs/", "CONTRIBUTING.md", "SECURITY.md", "CHANGELOG.md", ".agents/skills/documentation-review/"],
+            "Independently verify every parent-supplied documentation finding against current source, tests, and build truth.",
+        ),
+        _track(
+            "completeness-sweep",
+            "agentic",
+            "explore",
+            ["README.md", "docs/", ".agents/", ".cursor/", "src/", "common/", "frontend-js/", "build.gradle.kts", ".github/workflows/"],
+            "Search for documentation issues missed by the parent review and report only distinct evidence-backed findings.",
+        ),
+        _track(
+            "severity-evidence",
+            "critical",
+            "documentation-contract-auditor",
+            ["README.md", "docs/", "SECURITY.md", "CONTRIBUTING.md", ".agents/"],
+            "Challenge finding severity, categorization, evidence strength, and proposed fixes; reject preference-only claims.",
+        ),
+    ],
     "documentation-review": [
         _track(
             "product-docs",
@@ -132,6 +155,13 @@ WORKFLOW_TRACKS: dict[str, list[dict[str, Any]]] = {
         _track("harness-index", "routine", "agent-guidance-auditor", [".agents/AGENTS.md", ".agents/OPERATING.md", ".cursor/", ".kilo/", "CLAUDE.md"], "Review indexes, projections, and harness routing for drift and dead references."),
     ],
 }
+
+
+DISTINCT_ROUTE_WORKFLOWS = frozenset({"adversarial-pr-review", "documentation-adversarial-review"})
+
+
+def requires_distinct_routes(workflow: str | None) -> bool:
+    return workflow in DISTINCT_ROUTE_WORKFLOWS
 
 
 def available_workflows() -> tuple[str, ...]:

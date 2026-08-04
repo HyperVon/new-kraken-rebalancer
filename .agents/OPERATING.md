@@ -92,6 +92,11 @@ limited to Kilo Auto, `.kilo/kilo.json`, `./route-kilo`,
 Agent Manager. Other hosts should use their native model selection and agent
 fan-out; these Kilo-specific features do not run automatically there.
 
+Independent work must be launched concurrently: use one parallel tool message
+or a background process for the complete fan-out, then poll results. Do not
+start one foreground worker, wait for it, and only then start the next; that is
+sequential delegation, not parallel fan-out.
+
 For Kilo sessions, `.kilo/kilo.json` selects `kilo/kilo-auto/efficient` as the
 project default. That is a host-supported Auto tier, not a claim about which
 underlying model will answer a particular request.

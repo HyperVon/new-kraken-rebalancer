@@ -156,6 +156,12 @@ Do this handoff before a parent-wide Context Mode or regex/search inventory;
 parent-owned scans are follow-up evidence, not a substitute for the routed
 track reports.
 
+For a second-pass adversarial review of this audit, use the
+`documentation-adversarial-review` preset with the parent findings in the task
+context. Launch all three tracks concurrently in the background-capable host,
+then inspect the route report before accepting any claim of independent-model
+confirmation.
+
 ## Evidence and claims
 
 Treat every material documentation statement as a claim that needs a source:

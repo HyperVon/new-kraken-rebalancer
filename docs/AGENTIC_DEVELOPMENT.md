@@ -329,6 +329,7 @@ requirements from the prompt. Available profiles are:
 | `routine` | Summaries, formatting, lookups, and simple documentation/status tasks |
 | `coding` | Implementation, bugs, tests, refactoring, builds, and Gradle |
 | `agentic` | Complex multi-step reasoning and tool use |
+| `review` | Documentation, instruction, model-selection, and source-contract audits |
 | `critical` | Security, credentials, trading, financial, architecture, or adversarial work |
 | `auto` | Automatic profile inference from the prompt |
 
@@ -343,6 +344,21 @@ Examples:
 The profile constrains route selection; it does not directly choose a model.
 The router still selects the provider/model using capability, cost, quota, and
 availability.
+
+To permanently exclude a model or provider from automatic selection, update
+`.kilo/model-router/config`:
+
+```json
+"blacklist": {
+  "models": ["opencode-go/minimax-m2.7", "openrouter/google/*"],
+  "providers": ["nvidia"]
+}
+```
+
+`models` accepts full `provider/model` routes or model-ID glob patterns;
+`providers` excludes every model from that provider. The exclusions apply before
+ranking for both `./route-kilo` and routed subagents. Ask for a blacklist update
+when a route should no longer be selected; the next route plan should verify it.
 
 It discovers providers from `kilo auth list`, loaded Kilo/OpenCode provider
 configuration, and standard provider environment variables. It reads active
@@ -420,6 +436,23 @@ Use `--allow-edits` only when the manifest explicitly assigns disjoint writable
 paths and the parent has retained integration ownership. The host `Task` tool
 cannot be transparently intercepted; direct role-only Task calls therefore do
 not provide this cross-provider guarantee.
+
+For a second-pass adversarial review of a completed documentation audit, use the
+dedicated preset with the prior findings in the task context:
+
+```bash
+./.kilo/model-router/route-subagents \
+  --workflow documentation-adversarial-review \
+  --task "Independently re-review the documentation findings from the parent audit" \
+  --refresh \
+  --run
+```
+
+Launch the command in the host's background process facility when available and
+poll its logs/status. Review the generated route report before describing the
+result as an independent-model review; role names and Kilo Auto tiers alone do
+not prove model diversity. The preset requests distinct exact routes and records
+when provider availability forces a route reuse.
 
 Multiple agreeing reports are not proof of correctness. Related models can
 share the same blind spots, repeat inaccurate documentation, or approve

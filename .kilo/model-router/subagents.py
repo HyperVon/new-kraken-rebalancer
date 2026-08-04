@@ -124,13 +124,28 @@ def build_plan(
     candidates = router.build_candidates(raw_models, config, aa_models, quota_snapshot)
     records: list[dict[str, Any]] = []
     prepared: list[dict[str, Any]] = []
+    used_routes: set[str] = set()
+    require_distinct_routes = workflows.requires_distinct_routes(workflow)
 
     for track in tracks:
         requested_profile = str(track.get("profile", "auto"))
         profile_name, profile = router.profile_config(config, requested_profile, track["task"])
         track_candidates = copy.deepcopy(candidates)
         sensitive = router.is_sensitive(track["task"], profile_name)
-        selected = router.select_candidate(track_candidates, profile, config, sensitive)
+        try:
+            selected = router.select_candidate(
+                track_candidates,
+                profile,
+                config,
+                sensitive,
+                excluded_routes=used_routes if require_distinct_routes else None,
+            )
+        except router.RouterError:
+            if not require_distinct_routes:
+                raise
+            warnings.append(f"route diversity unavailable for track {track['id']}; reused the best available route")
+            selected = router.select_candidate(track_candidates, profile, config, sensitive)
+        used_routes.add(selected.route)
         selection = router.report(selected, profile_name, profile, aa_status, sensitive)
         selection.update(
             {
@@ -158,6 +173,7 @@ def build_plan(
         "manifest": manifest_label,
         "workflow": workflow,
         "aa": aa_status,
+        "route_diversity_required": require_distinct_routes,
         "warnings": warnings,
         "tracks": records,
     }, prepared
@@ -489,6 +505,7 @@ def _markdown_report(payload: Mapping[str, Any]) -> str:
         f"- Completed: `{payload['completed_at_utc']}`",
         f"- Workflow: `{payload['workflow']}`",
         f"- Artificial Analysis data: `{payload['artificial_analysis']}`",
+        f"- Distinct routes required: `{payload['route_diversity_required']}`",
         f"- Tracks: `{len(payload['tracks'])}`",
         "",
         "Persistent reports intentionally omit parent prompts, worker report text, credentials, and raw provider errors.",
@@ -538,6 +555,7 @@ def write_run_report(
         "completed_at_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         "workflow": plan.get("workflow") or "custom-manifest",
         "artificial_analysis": plan.get("aa"),
+        "route_diversity_required": bool(plan.get("route_diversity_required", False)),
         "tracks": tracks,
     }
     directory = Path(report_dir).expanduser() if report_dir else default_report_dir()

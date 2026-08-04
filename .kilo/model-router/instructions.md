@@ -12,6 +12,7 @@ manifest:
 | Skill | Preset |
 | :--- | :--- |
 | `documentation-review` | `documentation-review` |
+| Documentation-review adversarial re-review | `documentation-adversarial-review` |
 | `autonomous-code-optimizer` | `autonomous-code-optimizer` |
 | `continuous-improvement` | `continuous-improvement` |
 | `continuous-quality` | `continuous-quality` |
@@ -52,12 +53,32 @@ track or for parent-owned follow-up, but it does not replace routed fan-out.
    `adversarial-pr-review` in plan-only mode until its review-specific approval
    gate is satisfied.
 4. Keep implementation, edits, backlog integration, Gradle, browser tests, and
-   final verification in the parent unless the workflow explicitly says
-   otherwise. Never use `--allow-edits` for standard discovery.
+    final verification in the parent unless the workflow explicitly says
+    otherwise. Never use `--allow-edits` for standard discovery.
+
+Independent tracks must launch concurrently. In a host with background process
+support, run the single `route-subagents --run` command in the background and
+poll its status/logs; do not run one worker in the foreground and wait before
+starting the next. If using a host Task equivalent instead, submit all
+independent calls in one parallel tool message. Never describe sequential
+foreground launches as fan-out.
+
+For adversarial or second-pass review, inspect the generated route report before
+calling the result an independent-model review. A role name or Kilo Auto tier is
+not evidence of model diversity. If the actual provider/model routes are the
+same, report that no independent route was obtained and rerun the disputed track
+through a different host-enforceable route when the risk justifies it.
+The adversarial presets request distinct exact routes for their tracks; if
+availability prevents that, the launcher records the reuse warning instead of
+claiming diversity.
 
 The launcher selects an exact provider/model independently for every track,
 uses the installed quota plugin, and applies bounded runtime failover. A raw
 Kilo `Task` call remains unrouteable and must not be used as a substitute.
+When the user explicitly asks for a different model or delegation, stop parent
+implementation and perform the exact-route handoff first. Do not claim that a
+role-only Task call changed the model; if no host-enforceable route is available,
+state that limitation and keep the work parent-owned.
 
 Kilo's native `grep` tool accepts regular-expression patterns, and its native
 `glob` and `read` tools are available for repository searches. Use those tools
@@ -76,3 +97,11 @@ credentials, and raw provider errors. Set `KILO_MODEL_ROUTER_REPORT_DIR` or pass
 Standard read-only workers run from temporary repository copies, so an agent
 that ignores its prompt cannot modify the parent worktree. `--allow-edits` is
 the explicit exception for a custom manifest with owned writable paths.
+
+Persistent route exclusions live in `.kilo/model-router/config` under
+`blacklist`. `blacklist.models` accepts glob patterns matching either a full
+`provider/model` route or a model ID; `blacklist.providers` excludes every model
+from a provider. Keep both arrays empty unless an operator asks to exclude a
+route. A future model-selection update should edit those arrays and verify the
+next route plan; the blacklist is applied before capability, cost, and quota
+ranking for both the primary launcher and routed workers.

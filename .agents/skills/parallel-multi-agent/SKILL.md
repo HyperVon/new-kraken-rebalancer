@@ -88,7 +88,12 @@ or iteration limit, it returns a compact partial report and the parent starts a
 new narrower follow-up. Do not use manual compaction as a way to continue the
 same oversized worker task.
 
-Prefer `run_in_background: true` only when the parent can usefully continue; otherwise wait for coupled tracks.
+Independent tracks must launch concurrently, not one foreground task at a time.
+When the host exposes background process support, launch the single routed
+workflow or each independent process with `run_in_background: true` and poll its
+status/logs. When the host exposes a parallel tool, submit all independent Task
+calls in one message. Foreground waiting is reserved for coupled work whose next
+step depends on the result.
 
 ## Step 3 — Integrate
 
@@ -124,6 +129,12 @@ host route/effort mapping, model substitution, user approval, iteration cap,
 coverage, and stop reason.
 Never paste full prior reports into follow-ups; pass only the finding and the
 smallest affected path set.
+
+For an adversarial re-review of a completed documentation audit, use the
+`documentation-adversarial-review` preset rather than raw role-only Task calls.
+After it completes, inspect the Markdown/JSON route report. Same-role, same-tier,
+or same-provider labels do not prove independent model reasoning; record the
+actual routes and state explicitly when no independent route was obtained.
 
 ### Native Kilo model selection
 

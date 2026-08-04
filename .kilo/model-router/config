@@ -51,6 +51,10 @@
     }
   },
   "models": {},
+  "blacklist": {
+    "models": ["minimax-m2.7"],
+    "providers": []
+  },
   "policy": {
     "allowPaid": true,
     "allowFree": true,
