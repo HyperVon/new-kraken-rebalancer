@@ -167,6 +167,7 @@ def build_plan(
                 "candidates": track_candidates,
                 "profile": profile,
                 "config": config,
+                "config_path": config_path if config_path else str(router.DEFAULT_CONFIG_PATH),
                 "sensitive": sensitive,
                 "allow_edits": allow_edits,
             }
@@ -302,15 +303,20 @@ def launch_with_failover(
 
         kind = result.get("failure_kind")
         track = current["track"]
-        if not kind or not bool(current["selection"].get("read_only", True)):
+        if not kind:
             return result
-        if kind not in {"rate_limit", "credits", "provider_unavailable", "authentication", REPORT_FAILURE_KIND}:
-            return result
-
         route = str(result["route"])
         provider = str(current["selection"]["provider"])
+        if kind == "model_eol":
+            router.blacklist_model(current.get("config_path"), route)
+        if not bool(current["selection"].get("read_only", True)):
+            return result
+        if kind not in {"rate_limit", "credits", "provider_unavailable", "authentication", "model_eol", REPORT_FAILURE_KIND}:
+            return result
+
         cooldown = availability.record_failure(current["config"], route, provider, kind, result["report"])
-        excluded_providers.add(provider)
+        if kind != "model_eol":
+            excluded_providers.add(provider)
         failovers.append({"from": route, "reason": kind, "cooldown_seconds": cooldown})
         candidates = copy.deepcopy(current["candidates"])
         try:
@@ -398,6 +404,21 @@ def print_results(results: Sequence[Mapping[str, Any]], as_json: bool) -> None:
             print(result["report"])
 
 
+def print_route_summary(plan: Mapping[str, Any], results: Sequence[Mapping[str, Any]]) -> None:
+    tracks_by_id = {track["track"]: track for track in plan["tracks"]}
+    print("\nRoute summary — providers/models used per track:")
+    print("| Track | Status | Route chain | Profile | Billing | Duration |")
+    print("| :--- | :--- | :--- | :--- | :--- | ---: |")
+    for result in results:
+        track = tracks_by_id.get(result["track"], {})
+        chain = " -> ".join(str(route) for route in result.get("attempted_routes", [result["route"]]))
+        state = "passed" if result["exit_code"] == 0 else f"failed ({result['exit_code']})"
+        print(
+            f"| {result['track']} | {state} | {chain} | {track.get('profile', '?')} | "
+            f"{track.get('billing', '?')} | {result['duration_seconds']}s |"
+        )
+
+
 def default_report_dir() -> Path:
     configured = os.environ.get("KILO_MODEL_ROUTER_REPORT_DIR")
     return Path(configured).expanduser() if configured else Path.home() / DEFAULT_REPORT_SUBDIRECTORY
@@ -434,7 +455,17 @@ def _atomic_write(path: Path, content: str) -> None:
 
 
 def _ignore_read_only_files(_: str, names: list[str]) -> list[str]:
-    ignored = {".git", ".gradle", "build", "node_modules", "logs", "rebalancer-config.json"}
+    ignored = {
+        ".git",
+        ".gradle",
+        "build",
+        "node_modules",
+        "logs",
+        "rebalancer-config.json",
+        "env.local",
+        "manifest.local",
+        "agent-manager.json",
+    }
     return [
         name
         for name in names
@@ -621,6 +652,7 @@ def main() -> int:
     else:
         print_plan(plan, False)
         print_results(results, False)
+        print_route_summary(plan, results)
         if route_report:
             print(f"\nRoute report: {route_report['markdown']}")
     return 0 if all(result["exit_code"] == 0 for result in results) else 1

@@ -34,6 +34,9 @@ class AvailabilityTests(unittest.TestCase):
     def test_failure_classification_and_retry_after(self):
         self.assertEqual("rate_limit", MODULE.failure_kind("HTTP 429 Too Many Requests"))
         self.assertEqual("credits", MODULE.failure_kind("402 payment required: insufficient credits"))
+        self.assertEqual("model_eol", MODULE.failure_kind("HTTP 410 Gone: model reached its end of life"))
+        self.assertEqual("model_eol", MODULE.failure_kind('{"status":410,"detail":"... is no longer available."}'))
+        self.assertIsNone(MODULE.failure_kind("worker returned an empty report"))
         self.assertEqual(60, MODULE.retry_after_seconds("Retry-After: 60"))
 
     def test_record_failure_persists_only_cooldown_metadata(self):

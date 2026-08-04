@@ -428,6 +428,13 @@ To permanently exclude a model or provider from automatic selection, update
 ranking for both `./route-kilo` and routed subagents. Ask for a blacklist update
 when a route should no longer be selected; the next route plan should verify it.
 
+End-of-life models are added to `blacklist.models` automatically: when a launch
+answers HTTP 410 / "end of life", the launcher appends the exact dead route to
+`.kilo/model-router/config` and immediately retries the next best candidate
+without excluding the provider. The write appears as a config diff to review and
+commit; an EOL is a universal fact, so the exclusion is shared rather than kept
+in a private cache.
+
 It discovers providers from `kilo auth list`, loaded Kilo/OpenCode provider
 configuration, and standard provider environment variables. It reads active
 route capabilities and token prices from `kilo models`, and launches `kilo run --model provider/model`
@@ -513,6 +520,11 @@ when invoked with `--run`. Each worker receives an exact
 contract. Each run also writes a secret-free Markdown and JSON route report to
 `~/.cache/kilo/model-router/reports/` and prints the Markdown path; set
 `KILO_MODEL_ROUTER_REPORT_DIR` or pass `--report-dir` to change the destination.
+The launcher also prints a compact `Route summary` table to stdout after the
+workers finish (track, status, planned-to-used provider/model chain, profile,
+billing, duration), which the parent session relays into the conversation so
+the operator sees which providers/models ran which tasks without opening the
+report directory.
 Standard read-only workers inspect temporary repository copies, so accidental
 worker edits do not enter the parent worktree; `--allow-edits` is reserved for
 explicit custom manifests with owned writable paths.

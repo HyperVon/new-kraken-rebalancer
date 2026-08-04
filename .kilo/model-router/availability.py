@@ -206,6 +206,8 @@ def failure_kind(output: str) -> str | None:
         return "authentication"
     if re.search(r"\b(402|payment required|insufficient credits?|out of credits?|balance|credit limit)\b", text):
         return "credits"
+    if re.search(r"\b(410|end[- ]of[- ]life|no longer available)\b", text):
+        return "model_eol"
     if re.search(r"\b(429|rate[- ]?limit|too many requests|resource exhausted|retry[- ]?after)\b", text):
         return "rate_limit"
     if re.search(r"\b(502|503|provider unavailable|provider overloaded|service unavailable)\b", text):
@@ -236,6 +238,8 @@ def record_failure(config: Mapping[str, Any], route: str, provider: str, kind: s
         seconds = int(settings.get("creditsSeconds", 3600))
     elif kind == "provider_unavailable":
         seconds = int(settings.get("providerUnavailableSeconds", 300))
+    elif kind == "model_eol":
+        seconds = int(settings.get("modelEolSeconds", 86400))
     elif kind == "report_contract":
         seconds = int(settings.get("reportContractSeconds", 300))
     else:

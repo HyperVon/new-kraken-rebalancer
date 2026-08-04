@@ -161,6 +161,27 @@ class SubagentRouterTests(unittest.TestCase):
             self.assertTrue((workspace / "README.md").exists())
             self.assertFalse((workspace / "rebalancer-config.json").exists())
 
+    def test_read_only_workspace_ignore_excludes_credentials_and_local_state(self):
+        names = [
+            "README.md",
+            "env.local",
+            "manifest.local",
+            "agent-manager.json",
+            ".env.production",
+            "rebalancer-config.json",
+            "history.db",
+            "src",
+        ]
+        ignored = MODULE._ignore_read_only_files("", names)
+        self.assertIn("env.local", ignored)
+        self.assertIn("manifest.local", ignored)
+        self.assertIn("agent-manager.json", ignored)
+        self.assertIn(".env.production", ignored)
+        self.assertIn("rebalancer-config.json", ignored)
+        self.assertIn("history.db", ignored)
+        self.assertNotIn("README.md", ignored)
+        self.assertNotIn("src", ignored)
+
     def test_read_only_worker_fails_over_after_rate_limit(self):
         with tempfile.TemporaryDirectory() as directory:
             fallback = MODULE.router.Candidate(
@@ -222,6 +243,126 @@ class SubagentRouterTests(unittest.TestCase):
             self.assertEqual(2, launch.call_count)
             self.assertEqual("nvidia/free-model", result["route"])
             self.assertEqual("rate_limit", result["failovers"][0]["reason"])
+
+    def test_read_only_worker_blacklists_end_of_life_model_and_fails_over(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config_path = Path(directory) / "config.json"
+            config_path.write_text(
+                MODULE.json.dumps({"blacklist": {"models": [], "providers": []}}),
+                encoding="utf-8",
+            )
+            fallback = MODULE.router.Candidate(
+                route="nvidia/live-model",
+                provider="nvidia",
+                model="live-model",
+                name="Live model",
+                status="active",
+                input_cost=0,
+                output_cost=0,
+                cache_read_cost=0,
+                context_limit=128000,
+                output_limit=16000,
+                tool_call=True,
+                reasoning=True,
+                attachment=False,
+                pdf=False,
+                billing="free",
+                free_allowed=True,
+            )
+            item = {
+                "track": {"id": "source", "task": "Inspect source", "files": [], "read_only": True},
+                "selection": {
+                    "route": "nvidia/dead-model",
+                    "provider": "nvidia",
+                    "profile": "coding",
+                    "aa": "fresh",
+                    "agent": "explore",
+                    "read_only": True,
+                },
+                "prompt": "bounded prompt",
+                "candidates": [fallback],
+                "profile": {"minimum": 1},
+                "config": {
+                    "quota": {"cooldownPath": str(Path(directory) / "cooldowns.json")},
+                    "tpsProbe": {"enabled": False},
+                },
+                "sensitive": False,
+                "allow_edits": False,
+                "config_path": str(config_path),
+            }
+            results = [
+                {
+                    "track": "source",
+                    "route": "nvidia/dead-model",
+                    "exit_code": 1,
+                    "duration_seconds": 0.1,
+                    "report": "HTTP 410 Gone: model reached its end of life and is no longer available",
+                    "failure_kind": "model_eol",
+                },
+                {
+                    "track": "source",
+                    "route": "nvidia/live-model",
+                    "exit_code": 0,
+                    "duration_seconds": 0.1,
+                    "report": "done",
+                    "failure_kind": None,
+                },
+            ]
+            seen: dict[str, set[str]] = {}
+
+            def patched_select(
+                candidates, profile, config, sensitive, excluded_routes=None, excluded_providers=None
+            ):
+                seen["excluded_providers"] = set(excluded_providers or ())
+                return fallback
+
+            with patch.object(MODULE, "launch_worker", side_effect=results) as launch:
+                with patch.object(MODULE.router, "select_candidate", side_effect=patched_select):
+                    result = MODULE.launch_with_failover(item, timeout=10, allow_auto=False)
+            self.assertEqual(2, launch.call_count)
+            self.assertEqual("nvidia/live-model", result["route"])
+            self.assertEqual("model_eol", result["failovers"][0]["reason"])
+            self.assertEqual(set(), seen["excluded_providers"])
+            payload = MODULE.json.loads(config_path.read_text(encoding="utf-8"))
+            self.assertIn("nvidia/dead-model", payload["blacklist"]["models"])
+
+    def test_end_of_life_model_blacklisted_even_when_edits_allowed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config_path = Path(directory) / "config.json"
+            config_path.write_text(MODULE.json.dumps({"blacklist": {"models": []}}), encoding="utf-8")
+            item = {
+                "track": {"id": "source", "task": "Inspect source", "files": [], "read_only": False},
+                "selection": {
+                    "route": "nvidia/dead-model",
+                    "provider": "nvidia",
+                    "profile": "coding",
+                    "aa": "fresh",
+                    "agent": "explore",
+                    "read_only": False,
+                },
+                "prompt": "bounded prompt",
+                "candidates": [],
+                "profile": {"minimum": 1},
+                "config": {},
+                "sensitive": False,
+                "allow_edits": True,
+                "config_path": str(config_path),
+            }
+            results = [
+                {
+                    "track": "source",
+                    "route": "nvidia/dead-model",
+                    "exit_code": 1,
+                    "duration_seconds": 0.1,
+                    "report": "model reached its end of life",
+                    "failure_kind": "model_eol",
+                }
+            ]
+            with patch.object(MODULE, "launch_worker", side_effect=results) as launch:
+                result = MODULE.launch_with_failover(item, timeout=10, allow_auto=True)
+            self.assertEqual(1, launch.call_count)
+            payload = MODULE.json.loads(config_path.read_text(encoding="utf-8"))
+            self.assertIn("nvidia/dead-model", payload["blacklist"]["models"])
 
 
 if __name__ == "__main__":

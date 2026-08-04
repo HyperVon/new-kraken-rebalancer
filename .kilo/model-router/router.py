@@ -16,6 +16,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 import time
 import urllib.error
 import urllib.parse
@@ -33,6 +34,49 @@ ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_CONFIG_PATH = ROOT / ".kilo" / "model-router" / "config"
 AA_BASE_URL = "https://artificialanalysis.ai/api/v2"
 MAX_FAILOVER_ATTEMPTS = 3
+
+
+def _atomic_write(path: Path, content: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(
+        mode="w",
+        encoding="utf-8",
+        dir=path.parent,
+        prefix=f".{path.name}.",
+        delete=False,
+    ) as temporary:
+        temporary.write(content)
+        temporary.flush()
+        os.fsync(temporary.fileno())
+        temporary_path = Path(temporary.name)
+    os.replace(temporary_path, path)
+
+
+def blacklist_model(config_path: str | None, route: str) -> bool:
+    """Persistently add an end-of-life model route to the blacklist config."""
+    path = Path(config_path).expanduser() if config_path else DEFAULT_CONFIG_PATH
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    if not isinstance(payload, dict):
+        return False
+    blacklist = payload.get("blacklist")
+    if not isinstance(blacklist, dict):
+        blacklist = {}
+        payload["blacklist"] = blacklist
+    models = blacklist.get("models")
+    if not isinstance(models, list):
+        models = []
+        blacklist["models"] = models
+    if route in models:
+        return True
+    models.append(route)
+    try:
+        _atomic_write(path, json.dumps(payload, indent=2) + "\n")
+    except OSError:
+        return False
+    return True
 
 DEFAULT_PROFILES: dict[str, dict[str, Any]] = {
     "trivial": {
@@ -1666,6 +1710,7 @@ def main() -> int:
     args.task = " ".join(args.message)
     args.initial_prompt = prepare_initial_prompt(args.task)
     context = load_selection_context(args)
+    config_path = Path(args.config).expanduser() if args.config else DEFAULT_CONFIG_PATH
     result = context["result"]
     attempted_routes: set[str] = set()
     excluded_providers: set[str] = set()
@@ -1686,7 +1731,13 @@ def main() -> int:
             return 0
         kind = availability.failure_kind(output)
         attempted_routes.add(str(result["route"]))
-        if not kind or kind not in {"rate_limit", "credits", "provider_unavailable", "authentication"}:
+        if not kind or kind not in {
+            "rate_limit",
+            "credits",
+            "provider_unavailable",
+            "authentication",
+            "model_eol",
+        }:
             return exit_code
         if has_tool_activity(output):
             print("model-router: not retrying after tool activity", file=sys.stderr)
@@ -1699,9 +1750,12 @@ def main() -> int:
             kind,
             output,
         )
-        excluded_providers.add(str(result["provider"]))
+        if kind == "model_eol":
+            blacklist_model(config_path, str(result["route"]))
+        else:
+            excluded_providers.add(str(result["provider"]))
         print(
-            f"model-router: {kind} on {result['route']}; trying another provider "
+            f"model-router: {kind} on {result['route']}; trying another route "
             f"(cooldown {cooldown}s)",
             file=sys.stderr,
         )

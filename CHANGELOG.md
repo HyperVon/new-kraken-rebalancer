@@ -78,6 +78,24 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `--refresh`, since the router already re-fetches route metadata when the
   per-provider catalog (2h) or Artificial Analysis snapshot (24h) cache is
   stale; the flag remains available to force a re-fetch.
+- **End-of-life model failover and blacklist**: a route that answers HTTP 410 /
+  "end of life" is classified as `model_eol`, permanently added to the
+  `blacklist.models` array in `.kilo/model-router/config`, and the next best
+  route is tried without excluding the rest of that provider (only the dead
+  model is blacklisted). Applies to both `route-kilo` runs and routed
+  subagents, and also when subagents run with `--allow-edits`.
+- **Credential isolation for read-only worker workspaces**: `.kilo/model-router/
+  env.local`, `manifest.local`, and `.kilo/agent-manager.json` are now excluded
+  from the temporary repository copies given to read-only routed workers, so
+  local-only credentials never ride into worker snapshots.
+- **Per-track route summary in the conversation**: after a routed run, the
+  launcher prints a compact `Route summary` table (track, status, planned-to-
+  used provider/model chain including failovers, profile, billing, duration);
+  the orchestrating session relays it into the conversation instead of pointing
+  at the report directory.
+- **Shipping `.kilo/.gitignore`**: the file no longer ignores itself, so its
+  per-directory ignores (Agent Manager state, package manifests) apply for
+  contributors who clone the repository.
 
 ## [6.16.11] - 2026-08-03
 

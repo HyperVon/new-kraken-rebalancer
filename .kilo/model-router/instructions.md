@@ -99,6 +99,13 @@ failovers. They intentionally omit parent prompts, worker report text,
 credentials, and raw provider errors. Set `KILO_MODEL_ROUTER_REPORT_DIR` or pass
 `--report-dir` to choose another local destination.
 
+After the workers finish, the launcher also prints a compact `Route summary`
+table to stdout: track, status, the planned-to-used provider/model route chain
+(including failovers), profile, billing, and duration. The parent session must
+relay that per-track route summary into the conversation so the operator sees
+which providers/models ran which tasks without opening the report directory.
+Keep the relay one table or a few lines; do not paste the full report.
+
 When a catalog exposes model variants, the selected profile chooses one instead
 of silently accepting the provider default: trivial/routine prefer low/medium,
 coding prefers medium/high, complex-coding/agentic prefer high/thinking, and
@@ -159,3 +166,11 @@ from a provider. Keep both arrays empty unless an operator asks to exclude a
 route. A future model-selection update should edit those arrays and verify the
 next route plan; the blacklist is applied before capability, cost, and quota
 ranking for both the primary launcher and routed workers.
+
+End-of-life models are added to `blacklist.models` automatically: when a launch
+answers HTTP 410 / "end of life" (`model_eol`), both `route-kilo` runs and
+routed subagents append the exact dead route to the tracked
+`.kilo/model-router/config` and immediately retry the next best candidate
+without excluding the provider. That write is intentional and will appear as a
+config diff to review and commit — an EOL is a universal fact worth sharing,
+and the explicit `--run` gate already authorized the run that discovered it.
