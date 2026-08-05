@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.16.14] - 2026-08-05
+
+### Added
+
+- **Kraken ledger history**: synchronizes staking and dividend ledger entries
+  from `/0/private/Ledgers`, persists them in SQLite with durable watermarks and
+  overlap-safe deduplication, and exposes the new `/api/history/rewards` data
+  used by History.
+- **Staking rewards chart**: History now displays cumulative staking rewards in
+  USD with per-asset series across the selected time range.
+
 ## [6.16.13] - 2026-08-04
 
 ### Fixed

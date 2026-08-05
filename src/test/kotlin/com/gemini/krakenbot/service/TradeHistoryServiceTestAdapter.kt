@@ -1,8 +1,10 @@
 package com.gemini.krakenbot.service
 
 import com.gemini.krakenbot.model.HistoryStats
+import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.RebalancerComparison
+import com.gemini.krakenbot.model.RewardsOverTime
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.repository.TradeRepository
 import kotlinx.coroutines.flow.Flow
@@ -31,6 +33,9 @@ class TradeHistoryServiceTestAdapter(private val repository: TradeRepository) : 
         repository.getSnapshotsInRange(from, to)
     override suspend fun getTradesInRange(from: Instant, to: Instant): List<TradeRecord> =
         repository.getTradesInRange(from, to)
+    override suspend fun getLedgersInRange(from: Instant, to: Instant): List<LedgerEvent> = emptyList()
+    override suspend fun getRewardsOverTime(from: Instant, to: Instant): RewardsOverTime = throw NotImplementedError()
+    override suspend fun syncLedgersFromKraken(): Unit = throw NotImplementedError()
     override suspend fun getHistoryStats(): HistoryStats = throw NotImplementedError()
     override suspend fun getHistoryStats(from: Instant, to: Instant): HistoryStats = throw NotImplementedError()
     override suspend fun syncTradesFromKraken(): Unit = throw NotImplementedError()

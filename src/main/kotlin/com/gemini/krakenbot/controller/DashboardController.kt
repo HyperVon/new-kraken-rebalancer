@@ -119,6 +119,10 @@ class DashboardController(
                 handleGetHistoryComparison()
             }
 
+            get(Routes.API_HISTORY_REWARDS) {
+                handleGetHistoryRewards()
+            }
+
             get(Routes.API_HEALTH) {
                 handleGetHealth()
             }
@@ -340,6 +344,11 @@ class DashboardController(
     private suspend fun RoutingContext.handleGetHistoryComparison() {
         val (from, to) = parseTimeRange(call)
         respondJson(tradeHistoryService.getRebalancerComparison(from, to).toApiDto())
+    }
+
+    private suspend fun RoutingContext.handleGetHistoryRewards() {
+        val (from, to) = parseTimeRange(call)
+        respondJson(tradeHistoryService.getRewardsOverTime(from, to).toApiDto())
     }
 
     private suspend fun RoutingContext.handleGetHealth() {

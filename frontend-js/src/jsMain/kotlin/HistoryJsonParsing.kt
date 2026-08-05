@@ -4,6 +4,8 @@ import com.gemini.krakenbot.api.HistoryStats
 import com.gemini.krakenbot.api.PortfolioSnapshot
 import com.gemini.krakenbot.api.RebalancerComparison
 import com.gemini.krakenbot.api.RebalancerComparisonPoint
+import com.gemini.krakenbot.api.RewardsOverTime
+import com.gemini.krakenbot.api.RewardsOverTimePoint
 import com.gemini.krakenbot.api.SyncProgressResponse
 import com.gemini.krakenbot.api.TradeRecord
 import com.gemini.krakenbot.model.ComparisonAvailability
@@ -171,3 +173,17 @@ fun parseRebalancerComparison(raw: dynamic): RebalancerComparison {
         unavailableAt = dynamicString(raw.unavailableAt),
     )
 }
+
+fun parseRewardsOverTimePoint(raw: dynamic): RewardsOverTimePoint = RewardsOverTimePoint(
+    timestamp = dynamicString(raw.timestamp).orEmpty(),
+    cumulativeUSD = dynamicString(raw.cumulativeUSD).orEmpty(),
+    perAssetUSD =
+    JsObject.keys(raw.perAssetUSD).associateWith { key ->
+        dynamicString(raw.perAssetUSD[key]).orEmpty()
+    },
+)
+
+fun parseRewardsOverTime(raw: dynamic): RewardsOverTime = RewardsOverTime(
+    totalRewardsUSD = dynamicString(raw.totalRewardsUSD).orEmpty(),
+    points = parseArray(raw.points, ::parseRewardsOverTimePoint),
+)

@@ -8,6 +8,7 @@ import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.model.PortfolioSnapshot
+import com.gemini.krakenbot.repository.LedgerRepository
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.repository.TradeRepository
 import com.gemini.krakenbot.service.impl.history.TradeHistoryServiceImpl
@@ -25,6 +26,7 @@ abstract class TradeHistoryServiceTestBase : StringSpec() {
     protected val objectMapper = jacksonObjectMapper().registerModule(JavaTimeModule())
     protected val repository = mockk<TradeRepository>(relaxed = true)
     protected val statsRepository = mockk<PortfolioStatsRepository>(relaxed = true)
+    protected val ledgerRepository = mockk<LedgerRepository>(relaxed = true)
     protected val krakenService = mockk<KrakenService>(relaxed = true).also { stubWithStableBackend(it) }
     protected val configService = mockk<ConfigService>(relaxed = true)
     protected val portfolioAnalyzer = mockk<PortfolioAnalyzer>(relaxed = true)
@@ -62,6 +64,7 @@ abstract class TradeHistoryServiceTestBase : StringSpec() {
         return TradeHistoryServiceImpl(
             repository,
             statsRepository,
+            ledgerRepository,
             krakenService,
             configService,
             objectMapper,

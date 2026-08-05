@@ -219,6 +219,10 @@ Charts on this view:
   values using the same configured per-asset colors as Settings / Dashboard.
 - **Asset Holdings Over Time** — Relative change in holdings (percent), same
   per-asset colors.
+- **Staking Rewards** — Cumulative USD value of `staking` ledger entries in the
+  selected range, with one series per asset and a total shown beside the title.
+  Values are aligned to portfolio snapshots and use each snapshot's asset price;
+  the chart is empty until ledger data has been synchronized.
 
 Point markers scale with density: full size at ≤24 points, half size through 48,
 then line-only (markers hidden) while hover hit areas stay large enough for

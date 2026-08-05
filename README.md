@@ -255,6 +255,8 @@ with a wide range of tools and paradigms:
 - STREAM/STALE SSE stream-health indicator with relative age/time (separate from trading mode)
 - Persistent mode plate (SIMULATION / DRY RUN / LIVE TRADING)
 - **Range-Filtered History Metrics** — Time frame selector controls all six top metric summary cards (All-Time High / Period High, Total Trades, Total Volume Traded, Total Fees Paid, Avg Fee Rate, Avg Slippage) dynamically alongside interactive Chart.js timelines and trade history logs with price, fee, and slippage columns.
+- **Staking Rewards History** — displays cumulative staking rewards in USD, split
+  by asset, from synchronized Kraken ledger entries.
 - **Hypermedia-powered** — uses HTMX for HTML swaps and form submissions, plus
   Kotlin/JS (`rebalancer.js`) for charts, History controls, and client behavior
 
@@ -279,6 +281,19 @@ with a wide range of tools and paradigms:
 - Persists historical trades to the SQLite database
 - Deduplicates overlapping records within a ~5 minute window via pair-alias normalization (e.g. `XBTUSD` vs `XXBTZUSD`), local-estimate vs API fill reconciliation, and fee-difference tolerance
 - Tracks synchronization state in `history_sync_metadata` to prevent redundant API queries
+
+### Ledger & Staking Rewards Synchronization
+
+- Synchronizes staking and dividend entries from Kraken's private
+  `/0/private/Ledgers` endpoint, with a five-minute throttle and paginated cold
+  Flow fetching
+- Persists ledger entries in SQLite using the `(refid, timestamp, asset, type)`
+  identity so overlapping pages and retries remain idempotent
+- Stores durable seed progress and timestamps in `history_sync_metadata`, then
+  uses a five-minute incremental overlap to avoid missing entries near a
+  watermark
+- Serves `/api/history/rewards` with cumulative staking rewards aligned to
+  portfolio snapshots and valued using each snapshot's asset prices
 
 ### Safety & Reliability
 
@@ -349,6 +364,8 @@ The dedicated History view provides detailed analysis and charts tracking portfo
 - Six summary stat cards including avg fee rate and avg slippage
 - Trade log columns for price, fee, slippage, and status
 - Cumulative net cash flow chart with gross and fee-adjusted (dashed) series
+- Staking Rewards chart with cumulative USD value and per-asset series from
+  synchronized ledger entries
 
 - **View presets** — **Overview**, **Day · Total only**, **Week · Allocation**, and **Month · Net Cash Flow**, plus **Save view…** / **Set as default** / **Delete** for browser-local custom views
 - **Chart zoom** — **Zoom −** / **Zoom +** / **Reset**, plus wheel, pinch, and drag-to-zoom on the x-axis
@@ -482,7 +499,7 @@ This path is internal orchestration — not a second browser-facing SSE stream l
 ├── .github/copilot-instructions.md         # GitHub Copilot entrypoint → .agents/
 ├── common/                                 # Kotlin Multiplatform shared module (JVM + JS)
 │   ├── src/commonMain/kotlin/com/gemini/krakenbot/
-│       ├── api/                           # Wire DTOs: PortfolioSnapshot, TradeRecord, HistoryStats, RebalancerComparison, SyncProgressResponse
+│       ├── api/                           # Wire DTOs: PortfolioSnapshot, TradeRecord, HistoryStats, RebalancerComparison, RewardsOverTime, SyncProgressResponse
 │       ├── config/                        # AppConfig, Settings, Allocation, KrakenCredentials, InvalidConfigurationException
 │       ├── model/                         # Asset, OrderSide (OrderType defined alongside), RebalancerComparisonEnums, Result, TimeRange, TradeSource, generated SyncMetadataKeys
 │       ├── util/                          # PrecisionConstants
@@ -497,7 +514,7 @@ This path is internal orchestration — not a second browser-facing SSE stream l
 │   │   ├── History.kt                     # History page wiring (initHistory)
 │   │   ├── HistoryChartConfig.kt          # Chart.js defaults and option builders
 │   │   ├── HistoryChartState.kt           # Chart state, series visibility, and time range
-│   │   ├── HistoryCharts.kt               # Snapshot and net-cash-flow chart builders
+│   │   ├── HistoryCharts.kt               # Snapshot, rewards, and net-cash-flow chart builders
 │   │   ├── HistoryComparisonChart.kt      # Rebalancer comparison chart
 │   │   ├── HistoryZoom.kt                 # Zoom buttons and pan scrubbers
 │   │   ├── HistoryLoading.kt              # History API loading and sync progress
@@ -519,10 +536,10 @@ This path is internal orchestration — not a second browser-facing SSE stream l
 │   │   └── DashboardRoutes.kt            # Koin wiring → registerRoutes()
 │   ├── api/                               # Generated history mappers + custom sync-progress response mapping
 │   ├── codegen/                           # @GenerateApiMapper annotations for generated API mappers
-│   ├── model/                             # PortfolioSnapshot, OrderResult, TradeRecord, TradeSource, HistoryStats, RebalancerComparison, PortfolioStats
-│   ├── repository/                        # TradeRepository, PortfolioStatsRepository
+│   ├── model/                             # PortfolioSnapshot, OrderResult, TradeRecord, LedgerEvent, RewardsOverTime, TradeSource, HistoryStats, RebalancerComparison, PortfolioStats
+│   ├── repository/                        # TradeRepository, LedgerRepository, PortfolioStatsRepository
 │   │   ├── impl/                          # Sqlite*Impl + RepositoryUtils (safeTransaction)
-│   │   └── table/                         # TradeTable, PortfolioSnapshotTable, AssetSnapshotTable, PortfolioStatsTable, HistorySyncMetadataTable, ActionLogTable
+│   │   └── table/                         # TradeTable, LedgerTable, PortfolioSnapshotTable, AssetSnapshotTable, PortfolioStatsTable, HistorySyncMetadataTable, ActionLogTable
 │   ├── service/                           # Interfaces, ServiceUtils, and AssetColorAssigner
 │   │   └── impl/                          # Service implementations (coroutine-aware)
 │   │       ├── PortfolioManagerImpl.kt   # Loop orchestrator
@@ -540,6 +557,7 @@ This path is internal orchestration — not a second browser-facing SSE stream l
 │   │       └── history/                  # Trade history façade + collaborators
 │   │           ├── TradeHistoryServiceImpl.kt # Thin façade (Sync / SnapshotStore / Query / Reconstruction)
 │   │           ├── TradeHistorySyncService.kt
+│   │           ├── LedgersSyncService.kt
 │   │           ├── TradeHistorySnapshotStore.kt
 │   │           ├── TradeHistoryQueryService.kt
 │   │           ├── TradeHistoryReconstructionService.kt
@@ -690,6 +708,7 @@ If you are modifying the client-side code in `frontend-js/` and want to compile 
 | `GET`  | `/api/history/trades`        | Trade log for History page (JSON, `?range=`)                             |
 | `GET`  | `/api/history/stats`         | History summary-card aggregates (JSON, `?range=`)                        |
 | `GET`  | `/api/history/comparison`    | Rebalancer vs Buy & Hold comparison or unavailable reason (`?range=`)    |
+| `GET`  | `/api/history/rewards`       | Cumulative staking rewards by asset (JSON, `?range=`)                    |
 | `GET`  | `/api/history/sync-progress` | Polling endpoint for Kraken trade history sync status (JSON)             |
 | `GET`  | `/static/*`                  | Static assets (JS, dynamically compiled CSS via kotlinx-css)             |
 

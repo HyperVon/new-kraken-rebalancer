@@ -5,6 +5,7 @@ import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.gemini.krakenbot.config.DatabaseConfig
 import com.gemini.krakenbot.model.ComparisonAvailability
 import com.gemini.krakenbot.model.PortfolioSnapshot
+import com.gemini.krakenbot.repository.impl.SqliteLedgerRepositoryImpl
 import com.gemini.krakenbot.repository.impl.SqlitePortfolioStatsRepositoryImpl
 import com.gemini.krakenbot.repository.impl.SqliteTradeRepositoryImpl
 import com.gemini.krakenbot.service.ConfigService
@@ -72,6 +73,7 @@ class SimulationEvaluationScenariosTest : StringSpec() {
         val db = DatabaseConfig.init(TestFixtures.MEMORY_)
         val repository = SqliteTradeRepositoryImpl(db)
         val statsRepository = SqlitePortfolioStatsRepositoryImpl(db, objectMapper)
+        val ledgerRepository = SqliteLedgerRepositoryImpl(db)
 
         val simulated = SimulatedKrakenService(configService)
         val realService = mockk<KrakenServiceImpl>(relaxed = true)
@@ -87,6 +89,7 @@ class SimulationEvaluationScenariosTest : StringSpec() {
             TradeHistoryServiceImpl(
                 repository = repository,
                 portfolioStatsRepository = statsRepository,
+                ledgerRepository = ledgerRepository,
                 krakenService = dynamic,
                 configService = configService,
                 objectMapper = objectMapper,

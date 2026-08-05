@@ -175,6 +175,10 @@ ViewText:
   UNAVAILABLE_UNEXPLAINED_BALANCE_CHANGE: "A deposit, withdrawal, transfer, or incomplete trade history may exist."
   UNAVAILABLE_INVALID_RESPONSE: "Comparison data could not be validated."
   COMPARISON_CONFIDENCE_ESTIMATED: "Estimated (external balance changes may affect precision)"
+  # Staking rewards
+  HISTORY_STAKING_REWARDS: "Staking Rewards"
+  REWARDS_TOTAL: "Total Rewards"
+  REWARDS_CAPTION: "Cumulative staking reward value accrued during the selected range."
 
 HistoryViewIds:
   OVERVIEW: "overview"

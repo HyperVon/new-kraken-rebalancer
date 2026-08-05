@@ -25,6 +25,8 @@ import java.math.BigDecimal
 import java.time.Instant
 import com.gemini.krakenbot.model.RebalancerComparison as DomainComparison
 import com.gemini.krakenbot.model.RebalancerComparisonPoint as DomainComparisonPoint
+import com.gemini.krakenbot.model.RewardsOverTime as DomainRewardsOverTime
+import com.gemini.krakenbot.model.RewardsOverTimePoint as DomainRewardsOverTimePoint
 import io.ktor.client.plugins.sse.SSE as ClientSSE
 
 class DashboardHistoryApiTest : DashboardControllerTestBase() {
@@ -329,6 +331,38 @@ class DashboardHistoryApiTest : DashboardControllerTestBase() {
                 body shouldContain "\"availability\":\"UNAVAILABLE\""
                 body shouldContain "\"unavailableReason\":\"INSUFFICIENT_SNAPSHOTS\""
                 body shouldContain "\"unavailableAt\":\"2026-07-01T12:00:00Z\""
+            }
+        }
+
+        "getApiHistoryRewards_ReturnsJson" {
+            val rewards = DomainRewardsOverTime(
+                totalRewardsUSD = BigDecimal("1234.56"),
+                points = listOf(
+                    DomainRewardsOverTimePoint(
+                        timestamp = Instant.parse("2026-07-01T12:00:00Z"),
+                        cumulativeUSD = BigDecimal("500.00"),
+                        perAssetUSD = mapOf("BTC" to BigDecimal("500.00")),
+                    ),
+                    DomainRewardsOverTimePoint(
+                        timestamp = Instant.parse("2026-07-02T12:00:00Z"),
+                        cumulativeUSD = BigDecimal("1234.56"),
+                        perAssetUSD = mapOf("BTC" to BigDecimal("1234.56")),
+                    ),
+                ),
+            )
+            coEvery { tradeHistoryService.getRewardsOverTime(any(), any()) } returns rewards
+            testApplication {
+                application {
+                    configureTestEnv()
+                }
+                val response = client.get("/api/history/rewards?range=${TimeRange.THIRTY_DAYS.key}")
+                response.status shouldBe HttpStatusCode.OK
+                response.headers[HttpHeaders.ContentType] shouldContain TestFixtures.APPLICATION_JSON
+                val body = response.bodyAsText()
+                body shouldContain "\"totalRewardsUSD\":\"1234.56\""
+                body shouldContain "\"cumulativeUSD\":\"500.00\""
+                body shouldContain "\"perAssetUSD\":{\"BTC\":\"500.00\"}"
+                body shouldContain "\"timestamp\":\"2026-07-01T12:00:00Z\""
             }
         }
 

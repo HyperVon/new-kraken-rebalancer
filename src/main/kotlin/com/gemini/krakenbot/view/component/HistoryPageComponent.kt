@@ -71,6 +71,7 @@ class HistoryPageComponent(private val objectMapper: ObjectMapper) {
                 renderToolbar()
                 renderStatsGrid()
                 renderComparisonChartSection()
+                renderRewardsChartSection()
                 HistoryChartSection.entries.forEach { chart ->
                     renderChartSection(chart)
                 }
@@ -193,6 +194,30 @@ class HistoryPageComponent(private val objectMapper: ObjectMapper) {
             }
             p(CssClass.History.ChartCaption) { +ViewText.COMPARISON_CAPTION }
             renderChartScrubber(HtmlIds.REBALANCER_COMPARISON_CHART)
+        }
+    }
+
+    private fun DIV.renderRewardsChartSection() {
+        div(CssClass.Layout.GlassPanel) {
+            div(CssClass.History.ChartHeader + CssClass.History.RewardsHeader) {
+                h2(CssClass.Utility.GlassPanelTitle + CssClass.History.ChartHeaderTitle) {
+                    icon(Icons.TREND_UP)
+                    +ViewText.HISTORY_STAKING_REWARDS
+                }
+                div(CssClass.History.RewardsTotal) {
+                    id = HtmlIds.REWARDS_TOTAL
+                    +ViewText.EM_DASH
+                }
+            }
+            div(CssClass.History.RewardsChartArea) {
+                id = HtmlIds.REWARDS_CHART_CONTENT
+                div(CssClass.History.ChartContainer) {
+                    canvas {
+                        id = HtmlIds.REWARDS_CHART
+                    }
+                }
+            }
+            p(CssClass.History.ChartCaption) { +ViewText.REWARDS_CAPTION }
         }
     }
 

@@ -224,5 +224,25 @@ class HistoryJsonParsingTest : StringSpec() {
             parsed.availability shouldBe "UNAVAILABLE"
             parsed.points shouldBe emptyList()
         }
+
+        "parseRewardsOverTime reads string decimals and per-asset maps" {
+            val raw = json(
+                "totalRewardsUSD" to "15000.00",
+                "points" to arrayOf(
+                    json(
+                        "timestamp" to "2026-07-01T12:00:00Z",
+                        "cumulativeUSD" to "5000.00",
+                        "perAssetUSD" to json(Asset.BTC to "5000.00"),
+                    ),
+                ),
+            )
+
+            val parsed = parseRewardsOverTime(raw)
+            parsed.totalRewardsUSD shouldBe "15000.00"
+            parsed.points.size shouldBe 1
+            parsed.points[0].timestamp shouldBe "2026-07-01T12:00:00Z"
+            parsed.points[0].cumulativeUSD shouldBe "5000.00"
+            parsed.points[0].perAssetUSD[Asset.BTC] shouldBe "5000.00"
+        }
     }
 }

@@ -26,12 +26,12 @@
     "sqlite": {
       "type": "local",
       "command": ["npx", "-y", "mcp-server-sqlite-npx", "build/kilo-disposable.db"],
-      "enabled": false
+      "enabled": true
     },
     "playwright": {
       "type": "local",
       "command": ["npx", "-y", "@playwright/mcp"],
-      "enabled": false
+      "enabled": true
     }
   },
   "permission": {

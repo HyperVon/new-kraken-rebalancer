@@ -3,6 +3,7 @@ package com.gemini.krakenbot
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.gemini.krakenbot.config.*
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.repository.impl.SqliteLedgerRepositoryImpl
 import com.gemini.krakenbot.repository.impl.SqlitePortfolioStatsRepositoryImpl
 import com.gemini.krakenbot.repository.impl.SqliteTradeRepositoryImpl
 import com.gemini.krakenbot.service.ConfigService
@@ -111,6 +112,7 @@ class KrakenE2ETest : StringSpec() {
                 val db = DatabaseConfig.init(TestFixtures.MEMORY_)
                 val statsRepo = SqlitePortfolioStatsRepositoryImpl(db, objectMapper)
                 val tradesRepo = SqliteTradeRepositoryImpl(db)
+                val ledgerRepo = SqliteLedgerRepositoryImpl(db)
 
                 val krakenService =
                     KrakenServiceImpl(
@@ -128,6 +130,7 @@ class KrakenE2ETest : StringSpec() {
                     TradeHistoryServiceImpl(
                         repository = tradesRepo,
                         portfolioStatsRepository = statsRepo,
+                        ledgerRepository = ledgerRepo,
                         krakenService = krakenService,
                         configService = mockConfigService,
                         objectMapper = objectMapper,
@@ -234,6 +237,7 @@ class KrakenE2ETest : StringSpec() {
                 val db = DatabaseConfig.init(TestFixtures.MEMORY_)
                 val statsRepo = SqlitePortfolioStatsRepositoryImpl(db, objectMapper)
                 val tradesRepo = SqliteTradeRepositoryImpl(db)
+                val ledgerRepo = SqliteLedgerRepositoryImpl(db)
 
                 val krakenService =
                     KrakenServiceImpl(
@@ -251,6 +255,7 @@ class KrakenE2ETest : StringSpec() {
                     TradeHistoryServiceImpl(
                         repository = tradesRepo,
                         portfolioStatsRepository = statsRepo,
+                        ledgerRepository = ledgerRepo,
                         krakenService = krakenService,
                         configService = mockConfigService,
                         objectMapper = objectMapper,

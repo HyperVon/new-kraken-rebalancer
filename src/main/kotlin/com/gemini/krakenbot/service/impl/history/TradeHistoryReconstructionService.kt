@@ -1,6 +1,8 @@
 package com.gemini.krakenbot.service.impl.history
 
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.LedgerEvent
+import com.gemini.krakenbot.repository.LedgerRepository
 import com.gemini.krakenbot.repository.TradeRepository
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.KrakenService
@@ -15,6 +17,7 @@ import kotlin.time.Duration.Companion.milliseconds
 
 class TradeHistoryReconstructionService(
     private val repository: TradeRepository,
+    private val ledgerRepository: LedgerRepository,
     private val krakenService: KrakenService,
     private val configService: ConfigService,
     private val portfolioAnalyzer: PortfolioAnalyzer,
@@ -113,9 +116,16 @@ class TradeHistoryReconstructionService(
 
         val historicalTrades = trades.filter { it.timestamp.isBefore(cutoffTime) }
 
+        val stakingRewards =
+            ledgerRepository
+                .getLedgersInRange(Instant.now().minus(95, ChronoUnit.DAYS), Instant.now())
+                .filter { it.type == LedgerEvent.TYPE_STAKING }
+        val historicalRewards = stakingRewards.filter { it.time.isBefore(cutoffTime) }
+
         val events =
             SnapshotHistoryCalculator.buildTimelineEvents(
                 historicalTrades = historicalTrades,
+                historicalRewards = historicalRewards,
                 cutoffTime = cutoffTime,
             )
 

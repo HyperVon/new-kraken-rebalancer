@@ -7,3 +7,7 @@ SyncMetadataKeys:
   IS_SEEDED: "seeded"
   OFFSET: "offset"
   TOTAL: "total"
+  LEDGER_WATERMARK_EPOCH_SEC: "ledger_watermark_epoch_sec"
+  LEDGERS_SEEDED: "ledgers_seeded"
+  LEDGER_OFFSET: "ledger_offset"
+  LEDGER_TOTAL: "ledger_total"

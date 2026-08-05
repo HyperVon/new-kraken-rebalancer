@@ -1,6 +1,7 @@
 package com.gemini.krakenbot.frontend
 
 import com.gemini.krakenbot.api.PortfolioSnapshot
+import com.gemini.krakenbot.api.RewardsOverTime
 import com.gemini.krakenbot.api.TradeRecord
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderSide
@@ -8,6 +9,7 @@ import com.gemini.krakenbot.util.PrecisionConstants
 import com.gemini.krakenbot.view.util.ChartProps
 import com.gemini.krakenbot.view.util.HtmlIds
 import com.gemini.krakenbot.view.util.ViewText
+import kotlinx.browser.document
 import kotlin.js.Date
 import kotlin.js.json
 
@@ -389,4 +391,43 @@ private fun padSinglePointSeries(rawData: Array<dynamic>): Array<dynamic> = if (
     arrayOf(json(ChartProps.X to startTime, ChartProps.Y to 0.0), rawData[0])
 } else {
     rawData
+}
+
+internal fun buildRewardsChart(rewards: RewardsOverTime) {
+    val totalEl = document.getElementById(HtmlIds.REWARDS_TOTAL)
+    val total = dynamicNumber(rewards.totalRewardsUSD) ?: 0.0
+    totalEl?.textContent = formatUSD(total)
+
+    val points =
+        rewards.points
+            .map { point -> json("x" to point.timestamp, "y" to (dynamicNumber(point.cumulativeUSD) ?: 0.0)) }
+            .toTypedArray()
+    if (points.isEmpty()) {
+        clearChart(HtmlIds.REWARDS_CHART)
+        return
+    }
+
+    val datasets =
+        arrayOf(
+            lineDataset(
+                label = ViewText.HISTORY_STAKING_REWARDS,
+                data = points,
+                borderColor = ChartProps.COLOR_EMERALD,
+                backgroundColor = ChartProps.COLOR_GREEN_BG,
+                primary = true,
+                fill = true,
+            ),
+        )
+    val options = getClonedChartOptions()
+    applyUsdLabeling(options)
+    options.plugins.tooltip.callbacks.footer = { items: Array<dynamic> ->
+        val rawIndex = items.firstOrNull()?.dataIndex
+        val index = if (rawIndex == null || rawIndex == undefined) -1 else rawIndex.toString().toInt()
+        val perAsset = rewards.points.getOrNull(index)?.perAssetUSD
+        perAsset?.entries?.map { entry ->
+            val amount = dynamicNumber(entry.value) ?: 0.0
+            "${entry.key}: ${formatUSD(amount)}"
+        }?.toTypedArray() ?: emptyArray<String>()
+    }
+    createOrUpdate(HtmlIds.REWARDS_CHART, createLineChartConfig(datasets, options))
 }

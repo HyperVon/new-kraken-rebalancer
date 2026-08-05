@@ -95,7 +95,9 @@ To maintain the Single Responsibility Principle (SRP) and keep domain logic high
   Reconstruction. The hot `MutableSharedFlow<PortfolioSnapshot>` lives on
   `TradeHistorySnapshotStore` and is exposed via `getHistoryFlow()` for the Ktor
   SSE stream. Trade history sync uses a flow-based paginated fetch from the
-  Kraken API (`TradeHistorySyncService`).
+  Kraken API (`TradeHistorySyncService`). Ledger synchronization is a separate
+  paginated flow (`LedgersSyncService`) so ledger persistence does not alter
+  trade reconciliation semantics.
 
 ---
 
@@ -285,6 +287,21 @@ failure.
       a `0.26%` fee on each order and updates balances net of that fee. Emulator
       dry-run returns before changing balances.
 5. **Persistence**: The cycle snapshot (including all trade actions and their outcomes) is saved directly to the SQLite database (under the trade and snapshot tables).
+
+### Ledger history and staking rewards
+
+`LedgersSyncService` pulls Kraken's private `/0/private/Ledgers` endpoint at most
+once every **300 seconds**, requesting `staking` and `dividend` entries in pages
+of **50**. The first sync scans the full available history and stores durable
+progress metadata; later syncs use the latest stored ledger time (or watermark)
+with a **300-second overlap**. SQLite enforces the `(refid, timestamp, asset,
+type)` identity so overlapping pages and retries are safe.
+
+The History `/api/history/rewards` endpoint currently charts `staking` entries.
+It aligns cumulative per-asset amounts to stored portfolio snapshot timestamps,
+values each asset using that snapshot's price, and returns total and per-asset
+USD series for the selected range. Dividend entries are retained in the ledger
+store for future ledger-based views and accounting.
 
 ### Trade economics & slippage lifecycle
 

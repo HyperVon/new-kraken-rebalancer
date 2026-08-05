@@ -14,6 +14,10 @@ object TestDomBuilders {
         <div id="comparison-availability-message" class="comparison-unavailable"></div>
         <span id="comparison-confidence-badge" class="comparison-confidence-badge"></span>
         <span id="comparison-latest-difference">${ViewText.EM_DASH}</span>
+        <span id="rewards-total">${ViewText.EM_DASH}</span>
+        <div id="rewards-chart-content" class="rewards-chart-area">
+            <canvas id="rewards-chart"></canvas>
+        </div>
         <canvas id="portfolio-value-chart"></canvas>
         <canvas id="asset-holdings-chart"></canvas>
         <canvas id="allocation-drift-chart"></canvas>

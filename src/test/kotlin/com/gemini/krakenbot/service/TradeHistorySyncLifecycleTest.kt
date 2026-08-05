@@ -50,6 +50,7 @@ class TradeHistorySyncLifecycleTest : TradeHistoryServiceTestBase() {
                 val tradeHistoryService = TradeHistoryServiceImpl(
                     repository,
                     statsRepository,
+                    ledgerRepository,
                     krakenService,
                     configService,
                     objectMapper,
@@ -91,6 +92,7 @@ class TradeHistorySyncLifecycleTest : TradeHistoryServiceTestBase() {
                 val tradeHistoryService = TradeHistoryServiceImpl(
                     repository,
                     statsRepository,
+                    ledgerRepository,
                     krakenService,
                     configService,
                     objectMapper,
