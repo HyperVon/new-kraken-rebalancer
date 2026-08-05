@@ -391,6 +391,17 @@ options that are all likely to succeed.
 
 ---
 
+## 9. LSP servers
+
+LSP is enabled (`"lsp": true` in `.kilo/kilo.json`) so language-server
+diagnostics feed back when files are read. Servers auto-start on matching
+extensions and auto-install when the toolchain is present; set
+`KILO_DISABLE_LSP_DOWNLOAD=1` to stop auto-installs. Diagnostics add context
+to every file read — if a session gets context-heavy, prefer targeted
+`make`/test/lint runs for feedback instead.
+
+---
+
 ## Cursor-specific projection
 
 | Portable section above | Cursor rule file |
