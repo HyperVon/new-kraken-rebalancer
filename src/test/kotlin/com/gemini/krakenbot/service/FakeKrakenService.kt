@@ -1,7 +1,9 @@
 package com.gemini.krakenbot.service
 
+import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.OrderResult
 import com.gemini.krakenbot.model.TradeRecord
+import com.gemini.krakenbot.service.impl.KrakenApiConstants
 import java.math.BigDecimal
 
 /**
@@ -12,11 +14,15 @@ import java.math.BigDecimal
  * emulator used when `settings.simulation=true` (seeded portfolio, drifted prices).
  *
  * Suppliers and [executeOrderAction] / [orderResultFactory] may be reassigned between tests.
+ * [seedLedgerEntries] pre-seeds staking/dividend entries served like the Kraken Ledgers
+ * endpoint (type/time filtered, offset-paged at [KrakenApiConstants.LEDGER_PAGE_SIZE],
+ * matching total via [getLastLedgerTotalCount]).
  */
 class FakeKrakenService : KrakenService {
     var balanceSupplier: () -> Map<String, Any> = { emptyMap() }
     var pricesSupplier: (String) -> Map<String, Any> = { emptyMap() }
     var tradeHistorySupplier: (Long?, Int?) -> List<TradeRecord> = { _, _ -> emptyList() }
+    var ledgerSupplier: (Long?, Int?, Long?, Set<String>?) -> List<LedgerEvent> = { _, _, _, _ -> emptyList() }
 
     /** Optional side effect after recording (e.g. throw to simulate placement failure). */
     var executeOrderAction: ((String, String, String, BigDecimal) -> Unit)? =
@@ -30,6 +36,10 @@ class FakeKrakenService : KrakenService {
     var getBalancesCallCount = 0
     var getTradeHistoryCallCount = 0
     var tradeHistoryTotalCountOverride = 0
+    var getLedgersCallCount = 0
+    var ledgerTotalCountOverride = 0
+
+    private var seededLedgerEntries: List<LedgerEvent> = emptyList()
 
     override suspend fun getBalances(): RawBalances {
         getBalancesCallCount++
@@ -58,6 +68,37 @@ class FakeKrakenService : KrakenService {
     }
 
     override fun getLastTradeHistoryTotalCount(): Int = tradeHistoryTotalCountOverride
+
+    override suspend fun getLedgers(
+        startSec: Long?,
+        offset: Int?,
+        endSec: Long?,
+        types: Set<String>?,
+    ): List<LedgerEvent> {
+        getLedgersCallCount++
+        return ledgerSupplier(startSec, offset, endSec, types)
+    }
+
+    override fun getLastLedgerTotalCount(): Int = ledgerTotalCountOverride
+
+    /**
+     * Pre-seeds ledger entries (e.g. staking rewards) and serves them like the Kraken
+     * Ledgers endpoint: filtered by requested types and the start/end time window,
+     * newest-first, paged at [KrakenApiConstants.LEDGER_PAGE_SIZE] from [offset], with
+     * [getLastLedgerTotalCount] reporting the matching (unpaged) total.
+     */
+    fun seedLedgerEntries(entries: List<LedgerEvent>) {
+        seededLedgerEntries = entries
+        ledgerSupplier = { startSec, offset, endSec, types ->
+            val matching = seededLedgerEntries.filter { entry ->
+                (types == null || entry.type in types) &&
+                    (startSec == null || entry.time.epochSecond >= startSec) &&
+                    (endSec == null || entry.time.epochSecond <= endSec)
+            }.sortedByDescending { it.time }
+            ledgerTotalCountOverride = matching.size
+            matching.drop((offset ?: 0).coerceAtLeast(0)).take(KrakenApiConstants.LEDGER_PAGE_SIZE)
+        }
+    }
 
     override suspend fun executeOrder(
         pair: String,
