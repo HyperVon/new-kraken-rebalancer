@@ -185,6 +185,13 @@ The History page is for longer-term review: performance charts and the full
 trade log. Use the **24h / 7d / 30d / 90d / All** pills to change the window —
 all six summary cards and the charts update together.
 
+### Sync progress banner
+
+Immediately below the header, a banner appears while trade and ledger history is
+being synchronized: a spinner with **Synchronizing Kraken Trade History…** and an
+inline progress indicator (e.g. **0 / 0 (0%)**) plus a progress bar. It auto-
+dismisses once the sync session completes.
+
 ### Views
 
 The **Views** control (next to the time-range pills) applies a preset across
@@ -202,9 +209,7 @@ under a name in browser `localStorage` (`kraken.history.views`). **Set as
 default** marks the selected view for the next visit. **Delete** removes
 user-saved views only (built-ins stay locked).
 
-### Summary cards & primary charts
-
-![History — summary cards and value charts](images/history.png)
+### Summary cards
 
 | Card | Meaning |
 | :--- | :--- |
@@ -214,21 +219,6 @@ user-saved views only (built-ins stay locked).
 | **Total Fees Paid** | Fees attributed to those trades. |
 | **Avg Fee Rate** | `(SUM(fee) / SUM(usdAmount)) × 100` (%) for successful, non-dry-run trades in the window. |
 | **Avg Slippage** | Mean signed slippage % for successful, non-dry-run trades with slippage data. |
-
-Charts on this view:
-
-- **Portfolio Value Over Time** — Total portfolio (blue) plus per-asset USD
-  values using the same configured per-asset colors as Settings / Dashboard.
-- **Asset Holdings Over Time** — Relative change in holdings (percent), same
-  per-asset colors.
-- **Staking Rewards** — Cumulative USD value of `staking` ledger entries in the
-  selected range, with one series per asset and a total shown beside the title.
-  Values are aligned to portfolio snapshots and use each snapshot's asset price;
-  the chart is empty until ledger data has been synchronized.
-
-Point markers scale with density: full size at ≤24 points, half size through 48,
-then line-only (markers hidden) while hover hit areas stay large enough for
-tooltips.
 
 ### Zoom
 
@@ -243,9 +233,10 @@ pan. **Reset** returns to the full window and disables the scrubber again.
 
 ### Rebalancer vs Buy & Hold
 
-A new chart between the summary cards and Portfolio Value that compares what
-the rebalancer actually achieved against a **hypothetical buy-and-hold**
-strategy:
+![History — rebalancer vs buy & hold comparison](images/history.png)
+
+The first chart below the summary cards compares what the rebalancer actually
+achieved against a **hypothetical buy-and-hold** strategy:
 
 - **Buy & Hold** starts from the first snapshot in the selected window and
   holds those asset quantities constant. Each subsequent point values that
@@ -253,6 +244,9 @@ strategy:
 - **Rebalancer** is the actual portfolio value at each snapshot.
 - The **delta badge** next to the chart title shows the cumulative
   outperformance or underperformance (e.g. `+$5,000.00 (+4.76%)`).
+
+A caption below the chart reads: *Based on stored snapshots and recorded trades.
+Starting quantities are frozen at the first snapshot in the selected range.*
 
 The comparison cannot be computed when:
 
@@ -264,14 +258,37 @@ The comparison cannot be computed when:
 | Missing price | An asset lacks a price in a snapshot. |
 | Asset universe changed | An asset was added or removed during the window. |
 | Unsupported trade | A trade with a side other than BUY or SELL. |
+| Unexplained balance change | A deposit, withdrawal, transfer, or incomplete trade history may exist. |
 
-When unavailable, the chart area hides and a message explains why. Ranges
-containing unexplained balance changes — external deposits, withdrawals,
-dividends, or anything else the sync cannot attribute to a trade — still render
-but carry an **Estimated (external balance changes may affect precision)** badge;
-treat those ranges as approximate. Fully reconciled ranges show no badge.
+When an unavailability reason applies, the chart hides and a message explains why.
+Where the comparison *is* rendered but the tracked balance changes could not be
+fully reconciled (for example, external deposits or withdrawals), the chart
+still renders with an **Estimated (external balance changes may affect
+precision)** badge — treat those ranges as approximate. Fully reconciled ranges
+show no badge.
+
+### Staking Rewards
+
+A dedicated chart below the comparison shows the cumulative USD value of
+`staking` ledger entries in the selected range, with one series per asset and a
+total shown beside the title. Values are aligned to portfolio snapshots and use
+each snapshot's asset price; the chart is empty until ledger data has been
+synchronized. A caption below the chart reads: *Cumulative staking reward value
+accrued during the selected range. Assets without a snapshot price in the range
+are excluded.*
+
+### Portfolio Value & Asset Holdings
 
 ![History — portfolio value and asset holdings](images/history-portfolio-charts.png)
+
+- **Portfolio Value Over Time** — Total portfolio (blue) plus per-asset USD
+  values using the same configured per-asset colors as Settings / Dashboard.
+- **Asset Holdings Over Time** — Relative change in holdings (percent), same
+  per-asset colors.
+
+Point markers scale with density: full size at ≤24 points, half size through 48,
+then line-only (markers hidden) while hover hit areas stay large enough for
+tooltips.
 
 ### Allocation deviation & net cash flow
 

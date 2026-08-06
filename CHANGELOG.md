@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.16.24] - 2026-08-06
+
+### Fixed
+
+- **User Guide History Section**: Restructured the History page documentation to match actual rendering order — added a sync progress banner subsection, moved Staking Rewards to its own dedicated subsection, added the missing comparison chart caption, added the `Unexplained balance change` row to the unavailability reasons table, and corrected the ESTIMATED confidence explanation (chart renders with badge when balance changes are tracked but not fully reconciled, vs. hard unavailability reasons that hide the chart).
+
 ## [6.16.23] - 2026-08-06
 
 ### Style
