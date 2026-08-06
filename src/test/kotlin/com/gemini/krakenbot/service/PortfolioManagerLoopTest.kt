@@ -178,7 +178,7 @@ class PortfolioManagerLoopTest : StringSpec() {
             }
         }
 
-        "runLoop_SkipsTradesAndRebalanceWhenLedgerSyncFails" {
+        "runLoop_ContinuesRebalanceWhenLedgerSyncFails" {
             runTest {
                 val settings = TestFixtures.settings(loopDelaySeconds = 60L)
                 val config = TestFixtures.config(settings = settings)
@@ -194,12 +194,12 @@ class PortfolioManagerLoopTest : StringSpec() {
                 portfolioManager.stopRebalancingLoop()
                 job.join()
 
-                coVerify(exactly = 0) { tradeHistoryService.syncTradesFromKraken() }
-                krakenService.getBalancesCallCount shouldBe 0
+                coVerify(atLeast = 1) { tradeHistoryService.syncTradesFromKraken() }
+                krakenService.getBalancesCallCount shouldBe 1
             }
         }
 
-        "runLoop_SkipsRebalanceWhenSnapshotRebuildFails" {
+        "runLoop_ContinuesRebalanceWhenSnapshotRebuildFails" {
             runTest {
                 val settings = TestFixtures.settings(loopDelaySeconds = 60L)
                 val config = TestFixtures.config(settings = settings)
@@ -215,7 +215,7 @@ class PortfolioManagerLoopTest : StringSpec() {
                 portfolioManager.stopRebalancingLoop()
                 job.join()
 
-                krakenService.getBalancesCallCount shouldBe 0
+                krakenService.getBalancesCallCount shouldBe 1
             }
         }
 

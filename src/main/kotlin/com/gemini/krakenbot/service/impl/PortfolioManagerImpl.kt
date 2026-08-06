@@ -133,10 +133,9 @@ class PortfolioManagerImpl(
     }
 
     private suspend fun runLoopBody() {
-        if (synchronizeLedgers("on startup")) {
-            synchronizeTrades("on startup")
-            synchronizeHistoricalSnapshots("on startup")
-        }
+        synchronizeLedgers("on startup")
+        synchronizeTrades("on startup")
+        synchronizeHistoricalSnapshots("on startup")
 
         try {
             // Hot SharedFlow + collectLatest: config changes restart an idle delay immediately.
@@ -148,12 +147,10 @@ class PortfolioManagerImpl(
                             "Starting Rebalance Cycle. DryRun: {}",
                             settings.dryRun,
                         )
-                        if (synchronizeLedgers("during cycle")) {
-                            synchronizeTrades("during cycle")
-                            if (synchronizeHistoricalSnapshots("during cycle")) {
-                                performRebalanceCycle()
-                            }
-                        }
+                        synchronizeLedgers("during cycle")
+                        synchronizeTrades("during cycle")
+                        synchronizeHistoricalSnapshots("during cycle")
+                        performRebalanceCycle()
                     } catch (e: CancellationException) {
                         // Cancellation drives collectLatest restarts and shutdown; never treat it
                         // as a cycle error, or a config change would leave the old loop running.
@@ -170,19 +167,17 @@ class PortfolioManagerImpl(
         }
     }
 
-    private suspend fun synchronizeLedgers(context: String): Boolean {
+    private suspend fun synchronizeLedgers(context: String) {
         try {
             log.info(
                 "Checking and performing ledger entry synchronization from Kraken API {}...",
                 context,
             )
             tradeHistoryService.syncLedgersFromKraken()
-            return true
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             log.error("Failed to synchronize ledger entries {}", context, e)
-            return false
         }
     }
 
@@ -200,16 +195,14 @@ class PortfolioManagerImpl(
         }
     }
 
-    private suspend fun synchronizeHistoricalSnapshots(context: String): Boolean {
+    private suspend fun synchronizeHistoricalSnapshots(context: String) {
         try {
             log.info("Checking historical snapshot reconstruction {}...", context)
             tradeHistoryService.rebuildHistoricalSnapshotsIfNeeded()
-            return true
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             log.error("Failed to rebuild historical snapshots {}", context, e)
-            return false
         }
     }
 
