@@ -259,10 +259,7 @@ integrations and are not expected to work automatically in another host:
 - persisted Kilo route reports under `~/.cache/kilo/model-router/reports/`
 - the Context Mode plugin and Kilo Agent Manager setup/run hooks
 
-Other hosts should use their native model selection, subagent launcher, and
-parallel-workflow mechanisms. If they cannot expose a concrete model route or
-the required tool, keep the work in the parent or substitute an equivalent
-host-native artifact rather than claiming that the Kilo integration ran.
+Other hosts (such as Google Antigravity / AGY) MUST use their native built-in subagent launcher mechanisms (`invoke_subagent`). When executing under Antigravity, agents launch subagents solely through built-in Antigravity tools and MUST NOT invoke external subagent scripts (`.kilo/model-router/route-subagents` or `subagents.py`). If a host cannot expose a concrete model route or the required subagent tool, keep the work in the parent rather than claiming that the Kilo integration ran.
 
 ## Models and adaptive multi-agent review
 

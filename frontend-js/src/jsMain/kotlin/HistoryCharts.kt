@@ -218,8 +218,9 @@ internal fun buildAssetHoldingsChart(snapshots: List<PortfolioSnapshot>) {
     options.plugins.tooltip.callbacks.label = { ctx: dynamic ->
         val sym = ctx.dataset.label.toString()
         val pctChange = dynamicNumber(ctx.parsed.y) ?: 0.0
-        val snapshot = snapshots[ctx.dataIndex as Int]
-        val balance = dynamicNumber(snapshot.assets[sym]?.balance) ?: 0.0
+        val idx = dynamicNumber(ctx.dataIndex)?.toInt() ?: -1
+        val snapshot = snapshots.getOrNull(idx)
+        val balance = snapshot?.let { dynamicNumber(it.assets[sym]?.balance) } ?: 0.0
         val pctSign = if (pctChange >= 0.0) "+" else ""
         val balOpts: dynamic = json()
         balOpts.minimumFractionDigits = PrecisionConstants.MIN_CRYPTO_DECIMAL_PLACES

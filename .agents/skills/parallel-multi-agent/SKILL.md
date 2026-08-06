@@ -42,20 +42,11 @@ model route for each track:
 - State the route and effort plan to the user and obtain explicit approval before
   the first material or parallel worker launch.
 - Treat `subagent_type` as the worker role, not as route evidence from its name.
-- A Kilo Auto tier is a host-supported route when Kilo exposes it. The underlying
-  model is server-selected and must not be reported unless the host provides it.
-- If the Task wrapper exposes only a role and no usable model route, use
-  `.kilo/model-router/route-subagents` for bounded cross-provider tracks. Do not
-  claim that a role or profile changed the model when launching a raw Task.
+- In Google Antigravity (AGY) sessions, launch subagents natively using built-in `invoke_subagent` tool calls. Do NOT execute `.kilo/model-router/route-subagents` or `subagents.py`.
+- If running under Kilo CLI and the Task wrapper exposes only a role and no usable model route, `.kilo/model-router/route-subagents` can be used for bounded cross-provider tracks. Do not claim that a role or profile changed the model when launching a raw Task.
 - Native Auto owns its model mappings and fallbacks; it does not need a
-  repository-side inventory or probe. If the task explicitly requires direct
-  cross-provider selection, use `.kilo/model-router/route-subagents`, which
-  keeps its catalog ephemeral and persists only secret-free route/provider
-  cooldown expiry; it never persists credentials, balances, or raw errors.
-- For a broad read-only named workflow, use its routed preset; it prints and
-  executes the track matrix and route/effort plan. Use the `question` tool or
-  host equivalent only when a hard availability, scope, editing, or high-risk
-  review decision remains unresolved.
+  repository-side inventory or probe.
+- For a broad read-only named workflow under Antigravity, perform discovery fan-out natively via `invoke_subagent`. Under Kilo CLI, use the routed preset.
 - Escalate or add an independent verifier only when the track risk and available
   capability evidence justify it.
 

@@ -351,7 +351,7 @@ object ComponentStyles {
         val barTracks = ".${CssClass.Hero.TileBarTrack.value}, .${CssClass.AllocationChart.BarTrack.value}"
         "$barTracks" {
             flexGrow = 1.0
-            background = "linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.09))"
+            background = "linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.08))"
             borderRadius = CssTheme.radiusPill
             overflow = Overflow.hidden
             solidBorder(CssTheme.colorWhiteSubtle)
@@ -385,7 +385,6 @@ object ComponentStyles {
         // Hero tile bars keep their compact sizing.
         ".${CssClass.Hero.TileBarTrack.value}" {
             height = 0.625.rem
-            background = "linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.08))"
             put("box-shadow", "inset 0 1px 2px rgba(0,0,0,0.35)")
         }
         ".${CssClass.Hero.TileBarFill.value}" {

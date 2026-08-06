@@ -221,6 +221,7 @@ object NavigationStyles {
             display = Display.flex
             alignItems = Align.center
             gap = 0.25.rem
+            put("flex-wrap", "wrap")
         }
 
         ".${CssClass.History.ViewsBtn}" {

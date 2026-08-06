@@ -15,8 +15,10 @@ silently use the parent or a generic role. In Kilo, the project default is the
 host-supported `kilo/kilo-auto/efficient` tier. Its underlying model is selected
 server-side and must not be inferred from the role name.
 The repository remains usable in other hosts with its source, tests, Gradle,
-Git, and portable `.agents/` guidance. Kilo-only conveniences such as
-`.kilo/kilo.json`, `./route-kilo`, `route-subagents`, route reports, Context
+Git, and portable `.agents/` guidance. When running under Google Antigravity (AGY),
+launch subagents natively using built-in `invoke_subagent` tool calls; do NOT
+execute `.kilo/model-router/route-subagents` or `subagents.py`. Kilo-only conveniences
+such as `.kilo/kilo.json`, `./route-kilo`, `route-subagents`, route reports, Context
 Mode, and Agent Manager do not run automatically outside KiloCode.
 Choose an adaptive number of bounded tracks from the actual concerns; do not
 default to two full-task agents.

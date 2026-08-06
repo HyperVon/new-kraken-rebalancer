@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.16.16] - 2026-08-06
+
+### Changed
+
+- **Native Antigravity Subagent Policy**: Updated project documentation and agent guidance (`docs/AGENTIC_DEVELOPMENT.md`, `.agents/OPERATING.md`, `.agents/AGENTS.md`, `.agents/skills/*`, `.cursor/rules/*.mdc`) to specify that Google Antigravity (AGY) sessions launch subagents natively using built-in `invoke_subagent` tools instead of executing external Kilo CLI subagent scripts (`.kilo/model-router/route-subagents` / `subagents.py`).
+
+### Fixed
+
+- **Frontend JS Tooltip Bounds & Casting**: Replaced unsafe dynamic cast on `ctx.dataIndex` with safe numeric parsing and `snapshots.getOrNull()` in `HistoryCharts.kt`.
+- **Responsive Navigation Layout**: Added `flex-wrap: wrap` to `.history-views-actions` in `NavigationStyles.kt` to prevent toolbar button overflow on mobile viewports (<375px).
+- **CSS Token Centralization**: Consolidated duplicate `.hero-tile-bar-track` background linear-gradient and centralized primary button background/glow tokens in `CssTheme.kt`.
+
 ## [6.16.15] - 2026-08-06
 
 ### Fixed

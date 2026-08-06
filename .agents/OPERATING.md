@@ -89,8 +89,10 @@ can use the application source, tests, Gradle commands, Git workflow, and
 portable `.agents/` guidance. KiloCode-specific conveniences are optional and
 limited to Kilo Auto, `.kilo/kilo.json`, `./route-kilo`,
 `.kilo/model-router/route-subagents`, Kilo route reports, Context Mode, and
-Agent Manager. Other hosts should use their native model selection and agent
-fan-out; these Kilo-specific features do not run automatically there.
+Agent Manager. When running under Google Antigravity (AGY), subagents MUST be
+launched directly through Antigravity's native `invoke_subagent` tool calls;
+agents MUST NOT execute `.kilo/model-router/route-subagents` or `subagents.py`
+scripts. Other non-Kilo hosts should similarly use their built-in native agent fan-out.
 
 Independent work must be launched concurrently: use one parallel tool message
 or a background process for the complete fan-out, then poll results. Do not
@@ -360,17 +362,21 @@ providers and reports the quota source/state. Otherwise quota remains `unknown`.
 It does not probe every provider or silently retry an agent after a partial
 failure.
 
-For bounded parallel subagents, use `.kilo/model-router/route-subagents` with a
-track manifest instead of the host `Task` wrapper when the wrapper cannot expose
+For bounded parallel subagents in Google Antigravity (AGY), launch subagents
+natively via `invoke_subagent` tool calls; do NOT execute `.kilo/model-router/route-subagents`
+or `subagents.py`.
+
+For Kilo CLI sessions, `.kilo/model-router/route-subagents` with a track manifest
+can be used instead of the host `Task` wrapper when the wrapper cannot expose
 model selection. It computes one route plan per track from a shared metadata
 snapshot, requires `--run` to launch, and starts each worker with its exact
 `kilo run --model provider/model` route. The default worker contract is read-only;
 the parent owns integration and final verification. A raw role-only Task call is
 not evidence that this cross-provider routing occurred.
 
-For the named broad project skills, use the corresponding automatic workflow
-preset listed in `.kilo/model-router/instructions.md`; pass the user's request as
-task context instead of asking for a hand-edited manifest.
+For named broad project skills when running under Kilo, use the corresponding
+automatic workflow preset listed in `.kilo/model-router/instructions.md`; under
+Antigravity, perform discovery fan-out natively using `invoke_subagent`.
 
 Before material or parallel delegation:
 
