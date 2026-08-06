@@ -416,7 +416,18 @@ def launch_with_failover(
 
 def _cold_start_policy(config: Mapping[str, Any]) -> Mapping[str, Any]:
     value = config.get("coldStart", {})
-    return value if isinstance(value, Mapping) else {}
+    if not isinstance(value, Mapping):
+        return {}
+    try:
+        return {
+            "staggerSeconds": max(0, int(value.get("staggerSeconds", 5))),
+            "retryOnFastFail": bool(value.get("retryOnFastFail", True)),
+            "fastFailThresholdSeconds": max(0.0, float(value.get("fastFailThresholdSeconds", 5))),
+            "retryDelaySeconds": max(0.0, float(value.get("retryDelaySeconds", 10))),
+            "maxRetries": max(0, int(value.get("maxRetries", 1))),
+        }
+    except (TypeError, ValueError):
+        return {}
 
 
 def should_retry_cold_start(result: Mapping[str, Any], policy: Mapping[str, Any]) -> bool:

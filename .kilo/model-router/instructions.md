@@ -140,8 +140,11 @@ Polling caveats:
   Each snapshot shows pid, run id, phase, and per-track route / status
   (`queued` → `running` → `done`/`failed`) with exit code, retries, and
   elapsed seconds. `cat` the printed path to see exactly where a run is and
-  whether each worker is still alive. Per-run names mean concurrent Kilo
-  instances in different projects never overwrite each other.
+  whether each worker is still alive. A `running` track may still be inside
+  its stagger-sleep window (up to `(n-1) * coldStart.staggerSeconds`, ~15s
+  for 4 workers) before its `kilo run` process appears — far below the
+  stall threshold. Per-run names mean concurrent Kilo instances in
+  different projects never overwrite each other.
 - Network phases (provider catalogs, Artificial Analysis pages, quota-plugin
   queries, TPS probes) are each logged before they start and after they
   resolve, so a silent multi-minute stall is attributable to a specific
@@ -149,11 +152,11 @@ Polling caveats:
   `min(tpsProbe.timeoutSeconds, probeCharacters / minTps)` seconds per free
   route (default 50s); several free routes are probed serially, so plan-only
   runs may sit in the probe phase for minutes on first use of a route.
-- Concurrent cold starts of `kilo run` can fast-fail (exit 1 in under a
-  second, `failure_kind: null`). The launcher staggers launches and
-  auto-retries fast-fails once (see `coldStart` in `config`); if a track
-  still fails fast, retry the same command — the second run passes with
-  identical routes.
+- Concurrent cold starts of `kilo run` can fast-fail (exit 1 in under the
+  `coldStart.fastFailThresholdSeconds` default of 5s, `failure_kind: null`).
+  The launcher staggers launches and auto-retries fast-fails once (see
+  `coldStart` in `config`); if a track still fails fast, retry the same
+  command — the second run passes with identical routes.
 
 ### While workers run: check observability, do not wait blindly
 
@@ -217,6 +220,42 @@ table to stdout: track, status, the planned-to-used provider/model route chain
 relay that per-track route summary into the conversation so the operator sees
 which providers/models ran which tasks without opening the report directory.
 Keep the relay one table or a few lines; do not paste the full report.
+
+### Reading worker findings
+
+The route report intentionally omits worker report text — parent prompts,
+worker reports, credentials, and raw provider errors are never persisted
+there. Worker findings live in the worker's own Kilo session, stored in the
+Kilo CLI session database at `~/.local/share/kilo/kilo.db` (SQLite; tables
+`session`, `message`, `part`, each carrying a JSON payload in a `data`
+column).
+
+1. List the most recent worker sessions — each has `title` `routed-<track>`
+   and a `directory` pointing at its temp copy:
+
+   ```bash
+   sqlite3 ~/.local/share/kilo/kilo.db \
+     "SELECT id, substr(title,1,60), directory,
+             datetime(time_created,'unixepoch','localtime')
+      FROM session WHERE title LIKE 'routed-%'
+      ORDER BY time_created DESC LIMIT 8;"
+   ```
+
+2. Read the worker's final report — the last `text` part of the session
+   (the first `text` part is the full prompt the worker received):
+
+   ```bash
+   sqlite3 ~/.local/share/kilo/kilo.db \
+     "SELECT substr(json_extract(p.data,'$.text'),1,2500)
+      FROM part p JOIN message m ON p.message_id = m.id
+      WHERE m.session_id='<ses_id>'
+        AND json_extract(p.data,'$.type')='text'
+      ORDER BY m.time_created DESC, p.time_created DESC LIMIT 1;"
+   ```
+
+Match `directory` against the run's temp copies (printed in the launcher
+logs) to pick the right run; the per-run status snapshot gives the worker
+exit codes, retries, and elapsed times.
 
 When a catalog exposes model variants, the selected profile chooses one instead
 of silently accepting the provider default: trivial/routine prefer low/medium,

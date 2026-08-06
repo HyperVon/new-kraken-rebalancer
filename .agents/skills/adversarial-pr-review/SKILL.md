@@ -234,7 +234,9 @@ Repeat only for affected tracks:
 2. **Fan out** — launch N bounded, read-only tracks in parallel when independent.
 3. **Triage** — the parent verifies each finding against source and removes
    duplicates, false positives, and style preferences that contradict project
-   conventions.
+   conventions. Worker findings are not in the route report: read them from
+   the worker session database per "Reading worker findings" in
+   `.kilo/model-router/instructions.md`.
 4. **Targeted verification** — disputed or high-impact findings get a focused
    second verifier. It receives only the finding and affected paths.
 5. **Fix** — the parent applies legitimate critical/warning fixes and small
