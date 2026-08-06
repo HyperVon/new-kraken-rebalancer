@@ -121,6 +121,8 @@ class TradeHistorySnapshotStore(
         val currentAth =
             try {
                 portfolioStatsRepository?.load()?.allTimeHigh ?: BigDecimal.ZERO
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 log.warn("Failed to load allTimeHigh for seed grid; defaulting to zero ATH", e)
                 BigDecimal.ZERO

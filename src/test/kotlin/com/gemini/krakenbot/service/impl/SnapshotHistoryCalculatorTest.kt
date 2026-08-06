@@ -2,6 +2,7 @@ package com.gemini.krakenbot.service.impl
 
 import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.config.Allocation
+import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.OrderSide
@@ -22,7 +23,7 @@ class SnapshotHistoryCalculatorTest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
 
     private val defaultSettings =
-        com.gemini.krakenbot.config.Settings(
+        Settings(
             loopDelaySeconds = 60,
             deviationTriggerPercent = 5.0,
             dustThresholdUSD = 5.0,
@@ -561,14 +562,7 @@ class SnapshotHistoryCalculatorTest : StringSpec() {
                 "USD" to BigDecimal("10000.00"),
             )
 
-            val settings = com.gemini.krakenbot.config.Settings(
-                loopDelaySeconds = 60,
-                deviationTriggerPercent = 5.0,
-                dustThresholdUSD = 5.0,
-                dryRun = true,
-                fiatMaxDrawdown = 50.0,
-                fiatDeploymentExponent = 1.0,
-            )
+            val settings = defaultSettings
 
             val snapshots = SnapshotHistoryCalculator.calculateHistoricalSnapshots(
                 events = events,

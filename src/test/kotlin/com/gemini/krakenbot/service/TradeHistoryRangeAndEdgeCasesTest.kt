@@ -197,6 +197,97 @@ class TradeHistoryRangeAndEdgeCasesTest : TradeHistoryServiceTestBase() {
             }
         }
 
+        "init_InSimulationMode_UsesPersistedAthToShrinkUsdTargetDuringDrawdown" {
+            runTest {
+                val appConfig = AppConfig(
+                    kraken = KrakenCredentials(
+                        TestFixtures.TRADE_HISTORY_API_KEY,
+                        TestFixtures.TRADE_HISTORY_API_SECRET,
+                    ),
+                    settings = TestFixtures.settings(
+                        dryRun = false,
+                        simulation = true,
+                        loopDelaySeconds = 60,
+                        deviationTriggerPercent = 5.0,
+                        dustThresholdUSD = 5.0,
+                        fiatMaxDrawdown = 30.0,
+                    ),
+                    allocations = listOf(
+                        Allocation(Asset.BTC, 50.0),
+                        Allocation(TestFixtures.USD, 50.0),
+                    ),
+                )
+                every { configService.getConfig() } returns appConfig
+                coEvery { repository.load() } returns emptyList()
+                coEvery { statsRepository.load() } returns PortfolioStats(BigDecimal("100.00"))
+                val saved = slot<List<PortfolioSnapshot>>()
+                coEvery { repository.save(capture(saved)) } just Runs
+
+                val uniquePath = File.createTempFile("range-seed-ath-", ".json").also { it.delete() }
+                TradeHistoryServiceImpl(
+                    repository,
+                    statsRepository,
+                    ledgerRepository,
+                    krakenService,
+                    configService,
+                    objectMapper,
+                    portfolioAnalyzer,
+                    uniquePath.absolutePath,
+                ).init()
+
+                val firstSnapshot = saved.captured.first()
+                (firstSnapshot.drawdownPercent > BigDecimal.ZERO).shouldBeTrue()
+                firstSnapshot.effectiveUsdTargetPercent
+                    .shouldBeEqualComparingTo(BigDecimal.ZERO)
+            }
+        }
+
+        "init_InSimulationMode_UsesZeroAthWhenPersistedAthLoadFails" {
+            runTest {
+                val appConfig = AppConfig(
+                    kraken = KrakenCredentials(
+                        TestFixtures.TRADE_HISTORY_API_KEY,
+                        TestFixtures.TRADE_HISTORY_API_SECRET,
+                    ),
+                    settings = TestFixtures.settings(
+                        dryRun = false,
+                        simulation = true,
+                        loopDelaySeconds = 60,
+                        deviationTriggerPercent = 5.0,
+                        dustThresholdUSD = 5.0,
+                        fiatMaxDrawdown = 30.0,
+                    ),
+                    allocations = listOf(
+                        Allocation(Asset.BTC, 50.0),
+                        Allocation(TestFixtures.USD, 50.0),
+                    ),
+                )
+                every { configService.getConfig() } returns appConfig
+                coEvery { repository.load() } returns emptyList()
+                coEvery { statsRepository.load() } throws IllegalStateException("stats unavailable")
+                val saved = slot<List<PortfolioSnapshot>>()
+                coEvery { repository.save(capture(saved)) } just Runs
+
+                val uniquePath = File.createTempFile("range-seed-ath-fallback-", ".json").also { it.delete() }
+                TradeHistoryServiceImpl(
+                    repository,
+                    statsRepository,
+                    ledgerRepository,
+                    krakenService,
+                    configService,
+                    objectMapper,
+                    portfolioAnalyzer,
+                    uniquePath.absolutePath,
+                ).init()
+
+                val firstSnapshot = saved.captured.first()
+                firstSnapshot.drawdownPercent
+                    .shouldBeEqualComparingTo(BigDecimal.ZERO)
+                firstSnapshot.effectiveUsdTargetPercent
+                    .shouldBeEqualComparingTo(BigDecimal("50.00"))
+            }
+        }
+
         "syncTradesFromKraken_SkipsReconstructionWhenMultipleSnapshotsExist" {
             runTest {
                 val appConfig = AppConfig(

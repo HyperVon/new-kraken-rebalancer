@@ -117,7 +117,9 @@ The routing rules below are harness-neutral. Named agent types are repository
 or Kilo/OpenCode examples only; Cursor, Claude Code, Copilot, and other hosts
 should map the same capabilities to their own read-only Task/equivalent agents.
 Preserve the bounded scope, stop condition, report cap, and parent ownership
-regardless of the host.
+regardless of the host. **For Kilo CLI sessions the preset in
+`.kilo/model-router/instructions.md` is the required launch path (see below);
+the role table is only a mapping aid for hosts that launch natively.**
 
 Prefer a repository-specialized read-only role when its contract matches the
 track. A generic role is only a last-resort role mapping after the native
@@ -133,7 +135,7 @@ authorize a material or parallel launch when route selection is unavailable.
 | Strong reasoning | High-risk safety, persistence, exchange semantics, or disputed finding | `adversarial-reviewer-b` when available |
 | Generic capable | Only when no closer specialized type is available | `general` / host equivalent |
 
-When running under Google Antigravity (AGY), launch reviewer tracks natively using built-in `invoke_subagent` tool calls; do NOT execute `.kilo/model-router/route-subagents` or `subagents.py` scripts. For optional Kilo CLI sessions, launch independent tracks through the `adversarial-pr-review` preset in `.kilo/model-router/route-subagents` after the exact-route gate has passed. Include the track matrix in the parent task so
+When running under Google Antigravity (AGY), launch reviewer tracks natively using built-in `invoke_subagent` tool calls; do NOT execute `.kilo/model-router/route-subagents` or `subagents.py` scripts. For Kilo CLI sessions this handoff is **mandatory**: launch the independent tracks through the `adversarial-pr-review` preset in `.kilo/model-router/route-subagents` (with `--run` after the exact-route gate passes) per `.kilo/model-router/instructions.md`. Do not substitute raw role-only `Task` calls for the preset — a role label does not select a provider/model route. Include the track matrix in the parent task so
 agents do not redo one another's work. A prompt must contain:
 
 1. Absolute repository path, branch, and base.

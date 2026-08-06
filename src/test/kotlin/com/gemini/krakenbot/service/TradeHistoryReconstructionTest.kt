@@ -13,6 +13,7 @@ import com.gemini.krakenbot.repository.TradeSummaryStats
 import com.gemini.krakenbot.service.impl.history.TradeHistoryReconstructionService
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.booleans.shouldBeTrue
+import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.shouldBe
 import io.mockk.Runs
 import io.mockk.coEvery
@@ -45,7 +46,7 @@ class TradeHistoryReconstructionTest : TradeHistoryServiceTestBase() {
             }
         }
 
-        "reconstructHistoricalSnapshots_WithExistingOldestSnapshot" {
+        "reconstructHistoricalSnapshots_WithExistingOldestSnapshotAndAthLoadFailure" {
             runTest {
                 val service = createService()
 
@@ -59,6 +60,7 @@ class TradeHistoryReconstructionTest : TradeHistoryServiceTestBase() {
                         loopDelaySeconds = 60,
                         deviationTriggerPercent = 5.0,
                         dustThresholdUSD = 5.0,
+                        fiatMaxDrawdown = 30.0,
                     ),
                     allocations = listOf(
                         Allocation(Asset.BTC, 50.0),
@@ -70,6 +72,7 @@ class TradeHistoryReconstructionTest : TradeHistoryServiceTestBase() {
                 coEvery { repository.isHistorySeeded() } returns false
                 coEvery { repository.getLatestTradeTime() } returns null
                 coEvery { repository.getSyncMetadata(any()) } returns null
+                coEvery { statsRepository.load() } throws IllegalStateException("stats unavailable")
 
                 val existingSnapshot = PortfolioSnapshot(
                     timestamp = Instant.now().minus(5, ChronoUnit.DAYS),
@@ -123,11 +126,16 @@ class TradeHistoryReconstructionTest : TradeHistoryServiceTestBase() {
                 coEvery { repository.setSyncMetadata(any(), any()) } just Runs
 
                 coEvery { krakenService.getOHLC(TestFixtures.BTCUSD, 1440, any()) } returns emptyList()
-                coEvery { repository.save(any()) } just Runs
+                val reconstructed = slot<List<PortfolioSnapshot>>()
+                coEvery { repository.save(capture(reconstructed)) } just Runs
 
                 service.syncTradesFromKraken()
 
                 coVerify(atLeast = 1) { repository.save(any()) }
+                reconstructed.captured.last().drawdownPercent
+                    .shouldBeEqualComparingTo(BigDecimal.ZERO)
+                reconstructed.captured.last().effectiveUsdTargetPercent
+                    .shouldBeEqualComparingTo(BigDecimal("50.00"))
             }
         }
 

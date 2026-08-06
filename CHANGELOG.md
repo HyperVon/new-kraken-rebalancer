@@ -10,7 +10,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
-- **Historical Snapshot Review Follow-ups**: Hardened the effective USD target math introduced in `6.16.18` for historical snapshots. `TradeHistorySnapshotStore` now seeds the reconstructed ATH grid from the persisted all-time high (via `PortfolioStatsRepository`) instead of restarting from zero, `SnapshotHistoryCalculator` requires a non-null `Settings` (removing a silent zero-default footgun), the seed grid without a USD allocation carries a zero effective USD target, and `RebalancerEngine.calculateEffectiveUsdTarget` only shrinks when a non-USD target exists. A failed ATH load during reconstruction is now logged as a warning rather than silently defaulting.
+- **Historical Snapshot Review Follow-ups**: Hardened the effective USD target math introduced in `6.16.18` for historical snapshots. `TradeHistorySnapshotStore` now seeds the reconstructed ATH grid from the persisted all-time high (via `PortfolioStatsRepository`) instead of restarting from zero, `SnapshotHistoryCalculator` requires a non-null `Settings` (removing a silent zero-default footgun), the seed grid without a USD allocation carries a zero effective USD target, and `RebalancerEngine.calculateEffectiveUsdTarget` only shrinks when both a non-zero USD target and a non-USD target exist. A failed ATH load during seeding or reconstruction is now logged as a warning rather than silently defaulting.
 
 ## [6.16.18] - 2026-08-06
 
