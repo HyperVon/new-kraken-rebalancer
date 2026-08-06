@@ -414,7 +414,9 @@ def launch_with_failover(
     return result
 
 
-def _cold_start_policy(config: Mapping[str, Any]) -> Mapping[str, Any]:
+def _cold_start_policy(config: object) -> Mapping[str, Any]:
+    if not isinstance(config, Mapping):
+        return {}
     value = config.get("coldStart", {})
     if not isinstance(value, Mapping):
         return {}

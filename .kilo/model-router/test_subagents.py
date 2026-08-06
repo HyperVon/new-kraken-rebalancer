@@ -93,6 +93,16 @@ class SubagentRouterTests(unittest.TestCase):
         self.assertFalse(MODULE.should_retry_cold_start(fast_fail, {**policy, "maxRetries": 0}))
         self.assertFalse(MODULE.should_retry_cold_start(fast_fail, {**policy, "retryOnFastFail": False}))
 
+    def test_cold_start_policy_normalizes_malformed_config(self):
+        self.assertEqual({}, MODULE._cold_start_policy({"coldStart": "bad"}))
+        self.assertEqual({}, MODULE._cold_start_policy({"coldStart": {"staggerSeconds": "x"}}))
+        self.assertEqual({}, MODULE._cold_start_policy("not a mapping"))
+        normalized = MODULE._cold_start_policy({"coldStart": {"staggerSeconds": 3}})
+        self.assertEqual(3, normalized["staggerSeconds"])
+        self.assertEqual(True, normalized["retryOnFastFail"])
+        self.assertEqual(5.0, normalized["fastFailThresholdSeconds"])
+        self.assertEqual(1, normalized["maxRetries"])
+
     def test_workflow_preset_generates_specialized_tracks(self):
         tracks = MODULE.workflows.build_tracks("documentation-review", "Review the docs")
         self.assertEqual(4, len(tracks))
