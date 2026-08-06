@@ -8,6 +8,7 @@ import re
 import shlex
 import shutil
 import subprocess
+import sys
 import time
 from pathlib import Path
 from typing import Any, Mapping
@@ -154,6 +155,11 @@ def snapshot(config: Mapping[str, Any]) -> dict[str, Any]:
     status: dict[str, Any] | None = None
     show: dict[str, Any] | None = None
     if command:
+        print(
+            f"[quota {time.strftime('%H:%M:%S')}] opencode-quota status/show (timeout {timeout}s)",
+            file=sys.stderr,
+            flush=True,
+        )
         status = _run_json(command, ["status", "--json"], timeout)
         show = _run_json(command, ["show", "--json"], timeout)
         if status is None and show is None:

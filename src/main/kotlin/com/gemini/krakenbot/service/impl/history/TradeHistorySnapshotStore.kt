@@ -7,6 +7,7 @@ import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.model.TradeRecord
+import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.repository.TradeRepository
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.KrakenService
@@ -38,6 +39,7 @@ class TradeHistorySnapshotStore(
     private val krakenService: KrakenService,
     private val configService: ConfigService,
     private val objectMapper: ObjectMapper,
+    private val portfolioStatsRepository: PortfolioStatsRepository? = null,
     private val tradeHistoryFilePath: String = "trade-history.json",
 ) {
     private val log = LoggerFactory.getLogger(TradeHistorySnapshotStore::class.java)
@@ -116,12 +118,30 @@ class TradeHistorySnapshotStore(
         val config = configService.getConfig()
         val allocations = config.allocations
 
+        val currentAth =
+            try {
+                portfolioStatsRepository?.load()?.allTimeHigh ?: BigDecimal.ZERO
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                log.warn("Failed to load allTimeHigh for seed grid; defaulting to zero ATH", e)
+                BigDecimal.ZERO
+            }
+
         val (finalBalances, historicalTrades, provisionalNow) = fetchSimulationData(allocations)
 
         val (startInstant, steps, stepHours) = calculateSnapshotGridParameters(historicalTrades, provisionalNow)
         val currentBalances = reverseSeedTrades(finalBalances, historicalTrades)
         val snapshotsToSave =
-            buildSnapshotGrid(allocations, currentBalances, historicalTrades, startInstant, steps, stepHours)
+            buildSnapshotGrid(
+                allocations,
+                currentBalances,
+                historicalTrades,
+                startInstant,
+                steps,
+                stepHours,
+                currentAth,
+            )
 
         repository.save(snapshotsToSave)
         for (trade in historicalTrades) {
@@ -217,11 +237,12 @@ class TradeHistorySnapshotStore(
         startInstant: Instant,
         steps: Int,
         stepHours: Long,
+        currentAth: BigDecimal = BigDecimal.ZERO,
     ): List<PortfolioSnapshot> {
         val snapshotsToSave = mutableListOf<PortfolioSnapshot>()
         var step = 0
         var nextTradeIndex = 0
-        var runningAth = BigDecimal.ZERO
+        var runningAth = currentAth
 
         while (step <= steps) {
             val timestamp = startInstant.plus(step * stepHours, ChronoUnit.HOURS)

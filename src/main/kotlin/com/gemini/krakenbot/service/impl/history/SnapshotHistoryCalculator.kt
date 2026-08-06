@@ -71,6 +71,7 @@ object SnapshotHistoryCalculator {
     }
 
     private data class RawHistoricalPoint(
+        /** Buffered snapshot points collected newest-first; reversed for ATH-aware chronological computation. */
         val timestamp: Instant,
         val exactPortfolioValue: BigDecimal,
         val calculatedAssets: List<CalculatedAsset>,
@@ -83,7 +84,7 @@ object SnapshotHistoryCalculator {
         currentPrices: Map<String, BigDecimal>,
         ohlcData: Map<String, List<Pair<Long, BigDecimal>>>,
         tradePrices: Map<String, List<Pair<Instant, BigDecimal>>>,
-        settings: Settings? = null,
+        settings: Settings,
         currentAth: BigDecimal = BigDecimal.ZERO,
     ): List<PortfolioSnapshot> {
         val rawPoints = mutableListOf<RawHistoricalPoint>()
@@ -123,31 +124,11 @@ object SnapshotHistoryCalculator {
                 runningAth = exactPortfolioValue
             }
 
-            val drawdownPct =
-                if (settings != null) {
-                    RebalancerEngine.calculateDrawdown(exactPortfolioValue, runningAth)
-                } else {
-                    BigDecimal.ZERO
-                }
-            val fiatDeploymentPct =
-                if (settings != null) {
-                    RebalancerEngine.calculateFiatDeployment(drawdownPct, settings)
-                } else {
-                    BigDecimal.ZERO
-                }
-            val effectiveUsdTarget =
-                if (settings != null) {
-                    RebalancerEngine.calculateEffectiveUsdTarget(fiatDeploymentPct, allocations)
-                } else {
-                    PortfolioCalculations.calculateUsdTargetPercent(allocations)
-                }
-            val cryptoScaleFactor =
-                if (settings != null) {
-                    RebalancerEngine.calculateCryptoScaleFactor(effectiveUsdTarget, allocations)
-                } else {
-                    BigDecimal.ONE
-                }
-            val dustThreshold = settings?.dustThresholdUSD ?: 5.0
+            val drawdownPct = RebalancerEngine.calculateDrawdown(exactPortfolioValue, runningAth)
+            val fiatDeploymentPct = RebalancerEngine.calculateFiatDeployment(drawdownPct, settings)
+            val effectiveUsdTarget = RebalancerEngine.calculateEffectiveUsdTarget(fiatDeploymentPct, allocations)
+            val cryptoScaleFactor = RebalancerEngine.calculateCryptoScaleFactor(effectiveUsdTarget, allocations)
+            val dustThreshold = settings.dustThresholdUSD
 
             val assetSnapshots = mutableMapOf<String, PortfolioSnapshot.AssetSnapshot>()
             for ((symbol, balance, price, valueUSD, targetPercent) in point.calculatedAssets) {

@@ -36,6 +36,12 @@ AA_BASE_URL = "https://artificialanalysis.ai/api/v2"
 MAX_FAILOVER_ATTEMPTS = 3
 
 
+def _progress(message: str) -> None:
+    """Live phase progress on stderr, which stays line-buffered even when piped."""
+    stamp = time.strftime("%H:%M:%S")
+    print(f"[router {stamp}] {message}", file=sys.stderr, flush=True)
+
+
 def blacklist_model(config_path: str | None, route: str) -> bool:
     """Persistently add an end-of-life model route to the blacklist config."""
     path = Path(config_path).expanduser() if config_path else DEFAULT_CONFIG_PATH
@@ -464,9 +470,11 @@ def catalog_for_provider(provider: str, refresh: bool, cache_hours: float) -> li
         try:
             cached = json.loads(cache.read_text(encoding="utf-8"))
             if time.time() - float(cached.get("fetchedAt", 0)) < cache_hours * 3600:
+                _progress(f"provider catalog cached: {provider}")
                 return cached.get("models", [])
         except (OSError, ValueError, TypeError, json.JSONDecodeError):
             pass
+    _progress(f"fetching provider catalog: {provider}")
     command = ["kilo", "models", provider, "--verbose"]
     if refresh:
         command.append("--refresh")
@@ -550,10 +558,12 @@ def load_openrouter_benchmarks(config: Mapping[str, Any], refresh: bool) -> tupl
             if time.time() - float(cached.get("fetchedAt", 0)) < cache_hours * 3600:
                 records = cached.get("models", [])
                 if records:
+                    _progress("openrouter benchmarks cached")
                     return {r["slug"]: r for r in records if r.get("slug")}, "cached"
         except (OSError, ValueError, TypeError, json.JSONDecodeError):
             pass
 
+    _progress("fetching openrouter benchmarks (openrouter.ai/api/v1/models)")
     records: list[dict[str, Any]] = []
     try:
         request = urllib.request.Request(
@@ -599,6 +609,7 @@ def load_artificial_analysis(config: Mapping[str, Any], refresh: bool) -> tuple[
         try:
             cached = json.loads(path.read_text(encoding="utf-8"))
             if time.time() - float(cached.get("fetchedAt", 0)) < cache_hours * 3600:
+                _progress("AA model data cached")
                 return {item["slug"]: item for item in cached.get("models", [])}, "cached"
         except (OSError, ValueError, TypeError, json.JSONDecodeError):
             pass
@@ -615,6 +626,7 @@ def load_artificial_analysis(config: Mapping[str, Any], refresh: bool) -> tuple[
     page = 1
     try:
         while page <= 10:
+            _progress(f"fetching AA model data page {page} ({AA_BASE_URL}/language/models/free)")
             query = urllib.parse.urlencode({"page": page})
             request = urllib.request.Request(
                 f"{AA_BASE_URL}/language/models/free?{query}",
@@ -1193,6 +1205,7 @@ def probe_tps(candidate: Candidate, config: Mapping[str, Any]) -> tuple[float | 
     if min_tps > 0 and probe_chars > 0:
         timeout = min(timeout, probe_chars / min_tps)
     started = time.monotonic()
+    _progress(f"TPS probe {candidate.route}: {endpoint} (timeout {timeout:.0f}s)")
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
             payload = json.loads(response.read().decode())
@@ -1202,7 +1215,9 @@ def probe_tps(candidate: Candidate, config: Mapping[str, Any]) -> tuple[float | 
                 cache = read_tps_cache()
                 cache[candidate.route] = {"tps": 0.0, "measured_at": time.time(), "model": candidate.model}
                 write_tps_cache(cache)
+            _progress(f"TPS probe {candidate.route}: timed out after {timeout:.0f}s -> excluded")
             return 0.0, "timeout"
+        _progress(f"TPS probe {candidate.route}: failed ({type(error).__name__})")
         return None, f"probe failed ({type(error).__name__})"
     elapsed = time.monotonic() - started
     usage = payload.get("usage")
@@ -1211,12 +1226,14 @@ def probe_tps(candidate: Candidate, config: Mapping[str, Any]) -> tuple[float | 
         content = (payload.get("choices") or [{}])[0].get("message", {}).get("content") or ""
         tokens = max(1, len(content) // 4)
     if elapsed <= 0 or not isinstance(tokens, (int, float)) or tokens <= 0:
+        _progress(f"TPS probe {candidate.route}: no measurable output")
         return None, "probe produced no measurable output"
     tps = round(float(tokens) / elapsed, 2)
     if float(probe.get("cacheMinutes", 60)) > 0:
         cache = read_tps_cache()
         cache[candidate.route] = {"tps": tps, "measured_at": time.time(), "model": candidate.model}
         write_tps_cache(cache)
+    _progress(f"TPS probe {candidate.route}: {tps} tps")
     return tps, "probe"
 
 

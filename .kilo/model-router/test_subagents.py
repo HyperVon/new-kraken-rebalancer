@@ -1,4 +1,5 @@
 import importlib.util
+import json
 import sys
 import tempfile
 import unittest
@@ -36,6 +37,71 @@ class SubagentRouterTests(unittest.TestCase):
         self.assertIn("Do not edit files", prompt)
         self.assertIn("tool-call markup", prompt)
         self.assertIn("docs/", prompt)
+
+    def test_worker_prompt_injects_launch_time_and_date_rule(self):
+        prompt = MODULE.worker_prompt(
+            {"id": "docs", "files": ["docs/"], "task": "Check the docs", "read_only": True},
+            "openai/gpt-5.4",
+            False,
+        )
+        self.assertRegex(prompt, r"Launched at \(UTC\): \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z")
+        self.assertIn("run `date`", prompt)
+        self.assertIn("Never estimate the time", prompt)
+
+    def test_write_status_publishes_live_progress_snapshot(self):
+        with tempfile.TemporaryDirectory() as directory:
+            status_path = Path(directory) / "status.json"
+            MODULE.write_status(
+                {
+                    "pid": 1234,
+                    "phase": "launching",
+                    "tracks": [{"track": "docs", "route": "openai/gpt-5.4", "status": "queued"}],
+                },
+                status_path,
+            )
+            stored = json.loads(status_path.read_text(encoding="utf-8"))
+            self.assertEqual("launching", stored["phase"])
+            self.assertEqual("docs", stored["tracks"][0]["track"])
+            self.assertEqual("queued", stored["tracks"][0]["status"])
+            self.assertIn("updated_at_utc", stored)
+            self.assertRegex(stored["updated_at_utc"], r"\d{4}-\d{2}-\d{2}T")
+
+    def test_make_run_id_is_unique_and_timestamped(self):
+        run_id = MODULE.make_run_id()
+        self.assertRegex(run_id, r"^\d{8}T\d{6}Z-[0-9a-f]{8}$")
+        self.assertNotEqual(run_id, MODULE.make_run_id())
+
+    def test_write_status_pointer_records_latest_run(self):
+        with tempfile.TemporaryDirectory() as directory:
+            pointer = Path(directory) / "status.json"
+            with patch.object(MODULE, "STATUS_POINTER_PATH", pointer):
+                MODULE.write_status_pointer(Path(directory) / "status-abc.json", "abc")
+            stored = json.loads(pointer.read_text(encoding="utf-8"))
+            self.assertEqual("abc", stored["run_id"])
+            self.assertIn("status-abc.json", stored["path"])
+            self.assertIn("updated_at_utc", stored)
+
+    def test_should_retry_cold_start_only_for_fast_fail_without_kind(self):
+        policy = {"retryOnFastFail": True, "maxRetries": 1, "fastFailThresholdSeconds": 5}
+        fast_fail = {"exit_code": 1, "duration_seconds": 0.8}
+        self.assertTrue(MODULE.should_retry_cold_start(fast_fail, policy))
+        self.assertFalse(MODULE.should_retry_cold_start({**fast_fail, "exit_code": 0}, policy))
+        self.assertFalse(
+            MODULE.should_retry_cold_start({**fast_fail, "failure_kind": "provider_unavailable"}, policy)
+        )
+        self.assertFalse(MODULE.should_retry_cold_start({**fast_fail, "duration_seconds": 9.0}, policy))
+        self.assertFalse(MODULE.should_retry_cold_start(fast_fail, {**policy, "maxRetries": 0}))
+        self.assertFalse(MODULE.should_retry_cold_start(fast_fail, {**policy, "retryOnFastFail": False}))
+
+    def test_cold_start_policy_normalizes_malformed_config(self):
+        self.assertEqual({}, MODULE._cold_start_policy({"coldStart": "bad"}))
+        self.assertEqual({}, MODULE._cold_start_policy({"coldStart": {"staggerSeconds": "x"}}))
+        self.assertEqual({}, MODULE._cold_start_policy("not a mapping"))
+        normalized = MODULE._cold_start_policy({"coldStart": {"staggerSeconds": 3}})
+        self.assertEqual(3, normalized["staggerSeconds"])
+        self.assertEqual(True, normalized["retryOnFastFail"])
+        self.assertEqual(5.0, normalized["fastFailThresholdSeconds"])
+        self.assertEqual(1, normalized["maxRetries"])
 
     def test_workflow_preset_generates_specialized_tracks(self):
         tracks = MODULE.workflows.build_tracks("documentation-review", "Review the docs")

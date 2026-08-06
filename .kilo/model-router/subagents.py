@@ -11,6 +11,7 @@ import datetime
 import json
 import os
 import re
+import secrets
 import shutil
 import subprocess
 import sys
@@ -34,6 +35,51 @@ MAX_FAILOVER_ATTEMPTS = 3
 REPORT_FAILURE_KIND = "report_contract"
 REPORT_PROTOCOL_MARKERS = ("tool_code", "ctx_", "compress {")
 DEFAULT_REPORT_SUBDIRECTORY = Path(".cache") / "kilo" / "model-router" / "reports"
+STATUS_DIR = Path.home() / ".cache" / "kilo" / "model-router"
+STATUS_POINTER_PATH = STATUS_DIR / "status.json"
+
+
+def _log(message: str) -> None:
+    """Live progress on stderr, which stays line-buffered even when piped."""
+    stamp = datetime.datetime.now(datetime.timezone.utc).strftime("%H:%M:%S")
+    print(f"[subagents {stamp}] {message}", file=sys.stderr, flush=True)
+
+
+def make_run_id() -> str:
+    """Unique per-run id so concurrent instances in different projects never collide."""
+    stamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    return f"{stamp}-{secrets.token_hex(4)}"
+
+
+def status_path_for(run_id: str) -> Path:
+    return STATUS_DIR / f"status-{run_id}.json"
+
+
+def write_status(payload: Mapping[str, Any], status_path: Path) -> None:
+    """Publish a secret-free live status snapshot; never fatal on I/O errors."""
+    try:
+        status_path.parent.mkdir(parents=True, exist_ok=True)
+        snapshot = dict(
+            payload,
+            updated_at_utc=datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        )
+        fileio.atomic_write(status_path, json.dumps(snapshot, indent=2) + "\n")
+    except OSError:
+        pass
+
+
+def write_status_pointer(status_path: Path, run_id: str) -> None:
+    """Point the stable status.json at the most recent per-run snapshot."""
+    try:
+        STATUS_DIR.mkdir(parents=True, exist_ok=True)
+        pointer = {
+            "run_id": run_id,
+            "path": str(status_path),
+            "updated_at_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        }
+        fileio.atomic_write(STATUS_POINTER_PATH, json.dumps(pointer, indent=2) + "\n")
+    except OSError:
+        pass
 
 
 def load_manifest(path: Path) -> list[dict[str, Any]]:
@@ -77,12 +123,19 @@ def worker_prompt(track: Mapping[str, Any], route: str, allow_edits: bool, varia
         if read_only
         else "Edit only the explicitly owned paths and do not run unrelated builds or servers."
     )
+    launched_at = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     return f"""You are a bounded subagent launched by a parent agent.
 
 Track: {track['id']}
 Selected route: {route}
 Selected variant: {variant or 'default'}
 Owned paths: {scope}
+Launched at (UTC): {launched_at}
+
+Time rule: if you need the current date or time while working, run `date`
+(or `date -u`) in the shell and use its output. Never estimate the time from
+training knowledge; report timestamps only from command output or inspected
+files.
 
 {guardrails}
 Work only on the requested track. Do not redo other tracks or the parent task.
@@ -361,15 +414,120 @@ def launch_with_failover(
     return result
 
 
+def _cold_start_policy(config: object) -> Mapping[str, Any]:
+    if not isinstance(config, Mapping):
+        return {}
+    value = config.get("coldStart", {})
+    if not isinstance(value, Mapping):
+        return {}
+    try:
+        return {
+            "staggerSeconds": max(0, int(value.get("staggerSeconds", 5))),
+            "retryOnFastFail": bool(value.get("retryOnFastFail", True)),
+            "fastFailThresholdSeconds": max(0.0, float(value.get("fastFailThresholdSeconds", 5))),
+            "retryDelaySeconds": max(0.0, float(value.get("retryDelaySeconds", 10))),
+            "maxRetries": max(0, int(value.get("maxRetries", 1))),
+        }
+    except (TypeError, ValueError):
+        return {}
+
+
+def should_retry_cold_start(result: Mapping[str, Any], policy: Mapping[str, Any]) -> bool:
+    """True for a fast kilo CLI cold-start failure (exit 1, no failure kind)."""
+    if not bool(policy.get("retryOnFastFail", True)):
+        return False
+    if max(0, int(policy.get("maxRetries", 1))) <= 0:
+        return False
+    if result.get("exit_code") != 1 or result.get("failure_kind"):
+        return False
+    threshold = float(policy.get("fastFailThresholdSeconds", 5))
+    return float(result.get("duration_seconds") or 0) < threshold
+
+
 def launch_workers(prepared: Sequence[Mapping[str, Any]], max_workers: int, timeout: int, allow_auto: bool) -> list[dict[str, Any]]:
     def launch_isolated(item: Mapping[str, Any]) -> dict[str, Any]:
         read_only = bool(item["selection"].get("read_only", True))
         with worker_workspace(read_only) as workspace:
             return launch_with_failover(item, timeout, allow_auto, workspace)
 
+    def launch_staggered(item: Mapping[str, Any], delay: float) -> dict[str, Any]:
+        if delay > 0:
+            _log(f"worker {item['track']['id']}: staggering cold start, waiting {delay:.0f}s")
+            time.sleep(delay)
+        return launch_isolated(item)
+
+    run_id = make_run_id()
+    status_path = status_path_for(run_id)
+    policy = _cold_start_policy(prepared[0]["config"]) if prepared else {}
+    stagger = max(0, int(policy.get("staggerSeconds", 5)))
+    max_retries = max(0, int(policy.get("maxRetries", 1)))
+    retry_delay = float(policy.get("retryDelaySeconds", 10))
+
+    status: dict[str, Any] = {
+        "pid": os.getpid(),
+        "run_id": run_id,
+        "phase": "launching",
+        "started_at_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "tracks": [
+            {
+                "track": item["track"]["id"],
+                "route": item["selection"]["route"],
+                "status": "queued",
+                "exit_code": None,
+                "elapsed_seconds": None,
+                "retries": 0,
+            }
+            for item in prepared
+        ],
+    }
+    write_status(status, status_path)
+    write_status_pointer(status_path, run_id)
+    _log(f"live status: {status_path}")
+    by_id = {item["track"]["id"]: item for item in prepared}
+    submitted_at: dict[str, float] = {}
     with concurrent.futures.ThreadPoolExecutor(max_workers=min(max_workers, len(prepared))) as executor:
-        futures = [executor.submit(launch_isolated, item) for item in prepared]
-        return [future.result() for future in futures]
+        futures: dict[concurrent.futures.Future[dict[str, Any]], str] = {}
+        for index, item in enumerate(prepared):
+            track_id = item["track"]["id"]
+            futures[executor.submit(launch_staggered, item, index * stagger)] = track_id
+            submitted_at[track_id] = time.monotonic() + index * stagger
+            _log(f"worker {track_id}: running via {by_id[track_id]['selection']['route']}")
+            for row in status["tracks"]:
+                if row["track"] == track_id:
+                    row["status"] = "running"
+                    write_status(status, status_path)
+        status["phase"] = "running"
+        write_status(status, status_path)
+        results: list[dict[str, Any]] = []
+        for future in concurrent.futures.as_completed(futures):
+            track_id = futures[future]
+            result = future.result()
+            elapsed = time.monotonic() - submitted_at[track_id]
+            retries = 0
+            while retries < max_retries and should_retry_cold_start(result, policy):
+                retries += 1
+                _log(
+                    f"worker {track_id}: cold-start fast-fail (exit 1, no failure kind), "
+                    f"retry {retries}/{max_retries} in {retry_delay:.0f}s"
+                )
+                time.sleep(retry_delay)
+                result = launch_isolated(by_id[track_id])
+                _log(
+                    f"worker {track_id}: retry {retries} exit_code={result['exit_code']} "
+                    f"in {result['duration_seconds']}s"
+                )
+            _log(f"worker {track_id}: finished exit_code={result['exit_code']} in {elapsed:.1f}s")
+            for row in status["tracks"]:
+                if row["track"] == track_id:
+                    row["status"] = "done" if result["exit_code"] == 0 else "failed"
+                    row["exit_code"] = result["exit_code"]
+                    row["elapsed_seconds"] = round(elapsed, 1)
+                    row["retries"] = retries
+                    write_status(status, status_path)
+            results.append(result)
+    status["phase"] = "complete"
+    write_status(status, status_path)
+    return results
 
 
 def print_plan(plan: Mapping[str, Any], as_json: bool) -> None:
@@ -450,6 +608,8 @@ def _ignore_read_only_files(_: str, names: list[str]) -> list[str]:
         "env.local",
         "manifest.local",
         "agent-manager.json",
+        "__pycache__",
+        ".pytest_cache",
     }
     return [
         name
@@ -621,17 +781,28 @@ def main() -> int:
         raise router.RouterError(f"--max-workers must be between 1 and {MAX_TRACKS}")
     if args.timeout <= 0:
         raise router.RouterError("--timeout must be positive")
+    _log(
+        f"starting workflow={args.workflow or 'custom-manifest'} "
+        f"task_chars={len(args.task or '')} run={args.run} max_workers={args.max_workers}"
+    )
     manifest_path = Path(args.manifest).expanduser() if args.manifest else None
     plan, prepared = build_plan(manifest_path, args.workflow, args.task, args.config, args.refresh, args.allow_edits)
+    _log(f"route plan ready: {len(plan['tracks'])} track(s), aa={plan['aa']}")
     if not args.run:
         print_plan(plan, args.json)
+        _log("plan only; pass --run to launch workers")
         return 0
+    _log(f"launching {len(prepared)} worker(s), up to {args.max_workers} concurrent")
     results = launch_workers(prepared, args.max_workers, args.timeout, args.auto)
     try:
         route_report = write_run_report(plan, prepared, results, args.report_dir)
     except OSError:
         route_report = None
         print("Warning: unable to write the secret-free routed worker report", file=sys.stderr)
+    if route_report:
+        _log(f"route report: {route_report['markdown']}")
+    succeeded = sum(1 for result in results if result["exit_code"] == 0)
+    _log(f"done: {succeeded}/{len(results)} worker(s) succeeded")
     if args.json:
         print(json.dumps({**plan, "workers": results, "route_report": route_report}, indent=2))
     else:
