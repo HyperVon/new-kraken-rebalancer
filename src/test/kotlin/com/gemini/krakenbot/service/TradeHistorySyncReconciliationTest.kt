@@ -912,7 +912,7 @@ class TradeHistorySyncReconciliationTest : TradeHistoryServiceTestBase() {
                 coVerify {
                     repository.setSyncMetadata(
                         SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION,
-                        "2",
+                        "3",
                     )
                 }
             }

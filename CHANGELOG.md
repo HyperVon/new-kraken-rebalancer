@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.16.18] - 2026-08-06
+
+### Fixed
+
+- **Historical Snapshot Effective USD Target Math**: Fixed a discrepancy in allocation deviation history where reconstructed and seed snapshots used raw base USD target percentages instead of effective USD targets adjusted for drawdown and fiat deployment. Updated `SnapshotHistoryCalculator` and `TradeHistorySnapshotStore` to compute effective USD targets and crypto scale factors, matching live cycles from `PortfolioAnalyzerImpl`, and bumped snapshot reconstruction version to `"3"` for automatic database refresh.
+
 ## [6.16.17] - 2026-08-06
 
 ### Fixed

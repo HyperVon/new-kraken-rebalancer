@@ -193,7 +193,7 @@ class TradeHistoryRangeAndEdgeCasesTest : TradeHistoryServiceTestBase() {
 
                 saved.captured.isNotEmpty().shouldBeTrue()
                 saved.captured.first().effectiveUsdTargetPercent
-                    .shouldBeEqualComparingTo(BigDecimal("5.00"))
+                    .shouldBeEqualComparingTo(BigDecimal("0.00"))
             }
         }
 

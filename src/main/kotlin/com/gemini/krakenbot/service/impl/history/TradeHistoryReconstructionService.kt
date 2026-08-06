@@ -4,6 +4,7 @@ import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.repository.LedgerRepository
+import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.repository.TradeRepository
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.KrakenService
@@ -22,12 +23,13 @@ class TradeHistoryReconstructionService(
     private val krakenService: KrakenService,
     private val configService: ConfigService,
     private val portfolioAnalyzer: PortfolioAnalyzer,
+    private val portfolioStatsRepository: PortfolioStatsRepository? = null,
     private val nowProvider: () -> Instant = Instant::now,
 ) {
     private val log = LoggerFactory.getLogger(TradeHistoryReconstructionService::class.java)
 
     companion object {
-        const val CURRENT_RECONSTRUCTION_VERSION = "2"
+        const val CURRENT_RECONSTRUCTION_VERSION = "3"
     }
 
     suspend fun canRebuildSnapshots(): Boolean = ledgerRepository.isLedgersSeeded()
@@ -148,6 +150,14 @@ class TradeHistoryReconstructionService(
                 cutoffTime = cutoffTime,
             )
 
+        val settings = configService.getConfig().settings
+        val currentAth =
+            try {
+                portfolioStatsRepository?.load()?.allTimeHigh ?: BigDecimal.ZERO
+            } catch (e: Exception) {
+                BigDecimal.ZERO
+            }
+
         val snapshotsToSave =
             SnapshotHistoryCalculator.calculateHistoricalSnapshots(
                 events = events,
@@ -156,6 +166,8 @@ class TradeHistoryReconstructionService(
                 currentPrices = currentPrices,
                 ohlcData = ohlcData,
                 tradePrices = tradePrices,
+                settings = settings,
+                currentAth = currentAth,
             )
 
         if (snapshotsToSave.isNotEmpty()) {

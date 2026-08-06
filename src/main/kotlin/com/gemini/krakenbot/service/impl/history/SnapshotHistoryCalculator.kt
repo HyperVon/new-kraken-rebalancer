@@ -1,12 +1,14 @@
 package com.gemini.krakenbot.service.impl.history
 
 import com.gemini.krakenbot.config.Allocation
+import com.gemini.krakenbot.config.Settings
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.service.impl.PortfolioCalculations
+import com.gemini.krakenbot.service.impl.RebalancerEngine
 import com.gemini.krakenbot.util.PrecisionConstants
 import com.gemini.krakenbot.util.isNegative
 import java.math.BigDecimal
@@ -68,6 +70,12 @@ object SnapshotHistoryCalculator {
         return events
     }
 
+    private data class RawHistoricalPoint(
+        val timestamp: Instant,
+        val exactPortfolioValue: BigDecimal,
+        val calculatedAssets: List<CalculatedAsset>,
+    )
+
     fun calculateHistoricalSnapshots(
         events: List<TimelineEvent>,
         allocations: List<Allocation>,
@@ -75,15 +83,16 @@ object SnapshotHistoryCalculator {
         currentPrices: Map<String, BigDecimal>,
         ohlcData: Map<String, List<Pair<Long, BigDecimal>>>,
         tradePrices: Map<String, List<Pair<Instant, BigDecimal>>>,
+        settings: Settings? = null,
+        currentAth: BigDecimal = BigDecimal.ZERO,
     ): List<PortfolioSnapshot> {
-        val snapshotsToSave = mutableListOf<PortfolioSnapshot>()
+        val rawPoints = mutableListOf<RawHistoricalPoint>()
 
         // [runningBalances] starts at the reconstruction cutoff (the oldest retained snapshot, or current balances
         // when none exists); after each trade snapshot, undo that fill so older points see pre-trade balances.
         for (ev in events) {
             val snapshotTimestamp = ev.timestamp
             var exactPortfolioValue = BigDecimal.ZERO
-            val assetSnapshots = mutableMapOf<String, PortfolioSnapshot.AssetSnapshot>()
 
             val calculatedAssets =
                 allocations.map { alloc ->
@@ -96,32 +105,7 @@ object SnapshotHistoryCalculator {
                     CalculatedAsset(symbol, balance, price, valueUSD, alloc.targetPercent)
                 }
 
-            for ((symbol, balance, price, valueUSD, targetPercent) in calculatedAssets) {
-                assetSnapshots[symbol] =
-                    PortfolioCalculations.createAssetSnapshot(
-                        symbol = symbol,
-                        balance = balance,
-                        price = price,
-                        valueUSD = valueUSD,
-                        targetPercent = BigDecimal.valueOf(targetPercent),
-                        totalPortfolioValueUSD = exactPortfolioValue,
-                    )
-            }
-
-            val targetUsdPercent = PortfolioCalculations.calculateUsdTargetPercent(allocations)
-
-            val snapshot =
-                PortfolioSnapshot(
-                    timestamp = snapshotTimestamp,
-                    totalValueUSD = exactPortfolioValue.setScale(PrecisionConstants.SCALE_USD, RoundingMode.HALF_UP),
-                    assets = assetSnapshots,
-                    actions = emptyList(),
-                    drawdownPercent = BigDecimal.ZERO,
-                    fiatDeploymentPercent = BigDecimal.ZERO,
-                    effectiveUsdTargetPercent = targetUsdPercent,
-                )
-
-            snapshotsToSave.add(snapshot)
+            rawPoints.add(RawHistoricalPoint(snapshotTimestamp, exactPortfolioValue, calculatedAssets))
 
             if (ev is TimelineEvent.TradeEvent) {
                 reverseApplyTrade(ev.trade, runningBalances)
@@ -130,7 +114,81 @@ object SnapshotHistoryCalculator {
             }
         }
 
-        return snapshotsToSave
+        val snapshotsChronological = mutableListOf<PortfolioSnapshot>()
+        var runningAth = currentAth
+
+        for (point in rawPoints.asReversed()) {
+            val exactPortfolioValue = point.exactPortfolioValue
+            if (exactPortfolioValue > runningAth) {
+                runningAth = exactPortfolioValue
+            }
+
+            val drawdownPct =
+                if (settings != null) {
+                    RebalancerEngine.calculateDrawdown(exactPortfolioValue, runningAth)
+                } else {
+                    BigDecimal.ZERO
+                }
+            val fiatDeploymentPct =
+                if (settings != null) {
+                    RebalancerEngine.calculateFiatDeployment(drawdownPct, settings)
+                } else {
+                    BigDecimal.ZERO
+                }
+            val effectiveUsdTarget =
+                if (settings != null) {
+                    RebalancerEngine.calculateEffectiveUsdTarget(fiatDeploymentPct, allocations)
+                } else {
+                    PortfolioCalculations.calculateUsdTargetPercent(allocations)
+                }
+            val cryptoScaleFactor =
+                if (settings != null) {
+                    RebalancerEngine.calculateCryptoScaleFactor(effectiveUsdTarget, allocations)
+                } else {
+                    BigDecimal.ONE
+                }
+            val dustThreshold = settings?.dustThresholdUSD ?: 5.0
+
+            val assetSnapshots = mutableMapOf<String, PortfolioSnapshot.AssetSnapshot>()
+            for ((symbol, balance, price, valueUSD, targetPercent) in point.calculatedAssets) {
+                val symbolAsset = Asset(symbol)
+                val metrics =
+                    PortfolioCalculations.calculateAssetMetrics(
+                        symbol = symbolAsset,
+                        baseTargetPercent = BigDecimal.valueOf(targetPercent),
+                        currentValueUSD = valueUSD,
+                        totalPortfolioValueUSD = exactPortfolioValue,
+                        effectiveUsdTarget = effectiveUsdTarget,
+                        cryptoScaleFactor = cryptoScaleFactor,
+                        dustThresholdUSD = dustThreshold,
+                    )
+
+                assetSnapshots[symbol] =
+                    PortfolioCalculations.createAssetSnapshot(
+                        symbol = symbol,
+                        balance = balance,
+                        price = price,
+                        valueUSD = valueUSD,
+                        targetPercent = metrics.calcTargetPercent,
+                        totalPortfolioValueUSD = exactPortfolioValue,
+                    )
+            }
+
+            val snapshot =
+                PortfolioSnapshot(
+                    timestamp = point.timestamp,
+                    totalValueUSD = exactPortfolioValue.setScale(PrecisionConstants.SCALE_USD, RoundingMode.HALF_UP),
+                    assets = assetSnapshots,
+                    actions = emptyList(),
+                    drawdownPercent = drawdownPct,
+                    fiatDeploymentPercent = fiatDeploymentPct,
+                    effectiveUsdTargetPercent = effectiveUsdTarget,
+                )
+
+            snapshotsChronological.add(snapshot)
+        }
+
+        return snapshotsChronological.asReversed()
     }
 
     /** Undo one fill: buy spent usd+fee for volume; sell received usd−fee for volume. */
