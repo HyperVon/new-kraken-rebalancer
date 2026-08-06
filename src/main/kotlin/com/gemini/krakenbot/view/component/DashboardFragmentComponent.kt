@@ -13,6 +13,7 @@ import com.gemini.krakenbot.view.util.div
 import com.gemini.krakenbot.view.util.span
 import kotlinx.html.DIV
 import kotlinx.html.id
+import java.math.BigDecimal
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -32,6 +33,7 @@ class DashboardFragmentComponent(
         latest: PortfolioSnapshot,
         history: List<PortfolioSnapshot>,
         allocations: List<Allocation> = emptyList(),
+        delta24h: BigDecimal? = null,
     ) {
         val timeSinceUpdate =
             0L.coerceAtLeast(
@@ -42,7 +44,7 @@ class DashboardFragmentComponent(
         // Mode plate stays in the shell; this OOB swap only refreshes STREAM/STALE
         // (SSE freshness — StatusCard.Live here means healthy stream, not live trading).
         renderStreamStatus(latest, timeSinceUpdate, isStale)
-        overviewGridComponent.render(latest, history)
+        overviewGridComponent.render(latest, history, delta24h)
 
         div.div(CssClass.Layout.DetailGrid) {
             allocationChartComponent.render(latest, allocations)

@@ -70,13 +70,13 @@ class ConfigServiceTest : StringSpec() {
         )
     }
 
-    private fun assertAllocationsRejected(vararg allocations: Allocation) {
+    private suspend fun assertAllocationsRejected(vararg allocations: Allocation) {
         shouldThrow<InvalidConfigurationException> {
             configService.updateConfig(configService.getConfig().copy(allocations = allocations.toList()))
         }
     }
 
-    private fun assertSettingsRejected(vararg invalidSettings: Pair<String, Settings>) {
+    private suspend fun assertSettingsRejected(vararg invalidSettings: Pair<String, Settings>) {
         val currentConfig = configService.getConfig()
         invalidSettings.forEach { (name, settings) ->
             withClue(name) {
@@ -123,9 +123,11 @@ class ConfigServiceTest : StringSpec() {
         }
 
         "loadConfig_Success" {
-            configService.loadConfig()
-            configService.getConfig().shouldNotBeNull()
-            configService.getConfig().allocations.first().symbol.value shouldBe Asset.USD
+            runTest {
+                configService.loadConfig()
+                configService.getConfig().shouldNotBeNull()
+                configService.getConfig().allocations.first().symbol.value shouldBe Asset.USD
+            }
         }
 
         "loadConfig removes a stale temporary credential file" {
@@ -149,157 +151,177 @@ class ConfigServiceTest : StringSpec() {
         }
 
         "updateConfig_Success" {
-            val oldConfig = configService.getConfig()
-            val newConfig =
-                oldConfig.copy(
-                    allocations = listOf(
-                        Allocation(Asset.USD, 50.0),
-                        Allocation(Asset.BTC, 50.0),
-                    ),
+            runTest {
+                val oldConfig = configService.getConfig()
+                val newConfig =
+                    oldConfig.copy(
+                        allocations = listOf(
+                            Allocation(Asset.USD, 50.0),
+                            Allocation(Asset.BTC, 50.0),
+                        ),
+                    )
+
+                configService.updateConfig(newConfig)
+
+                configService.getConfig().allocations.size shouldBe 2
+                val readBack = objectMapper.readValue(
+                    tempFile,
+                    AppConfig::class.java,
                 )
-
-            configService.updateConfig(newConfig)
-
-            configService.getConfig().allocations.size shouldBe 2
-            val readBack = objectMapper.readValue(
-                tempFile,
-                AppConfig::class.java,
-            )
-            readBack.allocations.size shouldBe 2
-            readBack.kraken.apiKey.value shouldBe "k"
-            readBack.kraken.privateKey.value shouldBe "s"
+                readBack.allocations.size shouldBe 2
+                readBack.kraken.apiKey.value shouldBe "k"
+                readBack.kraken.privateKey.value shouldBe "s"
+            }
         }
 
         "updateConfig canonicalizes allocation case and Kraken aliases before persistence" {
-            configService.updateConfig(
-                configService.getConfig().copy(
-                    allocations = listOf(
-                        Allocation("usd", 20.0),
-                        Allocation("xbt", 40.0),
-                        Allocation("doge", 40.0),
-                    ),
-                ),
-            )
-
-            configService.getConfig().allocations.map { it.symbol.value } shouldBe
-                listOf(Asset.USD, Asset.BTC, Asset.DOGE)
-            objectMapper.readValue(tempFile, AppConfig::class.java).allocations.map { it.symbol.value } shouldBe
-                listOf(Asset.USD, Asset.BTC, Asset.DOGE)
-        }
-
-        "updateConfig rejects allocation aliases that collide after canonicalization" {
-            assertAllocationsRejected(
-                Allocation(Asset.BTC, 25.0),
-                Allocation(Asset.XBT, 25.0),
-                Allocation(Asset.USD, 50.0),
-            )
-            assertAllocationsRejected(
-                Allocation(Asset.DOGE, 25.0),
-                Allocation(Asset.XDG, 25.0),
-                Allocation(Asset.USD, 50.0),
-            )
-        }
-
-        "updateConfig persists the independent simulation flag through disk reload" {
-            val updated = configService.getConfig().copy(
-                settings = configService.getConfig().settings.copy(simulation = true, dryRun = false),
-            )
-
-            configService.updateConfig(updated)
-
-            ConfigServiceImpl(objectMapper, tempFile.absolutePath).getConfig().settings.simulation shouldBe true
-            ConfigServiceImpl(objectMapper, tempFile.absolutePath).getConfig().settings.dryRun shouldBe false
-        }
-
-        "execution session defers both updates and file reloads until the session ends" {
-            val originalConfig = configService.getConfig()
-            val updatedConfig = originalConfig.copy(
-                settings = originalConfig.settings.copy(loopDelaySeconds = 120L),
-            )
-            val reloadedConfig = originalConfig.copy(
-                settings = originalConfig.settings.copy(loopDelaySeconds = 180L),
-            )
-
-            configService.beginExecutionSession()
-            configService.updateConfig(updatedConfig)
-            configService.getConfig() shouldBe originalConfig
-
-            objectMapper.writeValue(tempFile, reloadedConfig)
-            configService.loadConfig()
-            configService.getConfig() shouldBe originalConfig
-
-            configService.endExecutionSession()
-            configService.getConfig().settings.loopDelaySeconds shouldBe 180L
-        }
-
-        "loadConfig_AssignsMissingColors" {
-            configService.loadConfig()
-            val colors = configService.getConfig().allocations.map { it.color }
-            colors.all { it != null }.shouldBeTrue()
-            colors.first() shouldBe "#94a3b8"
-        }
-
-        "updateConfig_PersistsAssignedColors" {
-            val oldConfig = configService.getConfig()
-            configService.updateConfig(
-                oldConfig.copy(
-                    allocations = listOf(
-                        Allocation(Asset.USD, 50.0),
-                        Allocation(Asset.BTC, 50.0),
-                    ),
-                ),
-            )
-            val readBack = objectMapper.readValue(tempFile, AppConfig::class.java)
-            readBack.allocations.map { it.color } shouldBe listOf("#94a3b8", "#fbbf24")
-        }
-
-        "updateConfig_RejectsInvalidColorByReassigning" {
-            val oldConfig = configService.getConfig()
-            configService.updateConfig(
-                oldConfig.copy(
-                    allocations = listOf(Allocation(Asset.USD, 100.0, "not-a-color")),
-                ),
-            )
-            val color = configService.getConfig().allocations.single().color
-            color.shouldNotBeNull()
-            color shouldBe "#94a3b8"
-        }
-
-        "updateConfig_DoesNotPersistEnvResolvedCredentials" {
-            val secretFromEnv = System.getenv("PATH") ?: "fallback-path"
-            writeRawConfig(
-                apiKey = "\${PATH:fallback-path}",
-                privateKey = "\${TEST_KRAKEN_PRIVATE_KEY:default-private-key}",
-            )
-
-            val service = ConfigServiceImpl(objectMapper, tempFile.absolutePath)
-            service.getConfig().kraken.apiKey.value shouldBe secretFromEnv
-
-            val updated = service.getConfig().copy(
-                settings = service.getConfig().settings.copy(dryRun = false),
-            )
-            service.updateConfig(updated)
-
-            val savedContent = tempFile.readText()
-            savedContent shouldContain $$"${PATH:fallback-path}"
-            savedContent shouldContain $$"${TEST_KRAKEN_PRIVATE_KEY:default-private-key}"
-            savedContent shouldNotContain secretFromEnv
-
-            val reloaded = ConfigServiceImpl(objectMapper, tempFile.absolutePath)
-            reloaded.getConfig().kraken.apiKey.value shouldBe secretFromEnv
-            reloaded.getConfig().settings.dryRun shouldBe false
-        }
-
-        "updateConfig makes the final credential config owner-only on POSIX" {
-            if (Files.getFileAttributeView(tempFile.toPath(), PosixFileAttributeView::class.java) != null) {
-                Files.setPosixFilePermissions(tempFile.toPath(), permissivePermissions)
+            runTest {
                 configService.updateConfig(
                     configService.getConfig().copy(
-                        settings = configService.getConfig().settings.copy(loopDelaySeconds = 61L),
+                        allocations = listOf(
+                            Allocation("usd", 20.0),
+                            Allocation("xbt", 40.0),
+                            Allocation("doge", 40.0),
+                        ),
                     ),
                 )
 
-                Files.getPosixFilePermissions(tempFile.toPath()) shouldBe ownerOnlyPermissions
+                configService.getConfig().allocations.map { it.symbol.value } shouldBe
+                    listOf(Asset.USD, Asset.BTC, Asset.DOGE)
+                objectMapper.readValue(tempFile, AppConfig::class.java).allocations.map { it.symbol.value } shouldBe
+                    listOf(Asset.USD, Asset.BTC, Asset.DOGE)
+            }
+        }
+
+        "updateConfig rejects allocation aliases that collide after canonicalization" {
+            runTest {
+                assertAllocationsRejected(
+                    Allocation(Asset.BTC, 25.0),
+                    Allocation(Asset.XBT, 25.0),
+                    Allocation(Asset.USD, 50.0),
+                )
+                assertAllocationsRejected(
+                    Allocation(Asset.DOGE, 25.0),
+                    Allocation(Asset.XDG, 25.0),
+                    Allocation(Asset.USD, 50.0),
+                )
+            }
+        }
+
+        "updateConfig persists the independent simulation flag through disk reload" {
+            runTest {
+                val updated = configService.getConfig().copy(
+                    settings = configService.getConfig().settings.copy(simulation = true, dryRun = false),
+                )
+
+                configService.updateConfig(updated)
+
+                ConfigServiceImpl(objectMapper, tempFile.absolutePath).getConfig().settings.simulation shouldBe true
+                ConfigServiceImpl(objectMapper, tempFile.absolutePath).getConfig().settings.dryRun shouldBe false
+            }
+        }
+
+        "execution session defers both updates and file reloads until the session ends" {
+            runTest {
+                val originalConfig = configService.getConfig()
+                val updatedConfig = originalConfig.copy(
+                    settings = originalConfig.settings.copy(loopDelaySeconds = 120L),
+                )
+                val reloadedConfig = originalConfig.copy(
+                    settings = originalConfig.settings.copy(loopDelaySeconds = 180L),
+                )
+
+                configService.beginExecutionSession()
+                configService.updateConfig(updatedConfig)
+                configService.getConfig() shouldBe originalConfig
+
+                objectMapper.writeValue(tempFile, reloadedConfig)
+                configService.loadConfig()
+                configService.getConfig() shouldBe originalConfig
+
+                configService.endExecutionSession()
+                configService.getConfig().settings.loopDelaySeconds shouldBe 180L
+            }
+        }
+
+        "loadConfig_AssignsMissingColors" {
+            runTest {
+                configService.loadConfig()
+                val colors = configService.getConfig().allocations.map { it.color }
+                colors.all { it != null }.shouldBeTrue()
+                colors.first() shouldBe "#94a3b8"
+            }
+        }
+
+        "updateConfig_PersistsAssignedColors" {
+            runTest {
+                val oldConfig = configService.getConfig()
+                configService.updateConfig(
+                    oldConfig.copy(
+                        allocations = listOf(
+                            Allocation(Asset.USD, 50.0),
+                            Allocation(Asset.BTC, 50.0),
+                        ),
+                    ),
+                )
+                val readBack = objectMapper.readValue(tempFile, AppConfig::class.java)
+                readBack.allocations.map { it.color } shouldBe listOf("#94a3b8", "#fbbf24")
+            }
+        }
+
+        "updateConfig_RejectsInvalidColorByReassigning" {
+            runTest {
+                val oldConfig = configService.getConfig()
+                configService.updateConfig(
+                    oldConfig.copy(
+                        allocations = listOf(Allocation(Asset.USD, 100.0, "not-a-color")),
+                    ),
+                )
+                val color = configService.getConfig().allocations.single().color
+                color.shouldNotBeNull()
+                color shouldBe "#94a3b8"
+            }
+        }
+
+        "updateConfig_DoesNotPersistEnvResolvedCredentials" {
+            runTest {
+                val secretFromEnv = System.getenv("PATH") ?: "fallback-path"
+                writeRawConfig(
+                    apiKey = "\${PATH:fallback-path}",
+                    privateKey = "\${TEST_KRAKEN_PRIVATE_KEY:default-private-key}",
+                )
+
+                val service = ConfigServiceImpl(objectMapper, tempFile.absolutePath)
+                service.getConfig().kraken.apiKey.value shouldBe secretFromEnv
+
+                val updated = service.getConfig().copy(
+                    settings = service.getConfig().settings.copy(dryRun = false),
+                )
+                service.updateConfig(updated)
+
+                val savedContent = tempFile.readText()
+                savedContent shouldContain $$"${PATH:fallback-path}"
+                savedContent shouldContain $$"${TEST_KRAKEN_PRIVATE_KEY:default-private-key}"
+                savedContent shouldNotContain secretFromEnv
+
+                val reloaded = ConfigServiceImpl(objectMapper, tempFile.absolutePath)
+                reloaded.getConfig().kraken.apiKey.value shouldBe secretFromEnv
+                reloaded.getConfig().settings.dryRun shouldBe false
+            }
+        }
+
+        "updateConfig makes the final credential config owner-only on POSIX" {
+            runTest {
+                if (Files.getFileAttributeView(tempFile.toPath(), PosixFileAttributeView::class.java) != null) {
+                    Files.setPosixFilePermissions(tempFile.toPath(), permissivePermissions)
+                    configService.updateConfig(
+                        configService.getConfig().copy(
+                            settings = configService.getConfig().settings.copy(loopDelaySeconds = 61L),
+                        ),
+                    )
+
+                    Files.getPosixFilePermissions(tempFile.toPath()) shouldBe ownerOnlyPermissions
+                }
             }
         }
 
@@ -313,199 +335,156 @@ class ConfigServiceTest : StringSpec() {
         }
 
         "updateConfig_PersistsUserChangedCredentials" {
-            val oldConfig = configService.getConfig()
-            val updated = oldConfig.copy(
-                kraken = KrakenCredentials("new-api-key", "new-private-key"),
-            )
+            runTest {
+                val oldConfig = configService.getConfig()
+                val updated = oldConfig.copy(
+                    kraken = KrakenCredentials("new-api-key", "new-private-key"),
+                )
 
-            configService.updateConfig(updated)
+                configService.updateConfig(updated)
 
-            val readBack = objectMapper.readValue(tempFile, AppConfig::class.java)
-            readBack.kraken.apiKey.value shouldBe "new-api-key"
-            readBack.kraken.privateKey.value shouldBe "new-private-key"
-            configService.getConfig().kraken.apiKey.value shouldBe "new-api-key"
+                val readBack = objectMapper.readValue(tempFile, AppConfig::class.java)
+                readBack.kraken.apiKey.value shouldBe "new-api-key"
+                readBack.kraken.privateKey.value shouldBe "new-private-key"
+                configService.getConfig().kraken.apiKey.value shouldBe "new-api-key"
+            }
         }
 
         "updateConfig preserves each unchanged env credential during partial rotation" {
-            listOf("api", "private").forEach { rotatedField ->
-                writeRawConfig(apiKey = "\${PATH:api-default}", privateKey = "\${PATH:private-default}")
-                val service = ConfigServiceImpl(objectMapper, tempFile.absolutePath)
-                val current = service.getConfig()
-                val rotated =
+            runTest {
+                listOf("api", "private").forEach { rotatedField ->
+                    writeRawConfig(apiKey = "\${PATH:api-default}", privateKey = "\${PATH:private-default}")
+                    val service = ConfigServiceImpl(objectMapper, tempFile.absolutePath)
+                    val current = service.getConfig()
+                    val rotated =
+                        if (rotatedField == "api") {
+                            KrakenCredentials("new-api-key", current.kraken.privateKey.value)
+                        } else {
+                            KrakenCredentials(current.kraken.apiKey.value, "new-private-key")
+                        }
+
+                    service.updateConfig(current.copy(kraken = rotated))
+
+                    val rawSaved = objectMapper.readValue(tempFile, AppConfig::class.java)
                     if (rotatedField == "api") {
-                        KrakenCredentials("new-api-key", current.kraken.privateKey.value)
+                        rawSaved.kraken.apiKey.value shouldBe "new-api-key"
+                        rawSaved.kraken.privateKey.value shouldBe $$"${PATH:private-default}"
                     } else {
-                        KrakenCredentials(current.kraken.apiKey.value, "new-private-key")
+                        rawSaved.kraken.apiKey.value shouldBe $$"${PATH:api-default}"
+                        rawSaved.kraken.privateKey.value shouldBe "new-private-key"
                     }
-
-                service.updateConfig(current.copy(kraken = rotated))
-
-                val rawSaved = objectMapper.readValue(tempFile, AppConfig::class.java)
-                if (rotatedField == "api") {
-                    rawSaved.kraken.apiKey.value shouldBe "new-api-key"
-                    rawSaved.kraken.privateKey.value shouldBe $$"${PATH:private-default}"
-                } else {
-                    rawSaved.kraken.apiKey.value shouldBe $$"${PATH:api-default}"
-                    rawSaved.kraken.privateKey.value shouldBe "new-private-key"
                 }
             }
         }
 
         "validateConfig_InvalidTotal" {
-            assertAllocationsRejected(Allocation(Asset.USD, 90.0))
+            runTest {
+                assertAllocationsRejected(Allocation(Asset.USD, 90.0))
+            }
         }
 
         "validateConfig_UsesSharedAllocationTolerance" {
-            configService.updateConfig(
-                configService.getConfig().copy(
-                    allocations = listOf(
-                        Allocation(Asset.USD, 49.995),
-                        Allocation(Asset.BTC, 50.0),
+            runTest {
+                configService.updateConfig(
+                    configService.getConfig().copy(
+                        allocations = listOf(
+                            Allocation(Asset.USD, 49.995),
+                            Allocation(Asset.BTC, 50.0),
+                        ),
                     ),
-                ),
-            )
+                )
 
-            assertAllocationsRejected(
-                Allocation(Asset.USD, 49.989),
-                Allocation(Asset.BTC, 50.0),
-            )
+                assertAllocationsRejected(
+                    Allocation(Asset.USD, 49.989),
+                    Allocation(Asset.BTC, 50.0),
+                )
+            }
         }
 
         "validateConfig_NoUSD" {
-            assertAllocationsRejected(Allocation(Asset.BTC, 100.0))
+            runTest {
+                assertAllocationsRejected(Allocation(Asset.BTC, 100.0))
+            }
         }
 
         "validateConfig_DuplicateSymbols" {
-            assertAllocationsRejected(
-                Allocation(Asset.BTC, 50.0),
-                Allocation(Asset.BTC.lowercase(), 50.0),
-            )
+            runTest {
+                assertAllocationsRejected(
+                    Allocation(Asset.BTC, 50.0),
+                    Allocation(Asset.BTC.lowercase(), 50.0),
+                )
+            }
         }
 
         "validateConfig_NegativeTargetPercent" {
-            assertAllocationsRejected(
-                Allocation(Asset.USD, 110.0),
-                Allocation(Asset.BTC, -10.0),
-            )
+            runTest {
+                assertAllocationsRejected(
+                    Allocation(Asset.USD, 110.0),
+                    Allocation(Asset.BTC, -10.0),
+                )
+            }
         }
 
         "validateConfig_EmptyAllocations" {
-            assertAllocationsRejected()
+            runTest {
+                assertAllocationsRejected()
+            }
         }
 
         "validateConfig_BlankSymbol" {
-            assertAllocationsRejected(
-                Allocation(Asset.USD, 50.0),
-                Allocation("  ", 50.0),
-            )
+            runTest {
+                assertAllocationsRejected(
+                    Allocation(Asset.USD, 50.0),
+                    Allocation("  ", 50.0),
+                )
+            }
         }
 
         "validateConfig_InvalidSymbolPattern" {
-            assertAllocationsRejected(
-                Allocation(Asset.USD, 50.0),
-                Allocation("BTC-USD", 50.0),
-            )
+            runTest {
+                assertAllocationsRejected(
+                    Allocation(Asset.USD, 50.0),
+                    Allocation("BTC-USD", 50.0),
+                )
+            }
         }
 
         "validateConfig_RejectsNonFiniteAllocationTargets" {
-            val originalConfig = configService.getConfig()
-            val originalDiskContent = tempFile.readText()
-            listOf(Double.NaN, Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY).forEach { value ->
-                withClue("targetPercent=$value") {
-                    shouldThrow<InvalidConfigurationException> {
-                        configService.updateConfig(
-                            originalConfig.copy(
-                                allocations = listOf(Allocation(Asset.USD, value)),
-                            ),
-                        )
+            runTest {
+                val originalConfig = configService.getConfig()
+                val originalDiskContent = tempFile.readText()
+                listOf(Double.NaN, Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY).forEach { value ->
+                    withClue("targetPercent=$value") {
+                        shouldThrow<InvalidConfigurationException> {
+                            configService.updateConfig(
+                                originalConfig.copy(
+                                    allocations = listOf(Allocation(Asset.USD, value)),
+                                ),
+                            )
+                        }
                     }
+                    configService.getConfig() shouldBe originalConfig
+                    tempFile.readText() shouldBe originalDiskContent
                 }
-                configService.getConfig() shouldBe originalConfig
-                tempFile.readText() shouldBe originalDiskContent
             }
         }
 
         "validateConfig_BadSettings" {
-            val settings = configService.getConfig().settings
-            assertSettingsRejected(
-                "loopDelaySeconds" to settings.copy(loopDelaySeconds = 0),
-                "deviationTriggerPercent" to settings.copy(deviationTriggerPercent = -1.0),
-                "dustThresholdUSD" to settings.copy(dustThresholdUSD = -1.0),
-                "minimum fiatMaxDrawdown" to settings.copy(fiatMaxDrawdown = -1.0),
-                "maximum fiatMaxDrawdown" to settings.copy(fiatMaxDrawdown = 101.0),
-                "fiatDeploymentExponent" to settings.copy(fiatDeploymentExponent = 0.0),
-            )
+            runTest {
+                val settings = configService.getConfig().settings
+                assertSettingsRejected(
+                    "loopDelaySeconds" to settings.copy(loopDelaySeconds = 0),
+                    "deviationTriggerPercent" to settings.copy(deviationTriggerPercent = -1.0),
+                    "dustThresholdUSD" to settings.copy(dustThresholdUSD = -1.0),
+                    "minimum fiatMaxDrawdown" to settings.copy(fiatMaxDrawdown = -1.0),
+                    "maximum fiatMaxDrawdown" to settings.copy(fiatMaxDrawdown = 101.0),
+                    "fiatDeploymentExponent" to settings.copy(fiatDeploymentExponent = 0.0),
+                )
+            }
         }
 
         "saveConfig_Exception" {
-            val mockMapper = mockk<ObjectMapper>(relaxed = true)
-            val mockWriter = mockk<ObjectWriter>(relaxed = true)
-            val validConfig =
-                TestFixtures.config(
-                    kraken = KrakenCredentials("a", "b"),
-                    settings = TestFixtures.settings(loopDelaySeconds = 1, deviationTriggerPercent = 1.0),
-                    allocations = listOf(Allocation(Asset.USD, 100.0)),
-                )
-            every { mockMapper.writerWithDefaultPrettyPrinter() } returns mockWriter
-            every {
-                mockMapper.readValue(
-                    any<String>(),
-                    AppConfig::class.java,
-                )
-            } returns validConfig
-            every {
-                mockWriter.writeValue(
-                    any<File>(),
-                    any<Any>(),
-                )
-            } throws IOException("Write error")
-
-            configService = ConfigServiceImpl(
-                mockMapper,
-                tempFile.absolutePath,
-            )
-
-            shouldThrow<RuntimeException> {
-                configService.updateConfig(validConfig)
-            }
-        }
-
-        "updateConfig removes the temp file after a non-IO serialization failure" {
-            val mockMapper = mockk<ObjectMapper>(relaxed = true)
-            val mockWriter = mockk<ObjectWriter>(relaxed = true)
-            val validConfig =
-                TestFixtures.config(
-                    kraken = KrakenCredentials("a", "b"),
-                    settings = TestFixtures.settings(loopDelaySeconds = 1, deviationTriggerPercent = 1.0),
-                    allocations = listOf(Allocation(Asset.USD, 100.0)),
-                )
-            every { mockMapper.writerWithDefaultPrettyPrinter() } returns mockWriter
-            every {
-                mockMapper.readValue(
-                    any<String>(),
-                    AppConfig::class.java,
-                )
-            } returns validConfig
-            every {
-                mockWriter.writeValue(
-                    any<File>(),
-                    any<Any>(),
-                )
-            } answers {
-                firstArg<File>().writeText("temporary credential material")
-                throw IllegalStateException("serialization failed")
-            }
-
-            configService = ConfigServiceImpl(mockMapper, tempFile.absolutePath)
-
-            shouldThrow<IllegalStateException> {
-                configService.updateConfig(validConfig)
-            }
-            File("${tempFile.absolutePath}.tmp").exists() shouldBe false
-        }
-
-        "writeConfigAtomically uses owner-only temp permissions before serialization on POSIX" {
-            if (Files.getFileAttributeView(tempFile.toPath(), PosixFileAttributeView::class.java) != null) {
+            runTest {
                 val mockMapper = mockk<ObjectMapper>(relaxed = true)
                 val mockWriter = mockk<ObjectWriter>(relaxed = true)
                 val validConfig =
@@ -514,7 +493,41 @@ class ConfigServiceTest : StringSpec() {
                         settings = TestFixtures.settings(loopDelaySeconds = 1, deviationTriggerPercent = 1.0),
                         allocations = listOf(Allocation(Asset.USD, 100.0)),
                     )
-                var observedPermissions: Set<PosixFilePermission>? = null
+                every { mockMapper.writerWithDefaultPrettyPrinter() } returns mockWriter
+                every {
+                    mockMapper.readValue(
+                        any<String>(),
+                        AppConfig::class.java,
+                    )
+                } returns validConfig
+                every {
+                    mockWriter.writeValue(
+                        any<File>(),
+                        any<Any>(),
+                    )
+                } throws IOException("Write error")
+
+                configService = ConfigServiceImpl(
+                    mockMapper,
+                    tempFile.absolutePath,
+                )
+
+                shouldThrow<RuntimeException> {
+                    configService.updateConfig(validConfig)
+                }
+            }
+        }
+
+        "updateConfig removes the temp file after a non-IO serialization failure" {
+            runTest {
+                val mockMapper = mockk<ObjectMapper>(relaxed = true)
+                val mockWriter = mockk<ObjectWriter>(relaxed = true)
+                val validConfig =
+                    TestFixtures.config(
+                        kraken = KrakenCredentials("a", "b"),
+                        settings = TestFixtures.settings(loopDelaySeconds = 1, deviationTriggerPercent = 1.0),
+                        allocations = listOf(Allocation(Asset.USD, 100.0)),
+                    )
                 every { mockMapper.writerWithDefaultPrettyPrinter() } returns mockWriter
                 every {
                     mockMapper.readValue(
@@ -528,17 +541,56 @@ class ConfigServiceTest : StringSpec() {
                         any<Any>(),
                     )
                 } answers {
-                    observedPermissions = Files.getPosixFilePermissions(firstArg<File>().toPath())
-                    throw IOException("write failed")
+                    firstArg<File>().writeText("temporary credential material")
+                    throw IllegalStateException("serialization failed")
                 }
 
                 configService = ConfigServiceImpl(mockMapper, tempFile.absolutePath)
 
-                shouldThrow<RuntimeException> {
+                shouldThrow<IllegalStateException> {
                     configService.updateConfig(validConfig)
                 }
-                observedPermissions shouldBe ownerOnlyPermissions
                 File("${tempFile.absolutePath}.tmp").exists() shouldBe false
+            }
+        }
+
+        "writeConfigAtomically uses owner-only temp permissions before serialization on POSIX" {
+            runTest {
+                if (Files.getFileAttributeView(tempFile.toPath(), PosixFileAttributeView::class.java) != null) {
+                    val mockMapper = mockk<ObjectMapper>(relaxed = true)
+                    val mockWriter = mockk<ObjectWriter>(relaxed = true)
+                    val validConfig =
+                        TestFixtures.config(
+                            kraken = KrakenCredentials("a", "b"),
+                            settings = TestFixtures.settings(loopDelaySeconds = 1, deviationTriggerPercent = 1.0),
+                            allocations = listOf(Allocation(Asset.USD, 100.0)),
+                        )
+                    var observedPermissions: Set<PosixFilePermission>? = null
+                    every { mockMapper.writerWithDefaultPrettyPrinter() } returns mockWriter
+                    every {
+                        mockMapper.readValue(
+                            any<String>(),
+                            AppConfig::class.java,
+                        )
+                    } returns validConfig
+                    every {
+                        mockWriter.writeValue(
+                            any<File>(),
+                            any<Any>(),
+                        )
+                    } answers {
+                        observedPermissions = Files.getPosixFilePermissions(firstArg<File>().toPath())
+                        throw IOException("write failed")
+                    }
+
+                    configService = ConfigServiceImpl(mockMapper, tempFile.absolutePath)
+
+                    shouldThrow<RuntimeException> {
+                        configService.updateConfig(validConfig)
+                    }
+                    observedPermissions shouldBe ownerOnlyPermissions
+                    File("${tempFile.absolutePath}.tmp").exists() shouldBe false
+                }
             }
         }
 
@@ -590,69 +642,75 @@ class ConfigServiceTest : StringSpec() {
         }
 
         "updateConfig rejects every non-finite numeric setting without changing runtime or disk" {
-            val originalConfig = configService.getConfig()
-            val originalDiskContent = tempFile.readText()
-            val nonFiniteValues = listOf(Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY, Double.NaN)
+            runTest {
+                val originalConfig = configService.getConfig()
+                val originalDiskContent = tempFile.readText()
+                val nonFiniteValues = listOf(Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY, Double.NaN)
 
-            nonFiniteSettingMutations.forEach { (name, mutate) ->
-                nonFiniteValues.forEach { value ->
-                    withClue("$name=$value") {
-                        shouldThrow<InvalidConfigurationException> {
-                            configService.updateConfig(
-                                originalConfig.copy(settings = mutate(originalConfig.settings, value)),
-                            )
+                nonFiniteSettingMutations.forEach { (name, mutate) ->
+                    nonFiniteValues.forEach { value ->
+                        withClue("$name=$value") {
+                            shouldThrow<InvalidConfigurationException> {
+                                configService.updateConfig(
+                                    originalConfig.copy(settings = mutate(originalConfig.settings, value)),
+                                )
+                            }
                         }
+                        configService.getConfig() shouldBe originalConfig
+                        tempFile.readText() shouldBe originalDiskContent
                     }
-                    configService.getConfig() shouldBe originalConfig
-                    tempFile.readText() shouldBe originalDiskContent
                 }
             }
         }
 
         "loadConfig rejects every non-finite numeric setting and preserves the active config" {
-            val originalConfig = configService.getConfig()
-            val nonFiniteValues = listOf(Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY, Double.NaN)
+            runTest {
+                val originalConfig = configService.getConfig()
+                val nonFiniteValues = listOf(Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY, Double.NaN)
 
-            nonFiniteSettingMutations.forEach { (name, mutate) ->
-                nonFiniteValues.forEach { value ->
-                    withClue("$name=$value") {
-                        objectMapper.writeValue(
-                            tempFile,
-                            originalConfig.copy(settings = mutate(originalConfig.settings, value)),
-                        )
-                        shouldThrow<InvalidConfigurationException> {
-                            configService.loadConfig()
+                nonFiniteSettingMutations.forEach { (name, mutate) ->
+                    nonFiniteValues.forEach { value ->
+                        withClue("$name=$value") {
+                            objectMapper.writeValue(
+                                tempFile,
+                                originalConfig.copy(settings = mutate(originalConfig.settings, value)),
+                            )
+                            shouldThrow<InvalidConfigurationException> {
+                                configService.loadConfig()
+                            }
                         }
+                        configService.getConfig() shouldBe originalConfig
                     }
-                    configService.getConfig() shouldBe originalConfig
                 }
             }
         }
 
         "failed load does not publish rejected raw credentials into a later save" {
-            val originalConfig = configService.getConfig()
-            objectMapper.writeValue(
-                tempFile,
-                originalConfig.copy(
-                    kraken = KrakenCredentials("rejected-key", "rejected-secret"),
-                    settings = originalConfig.settings.copy(fiatDeploymentExponent = Double.POSITIVE_INFINITY),
-                ),
-            )
-
-            shouldThrow<InvalidConfigurationException> {
-                configService.loadConfig()
-            }
-            configService.updateConfig(
-                originalConfig.copy(
-                    settings = originalConfig.settings.copy(
-                        loopDelaySeconds =
-                        originalConfig.settings.loopDelaySeconds + 1,
+            runTest {
+                val originalConfig = configService.getConfig()
+                objectMapper.writeValue(
+                    tempFile,
+                    originalConfig.copy(
+                        kraken = KrakenCredentials("rejected-key", "rejected-secret"),
+                        settings = originalConfig.settings.copy(fiatDeploymentExponent = Double.POSITIVE_INFINITY),
                     ),
-                ),
-            )
+                )
 
-            val savedConfig = objectMapper.readValue(tempFile, AppConfig::class.java)
-            savedConfig.kraken shouldBe originalConfig.kraken
+                shouldThrow<InvalidConfigurationException> {
+                    configService.loadConfig()
+                }
+                configService.updateConfig(
+                    originalConfig.copy(
+                        settings = originalConfig.settings.copy(
+                            loopDelaySeconds =
+                            originalConfig.settings.loopDelaySeconds + 1,
+                        ),
+                    ),
+                )
+
+                val savedConfig = objectMapper.readValue(tempFile, AppConfig::class.java)
+                savedConfig.kraken shouldBe originalConfig.kraken
+            }
         }
 
         "loadConfig_InvalidConfig" {
@@ -736,19 +794,21 @@ class ConfigServiceTest : StringSpec() {
         }
 
         "withExecutionSession executes block and closes session even when block throws exception" {
-            createValidConfig(tempFile)
-            val service = ConfigServiceImpl(objectMapper, tempFile.absolutePath)
-            shouldThrow<IllegalStateException> {
-                service.withExecutionSession {
-                    error("simulation thrown exception inside execution session")
+            runTest {
+                createValidConfig(tempFile)
+                val service = ConfigServiceImpl(objectMapper, tempFile.absolutePath)
+                shouldThrow<IllegalStateException> {
+                    service.withExecutionSession {
+                        error("simulation thrown exception inside execution session")
+                    }
                 }
+                // Verify execution session closed: updating config now immediately updates rather than pending
+                val updated = service.getConfig().copy(
+                    settings = service.getConfig().settings.copy(loopDelaySeconds = 120L),
+                )
+                service.updateConfig(updated)
+                service.getConfig().settings.loopDelaySeconds shouldBe 120L
             }
-            // Verify execution session closed: updating config now immediately updates rather than pending
-            val updated = service.getConfig().copy(
-                settings = service.getConfig().settings.copy(loopDelaySeconds = 120L),
-            )
-            service.updateConfig(updated)
-            service.getConfig().settings.loopDelaySeconds shouldBe 120L
         }
     }
 }

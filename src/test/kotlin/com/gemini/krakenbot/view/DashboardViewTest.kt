@@ -7,6 +7,7 @@ import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.PortfolioSnapshot
+import com.gemini.krakenbot.service.impl.PortfolioCalculations
 import com.gemini.krakenbot.view.component.AllocationChartComponent
 import com.gemini.krakenbot.view.component.DashboardFragmentComponent
 import com.gemini.krakenbot.view.component.DashboardShellComponent
@@ -362,21 +363,20 @@ class DashboardViewTest : StringSpec() {
         }
 
         "compute24hDelta_coversAllBranches" {
-            OverviewGridComponent.compute24hDelta(snap(0, "100"), emptyList()) shouldBe null
+            PortfolioCalculations.compute24hDelta(snap(0, "100"), emptyList()) shouldBe null
 
             val latestUp = snap(0, "11000")
             val olderBase = snap(90_000, "10000")
-            OverviewGridComponent.compute24hDelta(latestUp, listOf(latestUp, olderBase))!!
+            PortfolioCalculations.compute24hDelta(latestUp, listOf(latestUp, olderBase))!!
                 .shouldBeEqualComparingTo(BigDecimal("10.000000"))
 
-            // A shorter history must not be mislabeled as a 24-hour delta.
             val latestDown = snap(0, "9000")
             val recent = snap(3_600, "10000")
-            OverviewGridComponent.compute24hDelta(latestDown, listOf(latestDown, recent)) shouldBe null
+            PortfolioCalculations.compute24hDelta(latestDown, listOf(latestDown, recent)) shouldBe null
 
             val latestZeroBase = snap(0, "5000")
             val zeroBase = snap(90_000, "0")
-            OverviewGridComponent.compute24hDelta(latestZeroBase, listOf(latestZeroBase, zeroBase)) shouldBe null
+            PortfolioCalculations.compute24hDelta(latestZeroBase, listOf(latestZeroBase, zeroBase)) shouldBe null
         }
 
         "sparklineSvg_coversRangeBranches" {
@@ -402,7 +402,11 @@ class DashboardViewTest : StringSpec() {
                     snap(90_000, "10000"),
                 )
             val htmlUp = createHTML().div {
-                view.renderDashboardFragment(latestUp, historyUp)
+                view.renderDashboardFragment(
+                    latestUp,
+                    historyUp,
+                    delta24h = PortfolioCalculations.compute24hDelta(latestUp, historyUp),
+                )
             }
             htmlUp shouldContain deltaUp
             htmlUp shouldContain "m ago"
@@ -412,7 +416,11 @@ class DashboardViewTest : StringSpec() {
             val latestDown = snap(0, "9000")
             val historyDown = listOf(latestDown, snap(90_000, "10000"))
             val htmlDown = createHTML().div {
-                view.renderDashboardFragment(latestDown, historyDown)
+                view.renderDashboardFragment(
+                    latestDown,
+                    historyDown,
+                    delta24h = PortfolioCalculations.compute24hDelta(latestDown, historyDown),
+                )
             }
             htmlDown shouldContain deltaDown
         }

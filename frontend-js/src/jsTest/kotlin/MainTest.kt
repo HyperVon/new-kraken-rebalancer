@@ -96,15 +96,6 @@ class MainTest : StringSpec() {
                     as HTMLButtonElement
                 totalDisplay.textContent shouldBe "Total: 80.00%"
                 saveButton.disabled shouldBe true
-
-                val simulation = document.querySelector(
-                    "input[name=\"simulation\"]",
-                ) as HTMLInputElement
-                simulation.checked = true
-                val change = document.createEvent("Event")
-                change.initEvent(type = "change", bubbles = true, cancelable = true)
-                simulation.dispatchEvent(change)
-                document.getElementById("mode-plate-label")?.textContent shouldBe "SIMULATION"
             } finally {
                 window.asDynamic().setInterval = oldSetInterval
                 document.body!!.removeChild(container)

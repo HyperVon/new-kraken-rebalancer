@@ -609,8 +609,8 @@ class TradeHistoryReconstructionTest : TradeHistoryServiceTestBase() {
                     }
                 }
                 threw shouldBe true
-                verify(exactly = 1) { configService.beginExecutionSession() }
-                verify(exactly = 1) { configService.endExecutionSession() }
+                coVerify(exactly = 1) { configService.beginExecutionSession() }
+                coVerify(exactly = 1) { configService.endExecutionSession() }
             }
         }
 

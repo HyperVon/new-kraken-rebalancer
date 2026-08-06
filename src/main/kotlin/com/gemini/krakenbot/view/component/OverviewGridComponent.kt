@@ -21,7 +21,7 @@ import java.math.RoundingMode
 
 class OverviewGridComponent {
     context(div: DIV)
-    fun render(latest: PortfolioSnapshot, history: List<PortfolioSnapshot>) {
+    fun render(latest: PortfolioSnapshot, history: List<PortfolioSnapshot>, delta24h: BigDecimal?) {
         val totalValue = latest.totalValueUSD
         val usdAsset = latest.assets[Asset.USD]
         val usdValue = usdAsset?.valueUSD ?: BigDecimal.ZERO
@@ -35,7 +35,7 @@ class OverviewGridComponent {
         val cryptoCount = assetsList.size
 
         div.div(CssClass.Layout.HeroGrid) {
-            renderHeroCard(latest, history)
+            renderHeroCard(latest, history, delta24h)
             div(CssClass.Layout.HeroSide) {
                 renderCashTile(latest, usdAsset, usdValue)
                 renderCryptoTile(cryptoValue, cryptoPercent, cryptoTargetPercent, cryptoCount)
@@ -43,7 +43,7 @@ class OverviewGridComponent {
         }
     }
 
-    private fun DIV.renderHeroCard(latest: PortfolioSnapshot, history: List<PortfolioSnapshot>) {
+    private fun DIV.renderHeroCard(latest: PortfolioSnapshot, history: List<PortfolioSnapshot>, delta24h: BigDecimal?) {
         div(CssClass.Hero.Card) {
             div(CssClass.Hero.CardText) {
                 div(CssClass.Hero.Label) {
@@ -51,7 +51,7 @@ class OverviewGridComponent {
                     +ViewText.TOTAL_PORTFOLIO
                 }
                 div(CssClass.Hero.Value) { +"$${Formatter.formatCurrency(latest.totalValueUSD)}" }
-                renderDeltaRow(latest, history)
+                renderDeltaRow(delta24h)
                 renderDrawdown(latest.drawdownPercent)
             }
             val spark = sparklineSvg(history)
@@ -61,8 +61,8 @@ class OverviewGridComponent {
         }
     }
 
-    private fun DIV.renderDeltaRow(latest: PortfolioSnapshot, history: List<PortfolioSnapshot>) {
-        val delta = compute24hDelta(latest, history) ?: return
+    private fun DIV.renderDeltaRow(delta24h: BigDecimal?) {
+        val delta = delta24h ?: return
         div(CssClass.Hero.DeltaRow) {
             val signum = delta.signum()
             val cls =
@@ -155,26 +155,9 @@ class OverviewGridComponent {
     }
 
     companion object {
-        private const val SECONDS_PER_DAY = 86_400L
         private const val SPARK_WIDTH = 300.0
         private const val SPARK_HEIGHT = 80.0
         private const val SPARK_PAD = 4.0
-
-        /**
-         * 24h percentage change vs the most recent snapshot at least 24h older.
-         * Returns null when fewer than two points exist, no ≥24h baseline is available,
-         * or the baseline value is zero — never invents a shorter window labeled "24H".
-         */
-        internal fun compute24hDelta(latest: PortfolioSnapshot, history: List<PortfolioSnapshot>): BigDecimal? {
-            if (history.size < 2) return null
-            val cutoff = latest.timestamp.minusSeconds(SECONDS_PER_DAY)
-            val past = history.firstOrNull { it.timestamp <= cutoff } ?: return null
-            val base = past.totalValueUSD
-            if (base.signum() == 0) return null
-            return (latest.totalValueUSD - base)
-                .divide(base, 6, RoundingMode.HALF_UP)
-                .multiply(PrecisionConstants.HUNDRED)
-        }
 
         /** Inline SVG sparkline of total portfolio value; empty when too few points. */
         internal fun sparklineSvg(history: List<PortfolioSnapshot>): String {

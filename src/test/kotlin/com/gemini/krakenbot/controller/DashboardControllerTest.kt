@@ -27,9 +27,9 @@ import io.ktor.http.parametersOf
 import io.ktor.server.application.Application
 import io.ktor.server.testing.testApplication
 import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.slot
-import io.mockk.verify
 import java.math.BigDecimal
 import java.time.Instant
 
@@ -209,7 +209,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
 
         "postSettings_RejectsMissingCsrfToken" {
             every { configService.getConfig() } returns dashboardConfig()
-            every { configService.updateConfig(any()) } returns Unit
+            coEvery { configService.updateConfig(any()) } returns Unit
 
             testApplication {
                 application {
@@ -224,14 +224,14 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                 response.bodyAsText() shouldContain ViewText.CSRF_SESSION_EXPIRED
                 response.bodyAsText() shouldContain "name=\"${FormFields.CSRF_TOKEN}\""
                 response.headers[HttpHeaders.SetCookie].shouldNotBeNull()
-                verify(exactly = 0) { configService.updateConfig(any()) }
+                coVerify(exactly = 0) { configService.updateConfig(any()) }
             }
         }
 
         "postSettings_RejectsWrongCsrfTokenAndRotatesRecoveryToken" {
             val serverConfig = dashboardConfig()
             every { configService.getConfig() } returns serverConfig
-            every { configService.updateConfig(any()) } returns Unit
+            coEvery { configService.updateConfig(any()) } returns Unit
 
             testApplication {
                 application {
@@ -282,14 +282,14 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                 }
                 followUpResponse.status shouldBe HttpStatusCode.OK
                 followUpResponse.headers[HtmxHeaders.HX_REDIRECT] shouldBe Routes.ROOT
-                verify(exactly = 1) { configService.updateConfig(any()) }
+                coVerify(exactly = 1) { configService.updateConfig(any()) }
             }
         }
 
         "postSettings_RejectsMissingFormTokenWithCookie" {
             val serverConfig = dashboardConfig()
             every { configService.getConfig() } returns serverConfig
-            every { configService.updateConfig(any()) } returns Unit
+            coEvery { configService.updateConfig(any()) } returns Unit
 
             testApplication {
                 application {
@@ -304,7 +304,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
 
                 response.status shouldBe HttpStatusCode.Forbidden
                 response.bodyAsText() shouldContain ViewText.CSRF_SESSION_EXPIRED
-                verify(exactly = 0) { configService.updateConfig(any()) }
+                coVerify(exactly = 0) { configService.updateConfig(any()) }
             }
         }
 
@@ -317,7 +317,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
             )
             val captured = slot<AppConfig>()
             every { configService.getConfig() } returns serverConfig
-            every { configService.updateConfig(capture(captured)) } returns Unit
+            coEvery { configService.updateConfig(capture(captured)) } returns Unit
 
             testApplication {
                 application {
@@ -353,7 +353,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
 
             captured.captured.settings.simulation shouldBe true
             captured.captured.allocations.single().color shouldBe "#94a3b8"
-            verify { configService.updateConfig(any()) }
+            coVerify { configService.updateConfig(any()) }
         }
 
         "CQ-12-L1: post settings rejects unpaired allocation fields without updating config" {
@@ -364,7 +364,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                 ),
             )
             every { configService.getConfig() } returns serverConfig
-            every { configService.updateConfig(any()) } returns Unit
+            coEvery { configService.updateConfig(any()) } returns Unit
 
             testApplication {
                 application {
@@ -415,7 +415,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                 invalidColorResponse.bodyAsText() shouldContain ViewText.INVALID_ALLOCATION_COLOR
             }
 
-            verify(exactly = 0) { configService.updateConfig(any()) }
+            coVerify(exactly = 0) { configService.updateConfig(any()) }
         }
 
         "CQ-12-L1: post settings rejects malformed required trading values before persistence" {
@@ -424,7 +424,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                 credentials = KrakenCredentials(TestFixtures.TEST_SERVER_API_KEY, TestFixtures.TEST_SERVER_API_SECRET),
             )
             every { configService.getConfig() } returns serverConfig
-            every { configService.updateConfig(any()) } returns Unit
+            coEvery { configService.updateConfig(any()) } returns Unit
 
             val validFields =
                 mapOf(
@@ -477,7 +477,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                 }
             }
 
-            verify(exactly = 0) { configService.updateConfig(any()) }
+            coVerify(exactly = 0) { configService.updateConfig(any()) }
         }
 
         "CQ-12-L1: post settings rejects mismatched colors without updating config" {
@@ -486,7 +486,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                 credentials = KrakenCredentials(TestFixtures.TEST_SERVER_API_KEY, TestFixtures.TEST_SERVER_API_SECRET),
             )
             every { configService.getConfig() } returns serverConfig
-            every { configService.updateConfig(any()) } returns Unit
+            coEvery { configService.updateConfig(any()) } returns Unit
 
             testApplication {
                 application { configureTestEnv() }
@@ -512,7 +512,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                 response.bodyAsText() shouldContain ViewText.INVALID_ALLOCATION_FIELDS
             }
 
-            verify(exactly = 0) { configService.updateConfig(any()) }
+            coVerify(exactly = 0) { configService.updateConfig(any()) }
         }
 
         "CQ-12-L1: post settings rejects duplicate singleton values without updating config" {
@@ -521,7 +521,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                 credentials = KrakenCredentials(TestFixtures.TEST_SERVER_API_KEY, TestFixtures.TEST_SERVER_API_SECRET),
             )
             every { configService.getConfig() } returns serverConfig
-            every { configService.updateConfig(any()) } returns Unit
+            coEvery { configService.updateConfig(any()) } returns Unit
 
             testApplication {
                 application { configureTestEnv() }
@@ -547,7 +547,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                 response.bodyAsText() shouldContain ViewText.INVALID_DEVIATION_TRIGGER
             }
 
-            verify(exactly = 0) { configService.updateConfig(any()) }
+            coVerify(exactly = 0) { configService.updateConfig(any()) }
         }
 
         "postSettings_OnValidationError_ReturnsErrorHtmlBody" {
@@ -558,7 +558,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                 ),
             )
             every { configService.getConfig() } returns serverConfig
-            every { configService.updateConfig(any()) } throws
+            coEvery { configService.updateConfig(any()) } throws
                 InvalidConfigurationException(
                     "Total allocation percentage must be exactly 100%.",
                 )
@@ -624,7 +624,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                 ),
             )
             every { configService.getConfig() } returns serverConfig
-            every { configService.updateConfig(any()) } returns Unit
+            coEvery { configService.updateConfig(any()) } returns Unit
 
             testApplication {
                 application {
@@ -659,7 +659,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                 response.bodyAsText() shouldContain ViewText.INVALID_DEVIATION_TRIGGER
             }
 
-            verify(exactly = 0) { configService.updateConfig(any()) }
+            coVerify(exactly = 0) { configService.updateConfig(any()) }
         }
 
         "postSettings_WithInvalidDustThreshold_RejectsWithoutUpdatingConfig" {
@@ -670,7 +670,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                 ),
             )
             every { configService.getConfig() } returns serverConfig
-            every { configService.updateConfig(any()) } returns Unit
+            coEvery { configService.updateConfig(any()) } returns Unit
 
             testApplication {
                 application {
@@ -700,7 +700,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                 response.bodyAsText() shouldContain ViewText.INVALID_DUST_THRESHOLD
             }
 
-            verify(exactly = 0) { configService.updateConfig(any()) }
+            coVerify(exactly = 0) { configService.updateConfig(any()) }
         }
 
         "postSettings_WithAbsentDeviationAndDust_RejectsWithoutUpdatingConfig" {
@@ -711,7 +711,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                 ),
             )
             every { configService.getConfig() } returns serverConfig
-            every { configService.updateConfig(any()) } returns Unit
+            coEvery { configService.updateConfig(any()) } returns Unit
 
             testApplication {
                 application {
@@ -733,7 +733,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                 response.bodyAsText() shouldContain ViewText.INVALID_DEVIATION_TRIGGER
             }
 
-            verify(exactly = 0) { configService.updateConfig(any()) }
+            coVerify(exactly = 0) { configService.updateConfig(any()) }
         }
 
         "postSettings_WithValidatableConfigError_UsesFallbackMessageWhenNull" {
@@ -745,7 +745,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
             )
             every { configService.getConfig() } returns serverConfig
             val capturedConfig = slot<AppConfig>()
-            every {
+            coEvery {
                 configService.updateConfig(capture(capturedConfig))
             } throws
                 InvalidConfigurationException(
@@ -808,7 +808,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
         "postSettings_RejectsDuplicateMatchingCsrfFormTokens" {
             val serverConfig = dashboardConfig()
             every { configService.getConfig() } returns serverConfig
-            every { configService.updateConfig(any()) } returns Unit
+            coEvery { configService.updateConfig(any()) } returns Unit
 
             testApplication {
                 application {
@@ -830,7 +830,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                 response.status shouldBe HttpStatusCode.Forbidden
                 response.bodyAsText() shouldContain ViewText.CSRF_SESSION_EXPIRED
                 response.headers[HttpHeaders.SetCookie].shouldNotBeNull()
-                verify(exactly = 0) { configService.updateConfig(any()) }
+                coVerify(exactly = 0) { configService.updateConfig(any()) }
             }
         }
     }

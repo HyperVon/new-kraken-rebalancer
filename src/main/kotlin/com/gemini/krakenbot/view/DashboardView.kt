@@ -21,6 +21,7 @@ import kotlinx.html.body
 import kotlinx.html.head
 import kotlinx.html.script
 import kotlinx.html.title
+import java.math.BigDecimal
 
 class DashboardView(
     private val shellComponent: DashboardShellComponent,
@@ -60,7 +61,8 @@ class DashboardView(
         latest: PortfolioSnapshot,
         history: List<PortfolioSnapshot>,
         allocations: List<Allocation> = emptyList(),
+        delta24h: BigDecimal? = null,
     ) {
-        fragmentComponent.render(latest, history, allocations)
+        fragmentComponent.render(latest, history, allocations, delta24h)
     }
 }

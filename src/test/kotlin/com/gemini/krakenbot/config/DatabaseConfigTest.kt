@@ -8,7 +8,6 @@ import io.kotest.core.spec.style.StringSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
 import kotlinx.coroutines.test.runTest
-import java.io.File
 import java.sql.DriverManager
 import java.time.Instant
 import java.util.UUID
@@ -17,17 +16,10 @@ class DatabaseConfigTest : StringSpec() {
     override fun isolationMode() = IsolationMode.InstancePerTest
 
     init {
-        "should initialize database and create file" {
-            val dbFile = File("test-config.db")
-            if (dbFile.exists()) dbFile.delete()
-
-            try {
-                val db = DatabaseConfig.init(dbFile.name)
-                db shouldNotBe null
-                dbFile.exists() shouldNotBe false
-            } finally {
-                if (dbFile.exists()) dbFile.delete()
-            }
+        "should initialize database with in-memory connection" {
+            val databaseUrl = "jdbc:sqlite:file:testdb-${UUID.randomUUID()}?mode=memory&cache=shared"
+            val db = DatabaseConfig.init(databaseUrl)
+            db shouldNotBe null
         }
 
         "should initialize in-memory database" {

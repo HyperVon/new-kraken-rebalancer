@@ -147,4 +147,23 @@ object PortfolioCalculations {
             deviationUSD = deviationUSD.setScale(PrecisionConstants.SCALE_USD, RoundingMode.HALF_UP),
         )
     }
+
+    private const val SECONDS_PER_DAY = 86_400L
+    private const val DELTA_SCALE = 6
+
+    /**
+     * 24h percentage change vs the most recent snapshot at least 24h older.
+     * Returns null when fewer than two points exist, no ≥24h baseline is available,
+     * or the baseline value is zero — never invents a shorter window labeled "24H".
+     */
+    fun compute24hDelta(latest: PortfolioSnapshot, history: List<PortfolioSnapshot>): BigDecimal? {
+        if (history.size < 2) return null
+        val cutoff = latest.timestamp.minusSeconds(SECONDS_PER_DAY)
+        val past = history.firstOrNull { it.timestamp <= cutoff } ?: return null
+        val base = past.totalValueUSD
+        if (base.signum() == 0) return null
+        return (latest.totalValueUSD - base)
+            .divide(base, DELTA_SCALE, RoundingMode.HALF_UP)
+            .multiply(PrecisionConstants.HUNDRED)
+    }
 }

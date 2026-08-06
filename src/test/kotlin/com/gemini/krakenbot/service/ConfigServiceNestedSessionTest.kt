@@ -95,28 +95,30 @@ class ConfigServiceNestedSessionTest : StringSpec() {
         }
 
         "endExecutionSession on depth 0 throws IllegalStateException with the documented message" {
-            val tempFile =
-                Files
-                    .createTempDirectory("cq14-m7")
-                    .resolve("no-session.json")
-                    .toFile()
-            val service = newService(tempFile)
+            runTest {
+                val tempFile =
+                    Files
+                        .createTempDirectory("cq14-m7")
+                        .resolve("no-session.json")
+                        .toFile()
+                val service = newService(tempFile)
 
-            val ex = shouldThrow<IllegalStateException> {
+                val ex = shouldThrow<IllegalStateException> {
+                    service.endExecutionSession()
+                }
+                ex.message shouldBe "No execution session is active."
+
+                // The service must remain usable after the rejected call: a fresh begin/end pair
+                // should publish normally, proving the depth counter was not corrupted.
+                val updated = service.getConfig().copy(
+                    kraken = KrakenCredentials("k", "s"),
+                    settings = service.getConfig().settings.copy(loopDelaySeconds = 90L),
+                )
+                service.beginExecutionSession()
+                service.updateConfig(updated)
                 service.endExecutionSession()
+                service.getConfig().settings.loopDelaySeconds shouldBe 90L
             }
-            ex.message shouldBe "No execution session is active."
-
-            // The service must remain usable after the rejected call: a fresh begin/end pair
-            // should publish normally, proving the depth counter was not corrupted.
-            val updated = service.getConfig().copy(
-                kraken = KrakenCredentials("k", "s"),
-                settings = service.getConfig().settings.copy(loopDelaySeconds = 90L),
-            )
-            service.beginExecutionSession()
-            service.updateConfig(updated)
-            service.endExecutionSession()
-            service.getConfig().settings.loopDelaySeconds shouldBe 90L
         }
     }
 }

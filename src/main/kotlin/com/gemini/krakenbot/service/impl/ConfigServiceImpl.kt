@@ -9,10 +9,15 @@ import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.service.AssetColorAssigner
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.util.PrecisionConstants
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import java.io.File
 import java.io.IOException
@@ -29,6 +34,7 @@ class ConfigServiceImpl(
     private val configFilePath: String = DEFAULT_CONFIG_FILE_PATH,
 ) : ConfigService {
     private val log = LoggerFactory.getLogger(ConfigServiceImpl::class.java)
+    private val configLock = Mutex()
     private var executionSessionDepth = 0
     private var pendingConfig: AppConfig? = null
 
@@ -48,11 +54,10 @@ class ConfigServiceImpl(
         )
 
     init {
-        loadConfig()
+        loadConfigBlocking()
     }
 
-    @Synchronized
-    override fun loadConfig() {
+    private fun loadConfigBlocking() {
         cleanupStaleTempFile()
         val rawContent = readRawConfigContent()
         val rawConfig = parseConfig(rawContent)
@@ -62,32 +67,46 @@ class ConfigServiceImpl(
         publishOrStage(validatedConfig)
     }
 
+    @Throws(IOException::class)
+    override suspend fun loadConfig() {
+        withContext(Dispatchers.IO) {
+            configLock.withLock {
+                loadConfigBlocking()
+            }
+        }
+    }
+
     override fun getConfig(): AppConfig = appConfig
 
-    @Synchronized
-    override fun updateConfig(newConfig: AppConfig) {
-        val validatedConfig = validateAndNormalize(newConfig)
-        val previousKraken = pendingConfig?.kraken ?: appConfig.kraken
-        val persistedConfig = configForPersistence(validatedConfig, previousKraken)
-        writeConfigAtomically(persistedConfig)
-        persistedKrakenCredentials = persistedConfig.kraken
-        publishOrStage(validatedConfig)
+    override suspend fun updateConfig(newConfig: AppConfig) {
+        withContext(Dispatchers.IO) {
+            configLock.withLock {
+                val validatedConfig = validateAndNormalize(newConfig)
+                val previousKraken = pendingConfig?.kraken ?: appConfig.kraken
+                val persistedConfig = configForPersistence(validatedConfig, previousKraken)
+                writeConfigAtomically(persistedConfig)
+                persistedKrakenCredentials = persistedConfig.kraken
+                publishOrStage(validatedConfig)
+            }
+        }
     }
 
-    @Synchronized
-    override fun beginExecutionSession() {
-        executionSessionDepth++
+    override suspend fun beginExecutionSession() {
+        configLock.withLock {
+            executionSessionDepth++
+        }
     }
 
-    @Synchronized
-    override fun endExecutionSession() {
-        check(executionSessionDepth > 0) { "No execution session is active." }
-        executionSessionDepth--
-        if (executionSessionDepth == 0) {
-            pendingConfig?.let { config ->
-                appConfig = config
-                pendingConfig = null
-                _configFlow.tryEmit(config.settings)
+    override suspend fun endExecutionSession() {
+        configLock.withLock {
+            check(executionSessionDepth > 0) { "No execution session is active." }
+            executionSessionDepth--
+            if (executionSessionDepth == 0) {
+                pendingConfig?.let { config ->
+                    appConfig = config
+                    pendingConfig = null
+                    _configFlow.tryEmit(config.settings)
+                }
             }
         }
     }

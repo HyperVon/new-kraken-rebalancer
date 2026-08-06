@@ -447,8 +447,8 @@ class PortfolioManagerLoopTest : StringSpec() {
                 manager.stopRebalancingLoop()
                 worker.join()
 
-                verify(exactly = 1) { configService.beginExecutionSession() }
-                verify(exactly = 1) { configService.endExecutionSession() }
+                coVerify(exactly = 1) { configService.beginExecutionSession() }
+                coVerify(exactly = 1) { configService.endExecutionSession() }
                 coVerify(exactly = 0) { tradeHistoryService.addSnapshot(any()) }
             }
         }
