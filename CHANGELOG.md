@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.16.17] - 2026-08-06
+
+### Fixed
+
+- **README directory tree**: Added missing `ServerConfig.kt` (server port constant and JVM property key) under `config/` and `AllocationExtensions.kt` under `view/util/` — both files were present in source but omitted from the documented package tree.
+
 ## [6.16.16] - 2026-08-06
 
 ### Changed
