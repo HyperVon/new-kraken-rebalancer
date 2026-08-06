@@ -142,6 +142,87 @@ class KrakenLedgerTest : KrakenServiceTestBase() {
             }
         }
 
+        "getLedgers_MultipleTypes_QueriesEachTypeSeparatelyAndMerges" {
+            runTest {
+                val stakingJson = """
+                    {
+                        "error": [],
+                        "result": {
+                            "ledger": {
+                                "S1": {
+                                    "time": 1700000000.0000,
+                                    "type": "staking",
+                                    "asset": "XXBT",
+                                    "amount": "0.10000000",
+                                    "fee": "0.00000000",
+                                    "balance": "1.00000000"
+                                }
+                            },
+                            "count": 290
+                        }
+                    }
+                """.trimIndent()
+                val dividendJson = """
+                    {
+                        "error": [],
+                        "result": {
+                            "ledger": {
+                                "D1": {
+                                    "time": 1700000100.0000,
+                                    "type": "dividend",
+                                    "asset": "STRC",
+                                    "amount": "1.25000000",
+                                    "fee": "0.01000000",
+                                    "balance": "2.25000000"
+                                }
+                            },
+                            "count": 6
+                        }
+                    }
+                """.trimIndent()
+                val requestBodies = mutableListOf<String>()
+                val engine = MockEngine { request ->
+                    val body = (request.body as TextContent).text
+                    requestBodies += body
+                    if (body.contains("type=staking")) {
+                        respond(stakingJson)
+                    } else {
+                        respond(dividendJson)
+                    }
+                }
+                val mockConfigService = mockk<ConfigService>(relaxed = true)
+                val config = AppConfig(
+                    kraken = KrakenCredentials(
+                        TestFixtures.TRADE_HISTORY_API_KEY,
+                        TestFixtures.TRADE_HISTORY_API_SECRET,
+                    ),
+                    settings = TestFixtures.settings(dryRun = false, loopDelaySeconds = 60L),
+                    allocations = emptyList(),
+                )
+                every { mockConfigService.getConfig() } returns config
+                val service = KrakenServiceImpl(
+                    configService = mockConfigService,
+                    objectMapper = jacksonObjectMapper(),
+                    httpClient = HttpClient(engine),
+                )
+
+                val entries = service.getLedgers(types = setOf(LedgerEvent.TYPE_STAKING, LedgerEvent.TYPE_DIVIDEND))
+
+                requestBodies.size shouldBe 2
+                requestBodies.any { it.contains("type=staking") }.shouldBeTrue()
+                requestBodies.any { it.contains("type=dividend") }.shouldBeTrue()
+                requestBodies.none { it.contains("staking,dividend") }.shouldBeTrue()
+                entries.size shouldBe 2
+                val staking = entries.first { it.type == LedgerEvent.TYPE_STAKING }
+                staking.ledgerId shouldBe "S1"
+                staking.asset shouldBe "BTC"
+                val dividend = entries.first { it.type == LedgerEvent.TYPE_DIVIDEND }
+                dividend.ledgerId shouldBe "D1"
+                dividend.asset shouldBe "STRC"
+                service.getLastLedgerTotalCount() shouldBe 296
+            }
+        }
+
         "getLedgers_BlankApiKey_ReturnsEmpty" {
             runTest {
                 val mockConfigService = mockk<ConfigService>(relaxed = true)

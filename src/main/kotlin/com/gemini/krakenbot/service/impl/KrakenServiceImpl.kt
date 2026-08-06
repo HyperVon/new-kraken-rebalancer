@@ -393,12 +393,35 @@ class KrakenServiceImpl(
         if (offset != null) {
             params[KrakenApiConstants.PARAM_OFS] = offset.toString()
         }
-        if (types != null) {
-            // Server-side type filter: keeps the response count and pagination scoped to the
-            // requested types instead of walking the entire ledger.
-            params[KrakenApiConstants.PARAM_TYPE] = types.joinToString(",")
+        // Server-side type filter: keeps the response count and pagination scoped to the
+        // requested types instead of walking the entire ledger.
+        val sortedTypes = types?.sorted()
+        if (sortedTypes != null && sortedTypes.size > 1) {
+            // The private Ledgers endpoint accepts a single `type` value only; comma-delimited
+            // lists are rejected with EGeneral:Invalid arguments, so query each type separately
+            // and merge the pages (summed per-type counts keep the pagination math correct).
+            val pages = sortedTypes.map { type ->
+                queryLedgerPage(params + (KrakenApiConstants.PARAM_TYPE to type), types)
+            }
+            lastLedgerCount.set(pages.sumOf { it.second })
+            return pages.flatMap { it.first }
         }
+        val pageParams = if (sortedTypes !=
+            null
+        ) {
+            params + (KrakenApiConstants.PARAM_TYPE to sortedTypes.single())
+        } else {
+            params
+        }
+        val (entries, count) = queryLedgerPage(pageParams, types)
+        lastLedgerCount.set(count)
+        return entries
+    }
 
+    private suspend fun queryLedgerPage(
+        params: Map<String, String>,
+        expectedTypes: Set<String>?,
+    ): Pair<List<LedgerEvent>, Int> {
         val result =
             try {
                 queryPrivate(KrakenApiConstants.PATH_LEDGERS, params)
@@ -409,19 +432,19 @@ class KrakenServiceImpl(
                 throw e
             }
 
-        lastLedgerCount.set(result.path(KrakenApiConstants.FIELD_COUNT).asInt(0))
+        val count = result.path(KrakenApiConstants.FIELD_COUNT).asInt(0)
 
         val ledgerNode = result.path(KrakenApiConstants.FIELD_LEDGERS)
         if (!ledgerNode.isObject) {
-            return emptyList()
+            return emptyList<LedgerEvent>() to count
         }
 
         val ledgerList = mutableListOf<LedgerEvent>()
         ledgerNode.properties().forEach { (ledgerId, entryNode) ->
             val type = entryNode.path(KrakenApiConstants.FIELD_TYPE).asText()
-            // Trust-boundary guard: the server already filters by `type`, but an unexpected entry
-            // type would otherwise flow into the insert-only ledger store unfiltered.
-            if (types != null && type !in types) {
+            // Trust-boundary guard: the server already filters by `type`, but an unexpected
+            // entry type would otherwise flow into the insert-only ledger store unfiltered.
+            if (expectedTypes != null && type !in expectedTypes) {
                 return@forEach
             }
 
@@ -466,7 +489,7 @@ class KrakenServiceImpl(
                 ),
             )
         }
-        return ledgerList
+        return ledgerList to count
     }
 
     override suspend fun getOHLC(pair: String, interval: Int, since: Long?): List<Pair<Long, BigDecimal>> {
