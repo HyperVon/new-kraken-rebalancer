@@ -30,6 +30,8 @@ class TradeHistoryReconstructionService(
         const val CURRENT_RECONSTRUCTION_VERSION = "2"
     }
 
+    suspend fun canRebuildSnapshots(): Boolean = ledgerRepository.isLedgersSeeded()
+
     suspend fun reconstructHistoricalSnapshots() = reconstructHistoricalSnapshots(replaceExisting = false)
 
     suspend fun rebuildHistoricalSnapshots() {
@@ -163,12 +165,12 @@ class TradeHistoryReconstructionService(
             } else {
                 repository.save(snapshotsToSave)
             }
-            if (replaceExisting || (oldestSnapshot == null && ledgerRepository.isLedgersSeeded())) {
-                repository.setSyncMetadata(
-                    SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION,
-                    CURRENT_RECONSTRUCTION_VERSION,
-                )
-            }
+        }
+        if (replaceExisting || (oldestSnapshot == null && ledgerRepository.isLedgersSeeded())) {
+            repository.setSyncMetadata(
+                SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION,
+                CURRENT_RECONSTRUCTION_VERSION,
+            )
         }
     }
 }

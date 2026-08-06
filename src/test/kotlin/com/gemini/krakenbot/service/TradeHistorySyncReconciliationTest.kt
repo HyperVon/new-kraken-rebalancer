@@ -9,6 +9,7 @@ import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.OrderSubmissionState
 import com.gemini.krakenbot.model.PortfolioStats
+import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.model.TradeSource
 import com.gemini.krakenbot.repository.TradeSummaryStats
@@ -880,9 +881,38 @@ class TradeHistorySyncReconciliationTest : TradeHistoryServiceTestBase() {
                     TestFixtures.TEST_TRADE_HISTORY_JSON,
                 )
                 tradeHistoryService.syncTradesFromKraken()
-
                 coVerify(exactly = 1) { krakenService.getTradeHistory(any(), any()) }
                 coVerify(exactly = 1) { repository.setHistorySeeded(true) }
+            }
+        }
+
+        "CQ-15-L1: rebuildHistoricalSnapshots_persistsMetadataVersionEvenWhenSnapshotsToSaveIsEmpty" {
+            runTest {
+                coEvery { ledgerRepository.isLedgersSeeded() } returns true
+                coEvery { krakenService.getBalances() } returns emptyMap()
+                coEvery { krakenService.getTickerPrices(any()) } returns emptyMap()
+                coEvery { repository.load() } returns emptyList()
+                coEvery { repository.replaceSnapshots(any()) } just Runs
+                coEvery { repository.setSyncMetadata(any(), any()) } just Runs
+
+                val tradeHistoryService = TradeHistoryServiceImpl(
+                    repository,
+                    statsRepository,
+                    ledgerRepository,
+                    krakenService,
+                    configService,
+                    objectMapper,
+                    portfolioAnalyzer,
+                    TestFixtures.TEST_TRADE_HISTORY_JSON,
+                )
+                tradeHistoryService.rebuildHistoricalSnapshotsIfNeeded()
+
+                coVerify {
+                    repository.setSyncMetadata(
+                        SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION,
+                        "2",
+                    )
+                }
             }
         }
     }

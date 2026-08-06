@@ -141,7 +141,23 @@ class TradeHistorySyncCoordinationTest : TradeHistoryServiceTestBase() {
 
                 service.rebuildHistoricalSnapshotsIfNeeded()
 
-                coVerify(exactly = 0) { repository.getTradeSummaryStats() }
+                coVerify(exactly = 0) { ledgerRepository.isLedgersSeeded() }
+                coVerify(exactly = 0) { krakenService.getBalances() }
+            }
+        }
+
+        "CQ-15-L2: rebuildHistoricalSnapshotsIfNeeded_skipsWhenLedgersUnseeded" {
+            runTest {
+                val service = createService()
+                val config = TestFixtures.config(settings = TestFixtures.settings(dryRun = false))
+                every { configService.getConfig() } returns config
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION)
+                } returns null
+                coEvery { ledgerRepository.isLedgersSeeded() } returns false
+
+                service.rebuildHistoricalSnapshotsIfNeeded()
+
                 coVerify(exactly = 0) { krakenService.getBalances() }
             }
         }

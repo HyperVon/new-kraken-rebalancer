@@ -14,6 +14,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   fully sold off no longer invalidates the comparison for that range — the trade
   is skipped so the comparison stays visible instead of being reported as
   unavailable.
+- **Snapshot reconstruction metadata versioning**: `TradeHistoryReconstructionService` now persists the `SNAPSHOT_RECONSTRUCTION_VERSION` metadata even when `snapshotsToSave` is empty, preventing endless snapshot reconstruction retries on every rebalance cycle (#196).
+- **Snapshot reconstruction ledger guard**: `TradeHistorySyncService` now guards `rebuildHistoricalSnapshotsIfNeeded()` with `canRebuildSnapshots()` so it gracefully skips reconstruction when ledgers are unseeded instead of throwing an `IllegalStateException` (#197).
 - **Rebalancer vs Buy & Hold documentation**: ranges containing unexplained
   balance changes (deposits, withdrawals, dividends) remain visible with an
   **Estimated (external balance changes may affect precision)** badge instead of

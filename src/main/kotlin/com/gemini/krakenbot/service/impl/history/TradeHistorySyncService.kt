@@ -52,7 +52,7 @@ class TradeHistorySyncService(
             return
         }
 
-        if (repository.getTradeSummaryStats().totalTradesExecuted <= 0L) return
+        if (!reconstructionService.canRebuildSnapshots()) return
 
         log.info("Snapshot reconstruction version is stale or missing; rebuilding historical snapshots.")
         reconstructionService.rebuildHistoricalSnapshots()
