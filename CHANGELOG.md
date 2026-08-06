@@ -41,6 +41,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   on `LedgerEvent`) and unused CSS/text catalog entries
   (`RewardsHeader`, `RewardsTotal`, `RewardsChartArea`, `REWARDS_TOTAL`).
 
+### Fixed
+
+- **Ledger sync with multiple types**: Kraken's private `Ledgers` endpoint
+  accepts a single `type` value and rejects comma-delimited lists
+  (`staking,dividend`) with `EGeneral:Invalid arguments`. Ledger pages are now
+  fetched one type per request and merged, keeping pagination correct via the
+  summed per-type counts.
+
 ## [6.16.13] - 2026-08-04
 
 ### Fixed
