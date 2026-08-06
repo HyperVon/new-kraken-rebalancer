@@ -102,7 +102,15 @@ class LedgersSyncService(
             isSeeded = isSeeded,
         )
 
-        finalizeSync(isSeeded)
+        // A simulation run that found no ledger rows must not mark the store seeded: the emulator
+        // has no ledger data, and a bogus "seeded + watermark" state would make a later live sync
+        // skip the full history fetch. Live runs (even with an empty account) always finalize.
+        val isSimulation = config.settings.simulation
+        if (!isSimulation || isSeeded || totalAdded > 0) {
+            finalizeSync(isSeeded)
+        } else {
+            log.info("Simulation ledger sync produced no entries; leaving ledger store unseeded.")
+        }
         log.info("Ledger synchronization completed. Added: {} entries.", totalAdded)
     }
 

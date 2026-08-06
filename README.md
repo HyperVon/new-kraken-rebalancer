@@ -595,7 +595,7 @@ This path is internal orchestration — not a second browser-facing SSE stream l
 - Gradle (or use the included `./gradlew` wrapper — no installation required)
 - For **live** or **dry-run-against-Kraken** modes: a Kraken account with API
   keys (Permissions: **Query Funds**, **Query Closed Orders & Trades**,
-  **Create & Modify Orders**)
+  **Query Ledgers**, **Create & Modify Orders**)
 - For **`simulation: true`**: no real keys required — template placeholders are
   enough; the emulator never calls Kraken
 

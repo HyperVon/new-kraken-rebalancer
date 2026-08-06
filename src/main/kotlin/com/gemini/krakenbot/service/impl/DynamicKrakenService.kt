@@ -1,5 +1,6 @@
 package com.gemini.krakenbot.service.impl
 
+import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.OrderResult
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.service.BoundedTradeHistoryService
@@ -41,6 +42,9 @@ class DynamicKrakenService(
 
     /** Cached after [getTradeHistory] so progress metadata need not downcast the port. */
     private val lastTradeHistoryTotalCount = AtomicInteger(0)
+
+    /** Cached after [getLedgers] so sync progress metadata need not downcast the port. */
+    private val lastLedgerTotalCount = AtomicInteger(0)
 
     /**
      * Pins the live vs simulation backend for [block] at entry. If a pin is already
@@ -90,6 +94,20 @@ class DynamicKrakenService(
         currentBackend().getOHLC(pair, interval, since)
 
     override fun getLastTradeHistoryTotalCount(): Int = lastTradeHistoryTotalCount.get()
+
+    override suspend fun getLedgers(
+        startSec: Long?,
+        offset: Int?,
+        endSec: Long?,
+        types: Set<String>?,
+    ): List<LedgerEvent> {
+        val backend = currentBackend()
+        val ledgers = backend.getLedgers(startSec, offset, endSec, types)
+        lastLedgerTotalCount.set(backend.getLastLedgerTotalCount())
+        return ledgers
+    }
+
+    override fun getLastLedgerTotalCount(): Int = lastLedgerTotalCount.get()
 
     override suspend fun getApiCallCounter(): Double = currentBackend().getApiCallCounter()
 }

@@ -113,7 +113,7 @@ the CLAUDE.md / Copilot stubs) so they get the same norms without Cursor.
 | Exchange gateway | `DynamicKrakenService` → `KrakenServiceImpl` or `SimulatedKrakenService` |
 | Rate limit | `RateLimiter` (safeLimit **12**, decay **0.33**, `Mutex`) |
 | History reconstruction | `SnapshotHistoryCalculator` (`service/impl/history/`) |
-| Live history / SSE source | `TradeHistoryServiceImpl` façade → Sync / SnapshotStore / Query / Reconstruction |
+| Live history / SSE source | `TradeHistoryServiceImpl` façade → Sync / Ledger Sync (`LedgersSyncService`) / SnapshotStore / Query / Reconstruction |
 | HTTP | `DashboardRoutes` / `DashboardController` |
 | Views | `view/component/*`, `DashboardView`, `view/css/*` |
 | Shared routes/IDs | `:common` `Routes`, `HtmlIds`, `CssClass`, `HtmlQueries`, `ViewText` and generated pure-string catalogs |
@@ -226,9 +226,9 @@ with the workflow.
   can contain order identifiers, balance amounts, and asset keys; treat them as
   sensitive and redact them before sharing.
 - Kraken credentials for normal application operation use least privilege:
-  Query Funds, Query Closed Orders & Trades, and Create & Modify Orders. Do not
-  claim Query Open Orders is required for normal operation unless the API
-  surface changes and the claim is verified.
+  Query Funds, Query Closed Orders & Trades, Query Ledgers, and Create & Modify
+  Orders. Do not claim Query Open Orders is required for normal operation unless
+  the API surface changes and the claim is verified.
 - Preserve the durable live-order journal: write `PENDING` before AddOrder;
   ambiguous outcomes become blocking `UNCERTAIN`; never retry or heuristically
   clear them. Operator reconciliation requires a database backup and follows

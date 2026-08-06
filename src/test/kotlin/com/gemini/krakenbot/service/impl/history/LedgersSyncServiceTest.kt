@@ -13,6 +13,7 @@ import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.KrakenService
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
+import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.shouldBe
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -178,6 +179,26 @@ class LedgersSyncServiceTest : StringSpec() {
             val expectedStartSec = baseTime.minusSeconds(300).epochSecond
             coVerify {
                 krakenService.getLedgers(startSec = expectedStartSec, offset = 0, endSec = any(), types = any())
+            }
+        }
+
+        "simulation sync with no entries does not mark the store seeded or advance the watermark" {
+            stubStableBackend()
+            every {
+                configService.getConfig()
+            } returns
+                appConfig.copy(settings = TestFixtures.settings(simulation = true, loopDelaySeconds = 60))
+
+            coEvery { krakenService.getLedgers(any(), any(), any(), any()) } returns emptyList()
+            coEvery { krakenService.getLastLedgerTotalCount() } returns 0
+
+            val service = LedgersSyncService(repository, krakenService, configService, nowProvider = { fixedNow })
+            service.syncLedgersFromKraken()
+
+            service.isLedgersSeeded() shouldBe false
+            service.getSyncMetadata(SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC).shouldBeNull()
+            coVerify {
+                krakenService.getLedgers(startSec = null, offset = 0, endSec = any(), types = any())
             }
         }
     }
