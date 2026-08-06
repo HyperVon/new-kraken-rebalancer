@@ -10,12 +10,23 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
-- Corrected the Rebalancer vs Buy & Hold documentation: ranges with unreconciled
-  balance changes stay visible with an Estimated confidence badge instead of being
-  described as unavailable.
+- **Rebalancer vs Buy & Hold**: a transaction in an asset that has since been
+  fully sold off no longer invalidates the comparison for that range — the trade
+  is skipped so the comparison stays visible instead of being reported as
+  unavailable.
+- **Rebalancer vs Buy & Hold documentation**: ranges containing unexplained
+  balance changes (deposits, withdrawals, dividends) remain visible with an
+  **Estimated (external balance changes may affect precision)** badge instead of
+  being listed as unavailable.
 
 ### Changed
 
+- **Bounded trade-history seed**: resumed initial synchronizations now constrain
+  the backfill query to the last 96 days instead of pulling full history from the
+  epoch, keeping a coverage window of trading data older than it is pruned.
+- **Fail-closed history sync**: if ledger synchronization or historical snapshot
+  rebuild fails, that iteration skips the rebalance cycle rather than proceeding
+  with stale history.
 - Refreshed documentation screenshots from an isolated simulation run.
 
 ## [6.16.14] - 2026-08-05
