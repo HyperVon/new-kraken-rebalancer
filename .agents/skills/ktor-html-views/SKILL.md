@@ -145,6 +145,8 @@ History chart sections render **one** header row (title + zoom tools) plus an
 optional `HistoryChartSection.caption` under the canvas — put legend caveats in
 the caption rather than lengthening legend labels.
 
+**No unsolicited ARIA attributes**: Do not introduce `aria-*` attributes (`aria-hidden`, `aria-sort`, `aria-label`, etc.) or ARIA roles in HTML templates or `:common` attribute schemas unless explicitly requested by the user (`OPERATING.md` §5).
+
 ## Security note
 
 Dashboard has **no user authentication**. CORS is limited by
