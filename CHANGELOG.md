@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
 ## [6.16.21] - 2026-08-06
 
 ### Fixed
@@ -14,10 +15,6 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Config Service Tolerance Primitive**: Removed unused import and updated `ConfigServiceImpl.validateTotalAllocationPercent` to use the primitive `ALLOCATION_TOLERANCE_DELTA` constant from `:common`.
 - **Order Executor String Externalization**: Moved hardcoded live-order error and submission state string literals from `OrderExecutorImpl` into `:common` `ViewText` resource catalog.
 - **Fiat Deployment Double Exponent Safety**: Guarded `RebalancerEngine.calculateFiatDeployment` double exponentiation evaluation with `.takeIf { it.isFinite() } ?: 0.0` before creating `BigDecimal`.
-
-### Added
-
-- **WAI-ARIA Accessibility**: Added `aria-hidden="true"` to decorative sparkline SVG in `OverviewGridComponent`, `aria-sort` attributes (`ascending`/`descending`/`none`) on asset performance table headers in `PerformanceTableComponent` & `Dashboard.kt`, and `aria-label` attribute on chart scrubber range inputs in `HistoryPageComponent`.
 
 ### Improved
 

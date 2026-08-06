@@ -257,7 +257,6 @@ class HistoryPageComponent(private val objectMapper: ObjectMapper) {
                 // Starts disabled; :frontend-js enables once the chart has a zoomable range.
                 disabled = true
                 attributes[HtmlAttrs.DATA_CHART_ID] = chartId
-                attributes[HtmlAttrs.ARIA_LABEL] = "Chart scrubber for $chartId"
             }
         }
     }

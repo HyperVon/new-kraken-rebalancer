@@ -9,8 +9,6 @@ HtmlAttrs:
   DATASET_SORT_VALUE: "sortValue"
   CROSSORIGIN: "crossorigin"
   DATA_SORT: "data-sort"
-  ARIA_SORT: "aria-sort"
-  ARIA_LABEL: "aria-label"
   TAB_INDEX: "tabindex"
   TITLE: "title"
 ZoomActions:

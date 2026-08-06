@@ -62,16 +62,13 @@ class DashboardTest : StringSpec() {
             (sortedRows.item(1) as HTMLTableRowElement).cells.item(0)?.textContent shouldBe Asset.ETH
             th0.classList.contains("asc").shouldBeTrue()
             th0.getAttribute("data-sort") shouldBe "ascending"
-            th0.getAttribute("aria-sort") shouldBe "ascending"
             th1.getAttribute("data-sort") shouldBe "none"
-            th1.getAttribute("aria-sort") shouldBe "none"
 
             sortTable(th0, 0)
             sortedRows = tbody.querySelectorAll("tr.hoverable")
             (sortedRows.item(0) as HTMLTableRowElement).cells.item(0)?.textContent shouldBe Asset.ETH
             th0.classList.contains("desc").shouldBeTrue()
             th0.getAttribute("data-sort") shouldBe "descending"
-            th0.getAttribute("aria-sort") shouldBe "descending"
 
             sortTable(th1, 1)
             sortedRows = tbody.querySelectorAll("tr.hoverable")

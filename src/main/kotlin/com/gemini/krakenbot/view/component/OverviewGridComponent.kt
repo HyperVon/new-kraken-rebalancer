@@ -202,7 +202,7 @@ class OverviewGridComponent {
             val gradId = "hero-spark-grad-${history.first().timestamp.toEpochMilli()}"
             return buildString {
                 append(
-                    "<svg aria-hidden=\"true\" viewBox=\"0 0 ${fmt(
+                    "<svg viewBox=\"0 0 ${fmt(
                         SPARK_WIDTH,
                     )} ${fmt(SPARK_HEIGHT)}\" preserveAspectRatio=\"none\">",
                 )

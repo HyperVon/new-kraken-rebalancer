@@ -34,9 +34,6 @@ No open items — every CI-25 item shipped in Cycle 25.
 | CI-25-C03 | S | done | config | Remove unused import and use primitive `ALLOCATION_TOLERANCE_DELTA` in `ConfigServiceImpl` | 25 | — |
 | CI-25-C04 | S | done | common | Move `OrderExecutorImpl` string constants into `:common` `ViewText` catalog | 25 | — |
 | CI-25-C05 | M | done | math | Guard floating-point exponentiation in `RebalancerEngine.calculateFiatDeployment` with `.takeIf { it.isFinite() } ?: 0.0` | 25 | — |
-| CI-25-UI01 | S | done | accessibility | Add `aria-hidden="true"` to decorative sparkline SVG in `OverviewGridComponent` | 25 | — |
-| CI-25-UI02 | S | done | accessibility | Add WAI-ARIA `aria-sort` attributes to performance table headers in `PerformanceTableComponent` & `Dashboard.kt` | 25 | — |
-| CI-25-UI03 | S | done | accessibility | Add `aria-label` attribute to chart scrubber range inputs in `HistoryPageComponent` | 25 | — |
 | CI-25-D01 | S | done | docs | Clarify `SECURITY.md` permission scope regarding `Query Open Orders & Trades` for manual REST reconciliation | 25 | — |
 | CI-25-D02 | S | done | docs | Document `STALE_THRESHOLD_SECONDS` and automatic SSE reconnection behavior in `docs/USER_GUIDE.md` | 25 | — |
 | CI-24-D01 | M | done | docs | Policy update across `docs/AGENTIC_DEVELOPMENT.md`, `.agents/OPERATING.md`, `.agents/AGENTS.md`, skills, and rules: Antigravity sessions launch subagents natively via `invoke_subagent` instead of calling Kilo CLI `route-subagents` / `subagents.py` scripts | 24 | — |
