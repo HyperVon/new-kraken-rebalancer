@@ -11,7 +11,7 @@
     "auto": true,
     "prune": true
   },
-  "lsp": true,
+  "lsp": false,
   "mcp": {
     "context7": {
       "type": "remote",
