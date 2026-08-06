@@ -117,10 +117,12 @@ provider/model route. Include the track matrix in the parent task so agents do
 not redo one another's work.
 
 While the launcher runs, the parent MUST keep checking observability instead of
-sitting idle: poll `~/.cache/kilo/model-router/status.json` every 60–90 seconds
-and read the background-process `logs` between polls (see "While workers run"
-in `.kilo/model-router/instructions.md`). Status transitions decide when to
-stop polling; a stalled run is stopped and retried once, not waited on blindly.
+sitting idle: poll the per-run status file printed at launch (or the
+`~/.cache/kilo/model-router/status.json` pointer to the most recent run) every
+60–90 seconds and read the background-process `logs` between polls (see "While
+workers run" in `.kilo/model-router/instructions.md`). Status transitions
+decide when to stop polling; a stalled run is stopped and retried once, not
+waited on blindly.
 
 `subagent_type` and other agent-role labels identify a capability or harness
 role, not a model or effort level from their names alone. A profile is route

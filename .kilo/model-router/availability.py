@@ -156,8 +156,7 @@ def snapshot(config: Mapping[str, Any]) -> dict[str, Any]:
     show: dict[str, Any] | None = None
     if command:
         print(
-            f"[quota {time.strftime('%H:%M:%S')}] opencode-quota status/show "
-            f"(timeout {timeout}s, command {' '.join(command)})",
+            f"[quota {time.strftime('%H:%M:%S')}] opencode-quota status/show (timeout {timeout}s)",
             file=sys.stderr,
             flush=True,
         )

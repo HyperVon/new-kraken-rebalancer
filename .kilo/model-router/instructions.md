@@ -134,11 +134,14 @@ Polling caveats:
   line-buffered even when piped, and both wrappers run Python unbuffered
   (`python3 -u`), so the route plan table on stdout also appears in real time.
   `logs` therefore shows progress instead of nothing until exit.
-- A secret-free live status snapshot is written to
-  `~/.cache/kilo/model-router/status.json` while workers run: pid, phase, and
-  per-track route / status (`queued` → `running` → `done`/`failed`) with
-  exit code and elapsed seconds. `cat ~/.cache/kilo/model-router/status.json`
-  tells you exactly where a run is and whether each worker is still alive.
+- A secret-free live status snapshot is written per run to
+  `~/.cache/kilo/model-router/status-<runid>.json` — the launcher prints the
+  exact path at launch, and `status.json` is a pointer to the most recent run.
+  Each snapshot shows pid, run id, phase, and per-track route / status
+  (`queued` → `running` → `done`/`failed`) with exit code, retries, and
+  elapsed seconds. `cat` the printed path to see exactly where a run is and
+  whether each worker is still alive. Per-run names mean concurrent Kilo
+  instances in different projects never overwrite each other.
 - Network phases (provider catalogs, Artificial Analysis pages, quota-plugin
   queries, TPS probes) are each logged before they start and after they
   resolve, so a silent multi-minute stall is attributable to a specific
@@ -146,20 +149,24 @@ Polling caveats:
   `min(tpsProbe.timeoutSeconds, probeCharacters / minTps)` seconds per free
   route (default 50s); several free routes are probed serially, so plan-only
   runs may sit in the probe phase for minutes on first use of a route.
-- A track can fail fast (exit 1 in under a second, `failure_kind: null`) on
-  concurrent cold starts of `kilo run`. Retry the same command; the second run
-  passes with identical routes.
+- Concurrent cold starts of `kilo run` can fast-fail (exit 1 in under a
+  second, `failure_kind: null`). The launcher staggers launches and
+  auto-retries fast-fails once (see `coldStart` in `config`); if a track
+  still fails fast, retry the same command — the second run passes with
+  identical routes.
 
 ### While workers run: check observability, do not wait blindly
 
 An agent that launched a fan-out MUST keep polling the observability surface
 instead of sitting idle on the assumption that the run will finish:
 
-- Poll `cat ~/.cache/kilo/model-router/status.json` roughly every 60–90 seconds
-  while workers are queued/running. The file is secret-free and shows pid,
-  phase, and per-track status (`queued` → `running` → `done`/`failed`) with
-  route, exit code, and elapsed seconds. A stale `updated_at_utc` with no
-  progress across several polls is a real stall, not a slow worker.
+- Poll the per-run status file printed at launch (or `cat
+  ~/.cache/kilo/model-router/status.json` for the pointer to the most recent
+  run) roughly every 60–90 seconds while workers are queued/running. The
+  file is secret-free and shows pid, phase, and per-track status
+  (`queued` → `running` → `done`/`failed`) with route, exit code, retries,
+  and elapsed seconds. A stale `updated_at_utc` with no progress across
+  several polls is a real stall, not a slow worker.
 - Read the background-process `logs` output between polls. The `[subagents]`,
   `[router]`, and `[quota]` phase lines identify the current network phase, so
   a multi-minute silence is attributable to a specific endpoint instead of

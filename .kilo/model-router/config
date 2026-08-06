@@ -32,6 +32,13 @@
     "cacheMinutes": 60,
     "maxProbesPerRun": 3
   },
+  "coldStart": {
+    "staggerSeconds": 5,
+    "retryOnFastFail": true,
+    "fastFailThresholdSeconds": 5,
+    "retryDelaySeconds": 10,
+    "maxRetries": 1
+  },
   "providers": {
     "kilo": {
       "enabled": true,
