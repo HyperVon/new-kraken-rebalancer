@@ -25,12 +25,21 @@
     },
     "sqlite": {
       "type": "local",
-      "command": ["npx", "-y", "mcp-server-sqlite-npx", "build/kilo-disposable.db"],
+      "command": [
+        "npx",
+        "-y",
+        "mcp-server-sqlite-npx",
+        "build/kilo-disposable.db"
+      ],
       "enabled": true
     },
     "playwright": {
       "type": "local",
-      "command": ["npx", "-y", "@playwright/mcp"],
+      "command": [
+        "npx",
+        "-y",
+        "@playwright/mcp"
+      ],
       "enabled": true
     }
   },
@@ -40,5 +49,6 @@
   },
   "plugin": [
     "context-mode"
-  ]
+  ],
+  "snapshot": false
 }

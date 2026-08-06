@@ -27,6 +27,11 @@ _None — all cycle-14 items are done. See the Done table below for both #168
 
 | ID | Size | Kind | Status | Area | Summary | Cycle | PR | Issue |
 | :--- | :---: | :--- | :--- | :--- | :--- | :---: | :--- | :---: |
+| CQ-15-L1 | L | bug | done | history/reconstruction | Fix unpersisted reconstruction version metadata when `snapshotsToSave` is empty | 15 | #195 | #196 |
+| CQ-15-L2 | L | bug | done | history/sync | Guard `rebuildHistoricalSnapshotsIfNeeded` with `isLedgersSeeded` check | 15 | #195 | #197 |
+| CQ-15-M1 | M | gap | done | history/sync | Allow `rebuildHistoricalSnapshotsIfNeeded` to run when ledgers are seeded even if `totalTradesExecuted == 0` | 15 | #195 | — |
+| CQ-15-M2 | M | gap | done | history/sync | Add unit tests for `rebuildHistoricalSnapshotsIfNeeded` ledger seeding guard and zero-trade support | 15 | #195 | — |
+| CQ-15-M3 | M | gap | done | history/reconstruction | Add unit test asserting `SNAPSHOT_RECONSTRUCTION_VERSION` is persisted when `snapshotsToSave` is empty | 15 | #195 | — |
 | CQ-14-L1 | L | bug | done | config/orders/simulation | Canonicalize allocation symbols and reject Kraken alias collisions before valuation and execution | 14 | #168 | #163 |
 | CQ-14-L2 | L | bug | done | orders/journal | A live success without an order transaction ID must remain blocking `UNCERTAIN` | 14 | #168 | #161 |
 | CQ-14-L3 | L | bug | done | orders/dust | Apply the dust threshold to floored submitted buy notional | 14 | #168 | #166 |

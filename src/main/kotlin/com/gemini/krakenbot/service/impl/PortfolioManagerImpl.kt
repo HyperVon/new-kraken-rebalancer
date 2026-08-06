@@ -133,22 +133,9 @@ class PortfolioManagerImpl(
     }
 
     private suspend fun runLoopBody() {
-        try {
-            log.info("Checking and performing historical trades synchronization from Kraken API...")
-            tradeHistoryService.syncTradesFromKraken()
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            log.error("Failed to synchronize historical trades on startup", e)
-        }
-        try {
-            log.info("Checking and performing ledger entry synchronization from Kraken API...")
-            tradeHistoryService.syncLedgersFromKraken()
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            log.error("Failed to synchronize ledger entries on startup", e)
-        }
+        synchronizeLedgers("on startup")
+        synchronizeTrades("on startup")
+        synchronizeHistoricalSnapshots("on startup")
 
         try {
             // Hot SharedFlow + collectLatest: config changes restart an idle delay immediately.
@@ -160,20 +147,9 @@ class PortfolioManagerImpl(
                             "Starting Rebalance Cycle. DryRun: {}",
                             settings.dryRun,
                         )
-                        try {
-                            tradeHistoryService.syncTradesFromKraken()
-                        } catch (e: CancellationException) {
-                            throw e
-                        } catch (e: Exception) {
-                            log.error("Failed to synchronize historical trades during cycle", e)
-                        }
-                        try {
-                            tradeHistoryService.syncLedgersFromKraken()
-                        } catch (e: CancellationException) {
-                            throw e
-                        } catch (e: Exception) {
-                            log.error("Failed to synchronize ledger entries during cycle", e)
-                        }
+                        synchronizeLedgers("during cycle")
+                        synchronizeTrades("during cycle")
+                        synchronizeHistoricalSnapshots("during cycle")
                         performRebalanceCycle()
                     } catch (e: CancellationException) {
                         // Cancellation drives collectLatest restarts and shutdown; never treat it
@@ -188,6 +164,45 @@ class PortfolioManagerImpl(
         } catch (e: CancellationException) {
             log.info("Rebalancing loop coroutine cancelled. Shutting down loop.")
             throw e
+        }
+    }
+
+    private suspend fun synchronizeLedgers(context: String) {
+        try {
+            log.info(
+                "Checking and performing ledger entry synchronization from Kraken API {}...",
+                context,
+            )
+            tradeHistoryService.syncLedgersFromKraken()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            log.error("Failed to synchronize ledger entries {}", context, e)
+        }
+    }
+
+    private suspend fun synchronizeTrades(context: String) {
+        try {
+            log.info(
+                "Checking and performing historical trades synchronization from Kraken API {}...",
+                context,
+            )
+            tradeHistoryService.syncTradesFromKraken()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            log.error("Failed to synchronize historical trades {}", context, e)
+        }
+    }
+
+    private suspend fun synchronizeHistoricalSnapshots(context: String) {
+        try {
+            log.info("Checking historical snapshot reconstruction {}...", context)
+            tradeHistoryService.rebuildHistoricalSnapshotsIfNeeded()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            log.error("Failed to rebuild historical snapshots {}", context, e)
         }
     }
 

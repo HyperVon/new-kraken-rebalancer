@@ -214,6 +214,29 @@ class SqliteTradeRepositoryImplTest : SqliteTradeRepositoryTestBase() {
             }
         }
 
+        "replace snapshots replaces history without deleting trades" {
+            runTest {
+                val now = Instant.now().truncatedTo(ChronoUnit.MILLIS)
+                val original = TestFixtures.emptySnapshot(now.minusSeconds(10), BigDecimal("1000.00"))
+                val replacement = TestFixtures.emptySnapshot(now, BigDecimal("2000.00"))
+                val trade = TestFixtures.tradeRecord(
+                    timestamp = now,
+                    pair = TestFixtures.XBTUSD,
+                    side = TestFixtures.BUY,
+                    symbol = Asset.BTC,
+                    volume = BigDecimal("0.01"),
+                    usdAmount = BigDecimal("600.00"),
+                )
+
+                repository.saveSnapshot(original)
+                repository.saveTrade(trade)
+                repository.replaceSnapshots(listOf(replacement))
+
+                repository.load().map { it.totalValueUSD } shouldBe listOf(BigDecimal("2000.00"))
+                repository.getTradesInRange(now.minusSeconds(1), now.plusSeconds(1)).size shouldBe 1
+            }
+        }
+
         "getLatestTradeTime with empty and populated trades" {
             runTest {
                 repository.getLatestTradeTime() shouldBe null

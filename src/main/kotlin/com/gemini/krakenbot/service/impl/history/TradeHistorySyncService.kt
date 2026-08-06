@@ -34,8 +34,28 @@ class TradeHistorySyncService(
     private val syncMutex = Mutex()
     private var lastSyncTime: Instant = Instant.EPOCH
 
+    // Seed/initial history pulls are bounded to this lookback: filled trades older than
+    // HISTORICAL_DAYS_BACK (90d) are pruned and reconstruction only reaches ~95 days, so pulling
+    // more than this would fetch data that is immediately discarded.
+    private val SEED_HISTORY_LOOKBACK: Duration = Duration.ofDays(96)
+
     suspend fun syncTradesFromKraken() = syncMutex.withLock {
         syncTradesFromKrakenLocked()
+    }
+
+    suspend fun rebuildHistoricalSnapshotsIfNeeded() {
+        val config = configService.getConfig()
+        if (config.settings.simulation ||
+            repository.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION) ==
+            TradeHistoryReconstructionService.CURRENT_RECONSTRUCTION_VERSION
+        ) {
+            return
+        }
+
+        if (!reconstructionService.canRebuildSnapshots()) return
+
+        log.info("Snapshot reconstruction version is stale or missing; rebuilding historical snapshots.")
+        reconstructionService.rebuildHistoricalSnapshots()
     }
 
     private suspend fun syncTradesFromKrakenLocked() {
@@ -69,16 +89,22 @@ class TradeHistorySyncService(
     private suspend fun syncTradesFromKrakenPinned(config: AppConfig) {
         val isSeeded = repository.isHistorySeeded()
         val effectiveLatest = calculateEffectiveLatestTime()
-        // Null effective → full history (startSec null). Otherwise overlap by 5 minutes so fills
-        // near the previous watermark are re-fetched and reconciled rather than double-inserted.
+        // Bound every history pull to the seed lookback window instead of fetching full history
+        // since the account was created: filled trades older than HISTORICAL_DAYS_BACK are pruned
+        // and reconstruction only reaches ~95 days, so anything older would be immediately
+        // discarded. Incremental syncs still overlap the previous watermark by 5 minutes so fills
+        // near it are re-fetched and reconciled rather than double-inserted.
         // [isHistorySeeded] only gates progress metadata / first-sync completion, not this window.
-        val startSec = effectiveLatest?.minusSeconds(300)?.epochSecond
+        val seedBound = nowProvider().minus(SEED_HISTORY_LOOKBACK)
+        val startSec = effectiveLatest?.minusSeconds(300)?.epochSecond ?: seedBound.epochSecond
         // A numeric progress cursor marks an interrupted seed. Recovery only applies while the
         // database is unseeded: once seeding completed, an orphaned numeric offset (e.g. the process
         // died after setHistorySeeded but before the COMPLETED marker) is stale and must not force
         // a full-history query on every future sync.
         val isRecoveringInitialSync = !isSeeded && readInitialPaginationOffset() != null
-        val paginationStartSec = if (isRecoveringInitialSync) null else startSec
+        // A resumed seed restarts from page zero (new fills can shift Kraken offsets) but is still
+        // bounded to the seed lookback; the persisted page offset is only a progress marker.
+        val paginationStartSec = if (isRecoveringInitialSync) seedBound.epochSecond else startSec
 
         log.info(
             "Starting trade history synchronization (isSeeded={}, startSec={}, recovering={})...",
@@ -87,14 +113,10 @@ class TradeHistorySyncService(
             isRecoveringInitialSync,
         )
 
-        // A resumed seed uses a full-history query. The persisted page offset is only
-        // a progress marker; restart from page zero because new fills can shift Kraken offsets.
-        val queryStart =
-            if (isRecoveringInitialSync) {
-                Instant.EPOCH
-            } else {
-                effectiveLatest?.minusSeconds(300) ?: Instant.EPOCH
-            }
+        // queryStart mirrors the bounded seed window so local reconcile candidates cover the same
+        // horizon as the Kraken pull (previously this was a full-history EPOCH query on a resumed
+        // seed, pulling far more than the retained/ reconstructable window).
+        val queryStart = Instant.ofEpochSecond(paginationStartSec)
         val queryNow = nowProvider()
         val queryEnd = queryNow.plusSeconds(300)
         val originalLocalTrades = repository.getTradesInRange(queryStart, queryEnd).toMutableList()

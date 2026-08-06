@@ -261,11 +261,13 @@ The comparison cannot be computed when:
 | Baseline mismatch | First snapshot's total value doesn't match the sum of its priced assets (stale data). |
 | Missing price | An asset lacks a price in a snapshot. |
 | Asset universe changed | An asset was added or removed during the window. |
-| Unexplained balance change | A balance changed without a matching trade (deposit / withdrawal). |
 | Unsupported trade | A trade with a side other than BUY or SELL. |
 
-When unavailable, the chart area hides and a message explains why — the chart
-never shows a misleading comparison.
+When unavailable, the chart area hides and a message explains why. Ranges
+containing unexplained balance changes — external deposits, withdrawals,
+dividends, or anything else the sync cannot attribute to a trade — still render
+but carry an **Estimated (external balance changes may affect precision)** badge;
+treat those ranges as approximate. Fully reconciled ranges show no badge.
 
 ![History — portfolio value and asset holdings](images/history-portfolio-charts.png)
 

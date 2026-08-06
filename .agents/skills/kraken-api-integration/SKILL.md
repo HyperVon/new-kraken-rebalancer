@@ -65,6 +65,29 @@ Per-endpoint **cost** (in `KrakenServiceImpl.queryPrivate`):
 Never log raw signatures, API keys, or secrets. Load credentials from env or
 gitignored config.
 
+### Direct private-API calls from a script/agent (outside the JVM)
+
+Verified against the live Kraken API — replicate the JVM bytes exactly or you
+get `EAPI:Invalid key`:
+
+1. **HMAC message order is `path bytes + SHA256(nonce + urlencoded body)`** —
+   the path comes FIRST, then the SHA-256 digest. Many web examples reverse
+   this (`sha256 + path`); that order returns `EAPI:Invalid key`. The app's
+   `signRequest` (SKILL.md § signing above) concatenates `path` then `sha2`.
+2. **Nonce**: seed `timeMs * 1_000_000L` and increment per request (matches
+   `KrakenServiceImpl`). Missing/inconsistent nonce persistence is not the
+   issue; the message order is what breaks.
+3. **`Ledgers` / `TradesHistory` `start`/`end` are in SECONDS** (not ms), and
+   `Ledgers` paginates by ledger id (`ofs`/`id`), not timestamp.
+4. Credentials for this project come from `rebalancer-config.json`
+   (`kraken.apiKey` / `kraken.privateKey`) — do not expect env overrides; the
+   config values are the real keys. Never print more than length/prefix/suffix.
+5. Public endpoints (`/0/public/Time`, `/0/public/Ticker`) need no auth.
+   Ticker pair keys are canonical (`XXBTZUSD`, `XETHZUSD`, `XXRPZUSD`,
+   `SOLUSD`, ...) — map the balance asset to its actual response key.
+
+A working reference script pattern lives at `/tmp/kraken_truth_full.py`.
+
 ---
 
 ## Nonce (private calls only)

@@ -6,6 +6,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.16.15] - 2026-08-06
+
+### Fixed
+
+- **Rebalancer vs Buy & Hold**: a transaction in an asset that has since been
+  fully sold off no longer invalidates the comparison for that range — the trade
+  is skipped so the comparison stays visible instead of being reported as
+  unavailable.
+- **Snapshot reconstruction metadata versioning**: `TradeHistoryReconstructionService` now persists the `SNAPSHOT_RECONSTRUCTION_VERSION` metadata even when `snapshotsToSave` is empty, preventing endless snapshot reconstruction retries on every rebalance cycle (#196).
+- **Snapshot reconstruction ledger guard**: `TradeHistorySyncService` now guards `rebuildHistoricalSnapshotsIfNeeded()` with `canRebuildSnapshots()` so it gracefully skips reconstruction when ledgers are unseeded instead of throwing an `IllegalStateException` (#197).
+- **Rebalancer vs Buy & Hold documentation**: ranges containing unexplained
+  balance changes (deposits, withdrawals, dividends) remain visible with an
+  **Estimated (external balance changes may affect precision)** badge instead of
+  being listed as unavailable.
+
+### Changed
+
+- **Bounded trade-history seed**: resumed initial synchronizations now constrain
+  the backfill query to the last 96 days instead of pulling full history from the
+  epoch, keeping a coverage window of trading data older than it is pruned.
+- **Fail-closed history sync**: if ledger synchronization or historical snapshot
+  rebuild fails, that iteration skips the rebalance cycle rather than proceeding
+  with stale history.
+- Refreshed documentation screenshots from an isolated simulation run.
+
 ## [6.16.14] - 2026-08-05
 
 ### Added

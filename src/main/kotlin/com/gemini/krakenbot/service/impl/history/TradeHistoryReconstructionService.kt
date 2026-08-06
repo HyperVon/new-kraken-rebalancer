@@ -2,6 +2,7 @@ package com.gemini.krakenbot.service.impl.history
 
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.LedgerEvent
+import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.repository.LedgerRepository
 import com.gemini.krakenbot.repository.TradeRepository
 import com.gemini.krakenbot.service.ConfigService
@@ -21,18 +22,35 @@ class TradeHistoryReconstructionService(
     private val krakenService: KrakenService,
     private val configService: ConfigService,
     private val portfolioAnalyzer: PortfolioAnalyzer,
+    private val nowProvider: () -> Instant = Instant::now,
 ) {
     private val log = LoggerFactory.getLogger(TradeHistoryReconstructionService::class.java)
 
-    suspend fun reconstructHistoricalSnapshots() {
+    companion object {
+        const val CURRENT_RECONSTRUCTION_VERSION = "2"
+    }
+
+    suspend fun canRebuildSnapshots(): Boolean = ledgerRepository.isLedgersSeeded()
+
+    suspend fun reconstructHistoricalSnapshots() = reconstructHistoricalSnapshots(replaceExisting = false)
+
+    suspend fun rebuildHistoricalSnapshots() {
+        check(ledgerRepository.isLedgersSeeded()) {
+            "Cannot rebuild historical snapshots before ledger synchronization completes"
+        }
+        reconstructHistoricalSnapshots(replaceExisting = true)
+    }
+
+    private suspend fun reconstructHistoricalSnapshots(replaceExisting: Boolean) {
         log.info("Starting historical snapshots reconstruction...")
         val allocations = configService.getConfig().allocations
+        val reconstructionNow = nowProvider()
 
         // load() is newest-first (DESC); lastOrNull() is the oldest retained snapshot.
-        val currentSnapshots = repository.load()
+        val currentSnapshots = if (replaceExisting) emptyList() else repository.load()
         val oldestSnapshot = currentSnapshots.lastOrNull()
 
-        val cutoffTime = oldestSnapshot?.timestamp ?: Instant.now()
+        val cutoffTime = oldestSnapshot?.timestamp ?: reconstructionNow
 
         val fetchedLiveBalances =
             try {
@@ -85,7 +103,8 @@ class TradeHistoryReconstructionService(
 
         // Slightly wider than HISTORICAL_DAYS_BACK so daily closes cover the full reconstruction window.
         val ohlcData = mutableMapOf<String, List<Pair<Long, BigDecimal>>>()
-        val sinceSec = Instant.now().minus(95, ChronoUnit.DAYS).epochSecond
+        val since = reconstructionNow.minus(95, ChronoUnit.DAYS)
+        val sinceSec = since.epochSecond
         for ((symbol) in allocations) {
             val symbolU = symbol.value.uppercase()
             if (symbolU == Asset.USD) continue
@@ -104,7 +123,7 @@ class TradeHistoryReconstructionService(
 
         val trades =
             repository
-                .getTradesInRange(Instant.now().minus(95, ChronoUnit.DAYS), Instant.now())
+                .getTradesInRange(since, reconstructionNow)
                 .filter { it.success && !it.dryRun }
 
         val tradePrices =
@@ -118,7 +137,7 @@ class TradeHistoryReconstructionService(
 
         val stakingRewards =
             ledgerRepository
-                .getLedgersInRange(Instant.now().minus(95, ChronoUnit.DAYS), Instant.now())
+                .getLedgersInRange(since, reconstructionNow)
                 .filter { it.type == LedgerEvent.TYPE_STAKING }
         val historicalRewards = stakingRewards.filter { it.time.isBefore(cutoffTime) }
 
@@ -141,7 +160,17 @@ class TradeHistoryReconstructionService(
 
         if (snapshotsToSave.isNotEmpty()) {
             log.info("Saving {} reconstructed historical snapshots...", snapshotsToSave.size)
-            repository.save(snapshotsToSave)
+            if (replaceExisting) {
+                repository.replaceSnapshots(snapshotsToSave)
+            } else {
+                repository.save(snapshotsToSave)
+            }
+        }
+        if (replaceExisting || (oldestSnapshot == null && ledgerRepository.isLedgersSeeded())) {
+            repository.setSyncMetadata(
+                SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION,
+                CURRENT_RECONSTRUCTION_VERSION,
+            )
         }
     }
 }

@@ -20,6 +20,9 @@ data class TradeSummaryStats(
 interface TradeRepository {
     suspend fun save(history: List<PortfolioSnapshot>)
 
+    /** Replaces all portfolio snapshots and their children in one transaction. */
+    suspend fun replaceSnapshots(history: List<PortfolioSnapshot>)
+
     suspend fun load(): List<PortfolioSnapshot>
 
     suspend fun getTradeSummaryStats(): TradeSummaryStats
