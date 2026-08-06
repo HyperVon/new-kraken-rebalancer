@@ -1,5 +1,6 @@
 package com.gemini.krakenbot.service.impl
 
+import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.model.Asset
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
@@ -117,9 +118,9 @@ class PortfolioCalculationsTest : StringSpec() {
 
         "should sum all USD target percentages in calculateUsdTargetPercent" {
             val allocations = listOf(
-                com.gemini.krakenbot.config.Allocation("USD", 15.0),
-                com.gemini.krakenbot.config.Allocation("ZUSD", 5.0),
-                com.gemini.krakenbot.config.Allocation("BTC", 80.0),
+                Allocation("USD", 15.0),
+                Allocation("ZUSD", 5.0),
+                Allocation("BTC", 80.0),
             )
             PortfolioCalculations.calculateUsdTargetPercent(allocations)
                 .shouldBeEqualComparingTo(BigDecimal("20.00"))
