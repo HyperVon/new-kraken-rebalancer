@@ -34,6 +34,26 @@ MAX_FAILOVER_ATTEMPTS = 3
 REPORT_FAILURE_KIND = "report_contract"
 REPORT_PROTOCOL_MARKERS = ("tool_code", "ctx_", "compress {")
 DEFAULT_REPORT_SUBDIRECTORY = Path(".cache") / "kilo" / "model-router" / "reports"
+STATUS_PATH = Path.home() / ".cache" / "kilo" / "model-router" / "status.json"
+
+
+def _log(message: str) -> None:
+    """Live progress on stderr, which stays line-buffered even when piped."""
+    stamp = datetime.datetime.now(datetime.timezone.utc).strftime("%H:%M:%S")
+    print(f"[subagents {stamp}] {message}", file=sys.stderr, flush=True)
+
+
+def write_status(payload: Mapping[str, Any]) -> None:
+    """Publish a secret-free live status snapshot; never fatal on I/O errors."""
+    try:
+        STATUS_PATH.parent.mkdir(parents=True, exist_ok=True)
+        snapshot = dict(
+            payload,
+            updated_at_utc=datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        )
+        fileio.atomic_write(STATUS_PATH, json.dumps(snapshot, indent=2) + "\n")
+    except OSError:
+        pass
 
 
 def load_manifest(path: Path) -> list[dict[str, Any]]:
@@ -374,9 +394,47 @@ def launch_workers(prepared: Sequence[Mapping[str, Any]], max_workers: int, time
         with worker_workspace(read_only) as workspace:
             return launch_with_failover(item, timeout, allow_auto, workspace)
 
+    status: dict[str, Any] = {
+        "pid": os.getpid(),
+        "phase": "launching",
+        "started_at_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "tracks": [
+            {
+                "track": item["track"]["id"],
+                "route": item["selection"]["route"],
+                "status": "queued",
+                "exit_code": None,
+                "elapsed_seconds": None,
+            }
+            for item in prepared
+        ],
+    }
+    write_status(status)
+    by_id = {item["track"]["id"]: item for item in prepared}
     with concurrent.futures.ThreadPoolExecutor(max_workers=min(max_workers, len(prepared))) as executor:
-        futures = [executor.submit(launch_isolated, item) for item in prepared]
-        return [future.result() for future in futures]
+        futures = {executor.submit(launch_isolated, item): item["track"]["id"] for item in prepared}
+        results: list[dict[str, Any]] = []
+        for future in concurrent.futures.as_completed(futures):
+            track_id = futures[future]
+            _log(f"worker {track_id}: running via {by_id[track_id]['selection']['route']}")
+            for row in status["tracks"]:
+                if row["track"] == track_id:
+                    row["status"] = "running"
+                    write_status(status)
+            started = time.monotonic()
+            result = future.result()
+            elapsed = time.monotonic() - started
+            _log(f"worker {track_id}: finished exit_code={result['exit_code']} in {elapsed:.1f}s")
+            for row in status["tracks"]:
+                if row["track"] == track_id:
+                    row["status"] = "done" if result["exit_code"] == 0 else "failed"
+                    row["exit_code"] = result["exit_code"]
+                    row["elapsed_seconds"] = round(elapsed, 1)
+                    write_status(status)
+            results.append(result)
+    status["phase"] = "complete"
+    write_status(status)
+    return results
 
 
 def print_plan(plan: Mapping[str, Any], as_json: bool) -> None:
@@ -628,17 +686,28 @@ def main() -> int:
         raise router.RouterError(f"--max-workers must be between 1 and {MAX_TRACKS}")
     if args.timeout <= 0:
         raise router.RouterError("--timeout must be positive")
+    _log(
+        f"starting workflow={args.workflow or 'custom-manifest'} "
+        f"task_chars={len(args.task or '')} run={args.run} max_workers={args.max_workers}"
+    )
     manifest_path = Path(args.manifest).expanduser() if args.manifest else None
     plan, prepared = build_plan(manifest_path, args.workflow, args.task, args.config, args.refresh, args.allow_edits)
+    _log(f"route plan ready: {len(plan['tracks'])} track(s), aa={plan['aa']}")
     if not args.run:
         print_plan(plan, args.json)
+        _log("plan only; pass --run to launch workers")
         return 0
+    _log(f"launching {len(prepared)} worker(s), up to {args.max_workers} concurrent")
     results = launch_workers(prepared, args.max_workers, args.timeout, args.auto)
     try:
         route_report = write_run_report(plan, prepared, results, args.report_dir)
     except OSError:
         route_report = None
         print("Warning: unable to write the secret-free routed worker report", file=sys.stderr)
+    if route_report:
+        _log(f"route report: {route_report['markdown']}")
+    succeeded = sum(1 for result in results if result["exit_code"] == 0)
+    _log(f"done: {succeeded}/{len(results)} worker(s) succeeded")
     if args.json:
         print(json.dumps({**plan, "workers": results, "route_report": route_report}, indent=2))
     else:

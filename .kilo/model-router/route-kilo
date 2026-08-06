@@ -14,4 +14,4 @@ if [[ "${ARTIFICIAL_ANALYSIS_API_KEY:-}" == REPLACE_WITH_* ]]; then
   unset ARTIFICIAL_ANALYSIS_API_KEY
 fi
 
-exec python3 "$SCRIPT_DIR/router.py" run "$@"
+exec python3 -u "$SCRIPT_DIR/router.py" run "$@"

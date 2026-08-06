@@ -47,7 +47,10 @@ class AvailabilityTests(unittest.TestCase):
             self.assertEqual(60, seconds)
             payload = MODULE.json.loads(path.read_text(encoding="utf-8"))
             self.assertEqual("rate_limit", payload["routes"]["openrouter/model"]["reason"])
-            self.assertNotIn("429", MODULE.json.dumps(payload))
+            self.assertEqual(
+                {"blocked_until", "reason", "attempts"},
+                set(payload["routes"]["openrouter/model"]),
+            )
 
     def test_report_contract_failure_uses_provider_cooldown(self):
         with tempfile.TemporaryDirectory() as directory:

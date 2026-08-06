@@ -11,6 +11,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Changed
 
 - **Routed Subagent Launcher Docs & Worker Time Hygiene**: `.kilo/model-router/instructions.md` and `.agents/skills/adversarial-pr-review/SKILL.md` now treat the routed-launcher handoff for Kilo CLI sessions as mandatory, and document how to launch `route-subagents` from a Kilo session (background-process quoting workaround via a launcher script, block-buffered stdout polling, and cold-start retry guidance). Routed worker prompts now embed the launch timestamp and instruct workers to run `date` instead of estimating the current time from training knowledge.
+- **Routed Launcher Observability**: `route-subagents` and `route-kilo` now stream timestamped phase progress to stderr (line-buffered even when piped, and both wrappers run Python unbuffered) covering provider catalog fetches, Artificial Analysis pages, quota-plugin queries, and TPS probes, and publish a secret-free live status snapshot at `~/.cache/kilo/model-router/status.json` (pid, phase, per-track route/status/exit code/elapsed) while workers run. Silent multi-minute stalls are now attributable to a specific network phase instead of requiring process forensics.
 
 ### Fixed
 

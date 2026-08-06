@@ -129,10 +129,23 @@ run that script instead.
 
 Polling caveats:
 
-- The launcher's Python stdout is block-buffered when piped, so `logs` shows
-  nothing until exit. Check progress with `ps` (workers appear as
-  `kilo run --dir .../kilo-routed-*/repository --model <route>`) or by listing
-  the report directory.
+- The launcher now emits live progress: phase lines (`[subagents HH:MM:SS]`,
+  `[router HH:MM:SS]`, `[quota HH:MM:SS]`) stream to stderr, which stays
+  line-buffered even when piped, and both wrappers run Python unbuffered
+  (`python3 -u`), so the route plan table on stdout also appears in real time.
+  `logs` therefore shows progress instead of nothing until exit.
+- A secret-free live status snapshot is written to
+  `~/.cache/kilo/model-router/status.json` while workers run: pid, phase, and
+  per-track route / status (`queued` → `running` → `done`/`failed`) with
+  exit code and elapsed seconds. `cat ~/.cache/kilo/model-router/status.json`
+  tells you exactly where a run is and whether each worker is still alive.
+- Network phases (provider catalogs, Artificial Analysis pages, quota-plugin
+  queries, TPS probes) are each logged before they start and after they
+  resolve, so a silent multi-minute stall is attributable to a specific
+  endpoint. A TPS probe can legitimately take up to
+  `min(tpsProbe.timeoutSeconds, probeCharacters / minTps)` seconds per free
+  route (default 50s); several free routes are probed serially, so plan-only
+  runs may sit in the probe phase for minutes on first use of a route.
 - A track can fail fast (exit 1 in under a second, `failure_kind: null`) on
   concurrent cold starts of `kilo run`. Retry the same command; the second run
   passes with identical routes.

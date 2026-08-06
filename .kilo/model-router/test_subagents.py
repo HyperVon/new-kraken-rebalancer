@@ -1,4 +1,5 @@
 import importlib.util
+import json
 import sys
 import tempfile
 import unittest
@@ -46,6 +47,24 @@ class SubagentRouterTests(unittest.TestCase):
         self.assertRegex(prompt, r"Launched at \(UTC\): \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z")
         self.assertIn("run `date`", prompt)
         self.assertIn("Never estimate the time", prompt)
+
+    def test_write_status_publishes_live_progress_snapshot(self):
+        with tempfile.TemporaryDirectory() as directory:
+            status_path = Path(directory) / "status.json"
+            with patch.object(MODULE, "STATUS_PATH", status_path):
+                MODULE.write_status(
+                    {
+                        "pid": 1234,
+                        "phase": "launching",
+                        "tracks": [{"track": "docs", "route": "openai/gpt-5.4", "status": "queued"}],
+                    }
+                )
+            stored = json.loads(status_path.read_text(encoding="utf-8"))
+            self.assertEqual("launching", stored["phase"])
+            self.assertEqual("docs", stored["tracks"][0]["track"])
+            self.assertEqual("queued", stored["tracks"][0]["status"])
+            self.assertIn("updated_at_utc", stored)
+            self.assertRegex(stored["updated_at_utc"], r"\d{4}-\d{2}-\d{2}T")
 
     def test_workflow_preset_generates_specialized_tracks(self):
         tracks = MODULE.workflows.build_tracks("documentation-review", "Review the docs")
