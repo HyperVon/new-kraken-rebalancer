@@ -1,6 +1,7 @@
 package com.gemini.krakenbot.service.impl
 
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.OrderResult
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.OrderType
@@ -33,9 +34,12 @@ class SimulatedKrakenService(private val configService: ConfigService) :
     private val balances = ConcurrentHashMap<String, BigDecimal>()
     private val simulatedPrices = ConcurrentHashMap<String, BigDecimal>()
     private val simulatedTrades = CopyOnWriteArrayList<TradeRecord>()
+    private val simulatedLedgerEntries = CopyOnWriteArrayList<LedgerEvent>()
     private val orderMutex = Mutex()
     private var historicalTradesSeeded = false
+    private var historicalLedgersSeeded = false
     private var lastTradeHistoryTotalCount = 0
+    private var lastLedgerCount = 0
 
     init {
         log.info("Initialized SimulatedKrakenService")
@@ -93,6 +97,40 @@ class SimulatedKrakenService(private val configService: ConfigService) :
         ) {
             seedSimulatedTrades()
             historicalTradesSeeded = true
+            seedSimulatedLedgerEntries()
+            historicalLedgersSeeded = true
+        }
+    }
+
+    // Seeds staking ledger history so the rewards panel is populated in simulation
+    // mode. Entries spread across the same ~15-day window as seeded snapshots and
+    // trades, so the cumulative rewards line grows realistically over any range.
+    private fun seedSimulatedLedgerEntries() {
+        val now = Instant.now()
+        val allocations = configService.getConfig().allocations
+        val nonUsd = allocations.filter { !it.symbol.isUsd }
+        if (nonUsd.isEmpty()) return
+
+        nonUsd.forEachIndexed { assetIndex, alloc ->
+            val symbol = alloc.symbol.value.uppercase()
+            val price =
+                simulatedPrices[symbol]
+                    ?: (SimulationDefaults.INITIAL_PRICES[symbol] ?: SimulationDefaults.DEFAULT_PRICE)
+            repeat(5) { eventIndex ->
+                val hoursAgo = 14L + eventIndex * 72L + assetIndex.toLong()
+                val rewardUsd = BigDecimal.valueOf(25L + eventIndex * 6L)
+                simulatedLedgerEntries.add(
+                    LedgerEvent(
+                        ledgerId = "SIM-SEED-LEDGER-$assetIndex-$eventIndex",
+                        time = now.minus(hoursAgo, ChronoUnit.HOURS),
+                        type = LedgerEvent.TYPE_STAKING,
+                        subtype = "reward",
+                        aclass = "currency",
+                        asset = symbol,
+                        amount = rewardUsd.divide(price, PrecisionConstants.SCALE_CRYPTO, RoundingMode.HALF_UP),
+                    ),
+                )
+            }
         }
     }
 
@@ -363,6 +401,43 @@ class SimulatedKrakenService(private val configService: ConfigService) :
     }
 
     override fun getLastTradeHistoryTotalCount(): Int = lastTradeHistoryTotalCount
+
+    override suspend fun getLedgers(
+        startSec: Long?,
+        offset: Int?,
+        endSec: Long?,
+        types: Set<String>?,
+    ): List<LedgerEvent> {
+        initializeMissingBalancesAndPrices()
+
+        var filtered =
+            if (types != null) {
+                simulatedLedgerEntries.filter { it.type in types }
+            } else {
+                simulatedLedgerEntries
+            }
+
+        if (startSec != null) {
+            val startInstant = Instant.ofEpochSecond(startSec)
+            filtered = filtered.filter { !it.time.isBefore(startInstant) }
+        }
+
+        if (endSec != null) {
+            val endInstant = Instant.ofEpochSecond(endSec)
+            filtered = filtered.filter { !it.time.isAfter(endInstant) }
+        }
+
+        filtered = filtered.sortedByDescending { it.time }
+        lastLedgerCount = filtered.size
+
+        // Mirrors the private Ledgers endpoint: at most 50 entries per page (newest
+        // first); an offset at/beyond the result size yields an empty page.
+        return filtered
+            .drop(offset?.coerceAtLeast(0) ?: 0)
+            .take(KrakenApiConstants.LEDGER_PAGE_SIZE)
+    }
+
+    override fun getLastLedgerTotalCount(): Int = lastLedgerCount
 
     override suspend fun getOHLC(pair: String, interval: Int, since: Long?): List<Pair<Long, BigDecimal>> = emptyList()
 

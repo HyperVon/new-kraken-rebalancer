@@ -23,6 +23,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
 import java.math.BigDecimal
 import java.time.Instant
+import java.time.temporal.ChronoUnit
 
 class LedgersSyncServiceTest : StringSpec() {
 
@@ -200,6 +201,26 @@ class LedgersSyncServiceTest : StringSpec() {
             coVerify {
                 krakenService.getLedgers(startSec = null, offset = 0, endSec = any(), types = any())
             }
+        }
+
+        "prunes ledger entries older than the 90-day retention window during finalize" {
+            stubStableBackend()
+            every { configService.getConfig() } returns appConfig
+            repository.saveLedgers(
+                listOf(
+                    event(0, time = fixedNow.minus(100, ChronoUnit.DAYS)),
+                    event(1, time = fixedNow.minus(5, ChronoUnit.DAYS)),
+                ),
+            )
+
+            coEvery { krakenService.getLedgers(any(), any(), any(), any()) } returns emptyList()
+            coEvery { krakenService.getLastLedgerTotalCount() } returns 0
+
+            val service = LedgersSyncService(repository, krakenService, configService, nowProvider = { fixedNow })
+            service.syncLedgersFromKraken()
+
+            val remaining = repository.getLedgersInRange(Instant.EPOCH, fixedNow.plus(1, ChronoUnit.DAYS))
+            remaining.map { it.ledgerId } shouldBe listOf("ledger-1")
         }
     }
 }

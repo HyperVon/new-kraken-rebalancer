@@ -199,17 +199,17 @@ class HistoryPageComponent(private val objectMapper: ObjectMapper) {
 
     private fun DIV.renderRewardsChartSection() {
         div(CssClass.Layout.GlassPanel) {
-            div(CssClass.History.ChartHeader + CssClass.History.RewardsHeader) {
+            div(CssClass.History.ChartHeader) {
                 h2(CssClass.Utility.GlassPanelTitle + CssClass.History.ChartHeaderTitle) {
                     icon(Icons.TREND_UP)
                     +ViewText.HISTORY_STAKING_REWARDS
                 }
-                div(CssClass.History.RewardsTotal) {
+                div {
                     id = HtmlIds.REWARDS_TOTAL
                     +ViewText.EM_DASH
                 }
             }
-            div(CssClass.History.RewardsChartArea) {
+            div {
                 id = HtmlIds.REWARDS_CHART_CONTENT
                 div(CssClass.History.ChartContainer) {
                     canvas {

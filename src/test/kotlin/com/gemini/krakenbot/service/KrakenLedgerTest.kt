@@ -39,7 +39,7 @@ class KrakenLedgerTest : KrakenServiceTestBase() {
                                     "type": "staking",
                                     "subtype": "reward",
                                     "aclass": "currency",
-                                    "asset": "XBT",
+                                    "asset": "XXBT",
                                     "amount": "0.10000000",
                                     "fee": "0.00000000",
                                     "balance": "10.50000000"
@@ -69,7 +69,7 @@ class KrakenLedgerTest : KrakenServiceTestBase() {
                 staking.time.toEpochMilli() shouldBe 1700000000123L
                 staking.subtype shouldBe "reward"
                 staking.aclass shouldBe "currency"
-                staking.asset shouldBe "XBT"
+                staking.asset shouldBe "BTC"
                 staking.amount.shouldBeEqualComparingTo(BigDecimal("0.1"))
                 staking.fee.shouldBeEqualComparingTo(BigDecimal("0"))
                 staking.balance.shouldBeEqualComparingTo(BigDecimal("10.5"))
@@ -78,6 +78,7 @@ class KrakenLedgerTest : KrakenServiceTestBase() {
                 dividend.refid shouldBe "R2"
                 dividend.subtype.shouldBeNull()
                 dividend.aclass shouldBe "currency"
+                dividend.asset shouldBe "STRC"
                 service.getLastLedgerTotalCount() shouldBe 2
             }
         }
@@ -177,6 +178,70 @@ class KrakenLedgerTest : KrakenServiceTestBase() {
 
                 entries.isEmpty().shouldBeTrue()
                 service.getLastLedgerTotalCount() shouldBe 0
+            }
+        }
+
+        "getLedgers_NormalizesEarnSuffixAndLegacyAssetCodes" {
+            runTest {
+                val responseJson = """
+                    {
+                        "error": [],
+                        "result": {
+                            "ledger": {
+                                "L1": {
+                                    "time": 1700000000.0000,
+                                    "type": "staking",
+                                    "asset": "DOT.S",
+                                    "amount": "1.00000000",
+                                    "fee": "0.00000000",
+                                    "balance": "10.00000000"
+                                },
+                                "L2": {
+                                    "time": 1700000100.0000,
+                                    "type": "staking",
+                                    "asset": "USDT.F",
+                                    "amount": "2.00000000",
+                                    "fee": "0.00000000",
+                                    "balance": "20.00000000"
+                                },
+                                "L3": {
+                                    "time": 1700000200.0000,
+                                    "type": "staking",
+                                    "asset": "XXBT",
+                                    "amount": "0.10000000",
+                                    "fee": "0.00000000",
+                                    "balance": "1.00000000"
+                                },
+                                "L4": {
+                                    "time": 1700000300.0000,
+                                    "type": "staking",
+                                    "asset": "ZUSD",
+                                    "amount": "5.00000000",
+                                    "fee": "0.00000000",
+                                    "balance": "50.00000000"
+                                },
+                                "L5": {
+                                    "time": 1700000400.0000,
+                                    "type": "staking",
+                                    "asset": "ZGBP",
+                                    "amount": "3.00000000",
+                                    "fee": "0.00000000",
+                                    "balance": "30.00000000"
+                                }
+                            },
+                            "count": 5
+                        }
+                    }
+                """.trimIndent()
+                val service = createService(responseJson)
+                val entries = service.getLedgers()
+
+                entries.first { it.ledgerId == "L1" }.asset shouldBe "DOT"
+                entries.first { it.ledgerId == "L2" }.asset shouldBe "USDT"
+                entries.first { it.ledgerId == "L3" }.asset shouldBe "BTC"
+                entries.first { it.ledgerId == "L4" }.asset shouldBe "USD"
+                entries.first { it.ledgerId == "L5" }.asset shouldBe "ZGBP"
+                service.getLastLedgerTotalCount() shouldBe 5
             }
         }
     }

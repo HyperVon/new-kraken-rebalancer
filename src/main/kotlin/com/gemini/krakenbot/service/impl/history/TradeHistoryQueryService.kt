@@ -56,13 +56,15 @@ class TradeHistoryQueryService(
             ledgerRepository
                 .getLedgersInRange(from, to)
                 .filter { it.type == LedgerEvent.TYPE_STAKING }
+                .sortedBy { it.time }
+        val cumulativeByAsset = mutableMapOf<String, BigDecimal>()
+        var eventIndex = 0
         val points = snapshots.map { snapshot ->
-            val cumulativeByAsset = mutableMapOf<String, BigDecimal>()
-            for (event in stakingEvents) {
-                if (event.time <= snapshot.timestamp) {
-                    val symbol = event.asset.uppercase()
-                    cumulativeByAsset[symbol] = (cumulativeByAsset[symbol] ?: BigDecimal.ZERO).add(event.amount)
-                }
+            while (eventIndex < stakingEvents.size && stakingEvents[eventIndex].time <= snapshot.timestamp) {
+                val event = stakingEvents[eventIndex]
+                val symbol = event.asset.uppercase()
+                cumulativeByAsset[symbol] = (cumulativeByAsset[symbol] ?: BigDecimal.ZERO).add(event.amount)
+                eventIndex++
             }
             var cumulativeUSD = BigDecimal.ZERO
             val perAssetUSD = mutableMapOf<String, BigDecimal>()

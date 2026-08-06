@@ -376,6 +376,8 @@ class KrakenServiceImpl(
         endSec: Long?,
         types: Set<String>?,
     ): List<LedgerEvent> {
+        // Re-reading the config here is safe: callers (LedgersSyncService) bracket ledger pulls
+        // in a ConfigService execution session, so getConfig() returns the session-pinned config.
         if (!configService.getConfig().kraken.hasValidCredentials()) {
             log.warn("Kraken API key is blank or placeholder. Skipping ledger fetch.")
             return emptyList()
@@ -417,6 +419,8 @@ class KrakenServiceImpl(
         val ledgerList = mutableListOf<LedgerEvent>()
         ledgerNode.properties().forEach { (ledgerId, entryNode) ->
             val type = entryNode.path(KrakenApiConstants.FIELD_TYPE).asText()
+            // Trust-boundary guard: the server already filters by `type`, but an unexpected entry
+            // type would otherwise flow into the insert-only ledger store unfiltered.
             if (types != null && type !in types) {
                 return@forEach
             }
@@ -455,7 +459,7 @@ class KrakenServiceImpl(
                     type = type,
                     subtype = subtype,
                     aclass = aclass,
-                    asset = entryNode.path(KrakenApiConstants.FIELD_ASSET).asText(),
+                    asset = Asset.normalizeLedgerAsset(entryNode.path(KrakenApiConstants.FIELD_ASSET).asText()),
                     amount = safeParseBigDecimal(amountStr, PrecisionConstants.SCALE_CRYPTO),
                     fee = safeParseBigDecimal(feeStr, PrecisionConstants.SCALE_FEE),
                     balance = safeParseBigDecimal(balanceStr, PrecisionConstants.SCALE_CRYPTO),

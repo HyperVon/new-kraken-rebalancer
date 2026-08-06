@@ -180,9 +180,6 @@ History:
   ComparisonUnavailable: "comparison-unavailable"
   ComparisonChartArea: "comparison-chart-area"
   ComparisonConfidenceBadge: "comparison-confidence-badge"
-  RewardsHeader: "rewards-header"
-  RewardsTotal: "rewards-total"
-  RewardsChartArea: "rewards-chart-area"
 Utility:
   TextDanger: "text-danger"
   TextOverweight: "text-overweight"

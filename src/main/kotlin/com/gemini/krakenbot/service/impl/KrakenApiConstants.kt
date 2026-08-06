@@ -18,10 +18,6 @@ object KrakenApiConstants {
     /** Maximum number of records returned by one Kraken Ledgers page. */
     const val LEDGER_PAGE_SIZE = 50
 
-    /** Ledger entry types reported by the private Ledgers endpoint. */
-    const val LEDGER_TYPE_STAKING = "staking"
-    const val LEDGER_TYPE_DIVIDEND = "dividend"
-
     const val HEADER_API_KEY = "API-Key"
     const val HEADER_API_SIGN = "API-Sign"
     const val HEADER_CONTENT_TYPE = "Content-Type"
@@ -38,9 +34,6 @@ object KrakenApiConstants {
     const val PARAM_CL_ORD_ID = "cl_ord_id"
     const val PARAM_INTERVAL = "interval"
     const val PARAM_SINCE = "since"
-    const val PARAM_ACLASS = "aclass"
-    const val PARAM_WITHOUT_COUNT = "without_count"
-    const val PARAM_REBASE_MULTIPLIER = "rebase_multiplier"
 
     const val FIELD_RESULT = "result"
     const val FIELD_ERROR = "error"

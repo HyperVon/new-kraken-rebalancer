@@ -7,6 +7,7 @@ import com.gemini.krakenbot.repository.LedgerRepository
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.KrakenService
 import com.gemini.krakenbot.service.impl.KrakenApiConstants
+import com.gemini.krakenbot.util.PrecisionConstants
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.sync.Mutex
@@ -14,6 +15,7 @@ import kotlinx.coroutines.sync.withLock
 import org.slf4j.LoggerFactory
 import java.time.Duration
 import java.time.Instant
+import java.time.temporal.ChronoUnit
 import kotlin.coroutines.cancellation.CancellationException
 
 /**
@@ -145,7 +147,27 @@ class LedgersSyncService(
         // Persist watermark even when no real entries exist so the next sync is incremental.
         val completedAt = nowProvider()
         writeSyncWatermark(completedAt)
+        pruneOldEntries(completedAt)
         lastSyncTime = completedAt
+    }
+
+    /** Mirrors the snapshot/trade retention window (HISTORICAL_DAYS_BACK) for ledger entries. */
+    private suspend fun pruneOldEntries(reference: Instant) {
+        try {
+            val cutoff = reference.minus(PrecisionConstants.HISTORICAL_DAYS_BACK.toLong(), ChronoUnit.DAYS)
+            val pruned = repository.pruneLedgersOlderThan(cutoff)
+            if (pruned > 0) {
+                log.info(
+                    "Pruned {} ledger entries older than {} days.",
+                    pruned,
+                    PrecisionConstants.HISTORICAL_DAYS_BACK,
+                )
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            log.error("Failed to prune old ledger entries", e)
+        }
     }
 
     private suspend fun readSyncWatermark(): Instant? =
@@ -175,7 +197,7 @@ class LedgersSyncService(
                 startSec = startSec,
                 offset = offset,
                 endSec = endSec,
-                types = setOf(KrakenApiConstants.LEDGER_TYPE_STAKING, KrakenApiConstants.LEDGER_TYPE_DIVIDEND),
+                types = setOf(LedgerEvent.TYPE_STAKING, LedgerEvent.TYPE_DIVIDEND),
             )
             val totalCount = krakenService.getLastLedgerTotalCount()
 
@@ -187,6 +209,9 @@ class LedgersSyncService(
             if (apiLedgers.isNotEmpty()) emit(apiLedgers)
 
             val nextOffset = offset + KrakenApiConstants.LEDGER_PAGE_SIZE
+            // The Ledgers endpoint's count is the full number of matching entries (unlike
+            // TradesHistory, which caps count at 1000), so a positive totalCount can be trusted
+            // for pagination; the size-based fallback covers backends without a count.
             val hasMorePages = if (totalCount > 0) {
                 nextOffset < totalCount
             } else {

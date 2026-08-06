@@ -256,7 +256,11 @@ with a wide range of tools and paradigms:
 - Persistent mode plate (SIMULATION / DRY RUN / LIVE TRADING)
 - **Range-Filtered History Metrics** — Time frame selector controls all six top metric summary cards (All-Time High / Period High, Total Trades, Total Volume Traded, Total Fees Paid, Avg Fee Rate, Avg Slippage) dynamically alongside interactive Chart.js timelines and trade history logs with price, fee, and slippage columns.
 - **Staking Rewards History** — displays cumulative staking rewards in USD, split
-  by asset, from synchronized Kraken ledger entries.
+  by asset, from synchronized Kraken ledger entries. `dividend` entries (Kraken
+  staking-reward payouts for assets like DOT outside the tracked universe) are
+  persisted for balance attribution but excluded from the chart; Earn-migration
+  asset suffixes (`.S`/`.M`/`.F`/`.B`) and legacy `X`/`Z` asset codes are
+  normalized to the base symbol.
 - **Hypermedia-powered** — uses HTMX for HTML swaps and form submissions, plus
   Kotlin/JS (`rebalancer.js`) for charts, History controls, and client behavior
 
@@ -273,7 +277,7 @@ with a wide range of tools and paradigms:
 ### Offline Exchange Simulator & Pre-Seeding
 
 - **Offline Simulation Mode** — Run the bot completely offline without a real Kraken API key. Enable `"simulation": true` (dynamic toggling supported via the Settings UI) to execute orders and check balances against a realistic random walk price generator.
-- **Automated Database Seeding** — If started in simulation mode with an empty database, the system generates ~15 days of snapshots at 6-hour steps (~61 points) plus trade logs, providing immediately interactive graphs.
+- **Automated Database Seeding** — If started in simulation mode with an empty database, the system generates ~15 days of snapshots at 6-hour steps (~61 points), trade logs, and synthetic staking ledger entries, providing immediately interactive graphs including a populated rewards panel.
 
 ### Historical Trades Synchronization
 
@@ -293,7 +297,15 @@ with a wide range of tools and paradigms:
   uses a five-minute incremental overlap to avoid missing entries near a
   watermark
 - Serves `/api/history/rewards` with cumulative staking rewards aligned to
-  portfolio snapshots and valued using each snapshot's asset prices
+  portfolio snapshots and valued using each snapshot's asset prices. Ledger
+  assets are normalized to the tracked base symbol (Earn suffixes and legacy
+  `X`/`Z` codes), and assets without a snapshot price in the range are excluded
+  from the totals.
+- In simulation mode with an empty database, synthetic staking ledger entries
+  are seeded alongside snapshots and trades so the rewards panel shows a
+  realistic cumulative history; `dividend` entries stay persisted but excluded
+  from the rewards chart and comparison math (external USD-equivalent inflows
+  from the rebalancer's perspective).
 
 ### Safety & Reliability
 

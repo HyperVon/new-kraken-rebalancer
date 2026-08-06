@@ -17,6 +17,30 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Staking rewards chart**: History now displays cumulative staking rewards in
   USD with per-asset series across the selected time range.
 
+### Changed
+
+- **Ledger asset normalization**: ledger entries are normalized to the tracked
+  base symbol before storage — Earn-migration suffixes (`.S`/`.M`/`.F`/`.B`)
+  and legacy `X`/`Z` asset codes (`XXBT` → `BTC`, `ZUSD` → `USD`) are stripped;
+  foreign assets pass through unchanged. This keeps staking rewards on Earn
+  products (e.g. `DOT.S`) matched to the snapshot universe.
+- **Ledger retention**: completed ledger syncs now prune entries older than the
+  90-day `HISTORICAL_DAYS_BACK` window, mirroring the snapshot and trade prune.
+- **Simulation seeding**: simulation mode now seeds synthetic staking ledger
+  entries alongside snapshots and trades, so the rewards panel shows a
+  realistic cumulative history instead of an empty chart.
+- **Dividend entries documented**: Kraken `dividend` ledger entries (staking
+  payouts for assets outside the tracked universe) remain persisted for balance
+  attribution but are excluded from the rewards chart and comparison math —
+  they are treated as external USD-equivalent inflows.
+- **Rewards caption caveat**: the History rewards caption notes that assets
+  without a snapshot price in the selected range are excluded from the totals.
+- **Dead-code cleanup**: removed unused Kraken API constants
+  (`PARAM_ACLASS`, `PARAM_WITHOUT_COUNT`, `PARAM_REBASE_MULTIPLIER`,
+  `LEDGER_TYPE_STAKING`, `LEDGER_TYPE_DIVIDEND` — the type constants now live
+  on `LedgerEvent`) and unused CSS/text catalog entries
+  (`RewardsHeader`, `RewardsTotal`, `RewardsChartArea`, `REWARDS_TOTAL`).
+
 ## [6.16.13] - 2026-08-04
 
 ### Fixed
