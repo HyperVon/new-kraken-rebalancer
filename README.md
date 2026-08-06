@@ -541,7 +541,8 @@ This path is internal orchestration — not a second browser-facing SSE stream l
 │   │   ├── AppModule.kt                  # Koin dependency injection module
 │   │   ├── DatabaseConfig.kt             # SQLite connect + Exposed schema migrate
 │   │   ├── ErrorHandlingConfig.kt        # Ktor status pages
-│   │   └── KtorConfig.kt                 # CORS, compression, content negotiation
+│   │   ├── KtorConfig.kt                 # CORS, compression, content negotiation
+│   │   └── ServerConfig.kt               # Server port constant and JVM property key
 │   ├── controller/
 │   │   ├── DashboardController.kt        # HTTP handlers (pages, settings POST, SSE, history APIs)
 │   │   ├── CsrfProtection.kt              # Double-submit protection for settings mutations
@@ -580,7 +581,7 @@ This path is internal orchestration — not a second browser-facing SSE stream l
 │   │   ├── DashboardView.kt              # Facade class delegating to components
 │   │   ├── component/                    # Shell, Grid, Form, History, charts, activity, performance
 │   │   ├── css/                          # CssTheme, CssStyles, ComponentStyles, LayoutStyles, TableStyles, FormStyles, NavigationStyles, MediaQueries
-│   │   └── util/                         # Formatter, HtmlExtensions, HtmlHelpers, Icons, Layouts (shared IDs/Routes live in :common)
+│   │   └── util/                         # AllocationExtensions, Formatter, HtmlExtensions, HtmlHelpers, Icons, Layouts (shared IDs/Routes live in :common)
 ├── src/test/kotlin/                       # JVM unit / E2E / evaluation tests (JaCoCo gates)
 ├── src/main/resources/                    # Static resources
 │   └── static/
