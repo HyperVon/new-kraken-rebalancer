@@ -22,6 +22,7 @@ import com.gemini.krakenbot.util.TradeCalculator
 import com.gemini.krakenbot.util.resolveBalance
 import com.gemini.krakenbot.util.resolveBalanceOrNull
 import com.gemini.krakenbot.util.toUsdScale
+import com.gemini.krakenbot.view.util.ViewText
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -38,10 +39,10 @@ import java.util.UUID
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Duration.Companion.milliseconds
 
-private const val ERROR_LIVE_ORDERS_BLOCKED = "ERROR: Live orders blocked pending manual Kraken verification"
-private const val ORDER_SUBMISSION_PENDING = "Order submission pending"
-private const val ORDER_SUBMISSION_FAILED = "Order submission failed"
-private const val ORDER_SUBMISSION_FAILED_UNCERTAIN = "Order submission outcome is uncertain"
+private val ERROR_LIVE_ORDERS_BLOCKED = ViewText.ERROR_LIVE_ORDERS_BLOCKED
+private val ORDER_SUBMISSION_PENDING = ViewText.ORDER_SUBMISSION_PENDING
+private val ORDER_SUBMISSION_FAILED = ViewText.ORDER_SUBMISSION_FAILED
+private val ORDER_SUBMISSION_FAILED_UNCERTAIN = ViewText.ORDER_SUBMISSION_FAILED_UNCERTAIN
 
 class OrderExecutorImpl(
     private val krakenService: KrakenService,

@@ -248,6 +248,7 @@ domain skills.
 ## 7. Code quality invariants
 
 - **No FQNs** unless resolving a name collision — use imports.
+- **No ARIA attributes**: Do not introduce `aria-*` attributes (`aria-hidden`, `aria-sort`, `aria-label`, etc.) into HTML DSL templates, `:common` attribute catalogs, or client Kotlin/JS. Rely on standard semantic HTML elements.
 - **No absolute user paths** or machine-specific hostnames in source/tests.
 - Markdown: lint per [gradle-quality-gates](skills/gradle-quality-gates/SKILL.md)
   (`.agents/AGENTS.md`, `OPERATING.md`, skills, product docs, harness stubs).

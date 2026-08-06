@@ -336,6 +336,7 @@ results, test plan.
   convergence on every Cycle (too long) — survey + targeted fixes unless user
   asked for exhaustive optimize
 - Implementing ui-visual-review findings without size class + L gate
+- Adding unsolicited ARIA attributes (`aria-*`), ARIA roles, or accessibility metadata during discovery or refactoring — strictly prohibited by OPERATING.md §5
 - Mixing unrelated mega-themes in one PR (split cycles / PRs)
 - Skipping `pre_commit_check.sh` because “it’s just docs”
 - Silent live-trading or production-config use

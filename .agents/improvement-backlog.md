@@ -23,12 +23,19 @@ Items evaluated and deliberately not pursued (never actioned; the recorded reaso
 
 ## Open
 
-No open items — every CI-23 item shipped in PR #193.
+No open items — every CI-25 item shipped in Cycle 25.
 
 ## Done (recent)
 
 | ID | Size | Status | Area | Summary | Cycle | PR |
 | :--- | :---: | :--- | :--- | :--- | :---: | :--- |
+| CI-25-C01 | S | done | trading | Guard `TradeCalculator.calculateSlippage` against non-positive expected prices (`!expectedPrice.isPositive`) | 25 | — |
+| CI-25-C02 | S | done | history | Normalize trade side via `OrderSide.normalize` in `TradeHistorySyncService.legacyApiFillFingerprint` | 25 | — |
+| CI-25-C03 | S | done | config | Remove unused import and use primitive `ALLOCATION_TOLERANCE_DELTA` in `ConfigServiceImpl` | 25 | — |
+| CI-25-C04 | S | done | common | Move `OrderExecutorImpl` string constants into `:common` `ViewText` catalog | 25 | — |
+| CI-25-C05 | M | done | math | Guard floating-point exponentiation in `RebalancerEngine.calculateFiatDeployment` with `.takeIf { it.isFinite() } ?: 0.0` | 25 | — |
+| CI-25-D01 | S | done | docs | Clarify `SECURITY.md` permission scope regarding `Query Open Orders & Trades` for manual REST reconciliation | 25 | — |
+| CI-25-D02 | S | done | docs | Document `STALE_THRESHOLD_SECONDS` and automatic SSE reconnection behavior in `docs/USER_GUIDE.md` | 25 | — |
 | CI-24-D01 | M | done | docs | Policy update across `docs/AGENTIC_DEVELOPMENT.md`, `.agents/OPERATING.md`, `.agents/AGENTS.md`, skills, and rules: Antigravity sessions launch subagents natively via `invoke_subagent` instead of calling Kilo CLI `route-subagents` / `subagents.py` scripts | 24 | — |
 | CI-24-Q01 | S | done | frontend | Replace unsafe dynamic cast on `ctx.dataIndex` with safe numeric parsing and `snapshots.getOrNull()` in `HistoryCharts.kt` | 24 | — |
 | CI-24-U01 | S | done | css | Deduplicate `.hero-tile-bar-track` background linear-gradient property in `ComponentStyles.kt` | 24 | — |

@@ -1,6 +1,7 @@
 package com.gemini.krakenbot.service.impl.history
 
 import com.gemini.krakenbot.config.AppConfig
+import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.model.TradeSource
@@ -349,7 +350,7 @@ class TradeHistorySyncService(
     private fun legacyApiFillFingerprint(trade: TradeRecord): String = listOf(
         trade.timestamp.toEpochMilli().toString(),
         trade.pair,
-        trade.side.uppercase(),
+        OrderSide.normalize(trade.side),
         trade.volume.toPlainString(),
         trade.usdAmount.toPlainString(),
         trade.price.toPlainString(),
