@@ -8,6 +8,7 @@ import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.PortfolioSnapshot
+import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.model.TradeSource
 import com.gemini.krakenbot.repository.TradeSummaryStats
@@ -79,6 +80,69 @@ class TradeHistorySyncCoordinationTest : TradeHistoryServiceTestBase() {
                 coVerify(exactly = 1) { krakenService.getTradeHistory(any(), any()) }
                 verify(exactly = 1) { configService.beginExecutionSession() }
                 verify(exactly = 1) { configService.endExecutionSession() }
+            }
+        }
+
+        "rebuildHistoricalSnapshotsIfNeeded_replacesLegacyHistoryAfterLedgerSync" {
+            runTest {
+                val service = createService()
+                val config = TestFixtures.config(
+                    settings = TestFixtures.settings(dryRun = false),
+                    allocations = listOf(
+                        Allocation(Asset.BTC, 50.0),
+                        Allocation(TestFixtures.USD, 50.0),
+                    ),
+                )
+                every { configService.getConfig() } returns config
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION)
+                } returns null
+                coEvery { repository.getTradeSummaryStats() } returns TradeSummaryStats(
+                    totalTradesExecuted = 1L,
+                    totalVolumeTraded = BigDecimal.ZERO,
+                    totalFeesPaid = BigDecimal.ZERO,
+                    latestSnapshotTime = null,
+                )
+                coEvery { ledgerRepository.isLedgersSeeded() } returns true
+                coEvery { krakenService.getBalances() } returns mapOf(
+                    Asset.BTC to BigDecimal.ONE,
+                    TestFixtures.USD to BigDecimal("30000.00"),
+                )
+                every { portfolioAnalyzer.resolveBalance(Asset.BTC, any()) } returns BigDecimal.ONE
+                every { portfolioAnalyzer.resolveBalance(TestFixtures.USD, any()) } returns BigDecimal("30000.00")
+                coEvery { krakenService.getTickerPrices(any()) } returns mapOf(
+                    TestFixtures.BTCUSD to BigDecimal("30000.00"),
+                )
+                every { portfolioAnalyzer.resolvePriceFromTicker(Asset.BTC, any()) } returns BigDecimal("30000.00")
+                coEvery { krakenService.getOHLC(any(), any(), any()) } returns listOf(
+                    Instant.now().minus(1, ChronoUnit.DAYS).epochSecond to BigDecimal("30000.00"),
+                )
+                coEvery { repository.replaceSnapshots(any()) } just Runs
+                coEvery { repository.setSyncMetadata(any(), any()) } just Runs
+
+                service.rebuildHistoricalSnapshotsIfNeeded()
+
+                coVerify(exactly = 1) { repository.replaceSnapshots(any()) }
+                coVerify {
+                    repository.setSyncMetadata(
+                        SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION,
+                        "2",
+                    )
+                }
+            }
+        }
+
+        "rebuildHistoricalSnapshotsIfNeeded_skipsCurrentVersion" {
+            runTest {
+                val service = createService()
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION)
+                } returns "2"
+
+                service.rebuildHistoricalSnapshotsIfNeeded()
+
+                coVerify(exactly = 0) { repository.getTradeSummaryStats() }
+                coVerify(exactly = 0) { krakenService.getBalances() }
             }
         }
 
@@ -247,9 +311,9 @@ class TradeHistorySyncCoordinationTest : TradeHistoryServiceTestBase() {
                     } + fillX
                 val page1 = listOf(fillX, fillY)
 
-                coEvery { krakenService.getTradeHistory(startSec = null, offset = 0) } returns page0
-                coEvery { krakenService.getTradeHistory(startSec = null, offset = 50) } returns page1
-                coEvery { krakenService.getTradeHistory(startSec = null, offset = 100) } returns emptyList()
+                coEvery { krakenService.getTradeHistory(startSec = any(), offset = 0) } returns page0
+                coEvery { krakenService.getTradeHistory(startSec = any(), offset = 50) } returns page1
+                coEvery { krakenService.getTradeHistory(startSec = any(), offset = 100) } returns emptyList()
 
                 val tradeHistoryService = createService()
                 tradeHistoryService.syncTradesFromKraken()
@@ -267,16 +331,49 @@ class TradeHistorySyncCoordinationTest : TradeHistoryServiceTestBase() {
                 coEvery { repository.getLatestTradeTime() } returns null
                 coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
                 coEvery { repository.getSyncMetadata("sync_watermark_epoch_sec") } returns null
-                coEvery { krakenService.getTradeHistory(startSec = null, offset = 0) } returns emptyList()
+                coEvery { krakenService.getTradeHistory(startSec = any(), offset = 0) } returns emptyList()
 
                 service.syncTradesFromKraken()
 
-                coVerify(exactly = 1) { krakenService.getTradeHistory(startSec = null, offset = 0) }
+                coVerify(exactly = 1) { krakenService.getTradeHistory(startSec = any(), offset = 0) }
                 coVerify(exactly = 1) {
                     repository.setSyncMetadata(
                         "sync_watermark_epoch_sec",
                         match { it.toLongOrNull() != null },
                     )
+                }
+            }
+        }
+
+        "syncTradesFromKraken_BoundsInitialPullAndReconciliationWindow" {
+            runTest {
+                val fixedNow = Instant.parse("2033-05-01T12:00:00Z")
+                val expectedQueryStart = fixedNow.minus(96, ChronoUnit.DAYS)
+                val expectedStartSec = expectedQueryStart.epochSecond
+                var observedQueryStart: Instant? = null
+
+                coEvery { repository.isHistorySeeded() } returns false
+                coEvery { repository.getLatestTradeTime() } returns null
+                coEvery {
+                    repository.getSyncMetadata(SyncMetadataKeys.SYNC_WATERMARK_EPOCH_SEC)
+                } returns null
+                coEvery { repository.getTradesInRange(any(), any()) } coAnswers {
+                    observedQueryStart = firstArg()
+                    emptyList()
+                }
+                coEvery { krakenService.getTradeHistory(any(), 0) } coAnswers {
+                    firstArg<Long?>() shouldBe expectedStartSec
+                    emptyList()
+                }
+
+                createService(syncNowProvider = { fixedNow }).syncTradesFromKraken()
+
+                observedQueryStart shouldBe expectedQueryStart
+                coVerify(exactly = 1) {
+                    repository.getTradesInRange(expectedQueryStart, fixedNow.plusSeconds(300))
+                }
+                coVerify(exactly = 1) {
+                    krakenService.getTradeHistory(expectedStartSec, 0)
                 }
             }
         }
@@ -337,10 +434,10 @@ class TradeHistorySyncCoordinationTest : TradeHistoryServiceTestBase() {
                 val service = createService()
                 coEvery { repository.isHistorySeeded() } returns true
                 coEvery { repository.getLatestTradeTime() } returns null
-                coEvery { krakenService.getTradeHistory(startSec = null, offset = 0) } returns emptyList()
+                coEvery { krakenService.getTradeHistory(startSec = any(), offset = 0) } returns emptyList()
 
                 service.syncTradesFromKraken()
-                coVerify(exactly = 1) { krakenService.getTradeHistory(startSec = null, offset = 0) }
+                coVerify(exactly = 1) { krakenService.getTradeHistory(startSec = any(), offset = 0) }
             }
         }
 
@@ -361,12 +458,12 @@ class TradeHistorySyncCoordinationTest : TradeHistoryServiceTestBase() {
                     )
                 }
 
-                coEvery { krakenService.getTradeHistory(startSec = null, offset = 0) } returns batch1
-                coEvery { krakenService.getTradeHistory(startSec = null, offset = 50) } returns emptyList()
+                coEvery { krakenService.getTradeHistory(startSec = any(), offset = 0) } returns batch1
+                coEvery { krakenService.getTradeHistory(startSec = any(), offset = 50) } returns emptyList()
 
                 service.syncTradesFromKraken()
-                coVerify(exactly = 1) { krakenService.getTradeHistory(startSec = null, offset = 0) }
-                coVerify(exactly = 1) { krakenService.getTradeHistory(startSec = null, offset = 50) }
+                coVerify(exactly = 1) { krakenService.getTradeHistory(startSec = any(), offset = 0) }
+                coVerify(exactly = 1) { krakenService.getTradeHistory(startSec = any(), offset = 50) }
             }
         }
 

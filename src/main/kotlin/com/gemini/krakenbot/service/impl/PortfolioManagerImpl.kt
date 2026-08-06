@@ -133,21 +133,9 @@ class PortfolioManagerImpl(
     }
 
     private suspend fun runLoopBody() {
-        try {
-            log.info("Checking and performing historical trades synchronization from Kraken API...")
-            tradeHistoryService.syncTradesFromKraken()
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            log.error("Failed to synchronize historical trades on startup", e)
-        }
-        try {
-            log.info("Checking and performing ledger entry synchronization from Kraken API...")
-            tradeHistoryService.syncLedgersFromKraken()
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            log.error("Failed to synchronize ledger entries on startup", e)
+        if (synchronizeLedgers("on startup")) {
+            synchronizeTrades("on startup")
+            synchronizeHistoricalSnapshots("on startup")
         }
 
         try {
@@ -160,21 +148,12 @@ class PortfolioManagerImpl(
                             "Starting Rebalance Cycle. DryRun: {}",
                             settings.dryRun,
                         )
-                        try {
-                            tradeHistoryService.syncTradesFromKraken()
-                        } catch (e: CancellationException) {
-                            throw e
-                        } catch (e: Exception) {
-                            log.error("Failed to synchronize historical trades during cycle", e)
+                        if (synchronizeLedgers("during cycle")) {
+                            synchronizeTrades("during cycle")
+                            if (synchronizeHistoricalSnapshots("during cycle")) {
+                                performRebalanceCycle()
+                            }
                         }
-                        try {
-                            tradeHistoryService.syncLedgersFromKraken()
-                        } catch (e: CancellationException) {
-                            throw e
-                        } catch (e: Exception) {
-                            log.error("Failed to synchronize ledger entries during cycle", e)
-                        }
-                        performRebalanceCycle()
                     } catch (e: CancellationException) {
                         // Cancellation drives collectLatest restarts and shutdown; never treat it
                         // as a cycle error, or a config change would leave the old loop running.
@@ -188,6 +167,49 @@ class PortfolioManagerImpl(
         } catch (e: CancellationException) {
             log.info("Rebalancing loop coroutine cancelled. Shutting down loop.")
             throw e
+        }
+    }
+
+    private suspend fun synchronizeLedgers(context: String): Boolean {
+        try {
+            log.info(
+                "Checking and performing ledger entry synchronization from Kraken API {}...",
+                context,
+            )
+            tradeHistoryService.syncLedgersFromKraken()
+            return true
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            log.error("Failed to synchronize ledger entries {}", context, e)
+            return false
+        }
+    }
+
+    private suspend fun synchronizeTrades(context: String) {
+        try {
+            log.info(
+                "Checking and performing historical trades synchronization from Kraken API {}...",
+                context,
+            )
+            tradeHistoryService.syncTradesFromKraken()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            log.error("Failed to synchronize historical trades {}", context, e)
+        }
+    }
+
+    private suspend fun synchronizeHistoricalSnapshots(context: String): Boolean {
+        try {
+            log.info("Checking historical snapshot reconstruction {}...", context)
+            tradeHistoryService.rebuildHistoricalSnapshotsIfNeeded()
+            return true
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            log.error("Failed to rebuild historical snapshots {}", context, e)
+            return false
         }
     }
 

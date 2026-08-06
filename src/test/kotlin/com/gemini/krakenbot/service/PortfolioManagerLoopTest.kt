@@ -154,6 +154,71 @@ class PortfolioManagerLoopTest : StringSpec() {
             }
         }
 
+        "runLoop_SynchronizesLedgersBeforeTrades" {
+            runTest {
+                val settings = TestFixtures.settings(loopDelaySeconds = 60L)
+                val config = TestFixtures.config(settings = settings)
+                every { configService.getConfig() } returns config
+                krakenService.balanceSupplier = { emptyMap() }
+                val syncOrder = mutableListOf<String>()
+                coEvery { tradeHistoryService.syncLedgersFromKraken() } answers {
+                    syncOrder += "ledgers"
+                }
+                coEvery { tradeHistoryService.syncTradesFromKraken() } answers {
+                    syncOrder += "trades"
+                }
+
+                portfolioManager.startRebalancingLoop()
+                val job = launch { portfolioManager.runLoop() }
+                delay(10.milliseconds)
+                portfolioManager.stopRebalancingLoop()
+                job.join()
+
+                syncOrder.take(2) shouldBe listOf("ledgers", "trades")
+            }
+        }
+
+        "runLoop_SkipsTradesAndRebalanceWhenLedgerSyncFails" {
+            runTest {
+                val settings = TestFixtures.settings(loopDelaySeconds = 60L)
+                val config = TestFixtures.config(settings = settings)
+                every { configService.getConfig() } returns config
+                krakenService.balanceSupplier = { emptyMap() }
+                coEvery {
+                    tradeHistoryService.syncLedgersFromKraken()
+                } throws RuntimeException("Ledger sync error!")
+
+                portfolioManager.startRebalancingLoop()
+                val job = launch { portfolioManager.runLoop() }
+                delay(10.milliseconds)
+                portfolioManager.stopRebalancingLoop()
+                job.join()
+
+                coVerify(exactly = 0) { tradeHistoryService.syncTradesFromKraken() }
+                krakenService.getBalancesCallCount shouldBe 0
+            }
+        }
+
+        "runLoop_SkipsRebalanceWhenSnapshotRebuildFails" {
+            runTest {
+                val settings = TestFixtures.settings(loopDelaySeconds = 60L)
+                val config = TestFixtures.config(settings = settings)
+                every { configService.getConfig() } returns config
+                krakenService.balanceSupplier = { emptyMap() }
+                coEvery {
+                    tradeHistoryService.rebuildHistoricalSnapshotsIfNeeded()
+                } throws RuntimeException("Snapshot rebuild error!")
+
+                portfolioManager.startRebalancingLoop()
+                val job = launch { portfolioManager.runLoop() }
+                delay(10.milliseconds)
+                portfolioManager.stopRebalancingLoop()
+                job.join()
+
+                krakenService.getBalancesCallCount shouldBe 0
+            }
+        }
+
         "runLoop propagates cancellation from startup sync instead of entering the loop" {
             runTest {
                 val settings = TestFixtures.settings(loopDelaySeconds = 60L)

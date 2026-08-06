@@ -532,7 +532,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
             result.points.first().timestamp shouldBe now
         }
 
-        "trade for unknown symbol: returns UNSUPPORTED_TRADE" {
+        "trade for unknown symbol: skipped, comparison still available" {
             val snapshots = listOf(
                 snapshot(
                     now,
@@ -564,8 +564,8 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
 
             val result = RebalancerComparisonCalculator.calculate(snapshots, trades)
 
-            result.availability shouldBe ComparisonAvailability.UNAVAILABLE
-            result.unavailableReason shouldBe ComparisonUnavailableReason.UNSUPPORTED_TRADE
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
+            result.unavailableReason shouldBe null
         }
 
         "non-USD quoted trade: returns UNSUPPORTED_TRADE" {
@@ -840,6 +840,37 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
 
             result.availability shouldBe ComparisonAvailability.AVAILABLE
             result.confidence shouldBe ComparisonConfidence.RECONCILED
+            result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("100000.00")
+        }
+
+        "trades for assets outside the snapshot universe are skipped, not fatal" {
+            val snapshots = listOf(
+                snapshot(
+                    now,
+                    "100000.00",
+                    mapOf(
+                        "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                        "USD" to assetRow("50000.00", "1.0", "50000.00"),
+                    ),
+                ),
+                snapshot(
+                    now.plusSeconds(3600),
+                    "100000.00",
+                    mapOf(
+                        "BTC" to assetRow("1.0", "50000.00", "50000.00"),
+                        "USD" to assetRow("50000.00", "1.0", "50000.00"),
+                    ),
+                ),
+            )
+            val trades = listOf(
+                trade(now.plusSeconds(1800), "BUY", "XLM", "100.0", "105.00"),
+                trade(now.plusSeconds(900), "BUY", "BTC", "0.5", "25000.00"),
+                trade(now.plusSeconds(2700), "SELL", "BTC", "0.5", "25000.00"),
+            )
+
+            val result = RebalancerComparisonCalculator.calculate(snapshots, trades, emptyList())
+
+            result.availability shouldBe ComparisonAvailability.AVAILABLE
             result.points[1].buyAndHoldValueUSD shouldBeEqualComparingTo BigDecimal("100000.00")
         }
     }

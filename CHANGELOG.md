@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.16.15] - 2026-08-06
+
+### Fixed
+
+- Corrected the Rebalancer vs Buy & Hold documentation: ranges with unreconciled
+  balance changes stay visible with an Estimated confidence badge instead of being
+  described as unavailable.
+
+### Changed
+
+- Refreshed documentation screenshots from an isolated simulation run.
+
 ## [6.16.14] - 2026-08-05
 
 ### Added

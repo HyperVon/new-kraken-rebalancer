@@ -61,6 +61,7 @@ class TradeHistoryServiceImpl(
                 krakenService = krakenService,
                 configService = configService,
                 portfolioAnalyzer = portfolioAnalyzer,
+                nowProvider = syncNowProvider,
             ),
         ),
         ledgersSyncService =
@@ -109,6 +110,8 @@ class TradeHistoryServiceImpl(
     override suspend fun syncTradesFromKraken() = syncService.syncTradesFromKraken()
 
     override suspend fun syncLedgersFromKraken() = ledgersSyncService.syncLedgersFromKraken()
+
+    override suspend fun rebuildHistoricalSnapshotsIfNeeded() = syncService.rebuildHistoricalSnapshotsIfNeeded()
 
     override suspend fun getSyncMetadata(key: String): String? = syncService.getSyncMetadata(key)
 

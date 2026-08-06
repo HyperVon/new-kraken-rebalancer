@@ -82,6 +82,22 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
         }
     }
 
+    override suspend fun replaceSnapshots(history: List<PortfolioSnapshot>) {
+        database.safeTransactionIO(log, "Failed to replace snapshot history") {
+            val snapshotIds = PortfolioSnapshotTable.select(PortfolioSnapshotTable.id)
+                .map { it[PortfolioSnapshotTable.id] }
+            if (snapshotIds.isNotEmpty()) {
+                // Children first even with ON DELETE CASCADE — keeps SQLite FK order explicit.
+                AssetSnapshotTable.deleteWhere { snapshotId inList snapshotIds }
+                ActionLogTable.deleteWhere { snapshotId inList snapshotIds }
+                PortfolioSnapshotTable.deleteWhere { id inList snapshotIds }
+            }
+            for (snapshot in history) {
+                insertSnapshotWithChildren(snapshot)
+            }
+        }
+    }
+
     override suspend fun load(): List<PortfolioSnapshot> = database.readTransactionIO {
         val snapshotRows =
             PortfolioSnapshotTable

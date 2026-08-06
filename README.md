@@ -382,7 +382,7 @@ The dedicated History view provides detailed analysis and charts tracking portfo
 - **View presets** — **Overview**, **Day · Total only**, **Week · Allocation**, and **Month · Net Cash Flow**, plus **Save view…** / **Set as default** / **Delete** for browser-local custom views
 - **Chart zoom** — **Zoom −** / **Zoom +** / **Reset**, plus wheel, pinch, and drag-to-zoom on the x-axis
 - **Pan scrubber** — after zooming in, a horizontal scrubber below each chart pans the visible window across the full time range (chart drag zooms; it does not pan)
-- **Rebalancer vs Buy & Hold** — compares actual portfolio value against fixed quantities from the first stored snapshot in the selected range, shows the latest USD/percentage difference, and marks ranges with incomplete reconciliation data as unavailable
+- **Rebalancer vs Buy & Hold** — compares actual portfolio value against fixed quantities from the first stored snapshot in the selected range, shows the latest USD/percentage difference; ranges with incomplete reconciliation remain visible with an **Estimated** confidence badge, while fully reconciled ranges are unbadged
 - **Portfolio Value Over Time** (overall portfolio value in USD + individual asset values)
 - **Asset Holdings Over Time** (% change in asset balance)
 - **Allocation Deviation from Target** (signed relative drift around a 0% on-target baseline)

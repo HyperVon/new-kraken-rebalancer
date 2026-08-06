@@ -40,6 +40,9 @@ interface TradeHistoryService {
 
     suspend fun syncLedgersFromKraken()
 
+    /** Rebuilds legacy snapshot history when its reconstruction version is stale. */
+    suspend fun rebuildHistoricalSnapshotsIfNeeded() = Unit
+
     suspend fun getSyncMetadata(key: String): String?
 
     suspend fun setSyncMetadata(key: String, value: String)

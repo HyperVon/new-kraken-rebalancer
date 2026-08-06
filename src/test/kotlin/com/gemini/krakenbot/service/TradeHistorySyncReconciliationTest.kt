@@ -30,6 +30,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
 import java.math.BigDecimal
 import java.time.Instant
+import java.time.temporal.ChronoUnit
 
 class TradeHistorySyncReconciliationTest : TradeHistoryServiceTestBase() {
 
@@ -502,6 +503,8 @@ class TradeHistorySyncReconciliationTest : TradeHistoryServiceTestBase() {
 
         "syncTradesFromKraken_PaginationOffset" {
             runTest {
+                val now = Instant.parse("2033-05-01T12:00:00Z")
+                val expectedSeedStart = now.minus(96, ChronoUnit.DAYS).epochSecond
                 coEvery { repository.isHistorySeeded() } returns false
                 coEvery { repository.getLatestTradeTime() } returns null
                 coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
@@ -527,14 +530,14 @@ class TradeHistorySyncReconciliationTest : TradeHistoryServiceTestBase() {
                     ),
                 )
 
-                coEvery { krakenService.getTradeHistory(null, 0) } returns batch1
-                coEvery { krakenService.getTradeHistory(null, 50) } returns batch2
+                coEvery { krakenService.getTradeHistory(expectedSeedStart, 0) } returns batch1
+                coEvery { krakenService.getTradeHistory(expectedSeedStart, 50) } returns batch2
 
-                val tradeHistoryService = createService()
+                val tradeHistoryService = createService(syncNowProvider = { now })
                 tradeHistoryService.syncTradesFromKraken()
 
-                coVerify(exactly = 1) { krakenService.getTradeHistory(null, 0) }
-                coVerify(exactly = 1) { krakenService.getTradeHistory(null, 50) }
+                coVerify(exactly = 1) { krakenService.getTradeHistory(expectedSeedStart, 0) }
+                coVerify(exactly = 1) { krakenService.getTradeHistory(expectedSeedStart, 50) }
                 coVerify(exactly = 51) { repository.saveTrade(any()) }
                 coVerify(exactly = 1) { repository.setHistorySeeded(true) }
             }
@@ -542,6 +545,8 @@ class TradeHistorySyncReconciliationTest : TradeHistoryServiceTestBase() {
 
         "syncTradesFromKraken_continuesWhenFilteredPageIsShort" {
             runTest {
+                val now = Instant.parse("2033-05-01T12:00:00Z")
+                val expectedSeedStart = now.minus(96, ChronoUnit.DAYS).epochSecond
                 coEvery { repository.isHistorySeeded() } returns false
                 coEvery { repository.getLatestTradeTime() } returns null
                 coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
@@ -559,13 +564,13 @@ class TradeHistorySyncReconciliationTest : TradeHistoryServiceTestBase() {
                     timestamp = Instant.ofEpochSecond(1700000600),
                     side = TestFixtures.SELL,
                 )
-                coEvery { krakenService.getTradeHistory(null, 0) } returns listOf(firstPageFill)
-                coEvery { krakenService.getTradeHistory(null, 50) } returns listOf(secondPageFill)
+                coEvery { krakenService.getTradeHistory(expectedSeedStart, 0) } returns listOf(firstPageFill)
+                coEvery { krakenService.getTradeHistory(expectedSeedStart, 50) } returns listOf(secondPageFill)
 
-                createService().syncTradesFromKraken()
+                createService(syncNowProvider = { now }).syncTradesFromKraken()
 
-                coVerify(exactly = 1) { krakenService.getTradeHistory(null, 0) }
-                coVerify(exactly = 1) { krakenService.getTradeHistory(null, 50) }
+                coVerify(exactly = 1) { krakenService.getTradeHistory(expectedSeedStart, 0) }
+                coVerify(exactly = 1) { krakenService.getTradeHistory(expectedSeedStart, 50) }
                 coVerify(exactly = 2) { repository.saveTrade(any()) }
             }
         }
@@ -577,6 +582,7 @@ class TradeHistorySyncReconciliationTest : TradeHistoryServiceTestBase() {
             "CQ-14-L5: interrupted initial pagination resumes older fills after $interruptionKind" {
                 runTest {
                     val now = Instant.parse("2033-05-01T12:00:00Z")
+                    val expectedSeedStart = now.minus(96, ChronoUnit.DAYS).epochSecond
                     val allTrades = List(150) { index ->
                         val secondsAgo = when {
                             index < 50 -> index.toLong()
@@ -682,9 +688,9 @@ class TradeHistorySyncReconciliationTest : TradeHistoryServiceTestBase() {
                     seeded shouldBe true
                     metadata["sync_offset"] shouldBe "completed"
                     metadata["sync_total"] shouldBe "completed"
-                    coVerify(exactly = 2) { krakenService.getTradeHistory(null, 0) }
-                    coVerify(exactly = 1) { krakenService.getTradeHistory(null, 100) }
-                    coVerify(exactly = 0) { krakenService.getTradeHistory(null, 150) }
+                    coVerify(exactly = 2) { krakenService.getTradeHistory(expectedSeedStart, 0) }
+                    coVerify(exactly = 1) { krakenService.getTradeHistory(expectedSeedStart, 100) }
+                    coVerify(exactly = 0) { krakenService.getTradeHistory(expectedSeedStart, 150) }
                     verify(exactly = 2) { configService.beginExecutionSession() }
                     verify(exactly = 2) { configService.endExecutionSession() }
                 }

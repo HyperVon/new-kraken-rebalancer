@@ -237,7 +237,6 @@ object RebalancerComparisonCalculator {
         val symbol = trade.symbol.uppercase()
         if (
             symbol == Asset.USD ||
-            symbol !in balances ||
             !Asset.matchesUsdQuotedPair(trade.pair, symbol) ||
             trade.volume.signum() < 0 ||
             trade.usdAmount.signum() < 0 ||
@@ -247,6 +246,9 @@ object RebalancerComparisonCalculator {
         }
         if (Asset.USD !in balances) {
             return false
+        }
+        if (symbol !in balances) {
+            return true
         }
         val usdBalance = balances[Asset.USD] ?: BigDecimal.ZERO
         val assetBalance = balances.getValue(symbol)
