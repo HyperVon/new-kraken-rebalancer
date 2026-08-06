@@ -90,7 +90,7 @@ will not run automatically there.
 | **API**         | Kraken REST API with HMAC-SHA512 authentication                                                              |
 | **Testing**     | Kotest 6.2.3, MockK 1.14.11, JaCoCo (95% instr/95% line/95% method/90% branch), Karma/Istanbul (90/90/90/75) |
 | **Build**       | Gradle 9.6.1 (Kotlin DSL), Spotless 8.9.0 + ktlint 1.7.1                                                     |
-| **Codegen**     | Experimental JVM-only KSP processors for API mappers and YAML catalogs                                       |
+| **Codegen**     | Kotlin Multiplatform module with KSP processors for API mappers and YAML string catalogs (JVM + JS targets)  |
 | **Agent tools** | Optional Kilo Context Mode plugin for bounded large-output analysis; standard workflows remain portable      |
 
 ---
@@ -659,7 +659,7 @@ Or if you wish to build and execute the Fat JAR manually:
 ./gradlew fatJar
 
 # Run using the JVM (includes optimal JVM parameters for native SQLite memory access)
-java -Xshare:off --sun-misc-unsafe-memory-access=allow --enable-native-access=ALL-UNNAMED -jar build/libs/kraken-bot-0.0.1-SNAPSHOT-all.jar
+java -Xshare:off --enable-native-access=ALL-UNNAMED -jar build/libs/kraken-bot-0.0.1-SNAPSHOT-all.jar
 ```
 
 For a local quality-gated release build, use `./gradlew build fatJar` without

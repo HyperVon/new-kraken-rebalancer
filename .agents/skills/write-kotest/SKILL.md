@@ -132,7 +132,7 @@ Workflow:
 3. Prefer `FakeKrakenService` + `TestFixtures.DEFAULT_TEST_SETTINGS`; never a
    file-backed DB in unit tests.
 
-- Suite: `EvaluationScenariosTest` (34 scenarios)
+- Suite: `EvaluationScenariosTest` (35 scenarios)
 - Report: `build/reports/scenarios_evaluation_report.md` (absolute paths redacted)
 - Principles: no absolute paths, FakeKraken, virtual time, SSE multi-subscriber checks
 

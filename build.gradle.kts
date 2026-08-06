@@ -49,7 +49,7 @@ java {
 application {
     mainClass.set("com.gemini.krakenbot.KrakenRebalancerApplicationKt")
     applicationDefaultJvmArgs =
-        listOf("-Xshare:off", "--sun-misc-unsafe-memory-access=allow", "--enable-native-access=ALL-UNNAMED")
+        listOf("-Xshare:off", "--enable-native-access=ALL-UNNAMED")
 }
 
 repositories {
