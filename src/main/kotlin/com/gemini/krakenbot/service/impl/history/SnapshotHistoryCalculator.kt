@@ -70,6 +70,12 @@ object SnapshotHistoryCalculator {
         return events
     }
 
+    private data class RawHistoricalPoint(
+        val timestamp: Instant,
+        val exactPortfolioValue: BigDecimal,
+        val calculatedAssets: List<CalculatedAsset>,
+    )
+
     fun calculateHistoricalSnapshots(
         events: List<TimelineEvent>,
         allocations: List<Allocation>,
@@ -80,15 +86,13 @@ object SnapshotHistoryCalculator {
         settings: Settings? = null,
         currentAth: BigDecimal = BigDecimal.ZERO,
     ): List<PortfolioSnapshot> {
-        val snapshotsToSave = mutableListOf<PortfolioSnapshot>()
-        var runningAth = currentAth
+        val rawPoints = mutableListOf<RawHistoricalPoint>()
 
         // [runningBalances] starts at the reconstruction cutoff (the oldest retained snapshot, or current balances
         // when none exists); after each trade snapshot, undo that fill so older points see pre-trade balances.
         for (ev in events) {
             val snapshotTimestamp = ev.timestamp
             var exactPortfolioValue = BigDecimal.ZERO
-            val assetSnapshots = mutableMapOf<String, PortfolioSnapshot.AssetSnapshot>()
 
             val calculatedAssets =
                 allocations.map { alloc ->
@@ -101,6 +105,20 @@ object SnapshotHistoryCalculator {
                     CalculatedAsset(symbol, balance, price, valueUSD, alloc.targetPercent)
                 }
 
+            rawPoints.add(RawHistoricalPoint(snapshotTimestamp, exactPortfolioValue, calculatedAssets))
+
+            if (ev is TimelineEvent.TradeEvent) {
+                reverseApplyTrade(ev.trade, runningBalances)
+            } else if (ev is TimelineEvent.RewardEvent) {
+                reverseApplyReward(ev.event, runningBalances)
+            }
+        }
+
+        val snapshotsChronological = mutableListOf<PortfolioSnapshot>()
+        var runningAth = currentAth
+
+        for (point in rawPoints.asReversed()) {
+            val exactPortfolioValue = point.exactPortfolioValue
             if (exactPortfolioValue > runningAth) {
                 runningAth = exactPortfolioValue
             }
@@ -131,7 +149,8 @@ object SnapshotHistoryCalculator {
                 }
             val dustThreshold = settings?.dustThresholdUSD ?: 5.0
 
-            for ((symbol, balance, price, valueUSD, targetPercent) in calculatedAssets) {
+            val assetSnapshots = mutableMapOf<String, PortfolioSnapshot.AssetSnapshot>()
+            for ((symbol, balance, price, valueUSD, targetPercent) in point.calculatedAssets) {
                 val symbolAsset = Asset(symbol)
                 val metrics =
                     PortfolioCalculations.calculateAssetMetrics(
@@ -157,7 +176,7 @@ object SnapshotHistoryCalculator {
 
             val snapshot =
                 PortfolioSnapshot(
-                    timestamp = snapshotTimestamp,
+                    timestamp = point.timestamp,
                     totalValueUSD = exactPortfolioValue.setScale(PrecisionConstants.SCALE_USD, RoundingMode.HALF_UP),
                     assets = assetSnapshots,
                     actions = emptyList(),
@@ -166,16 +185,10 @@ object SnapshotHistoryCalculator {
                     effectiveUsdTargetPercent = effectiveUsdTarget,
                 )
 
-            snapshotsToSave.add(snapshot)
-
-            if (ev is TimelineEvent.TradeEvent) {
-                reverseApplyTrade(ev.trade, runningBalances)
-            } else if (ev is TimelineEvent.RewardEvent) {
-                reverseApplyReward(ev.event, runningBalances)
-            }
+            snapshotsChronological.add(snapshot)
         }
 
-        return snapshotsToSave
+        return snapshotsChronological.asReversed()
     }
 
     /** Undo one fill: buy spent usd+fee for volume; sell received usd−fee for volume. */

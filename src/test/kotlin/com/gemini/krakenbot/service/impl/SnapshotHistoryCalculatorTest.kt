@@ -509,5 +509,79 @@ class SnapshotHistoryCalculatorTest : StringSpec() {
             runningBalances["BTC"]!!.shouldBeEqualComparingTo(BigDecimal("0.4"))
             runningBalances["USD"]!!.shouldBeEqualComparingTo(BigDecimal("10000.00"))
         }
+
+        "calculateHistoricalSnapshots computes effective USD targets forward without peak leakage" {
+            val now = Instant.now()
+            val cutoff = now.minus(5, ChronoUnit.DAYS)
+            val tOldest = now.minus(4, ChronoUnit.DAYS)
+            val tPeak = now.minus(3, ChronoUnit.DAYS)
+            val tDrawdown = now.minus(2, ChronoUnit.DAYS)
+
+            val events = listOf(
+                SnapshotHistoryCalculator.TimelineEvent.DailyCloseEvent(tOldest),
+                SnapshotHistoryCalculator.TimelineEvent.DailyCloseEvent(tPeak),
+                SnapshotHistoryCalculator.TimelineEvent.DailyCloseEvent(tDrawdown),
+            ).sorted() // sorted newest first
+
+            val allocations = listOf(
+                Allocation(Asset(Asset.BTC), 50.0),
+                Allocation(Asset.USD, 50.0),
+            )
+
+            // Price sequence over time: tOldest ($20k) -> tPeak ($40k) -> tDrawdown ($20k)
+            val ohlcData = mapOf(
+                "BTC" to listOf(
+                    tOldest.epochSecond to BigDecimal("20000.00"),
+                    tPeak.epochSecond to BigDecimal("40000.00"),
+                    tDrawdown.epochSecond to BigDecimal("20000.00"),
+                ),
+            )
+
+            val runningBalances = mutableMapOf(
+                "BTC" to BigDecimal("1.0"),
+                "USD" to BigDecimal("10000.00"),
+            )
+
+            val settings = com.gemini.krakenbot.config.Settings(
+                loopDelaySeconds = 60,
+                deviationTriggerPercent = 5.0,
+                dustThresholdUSD = 5.0,
+                dryRun = true,
+                fiatMaxDrawdown = 50.0,
+                fiatDeploymentExponent = 1.0,
+            )
+
+            val snapshots = SnapshotHistoryCalculator.calculateHistoricalSnapshots(
+                events = events,
+                allocations = allocations,
+                runningBalances = runningBalances,
+                currentPrices = mapOf("BTC" to BigDecimal("20000.00"), "USD" to BigDecimal.ONE),
+                ohlcData = ohlcData,
+                tradePrices = emptyMap(),
+                settings = settings,
+                currentAth = BigDecimal("30000.00"), // Starting ATH before tOldest
+            )
+
+            snapshots.size shouldBe 3
+            // Snapshots returned newest first: tDrawdown, tPeak, tOldest
+            val sDrawdown = snapshots.first { it.timestamp == tDrawdown }
+            val sPeak = snapshots.first { it.timestamp == tPeak }
+            val sOldest = snapshots.first { it.timestamp == tOldest }
+
+            // sOldest ($30k portfolio = 1 BTC * $20k + $10k USD): ATH was $30k => drawdown = 0% => USD target = 50%
+            sOldest.drawdownPercent.shouldBeEqualComparingTo(BigDecimal.ZERO)
+            sOldest.effectiveUsdTargetPercent.shouldBeEqualComparingTo(BigDecimal("50.00"))
+
+            // sPeak ($50k portfolio = 1 BTC * $40k + $10k USD): new ATH $50k => drawdown = 0% => USD target = 50%
+            sPeak.drawdownPercent.shouldBeEqualComparingTo(BigDecimal.ZERO)
+            sPeak.effectiveUsdTargetPercent.shouldBeEqualComparingTo(BigDecimal("50.00"))
+
+            // sDrawdown ($30k portfolio): ATH was $50k at tPeak => drawdown = (50k-30k)/50k = 40%
+            // maxDD = 50% => fiat deployment = 40/50 * 100 = 80%
+            // effective USD target = 50% * (1 - 0.8) = 10%
+            sDrawdown.drawdownPercent.shouldBeEqualComparingTo(BigDecimal("40.00"))
+            sDrawdown.fiatDeploymentPercent.shouldBeEqualComparingTo(BigDecimal("80.00"))
+            sDrawdown.effectiveUsdTargetPercent.shouldBeEqualComparingTo(BigDecimal("10.00"))
+        }
     }
 }
