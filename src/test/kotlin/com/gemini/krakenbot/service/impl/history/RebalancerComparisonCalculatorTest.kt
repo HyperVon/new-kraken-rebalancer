@@ -900,7 +900,7 @@ class RebalancerComparisonCalculatorTest : StringSpec() {
         amount: String,
         type: String = LedgerEvent.TYPE_STAKING,
     ): LedgerEvent = LedgerEvent(
-        refid = "ref-$timestamp-$asset",
+        ledgerId = "ledger-$timestamp-$asset",
         time = timestamp,
         type = type,
         asset = asset,

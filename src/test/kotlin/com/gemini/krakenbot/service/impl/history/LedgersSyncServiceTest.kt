@@ -55,7 +55,7 @@ class LedgersSyncServiceTest : StringSpec() {
     }
 
     private fun event(index: Int, time: Instant = baseTime): LedgerEvent = LedgerEvent(
-        refid = "ref-$index",
+        ledgerId = "ledger-$index",
         time = time,
         type = LedgerEvent.TYPE_STAKING,
         asset = "XBT",

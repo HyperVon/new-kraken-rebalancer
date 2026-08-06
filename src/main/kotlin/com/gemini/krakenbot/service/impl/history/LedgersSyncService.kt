@@ -19,7 +19,7 @@ import kotlin.coroutines.cancellation.CancellationException
 /**
  * Pulls Kraken ledger entries (staking rewards and dividend payouts) into the local database.
  *
- * Ledger entries are insert-only: identity is the unique (refid, timestamp, asset, type) tuple,
+ * Ledger entries are insert-only: identity is the unique (ledger id, timestamp, asset, type) tuple,
  * so re-fetched pages (including the Kraken newest-first offset overlap) are deduplicated by the
  * database instead of reconciled like trades.
  */
@@ -85,16 +85,7 @@ class LedgersSyncService(
             isRecoveringInitialSync,
         )
 
-        // A resumed seed uses a full-history query; the persisted page offset is only a progress
-        // marker, so restart from page zero (new ledger entries can shift Kraken offsets).
-        val queryStart =
-            if (isRecoveringInitialSync) {
-                Instant.EPOCH
-            } else {
-                effectiveLatest?.minusSeconds(300) ?: Instant.EPOCH
-            }
         val queryNow = nowProvider()
-        val queryEnd = queryNow.plusSeconds(300)
 
         val totalAdded = processLedgerPages(
             startSec = paginationStartSec,
@@ -110,6 +101,9 @@ class LedgersSyncService(
             finalizeSync(isSeeded)
         } else {
             log.info("Simulation ledger sync produced no entries; leaving ledger store unseeded.")
+            // Keep the 5-minute throttle engaged even when a simulation sync finds nothing: only
+            // the seed/watermark state is deferred, never the next-sync timing.
+            lastSyncTime = nowProvider()
         }
         log.info("Ledger synchronization completed. Added: {} entries.", totalAdded)
     }
@@ -124,8 +118,8 @@ class LedgersSyncService(
 
     private suspend fun processLedgerPages(startSec: Long?, endSec: Long, isSeeded: Boolean): Int {
         var totalAdded = 0
-        // Cross-page duplicates are dropped by the unique (refid, timestamp, asset, type) index;
-        // saveLedgers returns the number of rows actually inserted.
+        // Cross-page duplicates are dropped by the unique (ledger id, timestamp, asset, type)
+        // index; saveLedgers returns the number of rows actually inserted.
         getLedgersPaginated(startSec = startSec, endSec = endSec, isSeeded = isSeeded)
             .collect { apiLedgers ->
                 totalAdded += repository.saveLedgers(apiLedgers)

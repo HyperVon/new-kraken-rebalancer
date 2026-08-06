@@ -294,8 +294,8 @@ failure.
 once every **300 seconds**, requesting `staking` and `dividend` entries in pages
 of **50**. The first sync scans the full available history and stores durable
 progress metadata; later syncs use the latest stored ledger time (or watermark)
-with a **300-second overlap**. SQLite enforces the `(refid, timestamp, asset,
-type)` identity so overlapping pages and retries are safe.
+with a **300-second overlap**. SQLite enforces the `(ledger id, timestamp,
+asset, type)` identity so overlapping pages and retries are safe.
 
 The History `/api/history/rewards` endpoint currently charts `staking` entries.
 It aligns cumulative per-asset amounts to stored portfolio snapshot timestamps,

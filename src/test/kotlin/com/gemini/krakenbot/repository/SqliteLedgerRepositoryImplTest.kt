@@ -25,12 +25,12 @@ class SqliteLedgerRepositoryImplTest : StringSpec() {
 
     private fun event(
         timestamp: Instant,
-        refid: String,
+        ledgerId: String,
         asset: String = "XBT",
         amount: String = "0.1",
         type: String = LedgerEvent.TYPE_STAKING,
     ): LedgerEvent = LedgerEvent(
-        refid = refid,
+        ledgerId = ledgerId,
         time = timestamp,
         type = type,
         asset = asset,
@@ -44,14 +44,14 @@ class SqliteLedgerRepositoryImplTest : StringSpec() {
             repository.getLedgersInRange(t0, t2).size shouldBe 2
         }
 
-        "saveLedgers skips duplicates on the (refid, timestamp, asset, type) identity" {
+        "saveLedgers skips duplicates on the (ledger id, timestamp, asset, type) identity" {
             repository.saveLedgers(listOf(event(t1, "ref-1")))
             val secondAttempt = repository.saveLedgers(listOf(event(t1, "ref-1")))
             secondAttempt shouldBe 0
             repository.getLedgersInRange(t0, t2).size shouldBe 1
         }
 
-        "saveLedgers keeps the same refid at different timestamps as distinct entries" {
+        "saveLedgers keeps the same ledger id at different timestamps as distinct entries" {
             repository.saveLedgers(listOf(event(t1, "ref-1"), event(t2, "ref-1")))
             repository.getLedgersInRange(t0, t2).size shouldBe 2
         }
@@ -59,7 +59,7 @@ class SqliteLedgerRepositoryImplTest : StringSpec() {
         "getLedgersInRange is inclusive on both bounds and returns newest first" {
             repository.saveLedgers(listOf(event(t0, "ref-0"), event(t1, "ref-1"), event(t2, "ref-2")))
             val inRange = repository.getLedgersInRange(t0, t1)
-            inRange.map { it.refid } shouldBe listOf("ref-1", "ref-0")
+            inRange.map { it.ledgerId } shouldBe listOf("ref-1", "ref-0")
         }
 
         "getLatestLedgerTime is null when empty and returns the newest entry after inserts" {
@@ -72,7 +72,7 @@ class SqliteLedgerRepositoryImplTest : StringSpec() {
             repository.saveLedgers(listOf(event(t1, "ref-1"), event(t2, "ref-2")))
             val pruned = repository.pruneLedgersOlderThan(t2)
             pruned shouldBe 1
-            repository.getLedgersInRange(Instant.EPOCH, t2).map { it.refid } shouldBe listOf("ref-2")
+            repository.getLedgersInRange(Instant.EPOCH, t2).map { it.ledgerId } shouldBe listOf("ref-2")
         }
 
         "sync metadata roundtrips through the shared history_sync_metadata table" {
@@ -92,7 +92,8 @@ class SqliteLedgerRepositoryImplTest : StringSpec() {
         "round-tripped ledger entries preserve all fields including dividend metadata" {
             val original =
                 LedgerEvent(
-                    refid = "ref-x",
+                    ledgerId = "ledger-x",
+                    refid = "tx-ref",
                     time = t1,
                     type = LedgerEvent.TYPE_DIVIDEND,
                     subtype = "in-kind",
@@ -104,6 +105,7 @@ class SqliteLedgerRepositoryImplTest : StringSpec() {
                 )
             repository.saveLedgers(listOf(original))
             val loaded = repository.getLedgersInRange(t0, t2).single()
+            loaded.ledgerId shouldBe original.ledgerId
             loaded.refid shouldBe original.refid
             loaded.time shouldBe original.time
             loaded.type shouldBe original.type

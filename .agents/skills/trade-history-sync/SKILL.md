@@ -85,7 +85,7 @@ Primary types: `TradeHistoryService` façade → `TradeHistorySyncService` /
   restarts from offset zero because newest-first pages can shift.
 - Incremental passes use `latestLedgerTime ?: ledger_watermark_epoch_sec` minus
   **300s**, and persist `ledger_watermark_epoch_sec` after successful completion.
-- `LedgerTable` enforces unique `(refid, timestamp, asset, type)` identity.
+- `LedgerTable` enforces unique `(ledger id, timestamp, asset, type)` identity.
   `saveLedgers()` returns only newly inserted rows, so overlap and repeated pages
   cannot inflate counts.
 - `TradeHistoryQueryService.getRewardsOverTime()` filters to `staking` entries,

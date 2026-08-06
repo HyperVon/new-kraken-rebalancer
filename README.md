@@ -287,7 +287,7 @@ with a wide range of tools and paradigms:
 - Synchronizes staking and dividend entries from Kraken's private
   `/0/private/Ledgers` endpoint, with a five-minute throttle and paginated cold
   Flow fetching
-- Persists ledger entries in SQLite using the `(refid, timestamp, asset, type)`
+- Persists ledger entries in SQLite using the `(ledger id, timestamp, asset, type)`
   identity so overlapping pages and retries remain idempotent
 - Stores durable seed progress and timestamps in `history_sync_metadata`, then
   uses a five-minute incremental overlap to avoid missing entries near a

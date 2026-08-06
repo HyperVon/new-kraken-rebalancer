@@ -21,6 +21,19 @@ Items evaluated and deliberately not pursued (never actioned; the recorded reaso
 | :--- | :---: | :--- | :--- | :--- | :---: | :--- |
 | CI-22-Q06 | S | dropped | frontend | Replace wildcard `org.w3c.dom.*` imports in frontend-js main/test (17 files) | 22 | ktlint `no-wildcard-imports` rule disabled (build.gradle.kts:17) → not enforced, low-value churn |
 
+## Open
+
+Items discovered but not yet actioned.
+
+| ID | Size | Status | Area | Summary | Cycle | Notes |
+| :--- | :---: | :--- | :--- | :--- | :---: | :--- |
+| CI-23-L01 | M | open | history | Wire `pruneLedgersOlderThan` into a ledger retention policy mirroring the trade prune at `TradeHistorySnapshotStore.kt:327` (no production caller yet) | 23 | From PR #193 code review |
+| CI-23-L02 | M | open | ledger | Normalize Kraken Earn-migration asset suffixes (`.S`/`.M`/`.F`/`.B`, e.g. `DOT.S`) to the base asset so staking rewards are not silently dropped from the comparison and chart (snapshots use base symbols) | 23 | From PR #193 code review; per Kraken docs |
+| CI-23-L03 | S | open | history | Rewards silently skip assets missing from the snapshot universe/prices in `RebalancerComparisonCalculator.validateTrackedBalanceChanges` and `TradeHistoryQueryService.getRewardsOverTime` — add a UI caveat or per-asset missing-price indicator | 23 | From PR #193 code review |
+| CI-23-L04 | S | open | kraken | Pass the pinned config into `KrakenServiceImpl.getLedgers` instead of re-reading `configService.getConfig()` inside the pinned execution session | 23 | From PR #193 code review |
+| CI-23-L05 | S | open | docs | Permission naming: Kraken docs say "Data - Query ledger entries", repo says "Query Ledgers" (UI name, same permission) — dual-cite in SECURITY.md | 23 | From PR #193 code review |
+| CI-23-L06 | S | open | history | `TradeHistoryQueryService.getRewardsOverTime` cumulative per-snapshot loop is O(n·m) — use a pointer/binary search over sorted events | 23 | From PR #193 code review |
+
 ## Done (recent)
 
 | ID | Size | Status | Area | Summary | Cycle | PR |

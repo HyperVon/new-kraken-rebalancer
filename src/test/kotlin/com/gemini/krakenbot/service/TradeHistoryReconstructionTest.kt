@@ -212,7 +212,7 @@ class TradeHistoryReconstructionTest : TradeHistoryServiceTestBase() {
                 coEvery { repository.save(any()) } just Runs
 
                 val stakingEvent = LedgerEvent(
-                    refid = "L1",
+                    ledgerId = "L1",
                     time = Instant.now().minus(4, ChronoUnit.DAYS),
                     type = LedgerEvent.TYPE_STAKING,
                     asset = "BTC",

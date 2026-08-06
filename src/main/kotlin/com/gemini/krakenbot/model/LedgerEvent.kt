@@ -6,9 +6,14 @@ import java.time.Instant
 /**
  * One entry from the Kraken private Ledgers endpoint (e.g. `staking` rewards and
  * `dividend` payouts). Amounts are signed and denominated in the ledger asset.
+ *
+ * [ledgerId] is the Kraken ledger entry id (the response map key), unique per entry;
+ * [refid] is the reference id of the parent transaction that caused the entry and may
+ * be shared by several entries or absent.
  */
 data class LedgerEvent(
-    val refid: String,
+    val ledgerId: String,
+    val refid: String? = null,
     val time: Instant,
     val type: String,
     val subtype: String? = null,

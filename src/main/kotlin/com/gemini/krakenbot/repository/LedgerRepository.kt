@@ -4,7 +4,7 @@ import com.gemini.krakenbot.model.LedgerEvent
 import java.time.Instant
 
 interface LedgerRepository {
-    /** Persists ledger entries, skipping rows whose (refid, timestamp, asset, type) already exist. */
+    /** Persists ledger entries, skipping rows whose (ledger id, timestamp, asset, type) already exist. */
     suspend fun saveLedgers(events: List<LedgerEvent>): Int
 
     suspend fun getLedgersInRange(from: Instant, to: Instant): List<LedgerEvent>

@@ -12,9 +12,11 @@ import io.kotest.matchers.booleans.shouldBeTrue
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.string.shouldContain
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
+import io.ktor.http.content.TextContent
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -62,7 +64,8 @@ class KrakenLedgerTest : KrakenServiceTestBase() {
 
                 entries.size shouldBe 2
                 val staking = entries.first { it.type == LedgerEvent.TYPE_STAKING }
-                staking.refid shouldBe "L1"
+                staking.ledgerId shouldBe "L1"
+                staking.refid shouldBe "R1"
                 staking.time.toEpochMilli() shouldBe 1700000000123L
                 staking.subtype shouldBe "reward"
                 staking.aclass shouldBe "currency"
@@ -71,6 +74,8 @@ class KrakenLedgerTest : KrakenServiceTestBase() {
                 staking.fee.shouldBeEqualComparingTo(BigDecimal("0"))
                 staking.balance.shouldBeEqualComparingTo(BigDecimal("10.5"))
                 val dividend = entries.first { it.type == LedgerEvent.TYPE_DIVIDEND }
+                dividend.ledgerId shouldBe "L2"
+                dividend.refid shouldBe "R2"
                 dividend.subtype.shouldBeNull()
                 dividend.aclass shouldBe "currency"
                 service.getLastLedgerTotalCount() shouldBe 2
@@ -113,6 +118,26 @@ class KrakenLedgerTest : KrakenServiceTestBase() {
                 entries.size shouldBe 1
                 entries.first().type shouldBe LedgerEvent.TYPE_STAKING
                 service.getLastLedgerTotalCount() shouldBe 2
+            }
+        }
+
+        "getLedgers_SendsRequestedTypesToApi" {
+            runTest {
+                val responseJson = """
+                    {
+                        "error": [],
+                        "result": {
+                            "count": 0
+                        }
+                    }
+                """.trimIndent()
+                var capturedBody = ""
+                val service = createService(responseJson) { request ->
+                    capturedBody = (request.body as TextContent).text
+                }
+                service.getLedgers(types = setOf(LedgerEvent.TYPE_STAKING))
+
+                capturedBody shouldContain "type=staking"
             }
         }
 

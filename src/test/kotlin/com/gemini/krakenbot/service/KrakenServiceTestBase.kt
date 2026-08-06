@@ -15,6 +15,7 @@ import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
 import io.ktor.client.*
 import io.ktor.client.engine.mock.*
+import io.ktor.client.request.*
 import io.ktor.http.*
 import io.mockk.every
 import io.mockk.mockk
@@ -42,7 +43,11 @@ abstract class KrakenServiceTestBase : StringSpec() {
         }
     }
 
-    protected fun createService(responseContent: String, rateLimiter: RateLimiter = RateLimiter()): KrakenService {
+    protected fun createService(
+        responseContent: String,
+        rateLimiter: RateLimiter = RateLimiter(),
+        onRequest: (HttpRequestData) -> Unit = {},
+    ): KrakenService {
         val objectMapper = jacksonObjectMapper()
         configService = mockk(relaxed = true)
 
@@ -62,7 +67,8 @@ abstract class KrakenServiceTestBase : StringSpec() {
         )
         every { configService.getConfig() } returns config
 
-        val mockEngine = MockEngine {
+        val mockEngine = MockEngine { request ->
+            onRequest(request)
             respond(
                 content = responseContent,
                 status = HttpStatusCode.OK,

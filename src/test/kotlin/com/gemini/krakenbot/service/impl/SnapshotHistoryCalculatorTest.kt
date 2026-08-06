@@ -430,7 +430,7 @@ class SnapshotHistoryCalculatorTest : StringSpec() {
             val cutoff = now.minus(5, ChronoUnit.DAYS)
             val stakingReward =
                 LedgerEvent(
-                    refid = "ref-stake",
+                    ledgerId = "ledger-stake",
                     time = now.minus(2, ChronoUnit.DAYS),
                     type = LedgerEvent.TYPE_STAKING,
                     asset = "XBT",
@@ -438,7 +438,7 @@ class SnapshotHistoryCalculatorTest : StringSpec() {
                 )
             val dividend =
                 LedgerEvent(
-                    refid = "ref-div",
+                    ledgerId = "ledger-div",
                     time = now.minus(1, ChronoUnit.DAYS),
                     type = LedgerEvent.TYPE_DIVIDEND,
                     asset = "STRC",
@@ -454,7 +454,7 @@ class SnapshotHistoryCalculatorTest : StringSpec() {
                 )
 
             val rewardEvents = events.filterIsInstance<SnapshotHistoryCalculator.TimelineEvent.RewardEvent>()
-            rewardEvents.map { it.event.refid } shouldBe listOf("ref-stake")
+            rewardEvents.map { it.event.ledgerId } shouldBe listOf("ledger-stake")
         }
 
         "calculateHistoricalSnapshots reverse-applies staking rewards to running balances" {
@@ -463,7 +463,7 @@ class SnapshotHistoryCalculatorTest : StringSpec() {
             val rewardTime = now.minus(2, ChronoUnit.DAYS)
             val reward =
                 LedgerEvent(
-                    refid = "ref-stake",
+                    ledgerId = "ledger-stake",
                     time = rewardTime,
                     type = LedgerEvent.TYPE_STAKING,
                     asset = "BTC",

@@ -378,7 +378,7 @@ trade synchronization, but it has separate metadata and insert-only semantics:
   page zero because new rows can shift Kraken offsets.
 - Incremental passes begin from the latest stored ledger time or watermark minus
   **300 seconds**, with a captured end time for stable newest-first pagination.
-- Each page is inserted under the unique `(refid, timestamp, asset, type)` key,
+- Each page is inserted under the unique `(ledger id, timestamp, asset, type)` key,
   so overlap and repeated pages are harmless. Only `staking` and `dividend`
   entries are requested.
 - Invalid live credentials skip the sync without opening an execution session;

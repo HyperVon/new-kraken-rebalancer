@@ -391,6 +391,11 @@ class KrakenServiceImpl(
         if (offset != null) {
             params[KrakenApiConstants.PARAM_OFS] = offset.toString()
         }
+        if (types != null) {
+            // Server-side type filter: keeps the response count and pagination scoped to the
+            // requested types instead of walking the entire ledger.
+            params[KrakenApiConstants.PARAM_TYPE] = types.joinToString(",")
+        }
 
         val result =
             try {
@@ -410,7 +415,7 @@ class KrakenServiceImpl(
         }
 
         val ledgerList = mutableListOf<LedgerEvent>()
-        ledgerNode.properties().forEach { (refid, entryNode) ->
+        ledgerNode.properties().forEach { (ledgerId, entryNode) ->
             val type = entryNode.path(KrakenApiConstants.FIELD_TYPE).asText()
             if (types != null && type !in types) {
                 return@forEach
@@ -420,6 +425,13 @@ class KrakenServiceImpl(
             val amountStr = entryNode.path(KrakenApiConstants.FIELD_AMOUNT).asText()
             val balanceStr = entryNode.path(KrakenApiConstants.FIELD_BALANCE).asText()
             val feeStr = entryNode.path(KrakenApiConstants.FIELD_FEE).asText()
+            val refidNode = entryNode.path(KrakenApiConstants.FIELD_REFID)
+            val refid =
+                if (refidNode.isMissingNode || refidNode.isNull) {
+                    null
+                } else {
+                    refidNode.asText().ifBlank { null }
+                }
             val subtypeNode = entryNode.path(KrakenApiConstants.FIELD_SUBTYPE)
             val subtype =
                 if (subtypeNode.isMissingNode || subtypeNode.isNull) {
@@ -437,6 +449,7 @@ class KrakenServiceImpl(
 
             ledgerList.add(
                 LedgerEvent(
+                    ledgerId = ledgerId,
                     refid = refid,
                     time = Instant.ofEpochMilli((time * 1000).toLong()),
                     type = type,

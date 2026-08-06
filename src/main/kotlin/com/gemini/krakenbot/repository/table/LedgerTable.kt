@@ -5,7 +5,8 @@ import org.jetbrains.exposed.v1.core.Table
 object LedgerTable : Table("ledgers") {
     val id = integer("id").autoIncrement()
     val timestamp = long("timestamp")
-    val refid = varchar("refid", 64)
+    val ledgerId = varchar("ledger_id", 64)
+    val refid = varchar("refid", 64).nullable()
     val type = varchar("type", 16)
     val subtype = varchar("subtype", 32).nullable()
     val aclass = varchar("aclass", 16).nullable()
@@ -17,7 +18,7 @@ object LedgerTable : Table("ledgers") {
     init {
         index("idx_ledgers_timestamp", false, timestamp)
         index("idx_ledgers_refid", false, refid)
-        index("idx_ledgers_dedupe", true, refid, timestamp, asset, type)
+        index("idx_ledgers_dedupe", true, ledgerId, timestamp, asset, type)
     }
 
     override val primaryKey = PrimaryKey(id)

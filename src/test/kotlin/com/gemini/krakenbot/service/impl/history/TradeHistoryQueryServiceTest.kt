@@ -152,13 +152,13 @@ class TradeHistoryQueryServiceTest : StringSpec() {
     }
 
     private fun ledgerEvent(
-        refid: String,
+        ledgerId: String,
         timestamp: Instant,
         asset: String,
         amount: String,
         type: String = LedgerEvent.TYPE_STAKING,
     ): LedgerEvent = LedgerEvent(
-        refid = refid,
+        ledgerId = ledgerId,
         time = timestamp,
         type = type,
         asset = asset,

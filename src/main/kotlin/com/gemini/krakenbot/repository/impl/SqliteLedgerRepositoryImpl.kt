@@ -28,6 +28,7 @@ class SqliteLedgerRepositoryImpl(private val database: Database) : LedgerReposit
 
     private fun UpdateBuilder<*>.applyLedgerFields(event: LedgerEvent) {
         this[LedgerTable.timestamp] = event.time.toEpochMilli()
+        this[LedgerTable.ledgerId] = event.ledgerId
         this[LedgerTable.refid] = event.refid
         this[LedgerTable.type] = event.type
         this[LedgerTable.subtype] = event.subtype
@@ -42,7 +43,7 @@ class SqliteLedgerRepositoryImpl(private val database: Database) : LedgerReposit
         database.safeTransactionIO(log, "Failed to save ledger entries to database") {
             var inserted = 0
             for (event in events) {
-                // INSERT OR IGNORE relies on the unique (refid, timestamp, asset, type) index.
+                // INSERT OR IGNORE relies on the unique (ledger id, timestamp, asset, type) index.
                 inserted += LedgerTable.insertIgnore {
                     it.applyLedgerFields(event)
                 }.insertedCount
@@ -101,6 +102,7 @@ class SqliteLedgerRepositoryImpl(private val database: Database) : LedgerReposit
         }
 
     private fun buildLedgerFromRow(row: ResultRow): LedgerEvent = LedgerEvent(
+        ledgerId = row[LedgerTable.ledgerId],
         refid = row[LedgerTable.refid],
         time = Instant.ofEpochMilli(row[LedgerTable.timestamp]),
         type = row[LedgerTable.type],
