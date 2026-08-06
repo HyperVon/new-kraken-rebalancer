@@ -33,6 +33,7 @@ Items discovered but not yet actioned.
 | CI-23-L04 | S | open | kraken | Pass the pinned config into `KrakenServiceImpl.getLedgers` instead of re-reading `configService.getConfig()` inside the pinned execution session | 23 | From PR #193 code review |
 | CI-23-L05 | S | open | docs | Permission naming: Kraken docs say "Data - Query ledger entries", repo says "Query Ledgers" (UI name, same permission) — dual-cite in SECURITY.md | 23 | From PR #193 code review |
 | CI-23-L06 | S | open | history | `TradeHistoryQueryService.getRewardsOverTime` cumulative per-snapshot loop is O(n·m) — use a pointer/binary search over sorted events | 23 | From PR #193 code review |
+| CI-23-L07 | S | open | history | Dividend ledger entries are stored but never used: `SnapshotHistoryCalculator` and `RebalancerComparisonCalculator` reverse/fold `TYPE_STAKING` only, and the chart is staking-only — decide whether to chart/fold dividends or stop persisting them | 23 | From PR #193 adversarial re-review (runtime-correctness track) |
 
 ## Done (recent)
 
