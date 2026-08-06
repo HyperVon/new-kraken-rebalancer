@@ -44,23 +44,9 @@ the parent starts a narrower follow-up. Manual compaction is not a continuation
 strategy. The parent owns integration, backlog updates, serial quality gates,
 and final verification.
 
-### Native model-selection gate for discovery
+When running under Google Antigravity (AGY), launch discovery subagents natively using built-in `invoke_subagent` tool calls; do NOT execute `.kilo/model-router/route-subagents` or `subagents.py` scripts. Discovery workers are read-only; implementation, backlog integration, Gradle, browser tests, and final verification remain parent-owned and serial.
 
-Before the first discovery worker, use the `continuous-improvement` preset from
-`.kilo/model-router/route-subagents`. For Kilo, it selects a separate route per
-track using the project quota and capability policy. Native Auto chooses its
-underlying model server-side, so do not claim an underlying model that the host
-does not report. Discovery workers are read-only; implementation, backlog
-integration, Gradle, browser tests, and final verification remain parent-owned
-and serial.
-
-```bash
-./.kilo/model-router/route-subagents \
-  --workflow continuous-improvement \
-  --task "<the user's continuous-improvement request>" \
-  --refresh \
-  --run
-```
+For optional Kilo CLI sessions, `.kilo/model-router/route-subagents` with `--workflow continuous-improvement` can be used.
 
 ---
 

@@ -29,6 +29,14 @@ No open items — every CI-23 item shipped in PR #193.
 
 | ID | Size | Status | Area | Summary | Cycle | PR |
 | :--- | :---: | :--- | :--- | :--- | :---: | :--- |
+| CI-24-D01 | M | done | docs | Policy update across `docs/AGENTIC_DEVELOPMENT.md`, `.agents/OPERATING.md`, `.agents/AGENTS.md`, skills, and rules: Antigravity sessions launch subagents natively via `invoke_subagent` instead of calling Kilo CLI `route-subagents` / `subagents.py` scripts | 24 | — |
+| CI-24-Q01 | S | done | frontend | Replace unsafe dynamic cast on `ctx.dataIndex` with safe numeric parsing and `snapshots.getOrNull()` in `HistoryCharts.kt` | 24 | — |
+| CI-24-U01 | S | done | css | Deduplicate `.hero-tile-bar-track` background linear-gradient property in `ComponentStyles.kt` | 24 | — |
+| CI-24-U02 | S | done | accessibility | Add accessible `aria-label` attributes to timeline scrubber input (`HistoryPageComponent.kt`) and allocation swatches/inputs (`AllocationEditor.kt`) | 24 | — |
+| CI-24-U03 | S | done | accessibility | Add WAI-ARIA `aria-sort` attributes on `th.sortable` in `PerformanceTableComponent.kt` | 24 | — |
+| CI-24-U04 | M | done | css | Add `flex-wrap: wrap` to `.history-views-actions` in `NavigationStyles.kt` for mobile viewports (<375px) | 24 | — |
+| CI-24-U05 | M | done | css | Centralize button primary background gradient & shadow glow tokens in `CssTheme.kt` and update `FormStyles.kt` | 24 | — |
+| CI-24-T02 | S | done | tests | Replace arbitrary wall-clock `delay(10.milliseconds)` with virtual scheduler `runCurrent()` in `PortfolioManagerLoopTest.kt` | 24 | — |
 | CI-23-L01 | M | done | history | Wire `pruneLedgersOlderThan` into a ledger retention policy mirroring the trade prune — `LedgersSyncService.finalizeSync` now prunes ledger entries older than `HISTORICAL_DAYS_BACK` (90 days) after each completed sync | 23 | 193 |
 | CI-23-L02 | M | done | ledger | Normalize Kraken Earn-migration asset suffixes (`.S`/`.M`/`.F`/`.B`, e.g. `DOT.S`) and legacy `X`/`Z` codes (`XXBT`, `ZUSD`) to the base symbol via new `Asset.normalizeLedgerAsset`, applied in `KrakenServiceImpl.getLedgers` | 23 | 193 |
 | CI-23-L03 | S | done | history | Rewards silently skip assets missing from the snapshot universe/prices — rewards caption now states assets without a snapshot price in the range are excluded | 23 | 193 |

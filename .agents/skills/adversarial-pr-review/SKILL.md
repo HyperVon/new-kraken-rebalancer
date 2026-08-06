@@ -133,9 +133,7 @@ authorize a material or parallel launch when route selection is unavailable.
 | Strong reasoning | High-risk safety, persistence, exchange semantics, or disputed finding | `adversarial-reviewer-b` when available |
 | Generic capable | Only when no closer specialized type is available | `general` / host equivalent |
 
-For Kilo, launch independent tracks through the
-`adversarial-pr-review` preset in `.kilo/model-router/route-subagents` after the
-exact-route gate has passed. Include the track matrix in the parent task so
+When running under Google Antigravity (AGY), launch reviewer tracks natively using built-in `invoke_subagent` tool calls; do NOT execute `.kilo/model-router/route-subagents` or `subagents.py` scripts. For optional Kilo CLI sessions, launch independent tracks through the `adversarial-pr-review` preset in `.kilo/model-router/route-subagents` after the exact-route gate has passed. Include the track matrix in the parent task so
 agents do not redo one another's work. A prompt must contain:
 
 1. Absolute repository path, branch, and base.

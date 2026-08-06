@@ -888,8 +888,10 @@ class TradeHistorySyncReconciliationTest : TradeHistoryServiceTestBase() {
 
         "CQ-15-L1: rebuildHistoricalSnapshots_persistsMetadataVersionEvenWhenSnapshotsToSaveIsEmpty" {
             runTest {
+                every { configService.getConfig() } returns TestFixtures.config()
+                coEvery { repository.getSyncMetadata(SyncMetadataKeys.SNAPSHOT_RECONSTRUCTION_VERSION) } returns null
                 coEvery { ledgerRepository.isLedgersSeeded() } returns true
-                coEvery { krakenService.getBalances() } returns emptyMap()
+                coEvery { krakenService.getBalances() } returns mapOf("USD" to BigDecimal("100.00"))
                 coEvery { krakenService.getTickerPrices(any()) } returns emptyMap()
                 coEvery { repository.load() } returns emptyList()
                 coEvery { repository.replaceSnapshots(any()) } just Runs

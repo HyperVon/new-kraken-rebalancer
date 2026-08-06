@@ -48,6 +48,9 @@ object CssTheme {
     const val glowBlueSoft = "0 0 16px rgba(56, 189, 248, 0.3)"
     const val glowGreenSoft = "0 0 14px rgba(16, 185, 129, 0.28)"
     const val glowPurpleSoft = "0 0 14px rgba(167, 139, 250, 0.32)"
+    val colorBlueGradientStart = Color("rgba(96, 165, 250, 0.95)")
+    const val shadowBtnPrimary =
+        "0 0 18px rgba(59, 130, 246, 0.32), 0 6px 14px rgba(37, 99, 235, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.18)"
     val colorKrakenBlue = Color("#0052ff")
     val colorBluePrimary = Color("#3b82f6")
     val colorBlueHover = Color("#1d4ed8")

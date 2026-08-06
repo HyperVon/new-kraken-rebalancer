@@ -82,14 +82,10 @@ object FormStyles {
 
         ".btn-primary" {
             background =
-                "linear-gradient(135deg, rgba(96,165,250,0.95) 0%, ${CssTheme.colorBlueDeep.value} 45%, " +
-                "${CssTheme.colorBlueHover.value} 100%)"
+                "linear-gradient(135deg, ${CssTheme.colorBlueGradientStart.value} 0%, " +
+                "${CssTheme.colorBlueDeep.value} 45%, ${CssTheme.colorBlueHover.value} 100%)"
             color = Color.white
-            put(
-                "box-shadow",
-                "0 0 18px rgba(59,130,246,0.32), 0 6px 14px rgba(37,99,235,0.28), " +
-                    "inset 0 1px 0 rgba(255,255,255,0.18)",
-            )
+            put("box-shadow", CssTheme.shadowBtnPrimary)
         }
 
         ".btn-primary:hover" {

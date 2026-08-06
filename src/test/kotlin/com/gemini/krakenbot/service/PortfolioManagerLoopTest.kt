@@ -85,7 +85,7 @@ class PortfolioManagerLoopTest : StringSpec() {
                 val job = launch {
                     portfolioManager.runLoop()
                 }
-                delay(10.milliseconds)
+                runCurrent()
                 portfolioManager.stopRebalancingLoop()
                 job.cancel()
 
@@ -126,7 +126,7 @@ class PortfolioManagerLoopTest : StringSpec() {
                 val job = launch {
                     portfolioManager.runLoop()
                 }
-                delay(10.milliseconds)
+                runCurrent()
                 portfolioManager.stopRebalancingLoop()
                 job.cancel()
 
@@ -170,7 +170,7 @@ class PortfolioManagerLoopTest : StringSpec() {
 
                 portfolioManager.startRebalancingLoop()
                 val job = launch { portfolioManager.runLoop() }
-                delay(10.milliseconds)
+                runCurrent()
                 portfolioManager.stopRebalancingLoop()
                 job.join()
 
@@ -190,7 +190,7 @@ class PortfolioManagerLoopTest : StringSpec() {
 
                 portfolioManager.startRebalancingLoop()
                 val job = launch { portfolioManager.runLoop() }
-                delay(10.milliseconds)
+                runCurrent()
                 portfolioManager.stopRebalancingLoop()
                 job.join()
 
@@ -211,7 +211,7 @@ class PortfolioManagerLoopTest : StringSpec() {
 
                 portfolioManager.startRebalancingLoop()
                 val job = launch { portfolioManager.runLoop() }
-                delay(10.milliseconds)
+                runCurrent()
                 portfolioManager.stopRebalancingLoop()
                 job.join()
 
