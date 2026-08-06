@@ -20,13 +20,26 @@ Product polish discovered during QA belongs in
 
 ## Open / deferred
 
-_None — all cycle-14 items are done. See the Done table below for both #168
-(cycle-14 production fixes) and #169 (cycle-15 test-only gap closures)._
+| ID | Size | Kind | Status | Area | Summary | Cycle | PR | Issue |
+| :--- | :---: | :--- | :--- | :--- | :--- | :---: | :--- | :---: |
 
 ## Done (recent)
 
 | ID | Size | Kind | Status | Area | Summary | Cycle | PR | Issue |
 | :--- | :---: | :--- | :--- | :--- | :--- | :---: | :--- | :---: |
+| CQ-16-1 | S | bug | done | algorithm/trade | Precision loss in `TradeCalculator.calculateSlippage` (multiply by 100 before dividing) | 16 | #205 | — |
+| CQ-16-2 | L | bug | done | algorithm/fiat | `RebalancerEngine.calculateFiatDeployment` guard 0% drawdown / exponent 0.0 & cap at 100% | 16 | #205 | #203 |
+| CQ-16-3 | L | bug | done | algorithm/orders | `OrderExecutorImpl.settleUsdAfterSells` fail-closed when spendable USD peek returns $0.00 | 16 | #205 | #204 |
+| CQ-16-4 | S | gap | done | algorithm/math | Sum all USD allocations in `PortfolioCalculations.calculateUsdTargetPercent` | 16 | #205 | — |
+| CQ-16-5 | M | gap | done | algorithm/eval | Add Evaluation Scenario 35 for complete zero-target position liquidation | 16 | #205 | — |
+| CQ-16-6 | M | bug | done | history/sync | Advance incremental history sync start time using sync watermark (`calculateEffectiveLatestTime`) | 16 | #205 | — |
+| CQ-16-7 | S | bug | done | history/dedupe | Deduplicate local estimate vs API fill for pair aliases (`BTC/USD` vs `XXBTZUSD`) & 0-USD trades | 16 | #205 | — |
+| CQ-16-9 | S | bug | done | history/reconstruction | Normalize asset symbol in `SnapshotHistoryCalculator.reverseApplyReward` (`DOT.S` / `XXBT`) | 16 | #205 | — |
+| CQ-16-11 | S | bug | done | frontend-js/json | Add null check on `raw.perAssetUSD` in `parseRewardsOverTimePoint` | 16 | #205 | — |
+| CQ-16-12 | S | gap | done | frontend-js/zoom | Guard `movableSpan <= 0.0` to prevent division by zero / NaN in `HistoryZoom.kt` | 16 | #205 | — |
+| CQ-16-13 | S | gap | done | controller/sse | Add debug logging for non-cancellation SSE client disconnects in `DashboardController.kt` | 16 | #205 | — |
+| CQ-16-14 | S | bug | done | controller/web | Return HTTP 422 Unprocessable Entity for settings form validation failures in `DashboardController.kt` | 16 | #205 | — |
+| CQ-16-15 | M | gap | done | config/flows | Add `withExecutionSession` try-finally extension helper in `ConfigServiceImpl.kt` | 16 | #205 | — |
 | CQ-15-L1 | L | bug | done | history/reconstruction | Fix unpersisted reconstruction version metadata when `snapshotsToSave` is empty | 15 | #195 | #196 |
 | CQ-15-L2 | L | bug | done | history/sync | Guard `rebuildHistoricalSnapshotsIfNeeded` with `isLedgersSeeded` check | 15 | #195 | #197 |
 | CQ-15-M1 | M | gap | done | history/sync | Allow `rebuildHistoricalSnapshotsIfNeeded` to run when ledgers are seeded even if `totalTradesExecuted == 0` | 15 | #195 | — |

@@ -193,7 +193,7 @@ object SnapshotHistoryCalculator {
 
     /** Undo one credited staking reward: rewards added after the snapshot are removed going backward. */
     private fun reverseApplyReward(event: LedgerEvent, runningBalances: MutableMap<String, BigDecimal>) {
-        val symbol = event.asset.uppercase()
+        val symbol = Asset.normalizeLedgerAsset(event.asset).uppercase()
         runningBalances[symbol] = (runningBalances[symbol] ?: BigDecimal.ZERO).subtract(event.amount)
     }
 

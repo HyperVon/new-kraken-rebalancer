@@ -115,6 +115,16 @@ class PortfolioCalculationsTest : StringSpec() {
             btcTarget.shouldBeEqualComparingTo(BigDecimal("45.000"))
         }
 
+        "should sum all USD target percentages in calculateUsdTargetPercent" {
+            val allocations = listOf(
+                com.gemini.krakenbot.config.Allocation("USD", 15.0),
+                com.gemini.krakenbot.config.Allocation("ZUSD", 5.0),
+                com.gemini.krakenbot.config.Allocation("BTC", 80.0),
+            )
+            PortfolioCalculations.calculateUsdTargetPercent(allocations)
+                .shouldBeEqualComparingTo(BigDecimal("20.00"))
+        }
+
         "should mark dust-sized deviations as insignificant" {
             val metrics = PortfolioCalculations.calculateAssetMetrics(
                 symbol = Asset(Asset.BTC),

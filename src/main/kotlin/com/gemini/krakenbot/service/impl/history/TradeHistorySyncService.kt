@@ -139,10 +139,7 @@ class TradeHistorySyncService(
     private suspend fun calculateEffectiveLatestTime(): Instant? {
         val latestTradeTime = repository.getLatestTradeTime()
         val watermarkInstant = readSyncWatermark()
-        // Prefer real/sim fill time; only fall back to the last successful sync watermark when
-        // there are no non-dry-run fills (CQ-8-M2). Do not max() with wall-clock watermark — that
-        // would shrink the reconcile window below latestTradeTime and strand unreconciled locals.
-        return latestTradeTime ?: watermarkInstant
+        return listOfNotNull(latestTradeTime, watermarkInstant).maxOrNull()
     }
 
     private suspend fun processApiTrades(

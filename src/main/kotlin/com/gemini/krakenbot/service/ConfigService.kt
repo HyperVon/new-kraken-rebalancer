@@ -22,3 +22,12 @@ interface ConfigService {
 
     fun watchConfigChanges(): Flow<Settings>
 }
+
+inline fun <T> ConfigService.withExecutionSession(block: () -> T): T {
+    beginExecutionSession()
+    try {
+        return block()
+    } finally {
+        endExecutionSession()
+    }
+}

@@ -89,7 +89,7 @@ value class Asset(val value: String) {
 
         private fun normalizedSymbol(symbol: String): String = symbol.uppercase()
 
-        private fun isUsdSymbol(symbol: String): Boolean = symbol.equals(USD, ignoreCase = true)
+        private fun isUsdSymbol(symbol: String): Boolean = normalizeLedgerAsset(symbol).equals(USD, ignoreCase = true)
 
         private fun matchesTradingPair(normalizedPair: String, symbol: String): Boolean =
             normalizedPair in acceptedKrakenPairs(symbol)

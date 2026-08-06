@@ -647,5 +647,53 @@ class OrderExecutorFillSettlementTest : StringSpec() {
                 krakenService.executedOrders[1].volume.shouldBeEqualComparingTo(BigDecimal("0.198"))
             }
         }
+
+        "aborts buy execution when balance peek returns 0.00 spendable USD" {
+            runTest {
+                val sellTxid = "OID-ZERO-BALANCE"
+                krakenService.orderResultFactory = { pair, _, side, volume ->
+                    OrderResult(
+                        success = true,
+                        pair = pair,
+                        side = side,
+                        volume = volume,
+                        orderTxid = if (side == TestFixtures.SELL) sellTxid else null,
+                    )
+                }
+                krakenService.tradeHistorySupplier = { _, _ ->
+                    listOf(
+                        TestFixtures.tradeRecord(
+                            timestamp = Instant.now(),
+                            pair = Asset.BTC_USD_PAIR,
+                            side = "SELL",
+                            symbol = Asset.BTC,
+                            volume = BigDecimal("0.1"),
+                            usdAmount = BigDecimal("100.00"),
+                            price = BigDecimal("1000.00"),
+                            fee = BigDecimal.ZERO,
+                            orderTxid = sellTxid,
+                        ),
+                    )
+                }
+                // Balance peek returns $0.00 (e.g. funds locked or deducted)
+                krakenService.balanceSupplier = { mapOf(Asset.USD to BigDecimal.ZERO) }
+
+                orderExecutor.executeOrders(
+                    buyOrders = mapOf(Asset.ETH to BigDecimal("500.00")),
+                    sellOrders = mapOf(Asset.BTC to BigDecimal("100.00")),
+                    currentValuesUSD = mapOf(Asset.USD to BigDecimal("100.00")),
+                    prices = mapOf(
+                        Asset.BTC to BigDecimal("1000.00"),
+                        Asset.ETH to BigDecimal("1000.00"),
+                    ),
+                    settings = TestFixtures.settings(dryRun = false),
+                    actionLog = mutableListOf(),
+                )
+
+                // Sell executes, but buy is aborted fail-closed because spendable USD is $0.00.
+                krakenService.executedOrders.size shouldBe 1
+                krakenService.executedOrders.single().side shouldBe TestFixtures.SELL
+            }
+        }
     }
 }

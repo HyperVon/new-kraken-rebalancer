@@ -84,8 +84,9 @@ fun TradeRecord.isLocalEstimateDuplicateOf(
     tolerance: BigDecimal = BigDecimal("0.01"),
 ): Boolean {
     val diff = abs(this.timestamp.toEpochMilli() - other.timestamp.toEpochMilli())
+    val pairMatches = this.pair.equals(other.pair, ignoreCase = true) || this.isPairAliasDuplicateOf(other)
     return this.isSameSymbolAndSide(other) &&
-        this.pair.equals(other.pair, ignoreCase = true) &&
+        pairMatches &&
         diff <= windowMillis &&
         isWithinRelativeTolerance(this.volume, other.volume, tolerance) &&
         isWithinRelativeTolerance(this.usdAmount, other.usdAmount, tolerance)

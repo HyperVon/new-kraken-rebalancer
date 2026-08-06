@@ -178,8 +178,16 @@ fun parseRewardsOverTimePoint(raw: dynamic): RewardsOverTimePoint = RewardsOverT
     timestamp = dynamicString(raw.timestamp).orEmpty(),
     cumulativeUSD = dynamicString(raw.cumulativeUSD).orEmpty(),
     perAssetUSD =
-    JsObject.keys(raw.perAssetUSD).associateWith { key ->
-        dynamicString(raw.perAssetUSD[key]).orEmpty()
+    if (raw.perAssetUSD != null) {
+        try {
+            JsObject.keys(raw.perAssetUSD).associateWith { key ->
+                dynamicString(raw.perAssetUSD[key]).orEmpty()
+            }
+        } catch (_: Throwable) {
+            emptyMap()
+        }
+    } else {
+        emptyMap()
     },
 )
 
