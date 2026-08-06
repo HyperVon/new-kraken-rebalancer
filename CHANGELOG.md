@@ -6,6 +6,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.16.20] - 2026-08-06
+
+### Fixed
+
+- **Slippage Calculation Precision**: Fixed precision loss in `TradeCalculator.calculateSlippage` by multiplying price difference by 100 before dividing by `expectedPrice`.
+- **Zero Drawdown Cash Deployment Guard**: Guarded 0% drawdown in `RebalancerEngine.calculateFiatDeployment` against Double exponent zero evaluation (`0.0.pow(0.0) == 1.0`), preventing erroneous cash deployment when drawdown is zero.
+- **Fail-Closed Spendable USD Balance Peek**: Changed `OrderExecutorImpl.peekUsdBalance` to return nullable `BigDecimal` on exception/missing balance key, fail-closing buy order execution when spendable cash is explicitly `$0.00`.
+- **Multi-USD Allocation Target Summing**: Updated `PortfolioCalculations.calculateUsdTargetPercent` to sum all USD-type allocations (`USD`, `ZUSD`).
+- **Incremental Trade History Sync Watermark**: Updated `calculateEffectiveLatestTime()` in `TradeHistorySyncService` and `LedgersSyncService` to use `max(latestTime, watermark)` so incremental syncs start from recent sync watermark instead of re-fetching historical fills.
+- **Pair Alias Deduplication & Zero USD Trades**: Updated `TradeRecord.isLocalEstimateDuplicateOf` to match pair aliases (`BTC/USD` vs `XXBTZUSD`) and handled zero USD amount in fee percent comparisons.
+- **Staking Reward Symbol Normalization**: Applied `Asset.normalizeLedgerAsset()` to rewards in `SnapshotHistoryCalculator.reverseApplyReward()` for Earn-staking assets (e.g. `DOT.S`).
+- **Frontend JS & HTTP Safety**: Added null/exception guards on `raw.perAssetUSD` in `HistoryJsonParsing.kt`, guarded `movableSpan <= 0.0` in `HistoryZoom.kt`, added debug logging for non-cancellation SSE client disconnects in `DashboardController`, and returned HTTP 422 Unprocessable Entity for settings validation failures.
+
+### Added
+
+- **Zero-Target Position Liquidation Evaluation**: Registered Scenario 35 ("Complete Liquidation of Zero-Target Position") in `EvaluationScenarios29To34.kt` and updated `docs/EVALUATION.md`.
+- **Config Execution Session Helper**: Added `ConfigService.withExecutionSession` try-finally extension block for safe session lifetime management.
+
 ## [6.16.19] - 2026-08-06
 
 ### Changed

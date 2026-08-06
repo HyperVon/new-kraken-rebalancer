@@ -588,4 +588,70 @@ internal fun EvaluationScenariosTest.registerScenarios29To34() {
             )
         }
     }
+
+    "Scenario 35: Complete Liquidation of Zero-Target Position" {
+        runTest {
+            val fakeKraken = FakeKrakenService()
+            val mockConfig = mockk<ConfigService>(relaxed = true)
+            val mockHistory = mockk<TradeHistoryService>(relaxed = true)
+            val appConfig = TestFixtures.config(
+                settings = TestFixtures.settings(
+                    dryRun = false,
+                    simulation = true,
+                    deviationTriggerPercent = 5.0,
+                    dustThresholdUSD = 10.0,
+                ),
+                allocations = listOf(
+                    Allocation(Asset.BTC, 0.0), // Zero target allocation
+                    Allocation(Asset.ETH, 50.0),
+                    Allocation(Asset.USD, 50.0),
+                ),
+            )
+            every { mockConfig.getConfig() } returns appConfig
+
+            val btcBalance = BigDecimal("0.1")
+            val btcPrice = BigDecimal("1000.00") // $100 value > $10 dust threshold
+            fakeKraken.balanceSupplier = {
+                mapOf(
+                    "XXBT" to btcBalance,
+                    "XETH" to BigDecimal("0.5"),
+                    "ZUSD" to BigDecimal("400.00"),
+                )
+            }
+            fakeKraken.pricesSupplier = {
+                mapOf(
+                    TestFixtures.XBTUSD to btcPrice,
+                    TestFixtures.ETHUSD to BigDecimal("1000.00"),
+                )
+            }
+
+            val analyzer = PortfolioAnalyzerImpl(
+                fakeKraken,
+                mockConfig,
+                mockk<PortfolioStatsRepository>(relaxed = true),
+            )
+            val manager = PortfolioManagerImpl(
+                mockConfig,
+                mockHistory,
+                analyzer,
+                OrderExecutorImpl(fakeKraken, mockHistory),
+            )
+
+            manager.performRebalanceCycle()
+
+            // Assert zero-target asset generates a 100% sell order for the full holding
+            val sellOrders = fakeKraken.executedOrders.filter { it.side == TestFixtures.SELL }
+            sellOrders.size shouldBe 1
+            val sell = sellOrders.single()
+            sell.pair shouldBe Asset.BTC_USD_PAIR
+            sell.volume.shouldBeEqualComparingTo(btcBalance)
+
+            EvaluationScenariosTest.recordResult(
+                "Scenario 35",
+                "Complete Liquidation of Zero-Target Position",
+                TestFixtures.PASS,
+                "Zero-target BTC holding=$btcBalance ($100 USD > $10 dust) generates full liquidation sell order",
+            )
+        }
+    }
 }

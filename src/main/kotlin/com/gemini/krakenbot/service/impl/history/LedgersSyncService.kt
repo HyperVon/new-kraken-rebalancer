@@ -113,9 +113,7 @@ class LedgersSyncService(
     private suspend fun calculateEffectiveLatestTime(): Instant? {
         val latestLedgerTime = repository.getLatestLedgerTime()
         val watermarkInstant = readSyncWatermark()
-        // Prefer the newest stored entry; only fall back to the last successful sync watermark
-        // when nothing has been stored yet.
-        return latestLedgerTime ?: watermarkInstant
+        return listOfNotNull(latestLedgerTime, watermarkInstant).maxOrNull()
     }
 
     private suspend fun processLedgerPages(startSec: Long?, endSec: Long, isSeeded: Boolean): Int {

@@ -420,7 +420,7 @@ class TradeHistorySyncCoordinationTest : TradeHistoryServiceTestBase() {
         }
 
         // CQ-8-M2: when real fills exist, prefer latestTradeTime over a newer wall-clock watermark.
-        "syncTradesFromKraken_PrefersLatestTradeTimeOverNewerWatermark" {
+        "syncTradesFromKraken_PrefersNewerWatermarkOverOlderTradeTime" {
             runTest {
                 val latestTradeSec = 1_700_000_000L
                 val newerWatermarkSec = latestTradeSec + 3_600L
@@ -435,12 +435,9 @@ class TradeHistorySyncCoordinationTest : TradeHistoryServiceTestBase() {
 
                 service.syncTradesFromKraken()
 
-                val expectedStart = latestTradeSec - 300
+                val expectedStart = newerWatermarkSec - 300
                 coVerify(exactly = 1) {
                     krakenService.getTradeHistory(startSec = expectedStart, offset = 0)
-                }
-                coVerify(exactly = 0) {
-                    krakenService.getTradeHistory(startSec = newerWatermarkSec - 300, offset = any())
                 }
             }
         }

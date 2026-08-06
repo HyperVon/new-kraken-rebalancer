@@ -44,6 +44,15 @@ class TradeCalculatorTest : StringSpec() {
             slippage.shouldBeEqualComparingTo(BigDecimal("5.0000"))
         }
 
+        "calculateSlippage should retain four-decimal percentage precision" {
+            val slippage = TradeCalculator.calculateSlippage(
+                OrderSide.BUY.uppercaseName,
+                BigDecimal("100.1234"),
+                BigDecimal("100.0000"),
+            )
+            slippage.shouldBeEqualComparingTo(BigDecimal("0.1234"))
+        }
+
         "calculateSlippage should treat lowercase buy like BUY" {
             val slippage = TradeCalculator.calculateSlippage(
                 OrderSide.BUY.apiValue,

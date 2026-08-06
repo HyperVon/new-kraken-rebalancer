@@ -100,7 +100,7 @@ object RebalancerEngine {
         }
 
     fun calculateFiatDeployment(drawdownPct: BigDecimal, settings: Settings): BigDecimal {
-        if (settings.fiatMaxDrawdown <= 0.0) return BigDecimal.ZERO
+        if (drawdownPct <= BigDecimal.ZERO || settings.fiatMaxDrawdown <= 0.0) return BigDecimal.ZERO
 
         val maxDD = BigDecimal.valueOf(settings.fiatMaxDrawdown)
         var ratio =
@@ -117,6 +117,7 @@ object RebalancerEngine {
         return BigDecimal
             .valueOf(deployDouble)
             .setScale(PrecisionConstants.SCALE_PERCENT, RoundingMode.HALF_UP)
+            .coerceAtMost(PrecisionConstants.HUNDRED)
     }
 
     fun calculateEffectiveUsdTarget(fiatDeploymentPct: BigDecimal, allocations: List<Allocation>): BigDecimal {

@@ -488,7 +488,7 @@ internal fun EvaluationScenariosTest.registerScenarios1To7() {
                     header(HttpHeaders.ContentType, ContentType.Application.FormUrlEncoded.toString())
                     header(HttpHeaders.Cookie, csrfCookie)
                 }
-            postInvalidResponse.status shouldBe HttpStatusCode.OK
+            postInvalidResponse.status shouldBe HttpStatusCode.UnprocessableEntity
             postInvalidResponse.bodyAsText() shouldContain "Total allocation percentage must be exactly 100%."
 
             // 4. SSE Stream Broadcast

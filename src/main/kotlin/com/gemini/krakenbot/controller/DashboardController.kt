@@ -49,6 +49,7 @@ import kotlinx.html.div
 import kotlinx.html.h2
 import kotlinx.html.p
 import kotlinx.html.stream.createHTML
+import org.slf4j.LoggerFactory
 import java.lang.management.ManagementFactory
 import java.math.BigDecimal
 import java.time.Instant
@@ -60,6 +61,8 @@ class DashboardController(
     private val objectMapper: ObjectMapper,
     private val dashboardView: DashboardView,
 ) {
+    private val log = LoggerFactory.getLogger(DashboardController::class.java)
+
     fun registerRoutes(routing: Routing) {
         with(routing) {
             get(Routes.STATIC_STYLE_CSS) {
@@ -158,7 +161,7 @@ class DashboardController(
                 config = currentConfig,
                 message = e.message ?: ViewText.INVALID_CONFIGURATION_FALLBACK,
                 csrfToken = CsrfProtection.currentToken(call),
-                status = HttpStatusCode.OK,
+                status = HttpStatusCode.UnprocessableEntity,
             )
             return
         }
@@ -172,7 +175,7 @@ class DashboardController(
                 config = updatedConfig,
                 message = e.message ?: ViewText.INVALID_CONFIGURATION_FALLBACK,
                 csrfToken = CsrfProtection.currentToken(call),
-                status = HttpStatusCode.OK,
+                status = HttpStatusCode.UnprocessableEntity,
             )
         }
     }
@@ -324,8 +327,9 @@ class DashboardController(
             }
         } catch (e: CancellationException) {
             throw e
-        } catch (_: Exception) {
+        } catch (e: Exception) {
             // Keep non-cancellation failures local to this client session so other collectors continue.
+            log.debug("SSE client stream session terminated: {}", e.message)
         }
     }
 

@@ -69,6 +69,22 @@ class RebalancerEngineTest : StringSpec() {
             deployment.shouldBeEqualComparingTo(BigDecimal("50.00"))
         }
 
+        "calculateFiatDeployment returns zero when drawdown is zero even with 0.0 exponent" {
+            val deployment = RebalancerEngine.calculateFiatDeployment(
+                BigDecimal.ZERO,
+                settings.copy(fiatDeploymentExponent = 0.0),
+            )
+            deployment.shouldBeEqualComparingTo(BigDecimal.ZERO)
+        }
+
+        "calculateFiatDeployment caps deployment at 100 percent" {
+            val deployment = RebalancerEngine.calculateFiatDeployment(
+                BigDecimal("50.00"),
+                settings.copy(fiatMaxDrawdown = 20.0, fiatDeploymentExponent = 0.5),
+            )
+            deployment.shouldBeEqualComparingTo(BigDecimal("100.00"))
+        }
+
         "calculateEffectiveUsdTarget shrinks USD target when fiat deployment > 0" {
             val deployment = BigDecimal("50.00")
             val effectiveUsd = RebalancerEngine.calculateEffectiveUsdTarget(deployment, allocations)

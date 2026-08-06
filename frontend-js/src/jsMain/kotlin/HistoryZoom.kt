@@ -56,6 +56,9 @@ internal fun chartScrubberState(chart: dynamic, fallbackRange: ChartRange?): Cha
     }
 
     val movableSpan = fullRange.span - currentRange.span
+    if (movableSpan <= 0.0) {
+        return ChartScrubberState(enabled = false, position = 0.0)
+    }
     val position = ((currentRange.min - fullRange.min) / movableSpan * PrecisionConstants.HUNDRED_INT)
         .coerceIn(0.0, PrecisionConstants.HUNDRED_INT.toDouble())
     return ChartScrubberState(enabled = true, position = position)

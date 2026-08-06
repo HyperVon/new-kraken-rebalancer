@@ -32,8 +32,8 @@ object TradeCalculator {
             }
 
         return diff
-            .divide(expectedPrice, PrecisionConstants.SCALE_PERCENT, RoundingMode.HALF_UP)
             .multiply(PrecisionConstants.HUNDRED)
+            .divide(expectedPrice, PrecisionConstants.SCALE_PERCENT, RoundingMode.HALF_UP)
     }
 
     fun estimateFee(usdAmount: BigDecimal): BigDecimal = usdAmount

@@ -114,6 +114,21 @@ class HistoryChartStateTest : StringSpec() {
             visibilityStates["portfolio-value-chart"] shouldBe before
             resetHistoryUiState()
         }
+
+        "chartScrubberState disables scrubber when currentRange span equals or exceeds fullRange span" {
+            val chart: dynamic = kotlin.js.json(
+                "scales" to kotlin.js.json(
+                    "x" to kotlin.js.json(
+                        "min" to 100.0,
+                        "max" to 200.0,
+                    ),
+                ),
+            )
+            val fallbackRange = ChartRange(min = 100.0, max = 200.0)
+            val state = chartScrubberState(chart, fallbackRange)
+            state?.enabled shouldBe false
+            state?.position shouldBe 0.0
+        }
     }
 
     private companion object {

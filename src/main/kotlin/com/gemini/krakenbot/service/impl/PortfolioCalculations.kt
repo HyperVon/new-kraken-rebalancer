@@ -28,11 +28,13 @@ object PortfolioCalculations {
         baseTargetPercent.multiply(cryptoScaleFactor)
     }
 
-    fun calculateUsdTargetPercent(allocations: List<Allocation>): BigDecimal = BigDecimal
-        .valueOf(
-            allocations.firstOrNull { it.symbol.isUsd }?.targetPercent
-                ?: PrecisionConstants.DEFAULT_USD_TARGET_PERCENT,
-        ).setScale(PrecisionConstants.SCALE_USD, RoundingMode.HALF_UP)
+    fun calculateUsdTargetPercent(allocations: List<Allocation>): BigDecimal = allocations
+        .filter { it.symbol.isUsd }
+        .takeIf { it.isNotEmpty() }
+        ?.sumOf { it.targetPercent.toBigDecimal() }
+        ?.setScale(PrecisionConstants.SCALE_USD, RoundingMode.HALF_UP)
+        ?: BigDecimal.valueOf(PrecisionConstants.DEFAULT_USD_TARGET_PERCENT)
+            .setScale(PrecisionConstants.SCALE_USD, RoundingMode.HALF_UP)
 
     fun calculateCurrentPercent(valueUSD: BigDecimal, totalPortfolioValueUSD: BigDecimal): BigDecimal =
         if (totalPortfolioValueUSD >

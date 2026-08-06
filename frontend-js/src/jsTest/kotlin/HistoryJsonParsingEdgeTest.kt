@@ -165,6 +165,20 @@ class HistoryJsonParsingEdgeTest : StringSpec() {
             emptySnapshot.assets.isEmpty() shouldBe true
             emptySnapshot.actions.isEmpty() shouldBe true
         }
+
+        "parseRewardsOverTimePoint handles null perAssetUSD safely" {
+            val point =
+                parseRewardsOverTimePoint(
+                    json(
+                        "timestamp" to "2023-01-01T00:00:00Z",
+                        "cumulativeUSD" to "10.00",
+                        "perAssetUSD" to null,
+                    ),
+                )
+            point.timestamp shouldBe "2023-01-01T00:00:00Z"
+            point.cumulativeUSD shouldBe "10.00"
+            point.perAssetUSD.isEmpty() shouldBe true
+        }
     }
 
     private fun baseTrade(): dynamic = json(

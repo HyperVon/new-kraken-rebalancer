@@ -589,7 +589,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                         )
                         header(HttpHeaders.Cookie, csrf.cookie)
                     }
-                response.status shouldBe HttpStatusCode.OK
+                response.status shouldBe HttpStatusCode.UnprocessableEntity
                 response.bodyAsText() shouldContain "Total allocation percentage must be exactly 100%."
             }
         }
@@ -655,7 +655,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                         )
                         header(HttpHeaders.Cookie, csrf.cookie)
                     }
-                response.status shouldBe HttpStatusCode.OK
+                response.status shouldBe HttpStatusCode.UnprocessableEntity
                 response.bodyAsText() shouldContain ViewText.INVALID_DEVIATION_TRIGGER
             }
 
@@ -696,7 +696,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                         )
                         header(HttpHeaders.Cookie, csrf.cookie)
                     }
-                response.status shouldBe HttpStatusCode.OK
+                response.status shouldBe HttpStatusCode.UnprocessableEntity
                 response.bodyAsText() shouldContain ViewText.INVALID_DUST_THRESHOLD
             }
 
@@ -729,7 +729,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                         )
                         header(HttpHeaders.Cookie, csrf.cookie)
                     }
-                response.status shouldBe HttpStatusCode.OK
+                response.status shouldBe HttpStatusCode.UnprocessableEntity
                 response.bodyAsText() shouldContain ViewText.INVALID_DEVIATION_TRIGGER
             }
 
@@ -778,7 +778,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                         )
                         header(HttpHeaders.Cookie, csrf.cookie)
                     }
-                response.status shouldBe HttpStatusCode.OK
+                response.status shouldBe HttpStatusCode.UnprocessableEntity
                 response.bodyAsText() shouldContain ViewText.INVALID_CONFIGURATION_FALLBACK
             }
 

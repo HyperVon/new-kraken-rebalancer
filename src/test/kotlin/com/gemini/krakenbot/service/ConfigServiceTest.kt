@@ -734,5 +734,21 @@ class ConfigServiceTest : StringSpec() {
                 job.cancel()
             }
         }
+
+        "withExecutionSession executes block and closes session even when block throws exception" {
+            createValidConfig(tempFile)
+            val service = ConfigServiceImpl(objectMapper, tempFile.absolutePath)
+            shouldThrow<IllegalStateException> {
+                service.withExecutionSession {
+                    error("simulation thrown exception inside execution session")
+                }
+            }
+            // Verify execution session closed: updating config now immediately updates rather than pending
+            val updated = service.getConfig().copy(
+                settings = service.getConfig().settings.copy(loopDelaySeconds = 120L),
+            )
+            service.updateConfig(updated)
+            service.getConfig().settings.loopDelaySeconds shouldBe 120L
+        }
     }
 }

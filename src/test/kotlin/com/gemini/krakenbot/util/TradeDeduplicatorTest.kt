@@ -193,6 +193,36 @@ class TradeDeduplicatorTest : StringSpec() {
             duplicates shouldContainExactly listOf(10)
         }
 
+        "CQ-16-7: should identify local estimate duplicate when estimate uses BTC/USD and API fill uses XXBTZUSD" {
+            val now = Instant.now()
+            val localEstimate = TestFixtures.tradeRecord(
+                timestamp = now,
+                pair = "BTC/USD",
+                side = "BUY",
+                symbol = "BTC",
+                volume = BigDecimal("1.0"),
+                usdAmount = BigDecimal("50000.00"),
+                fee = BigDecimal("10.00"),
+                slippagePercent = BigDecimal.ZERO,
+                source = TradeSource.LOCAL_ESTIMATE,
+                id = 15,
+            )
+            val settledFill = TestFixtures.tradeRecord(
+                timestamp = now.plusSeconds(2),
+                pair = "XXBTZUSD",
+                side = "BUY",
+                symbol = "BTC",
+                volume = BigDecimal("1.0"),
+                usdAmount = BigDecimal("50000.00"),
+                fee = BigDecimal("100.00"),
+                source = TradeSource.API_FILL,
+                id = 16,
+            )
+
+            val duplicates = TradeDeduplicator.findDuplicateTradeIds(listOf(localEstimate, settledFill))
+            duplicates shouldContainExactly listOf(15)
+        }
+
         "should preserve legitimate equal-sized fills with different financial details" {
             val now = Instant.now()
             val firstFill = TestFixtures.tradeRecord(

@@ -530,6 +530,55 @@ class SnapshotHistoryCalculatorTest : StringSpec() {
             runningBalances["USD"]!!.shouldBeEqualComparingTo(BigDecimal("10000.00"))
         }
 
+        "calculateHistoricalSnapshots reverse-applies un-normalized reward assets to base asset running balances" {
+            val now = Instant.now()
+            val cutoff = now.minus(5, ChronoUnit.DAYS)
+            val rewardTime = now.minus(2, ChronoUnit.DAYS)
+            val reward =
+                LedgerEvent(
+                    ledgerId = "ledger-stake-unnorm",
+                    time = rewardTime,
+                    type = LedgerEvent.TYPE_STAKING,
+                    asset = "DOT.S", // Earn-staking suffix un-normalized asset
+                    amount = BigDecimal("0.5"),
+                )
+
+            val events =
+                SnapshotHistoryCalculator.buildTimelineEvents(
+                    historicalTrades = emptyList(),
+                    historicalRewards = listOf(reward),
+                    cutoffTime = cutoff,
+                    now = now,
+                )
+
+            val allocations =
+                listOf(
+                    Allocation(Asset("DOT"), 50.0),
+                    Allocation(Asset.USD, 50.0),
+                )
+
+            val runningBalances =
+                mutableMapOf(
+                    "DOT" to BigDecimal("2.0"),
+                    "USD" to BigDecimal("10000.00"),
+                )
+
+            val currentPrices = mapOf("DOT" to BigDecimal("10.00"), "USD" to BigDecimal.ONE)
+
+            SnapshotHistoryCalculator.calculateHistoricalSnapshots(
+                events = events,
+                allocations = allocations,
+                runningBalances = runningBalances,
+                currentPrices = currentPrices,
+                ohlcData = emptyMap(),
+                tradePrices = emptyMap(),
+                settings = defaultSettings,
+            )
+
+            // After reverse-applying DOT.S reward: runningBalances["DOT"] -= 0.5 -> 1.5
+            runningBalances["DOT"]!!.shouldBeEqualComparingTo(BigDecimal("1.5"))
+        }
+
         "calculateHistoricalSnapshots computes effective USD targets forward without peak leakage" {
             val now = Instant.now()
             val cutoff = now.minus(5, ChronoUnit.DAYS)

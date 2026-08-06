@@ -20,6 +20,7 @@ import com.gemini.krakenbot.util.CASH_RESERVE_FACTOR
 import com.gemini.krakenbot.util.PrecisionConstants
 import com.gemini.krakenbot.util.TradeCalculator
 import com.gemini.krakenbot.util.resolveBalance
+import com.gemini.krakenbot.util.resolveBalanceOrNull
 import com.gemini.krakenbot.util.toUsdScale
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
@@ -368,7 +369,7 @@ class OrderExecutorImpl(
             val fillConfirmed = pollFillConfirmedUsd(backend, openingUsd, projectedCash, sellOrderTxids).last()
             if (fillConfirmed > BigDecimal.ZERO) {
                 val balancePeek = peekUsdBalance(backend)
-                if (balancePeek > BigDecimal.ZERO) {
+                if (balancePeek != null) {
                     val capped = fillConfirmed.min(balancePeek)
                     if (capped < fillConfirmed) {
                         log.info(
@@ -379,7 +380,7 @@ class OrderExecutorImpl(
                     }
                     return capped
                 }
-                // No spendable balance yet: never invent cash beyond this cycle's projected sells.
+                // No spendable balance peek available due to API exception: fallback to projected cash cap
                 val cappedToProjected = fillConfirmed.min(projectedCash)
                 if (cappedToProjected < fillConfirmed) {
                     log.info(
@@ -395,14 +396,14 @@ class OrderExecutorImpl(
         return pollUsdBalanceAfterSells(backend, projectedCash).last()
     }
 
-    private suspend fun peekUsdBalance(backend: KrakenService): BigDecimal = try {
+    private suspend fun peekUsdBalance(backend: KrakenService): BigDecimal? = try {
         val balances = backend.getBalances()
-        resolveBalance(Asset.USD, balances)
+        resolveBalanceOrNull(Asset.USD, balances)
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {
         log.warn("USD balance peek after fill confirmation failed", e)
-        BigDecimal.ZERO
+        null
     }
 
     private fun pollFillConfirmedUsd(
