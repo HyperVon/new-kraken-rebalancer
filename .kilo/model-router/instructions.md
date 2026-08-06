@@ -150,6 +150,29 @@ Polling caveats:
   concurrent cold starts of `kilo run`. Retry the same command; the second run
   passes with identical routes.
 
+### While workers run: check observability, do not wait blindly
+
+An agent that launched a fan-out MUST keep polling the observability surface
+instead of sitting idle on the assumption that the run will finish:
+
+- Poll `cat ~/.cache/kilo/model-router/status.json` roughly every 60–90 seconds
+  while workers are queued/running. The file is secret-free and shows pid,
+  phase, and per-track status (`queued` → `running` → `done`/`failed`) with
+  route, exit code, and elapsed seconds. A stale `updated_at_utc` with no
+  progress across several polls is a real stall, not a slow worker.
+- Read the background-process `logs` output between polls. The `[subagents]`,
+  `[router]`, and `[quota]` phase lines identify the current network phase, so
+  a multi-minute silence is attributable to a specific endpoint instead of
+  being a mystery. TPS probes legitimately take up to ~50s per free route and
+  run serially — do not kill a run that is merely probing.
+- If a run is stuck for more than ~2–3 minutes with no new phase line, no
+  status.json transition, and no worker `kilo run` process on the host, stop
+  the launcher and retry the same command once before investigating further —
+  cold-start races and quota-plugin timeouts resolve on retry.
+- Use the status.json transitions to decide when to stop polling: the run is
+  finished when every track is `done` or `failed` and the Route summary table
+  prints; only then collect the per-track route summary and the report path.
+
 For adversarial or second-pass review, inspect the generated route report before
 calling the result an independent-model review. A role name or Kilo Auto tier is
 not evidence of model diversity. If the actual provider/model routes are the

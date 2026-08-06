@@ -411,19 +411,25 @@ def launch_workers(prepared: Sequence[Mapping[str, Any]], max_workers: int, time
     }
     write_status(status)
     by_id = {item["track"]["id"]: item for item in prepared}
+    submitted_at: dict[str, float] = {}
     with concurrent.futures.ThreadPoolExecutor(max_workers=min(max_workers, len(prepared))) as executor:
-        futures = {executor.submit(launch_isolated, item): item["track"]["id"] for item in prepared}
-        results: list[dict[str, Any]] = []
-        for future in concurrent.futures.as_completed(futures):
-            track_id = futures[future]
+        futures: dict[concurrent.futures.Future[dict[str, Any]], str] = {}
+        for item in prepared:
+            track_id = item["track"]["id"]
+            futures[executor.submit(launch_isolated, item)] = track_id
+            submitted_at[track_id] = time.monotonic()
             _log(f"worker {track_id}: running via {by_id[track_id]['selection']['route']}")
             for row in status["tracks"]:
                 if row["track"] == track_id:
                     row["status"] = "running"
                     write_status(status)
-            started = time.monotonic()
+        status["phase"] = "running"
+        write_status(status)
+        results: list[dict[str, Any]] = []
+        for future in concurrent.futures.as_completed(futures):
+            track_id = futures[future]
             result = future.result()
-            elapsed = time.monotonic() - started
+            elapsed = time.monotonic() - submitted_at[track_id]
             _log(f"worker {track_id}: finished exit_code={result['exit_code']} in {elapsed:.1f}s")
             for row in status["tracks"]:
                 if row["track"] == track_id:
