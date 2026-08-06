@@ -155,6 +155,7 @@ class TradeHistoryReconstructionService(
             try {
                 portfolioStatsRepository?.load()?.allTimeHigh ?: BigDecimal.ZERO
             } catch (e: Exception) {
+                log.warn("Failed to load allTimeHigh for snapshot reconstruction; defaulting to zero ATH", e)
                 BigDecimal.ZERO
             }
 

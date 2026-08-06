@@ -77,6 +77,7 @@ val coreModule =
                 krakenService = get(),
                 configService = get(),
                 objectMapper = get(),
+                portfolioStatsRepository = get(),
             )
         }
         single {

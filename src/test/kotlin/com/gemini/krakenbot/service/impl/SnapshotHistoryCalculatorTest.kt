@@ -21,6 +21,16 @@ class SnapshotHistoryCalculatorTest : StringSpec() {
 
     override fun isolationMode() = IsolationMode.InstancePerTest
 
+    private val defaultSettings =
+        com.gemini.krakenbot.config.Settings(
+            loopDelaySeconds = 60,
+            deviationTriggerPercent = 5.0,
+            dustThresholdUSD = 5.0,
+            dryRun = true,
+            fiatMaxDrawdown = 50.0,
+            fiatDeploymentExponent = 1.0,
+        )
+
     init {
         "buildTimelineEvents should generate trade and daily close events sorted descending" {
             val now = Instant.now()
@@ -82,6 +92,7 @@ class SnapshotHistoryCalculatorTest : StringSpec() {
                 currentPrices = currentPrices,
                 ohlcData = emptyMap(),
                 tradePrices = emptyMap(),
+                settings = defaultSettings,
             )
 
             snapshots.shouldNotBeEmpty()
@@ -133,6 +144,7 @@ class SnapshotHistoryCalculatorTest : StringSpec() {
                 currentPrices = currentPrices,
                 ohlcData = emptyMap(),
                 tradePrices = emptyMap(),
+                settings = defaultSettings,
             )
 
             runningBalances["BTC"]!!.shouldBeEqualComparingTo(BigDecimal("0.4"))
@@ -181,6 +193,7 @@ class SnapshotHistoryCalculatorTest : StringSpec() {
                 currentPrices = currentPrices,
                 ohlcData = emptyMap(),
                 tradePrices = emptyMap(),
+                settings = defaultSettings,
             )
 
             // After reverse-applying the SELL: BTC += 0.1, USD -= 5000 + fee returned
@@ -241,6 +254,7 @@ class SnapshotHistoryCalculatorTest : StringSpec() {
                     currentPrices = currentPrices,
                     ohlcData = ohlcData,
                     tradePrices = emptyMap(),
+                    settings = defaultSettings,
                 )
 
             val tradeSnapshot = snapshots.first { it.timestamp == tradeTime }
@@ -277,6 +291,7 @@ class SnapshotHistoryCalculatorTest : StringSpec() {
                 currentPrices = prices,
                 ohlcData = emptyMap(),
                 tradePrices = emptyMap(),
+                settings = defaultSettings,
             ).first()
 
             snapshot.totalValueUSD.shouldBeEqualComparingTo(BigDecimal("3.02"))
@@ -336,6 +351,7 @@ class SnapshotHistoryCalculatorTest : StringSpec() {
                     currentPrices = currentPrices,
                     ohlcData = ohlcData,
                     tradePrices = emptyMap(),
+                    settings = defaultSettings,
                 )
 
             val tradeSnapshot = snapshots.first { it.timestamp == tradeTime }
@@ -370,6 +386,7 @@ class SnapshotHistoryCalculatorTest : StringSpec() {
                     currentPrices = currentPrices,
                     ohlcData = emptyMap(),
                     tradePrices = emptyMap(),
+                    settings = defaultSettings,
                 )
 
             snapshots.shouldNotBeEmpty()
@@ -418,6 +435,7 @@ class SnapshotHistoryCalculatorTest : StringSpec() {
                     currentPrices = currentPrices,
                     ohlcData = emptyMap(),
                     tradePrices = emptyMap(),
+                    settings = defaultSettings,
                 )
             }
 
@@ -500,6 +518,7 @@ class SnapshotHistoryCalculatorTest : StringSpec() {
                     currentPrices = currentPrices,
                     ohlcData = emptyMap(),
                     tradePrices = emptyMap(),
+                    settings = defaultSettings,
                 )
 
             snapshots.shouldNotBeEmpty()

@@ -123,10 +123,12 @@ object RebalancerEngine {
         val baseUsdTarget = allocations
             .filter { it.symbol.isUsd }
             .sumOf { it.targetPercent.toBigDecimal() }
+        val hasUsdTarget = baseUsdTarget > BigDecimal.ZERO
         val hasNonUsdTarget = allocations.any { !it.symbol.isUsd && it.targetPercent > 0.0 }
 
-        // Shrink configured USD target only when a positive crypto target can receive the freed allocation.
-        return if (fiatDeploymentPct > BigDecimal.ZERO && hasNonUsdTarget) {
+        // Shrink configured USD target only when there is a non-zero USD allocation
+        // and a positive crypto target can receive the freed allocation.
+        return if (fiatDeploymentPct > BigDecimal.ZERO && hasUsdTarget && hasNonUsdTarget) {
             val factor =
                 BigDecimal.ONE.subtract(
                     fiatDeploymentPct.divide(

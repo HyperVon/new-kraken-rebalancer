@@ -154,7 +154,7 @@ class TradeHistoryRangeAndEdgeCasesTest : TradeHistoryServiceTestBase() {
             }
         }
 
-        "init_InSimulationMode_SeedsWithoutUsdAllocationUsesDefaultTarget" {
+        "init_InSimulationMode_SeedsWithoutUsdAllocationHasZeroEffectiveUsdTarget" {
             runTest {
                 val appConfig = AppConfig(
                     kraken = KrakenCredentials(

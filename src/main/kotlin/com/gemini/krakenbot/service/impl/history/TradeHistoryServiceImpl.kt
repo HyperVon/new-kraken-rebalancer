@@ -40,6 +40,7 @@ class TradeHistoryServiceImpl(
             krakenService = krakenService,
             configService = configService,
             objectMapper = objectMapper,
+            portfolioStatsRepository = portfolioStatsRepository,
             tradeHistoryFilePath = tradeHistoryFilePath,
         ),
         queryService =
