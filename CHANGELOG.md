@@ -8,6 +8,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [6.16.19] - 2026-08-06
 
+### Changed
+
+- **Routed Subagent Launcher Docs & Worker Time Hygiene**: `.kilo/model-router/instructions.md` and `.agents/skills/adversarial-pr-review/SKILL.md` now treat the routed-launcher handoff for Kilo CLI sessions as mandatory, and document how to launch `route-subagents` from a Kilo session (background-process quoting workaround via a launcher script, block-buffered stdout polling, and cold-start retry guidance). Routed worker prompts now embed the launch timestamp and instruct workers to run `date` instead of estimating the current time from training knowledge.
+
 ### Fixed
 
 - **Historical Snapshot Review Follow-ups**: Hardened the effective USD target math introduced in `6.16.18` for historical snapshots. `TradeHistorySnapshotStore` now seeds the reconstructed ATH grid from the persisted all-time high (via `PortfolioStatsRepository`) instead of restarting from zero, `SnapshotHistoryCalculator` requires a non-null `Settings` (removing a silent zero-default footgun), the seed grid without a USD allocation carries a zero effective USD target, and `RebalancerEngine.calculateEffectiveUsdTarget` only shrinks when both a non-zero USD target and a non-USD target exist. A failed ATH load during seeding or reconstruction is now logged as a warning rather than silently defaulting.

@@ -32,32 +32,63 @@ manifest:
 
 ## Launch Contract
 
+**MUST — no exceptions.** For every Kilo CLI session that needs to fan out
+parallel read-only discovery or review tracks, you MUST invoke the
+`.kilo/model-router/route-subagents` script with a `--workflow` preset and
+`--run`. You MUST NOT use the native `Task` / `task` tool as a substitute for
+the routed launcher, and you MUST NOT call `ctx_batch_execute`, `ctx_execute`,
+or any in-process parallel scan instead of the script. A role label or Kilo Auto
+tier does not select a provider/model route; only the script's exact-route
+selection satisfies the model-selection gate.
+
 When a named workflow reaches its parallel-discovery step:
 
-For Kilo broad workflows, this handoff is mandatory: invoke the matching
-`route-subagents --workflow ... --run` preset before doing the broad discovery
-in the parent. Do not replace it with a parent-only `ctx_batch_execute` scan or
-an unverified role-only worker. Context Mode remains useful inside a bounded
-track or for parent-owned follow-up, but it does not replace routed fan-out.
+1. Invoke the matching `route-subagents --workflow <preset> --task "<request>" --run`
+   before doing the broad discovery in the parent.
+2. Do NOT replace the script with a parent-only `ctx_batch_execute` scan or an
+   unverified role-only worker. Context Mode remains useful inside a bounded
+   track or for parent-owned follow-up, but it does NOT replace routed fan-out.
+3. The script prints the complete route/quota plan to stdout BEFORE launching
+   any workers. Inspect that plan. Only then do workers start (because `--run`
+   is passed).
+4. Independent tracks MUST launch concurrently. The script uses a single
+   `ThreadPoolExecutor`; do NOT spawn one worker in the foreground and wait
+   before starting the next.
+5. The script copies each read-only worker into a temporary repository copy
+   with a `.gitignore`'d ignore filter (`.git`, `.gradle`, `build/`,
+   `rebalancer-config.json`, `*.db`, `.env*`, etc.), so a worker that ignores
+   its prompt cannot modify the parent worktree.
+6. Keep `--allow-edits` off for all standard read-only discovery. Only a custom
+   manifest with explicitly owned writable paths may set it.
+7. After the workers finish, the script writes a secret-free Markdown + JSON
+   route report and prints a compact `Route summary` table. The parent session
+   MUST relay that per-track route summary (track, status, route chain, profile,
+   billing, duration) into the conversation.
+8. For `adversarial-pr-review`, keep plan-only mode (omit `--run`) ONLY when a
+   separate human route decision is explicitly required. The user's request to
+   run the adversarial review authorizes the `--run` gate.
+9. When the user explicitly asks for a different model or delegation, stop
+   parent implementation and perform the exact-route handoff first via the
+   script. Do NOT claim that a role-only Task call changed the model.
 
-1. Decompose only the independent read-only discovery tracks required by the
-   workflow. The preset supplies bounded scopes and specialized agent roles.
-2. Plan routes and quota with the parent request as task context:
+10. Decompose only the independent read-only discovery tracks required by the
+    workflow. The preset supplies bounded scopes and specialized agent roles.
+11. Plan routes and quota with the parent request as task context:
 
-   ```bash
-   ./.kilo/model-router/route-subagents \
-      --workflow <preset> \
-      --task "<the user's workflow request>" \
-      --run
-   ```
+    ```bash
+    ./.kilo/model-router/route-subagents \
+       --workflow <preset> \
+       --task "<the user's workflow request>" \
+       --run
+    ```
 
-3. The command prints the complete route/quota plan before launching. The user's
-   request to run the named read-only workflow authorizes this bounded discovery
-   fan-out; do not ask the user to hand-edit a manifest. Omit `--run` only when
-   the workflow explicitly requires a separate human route decision. Keep
-   `adversarial-pr-review` in plan-only mode until its review-specific approval
-   gate is satisfied.
-4. Keep implementation, edits, backlog integration, Gradle, browser tests, and
+12. The command prints the complete route/quota plan before launching. The user's
+    request to run the named read-only workflow authorizes this bounded discovery
+    fan-out; do not ask the user to hand-edit a manifest. Omit `--run` only when
+    the workflow explicitly requires a separate human route decision. Keep
+    `adversarial-pr-review` in plan-only mode until its review-specific approval
+    gate is satisfied.
+13. Keep implementation, edits, backlog integration, Gradle, browser tests, and
     final verification in the parent unless the workflow explicitly says
     otherwise. Never use `--allow-edits` for standard discovery.
 
@@ -67,6 +98,44 @@ poll its status/logs; do not run one worker in the foreground and wait before
 starting the next. If using a host Task equivalent instead, submit all
 independent calls in one parallel tool message. Never describe sequential
 foreground launches as fan-out.
+
+### Launching from a Kilo session (background process)
+
+Kilo background-process and shell wrappers re-evaluate commands through zsh,
+so inline quoting is fragile: commands containing `$(...)`, single quotes, or
+long `--task` strings can fail with `parse error near ()` before the launcher
+runs. Do not fight the wrapper — put the invocation in a small shell script and
+run that script instead.
+
+1. Write the full task text to a temp file with the Write tool (for example
+   `$TMPDIR/routed-task.txt`). A file keeps the `--task` string out of every
+   shell parse.
+2. Write a launcher script with the Write tool, then start it with the
+   background-process tool as `bash /path/to/launcher.sh` — no inline special
+   characters:
+
+   ```bash
+   #!/usr/bin/env bash
+   set -euo pipefail
+   TASK_TEXT="$(cat "$TMPDIR/routed-task.txt")"
+   exec ./.kilo/model-router/route-subagents \
+     --workflow adversarial-pr-review \
+     --task "$TASK_TEXT" \
+     --run
+   ```
+
+3. The script prints the route/quota plan before workers start and the Route
+   summary table plus report path when they finish.
+
+Polling caveats:
+
+- The launcher's Python stdout is block-buffered when piped, so `logs` shows
+  nothing until exit. Check progress with `ps` (workers appear as
+  `kilo run --dir .../kilo-routed-*/repository --model <route>`) or by listing
+  the report directory.
+- A track can fail fast (exit 1 in under a second, `failure_kind: null`) on
+  concurrent cold starts of `kilo run`. Retry the same command; the second run
+  passes with identical routes.
 
 For adversarial or second-pass review, inspect the generated route report before
 calling the result an independent-model review. A role name or Kilo Auto tier is

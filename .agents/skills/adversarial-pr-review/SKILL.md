@@ -94,16 +94,27 @@ several small, independently useful reports:
 
 ## Agent selection and launch
 
-Before launching any material or parallel review track, complete the native
-model-selection gate. The selected host route and any separately configurable
-effort must be exposed to the parent. State the route and effort plan to the
-user and obtain explicit approval before the first Task call. A Kilo Auto tier
-is a valid route, but Kilo's underlying model is server-selected and must not be
-claimed without host evidence. If the host cannot expose a usable route, stop
-the fan-out and keep the review parent-owned; file disjointness is not permission
-to bypass this gate. Choose the least expensive capable tier, escalating only
-for high-risk financial, security, persistence, or disputed reasoning. Model
-diversity is useful, but scope diversity is mandatory.
+**MUST — no exceptions.** For every Kilo CLI session, you MUST invoke the
+`.kilo/model-router/route-subagents` script with `--workflow adversarial-pr-review --run`
+to launch independent review tracks. You MUST NOT use the native `Task` / `task`
+tool, `ctx_batch_execute`, `ctx_execute`, or any in-process parallel scan as a
+substitute for the routed launcher. A role label (e.g. `adversarial-reviewer-a`)
+or a Kilo Auto tier does not select a provider/model route; only the script's
+exact-route selection satisfies the model-selection gate.
+
+For `adversarial-pr-review`, the approval gate is the user's explicit request
+to run an adversarial/multi-agent PR review. That request authorizes `--run`
+immediately; you do NOT need to ask for additional permission. Omit `--run`
+only when the workflow explicitly requires a separate human route decision
+that the user has not yet provided.
+
+For Kilo CLI sessions this handoff is **mandatory**: launch the independent
+tracks through the `adversarial-pr-review` preset in
+`.kilo/model-router/route-subagents` (with `--run` after the exact-route gate
+passes) per `.kilo/model-router/instructions.md`. Do not substitute raw
+role-only `Task` calls for the preset — a role label does not select a
+provider/model route. Include the track matrix in the parent task so agents do
+not redo one another's work.
 
 `subagent_type` and other agent-role labels identify a capability or harness
 role, not a model or effort level from their names alone. A profile is route
@@ -135,8 +146,12 @@ authorize a material or parallel launch when route selection is unavailable.
 | Strong reasoning | High-risk safety, persistence, exchange semantics, or disputed finding | `adversarial-reviewer-b` when available |
 | Generic capable | Only when no closer specialized type is available | `general` / host equivalent |
 
-When running under Google Antigravity (AGY), launch reviewer tracks natively using built-in `invoke_subagent` tool calls; do NOT execute `.kilo/model-router/route-subagents` or `subagents.py` scripts. For Kilo CLI sessions this handoff is **mandatory**: launch the independent tracks through the `adversarial-pr-review` preset in `.kilo/model-router/route-subagents` (with `--run` after the exact-route gate passes) per `.kilo/model-router/instructions.md`. Do not substitute raw role-only `Task` calls for the preset — a role label does not select a provider/model route. Include the track matrix in the parent task so
-agents do not redo one another's work. A prompt must contain:
+When running under Google Antigravity (AGY), launch reviewer tracks natively
+using built-in `invoke_subagent` tool calls; do NOT execute
+`.kilo/model-router/route-subagents` or `subagents.py` scripts. For other
+non-Kilo, non-AGY hosts, use the host's native parallel task delegation. Include
+the track matrix in the parent task so agents do not redo one another's work.
+A prompt must contain:
 
 1. Absolute repository path, branch, and base.
 2. The single track question and exact allowed paths or hunks.
