@@ -35,16 +35,17 @@
       "click_button": "30d",
       "await_text": [
         "Total Trades",
-        "Rebalancer vs Buy & Hold"
+        "Rebalancer vs Buy & Hold",
+        "Staking Rewards"
       ],
-      "await_charts": 5,
+      "await_charts": 6,
       "position": "top"
     },
     {
       "file": "history-portfolio-charts.png",
       "path": "/history",
       "click_button": "30d",
-      "await_charts": 5,
+      "await_charts": 6,
       "anchor": "Portfolio Value Over Time",
       "await_text": ["Asset Holdings Over Time"]
     },
@@ -52,7 +53,7 @@
       "file": "history-charts.png",
       "path": "/history",
       "click_button": "30d",
-      "await_charts": 5,
+      "await_charts": 6,
       "anchor": "Allocation Deviation from Target",
       "await_text": ["Cumulative Net Cash Flow"],
       "ensure_visible": "Dry-run rows use estimated fees",
@@ -62,7 +63,7 @@
       "file": "history-bottom.png",
       "path": "/history",
       "click_button": "30d",
-      "await_charts": 5,
+      "await_charts": 6,
       "anchor": "Trade History"
     }
   ]

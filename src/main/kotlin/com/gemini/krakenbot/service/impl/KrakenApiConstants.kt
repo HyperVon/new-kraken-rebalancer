@@ -9,10 +9,14 @@ object KrakenApiConstants {
     const val PATH_TICKER = "/$API_VERSION/public/Ticker"
     const val PATH_ADD_ORDER = "/$API_VERSION/private/AddOrder"
     const val PATH_TRADES_HISTORY = "/$API_VERSION/private/TradesHistory"
+    const val PATH_LEDGERS = "/$API_VERSION/private/Ledgers"
     const val PATH_OHLC = "/$API_VERSION/public/OHLC"
 
     /** Maximum number of records returned by one Kraken TradesHistory page. */
     const val TRADE_HISTORY_PAGE_SIZE = 50
+
+    /** Maximum number of records returned by one Kraken Ledgers page. */
+    const val LEDGER_PAGE_SIZE = 50
 
     const val HEADER_API_KEY = "API-Key"
     const val HEADER_API_SIGN = "API-Sign"
@@ -35,6 +39,13 @@ object KrakenApiConstants {
     const val FIELD_ERROR = "error"
     const val FIELD_COUNT = "count"
     const val FIELD_TRADES = "trades"
+    const val FIELD_LEDGERS = "ledger"
+    const val FIELD_REFID = "refid"
+    const val FIELD_ACLASS = "aclass"
+    const val FIELD_ASSET = "asset"
+    const val FIELD_AMOUNT = "amount"
+    const val FIELD_BALANCE = "balance"
+    const val FIELD_SUBTYPE = "subtype"
     const val FIELD_PAIR = "pair"
     const val FIELD_TYPE = "type"
     const val FIELD_TIME = "time"

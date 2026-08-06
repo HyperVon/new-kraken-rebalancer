@@ -5,8 +5,10 @@ import com.fasterxml.jackson.databind.SerializationFeature
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.gemini.krakenbot.controller.DashboardController
+import com.gemini.krakenbot.repository.LedgerRepository
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.repository.TradeRepository
+import com.gemini.krakenbot.repository.impl.SqliteLedgerRepositoryImpl
 import com.gemini.krakenbot.repository.impl.SqlitePortfolioStatsRepositoryImpl
 import com.gemini.krakenbot.repository.impl.SqliteTradeRepositoryImpl
 import com.gemini.krakenbot.service.ConfigService
@@ -22,6 +24,7 @@ import com.gemini.krakenbot.service.impl.OrderExecutorImpl
 import com.gemini.krakenbot.service.impl.PortfolioAnalyzerImpl
 import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
 import com.gemini.krakenbot.service.impl.SimulatedKrakenService
+import com.gemini.krakenbot.service.impl.history.LedgersSyncService
 import com.gemini.krakenbot.service.impl.history.TradeHistoryQueryService
 import com.gemini.krakenbot.service.impl.history.TradeHistoryReconstructionService
 import com.gemini.krakenbot.service.impl.history.TradeHistoryServiceImpl
@@ -66,6 +69,7 @@ val coreModule =
 
         single<ConfigService> { ConfigServiceImpl(objectMapper = get()) }
         singleOf(::SqliteTradeRepositoryImpl) { bind<TradeRepository>() }
+        singleOf(::SqliteLedgerRepositoryImpl) { bind<LedgerRepository>() }
         single<PortfolioStatsRepository> { SqlitePortfolioStatsRepositoryImpl(database = get(), objectMapper = get()) }
         single {
             TradeHistorySnapshotStore(
@@ -75,10 +79,24 @@ val coreModule =
                 objectMapper = get(),
             )
         }
-        single { TradeHistoryQueryService(repository = get(), portfolioStatsRepository = get()) }
+        single {
+            TradeHistoryQueryService(
+                repository = get(),
+                portfolioStatsRepository = get(),
+                ledgerRepository = get(),
+            )
+        }
+        single {
+            LedgersSyncService(
+                repository = get(),
+                krakenService = get(),
+                configService = get(),
+            )
+        }
         single {
             TradeHistoryReconstructionService(
                 repository = get(),
+                ledgerRepository = get(),
                 krakenService = get(),
                 configService = get(),
                 portfolioAnalyzer = get(),
@@ -97,6 +115,7 @@ val coreModule =
                 snapshotStore = get(),
                 queryService = get(),
                 syncService = get(),
+                ledgersSyncService = get(),
             )
         }
         // Explicit constructor call (not singleOf) so the default `RateLimiter()` is used:

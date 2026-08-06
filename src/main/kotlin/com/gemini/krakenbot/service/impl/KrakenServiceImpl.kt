@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.OrderResult
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.model.TradeSource
@@ -69,7 +70,12 @@ class KrakenServiceImpl(
     /** Total trade count from the last TradesHistory response (Kraken `count`); used for pagination. */
     private val lastFetchedCount = AtomicInteger(0)
 
+    /** Total ledger entry count from the last Ledgers response (Kraken `count`); used for pagination. */
+    private val lastLedgerCount = AtomicInteger(0)
+
     override fun getLastTradeHistoryTotalCount(): Int = lastFetchedCount.get()
+
+    override fun getLastLedgerTotalCount(): Int = lastLedgerCount.get()
 
     override suspend fun getApiCallCounter(): Double = rateLimiter.getCurrentCounter()
 
@@ -362,6 +368,105 @@ class KrakenServiceImpl(
             )
         }
         return tradesList
+    }
+
+    override suspend fun getLedgers(
+        startSec: Long?,
+        offset: Int?,
+        endSec: Long?,
+        types: Set<String>?,
+    ): List<LedgerEvent> {
+        // Re-reading the config here is safe: callers (LedgersSyncService) bracket ledger pulls
+        // in a ConfigService execution session, so getConfig() returns the session-pinned config.
+        if (!configService.getConfig().kraken.hasValidCredentials()) {
+            log.warn("Kraken API key is blank or placeholder. Skipping ledger fetch.")
+            return emptyList()
+        }
+
+        val params = mutableMapOf<String, String>()
+        if (startSec != null) {
+            params[KrakenApiConstants.PARAM_START] = startSec.toString()
+        }
+        if (endSec != null) {
+            params[KrakenApiConstants.PARAM_END] = endSec.toString()
+        }
+        if (offset != null) {
+            params[KrakenApiConstants.PARAM_OFS] = offset.toString()
+        }
+        if (types != null) {
+            // Server-side type filter: keeps the response count and pagination scoped to the
+            // requested types instead of walking the entire ledger.
+            params[KrakenApiConstants.PARAM_TYPE] = types.joinToString(",")
+        }
+
+        val result =
+            try {
+                queryPrivate(KrakenApiConstants.PATH_LEDGERS, params)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                log.error("Failed to query private Ledgers endpoint", e)
+                throw e
+            }
+
+        lastLedgerCount.set(result.path(KrakenApiConstants.FIELD_COUNT).asInt(0))
+
+        val ledgerNode = result.path(KrakenApiConstants.FIELD_LEDGERS)
+        if (!ledgerNode.isObject) {
+            return emptyList()
+        }
+
+        val ledgerList = mutableListOf<LedgerEvent>()
+        ledgerNode.properties().forEach { (ledgerId, entryNode) ->
+            val type = entryNode.path(KrakenApiConstants.FIELD_TYPE).asText()
+            // Trust-boundary guard: the server already filters by `type`, but an unexpected entry
+            // type would otherwise flow into the insert-only ledger store unfiltered.
+            if (types != null && type !in types) {
+                return@forEach
+            }
+
+            val time = entryNode.path(KrakenApiConstants.FIELD_TIME).asDouble()
+            val amountStr = entryNode.path(KrakenApiConstants.FIELD_AMOUNT).asText()
+            val balanceStr = entryNode.path(KrakenApiConstants.FIELD_BALANCE).asText()
+            val feeStr = entryNode.path(KrakenApiConstants.FIELD_FEE).asText()
+            val refidNode = entryNode.path(KrakenApiConstants.FIELD_REFID)
+            val refid =
+                if (refidNode.isMissingNode || refidNode.isNull) {
+                    null
+                } else {
+                    refidNode.asText().ifBlank { null }
+                }
+            val subtypeNode = entryNode.path(KrakenApiConstants.FIELD_SUBTYPE)
+            val subtype =
+                if (subtypeNode.isMissingNode || subtypeNode.isNull) {
+                    null
+                } else {
+                    subtypeNode.asText().ifBlank { null }
+                }
+            val aclassNode = entryNode.path(KrakenApiConstants.FIELD_ACLASS)
+            val aclass =
+                if (aclassNode.isMissingNode || aclassNode.isNull) {
+                    null
+                } else {
+                    aclassNode.asText().ifBlank { null }
+                }
+
+            ledgerList.add(
+                LedgerEvent(
+                    ledgerId = ledgerId,
+                    refid = refid,
+                    time = Instant.ofEpochMilli((time * 1000).toLong()),
+                    type = type,
+                    subtype = subtype,
+                    aclass = aclass,
+                    asset = Asset.normalizeLedgerAsset(entryNode.path(KrakenApiConstants.FIELD_ASSET).asText()),
+                    amount = safeParseBigDecimal(amountStr, PrecisionConstants.SCALE_CRYPTO),
+                    fee = safeParseBigDecimal(feeStr, PrecisionConstants.SCALE_FEE),
+                    balance = safeParseBigDecimal(balanceStr, PrecisionConstants.SCALE_CRYPTO),
+                ),
+            )
+        }
+        return ledgerList
     }
 
     override suspend fun getOHLC(pair: String, interval: Int, since: Long?): List<Pair<Long, BigDecimal>> {

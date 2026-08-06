@@ -10,6 +10,7 @@ Routes:
   API_HISTORY_STATS: "/api/history/stats"
   API_HISTORY_SYNC_PROGRESS: "/api/history/sync-progress"
   API_HISTORY_COMPARISON: "/api/history/comparison"
+  API_HISTORY_REWARDS: "/api/history/rewards"
   API_HEALTH: "/api/health"
   STATIC_STYLE_CSS: "/static/style.css"
   STATIC_REBALANCER_JS: "/static/rebalancer.js"

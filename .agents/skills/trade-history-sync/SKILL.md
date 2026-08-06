@@ -1,19 +1,21 @@
 ---
 name: trade-history-sync
 description: >-
-  Trade history sync — TradeHistorySyncService (via TradeHistoryService façade),
-  TradeDeduplicator (pair aliases, local-estimate vs API, fee diffs; 5min scan /
-  10s reconcile / 300s sync overlap), sync metadata offsets, dry-run vs live
+  Trade and ledger history sync — TradeHistorySyncService and LedgersSyncService
+  (via TradeHistoryService façade), TradeDeduplicator (pair aliases,
+  local-estimate vs API, fee diffs; 5min scan / 10s reconcile / 300s sync
+  overlap), ledger identity dedupe, sync metadata offsets, dry-run vs live
   reconcile, and simulation seed ~15 days. Use when changing history sync,
-  dedupe, or snapshot seeding.
+  ledger/rewards queries, dedupe, or snapshot seeding.
 ---
 
 # Trade History Sync
 
 Primary types: `TradeHistoryService` façade → `TradeHistorySyncService` /
-`TradeHistorySnapshotStore` / `TradeHistoryQueryService` /
-`TradeHistoryReconstructionService` under `service/impl/history/`; also
-`TradeDeduplicator`, `SnapshotHistoryCalculator`, `SqliteTradeRepositoryImpl`.
+`LedgersSyncService` / `TradeHistorySnapshotStore` /
+`TradeHistoryQueryService` / `TradeHistoryReconstructionService` under
+`service/impl/history/`; also `TradeDeduplicator`, `SnapshotHistoryCalculator`,
+`SqliteTradeRepositoryImpl`, and `SqliteLedgerRepositoryImpl`.
 
 ## Sync behavior
 
@@ -72,6 +74,25 @@ Primary types: `TradeHistoryService` façade → `TradeHistorySyncService` /
   `history_seeded`, `sync_watermark_epoch_sec` — stored in
   `history_sync_metadata`.
 
+## Ledger synchronization
+
+- `LedgersSyncService` is a separate insert-only sync for Kraken
+  `/0/private/Ledgers`; it requests only `staking` and `dividend` types.
+- It uses the same **300s** throttle, coroutine `Mutex`, credential preflight,
+  stable-backend selection, and execution-session boundary as trade sync.
+- The first pass is a full paginated seed. Numeric `ledger_offset` and
+  `ledger_total` progress markers are durable until completion; recovery
+  restarts from offset zero because newest-first pages can shift.
+- Incremental passes use `latestLedgerTime ?: ledger_watermark_epoch_sec` minus
+  **300s**, and persist `ledger_watermark_epoch_sec` after successful completion.
+- `LedgerTable` enforces unique `(ledger id, timestamp, asset, type)` identity.
+  `saveLedgers()` returns only newly inserted rows, so overlap and repeated pages
+  cannot inflate counts.
+- `TradeHistoryQueryService.getRewardsOverTime()` filters to `staking` entries,
+  accumulates amounts by asset at each portfolio snapshot, and values them with
+  that snapshot's prices. `dividend` rows remain persisted but are not included
+  in the current staking-rewards chart.
+
 ## TradeDeduplicator
 
 Window: **300_000 ms** (5 minutes).
@@ -127,3 +148,4 @@ for SSE
 - [ ] dryRun/live reconcile does not drop legitimate distinct fills
 - [ ] Reconcile preserves local `cycleId` and prefers API `orderTxid` when present
 - [ ] Unresolved submission rows are not reconciled, deduplicated, or pruned
+- [ ] Ledger sync preserves 300s overlap, durable seed progress, and identity dedupe

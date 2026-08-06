@@ -108,6 +108,9 @@ HtmlIds:
   COMPARISON_LATEST_DIFFERENCE: "comparison-latest-difference"
   COMPARISON_AVAILABILITY_MESSAGE: "comparison-availability-message"
   COMPARISON_CONFIDENCE_BADGE: "comparison-confidence-badge"
+  REWARDS_CHART: "rewards-chart"
+  REWARDS_TOTAL: "rewards-total"
+  REWARDS_CHART_CONTENT: "rewards-chart-content"
 HealthStatusKeys:
   STATUS: "status"
   STATUS_UP: "UP"

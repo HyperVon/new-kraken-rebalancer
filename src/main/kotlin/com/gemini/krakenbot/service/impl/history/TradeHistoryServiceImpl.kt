@@ -2,9 +2,12 @@ package com.gemini.krakenbot.service.impl.history
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.gemini.krakenbot.model.HistoryStats
+import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.RebalancerComparison
+import com.gemini.krakenbot.model.RewardsOverTime
 import com.gemini.krakenbot.model.TradeRecord
+import com.gemini.krakenbot.repository.LedgerRepository
 import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.repository.TradeRepository
 import com.gemini.krakenbot.service.ConfigService
@@ -18,10 +21,12 @@ class TradeHistoryServiceImpl(
     private val snapshotStore: TradeHistorySnapshotStore,
     private val queryService: TradeHistoryQueryService,
     private val syncService: TradeHistorySyncService,
+    private val ledgersSyncService: LedgersSyncService,
 ) : TradeHistoryService {
     constructor(
         repository: TradeRepository,
         portfolioStatsRepository: PortfolioStatsRepository,
+        ledgerRepository: LedgerRepository,
         krakenService: KrakenService,
         configService: ConfigService,
         objectMapper: ObjectMapper,
@@ -41,6 +46,7 @@ class TradeHistoryServiceImpl(
         TradeHistoryQueryService(
             repository = repository,
             portfolioStatsRepository = portfolioStatsRepository,
+            ledgerRepository = ledgerRepository,
         ),
         syncService =
         TradeHistorySyncService(
@@ -51,10 +57,18 @@ class TradeHistoryServiceImpl(
             reconstructionService =
             TradeHistoryReconstructionService(
                 repository = repository,
+                ledgerRepository = ledgerRepository,
                 krakenService = krakenService,
                 configService = configService,
                 portfolioAnalyzer = portfolioAnalyzer,
             ),
+        ),
+        ledgersSyncService =
+        LedgersSyncService(
+            repository = ledgerRepository,
+            krakenService = krakenService,
+            configService = configService,
+            nowProvider = syncNowProvider,
         ),
     )
 
@@ -81,12 +95,20 @@ class TradeHistoryServiceImpl(
     override suspend fun getTradesInRange(from: Instant, to: Instant): List<TradeRecord> =
         queryService.getTradesInRange(from, to)
 
+    override suspend fun getLedgersInRange(from: Instant, to: Instant): List<LedgerEvent> =
+        queryService.getLedgersInRange(from, to)
+
+    override suspend fun getRewardsOverTime(from: Instant, to: Instant): RewardsOverTime =
+        queryService.getRewardsOverTime(from, to)
+
     override suspend fun getHistoryStats(): HistoryStats = queryService.getHistoryStats()
 
     override suspend fun getHistoryStats(from: Instant, to: Instant): HistoryStats =
         queryService.getHistoryStats(from, to)
 
     override suspend fun syncTradesFromKraken() = syncService.syncTradesFromKraken()
+
+    override suspend fun syncLedgersFromKraken() = ledgersSyncService.syncLedgersFromKraken()
 
     override suspend fun getSyncMetadata(key: String): String? = syncService.getSyncMetadata(key)
 

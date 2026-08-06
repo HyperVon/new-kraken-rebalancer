@@ -79,7 +79,8 @@ when saving other settings.
 Additional precautions include:
 
 - granting only the Kraken permissions needed by the application: **Query
-  Funds**, **Query Closed Orders & Trades**, and **Create & Modify Orders**;
+  Funds**, **Query Closed Orders & Trades**, **Query Ledgers** (Kraken UI:
+  *Data - Query ledger entries*), and **Create & Modify Orders**;
 - rotating API keys periodically and immediately after suspected exposure;
 - using separate credentials for this application rather than reusing keys;
 - redacting credentials and account data from logs, screenshots, and bug reports;

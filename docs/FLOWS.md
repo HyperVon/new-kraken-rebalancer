@@ -43,6 +43,7 @@ flowchart TB
         THS["TradeHistoryServiceImpl\n(façade)"]
         Store["TradeHistorySnapshotStore\nsnapshotFlow\nMutableSharedFlow&lt;PortfolioSnapshot&gt;\nreplay=1, buffer=16, DROP_OLDEST"]
         Sync["TradeHistorySyncService\n(300s throttle + pagination)"]
+        LedgerSync["LedgersSyncService\n(300s throttle + pagination)"]
     end
 
     subgraph External["🌐 External"]
@@ -79,6 +80,13 @@ flowchart TB
     Sync -->|"COLD getTradeHistoryPaginated()\n.collect { page → }\nemit() suspends until collector ready"| Kraken
     Kraken -->|"pages of TradeRecord"| Sync
     Sync -->|"reconcile & save"| Repo
+
+    %% Paginated ledger sync (facade -> LedgerSyncService; 300s throttle inside LedgerSync)
+    PM -->|"syncLedgersFromKraken()\neach cycle"| THS
+    THS -->|"delegate"| LedgerSync
+    LedgerSync -->|"COLD getLedgersPaginated()\n.collect { page -> }"| Kraken
+    Kraken -->|"staking/dividend ledger pages"| LedgerSync
+    LedgerSync -->|"insert with identity dedupe"| Repo
 
     %% Dashboard initial load
     SSE -->|"SSE connect /api/status/stream"| DashCtrl
@@ -353,6 +361,36 @@ sequenceDiagram
 
 ---
 
+## Flow 5 - Paginated Ledger Sync (Cold Flow)
+
+**Path:** `TradeHistoryServiceImpl.syncLedgersFromKraken()` ->
+`LedgersSyncService` -> `getLedgersPaginated()` -> Kraken `/0/private/Ledgers`
+-> SQLite
+
+Ledger synchronization follows the same cold, page-by-page backpressure model as
+trade synchronization, but it has separate metadata and insert-only semantics:
+
+- `PortfolioManagerImpl` invokes it at startup and once per rebalance cycle;
+  `LedgersSyncService` skips calls made within **300 seconds** of the previous
+  completed sync.
+- The first successful pass fetches the full ledger history, records durable
+  page progress, and marks the ledger store seeded. A resumed seed restarts from
+  page zero because new rows can shift Kraken offsets.
+- Incremental passes begin from the latest stored ledger time or watermark minus
+  **300 seconds**, with a captured end time for stable newest-first pagination.
+- Each page is inserted under the unique `(ledger id, timestamp, asset, type)` key,
+  so overlap and repeated pages are harmless. Only `staking` and `dividend`
+  entries are requested.
+- Invalid live credentials skip the sync without opening an execution session;
+  a real sync brackets all pages with the same `ConfigService` execution-session
+  boundary used by trade synchronization. Simulation mode does not call Kraken.
+
+The History rewards query filters the persisted ledger range to `staking` rows,
+then aligns cumulative amounts to portfolio snapshots and values them with each
+snapshot's prices. It is a normal suspend query, not a background flow.
+
+---
+
 ## Hot vs. Cold: Why Does It Matter?
 
 The choice between hot and cold flows in this application is deliberate and maps directly to the nature of each problem:
@@ -362,4 +400,5 @@ The choice between hot and cold flows in this application is deliberate and maps
 | Config changes | **Hot** | Config exists before anyone listens. New subscribers must get the current value immediately (`replay=1`). Multiple components could theoretically watch it. |
 | Dashboard streaming | **Hot** | Snapshots are produced by the rebalancer loop independently of how many browsers are connected. Each connected browser should see the same live broadcast. |
 | Paginated API sync | **Cold** | Fetching is always triggered on-demand for a specific reason. The caller owns the full lifecycle. Backpressure is critical for memory safety with large histories. |
+| Paginated ledger sync | **Cold** | Ledger pages are fetched only during startup/cycle sync, with insert-only identity dedupe and durable seed progress. |
 | USD settle (fill / balance) | **Cold** | One-shot after sells. Fill-confirm or balance poll only makes sense in that context; the caller only needs the final settled cash. |

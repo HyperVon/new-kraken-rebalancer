@@ -1,5 +1,6 @@
 package com.gemini.krakenbot.service
 
+import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.OrderResult
 import com.gemini.krakenbot.model.TradeRecord
 import java.math.BigDecimal
@@ -36,6 +37,21 @@ interface KrakenService {
      * Used for sync progress pagination metadata without downcasting the port.
      */
     fun getLastTradeHistoryTotalCount(): Int = 0
+
+    /**
+     * Ledger entries (staking rewards, dividends) in [startSec, endSec] starting at [offset],
+     * optionally filtered to [types] (e.g. `staking`). Defaults to empty for backends
+     * without ledger support (simulation, test fakes).
+     */
+    suspend fun getLedgers(
+        startSec: Long? = null,
+        offset: Int? = null,
+        endSec: Long? = null,
+        types: Set<String>? = null,
+    ): List<LedgerEvent> = emptyList()
+
+    /** Total ledger entry count from the last [getLedgers] response (Kraken `count`). */
+    fun getLastLedgerTotalCount(): Int = 0
 
     /** Current private-API call-counter load; 0 for backends without a rate limiter. */
     suspend fun getApiCallCounter(): Double = 0.0

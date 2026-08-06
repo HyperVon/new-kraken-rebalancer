@@ -16,9 +16,9 @@ Canonical doc: [`docs/FLOWS.md`](../../../docs/FLOWS.md).
 
 | Skill | Role |
 | :--- | :--- |
-| **coroutines-flows-sse** (this) | Hot vs cold Flow, SSE path, config `collectLatest`, USD-settle **poll mechanics** |
+| **coroutines-flows-sse** (this) | Hot vs cold Flow, SSE path, config `collectLatest`, paginated sync and USD-settle **poll mechanics** |
 | [portfolio-rebalancing-math](../portfolio-rebalancing-math/SKILL.md) | Rebalance math + execution **safety invariants** (sell-first, settle policy, 99% budget) |
-| [trade-history-sync](../trade-history-sync/SKILL.md) | Sync/dedupe/seeding that feeds history used by fill-confirm |
+| [trade-history-sync](../trade-history-sync/SKILL.md) | Trade/ledger sync, dedupe/seeding, and rewards queries |
 | [frontend-js-development](../frontend-js-development/SKILL.md) | Stream-chip age / chart rebind after HTMX SSE fragment swaps — **not** `EventSource` |
 | [koin-di-and-config](../koin-di-and-config/SKILL.md) | ConfigService / Settings persistence (not Flow restart semantics) |
 
@@ -27,7 +27,7 @@ Canonical doc: [`docs/FLOWS.md`](../../../docs/FLOWS.md).
 | | Cold `Flow` | Hot `SharedFlow` |
 | :--- | :--- | :--- |
 | Starts | On collect | Independent of collectors |
-| Use here | Paginated trade sync, USD poll | Config changes, snapshot broadcast |
+| Use here | Paginated trade/ledger sync, USD poll | Config changes, snapshot broadcast |
 
 ## Key pipelines
 
@@ -70,6 +70,10 @@ section owns the **cold Flow poll implementation**.
   `getTradeHistoryPaginated()`; invoked from the façade
   `syncTradesFromKraken()`). One coroutine `Mutex` spans the throttle check and
   pagination so concurrent top-level sync callers cannot overlap.
+- `LedgersSyncService` paginated Kraken ledger fetch (private cold
+  `getLedgersPaginated()`; invoked from `syncLedgersFromKraken()`). It uses the
+  same 300s throttle/session boundary, but inserts pages under a unique ledger
+  identity and persists separate seed progress and watermark metadata.
 - `settleUsdAfterSells()` — only when **≥1 sell succeeded** and **not** dry-run:
   - **Primary:** `pollFillConfirmedUsd()` → `sumMatchedSellProceeds()` (history
     matched by sell `orderTxid`, **net of fee**, up to 5×50 pages) → balance peek
@@ -117,3 +121,5 @@ Fill-confirm poll constants (`pollFillConfirmedUsd` / `sumMatchedSellProceeds`):
 - [ ] Active execution sessions defer config-flow publication until cycle/sync exit
 - [ ] SSE endpoint remains `/api/status/stream`
 - [ ] Flow tests use `runTest` + `advanceUntilIdle`
+- [ ] Ledger pagination remains cold, mutex-protected, overlap-safe, and
+      cancellation-aware

@@ -393,12 +393,15 @@ options that are all likely to succeed.
 
 ## 9. LSP servers
 
-LSP is enabled (`"lsp": true` in `.kilo/kilo.json`) so language-server
-diagnostics feed back when files are read. Servers auto-start on matching
-extensions and auto-install when the toolchain is present; set
-`KILO_DISABLE_LSP_DOWNLOAD=1` to stop auto-installs. Diagnostics add context
-to every file read — if a session gets context-heavy, prefer targeted
-`make`/test/lint runs for feedback instead.
+LSP is disabled by default in this repository (`.kilo/kilo.json` sets
+`"lsp": false`). The Kotlin LSP index goes stale between Gradle builds —
+heavy KSP/codegen catalogs (AppConfig, generated sync-metadata keys) show
+up as spurious unresolved references after model changes, so diagnostics
+are more noise than signal here. Rely on the Gradle gates
+(`./gradlew build jacocoTestCoverageVerification`, `spotlessCheck`) for
+authoritative feedback; set `KILO_DISABLE_LSP_DOWNLOAD=1` to stop
+auto-installs, and flip `"lsp"` back to `true` only if a session genuinely
+benefits from read-time diagnostics.
 
 ---
 

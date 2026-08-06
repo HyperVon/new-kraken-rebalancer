@@ -21,10 +21,21 @@ Items evaluated and deliberately not pursued (never actioned; the recorded reaso
 | :--- | :---: | :--- | :--- | :--- | :---: | :--- |
 | CI-22-Q06 | S | dropped | frontend | Replace wildcard `org.w3c.dom.*` imports in frontend-js main/test (17 files) | 22 | ktlint `no-wildcard-imports` rule disabled (build.gradle.kts:17) → not enforced, low-value churn |
 
+## Open
+
+No open items — every CI-23 item shipped in PR #193.
+
 ## Done (recent)
 
 | ID | Size | Status | Area | Summary | Cycle | PR |
 | :--- | :---: | :--- | :--- | :--- | :---: | :--- |
+| CI-23-L01 | M | done | history | Wire `pruneLedgersOlderThan` into a ledger retention policy mirroring the trade prune — `LedgersSyncService.finalizeSync` now prunes ledger entries older than `HISTORICAL_DAYS_BACK` (90 days) after each completed sync | 23 | 193 |
+| CI-23-L02 | M | done | ledger | Normalize Kraken Earn-migration asset suffixes (`.S`/`.M`/`.F`/`.B`, e.g. `DOT.S`) and legacy `X`/`Z` codes (`XXBT`, `ZUSD`) to the base symbol via new `Asset.normalizeLedgerAsset`, applied in `KrakenServiceImpl.getLedgers` | 23 | 193 |
+| CI-23-L03 | S | done | history | Rewards silently skip assets missing from the snapshot universe/prices — rewards caption now states assets without a snapshot price in the range are excluded | 23 | 193 |
+| CI-23-L04 | S | done | kraken | Pass the pinned config into `KrakenServiceImpl.getLedgers` — resolved by documenting the execution-session invariant: `ConfigServiceImpl` sessions pin `getConfig()`, so the re-read is safe (matches `getTradeHistory` convention); no interface churn | 23 | 193 |
+| CI-23-L05 | S | done | docs | Permission naming: SECURITY.md now dual-cites "Query Ledgers (Kraken UI: *Data - Query ledger entries*)" | 23 | 193 |
+| CI-23-L06 | S | done | history | `TradeHistoryQueryService.getRewardsOverTime` cumulative loop O(n·m) — replaced with a single pointer walk over time-sorted staking events (O(n+m)) | 23 | 193 |
+| CI-23-L07 | S | done | history | Dividend ledger entries — user decision: keep persisting them, exclude from rewards chart/comparison math, and document as external USD-equivalent inflows (Kraken 'dividend' type = staking-reward payouts for assets like DOT outside the tracked universe); documented in `LedgerEvent` KDoc + README | 23 | 193 |
 | CI-22-Q11 | M | done | config | ConfigServiceImpl fail-loudly on unknown JSON fields — decision: keep default (Jackson `FAIL_ON_UNKNOWN_PROPERTIES=true` throws `UnrecognizedPropertyException` at `ConfigServiceImpl.parseConfig`); no code change | 22 | — |
 | CI-22-Q14 | S | done | code | Remove dead `Icons.BACK_ARROW` and its `icons/back_arrow.svg` asset | 22 | — |
 | CI-22-Q05 | M | done | tests | Direct `HistoryChartStateTest.kt` unit tests for `historyCurrentRange` / `historyCaptureVisibility` / `historyRollbackPresetVisibility` (DOM + mock Chart.js harness) | 22 | — |

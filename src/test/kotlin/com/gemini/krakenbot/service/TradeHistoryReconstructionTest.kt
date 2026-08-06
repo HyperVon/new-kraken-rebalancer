@@ -7,6 +7,7 @@ import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.repository.TradeSummaryStats
 import com.gemini.krakenbot.service.impl.history.TradeHistoryReconstructionService
@@ -130,6 +131,102 @@ class TradeHistoryReconstructionTest : TradeHistoryServiceTestBase() {
             }
         }
 
+        "reconstructHistoricalSnapshots_AppliesStakingRewardsFromLedgers" {
+            runTest {
+                val service = createService()
+
+                val appConfig = AppConfig(
+                    kraken =
+                    KrakenCredentials(
+                        TestFixtures.TRADE_HISTORY_API_KEY,
+                        TestFixtures.TRADE_HISTORY_API_SECRET,
+                    ),
+                    settings = TestFixtures.settings(
+                        loopDelaySeconds = 60,
+                        deviationTriggerPercent = 5.0,
+                        dustThresholdUSD = 5.0,
+                    ),
+                    allocations = listOf(
+                        Allocation(Asset.BTC, 50.0),
+                        Allocation(TestFixtures.USD, 50.0),
+                    ),
+                )
+                every { configService.getConfig() } returns appConfig
+
+                coEvery { repository.isHistorySeeded() } returns false
+                coEvery { repository.getLatestTradeTime() } returns null
+                coEvery { repository.getSyncMetadata(any()) } returns null
+
+                val existingSnapshot = PortfolioSnapshot(
+                    timestamp = Instant.now().minus(5, ChronoUnit.DAYS),
+                    totalValueUSD = BigDecimal("10000.00"),
+                    assets = mapOf(
+                        Asset.BTC to TestFixtures.assetSnapshot(
+                            symbol = Asset.BTC,
+                            balance = BigDecimal("0.2"),
+                            price = BigDecimal("25000.00"),
+                            valueUSD = BigDecimal("5000.00"),
+                            targetPercent = BigDecimal("50.00"),
+                        ),
+                        TestFixtures.USD to TestFixtures.assetSnapshot(
+                            symbol = TestFixtures.USD,
+                            balance = BigDecimal("5000.00"),
+                            price = BigDecimal.ONE,
+                            valueUSD = BigDecimal("5000.00"),
+                            targetPercent = BigDecimal("50.00"),
+                        ),
+                    ),
+                    actions = emptyList(),
+                    drawdownPercent = BigDecimal.ZERO,
+                    fiatDeploymentPercent = BigDecimal.ZERO,
+                    effectiveUsdTargetPercent = BigDecimal.ZERO,
+                )
+                coEvery { repository.load() } returns listOf(existingSnapshot)
+                coEvery { repository.getTradeSummaryStats() } returns TradeSummaryStats(
+                    totalTradesExecuted = 1L,
+                    totalVolumeTraded = BigDecimal.ZERO,
+                    totalFeesPaid = BigDecimal.ZERO,
+                    latestSnapshotTime = null,
+                )
+
+                val apiTrade = TestFixtures.tradeRecord(
+                    timestamp = Instant.now().minus(6, ChronoUnit.DAYS),
+                    pair = TestFixtures.BTCUSD,
+                    side = TestFixtures.BUY,
+                    symbol = Asset.BTC,
+                    volume = BigDecimal("0.1"),
+                    usdAmount = BigDecimal("2500.00"),
+                    price = BigDecimal("25000.00"),
+                    fee = BigDecimal("5.00"),
+                )
+
+                coEvery { krakenService.getTradeHistory(any(), 0) } returns listOf(apiTrade)
+                coEvery { krakenService.getTradeHistory(any(), 50) } returns emptyList()
+                coEvery { repository.getTradesInRange(any(), any()) } returns listOf(apiTrade)
+                coEvery { repository.saveTrade(any()) } returns 1
+                coEvery { repository.updateTrade(any(), any()) } just Runs
+                coEvery { repository.setHistorySeeded(true) } just Runs
+                coEvery { repository.setSyncMetadata(any(), any()) } just Runs
+
+                coEvery { krakenService.getOHLC(TestFixtures.BTCUSD, 1440, any()) } returns emptyList()
+                coEvery { repository.save(any()) } just Runs
+
+                val stakingEvent = LedgerEvent(
+                    ledgerId = "L1",
+                    time = Instant.now().minus(4, ChronoUnit.DAYS),
+                    type = LedgerEvent.TYPE_STAKING,
+                    asset = "BTC",
+                    amount = BigDecimal("0.05"),
+                )
+                coEvery { ledgerRepository.getLedgersInRange(any(), any()) } returns listOf(stakingEvent)
+
+                service.syncTradesFromKraken()
+
+                coVerify(atLeast = 1) { ledgerRepository.getLedgersInRange(any(), any()) }
+                coVerify(atLeast = 1) { repository.save(any()) }
+            }
+        }
+
         "reconstructHistoricalSnapshots_FallbackMappingsAndExceptions" {
             runTest {
                 val appConfig = AppConfig(
@@ -238,6 +335,7 @@ class TradeHistoryReconstructionTest : TradeHistoryServiceTestBase() {
 
                 val reconstructionService = TradeHistoryReconstructionService(
                     repository = repository,
+                    ledgerRepository = ledgerRepository,
                     krakenService = krakenService,
                     configService = configService,
                     portfolioAnalyzer = portfolioAnalyzer,
@@ -305,6 +403,7 @@ class TradeHistoryReconstructionTest : TradeHistoryServiceTestBase() {
 
                     val reconstructionService = TradeHistoryReconstructionService(
                         repository = repository,
+                        ledgerRepository = ledgerRepository,
                         krakenService = krakenService,
                         configService = configService,
                         portfolioAnalyzer = portfolioAnalyzer,
@@ -370,6 +469,7 @@ class TradeHistoryReconstructionTest : TradeHistoryServiceTestBase() {
 
                     val reconstructionService = TradeHistoryReconstructionService(
                         repository = repository,
+                        ledgerRepository = ledgerRepository,
                         krakenService = krakenService,
                         configService = configService,
                         portfolioAnalyzer = portfolioAnalyzer,

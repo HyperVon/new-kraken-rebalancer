@@ -141,6 +141,14 @@ class PortfolioManagerImpl(
         } catch (e: Exception) {
             log.error("Failed to synchronize historical trades on startup", e)
         }
+        try {
+            log.info("Checking and performing ledger entry synchronization from Kraken API...")
+            tradeHistoryService.syncLedgersFromKraken()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            log.error("Failed to synchronize ledger entries on startup", e)
+        }
 
         try {
             // Hot SharedFlow + collectLatest: config changes restart an idle delay immediately.
@@ -158,6 +166,13 @@ class PortfolioManagerImpl(
                             throw e
                         } catch (e: Exception) {
                             log.error("Failed to synchronize historical trades during cycle", e)
+                        }
+                        try {
+                            tradeHistoryService.syncLedgersFromKraken()
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            log.error("Failed to synchronize ledger entries during cycle", e)
                         }
                         performRebalanceCycle()
                     } catch (e: CancellationException) {

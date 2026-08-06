@@ -128,5 +128,34 @@ value class Asset(val value: String) {
                 "X$krakenTicker",
             ).distinct()
         }
+
+        /** Assets the application can track; ledger entries for anything else are stored raw. */
+        private val KNOWN_LEDGER_ASSETS =
+            setOf(USD, BTC, ETH, DOGE, SOL, USDT, USDC, ADA, XRP, DOT, LINK, LTC, XBT, XDG)
+
+        /**
+         * Earn-migration suffixes: Kraken balances/ledger entries use e.g. `DOT.S`, `USDT.F` for
+         * read-only yield-bearing assets; the base asset remains the transactable one.
+         */
+        private val EARN_ASSET_SUFFIXES = listOf(".S", ".M", ".F", ".B")
+
+        /**
+         * Normalize a Kraken Ledgers asset code to the application symbol: strips Earn-migration
+         * suffixes (`DOT.S` → `DOT`) and legacy X/Z prefixes (`XXBT` → `BTC`, `ZUSD` → `USD`).
+         * Unknown or foreign assets (e.g. `ZGBP`) pass through unchanged so they are never
+         * mis-attributed to a tracked symbol.
+         */
+        fun normalizeLedgerAsset(asset: String): String {
+            val upper = asset.uppercase()
+            EARN_ASSET_SUFFIXES.firstOrNull(upper::endsWith)?.let { suffix ->
+                val base = upper.removeSuffix(suffix)
+                if (base in KNOWN_LEDGER_ASSETS) return canonicalSymbol(base)
+            }
+            if (upper.length > 1 && (upper[0] == 'X' || upper[0] == 'Z')) {
+                val stripped = upper.substring(1)
+                if (stripped in KNOWN_LEDGER_ASSETS) return canonicalSymbol(stripped)
+            }
+            return CANONICAL_SYMBOL_BY_ALIAS[upper] ?: upper
+        }
     }
 }

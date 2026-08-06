@@ -2,6 +2,7 @@ package com.gemini.krakenbot.service.impl.history
 
 import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.model.TradeRecord
@@ -32,6 +33,8 @@ object SnapshotHistoryCalculator {
 
         data class TradeEvent(override val timestamp: Instant, val trade: TradeRecord) : TimelineEvent()
 
+        data class RewardEvent(override val timestamp: Instant, val event: LedgerEvent) : TimelineEvent()
+
         data class DailyCloseEvent(override val timestamp: Instant) : TimelineEvent()
 
         // Newest first — [calculateHistoricalSnapshots] undoes trades after each snapshot.
@@ -40,12 +43,16 @@ object SnapshotHistoryCalculator {
 
     fun buildTimelineEvents(
         historicalTrades: List<TradeRecord>,
+        historicalRewards: List<LedgerEvent> = emptyList(),
         cutoffTime: Instant,
         now: Instant = Instant.now(),
     ): List<TimelineEvent> {
         val events = historicalTrades
             .map { TimelineEvent.TradeEvent(it.timestamp, it) }
             .toMutableList<TimelineEvent>()
+        events += historicalRewards
+            .filter { it.type == LedgerEvent.TYPE_STAKING }
+            .map { TimelineEvent.RewardEvent(it.time, it) }
         events += (0..PrecisionConstants.HISTORICAL_DAYS_BACK).mapNotNull { day ->
             val dailyTime =
                 now
@@ -118,6 +125,8 @@ object SnapshotHistoryCalculator {
 
             if (ev is TimelineEvent.TradeEvent) {
                 reverseApplyTrade(ev.trade, runningBalances)
+            } else if (ev is TimelineEvent.RewardEvent) {
+                reverseApplyReward(ev.event, runningBalances)
             }
         }
 
@@ -141,6 +150,12 @@ object SnapshotHistoryCalculator {
             runningBalances[symbol] = (runningBalances[symbol] ?: BigDecimal.ZERO).add(volume)
             runningBalances[Asset.USD] = (runningBalances[Asset.USD] ?: BigDecimal.ZERO).subtract(usdAmount).add(fee)
         }
+    }
+
+    /** Undo one credited staking reward: rewards added after the snapshot are removed going backward. */
+    private fun reverseApplyReward(event: LedgerEvent, runningBalances: MutableMap<String, BigDecimal>) {
+        val symbol = event.asset.uppercase()
+        runningBalances[symbol] = (runningBalances[symbol] ?: BigDecimal.ZERO).subtract(event.amount)
     }
 
     private fun getPriceForTimestamp(

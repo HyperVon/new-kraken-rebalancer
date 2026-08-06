@@ -29,6 +29,7 @@ portfolio-stats.json
 # Local directories
 /bin/
 .kotlin/
+.playwright-mcp/
 
 
 .junie/

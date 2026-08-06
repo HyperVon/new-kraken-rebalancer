@@ -183,6 +183,7 @@ class TradeHistoryRangeAndEdgeCasesTest : TradeHistoryServiceTestBase() {
                 TradeHistoryServiceImpl(
                     repository,
                     statsRepository,
+                    ledgerRepository,
                     krakenService,
                     configService,
                     objectMapper,
@@ -467,6 +468,7 @@ class TradeHistoryRangeAndEdgeCasesTest : TradeHistoryServiceTestBase() {
                 TradeHistoryServiceImpl(
                     repository,
                     statsRepository,
+                    ledgerRepository,
                     realKraken,
                     configService,
                     objectMapper,
@@ -527,6 +529,7 @@ class TradeHistoryRangeAndEdgeCasesTest : TradeHistoryServiceTestBase() {
                 TradeHistoryServiceImpl(
                     repository,
                     statsRepository,
+                    ledgerRepository,
                     dynamic,
                     configService,
                     objectMapper,

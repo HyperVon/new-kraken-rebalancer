@@ -12,6 +12,7 @@ import com.gemini.krakenbot.service.impl.KrakenServiceImpl
 import com.gemini.krakenbot.service.impl.SimulatedKrakenService
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
+import io.kotest.matchers.shouldBe
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
@@ -412,6 +413,31 @@ class DynamicKrakenServiceTest : StringSpec() {
 
             dynamicService.getBalances()
             coVerify(exactly = 1) { realService.getBalances() }
+        }
+
+        "delegates ledger queries to the selected backend" {
+            every { configService.getConfig() } returns appConfig(simulation = false)
+            val dynamicService = createService()
+
+            dynamicService.getLedgers(12345L, 10, 12399L, setOf("staking"))
+            coVerify(exactly = 1) { realService.getLedgers(12345L, 10, 12399L, setOf("staking")) }
+            coVerify(exactly = 0) { simulatedService.getLedgers(any(), any(), any(), any()) }
+
+            every { configService.getConfig() } returns appConfig(simulation = true)
+
+            dynamicService.getLedgers(12345L, 10, 12399L, setOf("dividend"))
+            coVerify(exactly = 1) { simulatedService.getLedgers(12345L, 10, 12399L, setOf("dividend")) }
+            coVerify(exactly = 0) { realService.getLedgers(12345L, 10, 12399L, setOf("dividend")) }
+        }
+
+        "caches the last ledger total count from the selected backend" {
+            every { configService.getConfig() } returns appConfig(simulation = false)
+            every { realService.getLastLedgerTotalCount() } returns 7
+            val dynamicService = createService()
+
+            dynamicService.getLedgers()
+            dynamicService.getLastLedgerTotalCount() shouldBe 7
+            coVerify(exactly = 1) { realService.getLastLedgerTotalCount() }
         }
     }
 }

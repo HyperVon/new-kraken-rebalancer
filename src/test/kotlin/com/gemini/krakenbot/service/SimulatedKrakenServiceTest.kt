@@ -3,6 +3,7 @@ package com.gemini.krakenbot.service
 import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.service.impl.SimulatedKrakenService
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
@@ -417,6 +418,86 @@ class SimulatedKrakenServiceTest : StringSpec() {
             val simulatedService = SimulatedKrakenService(configService)
             val ohlc = simulatedService.getOHLC(TestFixtures.BTCUSD, 1440, null)
             ohlc.isEmpty() shouldBe true
+        }
+
+        "should return seeded staking ledger entries newest-first with a tracked total" {
+            val configService = mockk<ConfigService>()
+            every { configService.getConfig() } returns btcUsdConfig
+
+            val simulatedService = SimulatedKrakenService(configService)
+            val entries = simulatedService.getLedgers(null, null, null, null)
+
+            entries.size shouldBe 5
+            entries.all { it.type == LedgerEvent.TYPE_STAKING } shouldBe true
+            entries.map { it.time }.zipWithNext { newer, older -> !newer.isBefore(older) }
+                .all { it } shouldBe true
+            entries.all { it.amount > BigDecimal.ZERO } shouldBe true
+            simulatedService.getLastLedgerTotalCount() shouldBe 5
+        }
+
+        "should filter ledger entries by type" {
+            val configService = mockk<ConfigService>()
+            every { configService.getConfig() } returns btcUsdConfig
+
+            val simulatedService = SimulatedKrakenService(configService)
+
+            simulatedService.getLedgers(null, null, null, setOf(LedgerEvent.TYPE_DIVIDEND))
+                .isEmpty() shouldBe true
+            simulatedService.getLedgers(null, null, null, setOf(LedgerEvent.TYPE_STAKING))
+                .size shouldBe 5
+        }
+
+        "should filter ledger entries by start and end window" {
+            val configService = mockk<ConfigService>()
+            every { configService.getConfig() } returns btcUsdConfig
+
+            val simulatedService = SimulatedKrakenService(configService)
+            val now = Instant.now()
+
+            simulatedService.getLedgers(
+                now.minusSeconds(150L * 3600).epochSecond,
+                null,
+                null,
+                null,
+            ).size shouldBe 2
+            simulatedService.getLedgers(
+                null,
+                null,
+                now.minusSeconds(100L * 3600).epochSecond,
+                null,
+            ).size shouldBe 3
+        }
+
+        "should page ledger entries at 50 records and track the total count" {
+            val configService = mockk<ConfigService>()
+            every { configService.getConfig() } returns
+                TestFixtures.DEFAULT_TEST_CONFIG.copy(
+                    allocations =
+                    listOf(
+                        Allocation(Asset.BTC, 40.0),
+                        Allocation(Asset.ETH, 30.0),
+                        Allocation(Asset.USD, 30.0),
+                    ),
+                )
+
+            val simulatedService = SimulatedKrakenService(configService)
+
+            simulatedService.getLedgers(null, 5, null, null).size shouldBe 5
+            simulatedService.getLedgers(null, 10, null, null).isEmpty() shouldBe true
+            simulatedService.getLastLedgerTotalCount() shouldBe 10
+        }
+
+        "should return no ledger entries when there are no non-usd allocations" {
+            val configService = mockk<ConfigService>()
+            every { configService.getConfig() } returns
+                TestFixtures.DEFAULT_TEST_CONFIG.copy(
+                    allocations = listOf(Allocation(Asset.USD, 100.0)),
+                )
+
+            val simulatedService = SimulatedKrakenService(configService)
+
+            simulatedService.getLedgers(null, null, null, null).isEmpty() shouldBe true
+            simulatedService.getLastLedgerTotalCount() shouldBe 0
         }
     }
 }

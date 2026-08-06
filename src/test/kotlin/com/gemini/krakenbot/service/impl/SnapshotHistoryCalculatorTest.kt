@@ -3,6 +3,7 @@ package com.gemini.krakenbot.service.impl
 import com.gemini.krakenbot.TestFixtures
 import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.model.Asset
+import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.OrderSide
 import com.gemini.krakenbot.model.TradeRecord
 import com.gemini.krakenbot.service.impl.history.SnapshotHistoryCalculator
@@ -421,6 +422,91 @@ class SnapshotHistoryCalculatorTest : StringSpec() {
             }
 
             runningBalances["BTC"]!!.shouldBeEqualComparingTo(BigDecimal("0.5"))
+            runningBalances["USD"]!!.shouldBeEqualComparingTo(BigDecimal("10000.00"))
+        }
+
+        "buildTimelineEvents emits staking rewards as RewardEvents but not dividends" {
+            val now = Instant.now()
+            val cutoff = now.minus(5, ChronoUnit.DAYS)
+            val stakingReward =
+                LedgerEvent(
+                    ledgerId = "ledger-stake",
+                    time = now.minus(2, ChronoUnit.DAYS),
+                    type = LedgerEvent.TYPE_STAKING,
+                    asset = "XBT",
+                    amount = BigDecimal("0.1"),
+                )
+            val dividend =
+                LedgerEvent(
+                    ledgerId = "ledger-div",
+                    time = now.minus(1, ChronoUnit.DAYS),
+                    type = LedgerEvent.TYPE_DIVIDEND,
+                    asset = "STRC",
+                    amount = BigDecimal("1.25"),
+                )
+
+            val events =
+                SnapshotHistoryCalculator.buildTimelineEvents(
+                    historicalTrades = emptyList(),
+                    historicalRewards = listOf(stakingReward, dividend),
+                    cutoffTime = cutoff,
+                    now = now,
+                )
+
+            val rewardEvents = events.filterIsInstance<SnapshotHistoryCalculator.TimelineEvent.RewardEvent>()
+            rewardEvents.map { it.event.ledgerId } shouldBe listOf("ledger-stake")
+        }
+
+        "calculateHistoricalSnapshots reverse-applies staking rewards to running balances" {
+            val now = Instant.now()
+            val cutoff = now.minus(5, ChronoUnit.DAYS)
+            val rewardTime = now.minus(2, ChronoUnit.DAYS)
+            val reward =
+                LedgerEvent(
+                    ledgerId = "ledger-stake",
+                    time = rewardTime,
+                    type = LedgerEvent.TYPE_STAKING,
+                    asset = "BTC",
+                    amount = BigDecimal("0.1"),
+                )
+
+            val events =
+                SnapshotHistoryCalculator.buildTimelineEvents(
+                    historicalTrades = emptyList(),
+                    historicalRewards = listOf(reward),
+                    cutoffTime = cutoff,
+                    now = now,
+                )
+
+            val allocations =
+                listOf(
+                    Allocation(Asset(Asset.BTC), 50.0),
+                    Allocation(Asset.USD, 50.0),
+                )
+
+            val runningBalances =
+                mutableMapOf(
+                    "BTC" to BigDecimal("0.5"),
+                    "USD" to BigDecimal("10000.00"),
+                )
+
+            val currentPrices = mapOf("BTC" to BigDecimal("50000.00"), "USD" to BigDecimal.ONE)
+
+            val snapshots =
+                SnapshotHistoryCalculator.calculateHistoricalSnapshots(
+                    events = events,
+                    allocations = allocations,
+                    runningBalances = runningBalances,
+                    currentPrices = currentPrices,
+                    ohlcData = emptyMap(),
+                    tradePrices = emptyMap(),
+                )
+
+            snapshots.shouldNotBeEmpty()
+            snapshots.first { it.timestamp == rewardTime }.assets["BTC"]!!.balance
+                .shouldBeEqualComparingTo(BigDecimal("0.5"))
+            // After reverse-applying the reward: BTC -= 0.1
+            runningBalances["BTC"]!!.shouldBeEqualComparingTo(BigDecimal("0.4"))
             runningBalances["USD"]!!.shouldBeEqualComparingTo(BigDecimal("10000.00"))
         }
     }

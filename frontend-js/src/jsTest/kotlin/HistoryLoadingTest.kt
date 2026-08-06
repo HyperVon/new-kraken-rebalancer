@@ -117,6 +117,9 @@ class HistoryLoadingTest : StringSpec() {
                 bodyResolvers.getValue("/api/history/comparison?range=$range")(
                     rebalancerComparisonToDynamic(mockAvailableComparison()),
                 )
+                bodyResolvers.getValue("/api/history/rewards?range=$range")(
+                    json("totalRewardsUSD" to "0.00", "points" to emptyArray<dynamic>()),
+                )
             }
 
             try {
@@ -174,6 +177,9 @@ class HistoryLoadingTest : StringSpec() {
                 )
                 bodyResolvers.getValue("/api/history/comparison?range=$range")(
                     rebalancerComparisonToDynamic(mockAvailableComparison()),
+                )
+                bodyResolvers.getValue("/api/history/rewards?range=$range")(
+                    json("totalRewardsUSD" to "0.00", "points" to emptyArray<dynamic>()),
                 )
             }
 
