@@ -268,5 +268,7 @@ rootProject.plugins.withType<YarnPlugin> {
         resolution("fast-uri", ">=4.1.1 <5.0.0")
         // Dependabot #102 / CVE-2026-14257 — DoS via unbounded expansion length
         resolution("brace-expansion", ">=5.0.9 <6.0.0")
+        // Dependabot #105 / GHSA-5p4m-2wfm-xmqj — quadratic CPU in !!omap resolution
+        resolution("js-yaml", ">=4.3.1")
     }
 }
