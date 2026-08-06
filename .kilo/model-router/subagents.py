@@ -77,12 +77,19 @@ def worker_prompt(track: Mapping[str, Any], route: str, allow_edits: bool, varia
         if read_only
         else "Edit only the explicitly owned paths and do not run unrelated builds or servers."
     )
+    launched_at = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     return f"""You are a bounded subagent launched by a parent agent.
 
 Track: {track['id']}
 Selected route: {route}
 Selected variant: {variant or 'default'}
 Owned paths: {scope}
+Launched at (UTC): {launched_at}
+
+Time rule: if you need the current date or time while working, run `date`
+(or `date -u`) in the shell and use its output. Never estimate the time from
+training knowledge; report timestamps only from command output or inspected
+files.
 
 {guardrails}
 Work only on the requested track. Do not redo other tracks or the parent task.

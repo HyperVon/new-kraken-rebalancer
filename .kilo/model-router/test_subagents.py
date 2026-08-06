@@ -37,6 +37,16 @@ class SubagentRouterTests(unittest.TestCase):
         self.assertIn("tool-call markup", prompt)
         self.assertIn("docs/", prompt)
 
+    def test_worker_prompt_injects_launch_time_and_date_rule(self):
+        prompt = MODULE.worker_prompt(
+            {"id": "docs", "files": ["docs/"], "task": "Check the docs", "read_only": True},
+            "openai/gpt-5.4",
+            False,
+        )
+        self.assertRegex(prompt, r"Launched at \(UTC\): \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z")
+        self.assertIn("run `date`", prompt)
+        self.assertIn("Never estimate the time", prompt)
+
     def test_workflow_preset_generates_specialized_tracks(self):
         tracks = MODULE.workflows.build_tracks("documentation-review", "Review the docs")
         self.assertEqual(4, len(tracks))
