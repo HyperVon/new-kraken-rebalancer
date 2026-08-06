@@ -735,7 +735,7 @@ The project features a comprehensive test suite for both the backend JVM applica
 ./gradlew check
 ```
 
-CI (`.github/workflows/maven.yml`) runs the equivalent coverage gate explicitly:
+CI (`.github/workflows/ci.yml`) runs the equivalent coverage gate explicitly:
 
 ```bash
 ./gradlew build jacocoTestCoverageVerification
@@ -770,7 +770,7 @@ To run JS browser tests only:
 
 Tests cover:
 
-- **Scenario Evaluation Suite** (`EvaluationScenariosTest`) — **34 highly realistic scenarios** testing the full end-to-end execution of rebalances, mathematical edge cases, API credentials invalidation, concurrency locks, and SSE client streams. See **[EVALUATION.md](docs/EVALUATION.md)** for descriptions and test results of all 34 scenarios.
+- **Scenario Evaluation Suite** (`EvaluationScenariosTest`) — **35 highly realistic scenarios** testing the full end-to-end execution of rebalances, mathematical edge cases, API credentials invalidation, concurrency locks, and SSE client streams. See **[EVALUATION.md](docs/EVALUATION.md)** for descriptions and test results of all 35 scenarios.
 - **Simulation Evaluation Suite** (`SimulationEvaluationScenariosTest`) — 6 invariant cases against the production `SimulatedKrakenService` emulator with real TradeHistory + in-memory SQLite. See **[EVALUATION.md](docs/EVALUATION.md)** for case descriptions.
 - `KrakenE2ETest` / `ResilienceChaosTest` / `PrecisionRoundingFuzzTest` /
   `SerializationParityTest` — advanced E2E black-box and fuzz testing

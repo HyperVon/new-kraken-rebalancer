@@ -14,6 +14,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **NetworkUtils IPv6 Loopback**: Replaced `InetAddress.getByName` DNS-dependent check with pure string normalization (`normalizeIpv6`), expanding `::` to full 8-group form and comparing against `0:0:0:0:0:0:0:1` without any network I/O.
 - **AllocationChartComponent Zero-Divide Guard**: Restored a zero-total guard for bar-fill percentage in `AllocationChartComponent` that was lost when `PortfolioCalculations.calculateCurrentPercent` was inlined as SRP cleanup.
 - **OverviewGridComponent SRP**: Moved `compute24hDelta` domain logic from the view component into `PortfolioCalculations`; the controller now pre-computes the 24h delta and passes it as a `BigDecimal?` to the view layer.
+- **Documentation Audit**: Corrected README CI workflow reference from `.github/workflows/maven.yml` to `.github/workflows/ci.yml`, and updated scenario count from 34 to 35 to match `EvaluationScenariosTest`.
 
 ### Changed
 
