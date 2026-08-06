@@ -15,7 +15,6 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Fixed
 
 - **Frontend JS Tooltip Bounds & Casting**: Replaced unsafe dynamic cast on `ctx.dataIndex` with safe numeric parsing and `snapshots.getOrNull()` in `HistoryCharts.kt`.
-- **Accessibility & ARIA Attributes**: Added accessible `aria-label` names to timeline range scrubber input (`HistoryPageComponent.kt`) and allocation swatches/inputs (`AllocationEditor.kt`), and WAI-ARIA `aria-sort` attributes to sortable headers (`PerformanceTableComponent.kt`).
 - **Responsive Navigation Layout**: Added `flex-wrap: wrap` to `.history-views-actions` in `NavigationStyles.kt` to prevent toolbar button overflow on mobile viewports (<375px).
 - **CSS Token Centralization**: Consolidated duplicate `.hero-tile-bar-track` background linear-gradient and centralized primary button background/glow tokens in `CssTheme.kt`.
 

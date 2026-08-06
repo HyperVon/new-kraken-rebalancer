@@ -37,15 +37,12 @@ object AllocationEditor {
             color,
         )}">
             <label>
-                <input type="color" class="${CssClass.Form.AllocationColorSwatch}" aria-label="${escapeHtml(
-            symbol,
-        )} color" value="${escapeHtml(
+                <input type="color" class="${CssClass.Form.AllocationColorSwatch}" value="${escapeHtml(
             color,
         )}" oninput="$syncColorJs">
             </label>
             <div class="${CssClass.Form.AllocationEditInputWrapper}">
                 <input class="${CssClass.Form.InputGlass}" type="number" name="${FormFields.TARGETS}"
-                  aria-label="${escapeHtml(symbol)} target percentage"
                   step="${PrecisionConstants.ALLOCATION_STEP_PERCENT}"
                   min="${PrecisionConstants.ALLOCATION_MIN_PERCENT}"
                   max="${PrecisionConstants.TOTAL_ALLOCATION_PERCENTAGE}"

@@ -250,7 +250,6 @@ class HistoryPageComponent(private val objectMapper: ObjectMapper) {
     private fun DIV.renderChartScrubber(chartId: String) {
         div(CssClass.History.ChartScrubber) {
             input(classes = CssClass.History.ChartScrubberInput.value, type = InputType.range) {
-                attributes["aria-label"] = "Chart timeline range scrubber"
                 min = "0"
                 max = "100"
                 step = "0.1"
