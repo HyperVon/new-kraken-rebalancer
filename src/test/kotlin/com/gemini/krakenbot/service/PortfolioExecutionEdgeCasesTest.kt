@@ -315,8 +315,8 @@ class PortfolioExecutionEdgeCasesTest : PortfolioManagerEdgeCasesTestBase() {
                 krakenService.getBalancesCallCount shouldBe 0
                 krakenService.executedOrders.isEmpty().shouldBeTrue()
                 coVerify(exactly = 0) { tradeHistoryService.addSnapshot(any()) }
-                verify(exactly = 0) { configService.beginExecutionSession() }
-                verify(exactly = 0) { configService.endExecutionSession() }
+                coVerify(exactly = 0) { configService.beginExecutionSession() }
+                coVerify(exactly = 0) { configService.endExecutionSession() }
                 // The `finally` cleared `workerJob`; the manager is restartable.
                 readWorkerJob() shouldBe null
             }
@@ -350,8 +350,8 @@ class PortfolioExecutionEdgeCasesTest : PortfolioManagerEdgeCasesTestBase() {
                 krakenService.getBalancesCallCount shouldBe 0
                 krakenService.executedOrders.isEmpty().shouldBeTrue()
                 coVerify(exactly = 0) { tradeHistoryService.addSnapshot(any()) }
-                verify(exactly = 0) { configService.beginExecutionSession() }
-                verify(exactly = 0) { configService.endExecutionSession() }
+                coVerify(exactly = 0) { configService.beginExecutionSession() }
+                coVerify(exactly = 0) { configService.endExecutionSession() }
                 readWorkerJob() shouldBe null
             }
         }

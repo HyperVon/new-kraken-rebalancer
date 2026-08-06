@@ -1,10 +1,12 @@
 package com.gemini.krakenbot.controller
 
+import com.gemini.krakenbot.util.isLocalOrPrivateOrigin
 import com.gemini.krakenbot.view.util.FormFields
 import io.ktor.http.HttpHeaders
 import io.ktor.http.Parameters
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.response.header
+import java.net.URI
 import java.security.MessageDigest
 import java.security.SecureRandom
 import java.util.Base64
@@ -34,6 +36,17 @@ internal object CsrfProtection {
     }
 
     fun isValid(call: ApplicationCall, parameters: Parameters): Boolean {
+        val originHeader = call.request.headers[HttpHeaders.Origin]
+        if (originHeader != null) {
+            if (!isLocalOrPrivateOrigin(originHeader)) return false
+        } else {
+            val refererHeader = call.request.headers[HttpHeaders.Referrer] ?: call.request.headers["Referer"]
+            if (refererHeader != null) {
+                val refererOrigin = extractOrigin(refererHeader) ?: return false
+                if (!isLocalOrPrivateOrigin(refererOrigin)) return false
+            }
+        }
+
         val cookieToken = call.request.cookies[COOKIE_NAME] ?: return false
         val formTokens = parameters.getAll(FormFields.CSRF_TOKEN) ?: return false
         if (formTokens.size != 1) return false
@@ -47,4 +60,11 @@ internal object CsrfProtection {
     fun currentToken(call: ApplicationCall): String = call.request.cookies[COOKIE_NAME]
         ?.takeIf { it.isNotBlank() }
         ?: issueToken(call)
+
+    private fun extractOrigin(referer: String): String? {
+        val uri = runCatching { URI(referer) }.getOrNull() ?: return null
+        val scheme = uri.scheme ?: return null
+        val authority = uri.authority ?: return null
+        return "$scheme://$authority"
+    }
 }

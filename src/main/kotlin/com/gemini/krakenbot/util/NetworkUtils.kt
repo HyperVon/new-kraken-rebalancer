@@ -1,6 +1,5 @@
 package com.gemini.krakenbot.util
 
-import java.net.InetAddress
 import java.net.URI
 
 /**
@@ -41,9 +40,28 @@ private fun parseIpv4(host: String): List<Int>? {
     return octets.takeIf { values -> values.all { it in 0..255 } }
 }
 
-private fun isIpv6Loopback(host: String): Boolean = runCatching { InetAddress.getByName(host) }
-    .getOrNull()
-    ?.isLoopbackAddress == true
+private fun isIpv6Loopback(host: String): Boolean {
+    if (!IPV6_CHARS.matches(host)) return false
+    return normalizeIpv6(host) == IPV6_LOOPBACK_EXPANDED
+}
+
+private fun normalizeIpv6(host: String): String {
+    val left: List<String>
+    val right: List<String>
+    val parts = host.split("::")
+    if (parts.size == 1) {
+        left = parts[0].split(':').filter { it.isNotEmpty() }
+        right = emptyList()
+    } else {
+        left = parts[0].split(':').filter { it.isNotEmpty() }
+        right = parts.getOrNull(1)?.split(':')?.filter { it.isNotEmpty() } ?: emptyList()
+    }
+    val missing = 8 - left.size - right.size
+    val middle = if (missing > 0) List(missing) { "0" } else emptyList()
+    return (left + middle + right).joinToString(":") { normalizeIpv6Group(it) }
+}
+
+private fun normalizeIpv6Group(group: String): String = group.toInt(radix = 16).toString()
 
 private fun isValidLocalHostname(host: String): Boolean =
     host.length <= MAX_HOST_LENGTH && host.split('.').all { label -> DNS_LABEL.matches(label) }
@@ -53,4 +71,6 @@ private const val MAX_HOST_LENGTH = 253
 private val ALLOWED_SCHEMES = setOf("http", "https")
 private val SCHEME_PATTERN = Regex("^[A-Za-z][A-Za-z0-9+.-]*://")
 private val IPV4_SHAPE = Regex("^[0-9]+(?:\\.[0-9]+){3}$")
+private val IPV6_CHARS = Regex("^[0-9a-fA-F:]+$")
 private val DNS_LABEL = Regex("^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$")
+private val IPV6_LOOPBACK_EXPANDED = "0:0:0:0:0:0:0:1"

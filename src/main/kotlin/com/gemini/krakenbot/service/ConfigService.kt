@@ -6,11 +6,11 @@ import kotlinx.coroutines.flow.Flow
 import java.io.IOException
 
 interface ConfigService {
-    fun beginExecutionSession()
-    fun endExecutionSession()
+    suspend fun beginExecutionSession()
+    suspend fun endExecutionSession()
 
     @Throws(IOException::class)
-    fun loadConfig()
+    suspend fun loadConfig()
 
     fun getConfig(): AppConfig
 
@@ -18,12 +18,12 @@ interface ConfigService {
      * Rejects invalid numeric bounds and portfolio allocations before persistence or publication.
      * Allocations must use unique valid symbols, include USD, and total 100% within the implementation tolerance.
      */
-    fun updateConfig(newConfig: AppConfig)
+    suspend fun updateConfig(newConfig: AppConfig)
 
     fun watchConfigChanges(): Flow<Settings>
 }
 
-inline fun <T> ConfigService.withExecutionSession(block: () -> T): T {
+suspend inline fun <T> ConfigService.withExecutionSession(block: () -> T): T {
     beginExecutionSession()
     try {
         return block()

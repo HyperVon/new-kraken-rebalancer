@@ -42,8 +42,8 @@ class TradeHistorySyncCoordinationTest : TradeHistoryServiceTestBase() {
 
                 service.syncTradesFromKraken()
                 coVerify(exactly = 1) { krakenService.getTradeHistory(any(), any()) }
-                verify(exactly = 1) { configService.beginExecutionSession() }
-                verify(exactly = 1) { configService.endExecutionSession() }
+                coVerify(exactly = 1) { configService.beginExecutionSession() }
+                coVerify(exactly = 1) { configService.endExecutionSession() }
             }
         }
 
@@ -51,8 +51,8 @@ class TradeHistorySyncCoordinationTest : TradeHistoryServiceTestBase() {
             runTest {
                 val service = createService()
                 var sessionActive = false
-                every { configService.beginExecutionSession() } answers { sessionActive = true }
-                every { configService.endExecutionSession() } answers { sessionActive = false }
+                coEvery { configService.beginExecutionSession() } answers { sessionActive = true }
+                coEvery { configService.endExecutionSession() } answers { sessionActive = false }
                 coEvery { krakenService.getTradeHistory(any(), any()) } coAnswers {
                     sessionActive shouldBe true
                     emptyList()
@@ -61,8 +61,8 @@ class TradeHistorySyncCoordinationTest : TradeHistoryServiceTestBase() {
                 service.syncTradesFromKraken()
 
                 sessionActive shouldBe false
-                verify(exactly = 1) { configService.beginExecutionSession() }
-                verify(exactly = 1) { configService.endExecutionSession() }
+                coVerify(exactly = 1) { configService.beginExecutionSession() }
+                coVerify(exactly = 1) { configService.endExecutionSession() }
             }
         }
 
@@ -78,8 +78,8 @@ class TradeHistorySyncCoordinationTest : TradeHistoryServiceTestBase() {
                 service.syncTradesFromKraken()
 
                 coVerify(exactly = 1) { krakenService.getTradeHistory(any(), any()) }
-                verify(exactly = 1) { configService.beginExecutionSession() }
-                verify(exactly = 1) { configService.endExecutionSession() }
+                coVerify(exactly = 1) { configService.beginExecutionSession() }
+                coVerify(exactly = 1) { configService.endExecutionSession() }
             }
         }
 
@@ -202,8 +202,8 @@ class TradeHistorySyncCoordinationTest : TradeHistoryServiceTestBase() {
                 second.join()
 
                 coVerify(exactly = 1) { krakenService.getTradeHistory(any(), 0) }
-                verify(exactly = 1) { configService.beginExecutionSession() }
-                verify(exactly = 1) { configService.endExecutionSession() }
+                coVerify(exactly = 1) { configService.beginExecutionSession() }
+                coVerify(exactly = 1) { configService.endExecutionSession() }
             }
         }
 
@@ -776,8 +776,8 @@ class TradeHistorySyncCoordinationTest : TradeHistoryServiceTestBase() {
                 job.cancel()
                 job.join()
 
-                verify(exactly = 1) { configService.beginExecutionSession() }
-                verify(exactly = 1) { configService.endExecutionSession() }
+                coVerify(exactly = 1) { configService.beginExecutionSession() }
+                coVerify(exactly = 1) { configService.endExecutionSession() }
             }
         }
 

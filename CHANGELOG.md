@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.16.22] - 2026-08-06
+
+### Fixed
+
+- **Config Service Suspend Safety**: Made `loadConfig`, `updateConfig`, `beginExecutionSession`, and `endExecutionSession` `suspend` on `ConfigService` and `ConfigServiceImpl`, replacing `@Synchronized` with a `Mutex` and offloading all blocking file I/O to `Dispatchers.IO` via `withContext`. Added a private `loadConfigBlocking` helper for the init path. Made `withExecutionSession` a `suspend inline` function.
+- **NetworkUtils IPv6 Loopback**: Replaced `InetAddress.getByName` DNS-dependent check with pure string normalization (`normalizeIpv6`), expanding `::` to full 8-group form and comparing against `0:0:0:0:0:0:0:1` without any network I/O.
+- **AllocationChartComponent Zero-Divide Guard**: Restored a zero-total guard for bar-fill percentage in `AllocationChartComponent` that was lost when `PortfolioCalculations.calculateCurrentPercent` was inlined as SRP cleanup.
+- **OverviewGridComponent SRP**: Moved `compute24hDelta` domain logic from the view component into `PortfolioCalculations`; the controller now pre-computes the 24h delta and passes it as a `BigDecimal?` to the view layer.
+
+### Changed
+
+- Updated MockK `verify`/`every` calls to `coVerify`/`coEvery` across 11 test files for suspend-method mocking.
+- `DashboardView.renderDashboardFragment` and `DashboardFragmentComponent.render` now accept an optional `delta24h: BigDecimal?` parameter.
+
 ## [6.16.21] - 2026-08-06
 
 ### Fixed

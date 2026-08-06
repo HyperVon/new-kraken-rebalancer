@@ -49,8 +49,8 @@ class TradeHistorySyncReconciliationTest : TradeHistoryServiceTestBase() {
 
                 coVerify(exactly = 1) { krakenService.getTradeHistory(1700000000 - 300, 0) }
                 coVerify(exactly = 0) { repository.setHistorySeeded(any()) }
-                verify(exactly = 1) { configService.beginExecutionSession() }
-                verify(exactly = 1) { configService.endExecutionSession() }
+                coVerify(exactly = 1) { configService.beginExecutionSession() }
+                coVerify(exactly = 1) { configService.endExecutionSession() }
             }
         }
 
@@ -84,8 +84,8 @@ class TradeHistorySyncReconciliationTest : TradeHistoryServiceTestBase() {
 
                 coVerify(exactly = 0) { krakenService.getTradeHistory(any(), any()) }
                 coVerify(exactly = 0) { repository.setHistorySeeded(any()) }
-                verify(exactly = 0) { configService.beginExecutionSession() }
-                verify(exactly = 0) { configService.endExecutionSession() }
+                coVerify(exactly = 0) { configService.beginExecutionSession() }
+                coVerify(exactly = 0) { configService.endExecutionSession() }
             }
         }
 
@@ -679,8 +679,8 @@ class TradeHistorySyncReconciliationTest : TradeHistoryServiceTestBase() {
                     metadata["sync_total"] shouldBe "150"
                     metadata["history_seeded"] shouldBe null
                     metadata["sync_watermark_epoch_sec"] shouldBe null
-                    verify(exactly = 1) { configService.beginExecutionSession() }
-                    verify(exactly = 1) { configService.endExecutionSession() }
+                    coVerify(exactly = 1) { configService.beginExecutionSession() }
+                    coVerify(exactly = 1) { configService.endExecutionSession() }
 
                     service.syncTradesFromKraken()
 
@@ -692,8 +692,8 @@ class TradeHistorySyncReconciliationTest : TradeHistoryServiceTestBase() {
                     coVerify(exactly = 2) { krakenService.getTradeHistory(expectedSeedStart, 0) }
                     coVerify(exactly = 1) { krakenService.getTradeHistory(expectedSeedStart, 100) }
                     coVerify(exactly = 0) { krakenService.getTradeHistory(expectedSeedStart, 150) }
-                    verify(exactly = 2) { configService.beginExecutionSession() }
-                    verify(exactly = 2) { configService.endExecutionSession() }
+                    coVerify(exactly = 2) { configService.beginExecutionSession() }
+                    coVerify(exactly = 2) { configService.endExecutionSession() }
                 }
             }
         }

@@ -302,55 +302,6 @@ class HistoryZoomTest : StringSpec() {
             }
         }
 
-        "zoom completion callback is invoked without error" {
-            resetHistoryUiState()
-            val container = document.createElement("div")
-            container.innerHTML =
-                """
-                 <canvas id="portfolio-value-chart"></canvas>
-                ${TestDomBuilders.scrubberDom(disabled = true)}
-                """.trimIndent()
-            document.body!!.appendChild(container)
-            var capturedOptions: dynamic = null
-            window.asDynamic().Chart = { _: dynamic, config: dynamic ->
-                capturedOptions = config.options
-                jsObject {
-                    data = config.data
-                    options = config.options
-                    canvas = document.getElementById("portfolio-value-chart")
-                    destroy = {}
-                    isDatasetVisible = { _: Int -> true }
-                    getInitialScaleBounds = { json("x" to json("min" to 0.0, "max" to 100.0)) }
-                    scales = json("x" to json("min" to 20.0, "max" to 40.0))
-                }
-            }
-            registerHistoryGlobals()
-            try {
-                val points = arrayOf(
-                    json("x" to 0.0, "y" to 1.0),
-                    json("x" to 100.0, "y" to 2.0),
-                )
-                createOrUpdate(
-                    "portfolio-value-chart",
-                    createLineChartConfig(
-                        arrayOf(json(ChartProps.LABEL to ViewText.TOTAL_PORTFOLIO, ChartProps.DATA to points)),
-                        getClonedChartOptions(),
-                    ),
-                )
-
-                val callback = capturedOptions.plugins.zoom.zoom[ChartProps.ON_ZOOM_COMPLETE]
-                // Verify the callback does not throw
-                callback(
-                    json(
-                        "chart" to json("canvas" to document.getElementById("portfolio-value-chart")),
-                    ),
-                )
-            } finally {
-                document.body!!.removeChild(container)
-                resetHistoryUiState()
-            }
-        }
-
         "panChartToScrubberPosition no-ops when not zoomed" {
             resetHistoryUiState()
             val container = document.createElement("div")

@@ -2,7 +2,6 @@ package com.gemini.krakenbot.view.component
 
 import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.model.PortfolioSnapshot
-import com.gemini.krakenbot.service.impl.PortfolioCalculations
 import com.gemini.krakenbot.view.util.ChartProps
 import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.Formatter
@@ -33,10 +32,14 @@ class AllocationChartComponent {
 
                 topAssets.forEachIndexed { index, asset ->
                     val fillPct =
-                        PortfolioCalculations
-                            .calculateCurrentPercent(asset.valueUSD, maxVal)
-                            .setScale(0, RoundingMode.HALF_UP)
-                            .toInt()
+                        if (maxVal.signum() > 0) {
+                            asset.valueUSD
+                                .multiply(BigDecimal(100))
+                                .divide(maxVal, 0, RoundingMode.HALF_UP)
+                                .toInt()
+                        } else {
+                            0
+                        }
                     val barColor = colorMap[asset.symbol.value.uppercase()]
                         ?: ChartProps.solidColorForSymbol(asset.symbol.value, index)
                     div(CssClass.AllocationChart.BarRow) {

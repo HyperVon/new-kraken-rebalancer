@@ -11,7 +11,6 @@ import com.gemini.krakenbot.view.util.ViewText
 import kotlinx.browser.document
 import kotlinx.browser.window
 import org.w3c.dom.*
-import org.w3c.dom.events.Event
 import kotlin.math.abs
 import com.gemini.krakenbot.view.util.HtmlQueries.SYMBOL_INPUTS as SYMBOL_INPUTS_QUERY
 import com.gemini.krakenbot.view.util.HtmlQueries.TARGET_INPUTS as TARGET_INPUTS_QUERY
@@ -19,71 +18,11 @@ import com.gemini.krakenbot.view.util.HtmlQueries.TARGET_INPUTS as TARGET_INPUTS
 fun initSettings() {
     registerSettingsGlobals()
     updateAllocationTotal()
-    wireModePlateSync()
 }
 
 fun registerSettingsGlobals() {
     window.asDynamic().updateAllocationTotal = { updateAllocationTotal() }
     window.asDynamic().addAssetRow = { addAssetRow() }
-}
-
-/** Keep the header mode plate in sync with live safety toggles before Save. */
-private fun wireModePlateSync() {
-    val simulation =
-        document.querySelector("input[name=\"${FormFields.SIMULATION}\"]") as? HTMLInputElement
-    val dryRun =
-        document.querySelector("input[name=\"${FormFields.DRY_RUN}\"]") as? HTMLInputElement
-    if (simulation == null && dryRun == null) return
-    // Mark each input as bound on first attachment so subsequent htmx:afterSwap callbacks
-    // (which can re-run this when the toggles survive a partial fragment swap) do not stack
-    // duplicate change listeners. The marker lives on the element itself, so detached inputs
-    // are GC'd normally without retaining references from a module-level set.
-    val onChange: (Event) -> Unit = { syncModePlateFromSafetyToggles() }
-    if (simulation != null && !simulation.dataset.isBound()) {
-        simulation.markBound()
-        simulation.addEventListener("change", onChange)
-    }
-    if (dryRun != null && !dryRun.dataset.isBound()) {
-        dryRun.markBound()
-        dryRun.addEventListener("change", onChange)
-    }
-    syncModePlateFromSafetyToggles()
-}
-
-private const val BOUND_MARKER = "modeToggleBound"
-
-private fun DOMStringMap.isBound(): Boolean = this[BOUND_MARKER] == "1"
-
-private fun HTMLInputElement.markBound() {
-    this.dataset[BOUND_MARKER] = "1"
-}
-
-internal fun syncModePlateFromSafetyToggles() {
-    val plate = document.getElementById(HtmlIds.MODE_PLATE) as? HTMLElement ?: return
-    val labelEl = document.getElementById(HtmlIds.MODE_PLATE_LABEL) as? HTMLElement ?: return
-    val simulation =
-        (document.querySelector("input[name=\"${FormFields.SIMULATION}\"]") as? HTMLInputElement)
-            ?.checked == true
-    val dryRun =
-        (document.querySelector("input[name=\"${FormFields.DRY_RUN}\"]") as? HTMLInputElement)
-            ?.checked == true
-    when {
-        simulation -> {
-            plate.className = CssClass.Mode.Simulation.toString()
-            labelEl.textContent = ViewText.MODE_SIMULATION
-            plate.title = ViewText.MODE_SIMULATION_TITLE
-        }
-        dryRun -> {
-            plate.className = CssClass.Mode.DryRun.toString()
-            labelEl.textContent = ViewText.MODE_DRY_RUN
-            plate.title = ViewText.MODE_DRY_RUN_TITLE
-        }
-        else -> {
-            plate.className = CssClass.Mode.Live.toString()
-            labelEl.textContent = ViewText.MODE_LIVE
-            plate.title = ViewText.MODE_LIVE_TITLE
-        }
-    }
 }
 
 fun updateAllocationTotal() {

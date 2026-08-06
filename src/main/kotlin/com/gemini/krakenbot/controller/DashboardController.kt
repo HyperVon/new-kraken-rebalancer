@@ -13,6 +13,7 @@ import com.gemini.krakenbot.model.TimeRange
 import com.gemini.krakenbot.service.AssetColorAssigner
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.TradeHistoryService
+import com.gemini.krakenbot.service.impl.PortfolioCalculations
 import com.gemini.krakenbot.view.DashboardView
 import com.gemini.krakenbot.view.css.CssStyles
 import com.gemini.krakenbot.view.util.CssClass
@@ -43,8 +44,6 @@ import io.ktor.server.sse.ServerSSESession
 import io.ktor.server.sse.sse
 import io.ktor.sse.ServerSentEvent
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import kotlinx.html.div
 import kotlinx.html.h2
 import kotlinx.html.p
@@ -167,7 +166,7 @@ class DashboardController(
         }
 
         try {
-            withContext(Dispatchers.IO) { configService.updateConfig(updatedConfig) }
+            configService.updateConfig(updatedConfig)
             call.response.header(HtmxHeaders.HX_REDIRECT, Routes.ROOT)
             call.respond(HttpStatusCode.OK)
         } catch (e: InvalidConfigurationException) {
@@ -278,9 +277,10 @@ class DashboardController(
             return
         }
 
+        val delta24h = PortfolioCalculations.compute24hDelta(latest, history)
         val html =
             createHTML(prettyPrint = false).div {
-                dashboardView.renderDashboardFragment(latest, history, allocations)
+                dashboardView.renderDashboardFragment(latest, history, allocations, delta24h)
             }
         call.respondText(html, ContentType.Text.Html)
     }

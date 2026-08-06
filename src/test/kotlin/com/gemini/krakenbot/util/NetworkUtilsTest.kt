@@ -16,6 +16,9 @@ class NetworkUtilsTest : StringSpec() {
             isLocalOrPrivateOrigin("127.0.0.1") shouldBe true
             isLocalOrPrivateOrigin("http://[::1]:8080") shouldBe true
             isLocalOrPrivateOrigin("[::1]") shouldBe true
+            isLocalOrPrivateOrigin("http://[0:0:0:0:0:0:0:1]") shouldBe true
+            isLocalOrPrivateOrigin("http://[0000:0000:0000:0000:0000:0000:0000:0001]") shouldBe true
+            isLocalOrPrivateOrigin("http://[::g1]") shouldBe false
         }
 
         "should identify .local mDNS origins" {

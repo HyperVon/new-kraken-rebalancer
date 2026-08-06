@@ -101,6 +101,8 @@ class KrakenServiceImpl(
             try {
                 emit(block())
                 return@flow
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 val isRateLimit = e.message?.contains(KrakenApiConstants.ERROR_RATE_LIMIT_EXCEEDED) == true
                 val isLockout = e.message?.contains(KrakenApiConstants.ERROR_TEMPORARY_LOCKOUT) == true

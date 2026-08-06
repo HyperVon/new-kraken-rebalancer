@@ -39,9 +39,9 @@ import io.ktor.server.application.Application
 import io.ktor.server.application.install
 import io.ktor.server.testing.testApplication
 import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
-import io.mockk.verify
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.take
@@ -410,7 +410,7 @@ internal fun EvaluationScenariosTest.registerScenarios1To7() {
             val configFlow = MutableSharedFlow<Settings>(replay = 1, extraBufferCapacity = 1)
             every { configService.getConfig() } returns validConfig
             every { configService.watchConfigChanges() } returns configFlow
-            every { configService.updateConfig(any()) } answers {
+            coEvery { configService.updateConfig(any()) } answers {
                 configFlow.tryEmit(firstArg<AppConfig>().settings).shouldBeTrue()
             }
             val settingsResponse = client.get("/settings")
@@ -443,7 +443,7 @@ internal fun EvaluationScenariosTest.registerScenarios1To7() {
                 }
             postResponse.status shouldBe HttpStatusCode.OK
             postResponse.headers["HX-Redirect"] shouldBe "/"
-            verify { configService.updateConfig(any()) }
+            coVerify { configService.updateConfig(any()) }
             configFlow.replayCache.single().loopDelaySeconds shouldBe 120L
 
             val actualConfigPath = evaluationTempPath("4-config")
@@ -465,7 +465,7 @@ internal fun EvaluationScenariosTest.registerScenarios1To7() {
             }
 
             // 3. POST Invalid Settings (Validation fails)
-            every { configService.updateConfig(any()) } throws
+            coEvery { configService.updateConfig(any()) } throws
                 InvalidConfigurationException(
                     "Total allocation percentage must be exactly 100%.",
                 )
