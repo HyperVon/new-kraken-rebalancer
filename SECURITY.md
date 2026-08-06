@@ -90,7 +90,8 @@ Additional precautions include:
 Runtime logs can include order identifiers, balance amounts, and asset keys.
 Protect them as account data and redact them before sharing. The endpoints used
 during normal application operation do not require the **Query Open Orders &
-Trades** permission.
+Trades** permission (though manual REST reconciliation of an `UNCERTAIN` live
+order requires it if querying open orders directly).
 
 ### Dashboard trust model
 

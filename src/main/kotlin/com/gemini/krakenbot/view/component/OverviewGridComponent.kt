@@ -201,7 +201,11 @@ class OverviewGridComponent {
             // Unique gradient id per sparkline so HTMX swaps / future reuse cannot collide.
             val gradId = "hero-spark-grad-${history.first().timestamp.toEpochMilli()}"
             return buildString {
-                append("<svg viewBox=\"0 0 ${fmt(SPARK_WIDTH)} ${fmt(SPARK_HEIGHT)}\" preserveAspectRatio=\"none\">")
+                append(
+                    "<svg aria-hidden=\"true\" viewBox=\"0 0 ${fmt(
+                        SPARK_WIDTH,
+                    )} ${fmt(SPARK_HEIGHT)}\" preserveAspectRatio=\"none\">",
+                )
                 append("<defs><linearGradient id=\"$gradId\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\">")
                 append("<stop offset=\"0%\" stop-color=\"${ChartProps.COLOR_BLUE}\" stop-opacity=\"0.55\"/>")
                 append("<stop offset=\"100%\" stop-color=\"${ChartProps.COLOR_BLUE}\" stop-opacity=\"0\"/>")

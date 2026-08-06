@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [6.16.21] - 2026-08-06
+
+### Fixed
+
+- **Trade Calculator Slippage Price Guard**: Guarded `TradeCalculator.calculateSlippage` against non-positive expected prices (`!expectedPrice.isPositive`) to prevent invalid slippage figures from malformed ticker data.
+- **Trade History Side Normalization**: Applied canonical `OrderSide.normalize` in `TradeHistorySyncService.legacyApiFillFingerprint` to prevent fingerprint mismatches across legacy trade imports.
+- **Config Service Tolerance Primitive**: Removed unused import and updated `ConfigServiceImpl.validateTotalAllocationPercent` to use the primitive `ALLOCATION_TOLERANCE_DELTA` constant from `:common`.
+- **Order Executor String Externalization**: Moved hardcoded live-order error and submission state string literals from `OrderExecutorImpl` into `:common` `ViewText` resource catalog.
+- **Fiat Deployment Double Exponent Safety**: Guarded `RebalancerEngine.calculateFiatDeployment` double exponentiation evaluation with `.takeIf { it.isFinite() } ?: 0.0` before creating `BigDecimal`.
+
+### Added
+
+- **WAI-ARIA Accessibility**: Added `aria-hidden="true"` to decorative sparkline SVG in `OverviewGridComponent`, `aria-sort` attributes (`ascending`/`descending`/`none`) on asset performance table headers in `PerformanceTableComponent` & `Dashboard.kt`, and `aria-label` attribute on chart scrubber range inputs in `HistoryPageComponent`.
+
+### Improved
+
+- **Documentation Precision**: Clarified `SECURITY.md` permission scope regarding `Query Open Orders & Trades` for manual REST reconciliation of `UNCERTAIN` orders, and updated `docs/USER_GUIDE.md` with `STALE_THRESHOLD_SECONDS` and automatic SSE reconnection behavior.
 
 ## [6.16.20] - 2026-08-06
 

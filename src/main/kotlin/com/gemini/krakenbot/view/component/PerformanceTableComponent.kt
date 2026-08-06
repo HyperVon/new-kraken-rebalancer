@@ -57,6 +57,7 @@ class PerformanceTableComponent {
                                     attributes[HtmlAttrs.ONCLICK] =
                                         "sortTable(this, $index)"
                                     attributes[HtmlAttrs.DATA_SORT] = col.sortState
+                                    attributes[HtmlAttrs.ARIA_SORT] = col.sortState
                                     attributes[HtmlAttrs.TAB_INDEX] = "0"
                                     attributes[HtmlAttrs.ONKEYDOWN] =
                                         "if(event.key === '${HtmlKeys.ENTER}' || " +

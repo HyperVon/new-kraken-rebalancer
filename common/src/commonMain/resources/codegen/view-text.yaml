@@ -160,6 +160,10 @@ ViewText:
   INVALID_ALLOCATION_COLOR: "Invalid allocation fields: supplied colors must use six-digit hex format."
   INVALID_CONFIGURATION_FALLBACK: "Invalid configuration"
   CSRF_SESSION_EXPIRED: "Settings session expired. Reload the page and try again."
+  ERROR_LIVE_ORDERS_BLOCKED: "ERROR: Live orders blocked pending manual Kraken verification"
+  ORDER_SUBMISSION_PENDING: "Order submission pending"
+  ORDER_SUBMISSION_FAILED: "Order submission failed"
+  ORDER_SUBMISSION_FAILED_UNCERTAIN: "Order submission outcome is uncertain"
   # Rebalancer comparison
   HISTORY_REBALANCER_VS_BUY_AND_HOLD: "Rebalancer vs Buy & Hold"
   REBALANCER: "Rebalancer"

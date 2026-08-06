@@ -132,10 +132,12 @@ fun sortTable(header: HTMLElement, colIdx: Int, forceDir: String? = null) {
         (headersList.item(i) as? HTMLElement)?.apply {
             classList.remove(CssClass.Utility.Asc, CssClass.Utility.Desc)
             setAttribute(HtmlAttrs.DATA_SORT, DataSort.NONE)
+            setAttribute(HtmlAttrs.ARIA_SORT, DataSort.NONE)
         }
     }
     header.classList.add(if (sortAsc) CssClass.Utility.Asc.value else CssClass.Utility.Desc.value)
     header.setAttribute(HtmlAttrs.DATA_SORT, if (sortAsc) DataSort.ASCENDING else DataSort.DESCENDING)
+    header.setAttribute(HtmlAttrs.ARIA_SORT, if (sortAsc) DataSort.ASCENDING else DataSort.DESCENDING)
 
     rows.forEach { row -> tbody.appendChild(row) }
 

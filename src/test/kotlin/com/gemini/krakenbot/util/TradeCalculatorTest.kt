@@ -35,6 +35,15 @@ class TradeCalculatorTest : StringSpec() {
             slippage.shouldBeEqualComparingTo(BigDecimal.ZERO)
         }
 
+        "calculateSlippage should return zero when expected price is negative" {
+            val slippage = TradeCalculator.calculateSlippage(
+                OrderSide.BUY.uppercaseName,
+                BigDecimal("105.0"),
+                BigDecimal("-10.0"),
+            )
+            slippage.shouldBeEqualComparingTo(BigDecimal.ZERO)
+        }
+
         "calculateSlippage should compute buy slippage correctly" {
             val slippage = TradeCalculator.calculateSlippage(
                 OrderSide.BUY.uppercaseName,

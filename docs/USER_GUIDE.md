@@ -73,8 +73,10 @@ funds").
 The dashboard pushes live updates over Server-Sent Events (`/api/status/stream`).
 **Only the Dashboard** shows a stream-health chip in the header next to the mode
 plate: **STREAM** (green) when data is flowing, or **STALE** when the last
-snapshot is older than **90 seconds**. Beside it are the relative age of the
-last update (e.g. `12s`) and its clock time.
+snapshot is older than **90 seconds** (governed by
+`PrecisionConstants.STALE_THRESHOLD_SECONDS`). Automatic SSE reconnection
+resumes feed status without requiring a page reload. Beside it are the relative
+age of the last update (e.g. `12s`) and its clock time.
 
 The stream chip describes **feed health, not trading mode** — a healthy
 **STREAM** chip does not mean live trading is on. Always read the mode plate for

@@ -22,7 +22,7 @@ object TradeCalculator {
      * Favorable fills are negative.
      */
     fun calculateSlippage(side: String, executedPrice: BigDecimal, expectedPrice: BigDecimal): BigDecimal {
-        if (expectedPrice.isZero) return BigDecimal.ZERO
+        if (!expectedPrice.isPositive) return BigDecimal.ZERO
 
         val diff =
             when {
