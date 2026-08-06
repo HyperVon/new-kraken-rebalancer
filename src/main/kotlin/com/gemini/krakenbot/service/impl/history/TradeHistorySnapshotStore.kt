@@ -11,6 +11,7 @@ import com.gemini.krakenbot.repository.TradeRepository
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.KrakenService
 import com.gemini.krakenbot.service.impl.PortfolioCalculations
+import com.gemini.krakenbot.service.impl.RebalancerEngine
 import com.gemini.krakenbot.service.impl.SimulationDefaults
 import com.gemini.krakenbot.util.PrecisionConstants
 import com.gemini.krakenbot.util.toCryptoScale
@@ -220,6 +221,7 @@ class TradeHistorySnapshotStore(
         val snapshotsToSave = mutableListOf<PortfolioSnapshot>()
         var step = 0
         var nextTradeIndex = 0
+        var runningAth = BigDecimal.ZERO
 
         while (step <= steps) {
             val timestamp = startInstant.plus(step * stepHours, ChronoUnit.HOURS)
@@ -233,7 +235,10 @@ class TradeHistorySnapshotStore(
             }
 
             val progress = step.toDouble() / steps.toDouble()
-            val snapshot = buildSingleSnapshot(allocations, currentBalances, timestamp, progress)
+            val snapshot = buildSingleSnapshot(allocations, currentBalances, timestamp, progress, runningAth)
+            if (snapshot.totalValueUSD > runningAth) {
+                runningAth = snapshot.totalValueUSD
+            }
             snapshotsToSave.add(snapshot)
             step++
         }
@@ -246,6 +251,7 @@ class TradeHistorySnapshotStore(
         currentBalances: Map<String, BigDecimal>,
         timestamp: Instant,
         progress: Double,
+        currentAth: BigDecimal = BigDecimal.ZERO,
     ): PortfolioSnapshot {
         val valuedAssets =
             allocations.mapIndexed { index, (symbol, targetPercent) ->
@@ -265,15 +271,33 @@ class TradeHistorySnapshotStore(
                 .fold(BigDecimal.ZERO) { acc, asset -> acc.add(asset.valueUSD) }
                 .toUsdScale()
 
+        val settings = configService.getConfig().settings
+        val ath = if (currentAth > exactPortfolioValue) currentAth else exactPortfolioValue
+        val drawdownPct = RebalancerEngine.calculateDrawdown(exactPortfolioValue, ath)
+        val fiatDeploymentPct = RebalancerEngine.calculateFiatDeployment(drawdownPct, settings)
+        val effectiveUsdTarget = RebalancerEngine.calculateEffectiveUsdTarget(fiatDeploymentPct, allocations)
+        val cryptoScaleFactor = RebalancerEngine.calculateCryptoScaleFactor(effectiveUsdTarget, allocations)
+
         val assetSnapshots =
             valuedAssets.associate { asset ->
+                val symbolAsset = Asset(asset.symbol)
+                val metrics =
+                    PortfolioCalculations.calculateAssetMetrics(
+                        symbol = symbolAsset,
+                        baseTargetPercent = BigDecimal.valueOf(asset.targetPercent),
+                        currentValueUSD = asset.valueUSD,
+                        totalPortfolioValueUSD = exactPortfolioValue,
+                        effectiveUsdTarget = effectiveUsdTarget,
+                        cryptoScaleFactor = cryptoScaleFactor,
+                        dustThresholdUSD = settings.dustThresholdUSD,
+                    )
                 asset.symbol to
                     PortfolioCalculations.createAssetSnapshot(
                         symbol = asset.symbol,
                         balance = asset.balance,
                         price = asset.price,
                         valueUSD = asset.valueUSD,
-                        targetPercent = BigDecimal.valueOf(asset.targetPercent),
+                        targetPercent = metrics.calcTargetPercent,
                         totalPortfolioValueUSD = exactPortfolioValue,
                     )
             }
@@ -283,9 +307,9 @@ class TradeHistorySnapshotStore(
             totalValueUSD = exactPortfolioValue,
             assets = assetSnapshots,
             actions = emptyList(),
-            drawdownPercent = BigDecimal.ZERO,
-            fiatDeploymentPercent = BigDecimal.ZERO,
-            effectiveUsdTargetPercent = PortfolioCalculations.calculateUsdTargetPercent(allocations),
+            drawdownPercent = drawdownPct,
+            fiatDeploymentPercent = fiatDeploymentPct,
+            effectiveUsdTargetPercent = effectiveUsdTarget,
         )
     }
 

@@ -61,6 +61,7 @@ class TradeHistoryServiceImpl(
                 krakenService = krakenService,
                 configService = configService,
                 portfolioAnalyzer = portfolioAnalyzer,
+                portfolioStatsRepository = portfolioStatsRepository,
                 nowProvider = syncNowProvider,
             ),
         ),

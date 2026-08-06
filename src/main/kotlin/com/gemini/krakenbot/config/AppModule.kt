@@ -100,6 +100,7 @@ val coreModule =
                 krakenService = get(),
                 configService = get(),
                 portfolioAnalyzer = get(),
+                portfolioStatsRepository = get(),
             )
         }
         single {
