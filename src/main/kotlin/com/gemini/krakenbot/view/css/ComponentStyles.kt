@@ -347,7 +347,7 @@ object ComponentStyles {
         val barTracks = ".${CssClass.Hero.TileBarTrack.value}, .${CssClass.AllocationChart.BarTrack.value}"
         "$barTracks" {
             flexGrow = 1.0
-            background = "linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.08))"
+            background = CssTheme.barTrackGradient
             borderRadius = CssTheme.radiusPill
             overflow = Overflow.hidden
             solidBorder(CssTheme.colorWhiteSubtle)
@@ -360,7 +360,7 @@ object ComponentStyles {
             borderRadius = CssTheme.radiusPill
             backgroundImageRaw(CssTheme.glassBarSheen)
             backgroundBlendModeRaw("soft-light")
-            boxShadowRaw("inset 0 1px 0 rgba(255,255,255,0.35), 0 0 12px rgba(255,255,255,0.12)")
+            boxShadowRaw(CssTheme.barFillShadow)
             transitionRaw("width 0.8s cubic-bezier(0.4, 0, 0.2, 1)")
         }
 
@@ -374,14 +374,14 @@ object ComponentStyles {
             top = 1.px
             height = 38.pct
             borderRadius = CssTheme.radiusPill
-            background = "linear-gradient(90deg, transparent, rgba(186,230,255,0.48), transparent)"
+            background = CssTheme.shimmerGradient
             pointerEventsRaw("none")
         }
 
         // Hero tile bars keep their compact sizing.
         ".${CssClass.Hero.TileBarTrack.value}" {
             height = 0.625.rem
-            boxShadowRaw("inset 0 1px 2px rgba(0,0,0,0.35)")
+            boxShadowRaw(CssTheme.insetShadowDark)
         }
         ".${CssClass.Hero.TileBarFill.value}" {
             boxShadowRaw("inset 0 1px 0 rgba(255,255,255,0.35), 0 0 12px rgba(255,255,255,0.10)")
@@ -390,7 +390,7 @@ object ComponentStyles {
             left = 10.pct
             right = 10.pct
             height = 40.pct
-            background = "linear-gradient(90deg, transparent, rgba(186,230,255,0.45), transparent)"
+            background = CssTheme.shimmerGradientAlt
         }
 
         // Allocation bars keep the larger sizing and deeper inset shadow.

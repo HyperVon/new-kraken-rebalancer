@@ -124,7 +124,12 @@ object CssTheme {
     const val glowAmberSoft = "0 0 14px rgba(245, 158, 11, 0.22)"
     const val glowRedSoft = "0 0 14px rgba(239, 68, 68, 0.22)"
 
-    // Tokenized component shadows/filters (extracted from ComponentStyles raw literals — CI-29-U01)
+    // Tokenized component shadows/filters (extracted from ComponentStyles raw literals — CI-29-U01 + CI-28-U01)
+    const val barTrackGradient = "linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.08))"
+    const val barFillShadow = "inset 0 1px 0 rgba(255,255,255,0.35), 0 0 12px rgba(255,255,255,0.12)"
+    const val shimmerGradient = "linear-gradient(90deg, transparent, rgba(186,230,255,0.48), transparent)"
+    const val shimmerGradientAlt = "linear-gradient(90deg, transparent, rgba(186,230,255,0.45), transparent)"
+    const val insetShadowDark = "inset 0 1px 2px rgba(0,0,0,0.35)"
     const val shadowBadge = "0 4px 6px -1px rgba(0, 0, 0, 0.1)"
     const val shadowHeroCard =
         "0 2px 4px rgba(0,0,0,0.5), 0 16px 36px rgba(0,0,0,0.52), 0 0 32px rgba(56,189,248,0.12), " +

@@ -40,7 +40,7 @@ Items evaluated and deliberately not pursued (never actioned; the recorded reaso
 | CI-28-C08 | M | deferred | frontend | `HistoryCharts.kt:434` split out `formatUsd`/`formatPercent` helpers (largest JS file) | 28 | file split, do in focused frontend cycle |
 | CI-28-C09 | M | deferred | history | `SnapshotHistoryCalculator.calculateHistoricalSnapshots` 93-line method → extract ATH helper | 28 | history math, needs dedicated tests |
 | CI-28-C10 | S | deferred | code | `KrakenRebalancerApplication.kt:73` ad-hoc `CoroutineScope(Dispatchers.Default)` → structured/Koin scope | 28 | scope change touches lifecycle |
-| CI-28-U01 | S | deferred | css | Tokenize remaining raw `rgba()`/shadow literals in `ComponentStyles.kt` | 28 | follow-up to CI-26-U02/U03, token audit needed |
+| CI-28-U01 | S | done | css | Tokenize remaining raw `rgba()`/shadow literals in `ComponentStyles.kt` | 28 | 222 |
 | CI-28-U02 | M | deferred | frontend | Dedupe `assetColorMap`/`hexToRgba`/`bgColorForSymbol` duplication between `HistoryCharts.kt` and `ChartProps` | 28 | small duplication, needs JS test |
 | CI-28-U03 | M | deferred | ui | Centralize `STREAM`/`STALE` stale check + badge transition (duplicated Dashboard JS + SSR) | 28 | needs UI QA |
 | CI-28-D01 | S | deferred | deps | No `gradle/libs.versions.toml` catalog (versions inline across 4 files) | 28 | migration is M/L, low urgency |
