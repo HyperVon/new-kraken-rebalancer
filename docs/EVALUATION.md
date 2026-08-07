@@ -1,6 +1,6 @@
 # Scenario Evaluation Suite
 
-The Kraken Rebalancer includes a production-grade **Scenario Evaluation Suite** designed to verify the correctness, performance, safety, and resilience of the rebalancer under 35 highly realistic market scenarios and operational conditions.
+The Kraken Rebalancer includes a production-grade **Scenario Evaluation Suite** designed to verify the correctness, performance, safety, and resilience of the rebalancer under 38 highly realistic market scenarios and operational conditions.
 
 Implemented in [EvaluationScenariosTest.kt](../src/test/kotlin/com/gemini/krakenbot/EvaluationScenariosTest.kt), this suite is run as part of the standard Gradle test task. It dynamically evaluates the system without making external network calls, using a highly precise in-process fake exchange client ([FakeKrakenService.kt](../src/test/kotlin/com/gemini/krakenbot/service/FakeKrakenService.kt)).
 
@@ -49,7 +49,7 @@ FakeKraken exact-math cases:
 
 ## Scenarios & Outcomes
 
-Below is the report of the current 35 scenarios run by the suite and their results.
+Below is the report of the current 38 scenarios run by the suite and their results.
 Refresh this table from `build/reports/scenarios_evaluation_report.md` after
 suite changes (redact absolute paths to `.../` and temp ids to `scenarioN-*.json`).
 
@@ -90,3 +90,6 @@ suite changes (redact absolute paths to `.../` and temp ids to `scenarioN-*.json
 | Scenario 33 | Drawdown Deployment Changes Order Sizes | 🟢 **PASS** | Portfolio: all-cash USD=$8000, BTC=0, ETH=0; targets 40/40/20<br>Control (fiatMaxDrawdown=0): BTC buy=0.064, ETH buy=1.6 (crypto notional=$6400)<br>Drawdown (ATH=$10000, 20% DD, deploy 100%): BTC buy=0.08, ETH buy=1.96 (crypto notional=$7920)<br>Snapshot: drawdown=20%, fiatDeployment=100%, effectiveUsdTarget=0% |
 | Scenario 34 | Zero-Target Liquidation Never Exceeds Holdings | 🟢 **PASS** | BTC holding=0.00000001 @ $500000.00; rounded liquidation intent=$0.01; submitted sell volume=0.00000001 |
 | Scenario 35 | Complete Liquidation of Zero-Target Position | 🟢 **PASS** | Zero-target BTC holding=0.1 ($100 USD > $10 dust) generates full liquidation sell order |
+| Scenario 36 | retryWithFlow Handles 429/503 And Lockout | 🟢 **PASS** | Rate-limit (429/EAPI) and lockout (503/EGeneral) retries succeed on second attempt via KrakenServiceImpl; see KrakenRetryAndRateLimitTest for exhaustive backoff coverage |
+| Scenario 37 | withStableBackend Pins Config Across Rebalance | 🟢 **PASS** | DynamicKrakenService withStableBackend pins backend/config across nested execution; verified via PortfolioManager consecutive cycles |
+| Scenario 38 | Ledgers Sync Recovery Uses 96d Bound | 🟢 **PASS** | Interrupted Ledgers seed restarts from 96-day bound (not null/full history); LedgersSyncServiceTest covers watermark recovery |

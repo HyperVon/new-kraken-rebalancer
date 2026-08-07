@@ -171,10 +171,11 @@ internal fun buildAssetHoldingsChart(snapshots: List<PortfolioSnapshot>) {
         val snapshot = snapshots.getOrNull(idx)
         val balance = snapshot?.let { dynamicNumber(it.assets[sym]?.balance) } ?: 0.0
         val pctSign = if (pctChange >= 0.0) "+" else ""
-        val balOpts: dynamic = json()
-        balOpts.minimumFractionDigits = PrecisionConstants.MIN_CRYPTO_DECIMAL_PLACES
-        balOpts.maximumFractionDigits = PrecisionConstants.SCALE_CRYPTO
-        val balFormatted = balance.asDynamic().toLocaleString(EN_US, balOpts)
+        val balFormatted = usdOptionsToLocale(
+            balance,
+            PrecisionConstants.MIN_CRYPTO_DECIMAL_PLACES,
+            PrecisionConstants.SCALE_CRYPTO,
+        )
         "$sym: $pctSign${pctChange.toFixed(PrecisionConstants.SCALE_USD)}% ($balFormatted)"
     }
 

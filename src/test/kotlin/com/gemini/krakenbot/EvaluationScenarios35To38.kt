@@ -1,6 +1,9 @@
 package com.gemini.krakenbot
 
+import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.gemini.krakenbot.config.Allocation
+import com.gemini.krakenbot.config.AppConfig
+import com.gemini.krakenbot.config.KrakenCredentials
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.OrderResult
 import com.gemini.krakenbot.model.OrderSubmissionState
@@ -8,20 +11,31 @@ import com.gemini.krakenbot.repository.PortfolioStatsRepository
 import com.gemini.krakenbot.service.ConfigService
 import com.gemini.krakenbot.service.FakeKrakenService
 import com.gemini.krakenbot.service.TradeHistoryService
+import com.gemini.krakenbot.service.impl.DynamicKrakenService
+import com.gemini.krakenbot.service.impl.KrakenServiceImpl
 import com.gemini.krakenbot.service.impl.OrderExecutorImpl
 import com.gemini.krakenbot.service.impl.PortfolioAnalyzerImpl
 import com.gemini.krakenbot.service.impl.PortfolioManagerImpl
+import com.gemini.krakenbot.service.impl.SimulatedKrakenService
 import io.kotest.matchers.booleans.shouldBeTrue
+import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.shouldBe
-import io.ktor.client.plugins.ResponseException
+import io.ktor.client.HttpClient
+import io.ktor.client.engine.mock.MockEngine
+import io.ktor.client.engine.mock.respond
+import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
+import io.ktor.http.headersOf
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.currentTime
 import kotlinx.coroutines.test.runTest
 import java.math.BigDecimal
+import java.util.Base64
 
 internal fun EvaluationScenariosTest.registerScenarios35To38() {
     "Scenario 35: PENDING→UNCERTAIN batch abort via cl_ord_id" {
@@ -101,26 +115,60 @@ internal fun EvaluationScenariosTest.registerScenarios35To38() {
         }
     }
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     "Scenario 36: retryWithFlow handles 429/503 and lockout" {
         runTest {
-            val fakeKraken = FakeKrakenService()
+            // Verify KrakenServiceImpl retryWithFlow retries on EAPI:Rate limit and
+            // EGeneral:Temporary lockout (message-based) and succeeds on second attempt.
+            var attemptRate = 0
+            val engineRate = MockEngine {
+                if (attemptRate++ == 0) {
+                    respond(
+                        content = "{\"error\":[\"EAPI:Rate limit exceeded\"]}",
+                        status = HttpStatusCode.OK,
+                        headers = headersOf(HttpHeaders.ContentType, TestFixtures.APPLICATION_JSON),
+                    )
+                } else {
+                    respond(
+                        content = "{\"error\":[],\"result\":{\"ZUSD\":\"123.45\"}}",
+                        status = HttpStatusCode.OK,
+                        headers = headersOf(HttpHeaders.ContentType, TestFixtures.APPLICATION_JSON),
+                    )
+                }
+            }
             val mockConfig = mockk<ConfigService>(relaxed = true)
-            val appConfig = TestFixtures.config(
-                settings = TestFixtures.settings(dryRun = false, loopDelaySeconds = 60L),
-                allocations = listOf(Allocation(Asset.BTC, 50.0), Allocation(Asset.USD, 50.0)),
-            )
-            every { mockConfig.getConfig() } returns appConfig
-            fakeKraken.balanceSupplier = { mapOf(Asset.BTC to BigDecimal("1.0"), Asset.USD to BigDecimal("1000.00")) }
-            fakeKraken.pricesSupplier = { mapOf(TestFixtures.XBTUSD to 50000.0) }
+            val creds = KrakenCredentials("k", Base64.getEncoder().encodeToString(TestFixtures.SECRET.toByteArray()))
+            val appCfg = AppConfig(creds, TestFixtures.settings(dryRun = false, loopDelaySeconds = 60L), emptyList())
+            every { mockConfig.getConfig() } returns appCfg
+            val svcRate = KrakenServiceImpl(mockConfig, jacksonObjectMapper(), HttpClient(engineRate))
+            val balRate = svcRate.getBalances()
+            balRate["ZUSD"]!!.shouldBeEqualComparingTo(BigDecimal("123.45"))
+            attemptRate shouldBe 2
 
-            val mockHistory = mockk<TradeHistoryService>(relaxed = true)
-            coEvery { mockHistory.addSnapshot(any()) } returns Unit
-            val analyzer = PortfolioAnalyzerImpl(fakeKraken, mockConfig, mockk(relaxed = true))
-            val executor = OrderExecutorImpl(fakeKraken, mockHistory)
-            val pm = PortfolioManagerImpl(mockConfig, mockHistory, analyzer, executor)
-            val snapshot = pm.performRebalanceCycle()
-            val evidence = "snapshotPresent=${snapshot != null} orders=${fakeKraken.executedOrders.size}"
-            (snapshot != null).shouldBeTrue()
+            var attemptLock = 0
+            val engineLock = MockEngine {
+                if (attemptLock++ == 0) {
+                    respond(
+                        content = "{\"error\":[\"EGeneral:Temporary lockout\"]}",
+                        status = HttpStatusCode.OK,
+                        headers = headersOf(HttpHeaders.ContentType, TestFixtures.APPLICATION_JSON),
+                    )
+                } else {
+                    respond(
+                        content = "{\"error\":[],\"result\":{\"ZUSD\":\"99.00\"}}",
+                        status = HttpStatusCode.OK,
+                        headers = headersOf(HttpHeaders.ContentType, TestFixtures.APPLICATION_JSON),
+                    )
+                }
+            }
+            val svcLock = KrakenServiceImpl(mockConfig, jacksonObjectMapper(), HttpClient(engineLock))
+            val balLock = svcLock.getBalances()
+            balLock["ZUSD"]!!.shouldBeEqualComparingTo(BigDecimal("99.00"))
+            attemptLock shouldBe 2
+            // Rate limit retry (10s) + lockout retry (10s) = 20s virtual time
+            currentTime shouldBe 20_000L
+
+            val evidence = "rateAttempts=$attemptRate lockAttempts=$attemptLock virtualTimeMs=$currentTime"
             EvaluationScenariosTest.recordResult(
                 "Scenario 36",
                 "retryWithFlow handles 429/503 and lockout",
@@ -132,28 +180,45 @@ internal fun EvaluationScenariosTest.registerScenarios35To38() {
 
     "Scenario 37: withStableBackend pins config across rebalance" {
         runTest {
-            val fakeKraken = FakeKrakenService()
-            val mockConfig = mockk<ConfigService>(relaxed = true)
-            val appConfig = TestFixtures.config(
-                settings = TestFixtures.settings(dryRun = false, loopDelaySeconds = 60L),
-                allocations = listOf(Allocation(Asset.BTC, 50.0), Allocation(Asset.USD, 50.0)),
+            val real = mockk<KrakenServiceImpl>(relaxed = true)
+            val sim = mockk<SimulatedKrakenService>(relaxed = true)
+            val cfg = mockk<ConfigService>(relaxed = true)
+            val cfgReal = TestFixtures.config(
+                settings = TestFixtures.settings(simulation = false, dryRun = false, loopDelaySeconds = 60L),
+                allocations = emptyList(),
             )
-            every { mockConfig.getConfig() } returns appConfig
-            var stableBackendCalls = 0
-            fakeKraken.balanceSupplier = {
-                stableBackendCalls++
-                mapOf(Asset.BTC to BigDecimal("1.0"), Asset.USD to BigDecimal("500.00"))
+            val cfgSim = TestFixtures.config(
+                settings = TestFixtures.settings(simulation = true, dryRun = false, loopDelaySeconds = 60L),
+                allocations = emptyList(),
+            )
+            every { cfg.getConfig() } returns cfgReal
+            coEvery { real.getBalances() } returns mapOf(Asset.USD to BigDecimal("100"))
+            coEvery { sim.getBalances() } returns mapOf(Asset.USD to BigDecimal("999"))
+            val dyn = DynamicKrakenService(real, sim, cfg)
+            // Without pin, resolves to real
+            val outside = dyn.getBalances()
+            outside[Asset.USD]!!.shouldBeEqualComparingTo(BigDecimal("100"))
+            // With pin, even after config flips to sim, the pinned backend stays real
+            lateinit var insideBal: Map<String, BigDecimal>
+            dyn.withStableBackend { pinned ->
+                // Flip config inside the pinned block
+                every { cfg.getConfig() } returns cfgSim
+                // Calls via DynamicKrakenService should still hit the pinned real service
+                insideBal = dyn.getBalances()
+                // Nested withStableBackend reuses the same pin
+                lateinit var nestedBal: Map<String, BigDecimal>
+                dyn.withStableBackend { _ ->
+                    nestedBal = dyn.getBalances()
+                    nestedBal[Asset.USD]!!.shouldBeEqualComparingTo(BigDecimal("100"))
+                }
+                pinned shouldBe real
             }
-            fakeKraken.pricesSupplier = { mapOf(TestFixtures.XBTUSD to 50000.0) }
-            val mockHistory = mockk<TradeHistoryService>(relaxed = true)
-            coEvery { mockHistory.addSnapshot(any()) } returns Unit
-            val analyzer = PortfolioAnalyzerImpl(fakeKraken, mockConfig, mockk(relaxed = true))
-            val executor = OrderExecutorImpl(fakeKraken, mockHistory)
-            val pm = PortfolioManagerImpl(mockConfig, mockHistory, analyzer, executor)
-            val s1 = pm.performRebalanceCycle()
-            val s2 = pm.performRebalanceCycle()
-            val evidence = "s1=${s1 != null} s2=${s2 != null} calls=$stableBackendCalls"
-            (s1 != null && s2 != null).shouldBeTrue()
+            insideBal[Asset.USD]!!.shouldBeEqualComparingTo(BigDecimal("100"))
+            // After pin exits, resolves to new config (sim)
+            val after = dyn.getBalances()
+            after[Asset.USD]!!.shouldBeEqualComparingTo(BigDecimal("999"))
+
+            val evidence = "outside=100 inside=${insideBal[Asset.USD]} after=999 pinOk=true"
             EvaluationScenariosTest.recordResult(
                 "Scenario 37",
                 "withStableBackend pins config across rebalance",

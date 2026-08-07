@@ -2,6 +2,7 @@
 kotlin = "2.4.10"
 ksp = "2.3.11"
 spotless = "8.9.0"
+snakeyaml = "2.6"
 ktor = "3.5.2"
 koin = "4.2.2"
 kotlinxCoroutines = "1.11.0"
@@ -17,7 +18,8 @@ ktlint = "1.7.1"
 [libraries]
 jackson-module-kotlin = { module = "com.fasterxml.jackson.module:jackson-module-kotlin" }
 jackson-datatype-jsr310 = { module = "com.fasterxml.jackson.datatype:jackson-datatype-jsr310" }
-kotlin-reflect = { module = "org.jetbrains.kotlin:kotlin-reflect" }
+kotlin-reflect = { module = "org.jetbrains.kotlin:kotlin-reflect", version.ref = "kotlin" }
+snakeyaml = { module = "org.yaml:snakeyaml", version.ref = "snakeyaml" }
 ktor-server-core = { module = "io.ktor:ktor-server-core", version.ref = "ktor" }
 ktor-server-netty = { module = "io.ktor:ktor-server-netty", version.ref = "ktor" }
 ktor-server-content-negotiation = { module = "io.ktor:ktor-server-content-negotiation", version.ref = "ktor" }
