@@ -1,5 +1,6 @@
 version: 2
 updates:
+  # Gradle dependency graph — covers JVM + Exposed + Ktor versions
   - package-ecosystem: "gradle"
     directory: "/"
     schedule:
@@ -7,6 +8,8 @@ updates:
     open-pull-requests-limit: 5
     labels:
       - "dependencies"
+  # npm — root scan is no-op today (JS is Gradle-managed via kotlin-js-store/yarn.lock);
+  # kept for future root package.json, audit via Dependabot alerts and Yarn resolutions.
   - package-ecosystem: "npm"
     directory: "/"
     schedule:
