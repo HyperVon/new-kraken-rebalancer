@@ -22,7 +22,7 @@ Implement tests-first fixes for the re-verified real CQ-18 findings on branch `q
 - Accuracy re-verification of all 13 CQ-18 findings against source.
 - Parent-only full review of the codebase (no new defects outside CQ-18).
 - Implemented CQ-18-9 after the user's explicit approval: warn+continue on non-cancellation ATH save failure, preserving in-memory ATH and cancellation propagation.
-- Updated `.agents/quality-backlog.md`: corrected CQ-18-2 wording, dropped 6 false items (CQ-18-3/5/7/10/12/13), and marked CQ-18-4/6/9/11 done.
+- Updated `.agents/quality-backlog.md`: corrected CQ-18-2 wording, dropped 9 review-rejected/no-defect items (CQ-18-1/2/3/5/7/8/10/12/13), and marked CQ-18-4/6/9/11 done.
 - `npx markdownlint-cli .agents/quality-backlog.md` and `git diff --check` pass; the full changed-document lint is the remaining gate.
 - Verified line references for every finding against current source.
 - Added regression tests and minimal production fixes for CQ-18-4/6/9, plus test-only coverage for CQ-18-11; focused ATH JVM tests pass.
@@ -67,14 +67,14 @@ Implement tests-first fixes for the re-verified real CQ-18 findings on branch `q
 
 | ID | Finding | Status | Implement? |
 | :--- | :--- | :--- | :--- |
-| CQ-18-1 | Paginated count trusts totalCount | M | False/no-defect (count-paginator by design; `TradeHistorySyncService.kt:362-391`, `DynamicKrakenService.kt:44/96`, `KrakenServiceImpl.kt:321`) |
-| CQ-18-2 | Throttle resets on restart, repeats window | M | False/no-defect (process-local throttle + persisted watermark bound window; `:36/64-69/:140-144/:291-312`) |
+| CQ-18-1 | Paginated count trusts totalCount | M | Dropped (review rejected/no-defect; count-paginator by design; `TradeHistorySyncService.kt:362-391`, `DynamicKrakenService.kt:44/96`, `KrakenServiceImpl.kt:321`) |
+| CQ-18-2 | Throttle resets on restart, repeats window | M | Dropped (review rejected/no-defect; process-local throttle + persisted watermark bound window; `:36/64-69/:140-144/:291-312`) |
 | CQ-18-3 | Events after newest snapshot excluded | S | Dropped (intentional; `TradeHistoryQueryServiceTest:34-50`) |
 | CQ-18-4 | `findClosest` min-abs includes future OHLC | M | **YES** (production) — `SnapshotHistoryCalculator.kt:233-249` used `:212/:222` / `:58-66` / `TradeHistoryReconstructionService:106-123` |
 | CQ-18-5 | Dividend payout surface (RebalancerComparison) | S | Dropped (verified contract: `LedgerEvent.kt:6-17`, `ALGORITHM.md:291-304`, `FLOWS.md:370-390`) |
 | CQ-18-6 | Injected `now` not propagated to timeline | S | **YES** (production) — `TradeHistoryReconstructionService.kt:147-151` omits `now=`; `SnapshotHistoryCalculator.kt:50` defaults `Instant.now()` (:27/:49 have `nowProvider`/`reconstructionNow`) |
 | CQ-18-7 | Paginator count under concurrency | S | Dropped (not observed in source) |
-| CQ-18-8 | Shared AtomicInteger paginator counters | M | False/no-defect (by-design per trade-history-sync skill; `:44/96`, `OrderExecutorImpl.kt:453-482`) |
+| CQ-18-8 | Shared AtomicInteger paginator counters | M | Dropped (review rejected/no-defect; by-design per trade-history-sync skill; `:44/96`, `OrderExecutorImpl.kt:453-482`) |
 | CQ-18-9 | ATH persist failure aborts cycle | L | **YES** — done after explicit user approval; issue #212 behavior implemented |
 | CQ-18-10 | Ledger dedupe alias collision | S | Dropped (no defect) |
 | CQ-18-11 | Settings allocation ±0.01 boundary | S | Test-only — prod logic correct (`Settings.kt:40` uses `<= ALLOCATION_TOLERANCE_DELTA` = 0.01 @ `PrecisionConstants.kt:37`); missing exact boundary cases in `SettingsTest` |
