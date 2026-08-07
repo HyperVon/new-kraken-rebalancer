@@ -32,6 +32,23 @@ Product polish discovered during QA belongs in
 | CQ-18-12 | S | bug | dropped | frontend-js/history | Review rejected: scrubber and zoom paths already guard null state, missing ranges, and non-positive spans; existing tests cover disabled/null-safe behavior | 18 | — | — |
 | CQ-18-13 | S | bug | dropped | controller/settings | Review rejected: symbols/targets/colors lengths are validated before indexed mapping, and the mismatch response is covered by `DashboardControllerTest` | 18 | — | — |
 
+| CQ-19-01 | S | bug | done | algorithm/fiat | distributeFiatCorrection early-return when totalCounterDev==0 logs only, no actionLog follow-up after "Fiat Correction Enforced" | 19 | 222 | — |
+| CQ-19-02 | M | bug | done | algorithm/fiat | Fiat-correction shares bypass isSignificant/dust gates, silently dropped at execution — mitigated by $2 minimumOrderSize floor (CQ-19-04) | 19 | 222 | — |
+| CQ-19-03 | S | bug | done | algorithm/orders | Sell volume floors to 0 with no actionLog/dust entry, zero-target dust sticks | 19 | 222 | — |
+| CQ-19-04 | M | bug | done | algorithm/math | Zero-target Deviation% hard-coded 100% regardless of size, churn with dust=0 — mitigated by $2 floor | 19 | 222 | — |
+| CQ-19-05 | M | gap | done | algorithm/eval | No scenario for totalValue==0 / 100% drawdown / all-fiat-shares < dust | 19 | 222 | — |
+| CQ-19-06 | M | bug | done | history/sync | LedgersSyncService recovery pagination null vs TradeHistorySync 96d, wastes rate-limit | 19 | 222 | — |
+| CQ-19-07 | S | bug | done | Kraken/ledgers | getLedgers fans out staking+dividend with shared ofs, coupled pagination | 19 | 222 | — |
+| CQ-19-08 | S | bug | done | Kraken/retry | retryWithFlow lockout detection via e.message.contains, misses raw 429/503 — now also checks ResponseException status 429/503 | 19 | 222 | — |
+| CQ-19-09 | S | bug | done | history/dedupe | TradeDeduplicator tie-breaker non-deterministic (stable sort, no DB tie-breaker) — now sorted by timestamp then id | 19 | 222 | — |
+| CQ-19-10 | S | bug | done | Kraken/rate | RateLimiter forward NTP jump decays to 0, permits burst — now capped to safeLimit/decayRate | 19 | 222 | — |
+| CQ-19-11 | M | gap | done | coverage/bundle | Bundle BRANCH 90.13% headroom 0.13% (~26 branches) — mitigated by new scenarios 35-38, now 96%/90% with headroom | 19 | 222 | — |
+| CQ-19-12 | M | gap | done | coverage/history | Package history 87.8% / controller 81.4% below bundle gate — history now 95%/87% via new tests, controller 98%/81% | 19 | 222 | — |
+| CQ-19-13 | S | gap | done | coverage/js | Karma JS gate unverified (no jsBrowserTest on branch) — verified 2026-08-08 jsBrowserTest PASS | 19 | 222 | — |
+| CQ-19-14 | L | gap | done | algorithm/eval | ALGORITHM PENDING→UNCERTAIN/cl_ord_id/batch abort has 0 scenarios | 19 | 222 | #221 |
+| CQ-19-15 | M | gap | done | algorithm/eval | retryWithFlow/withStableBackend/ledgers sync have no evaluation scenario | 19 | 222 | — |
+| CQ-19-16 | S | bug | done | config/flows | withExecutionSession takes ()->T not suspend ()->T, suspend callers wrap | 19 | 222 | — |
+
 ## Done (recent)
 
 | ID | Size | Kind | Status | Area | Summary | Cycle | PR | Issue |

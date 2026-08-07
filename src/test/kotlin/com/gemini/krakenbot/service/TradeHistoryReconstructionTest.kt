@@ -59,7 +59,7 @@ class TradeHistoryReconstructionTest : TradeHistoryServiceTestBase() {
                     settings = TestFixtures.settings(
                         loopDelaySeconds = 60,
                         deviationTriggerPercent = 5.0,
-                        dustThresholdUSD = 5.0,
+                        minimumOrderSizeUSD = 5.0,
                         fiatMaxDrawdown = 30.0,
                     ),
                     allocations = listOf(
@@ -152,7 +152,7 @@ class TradeHistoryReconstructionTest : TradeHistoryServiceTestBase() {
                     settings = TestFixtures.settings(
                         loopDelaySeconds = 60,
                         deviationTriggerPercent = 5.0,
-                        dustThresholdUSD = 5.0,
+                        minimumOrderSizeUSD = 5.0,
                     ),
                     allocations = listOf(
                         Allocation(Asset.BTC, 50.0),
@@ -246,7 +246,7 @@ class TradeHistoryReconstructionTest : TradeHistoryServiceTestBase() {
                     settings = TestFixtures.settings(
                         loopDelaySeconds = 60,
                         deviationTriggerPercent = 5.0,
-                        dustThresholdUSD = 5.0,
+                        minimumOrderSizeUSD = 5.0,
                     ),
                     allocations = listOf(
                         Allocation(Asset.BTC, 50.0),
@@ -309,7 +309,7 @@ class TradeHistoryReconstructionTest : TradeHistoryServiceTestBase() {
                     settings = TestFixtures.settings(
                         loopDelaySeconds = 60,
                         deviationTriggerPercent = 5.0,
-                        dustThresholdUSD = 5.0,
+                        minimumOrderSizeUSD = 5.0,
                     ),
                     allocations = listOf(
                         Allocation(Asset.BTC, 50.0),
@@ -374,7 +374,7 @@ class TradeHistoryReconstructionTest : TradeHistoryServiceTestBase() {
                             dryRun = false,
                             loopDelaySeconds = 60,
                             deviationTriggerPercent = 5.0,
-                            dustThresholdUSD = 5.0,
+                            minimumOrderSizeUSD = 5.0,
                         ),
                         allocations = allocations,
                     )
@@ -444,7 +444,7 @@ class TradeHistoryReconstructionTest : TradeHistoryServiceTestBase() {
                             dryRun = false,
                             loopDelaySeconds = 60,
                             deviationTriggerPercent = 5.0,
-                            dustThresholdUSD = 5.0,
+                            minimumOrderSizeUSD = 5.0,
                         ),
                         allocations = allocations,
                     )
@@ -509,7 +509,7 @@ class TradeHistoryReconstructionTest : TradeHistoryServiceTestBase() {
                         simulation = true,
                         loopDelaySeconds = 60,
                         deviationTriggerPercent = 5.0,
-                        dustThresholdUSD = 5.0,
+                        minimumOrderSizeUSD = 5.0,
                     ),
                     allocations = listOf(
                         Allocation(Asset.BTC, 50.0),
@@ -575,7 +575,7 @@ class TradeHistoryReconstructionTest : TradeHistoryServiceTestBase() {
                     settings = TestFixtures.settings(
                         loopDelaySeconds = 60,
                         deviationTriggerPercent = 5.0,
-                        dustThresholdUSD = 5.0,
+                        minimumOrderSizeUSD = 5.0,
                     ),
                     allocations = listOf(
                         Allocation(Asset.BTC, 50.0),
@@ -625,7 +625,7 @@ class TradeHistoryReconstructionTest : TradeHistoryServiceTestBase() {
                     settings = TestFixtures.settings(
                         loopDelaySeconds = 60,
                         deviationTriggerPercent = 5.0,
-                        dustThresholdUSD = 5.0,
+                        minimumOrderSizeUSD = 5.0,
                     ),
                     allocations = listOf(
                         Allocation(Asset.BTC, 50.0),
@@ -681,7 +681,7 @@ class TradeHistoryReconstructionTest : TradeHistoryServiceTestBase() {
                         dryRun = false,
                         loopDelaySeconds = 60,
                         deviationTriggerPercent = 5.0,
-                        dustThresholdUSD = 5.0,
+                        minimumOrderSizeUSD = 5.0,
                     ),
                     allocations = allocations,
                 )

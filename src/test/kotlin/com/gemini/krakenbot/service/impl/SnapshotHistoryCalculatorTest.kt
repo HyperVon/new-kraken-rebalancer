@@ -26,7 +26,7 @@ class SnapshotHistoryCalculatorTest : StringSpec() {
         Settings(
             loopDelaySeconds = 60,
             deviationTriggerPercent = 5.0,
-            dustThresholdUSD = 5.0,
+            minimumOrderSizeUSD = 5.0,
             dryRun = true,
             fiatMaxDrawdown = 50.0,
             fiatDeploymentExponent = 1.0,

@@ -60,10 +60,10 @@ class SimulationEvaluationScenariosTest : StringSpec() {
                 } else {
                     TestFixtures.DEFAULT_TEST_SETTINGS.deviationTriggerPercent
                 },
-                dustThresholdUSD = if (forceRebalance) {
+                minimumOrderSizeUSD = if (forceRebalance) {
                     0.0
                 } else {
-                    TestFixtures.DEFAULT_TEST_SETTINGS.dustThresholdUSD
+                    TestFixtures.DEFAULT_TEST_SETTINGS.minimumOrderSizeUSD
                 },
             ),
         )

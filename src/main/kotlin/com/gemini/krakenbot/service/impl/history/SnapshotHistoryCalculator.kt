@@ -115,61 +115,7 @@ object SnapshotHistoryCalculator {
             }
         }
 
-        val snapshotsChronological = mutableListOf<PortfolioSnapshot>()
-        var runningAth = currentAth
-
-        for (point in rawPoints.asReversed()) {
-            val exactPortfolioValue = point.exactPortfolioValue
-            if (exactPortfolioValue > runningAth) {
-                runningAth = exactPortfolioValue
-            }
-
-            val drawdownPct = RebalancerEngine.calculateDrawdown(exactPortfolioValue, runningAth)
-            val fiatDeploymentPct = RebalancerEngine.calculateFiatDeployment(drawdownPct, settings)
-            val effectiveUsdTarget = RebalancerEngine.calculateEffectiveUsdTarget(fiatDeploymentPct, allocations)
-            val cryptoScaleFactor = RebalancerEngine.calculateCryptoScaleFactor(effectiveUsdTarget, allocations)
-            val dustThreshold = settings.dustThresholdUSD
-
-            val assetSnapshots = mutableMapOf<String, PortfolioSnapshot.AssetSnapshot>()
-            for ((symbol, balance, price, valueUSD, targetPercent) in point.calculatedAssets) {
-                val symbolAsset = Asset(symbol)
-                val metrics =
-                    PortfolioCalculations.calculateAssetMetrics(
-                        symbol = symbolAsset,
-                        baseTargetPercent = BigDecimal.valueOf(targetPercent),
-                        currentValueUSD = valueUSD,
-                        totalPortfolioValueUSD = exactPortfolioValue,
-                        effectiveUsdTarget = effectiveUsdTarget,
-                        cryptoScaleFactor = cryptoScaleFactor,
-                        dustThresholdUSD = dustThreshold,
-                    )
-
-                assetSnapshots[symbol] =
-                    PortfolioCalculations.createAssetSnapshot(
-                        symbol = symbol,
-                        balance = balance,
-                        price = price,
-                        valueUSD = valueUSD,
-                        targetPercent = metrics.calcTargetPercent,
-                        totalPortfolioValueUSD = exactPortfolioValue,
-                    )
-            }
-
-            val snapshot =
-                PortfolioSnapshot(
-                    timestamp = point.timestamp,
-                    totalValueUSD = exactPortfolioValue.setScale(PrecisionConstants.SCALE_USD, RoundingMode.HALF_UP),
-                    assets = assetSnapshots,
-                    actions = emptyList(),
-                    drawdownPercent = drawdownPct,
-                    fiatDeploymentPercent = fiatDeploymentPct,
-                    effectiveUsdTargetPercent = effectiveUsdTarget,
-                )
-
-            snapshotsChronological.add(snapshot)
-        }
-
-        return snapshotsChronological.asReversed()
+        return buildSnapshotsChronological(rawPoints, allocations, settings, currentAth)
     }
 
     /** Undo one fill: buy spent usd+fee for volume; sell received usd−fee for volume. */
@@ -227,6 +173,70 @@ object SnapshotHistoryCalculator {
 
         return currentPrices[symbol.uppercase()] ?: BigDecimal.ZERO
     }
+
+    private fun buildSnapshotsChronological(
+        rawPoints: List<RawHistoricalPoint>,
+        allocations: List<Allocation>,
+        settings: Settings,
+        currentAth: BigDecimal,
+    ): List<PortfolioSnapshot> {
+        val snapshotsChronological = mutableListOf<PortfolioSnapshot>()
+        var runningAth = currentAth
+
+        for (point in rawPoints.asReversed()) {
+            val exactPortfolioValue = point.exactPortfolioValue
+            runningAth = updateAthForPoint(runningAth, exactPortfolioValue)
+
+            val drawdownPct = RebalancerEngine.calculateDrawdown(exactPortfolioValue, runningAth)
+            val fiatDeploymentPct = RebalancerEngine.calculateFiatDeployment(drawdownPct, settings)
+            val effectiveUsdTarget = RebalancerEngine.calculateEffectiveUsdTarget(fiatDeploymentPct, allocations)
+            val cryptoScaleFactor = RebalancerEngine.calculateCryptoScaleFactor(effectiveUsdTarget, allocations)
+            val minimumOrderSize = settings.minimumOrderSizeUSD
+
+            val assetSnapshots = mutableMapOf<String, PortfolioSnapshot.AssetSnapshot>()
+            for ((symbol, balance, price, valueUSD, targetPercent) in point.calculatedAssets) {
+                val symbolAsset = Asset(symbol)
+                val metrics =
+                    PortfolioCalculations.calculateAssetMetrics(
+                        symbol = symbolAsset,
+                        baseTargetPercent = BigDecimal.valueOf(targetPercent),
+                        currentValueUSD = valueUSD,
+                        totalPortfolioValueUSD = exactPortfolioValue,
+                        effectiveUsdTarget = effectiveUsdTarget,
+                        cryptoScaleFactor = cryptoScaleFactor,
+                        minimumOrderSizeUSD = minimumOrderSize,
+                    )
+
+                assetSnapshots[symbol] =
+                    PortfolioCalculations.createAssetSnapshot(
+                        symbol = symbol,
+                        balance = balance,
+                        price = price,
+                        valueUSD = valueUSD,
+                        targetPercent = metrics.calcTargetPercent,
+                        totalPortfolioValueUSD = exactPortfolioValue,
+                    )
+            }
+
+            val snapshot =
+                PortfolioSnapshot(
+                    timestamp = point.timestamp,
+                    totalValueUSD = exactPortfolioValue.setScale(PrecisionConstants.SCALE_USD, RoundingMode.HALF_UP),
+                    assets = assetSnapshots,
+                    actions = emptyList(),
+                    drawdownPercent = drawdownPct,
+                    fiatDeploymentPercent = fiatDeploymentPct,
+                    effectiveUsdTargetPercent = effectiveUsdTarget,
+                )
+
+            snapshotsChronological.add(snapshot)
+        }
+
+        return snapshotsChronological.asReversed()
+    }
+
+    private fun updateAthForPoint(currentAth: BigDecimal, pointValue: BigDecimal): BigDecimal =
+        if (pointValue > currentAth) pointValue else currentAth
 
     private fun <T> findClosest(
         list: List<T>,

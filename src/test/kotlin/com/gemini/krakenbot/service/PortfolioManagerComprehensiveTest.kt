@@ -153,7 +153,7 @@ class PortfolioManagerComprehensiveTest : StringSpec() {
             }
         }
 
-        "Scenario: Dust Thresholds - Skip Tiny Orders" {
+        "Scenario: Minimum Order Sizes - Skip Tiny Orders" {
             runTest {
                 every { configService.getConfig() } returns makeConfig(
                     Allocation(

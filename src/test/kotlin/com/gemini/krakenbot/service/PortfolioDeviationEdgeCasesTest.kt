@@ -214,7 +214,7 @@ class PortfolioDeviationEdgeCasesTest : PortfolioManagerEdgeCasesTestBase() {
                     Allocation(Asset.USD, 90.0),
                     Allocation(Asset.BTC, 10.0),
                 )
-                val settings = TestFixtures.settings(dustThresholdUSD = 0.50)
+                val settings = TestFixtures.settings(minimumOrderSizeUSD = 0.50)
                 every { configService.getConfig() } returns TestFixtures.config(
                     settings = settings,
                     allocations = allocs,
@@ -249,7 +249,7 @@ class PortfolioDeviationEdgeCasesTest : PortfolioManagerEdgeCasesTestBase() {
                     Allocation(Asset.USD, 50.0),
                     Allocation(Asset.BTC, 50.0),
                 )
-                val settings = TestFixtures.settings(dustThresholdUSD = 5.0)
+                val settings = TestFixtures.settings(minimumOrderSizeUSD = 5.0)
                 every { configService.getConfig() } returns TestFixtures.config(
                     settings = settings,
                     allocations = allocs,

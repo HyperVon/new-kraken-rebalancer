@@ -48,7 +48,7 @@ abstract class TradeHistoryServiceTestBase : StringSpec() {
                 dryRun = false,
                 loopDelaySeconds = 60,
                 deviationTriggerPercent = 5.0,
-                dustThresholdUSD = 5.0,
+                minimumOrderSizeUSD = 5.0,
                 fiatMaxDrawdown = 30.0,
             ),
             allocations = emptyList(),

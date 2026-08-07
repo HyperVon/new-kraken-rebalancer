@@ -31,7 +31,7 @@ ViewText:
   SAFETY_MODES: "Safety Modes"
   LOOP_INTERVAL: "Loop Interval (Seconds)"
   DEVIATION_TRIGGER: "Deviation Trigger (%)"
-  DUST_THRESHOLD: "Dust Threshold ($)"
+  MINIMUM_ORDER_SIZE: "Minimum Order Size ($)"
   FIAT_MAX_DRAWDOWN: "Fiat Max Drawdown (%)"
   FIAT_DEPLOYMENT_EXPONENT: "Fiat Deployment Exponent"
   # Safety and settings
@@ -151,7 +151,7 @@ ViewText:
   INVALID_SYMBOL_ALERT: "Invalid symbol. Symbols must be alphanumeric and up to 16 characters."
   SYMBOL_EXISTS_ALERT: "Symbol already exists"
   INVALID_DEVIATION_TRIGGER: "Invalid settings field: deviation trigger percent is required and must be a finite number."
-  INVALID_DUST_THRESHOLD: "Invalid settings field: dust threshold USD is required and must be a finite number."
+  INVALID_MINIMUM_ORDER_SIZE: "Invalid settings field: minimum order size USD is required and must be a finite number."
   INVALID_LOOP_DELAY: "Invalid settings field: loop delay is required and must be an integer."
   INVALID_FIAT_MAX_DRAWDOWN: "Invalid settings field: fiat max drawdown is required and must be a finite number."
   INVALID_FIAT_DEPLOYMENT_EXPONENT: "Invalid settings field: fiat deployment exponent is required and must be a finite number."

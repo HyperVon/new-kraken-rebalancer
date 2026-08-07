@@ -42,6 +42,9 @@ import com.gemini.krakenbot.view.component.SettingsFormComponent
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.HttpTimeout
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import org.jetbrains.exposed.v1.jdbc.Database
 import org.koin.core.module.dsl.bind
 import org.koin.core.module.dsl.singleOf
@@ -143,6 +146,9 @@ val coreModule =
                 orderExecutor = get(),
                 krakenService = get(),
             )
+        }
+        single<CoroutineScope>(qualifier = org.koin.core.qualifier.named("applicationScope")) {
+            CoroutineScope(SupervisorJob() + Dispatchers.Default)
         }
     }
 

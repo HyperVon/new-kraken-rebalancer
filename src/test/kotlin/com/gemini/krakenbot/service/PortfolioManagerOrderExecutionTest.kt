@@ -80,7 +80,7 @@ class PortfolioManagerOrderExecutionTest : StringSpec() {
                 val mockSettings = TestFixtures.settings(
                     dryRun = false,
                     deviationTriggerPercent = 0.1,
-                    dustThresholdUSD = 10.0,
+                    minimumOrderSizeUSD = 10.0,
                 )
                 val mockConfig = TestFixtures.config(
                     settings = mockSettings,
@@ -212,7 +212,7 @@ class PortfolioManagerOrderExecutionTest : StringSpec() {
                     prices = mapOf(Asset.BTC to BigDecimal("6.00")),
                     settings = TestFixtures.settings(
                         dryRun = false,
-                        dustThresholdUSD = 0.99,
+                        minimumOrderSizeUSD = 0.99,
                         simulation = true,
                     ),
                     actionLog = actionLog,

@@ -78,7 +78,10 @@ class LedgersSyncService(
         // A numeric progress cursor marks an interrupted seed; it only gates recovery while the
         // ledger store is unseeded (mirrors the trade sync watermark logic).
         val isRecoveringInitialSync = !isSeeded && readInitialPaginationOffset() != null
-        val paginationStartSec = if (isRecoveringInitialSync) null else startSec
+        // CQ-19-06: recovery must not fetch full history (startSec=null) — bound to 96d like
+        // TradeHistorySyncService to avoid wasting rate-limit on pruned data.
+        val seedBound = nowProvider().minus(96, ChronoUnit.DAYS)
+        val paginationStartSec = if (isRecoveringInitialSync) seedBound.epochSecond else startSec
 
         log.info(
             "Starting ledger synchronization (isSeeded={}, startSec={}, recovering={})...",

@@ -2,7 +2,7 @@ import org.jetbrains.kotlin.gradle.tasks.KotlinCompilationTask
 
 plugins {
     kotlin("multiplatform")
-    id("com.google.devtools.ksp") version "2.3.11"
+    alias(libs.plugins.ksp)
 }
 
 repositories {

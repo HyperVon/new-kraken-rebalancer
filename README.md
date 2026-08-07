@@ -388,7 +388,7 @@ page trade log).
 ### Settings
 
 All configuration is managed through the web UI — loop interval, deviation
-trigger, dust threshold, fiat deployment parameters, per-asset allocation
+trigger, minimum order size, fiat deployment parameters, per-asset allocation
 targets, and per-asset chart colors.
 
 ![Settings](docs/images/settings.png)
@@ -734,11 +734,13 @@ If you are modifying the client-side code in `frontend-js/` and want to compile 
 |---------------------------|-----------|-------------------------|---------------------------------------------------------------------------------------|
 | `loopDelaySeconds`        | `Long`    | — (template `60`)       | Seconds between rebalance cycles; required in JSON                                    |
 | `deviationTriggerPercent` | `Double`  | — (template `5.0`)      | Minimum absolute deviation % to trigger a trade; required in JSON                     |
-| `dustThresholdUSD`        | `Double`  | `5.0`                   | Min significant USD deviation (order generation) and min order notional (execution)   |
+| `minimumOrderSizeUSD`     | `Double`  | `5.0`                   | Min significant USD deviation (order generation) and min order notional (execution)   |
 | `dryRun`                  | `Boolean` | — (template `true`)     | Required in JSON; suppresses order placement on the active backend (live or emulator) |
 | `simulation`              | `Boolean` | `false`                 | If true, runs offline in exchange simulation mode (seeds history if DB is empty)      |
 | `fiatMaxDrawdown`         | `Double`  | `0.0`                   | Portfolio drawdown % at which 100% of USD is deployed (0 = disabled)                  |
 | `fiatDeploymentExponent`  | `Double`  | `1.0`                   | Controls deployment curve: `1.0` = linear, `<1.0` = aggressive, `>1.0` = conservative |
+
+> **Note:** `minimumOrderSizeUSD` is enforced to a minimum of `2` in `ConfigService` and the Settings UI (`min="2"`).
 
 ---
 
@@ -818,7 +820,7 @@ Tests cover:
   successful execution verification
 - `PortfolioManagerLoopTest` — loop lifecycle, error recovery, interruption
 - `PortfolioManagerZeroAllocationTest` — edge case: 0% target allocation
-- `Portfolio*EdgeCasesTest` — focused specs for dust thresholds, price
+- `Portfolio*EdgeCasesTest` — focused specs for minimum order sizes, price
   gaps, deviations, execution, settle, loop, and snapshot edge cases
 - `PortfolioManagerDogeTest` — Kraken symbol mapping quirks (BTC→XBT, DOGE→XDG)
 - `KrakenServiceTest` / `KrakenTradeHistoryTest` /

@@ -17,7 +17,7 @@ import com.gemini.krakenbot.model.isSettledApiFill
 object TradeDeduplicator {
     fun findDuplicateTradeIds(records: List<TradeRecord>): List<Int> {
         val toDelete = linkedSetOf<Int>()
-        val sorted = records.sortedBy { it.timestamp }
+        val sorted = records.sortedWith(compareBy<TradeRecord> { it.timestamp }.thenBy { it.id ?: Int.MAX_VALUE })
 
         for (i in sorted.indices) {
             val record1 = sorted[i]

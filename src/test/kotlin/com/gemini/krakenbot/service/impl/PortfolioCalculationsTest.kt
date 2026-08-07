@@ -76,7 +76,7 @@ class PortfolioCalculationsTest : StringSpec() {
                 totalPortfolioValueUSD = BigDecimal("1000.00"),
                 effectiveUsdTarget = BigDecimal("100.00"),
                 cryptoScaleFactor = BigDecimal.ONE,
-                dustThresholdUSD = 1.0,
+                minimumOrderSizeUSD = 1.0,
             )
             metrics.deviationPercent.shouldBeEqualComparingTo(BigDecimal("100"))
             metrics.isSignificant.shouldBeFalse()
@@ -134,14 +134,14 @@ class PortfolioCalculationsTest : StringSpec() {
                 totalPortfolioValueUSD = BigDecimal("1000.00"),
                 effectiveUsdTarget = BigDecimal("0"),
                 cryptoScaleFactor = BigDecimal.ONE,
-                dustThresholdUSD = 1.0,
+                minimumOrderSizeUSD = 1.0,
             )
             // Target $500, current $500.40 → $0.40 dust
             metrics.isSignificant.shouldBeFalse()
             metrics.deviationUSD.shouldBeEqualComparingTo(BigDecimal("0.40"))
         }
 
-        "should mark deviation at exact dust threshold as significant" {
+        "should mark deviation at exact minimum order size as significant" {
             val metrics = PortfolioCalculations.calculateAssetMetrics(
                 symbol = Asset(Asset.BTC),
                 baseTargetPercent = BigDecimal("50.00"),
@@ -149,14 +149,14 @@ class PortfolioCalculationsTest : StringSpec() {
                 totalPortfolioValueUSD = BigDecimal("1000.00"),
                 effectiveUsdTarget = BigDecimal("0"),
                 cryptoScaleFactor = BigDecimal.ONE,
-                dustThresholdUSD = 1.0,
+                minimumOrderSizeUSD = 1.0,
             )
             // Target $500, current $501.00 → |deviation| == $1.00 dust boundary
             metrics.isSignificant.shouldBeTrue()
             metrics.deviationUSD.shouldBeEqualComparingTo(BigDecimal("1.00"))
         }
 
-        "should mark deviation just below dust threshold as insignificant" {
+        "should mark deviation just below minimum order size as insignificant" {
             val metrics = PortfolioCalculations.calculateAssetMetrics(
                 symbol = Asset(Asset.BTC),
                 baseTargetPercent = BigDecimal("50.00"),
@@ -164,14 +164,14 @@ class PortfolioCalculationsTest : StringSpec() {
                 totalPortfolioValueUSD = BigDecimal("1000.00"),
                 effectiveUsdTarget = BigDecimal("0"),
                 cryptoScaleFactor = BigDecimal.ONE,
-                dustThresholdUSD = 1.0,
+                minimumOrderSizeUSD = 1.0,
             )
             // Target $500, current $500.99 → |deviation| == $0.99 below dust boundary
             metrics.isSignificant.shouldBeFalse()
             metrics.deviationUSD.shouldBeEqualComparingTo(BigDecimal("0.99"))
         }
 
-        "should mark significant deviations above the dust threshold" {
+        "should mark significant deviations above the minimum order size" {
             val metrics = PortfolioCalculations.calculateAssetMetrics(
                 symbol = Asset(Asset.BTC),
                 baseTargetPercent = BigDecimal("50.00"),
@@ -179,7 +179,7 @@ class PortfolioCalculationsTest : StringSpec() {
                 totalPortfolioValueUSD = BigDecimal("1000.00"),
                 effectiveUsdTarget = BigDecimal("0"),
                 cryptoScaleFactor = BigDecimal.ONE,
-                dustThresholdUSD = 1.0,
+                minimumOrderSizeUSD = 1.0,
             )
             metrics.isSignificant.shouldBeTrue()
             metrics.deviationUSD.shouldBeEqualComparingTo(BigDecimal("100.00"))
@@ -187,7 +187,7 @@ class PortfolioCalculationsTest : StringSpec() {
         }
 
         // CQ-3-16: isSignificant uses abs(), so underweight |deviation| must match overweight boundaries.
-        "should mark underweight deviation at exact dust threshold as significant" {
+        "should mark underweight deviation at exact minimum order size as significant" {
             val metrics = PortfolioCalculations.calculateAssetMetrics(
                 symbol = Asset(Asset.BTC),
                 baseTargetPercent = BigDecimal("50.00"),
@@ -195,14 +195,14 @@ class PortfolioCalculationsTest : StringSpec() {
                 totalPortfolioValueUSD = BigDecimal("1000.00"),
                 effectiveUsdTarget = BigDecimal("0"),
                 cryptoScaleFactor = BigDecimal.ONE,
-                dustThresholdUSD = 1.0,
+                minimumOrderSizeUSD = 1.0,
             )
             // Target $500, current $499.00 → |deviation| == $1.00 dust boundary
             metrics.isSignificant.shouldBeTrue()
             metrics.deviationUSD.shouldBeEqualComparingTo(BigDecimal("-1.00"))
         }
 
-        "should mark underweight deviation just below dust threshold as insignificant" {
+        "should mark underweight deviation just below minimum order size as insignificant" {
             val metrics = PortfolioCalculations.calculateAssetMetrics(
                 symbol = Asset(Asset.BTC),
                 baseTargetPercent = BigDecimal("50.00"),
@@ -210,7 +210,7 @@ class PortfolioCalculationsTest : StringSpec() {
                 totalPortfolioValueUSD = BigDecimal("1000.00"),
                 effectiveUsdTarget = BigDecimal("0"),
                 cryptoScaleFactor = BigDecimal.ONE,
-                dustThresholdUSD = 1.0,
+                minimumOrderSizeUSD = 1.0,
             )
             // Target $500, current $499.01 → |deviation| == $0.99 below dust boundary
             metrics.isSignificant.shouldBeFalse()

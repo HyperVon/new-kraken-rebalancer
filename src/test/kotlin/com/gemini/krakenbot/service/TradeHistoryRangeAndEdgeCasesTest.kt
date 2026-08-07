@@ -166,7 +166,7 @@ class TradeHistoryRangeAndEdgeCasesTest : TradeHistoryServiceTestBase() {
                         simulation = true,
                         loopDelaySeconds = 60,
                         deviationTriggerPercent = 5.0,
-                        dustThresholdUSD = 5.0,
+                        minimumOrderSizeUSD = 5.0,
                         fiatMaxDrawdown = 30.0,
                     ),
                     allocations = listOf(
@@ -209,7 +209,7 @@ class TradeHistoryRangeAndEdgeCasesTest : TradeHistoryServiceTestBase() {
                         simulation = true,
                         loopDelaySeconds = 60,
                         deviationTriggerPercent = 5.0,
-                        dustThresholdUSD = 5.0,
+                        minimumOrderSizeUSD = 5.0,
                         fiatMaxDrawdown = 30.0,
                     ),
                     allocations = listOf(
@@ -254,7 +254,7 @@ class TradeHistoryRangeAndEdgeCasesTest : TradeHistoryServiceTestBase() {
                         simulation = true,
                         loopDelaySeconds = 60,
                         deviationTriggerPercent = 5.0,
-                        dustThresholdUSD = 5.0,
+                        minimumOrderSizeUSD = 5.0,
                         fiatMaxDrawdown = 30.0,
                     ),
                     allocations = listOf(
@@ -298,7 +298,7 @@ class TradeHistoryRangeAndEdgeCasesTest : TradeHistoryServiceTestBase() {
                     settings = TestFixtures.settings(
                         loopDelaySeconds = 60,
                         deviationTriggerPercent = 5.0,
-                        dustThresholdUSD = 5.0,
+                        minimumOrderSizeUSD = 5.0,
                     ),
                     allocations = listOf(
                         Allocation(Asset.BTC, 50.0),
@@ -340,7 +340,7 @@ class TradeHistoryRangeAndEdgeCasesTest : TradeHistoryServiceTestBase() {
                     settings = TestFixtures.settings(
                         loopDelaySeconds = 60,
                         deviationTriggerPercent = 5.0,
-                        dustThresholdUSD = 5.0,
+                        minimumOrderSizeUSD = 5.0,
                     ),
                     allocations = listOf(
                         Allocation(Asset.BTC, 50.0),
@@ -432,7 +432,7 @@ class TradeHistoryRangeAndEdgeCasesTest : TradeHistoryServiceTestBase() {
                     settings = TestFixtures.settings(
                         loopDelaySeconds = 60,
                         deviationTriggerPercent = 5.0,
-                        dustThresholdUSD = 5.0,
+                        minimumOrderSizeUSD = 5.0,
                     ),
                     allocations = listOf(
                         Allocation(Asset.BTC, 50.0),
@@ -535,7 +535,7 @@ class TradeHistoryRangeAndEdgeCasesTest : TradeHistoryServiceTestBase() {
                     settings = TestFixtures.settings(
                         loopDelaySeconds = 60,
                         deviationTriggerPercent = 5.0,
-                        dustThresholdUSD = 5.0,
+                        minimumOrderSizeUSD = 5.0,
                     ),
                     allocations = listOf(
                         Allocation(Asset.BTC, 50.0),
@@ -596,7 +596,7 @@ class TradeHistoryRangeAndEdgeCasesTest : TradeHistoryServiceTestBase() {
                     settings = TestFixtures.settings(
                         loopDelaySeconds = 60,
                         deviationTriggerPercent = 5.0,
-                        dustThresholdUSD = 5.0,
+                        minimumOrderSizeUSD = 5.0,
                     ),
                     allocations = listOf(
                         Allocation(Asset.BTC, 50.0),
@@ -644,7 +644,7 @@ class TradeHistoryRangeAndEdgeCasesTest : TradeHistoryServiceTestBase() {
                     settings = TestFixtures.settings(
                         loopDelaySeconds = 60,
                         deviationTriggerPercent = 5.0,
-                        dustThresholdUSD = 5.0,
+                        minimumOrderSizeUSD = 5.0,
                     ),
                     allocations = listOf(
                         Allocation(Asset.BTC, 40.0),

@@ -135,7 +135,7 @@ class LedgersSyncServiceTest : StringSpec() {
             repository.getLedgersInRange(Instant.EPOCH, fixedNow).size shouldBe 74
         }
 
-        "recovering an interrupted seed restarts from full history with a null start" {
+        "recovering an interrupted seed restarts from 96-day bounded history" {
             stubStableBackend()
             every { configService.getConfig() } returns appConfig
             repository.setSyncMetadata(SyncMetadataKeys.LEDGER_OFFSET, "50")
@@ -146,7 +146,10 @@ class LedgersSyncServiceTest : StringSpec() {
             val service = LedgersSyncService(repository, krakenService, configService, nowProvider = { fixedNow })
             service.syncLedgersFromKraken()
 
-            coVerify { krakenService.getLedgers(startSec = null, offset = 0, endSec = any(), types = any()) }
+            val expectedSeedBound = fixedNow.minus(96, ChronoUnit.DAYS).epochSecond
+            coVerify {
+                krakenService.getLedgers(startSec = expectedSeedBound, offset = 0, endSec = any(), types = any())
+            }
         }
 
         "self-heals orphaned numeric offsets when the store is already seeded" {

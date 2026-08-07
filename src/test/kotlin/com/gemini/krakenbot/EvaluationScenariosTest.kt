@@ -209,5 +209,6 @@ class EvaluationScenariosTest : StringSpec() {
         registerScenarios15To21()
         registerScenarios22To28()
         registerScenarios29To34()
+        registerScenarios35To38()
     }
 }

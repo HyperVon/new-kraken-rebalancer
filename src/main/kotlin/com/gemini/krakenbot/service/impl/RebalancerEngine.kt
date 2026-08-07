@@ -190,7 +190,7 @@ object RebalancerEngine {
                     totalPortfolioValueUSD = totalPortfolioValueUSD,
                     effectiveUsdTarget = effectiveUsdTarget,
                     cryptoScaleFactor = cryptoScaleFactor,
-                    dustThresholdUSD = settings.dustThresholdUSD,
+                    minimumOrderSizeUSD = settings.minimumOrderSizeUSD,
                 )
 
             allDeviations[symbolVal] = metrics.deviationUSD
@@ -296,6 +296,7 @@ object RebalancerEngine {
                 "Fiat correction required but no suitable " +
                     "counter-balancing assets found.",
             )
+            actionLog.add("Fiat correction: no counter-balancing candidates")
             return
         }
 

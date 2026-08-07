@@ -64,11 +64,11 @@ class SettingsFormComponent {
             min = "0",
         ),
         NumericFieldSpec(
-            ViewText.DUST_THRESHOLD,
-            FormFields.DUST_THRESHOLD_USD,
-            config.settings.dustThresholdUSD.toString(),
+            ViewText.MINIMUM_ORDER_SIZE,
+            FormFields.MINIMUM_ORDER_SIZE_USD,
+            config.settings.minimumOrderSizeUSD.toString(),
             step = "0.5",
-            min = "0",
+            min = "2",
         ),
         NumericFieldSpec(
             ViewText.FIAT_MAX_DRAWDOWN,

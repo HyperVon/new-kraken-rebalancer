@@ -23,7 +23,7 @@ interface ConfigService {
     fun watchConfigChanges(): Flow<Settings>
 }
 
-suspend inline fun <T> ConfigService.withExecutionSession(block: () -> T): T {
+suspend inline fun <T> ConfigService.withExecutionSession(block: suspend () -> T): T {
     beginExecutionSession()
     try {
         return block()

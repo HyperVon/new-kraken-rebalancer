@@ -27,7 +27,7 @@ FormFields:
   CSRF_TOKEN: "csrfToken"
   LOOP_DELAY_SECONDS: "loopDelaySeconds"
   DEVIATION_TRIGGER_PERCENT: "deviationTriggerPercent"
-  DUST_THRESHOLD_USD: "dustThresholdUSD"
+  MINIMUM_ORDER_SIZE_USD: "minimumOrderSizeUSD"
   DRY_RUN: "dryRun"
   SIMULATION: "simulation"
   FIAT_MAX_DRAWDOWN: "fiatMaxDrawdown"

@@ -39,10 +39,15 @@ open class RateLimiter(
             var acquired: Double? = null
             mutex.withLock {
                 val now = clock()
-                val elapsedSeconds = (now - lastUpdateTimeMs).coerceAtLeast(0L) / 1000.0
+                val rawElapsedMs = now - lastUpdateTimeMs
+                // Forward NTP jump would otherwise decay to 0 and permit a burst; cap forward
+                // decay to at most one safeLimit fill (safeLimit/decayRate seconds) and treat
+                // backward jumps as 0.
+                val elapsedMs = rawElapsedMs.coerceIn(0L, (safeLimit / decayRate * 1000).toLong())
+                val elapsedSeconds = elapsedMs / 1000.0
                 callCounter = maxOf(0.0, callCounter - (elapsedSeconds * decayRate))
                 // Keep the internal baseline monotonic when the wall clock moves backward.
-                lastUpdateTimeMs = maxOf(lastUpdateTimeMs, now)
+                lastUpdateTimeMs = if (rawElapsedMs < 0) lastUpdateTimeMs else now
 
                 if (callCounter + cost > safeLimit) {
                     val neededDecay = (callCounter + cost) - safeLimit
@@ -66,8 +71,9 @@ open class RateLimiter(
     /** Returns the decayed [callCounter] without charging — linear decay since last update. */
     suspend fun getCurrentCounter(): Double = mutex.withLock {
         val now = clock()
-        val lastUpdate = lastUpdateTimeMs
-        val elapsedSeconds = (now - lastUpdate).coerceAtLeast(0L) / 1000.0
+        val rawElapsedMs = now - lastUpdateTimeMs
+        val elapsedMs = rawElapsedMs.coerceIn(0L, (safeLimit / decayRate * 1000).toLong())
+        val elapsedSeconds = elapsedMs / 1000.0
         return maxOf(0.0, callCounter - (elapsedSeconds * decayRate))
     }
 

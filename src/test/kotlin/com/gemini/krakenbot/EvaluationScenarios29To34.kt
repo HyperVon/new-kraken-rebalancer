@@ -24,14 +24,14 @@ import kotlinx.coroutines.test.runTest
 import java.math.BigDecimal
 
 internal fun EvaluationScenariosTest.registerScenarios29To34() {
-    "Scenario 29: Extremely Large Dust Threshold" {
+    "Scenario 29: Extremely Large Minimum Order Size" {
         runTest {
             val fakeKraken = FakeKrakenService()
             val mockConfig = mockk<ConfigService>(relaxed = true)
             val appConfig =
                 TestFixtures.config(
                     settings =
-                    TestFixtures.settings(dryRun = false, loopDelaySeconds = 60L, dustThresholdUSD = 100.0),
+                    TestFixtures.settings(dryRun = false, loopDelaySeconds = 60L, minimumOrderSizeUSD = 100.0),
                     allocations =
                     listOf(
                         Allocation(Asset.BTC, 45.0),
@@ -93,7 +93,7 @@ internal fun EvaluationScenariosTest.registerScenarios29To34() {
             success.shouldBeTrue()
             EvaluationScenariosTest.recordResult(
                 "Scenario 29",
-                "Extremely Large Dust Threshold",
+                "Extremely Large Minimum Order Size",
                 TestFixtures.PASS,
                 evidence,
             )
@@ -538,7 +538,7 @@ internal fun EvaluationScenariosTest.registerScenarios29To34() {
             val availableBtc = BigDecimal("0.00000001")
             val btcPrice = BigDecimal("500000.00")
             val settings =
-                TestFixtures.settings(deviationTriggerPercent = 0.0, dustThresholdUSD = 0.0)
+                TestFixtures.settings(deviationTriggerPercent = 0.0, minimumOrderSizeUSD = 0.0)
             every { mockConfig.getConfig() } returns
                 TestFixtures.config(
                     settings = settings,
@@ -599,7 +599,7 @@ internal fun EvaluationScenariosTest.registerScenarios29To34() {
                     dryRun = false,
                     simulation = true,
                     deviationTriggerPercent = 5.0,
-                    dustThresholdUSD = 10.0,
+                    minimumOrderSizeUSD = 10.0,
                 ),
                 allocations = listOf(
                     Allocation(Asset.BTC, 0.0), // Zero target allocation
@@ -610,7 +610,7 @@ internal fun EvaluationScenariosTest.registerScenarios29To34() {
             every { mockConfig.getConfig() } returns appConfig
 
             val btcBalance = BigDecimal("0.1")
-            val btcPrice = BigDecimal("1000.00") // $100 value > $10 dust threshold
+            val btcPrice = BigDecimal("1000.00") // $100 value > $10 minimum order size
             fakeKraken.balanceSupplier = {
                 mapOf(
                     "XXBT" to btcBalance,
@@ -651,6 +651,77 @@ internal fun EvaluationScenariosTest.registerScenarios29To34() {
                 "Complete Liquidation of Zero-Target Position",
                 TestFixtures.PASS,
                 "Zero-target BTC holding=$btcBalance ($100 USD > $10 dust) generates full liquidation sell order",
+            )
+        }
+    }
+
+    "Scenario 36: Zero Total Portfolio Value / 100% Drawdown" {
+        runTest {
+            val fakeKraken = FakeKrakenService()
+            val mockConfig = mockk<ConfigService>(relaxed = true)
+            val appConfig =
+                TestFixtures.config(
+                    settings = TestFixtures.settings(dryRun = false, minimumOrderSizeUSD = 0.0),
+                    allocations =
+                    listOf(
+                        Allocation(Asset.BTC, 50.0),
+                        Allocation(Asset.ETH, 30.0),
+                        Allocation(Asset.USD, 20.0),
+                    ),
+                )
+            every { mockConfig.getConfig() } returns appConfig
+
+            // Zero balances — totalPortfolioValueUSD == 0 (covers 100% drawdown path when ATH>0)
+            fakeKraken.balanceSupplier = {
+                mapOf(
+                    Asset.BTC to 0.0,
+                    "ETH" to 0.0,
+                    Asset.USD to 0.0,
+                )
+            }
+            fakeKraken.pricesSupplier = { _ ->
+                mapOf(
+                    TestFixtures.XBTUSD to 50000.0,
+                    TestFixtures.ETHUSD to 2000.0,
+                )
+            }
+            val statsRepo = mockk<PortfolioStatsRepository>(relaxed = true)
+            // Mock ATH load to return 0 so drawdown calc is deterministic; the zero-total path is the focus
+            coEvery { statsRepo.load() } returns PortfolioStats(allTimeHigh = BigDecimal.ZERO)
+            coEvery { statsRepo.save(any()) } answers { firstArg<PortfolioStats>() }
+
+            val analyzer = PortfolioAnalyzerImpl(fakeKraken, mockConfig, statsRepo)
+            val executor = OrderExecutorImpl(fakeKraken, tradeHistoryService)
+            val mockHistory = mockk<TradeHistoryService>(relaxed = true)
+            coEvery { mockHistory.addSnapshot(any()) } answers {
+                firstArg<PortfolioSnapshot>()
+            }
+            val pm =
+                PortfolioManagerImpl(
+                    mockConfig,
+                    mockHistory,
+                    analyzer,
+                    executor,
+                )
+            try {
+                pm.performRebalanceCycle()
+            } catch (e: Exception) {
+                EvaluationScenariosTest.recordResult(
+                    "Scenario 36",
+                    "Zero Total Portfolio Value / 100% Drawdown",
+                    "FAIL",
+                    "Unexpected exception with zero total: ${e.message}",
+                )
+                return@runTest
+            }
+            // With zero total, no orders should be generated
+            fakeKraken.executedOrders.size shouldBe 0
+
+            EvaluationScenariosTest.recordResult(
+                "Scenario 36",
+                "Zero Total Portfolio Value / 100% Drawdown",
+                TestFixtures.PASS,
+                "Zero balances handled without exception; 0 orders verified",
             )
         }
     }

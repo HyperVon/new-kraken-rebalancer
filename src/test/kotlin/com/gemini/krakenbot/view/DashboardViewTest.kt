@@ -58,7 +58,7 @@ class DashboardViewTest : StringSpec() {
             apiKey = TestFixtures.TEST_API_KEY,
             privateKey = "privateKey",
         ),
-        TestFixtures.settings(loopDelaySeconds = 60L, dustThresholdUSD = 5.0, fiatMaxDrawdown = 20.0),
+        TestFixtures.settings(loopDelaySeconds = 60L, minimumOrderSizeUSD = 5.0, fiatMaxDrawdown = 20.0),
         listOf(
             Allocation(Asset.USD, 10.0),
             Allocation(Asset.BTC, 50.0),
@@ -126,7 +126,7 @@ class DashboardViewTest : StringSpec() {
             listOf(
                 "loopDelaySeconds",
                 "deviationTriggerPercent",
-                "dustThresholdUSD",
+                "minimumOrderSizeUSD",
                 "fiatMaxDrawdown",
                 "fiatDeploymentExponent",
             ).forEach { field ->
@@ -166,7 +166,7 @@ class DashboardViewTest : StringSpec() {
                 return input
             }
 
-            namedInput("dustThresholdUSD") shouldContain "min=\"0\""
+            namedInput("minimumOrderSizeUSD") shouldContain "min=\"2\""
             val fiatMax = namedInput("fiatMaxDrawdown")
             fiatMax shouldContain "min=\"0\""
             fiatMax shouldContain "max=\"100\""
