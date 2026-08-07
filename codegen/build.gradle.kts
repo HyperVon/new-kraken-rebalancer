@@ -9,7 +9,7 @@ repositories {
 }
 
 dependencies {
-    implementation("com.google.devtools.ksp:symbol-processing-api:2.3.10")
+    implementation("com.google.devtools.ksp:symbol-processing-api:2.3.11")
     implementation("org.yaml:snakeyaml:2.6")
 }
 
