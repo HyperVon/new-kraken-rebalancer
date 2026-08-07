@@ -4,7 +4,7 @@ import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
 plugins {
     kotlin("jvm") version "2.4.10"
-    id("com.google.devtools.ksp") version "2.3.10"
+    id("com.google.devtools.ksp") version "2.3.11"
     id("com.diffplug.spotless") version "8.9.0"
     application
     jacoco
