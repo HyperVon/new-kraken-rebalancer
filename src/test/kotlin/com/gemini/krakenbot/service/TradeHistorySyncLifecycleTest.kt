@@ -36,7 +36,7 @@ class TradeHistorySyncLifecycleTest : TradeHistoryServiceTestBase() {
                         simulation = true,
                         loopDelaySeconds = 60,
                         deviationTriggerPercent = 5.0,
-                        dustThresholdUSD = 5.0,
+                        minimumOrderSizeUSD = 5.0,
                         fiatMaxDrawdown = 30.0,
                     ),
                     allocations = listOf(
@@ -77,7 +77,7 @@ class TradeHistorySyncLifecycleTest : TradeHistoryServiceTestBase() {
                         simulation = true,
                         loopDelaySeconds = 60,
                         deviationTriggerPercent = 5.0,
-                        dustThresholdUSD = 5.0,
+                        minimumOrderSizeUSD = 5.0,
                         fiatMaxDrawdown = 30.0,
                     ),
                     allocations = listOf(

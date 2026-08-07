@@ -69,7 +69,7 @@ class OrderExecutorCashCapTest : StringSpec() {
                     sellOrders = emptyMap(),
                     currentValuesUSD = mapOf(Asset.USD to BigDecimal("0.50")),
                     prices = mapOf(Asset.ETH to BigDecimal.ONE),
-                    settings = TestFixtures.settings(dustThresholdUSD = 0.0),
+                    settings = TestFixtures.settings(minimumOrderSizeUSD = 0.0),
                     actionLog = mutableListOf(),
                 )
 
@@ -167,7 +167,7 @@ class OrderExecutorCashCapTest : StringSpec() {
             }
         }
 
-        "should execute sell at exact dust threshold boundary" {
+        "should execute sell at exact minimum order size boundary" {
             runTest {
                 krakenService.orderResultFactory = { pair, _, side, volume ->
                     OrderResult(success = true, pair = pair, side = side, volume = volume)
@@ -183,7 +183,7 @@ class OrderExecutorCashCapTest : StringSpec() {
                     ),
                     prices = mapOf(Asset.BTC to BigDecimal("50000.00")),
                     settings =
-                    TestFixtures.settings(),
+                    TestFixtures.settings(minimumOrderSizeUSD = 1.0),
                     actionLog = mutableListOf(),
                 )
 
@@ -204,7 +204,7 @@ class OrderExecutorCashCapTest : StringSpec() {
                     sellOrders = emptyMap(),
                     currentValuesUSD = mapOf(Asset.USD to BigDecimal("100.00")),
                     prices = mapOf(Asset.BTC to BigDecimal("48523.97")),
-                    settings = TestFixtures.settings(dustThresholdUSD = 1.0),
+                    settings = TestFixtures.settings(minimumOrderSizeUSD = 1.0),
                     actionLog = mutableListOf(),
                 )
 
@@ -231,7 +231,7 @@ class OrderExecutorCashCapTest : StringSpec() {
                         Asset.ETH to BigDecimal.ONE,
                     ),
                     settings =
-                    TestFixtures.settings(deviationTriggerPercent = 0.0, dustThresholdUSD = 0.0),
+                    TestFixtures.settings(deviationTriggerPercent = 0.0, minimumOrderSizeUSD = 0.0),
                     actionLog = mutableListOf(),
                     availableBalances = mapOf("XXBT" to BigDecimal("0.00000001")),
                 )
@@ -249,7 +249,7 @@ class OrderExecutorCashCapTest : StringSpec() {
             }
         }
 
-        "CQ-12-L3: reports a capped sell that falls below the dust threshold" {
+        "CQ-12-L3: reports a capped sell that falls below the minimum order size" {
             runTest {
                 val actionLog = mutableListOf<String>()
                 orderExecutor.executeOrders(
@@ -258,7 +258,7 @@ class OrderExecutorCashCapTest : StringSpec() {
                     currentValuesUSD = mapOf(Asset.USD to BigDecimal.ZERO, Asset.BTC to BigDecimal("0.01")),
                     prices = mapOf(Asset.BTC to BigDecimal("500000.00")),
                     settings =
-                    TestFixtures.settings(deviationTriggerPercent = 0.0, dustThresholdUSD = 0.007),
+                    TestFixtures.settings(deviationTriggerPercent = 0.0, minimumOrderSizeUSD = 0.007),
                     actionLog = actionLog,
                     availableBalances = mapOf("XXBT" to BigDecimal("0.00000001")),
                 )
@@ -268,7 +268,7 @@ class OrderExecutorCashCapTest : StringSpec() {
             }
         }
 
-        "should skip sell just below dust threshold" {
+        "should skip sell just below minimum order size" {
             runTest {
                 krakenService.orderResultFactory = { pair, _, side, volume ->
                     OrderResult(success = true, pair = pair, side = side, volume = volume)
@@ -417,7 +417,7 @@ class OrderExecutorCashCapTest : StringSpec() {
             }
         }
 
-        "should not send a zero-volume sell when dustThresholdUSD is 0 and amount is 0" {
+        "should not send a zero-volume sell when minimumOrderSizeUSD is 0 and amount is 0" {
             runTest {
                 krakenService.orderResultFactory = { pair, _, side, volume ->
                     OrderResult(success = true, pair = pair, side = side, volume = volume)
@@ -433,7 +433,7 @@ class OrderExecutorCashCapTest : StringSpec() {
                     ),
                     prices = mapOf(Asset.BTC to BigDecimal("50000.00")),
                     settings =
-                    TestFixtures.settings(dustThresholdUSD = 0.0),
+                    TestFixtures.settings(minimumOrderSizeUSD = 0.0),
                     actionLog = mutableListOf(),
                 )
 
@@ -441,7 +441,7 @@ class OrderExecutorCashCapTest : StringSpec() {
             }
         }
 
-        "should not send a zero-volume buy when budget trims cost to 0 with dustThresholdUSD 0" {
+        "should not send a zero-volume buy when budget trims cost to 0 with minimumOrderSizeUSD 0" {
             runTest {
                 krakenService.orderResultFactory = { pair, _, side, volume ->
                     OrderResult(success = true, pair = pair, side = side, volume = volume)
@@ -463,7 +463,7 @@ class OrderExecutorCashCapTest : StringSpec() {
                         Asset.BTC to BigDecimal("1000.00"),
                     ),
                     settings =
-                    TestFixtures.settings(dustThresholdUSD = 0.0),
+                    TestFixtures.settings(minimumOrderSizeUSD = 0.0),
                     actionLog = mutableListOf(),
                 )
 
@@ -553,8 +553,8 @@ class OrderExecutorCashCapTest : StringSpec() {
             }
         }
 
-        // CQ-3-24: budget trim that lands strictly below a positive dust threshold → skip, no order.
-        "should skip budget-trimmed buy below positive dust threshold without sending an order" {
+        // CQ-3-24: budget trim that lands strictly below a positive minimum order size → skip, no order.
+        "should skip budget-trimmed buy below positive minimum order size without sending an order" {
             runTest {
                 krakenService.orderResultFactory = { pair, _, side, volume ->
                     OrderResult(success = true, pair = pair, side = side, volume = volume)
@@ -576,7 +576,7 @@ class OrderExecutorCashCapTest : StringSpec() {
                         Asset.BTC to BigDecimal("1000.00"),
                     ),
                     settings =
-                    TestFixtures.settings(dustThresholdUSD = 10.0),
+                    TestFixtures.settings(minimumOrderSizeUSD = 10.0),
                     actionLog = actionLog,
                 )
 

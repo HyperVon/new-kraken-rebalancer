@@ -292,7 +292,7 @@ internal fun EvaluationScenariosTest.registerScenarios8To14() {
             val appConfig =
                 TestFixtures.config(
                     settings =
-                    TestFixtures.settings(loopDelaySeconds = 10, dustThresholdUSD = 0.0001),
+                    TestFixtures.settings(loopDelaySeconds = 10, minimumOrderSizeUSD = 0.0001),
                     allocations =
                     listOf(
                         Allocation(
@@ -375,7 +375,7 @@ internal fun EvaluationScenariosTest.registerScenarios8To14() {
             val appConfig =
                 TestFixtures.config(
                     settings =
-                    TestFixtures.settings(loopDelaySeconds = 60L, dustThresholdUSD = 10.0, dryRun = false),
+                    TestFixtures.settings(loopDelaySeconds = 60L, minimumOrderSizeUSD = 10.0, dryRun = false),
                     allocations =
                     listOf(
                         Allocation(Asset.BTC, 40.0),
@@ -482,7 +482,7 @@ internal fun EvaluationScenariosTest.registerScenarios8To14() {
                 TestFixtures.settings(
                     loopDelaySeconds = 120L,
                     deviationTriggerPercent = 5.0,
-                    dustThresholdUSD = 2.0,
+                    minimumOrderSizeUSD = 2.0,
                     dryRun = false,
                     fiatMaxDrawdown = 10.0,
                     fiatDeploymentExponent = 1.5,

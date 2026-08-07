@@ -98,7 +98,7 @@ class OrderExecutorImpl(
             val cycleTradeIds = mutableListOf<Int>()
 
             for ((symbol, usdToSell) in sellOrders) {
-                if (usdToSell < BigDecimal.valueOf(settings.dustThresholdUSD)) {
+                if (usdToSell < BigDecimal.valueOf(settings.minimumOrderSizeUSD)) {
                     log.info("Skipping dust sell for {} ($ {})", symbol, usdToSell)
                     actionLog.add(ActionLogFormatter.formatSkippedDust(OrderSide.SELL, symbol, usdToSell))
                     continue
@@ -176,7 +176,7 @@ class OrderExecutorImpl(
                     cost = maxAffordable
                 }
 
-                if (cost < BigDecimal.valueOf(settings.dustThresholdUSD)) {
+                if (cost < BigDecimal.valueOf(settings.minimumOrderSizeUSD)) {
                     log.info("Skipping dust buy for {} ($ {})", symbol, cost)
                     actionLog.add(ActionLogFormatter.formatSkippedDust(OrderSide.BUY, symbol, cost))
                     continue
@@ -222,7 +222,7 @@ class OrderExecutorImpl(
         val price = prices[symbol] ?: BigDecimal.ZERO
         if (price.signum() == 0) return null
 
-        // Never place a zero/negative-value order (e.g. dustThresholdUSD=0 lets a $0 amount past
+        // Never place a zero/negative-value order (e.g. minimumOrderSizeUSD=0 lets a $0 amount past
         // the dust guard, or a budget-trimmed buy lands at $0). A zero volume would still hit the
         // exchange and persist a $0 TradeRecord otherwise (CQ-3-23 / #74).
         if (usdAmount.signum() <= 0) return null
@@ -244,7 +244,7 @@ class OrderExecutorImpl(
         if (volume.signum() <= 0) return null
         // Compare dust against the notional actually submitted after crypto-volume flooring.
         val effectiveUsdAmount = volume.multiply(price)
-        if (effectiveUsdAmount < BigDecimal.valueOf(settings.dustThresholdUSD)) {
+        if (effectiveUsdAmount < BigDecimal.valueOf(settings.minimumOrderSizeUSD)) {
             log.info("Skipping dust {} for {} after volume sizing ($ {})", side.apiValue, symbol, effectiveUsdAmount)
             actionLog.add(ActionLogFormatter.formatSkippedDust(side, symbol, effectiveUsdAmount))
             return null

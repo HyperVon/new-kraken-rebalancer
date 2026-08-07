@@ -47,7 +47,7 @@ private object FormFields {
     const val CSRF_TOKEN = "csrfToken"
     const val LOOP_DELAY_SECONDS = "loopDelaySeconds"
     const val DEVIATION_TRIGGER_PERCENT = "deviationTriggerPercent"
-    const val DUST_THRESHOLD_USD = "dustThresholdUSD"
+    const val MINIMUM_ORDER_SIZE_USD = "minimumOrderSizeUSD"
     const val DRY_RUN = "dryRun"
     const val SIMULATION = "simulation"
     const val FIAT_MAX_DRAWDOWN = "fiatMaxDrawdown"
@@ -84,7 +84,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
     init {
         "getDashboardShell_ReturnsHtml" {
             every { configService.getConfig() } returns dashboardConfig(
-                settings = TestFixtures.settings(loopDelaySeconds = 60L, dustThresholdUSD = 5.0),
+                settings = TestFixtures.settings(loopDelaySeconds = 60L, minimumOrderSizeUSD = 5.0),
                 credentials = KrakenCredentials(apiKey = TestFixtures.TEST_API_KEY, privateKey = "k"),
             )
             testApplication {
@@ -268,7 +268,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                         parametersOf(
                             FormFields.LOOP_DELAY_SECONDS to listOf("60"),
                             FormFields.DEVIATION_TRIGGER_PERCENT to listOf("2.0"),
-                            FormFields.DUST_THRESHOLD_USD to listOf("1.0"),
+                            FormFields.MINIMUM_ORDER_SIZE_USD to listOf("1.0"),
                             FormFields.FIAT_MAX_DRAWDOWN to listOf("0.0"),
                             FormFields.FIAT_DEPLOYMENT_EXPONENT to listOf("1.0"),
                             FormFields.CSRF_TOKEN to listOf(newToken),
@@ -330,7 +330,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                             parametersOf(
                                 FormFields.LOOP_DELAY_SECONDS to listOf("120"),
                                 FormFields.DEVIATION_TRIGGER_PERCENT to listOf("3.5"),
-                                FormFields.DUST_THRESHOLD_USD to listOf("2.0"),
+                                FormFields.MINIMUM_ORDER_SIZE_USD to listOf("2.0"),
                                 FormFields.FIAT_MAX_DRAWDOWN to listOf("5.0"),
                                 FormFields.FIAT_DEPLOYMENT_EXPONENT to listOf("1.5"),
                                 FormFields.CSRF_TOKEN to listOf(csrf.value),
@@ -376,7 +376,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                         parametersOf(
                             FormFields.LOOP_DELAY_SECONDS to listOf("60"),
                             FormFields.DEVIATION_TRIGGER_PERCENT to listOf("2.0"),
-                            FormFields.DUST_THRESHOLD_USD to listOf("1.0"),
+                            FormFields.MINIMUM_ORDER_SIZE_USD to listOf("1.0"),
                             FormFields.FIAT_MAX_DRAWDOWN to listOf("0.0"),
                             FormFields.FIAT_DEPLOYMENT_EXPONENT to listOf("1.0"),
                             FormFields.CSRF_TOKEN to listOf(csrf.value),
@@ -399,7 +399,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                             parametersOf(
                                 FormFields.LOOP_DELAY_SECONDS to listOf("60"),
                                 FormFields.DEVIATION_TRIGGER_PERCENT to listOf("2.0"),
-                                FormFields.DUST_THRESHOLD_USD to listOf("1.0"),
+                                FormFields.MINIMUM_ORDER_SIZE_USD to listOf("1.0"),
                                 FormFields.FIAT_MAX_DRAWDOWN to listOf("0.0"),
                                 FormFields.FIAT_DEPLOYMENT_EXPONENT to listOf("1.0"),
                                 FormFields.CSRF_TOKEN to listOf(csrf.value),
@@ -420,7 +420,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
 
         "CQ-12-L1: post settings rejects malformed required trading values before persistence" {
             val serverConfig = dashboardConfig(
-                settings = TestFixtures.settings(loopDelaySeconds = 60, dustThresholdUSD = 5.0),
+                settings = TestFixtures.settings(loopDelaySeconds = 60, minimumOrderSizeUSD = 5.0),
                 credentials = KrakenCredentials(TestFixtures.TEST_SERVER_API_KEY, TestFixtures.TEST_SERVER_API_SECRET),
             )
             every { configService.getConfig() } returns serverConfig
@@ -430,7 +430,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                 mapOf(
                     FormFields.LOOP_DELAY_SECONDS to "60",
                     FormFields.DEVIATION_TRIGGER_PERCENT to "2.0",
-                    FormFields.DUST_THRESHOLD_USD to "1.0",
+                    FormFields.MINIMUM_ORDER_SIZE_USD to "1.0",
                     FormFields.FIAT_MAX_DRAWDOWN to "5.0",
                     FormFields.FIAT_DEPLOYMENT_EXPONENT to "1.5",
                     FormFields.TARGETS to "100.0",
@@ -439,7 +439,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                 mapOf(
                     FormFields.LOOP_DELAY_SECONDS to "not-a-long",
                     FormFields.DEVIATION_TRIGGER_PERCENT to "NaN",
-                    FormFields.DUST_THRESHOLD_USD to "Infinity",
+                    FormFields.MINIMUM_ORDER_SIZE_USD to "Infinity",
                     FormFields.FIAT_MAX_DRAWDOWN to "not-a-number",
                     FormFields.FIAT_DEPLOYMENT_EXPONENT to "-Infinity",
                     FormFields.TARGETS to "not-a-target",
@@ -458,8 +458,8 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                                         listOf(fields.getValue(FormFields.LOOP_DELAY_SECONDS)),
                                     FormFields.DEVIATION_TRIGGER_PERCENT to
                                         listOf(fields.getValue(FormFields.DEVIATION_TRIGGER_PERCENT)),
-                                    FormFields.DUST_THRESHOLD_USD to
-                                        listOf(fields.getValue(FormFields.DUST_THRESHOLD_USD)),
+                                    FormFields.MINIMUM_ORDER_SIZE_USD to
+                                        listOf(fields.getValue(FormFields.MINIMUM_ORDER_SIZE_USD)),
                                     FormFields.FIAT_MAX_DRAWDOWN to
                                         listOf(fields.getValue(FormFields.FIAT_MAX_DRAWDOWN)),
                                     FormFields.FIAT_DEPLOYMENT_EXPONENT to
@@ -482,7 +482,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
 
         "CQ-12-L1: post settings rejects mismatched colors without updating config" {
             val serverConfig = dashboardConfig(
-                settings = TestFixtures.settings(loopDelaySeconds = 60, dustThresholdUSD = 5.0),
+                settings = TestFixtures.settings(loopDelaySeconds = 60, minimumOrderSizeUSD = 5.0),
                 credentials = KrakenCredentials(TestFixtures.TEST_SERVER_API_KEY, TestFixtures.TEST_SERVER_API_SECRET),
             )
             every { configService.getConfig() } returns serverConfig
@@ -497,7 +497,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                             parametersOf(
                                 FormFields.LOOP_DELAY_SECONDS to listOf("60"),
                                 FormFields.DEVIATION_TRIGGER_PERCENT to listOf("2.0"),
-                                FormFields.DUST_THRESHOLD_USD to listOf("1.0"),
+                                FormFields.MINIMUM_ORDER_SIZE_USD to listOf("1.0"),
                                 FormFields.FIAT_MAX_DRAWDOWN to listOf("0.0"),
                                 FormFields.FIAT_DEPLOYMENT_EXPONENT to listOf("1.0"),
                                 FormFields.CSRF_TOKEN to listOf(csrf.value),
@@ -532,7 +532,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                             parametersOf(
                                 FormFields.LOOP_DELAY_SECONDS to listOf("60"),
                                 FormFields.DEVIATION_TRIGGER_PERCENT to listOf("2.0", "3.0"),
-                                FormFields.DUST_THRESHOLD_USD to listOf("1.0"),
+                                FormFields.MINIMUM_ORDER_SIZE_USD to listOf("1.0"),
                                 FormFields.FIAT_MAX_DRAWDOWN to listOf("0.0"),
                                 FormFields.FIAT_DEPLOYMENT_EXPONENT to listOf("1.0"),
                                 FormFields.CSRF_TOKEN to listOf(csrf.value),
@@ -574,7 +574,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                             parametersOf(
                                 FormFields.LOOP_DELAY_SECONDS to listOf("60"),
                                 FormFields.DEVIATION_TRIGGER_PERCENT to listOf("2.0"),
-                                FormFields.DUST_THRESHOLD_USD to listOf("1.0"),
+                                FormFields.MINIMUM_ORDER_SIZE_USD to listOf("1.0"),
                                 FormFields.FIAT_MAX_DRAWDOWN to listOf("0.0"),
                                 FormFields.FIAT_DEPLOYMENT_EXPONENT to listOf("1.0"),
                                 FormFields.CSRF_TOKEN to listOf(csrf.value),
@@ -637,7 +637,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                             parametersOf(
                                 FormFields.LOOP_DELAY_SECONDS to listOf(TestFixtures.INVALID),
                                 FormFields.DEVIATION_TRIGGER_PERCENT to listOf(TestFixtures.INVALID),
-                                FormFields.DUST_THRESHOLD_USD to listOf("5.0"),
+                                FormFields.MINIMUM_ORDER_SIZE_USD to listOf("5.0"),
                                 FormFields.FIAT_MAX_DRAWDOWN to listOf(TestFixtures.INVALID),
                                 FormFields.FIAT_DEPLOYMENT_EXPONENT to listOf(TestFixtures.INVALID),
                                 FormFields.CSRF_TOKEN to listOf(csrf.value),
@@ -683,7 +683,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                             parametersOf(
                                 FormFields.LOOP_DELAY_SECONDS to listOf("60"),
                                 FormFields.DEVIATION_TRIGGER_PERCENT to listOf("5.0"),
-                                FormFields.DUST_THRESHOLD_USD to listOf(TestFixtures.INVALID),
+                                FormFields.MINIMUM_ORDER_SIZE_USD to listOf(TestFixtures.INVALID),
                                 FormFields.CSRF_TOKEN to listOf(csrf.value),
                                 FormFields.SYMBOLS to listOf(Asset.USD),
                                 FormFields.TARGETS to listOf("100.0"),
@@ -697,7 +697,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                         header(HttpHeaders.Cookie, csrf.cookie)
                     }
                 response.status shouldBe HttpStatusCode.UnprocessableEntity
-                response.bodyAsText() shouldContain ViewText.INVALID_DUST_THRESHOLD
+                response.bodyAsText() shouldContain ViewText.INVALID_MINIMUM_ORDER_SIZE
             }
 
             coVerify(exactly = 0) { configService.updateConfig(any()) }
@@ -763,7 +763,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
                             parametersOf(
                                 FormFields.LOOP_DELAY_SECONDS to listOf("60"),
                                 FormFields.DEVIATION_TRIGGER_PERCENT to listOf("5.0"),
-                                FormFields.DUST_THRESHOLD_USD to listOf("5.0"),
+                                FormFields.MINIMUM_ORDER_SIZE_USD to listOf("5.0"),
                                 FormFields.FIAT_MAX_DRAWDOWN to listOf("0.0"),
                                 FormFields.FIAT_DEPLOYMENT_EXPONENT to listOf("1.0"),
                                 FormFields.CSRF_TOKEN to listOf(csrf.value),
@@ -783,7 +783,7 @@ class DashboardControllerTest : DashboardControllerTestBase() {
             }
 
             capturedConfig.captured.settings.deviationTriggerPercent shouldBe 5.0
-            capturedConfig.captured.settings.dustThresholdUSD shouldBe 5.0
+            capturedConfig.captured.settings.minimumOrderSizeUSD shouldBe 5.0
         }
 
         "getSettings_SetCookieCarriesPathHttpOnlySameSiteStrictAttributes" {

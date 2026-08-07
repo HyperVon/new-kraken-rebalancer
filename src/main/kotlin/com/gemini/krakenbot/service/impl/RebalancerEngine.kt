@@ -190,7 +190,7 @@ object RebalancerEngine {
                     totalPortfolioValueUSD = totalPortfolioValueUSD,
                     effectiveUsdTarget = effectiveUsdTarget,
                     cryptoScaleFactor = cryptoScaleFactor,
-                    dustThresholdUSD = settings.dustThresholdUSD,
+                    minimumOrderSizeUSD = settings.minimumOrderSizeUSD,
                 )
 
             allDeviations[symbolVal] = metrics.deviationUSD

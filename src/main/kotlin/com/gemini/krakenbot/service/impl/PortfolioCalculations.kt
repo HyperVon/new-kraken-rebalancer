@@ -86,7 +86,7 @@ object PortfolioCalculations {
         val deviationUSD: BigDecimal,
         val deviationPercent: BigDecimal,
         val targetValueUSD: BigDecimal,
-        /** Dust gate only (`|deviationUSD| ≥ dustThresholdUSD`); percent trigger is applied by callers. */
+        /** Dust gate only (`|deviationUSD| ≥ minimumOrderSizeUSD`); percent trigger is applied by callers. */
         val isSignificant: Boolean,
     )
 
@@ -98,7 +98,7 @@ object PortfolioCalculations {
         totalPortfolioValueUSD: BigDecimal,
         effectiveUsdTarget: BigDecimal,
         cryptoScaleFactor: BigDecimal,
-        dustThresholdUSD: Double,
+        minimumOrderSizeUSD: Double,
     ): AssetMetrics {
         val calcTargetPct =
             calculateTargetPercent(
@@ -113,7 +113,7 @@ object PortfolioCalculations {
         val deviationUSD = calculateDeviationUSD(currentValueUSD, targetValueUSD)
         val deviationPct = calculateDeviationPercent(deviationUSD, targetValueUSD, currentValueUSD)
 
-        val isSignificant = deviationUSD.abs() >= BigDecimal.valueOf(dustThresholdUSD)
+        val isSignificant = deviationUSD.abs() >= BigDecimal.valueOf(minimumOrderSizeUSD)
 
         return AssetMetrics(
             symbol = symbol,

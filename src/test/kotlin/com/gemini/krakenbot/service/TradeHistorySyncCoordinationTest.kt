@@ -748,7 +748,7 @@ class TradeHistorySyncCoordinationTest : TradeHistoryServiceTestBase() {
                         dryRun = false,
                         loopDelaySeconds = 60,
                         deviationTriggerPercent = 5.0,
-                        dustThresholdUSD = 5.0,
+                        minimumOrderSizeUSD = 5.0,
                     ),
                     allocations = emptyList(),
                 )
@@ -793,7 +793,7 @@ class TradeHistorySyncCoordinationTest : TradeHistoryServiceTestBase() {
                     settings = TestFixtures.settings(
                         loopDelaySeconds = 60,
                         deviationTriggerPercent = 5.0,
-                        dustThresholdUSD = 5.0,
+                        minimumOrderSizeUSD = 5.0,
                     ),
                     allocations = listOf(
                         Allocation(Asset.BTC, 30.0),

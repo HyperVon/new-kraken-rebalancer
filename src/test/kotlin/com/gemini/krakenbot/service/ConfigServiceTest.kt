@@ -55,7 +55,7 @@ class ConfigServiceTest : StringSpec() {
     private val nonFiniteSettingMutations =
         listOf<Pair<String, (Settings, Double) -> Settings>>(
             "deviationTriggerPercent" to { settings, value -> settings.copy(deviationTriggerPercent = value) },
-            "dustThresholdUSD" to { settings, value -> settings.copy(dustThresholdUSD = value) },
+            "minimumOrderSizeUSD" to { settings, value -> settings.copy(minimumOrderSizeUSD = value) },
             "fiatMaxDrawdown" to { settings, value -> settings.copy(fiatMaxDrawdown = value) },
             "fiatDeploymentExponent" to { settings, value -> settings.copy(fiatDeploymentExponent = value) },
         )
@@ -98,7 +98,7 @@ class ConfigServiceTest : StringSpec() {
                   "settings": {
                     "loopDelaySeconds": 60,
                     "deviationTriggerPercent": 2.0,
-                    "dustThresholdUSD": 5.0,
+                    "minimumOrderSizeUSD": 5.0,
                     "dryRun": true,
                     "fiatMaxDrawdown": 0.0,
                     "fiatDeploymentExponent": 1.0
@@ -475,7 +475,7 @@ class ConfigServiceTest : StringSpec() {
                 assertSettingsRejected(
                     "loopDelaySeconds" to settings.copy(loopDelaySeconds = 0),
                     "deviationTriggerPercent" to settings.copy(deviationTriggerPercent = -1.0),
-                    "dustThresholdUSD" to settings.copy(dustThresholdUSD = -1.0),
+                    "minimumOrderSizeUSD" to settings.copy(minimumOrderSizeUSD = -1.0),
                     "minimum fiatMaxDrawdown" to settings.copy(fiatMaxDrawdown = -1.0),
                     "maximum fiatMaxDrawdown" to settings.copy(fiatMaxDrawdown = 101.0),
                     "fiatDeploymentExponent" to settings.copy(fiatDeploymentExponent = 0.0),

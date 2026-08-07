@@ -980,7 +980,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   journal lacks an automated reconcile path, so operators must resolve the row
   manually or via a restored database). The previous behavior cleared the
   submission state without an exchange identity.
-- **Floored submitted notional dust guard (#166)**: The buy dust threshold is now
+- **Floored submitted notional dust guard (#166)**: The buy minimum order size is now
   applied to the actual submitted notional (`floored volume × price`) rather than
   the original USD intent, preventing orders below the configured minimum
   execution notional after crypto-precision flooring. The journaled `usdAmount`
@@ -1600,7 +1600,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   portfolio-rebalancing-math skill poll gate; OPERATING §6 renumber +
   `.cursor/rules` sync.
 - **Settings POST numeric fields**: Reject missing or unparseable deviation
-  trigger and dust threshold values instead of silently coercing to `5.0`
+  trigger and minimum order size values instead of silently coercing to `5.0`
   (supersedes the `5.0` fallbacks noted in [6.13.3]).
 
 ### Fixed
@@ -1692,7 +1692,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `allocation-total` pill (no STREAM pulse animation).
 - **Settings POST fallbacks**: Missing deviation/dust form fields default to
   `5.0` / `5.0`, matching the config template (dust also matches
-  `Settings.dustThresholdUSD`; deviation has no data-class default).
+  `Settings.minimumOrderSizeUSD`; deviation has no data-class default).
 - **Docs accuracy**: EVALUATION hot streams, README Recent Activity vs History,
   config hot-reload wording, `@Suppress("unused")` guidance, and
   portfolio-rebalancing-math inclusive `>=` trigger language.
@@ -1713,7 +1713,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 
 - **Allocation Target Input Bounds**: Target allocation inputs enforce `min = "0"` and `max = "100"` HTML5 bounds on both server-rendered and dynamically added asset rows on the Settings page, so the step spinner and browser validation match the server-side allocation rules.
-- **Global Parameter Input Bounds**: Settings number inputs for dust threshold (`min = "0"`), fiat max drawdown (`min = "0"` / `max = "100"`), and fiat deployment exponent (`min = "0.1"`) now mirror `ConfigServiceImpl` validation so out-of-range values fail in the browser instead of only after Save.
+- **Global Parameter Input Bounds**: Settings number inputs for minimum order size (`min = "0"`), fiat max drawdown (`min = "0"` / `max = "100"`), and fiat deployment exponent (`min = "0.1"`) now mirror `ConfigServiceImpl` validation so out-of-range values fail in the browser instead of only after Save.
 
 ### Changed
 
@@ -1903,7 +1903,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Fixed
 
 - **Zero-volume order guard**: `OrderExecutor` no longer places a `$0` /
-  zero-volume market order (or persists a `$0` trade) when `dustThresholdUSD=0`
+  zero-volume market order (or persists a `$0` trade) when `minimumOrderSizeUSD=0`
   lets a `$0` amount past the dust guard, or a budget-trimmed buy lands at `$0`.
   `executeSingleOrder` now skips when the USD amount or computed volume is
   non-positive ([#74](https://github.com/HyperVon/new-kraken-rebalancer/issues/74)).
@@ -1913,14 +1913,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **tests**: Continuous-quality cycle 3 — USD refresh early-accept at ≥95% of
   projected (and continue-below-then-accept), TradeDeduplicator inclusive
   5-minute window boundary, explicit zero ticker price abort, and zero-volume
-  order suppression at `dustThresholdUSD=0`.
+  order suppression at `minimumOrderSizeUSD=0`.
 
 ## [6.12.24] - 2026-07-24
 
 ### Fixed
 
 - **Documentation review**: Documented dual rebalance trigger
-  (`|Deviation%|` and `|DeviationUSD| ≥ dustThresholdUSD` / `isSignificant`),
+  (`|Deviation%|` and `|DeviationUSD| ≥ minimumOrderSizeUSD` / `isSignificant`),
   missing/zero ticker price abort, and practical USD settle backoff
   (250→500→1000ms). Corrected History summary-card count (6, not 4) in
   frontend/code-review skills; refreshed README model tree and dust setting
@@ -2885,7 +2885,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **100% Test Coverage Implementation**: Expanded the Kotest unit test suite across multiple modules to achieve exactly 100% test coverage for lines, branches, and methods:
   - Added unit test to verify generated property getter of `PortfolioValues` data class in [ModelTest.kt](src/test/kotlin/com/gemini/krakenbot/model/ModelTest.kt).
   - Added unit test to verify that `ConfigServiceImpl` throws `InvalidConfigurationException` if it loads an invalid configuration file during initialization (`loadConfig`) in [ConfigServiceTest.kt](src/test/kotlin/com/gemini/krakenbot/service/ConfigServiceTest.kt).
-  - Added unit test for `OrderExecutor` to simulate a dust sell (selling value less than the dust threshold) in [PortfolioManagerEdgeCasesTest.kt](src/test/kotlin/com/gemini/krakenbot/service/PortfolioManagerEdgeCasesTest.kt).
+  - Added unit test for `OrderExecutor` to simulate a dust sell (selling value less than the minimum order size) in [PortfolioManagerEdgeCasesTest.kt](src/test/kotlin/com/gemini/krakenbot/service/PortfolioManagerEdgeCasesTest.kt).
   - Added reflection-based test to cover the `Icons.loadIcon` fallback branch on missing resource in [DashboardViewTest.kt](src/test/kotlin/com/gemini/krakenbot/view/DashboardViewTest.kt).
   - Added reflection-based test to invoke `PerformanceTableComponent$Companion.getCOLUMNS()` to cover the private companion class and method in [DashboardViewTest.kt](src/test/kotlin/com/gemini/krakenbot/view/DashboardViewTest.kt).
 

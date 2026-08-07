@@ -169,7 +169,16 @@ class ConfigServiceImpl(
         return config.copy(kraken = krakenToPersist)
     }
 
-    private fun parseConfig(content: String): AppConfig = objectMapper.readValue(content, AppConfig::class.java)
+    private fun parseConfig(content: String): AppConfig {
+        val normalized = normalizeLegacyKeys(content)
+        return objectMapper.readValue(normalized, AppConfig::class.java)
+    }
+
+    private fun normalizeLegacyKeys(content: String): String = if (content.contains("\"dustThresholdUSD\"")) {
+        content.replace("\"dustThresholdUSD\"", "\"minimumOrderSizeUSD\"")
+    } else {
+        content
+    }
 
     private fun resolveEnvVars(content: String): String = ENV_VAR_PATTERN.replace(content) { matchResult ->
         // A non-blank environment value wins, then the placeholder default, then an empty string.
@@ -275,8 +284,8 @@ class ConfigServiceImpl(
             (settings.loopDelaySeconds > 0) to "Loop delay must be a positive integer.",
             settings.deviationTriggerPercent.isFinite() to "Deviation trigger percent must be finite.",
             (settings.deviationTriggerPercent >= 0) to "Deviation trigger percent must be non-negative.",
-            settings.dustThresholdUSD.isFinite() to "Dust threshold USD must be finite.",
-            (settings.dustThresholdUSD >= 2.0) to "Dust threshold USD must be at least \$2.",
+            settings.minimumOrderSizeUSD.isFinite() to "Minimum order size USD must be finite.",
+            (settings.minimumOrderSizeUSD >= 2.0) to "Minimum order size USD must be at least \$2.",
             settings.fiatMaxDrawdown.isFinite() to "Fiat max drawdown must be finite.",
             (settings.fiatMaxDrawdown in MIN_PERCENT..MAX_PERCENT) to
                 "Fiat max drawdown must be between 0% and 100%.",

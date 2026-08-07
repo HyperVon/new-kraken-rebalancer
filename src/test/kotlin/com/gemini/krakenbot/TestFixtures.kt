@@ -112,7 +112,7 @@ object TestFixtures {
     val DEFAULT_TEST_SETTINGS = Settings(
         loopDelaySeconds = 60,
         deviationTriggerPercent = 2.0,
-        dustThresholdUSD = 5.0,
+        minimumOrderSizeUSD = 5.0,
         dryRun = false,
         simulation = true,
     )
@@ -131,7 +131,7 @@ object TestFixtures {
 
     fun settings(
         dryRun: Boolean = true,
-        dustThresholdUSD: Double = 5.0,
+        minimumOrderSizeUSD: Double = 5.0,
         simulation: Boolean = false,
         loopDelaySeconds: Long = 0L,
         deviationTriggerPercent: Double = 2.0,
@@ -140,7 +140,7 @@ object TestFixtures {
     ): Settings = Settings(
         loopDelaySeconds = loopDelaySeconds,
         deviationTriggerPercent = deviationTriggerPercent,
-        dustThresholdUSD = dustThresholdUSD,
+        minimumOrderSizeUSD = minimumOrderSizeUSD,
         dryRun = dryRun,
         fiatMaxDrawdown = fiatMaxDrawdown,
         fiatDeploymentExponent = fiatDeploymentExponent,

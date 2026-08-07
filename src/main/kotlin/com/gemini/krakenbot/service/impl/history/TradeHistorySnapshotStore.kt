@@ -310,7 +310,7 @@ class TradeHistorySnapshotStore(
                         totalPortfolioValueUSD = exactPortfolioValue,
                         effectiveUsdTarget = effectiveUsdTarget,
                         cryptoScaleFactor = cryptoScaleFactor,
-                        dustThresholdUSD = settings.dustThresholdUSD,
+                        minimumOrderSizeUSD = settings.minimumOrderSizeUSD,
                     )
                 asset.symbol to
                     PortfolioCalculations.createAssetSnapshot(

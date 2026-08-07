@@ -24,14 +24,14 @@ import kotlinx.coroutines.test.runTest
 import java.math.BigDecimal
 
 internal fun EvaluationScenariosTest.registerScenarios29To34() {
-    "Scenario 29: Extremely Large Dust Threshold" {
+    "Scenario 29: Extremely Large Minimum Order Size" {
         runTest {
             val fakeKraken = FakeKrakenService()
             val mockConfig = mockk<ConfigService>(relaxed = true)
             val appConfig =
                 TestFixtures.config(
                     settings =
-                    TestFixtures.settings(dryRun = false, loopDelaySeconds = 60L, dustThresholdUSD = 100.0),
+                    TestFixtures.settings(dryRun = false, loopDelaySeconds = 60L, minimumOrderSizeUSD = 100.0),
                     allocations =
                     listOf(
                         Allocation(Asset.BTC, 45.0),
@@ -93,7 +93,7 @@ internal fun EvaluationScenariosTest.registerScenarios29To34() {
             success.shouldBeTrue()
             EvaluationScenariosTest.recordResult(
                 "Scenario 29",
-                "Extremely Large Dust Threshold",
+                "Extremely Large Minimum Order Size",
                 TestFixtures.PASS,
                 evidence,
             )
@@ -538,7 +538,7 @@ internal fun EvaluationScenariosTest.registerScenarios29To34() {
             val availableBtc = BigDecimal("0.00000001")
             val btcPrice = BigDecimal("500000.00")
             val settings =
-                TestFixtures.settings(deviationTriggerPercent = 0.0, dustThresholdUSD = 0.0)
+                TestFixtures.settings(deviationTriggerPercent = 0.0, minimumOrderSizeUSD = 0.0)
             every { mockConfig.getConfig() } returns
                 TestFixtures.config(
                     settings = settings,
@@ -599,7 +599,7 @@ internal fun EvaluationScenariosTest.registerScenarios29To34() {
                     dryRun = false,
                     simulation = true,
                     deviationTriggerPercent = 5.0,
-                    dustThresholdUSD = 10.0,
+                    minimumOrderSizeUSD = 10.0,
                 ),
                 allocations = listOf(
                     Allocation(Asset.BTC, 0.0), // Zero target allocation
@@ -610,7 +610,7 @@ internal fun EvaluationScenariosTest.registerScenarios29To34() {
             every { mockConfig.getConfig() } returns appConfig
 
             val btcBalance = BigDecimal("0.1")
-            val btcPrice = BigDecimal("1000.00") // $100 value > $10 dust threshold
+            val btcPrice = BigDecimal("1000.00") // $100 value > $10 minimum order size
             fakeKraken.balanceSupplier = {
                 mapOf(
                     "XXBT" to btcBalance,
@@ -661,7 +661,7 @@ internal fun EvaluationScenariosTest.registerScenarios29To34() {
             val mockConfig = mockk<ConfigService>(relaxed = true)
             val appConfig =
                 TestFixtures.config(
-                    settings = TestFixtures.settings(dryRun = false, dustThresholdUSD = 0.0),
+                    settings = TestFixtures.settings(dryRun = false, minimumOrderSizeUSD = 0.0),
                     allocations =
                     listOf(
                         Allocation(Asset.BTC, 50.0),

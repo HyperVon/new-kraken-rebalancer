@@ -590,7 +590,7 @@ facts:
 - Examples and tests normally remain in simulation or dry-run modes.
 - Kraken credentials and real account data do not belong in commits or review
   artifacts.
-- BigDecimal precision, price guards, dust thresholds, sell-first ordering,
+- BigDecimal precision, price guards, minimum order sizes, sell-first ordering,
   cash caps, and the live-order submission journal protect real funds.
 - An ambiguous AddOrder outcome remains uncertain and blocks unsafe follow-up
   submissions.

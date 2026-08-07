@@ -33,7 +33,7 @@ class RebalancerEngineTest : StringSpec() {
             simulation = true,
             loopDelaySeconds = 60,
             deviationTriggerPercent = 5.0,
-            dustThresholdUSD = 10.0,
+            minimumOrderSizeUSD = 10.0,
             fiatMaxDrawdown = 20.0,
         )
 
@@ -157,7 +157,7 @@ class RebalancerEngineTest : StringSpec() {
                 effectiveUsdTarget = BigDecimal("20.00"),
                 cryptoScaleFactor = BigDecimal.ONE,
                 allocations = allocations,
-                settings = settings.copy(deviationTriggerPercent = 5.0, dustThresholdUSD = 10.0),
+                settings = settings.copy(deviationTriggerPercent = 5.0, minimumOrderSizeUSD = 10.0),
             )
             result.sellOrders.shouldContainKey(Asset.BTC)
             result.sellOrders.getValue(Asset.BTC).shouldBeEqualComparingTo(BigDecimal("1000.00"))

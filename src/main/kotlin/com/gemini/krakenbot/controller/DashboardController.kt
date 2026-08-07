@@ -183,9 +183,9 @@ class DashboardController(
         val deviationTriggerPercent =
             params.requiredSingle(FormFields.DEVIATION_TRIGGER_PERCENT, ViewText.INVALID_DEVIATION_TRIGGER)
                 .requiredFiniteDouble(ViewText.INVALID_DEVIATION_TRIGGER)
-        val dustThresholdUSD =
-            params.requiredSingle(FormFields.DUST_THRESHOLD_USD, ViewText.INVALID_DUST_THRESHOLD)
-                .requiredFiniteDouble(ViewText.INVALID_DUST_THRESHOLD)
+        val minimumOrderSizeUSD =
+            params.requiredSingle(FormFields.MINIMUM_ORDER_SIZE_USD, ViewText.INVALID_MINIMUM_ORDER_SIZE)
+                .requiredFiniteDouble(ViewText.INVALID_MINIMUM_ORDER_SIZE)
         val loopDelaySeconds =
             params.requiredSingle(FormFields.LOOP_DELAY_SECONDS, ViewText.INVALID_LOOP_DELAY)
                 .requiredLong(ViewText.INVALID_LOOP_DELAY)
@@ -199,7 +199,7 @@ class DashboardController(
             Settings(
                 loopDelaySeconds = loopDelaySeconds,
                 deviationTriggerPercent = deviationTriggerPercent,
-                dustThresholdUSD = dustThresholdUSD,
+                minimumOrderSizeUSD = minimumOrderSizeUSD,
                 dryRun = params[FormFields.DRY_RUN] != null,
                 simulation = params[FormFields.SIMULATION] != null,
                 fiatMaxDrawdown = fiatMaxDrawdown,

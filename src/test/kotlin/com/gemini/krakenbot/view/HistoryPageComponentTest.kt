@@ -19,7 +19,7 @@ class HistoryPageComponentTest : StringSpec() {
     init {
         "should render HistoryPage HTML structure" {
             val component = HistoryPageComponent(jacksonObjectMapper())
-            val settings = TestFixtures.settings(loopDelaySeconds = 60L, dustThresholdUSD = 5.0)
+            val settings = TestFixtures.settings(loopDelaySeconds = 60L, minimumOrderSizeUSD = 5.0)
             val htmlString = createHTML().html {
                 component.render(settings)
             }
@@ -63,7 +63,7 @@ class HistoryPageComponentTest : StringSpec() {
 
         "should JSON-escape asset colors in window.__ASSET_COLORS__" {
             val component = HistoryPageComponent(jacksonObjectMapper())
-            val settings = TestFixtures.settings(loopDelaySeconds = 60L, dustThresholdUSD = 5.0)
+            val settings = TestFixtures.settings(loopDelaySeconds = 60L, minimumOrderSizeUSD = 5.0)
             val htmlString = createHTML().html {
                 component.render(settings, mapOf("BTC" to "x\"};alert(1);//"))
             }

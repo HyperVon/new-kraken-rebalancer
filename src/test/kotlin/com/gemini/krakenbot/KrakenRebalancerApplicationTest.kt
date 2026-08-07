@@ -42,7 +42,7 @@ class KrakenRebalancerApplicationTest :
                     """
                     {
                       "kraken": { "apiKey": "k", "privateKey": "s" },
-                      "settings": { "loopDelaySeconds": 60, "deviationTriggerPercent": 2.0, "dustThresholdUSD": 1.0, "dryRun": true, "fiatMaxDrawdown": 0.0, "fiatDeploymentExponent": 1.0 },
+                      "settings": { "loopDelaySeconds": 60, "deviationTriggerPercent": 2.0, "minimumOrderSizeUSD": 5.0, "dryRun": true, "fiatMaxDrawdown": 0.0, "fiatDeploymentExponent": 1.0 },
                       "allocations": [ { "symbol": "USD", "targetPercent": 100.0 } ]
                     }
                     """.trimIndent(),

@@ -399,7 +399,7 @@ internal fun EvaluationScenariosTest.registerScenarios1To7() {
                     TestFixtures.settings(
                         loopDelaySeconds = 120L,
                         deviationTriggerPercent = 3.5,
-                        dustThresholdUSD = 2.0,
+                        minimumOrderSizeUSD = 2.0,
                     ),
                     allocations =
                     listOf(
@@ -429,7 +429,7 @@ internal fun EvaluationScenariosTest.registerScenarios1To7() {
                         parametersOf(
                             "loopDelaySeconds" to listOf("120"),
                             "deviationTriggerPercent" to listOf("3.5"),
-                            "dustThresholdUSD" to listOf("2.0"),
+                            "minimumOrderSizeUSD" to listOf("2.0"),
                             "fiatMaxDrawdown" to listOf("0.0"),
                             "fiatDeploymentExponent" to listOf("1.0"),
                             "csrfToken" to listOf(csrfToken),
@@ -476,7 +476,7 @@ internal fun EvaluationScenariosTest.registerScenarios1To7() {
                         parametersOf(
                             "loopDelaySeconds" to listOf("60"),
                             "deviationTriggerPercent" to listOf("2.0"),
-                            "dustThresholdUSD" to listOf("1.0"),
+                            "minimumOrderSizeUSD" to listOf("1.0"),
                             "fiatMaxDrawdown" to listOf("0.0"),
                             "fiatDeploymentExponent" to listOf("1.0"),
                             "csrfToken" to listOf(csrfToken),
@@ -591,11 +591,11 @@ internal fun EvaluationScenariosTest.registerScenarios1To7() {
 
             val dryRunPass = capturedActions.any { it.startsWith("[DRY RUN]") }
 
-            // Sub-case B: Dust Threshold Filtering
+            // Sub-case B: Minimum Order Size Filtering
             val appConfigDust =
                 TestFixtures.config(
                     settings =
-                    TestFixtures.settings(dryRun = false, dustThresholdUSD = 10.0, loopDelaySeconds = 60L),
+                    TestFixtures.settings(dryRun = false, minimumOrderSizeUSD = 10.0, loopDelaySeconds = 60L),
                     allocations =
                     listOf(
                         Allocation(Asset.BTC, 50.0),
@@ -647,7 +647,7 @@ internal fun EvaluationScenariosTest.registerScenarios1To7() {
             val finalPass = dryRunPass && dustPass && networkFailurePropagationPass && priceFailPass
             val evidence =
                 "Sub-case A (Dry Run Mode): $dryRunPass (Actions: $capturedActions)\n" +
-                    "Sub-case B (Dust Threshold): $dustPass " +
+                    "Sub-case B (Minimum Order Size): $dustPass " +
                     "(Trades executed: ${fakeKraken.executedOrders.size})\n" +
                     "Sub-case C (Network Failure propagated out of cycle to loop boundary): " +
                     "$networkFailurePropagationPass\n" +

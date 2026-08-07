@@ -128,7 +128,7 @@ object SnapshotHistoryCalculator {
             val fiatDeploymentPct = RebalancerEngine.calculateFiatDeployment(drawdownPct, settings)
             val effectiveUsdTarget = RebalancerEngine.calculateEffectiveUsdTarget(fiatDeploymentPct, allocations)
             val cryptoScaleFactor = RebalancerEngine.calculateCryptoScaleFactor(effectiveUsdTarget, allocations)
-            val dustThreshold = settings.dustThresholdUSD
+            val minimumOrderSize = settings.minimumOrderSizeUSD
 
             val assetSnapshots = mutableMapOf<String, PortfolioSnapshot.AssetSnapshot>()
             for ((symbol, balance, price, valueUSD, targetPercent) in point.calculatedAssets) {
@@ -141,7 +141,7 @@ object SnapshotHistoryCalculator {
                         totalPortfolioValueUSD = exactPortfolioValue,
                         effectiveUsdTarget = effectiveUsdTarget,
                         cryptoScaleFactor = cryptoScaleFactor,
-                        dustThresholdUSD = dustThreshold,
+                        minimumOrderSizeUSD = minimumOrderSize,
                     )
 
                 assetSnapshots[symbol] =

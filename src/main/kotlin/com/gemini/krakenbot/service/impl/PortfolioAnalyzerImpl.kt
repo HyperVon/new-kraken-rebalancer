@@ -166,7 +166,7 @@ class PortfolioAnalyzerImpl(
                     totalPortfolioValueUSD = totalPortfolioValueUSD,
                     effectiveUsdTarget = effectiveUsdTarget,
                     cryptoScaleFactor = cryptoScaleFactor,
-                    dustThresholdUSD = settings.dustThresholdUSD,
+                    minimumOrderSizeUSD = settings.minimumOrderSizeUSD,
                 )
 
             assetSnapshots[symbol.value] =
