@@ -1,11 +1,15 @@
 package com.gemini.krakenbot.repository.impl
 
+import com.gemini.krakenbot.repository.table.HistorySyncMetadataTable
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.jetbrains.exposed.v1.core.eq
 import org.jetbrains.exposed.v1.jdbc.Database
 import org.jetbrains.exposed.v1.jdbc.JdbcTransaction
+import org.jetbrains.exposed.v1.jdbc.selectAll
 import org.jetbrains.exposed.v1.jdbc.transactions.transaction
+import org.jetbrains.exposed.v1.jdbc.upsert
 import org.slf4j.Logger
 import java.io.IOException
 
@@ -37,4 +41,21 @@ suspend fun <T> Database.safeTransactionIO(
 
 suspend fun <T> Database.readTransactionIO(block: JdbcTransaction.() -> T): T = withContext(Dispatchers.IO) {
     transaction(this@readTransactionIO) { block() }
+}
+
+suspend fun Database.readSyncMetadata(key: String): String? = readTransactionIO {
+    HistorySyncMetadataTable
+        .selectAll()
+        .where { HistorySyncMetadataTable.key eq key }
+        .firstOrNull()
+        ?.get(HistorySyncMetadataTable.value)
+}
+
+suspend fun Database.writeSyncMetadata(key: String, value: String, log: Logger, logMessage: String) {
+    safeTransactionIO(log, logMessage) {
+        HistorySyncMetadataTable.upsert {
+            it[HistorySyncMetadataTable.key] = key
+            it[HistorySyncMetadataTable.value] = value
+        }
+    }
 }

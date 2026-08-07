@@ -3,11 +3,9 @@ package com.gemini.krakenbot.repository.impl
 import com.gemini.krakenbot.model.LedgerEvent
 import com.gemini.krakenbot.model.SyncMetadataKeys
 import com.gemini.krakenbot.repository.LedgerRepository
-import com.gemini.krakenbot.repository.table.HistorySyncMetadataTable
 import com.gemini.krakenbot.repository.table.LedgerTable
 import org.jetbrains.exposed.v1.core.ResultRow
 import org.jetbrains.exposed.v1.core.SortOrder
-import org.jetbrains.exposed.v1.core.eq
 import org.jetbrains.exposed.v1.core.greaterEq
 import org.jetbrains.exposed.v1.core.inList
 import org.jetbrains.exposed.v1.core.less
@@ -19,7 +17,6 @@ import org.jetbrains.exposed.v1.jdbc.deleteWhere
 import org.jetbrains.exposed.v1.jdbc.insertIgnore
 import org.jetbrains.exposed.v1.jdbc.select
 import org.jetbrains.exposed.v1.jdbc.selectAll
-import org.jetbrains.exposed.v1.jdbc.upsert
 import org.slf4j.LoggerFactory
 import java.time.Instant
 
@@ -71,21 +68,10 @@ class SqliteLedgerRepositoryImpl(private val database: Database) : LedgerReposit
             ?.let { Instant.ofEpochMilli(it[LedgerTable.timestamp]) }
     }
 
-    override suspend fun getSyncMetadata(key: String): String? = database.readTransactionIO {
-        HistorySyncMetadataTable
-            .selectAll()
-            .where { HistorySyncMetadataTable.key eq key }
-            .firstOrNull()
-            ?.get(HistorySyncMetadataTable.value)
-    }
+    override suspend fun getSyncMetadata(key: String): String? = database.readSyncMetadata(key)
 
     override suspend fun setSyncMetadata(key: String, value: String) {
-        database.safeTransactionIO(log, "Failed to upsert sync metadata") {
-            HistorySyncMetadataTable.upsert {
-                it[HistorySyncMetadataTable.key] = key
-                it[HistorySyncMetadataTable.value] = value
-            }
-        }
+        database.writeSyncMetadata(key, value, log, "Failed to upsert sync metadata")
     }
 
     override suspend fun isLedgersSeeded(): Boolean = getSyncMetadata(SyncMetadataKeys.LEDGERS_SEEDED) == "true"

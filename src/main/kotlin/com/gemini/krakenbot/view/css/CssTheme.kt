@@ -3,6 +3,7 @@ package com.gemini.krakenbot.view.css
 import kotlinx.css.Color
 import kotlinx.css.CssBuilder
 import kotlinx.css.px
+import kotlinx.css.rem
 
 object CssTheme {
     const val fontSans = "'Inter', system-ui, -apple-system, sans-serif"
@@ -10,6 +11,11 @@ object CssTheme {
     const val fontMono = "'Roboto Mono', monospace"
 
     val radiusPill = 9999.px
+    val radiusXs = 0.25.rem
+    val radiusSm = 0.375.rem
+    val radiusMd = 0.5.rem
+    val radiusLg = 0.75.rem
+    val radiusXl = 0.875.rem
 
     val colorBg = Color("#030712")
     val colorTextPrimary = Color("#f8fafc")
@@ -108,6 +114,10 @@ object CssTheme {
     val colorGlassSurfaceHover = Color("rgba(30, 41, 59, 0.8)")
     val colorGlassSurfaceInput = Color("rgba(15, 23, 42, 0.4)")
     val colorGlassSurfaceFaint = Color("rgba(15, 23, 42, 0.2)")
+
+    // Reusable shadow scrims (kept out of bespoke composite shadows below).
+    const val shadowScrim = "rgba(0,0,0,0.5)"
+    const val shadowScrimSoft = "rgba(0,0,0,0.4)"
 
     // Trading-mode plate glows (combined with insetTopHighlight at call sites).
     const val glowBlueStrong = "0 0 16px rgba(59, 130, 246, 0.25)"

@@ -54,7 +54,7 @@ object ChartProps {
     const val TIME_UNIT_MINUTE = "minute"
     const val TIME_UNIT_DAY = "day"
 
-    // Default Layout & Dimension Constants
+    /** Default layout & dimension constants. */
     const val FONT_SIZE_LEGEND = 12
     const val BORDER_WIDTH_TOOLTIP = 1
     const val PADDING_TOOLTIP = 12
@@ -79,7 +79,7 @@ object ChartProps {
     const val POINT_DENSITY_FULL_MAX = 24
     const val POINT_DENSITY_HALF_MAX = 48
 
-    // chartjs-plugin-zoom option keys
+    /** chartjs-plugin-zoom option keys. */
     const val ZOOM = "zoom"
     const val PAN = "pan"
     const val WHEEL = "wheel"
@@ -109,7 +109,7 @@ object ChartProps {
      */
     const val DATASET_VISIBILITY_DEFAULT = "*"
 
-    // Fonts & Theme colors
+    /** Fonts & theme colors. */
     const val FONT_INTER = "'Inter', sans-serif"
     const val FONT_MONO = "'Roboto Mono', monospace"
     const val COLOR_LEGEND_LABEL = "#94a3b8"
@@ -121,7 +121,7 @@ object ChartProps {
     const val COLOR_ZERO_LINE = "rgba(148, 163, 184, 0.65)"
     const val COLOR_TICK = "#64748b"
 
-    // Color palette
+    /** Color palette. */
     const val COLOR_BLUE = "rgba(96, 165, 250, 1)"
     const val COLOR_EMERALD = "rgba(52, 211, 153, 1)"
     const val COLOR_AMBER = "rgba(251, 191, 36, 1)"

@@ -4,6 +4,7 @@ import com.gemini.krakenbot.api.PortfolioSnapshot
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.TimeRange
 import com.gemini.krakenbot.view.util.ChartProps
+import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.ViewText
 import io.kotest.core.spec.IsolationMode
 import io.kotest.core.spec.style.StringSpec
@@ -378,7 +379,8 @@ class HistoryLoadingTest : StringSpec() {
             window.asDynamic().fetch = mockFetch { json("seeded" to true) }
             try {
                 checkSyncProgress().await() shouldBe true
-                (document.getElementById("sync-progress-banner") as HTMLElement).style.display shouldBe "none"
+                (document.getElementById("sync-progress-banner") as HTMLElement)
+                    .classList.contains(CssClass.Utility.Hidden.value) shouldBe true
             } finally {
                 document.body!!.removeChild(container)
             }
@@ -479,7 +481,7 @@ class HistoryLoadingTest : StringSpec() {
             try {
                 checkSyncProgress().await() shouldBe false
                 val banner = document.getElementById("sync-progress-banner") as HTMLElement
-                banner.style.display shouldBe "block"
+                banner.classList.contains(CssClass.Utility.Hidden.value) shouldBe false
                 val bar = document.getElementById("sync-progress-bar") as HTMLElement
                 bar.style.width shouldBe "0%"
                 val text = document.getElementById("sync-progress-text") as HTMLElement

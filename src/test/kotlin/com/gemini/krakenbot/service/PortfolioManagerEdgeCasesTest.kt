@@ -406,7 +406,7 @@ class PortfolioManagerEdgeCasesTest : PortfolioManagerEdgeCasesTestBase() {
                     balances,
                     prices,
                 )
-                (result.exceptionOrNull() != null) shouldBe true
+                result.fold(onSuccess = { false }, onFailure = { true }) shouldBe true
             }
         }
 
@@ -433,7 +433,7 @@ class PortfolioManagerEdgeCasesTest : PortfolioManagerEdgeCasesTestBase() {
                     balances,
                     prices,
                 )
-                (result.exceptionOrNull() != null) shouldBe true
+                result.fold(onSuccess = { false }, onFailure = { true }) shouldBe true
             }
         }
 

@@ -60,12 +60,12 @@ object NavigationStyles {
             alignItems = Align.center
             gap = 0.375.rem
             padding = Padding(0.375.rem, 0.875.rem)
-            borderRadius = 0.5.rem
+            borderRadius = CssTheme.radiusMd
             fontSize = 0.875.rem
             fontWeight = FontWeight.w500
             color = CssTheme.colorTextSecondary
             textDecoration = TextDecoration.none
-            put("transition", "all 0.2s ease")
+            transitionRaw("all 0.2s ease")
             solidBorder(Color.transparent)
         }
 
@@ -81,9 +81,9 @@ object NavigationStyles {
             ".${CssClass.Navigation.Link}:focus-visible, .${CssClass.History.TimeRangeBtn}:focus-visible, " +
                 ".${CssClass.History.ViewsBtn}:focus-visible, .${CssClass.History.ZoomBtn}:focus-visible"
             ) {
-            put("outline", "none")
+            outlineRaw("none")
             borderColor = CssTheme.colorBluePrimary
-            put("box-shadow", CssTheme.focusRingStrong)
+            boxShadowRaw(CssTheme.focusRingStrong)
         }
 
         CssClass.Navigation.LinkActive.querySelector {
@@ -100,7 +100,7 @@ object NavigationStyles {
         ".${CssClass.History.ToolbarRow}" {
             display = Display.flex
             alignItems = Align.center
-            put("flex-wrap", "wrap")
+            flexWrapRaw("wrap")
             gap = 0.75.rem
             marginBottom = 1.25.rem
         }
@@ -113,20 +113,22 @@ object NavigationStyles {
             padding = Padding(0.25.rem)
             background = CssTheme.colorGlass.value
             solidBorder(CssTheme.colorGlassBorder)
-            borderRadius = 0.75.rem
-            put("width", "fit-content")
+            borderRadius = CssTheme.radiusLg
+            widthRaw("fit-content")
+            maxWidthRaw("100%")
+            flexWrapRaw("wrap")
         }
 
         ".${CssClass.History.TimeRangeBtn}" {
             padding = Padding(0.375.rem, 1.rem)
-            borderRadius = 0.5.rem
+            borderRadius = CssTheme.radiusMd
             fontSize = 0.8125.rem
             fontWeight = FontWeight.w600
             color = CssTheme.colorTextSecondary
             background = "transparent"
             solidBorder(Color.transparent)
             cursor = Cursor.pointer
-            put("transition", "all 0.2s ease")
+            transitionRaw("all 0.2s ease")
             fontFamily = CssTheme.fontSans
         }
 
@@ -153,9 +155,9 @@ object NavigationStyles {
             ) {
             // Transparent outline stays invisible normally but is system-painted in
             // forced-colors mode, where the box-shadow ring is not rendered.
-            put("outline", "3px solid transparent")
+            outlineRaw("3px solid transparent")
             borderColor = CssTheme.colorBluePrimary
-            put("box-shadow", CssTheme.focusRingStrong)
+            boxShadowRaw(CssTheme.focusRingStrong)
         }
 
         ".${CssClass.History.ViewsToolbar}" {
@@ -165,8 +167,8 @@ object NavigationStyles {
             padding = Padding(0.25.rem, 0.5.rem)
             background = CssTheme.colorGlass.value
             solidBorder(CssTheme.colorGlassBorder)
-            borderRadius = 0.75.rem
-            put("flex-wrap", "wrap")
+            borderRadius = CssTheme.radiusLg
+            flexWrapRaw("wrap")
         }
 
         ".${CssClass.History.ViewsLabel}" {
@@ -179,27 +181,27 @@ object NavigationStyles {
 
         // HIST-1: fully themed select (no native chrome) with SVG chevron.
         ".${CssClass.History.ViewsSelect}" {
-            put("appearance", "none")
-            put("-webkit-appearance", "none")
-            put("-moz-appearance", "none")
+            appearanceRaw("none")
+            webkitAppearanceRaw("none")
+            mozAppearanceRaw("none")
             background = CssTheme.colorSurface2.value
             color = CssTheme.colorTextPrimary
             solidBorder(CssTheme.colorSurface2Border)
-            borderRadius = 0.5.rem
+            borderRadius = CssTheme.radiusMd
             padding = Padding(0.375.rem, 2.rem, 0.375.rem, 0.75.rem)
             fontSize = 0.8125.rem
             fontFamily = CssTheme.fontSans
             fontWeight = FontWeight.w600
             cursor = Cursor.pointer
-            put("min-width", "11rem")
+            minWidthRaw("11rem")
             put(
                 "background-image",
                 "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' " +
                     "viewBox='0 0 24 24' fill='none' stroke='%23a8b4c8' stroke-width='2' stroke-linecap='round' " +
                     "stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E\")",
             )
-            put("background-repeat", "no-repeat")
-            put("background-position", "right 0.625rem center")
+            backgroundRepeatRaw("no-repeat")
+            backgroundPositionRaw("right 0.625rem center")
         }
 
         ".${CssClass.History.ViewsSelect}:hover" {
@@ -207,9 +209,9 @@ object NavigationStyles {
         }
 
         ".${CssClass.History.ViewsSelect}:focus" {
-            put("outline", "none")
+            outlineRaw("none")
             borderColor = CssTheme.colorBluePrimary
-            put("box-shadow", CssTheme.focusRingSubtle)
+            boxShadowRaw(CssTheme.focusRingSubtle)
         }
 
         ".${CssClass.History.ViewsSelect} option" {
@@ -221,21 +223,21 @@ object NavigationStyles {
             display = Display.flex
             alignItems = Align.center
             gap = 0.25.rem
-            put("flex-wrap", "wrap")
+            flexWrapRaw("wrap")
         }
 
         ".${CssClass.History.ViewsBtn}" {
-            put("appearance", "none")
-            put("-webkit-appearance", "none")
+            appearanceRaw("none")
+            webkitAppearanceRaw("none")
             padding = Padding(0.375.rem, 0.625.rem)
-            borderRadius = 0.5.rem
+            borderRadius = CssTheme.radiusMd
             fontSize = 0.75.rem
             fontWeight = FontWeight.w600
             color = CssTheme.colorTextSecondary
             background = "transparent"
             solidBorder(Color.transparent)
             cursor = Cursor.pointer
-            put("transition", "all 0.2s ease")
+            transitionRaw("all 0.2s ease")
             fontFamily = CssTheme.fontSans
         }
 
@@ -253,10 +255,10 @@ object NavigationStyles {
         ".${CssClass.History.ChartHeader.value}" {
             display = Display.flex
             alignItems = Align.center
-            put("justify-content", "space-between")
+            justifyContentRaw("space-between")
             gap = 0.75.rem
-            put("flex-wrap", "wrap")
-            put("min-height", "2.25rem")
+            flexWrapRaw("wrap")
+            minHeightRaw("2.25rem")
             marginBottom = 0.5.rem
         }
 
@@ -271,21 +273,22 @@ object NavigationStyles {
             display = Display.flex
             alignItems = Align.center
             gap = 0.25.rem
-            put("justify-content", "flex-end")
+            justifyContentRaw("flex-end")
+            flexWrapRaw("wrap")
         }
 
         ".${CssClass.History.ZoomBtn}" {
-            put("appearance", "none")
-            put("-webkit-appearance", "none")
+            appearanceRaw("none")
+            webkitAppearanceRaw("none")
             padding = Padding(0.25.rem, 0.5.rem)
-            borderRadius = 0.375.rem
+            borderRadius = CssTheme.radiusSm
             fontSize = 0.75.rem
             fontWeight = FontWeight.w600
             color = CssTheme.colorTextSecondary
             background = CssTheme.colorGlass.value
             solidBorder(CssTheme.colorGlassBorder)
             cursor = Cursor.pointer
-            put("transition", "all 0.2s ease")
+            transitionRaw("all 0.2s ease")
             fontFamily = CssTheme.fontSans
         }
 
@@ -305,7 +308,7 @@ object NavigationStyles {
         ".${CssClass.History.ChartCaption.value}" {
             fontSize = 0.75.rem
             color = CssTheme.colorTextMuted
-            put("line-height", "1.4")
+            lineHeightRaw("1.4")
             marginTop = 0.5.rem
         }
 
@@ -314,14 +317,14 @@ object NavigationStyles {
         }
 
         ".${CssClass.History.ChartScrubberInput}" {
-            put("appearance", "none")
-            put("-webkit-appearance", "none")
+            appearanceRaw("none")
+            webkitAppearanceRaw("none")
             width = 100.pct
             height = 0.35.rem
             borderRadius = CssTheme.radiusPill
             background = CssTheme.colorBorderMuted.value
             cursor = Cursor.ewResize
-            put("accent-color", CssTheme.colorBlueAccent.value)
+            accentColorRaw(CssTheme.colorBlueAccent.value)
         }
 
         ".${CssClass.History.ChartScrubberInput}:disabled" {
@@ -330,8 +333,8 @@ object NavigationStyles {
         }
 
         ".${CssClass.History.ChartScrubberInput}::-webkit-slider-thumb" {
-            put("appearance", "none")
-            put("-webkit-appearance", "none")
+            appearanceRaw("none")
+            webkitAppearanceRaw("none")
             width = 1.rem
             height = 1.rem
             borderRadius = 50.pct
@@ -359,7 +362,7 @@ object NavigationStyles {
 
         ".${CssClass.History.TradeLogHeader}" {
             display = Display.flex
-            put("justify-content", "space-between")
+            justifyContentRaw("space-between")
             alignItems = Align.center
             marginBottom = 1.rem
         }
@@ -388,7 +391,7 @@ object NavigationStyles {
         ".${CssClass.History.SyncHeader}" {
             display = Display.flex
             alignItems = Align.center
-            put("justify-content", "space-between")
+            justifyContentRaw("space-between")
             marginBottom = 0.75.rem
         }
 
@@ -404,9 +407,9 @@ object NavigationStyles {
             width = 1.rem
             height = 1.rem
             solidBorder(CssTheme.colorKrakenBlue, 2.px)
-            put("border-top-color", "transparent")
+            borderTopColorRaw("transparent")
             borderRadius = 50.pct
-            put("animation", "spin 1s linear infinite")
+            animationRaw("spin 1s linear infinite")
         }
 
         ".${CssClass.History.SyncText}" {
@@ -420,21 +423,21 @@ object NavigationStyles {
             height = 0.5.rem
             background = CssTheme.colorWhiteMuted.value
             borderRadius = CssTheme.radiusPill
-            put("overflow", "hidden")
+            overflowRaw("hidden")
         }
 
         ".${CssClass.History.ProgressBar}" {
             width = 0.pct
             height = 100.pct
             background = CssTheme.colorKrakenBlue.value
-            put("transition", "width 0.3s ease")
+            transitionRaw("width 0.3s ease")
             borderRadius = CssTheme.radiusPill
         }
 
         ".${CssClass.Performance.DevContainer}" {
             display = Display.flex
             flexDirection = FlexDirection.column
-            put("line-height", "1.1")
+            lineHeightRaw("1.1")
         }
 
         ".${CssClass.Performance.DevUsdLabel}" {
@@ -492,26 +495,26 @@ object NavigationStyles {
             solidBorder(CssTheme.colorDangerBorder)
             color = CssTheme.colorDangerLight
             padding = Padding(1.rem)
-            borderRadius = 0.5.rem
+            borderRadius = CssTheme.radiusMd
             marginBottom = 1.5.rem
             fontWeight = FontWeight.w500
         }
 
         "@media (prefers-reduced-motion: reduce)" {
             "*, *::before, *::after" {
-                put("animation-duration", "0.01ms !important")
-                put("animation-iteration-count", "1 !important")
-                put("scroll-behavior", "auto !important")
-                put("transition-duration", "0.01ms !important")
+                animationDurationRaw("0.01ms !important")
+                animationIterationCountRaw("1 !important")
+                scrollBehaviorRaw("auto !important")
+                transitionDurationRaw("0.01ms !important")
             }
         }
 
         ".${CssClass.History.ComparisonHeader}" {
             display = Display.flex
             alignItems = Align.center
-            put("justify-content", "flex-start")
+            justifyContentRaw("flex-start")
             gap = 0.75.rem
-            put("flex-wrap", "wrap")
+            flexWrapRaw("wrap")
         }
 
         ".${CssClass.History.ComparisonDelta}" {
@@ -519,7 +522,7 @@ object NavigationStyles {
             fontWeight = FontWeight.w700
             fontFamily = CssTheme.fontMono
             padding = Padding(0.25.rem, 0.625.rem)
-            borderRadius = 0.375.rem
+            borderRadius = CssTheme.radiusSm
             background = CssTheme.colorGlass.value
             solidBorder(CssTheme.colorGlassBorder)
             whiteSpace = WhiteSpace.nowrap
@@ -567,6 +570,10 @@ object NavigationStyles {
         }
 
         ".${CssClass.History.ComparisonChartArea}.${CssClass.Utility.Hidden}" {
+            display = Display.none
+        }
+
+        ".${CssClass.Utility.Hidden}" {
             display = Display.none
         }
     }

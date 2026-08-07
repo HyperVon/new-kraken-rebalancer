@@ -69,15 +69,15 @@ object ComponentStyles {
             borderRadius = CssTheme.radiusPill
             fontSize = 0.75.rem
             fontWeight = FontWeight.w700
-            put("letter-spacing", "0.05em")
-            put("box-shadow", "0 4px 6px -1px rgba(0, 0, 0, 0.1)")
+            letterSpacingRaw("0.05em")
+            boxShadowRaw("0 4px 6px -1px rgba(0, 0, 0, 0.1)")
         }
 
         ".${CssClass.StatusCard.Badge}.live" {
             backgroundColor = CssTheme.colorSuccessMuted
             color = CssTheme.colorSuccess
             solidBorder(CssTheme.colorSuccessBorder)
-            put("animation", "pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite")
+            animationRaw("pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite")
         }
 
         ".${CssClass.StatusCard.Badge}.delayed" {
@@ -93,7 +93,7 @@ object ComponentStyles {
             borderRadius = CssTheme.radiusPill
             fontSize = 0.75.rem
             fontWeight = FontWeight.w700
-            put("letter-spacing", "0.04em")
+            letterSpacingRaw("0.04em")
             borderWidth = 1.px
             borderStyle = BorderStyle.solid
         }
@@ -124,12 +124,12 @@ object ComponentStyles {
             flexDirection = FlexDirection.column
             gap = 0.375.rem
             padding = Padding(0.75.rem, 0.875.rem)
-            borderRadius = 0.875.rem
+            borderRadius = CssTheme.radiusXl
         }
 
         ".${CssClass.StatusCard.Header}" {
             display = Display.flex
-            put("justify-content", "space-between")
+            justifyContentRaw("space-between")
             alignItems = Align.flexStart
             gap = 0.5.rem
         }
@@ -139,17 +139,17 @@ object ComponentStyles {
             fontWeight = FontWeight.w600
             color = CssTheme.colorTextSecondary
             paddingTop = 0.px
-            put("line-height", "1.25")
+            lineHeightRaw("1.25")
         }
 
         ".${CssClass.StatusCard.Icon}" {
             display = Display.flex
             alignItems = Align.center
-            put("justify-content", "center")
+            justifyContentRaw("center")
             width = 1.75.rem
             height = 1.75.rem
             flexShrink = 0.0
-            borderRadius = 0.375.rem
+            borderRadius = CssTheme.radiusSm
             background = CssTheme.colorGlassHover.value
             color = CssTheme.colorTextSecondary
             marginLeft = 0.px
@@ -164,8 +164,8 @@ object ComponentStyles {
             fontSize = 1.375.rem
             fontWeight = FontWeight.w700
             fontFamily = CssTheme.fontHeading
-            put("letter-spacing", "-0.02em")
-            put("line-height", "1.15")
+            letterSpacingRaw("-0.02em")
+            lineHeightRaw("1.15")
         }
 
         // DASH-1: Total Portfolio hero card
@@ -185,7 +185,7 @@ object ComponentStyles {
         ".hero-card > .hero-card-text" {
             display = Display.flex
             flexDirection = FlexDirection.column
-            put("justify-content", "center")
+            justifyContentRaw("center")
             gap = 0.5.rem
             flexShrink = 0.0
         }
@@ -194,8 +194,8 @@ object ComponentStyles {
             fontSize = 0.75.rem
             fontWeight = FontWeight.w600
             color = CssTheme.colorTextSecondary
-            put("text-transform", "uppercase")
-            put("letter-spacing", "0.08em")
+            textTransformRaw("uppercase")
+            letterSpacingRaw("0.08em")
             display = Display.flex
             alignItems = Align.center
             gap = 0.5.rem
@@ -205,7 +205,7 @@ object ComponentStyles {
             width = 1.rem
             height = 1.rem
             color = CssTheme.colorBlueAccent
-            put("filter", "drop-shadow(0 0 6px rgba(96, 165, 250, 0.55))")
+            filterRaw("drop-shadow(0 0 6px rgba(96, 165, 250, 0.55))")
         }
 
         ".${CssClass.Hero.Value.value}" {
@@ -213,9 +213,9 @@ object ComponentStyles {
             fontSize = 3.rem
             fontWeight = FontWeight.w700
             color = CssTheme.colorTextPrimary
-            put("letter-spacing", "-0.03em")
-            put("line-height", "1.05")
-            put("font-variant-numeric", "tabular-nums")
+            letterSpacingRaw("-0.03em")
+            lineHeightRaw("1.05")
+            fontVariantNumericRaw("tabular-nums")
         }
 
         ".${CssClass.Hero.DeltaRow.value}" {
@@ -232,7 +232,7 @@ object ComponentStyles {
             borderRadius = CssTheme.radiusPill
             fontSize = 0.8125.rem
             fontWeight = FontWeight.w700
-            put("font-variant-numeric", "tabular-nums")
+            fontVariantNumericRaw("tabular-nums")
             borderWidth = 1.px
             borderStyle = BorderStyle.solid
         }
@@ -241,14 +241,14 @@ object ComponentStyles {
             color = CssTheme.colorSuccess
             backgroundColor = CssTheme.colorSuccessBgSubtle
             borderColor = CssTheme.colorSuccessBorderSubtle
-            put("box-shadow", CssTheme.glowGreenSoft)
+            boxShadowRaw(CssTheme.glowGreenSoft)
         }
 
         ".hero-delta.down" {
             color = CssTheme.colorDanger
             backgroundColor = CssTheme.colorDangerBgSubtle
             borderColor = CssTheme.colorDangerBorderSubtle
-            put("box-shadow", "0 0 16px rgba(239, 68, 68, 0.3)")
+            boxShadowRaw("0 0 16px rgba(239, 68, 68, 0.3)")
         }
 
         ".hero-delta.flat" {
@@ -266,8 +266,8 @@ object ComponentStyles {
         ".${CssClass.Hero.DeltaWindow.value}" {
             fontSize = 0.75.rem
             color = CssTheme.colorTextMuted
-            put("text-transform", "uppercase")
-            put("letter-spacing", "0.05em")
+            textTransformRaw("uppercase")
+            letterSpacingRaw("0.05em")
         }
 
         ".${CssClass.Hero.Spark.value}" {
@@ -281,7 +281,7 @@ object ComponentStyles {
             width = 100.pct
             height = 5.rem
             display = Display.block
-            put("filter", "drop-shadow(0 0 8px rgba(59, 130, 246, 0.45))")
+            filterRaw("drop-shadow(0 0 8px rgba(59, 130, 246, 0.45))")
         }
 
         // Compact Cash / Crypto tiles with progress bars (DASH-1)
@@ -302,7 +302,7 @@ object ComponentStyles {
             width = 1.rem
             height = 1.rem
             padding = Padding(0.45.rem)
-            put("box-sizing", "content-box")
+            boxSizingRaw("content-box")
             borderRadius = 50.pct
             color = CssTheme.colorTextSecondary
             background = CssTheme.colorWhiteMuted.value
@@ -311,21 +311,21 @@ object ComponentStyles {
         ".hero-tile-cash .${CssClass.Hero.TileHeader.value} svg" {
             color = CssTheme.colorSuccess
             background = CssTheme.colorSuccessMuted.value
-            put("box-shadow", CssTheme.glowGreenSoft)
+            boxShadowRaw(CssTheme.glowGreenSoft)
         }
 
         ".hero-tile-crypto .${CssClass.Hero.TileHeader.value} svg" {
             color = CssTheme.colorPurpleAccent
             background = CssTheme.colorPurpleMuted.value
-            put("box-shadow", CssTheme.glowPurpleSoft)
+            boxShadowRaw(CssTheme.glowPurpleSoft)
         }
 
         ".${CssClass.Hero.TileTitle.value}" {
             fontSize = 0.75.rem
             fontWeight = FontWeight.w600
             color = CssTheme.colorTextSecondary
-            put("text-transform", "uppercase")
-            put("letter-spacing", "0.05em")
+            textTransformRaw("uppercase")
+            letterSpacingRaw("0.05em")
         }
 
         ".${CssClass.Hero.TileValue.value}" {
@@ -333,8 +333,8 @@ object ComponentStyles {
             fontSize = 1.375.rem
             fontWeight = FontWeight.w700
             color = CssTheme.colorTextPrimary
-            put("font-variant-numeric", "tabular-nums")
-            put("line-height", "1.15")
+            fontVariantNumericRaw("tabular-nums")
+            lineHeightRaw("1.15")
         }
 
         ".${CssClass.Hero.TileBarRow.value}" {
@@ -362,16 +362,16 @@ object ComponentStyles {
             position = Position.relative
             height = 100.pct
             borderRadius = CssTheme.radiusPill
-            put("background-image", CssTheme.glassBarSheen)
-            put("background-blend-mode", "soft-light")
-            put("box-shadow", "inset 0 1px 0 rgba(255,255,255,0.35), 0 0 12px rgba(255,255,255,0.12)")
-            put("transition", "width 0.8s cubic-bezier(0.4, 0, 0.2, 1)")
+            backgroundImageRaw(CssTheme.glassBarSheen)
+            backgroundBlendModeRaw("soft-light")
+            boxShadowRaw("inset 0 1px 0 rgba(255,255,255,0.35), 0 0 12px rgba(255,255,255,0.12)")
+            transitionRaw("width 0.8s cubic-bezier(0.4, 0, 0.2, 1)")
         }
 
         val barFillSheens =
             ".${CssClass.Hero.TileBarFill.value}::after, .${CssClass.AllocationChart.BarFill.value}::after"
         "$barFillSheens" {
-            put("content", "\"\"")
+            contentRaw("\"\"")
             position = Position.absolute
             left = 8.pct
             right = 8.pct
@@ -379,16 +379,16 @@ object ComponentStyles {
             height = 38.pct
             borderRadius = CssTheme.radiusPill
             background = "linear-gradient(90deg, transparent, rgba(186,230,255,0.48), transparent)"
-            put("pointer-events", "none")
+            pointerEventsRaw("none")
         }
 
         // Hero tile bars keep their compact sizing.
         ".${CssClass.Hero.TileBarTrack.value}" {
             height = 0.625.rem
-            put("box-shadow", "inset 0 1px 2px rgba(0,0,0,0.35)")
+            boxShadowRaw("inset 0 1px 2px rgba(0,0,0,0.35)")
         }
         ".${CssClass.Hero.TileBarFill.value}" {
-            put("box-shadow", "inset 0 1px 0 rgba(255,255,255,0.35), 0 0 12px rgba(255,255,255,0.10)")
+            boxShadowRaw("inset 0 1px 0 rgba(255,255,255,0.35), 0 0 12px rgba(255,255,255,0.10)")
         }
         ".${CssClass.Hero.TileBarFill.value}::after" {
             left = 10.pct
@@ -400,13 +400,13 @@ object ComponentStyles {
         // Allocation bars keep the larger sizing and deeper inset shadow.
         ".${CssClass.AllocationChart.BarTrack.value}" {
             height = 0.85.rem
-            put("box-shadow", "inset 0 1px 2px rgba(0,0,0,0.4)")
+            boxShadowRaw("inset 0 1px 2px " + CssTheme.shadowScrimSoft)
         }
 
         ".${CssClass.Hero.TileMeta.value}" {
             fontSize = 0.75.rem
             color = CssTheme.colorTextSecondary
-            put("font-variant-numeric", "tabular-nums")
+            fontVariantNumericRaw("tabular-nums")
         }
 
         ".${CssClass.AllocationChart.Container}" {
@@ -420,7 +420,7 @@ object ComponentStyles {
             display = Display.flex
             alignItems = Align.center
             gap = 1.rem
-            put("transition", "transform 0.2s ease")
+            transitionRaw("transform 0.2s ease")
         }
 
         ".${CssClass.AllocationChart.BarRow}:hover" {
@@ -446,8 +446,8 @@ object ComponentStyles {
             display = Display.flex
             flexDirection = FlexDirection.column
             alignItems = Align.center
-            put("justify-content", "center")
-            put("min-height", "calc(100vh - 10rem)")
+            justifyContentRaw("center")
+            minHeightRaw("calc(100vh - 10rem)")
             gap = 1.rem
         }
 
@@ -455,9 +455,9 @@ object ComponentStyles {
             width = 3.rem
             height = 3.rem
             solidBorder(CssTheme.colorKrakenBlue, 4.px)
-            put("border-top-color", "transparent")
+            borderTopColorRaw("transparent")
             borderRadius = 50.pct
-            put("animation", "spin 1s linear infinite")
+            animationRaw("spin 1s linear infinite")
         }
 
         "@keyframes spin" {
@@ -470,7 +470,7 @@ object ComponentStyles {
             display = Display.flex
             flexDirection = FlexDirection.column
             alignItems = Align.center
-            put("justify-content", "center")
+            justifyContentRaw("center")
             padding = Padding(4.rem, 1.rem)
             color = CssTheme.colorTextMuted
             textAlign = TextAlign.center
@@ -512,7 +512,7 @@ object ComponentStyles {
         }
 
         ".${CssClass.Activity.Cycle.value}" {
-            borderRadius = 0.75.rem
+            borderRadius = CssTheme.radiusLg
             background = CssTheme.glassSurfaceGradient
             solidBorder(CssTheme.colorSurface2Border)
             overflow = Overflow.hidden
@@ -528,14 +528,14 @@ object ComponentStyles {
             alignItems = Align.center
             gap = 0.75.rem
             padding = Padding(0.625.rem, 0.875.rem)
-            put("flex-wrap", "wrap")
+            flexWrapRaw("wrap")
         }
 
         ".${CssClass.Activity.CycleTime.value}" {
             fontSize = 0.75.rem
             color = CssTheme.colorTextMuted
             fontFamily = CssTheme.fontMono
-            put("margin-left", "auto")
+            marginLeftRaw("auto")
         }
 
         ".${CssClass.Activity.CycleMeta.value}" {
@@ -565,13 +565,13 @@ object ComponentStyles {
             borderLeftWidth = 3.px
             borderLeftStyle = BorderStyle.solid
             borderLeftColor = CssTheme.colorBlueAccent
-            put("margin-left", "-0.625rem")
+            marginLeftRaw("-0.625rem")
         }
 
         ".${CssClass.Activity.ItemText.value}" {
             fontSize = 0.8125.rem
             color = CssTheme.colorTextPrimary
-            put("line-height", "1.35")
+            lineHeightRaw("1.35")
         }
 
         "${CssClass.Activity.Item.querySelector} .${CssClass.Activity.ItemText.value}" {
@@ -585,7 +585,7 @@ object ComponentStyles {
 
         ".${CssClass.Activity.FeedFooter.value}" {
             display = Display.flex
-            put("justify-content", "center")
+            justifyContentRaw("center")
             marginTop = 0.75.rem
         }
 
@@ -598,8 +598,8 @@ object ComponentStyles {
             color = CssTheme.colorBlueAccent
             textDecoration = TextDecoration.none
             padding = Padding(0.375.rem, 0.875.rem)
-            borderRadius = 0.5.rem
-            put("transition", "all 0.2s ease")
+            borderRadius = CssTheme.radiusMd
+            transitionRaw("all 0.2s ease")
         }
 
         ".${CssClass.Activity.ViewAll.value}:hover" {
