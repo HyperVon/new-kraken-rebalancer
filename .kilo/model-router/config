@@ -117,7 +117,10 @@
       "*gpt-5-6-sol*",
       "nvidia/qwen/qwen3.5-122b-a10b",
       "nvidia/qwen/qwen3.5-397b-a17b",
-      "nvidia/minimaxai/minimax-m2.7"
+      "nvidia/minimaxai/minimax-m2.7",
+      "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free",
+      "openrouter/google/gemma-4-31b-it",
+      "openrouter/kwaipilot/kat-coder-air-v2.5"
     ],
     "providers": []
   },
