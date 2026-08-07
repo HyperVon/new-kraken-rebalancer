@@ -20,15 +20,31 @@ Items evaluated and deliberately not pursued (never actioned; the recorded reaso
 | ID | Size | Status | Area | Summary | Cycle | Notes |
 | :--- | :---: | :--- | :--- | :--- | :---: | :--- |
 | CI-22-Q06 | S | dropped | frontend | Replace wildcard `org.w3c.dom.*` imports in frontend-js main/test (17 files) | 22 | ktlint `no-wildcard-imports` rule disabled (build.gradle.kts:17) → not enforced, low-value churn |
+| CI-27-C01 | S | dropped | code | Exposed `createMissingTablesAndColumns` still used | 27 | already migrated in `DatabaseConfig.kt` (createStatements + addMissingColumnsStatements + deprecation comment) |
+| CI-27-C02 | S | dropped | code | Replace `java.math.BigDecimal` FQN with Kotlin alias | 27 | false — `java.math.BigDecimal` is the actual money type; no Kotlin alias exists |
+| CI-27-DEP3 | S | dropped | ci | Add `setup-node` to CI | 27 | false premise — Kotlin/JS Gradle plugin manages its own Node; no npm needed |
+| CI-27-DEP4 | S | dropped | ci | Pin Node via package.json `engines` | 27 | would not pin Gradle-managed Node; marginal noise |
+| CI-27-U02 | S | dropped | css | Remove dead DOM imports in `DomExtensions.kt` | 27 | false — `CssClass`/`HtmlAttrs`/`org.w3c.dom.*` all used |
+| CI-27-D03 | S | dropped | docs | "Go 1.26"/"Spring Boot 4" in Technology Journey | 27 | intentional narrative flavor, not drift |
+| CI-27-D04 | S | dropped | docs | dryRun ambiguity | 27 | README:735 already states "Required in JSON; template `true`" |
+| CI-27-D05 | S | dropped | docs | README `.kilo/` tree incomplete | 27 | already covered by CI-26-D02 |
+| CI-27-U03 | S | deferred | ui | Scrubber sync after zoom-reset | 27 | plausible but needs manual QA; deferred (no blind edit) |
+| CI-27-U04 | S | dropped | docs | Stale README screenshots | 27 | no CSS changed this cycle; no refresh needed |
 
 ## Open
 
-No open items — every CI-26 item shipped in Cycle 26.
+No open items — every CI-27 item shipped in Cycle 27 (PR #211).
 
 ## Done (recent)
 
 | ID | Size | Status | Area | Summary | Cycle | PR |
 | :--- | :---: | :--- | :--- | :--- | :---: | :--- |
+| CI-27-DP1 | S | done | deps | Bound unpinned `js-yaml` Gradle resolution to `<5.0.0`; regen yarn.lock | 27 | 211 |
+| CI-27-DP2 | S | done | ci | Simplify CI `build` step to `./gradlew build` (`check` already runs jacoco) | 27 | 211 |
+| CI-27-DP3 | S | done | ci | Add `cache: gradle` to dependency-submission setup-java step | 27 | 211 |
+| CI-27-D01 | S | done | docs | De-date AI-Assisted Development "couple of weeks" claim in README | 27 | 211 |
+| CI-27-D02 | S | done | docs | Warn `rebalancer-config.json` is gitignored, never commit credentials | 27 | 211 |
+| CI-27-U01 | S | done | css | Add `:focus-visible` ring to visually-hidden settings checkboxes | 27 | 211 |
 | CI-25-C01 | S | done | trading | Guard `TradeCalculator.calculateSlippage` against non-positive expected prices (`!expectedPrice.isPositive`) | 25 | — |
 | CI-25-C02 | S | done | history | Normalize trade side via `OrderSide.normalize` in `TradeHistorySyncService.legacyApiFillFingerprint` | 25 | — |
 | CI-25-C03 | S | done | config | Remove unused import and use primitive `ALLOCATION_TOLERANCE_DELTA` in `ConfigServiceImpl` | 25 | — |

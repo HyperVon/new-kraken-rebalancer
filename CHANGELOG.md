@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.16.30] - 2026-08-07
+
+### Changed
+
+- **Continuous Improvement Cycle 27**: Bounded the previously unconstrained `js-yaml` Gradle/Yarn resolution to `<5.0.0` (matching sibling bounds) and regenerated `kotlin-js-store/yarn.lock`; simplified the CI `build` step to `./gradlew build` (the `check` task already runs `jacocoTestCoverageVerification`); added `cache: gradle` to the dependency-submission `setup-java` step; de-dated the AI-Assisted Development claim in the README; added a warning that `rebalancer-config.json` is gitignored and must never be committed with credentials; added a `:focus-visible` ring to the visually-hidden settings checkboxes for keyboard focus visibility.
+
 ## [6.16.29] - 2026-08-07
 
 ### Changed

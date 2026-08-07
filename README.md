@@ -55,9 +55,8 @@ consequences, so you remain responsible for the strategy and its operation.
 This project—including its application code, tests, documentation, and agent
 playbook—was developed through human-directed AI coding sessions. Most of the
 initial project and much of its earlier evolution were created with Google
-Antigravity. Cursor, Codex, and OpenCode joined the workflow only much more
-recently—roughly within the couple of weeks before this documentation was added—
-while portable repository guidance is also available to Claude Code, GitHub
+Antigravity. Cursor, Codex, and OpenCode are also used in the workflow, while
+portable repository guidance is also available to Claude Code, GitHub
 Copilot, and other agents. Independent models are used for adversarial review,
 while tests, coverage, simulation, browser QA, and human approval provide the
 final safety boundaries.
@@ -650,6 +649,10 @@ git clone https://github.com/HyperVon/new-kraken-rebalancer.git
 cd new-kraken-rebalancer
 cp rebalancer-config-template.json rebalancer-config.json
 ```
+
+> [!WARNING]
+> `rebalancer-config.json` is **gitignored** and must **never** be committed. It
+> holds your Kraken API key and private key — keep credentials local only.
 
 Edit `rebalancer-config.json`:
 
