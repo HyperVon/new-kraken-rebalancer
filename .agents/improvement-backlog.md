@@ -28,7 +28,7 @@ Items evaluated and deliberately not pursued (never actioned; the recorded reaso
 | CI-27-D03 | S | dropped | docs | "Go 1.26"/"Spring Boot 4" in Technology Journey | 27 | intentional narrative flavor, not drift |
 | CI-27-D04 | S | dropped | docs | dryRun ambiguity | 27 | README:735 already states "Required in JSON; template `true`" |
 | CI-27-D05 | S | dropped | docs | README `.kilo/` tree incomplete | 27 | already covered by CI-26-D02 |
-| CI-27-U03 | S | deferred | ui | Scrubber sync after zoom-reset | 27 | plausible but needs manual QA; deferred (no blind edit) |
+| CI-27-U03 | S | done | ui | Scrubber sync after zoom-reset | 27 | 222 |
 | CI-27-U04 | S | dropped | docs | Stale README screenshots | 27 | no CSS changed this cycle; no refresh needed |
 | CI-28-U04 | S | dropped | a11y | Sync banner `.hidden` toggle without `aria-live` | 28 | OPERATING.md §5 prohibits unsolicited ARIA |
 

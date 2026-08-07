@@ -70,7 +70,9 @@ fun main() {
     // below and before the server accepts traffic, so cycle one and the dashboard see seeded state.
     runBlocking { tradeHistoryService.init() }
 
-    val applicationScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+    val applicationScope: CoroutineScope = koin.get(
+        qualifier = org.koin.core.qualifier.named("applicationScope"),
+    )
     val workerJob = portfolioManager.startRebalancingLoop(applicationScope)
 
     Runtime.getRuntime().addShutdownHook(
