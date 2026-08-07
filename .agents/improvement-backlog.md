@@ -36,7 +36,6 @@ Items evaluated and deliberately not pursued (never actioned; the recorded reaso
 
 | ID | Size | Status | Area | Summary | Cycle | Notes |
 | :--- | :---: | :--- | :--- | :--- | :--- | :--- |
-| CI-28-C05 | M | deferred | deps | Align KSP version `2.3.10` → `2.3.11` (latest) | 28 | 2.3.11 breaks Gradle 9 validation (`kspCommonMainKotlinMetadata` implicit dependency); needs task `dependsOn` fix |
 | CI-28-C07 | S | deferred | code | `OverviewGridComponent.kt:165` sparkline `BigDecimal → toDouble()` for SVG coords (precision) | 28 | low risk, needs visual verification |
 | CI-28-C08 | M | deferred | frontend | `HistoryCharts.kt:434` split out `formatUsd`/`formatPercent` helpers (largest JS file) | 28 | file split, do in focused frontend cycle |
 | CI-28-C09 | M | deferred | history | `SnapshotHistoryCalculator.calculateHistoricalSnapshots` 93-line method → extract ATH helper | 28 | history math, needs dedicated tests |
@@ -54,6 +53,7 @@ Items evaluated and deliberately not pursued (never actioned; the recorded reaso
 | CI-28-C03 | M | done | code | Add KDoc to 6/9 undocumented public funs in `PortfolioCalculations.kt` | 28 | 214 |
 | CI-28-C04 | S | done | css | Expand `CssTheme.applyRootVariables()` from 12 to 28 CSS variables | 28 | 214 |
 | CI-28-C06 | M | done | deps | Add `.github/dependabot.yml` for weekly Gradle + npm update PRs | 28 | 214 |
+| CI-28-C05 | M | done | deps | Align KSP `2.3.10` → `2.3.11` with Gradle 9 `kspCommonMainKotlinMetadata` dependsOn fix | 28 | 218 |
 
 | ID | Size | Status | Area | Summary | Cycle | PR |
 | :--- | :---: | :--- | :--- | :--- | :---: | :--- |
