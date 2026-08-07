@@ -34,14 +34,40 @@ private class StringConstantProcessor(private val support: CatalogProcessorSuppo
             line("package $packageName")
             line()
             line("/** Generated from @GenerateStringConstants; edit the YAML resource instead. */")
-            renderGroups(
-                input.definitions,
-                header = { group -> "object $group" },
-                entry = { definition, _ ->
-                    "const val ${definition.name} = \"${escapeKotlinString(definition.value)}\""
-                },
-            )
+            val isCssTheme = fileName == "CssThemeVars"
+            if (isCssTheme) {
+                // Single batch: object + embedded cssVars list so callers have one source of truth
+                // and no hand-maintained listOf("--kebab" to camelCase) is needed.
+                val group = input.definitions.firstOrNull()?.group ?: fileName
+                block("object $group") {
+                    for (def in input.definitions) {
+                        line("const val ${def.name} = \"${escapeKotlinString(def.value)}\"")
+                    }
+                    line()
+                    line("val cssVars: List<Pair<String, String>> by lazy {")
+                    line("    listOf(")
+                    for (def in input.definitions) {
+                        val kebab = toKebabCase(def.name)
+                        line("        \"--$kebab\" to ${def.name},")
+                    }
+                    line("    )")
+                    line("}")
+                }
+            } else {
+                renderGroups(
+                    input.definitions,
+                    header = { group -> "object $group" },
+                    entry = { definition, _ ->
+                        "const val ${definition.name} = \"${escapeKotlinString(definition.value)}\""
+                    },
+                )
+            }
         }.toString()
         support.write(input, packageName, fileName, source)
     }
+
+    private fun toKebabCase(name: String): String = name
+        .replace(Regex("([a-z])([A-Z])"), "$1-$2")
+        .replace(Regex("([a-zA-Z])(\\d)"), "$1-$2")
+        .lowercase()
 }
