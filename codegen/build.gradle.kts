@@ -10,7 +10,7 @@ repositories {
 
 dependencies {
     implementation("com.google.devtools.ksp:symbol-processing-api:2.3.10")
-    implementation("org.yaml:snakeyaml:2.4")
+    implementation("org.yaml:snakeyaml:2.6")
 }
 
 kotlin {
