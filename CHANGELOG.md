@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.16.31] - 2026-08-07
+
+### Changed
+
+- **Continuous Improvement Cycle 28**: Added method KDoc to `RateLimiter` (`acquireWithCost`, `getCurrentCounter`, `reset`) and to six public functions in `PortfolioCalculations` (`calculateUsdTargetPercent`, `calculateCurrentPercent`, `calculateTargetValue`, `calculateDeviationUSD`, `calculateAssetMetrics`, `createAssetSnapshot`); expanded `CssTheme.applyRootVariables()` from 12 to 28 CSS variables (`--radius-*`, `--shadow-scrim*`, `--focus-ring-*`, `--color-surface-*-border`, `--color-border-*`); added `.github/dependabot.yml` for weekly Gradle + npm update PRs; removed redundant `InputType` import in `SettingsFormComponent`.
+
 ## [6.16.30] - 2026-08-07
 
 ### Changed

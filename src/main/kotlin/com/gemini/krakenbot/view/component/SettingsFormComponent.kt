@@ -32,7 +32,6 @@ import kotlinx.html.ButtonType.button
 import kotlinx.html.ButtonType.submit
 import kotlinx.html.DIV
 import kotlinx.html.FlowContent
-import kotlinx.html.InputType
 import kotlinx.html.InputType.*
 import kotlinx.html.form
 import kotlinx.html.header

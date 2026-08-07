@@ -30,12 +30,30 @@ Items evaluated and deliberately not pursued (never actioned; the recorded reaso
 | CI-27-D05 | S | dropped | docs | README `.kilo/` tree incomplete | 27 | already covered by CI-26-D02 |
 | CI-27-U03 | S | deferred | ui | Scrubber sync after zoom-reset | 27 | plausible but needs manual QA; deferred (no blind edit) |
 | CI-27-U04 | S | dropped | docs | Stale README screenshots | 27 | no CSS changed this cycle; no refresh needed |
+| CI-28-U04 | S | dropped | a11y | Sync banner `.hidden` toggle without `aria-live` | 28 | OPERATING.md §5 prohibits unsolicited ARIA |
 
 ## Open
 
-No open items — every CI-27 item shipped in Cycle 27 (PR #211).
+| ID | Size | Status | Area | Summary | Cycle | Notes |
+| :--- | :---: | :--- | :--- | :--- | :--- | :--- |
+| CI-28-C05 | M | deferred | deps | Align KSP version `2.3.10` → `2.3.11` (latest) | 28 | 2.3.11 breaks Gradle 9 validation (`kspCommonMainKotlinMetadata` implicit dependency); needs task `dependsOn` fix |
+| CI-28-C07 | S | deferred | code | `OverviewGridComponent.kt:165` sparkline `BigDecimal → toDouble()` for SVG coords (precision) | 28 | low risk, needs visual verification |
+| CI-28-C08 | M | deferred | frontend | `HistoryCharts.kt:434` split out `formatUsd`/`formatPercent` helpers (largest JS file) | 28 | file split, do in focused frontend cycle |
+| CI-28-C09 | M | deferred | history | `SnapshotHistoryCalculator.calculateHistoricalSnapshots` 93-line method → extract ATH helper | 28 | history math, needs dedicated tests |
+| CI-28-C10 | S | deferred | code | `KrakenRebalancerApplication.kt:73` ad-hoc `CoroutineScope(Dispatchers.Default)` → structured/Koin scope | 28 | scope change touches lifecycle |
+| CI-28-U01 | S | deferred | css | Tokenize remaining raw `rgba()`/shadow literals in `ComponentStyles.kt` | 28 | follow-up to CI-26-U02/U03, token audit needed |
+| CI-28-U02 | M | deferred | frontend | Dedupe `assetColorMap`/`hexToRgba`/`bgColorForSymbol` duplication between `HistoryCharts.kt` and `ChartProps` | 28 | small duplication, needs JS test |
+| CI-28-U03 | M | deferred | ui | Centralize `STREAM`/`STALE` stale check + badge transition (duplicated Dashboard JS + SSR) | 28 | needs UI QA |
+| CI-28-D01 | S | deferred | deps | No `gradle/libs.versions.toml` catalog (versions inline across 4 files) | 28 | migration is M/L, low urgency |
+| CI-28-D02 | S | deferred | deps | No `yarn audit` in CI for `kotlin-js-store/yarn.lock` (487 transitive entries) | 28 | Dependabot alerts already cover it (0 open) |
 
 ## Done (recent)
+
+| CI-28-C01 | S | done | code | Remove redundant `import kotlinx.html.InputType` in `SettingsFormComponent.kt:35` | 28 | TBD |
+| CI-28-C02 | S | done | code | Add method KDoc to `RateLimiter.acquireWithCost` / `getCurrentCounter` / `reset` | 28 | TBD |
+| CI-28-C03 | M | done | code | Add KDoc to 6/9 undocumented public funs in `PortfolioCalculations.kt` | 28 | TBD |
+| CI-28-C04 | S | done | css | Expand `CssTheme.applyRootVariables()` from 12 to 28 CSS variables | 28 | TBD |
+| CI-28-C06 | M | done | deps | Add `.github/dependabot.yml` for weekly Gradle + npm update PRs | 28 | TBD |
 
 | ID | Size | Status | Area | Summary | Cycle | PR |
 | :--- | :---: | :--- | :--- | :--- | :---: | :--- |
