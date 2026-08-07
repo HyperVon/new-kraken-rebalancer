@@ -212,8 +212,7 @@ object SnapshotHistoryCalculator {
             return prices.filter { it.first <= targetSec }
                 .maxByOrNull { it.first }
                 ?.second
-                ?: prices.minByOrNull { it.first }?.second
-                ?: BigDecimal.ZERO
+                ?: prices.minBy { it.first }.second
         }
 
         val tPrices = tradePrices[symbol.uppercase()]
