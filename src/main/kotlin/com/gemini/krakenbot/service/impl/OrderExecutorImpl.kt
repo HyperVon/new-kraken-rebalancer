@@ -241,7 +241,11 @@ class OrderExecutorImpl(
             } else {
                 requestedVolume
             }
-        if (volume.signum() <= 0) return null
+        if (volume.signum() <= 0) {
+            log.info("Skipping dust {} for {} after volume floor to 0 (usdAmount {})", side.apiValue, symbol, usdAmount)
+            actionLog.add(ActionLogFormatter.formatSkippedDust(side, symbol, usdAmount))
+            return null
+        }
         // Compare dust against the notional actually submitted after crypto-volume flooring.
         val effectiveUsdAmount = volume.multiply(price)
         if (effectiveUsdAmount < BigDecimal.valueOf(settings.minimumOrderSizeUSD)) {

@@ -36,7 +36,7 @@ Items evaluated and deliberately not pursued (never actioned; the recorded reaso
 
 | ID | Size | Status | Area | Summary | Cycle | Notes |
 | :--- | :---: | :--- | :--- | :--- | :--- | :--- |
-| CI-28-C07 | S | deferred | code | `OverviewGridComponent.kt:165` sparkline `BigDecimal → toDouble()` for SVG coords (precision) | 28 | superseded by CI-29-C01 |
+| CI-28-C07 | S | dropped | code | `OverviewGridComponent.kt:165` sparkline `BigDecimal → toDouble()` for SVG coords (precision) | 28 | superseded by CI-29-C01 (done 220) |
 | CI-28-C08 | M | deferred | frontend | `HistoryCharts.kt:434` split out `formatUsd`/`formatPercent` helpers (largest JS file) | 28 | file split, do in focused frontend cycle |
 | CI-28-C09 | M | deferred | history | `SnapshotHistoryCalculator.calculateHistoricalSnapshots` 93-line method → extract ATH helper | 28 | history math, needs dedicated tests |
 | CI-28-C10 | S | deferred | code | `KrakenRebalancerApplication.kt:73` ad-hoc `CoroutineScope(Dispatchers.Default)` → structured/Koin scope | 28 | scope change touches lifecycle |

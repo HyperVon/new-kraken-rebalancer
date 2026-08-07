@@ -296,6 +296,7 @@ object RebalancerEngine {
                 "Fiat correction required but no suitable " +
                     "counter-balancing assets found.",
             )
+            actionLog.add("Fiat correction: no counter-balancing candidates")
             return
         }
 

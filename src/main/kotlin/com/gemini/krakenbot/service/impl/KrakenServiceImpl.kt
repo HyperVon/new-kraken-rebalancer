@@ -104,8 +104,12 @@ class KrakenServiceImpl(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                val isRateLimit = e.message?.contains(KrakenApiConstants.ERROR_RATE_LIMIT_EXCEEDED) == true
-                val isLockout = e.message?.contains(KrakenApiConstants.ERROR_TEMPORARY_LOCKOUT) == true
+                val status = (e as? ResponseException)?.response?.status?.value
+                val isRawRateLimit = status == 429
+                val isRawLockout = status == 503
+                val isRateLimit =
+                    isRawRateLimit || e.message?.contains(KrakenApiConstants.ERROR_RATE_LIMIT_EXCEEDED) == true
+                val isLockout = isRawLockout || e.message?.contains(KrakenApiConstants.ERROR_TEMPORARY_LOCKOUT) == true
                 val isNetworkOrTransient = e is IOException || e is ResponseException
                 val retryable = isNetworkOrTransient || isRateLimit || isLockout
                 val attemptsUsed = if (isLockout) lockoutAttempt else attempt
@@ -402,8 +406,14 @@ class KrakenServiceImpl(
             // The private Ledgers endpoint accepts a single `type` value only; comma-delimited
             // lists are rejected with EGeneral:Invalid arguments, so query each type separately
             // and merge the pages (summed per-type counts keep the pagination math correct).
+            // CQ-19-07: offset is per-filtered-type, not per-combined set — sharing the same ofs
+            // across types couples pagination and skips entries. Strip ofs for the fan-out and
+            // let callers paginate per-type if they need it (LedgersSyncService is full-history
+            // with startSec, so offset is only for initial seed recovery, which is single-type
+            // after the first page).
+            val fanOutParams = params - KrakenApiConstants.PARAM_OFS
             val pages = sortedTypes.map { type ->
-                queryLedgerPage(params + (KrakenApiConstants.PARAM_TYPE to type), types)
+                queryLedgerPage(fanOutParams + (KrakenApiConstants.PARAM_TYPE to type), types)
             }
             lastLedgerCount.set(pages.sumOf { it.second })
             return pages.flatMap { it.first }
