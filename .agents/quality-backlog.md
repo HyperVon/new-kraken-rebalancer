@@ -27,6 +27,8 @@ Product polish discovered during QA belongs in
 
 | ID | Size | Kind | Status | Area | Summary | Cycle | PR | Issue |
 | :--- | :---: | :--- | :--- | :--- | :--- | :---: | :--- | :---: |
+| CQ-17-1 | S | gap | done | repository/utils | `Database.safeTransaction` rethrows `CancellationException`/`IOException` unwrapped, wraps others as `IOException`; `readSyncMetadata`/`writeSyncMetadata` upsert round-trip | 17 | #210 | — |
+| CQ-17-2 | S | gap | done | view/css | `CssBuilderExtensions` `*Raw` helpers emit the correct CSS property name (regression guard against property-name typos) | 17 | #210 | — |
 | CQ-16-1 | S | bug | done | algorithm/trade | Precision loss in `TradeCalculator.calculateSlippage` (multiply by 100 before dividing) | 16 | #205 | — |
 | CQ-16-2 | L | bug | done | algorithm/fiat | `RebalancerEngine.calculateFiatDeployment` guard 0% drawdown / exponent 0.0 & cap at 100% | 16 | #205 | #203 |
 | CQ-16-3 | L | bug | done | algorithm/orders | `OrderExecutorImpl.settleUsdAfterSells` fail-closed when spendable USD peek returns $0.00 | 16 | #205 | #204 |
