@@ -65,7 +65,7 @@ WORKFLOW_TRACKS: dict[str, list[dict[str, Any]]] = {
             "agent-guidance",
             "routine",
             "agent-guidance-auditor",
-            [".agents/", ".cursor/rules/", "CLAUDE.md", ".github/copilot-instructions.md", ".kilo/"],
+            ["AGENTS.md", ".clinerules/", ".agents/", ".cursor/rules/", "CLAUDE.md", ".github/copilot-instructions.md", ".kilo/"],
             "Audit agent rules, skills, Kilo workflows, projections, and links for drift or contradictory delegation claims.",
         ),
         _track(

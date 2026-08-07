@@ -1,10 +1,3 @@
----
-description: Complete every PR test-plan verification before gh pr create; never defer checks to after merge
-alwaysApply: true
----
-
-<!-- Canonical source: .agents/OPERATING.md § Complete PR verifications before opening -->
-
 # Complete PR verifications before opening
 
 Every item in a PR **Test plan** / **Verification Results** must be executed and

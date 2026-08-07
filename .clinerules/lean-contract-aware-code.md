@@ -1,10 +1,3 @@
----
-description: Defensive at trust boundaries, lean inside; every test kills a distinct defect class
-alwaysApply: true
----
-
-<!-- Canonical source: .agents/OPERATING.md § Lean, contract-aware code -->
-
 # Lean, contract-aware code
 
 Write code a staff engineer would sign: defensive exactly at trust boundaries

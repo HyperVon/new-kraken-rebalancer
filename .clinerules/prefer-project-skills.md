@@ -1,10 +1,3 @@
----
-description: Prefer project .agents skills over inventing ad-hoc workflows for known tasks
-alwaysApply: true
----
-
-<!-- Canonical source: .agents/OPERATING.md § Prefer project skills -->
-
 # Prefer project skills
 
 For any task that matches a skill in `.agents/skills/*/SKILL.md` or the index

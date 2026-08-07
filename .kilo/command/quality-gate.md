@@ -11,7 +11,7 @@ Run a read-only verification pass for this repository.
 - Do not edit, format, delete, commit, push, or start a long-running application process.
 - Run the full JVM, coverage, frontend, and formatting checks:
   - `./gradlew build jacocoTestCoverageVerification`
-  - `npx markdownlint-cli .agents/AGENTS.md .agents/OPERATING.md CLAUDE.md .github/copilot-instructions.md CHANGELOG.md CONTRIBUTING.md README.md SECURITY.md docs/*.md .agents/skills/**/*.md .kilo/command/*.md .kilo/agent/**/*.md`
+  - `npx markdownlint-cli AGENTS.md .clinerules/**/*.md .cursor/rules/*.mdc .agents/AGENTS.md .agents/OPERATING.md CLAUDE.md .github/copilot-instructions.md CHANGELOG.md CONTRIBUTING.md README.md SECURITY.md docs/*.md .agents/skills/**/*.md .kilo/command/*.md .kilo/agent/**/*.md`
 - Report each command as pass or fail, identify the first actionable failure and its file/task, and summarize successful checks.
 - Redact credentials, tokens, account identifiers, hostnames, personal paths, and personal or account data from command output.
 

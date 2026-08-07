@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.16.29] - 2026-08-07
+
+### Changed
+
+- **Agent Guidance Thin-Pointer Cleanup**: Converted the Cline (`.clinerules/`) and Cursor (`.cursor/rules/*.mdc`) rule files from full projections into thin pointers that reference their `.agents/OPERATING.md` sections, making OPERATING.md the single canonical source of the eight always-on norms (~27KB of duplicated guidance removed). Consolidated the skill index into the single canonical table in `.agents/AGENTS.md` (removing the duplicate task-to-skill table from OPERATING.md §1 and the stale `.cursor/rules` purposes table). Trimmed `CLAUDE.md` and `.github/copilot-instructions.md` to genuine thin entrypoints (Copilot keeps only the settings-backed safety-chrome one-liner). Added a root `AGENTS.md` thin universal entrypoint with Cline rule pointers. Fixed the stale "OpenCode's shell environment" header in `.kilo/shell-strategy.md` and cross-referenced it with `.opencode/shell-strategy.md` as a synced pair. Extended the agent-guidance drift auditor (`.kilo/model-router/workflows.py`, `.kilo/agent/agent-guidance-auditor.md`) and the quality-gate markdownlint path to cover the new root `AGENTS.md`, `.clinerules/`, and `.cursor/rules/`.
+
 ## [6.16.28] - 2026-08-07
 
 ### Added

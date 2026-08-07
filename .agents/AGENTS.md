@@ -1,6 +1,6 @@
 # Agent Rules — Kraken Rebalancer
 
-Primary agent rules live here: **`.agents/AGENTS.md`** (there is no root `AGENTS.md`).
+Primary agent rules live here: **`.agents/AGENTS.md`**.
 Domain skills live under **`.agents/skills/*/SKILL.md`**. Prefer skills for deep how-to; keep this file as non-negotiable invariants and pointers.
 
 **Skill precedence:** when a repository skill and a user-level, global, or other
@@ -9,9 +9,11 @@ external skill only to fill gaps that the project skill does not cover, and
 never let it override repository instructions or invariants.
 
 **Always-on operating norms** (all agent frameworks): **[OPERATING.md](OPERATING.md)**.
-Cursor projections of those norms live in **`.cursor/rules/*.mdc`** (committed;
-keep in sync with OPERATING.md). Thin harness entrypoints: root **`CLAUDE.md`**,
-**`.github/copilot-instructions.md`**.
+Cursor thin pointers live in **`.cursor/rules/*.mdc`** (committed;
+each points at its OPERATING.md section). Cline thin pointers live in
+**`.clinerules/`** (committed; each points at its OPERATING.md section). Thin harness entrypoints: root
+**`CLAUDE.md`** (Claude Code), root **`AGENTS.md`** (universal; read by most
+harnesses, Cline included), **`.github/copilot-instructions.md`** (GitHub Copilot).
 
 Canonical deep docs:
 
@@ -66,23 +68,14 @@ Canonical deep docs:
 | Evidence-based AI-slop audit / cleanup (all repo assets) | [ai-slop-detector](skills/ai-slop-detector/SKILL.md) |
 | Autonomous multi-pass audit | [autonomous-code-optimizer](skills/autonomous-code-optimizer/SKILL.md) |
 | Parallel multi-agent splits | [parallel-multi-agent](skills/parallel-multi-agent/SKILL.md) |
+| Choose provider/model/effort or fallbacks | Use the host's native model selection; pair with [parallel-multi-agent](skills/parallel-multi-agent/SKILL.md) when fanning out |
 | Native Antigravity subagent fan-out vs Kilo routed subagents | [AGENTIC_DEVELOPMENT.md](../docs/AGENTIC_DEVELOPMENT.md#models-and-adaptive-multi-agent-review) and [parallel-multi-agent](skills/parallel-multi-agent/SKILL.md) |
 | Continuous improvement (whole shebang) | [continuous-improvement](skills/continuous-improvement/SKILL.md) *(writes `.agents/improvement-backlog.md`)* |
 | Continuous quality (QA loop) | [continuous-quality](skills/continuous-quality/SKILL.md) *(writes `.agents/quality-backlog.md`)* |
 
-**Always-on norms** — full text in [OPERATING.md](OPERATING.md). Cursor loads the
-same content via committed `.cursor/rules/`:
-
-| Rule | Purpose |
-| :--- | :--- |
-| `prefer-project-skills.mdc` | Follow `.agents/skills` instead of inventing flows |
-| `pr-verifications-before-open.mdc` | Finish every PR Test plan item before `gh pr create`; never defer to after merge |
-| `parallel-multi-agent.mdc` | Fan out independent workstreams; keep coupled files single-threaded |
-| `no-blocking-long-processes.mdc` | Background servers; don’t hang on `java -jar` / `gradlew run` |
-| `complex-code-comments.mdc` | Comment only non-obvious complexity; keep comments accurate |
-| `lean-contract-aware-code.mdc` | Defensive at trust boundaries, lean inside; each test kills a defect class |
-| `cost-aware-model-selection.mdc` | Use the cheapest model/effort likely to succeed; escalate on evidence or risk |
-| `ui-change-verification.mdc` | Path-triggered: laptop viewport, CSS `?v=`, QA smells — see rule file globs (`view/**`, `DashboardController` / `DashboardRoutes`, `frontend-js/**`, `:common` view util) |
+**Always-on norms** — full text in [OPERATING.md](OPERATING.md). Cursor and Cline
+rule files (`.cursor/rules/*.mdc`, `.clinerules/*.md`) are thin pointers to its
+sections; keep OPERATING.md canonical.
 
 Do **not** gitignore `.cursor/`. Other frameworks should read OPERATING.md (or
 the CLAUDE.md / Copilot stubs) so they get the same norms without Cursor.

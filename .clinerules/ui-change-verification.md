@@ -1,10 +1,11 @@
 ---
-description: After UI/SSR/JS visual changes, verify laptop density, cache-bust, and QA skills
-globs: src/main/kotlin/com/gemini/krakenbot/view/**/*.kt,src/main/kotlin/com/gemini/krakenbot/controller/DashboardController.kt,src/main/kotlin/com/gemini/krakenbot/controller/DashboardRoutes.kt,frontend-js/src/**/*.kt,common/src/commonMain/kotlin/com/gemini/krakenbot/view/util/**/*.kt
-alwaysApply: false
+paths:
+  - "src/main/kotlin/com/gemini/krakenbot/view/**/*.kt"
+  - "src/main/kotlin/com/gemini/krakenbot/controller/DashboardController.kt"
+  - "src/main/kotlin/com/gemini/krakenbot/controller/DashboardRoutes.kt"
+  - "frontend-js/src/**/*.kt"
+  - "common/src/commonMain/kotlin/com/gemini/krakenbot/view/util/**/*.kt"
 ---
-
-<!-- Canonical source: .agents/OPERATING.md § UI change verification -->
 
 # UI change verification
 

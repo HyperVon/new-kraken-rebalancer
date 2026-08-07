@@ -1,6 +1,8 @@
-# Shell Non-Interactive Strategy (Global)
+# Shell Non-Interactive Strategy
 
-**Context:** OpenCode's shell environment is strictly **non-interactive**. It lacks a TTY/PTY, meaning any command that waits for user input, confirmation, or launches a UI (editor/pager) will hang indefinitely and timeout.
+<!-- Synced with .opencode/shell-strategy.md; this Kilo copy appends §8 Context Mode Output Routing. Keep the shared sections in sync. -->
+
+**Context:** the shell environment is strictly **non-interactive**. It lacks a TTY/PTY, meaning any command that waits for user input, confirmation, or launches a UI (editor/pager) will hang indefinitely and timeout.
 
 **Goal:** Achieve parity with Claude Code's shell capabilities through internalized knowledge of non-interactive flags and environment variables.
 

@@ -1,10 +1,3 @@
----
-description: Prefer readable code; comment only non-obvious complexity; keep comments true
-alwaysApply: true
----
-
-<!-- Canonical source: .agents/OPERATING.md § Complex-code comments -->
-
 # Complex-code comments
 
 Prefer readable code without comments; comment only where logic is non-obvious

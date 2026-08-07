@@ -1,10 +1,3 @@
----
-description: Use the least expensive model and reasoning effort likely to complete the task correctly
-alwaysApply: true
----
-
-<!-- Canonical source: .agents/OPERATING.md § Native model selection -->
-
 # Cost-aware model selection
 
 Prefer a genuinely local route that clears the task's capability and risk

@@ -1,4 +1,6 @@
-# Shell Non-Interactive Strategy (Global)
+# Shell Non-Interactive Strategy
+
+<!-- Canonical base; .kilo/shell-strategy.md is a synced copy that appends §8 Context Mode Output Routing. Keep the shared sections in sync. -->
 
 **Context:** OpenCode's shell environment is strictly **non-interactive**. It lacks a TTY/PTY, meaning any command that waits for user input, confirmation, or launches a UI (editor/pager) will hang indefinitely and timeout.
 

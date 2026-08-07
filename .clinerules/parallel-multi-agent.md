@@ -1,10 +1,3 @@
----
-description: Prefer parallel multi-agent workstreams when tasks have independent file/ownership boundaries
-alwaysApply: true
----
-
-<!-- Canonical source: .agents/OPERATING.md § Parallel multi-agent work -->
-
 # Parallel multi-agent work
 
 Parallelize independent workstreams only after the native model-selection gate

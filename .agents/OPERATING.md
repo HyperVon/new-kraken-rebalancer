@@ -3,9 +3,10 @@
 Portable, framework-agnostic operating rules for any coding agent working in
 this repository (Cursor, Claude Code, Copilot, Codex, Antigravity, etc.).
 
-**Canonical location:** this file. Cursor also loads projections under
+**Canonical location:** this file. Cursor also loads thin pointers under
 [`.cursor/rules/`](../.cursor/rules/) (`.mdc` with `alwaysApply` / `globs`).
-Keep those projections in sync when changing norms here.
+Cline loads thin pointers under [`.clinerules/`](../.clinerules/) (`.md`),
+each referencing a section below; keep the sections below canonical.
 
 Deep domain how-to lives in [skills](skills/) — see the skill index in
 [AGENTS.md](AGENTS.md). Prefer skills over inventing parallel workflows.
@@ -15,39 +16,15 @@ Deep domain how-to lives in [skills](skills/) — see the skill index in
 ## 1. Prefer project skills
 
 For tasks that match a skill in `.agents/skills/*/SKILL.md` or the index in
-`AGENTS.md`, **read and follow that skill** before inventing a parallel process.
-When both a repository skill and a user-level, global, or other non-project
-skill match, the **repository skill has higher precedence**. Use the external
-skill only for behavior the project skill does not cover, and never allow it to
-override repository instructions, safety rules, or domain invariants.
+[`AGENTS.md`](AGENTS.md), **read and follow that skill** before inventing a
+parallel process. When both a repository skill and a user-level, global, or
+other non-project skill match, the **repository skill has higher precedence**.
+Use the external skill only for behavior the project skill does not cover, and
+never allow it to override repository instructions, safety rules, or domain
+invariants.
 
-| User intent | Skill |
-| :--- | :--- |
-| Commit / push | `commit-and-push` |
-| Open PR | `open-pr` (+ mandatory `adversarial-pr-review`) |
-| Push updating an open PR | `commit-and-push` → `adversarial-pr-review` |
-| Adversarial / multi-model PR review | `adversarial-pr-review` |
-| Pre-PR / diff code review (conventions) | `code-review` |
-| Changelog / README / docs sync after a change | `changelog-and-docs-sync` |
-| Quality gates (Spotless, JaCoCo, Karma) | `gradle-quality-gates` |
-| Dependency upgrades | `dependency-upgrade` |
-| Kotlin refactor / cleanup | `kotlin-refactoring-and-cleanup` |
-| Code-size reduction / large-file splits | `reduce-code-size` |
-| UI click-through QA | `ui-manual-qa` |
-| UI visual critique / implement | `ui-visual-review` / `ui-visual-implement` |
-| Docs screenshots | `docs-screenshot-refresh` |
-| End-user User Guide | `user-guide` |
-| Docs audit | `documentation-review` |
-| Architecture review / redesign brainstorm | `architecture-review` |
-| Product opportunity review / feature roadmap | `product-opportunity-review` |
-| Create or modify an approved project skill | `skill-authoring` |
-| Skill / agent-files review (skills, rules, AGENTS) | `skill-reviewer` |
-| Complex-code comments (audit / hygiene) | `complex-code-comments` |
-| Fan-out parallel work | `parallel-multi-agent` |
-| Choose provider/model/effort or fallbacks | Use the host's native model selection; pair with `parallel-multi-agent` when fanning out |
-| Post-deploy UI smoke | `post-deploy-ui-smoke` |
-| Continuous improvement / “whole shebang” | `continuous-improvement` (+ `.agents/improvement-backlog.md`) |
-| Continuous quality / QA loop / test hardening | `continuous-quality` (+ `.agents/quality-backlog.md`) |
+The canonical skill index lives in [`AGENTS.md`](AGENTS.md); update it when
+adding or renaming skills.
 
 If no skill fits, proceed normally. Don’t skip quality gates the skill names.
 
@@ -424,9 +401,31 @@ benefits from read-time diagnostics.
 | Cost-aware model selection | `.cursor/rules/cost-aware-model-selection.mdc` (`alwaysApply`) |
 | UI change verification | `.cursor/rules/ui-change-verification.mdc` (path globs) |
 
-Cursor projections may add harness-only details (e.g. `block_until_ms: 0`,
-`AwaitShell`) that are absent from the portable bullets above — keep the
-portable meaning aligned when editing either side.
+Each `.cursor/rules/*.mdc` is a thin pointer to the portable section above; the
+bullets above are the single source of truth, so keep them canonical. Cursor
+tool specifics (`block_until_ms: 0`, `AwaitShell`) live in the portable
+section above, not in the pointer files.
 
-Commit both this file and `.cursor/rules/` so Cursor clones pick up rules
+Commit both this file and `.cursor/rules/` so Cursor clones pick up the
+pointers automatically and other harnesses still have a single portable source.
+
+---
+
+## Cline-specific projection
+
+| Portable section above | Cline rule file |
+| :--- | :--- |
+| Prefer project skills | `.clinerules/prefer-project-skills.md` (universal) |
+| Complete PR verifications before opening | `.clinerules/pr-verifications-before-open.md` (universal) |
+| Parallel multi-agent | `.clinerules/parallel-multi-agent.md` (universal) |
+| No blocking long processes | `.clinerules/no-blocking-long-processes.md` (universal) |
+| Complex-code comments | `.clinerules/complex-code-comments.md` (universal) |
+| Lean, contract-aware code | `.clinerules/lean-contract-aware-code.md` (universal) |
+| Cost-aware model selection | `.clinerules/cost-aware-model-selection.md` (universal) |
+| UI change verification | `.clinerules/ui-change-verification.md` (path-scoped) |
+
+Each `.clinerules/*.md` is a thin pointer to the portable section above; the
+bullets above are the single source of truth, so keep them canonical.
+
+Commit both this file and `.clinerules/` so Cline clones pick up the pointers
 automatically and other harnesses still have a single portable source.

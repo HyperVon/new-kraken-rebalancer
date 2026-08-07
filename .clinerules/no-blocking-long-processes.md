@@ -1,10 +1,3 @@
----
-description: Never block the chat waiting on long-lived processes; background servers and report progress
-alwaysApply: true
----
-
-<!-- Canonical source: .agents/OPERATING.md § No blocking long processes -->
-
 # No blocking long processes
 
 Never leave the user waiting on a foreground command that never exits; run

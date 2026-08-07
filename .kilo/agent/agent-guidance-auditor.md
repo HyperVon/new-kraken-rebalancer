@@ -26,7 +26,7 @@ permission:
 
 Perform a read-only audit of the explicitly requested agent-guidance and workflow paths against current repository truth.
 
-- Check only `.agents/`, `.cursor/rules/`, `.github/workflows/`, and named config/skill paths.
+- Check only `AGENTS.md`, `.clinerules/`, `.agents/`, `.cursor/rules/`, `.github/`, `.kilo/`, and named config/skill paths.
 - Verify constants, APIs, commands, links, model/tooling guidance, and projection alignment from the minimum source files required.
 - Classify concrete findings as WRONG, STALE, MISSING, ORPHAN, or SKILL DRIFT.
 - Report each finding with `path:line`, source evidence, impact, and the smallest correction.
