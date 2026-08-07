@@ -13,7 +13,7 @@ import com.gemini.krakenbot.service.PortfolioValues
 import com.gemini.krakenbot.service.RawBalances
 import com.gemini.krakenbot.service.RawPrices
 import com.gemini.krakenbot.util.ActionLogFormatter
-import com.gemini.krakenbot.util.HUNDRED
+import com.gemini.krakenbot.util.HUNDRED // extension import for PrecisionConstants.HUNDRED
 import com.gemini.krakenbot.util.PrecisionConstants
 import com.gemini.krakenbot.util.resolveBalance
 import com.gemini.krakenbot.util.toUsdScale

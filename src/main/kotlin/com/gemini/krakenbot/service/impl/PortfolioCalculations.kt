@@ -3,7 +3,7 @@ package com.gemini.krakenbot.service.impl
 import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.model.Asset
 import com.gemini.krakenbot.model.PortfolioSnapshot
-import com.gemini.krakenbot.util.HUNDRED
+import com.gemini.krakenbot.util.HUNDRED // extension import for PrecisionConstants.HUNDRED
 import com.gemini.krakenbot.util.PrecisionConstants
 import java.math.BigDecimal
 import java.math.RoundingMode
@@ -28,6 +28,7 @@ object PortfolioCalculations {
         baseTargetPercent.multiply(cryptoScaleFactor)
     }
 
+    /** Sums USD allocations to obtain the USD target percent, falling back to [PrecisionConstants.DEFAULT_USD_TARGET_PERCENT]. */
     fun calculateUsdTargetPercent(allocations: List<Allocation>): BigDecimal = allocations
         .filter { it.symbol.isUsd }
         .takeIf { it.isNotEmpty() }
@@ -36,6 +37,7 @@ object PortfolioCalculations {
         ?: BigDecimal.valueOf(PrecisionConstants.DEFAULT_USD_TARGET_PERCENT)
             .setScale(PrecisionConstants.SCALE_USD, RoundingMode.HALF_UP)
 
+    /** Current allocation percent: `valueUSD / totalPortfolioValueUSD × 100`, or zero when total is zero. */
     fun calculateCurrentPercent(valueUSD: BigDecimal, totalPortfolioValueUSD: BigDecimal): BigDecimal =
         if (totalPortfolioValueUSD >
             BigDecimal.ZERO
@@ -47,11 +49,13 @@ object PortfolioCalculations {
             BigDecimal.ZERO
         }
 
+    /** Target value in USD: `totalPortfolioValueUSD × targetPct / 100`. */
     fun calculateTargetValue(targetPct: BigDecimal, totalPortfolioValueUSD: BigDecimal): BigDecimal =
         totalPortfolioValueUSD
             .multiply(targetPct)
             .divide(PrecisionConstants.HUNDRED, PrecisionConstants.SCALE_USD, RoundingMode.HALF_UP)
 
+    /** Signed USD deviation: `currentValueUSD − targetValueUSD` (positive = overweight). */
     fun calculateDeviationUSD(currentValueUSD: BigDecimal, targetValueUSD: BigDecimal): BigDecimal =
         currentValueUSD.subtract(targetValueUSD)
 
@@ -86,6 +90,7 @@ object PortfolioCalculations {
         val isSignificant: Boolean,
     )
 
+    /** Builds [AssetMetrics] for one symbol, applying ATH/drawdown scaling and the dust gate. */
     fun calculateAssetMetrics(
         symbol: Asset,
         baseTargetPercent: BigDecimal,
@@ -122,6 +127,9 @@ object PortfolioCalculations {
         )
     }
 
+    /**
+     * Creates a display-ready [PortfolioSnapshot.AssetSnapshot] with percents rounded to `SCALE_USD`.
+     */
     fun createAssetSnapshot(
         symbol: String,
         balance: BigDecimal,

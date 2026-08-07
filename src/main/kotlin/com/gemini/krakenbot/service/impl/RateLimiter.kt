@@ -27,6 +27,10 @@ open class RateLimiter(
     private var callCounter: Double = 0.0
     private var lastUpdateTimeMs: Long = clock()
 
+    /**
+     * Blocks until `callCounter + cost ≤ safeLimit`, then charges [cost] and returns the new counter.
+     * The wait uses linear decay (`decayRate`/sec) and releases the mutex during the delay.
+     */
     open suspend fun acquireWithCost(cost: Double): Double {
         require(cost > 0.0) { "Cost must be strictly positive: $cost" }
         require(cost <= safeLimit) { "Requested cost $cost exceeds safeLimit $safeLimit" }
@@ -59,6 +63,7 @@ open class RateLimiter(
         }
     }
 
+    /** Returns the decayed [callCounter] without charging — linear decay since last update. */
     suspend fun getCurrentCounter(): Double = mutex.withLock {
         val now = clock()
         val lastUpdate = lastUpdateTimeMs
@@ -66,6 +71,7 @@ open class RateLimiter(
         return maxOf(0.0, callCounter - (elapsedSeconds * decayRate))
     }
 
+    /** Resets the counter to zero and re-baselines the decay clock to `clock()`. */
     suspend fun reset() = mutex.withLock {
         callCounter = 0.0
         lastUpdateTimeMs = clock()
