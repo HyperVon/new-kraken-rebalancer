@@ -13,57 +13,6 @@ import kotlinx.browser.document
 import kotlin.js.Date
 import kotlin.js.json
 
-private val assetColorMap: Map<String, String> by lazy {
-    val global = js("window.${ChartProps.ASSET_COLORS_GLOBAL_KEY}")
-    if (global != null && global != undefined) {
-        val map = mutableMapOf<String, String>()
-        val keys: Array<String> = js("Object.keys(${ChartProps.ASSET_COLORS_GLOBAL_KEY})")
-        for (key in keys) {
-            val v: String = js("${ChartProps.ASSET_COLORS_GLOBAL_KEY}[key]")
-            map[key] = v
-        }
-        map
-    } else {
-        emptyMap()
-    }
-}
-
-private fun colorForSymbol(symbol: String, fallbackIndex: Int): String =
-    assetColorMap[symbol.uppercase()] ?: ChartProps.borderColorForSymbol(symbol, fallbackIndex)
-
-private fun bgColorForSymbol(symbol: String, fallbackIndex: Int): String {
-    val solid = assetColorMap[symbol.uppercase()]
-    if (solid != null) {
-        return hexToRgba(solid, 0.1) ?: ChartProps.backgroundColorForSymbol(symbol, fallbackIndex)
-    }
-    return ChartProps.backgroundColorForSymbol(symbol, fallbackIndex)
-}
-
-private fun hexToRgba(hex: String, alpha: Double): String? {
-    val clean = hex.removePrefix("#")
-    if (clean.length != 6) return null
-    val r = clean.substring(0, 2).toIntOrNull(16) ?: return null
-    val g = clean.substring(2, 4).toIntOrNull(16) ?: return null
-    val b = clean.substring(4, 6).toIntOrNull(16) ?: return null
-    return "rgba($r, $g, $b, $alpha)"
-}
-
-fun formatUSD(valDouble: Double): String {
-    // Format the magnitude, then place the sign before the $ ("-$1.23", not "$-1.23").
-    val absVal = if (valDouble < 0) -valDouble else valDouble
-    val formatted = usdOptionsToLocale(absVal, PrecisionConstants.SCALE_USD, PrecisionConstants.SCALE_USD)
-    return if (valDouble < 0) "-$$formatted" else "$$formatted"
-}
-
-fun formatPctTick(v: Double, includePlus: Boolean = true): String {
-    val d = dynamicNumber(v) ?: 0.0
-    val sign = if (includePlus && d >= 0.0) "+" else ""
-    val options: dynamic = json()
-    options.minimumFractionDigits = 0
-    options.maximumFractionDigits = PrecisionConstants.SCALE_USD
-    return sign + d.asDynamic().toLocaleString(EN_US, options) + "%"
-}
-
 /**
  * A Chart.js line dataset with the shared structural props. `fill`/`borderDash` are nullable so
  * their absence is preserved (a dataset without a `fill` key renders differently from `fill:false`).

@@ -1,6 +1,7 @@
 package com.gemini.krakenbot.frontend
 
 import com.gemini.krakenbot.util.PrecisionConstants
+import com.gemini.krakenbot.util.StreamStatus
 import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.DataSort
 import com.gemini.krakenbot.view.util.HtmlAttrs
@@ -40,7 +41,7 @@ fun updateAge() {
     val diff = ((now - epoch) / PrecisionConstants.MILLIS_PER_SECOND).toInt().coerceAtLeast(0)
 
     ageEl.textContent = "${diff}${ViewText.AGO_SECONDS}"
-    val isStale = diff > PrecisionConstants.STALE_THRESHOLD_SECONDS
+    val isStale = StreamStatus.isStale(diff.toLong())
     ageEl.classList.toggle(CssClass.Utility.Stale, isStale)
 
     val date = Date(epoch)

@@ -3,9 +3,9 @@ import org.jetbrains.kotlin.gradle.targets.js.yarn.YarnRootExtension
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
 plugins {
-    kotlin("jvm") version "2.4.10"
-    id("com.google.devtools.ksp") version "2.3.11"
-    id("com.diffplug.spotless") version "8.9.0"
+    alias(libs.plugins.kotlin.jvm)
+    alias(libs.plugins.ksp)
+    alias(libs.plugins.spotless)
     application
     jacoco
 }
@@ -13,7 +13,7 @@ plugins {
 spotless {
     kotlin {
         target("src/**/*.kt", "common/src/**/*.kt", "frontend-js/src/**/*.kt", "codegen/src/**/*.kt")
-        ktlint("1.7.1").editorConfigOverride(
+        ktlint(libs.versions.ktlint.get()).editorConfigOverride(
             mapOf(
                 "ktlint_standard_no-wildcard-imports" to "disabled",
                 "ktlint_standard_filename" to "disabled",
@@ -24,7 +24,7 @@ spotless {
     }
     kotlinGradle {
         target("*.gradle.kts", "*/build.gradle.kts")
-        ktlint("1.7.1").editorConfigOverride(
+        ktlint(libs.versions.ktlint.get()).editorConfigOverride(
             mapOf(
                 "max_line_length" to "120",
             ),
@@ -58,60 +58,55 @@ repositories {
 
 dependencies {
     ksp(project(":codegen"))
-    val ktorVersion = "3.5.2"
-    val koinVersion = "4.2.2"
 
     implementation(project(":common"))
-    implementation("com.fasterxml.jackson.module:jackson-module-kotlin")
-    implementation("com.fasterxml.jackson.datatype:jackson-datatype-jsr310")
-    implementation("org.jetbrains.kotlin:kotlin-reflect")
+    implementation(libs.jackson.module.kotlin)
+    implementation(libs.jackson.datatype.jsr310)
+    implementation(libs.kotlin.reflect)
 
     // Jackson BOM — pins jackson-core & jackson-databind to a secure, explicit version
-    implementation(platform("com.fasterxml.jackson:jackson-bom:2.22.1"))
-    implementation("io.ktor:ktor-server-caching-headers:$ktorVersion")
-    implementation("io.ktor:ktor-server-compression:$ktorVersion")
-    implementation("io.ktor:ktor-server-conditional-headers:$ktorVersion")
+    implementation(platform("com.fasterxml.jackson:jackson-bom:${libs.versions.jacksonBom.get()}"))
+    implementation(libs.ktor.server.caching.headers)
+    implementation(libs.ktor.server.compression)
+    implementation(libs.ktor.server.conditional.headers)
 
     // Koin
-    implementation("io.insert-koin:koin-core:$koinVersion")
-    implementation("io.insert-koin:koin-logger-slf4j:$koinVersion")
-    implementation("io.insert-koin:koin-ktor:$koinVersion")
+    implementation(libs.koin.core)
+    implementation(libs.koin.logger.slf4j)
+    implementation(libs.koin.ktor)
 
     // Ktor Server & Client
-    implementation("io.ktor:ktor-server-core:$ktorVersion")
-    implementation("io.ktor:ktor-server-netty:$ktorVersion")
-    implementation("io.ktor:ktor-server-content-negotiation:$ktorVersion")
-    implementation("io.ktor:ktor-serialization-jackson:$ktorVersion")
-    implementation("io.ktor:ktor-server-cors:$ktorVersion")
-    implementation("io.ktor:ktor-server-status-pages:$ktorVersion")
-    implementation("io.ktor:ktor-server-sse:$ktorVersion")
-    implementation("io.ktor:ktor-server-html-builder:$ktorVersion")
-    implementation("io.ktor:ktor-client-core:$ktorVersion")
-    implementation("io.ktor:ktor-client-cio:$ktorVersion")
+    implementation(libs.ktor.server.core)
+    implementation(libs.ktor.server.netty)
+    implementation(libs.ktor.server.content.negotiation)
+    implementation(libs.ktor.serialization.jackson)
+    implementation(libs.ktor.server.cors)
+    implementation(libs.ktor.server.status.pages)
+    implementation(libs.ktor.server.sse)
+    implementation(libs.ktor.server.html.builder)
+    implementation(libs.ktor.client.core)
+    implementation(libs.ktor.client.cio)
 
     // Logging
-    implementation("ch.qos.logback:logback-classic:1.6.1")
+    implementation(libs.logback.classic)
 
     // Coroutines
-    val kotlinXCoroutinesVersion = "1.11.0"
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:$kotlinXCoroutinesVersion")
+    implementation(libs.kotlinx.coroutines.core)
 
     // SQLite + Exposed ORM
-    val exposedVersion = "1.3.1"
-    implementation("org.jetbrains.exposed:exposed-core:$exposedVersion")
-    implementation("org.jetbrains.exposed:exposed-jdbc:$exposedVersion")
-    implementation("org.xerial:sqlite-jdbc:3.53.2.1")
-    implementation("org.jetbrains.kotlin-wrappers:kotlin-css-jvm:2026.7.7")
+    implementation(libs.exposed.core)
+    implementation(libs.exposed.jdbc)
+    implementation(libs.sqlite.jdbc)
+    implementation(libs.kotlin.css.jvm)
 
     // Testing
-    val koTestVersion = "6.2.3"
-    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:$kotlinXCoroutinesVersion")
-    testImplementation("io.ktor:ktor-server-test-host:$ktorVersion")
-    testImplementation("io.ktor:ktor-client-mock:$ktorVersion")
-    testImplementation("io.insert-koin:koin-test:$koinVersion")
-    testImplementation("io.mockk:mockk:1.14.11")
-    testImplementation("io.kotest:kotest-runner-junit5:$koTestVersion")
-    testImplementation("io.kotest:kotest-assertions-core:$koTestVersion")
+    testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.ktor.server.test.host)
+    testImplementation(libs.ktor.client.mock)
+    testImplementation(libs.koin.test)
+    testImplementation(libs.mockk)
+    testImplementation(libs.kotest.runner.junit5)
+    testImplementation(libs.kotest.assertions.core)
 }
 
 tasks.withType<KotlinCompile> {

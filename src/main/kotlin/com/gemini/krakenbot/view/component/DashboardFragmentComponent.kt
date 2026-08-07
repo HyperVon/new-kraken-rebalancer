@@ -3,6 +3,7 @@ package com.gemini.krakenbot.view.component
 import com.gemini.krakenbot.config.Allocation
 import com.gemini.krakenbot.model.PortfolioSnapshot
 import com.gemini.krakenbot.util.PrecisionConstants
+import com.gemini.krakenbot.util.StreamStatus
 import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.HtmlAttrs
 import com.gemini.krakenbot.view.util.HtmlIds
@@ -39,7 +40,7 @@ class DashboardFragmentComponent(
             0L.coerceAtLeast(
                 Instant.now().epochSecond - latest.timestamp.epochSecond,
             )
-        val isStale = timeSinceUpdate > PrecisionConstants.STALE_THRESHOLD_SECONDS
+        val isStale = StreamStatus.isStale(timeSinceUpdate)
 
         // Mode plate stays in the shell; this OOB swap only refreshes STREAM/STALE
         // (SSE freshness — StatusCard.Live here means healthy stream, not live trading).

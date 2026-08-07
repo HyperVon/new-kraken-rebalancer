@@ -2,8 +2,8 @@ import org.jetbrains.kotlin.gradle.tasks.KotlinCompilationTask
 
 plugins {
     kotlin("multiplatform")
-    id("com.google.devtools.ksp") version "2.3.11"
-    id("io.kotest") version "6.2.3"
+    alias(libs.plugins.ksp)
+    id("io.kotest") version libs.versions.kotest.get()
 }
 
 repositories {
@@ -31,14 +31,14 @@ kotlin {
         getByName("commonTest") {
             dependencies {
                 implementation(kotlin("test"))
-                implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0")
-                implementation("io.kotest:kotest-assertions-core:6.2.3")
-                implementation("io.kotest:kotest-framework-engine:6.2.3")
+                implementation(libs.kotlinx.coroutines.core)
+                implementation(libs.kotest.assertions.core)
+                implementation("io.kotest:kotest-framework-engine:${libs.versions.kotest.get()}")
             }
         }
         getByName("jsTest") {
             dependencies {
-                implementation("io.kotest:kotest-framework-engine:6.2.3")
+                implementation("io.kotest:kotest-framework-engine:${libs.versions.kotest.get()}")
                 implementation(devNpm("karma-coverage", "2.2.1"))
                 implementation(devNpm("@jsdevtools/coverage-istanbul-loader", "3.0.5"))
             }

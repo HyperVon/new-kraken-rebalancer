@@ -37,17 +37,17 @@ Items evaluated and deliberately not pursued (never actioned; the recorded reaso
 | ID | Size | Status | Area | Summary | Cycle | Notes |
 | :--- | :---: | :--- | :--- | :--- | :--- | :--- |
 | CI-28-C07 | S | dropped | code | `OverviewGridComponent.kt:165` sparkline `BigDecimal → toDouble()` for SVG coords (precision) | 28 | superseded by CI-29-C01 (done 220) |
-| CI-28-C08 | M | deferred | frontend | `HistoryCharts.kt:434` split out `formatUsd`/`formatPercent` helpers (largest JS file) | 28 | file split, do in focused frontend cycle |
-| CI-28-C09 | M | deferred | history | `SnapshotHistoryCalculator.calculateHistoricalSnapshots` 93-line method → extract ATH helper | 28 | history math, needs dedicated tests |
-| CI-28-C10 | S | deferred | code | `KrakenRebalancerApplication.kt:73` ad-hoc `CoroutineScope(Dispatchers.Default)` → structured/Koin scope | 28 | scope change touches lifecycle |
 | CI-28-U01 | S | done | css | Tokenize remaining raw `rgba()`/shadow literals in `ComponentStyles.kt` | 28 | 222 |
-| CI-28-U02 | M | deferred | frontend | Dedupe `assetColorMap`/`hexToRgba`/`bgColorForSymbol` duplication between `HistoryCharts.kt` and `ChartProps` | 28 | small duplication, needs JS test |
-| CI-28-U03 | M | deferred | ui | Centralize `STREAM`/`STALE` stale check + badge transition (duplicated Dashboard JS + SSR) | 28 | needs UI QA |
-| CI-28-D01 | S | deferred | deps | No `gradle/libs.versions.toml` catalog (versions inline across 4 files) | 28 | migration is M/L, low urgency |
-| CI-28-D02 | S | deferred | deps | No `yarn audit` in CI for `kotlin-js-store/yarn.lock` (487 transitive entries) | 28 | Dependabot alerts already cover it (0 open) |
 
 ## Done (recent)
 
+| CI-28-C08 | M | done | frontend | Split `formatUsd`/`formatPercent`/`EN_US`/`usdOptionsToLocale` out of `HistoryCharts`/`HistoryLoading` into `HistoryFormatting.kt` (single source) | 28 | 222 |
+| CI-28-C09 | M | done | history | Extract `buildSnapshotsChronological` ATH helper from `SnapshotHistoryCalculator.calculateHistoricalSnapshots` | 28 | 222 |
+| CI-28-C10 | S | done | code | Move `applicationScope` from ad-hoc `CoroutineScope(Dispatchers.Default)` in `KrakenRebalancerApplication` to Koin named qualifier in `AppModule` | 28 | 222 |
+| CI-28-U02 | M | done | frontend | Dedupe `assetColorMap`/`hexToRgba`/`bgColorForSymbol` via `AssetColors.kt` delegating to `ChartProps` palette | 28 | 222 |
+| CI-28-U03 | M | done | ui | Centralize `STREAM`/`STALE` check via `common:StreamStatus.isStale` used by both `DashboardFragmentComponent` (SSR) and `Dashboard.kt` (JS) | 28 | 222 |
+| CI-28-D01 | S | done | deps | Add `gradle/libs.versions.toml` catalog; migrate `build.gradle.kts` + `common`/`frontend-js`/`codegen` to version catalog | 28 | 222 |
+| CI-28-D02 | S | done | deps | Yarn audit covered by Dependabot + pinned `YarnRootExtension` resolutions (`webpack`, `brace-expansion`, `js-yaml` etc.); no open alerts | 28 | 222 |
 | CI-29-C01 | S | done | code | Fix `OverviewGridComponent.sparklineSvg` precision (`toDouble()` → `BigDecimal`) | 29 | 220 |
 | CI-29-U01 | S | done | css | Tokenize 5 raw `rgba()`/shadow literals in `ComponentStyles.kt` → `CssTheme` | 29 | 220 |
 | CI-29-D01 | S | done | docs | Fix stale KSP `2.3.10` → `2.3.11` and Ktor `3.5.1` → `3.5.2` pins (AGENTS + skill) | 29 | 220 |
