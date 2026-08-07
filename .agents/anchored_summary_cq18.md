@@ -38,7 +38,7 @@ Implement tests-first fixes for the re-verified real CQ-18 findings on branch `q
 ## Key Decisions
 
 - Implement ONLY the real open issues: CQ-18-4 (production), CQ-18-6 (production), CQ-18-9 (approved production), CQ-18-11 (test-only).
-- CQ-18-1, CQ-18-2, CQ-18-8 are NO-DEFECT (re-verified against source) — do NOT change code; leave as rejected for traceability.
+- CQ-18-1, CQ-18-2, CQ-18-8 are dropped as no-defect (re-verified against source) — do NOT change code; retain the dropped records for traceability.
 - CQ-18-9 is done: non-cancellation save failures warn and continue with the in-memory ATH; database loads and cancellation remain fail-closed.
 - Dropped findings retained as rejected (not silently deleted) for traceability.
 - Fix sites anchored by file:line for each item (see Relevant Files).
@@ -47,7 +47,7 @@ Implement tests-first fixes for the re-verified real CQ-18 findings on branch `q
 
 - Full `./gradlew build jacocoTestCoverageVerification --rerun-tasks` passed with serial Gradle execution.
 - Complete repository Markdown lint and `git diff --check` passed; inspect the final worktree boundary before handoff.
-- Do not commit or push unless explicitly requested.
+- Commit and push only after explicit user request; this session's request has been completed.
 
 ## Critical Context
 
@@ -67,19 +67,19 @@ Implement tests-first fixes for the re-verified real CQ-18 findings on branch `q
 
 | ID | Finding | Status | Implement? |
 | :--- | :--- | :--- | :--- |
-| CQ-18-1 | Paginated count trusts totalCount | S | False/no-defect (count-paginator by design; `TradeHistorySyncService.kt:362-391`, `DynamicKrakenService.kt:44/96`, `KrakenServiceImpl.kt:321`) |
-| CQ-18-2 | Throttle resets on restart, repeats window | S | False/no-defect (process-local throttle + persisted watermark bound window; `:36/64-69/:140-144/:291-312`) |
+| CQ-18-1 | Paginated count trusts totalCount | M | False/no-defect (count-paginator by design; `TradeHistorySyncService.kt:362-391`, `DynamicKrakenService.kt:44/96`, `KrakenServiceImpl.kt:321`) |
+| CQ-18-2 | Throttle resets on restart, repeats window | M | False/no-defect (process-local throttle + persisted watermark bound window; `:36/64-69/:140-144/:291-312`) |
 | CQ-18-3 | Events after newest snapshot excluded | S | Dropped (intentional; `TradeHistoryQueryServiceTest:34-50`) |
-| CQ-18-4 | `findClosest` min-abs includes future OHLC | S | **YES** (production) — `SnapshotHistoryCalculator.kt:233-249` used `:212/:222` / `:58-66` / `TradeHistoryReconstructionService:106-123` |
-| CQ-18-5 | Dividend payout surface (RebalancerComparison) | L | Dropped (verified contract: `LedgerEvent.kt:6-17`, `ALGORITHM.md:291-304`, `FLOWS.md:370-390`) |
+| CQ-18-4 | `findClosest` min-abs includes future OHLC | M | **YES** (production) — `SnapshotHistoryCalculator.kt:233-249` used `:212/:222` / `:58-66` / `TradeHistoryReconstructionService:106-123` |
+| CQ-18-5 | Dividend payout surface (RebalancerComparison) | S | Dropped (verified contract: `LedgerEvent.kt:6-17`, `ALGORITHM.md:291-304`, `FLOWS.md:370-390`) |
 | CQ-18-6 | Injected `now` not propagated to timeline | S | **YES** (production) — `TradeHistoryReconstructionService.kt:147-151` omits `now=`; `SnapshotHistoryCalculator.kt:50` defaults `Instant.now()` (:27/:49 have `nowProvider`/`reconstructionNow`) |
-| CQ-18-7 | Paginator count under concurrency | M | Dropped (not observed in source) |
-| CQ-18-8 | Shared AtomicInteger paginator counters | L | False/no-defect (by-design per trade-history-sync skill; `:44/96`, `OrderExecutorImpl.kt:453-482`) |
+| CQ-18-7 | Paginator count under concurrency | S | Dropped (not observed in source) |
+| CQ-18-8 | Shared AtomicInteger paginator counters | M | False/no-defect (by-design per trade-history-sync skill; `:44/96`, `OrderExecutorImpl.kt:453-482`) |
 | CQ-18-9 | ATH persist failure aborts cycle | L | **YES** — done after explicit user approval; issue #212 behavior implemented |
-| CQ-18-10 | Ledger dedupe alias collision | M | Dropped (no defect) |
+| CQ-18-10 | Ledger dedupe alias collision | S | Dropped (no defect) |
 | CQ-18-11 | Settings allocation ±0.01 boundary | S | Test-only — prod logic correct (`Settings.kt:40` uses `<= ALLOCATION_TOLERANCE_DELTA` = 0.01 @ `PrecisionConstants.kt:37`); missing exact boundary cases in `SettingsTest` |
-| CQ-18-12 | OHLC weekend gap semantics | M | Dropped |
-| CQ-18-13 | SSOT duplicate source | L | Dropped |
+| CQ-18-12 | OHLC weekend gap semantics | S | Dropped |
+| CQ-18-13 | SSOT duplicate source | S | Dropped |
 
 ## Relevant Files
 
