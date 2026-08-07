@@ -58,7 +58,7 @@ repositories {
 
 dependencies {
     ksp(project(":codegen"))
-    val ktorVersion = "3.5.1"
+    val ktorVersion = "3.5.2"
     val koinVersion = "4.2.2"
 
     implementation(project(":common"))
