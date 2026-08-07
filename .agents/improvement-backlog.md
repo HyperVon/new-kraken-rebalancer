@@ -33,19 +33,18 @@ Items evaluated and deliberately not pursued (never actioned; the recorded reaso
 
 ## Open
 
-| ID | Size | Status | Area | Summary | Cycle | Notes |
-| :--- | :---: | :--- | :--- | :--- | :---: | :--- |
-| CI-27-DP1 | S | in_progress | deps | Bound unpinned `js-yaml` Gradle resolution to `<5.0.0` (build.gradle.kts:272) | 27 | branch improve/cycle-20260807-0458 |
-| CI-27-DP2 | S | in_progress | ci | Remove redundant `jacocoTestCoverageVerification` from CI `build` step (`tasks.check` already covers it) | 27 | branch improve/cycle-20260807-0458 |
-| CI-27-DP3 | S | in_progress | ci | Add `cache: gradle` to dependency-submission setup-java step | 27 | branch improve/cycle-20260807-0458 |
-| CI-27-D01 | S | in_progress | docs | De-date "couple of weeks" AI-Assisted Development claim in README | 27 | branch improve/cycle-20260807-0458 |
-| CI-27-D02 | S | in_progress | docs | Warn that `rebalancer-config.json` is gitignored and must never be committed (README Getting Started) | 27 | branch improve/cycle-20260807-0458 |
-| CI-27-U01 | S | in_progress | css | Add `:focus-visible` ring to the visually-hidden custom checkbox (FormStyles.kt) | 27 | branch improve/cycle-20260807-0458 |
+No open items — every CI-27 item shipped in Cycle 27 (PR #211).
 
 ## Done (recent)
 
 | ID | Size | Status | Area | Summary | Cycle | PR |
 | :--- | :---: | :--- | :--- | :--- | :---: | :--- |
+| CI-27-DP1 | S | done | deps | Bound unpinned `js-yaml` Gradle resolution to `<5.0.0`; regen yarn.lock | 27 | 211 |
+| CI-27-DP2 | S | done | ci | Simplify CI `build` step to `./gradlew build` (`check` already runs jacoco) | 27 | 211 |
+| CI-27-DP3 | S | done | ci | Add `cache: gradle` to dependency-submission setup-java step | 27 | 211 |
+| CI-27-D01 | S | done | docs | De-date AI-Assisted Development "couple of weeks" claim in README | 27 | 211 |
+| CI-27-D02 | S | done | docs | Warn `rebalancer-config.json` is gitignored, never commit credentials | 27 | 211 |
+| CI-27-U01 | S | done | css | Add `:focus-visible` ring to visually-hidden settings checkboxes | 27 | 211 |
 | CI-25-C01 | S | done | trading | Guard `TradeCalculator.calculateSlippage` against non-positive expected prices (`!expectedPrice.isPositive`) | 25 | — |
 | CI-25-C02 | S | done | history | Normalize trade side via `OrderSide.normalize` in `TradeHistorySyncService.legacyApiFillFingerprint` | 25 | — |
 | CI-25-C03 | S | done | config | Remove unused import and use primitive `ALLOCATION_TOLERANCE_DELTA` in `ConfigServiceImpl` | 25 | — |
