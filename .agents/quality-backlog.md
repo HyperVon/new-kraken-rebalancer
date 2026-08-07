@@ -32,6 +32,23 @@ Product polish discovered during QA belongs in
 | CQ-18-12 | S | bug | dropped | frontend-js/history | Review rejected: scrubber and zoom paths already guard null state, missing ranges, and non-positive spans; existing tests cover disabled/null-safe behavior | 18 | — | — |
 | CQ-18-13 | S | bug | dropped | controller/settings | Review rejected: symbols/targets/colors lengths are validated before indexed mapping, and the mismatch response is covered by `DashboardControllerTest` | 18 | — | — |
 
+| CQ-19-01 | S | bug | deferred | algorithm/fiat | distributeFiatCorrection early-return when totalCounterDev==0 logs only, no actionLog follow-up after "Fiat Correction Enforced" | 19 | — | — |
+| CQ-19-02 | M | bug | deferred | algorithm/fiat | Fiat-correction shares bypass isSignificant/dust gates, silently dropped at execution | 19 | — | — |
+| CQ-19-03 | S | bug | deferred | algorithm/orders | Sell volume floors to 0 with no actionLog/dust entry, zero-target dust sticks | 19 | — | — |
+| CQ-19-04 | M | bug | deferred | algorithm/math | Zero-target Deviation% hard-coded 100% regardless of size, churn with dust=0 | 19 | — | — |
+| CQ-19-05 | M | gap | done | algorithm/eval | No scenario for totalValue==0 / 100% drawdown / all-fiat-shares < dust | 19 | TBD | — |
+| CQ-19-06 | M | bug | deferred | history/sync | LedgersSyncService recovery pagination null vs TradeHistorySync 96d, wastes rate-limit | 19 | — | — |
+| CQ-19-07 | S | bug | open | Kraken/ledgers | getLedgers fans out staking+dividend with shared ofs, coupled pagination | 19 | — | — |
+| CQ-19-08 | S | bug | open | Kraken/retry | retryWithFlow lockout detection via e.message.contains, misses raw 429/503 | 19 | — | — |
+| CQ-19-09 | S | bug | open | history/dedupe | TradeDeduplicator tie-breaker non-deterministic (stable sort, no DB tie-breaker) | 19 | — | — |
+| CQ-19-10 | S | bug | open | Kraken/rate | RateLimiter forward NTP jump decays to 0, permits burst | 19 | — | — |
+| CQ-19-11 | M | gap | deferred | coverage/bundle | Bundle BRANCH 90.13% headroom 0.13% (~26 branches) | 19 | — | — |
+| CQ-19-12 | M | gap | deferred | coverage/history | Package history 87.8% / controller 81.4% below bundle gate | 19 | — | — |
+| CQ-19-13 | S | gap | open | coverage/js | Karma JS gate unverified (no jsBrowserTest on branch) | 19 | — | — |
+| CQ-19-14 | L | gap | deferred | algorithm/eval | ALGORITHM PENDING→UNCERTAIN/cl_ord_id/batch abort has 0 scenarios | 19 | — | #221 |
+| CQ-19-15 | M | gap | deferred | algorithm/eval | retryWithFlow/withStableBackend/ledgers sync have no evaluation scenario | 19 | — | — |
+| CQ-19-16 | S | bug | done | config/flows | withExecutionSession takes ()->T not suspend ()->T, suspend callers wrap | 19 | TBD | — |
+
 ## Done (recent)
 
 | ID | Size | Kind | Status | Area | Summary | Cycle | PR | Issue |

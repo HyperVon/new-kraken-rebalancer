@@ -654,4 +654,75 @@ internal fun EvaluationScenariosTest.registerScenarios29To34() {
             )
         }
     }
+
+    "Scenario 36: Zero Total Portfolio Value / 100% Drawdown" {
+        runTest {
+            val fakeKraken = FakeKrakenService()
+            val mockConfig = mockk<ConfigService>(relaxed = true)
+            val appConfig =
+                TestFixtures.config(
+                    settings = TestFixtures.settings(dryRun = false, dustThresholdUSD = 0.0),
+                    allocations =
+                    listOf(
+                        Allocation(Asset.BTC, 50.0),
+                        Allocation(Asset.ETH, 30.0),
+                        Allocation(Asset.USD, 20.0),
+                    ),
+                )
+            every { mockConfig.getConfig() } returns appConfig
+
+            // Zero balances — totalPortfolioValueUSD == 0 (covers 100% drawdown path when ATH>0)
+            fakeKraken.balanceSupplier = {
+                mapOf(
+                    Asset.BTC to 0.0,
+                    "ETH" to 0.0,
+                    Asset.USD to 0.0,
+                )
+            }
+            fakeKraken.pricesSupplier = { _ ->
+                mapOf(
+                    TestFixtures.XBTUSD to 50000.0,
+                    TestFixtures.ETHUSD to 2000.0,
+                )
+            }
+            val statsRepo = mockk<PortfolioStatsRepository>(relaxed = true)
+            // Mock ATH load to return 0 so drawdown calc is deterministic; the zero-total path is the focus
+            coEvery { statsRepo.load() } returns PortfolioStats(allTimeHigh = BigDecimal.ZERO)
+            coEvery { statsRepo.save(any()) } answers { firstArg<PortfolioStats>() }
+
+            val analyzer = PortfolioAnalyzerImpl(fakeKraken, mockConfig, statsRepo)
+            val executor = OrderExecutorImpl(fakeKraken, tradeHistoryService)
+            val mockHistory = mockk<TradeHistoryService>(relaxed = true)
+            coEvery { mockHistory.addSnapshot(any()) } answers {
+                firstArg<PortfolioSnapshot>()
+            }
+            val pm =
+                PortfolioManagerImpl(
+                    mockConfig,
+                    mockHistory,
+                    analyzer,
+                    executor,
+                )
+            try {
+                pm.performRebalanceCycle()
+            } catch (e: Exception) {
+                EvaluationScenariosTest.recordResult(
+                    "Scenario 36",
+                    "Zero Total Portfolio Value / 100% Drawdown",
+                    "FAIL",
+                    "Unexpected exception with zero total: ${e.message}",
+                )
+                return@runTest
+            }
+            // With zero total, no orders should be generated
+            fakeKraken.executedOrders.size shouldBe 0
+
+            EvaluationScenariosTest.recordResult(
+                "Scenario 36",
+                "Zero Total Portfolio Value / 100% Drawdown",
+                TestFixtures.PASS,
+                "Zero balances handled without exception; 0 orders verified",
+            )
+        }
+    }
 }

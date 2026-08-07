@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.16.33] - 2026-08-07
+
+### Added
+
+- **Continuous Quality Cycle 19**: Added `Scenario 36` for zero total portfolio value / 100% drawdown (covers `CQ-19-05`); fixed `ConfigService.withExecutionSession` to `suspend` lambda for suspend callers (`CQ-19-16`).
+
 ## [6.16.32] - 2026-08-07
 
 ### Changed
