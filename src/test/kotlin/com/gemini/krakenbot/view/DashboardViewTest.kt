@@ -166,7 +166,7 @@ class DashboardViewTest : StringSpec() {
                 return input
             }
 
-            namedInput("dustThresholdUSD") shouldContain "min=\"0\""
+            namedInput("dustThresholdUSD") shouldContain "min=\"2\""
             val fiatMax = namedInput("fiatMaxDrawdown")
             fiatMax shouldContain "min=\"0\""
             fiatMax shouldContain "max=\"100\""

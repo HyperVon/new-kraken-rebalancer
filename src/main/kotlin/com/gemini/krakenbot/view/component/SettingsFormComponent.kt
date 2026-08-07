@@ -68,7 +68,7 @@ class SettingsFormComponent {
             FormFields.DUST_THRESHOLD_USD,
             config.settings.dustThresholdUSD.toString(),
             step = "0.5",
-            min = "0",
+            min = "2",
         ),
         NumericFieldSpec(
             ViewText.FIAT_MAX_DRAWDOWN,

@@ -98,7 +98,7 @@ class ConfigServiceTest : StringSpec() {
                   "settings": {
                     "loopDelaySeconds": 60,
                     "deviationTriggerPercent": 2.0,
-                    "dustThresholdUSD": 1.0,
+                    "dustThresholdUSD": 5.0,
                     "dryRun": true,
                     "fiatMaxDrawdown": 0.0,
                     "fiatDeploymentExponent": 1.0

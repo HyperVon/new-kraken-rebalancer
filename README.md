@@ -740,6 +740,8 @@ If you are modifying the client-side code in `frontend-js/` and want to compile 
 | `fiatMaxDrawdown`         | `Double`  | `0.0`                   | Portfolio drawdown % at which 100% of USD is deployed (0 = disabled)                  |
 | `fiatDeploymentExponent`  | `Double`  | `1.0`                   | Controls deployment curve: `1.0` = linear, `<1.0` = aggressive, `>1.0` = conservative |
 
+> **Note:** `dustThresholdUSD` is enforced to a minimum of `2` in `ConfigService` and the Settings UI (`min="2"`).
+
 ---
 
 ## API Endpoints
