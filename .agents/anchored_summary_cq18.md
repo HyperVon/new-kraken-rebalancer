@@ -47,7 +47,7 @@ Implement tests-first fixes for the re-verified real CQ-18 findings on branch `q
 
 - Full `./gradlew build jacocoTestCoverageVerification --rerun-tasks` passed with serial Gradle execution.
 - Complete repository Markdown lint and `git diff --check` passed; inspect the final worktree boundary before handoff.
-- Commit and push only after explicit user request; this session's request has been completed.
+- Commit/push policy: do so only after an explicit user request. This request was explicit, and the resulting commits are pushed.
 
 ## Critical Context
 
