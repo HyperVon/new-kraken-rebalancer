@@ -51,7 +51,7 @@ Implement tests-first fixes for the re-verified real CQ-18 findings on branch `q
 
 ## Critical Context
 
-- Repo root: `/Users/charlesv/Projects/new-kraken-rebalancer`; main at `bcdf4e6`.
+- Repository root; main at `bcdf4e6`.
 - Production roots: `src/main/kotlin/com/gemini/krakenbot/` (JVM) and `frontend-js/src/jsMain/kotlin/`; tests `src/test/kotlin/com/gemini/krakenbot/` + `frontend-js/src/jsTest/kotlin/` (14 files).
 - CQ-18-1: trade paging trusts Kraken `totalCount` (capped 1000) at `TradeHistorySyncService.kt:373,383-388`; ledger count (`:210-212`) is reliable — keep ledger count-trust.
 - CQ-18-2: throttle `lastSyncTime` is process-local at `TradeHistorySyncService.kt:36,64-69,311` (same in LedgersSyncService `:36/108/149`); persisted watermark (`finalizeSync :291-312`, `calculateEffectiveLatestTime :140-144`) bounds window but throttle resets on restart. (NO-DEFECT re-confirmed.)
@@ -61,7 +61,7 @@ Implement tests-first fixes for the re-verified real CQ-18 findings on branch `q
 - CQ-18-9 current behavior: `PortfolioAnalyzerImpl.kt:67-99` rethrows `CancellationException` but warns and continues after other ATH save failures using the selected in-memory ATH; `PortfolioManagerImpl.kt:250-252` remains unchanged, so the persistence policy has one owner. Issue #212 is implemented.
 - CQ-18-11: exact `±0.01` allocation boundary at `Settings.kt:28-48`; `Settings.kt:40` uses `abs(total - PrecisionConstants.TOTAL_ALLOCATION_PERCENTAGE) <= PrecisionConstants.ALLOCATION_TOLERANCE_DELTA`. The added test records actual V8 behavior: 100.00, 100.01, and 99.99 are accepted; 100.02 is rejected.
 - Test base: `TradeHistoryServiceTestBase` provides `repository`, `ledgerRepository`, `krakenService` (relaxed + `stubWithStableBackend`), `configService`, `portfolioAnalyzer` mocks and `createService()`; `TradeHistoryReconstructionTest` extends it. `SnapshotHistoryCalculatorTest` uses `:memory:` + its own cleanup.
-- Worktree changes so far include the CQ-18 implementation/tests/docs, `.kilo/model-router/config` (EOL blacklist of `nvidia/mistralai/mistral-medium-3.5-128b`), and this handoff artifact. Nothing is committed or pushed.
+- Handoff state: CQ-18 implementation/tests/docs and the router EOL blacklist are committed and pushed; no runtime state, credentials, or databases are included.
 
 ## Verdict Table (re-verified vs current source)
 
