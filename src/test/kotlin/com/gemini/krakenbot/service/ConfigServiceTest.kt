@@ -476,6 +476,8 @@ class ConfigServiceTest : StringSpec() {
                     "loopDelaySeconds" to settings.copy(loopDelaySeconds = 0),
                     "deviationTriggerPercent" to settings.copy(deviationTriggerPercent = -1.0),
                     "minimumOrderSizeUSD" to settings.copy(minimumOrderSizeUSD = -1.0),
+                    "minimumOrderSizeUSD below floor" to settings.copy(minimumOrderSizeUSD = 1.0),
+                    "minimumOrderSizeUSD below floor 1.9" to settings.copy(minimumOrderSizeUSD = 1.9),
                     "minimum fiatMaxDrawdown" to settings.copy(fiatMaxDrawdown = -1.0),
                     "maximum fiatMaxDrawdown" to settings.copy(fiatMaxDrawdown = 101.0),
                     "fiatDeploymentExponent" to settings.copy(fiatDeploymentExponent = 0.0),

@@ -174,10 +174,16 @@ class ConfigServiceImpl(
         return objectMapper.readValue(normalized, AppConfig::class.java)
     }
 
-    private fun normalizeLegacyKeys(content: String): String = if (content.contains("\"dustThresholdUSD\"")) {
-        content.replace("\"dustThresholdUSD\"", "\"minimumOrderSizeUSD\"")
-    } else {
-        content
+    private fun normalizeLegacyKeys(content: String): String {
+        if (!content.contains("\"dustThresholdUSD\"")) return content
+        val hasNew = content.contains("\"minimumOrderSizeUSD\"")
+        return if (hasNew) {
+            // Both keys present: drop the legacy entry, prefer the new value (avoid duplicate keys).
+            content.replace(Regex("\"dustThresholdUSD\"\\s*:\\s*[^,\\n}]+,?\\s*"), "")
+        } else {
+            // Only legacy: rename the key, not string values (match key + colon).
+            content.replace(Regex("\"dustThresholdUSD\"(\\s*:)"), "\"minimumOrderSizeUSD\"$1")
+        }
     }
 
     private fun resolveEnvVars(content: String): String = ENV_VAR_PATTERN.replace(content) { matchResult ->
