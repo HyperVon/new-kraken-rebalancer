@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.16.26] - 2026-08-06
+
+### Fixed
+
+- **Agent Skill Examples**: Corrected `koin-di-and-config` and `kraken-api-integration` skill examples to match real source contracts — `KoinModuleExample.kt` now uses the actual `AppConfig`/`Settings`/`Allocation`/`KrakenCredentials`/`Asset` schema with real field names (`loopDelaySeconds`, `deviationTriggerPercent`, `dryRun`, …) instead of invented ones; `KrakenApiExample.kt` rate limiting now mirrors the real `RateLimiter` linearly-decaying call-counter algorithm (mutex released before `delay`, per-endpoint cost) instead of a `Mutex.withLock` that serializes all concurrent calls. Examples are illustrative only and are not Gradle source inputs, so this cannot affect builds.
+
 ## [6.16.25] - 2026-08-06
 
 ### Fixed

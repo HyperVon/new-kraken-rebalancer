@@ -5,26 +5,60 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.slf4j.LoggerFactory
 import java.math.BigDecimal
+import kotlin.time.Duration.Companion.milliseconds
 
 class KrakenApiExample(
     private val apiKey: String,
     private val apiSecret: String
 ) {
     private val log = LoggerFactory.getLogger(KrakenApiExample::class.java)
-    private val rateLimiterMutex = Mutex()
 
-    suspend fun getAccountBalances(): Map<String, BigDecimal> = rateLimiterMutex.withLock {
+    // Mirrors service/impl/RateLimiter.kt: a linearly-decaying call counter,
+    // NOT a mutex held across the whole call. safeLimit (12.0) is the
+    // Intermediate-tier cost ceiling; decayRate (0.33) is tokens/sec. The mutex
+    // guards counter updates only and is released before delay() so waiters do
+    // not HOL-block one another (CQ-7-L1).
+    private val rateLimiterMutex = Mutex()
+    private var callCounter = 0.0
+    private var lastUpdateTimeMs = System.currentTimeMillis()
+    private val safeLimit = 12.0
+    private val decayRate = 0.33
+
+    suspend fun getAccountBalances(): Map<String, BigDecimal> {
+        acquireCost(cost = 1.0)
         log.info("Fetching private account balances from Kraken API...")
-        
+
         // Map raw Kraken API symbols to normalized display symbols
         val rawBalances = fetchRawBalancesFromKraken()
-        
-        rawBalances.mapKeys { (symbol, _) ->
+
+        return rawBalances.mapKeys { (symbol, _) ->
             when (symbol) {
                 "XXBT", "XBT" -> "BTC"
                 "XXDG", "XDG", "DOGE" -> "DOGE"
-                "ZUSD" -> "USD"
+                "ZUSD", "USD" -> "USD"
                 else -> symbol
+            }
+        }
+    }
+
+    private suspend fun acquireCost(cost: Double) {
+        while (true) {
+            var waitMs = 0L
+            rateLimiterMutex.withLock {
+                val now = System.currentTimeMillis()
+                val elapsedSeconds = (now - lastUpdateTimeMs) / 1000.0
+                callCounter = maxOf(0.0, callCounter - (elapsedSeconds * decayRate))
+                lastUpdateTimeMs = maxOf(lastUpdateTimeMs, now)
+                if (callCounter + cost > safeLimit) {
+                    val neededDecay = (callCounter + cost) - safeLimit
+                    waitMs = (neededDecay / decayRate * 1000).toLong().coerceAtLeast(1L)
+                } else {
+                    callCounter += cost
+                    return
+                }
+            }
+            if (waitMs > 0) {
+                delay(waitMs.milliseconds)
             }
         }
     }
