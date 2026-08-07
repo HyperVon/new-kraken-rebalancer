@@ -49,11 +49,11 @@ Items evaluated and deliberately not pursued (never actioned; the recorded reaso
 
 ## Done (recent)
 
-| CI-28-C01 | S | done | code | Remove redundant `import kotlinx.html.InputType` in `SettingsFormComponent.kt:35` | 28 | TBD |
-| CI-28-C02 | S | done | code | Add method KDoc to `RateLimiter.acquireWithCost` / `getCurrentCounter` / `reset` | 28 | TBD |
-| CI-28-C03 | M | done | code | Add KDoc to 6/9 undocumented public funs in `PortfolioCalculations.kt` | 28 | TBD |
-| CI-28-C04 | S | done | css | Expand `CssTheme.applyRootVariables()` from 12 to 28 CSS variables | 28 | TBD |
-| CI-28-C06 | M | done | deps | Add `.github/dependabot.yml` for weekly Gradle + npm update PRs | 28 | TBD |
+| CI-28-C01 | S | done | code | Remove redundant `import kotlinx.html.InputType` in `SettingsFormComponent.kt:35` | 28 | 214 |
+| CI-28-C02 | S | done | code | Add method KDoc to `RateLimiter.acquireWithCost` / `getCurrentCounter` / `reset` | 28 | 214 |
+| CI-28-C03 | M | done | code | Add KDoc to 6/9 undocumented public funs in `PortfolioCalculations.kt` | 28 | 214 |
+| CI-28-C04 | S | done | css | Expand `CssTheme.applyRootVariables()` from 12 to 28 CSS variables | 28 | 214 |
+| CI-28-C06 | M | done | deps | Add `.github/dependabot.yml` for weekly Gradle + npm update PRs | 28 | 214 |
 
 | ID | Size | Status | Area | Summary | Cycle | PR |
 | :--- | :---: | :--- | :--- | :--- | :---: | :--- |
