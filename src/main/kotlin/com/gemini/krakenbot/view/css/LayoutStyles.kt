@@ -65,10 +65,10 @@ object LayoutStyles {
             backgroundColor = CssTheme.colorBg
             color = CssTheme.colorTextPrimary
             fontFamily = CssTheme.fontSans
-            put("-webkit-font-smoothing", "antialiased")
-            put("-moz-osx-font-smoothing", "grayscale")
+            webkitFontSmoothingRaw("antialiased")
+            mozOsxFontSmoothingRaw("grayscale")
             minHeight = 100.vh
-            put("line-height", "1.5")
+            lineHeightRaw("1.5")
             put(
                 "background-image",
                 "radial-gradient(ellipse 90% 55% at 12% 0%, " +
@@ -85,8 +85,8 @@ object LayoutStyles {
             maxWidth = 80.rem
             marginTop = 0.px
             marginBottom = 0.px
-            put("margin-left", "auto")
-            put("margin-right", "auto")
+            marginLeftRaw("auto")
+            marginRightRaw("auto")
             padding = Padding(1.rem, 1.rem, 3.rem, 1.rem)
         }
 
@@ -95,11 +95,11 @@ object LayoutStyles {
             display = Display.flex
             flexDirection = FlexDirection.row
             alignItems = Align.center
-            put("justify-content", "space-between")
+            justifyContentRaw("space-between")
             flexWrap = FlexWrap.wrap
             rowGap = 0.75.rem
             columnGap = 1.rem
-            put("min-height", "3rem")
+            minHeightRaw("3rem")
             paddingBottom = 1.25.rem
             borderBottomWidth = 1.px
             borderBottomStyle = BorderStyle.solid
@@ -118,8 +118,8 @@ object LayoutStyles {
             fontFamily = CssTheme.fontHeading
             fontSize = 1.75.rem
             fontWeight = FontWeight.w800
-            put("letter-spacing", "-0.03em")
-            put("line-height", "1.1")
+            letterSpacingRaw("-0.03em")
+            lineHeightRaw("1.1")
             margin = Margin(0.px)
         }
 
@@ -136,7 +136,7 @@ object LayoutStyles {
             alignItems = Align.center
             gap = 1.rem
             flexWrap = FlexWrap.wrap
-            put("justify-content", "flex-end")
+            justifyContentRaw("flex-end")
             marginBottom = 0.rem
         }
 
@@ -145,7 +145,7 @@ object LayoutStyles {
             fontSize = 0.875.rem
             fontWeight = FontWeight.w700
             color = CssTheme.colorTextBright
-            put("line-height", "1.35")
+            lineHeightRaw("1.35")
         }
 
         ".${CssClass.DataAge.Value}.${CssClass.Utility.Stale}" {
@@ -155,7 +155,7 @@ object LayoutStyles {
         ".${CssClass.DataAge.Time}" {
             fontSize = 0.75.rem
             color = CssTheme.colorTextMuted
-            put("line-height", "1.35")
+            lineHeightRaw("1.35")
         }
 
         // GLOB-1/DASH-2: persistent trading-mode plate + compact single-line stream status.
@@ -167,11 +167,11 @@ object LayoutStyles {
             borderRadius = CssTheme.radiusPill
             fontSize = 0.6875.rem
             fontWeight = FontWeight.w700
-            put("letter-spacing", "0.08em")
+            letterSpacingRaw("0.08em")
             borderWidth = 1.px
             borderStyle = BorderStyle.solid
-            put("text-transform", "uppercase")
-            put("white-space", "nowrap")
+            textTransformRaw("uppercase")
+            whiteSpaceRaw("nowrap")
         }
 
         ".${CssClass.Mode.Plate.value} svg" {
@@ -183,7 +183,7 @@ object LayoutStyles {
             width = 0.4375.rem
             height = 0.4375.rem
             borderRadius = 50.pct
-            put("background-color", "currentColor")
+            backgroundColorRaw("currentColor")
             flexShrink = 0.0
         }
 
@@ -191,21 +191,21 @@ object LayoutStyles {
             color = CssTheme.colorBlueAccent
             backgroundColor = CssTheme.colorBlueGlassBg
             borderColor = CssTheme.colorBlueGlassBorderHover
-            put("box-shadow", "${CssTheme.glowBlueStrong}, ${CssTheme.insetTopHighlight}")
+            boxShadowRaw("${CssTheme.glowBlueStrong}, ${CssTheme.insetTopHighlight}")
         }
 
         ".mode-dry-run" {
             color = CssTheme.colorWarning
             backgroundColor = CssTheme.colorWarningMuted
             borderColor = CssTheme.colorWarningBorder
-            put("box-shadow", "${CssTheme.glowAmberSoft}, ${CssTheme.insetTopHighlight}")
+            boxShadowRaw("${CssTheme.glowAmberSoft}, ${CssTheme.insetTopHighlight}")
         }
 
         ".mode-live" {
             color = CssTheme.colorDanger
             backgroundColor = CssTheme.colorDangerMuted
             borderColor = CssTheme.colorDangerBorder
-            put("box-shadow", "${CssTheme.glowRedSoft}, ${CssTheme.insetTopHighlight}")
+            boxShadowRaw("${CssTheme.glowRedSoft}, ${CssTheme.insetTopHighlight}")
         }
 
         ".${CssClass.Layout.HeaderStatus.value}" {
@@ -222,7 +222,7 @@ object LayoutStyles {
             )
             fontSize = 0.75.rem
             color = CssTheme.colorTextSecondary
-            put("white-space", "nowrap")
+            whiteSpaceRaw("nowrap")
             fontFamily = CssTheme.fontMono
         }
 
@@ -244,18 +244,18 @@ object LayoutStyles {
         ".${CssClass.Layout.GlassPanel}" {
             // Raised glass: cool blue sheen + light blur + cyan rim (not matte, not milky).
             background = CssTheme.glassSurfaceGradient
-            put("backdrop-filter", "blur(16px)")
-            put("-webkit-backdrop-filter", "blur(16px)")
+            backdropFilterRaw("blur(16px)")
+            webkitBackdropFilterRaw("blur(16px)")
             solidBorder(CssTheme.colorSurface1Border)
-            put("box-shadow", CssTheme.shadowSurface1)
+            boxShadowRaw(CssTheme.shadowSurface1)
             borderRadius = CssTheme.radiusXl
             padding = Padding(1.5.rem)
-            put("transition", "border-color 0.25s ease, box-shadow 0.25s ease")
+            transitionRaw("border-color 0.25s ease, box-shadow 0.25s ease")
         }
 
         ".${CssClass.Layout.GlassPanel}:hover" {
             borderColor = CssTheme.colorGlassBorderHover
-            put("box-shadow", CssTheme.shadowSurface2)
+            boxShadowRaw(CssTheme.shadowSurface2)
         }
 
         ".${CssClass.Layout.Container} > .${CssClass.Layout.GlassPanel}" {
@@ -266,8 +266,8 @@ object LayoutStyles {
             fontSize = 0.875.rem
             fontWeight = FontWeight.w600
             color = CssTheme.colorTextSecondary
-            put("text-transform", "uppercase")
-            put("letter-spacing", "0.05em")
+            textTransformRaw("uppercase")
+            letterSpacingRaw("0.05em")
             marginBottom = 0.75.rem
             display = Display.flex
             alignItems = Align.center

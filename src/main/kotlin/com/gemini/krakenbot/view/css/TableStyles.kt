@@ -79,13 +79,13 @@ object TableStyles {
             fontWeight = FontWeight.w600
             color = CssTheme.colorTextSecondary
             fontSize = 0.75.rem
-            put("text-transform", "uppercase")
-            put("letter-spacing", "0.05em")
+            textTransformRaw("uppercase")
+            letterSpacingRaw("0.05em")
         }
 
         td {
             padding = Padding(0.75.rem, 0.5.rem)
-            put("vertical-align", "middle")
+            verticalAlignRaw("middle")
             borderBottomWidth = 1.px
             borderBottomStyle = BorderStyle.solid
             borderBottomColor = CssTheme.colorBorderFaint
@@ -107,7 +107,7 @@ object TableStyles {
         ".${CssClass.Table.MonoCol}" {
             fontFamily = CssTheme.fontMono
             // HIST-3: tabular figures keep decimal columns aligned.
-            put("font-variant-numeric", "tabular-nums")
+            fontVariantNumericRaw("tabular-nums")
         }
 
         // HIST-3: quiet success indicator (replaces the always-"SUCCESS" text column).
@@ -117,12 +117,12 @@ object TableStyles {
             height = 0.5.rem
             borderRadius = 50.pct
             backgroundColor = CssTheme.colorSuccess
-            put("box-shadow", "0 0 0 3px rgba(16, 185, 129, 0.15)")
+            boxShadowRaw("0 0 0 3px rgba(16, 185, 129, 0.15)")
         }
 
         "th.sortable" {
             cursor = Cursor.pointer
-            put("user-select", "none")
+            userSelectRaw("none")
         }
 
         "th.sortable:hover" {
@@ -130,9 +130,9 @@ object TableStyles {
         }
 
         "th.sortable:focus-visible" {
-            put("outline", "none")
+            outlineRaw("none")
             color = CssTheme.colorTextPrimary
-            put("box-shadow", "inset 0 0 0 2px rgba(59, 130, 246, 0.7)")
+            boxShadowRaw("inset 0 0 0 2px rgba(59, 130, 246, 0.7)")
         }
 
         "th.sortable::after" {
@@ -160,7 +160,7 @@ object TableStyles {
             borderRadius = CssTheme.radiusSm
             fontSize = 0.675.rem
             fontWeight = FontWeight.w700
-            put("letter-spacing", "0.05em")
+            letterSpacingRaw("0.05em")
             backgroundColor = Color.transparent
             solidBorder(CssTheme.colorWhiteBorder)
             color = CssTheme.colorTextSecondary

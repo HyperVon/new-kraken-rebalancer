@@ -75,7 +75,7 @@ object FormStyles {
             fontWeight = FontWeight.w600
             cursor = Cursor.pointer
             borderStyle = BorderStyle.none
-            put("transition", "all 0.2s ease")
+            transitionRaw("all 0.2s ease")
             textDecoration = TextDecoration.none
             color = Color.inherit
         }
@@ -85,7 +85,7 @@ object FormStyles {
                 "linear-gradient(135deg, ${CssTheme.colorBlueGradientStart.value} 0%, " +
                 "${CssTheme.colorBlueDeep.value} 45%, ${CssTheme.colorBlueHover.value} 100%)"
             color = Color.white
-            put("box-shadow", CssTheme.shadowBtnPrimary)
+            boxShadowRaw(CssTheme.shadowBtnPrimary)
         }
 
         ".btn-primary:hover" {
@@ -140,14 +140,14 @@ object FormStyles {
         }
 
         ".btn:focus-visible" {
-            put("outline", "none")
-            put("box-shadow", CssTheme.focusRingStrong)
+            outlineRaw("none")
+            boxShadowRaw(CssTheme.focusRingStrong)
         }
 
         ".btn:disabled" {
             opacity = 0.5
             cursor = Cursor.notAllowed
-            put("transform", "none")
+            transformRaw("none")
         }
 
         ".${CssClass.Form.Section}" {
@@ -200,13 +200,13 @@ object FormStyles {
             borderRadius = CssTheme.radiusMd
             fontFamily = "inherit"
             fontSize = 0.875.rem
-            put("transition", "all 0.2s ease")
+            transitionRaw("all 0.2s ease")
         }
 
         ".${CssClass.Form.InputGlass}:focus" {
-            put("outline", "none")
+            outlineRaw("none")
             borderColor = CssTheme.colorBluePrimary
-            put("box-shadow", CssTheme.focusRingSubtle)
+            boxShadowRaw(CssTheme.focusRingSubtle)
         }
 
         ".${CssClass.Form.CheckboxContainer}" {
@@ -214,7 +214,7 @@ object FormStyles {
             alignItems = Align.center
             gap = 0.75.rem
             cursor = Cursor.pointer
-            put("user-select", "none")
+            userSelectRaw("none")
             position = Position.relative
         }
 
@@ -224,7 +224,7 @@ object FormStyles {
             height = 1.25.rem
             solidBorder(CssTheme.colorBorderInputStrong, 2.px)
             borderRadius = CssTheme.radiusXs
-            put("transition", "all 0.2s ease")
+            transitionRaw("all 0.2s ease")
         }
 
         "input[type=\"checkbox\"]" {
@@ -237,9 +237,9 @@ object FormStyles {
             padding = Padding(0.px)
             borderWidth = 0.px
             overflow = Overflow.hidden
-            put("clip", "rect(0, 0, 0, 0)")
-            put("clip-path", "inset(50%)")
-            put("white-space", "nowrap")
+            clipRaw("rect(0, 0, 0, 0)")
+            clipPathRaw("inset(50%)")
+            whiteSpaceRaw("nowrap")
         }
 
         "input[type=\"checkbox\"]:checked + .${CssClass.Form.CheckboxCustom}" {
@@ -256,7 +256,7 @@ object FormStyles {
             height = 0.5.rem
             borderStyle = BorderStyle.solid
             borderColor = Color.white
-            put("border-width", "0 2px 2px 0")
+            borderWidthRaw("0 2px 2px 0")
             transform { rotate(45.deg) }
         }
 
@@ -298,7 +298,7 @@ object FormStyles {
             cursor = Cursor.pointer
             backgroundColor = Color.transparent
             display = Display.inlineFlex
-            put("flex-shrink", "0")
+            flexShrinkRaw("0")
         }
 
         ".${CssClass.Form.AllocationColorSwatch}::-webkit-color-swatch-wrapper" {
@@ -347,7 +347,7 @@ object FormStyles {
             color = CssTheme.colorTextSecondary
             marginTop = (-0.75).rem
             marginBottom = 1.25.rem
-            put("line-height", "1.45")
+            lineHeightRaw("1.45")
             maxWidth = 44.rem
         }
 
@@ -370,7 +370,7 @@ object FormStyles {
             display = Display.block
             position = Position.relative
             cursor = Cursor.pointer
-            put("user-select", "none")
+            userSelectRaw("none")
         }
 
         ".${CssClass.Form.SafetyCardInner.value}" {
@@ -381,18 +381,18 @@ object FormStyles {
             borderRadius = CssTheme.radiusXl
             background = CssTheme.glassSurfaceGradient
             solidBorder(CssTheme.colorSurface2Border)
-            put("transition", "all 0.2s ease")
-            put("box-shadow", CssTheme.shadowSurface1)
+            transitionRaw("all 0.2s ease")
+            boxShadowRaw(CssTheme.shadowSurface1)
         }
 
         ".${CssClass.Form.SafetyCard.value}:focus-within .${CssClass.Form.SafetyCardInner.value}" {
             borderColor = CssTheme.colorKrakenBlue
-            put("box-shadow", "${CssTheme.focusRingCompact}, ${CssTheme.shadowSurface1}")
+            boxShadowRaw("${CssTheme.focusRingCompact}, ${CssTheme.shadowSurface1}")
         }
 
         ".${CssClass.Form.SafetyCard.value}:hover .${CssClass.Form.SafetyCardInner.value}" {
             borderColor = CssTheme.colorGlassBorderHover
-            put("box-shadow", CssTheme.shadowSurface2)
+            boxShadowRaw(CssTheme.shadowSurface2)
         }
 
         // Active (checked) tint — a safety that is ON reads as success.
@@ -411,14 +411,14 @@ object FormStyles {
         ".${CssClass.Form.SafetyCardIcon.value}" {
             display = Display.flex
             alignItems = Align.center
-            put("justify-content", "center")
+            justifyContentRaw("center")
             flexShrink = 0.0
             width = 2.75.rem
             height = 2.75.rem
             borderRadius = 50.pct
             background = CssTheme.colorGlassHover.value
             color = CssTheme.colorTextSecondary
-            put("transition", "all 0.2s ease")
+            transitionRaw("all 0.2s ease")
         }
 
         val checkedIcon =
@@ -427,7 +427,7 @@ object FormStyles {
         checkedIcon {
             background = CssTheme.colorSuccessMuted.value
             color = CssTheme.colorSuccess
-            put("box-shadow", CssTheme.glowGreenSoft)
+            boxShadowRaw(CssTheme.glowGreenSoft)
         }
 
         ".${CssClass.Form.SafetyCardIcon.value} svg" {
@@ -445,7 +445,7 @@ object FormStyles {
         ".${CssClass.Form.SafetyCardTitleRow.value}" {
             display = Display.flex
             alignItems = Align.center
-            put("justify-content", "space-between")
+            justifyContentRaw("space-between")
             gap = 0.75.rem
         }
 
@@ -458,7 +458,7 @@ object FormStyles {
         ".${CssClass.Form.SafetyCardDesc.value}" {
             fontSize = 0.8125.rem
             color = CssTheme.colorTextSecondary
-            put("line-height", "1.45")
+            lineHeightRaw("1.45")
         }
 
         ".${CssClass.Form.SafetyStatePill.value}" {
@@ -467,7 +467,7 @@ object FormStyles {
             borderRadius = CssTheme.radiusPill
             fontSize = 0.6875.rem
             fontWeight = FontWeight.w700
-            put("letter-spacing", "0.06em")
+            letterSpacingRaw("0.06em")
             backgroundColor = CssTheme.colorSlateMuted
             color = CssTheme.colorTextSecondary
             solidBorder(CssTheme.colorSlateBorder)
@@ -498,7 +498,7 @@ object FormStyles {
 
         ".${CssClass.Form.SectionHeader}" {
             display = Display.flex
-            put("justify-content", "space-between")
+            justifyContentRaw("space-between")
             alignItems = Align.center
             marginBottom = 1.25.rem
         }
@@ -511,7 +511,7 @@ object FormStyles {
         }
 
         ".add-asset-box input" {
-            put("text-transform", "uppercase")
+            textTransformRaw("uppercase")
             flexGrow = 1.0
         }
     }

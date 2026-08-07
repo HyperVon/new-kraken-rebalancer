@@ -29,7 +29,7 @@ object MediaQueries {
                 gridTemplateColumns = GridTemplateColumns("repeat(2, 1fr)")
             }
             ".${CssClass.History.ToolbarRow}" {
-                put("flex-wrap", "nowrap")
+                flexWrapRaw("nowrap")
             }
         }
 
@@ -39,7 +39,7 @@ object MediaQueries {
             }
             header {
                 flexDirection = FlexDirection.row
-                put("justify-content", "space-between")
+                justifyContentRaw("space-between")
                 alignItems = Align.center
                 paddingBottom = 1.5.rem
                 marginBottom = 1.75.rem
