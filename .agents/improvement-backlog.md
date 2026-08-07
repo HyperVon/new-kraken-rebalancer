@@ -36,7 +36,7 @@ Items evaluated and deliberately not pursued (never actioned; the recorded reaso
 
 | ID | Size | Status | Area | Summary | Cycle | Notes |
 | :--- | :---: | :--- | :--- | :--- | :--- | :--- |
-| CI-28-C07 | S | deferred | code | `OverviewGridComponent.kt:165` sparkline `BigDecimal → toDouble()` for SVG coords (precision) | 28 | low risk, needs visual verification |
+| CI-28-C07 | S | deferred | code | `OverviewGridComponent.kt:165` sparkline `BigDecimal → toDouble()` for SVG coords (precision) | 28 | superseded by CI-29-C01 |
 | CI-28-C08 | M | deferred | frontend | `HistoryCharts.kt:434` split out `formatUsd`/`formatPercent` helpers (largest JS file) | 28 | file split, do in focused frontend cycle |
 | CI-28-C09 | M | deferred | history | `SnapshotHistoryCalculator.calculateHistoricalSnapshots` 93-line method → extract ATH helper | 28 | history math, needs dedicated tests |
 | CI-28-C10 | S | deferred | code | `KrakenRebalancerApplication.kt:73` ad-hoc `CoroutineScope(Dispatchers.Default)` → structured/Koin scope | 28 | scope change touches lifecycle |
@@ -48,6 +48,9 @@ Items evaluated and deliberately not pursued (never actioned; the recorded reaso
 
 ## Done (recent)
 
+| CI-29-C01 | S | done | code | Fix `OverviewGridComponent.sparklineSvg` precision (`toDouble()` → `BigDecimal`) | 29 | TBD |
+| CI-29-U01 | S | done | css | Tokenize 5 raw `rgba()`/shadow literals in `ComponentStyles.kt` → `CssTheme` | 29 | TBD |
+| CI-29-D01 | S | done | docs | Fix stale KSP `2.3.10` → `2.3.11` and Ktor `3.5.1` → `3.5.2` pins (AGENTS + skill) | 29 | TBD |
 | CI-28-C01 | S | done | code | Remove redundant `import kotlinx.html.InputType` in `SettingsFormComponent.kt:35` | 28 | 214 |
 | CI-28-C02 | S | done | code | Add method KDoc to `RateLimiter.acquireWithCost` / `getCurrentCounter` / `reset` | 28 | 214 |
 | CI-28-C03 | M | done | code | Add KDoc to 6/9 undocumented public funs in `PortfolioCalculations.kt` | 28 | 214 |
