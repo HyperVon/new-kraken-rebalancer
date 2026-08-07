@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.16.28] - 2026-08-07
+
+### Added
+
+- **Continuous Quality Cycle 17**: Added `RepositoryUtilsTest` covering `Database.safeTransaction` exception semantics (rethrows `CancellationException` and `IOException` unwrapped, wraps other exceptions as `IOException`) and `readSyncMetadata`/`writeSyncMetadata` upsert round-trip; added `CssBuilderExtensionsTest` asserting every typed `*Raw` helper emits the correct CSS property name (regression guard for the typo class those helpers prevent).
+
 ## [6.16.27] - 2026-08-06
 
 ### Changed
