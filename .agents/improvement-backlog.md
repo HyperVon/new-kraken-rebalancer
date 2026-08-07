@@ -20,10 +20,27 @@ Items evaluated and deliberately not pursued (never actioned; the recorded reaso
 | ID | Size | Status | Area | Summary | Cycle | Notes |
 | :--- | :---: | :--- | :--- | :--- | :---: | :--- |
 | CI-22-Q06 | S | dropped | frontend | Replace wildcard `org.w3c.dom.*` imports in frontend-js main/test (17 files) | 22 | ktlint `no-wildcard-imports` rule disabled (build.gradle.kts:17) → not enforced, low-value churn |
+| CI-27-C01 | S | dropped | code | Exposed `createMissingTablesAndColumns` still used | 27 | already migrated in `DatabaseConfig.kt` (createStatements + addMissingColumnsStatements + deprecation comment) |
+| CI-27-C02 | S | dropped | code | Replace `java.math.BigDecimal` FQN with Kotlin alias | 27 | false — `java.math.BigDecimal` is the actual money type; no Kotlin alias exists |
+| CI-27-DEP3 | S | dropped | ci | Add `setup-node` to CI | 27 | false premise — Kotlin/JS Gradle plugin manages its own Node; no npm needed |
+| CI-27-DEP4 | S | dropped | ci | Pin Node via package.json `engines` | 27 | would not pin Gradle-managed Node; marginal noise |
+| CI-27-U02 | S | dropped | css | Remove dead DOM imports in `DomExtensions.kt` | 27 | false — `CssClass`/`HtmlAttrs`/`org.w3c.dom.*` all used |
+| CI-27-D03 | S | dropped | docs | "Go 1.26"/"Spring Boot 4" in Technology Journey | 27 | intentional narrative flavor, not drift |
+| CI-27-D04 | S | dropped | docs | dryRun ambiguity | 27 | README:735 already states "Required in JSON; template `true`" |
+| CI-27-D05 | S | dropped | docs | README `.kilo/` tree incomplete | 27 | already covered by CI-26-D02 |
+| CI-27-U03 | S | deferred | ui | Scrubber sync after zoom-reset | 27 | plausible but needs manual QA; deferred (no blind edit) |
+| CI-27-U04 | S | dropped | docs | Stale README screenshots | 27 | no CSS changed this cycle; no refresh needed |
 
 ## Open
 
-No open items — every CI-26 item shipped in Cycle 26.
+| ID | Size | Status | Area | Summary | Cycle | Notes |
+| :--- | :---: | :--- | :--- | :--- | :---: | :--- |
+| CI-27-DP1 | S | in_progress | deps | Bound unpinned `js-yaml` Gradle resolution to `<5.0.0` (build.gradle.kts:272) | 27 | branch improve/cycle-20260807-0458 |
+| CI-27-DP2 | S | in_progress | ci | Remove redundant `jacocoTestCoverageVerification` from CI `build` step (`tasks.check` already covers it) | 27 | branch improve/cycle-20260807-0458 |
+| CI-27-DP3 | S | in_progress | ci | Add `cache: gradle` to dependency-submission setup-java step | 27 | branch improve/cycle-20260807-0458 |
+| CI-27-D01 | S | in_progress | docs | De-date "couple of weeks" AI-Assisted Development claim in README | 27 | branch improve/cycle-20260807-0458 |
+| CI-27-D02 | S | in_progress | docs | Warn that `rebalancer-config.json` is gitignored and must never be committed (README Getting Started) | 27 | branch improve/cycle-20260807-0458 |
+| CI-27-U01 | S | in_progress | css | Add `:focus-visible` ring to the visually-hidden custom checkbox (FormStyles.kt) | 27 | branch improve/cycle-20260807-0458 |
 
 ## Done (recent)
 

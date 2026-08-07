@@ -247,6 +247,12 @@ object FormStyles {
             borderColor = CssTheme.colorKrakenBlue
         }
 
+        // UIV-1: keyboard focus visibility for the custom (visually-hidden) checkbox.
+        "input[type=\"checkbox\"]:focus-visible + .${CssClass.Form.CheckboxCustom}" {
+            borderColor = CssTheme.colorBluePrimary
+            boxShadowRaw(CssTheme.focusRingStrong)
+        }
+
         "input[type=\"checkbox\"]:checked + .${CssClass.Form.CheckboxCustom}::after" {
             content = QuotedString("")
             position = Position.absolute
