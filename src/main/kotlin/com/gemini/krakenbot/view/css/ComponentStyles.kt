@@ -70,7 +70,7 @@ object ComponentStyles {
             fontSize = 0.75.rem
             fontWeight = FontWeight.w700
             letterSpacingRaw("0.05em")
-            boxShadowRaw("0 4px 6px -1px rgba(0, 0, 0, 0.1)")
+            boxShadowRaw(CssTheme.shadowBadge)
         }
 
         ".${CssClass.StatusCard.Badge}.live" {
@@ -175,11 +175,7 @@ object ComponentStyles {
             gap = 1.5.rem
             padding = Padding(1.5.rem, 1.75.rem)
             // Slightly taller lift than sibling tiles.
-            put(
-                "box-shadow",
-                "0 2px 4px rgba(0,0,0,0.5), 0 16px 36px rgba(0,0,0,0.52), 0 0 32px rgba(56,189,248,0.12), " +
-                    "inset 0 1px 0 rgba(147,197,253,0.26), inset 0 -1px 0 rgba(0,0,0,0.28)",
-            )
+            put("box-shadow", CssTheme.shadowHeroCard)
         }
 
         ".hero-card > .hero-card-text" {
@@ -205,7 +201,7 @@ object ComponentStyles {
             width = 1.rem
             height = 1.rem
             color = CssTheme.colorBlueAccent
-            filterRaw("drop-shadow(0 0 6px rgba(96, 165, 250, 0.55))")
+            filterRaw(CssTheme.filterHeroIcon)
         }
 
         ".${CssClass.Hero.Value.value}" {
@@ -248,7 +244,7 @@ object ComponentStyles {
             color = CssTheme.colorDanger
             backgroundColor = CssTheme.colorDangerBgSubtle
             borderColor = CssTheme.colorDangerBorderSubtle
-            boxShadowRaw("0 0 16px rgba(239, 68, 68, 0.3)")
+            boxShadowRaw(CssTheme.shadowDeltaDown)
         }
 
         ".hero-delta.flat" {
@@ -281,7 +277,7 @@ object ComponentStyles {
             width = 100.pct
             height = 5.rem
             display = Display.block
-            filterRaw("drop-shadow(0 0 8px rgba(59, 130, 246, 0.45))")
+            filterRaw(CssTheme.filterHeroDelta)
         }
 
         // Compact Cash / Crypto tiles with progress bars (DASH-1)

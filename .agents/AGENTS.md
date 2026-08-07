@@ -86,10 +86,10 @@ the CLAUDE.md / Copilot stubs) so they get the same norms without Cursor.
 
 - **Language**: Kotlin **2.4.10** (KMP: JVM + JS)
 - **JDK**: **25** (`java.toolchain`)
-- **Backend**: Ktor **3.5.1** (Netty, Jackson, SSE, HTML), Koin **4.2.2**
+- **Backend**: Ktor **3.5.2** (Netty, Jackson, SSE, HTML), Koin **4.2.2**
 - **Database**: SQLite via JetBrains Exposed **1.3.1**
 - **Concurrency**: `kotlinx.coroutines` **1.11.0** — prefer `Dispatchers.IO` for DB/network; no `GlobalScope`
-- **Frontend/codegen**: `kotlinx.html` + `kotlinx-css` + HTMX + Kotlin/JS (`:frontend-js` → `/static/rebalancer.js`); KSP **2.3.10** is required for Kotlin/JS Kotest discovery and the experimental JVM/common catalog processors
+- **Frontend/codegen**: `kotlinx.html` + `kotlinx-css` + HTMX + Kotlin/JS (`:frontend-js` → `/static/rebalancer.js`); KSP **2.3.11** is required for Kotlin/JS Kotest discovery and the experimental JVM/common catalog processors
 - **Testing**: Kotest **6.2.3**, MockK **1.14.11**, Karma/Istanbul
 - **Formatting**: Spotless **8.9.0** + ktlint **1.7.1**, **120**-char line length; `allWarningsAsErrors` in all modules
 

@@ -124,6 +124,15 @@ object CssTheme {
     const val glowAmberSoft = "0 0 14px rgba(245, 158, 11, 0.22)"
     const val glowRedSoft = "0 0 14px rgba(239, 68, 68, 0.22)"
 
+    // Tokenized component shadows/filters (extracted from ComponentStyles raw literals — CI-29-U01)
+    const val shadowBadge = "0 4px 6px -1px rgba(0, 0, 0, 0.1)"
+    const val shadowHeroCard =
+        "0 2px 4px rgba(0,0,0,0.5), 0 16px 36px rgba(0,0,0,0.52), 0 0 32px rgba(56,189,248,0.12), " +
+            "inset 0 1px 0 rgba(147,197,253,0.26), inset 0 -1px 0 rgba(0,0,0,0.28)"
+    const val filterHeroIcon = "drop-shadow(0 0 6px rgba(96, 165, 250, 0.55))"
+    const val shadowDeltaDown = "0 0 16px rgba(239, 68, 68, 0.3)"
+    const val filterHeroDelta = "drop-shadow(0 0 8px rgba(59, 130, 246, 0.45))"
+
     fun CssBuilder.applyRootVariables() {
         ":root" {
             put("--font-sans", fontSans)

@@ -155,7 +155,7 @@ Known migration-sensitive areas in this codebase:
 - **Jackson** — always bump via the `jackson-bom` platform, not individual artifacts.
 - **Kotlin / KSP** — use a KSP release compatible with the configured Kotlin
   compiler; do not assume their version strings must be identical. This
-  repository currently pins KSP **2.3.10** for Kotlin/JS Kotest test discovery.
+  repository currently pins KSP **2.3.11** for Kotlin/JS Kotest test discovery.
 
 ### Step 6: Verify (mandatory)
 

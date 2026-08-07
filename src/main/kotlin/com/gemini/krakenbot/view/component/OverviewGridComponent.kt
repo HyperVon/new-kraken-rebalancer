@@ -162,20 +162,21 @@ class OverviewGridComponent {
         /** Inline SVG sparkline of total portfolio value; empty when too few points. */
         internal fun sparklineSvg(history: List<PortfolioSnapshot>): String {
             if (history.size < 2) return ""
-            val values = history.asReversed().map { it.totalValueUSD.toDouble() }
-            val min = values.min()
-            val max = values.max()
-            val range = max - min
+            val values = history.asReversed().map { it.totalValueUSD }
+            val min = values.minOrNull() ?: BigDecimal.ZERO
+            val max = values.maxOrNull() ?: BigDecimal.ZERO
+            val range = max.subtract(min)
             val lastIndex = values.size - 1
             val usableHeight = SPARK_HEIGHT - SPARK_PAD * 2
             val coords =
                 values.mapIndexed { i, v ->
                     val x = i.toDouble() / lastIndex * SPARK_WIDTH
                     val y =
-                        if (range == 0.0) {
+                        if (range.compareTo(BigDecimal.ZERO) == 0) {
                             SPARK_HEIGHT / 2
                         } else {
-                            SPARK_HEIGHT - SPARK_PAD - (v - min) / range * usableHeight
+                            val offset = v.subtract(min).divide(range, 10, RoundingMode.HALF_UP).toDouble()
+                            SPARK_HEIGHT - SPARK_PAD - offset * usableHeight
                         }
                     "${fmt(x)},${fmt(y)}"
                 }

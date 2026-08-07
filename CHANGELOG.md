@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.16.32] - 2026-08-07
+
+### Changed
+
+- **Continuous Improvement Cycle 29**: Fixed `OverviewGridComponent.sparklineSvg` precision (`toDouble()` → `BigDecimal` min/max/range with `minOrNull`/`maxOrNull`); tokenized 5 remaining raw `rgba()`/shadow literals in `ComponentStyles` into `CssTheme` (`shadowBadge`, `shadowHeroCard`, `filterHeroIcon`, `shadowDeltaDown`, `filterHeroDelta`); corrected stale KSP `2.3.10` → `2.3.11` and Ktor `3.5.1` → `3.5.2` pins in `.agents/AGENTS.md` and `dependency-upgrade` skill.
+
 ## [6.16.31] - 2026-08-07
 
 ### Changed
