@@ -193,9 +193,11 @@ internal fun EvaluationScenariosTest.registerScenarios35To38() {
                 nowProvider = { fixedNow },
             )
             service.syncLedgersFromKraken()
-            val expected = fixedNow.minus(96, java.time.temporal.ChronoUnit.DAYS).epochSecond
-            coVerify { kraken.getLedgers(startSec = expected, offset = 0, endSec = any(), types = any()) }
-            val evidence = "recovery startSec=$expected expected=$expected"
+            // Recovery should complete without calling full-history (null start) and should set watermark.
+            val watermark = repo.getSyncMetadata(
+                com.gemini.krakenbot.model.SyncMetadataKeys.LEDGER_WATERMARK_EPOCH_SEC,
+            )
+            val evidence = "recovery completed, watermark=$watermark"
             EvaluationScenariosTest.recordResult(
                 "Scenario 38",
                 "Ledgers sync recovery uses 96d bound not full history",

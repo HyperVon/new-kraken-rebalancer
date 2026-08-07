@@ -178,8 +178,11 @@ class ConfigServiceImpl(
         if (!content.contains("\"dustThresholdUSD\"")) return content
         val hasNew = content.contains("\"minimumOrderSizeUSD\"")
         return if (hasNew) {
-            // Both keys present: drop the legacy entry, prefer the new value (avoid duplicate keys).
-            content.replace(Regex("\"dustThresholdUSD\"\\s*:\\s*[^,\\n}]+,?\\s*"), "")
+            // Both keys present: drop legacy, keep new. Handle both orderings without leaving
+            // a dangling comma (fix Track A warning: {"a":5,"dust":3}→{"a":5,} invalid).
+            var out = content.replace(Regex(",\\s*\"dustThresholdUSD\"\\s*:\\s*[^,\\n}]+"), "")
+            out = out.replace(Regex("\"dustThresholdUSD\"\\s*:\\s*[^,\\n}]+,?\\s*"), "")
+            out
         } else {
             // Only legacy: rename the key, not string values (match key + colon).
             content.replace(Regex("\"dustThresholdUSD\"(\\s*:)"), "\"minimumOrderSizeUSD\"$1")
