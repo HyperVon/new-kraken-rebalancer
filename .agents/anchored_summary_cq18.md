@@ -23,7 +23,7 @@ Implement tests-first fixes for the re-verified real CQ-18 findings on branch `q
 - Parent-only full review of the codebase (no new defects outside CQ-18).
 - Implemented CQ-18-9 after the user's explicit approval: warn+continue on non-cancellation ATH save failure, preserving in-memory ATH and cancellation propagation.
 - Updated `.agents/quality-backlog.md`: corrected CQ-18-2 wording, dropped 9 review-rejected/no-defect items (CQ-18-1/2/3/5/7/8/10/12/13), and marked CQ-18-4/6/9/11 done.
-- `npx markdownlint-cli .agents/quality-backlog.md` and `git diff --check` pass; the full changed-document lint is the remaining gate.
+- Full repository Markdown lint and `git diff --check` pass.
 - Verified line references for every finding against current source.
 - Added regression tests and minimal production fixes for CQ-18-4/6/9, plus test-only coverage for CQ-18-11; focused ATH JVM tests pass.
 
@@ -46,7 +46,7 @@ Implement tests-first fixes for the re-verified real CQ-18 findings on branch `q
 ## Next Steps
 
 - Full `./gradlew build jacocoTestCoverageVerification --rerun-tasks` passed with serial Gradle execution.
-- Complete repository Markdown lint and `git diff --check` passed; inspect the final worktree boundary before handoff.
+- Complete repository Markdown lint, `git diff --check`, and the final clean worktree boundary check passed.
 - Commit/push policy: do so only after an explicit user request. This request was explicit, and the resulting commits are pushed.
 
 ## Critical Context
@@ -96,7 +96,7 @@ Implement tests-first fixes for the re-verified real CQ-18 findings on branch `q
 - `src/main/kotlin/com/gemini/krakenbot/service/impl/OrderExecutorImpl.kt` — CQ-18-8:453-482
 - `frontend-js/src/jsMain/kotlin/Settings.kt` — CQ-18-11:28-48
 - `frontend-js/src/jsTest/kotlin/SettingsTest.kt` — CQ-18-11 test target (`updateAllocationTotal validates totals and USD allocation` :27, boundary cases :83-132)
-- `src/commonMain/kotlin/com/gemini/krakenbot/PrecisionConstants.kt` — `SCALE_USD=2`, `TOTAL_ALLOCATION_PERCENTAGE=100.0`, `ALLOCATION_TOLERANCE_DELTA=0.01` (:37)
+- `common/src/commonMain/kotlin/com/gemini/krakenbot/util/PrecisionConstants.kt` — `SCALE_USD=2`, `TOTAL_ALLOCATION_PERCENTAGE=100.0`, `ALLOCATION_TOLERANCE_DELTA=0.01` (:37)
 - `.agents/quality-backlog.md` — CQ-18 verdict table and statuses
 - `.agents/skills/continuous-quality/SKILL.md` — size/classification and L-gating rules
 - `.agents/skills/code-review/SKILL.md` — review invariants (SRP, money scales, flow/SSE, modes)
