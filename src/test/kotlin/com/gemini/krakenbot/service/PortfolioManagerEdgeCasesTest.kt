@@ -500,8 +500,13 @@ class PortfolioManagerEdgeCasesTest : PortfolioManagerEdgeCasesTestBase() {
                     "Save failed",
                 )
 
-                shouldThrow<IOException> {
-                    portfolioAnalyzer.updateAthAndCalculateDrawdown(BigDecimal("800.0"))
+                val drawdown = portfolioAnalyzer.updateAthAndCalculateDrawdown(BigDecimal("800.0"))
+
+                drawdown.shouldBeEqualComparingTo(BigDecimal("20.0000"))
+                coVerify {
+                    portfolioStatsRepository.save(
+                        match { it.allTimeHigh.compareTo(BigDecimal("1000.0")) == 0 },
+                    )
                 }
             }
         }
@@ -513,8 +518,13 @@ class PortfolioManagerEdgeCasesTest : PortfolioManagerEdgeCasesTestBase() {
                 )
                 coEvery { portfolioStatsRepository.save(any()) } throws IOException("Save failed")
 
-                shouldThrow<IOException> {
-                    portfolioAnalyzer.updateAthAndCalculateDrawdown(BigDecimal("1500.0"))
+                val drawdown = portfolioAnalyzer.updateAthAndCalculateDrawdown(BigDecimal("1500.0"))
+
+                drawdown.shouldBeEqualComparingTo(BigDecimal.ZERO)
+                coVerify {
+                    portfolioStatsRepository.save(
+                        match { it.allTimeHigh.compareTo(BigDecimal("1500.0")) == 0 },
+                    )
                 }
             }
         }

@@ -91,8 +91,7 @@ class PortfolioAnalyzerImpl(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            log.error("Failed to persist portfolio ATH", e)
-            throw e
+            log.warn("Failed to persist portfolio ATH; continuing with in-memory ATH", e)
         }
 
         return RebalancerEngine.calculateDrawdown(totalPortfolioValueUSD, ath)

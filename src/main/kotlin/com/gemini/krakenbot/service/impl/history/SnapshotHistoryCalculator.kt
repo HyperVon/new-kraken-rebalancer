@@ -208,13 +208,12 @@ object SnapshotHistoryCalculator {
 
         val prices = ohlcData[symbol.uppercase()]
         if (!prices.isNullOrEmpty()) {
-            // OHLC keys are epoch seconds; trade-price keys below are epoch millis.
-            return findClosest(
-                prices,
-                timestamp.epochSecond,
-                { it.first },
-                { it.second },
-            )
+            val targetSec = timestamp.epochSecond
+            return prices.filter { it.first <= targetSec }
+                .maxByOrNull { it.first }
+                ?.second
+                ?: prices.minByOrNull { it.first }?.second
+                ?: BigDecimal.ZERO
         }
 
         val tPrices = tradePrices[symbol.uppercase()]

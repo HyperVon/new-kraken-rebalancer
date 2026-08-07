@@ -131,6 +131,61 @@ class SettingsTest : StringSpec() {
             }
         }
 
+        "updateAllocationTotal exact boundary: 100.00 ok, 100.01 and 99.99 also ok (CQ-18-11)" {
+            val container = document.createElement("div") as HTMLDivElement
+
+            val totalDisplay = document.createElement("span") as HTMLSpanElement
+            totalDisplay.id = "total-allocated-display"
+            container.appendChild(totalDisplay)
+
+            val saveButton = document.createElement("button") as HTMLButtonElement
+            saveButton.id = "save-button"
+            container.appendChild(saveButton)
+
+            val firstTarget = document.createElement("input") as HTMLInputElement
+            firstTarget.name = "targets"
+            firstTarget.value = "50"
+            container.appendChild(firstTarget)
+            val firstSymbol = document.createElement("input") as HTMLInputElement
+            firstSymbol.name = "symbols"
+            firstSymbol.value = Asset.BTC
+            container.appendChild(firstSymbol)
+
+            val secondTarget = document.createElement("input") as HTMLInputElement
+            secondTarget.name = "targets"
+            secondTarget.value = "50"
+            container.appendChild(secondTarget)
+            val secondSymbol = document.createElement("input") as HTMLInputElement
+            secondSymbol.name = "symbols"
+            secondSymbol.value = Asset.USD
+            container.appendChild(secondSymbol)
+
+            document.body!!.appendChild(container)
+
+            try {
+                updateAllocationTotal()
+                totalDisplay.classList.contains("allocation-total-ok").shouldBeTrue()
+                saveButton.disabled.shouldBeFalse()
+
+                secondTarget.value = "50.01"
+                updateAllocationTotal()
+                totalDisplay.classList.contains("allocation-total-ok").shouldBeTrue()
+                saveButton.disabled.shouldBeFalse()
+
+                secondTarget.value = "49.99"
+                updateAllocationTotal()
+                totalDisplay.classList.contains("allocation-total-ok").shouldBeTrue()
+                saveButton.disabled.shouldBeFalse()
+
+                secondTarget.value = "50.02"
+                updateAllocationTotal()
+                totalDisplay.classList.contains("allocation-total-bad").shouldBeTrue()
+                saveButton.disabled.shouldBeTrue()
+            } finally {
+                document.body!!.removeChild(container)
+            }
+        }
+
         "addAssetRow appends a valid allocation" {
             val container = document.createElement("div") as HTMLDivElement
 
