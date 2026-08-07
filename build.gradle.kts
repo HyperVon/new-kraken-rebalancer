@@ -56,6 +56,10 @@ repositories {
     mavenCentral()
 }
 
+ksp {
+    arg("codegenResourceRoot", layout.projectDirectory.dir("src/main/resources").asFile.absolutePath)
+}
+
 dependencies {
     ksp(project(":codegen"))
 

@@ -33,28 +33,64 @@ private class StringConstantProcessor(private val support: CatalogProcessorSuppo
         val source = KotlinSourceBuilder().apply {
             line("package $packageName")
             line()
+            if (fileName == "CssTheme") {
+                line("import com.gemini.krakenbot.view.util.CssThemeVars")
+                line("import kotlinx.css.Color")
+                line("import kotlinx.css.CssBuilder")
+                line("import kotlinx.css.px")
+                line("import kotlinx.css.rem")
+                line()
+            }
             line("/** Generated from @GenerateStringConstants; edit the YAML resource instead. */")
-            val isCssTheme = fileName == "CssThemeVars"
-            if (isCssTheme) {
-                // Single batch: object + embedded cssVars list so callers have one source of truth
-                // and no hand-maintained listOf("--kebab" to camelCase) is needed.
-                val group = input.definitions.firstOrNull()?.group ?: fileName
-                block("object $group") {
-                    for (def in input.definitions) {
-                        line("const val ${def.name} = \"${escapeKotlinString(def.value)}\"")
+            when (fileName) {
+                "CssThemeVars" -> {
+                    // Single batch: object + embedded cssVars list so callers have one source of truth
+                    val group = input.definitions.firstOrNull()?.group ?: fileName
+                    block("object $group") {
+                        for (def in input.definitions) {
+                            line("const val ${def.name} = \"${escapeKotlinString(def.value)}\"")
+                        }
+                        line()
+                        line("val cssVars: List<Pair<String, String>> by lazy {")
+                        line("    listOf(")
+                        for (def in input.definitions) {
+                            val kebab = toKebabCase(def.name)
+                            line("        \"--$kebab\" to ${def.name},")
+                        }
+                        line("    )")
+                        line("}")
                     }
-                    line()
-                    line("val cssVars: List<Pair<String, String>> by lazy {")
-                    line("    listOf(")
-                    for (def in input.definitions) {
-                        val kebab = toKebabCase(def.name)
-                        line("        \"--$kebab\" to ${def.name},")
-                    }
-                    line("    )")
-                    line("}")
                 }
-            } else {
-                renderGroups(
+                "CssTheme" -> {
+                    // Typed CssTheme for JVM: Color for colors, LinearDimension for radii, String for rest
+                    block("object $fileName") {
+                        for (def in input.definitions) {
+                            val escaped = escapeKotlinString(def.value)
+                            when {
+                                def.name.startsWith("radius") -> {
+                                    val v = def.value
+                                    val typed = when {
+                                        v.endsWith("px") -> v.removeSuffix("px") + ".px"
+                                        v.endsWith("rem") -> v.removeSuffix("rem") + ".rem"
+                                        else -> "\"$escaped\""
+                                    }
+                                    line("val ${def.name} = $typed")
+                                }
+                                def.name.startsWith("color") -> line("val ${def.name} = Color(\"$escaped\")")
+                                else -> line("const val ${def.name} = \"$escaped\"")
+                            }
+                        }
+                        line()
+                        line("fun kotlinx.css.CssBuilder.applyRootVariables() {")
+                        line("    \":root\" {")
+                        line(
+                            "        com.gemini.krakenbot.view.util.CssThemeVars.cssVars.forEach { (k, v) -> put(k, v) }",
+                        )
+                        line("    }")
+                        line("}")
+                    }
+                }
+                else -> renderGroups(
                     input.definitions,
                     header = { group -> "object $group" },
                     entry = { definition, _ ->
