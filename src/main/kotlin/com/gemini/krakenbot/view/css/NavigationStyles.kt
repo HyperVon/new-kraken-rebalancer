@@ -60,7 +60,7 @@ object NavigationStyles {
             alignItems = Align.center
             gap = 0.375.rem
             padding = Padding(0.375.rem, 0.875.rem)
-            borderRadius = 0.5.rem
+            borderRadius = CssTheme.radiusMd
             fontSize = 0.875.rem
             fontWeight = FontWeight.w500
             color = CssTheme.colorTextSecondary
@@ -113,13 +113,15 @@ object NavigationStyles {
             padding = Padding(0.25.rem)
             background = CssTheme.colorGlass.value
             solidBorder(CssTheme.colorGlassBorder)
-            borderRadius = 0.75.rem
+            borderRadius = CssTheme.radiusLg
             put("width", "fit-content")
+            put("max-width", "100%")
+            put("flex-wrap", "wrap")
         }
 
         ".${CssClass.History.TimeRangeBtn}" {
             padding = Padding(0.375.rem, 1.rem)
-            borderRadius = 0.5.rem
+            borderRadius = CssTheme.radiusMd
             fontSize = 0.8125.rem
             fontWeight = FontWeight.w600
             color = CssTheme.colorTextSecondary
@@ -165,7 +167,7 @@ object NavigationStyles {
             padding = Padding(0.25.rem, 0.5.rem)
             background = CssTheme.colorGlass.value
             solidBorder(CssTheme.colorGlassBorder)
-            borderRadius = 0.75.rem
+            borderRadius = CssTheme.radiusLg
             put("flex-wrap", "wrap")
         }
 
@@ -185,7 +187,7 @@ object NavigationStyles {
             background = CssTheme.colorSurface2.value
             color = CssTheme.colorTextPrimary
             solidBorder(CssTheme.colorSurface2Border)
-            borderRadius = 0.5.rem
+            borderRadius = CssTheme.radiusMd
             padding = Padding(0.375.rem, 2.rem, 0.375.rem, 0.75.rem)
             fontSize = 0.8125.rem
             fontFamily = CssTheme.fontSans
@@ -228,7 +230,7 @@ object NavigationStyles {
             put("appearance", "none")
             put("-webkit-appearance", "none")
             padding = Padding(0.375.rem, 0.625.rem)
-            borderRadius = 0.5.rem
+            borderRadius = CssTheme.radiusMd
             fontSize = 0.75.rem
             fontWeight = FontWeight.w600
             color = CssTheme.colorTextSecondary
@@ -272,13 +274,14 @@ object NavigationStyles {
             alignItems = Align.center
             gap = 0.25.rem
             put("justify-content", "flex-end")
+            put("flex-wrap", "wrap")
         }
 
         ".${CssClass.History.ZoomBtn}" {
             put("appearance", "none")
             put("-webkit-appearance", "none")
             padding = Padding(0.25.rem, 0.5.rem)
-            borderRadius = 0.375.rem
+            borderRadius = CssTheme.radiusSm
             fontSize = 0.75.rem
             fontWeight = FontWeight.w600
             color = CssTheme.colorTextSecondary
@@ -492,7 +495,7 @@ object NavigationStyles {
             solidBorder(CssTheme.colorDangerBorder)
             color = CssTheme.colorDangerLight
             padding = Padding(1.rem)
-            borderRadius = 0.5.rem
+            borderRadius = CssTheme.radiusMd
             marginBottom = 1.5.rem
             fontWeight = FontWeight.w500
         }
@@ -519,7 +522,7 @@ object NavigationStyles {
             fontWeight = FontWeight.w700
             fontFamily = CssTheme.fontMono
             padding = Padding(0.25.rem, 0.625.rem)
-            borderRadius = 0.375.rem
+            borderRadius = CssTheme.radiusSm
             background = CssTheme.colorGlass.value
             solidBorder(CssTheme.colorGlassBorder)
             whiteSpace = WhiteSpace.nowrap
@@ -567,6 +570,10 @@ object NavigationStyles {
         }
 
         ".${CssClass.History.ComparisonChartArea}.${CssClass.Utility.Hidden}" {
+            display = Display.none
+        }
+
+        ".${CssClass.Utility.Hidden}" {
             display = Display.none
         }
     }

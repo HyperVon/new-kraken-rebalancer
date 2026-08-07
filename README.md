@@ -90,7 +90,7 @@ will not run automatically there.
 | **API**         | Kraken REST API with HMAC-SHA512 authentication                                                              |
 | **Testing**     | Kotest 6.2.3, MockK 1.14.11, JaCoCo (95% instr/95% line/95% method/90% branch), Karma/Istanbul (90/90/90/75) |
 | **Build**       | Gradle 9.6.1 (Kotlin DSL), Spotless 8.9.0 + ktlint 1.7.1                                                     |
-| **Codegen**     | Kotlin Multiplatform module with KSP processors for API mappers and YAML string catalogs (JVM + JS targets)  |
+| **Codegen**     | JVM-only module with KSP processors for API mappers and YAML string catalogs                                 |
 | **Agent tools** | Optional Kilo Context Mode plugin for bounded large-output analysis; standard workflows remain portable      |
 
 ---
@@ -503,9 +503,15 @@ This path is internal orchestration — not a second browser-facing SSE stream l
 │   ├── AGENTS.md                          # Repository rules & technical guidelines
 │   ├── OPERATING.md                       # Always-on norms (all agent frameworks)
 │   └── skills/                            # Domain skills (see .agents/AGENTS.md skill index)
-├── .kilo/                                  # Optional Kilo Code integration
+├── .kilo/                                  # Optional Kilo Code integration (Agent Manager hooks)
 │   ├── kilo.json                           # Context Mode plugin + safe local-tool settings
-│   └── shell-strategy.md                   # Non-interactive shell and bounded-output guidance
+│   ├── shell-strategy.md                   # Non-interactive shell and bounded-output guidance
+│   ├── setup-script                        # Prepare Gradle classes for Agent Manager worktrees
+│   ├── run-script                          # Build fat JAR and start an isolated local simulation
+│   ├── agent-manager.json                  # Agent Manager worktree configuration
+│   ├── model-router/                       # Routed subagent launcher (route-subagents, route-kilo)
+│   ├── command/                            # Project command definitions
+│   └── agent/                              # Project agent definitions
 ├── .cursor/rules/                          # Cursor projections of OPERATING.md (committed)
 ├── CLAUDE.md                               # Claude Code entrypoint → .agents/
 ├── .github/copilot-instructions.md         # GitHub Copilot entrypoint → .agents/
@@ -517,7 +523,7 @@ This path is internal orchestration — not a second browser-facing SSE stream l
 │       ├── util/                          # PrecisionConstants
 │       ├── view/util/                     # Generated YAML string catalogs, Routes helpers, ViewText, CssClass, HtmlQueries, CssClassSchema, ChartProps
 │   └── src/commonMain/resources/codegen/   # Explicit YAML inputs for generated common catalogs
-├── codegen/                                # Kotlin Multiplatform module with KSP processors for API mappers and YAML string catalogs (JVM + JS targets)
+├── codegen/                                # JVM-only module with KSP processors for API mappers and YAML string catalogs
 ├── frontend-js/                            # Kotlin/JS client-side subproject compiling to rebalancer.js
 │   ├── src/jsMain/kotlin/                 # Kotlin/JS frontend source files
 │   │   ├── main.kt                        # Client-side routing entry point
@@ -669,6 +675,8 @@ projects in parallel and uses up to two JVM test forks by default; override on
 smaller machines with `-PtestForks=1` or `-PtestMaxHeap=1g`.
 
 The backend starts on port **8080** and begins the rebalancing loop immediately.
+To bind a different port, pass the JVM property `-Dkraken.server.port=<port>`
+(valid range `1`–`65535`) when starting the application.
 
 ### 3. Open Dashboard
 

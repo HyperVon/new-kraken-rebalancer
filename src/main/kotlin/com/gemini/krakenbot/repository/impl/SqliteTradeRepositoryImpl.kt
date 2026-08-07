@@ -11,7 +11,6 @@ import com.gemini.krakenbot.repository.TradeRepository
 import com.gemini.krakenbot.repository.TradeSummaryStats
 import com.gemini.krakenbot.repository.table.ActionLogTable
 import com.gemini.krakenbot.repository.table.AssetSnapshotTable
-import com.gemini.krakenbot.repository.table.HistorySyncMetadataTable
 import com.gemini.krakenbot.repository.table.PortfolioSnapshotTable
 import com.gemini.krakenbot.repository.table.TradeTable
 import com.gemini.krakenbot.util.PrecisionConstants
@@ -38,7 +37,6 @@ import org.jetbrains.exposed.v1.jdbc.insert
 import org.jetbrains.exposed.v1.jdbc.select
 import org.jetbrains.exposed.v1.jdbc.selectAll
 import org.jetbrains.exposed.v1.jdbc.update
-import org.jetbrains.exposed.v1.jdbc.upsert
 import org.slf4j.LoggerFactory
 import java.math.BigDecimal
 import java.math.RoundingMode
@@ -434,21 +432,10 @@ class SqliteTradeRepositoryImpl(private val database: Database) : TradeRepositor
         setSyncMetadata(SyncMetadataKeys.HISTORY_SEEDED, seeded.toString())
     }
 
-    override suspend fun getSyncMetadata(key: String): String? = database.readTransactionIO {
-        HistorySyncMetadataTable
-            .selectAll()
-            .where { HistorySyncMetadataTable.key eq key }
-            .firstOrNull()
-            ?.get(HistorySyncMetadataTable.value)
-    }
+    override suspend fun getSyncMetadata(key: String): String? = database.readSyncMetadata(key)
 
     override suspend fun setSyncMetadata(key: String, value: String) {
-        database.safeTransactionIO(log, "Failed to upsert sync metadata") {
-            HistorySyncMetadataTable.upsert {
-                it[HistorySyncMetadataTable.key] = key
-                it[HistorySyncMetadataTable.value] = value
-            }
-        }
+        database.writeSyncMetadata(key, value, log, "Failed to upsert sync metadata")
     }
 
     override suspend fun pruneSnapshotsOlderThan(cutoff: Instant): Int =

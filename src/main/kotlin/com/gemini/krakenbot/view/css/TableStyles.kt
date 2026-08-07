@@ -157,7 +157,7 @@ object TableStyles {
             display = Display.inlineFlex
             alignItems = Align.center
             padding = Padding(0.125.rem, 0.5.rem)
-            borderRadius = 0.375.rem
+            borderRadius = CssTheme.radiusSm
             fontSize = 0.675.rem
             fontWeight = FontWeight.w700
             put("letter-spacing", "0.05em")

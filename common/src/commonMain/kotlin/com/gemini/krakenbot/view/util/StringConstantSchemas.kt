@@ -2,9 +2,6 @@ package com.gemini.krakenbot.view.util
 
 import com.gemini.krakenbot.codegen.GenerateStringConstants
 
-@GenerateStringConstants(fileName = "DataProps", resource = "codegen/data-props.yaml")
-internal object DataPropsSchema
-
 @GenerateStringConstants(fileName = "HtmlAttrs", resource = "codegen/html-attrs.yaml")
 internal object HtmlAttrsSchema
 

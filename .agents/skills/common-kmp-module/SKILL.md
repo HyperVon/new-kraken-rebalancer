@@ -29,7 +29,7 @@ Path: `common/src/commonMain/kotlin/com/gemini/krakenbot/`.
 | Domain | `TimeRange`, `OrderSide`, `OrderType`, `Asset`, `Result`, `TradeSource`, `SyncMetadataKeys` |
 | Wire DTOs (`api/`) | `PortfolioSnapshot`, `TradeRecord`, `HistoryStats`, `SyncProgressResponse` |
 | Precision | `PrecisionConstants` |
-| View util | `CssClass`, `HtmlQueries`, `HtmlIds`, `HtmlAttrs`, `HtmxAttrs`, `ViewText`, `Routes`, `FormFields`, `QueryParamKeys`, `DataProps`, `ChartProps` |
+| View util | `CssClass`, `HtmlQueries`, `HtmlIds`, `HtmlAttrs`, `HtmxAttrs`, `ViewText`, `Routes`, `FormFields`, `QueryParamKeys`, `ChartProps` |
 
 ## Generated catalog boundary
 

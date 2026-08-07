@@ -64,12 +64,6 @@ class ResultTest : StringSpec() {
             result.getOrNull() shouldBe null
         }
 
-        "exceptionOrNull returns exception on Failure" {
-            val ex = Exception(TestFixtures.TEST)
-            val result: Result<String> = Result.Failure(ex)
-            result.exceptionOrNull() shouldBe ex
-        }
-
         "runCatching returns Success on no error" {
             val result = Result.runCatching { TestFixtures.HELLO }
             result.shouldBeInstanceOf<Result.Success<String>>()

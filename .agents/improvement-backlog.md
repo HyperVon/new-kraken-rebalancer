@@ -23,7 +23,9 @@ Items evaluated and deliberately not pursued (never actioned; the recorded reaso
 
 ## Open
 
-No open items — every CI-25 item shipped in Cycle 25.
+| ID | Size | Status | Area | Summary | Cycle | Notes |
+| :--- | :---: | :--- | :--- | :--- | :---: | :--- |
+| CI-26-C03 | M | deferred | css | Add typed `CssBuilder` extensions (e.g. `boxShadow(…)`, `justifyContentRaw(…)`) for the ~194 `put("<prop>", …)` escape-hatch calls so CSS typos fail at compile time; keep per-call values inline per `common-kmp-module` skill §2 | 26 | Deferred — large churn across many CSS files; tracked as GH #208 to land in its own PR |
 
 ## Done (recent)
 
@@ -36,6 +38,18 @@ No open items — every CI-25 item shipped in Cycle 25.
 | CI-25-C05 | M | done | math | Guard floating-point exponentiation in `RebalancerEngine.calculateFiatDeployment` with `.takeIf { it.isFinite() } ?: 0.0` | 25 | — |
 | CI-25-D01 | S | done | docs | Clarify `SECURITY.md` permission scope regarding `Query Open Orders & Trades` for manual REST reconciliation | 25 | — |
 | CI-25-D02 | S | done | docs | Document `STALE_THRESHOLD_SECONDS` and automatic SSE reconnection behavior in `docs/USER_GUIDE.md` | 25 | — |
+| CI-26-C01 | S | done | code | Remove dead generated `DataProps` catalog (`StringConstantSchemas.kt` + `data-props.yaml`); drop from `:common` skill table | 26 | — |
+| CI-26-C02 | M | done | repository | Extract shared `Database.readSyncMetadata` / `writeSyncMetadata` extensions in `RepositoryUtils.kt`; both ledger + trade repos delegate | 26 | — |
+| CI-26-C04 | S | done | common | Remove unused `Result.exceptionOrNull()` accessor; update tests to `fold` | 26 | — |
+| CI-26-CM1 | S | done | comments | Convert bare section-header labels in `ChartProps.kt` to KDoc group comments | 26 | — |
+| CI-26-D01 | S | done | docs | Fix README `:codegen` description (JVM-only, not KMP) in tech table + project tree | 26 | — |
+| CI-26-D02 | S | done | docs | Refresh README `.kilo/` project-structure tree (setup-script, run-script, agent-manager.json, model-router, command, agent) | 26 | — |
+| CI-26-D03 | S | done | docs | Document `kraken.server.port` JVM property override in README Getting Started | 26 | — |
+| CI-26-U01 | S | done | css | Add `flex-wrap: wrap` + `max-width: 100%` to `.time-range-selector` in `NavigationStyles` | 26 | — |
+| CI-26-U02 | S | done | css | Tokenize 22 literal radii into `CssTheme` (`radiusXs/Sm/Md/Lg/Xl`) and reference across CSS files | 26 | — |
+| CI-26-U03 | M | done | css | Promote repeated shadow scrims (`shadowScrim`, `shadowScrimSoft`) into `CssTheme` | 26 | — |
+| CI-26-U04 | S | done | css/frontend | Toggle `CssClass.Utility.Hidden` instead of inline `style.display` for the sync banner in `HistoryLoading.kt`; add global `.hidden` rule | 26 | — |
+| CI-26-U05 | S | done | css | Add `flex-wrap: wrap` to `.history-chart-tools` in `NavigationStyles` | 26 | — |
 | CI-24-D01 | M | done | docs | Policy update across `docs/AGENTIC_DEVELOPMENT.md`, `.agents/OPERATING.md`, `.agents/AGENTS.md`, skills, and rules: Antigravity sessions launch subagents natively via `invoke_subagent` instead of calling Kilo CLI `route-subagents` / `subagents.py` scripts | 24 | — |
 | CI-24-Q01 | S | done | frontend | Replace unsafe dynamic cast on `ctx.dataIndex` with safe numeric parsing and `snapshots.getOrNull()` in `HistoryCharts.kt` | 24 | — |
 | CI-24-U01 | S | done | css | Deduplicate `.hero-tile-bar-track` background linear-gradient property in `ComponentStyles.kt` | 24 | — |

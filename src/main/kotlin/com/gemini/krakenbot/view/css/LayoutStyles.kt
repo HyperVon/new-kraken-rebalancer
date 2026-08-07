@@ -248,7 +248,7 @@ object LayoutStyles {
             put("-webkit-backdrop-filter", "blur(16px)")
             solidBorder(CssTheme.colorSurface1Border)
             put("box-shadow", CssTheme.shadowSurface1)
-            borderRadius = 0.875.rem
+            borderRadius = CssTheme.radiusXl
             padding = Padding(1.5.rem)
             put("transition", "border-color 0.25s ease, box-shadow 0.25s ease")
         }

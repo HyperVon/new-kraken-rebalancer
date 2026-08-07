@@ -124,7 +124,7 @@ object ComponentStyles {
             flexDirection = FlexDirection.column
             gap = 0.375.rem
             padding = Padding(0.75.rem, 0.875.rem)
-            borderRadius = 0.875.rem
+            borderRadius = CssTheme.radiusXl
         }
 
         ".${CssClass.StatusCard.Header}" {
@@ -149,7 +149,7 @@ object ComponentStyles {
             width = 1.75.rem
             height = 1.75.rem
             flexShrink = 0.0
-            borderRadius = 0.375.rem
+            borderRadius = CssTheme.radiusSm
             background = CssTheme.colorGlassHover.value
             color = CssTheme.colorTextSecondary
             marginLeft = 0.px
@@ -400,7 +400,7 @@ object ComponentStyles {
         // Allocation bars keep the larger sizing and deeper inset shadow.
         ".${CssClass.AllocationChart.BarTrack.value}" {
             height = 0.85.rem
-            put("box-shadow", "inset 0 1px 2px rgba(0,0,0,0.4)")
+            put("box-shadow", "inset 0 1px 2px " + CssTheme.shadowScrimSoft)
         }
 
         ".${CssClass.Hero.TileMeta.value}" {
@@ -512,7 +512,7 @@ object ComponentStyles {
         }
 
         ".${CssClass.Activity.Cycle.value}" {
-            borderRadius = 0.75.rem
+            borderRadius = CssTheme.radiusLg
             background = CssTheme.glassSurfaceGradient
             solidBorder(CssTheme.colorSurface2Border)
             overflow = Overflow.hidden
@@ -598,7 +598,7 @@ object ComponentStyles {
             color = CssTheme.colorBlueAccent
             textDecoration = TextDecoration.none
             padding = Padding(0.375.rem, 0.875.rem)
-            borderRadius = 0.5.rem
+            borderRadius = CssTheme.radiusMd
             put("transition", "all 0.2s ease")
         }
 

@@ -25,8 +25,6 @@ sealed class Result<out T> {
 
     fun getOrNull(): T? = (this as? Success)?.value
 
-    fun exceptionOrNull(): Exception? = (this as? Failure)?.exception
-
     companion object {
         inline fun <T> runCatching(block: () -> T): Result<T> = try {
             Success(block())

@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.16.27] - 2026-08-06
+
+### Changed
+
+- **Continuous Improvement Cycle 26**: Removed dead generated `DataProps` catalog and dropped it from the `:common` skill table; extracted shared `Database.readSyncMetadata` / `writeSyncMetadata` helpers so the ledger and trade history repositories no longer duplicate sync-metadata access; removed the unused `Result.exceptionOrNull()` accessor (tests now use `fold`); converted bare section-header comments in `ChartProps.kt` to KDoc groups; fixed the README `:codegen` description (JVM-only, not KMP) and refreshed the `.kilo/` project-structure tree; documented the `kraken.server.port` JVM property override; tokenized 22 literal radii and the repeated shadow scrims into `CssTheme`; added `flex-wrap` to `.time-range-selector` and `.history-chart-tools`; switched the History sync banner from inline `style.display` to the `CssClass.Utility.Hidden` class toggle. The large typed-`CssBuilder` escape-hatch refactor (~194 `put()` calls) was deferred to a dedicated issue (CI-26-C03).
+
 ## [6.16.26] - 2026-08-06
 
 ### Fixed

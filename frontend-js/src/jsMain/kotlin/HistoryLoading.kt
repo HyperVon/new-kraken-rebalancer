@@ -2,6 +2,7 @@ package com.gemini.krakenbot.frontend
 
 import com.gemini.krakenbot.model.TimeRange
 import com.gemini.krakenbot.util.PrecisionConstants
+import com.gemini.krakenbot.view.util.CssClass
 import com.gemini.krakenbot.view.util.HtmlAttrs
 import com.gemini.krakenbot.view.util.HtmlEvents
 import com.gemini.krakenbot.view.util.HtmlIds
@@ -129,10 +130,10 @@ internal fun checkSyncProgress(): Promise<Boolean> = fetchJSON(Routes.API_HISTOR
         val status = parseSyncProgressResponse(rawStatus)
         val banner = document.getElementById(HtmlIds.SYNC_PROGRESS_BANNER) as? HTMLElement
         banner == null || if (status.seeded) {
-            banner.style.display = "none"
+            banner.classList.add(CssClass.Utility.Hidden.value)
             true
         } else {
-            banner.style.display = "block"
+            banner.classList.remove(CssClass.Utility.Hidden.value)
             val offset = dynamicNumber(status.offset) ?: 0.0
             val total = dynamicNumber(status.total) ?: 0.0
             var pct = 0

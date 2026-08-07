@@ -70,7 +70,7 @@ object FormStyles {
             alignItems = Align.center
             gap = 0.5.rem
             padding = Padding(0.5.rem, 1.rem)
-            borderRadius = 0.5.rem
+            borderRadius = CssTheme.radiusMd
             fontSize = 0.875.rem
             fontWeight = FontWeight.w600
             cursor = Cursor.pointer
@@ -197,7 +197,7 @@ object FormStyles {
             solidBorder(CssTheme.colorBorderInput)
             color = Color.white
             padding = Padding(0.5.rem, 0.75.rem)
-            borderRadius = 0.5.rem
+            borderRadius = CssTheme.radiusMd
             fontFamily = "inherit"
             fontSize = 0.875.rem
             put("transition", "all 0.2s ease")
@@ -223,7 +223,7 @@ object FormStyles {
             width = 1.25.rem
             height = 1.25.rem
             solidBorder(CssTheme.colorBorderInputStrong, 2.px)
-            borderRadius = 0.25.rem
+            borderRadius = CssTheme.radiusXs
             put("transition", "all 0.2s ease")
         }
 
@@ -273,7 +273,7 @@ object FormStyles {
             gap = 0.75.rem
             background = CssTheme.colorSurface2.value
             padding = Padding(0.5.rem, 0.75.rem)
-            borderRadius = 0.75.rem
+            borderRadius = CssTheme.radiusLg
             solidBorder(CssTheme.colorSurface2Border)
             put(
                 "box-shadow",
@@ -294,7 +294,7 @@ object FormStyles {
             padding = Padding(0.px)
             borderWidth = 0.px
             borderStyle = BorderStyle.none
-            borderRadius = 0.5.rem
+            borderRadius = CssTheme.radiusMd
             cursor = Cursor.pointer
             backgroundColor = Color.transparent
             display = Display.inlineFlex
@@ -308,7 +308,7 @@ object FormStyles {
         ".${CssClass.Form.AllocationColorSwatch}::-webkit-color-swatch" {
             borderWidth = 0.px
             borderStyle = BorderStyle.none
-            borderRadius = 0.5.rem
+            borderRadius = CssTheme.radiusMd
         }
 
         ".${CssClass.Form.AllocationEditInputWrapper}" {
@@ -335,7 +335,7 @@ object FormStyles {
             display = Display.flex
             gap = 1.rem
             padding = Padding(0.75.rem)
-            borderRadius = 0.75.rem
+            borderRadius = CssTheme.radiusLg
             borderWidth = 1.px
             borderStyle = BorderStyle.dashed
             borderColor = CssTheme.colorBorderInput
@@ -378,7 +378,7 @@ object FormStyles {
             alignItems = Align.flexStart
             gap = 1.rem
             padding = Padding(1.25.rem)
-            borderRadius = 0.875.rem
+            borderRadius = CssTheme.radiusXl
             background = CssTheme.glassSurfaceGradient
             solidBorder(CssTheme.colorSurface2Border)
             put("transition", "all 0.2s ease")
