@@ -69,11 +69,36 @@ human–agent workflow, review loop, and maintenance guidance.
 The repository is still fully usable without KiloCode. Application code, tests,
 Gradle tasks, documentation, Git workflows, and the portable `.agents/` skills
 remain available to any capable development tool. KiloCode-only additions are
-optional: Kilo Auto model selection, the project-root `./route-kilo` launcher,
-automatic cross-provider routing, routed subagent fan-out, Kilo route reports,
-Context Mode, and Agent Manager integration. Other hosts should use their own
-model selection and parallel-agent mechanisms; those Kilo-specific conveniences
-will not run automatically there.
+
+### Cline MCP Quota Tool
+
+If you use [Cline](https://github.com/cline/cline) for AI-assisted development,
+the repo includes a local MCP server that exposes `quota_check` so you can
+inspect remaining provider quota without leaving your session.
+
+```bash
+# Install the dependency once from the repo root
+cd .cline/mcp/quota-server
+npm install
+```
+
+Then add the server to Cline's global MCP settings
+(`~/.cline/data/settings/cline_mcp_settings.json`):
+
+```json
+{
+  "mcpServers": {
+    "quota": {
+      "command": "node",
+      "args": ["/absolute/path/to/new-kraken-rebalancer/.cline/mcp/quota-server/index.js"]
+    }
+  }
+}
+```
+
+Restart Cline after editing the settings file. The server depends on
+`@slkiser/opencode-quota` being available in your environment; install it once
+with `npm install -g @slkiser/opencode-quota` if needed.
 
 ---
 
