@@ -22,11 +22,24 @@ Product polish discovered during QA belongs in
 
 | ID | Size | Kind | Status | Area | Summary | Cycle | PR | Issue |
 | :--- | :---: | :--- | :--- | :--- | :--- | :---: | :--- | :---: |
+| CQ-18-1 | M | bug | dropped | history/sync | Review rejected: >1000-fill pagination intentionally trusts Kraken `totalCount`; the size-based fallback is not a contract for this paginator | 18 | — | — |
+| CQ-18-2 | M | bug | dropped | history/sync | Review rejected: the process-local 5-minute throttle is intentionally combined with the persisted watermark, which bounds the repeated window after restart | 18 | — | — |
+| CQ-18-3 | S | bug | dropped | history/query | Review rejected: `getRewardsOverTime` intentionally reports rewards only through the latest valueable snapshot; later events have no snapshot price and are excluded by contract and regression test | 18 | — | — |
+| CQ-18-5 | S | bug | dropped | history/reconstruction | Review rejected: dividend ledger entries are intentional external deposits outside the tracked universe; exclusion from reconstruction/comparison is documented and regression-tested | 18 | — | — |
+| CQ-18-7 | S | bug | dropped | config/flows | Review rejected: replay=1 with `DROP_OLDEST` retains the newest non-suspending emission for the busy `collectLatest` subscriber; existing flow tests cover the restart behavior | 18 | — | — |
+| CQ-18-8 | M | bug | dropped | Kraken/orders | Review rejected: shared backend pagination counters are intentional service-wide coordination for the active backend and its paginators | 18 | — | — |
+| CQ-18-10 | S | gap | dropped | frontend-js/zoom | Review rejected: the production contract falls back only when the zoom-plugin API is unavailable; existing tests cover both the plugin and explicit fallback paths, with no evidence that a stale frame should trigger a different behavior | 18 | — | — |
+| CQ-18-12 | S | bug | dropped | frontend-js/history | Review rejected: scrubber and zoom paths already guard null state, missing ranges, and non-positive spans; existing tests cover disabled/null-safe behavior | 18 | — | — |
+| CQ-18-13 | S | bug | dropped | controller/settings | Review rejected: symbols/targets/colors lengths are validated before indexed mapping, and the mismatch response is covered by `DashboardControllerTest` | 18 | — | — |
 
 ## Done (recent)
 
 | ID | Size | Kind | Status | Area | Summary | Cycle | PR | Issue |
 | :--- | :---: | :--- | :--- | :--- | :--- | :---: | :--- | :---: |
+| CQ-18-9 | L | bug | done | algorithm/ATH | Non-cancellation ATH persistence failures warn and continue with the cycle's in-memory ATH; ATH load failures and cancellation remain fail-closed | 18 | — | #212 |
+| CQ-18-4 | M | bug | done | history/reconstruction | Historical OHLC pricing uses the latest candle at or before a daily close instead of looking ahead to a future candle | 18 | — | — |
+| CQ-18-6 | S | gap | done | history/reconstruction | Pass the injected reconstruction clock through to timeline-event generation so daily closes are deterministic | 18 | — | — |
+| CQ-18-11 | S | gap | done | frontend-js/settings | Add regression coverage for allocation totals at 100.00, 100.01, 99.99, and 100.02 with matching save-button state | 18 | — | — |
 | CQ-17-1 | S | gap | done | repository/utils | `Database.safeTransaction` rethrows `CancellationException`/`IOException` unwrapped, wraps others as `IOException`; `readSyncMetadata`/`writeSyncMetadata` upsert round-trip | 17 | #210 | — |
 | CQ-17-2 | S | gap | done | view/css | `CssBuilderExtensions` `*Raw` helpers emit the correct CSS property name (regression guard against property-name typos) | 17 | #210 | — |
 | CQ-16-1 | S | bug | done | algorithm/trade | Precision loss in `TradeCalculator.calculateSlippage` (multiply by 100 before dividing) | 16 | #205 | — |

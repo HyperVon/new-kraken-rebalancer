@@ -653,15 +653,66 @@ class TradeHistoryReconstructionTest : TradeHistoryServiceTestBase() {
 
                 service.syncTradesFromKraken()
 
-                // Reconstruction started and failed, but the sync itself succeeded and stays silent about it.
                 coVerify(exactly = 1) { krakenService.getBalances() }
                 coVerify(exactly = 0) { repository.save(any()) }
 
-                // A best-effort reconstruction failure must not reopen the Kraken tap on the next cycle.
                 service.syncTradesFromKraken()
 
                 coVerify(exactly = 1) { krakenService.getTradeHistory(any(), any()) }
                 coVerify(exactly = 1) { krakenService.getBalances() }
+            }
+        }
+
+        "CQ-18-6: reconstruction passes nowProvider through to buildTimelineEvents" {
+            runTest {
+                val fixedNow = Instant.parse("2024-06-01T00:00:00Z")
+                val allocations = listOf(
+                    Allocation(Asset.BTC, 100.0),
+                    Allocation(TestFixtures.USD, 0.0),
+                )
+                every { configService.getConfig() } returns AppConfig(
+                    kraken =
+                    KrakenCredentials(
+                        TestFixtures.TRADE_HISTORY_API_KEY,
+                        TestFixtures.TRADE_HISTORY_API_SECRET,
+                    ),
+                    settings =
+                    TestFixtures.settings(
+                        dryRun = false,
+                        loopDelaySeconds = 60,
+                        deviationTriggerPercent = 5.0,
+                        dustThresholdUSD = 5.0,
+                    ),
+                    allocations = allocations,
+                )
+                coEvery { repository.load() } returns emptyList()
+                coEvery { krakenService.getBalances() } returns mapOf(Asset.BTC to BigDecimal.ONE)
+                every { portfolioAnalyzer.resolveBalance(any(), any()) } returns BigDecimal.ONE
+                coEvery { krakenService.getTickerPrices(any()) } returns
+                    mapOf(TestFixtures.BTCUSD to BigDecimal("30000.00"))
+                coEvery { krakenService.getOHLC(any(), any(), any()) } returns emptyList()
+                coEvery { repository.getTradesInRange(any(), any()) } returns emptyList()
+
+                val captured = slot<List<PortfolioSnapshot>>()
+                coEvery { repository.save(capture(captured)) } just Runs
+
+                val reconstructionService = TradeHistoryReconstructionService(
+                    repository = repository,
+                    ledgerRepository = ledgerRepository,
+                    krakenService = krakenService,
+                    configService = configService,
+                    portfolioAnalyzer = portfolioAnalyzer,
+                    nowProvider = { fixedNow },
+                )
+                reconstructionService.reconstructHistoricalSnapshots()
+
+                val expectedDailyClose =
+                    fixedNow.minus(1, ChronoUnit.DAYS)
+                        .truncatedTo(ChronoUnit.DAYS)
+                        .plus(23, ChronoUnit.HOURS)
+                        .plus(59, ChronoUnit.MINUTES)
+                        .plus(59, ChronoUnit.SECONDS)
+                captured.captured.any { it.timestamp == expectedDailyClose } shouldBe true
             }
         }
     }

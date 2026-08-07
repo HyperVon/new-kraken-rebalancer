@@ -12,6 +12,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - **Continuous Improvement Cycle 27**: Bounded the previously unconstrained `js-yaml` Gradle/Yarn resolution to `<5.0.0` (matching sibling bounds) and regenerated `kotlin-js-store/yarn.lock`; simplified the CI `build` step to `./gradlew build` (the `check` task already runs `jacocoTestCoverageVerification`); added `cache: gradle` to the dependency-submission `setup-java` step; de-dated the AI-Assisted Development claim in the README; added a warning that `rebalancer-config.json` is gitignored and must never be committed with credentials; added a `:focus-visible` ring to the visually-hidden settings checkboxes for keyboard focus visibility.
 
+### Fixed
+
+- **Continuous Quality Cycle 18**: Prevented historical OHLC lookahead by flooring daily-close prices to the latest candle at or before the close; threaded the injected reconstruction clock through timeline generation; and changed non-cancellation ATH persistence failures to warn and continue with the cycle's in-memory ATH while preserving fail-closed ATH load and cancellation behavior. Added regression coverage for these paths and the frontend allocation-total boundary.
+
 ## [6.16.29] - 2026-08-07
 
 ### Changed

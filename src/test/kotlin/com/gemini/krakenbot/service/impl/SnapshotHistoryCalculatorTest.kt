@@ -530,6 +530,58 @@ class SnapshotHistoryCalculatorTest : StringSpec() {
             runningBalances["USD"]!!.shouldBeEqualComparingTo(BigDecimal("10000.00"))
         }
 
+        "calculateHistoricalSnapshots floors OHLC price to prior DailyCloseEvent (CQ-18-4)" {
+            val now = Instant.parse("2026-08-07T12:00:00Z")
+            val cutoff = now.minus(5, ChronoUnit.DAYS)
+            val day1Close =
+                now.minus(1, ChronoUnit.DAYS)
+                    .truncatedTo(ChronoUnit.DAYS)
+                    .plus(23, ChronoUnit.HOURS)
+                    .plus(59, ChronoUnit.MINUTES)
+                    .plus(59, ChronoUnit.SECONDS)
+            val day2Close =
+                now.minus(2, ChronoUnit.DAYS)
+                    .truncatedTo(ChronoUnit.DAYS)
+                    .plus(23, ChronoUnit.HOURS)
+                    .plus(59, ChronoUnit.MINUTES)
+                    .plus(59, ChronoUnit.SECONDS)
+
+            val events =
+                listOf(
+                    SnapshotHistoryCalculator.TimelineEvent.DailyCloseEvent(day1Close),
+                    SnapshotHistoryCalculator.TimelineEvent.DailyCloseEvent(day2Close),
+                ).sorted()
+
+            val day1Candle = day1Close.truncatedTo(ChronoUnit.DAYS).epochSecond
+            val day2Candle = day2Close.truncatedTo(ChronoUnit.DAYS).epochSecond
+            val day0Candle =
+                day1Close.plus(1, ChronoUnit.DAYS).truncatedTo(ChronoUnit.DAYS).epochSecond
+
+            val ohlcData =
+                mapOf(
+                    "BTC" to
+                        listOf(
+                            day2Candle to BigDecimal("20000.00"),
+                            day1Candle to BigDecimal("21000.00"),
+                            day0Candle to BigDecimal("22000.00"),
+                        ),
+                )
+
+            val snapshots =
+                SnapshotHistoryCalculator.calculateHistoricalSnapshots(
+                    events = events,
+                    allocations = listOf(Allocation(Asset(Asset.BTC), 100.0)),
+                    runningBalances = mutableMapOf("BTC" to BigDecimal.ONE, "USD" to BigDecimal.ZERO),
+                    currentPrices = mapOf("BTC" to BigDecimal("20000.00"), "USD" to BigDecimal.ONE),
+                    ohlcData = ohlcData,
+                    tradePrices = emptyMap(),
+                    settings = defaultSettings,
+                )
+
+            val day1Snapshot = snapshots.first { it.timestamp == day1Close }
+            day1Snapshot.assets["BTC"]!!.price.shouldBeEqualComparingTo(BigDecimal("21000.00"))
+        }
+
         "calculateHistoricalSnapshots reverse-applies un-normalized reward assets to base asset running balances" {
             val now = Instant.now()
             val cutoff = now.minus(5, ChronoUnit.DAYS)

@@ -148,6 +148,7 @@ class TradeHistoryReconstructionService(
                 historicalTrades = historicalTrades,
                 historicalRewards = historicalRewards,
                 cutoffTime = cutoffTime,
+                now = reconstructionNow,
             )
 
         val settings = configService.getConfig().settings
