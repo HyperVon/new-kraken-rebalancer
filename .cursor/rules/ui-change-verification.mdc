@@ -12,6 +12,6 @@ When editing dashboard HTML/CSS/HTMX, dashboard routes, or `:frontend-js`
 charts/DOM: verify viewport, CSS cache-busting, interactions, visuals, and the
 settings-backed mode plate before calling done or opening a PR.
 
-Full guidance: [`.agents/OPERATING.md` § 5 UI change verification](../.agents/OPERATING.md).
-QA: [`.agents/skills/ui-manual-qa/SKILL.md`](../.agents/skills/ui-manual-qa/SKILL.md);
-screenshots: [`.agents/skills/docs-screenshot-refresh/SKILL.md`](../.agents/skills/docs-screenshot-refresh/SKILL.md).
+Full guidance: [`.agents/OPERATING.md` § 5 UI change verification](../../.agents/OPERATING.md).
+QA: [`.agents/skills/ui-manual-qa/SKILL.md`](../../.agents/skills/ui-manual-qa/SKILL.md);
+screenshots: [`.agents/skills/docs-screenshot-refresh/SKILL.md`](../../.agents/skills/docs-screenshot-refresh/SKILL.md).

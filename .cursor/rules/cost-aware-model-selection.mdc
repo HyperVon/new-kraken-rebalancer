@@ -11,4 +11,4 @@ Prefer a genuinely local route that clears the task's capability and risk
 thresholds; escalate to cloud only for a capability gap, then use the **least
 expensive model** reasonably likely to complete the task correctly.
 
-Full guidance: [`.agents/OPERATING.md` § 8 Native model selection](../.agents/OPERATING.md).
+Full guidance: [`.agents/OPERATING.md` § 8 Native model selection](../../.agents/OPERATING.md).

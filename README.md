@@ -106,7 +106,7 @@ with `npm install -g @slkiser/opencode-quota` if needed.
 | Layer           | Technology                                                                                                   |
 | --------------- | ------------------------------------------------------------------------------------------------------------ |
 | **Language**    | Kotlin 2.4.10 (Kotlin Multiplatform: JVM + JS)                                                               |
-| **Backend**     | Ktor 3.5.1 (Netty engine), Koin 4.2.2 (DI), Jackson 2.22.1                                                   |
+| **Backend**     | Ktor 3.5.2 (Netty engine), Koin 4.2.2 (DI), Jackson 2.22.1                                                   |
 | **Database**    | SQLite (via JetBrains Exposed ORM 1.3.1)                                                                     |
 | **HTTP Client** | Ktor CIO Client (async, coroutine-native)                                                                    |
 | **Concurrency** | Kotlin Coroutines (`kotlinx.coroutines` 1.11.0)                                                              |
@@ -231,7 +231,7 @@ with a wide range of tools and paradigms:
 | Category               | Technologies Used                                                                                                                     |
 | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
 | **Languages**          | Kotlin 2.4 (current), Kotlin 2.x, Java 25, Go 1.26, TypeScript (all phases documented in CHANGELOG)                                   |
-| **Backend Frameworks** | Ktor 3.5.1 (current), Spring Boot 4, Ktor 2.3, NestJS, Express, Go `net/http`                                                         |
+| **Backend Frameworks** | Ktor 3.5.2 (current), Spring Boot 4, Ktor 2.3, NestJS, Express, Go `net/http`                                                         |
 | **DI / IoC**           | Koin 4.2.2 (current), Spring IoC (`@Autowired`), Koin 3.5, NestJS modules                                                             |
 | **Build Systems**      | Gradle 9.6.1 Kotlin DSL (current), Maven, npm / yarn, Go modules                                                                      |
 | **Frontend**           | Kotlin/JS + kotlinx.html + HTMX (current), React, Angular (explored), Tailwind CSS v4, Chart.js                                       |
@@ -542,6 +542,7 @@ This path is internal orchestration — not a second browser-facing SSE stream l
 ├── common/                                 # Kotlin Multiplatform shared module (JVM + JS)
 │   ├── src/commonMain/kotlin/com/gemini/krakenbot/
 │       ├── api/                           # Wire DTOs: PortfolioSnapshot, TradeRecord, HistoryStats, RebalancerComparison, RewardsOverTime, SyncProgressResponse
+│       ├── codegen/                       # GenerateStringConstants and shared codegen sources
 │       ├── config/                        # AppConfig, Settings, Allocation, KrakenCredentials, InvalidConfigurationException
 │       ├── model/                         # Asset, OrderSide (OrderType defined alongside), RebalancerComparisonEnums, Result, TimeRange, TradeSource, generated SyncMetadataKeys
 │       ├── util/                          # PrecisionConstants

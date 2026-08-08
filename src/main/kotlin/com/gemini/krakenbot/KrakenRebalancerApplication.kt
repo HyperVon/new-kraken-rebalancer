@@ -1,6 +1,7 @@
 package com.gemini.krakenbot
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.gemini.krakenbot.config.APPLICATION_SCOPE_QUALIFIER
 import com.gemini.krakenbot.config.ErrorHandlingConfig.configureErrorHandling
 import com.gemini.krakenbot.config.ServerConfig
 import com.gemini.krakenbot.config.appModule
@@ -26,6 +27,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import org.koin.core.context.GlobalContext
 import org.koin.core.context.startKoin
 import org.koin.core.context.stopKoin
+import org.koin.core.qualifier.named
 import org.koin.logger.slf4jLogger
 import org.slf4j.LoggerFactory
 
@@ -71,7 +73,7 @@ fun main() {
     runBlocking { tradeHistoryService.init() }
 
     val applicationScope: CoroutineScope = koin.get(
-        qualifier = org.koin.core.qualifier.named("applicationScope"),
+        qualifier = named(APPLICATION_SCOPE_QUALIFIER),
     )
     val workerJob = portfolioManager.startRebalancingLoop(applicationScope)
 
