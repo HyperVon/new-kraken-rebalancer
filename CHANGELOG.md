@@ -14,6 +14,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **Comprehensive Quality Overhaul skill**: Step 0 now cleans up leftover `.worktrees/` and `.coordination/` state from any previous run before starting, and a new Step 6 tears down the run's worktrees at the end, so repeated skill launches do not accumulate stale worktrees, coordination files, or leftover branches.
+
 - **Refactor(codegen)**: Centralized repeated string literals in `ConfigServiceImpl` companion object (`LEGACY_DUST_THRESHOLD_KEY`, `NEW_MINIMUM_ORDER_SIZE_KEY`) and extracted `colorForSymbol()` helper from three near-identical `when` blocks in `ChartProps` via a private `SymbolColors` holder, matching constant-centralization and method-extraction patterns from the `refactor/Manual` branch.
 
 ### Fixed

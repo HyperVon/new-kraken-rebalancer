@@ -44,7 +44,7 @@ for test/QA-only hardening.
 | **Non-goals** | Architecture redesign, live-trading changes, credential changes without approval, booting app in parallel worktrees |
 | **Inputs** | Fresh `main`, user approval for L-class items, host-supported model routes per track |
 | **Outputs** | Findings report, integrated S/M fixes, L-item proposals, PR triage with merge order, quality-gate verification, PRs opened |
-| **Token constraint** | All `route-subagents` calls for this skill must use **free models only** (no paid provider routes), except when a worker is performing adversarial PR review on a high-risk PR (trading math, Kraken I/O, CORS, live-order journal, credentials) — in that case use the strongest available free route, or fall back to a paid route only if no free route meets the capability requirement |
+| **Token constraint** | All `route-subagents` calls for this skill must use **free models only** (no paid provider routes), except when a worker is performing adversarial PR review on a high-risk PR (trading math, Kraken I/O, CORS, live-order journal, credentials) — in that case use the strongest available free route, or fall back to a paid route only if no free route meets the capability requirement. **This skill does not use `route-subagents`** because each track runs multiple skills sequentially inside an isolated worktree. Use direct `Task` subagent fan-out with free routes instead. |
 | **Side effects** | Worktrees created, branches created, files edited, quality gates run, PR opened, GitHub issues for L items |
 | **Stop condition** | All tracks report, S/M fixes applied and verified, gates green, PR opened. L items deferred as proposals/issues. |
 
@@ -203,25 +203,45 @@ integrated. Never run them inside a parallel worktree.
 ## Workflow
 
 ```text
-- [ ] Step 0: Branch, model routes, and worktree setup
+- [ ] Step 0: Clean leftover state, branch, model routes, and worktree setup
 - [ ] Step 1: Fan-out 5 read-only tracks
 - [ ] Step 2: Collect and triage findings (S/M/L classification)
 - [ ] Step 3: PR triage — candidate PRs with merge recommendation
 - [ ] Step 4: Commit, push, open PRs (iterative per triage)
 - [ ] Step 5: Overhaul report
+- [ ] Step 6: Teardown worktrees
 ```
 
-### Step 0 — Branch, model routes, and worktree setup
+### Step 0 — Clean leftover state, branch, model routes, and worktree setup
 
-1. Start from an up-to-date `main`.
-2. Create a dedicated branch: `improve/overhaul-YYYYMMDD`.
-3. Select a host-supported route for each track. Record primary route, effort
-   when exposed, fallback, and availability evidence. See
-   [parallel-multi-agent](../parallel-multi-agent/SKILL.md) § Native model-selection gate.
-   **This skill routes only through free models.** When invoking
-   `.kilo/model-router/route-subagents`, pass `--free-only` or set the router
-   config to exclude paid providers so all parallel tracks use free-tier routes.
-4. Create worktrees. Each worktree gets its own isolated directory:
+1. **Clean up leftover worktrees and coordination state from any previous
+   run before doing anything else.** This skill creates `.worktrees/wt-*`
+   plus `.worktrees/.coordination/`; if an earlier run was interrupted or
+   skipped teardown, remove its remains so runs do not accumulate:
+
+```bash
+for wt in .worktrees/wt-*; do git worktree remove --force "$wt"; done
+git worktree prune
+rm -rf .worktrees
+```
+
+   Only `.worktrees/wt-*` paths are touched — other repository worktrees are
+   never removed. If a leftover worktree holds uncommitted work you need,
+   commit it to its branch first: removal discards uncommitted changes.
+   Branches survive worktree removal; clean up `improve/overhaul-*` branches
+   only when their PRs are merged or abandoned.
+2. **Start from `main`.** Run `git checkout main && git pull origin main` before doing anything else. Never start this skill from any other branch.
+3. Create a dedicated branch: `improve/overhaul-YYYYMMDD`.
+4. Select a host-supported route for each track. Record primary route, effort
+    when exposed, fallback, and availability evidence. See
+    [parallel-multi-agent](../parallel-multi-agent/SKILL.md) § Native model-selection gate.
+    **This skill routes only through free models.** Do NOT invoke
+    `.kilo/model-router/route-subagents` for this skill — each track runs
+    multiple skills sequentially inside an isolated worktree, which does not
+    fit the single-task-per-track workflow model. Instead, launch each track
+    as a direct `Task` subagent with an explicit free-route instruction and
+    verify the actual provider/model in the parent before/during launch.
+5. Create worktrees. Each worktree gets its own isolated directory:
 
 ```bash
 git worktree add .worktrees/wt-code -b improve/overhaul-YYYYMMDD-wt-code main
@@ -241,10 +261,10 @@ mkdir -p .worktrees/.coordination/{agent-status,findings,topics,questions}
 
 ### Step 1 — Fan-out 5 read-only tracks
 
-Launch all five tracks concurrently. Each track runs its assigned skills in
-discovery mode and returns at most 12 report lines and 5 findings per skill.
-Workers do not edit files, run Gradle, start servers, inspect secrets, or load
-unrelated skills.
+Launch all five tracks concurrently as direct `Task` subagents (not via
+`route-subagents`). Each track runs its assigned skills in discovery mode and
+returns at most 12 report lines and 5 findings per skill. Workers do not edit
+files, run Gradle, start servers, inspect secrets, or load unrelated skills.
 
 Workers write a heartbeat JSON to `.worktrees/.coordination/agent-status/<track>.json`
 at least every 60 seconds, and append incremental findings to
@@ -422,6 +442,22 @@ Deliver a concise summary:
 - Next: your review — approve PRs to implement/merge, defer or drop L proposals
 ```
 
+### Step 6 — Teardown worktrees
+
+Once all candidate PRs are created (branches pushed), remove the worktrees and
+coordination state so the next run starts clean:
+
+```bash
+for wt in .worktrees/wt-*; do git worktree remove --force "$wt"; done
+git worktree prune
+rm -rf .worktrees
+```
+
+Do not delete the `improve/overhaul-*` branches here — the PRs still reference
+them; clean up branches later once the PRs are merged or abandoned. If the run
+stops early (user interruption or a failed track), run this teardown anyway
+before ending the session, and note in the report that cleanup was performed.
+
 ## Size class reference
 
 | Size | Examples | Action |
@@ -454,10 +490,16 @@ small. Architecture redesign and product feature recommendations are always
   not automatic merges
 - Bundling unrelated concerns into one PR just to reduce PR count
 - Adding unsolicited ARIA attributes during UI work
-- Using paid provider routes for this skill’s subagents (must stay on free routes)
+- Using paid provider routes for this skill's subagents (must stay on free routes)
+- Leaving `.worktrees/` or `.coordination/` behind at the end of a run — always
+  run Step 6 teardown so the next launch starts clean
+- Invoking `route-subagents` for this skill — each track runs multiple skills
+  sequentially inside an isolated worktree, which does not fit the single-task
+  workflow model. Use direct `Task` subagent fan-out instead.
 
 ## Checklist
 
+- [ ] Leftover `.worktrees/` from previous runs cleaned up (Step 0 cleanup)
 - [ ] Fresh branch created from up-to-date main
 - [ ] Model routes selected and recorded per track
 - [ ] Five worktrees created with isolated state
@@ -471,3 +513,4 @@ small. Architecture redesign and product feature recommendations are always
 - [ ] GitHub issues created for deferred L items
 - [ ] PRs opened with adversarial PR review where required
 - [ ] Overhaul report delivered
+- [ ] Worktrees torn down (Step 6), `.worktrees/` removed
