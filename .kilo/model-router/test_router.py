@@ -324,6 +324,22 @@ class RouterTests(unittest.TestCase):
         selected = MODULE.select_candidate([model], profile, config, False)
         self.assertEqual("openrouter/model", selected.route)
 
+    def test_below_minimum_fallback_selects_highest_quality(self):
+        weak = candidate("openrouter/weak", billing="free", quality=40)
+        weaker = candidate("openrouter/weaker", billing="free", quality=30)
+        profile = {"metric": "artificial_analysis_intelligence_index", "minimum": 60}
+        config = {"policy": {"allowPaid": False, "allowFree": True}}
+        selected = MODULE.select_candidate([weaker, weak], profile, config, False)
+        self.assertEqual("openrouter/weak", selected.route)
+
+    def test_account_priced_blocked_when_paid_disabled(self):
+        account = candidate("kilo/account-model", billing="account-priced", quality=90)
+        free_model = candidate("nvidia/free", billing="free", quality=20)
+        profile = {"metric": "artificial_analysis_intelligence_index", "minimum": 10}
+        config = {"policy": {"allowPaid": False, "allowFree": True}}
+        selected = MODULE.select_candidate([account, free_model], profile, config, False)
+        self.assertEqual("nvidia/free", selected.route)
+
     def test_high_quota_preferred_when_cost_equal(self):
         low_quota = candidate("openai/a", quality=40, aa_cost=0.10)
         low_quota.quota_state = "sufficient"

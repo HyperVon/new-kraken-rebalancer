@@ -35,14 +35,14 @@ for test/QA-only hardening.
 - Does not run concurrent Gradle builds in a single clone.
 - Does not boot the application inside parallel worktrees (port conflicts,
   orphan processes). App-boot skills run serially by the parent after
-  read-only discovery and coordination.
+  implementer coordination.
 
 ## Contracts
 
 | Contract item | Value |
 | :--- | :--- |
 | **Trigger** | "improve everything", "total quality overhaul", "run all skills", "comprehensive quality sweep", "kitchen sink quality pass" |
-| **Non-goals** | Architecture redesign, live-trading changes, credential changes without approval, booting app in parallel worktrees |
+| **Non-goals** | Live-trading changes without approval, credential changes without approval, booting app in parallel worktrees |
 | **Inputs** | Fresh `main`, user approval for L-class items, host-supported model routes per track |
 | **Outputs** | Findings report, integrated S/M fixes, L-item proposals, PR triage with merge order, quality-gate verification, PRs opened |
 | **Token constraint** | All model routing for this skill must use **free models only** (no paid provider routes), except when an agent is performing adversarial PR review on a high-risk PR (trading math, Kraken I/O, CORS, live-order journal, credentials) — in that case use the strongest available free route, or fall back to a paid route only if no free route meets the acceptance requirement. In Kilo CLI sessions, fan-out **must** use the `.kilo/model-router/route-subagents` launcher with a **custom `--manifest` + free-only `--config` override** — it is the only mechanism that selects and records a per-track exact route. The launcher has **no `--free-only` flag**; free-only is enforced through the override (see Step 0 §4). Direct `Task` subagents with an explicit free-route instruction in every prompt are a fallback only when the launcher cannot run (non-Kilo host, no network, launcher failure) — not a parallel option. |
@@ -63,14 +63,13 @@ gates.
 | `wt-tests` | Tests, QA, security, deps | `continuous-quality`, `write-kotest`, `dependency-upgrade`, `ai-slop-detector` (test + build/security scope) | reviewer-b |
 | `wt-arch` | Architecture & product | `architecture-review`, `product-opportunity-review` | reviewer-a |
 
-Each worktree agent is a **read-only discovery scout for repository files**.
-Agents do not edit source files, run Gradle, start servers, create GitHub
-issues, commit, push, or open PRs. Their only file writes are coordination
-artifacts under `.worktrees/.coordination/` (heartbeats, findings, topics,
-questions, requests). Worker prompts must explicitly grant read/write
-filesystem access to the worktree and the parent `.worktrees/.coordination/`
-directory; the parent owns every code edit, branch, commit, PR, and GitHub
-issue, and performs them only after the user approves the triage plan.
+Each worktree agent is an **implementer for all findings (S/M/L)** in its assigned domain. Workers:
+
+- **Discover and implement** all findings (S/M/L) directly in their worktree
+- Report findings and evidence to the coordination layer
+- Do **not** run Gradle, start servers, create GitHub issues, or open PRs themselves
+- Their only file writes outside the worktree source are coordination artifacts under `.worktrees/.coordination/` (heartbeats, findings, topics, questions, requests)
+- Worker prompts must explicitly grant read/write filesystem access to the worktree and the parent `.worktrees/.coordination/` directory; the parent owns L-item implementation, branch management, commit, push, and PR creation after user approval
 
 ### Coordination layer
 
@@ -215,13 +214,19 @@ and an artifact path. Workers must not block on the result; they reference
 the request id in their findings and the parent folds the outcome into the
 Step 2 triage.
 
-### Recommend-only tracks
+### Architecture & product tracks (implemented in overhaul mode)
 
 `architecture-review` and `product-opportunity-review` are **recommend-only**
-skills. They run as **Track E** in `wt-arch` in **parallel** with tracks A–D
-as exploratory discovery; their findings are always classified as **L** and
-require explicit user approval before any implementation. The parent
-implements them serially after approval — never inside a worktree.
+skills in their traditional form. However, for this overhaul skill, workers
+should still **implement their recommendations as code changes** in the worktree
+so they become candidate PRs for user review. The difference is:
+
+- Traditional: recommendations only (no code changes)
+- Overhaul mode: implement the architectural changes as code, produce PRs
+- The user still decides whether to merge the resulting PRs
+
+This applies to all tracks including `wt-arch` — all findings (S/M/L) become
+candidate PRs. The user decides which to merge.
 
 ### App-boot skills (serial parent only)
 
@@ -414,28 +419,12 @@ desired.
 
 Every worker prompt must state this contract:
 
-- **Effect of "read-only discovery"**: workers audit, form findings, and
-  report. They do not edit source files, run race/build tests, start
-  servers, open GitHub issues, commit, push, or open PRs. The parent owns
-  every mutation step after user approval of the triage plan.
-- **Write scope**: workers write only coordination artifacts (heartbeats,
-  findings, topics/questions responses, `requests/` entries) under the
-  parent's absolute `.worktrees/.coordination/` path. Grant each worker
-  read/write filesystem access to that directory; everything else stays
-  read-only.
-- **Models**: workers may fan out only on **free routes** (free-only `--config`
-  override + custom manifest; see Step 0 — there is no `--free-only` flag).
-  The paid adversarial-review carve-out applies only to the parent's own
-  review of a high-risk PR, never to worker fan-out.
-- **Topics**: check `<parent>/.worktrees/.coordination/topics/<track>.txt`
-  at every heartbeat and answer or acknowledge what the parent asks at the
-  next heartbeat.
-- **Overlap**: if another track's work overlaps a finding, record it with
-  its own path and evidence; do not attempt to resolve or deduplicate in
-  parallel — Step 2 consolidates.
-- **Requests**: never boot the application; if skill instructions require
-  an app boot or screenshot, write a `requests/<track>-<n>.json` and keep
-  going.
+- **Effect of "implementer"**: workers audit, form findings, **implement fixes** (S/M/L), and report. They do not run Gradle, start servers, open GitHub issues, commit, push, or open PRs. The parent owns every mutation step after the worker implements the fix in the worktree.
+- **Write scope**: workers write source code changes in their worktree AND coordination artifacts (heartbeats, findings, topics/questions responses, `requests/` entries) under the parent's absolute `.worktrees/.coordination/` path. Grant each worker read/write filesystem access to that directory; everything else stays read-only.
+- **Models**: workers may fan out only on **free routes** (free-only `--config` override + custom manifest; see Step 0 — there is no `--free-only` flag). The paid adversarial-review carve-out applies only to the parent's own review of a high-risk PR, never to worker fan-out.
+- **Topics**: check `<parent>/.worktrees/.coordination/topics/<track>.txt` at every heartbeat and answer or acknowledge what the parent asks at the next heartbeat.
+- **Overlap**: if another track's work overlaps a finding, record it with its own path and evidence; do not attempt to resolve or deduplicate in parallel — Step 2 consolidates.
+- **Requests**: never boot the application; if skill instructions require an app boot or screenshot, write a `requests/<track>-<n>.json` and keep going.
 
 ### Step 2 — Collect and triage findings
 
@@ -451,14 +440,15 @@ unified findings table. Classify every item:
 **Impact override:** anything that can change live order behavior, `dryRun` /
 `simulation` semantics, or credentials handling is **L** even if the diff looks
 small. Architecture redesign and product feature recommendations are always
-**L** (recommend-only unless user approves implementation).
+**L** (implemented in overhaul mode; user decides merge/abandon).
 
 ### Step 3 — PR triage — candidate PRs with merge recommendation
 
 After all tracks report, group every finding into a **candidate PR** and produce
 a judgment plan for the user. The goal is a broad set of reviewable PRs, not a
-single merged outcome. Do not implement fixes yet; the user judges which PRs
-to merge before any code changes are applied.
+single merged outcome. Workers have already implemented the fixes in their
+worktrees; the user judges which PRs to merge before any code changes are
+applied to `main`.
 
 #### Candidate PR rules
 
@@ -468,8 +458,8 @@ to merge before any code changes are applied.
    across 10 files); do not bundle unrelated concerns.
 2. **L items become standalone proposal PRs** — each architecture, product, or
    high-impact finding that needs approval is its own PR proposal with a clear
-   problem statement and risk assessment. Do not implement; leave it open for
-   the user to judge.
+   problem statement and risk assessment. Workers implement the fix in the worktree;
+   the PR is left open for the user to judge.
 3. **Hotfix-style changes are flagged** — bug fixes, security patches, and
    fail-closed corrections are labeled `priority: high` and recommended for
    early merge regardless of size.
@@ -561,8 +551,7 @@ Deliver a concise summary:
 
 ### Step 6 — Teardown worktrees
 
-Once all candidate PRs are created (branches pushed), remove the worktrees and
-coordination state so the next run starts clean:
+Once the user has reviewed all candidate PRs and decided which to merge/abandon, remove the worktrees and coordination state so the next run starts clean. The worktrees should remain available until the user has reviewed all PRs and made merge/abandon decisions, because the worktrees contain the implemented changes for each PR.
 
 ```bash
 for wt in .worktrees/wt-*; do git worktree remove --force "$wt"; done
@@ -586,7 +575,7 @@ before ending the session, and note in the report that cleanup was performed.
 **Impact override:** anything that can change live order behavior, `dryRun` /
 `simulation` semantics, or credentials handling is **L** even if the diff looks
 small. Architecture redesign and product feature recommendations are always
-**L** — recommend-only unless the user explicitly approves implementation.
+**L** (implemented in overhaul mode; user decides merge/abandon).
 
 ## Anti-patterns
 
@@ -634,7 +623,7 @@ small. Architecture redesign and product feature recommendations are always
 - [ ] Fan-out launched via `.kilo/model-router/route-subagents` with custom manifest + free-only `--config` override carrying the full `blacklist` verbatim (direct `Task` only as documented fallback)
 - [ ] Five worktrees created with isolated state
 - [ ] Worker prompts gave the parent-absolute coordination path and granted .coordination read/write
-- [ ] Worker contract enforced: read-only discovery, free-only routes, no issues/commits/PRs
+- [ ] Worker contract enforced: implementer role, free-only routes, no issues/commits/PRs
 - [ ] Request channel (worker app/q screenshot requests → parent results) worked
 - [ ] All 5 read-only tracks completed discovery (compact reports returned)
 - [ ] Findings triaged S/M/L with evidence anchors

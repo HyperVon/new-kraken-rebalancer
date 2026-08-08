@@ -992,7 +992,14 @@ def is_sensitive(task: str, profile_name: str) -> bool:
     return any(re.search(pattern, task, flags=re.IGNORECASE) for pattern in SENSITIVE_PROMPT_PATTERNS)
 
 
-def candidate_qualifies(candidate: Candidate, profile: Mapping[str, Any], config: Mapping[str, Any], sensitive: bool) -> bool:
+def candidate_qualifies(
+    candidate: Candidate,
+    profile: Mapping[str, Any],
+    config: Mapping[str, Any],
+    sensitive: bool,
+    *,
+    relax_quality: bool = False,
+) -> bool:
     policy = config.get("policy", {})
     if candidate.quota_state in {"insufficient", "unavailable", "blocked"}:
         candidate.rejection = f"quota state is {candidate.quota_state}"
@@ -1015,18 +1022,19 @@ def candidate_qualifies(candidate: Candidate, profile: Mapping[str, Any], config
     if candidate.billing == "free" and sensitive and policy.get("denyFreeForSensitive", True):
         candidate.rejection = "free routes disabled for sensitive work"
         return False
-    if candidate.billing == "paid" and not policy.get("allowPaid", True):
+    if candidate.billing != "free" and not policy.get("allowPaid", True):
         candidate.rejection = "paid routes disabled by policy"
         return False
     minimum = effective_minimum(profile)
     if candidate.quality is None:
         candidate.rejection = "capability quality is unknown and cannot be assessed"
         return False
-    if candidate.quality < minimum:
-        candidate.rejection = f"quality score {candidate.quality:g} is below {minimum:g}"
-        return False
+    elif candidate.quality < minimum:
+        if not relax_quality:
+            candidate.rejection = f"quality score {candidate.quality:g} is below {minimum:g}"
+            return False
     secondary = profile.get("secondary", {})
-    if candidate.aa and isinstance(secondary, Mapping):
+    if candidate.aa and isinstance(secondary, Mapping) and not relax_quality:
         evaluations = candidate.aa.get("evaluations", {})
         for metric, threshold in secondary.items():
             value = number(evaluations.get(metric)) if isinstance(evaluations, Mapping) else None
@@ -1373,6 +1381,19 @@ def select_candidate(
         and candidate_qualifies(candidate, profile, config, sensitive)
     ]
     if not usable:
+        for candidate in candidates:
+            candidate.rejection = None
+        fallback = [
+            candidate
+            for candidate in candidates
+            if candidate.route not in excluded_routes
+            and candidate.provider not in excluded_providers
+            and candidate_qualifies(candidate, profile, config, sensitive, relax_quality=True)
+        ]
+        if fallback:
+            selected = max(fallback, key=lambda c: c.quality or 0.0)
+            select_variant(selected, profile)
+            return selected
         reasons: dict[str, int] = {}
         for candidate in candidates:
             if candidate.route in excluded_routes or candidate.provider in excluded_providers:
