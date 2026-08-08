@@ -120,6 +120,7 @@ ViewText:
   HISTORY_VIEW_MONTH_NET_CASH_FLOW: "Month · Net Cash Flow"
   HISTORY_VIEW_UNSAVED: "Custom (unsaved)"
   HISTORY_VIEWS_STORAGE_KEY: "kraken.history.views"
+  HISTORY_SESSION_STORAGE_KEY: "kraken.history.session"
   # Navigation and trade table
   NAV_DASHBOARD: "Dashboard"
   NAV_HISTORY: "History"

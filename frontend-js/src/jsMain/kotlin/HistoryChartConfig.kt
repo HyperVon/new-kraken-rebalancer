@@ -158,6 +158,62 @@ internal fun getClonedChartOptions(): dynamic {
     options.plugins.legend.labels[ChartProps.FILTER] = { item: dynamic, chartData: dynamic ->
         legendLabelsFilter(item, chartData)
     }
+    options.plugins.legend.onClick = { _: dynamic, legendItem: dynamic, legend: dynamic ->
+        try {
+            val chart = legend.chart
+            if (chart != null && chart != undefined && legendItem != null && legendItem != undefined) {
+                val rawIdx = legendItem.datasetIndex
+                if (rawIdx != null && rawIdx != undefined) {
+                    val idx = (rawIdx as Number).toInt()
+                    val isVisible = try {
+                        (chart.isDatasetVisible(idx)).unsafeCast<Boolean>()
+                    } catch (_: Throwable) {
+                        true
+                    }
+                    try {
+                        val setVis = chart.setDatasetVisibility
+                        if (setVis != null && setVis != undefined) {
+                            setVis.call(chart, idx, !isVisible)
+                        } else {
+                            val ds = chart.data.datasets[idx]
+                            if (ds != null && ds != undefined) {
+                                ds.hidden = isVisible
+                            }
+                        }
+                    } catch (_: Throwable) {
+                        try {
+                            val ds = chart.data.datasets[idx]
+                            if (ds != null && ds != undefined) {
+                                ds.hidden = isVisible
+                            }
+                        } catch (_: Throwable) {
+                        }
+                    }
+                    try {
+                        chart.update()
+                    } catch (_: Throwable) {
+                    }
+                    try {
+                        val canvasId = chart.canvas?.id?.toString() ?: ""
+                        if (canvasId.isNotEmpty()) {
+                            val live = captureChartVisibility(chart)
+                            if (live.isNotEmpty()) {
+                                visibilityStates[canvasId] = live.toMutableMap()
+                            }
+                            if (!HistoryViewPrefs.hasUserInteracted()) {
+                                HistoryViewPrefs.setHasUserInteracted(true)
+                            }
+                            // Also reflect diverged state in the preset selector
+                            HistoryViewPrefs.markCurrentViewModified()
+                            HistorySessionState.save()
+                        }
+                    } catch (_: Throwable) {
+                    }
+                }
+            }
+        } catch (_: Throwable) {
+        }
+    }
     return options
 }
 

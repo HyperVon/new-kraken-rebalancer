@@ -55,13 +55,45 @@ internal fun setupSyncProgressAndLoad() {
         HistoryViewPrefs.markCurrentViewModified()
         renderTradeTable(allTrades)
         buildCumulativeNetCashFlowChart(allTrades, checkbox.checked)
+        try {
+            HistorySessionState.save()
+        } catch (_: Throwable) {
+        }
     })
+
+    // Persist session on page hide/unload so legend toggles and other ephemeral UI
+    // captured from live charts are not lost when navigating away.
+    try {
+        window.addEventListener("beforeunload", {
+            try {
+                HistorySessionState.save()
+            } catch (_: Throwable) {
+            }
+        })
+        document.addEventListener("visibilitychange", {
+            if (document.asDynamic().visibilityState == "hidden") {
+                try {
+                    HistorySessionState.save()
+                } catch (_: Throwable) {
+                }
+            }
+        })
+    } catch (_: Throwable) {
+    }
 }
 
-internal fun loadHistoryAfterSync(): Promise<Unit> = if (HistoryViewPrefs.hasUserInteracted()) {
-    loadAll(historyCurrentRange())
-} else {
-    HistoryViewPrefs.applyDefaultView()
+internal fun loadHistoryAfterSync(): Promise<Unit> {
+    val session = HistorySessionState.load()
+    if (session != null) {
+        // Restore session before deciding default vs currentRange
+        HistorySessionState.restoreIfNeeded()
+        return loadAll(session.range)
+    }
+    return if (HistoryViewPrefs.hasUserInteracted()) {
+        loadAll(historyCurrentRange())
+    } else {
+        HistoryViewPrefs.applyDefaultView()
+    }
 }
 
 private fun fetchJSON(url: String): Promise<dynamic> = window

@@ -32,7 +32,7 @@ private val ACTIVE = CssClass.Utility.Active.value
 
 internal fun historyCurrentRange(): String = currentRange
 
-private fun captureChartVisibility(chart: dynamic): MutableMap<String, Boolean> {
+internal fun captureChartVisibility(chart: dynamic): MutableMap<String, Boolean> {
     if (chart == null || chart == undefined) return mutableMapOf()
     val states = mutableMapOf<String, Boolean>()
     val datasets = chart.data.datasets
@@ -71,6 +71,10 @@ internal fun historyApplyVisibility(visibility: Map<String, Map<String, Boolean>
     for ((canvasId, labels) in visibility) {
         visibilityStates[canvasId] = labels.toMutableMap()
     }
+    try {
+        HistorySessionState.save()
+    } catch (_: Throwable) {
+    }
 }
 
 /** Undo a preset application whose range load failed; restores the pre-preset visibility state. */
@@ -82,6 +86,10 @@ internal fun historyRollbackPresetVisibility() {
     }
     pendingPresetVisibility.clear()
     visibilityBackupBeforePreset = null
+    try {
+        HistorySessionState.save()
+    } catch (_: Throwable) {
+    }
 }
 
 /** Test helper — clears chart instances and visibility between specs. */
@@ -99,6 +107,10 @@ internal fun resetHistoryUiState() {
     historyLoadGeneration = 0L
     allTrades = emptyList()
     HistoryViewPrefs.resetInteractionState()
+    try {
+        HistorySessionState.clear()
+    } catch (_: Throwable) {
+    }
 }
 
 internal fun syncTimeRangeButtons(range: String) {
@@ -112,6 +124,10 @@ internal fun syncTimeRangeButtons(range: String) {
         } else {
             btn.classList.remove(ACTIVE)
         }
+    }
+    try {
+        HistorySessionState.save()
+    } catch (_: Throwable) {
     }
 }
 
@@ -150,6 +166,10 @@ internal fun createOrUpdate(canvasId: String, config: dynamic) {
     pendingPresetVisibility.remove(canvasId)
     if (pendingPresetVisibility.isEmpty()) visibilityBackupBeforePreset = null
     syncChartScrubber(canvasId)
+    try {
+        HistorySessionState.save()
+    } catch (_: Throwable) {
+    }
 }
 
 internal fun clearChart(canvasId: String) {
@@ -164,5 +184,9 @@ internal fun clearChart(canvasId: String) {
     if (scrubber != null) {
         scrubber.disabled = true
         scrubber.value = "0"
+    }
+    try {
+        HistorySessionState.save()
+    } catch (_: Throwable) {
     }
 }
