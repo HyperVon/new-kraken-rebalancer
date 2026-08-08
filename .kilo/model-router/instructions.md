@@ -45,10 +45,16 @@ selection satisfies the model-selection gate.
 runs composite multi-skill tracks inside isolated worktrees with a shared
 coordination layer, so it does not fit a single workflow preset. Its own
 separate file — `.agents/skills/comprehensive-quality-overhaul/SKILL.md` —
-governs its fan-out: in Kilo CLI sessions it MUST use this launcher with
-`--free-only` (the only mechanism that records a per-track exact route);
-direct `Task` subagents are the fallback only when the launcher cannot run
-(non-Kilo host, no network, launcher failure), never a parallel option —
+governs its fan-out: in Kilo CLI sessions it MUST use this launcher with a
+**custom `--manifest` plus a free-only `--config` override** (the launcher has
+no `--free-only` flag and no preset for this skill); that override **replaces**
+the tracked config, so it must reproduce the full `blacklist` section verbatim
+from `.kilo/model-router/config` and disable subscription/account-priced
+providers via `providers.<name>.enabled: false` — otherwise blacklisted
+models (e.g. several `nvidia/…` routes) become eligible again. See the SKILL.md
+Step 0 § disclaimers for the verified override shape. Direct `Task` subagents
+are the fallback only when the launcher cannot run (non-Kilo host, no
+network, launcher failure), never a parallel option —
 with the same free-only constraint and its single adversarial carve-out.
 When that skill is active, its instructions take precedence over
 this section.

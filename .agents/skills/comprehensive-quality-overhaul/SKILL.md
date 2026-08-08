@@ -45,7 +45,7 @@ for test/QA-only hardening.
 | **Non-goals** | Architecture redesign, live-trading changes, credential changes without approval, booting app in parallel worktrees |
 | **Inputs** | Fresh `main`, user approval for L-class items, host-supported model routes per track |
 | **Outputs** | Findings report, integrated S/M fixes, L-item proposals, PR triage with merge order, quality-gate verification, PRs opened |
-| **Token constraint** | All model routing for this skill must use **free models only** (no paid provider routes), except when an agent is performing adversarial PR review on a high-risk PR (trading math, Kraken I/O, CORS, live-order journal, credentials) — in that case use the strongest available free route, or fall back to a paid route only if no free route meets the capability requirement. In Kilo CLI sessions, fan-out **must** use the `.kilo/model-router/route-subagents` launcher with `--free-only` — it is the only mechanism that selects and records a per-track exact route. Direct `Task` subagents with an explicit free-route instruction in every prompt are a fallback only when the launcher cannot run (non-Kilo host, no network, launcher failure) — not a parallel option. |
+| **Token constraint** | All model routing for this skill must use **free models only** (no paid provider routes), except when an agent is performing adversarial PR review on a high-risk PR (trading math, Kraken I/O, CORS, live-order journal, credentials) — in that case use the strongest available free route, or fall back to a paid route only if no free route meets the acceptance requirement. In Kilo CLI sessions, fan-out **must** use the `.kilo/model-router/route-subagents` launcher with a **custom `--manifest` + free-only `--config` override** — it is the only mechanism that selects and records a per-track exact route. The launcher has **no `--free-only` flag**; free-only is enforced through the override (see Step 0 §4). Direct `Task` subagents with an explicit free-route instruction in every prompt are a fallback only when the launcher cannot run (non-Kilo host, no network, launcher failure) — not a parallel option. |
 | **Side effects** | Worktrees created, branches created, files edited, quality gates run, PR opened, GitHub issues for L items |
 | **Stop condition** | All tracks report, S/M fixes applied and verified, gates green, PR opened. L items deferred as proposals/issues. |
 
@@ -274,13 +274,38 @@ rmdir .worktrees 2>/dev/null || true
     **This skill routes only through free models** (no paid provider routes),
     except the single adversarial-review carve-out in the Contracts table.
     In Kilo CLI sessions, launch the fan-out through
-    `.kilo/model-router/route-subagents` with `--free-only` — this is the
-    mandatory path; it selects and records a per-track exact route. Fall back
-    to direct `Task` subagents with an explicit free-route instruction in
-    every prompt **only** when the launcher cannot run (non-Kilo host, no
-    network, launcher failure) — never as the default; if the host exposes
-    only pinned roles with no route choice, record that
-    limitation and the actual model instead of claiming a route selection.
+    `.kilo/model-router/route-subagents` with a **custom manifest** and a
+    **free-only config override** — this is the mandatory path; it selects
+    and records a per-track exact route. Fall back to direct `Task` subagents
+    with an explicit free-route instruction in every prompt **only** when the
+    launcher cannot run (non-Kilo host, no network, launcher failure) — never
+    as the default; if the host exposes only pinned roles with no route
+    choice, record that limitation and the actual model instead of claiming
+    a route selection.
+      - **Launcher free-only mechanics (verified against the installed
+        launcher):** the installed `route-subagents` has **no `--free-only`
+        flag** and no `--workflow` preset for this skill. Free-only is
+        expressed via a custom `--manifest` plus a `--config` override.
+      - **`--config` REPLACES the tracked `.kilo/model-router/config`** — it is
+        deep-merged only against the launcher's built-in defaults, never against
+        the tracked file. The override **must reproduce the full `blacklist`
+        section verbatim** from `.kilo/model-router/config`; an override that
+        omits it silently drops the user-maintained blacklist and blacklisted
+        models become eligible again (observed live: the first run selected
+        `nvidia/z-ai/glm-5.2` and `nvidia/minimaxai/minimax-m3`, both on
+        `blacklist.models`).
+      - `policy.allowPaid=false` alone is insufficient: subscription/account-
+        priced providers (`kilo`, `opencode-go`, `openai`) are not gated by it.
+        They must be disabled explicitly with `providers.<name>.enabled: false`
+        in the override. Keep free providers (`nvidia` and openrouter `:free`
+        variants) enabled with `policy.allowFree: true`.
+      - Override shape used successfully:
+        `{"providers":{"kilo":{"enabled":false},"opencode-go":{"enabled":false},"openai":{"enabled":false}},"policy":{"allowPaid":false,"allowFree":true,"denyFreeForSensitive":false},"blacklist":{...copied verbatim from tracked config...}}`
+      - **Verify the route plan printed before workers launch**: every route
+        must be a free route and none may appear on `blacklist.models`. Abort
+        and fix the override if a blacklisted or paid route is selected.
+      - Keep the manifest and override in the gitignored
+        `.worktrees/.coordination/` directory so they never get committed.
 5. Create worktrees. Each worktree gets its own isolated directory:
 
 ```bash
@@ -310,7 +335,8 @@ mkdir -p .worktrees/.coordination/{agent-status,findings,topics,questions,reques
 ### Step 1 — Fan-out 5 read-only tracks
 
 Launch all five tracks concurrently via a single
-`.kilo/model-router/route-subagents` invocation with `--free-only` —
+`.kilo/model-router/route-subagents` invocation with a **custom manifest**
+and the **free-only `--config` override** from Step 0 —
 mandatory in Kilo CLI sessions because it selects and records a per-track
 exact route. Fall back to a one-message parallel `Task` fan-out with an
 explicit free-route instruction in every prompt only when the launcher
@@ -397,7 +423,8 @@ Every worker prompt must state this contract:
   parent's absolute `.worktrees/.coordination/` path. Grant each worker
   read/write filesystem access to that directory; everything else stays
   read-only.
-- **Models**: workers may fan out only on **free routes** (`--free-only`).
+- **Models**: workers may fan out only on **free routes** (free-only `--config`
+  override + custom manifest; see Step 0 — there is no `--free-only` flag).
   The paid adversarial-review carve-out applies only to the parent's own
   review of a high-risk PR, never to worker fan-out.
 - **Topics**: check `<parent>/.worktrees/.coordination/topics/<track>.txt`
@@ -589,10 +616,14 @@ small. Architecture redesign and product feature recommendations are always
   source edits, no commits, no GitHub issues, no PRs from inside workers)
 - Workers resolving overlapping findings against each other in parallel
   (record them; Step 2 dedupes)
-- Calling `route-subagents` without `--free-only` — every worker route must
+- Calling `route-subagents` without the free-only manifest + `--config`
+  override — every worker route must
   stay free unless it is the parent's adversarial high-risk carve-out
+- Omitting the tracked `blacklist` section from the `--config` override —
+  `--config` replaces (not merges with) `.kilo/model-router/config`, so an
+  override without the blacklist re-enables blacklisted models
 - Falling back to direct `Task` fan-out when `route-subagents` is available —
-  in Kilo CLI sessions the launcher with `--free-only` is mandatory, not optional
+  in Kilo CLI sessions the launcher with a free-only override is mandatory, not optional
 
 ## Checklist
 
@@ -600,7 +631,7 @@ small. Architecture redesign and product feature recommendations are always
 - [ ] `.worktrees/` added to `.gitignore` so parent `git add -A` never stages worktrees
 - [ ] Fresh branch created from up-to-date main
 - [ ] Model routes selected and recorded per track
-- [ ] Fan-out launched via `.kilo/model-router/route-subagents --free-only` (direct `Task` only as documented fallback)
+- [ ] Fan-out launched via `.kilo/model-router/route-subagents` with custom manifest + free-only `--config` override carrying the full `blacklist` verbatim (direct `Task` only as documented fallback)
 - [ ] Five worktrees created with isolated state
 - [ ] Worker prompts gave the parent-absolute coordination path and granted .coordination read/write
 - [ ] Worker contract enforced: read-only discovery, free-only routes, no issues/commits/PRs
