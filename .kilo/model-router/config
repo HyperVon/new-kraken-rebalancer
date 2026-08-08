@@ -109,29 +109,30 @@
       "contextLimit": 262144
     }
   },
-   "blacklist": {
-     "models": [
-       "minimax-m2.7",
-       "*claude*",
-       "*anthropic*",
-       "*gpt-5-6-sol*",
-       "nvidia/qwen/qwen3.5-122b-a10b",
-       "nvidia/qwen/qwen3.5-397b-a17b",
-       "nvidia/minimaxai/minimax-m2.7",
-       "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free",
-       "openrouter/google/gemma-4-31b-it",
-       "openrouter/kwaipilot/kat-coder-air-v2.5",
-       "nvidia/mistralai/mistral-medium-3.5-128b",
+  "blacklist": {
+    "models": [
+      "minimax-m2.7",
+      "*claude*",
+      "*anthropic*",
+      "*gpt-5-6-sol*",
+      "nvidia/qwen/qwen3.5-122b-a10b",
+      "nvidia/qwen/qwen3.5-397b-a17b",
+      "nvidia/minimaxai/minimax-m2.7",
+      "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free",
+      "openrouter/google/gemma-4-31b-it",
+      "openrouter/kwaipilot/kat-coder-air-v2.5",
+      "nvidia/mistralai/mistral-medium-3.5-128b",
       "nvidia/openai/gpt-oss-120b",
       "nvidia/thinkingmachines/inkling",
       "nvidia/minimaxai/minimax-m3",
       "nvidia/z-ai/glm-5.2",
-      "nvidia/stepfun-ai/step-3.7-flash"
+      "nvidia/stepfun-ai/step-3.7-flash",
+      "nvidia/mistralai/mistral-small-4-119b-2603"
     ],
-     "providers": [
-       "ollama"
-     ]
-   },
+    "providers": [
+      "ollama"
+    ]
+  },
   "policy": {
     "allowPaid": true,
     "allowFree": true,

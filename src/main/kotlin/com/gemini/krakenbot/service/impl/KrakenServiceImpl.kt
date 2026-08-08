@@ -542,8 +542,13 @@ class KrakenServiceImpl(
                 val closePrice =
                     try {
                         BigDecimal(entry.get(4).asText())
-                    } catch (_: Exception) {
-                        BigDecimal.ZERO
+                    } catch (e: Exception) {
+                        log.warn(
+                            "Skipping OHLC entry for {} with unparseable close price: {}",
+                            pair,
+                            entry.get(4).asText(),
+                        )
+                        return@forEach
                     }
                 priceList.add(Pair(time, closePrice))
             }
