@@ -163,6 +163,8 @@ class HistoryViewPrefsTest : StringSpec() {
                 (document.getElementById("history-set-default-btn") as HTMLButtonElement).disabled shouldBe true
                 (document.getElementById("history-delete-view-btn") as HTMLButtonElement).disabled shouldBe true
 
+                // Clear session so the next load tests the default-view path without session restore
+                HistorySessionState.clear()
                 HistoryViewPrefs.resetInteractionState()
                 loadHistoryAfterSync().await()
                 currentRange shouldBe TimeRange.THIRTY_DAYS.key

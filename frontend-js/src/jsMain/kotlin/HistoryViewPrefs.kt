@@ -55,6 +55,10 @@ object HistoryViewPrefs {
         userInteracted = false
     }
 
+    internal fun setHasUserInteracted(value: Boolean) {
+        userInteracted = value
+    }
+
     /**
      * Marks the current controls as diverged from a named preset. The temporary
      * option prevents the selector from claiming that a preset is still active.
@@ -76,6 +80,10 @@ object HistoryViewPrefs {
         }
         (document.getElementById(HtmlIds.HISTORY_SET_DEFAULT_BTN) as? HTMLButtonElement)?.disabled = true
         (document.getElementById(HtmlIds.HISTORY_DELETE_VIEW_BTN) as? HTMLButtonElement)?.disabled = true
+        try {
+            HistorySessionState.save()
+        } catch (_: Throwable) {
+        }
     }
 
     fun builtInViews(): List<HistoryViewDef> = listOf(
@@ -264,6 +272,10 @@ object HistoryViewPrefs {
         syncTimeRangeButtons(view.range)
         refreshSelect(store, selectedId = view.id)
         updateDeleteEnabled(view)
+        try {
+            HistorySessionState.save()
+        } catch (_: Throwable) {
+        }
         return loadAll(view.range)
     }
 
@@ -300,6 +312,10 @@ object HistoryViewPrefs {
                 saveStore(updated)
                 refreshSelect(updated, selectedId = captured.id)
                 updateDeleteEnabled(captured)
+                try {
+                    HistorySessionState.save()
+                } catch (_: Throwable) {
+                }
             },
         )
 
@@ -316,6 +332,10 @@ object HistoryViewPrefs {
                 val updated = current.copy(defaultId = id)
                 saveStore(updated)
                 refreshSelect(updated, selectedId = id)
+                try {
+                    HistorySessionState.save()
+                } catch (_: Throwable) {
+                }
             },
         )
 
