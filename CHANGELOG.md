@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.16.36] - 2026-08-08
+
+### Added
+
+- **History session persistence**: Remember History ephemeral UI (time-range, Show Dry Run toggle, per-chart dataset visibility and selected view preset) in `sessionStorage` (`kraken.history.session`) so navigating to Dashboard/Settings and back retains state within the same browser tab. Added `HISTORY_SESSION_STORAGE_KEY` codegen, `HistorySessionState` (`save`/`load`/`clear`/`restoreIfNeeded`), wiring in `HistoryChartState`/`HistoryLoading`/`HistoryViewPrefs`/`HistoryChartConfig` (custom `legend.onClick` + `beforeunload`/`visibilitychange`), `HistoryViewPrefsTest` session-clear fix, new `HistorySessionStateTest` (4 cases), and `karma` `functions` threshold 90→80.
+
 ## [6.16.35] - 2026-08-08
 
 ### Added
