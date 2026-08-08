@@ -120,6 +120,7 @@
       "nvidia/minimaxai/minimax-m2.7",
       "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free",
       "openrouter/google/gemma-4-31b-it",
+      "openrouter/google/gemma-4-31b-it:free",
       "openrouter/kwaipilot/kat-coder-air-v2.5",
       "nvidia/mistralai/mistral-medium-3.5-128b",
       "nvidia/openai/gpt-oss-120b",

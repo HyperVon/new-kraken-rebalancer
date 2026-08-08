@@ -1,7 +1,6 @@
 package com.gemini.krakenbot.view.css
 
 import com.gemini.krakenbot.view.util.CssClass
-import kotlinx.css.Color
 import kotlinx.css.CssBuilder
 import kotlinx.css.Display
 import kotlinx.css.FontWeight
