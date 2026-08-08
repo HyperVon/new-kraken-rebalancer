@@ -24,6 +24,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Documentation drift**: Completed the `dustThresholdUSD` → `minimumOrderSizeUSD` rename across `.agents/AGENTS.md`, README scenario count, and `.agents/skills/portfolio-rebalancing-math`, `.agents/skills/koin-di-and-config`, and `.agents/skills/documentation-review` skill files. Updated historical backlog references in `.agents/skill-content-backlog.md` and `.agents/quality-backlog.md`.
 - **Config**: Replaced regex-based legacy `dustThresholdUSD` → `minimumOrderSizeUSD` migration with Jackson `JsonNode` tree manipulation to prevent silent corruption when values contain commas, braces, or newlines.
 - **Model router**: Free-billing routes now bypass provider-level quota exhaustion and provider-level cooldowns, allowing free OpenRouter models to be selected even when the provider's paid quota is depleted.
+- **Comprehensive Quality Overhaul skill**: Fixed coordination-path typos in the worker heartbeat, findings, topics, and request-channel instructions — worker coordination paths now consistently use the parent-absolute `.worktrees/.coordination/` prefix.
 
 ## [6.16.37] - 2026-08-08
 

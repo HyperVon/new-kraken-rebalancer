@@ -316,11 +316,11 @@ not edit repository files, run Gradle, start servers, inspect secrets,
 create GitHub issues, commit, push, or open PRs.
 
 Workers write a heartbeat JSON to the **parent-absolute**
-`<parent>/worktrees/.coordination/agent-status/<track>.json` at least every
+`<parent>/.worktrees/.coordination/agent-status/<track>.json` at least every
 60 seconds, append incremental findings to
-`<parent>/worktrees/.coordination/findings/<track>/` as soon as they have
-evidence, and check `<parent>/topics/<track>.txt` at each heartbeat for
-parent guidance. The parent polls this directory for live status, warnings,
+`<parent>/.worktrees/.coordination/findings/<track>/` as soon as they have
+evidence, and check `<parent>/.worktrees/.coordination/topics/<track>.txt`
+at each heartbeat for parent guidance. The parent polls this directory for live status, warnings,
 blockers, and cross-track questions.
 
 **Retry policy:** if a track produces no heartbeat for ~3 minutes, mark it
@@ -395,8 +395,9 @@ Every worker prompt must state this contract:
 - **Models**: workers may fan out only on **free routes** (`--free-only`).
   The paid adversarial-review carve-out applies only to the parent's own
   review of a high-risk PR, never to worker fan-out.
-- **Topics**: check `<parent>/topics/<track>.txt` at every heartbeat and
-  answer or acknowledge what the parent asks at the next heartbeat.
+- **Topics**: check `<parent>/.worktrees/.coordination/topics/<track>.txt`
+  at every heartbeat and answer or acknowledge what the parent asks at the
+  next heartbeat.
 - **Overlap**: if another track's work overlaps a finding, record it with
   its own path and evidence; do not attempt to resolve or deduplicate in
   parallel — Step 2 consolidates.
