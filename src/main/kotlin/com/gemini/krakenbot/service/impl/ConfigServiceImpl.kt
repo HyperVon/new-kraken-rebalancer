@@ -175,17 +175,14 @@ class ConfigServiceImpl(
     }
 
     private fun normalizeLegacyKeys(content: String): String {
-        if (!content.contains("\"dustThresholdUSD\"")) return content
-        val hasNew = content.contains("\"minimumOrderSizeUSD\"")
+        if (!content.contains("\"$LEGACY_DUST_THRESHOLD_KEY\"")) return content
+        val hasNew = content.contains("\"$NEW_MINIMUM_ORDER_SIZE_KEY\"")
         return if (hasNew) {
-            // Both keys present: drop legacy, keep new. Handle both orderings without leaving
-            // a dangling comma (fix Track A warning: {"a":5,"dust":3}→{"a":5,} invalid).
-            var out = content.replace(Regex(",\\s*\"dustThresholdUSD\"\\s*:\\s*[^,\\n}]+"), "")
-            out = out.replace(Regex("\"dustThresholdUSD\"\\s*:\\s*[^,\\n}]+,?\\s*"), "")
+            var out = content.replace(Regex(",\\s*\"$LEGACY_DUST_THRESHOLD_KEY\"\\s*:\\s*[^,\\n}]+"), "")
+            out = out.replace(Regex("\"$LEGACY_DUST_THRESHOLD_KEY\"\\s*:\\s*[^,\\n}]+,?\\s*"), "")
             out
         } else {
-            // Only legacy: rename the key, not string values (match key + colon).
-            content.replace(Regex("\"dustThresholdUSD\"(\\s*:)"), "\"minimumOrderSizeUSD\"$1")
+            content.replace(Regex("\"$LEGACY_DUST_THRESHOLD_KEY\"(\\s*:)"), "\"$NEW_MINIMUM_ORDER_SIZE_KEY\"$1")
         }
     }
 
@@ -357,6 +354,8 @@ class ConfigServiceImpl(
     private companion object {
         private const val DEFAULT_CONFIG_FILE_PATH = "rebalancer-config.json"
         private const val ENV_VAR_DEFAULT_SEPARATOR = ":"
+        private const val LEGACY_DUST_THRESHOLD_KEY = "dustThresholdUSD"
+        private const val NEW_MINIMUM_ORDER_SIZE_KEY = "minimumOrderSizeUSD"
         private const val MIN_PERCENT = 0.0
         private const val MAX_PERCENT = 100.0
 
