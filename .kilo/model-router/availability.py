@@ -185,14 +185,24 @@ def snapshot(config: Mapping[str, Any]) -> dict[str, Any]:
     return {"providers": providers, "cooldowns": state, "warnings": warnings}
 
 
-def apply_to_candidate(candidate: Any, availability: Mapping[str, Any] | None) -> None:
+def apply_to_candidate(
+    candidate: Any,
+    availability: Mapping[str, Any] | None,
+) -> None:
     info = (availability or {}).get("providers", {}).get(candidate.provider, {})
-    candidate.quota_state = str(info.get("state", "unknown"))
-    candidate.quota_percent = info.get("remaining_percent")
-    candidate.quota_source = str(info.get("source", "unavailable"))
+    if candidate.billing == "free":
+        candidate.quota_state = "unknown"
+        candidate.quota_percent = None
+        candidate.quota_source = "free-exempt"
+    else:
+        candidate.quota_state = str(info.get("state", "unknown"))
+        candidate.quota_percent = info.get("remaining_percent")
+        candidate.quota_source = str(info.get("source", "unavailable"))
     cooldowns = (availability or {}).get("cooldowns", {})
     route_cooldown = cooldowns.get("routes", {}).get(candidate.route, {})
     provider_cooldown = cooldowns.get("providers", {}).get(candidate.provider, {})
+    if candidate.billing == "free":
+        provider_cooldown = {}
     blocked_until = max(
         float(route_cooldown.get("blocked_until", 0)),
         float(provider_cooldown.get("blocked_until", 0)),
@@ -252,7 +262,11 @@ def record_failure(config: Mapping[str, Any], route: str, provider: str, kind: s
     blocked_until = time.time() + max(1, seconds)
     entry = {"blocked_until": blocked_until, "reason": kind, "attempts": attempts}
     state["routes"][route] = entry
+    route_billing = "paid"
+    if route.endswith(":free") or "/free" in route:
+        route_billing = "free"
     if kind in {"rate_limit", "credits", "provider_unavailable", "authentication", "report_contract"}:
-        state["providers"][provider] = entry
+        if route_billing != "free":
+            state["providers"][provider] = entry
     _save_cooldowns(config, state)
     return seconds

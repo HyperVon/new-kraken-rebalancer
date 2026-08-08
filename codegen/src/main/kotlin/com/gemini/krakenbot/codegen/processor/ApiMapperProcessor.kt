@@ -16,12 +16,8 @@ import com.google.devtools.ksp.symbol.KSType
 import java.io.OutputStreamWriter
 
 private const val ANNOTATION_NAME = "com.gemini.krakenbot.codegen.GenerateApiMapper"
-private const val BIG_DECIMAL_NAME = "java.math.BigDecimal"
-private const val INSTANT_NAME = "java.time.Instant"
-private const val ASSET_NAME = "com.gemini.krakenbot.model.Asset"
-private const val STRING_NAME = "kotlin.String"
-private const val LIST_NAME = "kotlin.collections.List"
-private const val MAP_NAME = "kotlin.collections.Map"
+private const val GENERATED_API_MAPPER_COMMENT =
+    "/** Generated from @GenerateApiMapper; only target constructor properties are emitted. */"
 
 class ApiMapperProcessorProvider : SymbolProcessorProvider {
     override fun create(environment: SymbolProcessorEnvironment): SymbolProcessor =
@@ -92,7 +88,7 @@ private class ApiMapperProcessor(private val codeGenerator: CodeGenerator, priva
                 }
             }
             appendLine()
-            appendLine("/** Generated from @GenerateApiMapper; only target constructor properties are emitted. */")
+            appendLine(GENERATED_API_MAPPER_COMMENT)
             appendLine("fun $sourceTypeName.toApiDto(): $targetTypeName = $targetTypeName(")
             arguments.forEachIndexed { index, (name, expression) ->
                 val comma = if (index == arguments.lastIndex) "" else ","
@@ -171,7 +167,13 @@ private class ApiMapperProcessor(private val codeGenerator: CodeGenerator, priva
     ): String {
         val sourceElement = sourceType.argumentType(0, path)
         val targetElement = targetType.argumentType(0, path)
-        val mappedElement = mapExpression(sourceElement, targetElement, "element", "$path[]", mappingsBySource)
+        val mappedElement = mapExpression(
+            sourceElement,
+            targetElement,
+            "element",
+            "$path[]",
+            mappingsBySource,
+        )
         return "$expression.map { element -> $mappedElement }"
     }
 
@@ -186,8 +188,20 @@ private class ApiMapperProcessor(private val codeGenerator: CodeGenerator, priva
         val targetKey = targetType.argumentType(0, path)
         val sourceValue = sourceType.argumentType(1, path)
         val targetValue = targetType.argumentType(1, path)
-        val mappedKey = mapExpression(sourceKey, targetKey, "key", "$path.keys", mappingsBySource)
-        val mappedValue = mapExpression(sourceValue, targetValue, "value", "$path.values", mappingsBySource)
+        val mappedKey = mapExpression(
+            sourceKey,
+            targetKey,
+            "key",
+            "$path.keys",
+            mappingsBySource,
+        )
+        val mappedValue = mapExpression(
+            sourceValue,
+            targetValue,
+            "value",
+            "$path.values",
+            mappingsBySource,
+        )
         return when {
             mappedKey == "key" && mappedValue == "value" -> expression
             mappedKey == "key" -> "$expression.mapValues { (_, value) -> $mappedValue }"

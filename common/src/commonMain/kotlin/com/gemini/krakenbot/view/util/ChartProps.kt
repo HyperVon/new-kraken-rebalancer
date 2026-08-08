@@ -188,28 +188,6 @@ object ChartProps {
         COLOR_FUCHSIA_BG_PALETTE,
     )
 
-    /** Default per-asset chart colors; Settings-stored colors override when present. */
-    fun borderColorForSymbol(symbol: String, fallbackIndex: Int = 0): String = when (symbol.uppercase()) {
-        Asset.BTC -> COLOR_AMBER
-        Asset.ETH -> COLOR_VIOLET
-        Asset.USD -> COLOR_SLATE
-        else -> PALETTE_BORDER_COLORS[fallbackIndex % PALETTE_BORDER_COLORS.size]
-    }
-
-    fun backgroundColorForSymbol(symbol: String, fallbackIndex: Int = 0): String = when (symbol.uppercase()) {
-        Asset.BTC -> COLOR_AMBER_BG_PALETTE
-        Asset.ETH -> COLOR_VIOLET_BG_PALETTE
-        Asset.USD -> COLOR_SLATE_BG_PALETTE
-        else -> PALETTE_BG_COLORS[fallbackIndex % PALETTE_BG_COLORS.size]
-    }
-
-    fun solidColorForSymbol(symbol: String, fallbackIndex: Int = 0): String = when (symbol.uppercase()) {
-        Asset.BTC -> SOLID_BTC
-        Asset.ETH -> SOLID_ETH
-        Asset.USD -> SOLID_USD
-        else -> SOLID_FALLBACK_PALETTE[fallbackIndex % SOLID_FALLBACK_PALETTE.size]
-    }
-
     private val SOLID_FALLBACK_PALETTE =
         arrayOf(
             SOLID_BLUE,
@@ -221,4 +199,45 @@ object ChartProps {
             SOLID_ORANGE,
             SOLID_FUCHSIA,
         )
+
+    private class SymbolColors(val btc: String, val eth: String, val usd: String, val fallbackPalette: Array<String>)
+
+    private val BORDER_COLORS = SymbolColors(
+        btc = COLOR_AMBER,
+        eth = COLOR_VIOLET,
+        usd = COLOR_SLATE,
+        fallbackPalette = PALETTE_BORDER_COLORS,
+    )
+
+    private val BG_COLORS = SymbolColors(
+        btc = COLOR_AMBER_BG_PALETTE,
+        eth = COLOR_VIOLET_BG_PALETTE,
+        usd = COLOR_SLATE_BG_PALETTE,
+        fallbackPalette = PALETTE_BG_COLORS,
+    )
+
+    private val SOLID_COLORS = SymbolColors(
+        btc = SOLID_BTC,
+        eth = SOLID_ETH,
+        usd = SOLID_USD,
+        fallbackPalette = SOLID_FALLBACK_PALETTE,
+    )
+
+    private fun colorForSymbol(symbol: String, fallbackIndex: Int, colors: SymbolColors): String =
+        when (symbol.uppercase()) {
+            Asset.BTC -> colors.btc
+            Asset.ETH -> colors.eth
+            Asset.USD -> colors.usd
+            else -> colors.fallbackPalette[fallbackIndex % colors.fallbackPalette.size]
+        }
+
+    /** Default per-asset chart colors; Settings-stored colors override when present. */
+    fun borderColorForSymbol(symbol: String, fallbackIndex: Int = 0): String =
+        colorForSymbol(symbol, fallbackIndex, BORDER_COLORS)
+
+    fun backgroundColorForSymbol(symbol: String, fallbackIndex: Int = 0): String =
+        colorForSymbol(symbol, fallbackIndex, BG_COLORS)
+
+    fun solidColorForSymbol(symbol: String, fallbackIndex: Int = 0): String =
+        colorForSymbol(symbol, fallbackIndex, SOLID_COLORS)
 }

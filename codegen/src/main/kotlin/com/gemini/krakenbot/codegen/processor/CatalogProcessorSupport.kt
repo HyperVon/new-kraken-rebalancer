@@ -69,17 +69,6 @@ internal class CatalogProcessorSupport(
             Charsets.UTF_8,
         ).use { it.write(source) }
     }
-
-    fun writeRaw(packageName: String, fileName: String, source: String, sourceFile: KSFile) {
-        OutputStreamWriter(
-            codeGenerator.createNewFile(
-                Dependencies(aggregating = false, sourceFile),
-                packageName,
-                fileName,
-            ),
-            Charsets.UTF_8,
-        ).use { it.write(source) }
-    }
 }
 
 private fun KSClassDeclaration.annotationArguments(annotationName: String): Map<String, Any?> {

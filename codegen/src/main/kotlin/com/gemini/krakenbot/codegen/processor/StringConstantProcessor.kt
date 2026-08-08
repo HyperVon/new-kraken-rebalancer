@@ -7,6 +7,8 @@ import com.google.devtools.ksp.processing.SymbolProcessorProvider
 import com.google.devtools.ksp.symbol.KSAnnotated
 
 private const val ANNOTATION_NAME = "com.gemini.krakenbot.codegen.GenerateStringConstants"
+private const val GENERATED_SOURCE_COMMENT =
+    "/** Generated from @GenerateStringConstants; edit the YAML resource instead. */"
 
 class StringConstantProcessorProvider : SymbolProcessorProvider {
     override fun create(environment: SymbolProcessorEnvironment): SymbolProcessor = StringConstantProcessor(
@@ -25,85 +27,148 @@ private class StringConstantProcessor(private val support: CatalogProcessorSuppo
         support.process(resolver, ANNOTATION_NAME, generatedSources, ::generate)
 
     private fun generate(input: CatalogInput) {
-        val fileName = input.stringArgument(ANNOTATION_NAME, "fileName")
+        val fileName = input.stringArgument(ANNOTATION_NAME, FILE_NAME_ARGUMENT)
+
         if (!isKotlinIdentifier(fileName)) {
             failCatalog("Generated constant file name is not a Kotlin identifier: $fileName")
         }
+
         val packageName = input.declaration.packageName.asString()
-        val source = KotlinSourceBuilder().apply {
+        val sourceText = buildGeneratedSource(input, packageName, fileName)
+
+        support.write(input, packageName, fileName, sourceText)
+    }
+
+    private fun buildGeneratedSource(input: CatalogInput, packageName: String, fileName: String): String =
+        KotlinSourceBuilder().apply {
             line("package $packageName")
             line()
-            if (fileName == "CssTheme") {
-                line("import com.gemini.krakenbot.view.util.CssThemeVars")
-                line("import kotlinx.css.Color")
-                line("import kotlinx.css.CssBuilder")
-                line("import kotlinx.css.px")
-                line("import kotlinx.css.rem")
-                line()
-            }
-            line("/** Generated from @GenerateStringConstants; edit the YAML resource instead. */")
-            when (fileName) {
-                "CssThemeVars" -> {
-                    // Single batch: object + embedded cssVars list so callers have one source of truth
-                    val group = input.definitions.firstOrNull()?.group ?: fileName
-                    block("object $group") {
-                        for (def in input.definitions) {
-                            line("const val ${def.name} = \"${escapeKotlinString(def.value)}\"")
-                        }
-                        line()
-                        line("val cssVars: List<Pair<String, String>> by lazy {")
-                        line("    listOf(")
-                        for (def in input.definitions) {
-                            val kebab = toKebabCase(def.name)
-                            line("        \"--$kebab\" to ${def.name},")
-                        }
-                        line("    )")
-                        line("}")
-                    }
-                }
-                "CssTheme" -> {
-                    // Typed CssTheme for JVM: Color for colors, LinearDimension for radii, String for rest
-                    block("object $fileName") {
-                        for (def in input.definitions) {
-                            val escaped = escapeKotlinString(def.value)
-                            when {
-                                def.name.startsWith("radius") -> {
-                                    val v = def.value
-                                    val typed = when {
-                                        v.endsWith("px") -> v.removeSuffix("px") + ".px"
-                                        v.endsWith("rem") -> v.removeSuffix("rem") + ".rem"
-                                        else -> "\"$escaped\""
-                                    }
-                                    line("val ${def.name} = $typed")
-                                }
-                                def.name.startsWith("color") -> line("val ${def.name} = Color(\"$escaped\")")
-                                else -> line("const val ${def.name} = \"$escaped\"")
-                            }
-                        }
-                        line()
-                        line("fun kotlinx.css.CssBuilder.applyRootVariables() {")
-                        line("    \":root\" {")
-                        line(
-                            "        com.gemini.krakenbot.view.util.CssThemeVars.cssVars.forEach { (k, v) -> put(k, v) }",
-                        )
-                        line("    }")
-                        line("}")
-                    }
-                }
-                else -> renderGroups(
-                    input.definitions,
-                    header = { group -> "object $group" },
-                    entry = { definition, _ ->
-                        "const val ${definition.name} = \"${escapeKotlinString(definition.value)}\""
-                    },
-                )
-            }
+
+            renderThemeImportsIfNeeded(fileName)
+
+            line(GENERATED_SOURCE_COMMENT)
+            renderGeneratedBody(input, fileName)
         }.toString()
-        support.write(input, packageName, fileName, source)
+
+    private fun KotlinSourceBuilder.renderThemeImportsIfNeeded(fileName: String) {
+        if (fileName != CSS_THEME_FILE_NAME) return
+
+        listOf(
+            CSS_THEME_VARS_IMPORT,
+            COLOR_IMPORT,
+            CSS_BUILDER_IMPORT,
+            PX_IMPORT,
+            REM_IMPORT,
+        ).forEach(::line)
+
+        line()
+    }
+
+    private fun KotlinSourceBuilder.renderGeneratedBody(input: CatalogInput, fileName: String) {
+        when (fileName) {
+            CSS_THEME_VARS_FILE_NAME -> renderCssThemeVars(input, fileName)
+            CSS_THEME_FILE_NAME -> renderCssTheme(input, fileName)
+            else -> renderDefaultGroups(input)
+        }
+    }
+
+    private fun KotlinSourceBuilder.renderCssThemeVars(input: CatalogInput, fileName: String) {
+        val objectName = input.definitions.firstOrNull()?.group ?: fileName
+
+        block("object $objectName") {
+            input.definitions.forEach { definition ->
+                line(renderStringDefinition(definition))
+            }
+
+            line()
+            renderCssVarsProperty(input.definitions)
+        }
+    }
+
+    private fun KotlinSourceBuilder.renderCssVarsProperty(definitions: List<CatalogDefinition>) {
+        line("val cssVars: List<Pair<String, String>> by lazy {")
+        line("    listOf(")
+
+        definitions.forEach { definition ->
+            line(renderCssVariablePair(definition.name))
+        }
+
+        line("    )")
+        line("}")
+    }
+
+    private fun KotlinSourceBuilder.renderCssTheme(input: CatalogInput, fileName: String) {
+        block("object $fileName") {
+            input.definitions.forEach { definition ->
+                line(renderCssThemeDefinition(definition))
+            }
+
+            line()
+            renderRootVariablesFunction()
+        }
+    }
+
+    private fun renderCssThemeDefinition(definition: CatalogDefinition): String = when {
+        definition.name.startsWith(CSS_RADIUS_PREFIX) -> renderRadiusDefinition(definition)
+        definition.name.startsWith(CSS_COLOR_PREFIX) -> renderColorDefinition(definition)
+        else -> renderStringDefinition(definition)
+    }
+
+    private fun renderRadiusDefinition(definition: CatalogDefinition): String {
+        val escapedValue = escapeKotlinString(definition.value)
+        val renderedValue = renderRadiusValue(definition.value, escapedValue)
+
+        return "val ${definition.name} = $renderedValue"
+    }
+
+    private fun renderColorDefinition(definition: CatalogDefinition): String {
+        val escapedValue = escapeKotlinString(definition.value)
+
+        return "val ${definition.name} = Color(\"$escapedValue\")"
+    }
+
+    private fun renderStringDefinition(definition: CatalogDefinition): String {
+        val escapedValue = escapeKotlinString(definition.value)
+
+        return "const val ${definition.name} = \"$escapedValue\""
+    }
+
+    private fun KotlinSourceBuilder.renderRootVariablesFunction() {
+        line("fun CssBuilder.applyRootVariables() {")
+        line("    \":root\" {")
+        line("        CssThemeVars.cssVars.forEach { (key, value) -> put(key, value) }")
+        line("    }")
+        line("}")
+    }
+
+    private fun KotlinSourceBuilder.renderDefaultGroups(input: CatalogInput) {
+        renderGroups(
+            input.definitions,
+            header = { group -> "object $group" },
+            entry = { definition, _ -> renderStringDefinition(definition) },
+        )
+    }
+
+    private fun renderCssVariablePair(constantName: String): String {
+        val cssVariableName = CSS_VARIABLE_PREFIX + toKebabCase(constantName)
+
+        return "\"$cssVariableName\" to $constantName,"
+    }
+
+    private fun renderRadiusValue(value: String, escapedValue: String): String = when {
+        value.endsWith(PIXEL_SUFFIX) -> renderNumericCssValue(value, PIXEL_SUFFIX, PIXEL_SUFFIX)
+        value.endsWith(REM_SUFFIX) -> renderNumericCssValue(value, REM_SUFFIX, REM_SUFFIX)
+        else -> "\"$escapedValue\""
+    }
+
+    private fun renderNumericCssValue(value: String, suffix: String, kotlinCssExtension: String): String {
+        val numericValue = value.removeSuffix(suffix)
+
+        return "$numericValue.$kotlinCssExtension"
     }
 
     private fun toKebabCase(name: String): String = name
-        .replace(Regex("([a-z])([A-Z])"), "$1-$2")
-        .replace(Regex("([a-zA-Z])(\\d)"), "$1-$2")
+        .replace(LOWER_TO_UPPER_BOUNDARY_REGEX, PLACEHOLDER_FORMAT)
+        .replace(LETTER_TO_DIGIT_BOUNDARY_REGEX, PLACEHOLDER_FORMAT)
         .lowercase()
 }

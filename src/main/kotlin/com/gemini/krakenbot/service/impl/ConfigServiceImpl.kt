@@ -1,6 +1,7 @@
 package com.gemini.krakenbot.service.impl
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.databind.node.ObjectNode
 import com.gemini.krakenbot.config.AppConfig
 import com.gemini.krakenbot.config.InvalidConfigurationException
 import com.gemini.krakenbot.config.KrakenCredentials
@@ -175,18 +176,18 @@ class ConfigServiceImpl(
     }
 
     private fun normalizeLegacyKeys(content: String): String {
-        if (!content.contains("\"dustThresholdUSD\"")) return content
-        val hasNew = content.contains("\"minimumOrderSizeUSD\"")
-        return if (hasNew) {
-            // Both keys present: drop legacy, keep new. Handle both orderings without leaving
-            // a dangling comma (fix Track A warning: {"a":5,"dust":3}→{"a":5,} invalid).
-            var out = content.replace(Regex(",\\s*\"dustThresholdUSD\"\\s*:\\s*[^,\\n}]+"), "")
-            out = out.replace(Regex("\"dustThresholdUSD\"\\s*:\\s*[^,\\n}]+,?\\s*"), "")
-            out
-        } else {
-            // Only legacy: rename the key, not string values (match key + colon).
-            content.replace(Regex("\"dustThresholdUSD\"(\\s*:)"), "\"minimumOrderSizeUSD\"$1")
+        val tree = objectMapper.readTree(content)
+        val settings = tree.get("settings") as? ObjectNode ?: return content
+        val legacy = settings.get(LEGACY_DUST_THRESHOLD_KEY)
+        val current = settings.get(NEW_MINIMUM_ORDER_SIZE_KEY)
+        when {
+            legacy != null && current != null -> settings.remove(LEGACY_DUST_THRESHOLD_KEY)
+            legacy != null -> {
+                settings.remove(LEGACY_DUST_THRESHOLD_KEY)
+                settings.set(NEW_MINIMUM_ORDER_SIZE_KEY, legacy)
+            }
         }
+        return objectMapper.writeValueAsString(tree)
     }
 
     private fun resolveEnvVars(content: String): String = ENV_VAR_PATTERN.replace(content) { matchResult ->
@@ -357,6 +358,8 @@ class ConfigServiceImpl(
     private companion object {
         private const val DEFAULT_CONFIG_FILE_PATH = "rebalancer-config.json"
         private const val ENV_VAR_DEFAULT_SEPARATOR = ":"
+        private const val LEGACY_DUST_THRESHOLD_KEY = "dustThresholdUSD"
+        private const val NEW_MINIMUM_ORDER_SIZE_KEY = "minimumOrderSizeUSD"
         private const val MIN_PERCENT = 0.0
         private const val MAX_PERCENT = 100.0
 
