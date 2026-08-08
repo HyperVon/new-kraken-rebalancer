@@ -45,7 +45,7 @@ Product polish discovered during QA belongs in
 | CQ-19-11 | M | gap | done | coverage/bundle | Bundle BRANCH 90.13% headroom 0.13% (~26 branches) — mitigated by new scenarios 35-38, now 96%/90% with headroom | 19 | 222 | — |
 | CQ-19-12 | M | gap | done | coverage/history | Package history 87.8% / controller 81.4% below bundle gate — history now 95%/87% via new tests, controller 98%/81% | 19 | 222 | — |
 | CQ-19-13 | S | gap | done | coverage/js | Karma JS gate unverified (no jsBrowserTest on branch) — verified 2026-08-08 jsBrowserTest PASS | 19 | 222 | — |
-| CQ-19-14 | L | gap | done | algorithm/eval | ALGORITHM PENDING→UNCERTAIN/cl_ord_id/batch abort has 0 scenarios | 19 | 222 | #221 |
+| CQ-19-14 | L | gap | done | algorithm/eval | ALGORITHM PENDING→UNCERTAIN/cl_ord_id/batch abort has 0 scenarios — hardened to Scenario 39 (deterministic ids, abort, blocking) | 19 | 222 | #221 |
 | CQ-19-15 | M | gap | done | algorithm/eval | retryWithFlow/withStableBackend/ledgers sync have no evaluation scenario | 19 | 222 | — |
 | CQ-19-16 | S | bug | done | config/flows | withExecutionSession takes ()->T not suspend ()->T, suspend callers wrap | 19 | 222 | — |
 
