@@ -357,7 +357,7 @@ only updates stream-chip timing; it never opens an EventSource.
 ### [PORT-ZERO-1] Block zero/negative notional before AddOrder
 
 - Skill: `.agents/skills/portfolio-rebalancing-math/SKILL.md`
-- Gap: Dust skip is documented; `dustThresholdUSD = 0` and budget-trim-to-zero are not.
+- Gap: Dust skip is documented; `minimumOrderSizeUSD = 0` and budget-trim-to-zero are not.
 - Why: Zero-volume market orders reach the exchange and persist bogus trades.
 
 ````markdown
@@ -365,7 +365,7 @@ only updates stream-chip timing; it never opens an EventSource.
 
 - After the dust check, abort when `usdAmount.signum() <= 0` or the computed
   `volume.signum() <= 0` — return `null`; do not call `executeOrder`.
-- Applies when `dustThresholdUSD = 0`, or when a buy is trimmed to $0 by the
+- Applies when `minimumOrderSizeUSD = 0`, or when a buy is trimmed to $0 by the
   99% cycle budget.
 - Anti-pattern: relying on Kraken to reject zero volume — the app would still
   persist a `TradeRecord`.

@@ -62,7 +62,7 @@ Pure KMP types under `common/.../config/`:
 - Non-empty, no duplicate symbols, symbols match `^[A-Z0-9]{1,16}$`
 - Missing or invalid allocation colors are normalized by `AssetColorAssigner`;
   persisted colors use `#rrggbb`
-- `loopDelaySeconds > 0`, `deviationTriggerPercent ≥ 0`, `dustThresholdUSD ≥ 0`
+- `loopDelaySeconds > 0`, `deviationTriggerPercent ≥ 0`, `minimumOrderSizeUSD ≥ 2`
 - `fiatMaxDrawdown` in `0..100`, `fiatDeploymentExponent > 0`
 - Every `Double` setting and allocation percentage must be finite; reject
   `NaN` and positive/negative infinity before publishing or persisting config.
