@@ -34,37 +34,31 @@ private fun resolveCatalogFile(resource: String, resourceRoot: String): File {
     return resourceFile
 }
 
-private fun readYamlRoot(resourceFile: File, resource: String): Any? =
-    try {
-        createYamlParser().load<Any?>(resourceFile.readText(Charsets.UTF_8))
-    } catch (exception: Exception) {
-        failCatalog("Unable to parse catalog resource $resource: ${exception.message}")
-    }
+private fun readYamlRoot(resourceFile: File, resource: String): Any? = try {
+    createYamlParser().load<Any?>(resourceFile.readText(Charsets.UTF_8))
+} catch (exception: Exception) {
+    failCatalog("Unable to parse catalog resource $resource: ${exception.message}")
+}
 
 private fun createYamlParser(): Yaml {
     val loaderOptions = LoaderOptions().apply { isAllowDuplicateKeys = false }
     return Yaml(SafeConstructor(loaderOptions))
 }
 
-private fun parseCatalogDefinitions(groups: Map<*, *>, resource: String): List<CatalogDefinition> =
-    buildList {
-        groups.forEach { (rawGroup, rawEntries) ->
-            val group = rawGroup as? String
-                ?: failCatalog("Catalog group names must be strings: $resource")
-            validateIdentifier(group, "group", resource)
+private fun parseCatalogDefinitions(groups: Map<*, *>, resource: String): List<CatalogDefinition> = buildList {
+    groups.forEach { (rawGroup, rawEntries) ->
+        val group = rawGroup as? String
+            ?: failCatalog("Catalog group names must be strings: $resource")
+        validateIdentifier(group, "group", resource)
 
-            val entries = rawEntries as? Map<*, *>
-                ?: failCatalog("Catalog group must contain a map: $resource/$group")
+        val entries = rawEntries as? Map<*, *>
+            ?: failCatalog("Catalog group must contain a map: $resource/$group")
 
-            addAll(parseGroupDefinitions(group, entries, resource))
-        }
+        addAll(parseGroupDefinitions(group, entries, resource))
     }
+}
 
-private fun parseGroupDefinitions(
-    group: String,
-    entries: Map<*, *>,
-    resource: String,
-): List<CatalogDefinition> =
+private fun parseGroupDefinitions(group: String, entries: Map<*, *>, resource: String): List<CatalogDefinition> =
     buildList {
         entries.forEach { (rawName, rawValue) ->
             val catalogLocation = "$resource/$group"
